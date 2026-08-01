@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0.0",
+  "event_id": "event-0001",
+  "connector_id": "fixture-connector",
+  "source_type": "fixture",
+  "source_project_id": "source-project-0001",
+  "source_revision": "revision-0001",
+  "event_type": "project.discovered",
+  "occurred_at": "2026-08-01T00:00:00Z",
+  "discovered_at": "2026-08-01T00:00:01Z",
+  "project": {
+    "project_id": null,
+    "source_connector": "fixture-connector",
+    "source_project_id": "source-project-0001",
+    "revision": "revision-0001",
+    "title": "Connector contract fixture",
+    "project_type": "fixture",
+    "status": "discovered",
+    "protected_level": "internal",
+    "source_uri": "connector://fixture/projects/source-project-0001",
+    "created_at": "2026-08-01T00:00:00Z",
+    "updated_at": "2026-08-01T00:00:00Z",
+    "attributes": {
+      "fixture": true
+    }
+  },
+  "artifacts": [
+    {
+      "artifact_id": "artifact-0001",
+      "project_id": null,
+      "role": "source",
+      "uri": "connector://fixture/artifacts/artifact-0001",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 128,
+      "mime_type": "text/plain",
+      "source_artifact_id": null,
+      "source_revision": "revision-0001",
+      "time_range": null,
+      "version": "1",
+      "permission_tags": [
+        "internal",
+        "read_only"
+      ],
+      "created_at": "2026-08-01T00:00:00Z"
+    }
+  ],
+  "idempotency_key": "fixture-connector:event-0001:revision-0001",
+  "permission_tags": [
+    "internal",
+    "read_only"
+  ],
+  "metadata": {
+    "fixture": true
+  }
+}
