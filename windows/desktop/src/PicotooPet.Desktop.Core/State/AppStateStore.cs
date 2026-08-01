@@ -71,13 +71,19 @@ public sealed class AppStateStore
 
     private void OnConnectionSnapshotChanged(
         object? sender,
-        ConnectionSnapshot connection) =>
-        PublishSnapshot(CreateAppSnapshot(connection, TaskStore.Snapshot));
+        ConnectionSnapshot connection)
+    {
+        var snapshot = CreateAppSnapshot(connection, TaskStore.Snapshot);
+        PublishSnapshot(snapshot);
+    }
 
     private void OnTaskSnapshotChanged(
         object? sender,
-        TaskStateSnapshot tasks) =>
-        PublishSnapshot(CreateAppSnapshot(ConnectionStore.Snapshot, tasks));
+        TaskStateSnapshot tasks)
+    {
+        var snapshot = CreateAppSnapshot(ConnectionStore.Snapshot, tasks);
+        PublishSnapshot(snapshot);
+    }
 
     private static AppSnapshot CreateAppSnapshot(
         ConnectionSnapshot connection,
