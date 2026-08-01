@@ -45,7 +45,7 @@ jobs:
         run: |
           [Environment]::OSVersion.VersionString
           dotnet --info
-          powershell.exe -NoLogo -NoProfile -Command "$PSVersionTable.PSVersion"
+          $PSVersionTable.PSVersion
 
       - name: Build, analyze, publish and self-test
         shell: powershell
