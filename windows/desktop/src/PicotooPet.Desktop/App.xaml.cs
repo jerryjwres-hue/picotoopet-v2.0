@@ -66,10 +66,10 @@ public partial class App : Application, IDisposable
         var window    = new ShellWindow(viewModel, session);
         MainWindow = window;
         window.Show();
-        _ = InitializeSessionAsync(session, window, logger);
+        _ = InitializeViewModelAsync(session, window, logger);
     }
 
-    private static async Task InitializeSessionAsync(
+    private static async Task InitializeViewModelAsync(
         ControlCenterSession session,
         Window owner,
         SafeFileLogger logger)
