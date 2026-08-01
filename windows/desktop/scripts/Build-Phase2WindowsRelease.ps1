@@ -28,39 +28,98 @@ function Invoke-NativeCommand {
         [int]$TimeoutSeconds = 900
     )
 
-    # 原生命令统一记录 stdout、stderr、退出码和超时，避免 PowerShell 5.1 误判 stderr。
-    $token        = [Guid]::NewGuid().ToString('N')
-    $stdoutPath   = Join-Path $env:TEMP "picotoo-build-$token.stdout.log"
-    $stderrPath   = Join-Path $env:TEMP "picotoo-build-$token.stderr.log"
-    $argumentLine = ($Arguments | ForEach-Object { ConvertTo-NativeArgument -Value $_ }) -join ' '
+    # 参数构造                Windows PowerShell 5.1 没有 ProcessStartInfo.ArgumentList。
+    $argumentLine = (
+        $Arguments |
+        ForEach-Object {
+            ConvertTo-NativeArgument -Value $_
+        }
+    ) -join ' '
+
+    # 进程配置                不使用 Start-Process，避免 PassThru ExitCode 为空。
+    $startInfo                        = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName               = $FilePath
+    $startInfo.Arguments              = $argumentLine
+    $startInfo.UseShellExecute        = $false
+    $startInfo.CreateNoWindow         = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError  = $true
+
+    $process           = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+
     try {
-        $process = Start-Process -FilePath $FilePath -ArgumentList $argumentLine `
-            -PassThru -WindowStyle Hidden `
-            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+        # 启动进程                启动失败立即终止，不产生伪退出码。
+        if (-not $process.Start()) {
+            throw "无法启动原生命令：$FilePath"
+        }
+
+        # 异步读取                同时排空 stdout/stderr，避免缓冲区导致死锁。
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+
+        # 超时控制                有限等待；超时后终止并等待进程真正退出。
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            try { $process.Kill() } catch { }
+            try {
+                $process.Kill()
+            }
+            catch {
+                Write-Warning (
+                    "终止超时进程失败：{0}" -f $_.Exception.Message
+                )
+            }
+
+            try {
+                $process.WaitForExit()
+            }
+            catch {
+                # 超时错误优先        保留原始超时原因。
+            }
+
             throw "原生命令超时（$TimeoutSeconds 秒）：$FilePath"
         }
-        $stdout = if (Test-Path -LiteralPath $stdoutPath) {
-            Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
-        } else { '' }
-        $stderr = if (Test-Path -LiteralPath $stderrPath) {
-            Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue
-        } else { '' }
-        if (-not [string]::IsNullOrWhiteSpace($stdout)) { Write-Host $stdout.TrimEnd() }
-        if (-not [string]::IsNullOrWhiteSpace($stderr)) { Write-Host $stderr.TrimEnd() }
-        if ($process.ExitCode -ne 0) {
-            $tail = (($stderr + "`n" + $stdout) -split "`r?`n" | Select-Object -Last 80) -join "`n"
-            throw "原生命令失败（退出码 $($process.ExitCode)）：$FilePath`n$tail"
+
+        # 完成等待                确保重定向输出和进程管理信息均已刷新。
+        $process.WaitForExit()
+        $process.Refresh()
+
+        $stdout   = $stdoutTask.GetAwaiter().GetResult()
+        $stderr   = $stderrTask.GetAwaiter().GetResult()
+        $exitCode = [int]$process.ExitCode
+
+        if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+            Write-Host $stdout.TrimEnd()
         }
+
+        if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+            Write-Host $stderr.TrimEnd()
+        }
+
+        if ($exitCode -ne 0) {
+            $tail = (
+                ($stderr + "`n" + $stdout) -split "`r?`n" |
+                Select-Object -Last 80
+            ) -join "`n"
+
+            throw (
+                "原生命令失败（退出码 {0}）：{1}`n{2}" -f
+                $exitCode,
+                $FilePath,
+                $tail
+            )
+        }
+
         return [pscustomobject]@{
-            ExitCode = $process.ExitCode
+            ExitCode = $exitCode
             StdOut   = $stdout
             StdErr   = $stderr
         }
     }
     finally {
-        Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+        # 资源释放                CI 长流程中不保留已退出进程句柄。
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
     }
 }
 
