@@ -3,6 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>PicotooPet.Desktop</RootNamespace>
     <AssemblyName>Picotoo Pet AI</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
