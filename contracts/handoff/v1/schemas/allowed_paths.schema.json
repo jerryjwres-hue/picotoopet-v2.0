@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/handoff/v1/allowed_paths.schema.json",
+  "title": "Picotoo Pet Handoff AllowedPaths v1",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "path_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string",
+          "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))D:/PicotooPet/DevSandbox/(?:worktrees|handoff-inbox|sessions|return-packages|quarantine)/[A-Za-z0-9._~!$&'()*+,;=:@%/\\-]+$",
+          "maxLength": 2048
+        },
+        "glob": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "max_file_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        },
+        "file_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "uniqueItems": true,
+          "maxItems": 128
+        },
+        "allow_create": {
+          "type": "boolean"
+        },
+        "allow_delete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "root",
+        "glob",
+        "max_file_size",
+        "file_types",
+        "allow_create",
+        "allow_delete"
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "read": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/path_rule"
+      },
+      "minItems": 1,
+      "maxItems": 128
+    },
+    "write": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/path_rule"
+      },
+      "minItems": 1,
+      "maxItems": 128
+    }
+  },
+  "required": ["schema_version", "read", "write"]
+}
