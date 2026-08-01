@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/connector/v1/project_manifest.schema.json",
+  "title": "Picotoo Pet Connector ProjectManifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "project_id": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "source_connector": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "source_project_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "project_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "protected_level": {
+      "enum": ["public", "internal", "confidential", "protected"]
+    },
+    "source_uri": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "created_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "project_id",
+    "source_connector",
+    "source_project_id",
+    "revision",
+    "title",
+    "project_type",
+    "status",
+    "protected_level",
+    "source_uri",
+    "created_at",
+    "updated_at",
+    "attributes"
+  ]
+}
