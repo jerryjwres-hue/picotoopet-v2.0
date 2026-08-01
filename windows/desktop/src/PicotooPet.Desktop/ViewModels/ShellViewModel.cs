@@ -1,25 +1,80 @@
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Navigation;
+using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>维护冻结导航、能力可用性和当前解释性页面。</summary>
-public sealed class ShellViewModel : ObservableObject
+/// <summary>把真实会话快照适配为冻结导航、全局状态和当前页面。</summary>
+public sealed class ShellViewModel : ObservableObject, IDisposable
 {
+    private readonly ControlCenterSession? _session;
+    private readonly IUiDispatcher? _dispatcher;
+    private ControlCenterSessionSnapshot? _snapshot;
+    private IReadOnlyList<NavigationItem> _navigationItems;
+    private NavigationItem _selectedNavigationItem;
     private NavigationRoute _currentRoute;
     private PageViewModel _currentPage;
+    private string _connectionText;
+    private string _connectionMessage;
+    private string _approvalText;
+    private string _statusMessage;
+    private bool _disposed;
+
+    /// <summary>创建绑定真实 Session 的运行时 Shell。</summary>
+    public ShellViewModel(
+        ControlCenterSession session,
+        IUiDispatcher dispatcher)
+    {
+        _session    = session ?? throw new ArgumentNullException(nameof(session));
+        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _snapshot   = session.Snapshot;
+        _navigationItems = BuildNavigation(_snapshot.State.Capabilities.Features);
+        _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.Dashboard);
+        _currentRoute     = NavigationRoute.Dashboard;
+        _currentPage      = CreatePage(_currentRoute, _snapshot);
+        _connectionText   = FormatConnection(_snapshot.State.Connection.State);
+        _connectionMessage = FormatConnectionMessage(_snapshot);
+        _approvalText     = FormatApproval(_snapshot.State.Capabilities);
+        _statusMessage    = _snapshot.StatusMessage;
+        session.SnapshotChanged += OnSessionSnapshotChanged;
+    }
 
     private ShellViewModel(ControlCenterCapabilities capabilities)
     {
         ArgumentNullException.ThrowIfNull(capabilities);
-
-        NavigationItems = BuildNavigation(capabilities);
-        _currentRoute    = NavigationRoute.Dashboard;
-        _currentPage     = CreatePage(_currentRoute);
+        _navigationItems = BuildNavigation(capabilities);
+        _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.Dashboard);
+        _currentRoute      = NavigationRoute.Dashboard;
+        _currentPage       = CreateStaticPage(_currentRoute);
+        _connectionText    = "离线";
+        _connectionMessage = "Smoke test 模式未连接 Mac Core。";
+        _approvalText      = capabilities.ApprovalList ? "审批能力可用" : "审批能力未启用";
+        _statusMessage     = "确定性导航测试。";
     }
 
     /// <summary>十个冻结的一级导航项。</summary>
-    public IReadOnlyList<NavigationItem> NavigationItems { get; }
+    public IReadOnlyList<NavigationItem> NavigationItems
+    {
+        get => _navigationItems;
+        private set => SetProperty(ref _navigationItems, value);
+    }
+
+    /// <summary>当前选中的导航项；不可用项仍允许打开解释页。</summary>
+    public NavigationItem SelectedNavigationItem
+    {
+        get => _selectedNavigationItem;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (!SetProperty(ref _selectedNavigationItem, value))
+            {
+                return;
+            }
+            CurrentRoute = value.Route;
+            CurrentPage  = CreateCurrentPage(value.Route);
+        }
+    }
 
     /// <summary>当前选中的路由。</summary>
     public NavigationRoute CurrentRoute
@@ -28,23 +83,73 @@ public sealed class ShellViewModel : ObservableObject
         private set => SetProperty(ref _currentRoute, value);
     }
 
-    /// <summary>当前页面；不可用路由仍可展示完整原因和后续步骤。</summary>
+    /// <summary>当前页面；不可用路由仍展示原因、后续步骤和用户动作。</summary>
     public PageViewModel CurrentPage
     {
         get => _currentPage;
         private set => SetProperty(ref _currentPage, value);
     }
 
+    /// <summary>顶部全局连接状态。</summary>
+    public string ConnectionText
+    {
+        get => _connectionText;
+        private set => SetProperty(ref _connectionText, value);
+    }
+
+    /// <summary>底部连接和错误说明。</summary>
+    public string ConnectionMessage
+    {
+        get => _connectionMessage;
+        private set => SetProperty(ref _connectionMessage, value);
+    }
+
+    /// <summary>顶部审批能力说明；未接入时不伪造待审批数量。</summary>
+    public string ApprovalText
+    {
+        get => _approvalText;
+        private set => SetProperty(ref _approvalText, value);
+    }
+
+    /// <summary>当前会话操作说明。</summary>
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        private set => SetProperty(ref _statusMessage, value);
+    }
+
     /// <summary>创建不依赖窗口或网络的确定性 Shell 模型。</summary>
     public static ShellViewModel CreateForSmokeTest(
         ControlCenterCapabilities capabilities) => new(capabilities);
 
-    /// <summary>切换页面；能力状态只限制操作，不隐藏解释信息。</summary>
+    /// <summary>按路由切换页面；导航项可用性只限制动作，不隐藏解释。</summary>
     public void Navigate(NavigationRoute route)
     {
+        var item = FindItem(NavigationItems, route);
+        if (!ReferenceEquals(SelectedNavigationItem, item))
+        {
+            SelectedNavigationItem = item;
+            return;
+        }
         CurrentRoute = route;
-        CurrentPage  = CreatePage(route);
+        CurrentPage  = CreateCurrentPage(route);
     }
+
+    private PageViewModel CreateCurrentPage(NavigationRoute route) =>
+        _snapshot is null
+            ? CreateStaticPage(route)
+            : CreatePage(route, _snapshot);
+
+    private static PageViewModel CreatePage(
+        NavigationRoute route,
+        ControlCenterSessionSnapshot snapshot) => route switch
+    {
+        NavigationRoute.Dashboard => new OverviewPageViewModel(
+            snapshot,
+            FormatConnection(snapshot.State.Connection.State)),
+        NavigationRoute.Settings => new SettingsPageViewModel(snapshot.MacBaseUrl),
+        _ => CreateStaticPage(route),
+    };
 
     private static NavigationItem[] BuildNavigation(
         ControlCenterCapabilities capabilities) =>
@@ -54,7 +159,7 @@ public sealed class ShellViewModel : ObservableObject
                 NavigationRoute.Dashboard,
                 "总览",
                 capabilities.Dashboard,
-                "Mac Core 尚未声明 Dashboard 能力。"),
+                "当前只提供基础连接和任务总览，完整 Dashboard 尚未声明。"),
             Item(
                 NavigationRoute.Projects,
                 "项目",
@@ -112,12 +217,17 @@ public sealed class ShellViewModel : ObservableObject
             isAvailable,
             isAvailable ? "当前能力可用。" : unavailableMessage);
 
-    private static EmptyStatePageViewModel CreatePage(NavigationRoute route) => route switch
+    private static NavigationItem FindItem(
+        IReadOnlyList<NavigationItem> items,
+        NavigationRoute route) =>
+        items.Single(item => item.Route == route);
+
+    private static PageViewModel CreateStaticPage(NavigationRoute route) => route switch
     {
         NavigationRoute.Dashboard => new EmptyStatePageViewModel(
             "总览",
-            "当前版本尚未声明 Dashboard 能力。",
-            "后续切片将接入真实连接、任务和健康摘要。",
+            "当前版本尚未声明完整 Dashboard 能力。",
+            "运行时 Shell 将展示真实连接、任务和健康摘要。",
             "你现在不需要操作。"),
         NavigationRoute.Projects => new EmptyStatePageViewModel(
             "项目",
@@ -126,8 +236,8 @@ public sealed class ShellViewModel : ObservableObject
             "你现在不需要操作。"),
         NavigationRoute.TaskCenter => new EmptyStatePageViewModel(
             "任务中心",
-            "现有 2.2 耐久任务列表能力已保留，新的 Shell 页面尚未接入。",
-            "Task 8 将把真实任务快照接入 Control Center。",
+            "现有 2.2 耐久任务列表能力已保留，专用任务中心页面尚未接入。",
+            "下一切片将把筛选、详情和任务动作接入此页面。",
             "你现在不需要操作。"),
         NavigationRoute.Results => new EmptyStatePageViewModel(
             "结果",
@@ -159,11 +269,73 @@ public sealed class ShellViewModel : ObservableObject
             "Mac Core 尚未声明日志查询能力。",
             "后续切片将先加入脱敏、只读和有界的诊断查询。",
             "你现在不需要操作。"),
-        NavigationRoute.Settings => new EmptyStatePageViewModel(
-            "设置",
-            "现有 Mac 地址与 Credential Manager 令牌行为保持不变，新的设置页尚未接入。",
-            "Task 8 将复用现有设置和配对路径。",
-            "你现在不需要操作。"),
+        NavigationRoute.Settings => new SettingsPageViewModel(DesktopSettings.Default.MacBaseUrl),
         _ => throw new ArgumentOutOfRangeException(nameof(route), route, "未知导航路由。"),
     };
+
+    private void OnSessionSnapshotChanged(
+        object? sender,
+        ControlCenterSessionSnapshot snapshot)
+    {
+        var dispatcher = _dispatcher;
+        if (dispatcher is null)
+        {
+            ApplySnapshot(snapshot);
+            return;
+        }
+        _ = dispatcher.InvokeAsync(
+            () => ApplySnapshot(snapshot),
+            CancellationToken.None);
+    }
+
+    private void ApplySnapshot(ControlCenterSessionSnapshot snapshot)
+    {
+        _snapshot = snapshot;
+        var route = CurrentRoute;
+        NavigationItems = BuildNavigation(snapshot.State.Capabilities.Features);
+        _selectedNavigationItem = FindItem(NavigationItems, route);
+        OnPropertyChanged(nameof(SelectedNavigationItem));
+        ConnectionText    = FormatConnection(snapshot.State.Connection.State);
+        ConnectionMessage = FormatConnectionMessage(snapshot);
+        ApprovalText      = FormatApproval(snapshot.State.Capabilities);
+        StatusMessage     = snapshot.StatusMessage;
+        CurrentPage       = CreatePage(route, snapshot);
+    }
+
+    private static string FormatConnection(ConnectionState state) => state switch
+    {
+        ConnectionState.Online               => "在线",
+        ConnectionState.Connecting           => "连接中",
+        ConnectionState.Reconnecting         => "正在重连",
+        ConnectionState.AuthenticationFailed => "认证失败",
+        ConnectionState.Faulted              => "连接故障",
+        _                                    => "离线",
+    };
+
+    private static string FormatConnectionMessage(ControlCenterSessionSnapshot snapshot)
+    {
+        var error = snapshot.State.Connection.LastError;
+        return string.IsNullOrWhiteSpace(error)
+            ? snapshot.StatusMessage
+            : $"{snapshot.StatusMessage} · {error}";
+    }
+
+    private static string FormatApproval(CapabilitySnapshot capabilities) =>
+        capabilities.Features.ApprovalList
+            ? "审批能力已接入"
+            : "审批能力未启用";
+
+    /// <summary>取消会话快照订阅；网络资源由 ControlCenterSession 统一释放。</summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        _disposed = true;
+        if (_session is not null)
+        {
+            _session.SnapshotChanged -= OnSessionSnapshotChanged;
+        }
+    }
 }
