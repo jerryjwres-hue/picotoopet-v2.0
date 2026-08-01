@@ -2,14 +2,15 @@
 [CmdletBinding()]
 param(
     [string]$OutputRoot = "",
-    [string]$Version = ""
+    [string]$Version = "",
+    [string]$VersionLabel = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference    = "SilentlyContinue"
-$env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
-$env:DOTNET_NOLOGO              = "1"
+$env:DOTNET_CLI_TELEMETRY_OPTOUT      = "1"
+$env:DOTNET_NOLOGO                    = "1"
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
 
 function ConvertTo-NativeArgument {
@@ -168,6 +169,17 @@ $desktopRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot    = Split-Path -Parent (Split-Path -Parent $desktopRoot)
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $desktopRoot "artifacts\release"
+}
+
+# 版本兼容                新 CI 使用 VersionLabel；旧调用方继续使用 Version 或默认值。
+if (-not [string]::IsNullOrWhiteSpace($Version) -and
+    -not [string]::IsNullOrWhiteSpace($VersionLabel) -and
+    $Version -ne $VersionLabel) {
+    throw "Version 与 VersionLabel 同时指定时必须一致。"
+}
+if ([string]::IsNullOrWhiteSpace($Version) -and
+    -not [string]::IsNullOrWhiteSpace($VersionLabel)) {
+    $Version = $VersionLabel
 }
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $runNumber = if ([string]::IsNullOrWhiteSpace($env:GITHUB_RUN_NUMBER)) { "local" } else { $env:GITHUB_RUN_NUMBER }
