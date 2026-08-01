@@ -46,7 +46,7 @@ public sealed class ShellViewModel : ObservableObject
         CurrentPage  = CreatePage(route);
     }
 
-    private static IReadOnlyList<NavigationItem> BuildNavigation(
+    private static NavigationItem[] BuildNavigation(
         ControlCenterCapabilities capabilities) =>
         new NavigationItem[]
         {
@@ -112,7 +112,7 @@ public sealed class ShellViewModel : ObservableObject
             isAvailable,
             isAvailable ? "当前能力可用。" : unavailableMessage);
 
-    private static PageViewModel CreatePage(NavigationRoute route) => route switch
+    private static EmptyStatePageViewModel CreatePage(NavigationRoute route) => route switch
     {
         NavigationRoute.Dashboard => new EmptyStatePageViewModel(
             "总览",
