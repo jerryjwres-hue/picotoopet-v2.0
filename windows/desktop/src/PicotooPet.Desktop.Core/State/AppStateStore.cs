@@ -1,118 +1,93 @@
-using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.State;
 
-/// <summary>单写入锁保护的桌面状态仓库；界面只接收不可变快照。</summary>
+/// <summary>兼容现有界面的状态门面；实际状态由 focused store 独立维护。</summary>
 public sealed class AppStateStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    /// <summary>使用默认 focused store 创建兼容门面。</summary>
+    public AppStateStore()
+        : this(
+            new ConnectionStateStore(),
+            new CapabilityStateStore(),
+            new TaskStateStore())
     {
-        PropertyNameCaseInsensitive = true,
-    };
+    }
 
-    private readonly object _gate = new();
-    private readonly Dictionary<string, TaskRecord> _tasks = new(StringComparer.Ordinal);
-    private ConnectionState _connectionState = ConnectionState.Offline;
-    private string? _lastError;
-    private long _lastSequence;
+    /// <summary>使用显式 focused store 创建可测试门面。</summary>
+    public AppStateStore(
+        ConnectionStateStore connectionStore,
+        CapabilityStateStore capabilityStore,
+        TaskStateStore taskStore)
+    {
+        ConnectionStore = connectionStore ?? throw new ArgumentNullException(nameof(connectionStore));
+        CapabilityStore = capabilityStore ?? throw new ArgumentNullException(nameof(capabilityStore));
+        TaskStore       = taskStore ?? throw new ArgumentNullException(nameof(taskStore));
 
-    /// <summary>状态提交后发布新的不可变快照。</summary>
+        ConnectionStore.SnapshotChanged += OnConnectionSnapshotChanged;
+        TaskStore.SnapshotChanged       += OnTaskSnapshotChanged;
+    }
+
+    /// <summary>独立连接状态仓库。</summary>
+    public ConnectionStateStore ConnectionStore { get; }
+
+    /// <summary>独立能力状态仓库。</summary>
+    public CapabilityStateStore CapabilityStore { get; }
+
+    /// <summary>独立任务状态仓库。</summary>
+    public TaskStateStore TaskStore { get; }
+
+    /// <summary>状态提交后发布兼容旧界面的不可变快照。</summary>
     public event EventHandler<AppSnapshot>? SnapshotChanged;
 
-    /// <summary>当前快照。</summary>
-    public AppSnapshot Snapshot
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return CreateSnapshot(taskReset: false, changedTask: null);
-            }
-        }
-    }
+    /// <summary>当前兼容快照。</summary>
+    public AppSnapshot Snapshot => CreateAppSnapshot(
+        ConnectionStore.Snapshot,
+        TaskStore.Snapshot);
 
-    /// <summary>用 REST 初始数据替换任务集合，并通知界面执行一次完整差异归并。</summary>
-    public void ReplaceTasks(IEnumerable<TaskRecord> tasks)
-    {
-        ArgumentNullException.ThrowIfNull(tasks);
-        AppSnapshot snapshot;
-        lock (_gate)
-        {
-            _tasks.Clear();
-            foreach (var task in tasks)
-            {
-                _tasks[task.TaskId] = task;
-            }
-            snapshot = CreateSnapshot(taskReset: true, changedTask: null);
-        }
-        PublishSnapshot(snapshot);
-    }
+    /// <summary>当前 Control Center 完整组合快照。</summary>
+    public ControlCenterSnapshot ControlCenterSnapshot => new(
+        ConnectionStore.Snapshot,
+        CapabilityStore.Snapshot,
+        TaskStore.Snapshot);
 
-    /// <summary>归并一个 REST 返回任务，避免为单条变化重建整个状态集合。</summary>
-    public void UpsertTask(TaskRecord task)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-        AppSnapshot snapshot;
-        lock (_gate)
-        {
-            _tasks[task.TaskId] = task;
-            snapshot = CreateSnapshot(taskReset: false, changedTask: task);
-        }
-        PublishSnapshot(snapshot);
-    }
+    /// <summary>用 REST 初始数据替换任务集合，并通知旧界面执行完整归并。</summary>
+    public void ReplaceTasks(IEnumerable<TaskRecord> tasks) =>
+        TaskStore.ReplaceTasks(tasks);
 
-    /// <summary>归并单个顺序事件；旧序号和重复事件不会回滚状态。</summary>
+    /// <summary>归并一个 REST 返回任务。</summary>
+    public void UpsertTask(TaskRecord task) =>
+        TaskStore.UpsertTask(task);
+
+    /// <summary>归并连续事件；重复或序号跳跃均返回 false。</summary>
     public bool Apply(
         EventEnvelope envelope,
-        Predicate<TaskRecord>? includeTask = null)
-    {
-        ArgumentNullException.ThrowIfNull(envelope);
-        AppSnapshot snapshot;
-        TaskRecord? changedTask = null;
-        lock (_gate)
-        {
-            if (envelope.Sequence <= _lastSequence)
-            {
-                return false;
-            }
-            if (envelope.TryGetTask(JsonOptions, out var task)
-                && task is not null
-                && (includeTask is null || includeTask(task)))
-            {
-                _tasks[task.TaskId] = task;
-                changedTask = task;
-            }
-            // 即使过滤任务负载也确认事件序号，避免重连时反复重放同一诊断事件。
-            _lastSequence = envelope.Sequence;
-            snapshot = CreateSnapshot(taskReset: false, changedTask);
-        }
-        PublishSnapshot(snapshot);
-        return true;
-    }
+        Predicate<TaskRecord>? includeTask = null) =>
+        TaskStore.Apply(envelope, includeTask) == SequenceApplyResult.Applied;
 
     /// <summary>更新连接状态和可选错误摘要。</summary>
-    public void SetConnection(ConnectionState state, string? error = null)
-    {
-        AppSnapshot snapshot;
-        lock (_gate)
-        {
-            _connectionState = state;
-            _lastError       = error;
-            snapshot = CreateSnapshot(taskReset: false, changedTask: null);
-        }
-        PublishSnapshot(snapshot);
-    }
+    public void SetConnection(ConnectionState state, string? error = null) =>
+        ConnectionStore.Set(state, error);
 
-    private AppSnapshot CreateSnapshot(bool taskReset, TaskRecord? changedTask) => new(
-        _connectionState,
-        _tasks.Values
-            .OrderByDescending(task => task.CreatedAt)
-            .ToArray(),
-        _lastError,
-        _lastSequence,
-        taskReset,
-        changedTask);
+    private void OnConnectionSnapshotChanged(
+        object? sender,
+        ConnectionSnapshot connection) =>
+        PublishSnapshot(CreateAppSnapshot(connection, TaskStore.Snapshot));
+
+    private void OnTaskSnapshotChanged(
+        object? sender,
+        TaskStateSnapshot tasks) =>
+        PublishSnapshot(CreateAppSnapshot(ConnectionStore.Snapshot, tasks));
+
+    private static AppSnapshot CreateAppSnapshot(
+        ConnectionSnapshot connection,
+        TaskStateSnapshot tasks) => new(
+            connection.State,
+            tasks.Tasks,
+            connection.LastError,
+            tasks.LastSequence,
+            tasks.TaskReset,
+            tasks.ChangedTask);
 
     private void PublishSnapshot(AppSnapshot snapshot) =>
         SnapshotChanged?.Invoke(this, snapshot);
