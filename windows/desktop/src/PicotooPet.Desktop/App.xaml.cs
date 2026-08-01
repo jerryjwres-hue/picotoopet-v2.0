@@ -3,6 +3,7 @@ using System.Windows;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Core.State;
+using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views;
@@ -13,7 +14,12 @@ namespace PicotooPet.Desktop;
 public partial class App : Application, IDisposable
 {
     private Mutex? _singleInstanceMutex;
+    private ControlCenterSession? _session;
+    private ShellViewModel? _shellViewModel;
+    private ShellWindow? _shellWindow;
+    private WindowsTrayService? _trayService;
     private bool _ownsSingleInstance;
+    private bool _runtimeDisposing;
 
     /// <summary>创建单实例保护、日志、安全令牌存储、状态仓库和 Control Center Shell。</summary>
     protected override void OnStartup(StartupEventArgs e)
@@ -55,18 +61,26 @@ public partial class App : Application, IDisposable
         var connectionStore = new ConnectionStateStore();
         var capabilityStore = new CapabilityStateStore();
         var taskStore       = new TaskStateStore();
-        var session = new ControlCenterSession(
+
+        _session = new ControlCenterSession(
             tokenStore,
             settings,
             logger,
             connectionStore,
             capabilityStore,
             taskStore);
-        var viewModel = new ShellViewModel(session, dispatcher);
-        var window    = new ShellWindow(viewModel, session);
-        MainWindow = window;
-        window.Show();
-        _ = InitializeViewModelAsync(session, window, logger);
+        _shellViewModel = new ShellViewModel(_session, dispatcher);
+        _shellWindow    = new ShellWindow(_shellViewModel, _session);
+        _trayService    = new WindowsTrayService();
+
+        _trayService.OpenRequested += OnTrayOpenRequested;
+        _trayService.PendingApprovalsRequested += OnPendingApprovalsRequested;
+        _trayService.ExitRequested += OnTrayExitRequested;
+        _shellWindow.ExitRequested += OnShellExitRequested;
+
+        MainWindow = _shellWindow;
+        _shellWindow.Show();
+        _ = InitializeViewModelAsync(_session, _shellWindow, logger);
     }
 
     private static async Task InitializeViewModelAsync(
@@ -87,6 +101,86 @@ public partial class App : Application, IDisposable
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning));
+        }
+    }
+
+    private void OnTrayOpenRequested(object? sender, EventArgs e) =>
+        RunOnUiThread(() => _shellWindow?.ShowFromTray());
+
+    private void OnPendingApprovalsRequested(object? sender, EventArgs e) =>
+        RunOnUiThread(() =>
+        {
+            _shellWindow?.ShowFromTray();
+            _shellViewModel?.Navigate(NavigationRoute.Approvals);
+        });
+
+    private void OnTrayExitRequested(object? sender, EventArgs e) =>
+        RunOnUiThread(() => _shellWindow?.RequestExplicitExit());
+
+    private async void OnShellExitRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            await DisposeRuntimeAsync();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                _shellWindow,
+                $"退出时释放资源失败：{exception.Message}",
+                "Picotoo Pet AI",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+        finally
+        {
+            _shellWindow?.AllowExplicitClose();
+            Shutdown();
+        }
+    }
+
+    private void RunOnUiThread(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+        _ = Dispatcher.InvokeAsync(action);
+    }
+
+    /// <summary>按 ViewModel、Session、托盘的顺序解除订阅并释放所有运行时资源。</summary>
+    private async Task DisposeRuntimeAsync()
+    {
+        if (_runtimeDisposing)
+        {
+            return;
+        }
+        _runtimeDisposing = true;
+
+        if (_shellWindow is not null)
+        {
+            _shellWindow.ExitRequested -= OnShellExitRequested;
+        }
+        if (_trayService is not null)
+        {
+            _trayService.OpenRequested -= OnTrayOpenRequested;
+            _trayService.PendingApprovalsRequested -= OnPendingApprovalsRequested;
+            _trayService.ExitRequested -= OnTrayExitRequested;
+        }
+
+        _shellViewModel?.Dispose();
+        _shellViewModel = null;
+
+        if (_session is not null)
+        {
+            await _session.DisposeAsync();
+            _session = null;
+        }
+        if (_trayService is not null)
+        {
+            _trayService.Dispose();
+            _trayService = null;
         }
     }
 
