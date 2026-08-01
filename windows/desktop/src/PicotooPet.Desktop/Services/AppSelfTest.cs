@@ -1,7 +1,10 @@
 using System.IO;
 using System.Text.Json;
+using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Navigation;
+using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Services;
 
@@ -13,14 +16,16 @@ internal static class AppSelfTest
         WriteIndented = true,
     };
 
-    /// <summary>验证应用组合根可加载、日志可安全写入且网络参数可构造。</summary>
+    /// <summary>验证应用组合根可加载、日志可安全写入且 Control Center Shell 可构造。</summary>
     public static int Run(string[] args)
     {
         var outputPath = GetArgumentValue(args, "--self-test-output")
-            ?? Path.Combine(Path.GetTempPath(), $"picotoo-desktop-self-test-{Guid.NewGuid():N}.json");
+            ?? Path.Combine(
+                Path.GetTempPath(),
+                $"picotoo-desktop-self-test-{Guid.NewGuid():N}.json");
         var report = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["schema_version"] = "2.2.0",
+            ["schema_version"] = "2.3.0",
             ["generated_at"]   = DateTimeOffset.UtcNow,
             ["status"]         = "running",
             ["checks"]         = new Dictionary<string, string>(StringComparer.Ordinal),
@@ -29,9 +34,13 @@ internal static class AppSelfTest
 
         try
         {
-            var checks   = (Dictionary<string, string>)report["checks"]!;
-            var tempRoot = Path.Combine(Path.GetTempPath(), "PicotooPetV2", "desktop-self-test", Guid.NewGuid().ToString("N"));
-            var logPath  = Path.Combine(tempRoot, "self-test.log");
+            var checks = (Dictionary<string, string>)report["checks"]!;
+            var tempRoot = Path.Combine(
+                Path.GetTempPath(),
+                "PicotooPetV2",
+                "desktop-self-test",
+                Guid.NewGuid().ToString("N"));
+            var logPath = Path.Combine(tempRoot, "self-test.log");
             Directory.CreateDirectory(tempRoot);
 
             var logger = new SafeFileLogger(logPath, capacity: 128);
@@ -53,11 +62,35 @@ internal static class AppSelfTest
             }
             checks["client_options"] = "pass";
 
+            using var shell = ShellViewModel.CreateForSmokeTest(
+                ControlCenterCapabilities.Legacy22);
+            if (shell.NavigationItems.Count != 10)
+            {
+                throw new InvalidOperationException("Control Center 一级导航数量自检失败。");
+            }
+            if (!shell.NavigationItems.Single(
+                    item => item.Route == NavigationRoute.TaskCenter).IsAvailable)
+            {
+                throw new InvalidOperationException("Legacy 2.2 任务中心兼容自检失败。");
+            }
+            if (shell.NavigationItems.Single(
+                    item => item.Route == NavigationRoute.CloudDevelopment).IsAvailable)
+            {
+                throw new InvalidOperationException("云端开发能力关闭自检失败。");
+            }
+            shell.Navigate(NavigationRoute.Settings);
+            if (shell.CurrentPage is not SettingsPageViewModel)
+            {
+                throw new InvalidOperationException("Control Center 设置页路由自检失败。");
+            }
+            checks["control_center_shell"] = "pass";
+
             Directory.Delete(tempRoot, recursive: true);
             checks["filesystem_cleanup"] = "pass";
             report["status"] = "pass";
             WriteReport(outputPath, report);
             Console.WriteLine("PHASE2_DESKTOP_SELF_TEST=PASS");
+            Console.WriteLine("PHASE23_CONTROL_CENTER_SELF_TEST=PASS");
             return 0;
         }
         catch (Exception exception)
@@ -65,7 +98,10 @@ internal static class AppSelfTest
             report["status"] = "fail";
             report["error"]  = $"{exception.GetType().Name}: {exception.Message}";
             WriteReport(outputPath, report);
-            Console.Error.WriteLine($"PHASE2_DESKTOP_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE2_DESKTOP_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE23_CONTROL_CENTER_SELF_TEST=FAIL | {exception.Message}");
             return 1;
         }
     }
