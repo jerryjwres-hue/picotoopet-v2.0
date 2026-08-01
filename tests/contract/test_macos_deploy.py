@@ -1,5 +1,8 @@
+import os
 import plistlib
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy" / "macos"
@@ -52,10 +55,13 @@ def test_mac_scripts_cover_install_verify_backup_repair_and_rollback() -> None:
     assert ".backup" in backup
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="该测试执行 macOS launchctl/open 脚本，只能在 POSIX runner 判定。",
+)
 def test_verify_mac_always_writes_and_opens_report_when_a_check_fails(tmp_path: Path) -> None:
     """任一检查失败时仍须完成其余检查，并向用户展示验证报告。"""
 
-    import os
     import subprocess
 
     home        = tmp_path / "home"
@@ -125,10 +131,13 @@ def test_mac_install_selects_and_persists_a_free_api_port() -> None:
     assert plist["EnvironmentVariables"]["PICOTOO_API_PORT"] == "__API_PORT__"
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="该测试 source POSIX shell helper，只能在 POSIX runner 判定。",
+)
 def test_runtime_port_helper_chooses_8766_when_8765_is_busy(tmp_path: Path) -> None:
     """端口检测必须只读，且不能终止占用 8765 的旧进程。"""
 
-    import os
     import subprocess
 
     helper   = SCRIPTS / "lib" / "runtime_port.sh"
