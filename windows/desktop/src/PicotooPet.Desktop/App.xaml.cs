@@ -7,11 +7,13 @@ using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views;
+using WpfApplication = System.Windows.Application;
+using WpfMessageBox = System.Windows.MessageBox;
 
 namespace PicotooPet.Desktop;
 
 /// <summary>桌面应用组合根；不使用隐藏的全局 Service Locator。</summary>
-public partial class App : Application, IDisposable
+public partial class App : WpfApplication, IDisposable
 {
     private Mutex? _singleInstanceMutex;
     private ControlCenterSession? _session;
@@ -40,7 +42,7 @@ public partial class App : Application, IDisposable
         _ownsSingleInstance = createdNew;
         if (!createdNew)
         {
-            MessageBox.Show(
+            WpfMessageBox.Show(
                 "Picotoo Pet AI 已经在运行。",
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
@@ -95,7 +97,7 @@ public partial class App : Application, IDisposable
         catch (Exception exception)
         {
             logger.Error("Control Center 初始化失败", exception);
-            await owner.Dispatcher.InvokeAsync(() => MessageBox.Show(
+            await owner.Dispatcher.InvokeAsync(() => WpfMessageBox.Show(
                 owner,
                 $"初始化失败：{exception.Message}\n\n你仍可在设置页重新配对；详细日志位于本地应用数据目录。",
                 "Picotoo Pet AI",
@@ -125,7 +127,7 @@ public partial class App : Application, IDisposable
         }
         catch (Exception exception)
         {
-            MessageBox.Show(
+            WpfMessageBox.Show(
                 _shellWindow,
                 $"退出时释放资源失败：{exception.Message}",
                 "Picotoo Pet AI",
