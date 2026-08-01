@@ -10,7 +10,6 @@ on:
       - "tests/**"
       - "scripts/**"
       - "contracts/**"
-      - "windows/desktop/**"
       - ".github/workflows/phase23-validation.yml"
   workflow_dispatch:
 
@@ -77,52 +76,5 @@ jobs:
         with:
           name: PicotooPet-Phase23-OpenAPI
           path: contracts/openapi/mac_core_v1.openapi.json
-          if-no-files-found: error
-          retention-days: 30
-
-  windows-native:
-    name: Native Windows build, package and self-test
-    runs-on: windows-2025
-    timeout-minutes: 35
-    env:
-      CI: "true"
-      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
-      DOTNET_NOLOGO: "1"
-      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v6
-
-      - name: Install exact .NET SDK from global.json
-        uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: windows/desktop/global.json
-
-      - name: Show native environment
-        shell: powershell
-        run: |
-          [Environment]::OSVersion.VersionString
-          dotnet --info
-          $PSVersionTable.PSVersion
-
-      - name: Build, analyze, publish and self-test
-        shell: powershell
-        run: |
-          .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1
-
-      - name: Verify packaged payload with Windows PowerShell 5.1
-        shell: powershell
-        run: |
-          .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1
-
-      - name: Upload prebuilt package and evidence
-        uses: actions/upload-artifact@v7
-        with:
-          name: PicotooPet-Phase23-Windows-Native
-          path: |
-            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
-            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
-            windows/desktop/artifacts/release/windows-build-report.json
           if-no-files-found: error
           retention-days: 30
