@@ -1,7 +1,7 @@
 namespace PicotooPet.Desktop.ViewModels;
 
 /// <summary>Control Center 页面模型的最小公共表面。</summary>
-public abstract class PageViewModel
+public abstract class PageViewModel : ObservableObject
 {
     /// <summary>初始化页面标题。</summary>
     protected PageViewModel(string title)
