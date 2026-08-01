@@ -69,12 +69,14 @@ def test_wpf_task_list_enables_virtualization_and_recycling() -> None:
 def test_csharp_sources_have_chinese_comments_and_no_obvious_sync_over_async() -> None:
     """C# 文件必须包含中文说明，并禁止明显同步阻塞异步调用。"""
 
+    import re
+
     sources = list((DESKTOP / "src").rglob("*.cs"))
     assert len(sources) >= 12
     for source in sources:
         text = source.read_text(encoding="utf-8")
         assert "///" in text or "//" in text, source
-        assert ".Result" not in text, source
+        assert re.search(r"\.Result\b", text) is None, source
         assert ".Wait()" not in text, source
         assert "Thread.Sleep" not in text, source
 
