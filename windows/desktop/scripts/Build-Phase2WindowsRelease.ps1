@@ -149,7 +149,14 @@ function Get-FileEntry {
         [Parameter(Mandatory)][string]$Path
     )
 
-    $relative = $Path.Substring($PayloadRoot.Length).TrimStart('\\', '/') -replace '\\', '/'
+    # 路径归一化              使用 .NET 提供的 char，避免 PowerShell 反斜杠字面量歧义。
+    $trimChars = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $relative = (
+        $Path.Substring($PayloadRoot.Length).TrimStart($trimChars)
+    ) -replace '\\', '/'
     return [ordered]@{
         path       = $relative
         sha256     = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
