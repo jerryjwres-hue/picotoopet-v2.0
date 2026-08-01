@@ -8,7 +8,7 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>Phase 2 性能纵向切片主视图模型。</summary>
+/// <summary>Phase 2 兼容展示适配器；网络和状态同步由 Core 协调器负责。</summary>
 public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly ITokenStore _tokenStore;
@@ -21,8 +21,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly Dictionary<string, TaskRowViewModel> _taskRowsById = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _connectionLifetime;
-    private MacCoreClient? _client;
-    private EventStreamClient? _eventStream;
+    private StateSyncCoordinator? _syncCoordinator;
     private Task? _eventTask;
     private string _connectionText = "离线";
     private string _healthText = "尚未连接";
@@ -47,11 +46,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         SubmitTaskCommand = new AsyncRelayCommand(
             SubmitTaskAsync,
             HandleError,
-            () => !IsBusy && _client is not null && !string.IsNullOrWhiteSpace(TaskType));
+            () => !IsBusy
+                && _syncCoordinator is not null
+                && !string.IsNullOrWhiteSpace(TaskType));
         RefreshCommand = new AsyncRelayCommand(
             RefreshAsync,
             HandleError,
-            () => !IsBusy && _client is not null);
+            () => !IsBusy && _syncCoordinator is not null);
     }
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
@@ -148,21 +149,30 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         await CancelConnectionAsync().ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        _stateStore.SetConnection(ConnectionState.Connecting);
+
         var connectionLifetime = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         var client = MacCoreClient.Create(MacCoreClientOptions.CreateDefault(baseUri, token));
-        var stream = new EventStreamClient(baseUri, token, _stateStore.Snapshot.LastSequence);
+        var coordinator = new StateSyncCoordinator(
+            client,
+            _stateStore.ConnectionStore,
+            _stateStore.CapabilityStore,
+            _stateStore.TaskStore,
+            sequence => new EventStreamClient(baseUri, token, sequence));
         _connectionLifetime = connectionLifetime;
-        _client             = client;
-        _eventStream        = stream;
-        client.RequestMeasured += OnRequestMeasured;
-        stream.ConnectionStateChanged += OnConnectionStateChanged;
-        stream.SocketMeasured += OnSocketMeasured;
+        _syncCoordinator    = coordinator;
+        coordinator.RequestMeasured += OnRequestMeasured;
+        coordinator.SocketMeasured  += OnSocketMeasured;
+        coordinator.HealthChanged   += OnHealthChanged;
+        coordinator.DiagnosticRaised += OnDiagnosticRaised;
+        SubmitTaskCommand.NotifyCanExecuteChanged();
+        RefreshCommand.NotifyCanExecuteChanged();
 
         try
         {
-            await RefreshCoreAsync(cancellationToken).ConfigureAwait(false);
-            _eventTask = RunEventStreamAsync(stream, connectionLifetime.Token);
+            await coordinator.InitializeSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            _eventTask = RunCoordinatorEventStreamAsync(
+                coordinator,
+                connectionLifetime.Token);
             await _dispatcher.InvokeAsync(
                 () => StatusMessage = "双机控制链已连接。",
                 cancellationToken).ConfigureAwait(false);
@@ -178,22 +188,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private async Task RefreshCoreAsync(CancellationToken cancellationToken)
     {
-        var client = _client;
-        if (client is null)
+        var coordinator = _syncCoordinator;
+        if (coordinator is null)
         {
             return;
         }
         IsBusy = true;
         try
         {
-            var healthTask = client.GetHealthAsync(cancellationToken);
-            var tasksTask  = client.GetTasksAsync(cancellationToken);
-            await Task.WhenAll(healthTask, tasksTask).ConfigureAwait(false);
-            _stateStore.ReplaceTasks(await tasksTask.ConfigureAwait(false));
-            var health = await healthTask.ConfigureAwait(false);
-            await _dispatcher.InvokeAsync(
-                () => HealthText = $"{health.Status} · {health.Version ?? "未知版本"}",
-                cancellationToken).ConfigureAwait(false);
+            var health = await coordinator.RefreshAsync(cancellationToken).ConfigureAwait(false);
+            await UpdateHealthTextAsync(health, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -205,8 +209,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private async Task SubmitTaskAsync()
     {
-        var client = _client;
-        if (client is null)
+        var coordinator = _syncCoordinator;
+        if (coordinator is null)
         {
             return;
         }
@@ -214,14 +218,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         StatusMessage = "正在提交任务……";
         try
         {
-            var coordinator = new TaskCoordinator(client, _stateStore);
             var request = new TaskCreateRequest(
                 TaskType.Trim(),
                 new Dictionary<string, object?>
                 {
                     ["source"] = "windows-desktop-phase2",
                 });
-            var task = await coordinator.CreateAsync(request, CurrentConnectionToken)
+            var task = await coordinator.CreateTaskAsync(request, CurrentConnectionToken)
                 .ConfigureAwait(false);
             await _dispatcher.InvokeAsync(
                 () => StatusMessage = $"任务已入队：{task.TaskId}").ConfigureAwait(false);
@@ -232,15 +235,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private async Task RunEventStreamAsync(
-        EventStreamClient stream,
+    private async Task RunCoordinatorEventStreamAsync(
+        StateSyncCoordinator coordinator,
         CancellationToken cancellationToken)
     {
         try
         {
-            await stream.RunAsync(
-                (envelope, _) => new ValueTask(ApplyEventAsync(envelope)),
-                cancellationToken).ConfigureAwait(false);
+            await coordinator.RunEventStreamAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -248,20 +249,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
         catch (EventStreamAuthenticationException exception)
         {
+            // 协调器已经提交 AuthenticationFailed；展示层只记录脱敏诊断。
             _logger.Error("WebSocket 设备认证失败", exception);
-            _stateStore.SetConnection(ConnectionState.AuthenticationFailed, exception.Message);
         }
         catch (Exception exception)
         {
+            // 协调器已经提交 Faulted；展示层不重复修改网络状态。
             _logger.Error("WebSocket 事件链路异常", exception);
-            _stateStore.SetConnection(ConnectionState.Faulted, exception.Message);
         }
-    }
-
-    private Task ApplyEventAsync(EventEnvelope envelope)
-    {
-        _stateStore.Apply(envelope, IsVisibleTask);
-        return Task.CompletedTask;
     }
 
     private void OnRequestMeasured(object? sender, RequestMeasurement measurement)
@@ -283,8 +278,18 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         LatencyText = $"REST p95 {rest.P95Milliseconds:F1} ms · WS p95 {socket.P95Milliseconds:F1} ms";
     });
 
-    private void OnConnectionStateChanged(object? sender, ConnectionState state) =>
-        _stateStore.SetConnection(state);
+    private void OnHealthChanged(object? sender, HealthResponse health) =>
+        _ = UpdateHealthTextAsync(health, CancellationToken.None);
+
+    private Task UpdateHealthTextAsync(
+        HealthResponse health,
+        CancellationToken cancellationToken) =>
+        _dispatcher.InvokeAsync(
+            () => HealthText = $"{health.Status} · {health.Version ?? "未知版本"}",
+            cancellationToken);
+
+    private void OnDiagnosticRaised(object? sender, string diagnostic) =>
+        _logger.Info($"状态同步诊断：{diagnostic}");
 
     private void OnSnapshotChanged(object? sender, AppSnapshot snapshot)
     {
@@ -387,15 +392,26 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         var connectionLifetime = _connectionLifetime;
         var eventTask           = _eventTask;
-        var eventStream         = _eventStream;
-        var client              = _client;
+        var coordinator         = _syncCoordinator;
 
         _connectionLifetime = null;
         _eventTask           = null;
-        _eventStream         = null;
-        _client              = null;
+        _syncCoordinator     = null;
         connectionLifetime?.Cancel();
+        SubmitTaskCommand.NotifyCanExecuteChanged();
+        RefreshCommand.NotifyCanExecuteChanged();
 
+        if (coordinator is not null)
+        {
+            try
+            {
+                await coordinator.StopAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error("停止旧状态同步链路失败", exception);
+            }
+        }
         if (eventTask is not null)
         {
             try
@@ -407,16 +423,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 // 旧连接已按设计取消。
             }
         }
-        if (eventStream is not null)
+        if (coordinator is not null)
         {
-            eventStream.ConnectionStateChanged -= OnConnectionStateChanged;
-            eventStream.SocketMeasured -= OnSocketMeasured;
-            await eventStream.DisposeAsync().ConfigureAwait(false);
-        }
-        if (client is not null)
-        {
-            client.RequestMeasured -= OnRequestMeasured;
-            await client.DisposeAsync().ConfigureAwait(false);
+            coordinator.RequestMeasured -= OnRequestMeasured;
+            coordinator.SocketMeasured  -= OnSocketMeasured;
+            coordinator.HealthChanged   -= OnHealthChanged;
+            coordinator.DiagnosticRaised -= OnDiagnosticRaised;
+            await coordinator.DisposeAsync().ConfigureAwait(false);
         }
         connectionLifetime?.Dispose();
         _stateStore.SetConnection(ConnectionState.Offline);
