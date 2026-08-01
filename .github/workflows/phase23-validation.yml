@@ -69,7 +69,8 @@ jobs:
             src/picotoopet_core/api/contracts \
             src/picotoopet_core/api/routes/health.py \
             tests/contract/test_phase23_capabilities_contract.py \
-            tests/contract/test_connector_contract_v1.py
+            tests/contract/test_connector_contract_v1.py \
+            tests/contract/test_handoff_contract_v1.py
 
       - name: Upload generated OpenAPI evidence
         uses: actions/upload-artifact@v7
