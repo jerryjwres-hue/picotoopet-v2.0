@@ -107,3 +107,41 @@ def test_explicit_exit_disposes_session_and_tray_before_shutdown() -> None:
         "Shutdown()",
     ):
         assert required in app
+
+
+def test_control_center_native_windows_ci_has_required_gates() -> None:
+    """独立 Slice A CI 必须在原生 Windows 上执行全部合同、构建和包级复验。"""
+
+    workflow = (
+        ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "windows-2025",
+        "setup-python",
+        "setup-dotnet",
+        "pytest",
+        "dotnet build",
+        "PicotooPet.Desktop.Core.SmokeTests",
+        "--self-test",
+        "Build-Phase2WindowsRelease.ps1",
+        "Test-Phase2WindowsRelease.ps1",
+        "powershell",
+        "upload-artifact",
+    ):
+        assert required in workflow
+
+
+def test_control_center_ci_uses_version_label_and_shell_self_test_marker() -> None:
+    """非发布包必须有独立版本标签，包级复验必须确认新 Shell 自检。"""
+
+    build = (
+        ROOT / "windows" / "desktop" / "scripts" / "Build-Phase2WindowsRelease.ps1"
+    ).read_text(encoding="utf-8")
+    verify = (
+        ROOT / "windows" / "desktop" / "scripts" / "Test-Phase2WindowsRelease.ps1"
+    ).read_text(encoding="utf-8")
+    self_test = read("Services/AppSelfTest.cs")
+
+    assert "$VersionLabel" in build
+    assert "control_center_shell" in verify
+    assert "PHASE23_CONTROL_CENTER_SELF_TEST=PASS" in self_test
