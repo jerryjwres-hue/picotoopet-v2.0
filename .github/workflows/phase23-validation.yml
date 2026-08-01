@@ -26,10 +26,14 @@ jobs:
     name: Python contract and regression tests
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: write
 
     steps:
-      - name: Check out source
+      - name: Check out implementation head
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
@@ -73,6 +77,22 @@ jobs:
           path: contracts/openapi/mac_core_v1.openapi.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Synchronize generated OpenAPI to implementation branch
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: |
+          if git diff --quiet -- contracts/openapi/mac_core_v1.openapi.json; then
+            echo "OpenAPI already synchronized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add contracts/openapi/mac_core_v1.openapi.json
+          git commit -m "docs: refresh Phase 2.3 OpenAPI [skip ci]"
+          git push origin "HEAD:${{ github.head_ref }}"
 
   windows-native:
     name: Native Windows build, package and self-test
