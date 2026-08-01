@@ -46,11 +46,30 @@ public sealed class TaskStateStore
         TaskStateSnapshot snapshot;
         lock (_gate)
         {
-            _tasks.Clear();
-            foreach (var task in tasks)
-            {
-                _tasks[task.TaskId] = task;
-            }
+            ReplaceTasksLocked(tasks);
+            snapshot = CreateSnapshot(taskReset: true, changedTask: null);
+        }
+        SnapshotChanged?.Invoke(this, snapshot);
+    }
+
+    /// <summary>用 REST 恢复快照并确认触发恢复的事件序号。</summary>
+    public void ReloadTasksAtSequence(
+        IEnumerable<TaskRecord> tasks,
+        long confirmedSequence)
+    {
+        ArgumentNullException.ThrowIfNull(tasks);
+        if (confirmedSequence < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(confirmedSequence),
+                "确认序号不得小于零。");
+        }
+
+        TaskStateSnapshot snapshot;
+        lock (_gate)
+        {
+            ReplaceTasksLocked(tasks);
+            _lastSequence = Math.Max(_lastSequence, confirmedSequence);
             snapshot = CreateSnapshot(taskReset: true, changedTask: null);
         }
         SnapshotChanged?.Invoke(this, snapshot);
@@ -103,6 +122,15 @@ public sealed class TaskStateStore
         }
         SnapshotChanged?.Invoke(this, snapshot);
         return SequenceApplyResult.Applied;
+    }
+
+    private void ReplaceTasksLocked(IEnumerable<TaskRecord> tasks)
+    {
+        _tasks.Clear();
+        foreach (var task in tasks)
+        {
+            _tasks[task.TaskId] = task;
+        }
     }
 
     private TaskStateSnapshot CreateSnapshot(bool taskReset, TaskRecord? changedTask) => new(
