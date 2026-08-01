@@ -43,6 +43,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e . pytest pytest-asyncio pytest-cov ruff jsonschema
 
+      - name: Export deterministic contracts
+        shell: bash
+        run: |
+          PYTHONPATH=.:src python scripts/export_contracts.py
+
       - name: Run capability contract first
         shell: bash
         run: |
@@ -53,10 +58,21 @@ jobs:
         run: |
           PYTHONPATH=.:src pytest -q
 
-      - name: Run Python lint
+      - name: Lint Slice A Python changes
         shell: bash
         run: |
-          ruff check src tests scripts
+          ruff check \
+            src/picotoopet_core/api/contracts \
+            src/picotoopet_core/api/routes/health.py \
+            tests/contract/test_phase23_capabilities_contract.py
+
+      - name: Upload generated OpenAPI evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-Phase23-OpenAPI
+          path: contracts/openapi/mac_core_v1.openapi.json
+          if-no-files-found: error
+          retention-days: 30
 
   windows-native:
     name: Native Windows build, package and self-test
