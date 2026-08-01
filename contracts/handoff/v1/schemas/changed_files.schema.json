@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/handoff/v1/changed_files.schema.json",
+  "title": "Picotoo Pet Return ChangedFiles v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "files": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._~!$&'()*+,;=:@%/\\-]+$",
+            "maxLength": 2048
+          },
+          "operation": {
+            "enum": ["add", "modify", "delete", "rename"]
+          },
+          "before_sha256": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "after_sha256": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "additions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deletions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "permission_result": {
+            "enum": ["allowed", "denied"]
+          },
+          "generated": {
+            "type": "boolean"
+          },
+          "binary": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "operation",
+          "before_sha256",
+          "after_sha256",
+          "additions",
+          "deletions",
+          "permission_result",
+          "generated",
+          "binary"
+        ]
+      }
+    }
+  },
+  "required": ["schema_version", "files"]
+}
