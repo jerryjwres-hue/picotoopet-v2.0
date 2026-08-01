@@ -1,0 +1,120 @@
+<Window x:Class="PicotooPet.Desktop.Views.ShellWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:pages="clr-namespace:PicotooPet.Desktop.Views.Pages"
+        Title="Picotoo Pet AI"
+        Width="1240"
+        Height="780"
+        MinWidth="980"
+        MinHeight="640"
+        WindowStartupLocation="CenterScreen">
+  <Window.CommandBindings>
+    <CommandBinding Command="{x:Static pages:SettingsPage.SaveAndConnectCommand}"
+                    Executed="SaveAndConnect_Click" />
+  </Window.CommandBindings>
+
+  <Grid Background="White">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="232" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="72" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="40" />
+    </Grid.RowDefinitions>
+
+    <Border Grid.Column="0"
+            Grid.RowSpan="3"
+            Background="#FF111827"
+            Padding="14,20">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="8,0,8,20">
+          <TextBlock Text="Picotoo Pet AI"
+                     Foreground="White"
+                     FontSize="21"
+                     FontWeight="SemiBold" />
+          <TextBlock Text="Control Center · Slice A"
+                     Margin="0,5,0,0"
+                     Foreground="#FF9CA3AF" />
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding NavigationItems}"
+                 SelectedItem="{Binding SelectedNavigationItem, Mode=TwoWay}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 Foreground="White"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+          <ListBox.ItemContainerStyle>
+            <Style TargetType="ListBoxItem">
+              <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+              <Setter Property="Padding" Value="0" />
+              <Setter Property="Margin" Value="0,2" />
+            </Style>
+          </ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Border Padding="12,10" CornerRadius="8">
+                <StackPanel>
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding AvailabilityMessage}"
+                             Margin="0,3,0,0"
+                             FontSize="10"
+                             Foreground="#FF9CA3AF"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+
+    <Border Grid.Column="1"
+            Grid.Row="0"
+            Background="#FFF9FAFB"
+            BorderBrush="#FFE5E7EB"
+            BorderThickness="0,0,0,1"
+            Padding="22,12">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel>
+          <TextBlock Text="{Binding CurrentPage.Title}"
+                     FontSize="20"
+                     FontWeight="SemiBold" />
+          <TextBlock Text="{Binding StatusMessage}"
+                     Margin="0,4,0,0"
+                     Foreground="#FF6B7280"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Border Background="#FFEFF6FF" CornerRadius="8" Padding="12,7" Margin="0,0,10,0">
+            <TextBlock Text="{Binding ApprovalText}" Foreground="#FF1D4ED8" />
+          </Border>
+          <Border Background="#FFECFDF5" CornerRadius="8" Padding="12,7">
+            <TextBlock Text="{Binding ConnectionText}" Foreground="#FF047857" FontWeight="SemiBold" />
+          </Border>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <ContentControl x:Name="ContentHost"
+                    Grid.Column="1"
+                    Grid.Row="1"
+                    Content="{Binding CurrentPage}" />
+
+    <Border Grid.Column="1"
+            Grid.Row="2"
+            Background="#FFF3F4F6"
+            BorderBrush="#FFE5E7EB"
+            BorderThickness="0,1,0,0"
+            Padding="14,8">
+      <TextBlock Text="{Binding ConnectionMessage}"
+                 Foreground="#FF4B5563"
+                 TextTrimming="CharacterEllipsis" />
+    </Border>
+  </Grid>
+</Window>
