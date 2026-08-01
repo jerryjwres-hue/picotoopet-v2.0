@@ -294,7 +294,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var route = CurrentRoute;
         NavigationItems = BuildNavigation(snapshot.State.Capabilities.Features);
         _selectedNavigationItem = FindItem(NavigationItems, route);
-        OnPropertyChanged(nameof(SelectedNavigationItem));
+        RaisePropertyChanged(nameof(SelectedNavigationItem));
         ConnectionText    = FormatConnection(snapshot.State.Connection.State);
         ConnectionMessage = FormatConnectionMessage(snapshot);
         ApprovalText      = FormatApproval(snapshot.State.Capabilities);
