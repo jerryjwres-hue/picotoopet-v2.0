@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/handoff/v1/security_report.schema.json",
+  "title": "Picotoo Pet Return SecurityReport v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "status": {
+      "enum": ["pass", "fail", "quarantine", "not_run"]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "secret",
+              "path",
+              "dependency",
+              "permission",
+              "dangerous_command",
+              "binary",
+              "network",
+              "redaction",
+              "license",
+              "supply_chain"
+            ]
+          },
+          "status": {
+            "enum": ["pass", "fail", "not_run"]
+          },
+          "findings": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "report_ref": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "category",
+          "status",
+          "findings",
+          "report_ref",
+          "summary"
+        ]
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "checks",
+    "summary",
+    "generated_at"
+  ]
+}
