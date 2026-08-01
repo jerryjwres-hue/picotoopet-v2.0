@@ -1,0 +1,277 @@
+using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.Networking;
+
+namespace PicotooPet.Desktop.Core.State;
+
+/// <summary>统一协调 REST 初始快照、WebSocket 增量和有界恢复。</summary>
+public sealed class StateSyncCoordinator : IAsyncDisposable
+{
+    private readonly object _streamGate = new();
+    private readonly MacCoreClient _client;
+    private readonly ConnectionStateStore _connectionStore;
+    private readonly CapabilityStateStore _capabilityStore;
+    private readonly TaskStateStore _taskStore;
+    private readonly Func<long, EventStreamClient>? _eventStreamFactory;
+    private CancellationTokenSource? _streamLifetime;
+    private EventStreamClient? _eventStream;
+    private Task? _streamTask;
+    private bool _disposed;
+
+    /// <summary>创建同步协调器；事件流工厂可为空以支持纯 REST 测试。</summary>
+    public StateSyncCoordinator(
+        MacCoreClient client,
+        ConnectionStateStore connectionStore,
+        CapabilityStateStore capabilityStore,
+        TaskStateStore taskStore,
+        Func<long, EventStreamClient>? eventStreamFactory)
+    {
+        _client             = client ?? throw new ArgumentNullException(nameof(client));
+        _connectionStore    = connectionStore ?? throw new ArgumentNullException(nameof(connectionStore));
+        _capabilityStore    = capabilityStore ?? throw new ArgumentNullException(nameof(capabilityStore));
+        _taskStore          = taskStore ?? throw new ArgumentNullException(nameof(taskStore));
+        _eventStreamFactory = eventStreamFactory;
+        _client.RequestMeasured += OnRequestMeasured;
+    }
+
+    /// <summary>REST 请求延迟样本。</summary>
+    public event EventHandler<RequestMeasurement>? RequestMeasured;
+
+    /// <summary>WebSocket Ping/Pong 延迟样本。</summary>
+    public event EventHandler<SocketMeasurement>? SocketMeasured;
+
+    /// <summary>轻量健康快照更新。</summary>
+    public event EventHandler<HealthResponse>? HealthChanged;
+
+    /// <summary>需要写入脱敏诊断日志的协调器事件。</summary>
+    public event EventHandler<string>? DiagnosticRaised;
+
+    /// <summary>并发读取 health、capabilities 和 tasks，再启动事件流之前提交快照。</summary>
+    public Task<HealthResponse> InitializeSnapshotAsync(
+        CancellationToken cancellationToken) =>
+        RefreshAsync(cancellationToken);
+
+    /// <summary>重新加载服务端快照；旧服务能力接口缺失时使用保守能力集。</summary>
+    public async Task<HealthResponse> RefreshAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        _connectionStore.Set(ConnectionState.Connecting);
+
+        try
+        {
+            var healthTask     = _client.GetHealthAsync(cancellationToken);
+            var capabilityTask = LoadCapabilitiesAsync(cancellationToken);
+            var tasksTask      = _client.GetTasksAsync(cancellationToken);
+            await Task.WhenAll(healthTask, capabilityTask, tasksTask).ConfigureAwait(false);
+
+            var health       = await healthTask.ConfigureAwait(false);
+            var capabilities = await capabilityTask.ConfigureAwait(false);
+            var tasks        = await tasksTask.ConfigureAwait(false);
+            _capabilityStore.Set(capabilities);
+            _taskStore.ReplaceTasks(tasks);
+            _connectionStore.Set(ConnectionState.Online);
+            HealthChanged?.Invoke(this, health);
+            return health;
+        }
+        catch (ApiException exception) when (exception.StatusCode is 401 or 403)
+        {
+            _connectionStore.Set(ConnectionState.AuthenticationFailed, exception.Message);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _connectionStore.Set(ConnectionState.Faulted, exception.Message);
+            throw;
+        }
+    }
+
+    /// <summary>启动并等待单一事件流；必须先成功提交初始快照。</summary>
+    public Task RunEventStreamAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        var factory = _eventStreamFactory
+            ?? throw new InvalidOperationException("当前协调器未配置事件流工厂。");
+
+        lock (_streamGate)
+        {
+            if (_streamTask is not null)
+            {
+                return _streamTask;
+            }
+
+            var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var stream   = factory(_taskStore.Snapshot.LastSequence);
+            stream.ConnectionStateChanged += OnConnectionStateChanged;
+            stream.SocketMeasured         += OnSocketMeasured;
+            _streamLifetime = lifetime;
+            _eventStream    = stream;
+            _streamTask     = RunEventStreamCoreAsync(stream, lifetime);
+            return _streamTask;
+        }
+    }
+
+    /// <summary>创建任务并立即归并 REST 返回快照。</summary>
+    public async Task<TaskRecord> CreateTaskAsync(
+        TaskCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(request);
+        var task = await _client.CreateTaskAsync(
+            request,
+            Guid.NewGuid().ToString("N"),
+            cancellationToken).ConfigureAwait(false);
+        _taskStore.UpsertTask(task);
+        return task;
+    }
+
+    /// <summary>取消并等待旧事件循环，确保重连时只有一个消费者。</summary>
+    public async Task StopAsync()
+    {
+        Task? streamTask;
+        CancellationTokenSource? lifetime;
+        lock (_streamGate)
+        {
+            streamTask = _streamTask;
+            lifetime   = _streamLifetime;
+        }
+
+        lifetime?.Cancel();
+        if (streamTask is not null)
+        {
+            try
+            {
+                await streamTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // 主动停止事件流属于正常控制路径。
+            }
+        }
+    }
+
+    private async Task<CapabilitiesResponse> LoadCapabilitiesAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _client.GetCapabilitiesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(response.SchemaVersion)
+                || response.Features is null
+                || response.ContractVersions is null)
+            {
+                throw new InvalidDataException("能力响应缺少必需字段。");
+            }
+            return response;
+        }
+        catch (ApiException exception) when (exception.StatusCode == 404)
+        {
+            DiagnosticRaised?.Invoke(this, "capabilities_legacy22_fallback");
+            return Legacy22Response();
+        }
+        catch (ApiException exception) when (exception.Code == "INVALID_RESPONSE")
+        {
+            DiagnosticRaised?.Invoke(this, "capabilities_invalid_legacy22_fallback");
+            return Legacy22Response();
+        }
+        catch (InvalidDataException)
+        {
+            DiagnosticRaised?.Invoke(this, "capabilities_incomplete_legacy22_fallback");
+            return Legacy22Response();
+        }
+    }
+
+    private async Task RunEventStreamCoreAsync(
+        EventStreamClient stream,
+        CancellationTokenSource lifetime)
+    {
+        try
+        {
+            await stream.RunAsync(ApplyEventAsync, lifetime.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+            // 停止或重新配对时取消旧事件流属于正常控制路径。
+        }
+        catch (EventStreamAuthenticationException exception)
+        {
+            _connectionStore.Set(ConnectionState.AuthenticationFailed, exception.Message);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _connectionStore.Set(ConnectionState.Faulted, exception.Message);
+            throw;
+        }
+        finally
+        {
+            stream.ConnectionStateChanged -= OnConnectionStateChanged;
+            stream.SocketMeasured         -= OnSocketMeasured;
+            await stream.DisposeAsync().ConfigureAwait(false);
+            lifetime.Dispose();
+            lock (_streamGate)
+            {
+                if (ReferenceEquals(_eventStream, stream))
+                {
+                    _streamLifetime = null;
+                    _eventStream    = null;
+                    _streamTask     = null;
+                }
+            }
+        }
+    }
+
+    private async ValueTask ApplyEventAsync(
+        EventEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var result = _taskStore.Apply(envelope, IsVisibleTask);
+        if (result != SequenceApplyResult.GapDetected)
+        {
+            return;
+        }
+
+        DiagnosticRaised?.Invoke(
+            this,
+            $"event_sequence_gap:{_taskStore.Snapshot.LastSequence}:{envelope.Sequence}");
+        var tasks = await _client.GetTasksAsync(cancellationToken).ConfigureAwait(false);
+        _taskStore.ReloadTasksAtSequence(tasks, envelope.Sequence);
+    }
+
+    private static bool IsVisibleTask(TaskRecord task) =>
+        !string.Equals(
+            task.ResourceTag,
+            "phase2-diagnostic",
+            StringComparison.Ordinal);
+
+    private void OnRequestMeasured(object? sender, RequestMeasurement measurement) =>
+        RequestMeasured?.Invoke(this, measurement);
+
+    private void OnSocketMeasured(object? sender, SocketMeasurement measurement) =>
+        SocketMeasured?.Invoke(this, measurement);
+
+    private void OnConnectionStateChanged(object? sender, ConnectionState state) =>
+        _connectionStore.Set(state);
+
+    private static CapabilitiesResponse Legacy22Response() => new(
+        "2.2.0",
+        ControlCenterCapabilities.Legacy22,
+        new ContractVersions("unavailable", "unavailable"),
+        "manual_approval_only");
+
+    private void ThrowIfDisposed() =>
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+    /// <summary>停止事件流、取消订阅并释放 REST 连接池。</summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        _disposed = true;
+        await StopAsync().ConfigureAwait(false);
+        _client.RequestMeasured -= OnRequestMeasured;
+        await _client.DisposeAsync().ConfigureAwait(false);
+    }
+}
