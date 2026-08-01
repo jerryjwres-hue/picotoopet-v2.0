@@ -1,0 +1,106 @@
+name: Phase 2.3 Control Center Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature/phase-2.3-control-center-design
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "contracts/**"
+      - "windows/desktop/**"
+      - ".github/workflows/phase23-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase23-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-contracts:
+    name: Python contract and regression tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project and test dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest pytest-asyncio pytest-cov ruff jsonschema
+
+      - name: Run capability contract first
+        shell: bash
+        run: |
+          PYTHONPATH=src pytest -q tests/contract/test_phase23_capabilities_contract.py
+
+      - name: Run Python regression suite
+        shell: bash
+        run: |
+          PYTHONPATH=src pytest -q
+
+      - name: Run Python lint
+        shell: bash
+        run: |
+          ruff check src tests scripts
+
+  windows-native:
+    name: Native Windows build, package and self-test
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install exact .NET SDK from global.json
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Show native environment
+        shell: powershell
+        run: |
+          [Environment]::OSVersion.VersionString
+          dotnet --info
+          $PSVersionTable.PSVersion
+
+      - name: Build, analyze, publish and self-test
+        shell: powershell
+        run: |
+          .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1
+
+      - name: Verify packaged payload with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1
+
+      - name: Upload prebuilt package and evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-Phase23-Windows-Native
+          path: |
+            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
+            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
+            windows/desktop/artifacts/release/windows-build-report.json
+          if-no-files-found: error
+          retention-days: 30
