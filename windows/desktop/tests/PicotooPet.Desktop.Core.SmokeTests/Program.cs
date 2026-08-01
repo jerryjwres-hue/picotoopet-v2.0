@@ -16,6 +16,7 @@ internal static class Program
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
+            CapabilitySmokeTests.Run();
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
         }
