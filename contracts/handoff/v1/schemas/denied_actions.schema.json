@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/handoff/v1/denied_actions.schema.json",
+  "title": "Picotoo Pet Handoff DeniedActions v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "git.modify_main",
+          "git.push",
+          "git.force_push",
+          "git.tag",
+          "git.release",
+          "system.registry",
+          "system.service",
+          "system.firewall",
+          "system.driver",
+          "system.scheduled_task",
+          "credential.manage",
+          "network.unapproved_upload",
+          "shell.download_execute_unknown",
+          "security.disable_checks",
+          "permission.always_approve"
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 15,
+      "maxItems": 15
+    }
+  },
+  "required": ["schema_version", "actions"]
+}
