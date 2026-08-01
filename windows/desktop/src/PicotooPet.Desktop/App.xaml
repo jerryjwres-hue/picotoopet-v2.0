@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:viewModels="clr-namespace:PicotooPet.Desktop.ViewModels"
              xmlns:pages="clr-namespace:PicotooPet.Desktop.Views.Pages"
-             ShutdownMode="OnMainWindowClose">
+             ShutdownMode="OnExplicitShutdown">
   <Application.Resources>
     <SolidColorBrush x:Key="PanelBrush" Color="#FFF7F8FA" />
 
