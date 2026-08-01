@@ -66,6 +66,14 @@ internal static class StateStoreSmokeTests
 
     private static EventEnvelope CreateEvent(long sequence)
     {
+        var timestamp = new DateTimeOffset(
+            year: 2026,
+            month: 8,
+            day: 1,
+            hour: 0,
+            minute: 0,
+            second: 0,
+            offset: TimeSpan.Zero);
         var payload = JsonSerializer.SerializeToElement(new
         {
             task_id = "task-1",
@@ -79,8 +87,8 @@ internal static class StateStoreSmokeTests
             attempt_count = 0,
             max_attempts = 3,
             timeout_seconds = 3600,
-            created_at = DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
-            updated_at = DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            created_at = timestamp,
+            updated_at = timestamp,
             error_code = (string?)null,
             error_message = (string?)null,
         });
@@ -91,7 +99,7 @@ internal static class StateStoreSmokeTests
             $"event-{sequence}",
             "task.updated",
             "trace-1",
-            DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            timestamp,
             payload);
     }
 }
