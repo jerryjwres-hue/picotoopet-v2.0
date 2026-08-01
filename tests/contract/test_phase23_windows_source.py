@@ -67,3 +67,43 @@ def test_composition_root_uses_new_shell_without_changing_storage_targets() -> N
         '"desktop.log"',
     ):
         assert required in app
+
+
+def test_shell_close_is_intercepted_and_exit_is_explicit() -> None:
+    """普通关闭必须隐藏到托盘，只有显式退出才能结束 UI 进程。"""
+
+    code = read("Views/ShellWindow.xaml.cs")
+    app = read("App.xaml")
+    assert "OnClosing" in code
+    assert "ExitRequested" in code
+    assert 'ShutdownMode="OnExplicitShutdown"' in app
+
+
+def test_tray_uses_builtin_notify_icon_and_has_required_commands() -> None:
+    """托盘必须使用系统自带 NotifyIcon，并提供打开、审批入口和显式退出。"""
+
+    contract = read("Services/ITrayService.cs")
+    service = read("Services/WindowsTrayService.cs")
+    project = read("PicotooPet.Desktop.csproj")
+
+    for required in ("OpenRequested", "PendingApprovalsRequested", "ExitRequested"):
+        assert required in contract
+        assert required in service
+    assert "NotifyIcon" in service
+    assert "ContextMenuStrip" in service
+    assert "<UseWindowsForms>true</UseWindowsForms>" in project
+    assert "<PackageReference" not in project
+
+
+def test_explicit_exit_disposes_session_and_tray_before_shutdown() -> None:
+    """组合根必须先释放网络、日志和托盘句柄，再显式关闭 WPF。"""
+
+    app = read("App.xaml.cs")
+    for required in (
+        "WindowsTrayService",
+        "DisposeRuntimeAsync",
+        "await _session.DisposeAsync()",
+        "_trayService.Dispose()",
+        "Shutdown()",
+    ):
+        assert required in app
