@@ -11,9 +11,9 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
     private readonly ConnectionStateStore _connectionStore;
     private readonly CapabilityStateStore _capabilityStore;
     private readonly TaskStateStore _taskStore;
-    private readonly Func<long, EventStreamClient>? _eventStreamFactory;
+    private readonly Func<long, IEventStreamSession>? _eventStreamFactory;
     private CancellationTokenSource? _streamLifetime;
-    private EventStreamClient? _eventStream;
+    private IEventStreamSession? _eventStream;
     private Task? _streamTask;
     private bool _disposed;
 
@@ -23,7 +23,7 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         ConnectionStateStore connectionStore,
         CapabilityStateStore capabilityStore,
         TaskStateStore taskStore,
-        Func<long, EventStreamClient>? eventStreamFactory)
+        Func<long, IEventStreamSession>? eventStreamFactory)
     {
         _client             = client ?? throw new ArgumentNullException(nameof(client));
         _connectionStore    = connectionStore ?? throw new ArgumentNullException(nameof(connectionStore));
@@ -182,7 +182,7 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
     }
 
     private async Task RunEventStreamCoreAsync(
-        EventStreamClient stream,
+        IEventStreamSession stream,
         CancellationTokenSource lifetime)
     {
         try
