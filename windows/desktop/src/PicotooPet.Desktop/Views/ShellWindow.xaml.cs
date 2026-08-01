@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -12,6 +13,7 @@ public partial class ShellWindow : Window
 {
     private readonly ShellViewModel _viewModel;
     private readonly ControlCenterSession _session;
+    private bool _explicitExit;
 
     /// <summary>绑定 Shell 展示模型和统一连接 Session。</summary>
     public ShellWindow(
@@ -22,7 +24,42 @@ public partial class ShellWindow : Window
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         _session   = session ?? throw new ArgumentNullException(nameof(session));
         DataContext = viewModel;
-        Closed += OnClosed;
+    }
+
+    /// <summary>请求组合根按安全顺序释放资源并显式退出。</summary>
+    public event EventHandler? ExitRequested;
+
+    /// <summary>由托盘命令请求显式退出；窗口本身不直接释放共享资源。</summary>
+    public void RequestExplicitExit() =>
+        ExitRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>允许 WPF 在资源释放后真正关闭窗口。</summary>
+    public void AllowExplicitClose() =>
+        _explicitExit = true;
+
+    /// <summary>从托盘恢复、置前并激活主窗口。</summary>
+    public void ShowFromTray()
+    {
+        if (!IsVisible)
+        {
+            Show();
+        }
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+        Activate();
+    }
+
+    /// <summary>普通关闭只隐藏到托盘；显式退出才允许窗口销毁。</summary>
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (!_explicitExit)
+        {
+            e.Cancel = true;
+            Hide();
+        }
+        base.OnClosing(e);
     }
 
     private async void SaveAndConnect_Click(
@@ -91,23 +128,5 @@ public partial class ShellWindow : Window
             }
         }
         return null;
-    }
-
-    private async void OnClosed(object? sender, EventArgs e)
-    {
-        Closed -= OnClosed;
-        _viewModel.Dispose();
-        try
-        {
-            await _session.DisposeAsync();
-        }
-        catch (Exception exception)
-        {
-            MessageBox.Show(
-                $"退出时释放资源失败：{exception.Message}",
-                "Picotoo Pet AI",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
     }
 }
