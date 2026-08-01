@@ -1,0 +1,13 @@
+{
+  "blocking_for_source_build": [],
+  "pending_real_machine_validation": [
+    "ComfyUI Desktop actual data root and custom_nodes path",
+    "ComfyUI API availability on Windows",
+    "Windows CUDA, PyTorch and driver compatibility from real machine",
+    "Five visual model files after local download and SHA-256 verification",
+    "Mac launchd service loading and Keychain access",
+    "gpt-oss:20b actual resident state after Resident Manager installation",
+    "faster-whisper, FFmpeg, RIFE, Real-ESRGAN and SAM2 worker paths for later Windows Worker phase"
+  ],
+  "schema_version": "2.2.0"
+}

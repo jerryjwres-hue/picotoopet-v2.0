@@ -1,0 +1,109 @@
+{
+  "$defs": {
+    "ApprovalStatus": {
+      "enum": [
+        "Pending",
+        "Approved",
+        "Rejected",
+        "Expired"
+      ],
+      "title": "ApprovalStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "不含明文令牌的审批持久化契约。",
+  "properties": {
+    "approval_id": {
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "approval_type": {
+      "title": "Approval Type",
+      "type": "string"
+    },
+    "decision_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decision Reason"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "requested_at": {
+      "format": "date-time",
+      "title": "Requested At",
+      "type": "string"
+    },
+    "requested_by": {
+      "title": "Requested By",
+      "type": "string"
+    },
+    "resolved_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved At"
+    },
+    "resolved_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved By"
+    },
+    "scope": {
+      "additionalProperties": true,
+      "title": "Scope",
+      "type": "object"
+    },
+    "status": {
+      "$ref": "#/$defs/ApprovalStatus"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Id"
+    }
+  },
+  "required": [
+    "approval_id",
+    "approval_type",
+    "scope",
+    "status",
+    "requested_by",
+    "expires_at",
+    "requested_at"
+  ],
+  "title": "ApprovalContract",
+  "type": "object"
+}

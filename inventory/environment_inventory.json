@@ -1,0 +1,66 @@
+{
+  "comfy_desktop": {
+    "data_root_detection": "pending_real_windows_run",
+    "desktop_program_confirmed": true,
+    "executable": "C:\\zhaoyang lin\\opc\\Comfy Desktop\\Comfy Desktop.exe",
+    "resource_directory_policy": "read_only",
+    "supplied_install_root": "C:\\zhaoyang lin\\opc\\Comfy Desktop"
+  },
+  "credentials": {
+    "mac_api_token_storage": "macOS Keychain",
+    "values_recorded": false
+  },
+  "hardware": {
+    "mac": {
+      "device": "Mac mini M4 Pro",
+      "memory_gb": 64,
+      "observed_ip": "192.168.1.161",
+      "role": "dedicated_local_ai_server"
+    },
+    "windows": {
+      "cpu": "Core Ultra 9 285K",
+      "drives": {
+        "C": "2TB",
+        "D": "4TB",
+        "E": "4TB"
+      },
+      "gpu": "RTX 5070 Ti 16GB",
+      "memory_gb": 64,
+      "observed_ip": "192.168.1.165",
+      "os": "Windows 11"
+    }
+  },
+  "mac_ollama_models": [
+    {
+      "model_id": "17052f91a42e",
+      "name": "gpt-oss:20b",
+      "policy": "permanent_resident",
+      "size": "13 GB"
+    },
+    {
+      "model_id": "5571076f3d70",
+      "name": "gemma4:26b",
+      "policy": "on_demand",
+      "size": "17 GB"
+    },
+    {
+      "model_id": "c6eb396dbd59",
+      "name": "gemma4:latest",
+      "policy": "unassigned",
+      "size": "9.6 GB"
+    },
+    {
+      "model_id": "6316f6629137",
+      "name": "gemma4:31b",
+      "policy": "on_demand",
+      "size": "19 GB"
+    },
+    {
+      "model_id": "06c1097efce0",
+      "name": "qwen3-coder:30b",
+      "policy": "coding_candidate",
+      "size": "18 GB"
+    }
+  ],
+  "schema_version": "2.2.0"
+}

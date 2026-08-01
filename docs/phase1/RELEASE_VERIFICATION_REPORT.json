@@ -1,0 +1,10 @@
+{
+  "generated_at": "2026-07-31T04:11:16.626304+00:00",
+  "malformed_model_hashes": [],
+  "missing_required_files": [],
+  "model_count": 5,
+  "scanned_files": 134,
+  "schema_version": "2.2.0",
+  "secret_findings": [],
+  "status": "pass"
+}

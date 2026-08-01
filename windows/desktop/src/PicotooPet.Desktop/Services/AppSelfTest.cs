@@ -1,0 +1,86 @@
+using System.Text.Json;
+using PicotooPet.Desktop.Core.Logging;
+using PicotooPet.Desktop.Core.Networking;
+
+namespace PicotooPet.Desktop.Services;
+
+/// <summary>Windows CI 和发布包使用的无界面启动自检。</summary>
+internal static class AppSelfTest
+{
+    /// <summary>验证应用组合根可加载、日志可安全写入且网络参数可构造。</summary>
+    public static int Run(string[] args)
+    {
+        var outputPath = GetArgumentValue(args, "--self-test-output")
+            ?? Path.Combine(Path.GetTempPath(), $"picotoo-desktop-self-test-{Guid.NewGuid():N}.json");
+        var report = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["schema_version"] = "2.2.0",
+            ["generated_at"]   = DateTimeOffset.UtcNow,
+            ["status"]         = "running",
+            ["checks"]         = new Dictionary<string, string>(StringComparer.Ordinal),
+            ["error"]          = null,
+        };
+
+        try
+        {
+            var checks   = (Dictionary<string, string>)report["checks"]!;
+            var tempRoot = Path.Combine(Path.GetTempPath(), "PicotooPetV2", "desktop-self-test", Guid.NewGuid().ToString("N"));
+            var logPath  = Path.Combine(tempRoot, "self-test.log");
+            Directory.CreateDirectory(tempRoot);
+
+            var logger = new SafeFileLogger(logPath, capacity: 128);
+            logger.Info("self-test Bearer abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ");
+            logger.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            var logText = File.ReadAllText(logPath);
+            if (!logText.Contains("[REDACTED]", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("安全日志脱敏自检失败。");
+            }
+            checks["safe_logger"] = "pass";
+
+            var options = MacCoreClientOptions.CreateDefault(
+                new Uri("http://127.0.0.1:8766", UriKind.Absolute),
+                "self-test-token");
+            if (options.BaseUri.Port != 8766 || options.RequestTimeout <= TimeSpan.Zero)
+            {
+                throw new InvalidOperationException("Mac Core 客户端参数自检失败。");
+            }
+            checks["client_options"] = "pass";
+
+            Directory.Delete(tempRoot, recursive: true);
+            checks["filesystem_cleanup"] = "pass";
+            report["status"] = "pass";
+            WriteReport(outputPath, report);
+            Console.WriteLine("PHASE2_DESKTOP_SELF_TEST=PASS");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            report["status"] = "fail";
+            report["error"]  = $"{exception.GetType().Name}: {exception.Message}";
+            WriteReport(outputPath, report);
+            Console.Error.WriteLine($"PHASE2_DESKTOP_SELF_TEST=FAIL | {exception.Message}");
+            return 1;
+        }
+    }
+
+    private static string? GetArgumentValue(string[] args, string name)
+    {
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (string.Equals(args[index], name, StringComparison.OrdinalIgnoreCase))
+            {
+                return args[index + 1];
+            }
+        }
+        return null;
+    }
+
+    private static void WriteReport(string path, object report)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+        File.WriteAllText(
+            path,
+            JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+    }
+}

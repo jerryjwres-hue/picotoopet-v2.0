@@ -1,0 +1,1379 @@
+{
+  "components": {
+    "schemas": {
+      "ApprovalDecisionBody": {
+        "description": "人工批准参数。",
+        "properties": {
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "reason"
+        ],
+        "title": "ApprovalDecisionBody",
+        "type": "object"
+      },
+      "ApprovalGrant": {
+        "description": "仅在创建时返回一次的明文授权。",
+        "properties": {
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approval_id",
+          "token",
+          "expires_at"
+        ],
+        "title": "ApprovalGrant",
+        "type": "object"
+      },
+      "ApprovalRecord": {
+        "description": "不含明文令牌的审批记录。",
+        "properties": {
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "approval_type": {
+            "title": "Approval Type",
+            "type": "string"
+          },
+          "decision_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Reason"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
+          "scope": {
+            "additionalProperties": true,
+            "title": "Scope",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "approval_id",
+          "task_id",
+          "approval_type",
+          "scope",
+          "status",
+          "requested_by",
+          "resolved_by",
+          "expires_at",
+          "requested_at",
+          "resolved_at",
+          "decision_reason"
+        ],
+        "title": "ApprovalRecord",
+        "type": "object"
+      },
+      "ApprovalRequestBody": {
+        "description": "审批创建参数。",
+        "properties": {
+          "approval_type": {
+            "title": "Approval Type",
+            "type": "string"
+          },
+          "expires_seconds": {
+            "default": 600,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Expires Seconds",
+            "type": "integer"
+          },
+          "scope": {
+            "additionalProperties": true,
+            "title": "Scope",
+            "type": "object"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "approval_type"
+        ],
+        "title": "ApprovalRequestBody",
+        "type": "object"
+      },
+      "Classification": {
+        "enum": [
+          "PUBLIC",
+          "INTERNAL",
+          "PROTECTED"
+        ],
+        "title": "Classification",
+        "type": "string"
+      },
+      "CloudPolicy": {
+        "enum": [
+          "local_only",
+          "cloud_manual"
+        ],
+        "title": "CloudPolicy",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ProjectCreate": {
+        "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/Classification",
+            "default": "INTERNAL"
+          },
+          "project_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Project Type",
+            "type": "string"
+          },
+          "source_app": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Source App",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "workspace_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Root"
+          }
+        },
+        "required": [
+          "title",
+          "project_type",
+          "source_app"
+        ],
+        "title": "ProjectCreate",
+        "type": "object"
+      },
+      "ProjectRecord": {
+        "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/Classification",
+            "default": "INTERNAL"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Project Type",
+            "type": "string"
+          },
+          "source_app": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Source App",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Root"
+          }
+        },
+        "required": [
+          "title",
+          "project_type",
+          "source_app",
+          "project_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectRecord",
+        "type": "object"
+      },
+      "TaskCreate": {
+        "properties": {
+          "cloud_policy": {
+            "$ref": "#/components/schemas/CloudPolicy",
+            "default": "local_only"
+          },
+          "dedupe_key": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dedupe Key"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "max_attempts": {
+            "default": 3,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "priority": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "resource_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Tag"
+          },
+          "task_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Task Type",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "default": 3600,
+            "maximum": 86400.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "task_type"
+        ],
+        "title": "TaskCreate",
+        "type": "object"
+      },
+      "TaskRecord": {
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "parent_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Task Id"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "resource_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Tag"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_type": {
+            "title": "Task Type",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "task_type",
+          "status",
+          "priority",
+          "payload",
+          "attempt_count",
+          "max_attempts",
+          "timeout_seconds",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TaskRecord",
+        "type": "object"
+      },
+      "TaskStatus": {
+        "enum": [
+          "Created",
+          "Validating",
+          "Queued",
+          "Running",
+          "WaitingForTool",
+          "WaitingForApproval",
+          "Retrying",
+          "Completed",
+          "Failed",
+          "Cancelled",
+          "Archived"
+        ],
+        "title": "TaskStatus",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Picotoo Pet Mac Core",
+    "version": "2.2.0-phase2-slice1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/approvals": {
+      "post": {
+        "description": "请求一次性人工批准。",
+        "operationId": "request_approval_api_v1_approvals_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalGrant"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Approval",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/api/v1/approvals/{approval_id}/approve": {
+      "post": {
+        "description": "消费一次性审批令牌。",
+        "operationId": "approve_api_v1_approvals__approval_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/api/v1/approvals/{approval_id}/reject": {
+      "post": {
+        "description": "拒绝审批并取消对应等待任务。",
+        "operationId": "reject_api_v1_approvals__approval_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reject",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/api/v1/audit/events": {
+      "get": {
+        "description": "读取最近脱敏审计事件。",
+        "operationId": "audit_events_api_v1_audit_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Audit Events Api V1 Audit Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Audit Events",
+        "tags": [
+          "status",
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/audit/verify": {
+      "get": {
+        "description": "验证追加式审计哈希链。",
+        "operationId": "audit_verify_api_v1_audit_verify_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Audit Verify Api V1 Audit Verify Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Audit Verify",
+        "tags": [
+          "status",
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/capabilities": {
+      "get": {
+        "description": "列出当前纵向切片能力，不宣称 Windows Worker 已上线。",
+        "operationId": "capabilities_api_v1_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Capabilities Api V1 Capabilities Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Capabilities",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "summary": "认证、可续传的任务事件流",
+      "x-application-ping-pong": true,
+      "x-resume-query": "after_sequence",
+      "x-websocket": true
+    },
+    "/api/v1/health": {
+      "get": {
+        "description": "提供不含秘密的轻量健康状态。",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Api V1 Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "description": "列出项目。",
+        "operationId": "list_projects_api_v1_projects_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectRecord"
+                  },
+                  "title": "Response List Projects Api V1 Projects Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Projects",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "description": "创建项目元数据。",
+        "operationId": "create_project_api_v1_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}": {
+      "get": {
+        "description": "读取指定项目。",
+        "operationId": "get_project_api_v1_projects__project_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/results/{result_id}": {
+      "get": {
+        "description": "读取结果清单，不直接暴露任意文件路径。",
+        "operationId": "get_result_api_v1_results__result_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "result_id",
+            "required": true,
+            "schema": {
+              "title": "Result Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Result Api V1 Results  Result Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Result",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "description": "返回队列和服务状态，不暴露令牌或任意文件路径。",
+        "operationId": "status_api_v1_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Status Api V1 Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Status",
+        "tags": [
+          "status",
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "description": "返回有界任务快照；桌面可排除高样本诊断任务以降低传输和内存开销。",
+        "operationId": "list_tasks_api_v1_tasks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "exclude_resource_tag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Resource Tag"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaskRecord"
+                  },
+                  "title": "Response List Tasks Api V1 Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Tasks",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "post": {
+        "description": "创建本地或人工审批任务。",
+        "operationId": "create_task_api_v1_tasks_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "get": {
+        "description": "读取任务。",
+        "operationId": "get_task_api_v1_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/cancel": {
+      "post": {
+        "description": "取消尚未进入不可逆终态的任务。",
+        "operationId": "cancel_task_api_v1_tasks__task_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/retry": {
+      "post": {
+        "description": "创建新的子任务，不重新打开原终态任务。",
+        "operationId": "retry_task_api_v1_tasks__task_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    }
+  }
+}

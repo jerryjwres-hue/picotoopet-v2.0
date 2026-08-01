@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picotoopet.local/schemas/windows_release_manifest_v2.schema.json",
+  "title": "Picotoo Pet V2 Windows Prebuilt Release Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "release_type",
+    "version",
+    "target",
+    "sdk_version",
+    "built_at",
+    "signature",
+    "files"
+  ],
+  "properties": {
+    "schema_version": { "const": "2.2.0" },
+    "release_type": { "const": "prebuilt" },
+    "version": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "target": { "const": "win-x64" },
+    "sdk_version": { "const": "10.0.302" },
+    "built_at": { "type": "string", "format": "date-time" },
+    "commit": { "type": ["string", "null"] },
+    "signature": {
+      "type": "object",
+      "required": ["status", "note"],
+      "properties": {
+        "status": { "enum": ["unsigned-ci", "signed"] },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "size_bytes"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "size_bytes": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

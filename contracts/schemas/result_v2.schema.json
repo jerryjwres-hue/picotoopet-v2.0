@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "内容寻址结果契约。",
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "manifest": {
+      "additionalProperties": true,
+      "title": "Manifest",
+      "type": "object"
+    },
+    "object_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Object Hash",
+      "type": "string"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Project Id"
+    },
+    "result_id": {
+      "title": "Result Id",
+      "type": "string"
+    },
+    "result_type": {
+      "title": "Result Type",
+      "type": "string"
+    },
+    "schema_version": {
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Id"
+    }
+  },
+  "required": [
+    "result_id",
+    "result_type",
+    "object_hash",
+    "manifest",
+    "schema_version",
+    "created_at"
+  ],
+  "title": "ResultContract",
+  "type": "object"
+}

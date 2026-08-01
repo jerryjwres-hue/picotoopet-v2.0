@@ -1,0 +1,64 @@
+{
+  "schema_version": "2.2.0",
+  "generated_at": "2026-07-31T05:46:31.365512+00:00",
+  "status": "partial",
+  "scope": "phase2-performance-vertical-slice-source",
+  "automated_tests": {
+    "command": "PYTHONPATH=src python -m pytest -q",
+    "passed": 132,
+    "failed": 0
+  },
+  "static_checks": {
+    "python_compileall": "pass",
+    "git_diff_check": "pass",
+    "bash_syntax": "pass",
+    "powershell_utf8_bom": "pass",
+    "xaml_xml_parse": "pass",
+    "json_parse": "pass",
+    "release_scan": "pass"
+  },
+  "local_loopback_metrics": {
+    "sample_count": 500,
+    "environment": "Linux container, real Uvicorn HTTP/WebSocket process, loopback only",
+    "rest_health": {
+      "p50_ms": 0.772,
+      "p95_ms": 1.06,
+      "p99_ms": 1.813,
+      "max_ms": 50.838
+    },
+    "task_submit": {
+      "p50_ms": 3.079,
+      "p95_ms": 5.193,
+      "p99_ms": 10.84,
+      "max_ms": 500.894
+    },
+    "task_event": {
+      "p50_ms": 21.661,
+      "p95_ms": 24.17,
+      "p99_ms": 30.402,
+      "max_ms": 519.323
+    },
+    "websocket_ping": {
+      "p50_ms": 0.128,
+      "p95_ms": 0.195,
+      "p99_ms": 0.386,
+      "max_ms": 0.55
+    }
+  },
+  "not_verified_in_container": [
+    "Windows .NET 10 WPF compile and publish",
+    "Windows Credential Manager real read/write",
+    "Mac-to-Windows physical LAN p50/p95/p99",
+    "sleep/wake, cable removal and reboot recovery",
+    "8-hour Windows soak test"
+  ],
+  "release_scan": {
+    "status": "pass",
+    "scanned_files": 198,
+    "source_tree_sha256": "6083aa1a866b1f5042b269b9a7a9027547611f453ffa15803496e457db8383c3",
+    "secret_findings": 0,
+    "missing_required_files": 0,
+    "powershell_bom_failures": 0,
+    "hash_stable_across_two_runs": true
+  }
+}

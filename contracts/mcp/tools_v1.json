@@ -1,0 +1,697 @@
+{
+  "schema_version": "2.2.0",
+  "tools": [
+    {
+      "description": "创建 V2 项目元数据。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "classification": {
+            "enum": [
+              "PUBLIC",
+              "INTERNAL",
+              "PROTECTED"
+            ],
+            "type": "string"
+          },
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_type": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_app": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "project_type",
+          "source_app",
+          "trace_id",
+          "idempotency_key"
+        ],
+        "type": "object"
+      },
+      "name": "create_project",
+      "permission_operation": "create",
+      "timeout_seconds": 30
+    },
+    {
+      "description": "读取项目元数据。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id"
+        ],
+        "type": "object"
+      },
+      "name": "read_project",
+      "permission_operation": "read",
+      "timeout_seconds": 30
+    },
+    {
+      "description": "读取项目分析结果。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id"
+        ],
+        "type": "object"
+      },
+      "name": "read_analysis",
+      "permission_operation": "read",
+      "timeout_seconds": 30
+    },
+    {
+      "description": "受控读取项目证据。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id"
+        ],
+        "type": "object"
+      },
+      "name": "read_evidence",
+      "permission_operation": "read",
+      "timeout_seconds": 30
+    },
+    {
+      "description": "列出项目资产。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id"
+        ],
+        "type": "object"
+      },
+      "name": "list_assets",
+      "permission_operation": "read",
+      "timeout_seconds": 30
+    },
+    {
+      "description": "提交 Windows 转录任务。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "submit_transcription",
+      "permission_operation": "execute",
+      "timeout_seconds": 3600
+    },
+    {
+      "description": "提交 Wan2.2 视频生成任务。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "submit_video_generation",
+      "permission_operation": "execute",
+      "timeout_seconds": 14400
+    },
+    {
+      "description": "提交 Wan2.1 VACE 编辑任务。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "submit_video_edit",
+      "permission_operation": "execute",
+      "timeout_seconds": 14400
+    },
+    {
+      "description": "提交 Real-ESRGAN 放大任务。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "submit_upscale",
+      "permission_operation": "execute",
+      "timeout_seconds": 7200
+    },
+    {
+      "description": "提交 RIFE 补帧任务。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "submit_interpolation",
+      "permission_operation": "execute",
+      "timeout_seconds": 7200
+    },
+    {
+      "description": "提交受限 FFmpeg 任务。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "submit_ffmpeg_job",
+      "permission_operation": "execute",
+      "timeout_seconds": 7200
+    },
+    {
+      "description": "创建本地报告。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "create_report",
+      "permission_operation": "create",
+      "timeout_seconds": 1800
+    },
+    {
+      "description": "创建内容脚本。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "create_script",
+      "permission_operation": "create",
+      "timeout_seconds": 1800
+    },
+    {
+      "description": "创建镜头表。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "create_shot_list",
+      "permission_operation": "create",
+      "timeout_seconds": 1800
+    },
+    {
+      "description": "创建受控 ComfyUI 工作流。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "create_comfyui_workflow",
+      "permission_operation": "create",
+      "timeout_seconds": 1800
+    },
+    {
+      "description": "创建脱敏 Handoff 包。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "create_handoff_package",
+      "permission_operation": "create",
+      "timeout_seconds": 3600
+    },
+    {
+      "description": "提交受限编码任务。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "submit_coding_task",
+      "permission_operation": "execute",
+      "timeout_seconds": 3600
+    },
+    {
+      "description": "把结果写回 V2 Workspace。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "name": "write_result_back",
+      "permission_operation": "update",
+      "timeout_seconds": 600
+    },
+    {
+      "description": "读取任务状态。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "get_task_status",
+      "permission_operation": "read",
+      "timeout_seconds": 30
+    },
+    {
+      "description": "取消任务。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "cancel_task",
+      "permission_operation": "update",
+      "timeout_seconds": 30
+    },
+    {
+      "description": "请求人工批准。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "trace_id",
+          "payload",
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "request_human_approval",
+      "permission_operation": "create",
+      "timeout_seconds": 30
+    }
+  ]
+}

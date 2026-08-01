@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-07-31T23:02:21.269873+00:00",
+  "malformed_model_hashes": [],
+  "missing_required_files": [],
+  "model_count": 5,
+  "powershell_bom_failures": [],
+  "release_phase": "phase2-slice1",
+  "scanned_files": 212,
+  "schema_version": "2.2.0",
+  "secret_findings": [],
+  "source_tree_sha256": "bd62c52d43f5801881b8e4ab1e3a014319c11d33c397bbf74bc8846f58db3d55",
+  "status": "pass"
+}

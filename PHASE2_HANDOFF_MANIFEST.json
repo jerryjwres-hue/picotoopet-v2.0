@@ -1,0 +1,15 @@
+{
+  "schema_version": "2.2.0",
+  "package": "PicotooPet V2 Phase 2 Performance Vertical Slice Source",
+  "git_commit": "07fc3747709e3a31ef29a39cd9ae4d36fd6f865b",
+  "git_commit_time_utc": "2026-07-31T05:49:04+00:00",
+  "source_tree_sha256": "6083aa1a866b1f5042b269b9a7a9027547611f453ffa15803496e457db8383c3",
+  "automated_tests": {
+    "passed": 132,
+    "failed": 0
+  },
+  "release_scan_status": "pass",
+  "windows_build_status": "pending_real_windows_dotnet10_build",
+  "real_dual_machine_acceptance": "pending",
+  "start_here": "docs/phase2/INSTALLATION_GUIDE_CN.md"
+}

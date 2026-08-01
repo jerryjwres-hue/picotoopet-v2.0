@@ -1,0 +1,80 @@
+{
+  "$defs": {
+    "Classification": {
+      "enum": [
+        "PUBLIC",
+        "INTERNAL",
+        "PROTECTED"
+      ],
+      "title": "Classification",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Maotai、创作助手和 Windows Worker 的统一事件契约。",
+  "properties": {
+    "classification": {
+      "$ref": "#/$defs/Classification"
+    },
+    "connector_id": {
+      "title": "Connector Id",
+      "type": "string"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "title": "Event Type",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Project Id"
+    },
+    "schema_version": {
+      "default": "2.2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trace_id": {
+      "title": "Trace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "connector_id",
+    "event_type",
+    "classification",
+    "payload",
+    "idempotency_key",
+    "trace_id",
+    "occurred_at"
+  ],
+  "title": "ConnectorEventContract",
+  "type": "object"
+}

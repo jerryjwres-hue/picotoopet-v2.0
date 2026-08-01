@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picotoopet.local/schemas/event_envelope_v2.schema.json",
+  "title": "Picotoo Pet V2 Event Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sequence",
+    "event_id",
+    "topic",
+    "created_at",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.2.0"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "trace_id": {
+      "type": ["string", "null"],
+      "maxLength": 100
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

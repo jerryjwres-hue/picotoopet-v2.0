@@ -1,0 +1,182 @@
+{
+  "$defs": {
+    "TaskStatus": {
+      "enum": [
+        "Created",
+        "Validating",
+        "Queued",
+        "Running",
+        "WaitingForTool",
+        "WaitingForApproval",
+        "Retrying",
+        "Completed",
+        "Failed",
+        "Cancelled",
+        "Archived"
+      ],
+      "title": "TaskStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "耐久任务契约。",
+  "properties": {
+    "attempt_count": {
+      "minimum": 0,
+      "title": "Attempt Count",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "dedupe_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dedupe Key"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "error_message": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Message"
+    },
+    "idempotency_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Idempotency Key"
+    },
+    "max_attempts": {
+      "minimum": 1,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "parent_task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Task Id"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "priority": {
+      "maximum": 1000,
+      "minimum": 0,
+      "title": "Priority",
+      "type": "integer"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Project Id"
+    },
+    "resource_tag": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resource Tag"
+    },
+    "result_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Id"
+    },
+    "status": {
+      "$ref": "#/$defs/TaskStatus"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_type": {
+      "title": "Task Type",
+      "type": "string"
+    },
+    "timeout_seconds": {
+      "minimum": 1,
+      "title": "Timeout Seconds",
+      "type": "integer"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "task_type",
+    "status",
+    "priority",
+    "attempt_count",
+    "max_attempts",
+    "timeout_seconds",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "TaskContract",
+  "type": "object"
+}

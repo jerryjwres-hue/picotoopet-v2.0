@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "Classification": {
+      "enum": [
+        "PUBLIC",
+        "INTERNAL",
+        "PROTECTED"
+      ],
+      "title": "Classification",
+      "type": "string"
+    },
+    "CloudPolicy": {
+      "enum": [
+        "local_only",
+        "cloud_manual"
+      ],
+      "title": "CloudPolicy",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "资产登记契约；原始资产只登记，不承诺可修改。",
+  "properties": {
+    "artifact_id": {
+      "title": "Artifact Id",
+      "type": "string"
+    },
+    "artifact_type": {
+      "title": "Artifact Type",
+      "type": "string"
+    },
+    "classification": {
+      "$ref": "#/$defs/Classification"
+    },
+    "cloud_policy": {
+      "$ref": "#/$defs/CloudPolicy",
+      "default": "local_only"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "is_original": {
+      "default": false,
+      "title": "Is Original",
+      "type": "boolean"
+    },
+    "media_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Media Type"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sha256"
+    },
+    "size_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Size Bytes"
+    },
+    "source_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Path"
+    },
+    "stored_object_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stored Object Hash"
+    }
+  },
+  "required": [
+    "artifact_id",
+    "project_id",
+    "artifact_type",
+    "classification",
+    "created_at"
+  ],
+  "title": "ArtifactContract",
+  "type": "object"
+}

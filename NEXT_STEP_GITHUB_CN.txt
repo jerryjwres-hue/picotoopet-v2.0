@@ -1,0 +1,21 @@
+Picotoo Pet V2 Phase 2 下一步
+
+请创建一个空的私有 GitHub 仓库：
+picotoopet-v2
+
+创建后，在 ChatGPT 的 GitHub 连接权限中允许访问该仓库，然后回复：
+GitHub 仓库已经授权
+
+随后将执行：
+1. 上传本 CI 就绪源码；
+2. 运行 Windows Server 2025 GitHub Actions；
+3. 读取真实 C# / WPF / PowerShell 5.1 构建日志；
+4. 只在 CI 中修复问题；
+5. 下载经过门禁的预编译 Artifact；
+6. 交付给 Windows 电脑直接安装。
+
+不要再运行旧的源码安装器：
+windows\desktop\scripts\INSTALL_PHASE2_WINDOWS.vbs
+
+最终可安装包必须来自 GitHub Actions Artifact：
+PicotooPet-Phase2-Windows-Prebuilt

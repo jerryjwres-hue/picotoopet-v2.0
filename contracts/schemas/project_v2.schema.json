@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "Classification": {
+      "enum": [
+        "PUBLIC",
+        "INTERNAL",
+        "PROTECTED"
+      ],
+      "title": "Classification",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "项目元数据契约。",
+  "properties": {
+    "classification": {
+      "$ref": "#/$defs/Classification"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "project_type": {
+      "title": "Project Type",
+      "type": "string"
+    },
+    "source_app": {
+      "title": "Source App",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_root": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workspace Root"
+    }
+  },
+  "required": [
+    "project_id",
+    "title",
+    "project_type",
+    "source_app",
+    "classification",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ProjectContract",
+  "type": "object"
+}

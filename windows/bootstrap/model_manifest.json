@@ -1,0 +1,59 @@
+{
+  "schema_version": "2.2.0",
+  "hf_cli_version": "1.24.0",
+  "model_root": "E:\\PicotooPet\\Models",
+  "cache_root": "E:\\PicotooPet\\ModelCache",
+  "quarantine_root": "E:\\PicotooPet\\Quarantine",
+  "models": [
+    {
+      "role": "primary_video_generation",
+      "filename": "wan2.2_ti2v_5B_fp16.safetensors",
+      "repository": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "source_path": "split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
+      "revision": "e58ce6c7762f9662699e3479ba30b5004204f93c",
+      "destination": "diffusion_models",
+      "sha256": "456f901338bd9eadbded3828b819109a9b68e8a525ca5cf8d0049a69fcfeca1e",
+      "required": true
+    },
+    {
+      "role": "primary_video_editing",
+      "filename": "wan2.1_vace_1.3B_fp16.safetensors",
+      "repository": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+      "source_path": "split_files/diffusion_models/wan2.1_vace_1.3B_fp16.safetensors",
+      "revision": "06e001fc51048fb03433a6fb25334de7836704a5",
+      "destination": "diffusion_models",
+      "sha256": "640ccc0577e6a5d4bb15cd91b11b699ef914fc55f126c5a1c544e152130784f2",
+      "required": true
+    },
+    {
+      "role": "shared_text_encoder",
+      "filename": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "repository": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+      "source_path": "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "revision": "06e001fc51048fb03433a6fb25334de7836704a5",
+      "destination": "text_encoders",
+      "sha256": "c3355d30191f1f066b26d93fba017ae9809dce6c627dda5f6a66eaa651204f68",
+      "required": true
+    },
+    {
+      "role": "wan22_vae",
+      "filename": "wan2.2_vae.safetensors",
+      "repository": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "source_path": "split_files/vae/wan2.2_vae.safetensors",
+      "revision": "e58ce6c7762f9662699e3479ba30b5004204f93c",
+      "destination": "vae",
+      "sha256": "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156",
+      "required": true
+    },
+    {
+      "role": "wan21_vae",
+      "filename": "wan_2.1_vae.safetensors",
+      "repository": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+      "source_path": "split_files/vae/wan_2.1_vae.safetensors",
+      "revision": "06e001fc51048fb03433a6fb25334de7836704a5",
+      "destination": "vae",
+      "sha256": "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b",
+      "required": true
+    }
+  ]
+}
