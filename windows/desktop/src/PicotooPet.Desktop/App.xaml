@@ -1,9 +1,22 @@
 <Application x:Class="PicotooPet.Desktop.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="clr-namespace:PicotooPet.Desktop.ViewModels"
+             xmlns:pages="clr-namespace:PicotooPet.Desktop.Views.Pages"
              ShutdownMode="OnMainWindowClose">
   <Application.Resources>
     <SolidColorBrush x:Key="PanelBrush" Color="#FFF7F8FA" />
+
+    <DataTemplate DataType="{x:Type viewModels:OverviewPageViewModel}">
+      <pages:OverviewPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:SettingsPageViewModel}">
+      <pages:SettingsPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:EmptyStatePageViewModel}">
+      <pages:EmptyStatePage />
+    </DataTemplate>
+
     <Style TargetType="Button">
       <Setter Property="Padding" Value="14,8" />
       <Setter Property="Margin" Value="4" />
