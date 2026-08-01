@@ -311,7 +311,7 @@ internal sealed record DiagnosticOptions(
     }
 
     private static int ParsePositive(
-        IReadOnlyDictionary<string, string> values,
+        Dictionary<string, string> values,
         string key,
         int fallback) =>
         values.TryGetValue(key, out var raw) && int.TryParse(raw, out var value) && value > 0

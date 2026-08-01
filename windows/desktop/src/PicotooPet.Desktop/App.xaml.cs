@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
@@ -7,7 +8,7 @@ using PicotooPet.Desktop.ViewModels;
 namespace PicotooPet.Desktop;
 
 /// <summary>桌面应用组合根；不使用隐藏的全局 Service Locator。</summary>
-public partial class App : Application
+public partial class App : Application, IDisposable
 {
     private Mutex? _singleInstanceMutex;
     private bool _ownsSingleInstance;
@@ -77,23 +78,43 @@ public partial class App : Application
         }
     }
 
+    /// <summary>显式释放应用持有的单实例互斥锁。</summary>
+    public void Dispose()
+    {
+        DisposeSingleInstanceMutex();
+        GC.SuppressFinalize(this);
+    }
+
     /// <summary>进程退出时释放命名互斥锁，允许下一次启动接管。</summary>
     protected override void OnExit(ExitEventArgs e)
     {
-        if (_ownsSingleInstance && _singleInstanceMutex is not null)
+        Dispose();
+        base.OnExit(e);
+    }
+
+    /// <summary>幂等释放互斥锁；重复调用不会再次释放所有权。</summary>
+    private void DisposeSingleInstanceMutex()
+    {
+        var mutex = _singleInstanceMutex;
+        if (mutex is null)
+        {
+            return;
+        }
+
+        if (_ownsSingleInstance)
         {
             try
             {
-                _singleInstanceMutex.ReleaseMutex();
+                mutex.ReleaseMutex();
             }
             catch (ApplicationException)
             {
                 // 退出阶段即使所有权已被系统回收，也不得阻止进程结束。
             }
         }
-        _singleInstanceMutex?.Dispose();
+
+        mutex.Dispose();
         _singleInstanceMutex = null;
         _ownsSingleInstance  = false;
-        base.OnExit(e);
     }
 }

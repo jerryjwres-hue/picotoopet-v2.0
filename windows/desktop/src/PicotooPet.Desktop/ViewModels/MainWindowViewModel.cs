@@ -197,7 +197,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
         finally
         {
-            await _dispatcher.InvokeAsync(() => IsBusy = false).ConfigureAwait(false);
+            await _dispatcher.InvokeAsync(
+                () => IsBusy = false,
+                CancellationToken.None).ConfigureAwait(false);
         }
     }
 

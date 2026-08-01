@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
@@ -7,6 +8,11 @@ namespace PicotooPet.Desktop.Services;
 /// <summary>Windows CI 和发布包使用的无界面启动自检。</summary>
 internal static class AppSelfTest
 {
+    private static readonly JsonSerializerOptions ReportJsonOptions = new()
+    {
+        WriteIndented = true,
+    };
+
     /// <summary>验证应用组合根可加载、日志可安全写入且网络参数可构造。</summary>
     public static int Run(string[] args)
     {
@@ -81,6 +87,6 @@ internal static class AppSelfTest
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
         File.WriteAllText(
             path,
-            JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+            JsonSerializer.Serialize(report, ReportJsonOptions));
     }
 }
