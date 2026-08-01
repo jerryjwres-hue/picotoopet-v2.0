@@ -9,7 +9,7 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 internal static class Program
 {
     /// <summary>运行确定性断言；任一失败返回非零退出码。</summary>
-    private static int Main()
+    private static async Task<int> Main()
     {
         try
         {
@@ -18,6 +18,7 @@ internal static class Program
             VerifyStateDeduplication();
             CapabilitySmokeTests.Run();
             StateStoreSmokeTests.Run();
+            await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
         }
