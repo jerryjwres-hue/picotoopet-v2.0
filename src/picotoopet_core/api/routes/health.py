@@ -3,6 +3,10 @@
 from fastapi import APIRouter, Request
 
 from picotoopet_core import __version__
+from picotoopet_core.api.contracts import (
+    CapabilitiesResponse,
+    ControlCenterCapabilities,
+)
 
 router = APIRouter()
 
@@ -20,14 +24,20 @@ def health(request: Request) -> dict[str, object]:
     }
 
 
-@router.get("/capabilities")
-def capabilities() -> dict[str, object]:
-    """列出当前纵向切片能力，不宣称 Windows Worker 已上线。"""
+@router.get("/capabilities", response_model=CapabilitiesResponse)
+def capabilities() -> CapabilitiesResponse:
+    """返回显式能力；未实现功能保持关闭且不伪造运行状态。"""
 
-    return {
-        "local_agent": True,
-        "durable_queue": True,
-        "mcp_hub": True,
-        "windows_worker": False,
-        "cloud_upload": "manual_approval_only",
-    }
+    features = ControlCenterCapabilities()
+    return CapabilitiesResponse(
+        features=features,
+        contract_versions={
+            "connector": "1.0.0",
+            "handoff_return": "1.0.0",
+        },
+        # 兼容 2.2 客户端仍读取的顶层字段。
+        local_agent=features.local_agent,
+        durable_queue=features.durable_queue,
+        mcp_hub=features.mcp_hub,
+        windows_worker=features.windows_worker,
+    )
