@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/connector/v1/writeback_request.schema.json",
+  "title": "Picotoo Pet WritebackRequest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "writeback_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "connector_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "target_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "target_uri": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$))(?:workspace|connector)://[A-Za-z0-9._~!$&'()*+,;=:@%/\\-]+$"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "https://schemas.picotoopet.local/connector/v1/artifact_manifest.schema.json"
+      },
+      "minItems": 1,
+      "maxItems": 10000
+    },
+    "expected_source_revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "request_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "approval_ref": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schema_version",
+    "writeback_id",
+    "connector_id",
+    "project_id",
+    "target_type",
+    "target_uri",
+    "action",
+    "artifacts",
+    "expected_source_revision",
+    "idempotency_key",
+    "request_digest",
+    "approval_ref",
+    "requested_at",
+    "expires_at"
+  ]
+}
