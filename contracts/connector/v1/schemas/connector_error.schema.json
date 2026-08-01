@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/connector/v1/connector_error.schema.json",
+  "title": "Picotoo Pet ConnectorError v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,99}$"
+    },
+    "stage": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "impact": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "automatic_action": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "suggested_actions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "maxItems": 16
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "details_ref": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 2048
+    }
+  },
+  "required": [
+    "code",
+    "stage",
+    "summary",
+    "impact",
+    "retryable",
+    "automatic_action",
+    "suggested_actions",
+    "trace_id",
+    "details_ref"
+  ]
+}
