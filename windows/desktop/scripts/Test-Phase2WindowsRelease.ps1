@@ -113,6 +113,9 @@ try {
     if (-not (Test-Path -LiteralPath $selfTestPath)) { throw "桌面自检报告缺失。" }
     $selfTest = Get-Content -LiteralPath $selfTestPath -Raw | ConvertFrom-Json
     if ([string]$selfTest.status -ne "pass") { throw "桌面自检报告不是 pass。" }
+    if ([string]$selfTest.checks.control_center_shell -ne "pass") {
+        throw "Control Center Shell 自检不是 pass。"
+    }
 
     Write-Host "PHASE2_WINDOWS_RELEASE_TEST=PASS"
     Write-Host "PACKAGE=$($zip.FullName)"
