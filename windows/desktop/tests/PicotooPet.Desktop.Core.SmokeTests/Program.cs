@@ -17,6 +17,7 @@ internal static class Program
             VerifyReconnectBounds();
             VerifyStateDeduplication();
             CapabilitySmokeTests.Run();
+            StateStoreSmokeTests.Run();
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
         }
