@@ -1,0 +1,120 @@
+name: Windows Control Center CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/windows-control-center-ci.yml"
+      - "windows/desktop/**"
+      - "tests/contract/**"
+      - "tests/security/**"
+      - "src/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-control-center-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  control-center:
+    name: Native Windows Control Center gate
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install locked Python test dependencies
+        shell: powershell
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . `
+            pytest==9.1.1 `
+            pytest-asyncio==1.4.0 `
+            pytest-cov==7.1.0 `
+            ruff==0.16.1 `
+            jsonschema==4.26.0
+
+      - name: Run contract and security tests
+        shell: powershell
+        run: |
+          $env:PYTHONPATH = ".;src"
+          python -m pytest -q tests/contract tests/security
+
+      - name: Install exact .NET SDK from global.json
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Show native Windows environment
+        shell: powershell
+        run: |
+          [Environment]::OSVersion.VersionString
+          dotnet --info
+          $PSVersionTable.PSVersion
+
+      - name: Run Core smoke executable
+        shell: powershell
+        run: |
+          dotnet run `
+            --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
+            --configuration Release
+
+      - name: Build WPF solution with warnings as errors
+        shell: powershell
+        run: |
+          dotnet build windows/desktop/PicotooPet.Desktop.sln `
+            --configuration Release `
+            --nologo `
+            -warnaserror
+
+      - name: Run Control Center shell self-test
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path windows/desktop/artifacts -Force | Out-Null
+          dotnet run `
+            --project windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj `
+            --configuration Release `
+            -- `
+            --self-test `
+            --self-test-output windows/desktop/artifacts/control-center-self-test.json
+
+      - name: Build prebuilt Control Center package
+        shell: powershell
+        run: |
+          .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 `
+            -OutputRoot "windows\desktop\artifacts\control-center-release" `
+            -VersionLabel "2.3.0-slice-a-${{ github.run_number }}-${{ github.sha }}"
+
+      - name: Verify package on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1 `
+            -ReleaseRoot "windows\desktop\artifacts\control-center-release"
+
+      - name: Upload Control Center package and evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-control-center-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            windows/desktop/artifacts/control-center-release/*.zip
+            windows/desktop/artifacts/control-center-release/*.sha256.txt
+            windows/desktop/artifacts/control-center-release/windows-build-report.json
+            windows/desktop/artifacts/control-center-self-test.json
