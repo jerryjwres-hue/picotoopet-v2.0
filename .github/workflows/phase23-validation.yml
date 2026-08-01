@@ -46,12 +46,12 @@ jobs:
       - name: Run capability contract first
         shell: bash
         run: |
-          PYTHONPATH=src pytest -q tests/contract/test_phase23_capabilities_contract.py
+          PYTHONPATH=.:src pytest -q tests/contract/test_phase23_capabilities_contract.py
 
       - name: Run Python regression suite
         shell: bash
         run: |
-          PYTHONPATH=src pytest -q
+          PYTHONPATH=.:src pytest -q
 
       - name: Run Python lint
         shell: bash
