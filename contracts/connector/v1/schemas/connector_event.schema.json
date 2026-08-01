@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/connector/v1/connector_event.schema.json",
+  "title": "Picotoo Pet ConnectorEvent v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "connector_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "source_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "source_project_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "source_revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "discovered_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "project": {
+      "$ref": "https://schemas.picotoopet.local/connector/v1/project_manifest.schema.json"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "https://schemas.picotoopet.local/connector/v1/artifact_manifest.schema.json"
+      },
+      "maxItems": 10000
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "permission_tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "uniqueItems": true,
+      "maxItems": 64
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "connector_id",
+    "source_type",
+    "source_project_id",
+    "source_revision",
+    "event_type",
+    "occurred_at",
+    "discovered_at",
+    "project",
+    "artifacts",
+    "idempotency_key",
+    "permission_tags",
+    "metadata"
+  ]
+}
