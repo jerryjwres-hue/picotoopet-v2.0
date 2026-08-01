@@ -2,8 +2,10 @@ using System.IO;
 using System.Windows;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
+using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Views;
 
 namespace PicotooPet.Desktop;
 
@@ -13,7 +15,7 @@ public partial class App : Application, IDisposable
     private Mutex? _singleInstanceMutex;
     private bool _ownsSingleInstance;
 
-    /// <summary>创建单实例保护、日志、安全令牌存储和主窗口。</summary>
+    /// <summary>创建单实例保护、日志、安全令牌存储、状态仓库和 Control Center Shell。</summary>
     protected override void OnStartup(StartupEventArgs e)
     {
         if (e.Args.Any(argument =>
@@ -46,32 +48,42 @@ public partial class App : Application, IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "PicotooPetV2",
             "Desktop");
-        var logger      = new SafeFileLogger(Path.Combine(dataRoot, "logs", "desktop.log"));
-        var tokenStore  = new CredentialManagerTokenStore();
-        var settings    = new DesktopSettingsStore(Path.Combine(dataRoot, "settings.json"));
-        var dispatcher  = new WpfUiDispatcher(Current.Dispatcher);
-        var viewModel   = new MainWindowViewModel(tokenStore, settings, dispatcher, logger);
-        var window      = new MainWindow(viewModel);
-        MainWindow      = window;
+        var logger          = new SafeFileLogger(Path.Combine(dataRoot, "logs", "desktop.log"));
+        var tokenStore      = new CredentialManagerTokenStore();
+        var settings        = new DesktopSettingsStore(Path.Combine(dataRoot, "settings.json"));
+        var dispatcher      = new WpfUiDispatcher(Current.Dispatcher);
+        var connectionStore = new ConnectionStateStore();
+        var capabilityStore = new CapabilityStateStore();
+        var taskStore       = new TaskStateStore();
+        var session = new ControlCenterSession(
+            tokenStore,
+            settings,
+            logger,
+            connectionStore,
+            capabilityStore,
+            taskStore);
+        var viewModel = new ShellViewModel(session, dispatcher);
+        var window    = new ShellWindow(viewModel, session);
+        MainWindow = window;
         window.Show();
-        _ = InitializeViewModelAsync(viewModel, window, logger);
+        _ = InitializeSessionAsync(session, window, logger);
     }
 
-    private static async Task InitializeViewModelAsync(
-        MainWindowViewModel viewModel,
+    private static async Task InitializeSessionAsync(
+        ControlCenterSession session,
         Window owner,
         SafeFileLogger logger)
     {
         try
         {
-            await viewModel.InitializeAsync(CancellationToken.None);
+            await session.InitializeAsync(CancellationToken.None);
         }
         catch (Exception exception)
         {
-            logger.Error("桌面初始化失败", exception);
+            logger.Error("Control Center 初始化失败", exception);
             await owner.Dispatcher.InvokeAsync(() => MessageBox.Show(
                 owner,
-                $"初始化失败：{exception.Message}\n\n详细日志位于本地应用数据目录。",
+                $"初始化失败：{exception.Message}\n\n你仍可在设置页重新配对；详细日志位于本地应用数据目录。",
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning));
