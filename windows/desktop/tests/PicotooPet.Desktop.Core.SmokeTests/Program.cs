@@ -18,6 +18,7 @@ internal static class Program
             VerifyStateDeduplication();
             CapabilitySmokeTests.Run();
             StateStoreSmokeTests.Run();
+            NavigationSmokeTests.Run();
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
