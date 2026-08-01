@@ -225,12 +225,16 @@ def test_desktop_enforces_single_instance_to_avoid_duplicate_event_consumers() -
 
 
 def test_desktop_filters_diagnostic_tasks_before_state_storage_and_rest_transfer() -> None:
-    """诊断任务既不能进入桌面状态仓库，也不能占用初始 REST 快照带宽。"""
+    """诊断任务必须在 REST 与 Core 事件归并两处过滤，WPF 不再消费原始事件。"""
 
     view_model = read("src/PicotooPet.Desktop/ViewModels/MainWindowViewModel.cs")
-    client     = read("src/PicotooPet.Desktop.Core/Networking/MacCoreClient.cs")
-    state      = read("src/PicotooPet.Desktop.Core/State/AppStateStore.cs")
+    client = read("src/PicotooPet.Desktop.Core/Networking/MacCoreClient.cs")
+    coordinator = read("src/PicotooPet.Desktop.Core/State/StateSyncCoordinator.cs")
+    task_state = read("src/PicotooPet.Desktop.Core/State/TaskStateStore.cs")
 
     assert "exclude_resource_tag=phase2-diagnostic" in client
-    assert "_stateStore.Apply(envelope, IsVisibleTask)" in view_model
-    assert "Predicate<TaskRecord>? includeTask" in state
+    assert "_taskStore.Apply(envelope, IsVisibleTask)" in coordinator
+    assert "task.ResourceTag" in coordinator
+    assert '"phase2-diagnostic"' in coordinator
+    assert "Predicate<TaskRecord>? includeTask" in task_state
+    assert "_stateStore.Apply(envelope" not in view_model
