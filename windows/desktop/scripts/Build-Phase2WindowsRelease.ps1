@@ -208,10 +208,12 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "run", "--project", $smokeProject, "--configuration", "Release", "--no-build"
 ) | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
-    "restore", $appProject, "--runtime", "win-x64", "--nologo"
+    "restore", $appProject, "--runtime", "win-x64", "--nologo",
+    "-p:PublishReadyToRun=true"
 ) | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
-    "restore", $diagProject, "--runtime", "win-x64", "--nologo"
+    "restore", $diagProject, "--runtime", "win-x64", "--nologo",
+    "-p:PublishReadyToRun=true"
 ) | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "publish", $appProject, "--configuration", "Release", "--runtime", "win-x64",
