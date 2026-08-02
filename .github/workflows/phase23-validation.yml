@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: phase23-validation-${{ github.event.pull_request.number || github.ref }}
@@ -28,8 +28,11 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Check out source
+      - name: Check out PR head for one-time contract synchronization
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
@@ -48,10 +51,19 @@ jobs:
         run: |
           PYTHONPATH=.:src python scripts/export_contracts.py
 
-      - name: Show generated OpenAPI difference for evidence capture
+      - name: Commit generated OpenAPI only on the current same-repository PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         run: |
-          git diff -- contracts/openapi/mac_core_v1.openapi.json
+          if git diff --quiet -- contracts/openapi/mac_core_v1.openapi.json; then
+            echo "OpenAPI already synchronized."
+            exit 0
+          fi
+          git config user.name "PicotooPet Contract CI"
+          git config user.email "contract-ci@picotoopet.local"
+          git add contracts/openapi/mac_core_v1.openapi.json
+          git commit -m "docs: refresh Slice B OpenAPI"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
 
       - name: Run capability and Worker contracts first
         shell: bash
