@@ -51,9 +51,9 @@ def test_windows_utf8_incident_cannot_regress() -> None:
         assert "Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json" not in text
 
     package_gate = read(desktop / "scripts" / "Test-Phase2WindowsRelease.ps1")
-    assert "-PreflightOnly" in package_gate
-    assert "powershell.exe" in package_gate.lower()
+    assert "& $installer -PackageRoot $tempRoot -PreflightOnly" in package_gate
     assert "phase2-prebuilt-install" in package_gate
+    assert "preflight.status" in package_gate
 
 
 def test_mac_spaced_path_incident_cannot_regress() -> None:
