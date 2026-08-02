@@ -27,7 +27,7 @@ class ControlCenterCapabilities(BaseModel):
     connector_contract_v1: bool = True
     handoff_contract_v1: bool = True
     worker_status: bool = True
-    worker_execution: bool = False
+    local_worker: bool = False
     windows_worker: bool = False
 
 
@@ -67,7 +67,7 @@ class WorkerStatusResponse(BaseModel):
         "degraded",
         "offline",
     ] = "not_deployed"
-    reason: str = "Mac 任务执行器尚未部署；Queued 任务不会自动执行。"
+    reason: str = "worker_runtime_not_installed"
     worker_id: str | None = None
     supported_task_types: list[str] = Field(default_factory=list)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
