@@ -33,6 +33,7 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         };
 
     private readonly ControlCenterSession? _session;
+    private readonly IReadOnlyList<TaskCenterFilterOption> _filterOptions = DefaultFilters;
     private IReadOnlyList<TaskRowViewModel> _allTasks = Array.Empty<TaskRowViewModel>();
     private IReadOnlyList<TaskRowViewModel> _visibleTasks = Array.Empty<TaskRowViewModel>();
     private TaskCenterFilter _selectedFilter;
@@ -61,7 +62,7 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         ApplySnapshot(tasks, worker);
     }
 
-    public IReadOnlyList<TaskCenterFilterOption> FilterOptions => DefaultFilters;
+    public IReadOnlyList<TaskCenterFilterOption> FilterOptions => _filterOptions;
 
     public IReadOnlyList<TaskRowViewModel> AllTasks
     {
@@ -224,22 +225,14 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         WorkerStatusText = FormatWorkerStatus(worker);
         WorkerReasonText = FormatWorkerReason(worker);
         ApplyFilter();
-        SelectedTask = selectedId is null
-            ? VisibleTasks.FirstOrDefault()
-            : VisibleTasks.FirstOrDefault(task =>
-                string.Equals(task.TaskId, selectedId, StringComparison.Ordinal))
-                ?? VisibleTasks.FirstOrDefault();
+        SelectedTask = ResolveSelection(VisibleTasks, selectedId);
     }
 
     private void ApplyFilter()
     {
         var selectedId = SelectedTask?.TaskId;
         VisibleTasks = AllTasks.Where(MatchesFilter).ToArray();
-        SelectedTask = selectedId is null
-            ? VisibleTasks.FirstOrDefault()
-            : VisibleTasks.FirstOrDefault(task =>
-                string.Equals(task.TaskId, selectedId, StringComparison.Ordinal))
-                ?? VisibleTasks.FirstOrDefault();
+        SelectedTask = ResolveSelection(VisibleTasks, selectedId);
     }
 
     private bool MatchesFilter(TaskRowViewModel task) => SelectedFilter switch
@@ -258,6 +251,23 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         TaskCenterFilter.FailedOrCancelled => task.Status is "Failed" or "Cancelled",
         _ => false,
     };
+
+    private static TaskRowViewModel? ResolveSelection(
+        IReadOnlyList<TaskRowViewModel> tasks,
+        string? selectedId)
+    {
+        if (!string.IsNullOrWhiteSpace(selectedId))
+        {
+            for (var index = 0; index < tasks.Count; index++)
+            {
+                if (string.Equals(tasks[index].TaskId, selectedId, StringComparison.Ordinal))
+                {
+                    return tasks[index];
+                }
+            }
+        }
+        return tasks.Count == 0 ? null : tasks[0];
+    }
 
     private static string FormatWorkerStatus(WorkerSnapshot worker)
     {
