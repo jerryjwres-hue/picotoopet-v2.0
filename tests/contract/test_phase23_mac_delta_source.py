@@ -101,11 +101,11 @@ def test_mac_delta_shared_library_uses_safe_json_and_path_validation() -> None:
         "verify_api_contract",
         "PICOTOO_RUNTIME_ROOT_OVERRIDE",
         "Library/Application Support/PicotooPetV2",
+        "hashlib.sha256",
     ):
         assert required in library
     assert "eval " not in library
     assert "security find-generic-password" in library
-    assert "shasum -a 256" in library
 
 
 def test_mac_delta_verify_and_rollback_are_explicit_and_non_destructive() -> None:
