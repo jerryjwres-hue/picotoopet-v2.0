@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+from contextlib import suppress
 from dataclasses import dataclass
 from threading import Event, Thread
 
@@ -141,15 +141,13 @@ class WorkerRuntime:
                 heartbeat.raise_if_failed()
             self.queue.complete_leased(task.task_id, worker_id=self.worker_id)
         except Exception:
-            try:
+            with suppress(LeaseOwnershipError):
                 self.queue.fail_leased(
                     task.task_id,
                     worker_id=self.worker_id,
                     error_code="WORKER_HANDLER_ERROR",
                     error_message=f"{task.task_type} handler failed",
                 )
-            except LeaseOwnershipError:
-                pass
             self._publish(
                 state="degraded",
                 reason="task_execution_failed",
@@ -188,9 +186,3 @@ class WorkerRuntime:
             supported_task_types=self.supported_task_types,
             active_task_id=active_task_id,
         )
-
-
-def wait_forever() -> None:  # pragma: no cover - CLI 信号循环的最小等待辅助。
-    """保留稳定可替换的短暂停顿。"""
-
-    time.sleep(0.1)
