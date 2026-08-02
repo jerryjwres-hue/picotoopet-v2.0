@@ -8,6 +8,7 @@ on:
       - "tests/**"
       - "scripts/mac/phase23/**"
       - "deploy/macos/phase23/**"
+      - "contracts/openapi/**"
       - "pyproject.toml"
   workflow_dispatch:
 
@@ -19,8 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  version-contract:
-    name: Native macOS version contract (${{ matrix.arch }})
+  native-mac-delta:
+    name: Native macOS Slice B delivery (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -30,7 +31,10 @@ jobs:
           - runner: macos-15-intel
             arch: x86_64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 45
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
     steps:
       - name: Check out source
@@ -42,21 +46,88 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install project and focused test dependencies
+      - name: Install project and test dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e . pytest==9.1.1
+          python -m pip install -e . \
+            pytest==9.1.1 \
+            pytest-asyncio==1.4.0 \
+            pytest-cov==7.1.0 \
+            ruff==0.16.1 \
+            jsonschema==4.26.0
 
-      - name: Show native macOS environment
+      - name: Show and verify native macOS environment
         shell: bash
         run: |
           sw_vers
           uname -m
           python --version
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          test "$(python -c 'import platform; print(platform.machine())')" = "${{ matrix.arch }}"
 
-      - name: Run Slice B Mac version contract
+      - name: Run focused Mac delivery contracts
         shell: bash
         run: |
           PYTHONPATH=.:src python -m pytest -q \
-            tests/contract/test_phase23_mac_delta_source.py::test_slice_b_mac_version_identity
+            tests/test_package_baseline.py \
+            tests/contract/test_phase23_mac_delta_source.py \
+            tests/contract/test_phase23_worker_status_contract.py
+
+      - name: Run full Python regression
+        shell: bash
+        run: |
+          PYTHONPATH=.:src python -m pytest -q
+
+      - name: Lint Slice B Python changes
+        shell: bash
+        run: |
+          ruff check \
+            src/picotoopet_core/api/contracts \
+            src/picotoopet_core/api/routes/workers.py \
+            tests/contract/test_phase23_mac_delta_source.py \
+            tests/contract/test_phase23_worker_status_contract.py
+
+      - name: Validate shell syntax on macOS Bash
+        shell: bash
+        run: |
+          for script in \
+            scripts/mac/phase23/*.sh \
+            deploy/macos/phase23/*.command \
+            deploy/macos/phase23/lib.sh; do
+            bash -n "$script"
+          done
+
+      - name: Build architecture-specific offline package
+        shell: bash
+        run: |
+          output="artifacts/mac-slice-b/${{ matrix.arch }}"
+          mkdir -p "$output"
+          bash scripts/mac/phase23/Build-MacCoreSliceBDelta.sh \
+            --output-root "$output" \
+            --version-label "2.3.0-slice-b-${{ github.run_number }}-${{ github.sha }}"
+
+      - name: Verify package structure and hashes
+        shell: bash
+        run: |
+          bash scripts/mac/phase23/Test-MacCoreSliceBDelta.sh \
+            "artifacts/mac-slice-b/${{ matrix.arch }}"
+
+      - name: Exercise offline install, API contract and rollback fixture
+        shell: bash
+        run: |
+          bash scripts/mac/phase23/Test-MacCoreSliceBFixture.sh \
+            "artifacts/mac-slice-b/${{ matrix.arch }}"
+
+      - name: Upload architecture-specific package and evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-MacCore-SliceB-${{ matrix.arch }}-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            artifacts/mac-slice-b/${{ matrix.arch }}/*.tar.gz
+            artifacts/mac-slice-b/${{ matrix.arch }}/*.sha256.txt
+            artifacts/mac-slice-b/${{ matrix.arch }}/mac-build-report.json
+            artifacts/mac-slice-b/${{ matrix.arch }}/fixture-evidence/*.json
+            artifacts/mac-slice-b/${{ matrix.arch }}/fixture-evidence/*.txt
