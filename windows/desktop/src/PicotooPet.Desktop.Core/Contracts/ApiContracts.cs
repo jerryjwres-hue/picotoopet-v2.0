@@ -9,6 +9,16 @@ public sealed record HealthResponse(
     [property: JsonPropertyName("database")] string? Database,
     [property: JsonPropertyName("version")] string? Version);
 
+/// <summary>Mac Core 返回的 Worker 可用性快照。</summary>
+public sealed record WorkerStatusResponse(
+    [property: JsonPropertyName("schema_version")] string SchemaVersion,
+    [property: JsonPropertyName("available")] bool Available,
+    [property: JsonPropertyName("state")] string State,
+    [property: JsonPropertyName("reason")] string Reason,
+    [property: JsonPropertyName("worker_id")] string? WorkerId,
+    [property: JsonPropertyName("supported_task_types")] IReadOnlyList<string> SupportedTaskTypes,
+    [property: JsonPropertyName("observed_at")] DateTimeOffset ObservedAt);
+
 /// <summary>任务创建请求；幂等键通过 HTTP Header 发送。</summary>
 public sealed record TaskCreateRequest(
     [property: JsonPropertyName("task_type")] string TaskType,
