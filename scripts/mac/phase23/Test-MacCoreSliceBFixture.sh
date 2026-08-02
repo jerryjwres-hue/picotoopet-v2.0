@@ -128,6 +128,11 @@ echo "PHASE23_MAC_DELTA_INSTALL_FIXTURE=PASS"
 echo "PHASE23_MAC_DELTA_QUEUED_PRESERVATION=PASS"
 
 bash "$package_root/ROLLBACK_MAC_CORE_SLICE_B.command"
+start_fixture_service \
+  "$runtime_root" \
+  "$runtime_root/current/.venv/bin/picotoopet-core" \
+  "$port" \
+  "$token"
 verify_health "http://127.0.0.1:$port"
 
 cp "$before_snapshot" "$evidence_root/queued-before.json"
