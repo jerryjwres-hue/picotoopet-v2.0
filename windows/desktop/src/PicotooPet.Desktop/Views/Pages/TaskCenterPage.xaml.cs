@@ -1,11 +1,10 @@
 using System.Windows;
-using System.Windows.Controls;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
 /// <summary>任务中心视图只转发显式用户动作；状态规则保留在 ViewModel 和 Mac Core。</summary>
-public partial class TaskCenterPage : UserControl
+public partial class TaskCenterPage : System.Windows.Controls.UserControl
 {
     public TaskCenterPage()
     {
