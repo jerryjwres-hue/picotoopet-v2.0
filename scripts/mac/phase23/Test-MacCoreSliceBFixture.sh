@@ -15,7 +15,8 @@ archive="$(find "$release_root" -maxdepth 1 -type f \
   -name 'PicotooPet-MacCore-*.tar.gz' -print | sort | tail -n 1)"
 temp_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-mac-fixture.XXXXXX")"
 extract_root="$temp_root/package"
-runtime_root="$temp_root/runtime"
+# 必须包含空格，复现真实路径 ~/Library/Application Support/PicotooPetV2。
+runtime_root="$temp_root/Application Support/PicotooPetV2"
 evidence_root="$release_root/fixture-evidence"
 mkdir -p \
   "$extract_root" \
@@ -153,6 +154,7 @@ Path(sys.argv[1]).write_text(
             "offline_install": True,
             "queued_task_preserved": True,
             "rollback_verified": True,
+            "runtime_path_with_spaces": True,
             "worker_runtime_installed": False,
         },
         ensure_ascii=False,
