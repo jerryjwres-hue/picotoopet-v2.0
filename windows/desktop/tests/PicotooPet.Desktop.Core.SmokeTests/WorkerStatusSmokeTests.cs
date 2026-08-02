@@ -7,6 +7,8 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>验证 Worker 状态解析和旧服务保守降级。</summary>
 internal static class WorkerStatusSmokeTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     public static void Run()
     {
         var json = """
@@ -21,10 +23,8 @@ internal static class WorkerStatusSmokeTests
             }
             """;
 
-        var response = JsonSerializer.Deserialize<WorkerStatusResponse>(
-            json,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        SmokeAssert.True(response is not null, "Worker 状态 JSON 未解析");
+        var response = JsonSerializer.Deserialize<WorkerStatusResponse>(json, JsonOptions)
+            ?? throw new InvalidOperationException("Worker 状态 JSON 未解析");
         SmokeAssert.True(!response.Available, "未部署 Worker 不得标记可用");
         SmokeAssert.Equal("not_deployed", response.State, "Worker 状态错误");
         SmokeAssert.Equal(0, response.SupportedTaskTypes.Count, "未部署 Worker 不应声明任务类型");
