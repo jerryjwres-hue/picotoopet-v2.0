@@ -179,3 +179,14 @@ def test_slice_c_native_ci_is_m4_only_and_uploads_diagnostics_separately() -> No
         assert required in workflow
     assert "macos-15-intel" not in workflow
     assert "x86_64" not in workflow
+
+
+def test_slice_c_ci_cannot_upload_candidate_before_package_fixture() -> None:
+    """正式候选只能在真实归档安装、执行、取消、恢复和回滚后上传。"""
+
+    workflow = read(ROOT / ".github" / "workflows" / "macos-worker-slice-c-ci.yml")
+    build = workflow.index("Build M4 arm64 offline Worker package")
+    verify = workflow.index("Verify actual Worker archive and manifest")
+    fixture = workflow.index("Exercise install execution historical protection and rollback")
+    upload = workflow.index("Upload verified M4 Worker candidate")
+    assert build < verify < fixture < upload
