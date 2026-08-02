@@ -1,6 +1,6 @@
 [project]
 name = "picotoopet-core"
-version = "2.3.0.dev1"
+version = "2.3.0.dev2"
 description = "Picotoo Pet V2 Mac Core and deployment bootstrap"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
