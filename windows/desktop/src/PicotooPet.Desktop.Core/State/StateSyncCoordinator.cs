@@ -6,10 +6,20 @@ namespace PicotooPet.Desktop.Core.State;
 /// <summary>统一协调 REST 初始快照、WebSocket 增量和有界恢复。</summary>
 public sealed class StateSyncCoordinator : IAsyncDisposable
 {
+    private static readonly HashSet<string> WorkerStates = new(StringComparer.Ordinal)
+    {
+        "not_deployed",
+        "starting",
+        "online",
+        "degraded",
+        "offline",
+    };
+
     private readonly object _streamGate = new();
     private readonly MacCoreClient _client;
     private readonly ConnectionStateStore _connectionStore;
     private readonly CapabilityStateStore _capabilityStore;
+    private readonly WorkerStateStore _workerStore;
     private readonly TaskStateStore _taskStore;
     private readonly Func<long, IEventStreamSession>? _eventStreamFactory;
     private CancellationTokenSource? _streamLifetime;
@@ -17,17 +27,36 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
     private Task? _streamTask;
     private bool _disposed;
 
-    /// <summary>创建同步协调器；事件流工厂可为空以支持纯 REST 测试。</summary>
+    /// <summary>保留 Slice A 构造器，并使用内部保守 Worker 状态仓库。</summary>
     public StateSyncCoordinator(
         MacCoreClient client,
         ConnectionStateStore connectionStore,
         CapabilityStateStore capabilityStore,
         TaskStateStore taskStore,
         Func<long, IEventStreamSession>? eventStreamFactory)
+        : this(
+            client,
+            connectionStore,
+            capabilityStore,
+            new WorkerStateStore(),
+            taskStore,
+            eventStreamFactory)
+    {
+    }
+
+    /// <summary>创建同步协调器；事件流工厂可为空以支持纯 REST 测试。</summary>
+    public StateSyncCoordinator(
+        MacCoreClient client,
+        ConnectionStateStore connectionStore,
+        CapabilityStateStore capabilityStore,
+        WorkerStateStore workerStore,
+        TaskStateStore taskStore,
+        Func<long, IEventStreamSession>? eventStreamFactory)
     {
         _client             = client ?? throw new ArgumentNullException(nameof(client));
         _connectionStore    = connectionStore ?? throw new ArgumentNullException(nameof(connectionStore));
         _capabilityStore    = capabilityStore ?? throw new ArgumentNullException(nameof(capabilityStore));
+        _workerStore        = workerStore ?? throw new ArgumentNullException(nameof(workerStore));
         _taskStore          = taskStore ?? throw new ArgumentNullException(nameof(taskStore));
         _eventStreamFactory = eventStreamFactory;
         _client.RequestMeasured += OnRequestMeasured;
@@ -45,12 +74,12 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
     /// <summary>需要写入脱敏诊断日志的协调器事件。</summary>
     public event EventHandler<string>? DiagnosticRaised;
 
-    /// <summary>并发读取 health、capabilities 和 tasks，再启动事件流之前提交快照。</summary>
+    /// <summary>并发读取 health、capabilities、Worker 和 tasks，再启动事件流之前提交快照。</summary>
     public Task<HealthResponse> InitializeSnapshotAsync(
         CancellationToken cancellationToken) =>
         RefreshAsync(cancellationToken);
 
-    /// <summary>重新加载服务端快照；旧服务能力接口缺失时使用保守能力集。</summary>
+    /// <summary>重新加载服务端快照；旧服务缺失新接口时使用保守状态。</summary>
     public async Task<HealthResponse> RefreshAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
@@ -60,13 +89,17 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         {
             var healthTask     = _client.GetHealthAsync(cancellationToken);
             var capabilityTask = LoadCapabilitiesAsync(cancellationToken);
+            var workerTask     = LoadWorkerStatusAsync(cancellationToken);
             var tasksTask      = _client.GetTasksAsync(cancellationToken);
-            await Task.WhenAll(healthTask, capabilityTask, tasksTask).ConfigureAwait(false);
+            await Task.WhenAll(healthTask, capabilityTask, workerTask, tasksTask)
+                .ConfigureAwait(false);
 
             var health       = await healthTask.ConfigureAwait(false);
             var capabilities = await capabilityTask.ConfigureAwait(false);
+            var worker       = await workerTask.ConfigureAwait(false);
             var tasks        = await tasksTask.ConfigureAwait(false);
             _capabilityStore.Set(capabilities);
+            _workerStore.Set(worker);
             _taskStore.ReplaceTasks(tasks);
             _connectionStore.Set(ConnectionState.Online);
             HealthChanged?.Invoke(this, health);
@@ -181,6 +214,41 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         }
     }
 
+    private async Task<WorkerStatusResponse> LoadWorkerStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _client.GetWorkerStatusAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(response.SchemaVersion)
+                || !WorkerStates.Contains(response.State)
+                || string.IsNullOrWhiteSpace(response.Reason)
+                || response.SupportedTaskTypes is null
+                || response.ObservedAt == default
+                || (response.Available && string.IsNullOrWhiteSpace(response.WorkerId)))
+            {
+                throw new InvalidDataException("Worker 状态响应缺少必需字段。");
+            }
+            return response;
+        }
+        catch (ApiException exception) when (exception.StatusCode == 404)
+        {
+            DiagnosticRaised?.Invoke(this, "worker_status_not_deployed_fallback");
+            return NotDeployedWorkerResponse();
+        }
+        catch (ApiException exception) when (exception.Code == "INVALID_RESPONSE")
+        {
+            DiagnosticRaised?.Invoke(this, "worker_status_invalid_fallback");
+            return NotDeployedWorkerResponse();
+        }
+        catch (InvalidDataException)
+        {
+            DiagnosticRaised?.Invoke(this, "worker_status_incomplete_fallback");
+            return NotDeployedWorkerResponse();
+        }
+    }
+
     private async Task RunEventStreamCoreAsync(
         IEventStreamSession stream,
         CancellationTokenSource lifetime)
@@ -258,6 +326,15 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         ControlCenterCapabilities.Legacy22,
         new ContractVersions("unavailable", "unavailable"),
         "manual_approval_only");
+
+    private static WorkerStatusResponse NotDeployedWorkerResponse() => new(
+        "2.3.0",
+        Available: false,
+        State: "not_deployed",
+        Reason: "Mac 任务执行器尚未部署；Queued 任务不会自动执行。",
+        WorkerId: null,
+        SupportedTaskTypes: Array.Empty<string>(),
+        ObservedAt: DateTimeOffset.UtcNow);
 
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(_disposed, this);
