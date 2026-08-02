@@ -282,6 +282,11 @@
             "title": "Local Agent",
             "type": "boolean"
           },
+          "local_worker": {
+            "default": false,
+            "title": "Local Worker",
+            "type": "boolean"
+          },
           "logs_query": {
             "default": false,
             "title": "Logs Query",
@@ -320,6 +325,11 @@
           "windows_worker": {
             "default": false,
             "title": "Windows Worker",
+            "type": "boolean"
+          },
+          "worker_status": {
+            "default": true,
+            "title": "Worker Status",
             "type": "boolean"
           }
         },
@@ -710,6 +720,64 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkerStatusResponse": {
+        "additionalProperties": false,
+        "description": "只读报告执行器部署状态；不会因此启动或领取任务。",
+        "properties": {
+          "available": {
+            "default": false,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "reason": {
+            "default": "worker_runtime_not_installed",
+            "title": "Reason",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "2.3.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "state": {
+            "default": "not_deployed",
+            "enum": [
+              "not_deployed",
+              "starting",
+              "online",
+              "degraded",
+              "offline"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "supported_task_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Task Types",
+            "type": "array"
+          },
+          "worker_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Id"
+          }
+        },
+        "title": "WorkerStatusResponse",
         "type": "object"
       }
     },
@@ -1504,6 +1572,33 @@
         "summary": "Retry Task",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/workers/status": {
+      "get": {
+        "description": "明确报告执行器尚未部署，不启动 Worker，也不领取历史任务。",
+        "operationId": "worker_status_api_v1_workers_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Worker Status",
+        "tags": [
+          "workers"
         ]
       }
     }
