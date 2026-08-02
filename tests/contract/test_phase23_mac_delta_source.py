@@ -68,7 +68,7 @@ def test_mac_delta_installer_preserves_existing_runtime_boundaries() -> None:
         "picotoopet-core==2.3.0.dev1",
         "com.picotoopet.mac-core",
         "previous-version.txt",
-        "/api/v1/workers/status",
+        "verify_api_contract",
         "atomic_switch_current",
         "rollback_after_failed_activation",
     ):
@@ -99,6 +99,7 @@ def test_mac_delta_shared_library_uses_safe_json_and_path_validation() -> None:
         "restart_user_agent",
         "write_report",
         "verify_api_contract",
+        "/api/v1/workers/status",
         "PICOTOO_RUNTIME_ROOT_OVERRIDE",
         "Library/Application Support/PicotooPetV2",
         "hashlib.sha256",
