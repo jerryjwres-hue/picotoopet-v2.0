@@ -24,6 +24,20 @@ function Write-Utf8NoBom {
     [System.IO.File]::WriteAllText($Path, $Value, $encoding)
 }
 
+function Read-JsonUtf8 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    # 机器 JSON 固定按严格 UTF-8 读取，绕过 Windows PowerShell 5.1 的区域默认编码。
+    $encoding = [System.Text.UTF8Encoding]::new($false, $true)
+    try {
+        $json = [System.IO.File]::ReadAllText($Path, $encoding)
+        return ($json | ConvertFrom-Json)
+    }
+    catch {
+        throw "JSON 解析失败：$Path | $($_.Exception.Message)"
+    }
+}
+
 function Write-JsonAtomic {
     param([Parameter(Mandatory)]$Value, [Parameter(Mandatory)][string]$Path)
 
@@ -55,14 +69,14 @@ New-Item -ItemType Directory -Path $reportsRoot -Force | Out-Null
 
 try {
     if (-not (Test-Path -LiteralPath $currentPath)) { throw "尚未安装 Phase 2 Windows Desktop。" }
-    $current      = Get-Content -LiteralPath $currentPath -Raw | ConvertFrom-Json
+    $current      = Read-JsonUtf8 -Path $currentPath
     $manifestPath = Join-Path $current.path "release-manifest.json"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "当前版本缺少 release-manifest.json。" }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Read-JsonUtf8 -Path $manifestPath
     Assert-ManifestFiles -Manifest $manifest -Root $current.path
 
     if (Test-Path -LiteralPath $settingsPath) {
-        $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        $settings = Read-JsonUtf8 -Path $settingsPath
         if (-not [string]::IsNullOrWhiteSpace([string]$settings.macBaseUrl)) {
             $candidate = [Uri]$settings.macBaseUrl
             if ($candidate.IsAbsoluteUri) { $baseUrl = $candidate.AbsoluteUri.TrimEnd('/') }
