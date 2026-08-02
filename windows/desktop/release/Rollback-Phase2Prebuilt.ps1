@@ -25,6 +25,20 @@ function Write-Utf8NoBom {
     [System.IO.File]::WriteAllText($Path, $Value, $encoding)
 }
 
+function Read-JsonUtf8 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    # 机器 JSON 固定按严格 UTF-8 读取，绕过 Windows PowerShell 5.1 的区域默认编码。
+    $encoding = [System.Text.UTF8Encoding]::new($false, $true)
+    try {
+        $json = [System.IO.File]::ReadAllText($Path, $encoding)
+        return ($json | ConvertFrom-Json)
+    }
+    catch {
+        throw "JSON 解析失败：$Path | $($_.Exception.Message)"
+    }
+}
+
 function Write-JsonAtomic {
     param([Parameter(Mandatory)]$Value, [Parameter(Mandatory)][string]$Path)
 
@@ -78,11 +92,11 @@ try {
     if (-not (Test-Path -LiteralPath $currentPath))  { throw "当前版本指针不存在。" }
     if (-not (Test-Path -LiteralPath $previousPath)) { throw "没有可回滚的上一版本。" }
 
-    $current      = Get-Content -LiteralPath $currentPath -Raw | ConvertFrom-Json
-    $previous     = Get-Content -LiteralPath $previousPath -Raw | ConvertFrom-Json
+    $current      = Read-JsonUtf8 -Path $currentPath
+    $previous     = Read-JsonUtf8 -Path $previousPath
     $manifestPath = Join-Path $previous.path "release-manifest.json"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "上一版本缺少发布清单。" }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Read-JsonUtf8 -Path $manifestPath
     Assert-ManifestFiles -Manifest $manifest -Root $previous.path
 
     Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
