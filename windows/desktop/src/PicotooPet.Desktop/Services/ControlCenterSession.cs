@@ -7,7 +7,7 @@ using PicotooPet.Desktop.Core.State;
 namespace PicotooPet.Desktop.Services;
 
 /// <summary>集中管理真实 Mac Core 连接、状态快照、凭据和非敏感设置。</summary>
-public sealed class ControlCenterSession : IAsyncDisposable
+public sealed partial class ControlCenterSession : IAsyncDisposable
 {
     private readonly object _snapshotGate = new();
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
