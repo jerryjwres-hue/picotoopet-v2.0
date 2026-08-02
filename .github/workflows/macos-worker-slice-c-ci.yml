@@ -1,0 +1,152 @@
+name: Mac Worker Slice C CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/macos-worker-slice-c-ci.yml"
+      - ".github/workflows/macos-core-slice-b-ci.yml"
+      - "src/**"
+      - "tests/**"
+      - "scripts/mac/phase23-worker/**"
+      - "deploy/macos/phase23-worker/**"
+      - "deploy/macos/phase23/lib.sh"
+      - "contracts/release/**"
+      - "docs/operations/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-worker-slice-c-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-m4-worker-delivery:
+    name: Native M4/arm64 Worker delivery
+    runs-on: macos-15
+    timeout-minutes: 50
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project and pinned test dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . \
+            pytest==9.1.1 \
+            pytest-asyncio==1.4.0 \
+            pytest-cov==7.1.0 \
+            ruff==0.16.1 \
+            jsonschema==4.26.0
+
+      - name: Verify native M4-class environment
+        shell: bash
+        run: |
+          sw_vers
+          uname -m
+          python --version
+          test "$(uname -m)" = "arm64"
+          test "$(python -c 'import platform; print(platform.machine())')" = "arm64"
+
+      - name: Run installation incident and Worker contracts
+        shell: bash
+        run: |
+          PYTHONPATH=.:src python -m pytest -q \
+            tests/contract/test_install_regression_registry.py \
+            tests/contract/test_worker_runtime_source.py \
+            tests/contract/test_phase23_worker_delivery.py \
+            tests/contract/test_phase23_worker_status_contract.py \
+            tests/integration/queue/test_worker_leases.py \
+            tests/unit/worker/test_worker_runtime_foundation.py
+
+      - name: Run full Python regression
+        shell: bash
+        run: |
+          PYTHONPATH=.:src python -m pytest -q
+
+      - name: Lint Worker Runtime and delivery changes
+        shell: bash
+        run: |
+          ruff check \
+            src/picotoopet_core/worker \
+            src/picotoopet_core/queue/repository.py \
+            src/picotoopet_core/api/contracts/control_center.py \
+            src/picotoopet_core/api/routes/workers.py \
+            src/picotoopet_core/config \
+            src/picotoopet_core/cli.py \
+            tests/contract/test_install_regression_registry.py \
+            tests/contract/test_worker_runtime_source.py \
+            tests/contract/test_phase23_worker_delivery.py \
+            tests/integration/queue/test_worker_leases.py \
+            tests/unit/worker/test_worker_runtime_foundation.py
+
+      - name: Validate all Slice C shell syntax on macOS Bash
+        shell: bash
+        run: |
+          for script in \
+            scripts/mac/phase23-worker/*.sh \
+            deploy/macos/phase23-worker/*.command \
+            deploy/macos/phase23-worker/*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Build M4 arm64 offline Worker package
+        shell: bash
+        run: |
+          output="artifacts/mac-worker-slice-c/arm64"
+          mkdir -p "$output"
+          bash scripts/mac/phase23-worker/Build-MacWorkerSliceC.sh \
+            --output-root "$output" \
+            --version-label "2.3.0-slice-c-${{ github.run_number }}-${{ github.sha }}"
+
+      - name: Verify actual Worker archive and manifest
+        shell: bash
+        run: |
+          bash scripts/mac/phase23-worker/Test-MacWorkerSliceC.sh \
+            "artifacts/mac-worker-slice-c/arm64"
+
+      - name: Exercise install execution historical protection and rollback
+        shell: bash
+        run: |
+          bash scripts/mac/phase23-worker/Test-MacWorkerSliceCFixture.sh \
+            "artifacts/mac-worker-slice-c/arm64"
+
+      - name: Upload failed-run Worker diagnostic evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-MacWorker-SliceC-DIAGNOSTIC-arm64-${{ github.run_number }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            artifacts/mac-worker-slice-c/arm64/*.tar.gz
+            artifacts/mac-worker-slice-c/arm64/*.sha256.txt
+            artifacts/mac-worker-slice-c/arm64/mac-worker-build-report.json
+            artifacts/mac-worker-slice-c/arm64/fixture-evidence/*.json
+            artifacts/mac-worker-slice-c/arm64/fixture-evidence/*.txt
+
+      - name: Upload verified M4 Worker candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-MacWorker-SliceC-arm64-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            artifacts/mac-worker-slice-c/arm64/*.tar.gz
+            artifacts/mac-worker-slice-c/arm64/*.sha256.txt
+            artifacts/mac-worker-slice-c/arm64/mac-worker-build-report.json
+            artifacts/mac-worker-slice-c/arm64/fixture-evidence/*.json
+            artifacts/mac-worker-slice-c/arm64/fixture-evidence/*.txt
