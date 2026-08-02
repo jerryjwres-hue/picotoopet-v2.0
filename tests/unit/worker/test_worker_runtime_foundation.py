@@ -11,7 +11,9 @@ from picotoopet_core.worker.runtime import WorkerRuntime
 from picotoopet_core.worker.state import WorkerStateStore
 
 
-def make_runtime(tmp_path: Path) -> tuple[Database, QueueRepository, WorkerRuntime, WorkerStateStore]:
+def make_runtime(
+    tmp_path: Path,
+) -> tuple[Database, QueueRepository, WorkerRuntime, WorkerStateStore]:
     database = Database(tmp_path / "core.db")
     database.open()
     database.apply_migrations()
