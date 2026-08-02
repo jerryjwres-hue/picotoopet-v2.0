@@ -27,7 +27,7 @@ public sealed record ControlCenterCapabilities(
     [property: JsonPropertyName("connector_contract_v1")] bool ConnectorContractV1,
     [property: JsonPropertyName("handoff_contract_v1")] bool HandoffContractV1,
     [property: JsonPropertyName("worker_status")] bool WorkerStatus = false,
-    [property: JsonPropertyName("worker_execution")] bool WorkerExecution = false,
+    [property: JsonPropertyName("local_worker")] bool LocalWorker = false,
     [property: JsonPropertyName("windows_worker")] bool WindowsWorker = false)
 {
     /// <summary>旧版 2.2 服务的保守能力集；未知功能一律关闭。</summary>
@@ -48,7 +48,7 @@ public sealed record ControlCenterCapabilities(
         ConnectorContractV1: false,
         HandoffContractV1: false,
         WorkerStatus: false,
-        WorkerExecution: false,
+        LocalWorker: false,
         WindowsWorker: false);
 }
 
