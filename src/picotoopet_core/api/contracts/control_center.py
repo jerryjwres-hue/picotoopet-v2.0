@@ -1,5 +1,7 @@
 """Windows Control Center 的版本化公共契约。"""
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -23,6 +25,8 @@ class ControlCenterCapabilities(BaseModel):
     manual_goal: bool = False
     connector_contract_v1: bool = True
     handoff_contract_v1: bool = True
+    worker_status: bool = True
+    worker_execution: bool = False
     windows_worker: bool = False
 
 
@@ -46,3 +50,16 @@ class CapabilitiesResponse(BaseModel):
     durable_queue: bool = True
     mcp_hub: bool = True
     windows_worker: bool = False
+
+
+class WorkerStatusResponse(BaseModel):
+    """只读报告执行器部署状态；不会因此启动或领取任务。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "2.3.0"
+    status: str = "not_deployed"
+    worker_id: str | None = None
+    supported_task_types: list[str] = Field(default_factory=list)
+    heartbeat_at: datetime | None = None
+    message: str = "Mac 任务执行器尚未部署；Queued 任务不会自动执行。"
