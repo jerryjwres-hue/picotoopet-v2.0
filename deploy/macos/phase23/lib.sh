@@ -136,6 +136,29 @@ wait_for_health() {
   return 1
 }
 
+wait_for_port_release() {
+  local port="$1"
+  local attempts="${2:-80}"
+  local index
+  for ((index = 0; index < attempts; index += 1)); do
+    if python3 - "$port" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.settimeout(0.2)
+    raise SystemExit(1 if sock.connect_ex(("127.0.0.1", port)) == 0 else 0)
+PY
+    then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "fixture API port did not become free: $port" >&2
+  return 1
+}
+
 verify_health() {
   local base_url="$1"
   python3 - "$base_url" <<'PY'
@@ -232,6 +255,16 @@ stop_fixture_service() {
     pid="$(cat "$pid_file")"
     if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" >/dev/null 2>&1; then
       kill "$pid" >/dev/null 2>&1 || true
+      local index
+      for ((index = 0; index < 40; index += 1)); do
+        if ! kill -0 "$pid" >/dev/null 2>&1; then
+          break
+        fi
+        sleep 0.1
+      done
+      if kill -0 "$pid" >/dev/null 2>&1; then
+        kill -9 "$pid" >/dev/null 2>&1 || true
+      fi
       wait "$pid" >/dev/null 2>&1 || true
     fi
     rm -f "$pid_file"
@@ -243,18 +276,42 @@ start_fixture_service() {
   local executable="$2"
   local port="$3"
   local token="$4"
+  local stdout_log="$runtime_root/logs/fixture-service.stdout.log"
+  local stderr_log="$runtime_root/logs/fixture-service.stderr.log"
   mkdir -p "$runtime_root/state" "$runtime_root/logs"
   stop_fixture_service "$runtime_root"
-  PICOTOO_RUNTIME_ROOT="$runtime_root" \
-  PICOTOO_API_HOST="127.0.0.1" \
-  PICOTOO_API_PORT="$port" \
-  PICOTOO_API_TOKEN="$token" \
+  wait_for_port_release "$port"
+
+  nohup env \
+    PICOTOO_RUNTIME_ROOT="$runtime_root" \
+    PICOTOO_API_HOST="127.0.0.1" \
+    PICOTOO_API_PORT="$port" \
+    PICOTOO_API_TOKEN="$token" \
     "$executable" serve \
-      >"$runtime_root/logs/fixture-service.stdout.log" \
-      2>"$runtime_root/logs/fixture-service.stderr.log" &
+      </dev/null \
+      >"$stdout_log" \
+      2>"$stderr_log" &
   local pid=$!
   printf '%s\n' "$pid" > "$runtime_root/state/fixture-service.pid"
-  wait_for_health "http://127.0.0.1:$port"
+
+  if ! wait_for_health "http://127.0.0.1:$port"; then
+    echo "fixture service failed to become healthy; stderr follows:" >&2
+    cat "$stderr_log" >&2 || true
+    return 1
+  fi
+
+  # 首次健康可能来自刚退出的旧进程；要求新 PID 持续存活并再次通过健康检查。
+  sleep 1
+  if ! kill -0 "$pid" >/dev/null 2>&1; then
+    echo "fixture service exited after initial health check; stderr follows:" >&2
+    cat "$stderr_log" >&2 || true
+    return 1
+  fi
+  if ! verify_health "http://127.0.0.1:$port"; then
+    echo "fixture service was not stable after startup; stderr follows:" >&2
+    cat "$stderr_log" >&2 || true
+    return 1
+  fi
 }
 
 write_report() {
