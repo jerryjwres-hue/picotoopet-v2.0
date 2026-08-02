@@ -17,6 +17,7 @@ internal static class Program
             VerifyReconnectBounds();
             VerifyStateDeduplication();
             CapabilitySmokeTests.Run();
+            WorkerStatusSmokeTests.Run();
             StateStoreSmokeTests.Run();
             NavigationSmokeTests.Run();
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
