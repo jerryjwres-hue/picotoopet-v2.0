@@ -51,12 +51,12 @@ with tarfile.open(archive, "r:gz") as bundle:
 PY
 
 tar -xzf "$archive" -C "$temp_root"
-mapfile -t roots < <(find "$temp_root" -mindepth 1 -maxdepth 1 -type d -print)
-if [[ ${#roots[@]} -ne 1 ]]; then
+root_count="$(find "$temp_root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+if [[ "$root_count" != "1" ]]; then
   echo "归档必须只包含一个根目录。" >&2
   exit 1
 fi
-package_root="${roots[0]}"
+package_root="$(find "$temp_root" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)"
 
 # shellcheck source=/dev/null
 source "$package_root/lib.sh"
