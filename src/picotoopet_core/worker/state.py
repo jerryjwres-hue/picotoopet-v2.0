@@ -11,7 +11,6 @@ from pydantic import ValidationError
 
 from picotoopet_core.api.contracts import WorkerStatusResponse
 
-
 DEFAULT_WORKER_STATUS_FILENAME = "worker-status.json"
 
 
