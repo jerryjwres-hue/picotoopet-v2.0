@@ -1,0 +1,62 @@
+name: Mac Core Slice B CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/macos-core-slice-b-ci.yml"
+      - "src/**"
+      - "tests/**"
+      - "scripts/mac/phase23/**"
+      - "deploy/macos/phase23/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-core-slice-b-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-contract:
+    name: Native macOS version contract (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project and focused test dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest==9.1.1
+
+      - name: Show native macOS environment
+        shell: bash
+        run: |
+          sw_vers
+          uname -m
+          python --version
+
+      - name: Run Slice B Mac version contract
+        shell: bash
+        run: |
+          PYTHONPATH=.:src python -m pytest -q \
+            tests/contract/test_phase23_mac_delta_source.py::test_slice_b_mac_version_identity
