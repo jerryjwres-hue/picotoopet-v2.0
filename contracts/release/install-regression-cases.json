@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0.0",
+  "updated_at": "2026-08-02",
+  "target_devices": {
+    "mac": "Apple Silicon M4 / arm64",
+    "windows": "native Windows 2025 CI; user PC installs prebuilt package only"
+  },
+  "cases": [
+    {
+      "id": "WIN-2026-08-01-UTF8-MANIFEST",
+      "platform": "windows",
+      "symptom": "Windows PowerShell 5.1 on a Chinese locale failed to parse UTF-8 without BOM release-manifest.json.",
+      "root_cause": "Get-Content used the host default text encoding before ConvertFrom-Json.",
+      "required_controls": [
+        "All release JSON is read with ReadAllText and strict UTF8Encoding(false, true).",
+        "The exact generated package runs Install-Phase2Prebuilt.ps1 -PreflightOnly under Windows PowerShell 5.1.",
+        "The preflight report must be pass before an artifact is published."
+      ],
+      "enforced_by": [
+        "tests/release/test_windows_prebuilt_delivery.py",
+        "windows/desktop/scripts/Test-Phase2WindowsRelease.ps1",
+        ".github/workflows/windows-phase2-release.yml"
+      ],
+      "status": "closed"
+    },
+    {
+      "id": "MAC-2026-08-02-SPACED-RUNTIME-PATH",
+      "platform": "macos-arm64",
+      "symptom": "The Slice B installer failed while reading the existing Python version from ~/Library/Application Support/PicotooPetV2.",
+      "root_cause": "The executable path variable was invoked without quotes, so the shell split Application Support into separate arguments.",
+      "required_controls": [
+        "Every executable path variable is invoked as a quoted command argument.",
+        "The native install fixture uses a runtime path containing Application Support.",
+        "The full offline install, authenticated API verification, queued-task preservation and rollback fixture must pass on native arm64 macOS."
+      ],
+      "enforced_by": [
+        "tests/contract/test_phase23_mac_delta_source.py",
+        "scripts/mac/phase23/Test-MacCoreSliceBFixture.sh",
+        ".github/workflows/macos-core-slice-b-ci.yml"
+      ],
+      "status": "closed"
+    },
+    {
+      "id": "CROSS-PLATFORM-NO-USER-BUILD",
+      "platform": "cross-platform",
+      "symptom": "User machines must never be used as build or repair environments.",
+      "root_cause": "Release confidence must come from native CI and package-level verification, not user-machine compilation.",
+      "required_controls": [
+        "Windows and Mac reports include source_build_on_user_pc/source_build_on_user_mac=false.",
+        "Packages include all runtime payloads and dependencies required for offline installation.",
+        "Failed release jobs upload clearly labeled diagnostic evidence; only passing jobs publish install candidates."
+      ],
+      "enforced_by": [
+        "tests/contract/test_install_regression_registry.py",
+        ".github/workflows/windows-phase2-release.yml",
+        ".github/workflows/macos-core-slice-b-ci.yml"
+      ],
+      "status": "closed"
+    }
+  ]
+}
