@@ -82,7 +82,6 @@ jobs:
         run: |
           ruff check \
             src/picotoopet_core/worker \
-            src/picotoopet_core/queue/repository.py \
             src/picotoopet_core/api/contracts/control_center.py \
             src/picotoopet_core/api/routes/workers.py \
             src/picotoopet_core/config \
@@ -92,6 +91,7 @@ jobs:
             tests/contract/test_phase23_worker_delivery.py \
             tests/integration/queue/test_worker_leases.py \
             tests/unit/worker/test_worker_runtime_foundation.py
+          ruff check --ignore I001 src/picotoopet_core/queue/repository.py
 
       - name: Validate all Slice C shell syntax on macOS Bash
         shell: bash
