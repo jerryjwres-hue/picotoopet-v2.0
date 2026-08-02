@@ -36,6 +36,7 @@ candidate_pid=""
 candidate_root=""
 activated=0
 worker_started=0
+backup_captured=0
 previous_worker_present=0
 previous_worker_backup="$state_root/slice-c-previous-worker.plist"
 previous_version_file="$state_root/slice-c-previous-version.txt"
@@ -71,6 +72,9 @@ restart_core_runtime() {
 }
 
 restore_previous_worker_definition() {
+  if [[ "$backup_captured" != "1" ]]; then
+    return 0
+  fi
   stop_worker_agent
   local plist
   plist="$(worker_plist_path)"
@@ -113,7 +117,8 @@ on_error() {
     "fail" \
     "$version" \
     "$new_version" \
-    "命令失败：$failed_command")" || true
+    "命令失败：$failed_command" \
+    "false")" || true
   echo "Slice C Worker 安装失败。报告：$report" >&2
   exit "$code"
 }
@@ -171,6 +176,7 @@ else
   rm -f "$previous_worker_backup"
 fi
 printf '%s\n' "$previous_worker_present" > "$worker_present_file"
+backup_captured=1
 
 new_version="$versions_root/${version}-${package_arch}"
 if [[ -e "$new_version" ]]; then
@@ -219,7 +225,8 @@ report="$(write_worker_report \
   "pass" \
   "$version" \
   "$new_version" \
-  "")"
+  "" \
+  "true")"
 echo "PHASE23_MAC_WORKER_INSTALL=PASS"
 echo "REPORT=$report"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" != "1" ]]; then
