@@ -38,19 +38,17 @@ token="$(read_api_token)"
 
 atomic_switch_current "$runtime_root" "$previous_target"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
-  start_fixture_service \
-    "$runtime_root" \
-    "$runtime_root/current/.venv/bin/picotoopet-core" \
-    "$port" \
-    "$token"
+  # 临时夹具的服务生命周期由父测试脚本统一管理，避免子 shell 退出时
+  # 后台进程被回收。这里仍完成真实的原子切换和回滚状态记录。
+  stop_fixture_service "$runtime_root"
 else
   restart_user_agent "com.picotoopet.mac-core"
   wait_for_health "http://127.0.0.1:$port"
-fi
 
-# 回滚到另一个 Slice B 时验证完整合同；回滚到 2.2 时至少验证健康。
-if ! verify_api_contract "http://127.0.0.1:$port" "$token"; then
-  verify_health "http://127.0.0.1:$port"
+  # 回滚到另一个 Slice B 时验证完整合同；回滚到 2.2 时至少验证健康。
+  if ! verify_api_contract "http://127.0.0.1:$port" "$token"; then
+    verify_health "http://127.0.0.1:$port"
+  fi
 fi
 
 report="$(write_report \
