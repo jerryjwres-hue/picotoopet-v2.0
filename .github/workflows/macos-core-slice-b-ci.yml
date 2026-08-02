@@ -119,6 +119,20 @@ jobs:
           bash scripts/mac/phase23/Test-MacCoreSliceBFixture.sh \
             "artifacts/mac-slice-b/${{ matrix.arch }}"
 
+      - name: Upload failed-run diagnostic package and evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-MacCore-SliceB-DIAGNOSTIC-${{ matrix.arch }}-${{ github.run_number }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            artifacts/mac-slice-b/${{ matrix.arch }}/*.tar.gz
+            artifacts/mac-slice-b/${{ matrix.arch }}/*.sha256.txt
+            artifacts/mac-slice-b/${{ matrix.arch }}/mac-build-report.json
+            artifacts/mac-slice-b/${{ matrix.arch }}/fixture-evidence/*.json
+            artifacts/mac-slice-b/${{ matrix.arch }}/fixture-evidence/*.txt
+
       - name: Upload architecture-specific package and evidence
         uses: actions/upload-artifact@v7
         with:
