@@ -157,6 +157,32 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         return task;
     }
 
+    /// <summary>请求 Mac Core 取消任务，并归并服务端裁决后的状态。</summary>
+    public async Task<TaskRecord> CancelTaskAsync(
+        string taskId,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
+        var task = await _client.CancelTaskAsync(taskId, cancellationToken)
+            .ConfigureAwait(false);
+        _taskStore.UpsertTask(task);
+        return task;
+    }
+
+    /// <summary>请求 Mac Core 为失败或取消任务创建新的重试子任务。</summary>
+    public async Task<TaskRecord> RetryTaskAsync(
+        string taskId,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
+        var task = await _client.RetryTaskAsync(taskId, cancellationToken)
+            .ConfigureAwait(false);
+        _taskStore.UpsertTask(task);
+        return task;
+    }
+
     /// <summary>取消并等待旧事件循环，确保重连时只有一个消费者。</summary>
     public async Task StopAsync()
     {
@@ -331,7 +357,7 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         "2.3.0",
         Available: false,
         State: "not_deployed",
-        Reason: "Mac 任务执行器尚未部署；Queued 任务不会自动执行。",
+        Reason: "worker_runtime_not_installed",
         WorkerId: null,
         SupportedTaskTypes: Array.Empty<string>(),
         ObservedAt: DateTimeOffset.UtcNow);
