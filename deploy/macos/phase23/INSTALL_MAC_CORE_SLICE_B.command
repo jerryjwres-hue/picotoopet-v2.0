@@ -112,7 +112,7 @@ if [[ ! -x "$current_python" ]]; then
   echo "缺少现有运行时 Python：$current_python" >&2
   exit 1
 fi
-python_version="$($current_python --version 2>&1)"
+python_version="$("$current_python" --version 2>&1)"
 if [[ "$python_version" != Python\ 3.12.* ]]; then
   echo "现有运行时不是 Python 3.12：$python_version" >&2
   exit 1
