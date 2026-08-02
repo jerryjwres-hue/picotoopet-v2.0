@@ -1,6 +1,7 @@
 """Windows Control Center 的版本化公共契约。"""
 
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,8 +59,15 @@ class WorkerStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = "2.3.0"
-    status: str = "not_deployed"
+    available: bool = False
+    state: Literal[
+        "not_deployed",
+        "starting",
+        "online",
+        "degraded",
+        "offline",
+    ] = "not_deployed"
+    reason: str = "Mac 任务执行器尚未部署；Queued 任务不会自动执行。"
     worker_id: str | None = None
     supported_task_types: list[str] = Field(default_factory=list)
-    heartbeat_at: datetime | None = None
-    message: str = "Mac 任务执行器尚未部署；Queued 任务不会自动执行。"
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
