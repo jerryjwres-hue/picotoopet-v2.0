@@ -16,7 +16,13 @@ archive="$(find "$release_root" -maxdepth 1 -type f \
 temp_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-mac-fixture.XXXXXX")"
 extract_root="$temp_root/package"
 runtime_root="$temp_root/runtime"
-mkdir -p "$extract_root" "$runtime_root/versions" "$runtime_root/state" "$runtime_root/logs"
+evidence_root="$release_root/fixture-evidence"
+mkdir -p \
+  "$extract_root" \
+  "$runtime_root/versions" \
+  "$runtime_root/state" \
+  "$runtime_root/logs" \
+  "$evidence_root"
 
 tar -xzf "$archive" -C "$extract_root"
 root_count="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
@@ -124,4 +130,34 @@ echo "PHASE23_MAC_DELTA_QUEUED_PRESERVATION=PASS"
 bash "$package_root/ROLLBACK_MAC_CORE_SLICE_B.command"
 verify_health "http://127.0.0.1:$port"
 
+cp "$before_snapshot" "$evidence_root/queued-before.json"
+cp "$after_snapshot" "$evidence_root/queued-after.json"
+cp "$runtime_root/state/previous-version.txt" "$evidence_root/previous-version.txt"
+cp "$runtime_root/state/rollback-from.txt" "$evidence_root/rollback-from.txt"
+find "$runtime_root/reports" -maxdepth 1 -type f -name '*.json' -exec cp {} "$evidence_root/" \;
+python3 - "$evidence_root/fixture-summary.json" "$(uname -m)" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    json.dumps(
+        {
+            "status": "pass",
+            "architecture": sys.argv[2],
+            "offline_install": True,
+            "queued_task_preserved": True,
+            "rollback_verified": True,
+            "worker_runtime_installed": False,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+
 echo "PHASE23_MAC_DELTA_ROLLBACK_FIXTURE=PASS"
+echo "EVIDENCE=$evidence_root"
