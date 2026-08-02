@@ -225,12 +225,26 @@ write_worker_report() {
   local version="$4"
   local install_path="$5"
   local error_message="${6:-}"
+  local worker_installed="${7:-}"
+  if [[ -z "$worker_installed" ]]; then
+    if [[ "$status" == "pass" ]]; then
+      worker_installed="true"
+    else
+      worker_installed="false"
+    fi
+  fi
   local reports="$runtime_root/reports"
   mkdir -p "$reports"
   local stamp
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   local report="$reports/phase23-slice-c-${kind}-${stamp}.json"
-  python3 - "$report" "$status" "$version" "$install_path" "$error_message" <<'PY'
+  python3 - \
+    "$report" \
+    "$status" \
+    "$version" \
+    "$install_path" \
+    "$error_message" \
+    "$worker_installed" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -241,7 +255,7 @@ payload = {
     "version": sys.argv[3] or None,
     "install_path": sys.argv[4] or None,
     "source_build_on_user_mac": False,
-    "worker_runtime_installed": sys.argv[2] == "pass",
+    "worker_runtime_installed": sys.argv[6].lower() == "true",
     "worker_supported_task_types": ["system.noop"],
     "error": sys.argv[5] or None,
 }
