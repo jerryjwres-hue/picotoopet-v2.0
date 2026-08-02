@@ -131,13 +131,13 @@ def test_mac_delta_verify_and_rollback_are_explicit_and_non_destructive() -> Non
     assert "rm -rf" not in rollback
 
 
-def test_native_macos_ci_builds_and_verifies_both_architectures() -> None:
-    """arm64 与 Intel 必须各自在原生 macOS Runner 生成和验证架构专属包。"""
+def test_native_macos_ci_builds_and_verifies_m4_arm64_only() -> None:
+    """当前用户为 M4，CI 只在原生 arm64 Runner 构建和验证安装包。"""
 
     workflow = read(ROOT / ".github" / "workflows" / "macos-core-slice-b-ci.yml")
     for required in (
         "macos-15",
-        "macos-15-intel",
+        "arch: arm64",
         'python-version: "3.12"',
         "pytest -q",
         "ruff check",
@@ -147,6 +147,8 @@ def test_native_macos_ci_builds_and_verifies_both_architectures() -> None:
         "upload-artifact",
     ):
         assert required in workflow
+    assert "macos-15-intel" not in workflow
+    assert "arch: x86_64" not in workflow
 
 
 def test_mac_delta_scripts_contain_no_worker_execution_or_system_mutation() -> None:
