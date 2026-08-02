@@ -10,6 +10,9 @@
     <DataTemplate DataType="{x:Type viewModels:OverviewPageViewModel}">
       <pages:OverviewPage />
     </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:TaskCenterPageViewModel}">
+      <pages:TaskCenterPage />
+    </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:SettingsPageViewModel}">
       <pages:SettingsPage />
     </DataTemplate>

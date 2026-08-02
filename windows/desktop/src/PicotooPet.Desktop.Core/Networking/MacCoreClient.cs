@@ -77,6 +77,17 @@ public sealed class MacCoreClient : IAsyncDisposable
             null,
             cancellationToken);
 
+    /// <summary>读取 Mac 任务执行器的真实可用性。</summary>
+    public Task<WorkerStatusResponse> GetWorkerStatusAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<WorkerStatusResponse>(
+            HttpMethod.Get,
+            "api/v1/workers/status",
+            null,
+            "workers.status",
+            null,
+            cancellationToken);
+
     /// <summary>读取服务与队列聚合状态。</summary>
     public Task<StatusResponse> GetStatusAsync(CancellationToken cancellationToken = default) =>
         SendAsync<StatusResponse>(HttpMethod.Get, "api/v1/status", null, "status", null, cancellationToken);
@@ -288,7 +299,7 @@ public sealed class MacCoreClient : IAsyncDisposable
         client.DefaultRequestHeaders.Accept.Clear();
         client.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-slice-a");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-slice-b");
     }
 
     private static Uri EnsureTrailingSlash(Uri baseUri)

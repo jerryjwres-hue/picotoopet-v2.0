@@ -31,12 +31,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _snapshot   = session.Snapshot;
         _navigationItems = BuildNavigation(_snapshot.State.Capabilities.Features);
         _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.Dashboard);
-        _currentRoute     = NavigationRoute.Dashboard;
-        _currentPage      = CreatePage(_currentRoute, _snapshot);
-        _connectionText   = FormatConnection(_snapshot.State.Connection.State);
+        _currentRoute      = NavigationRoute.Dashboard;
+        _currentPage       = CreatePage(_currentRoute, _snapshot);
+        _connectionText    = FormatConnection(_snapshot.State.Connection.State);
         _connectionMessage = FormatConnectionMessage(_snapshot);
-        _approvalText     = FormatApproval(_snapshot.State.Capabilities);
-        _statusMessage    = _snapshot.StatusMessage;
+        _approvalText      = FormatApproval(_snapshot.State.Capabilities);
+        _statusMessage     = _snapshot.StatusMessage;
         session.SnapshotChanged += OnSessionSnapshotChanged;
     }
 
@@ -140,13 +140,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             ? CreateStaticPage(route)
             : CreatePage(route, _snapshot);
 
-    private static PageViewModel CreatePage(
+    private PageViewModel CreatePage(
         NavigationRoute route,
         ControlCenterSessionSnapshot snapshot) => route switch
     {
         NavigationRoute.Dashboard => new OverviewPageViewModel(
             snapshot,
             FormatConnection(snapshot.State.Connection.State)),
+        NavigationRoute.TaskCenter when _session is not null =>
+            new TaskCenterPageViewModel(_session, snapshot),
         NavigationRoute.Settings => new SettingsPageViewModel(snapshot.MacBaseUrl),
         _ => CreateStaticPage(route),
     };
@@ -159,12 +161,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 NavigationRoute.Dashboard,
                 "总览",
                 capabilities.Dashboard,
-                "当前只提供基础连接和任务总览，完整 Dashboard 尚未声明。"),
+                "当前提供真实连接、Worker 和任务摘要；完整 Dashboard 聚合尚未声明。"),
             Item(
                 NavigationRoute.Projects,
                 "项目",
                 isAvailable: false,
-                "Slice A 只冻结项目导航，尚未提供项目目录。"),
+                "Slice B 尚未提供项目目录。"),
             Item(
                 NavigationRoute.TaskCenter,
                 "任务中心",
@@ -189,7 +191,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 NavigationRoute.Automation,
                 "自动化",
                 isAvailable: false,
-                "自动化策略尚未进入 Slice A。"),
+                "自动化策略尚未进入 Slice B。"),
             Item(
                 NavigationRoute.Health,
                 "健康",
@@ -227,18 +229,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.Dashboard => new EmptyStatePageViewModel(
             "总览",
             "当前版本尚未声明完整 Dashboard 能力。",
-            "运行时 Shell 将展示真实连接、任务和健康摘要。",
+            "运行时 Shell 将展示真实连接、Worker、任务和健康摘要。",
             "你现在不需要操作。"),
         NavigationRoute.Projects => new EmptyStatePageViewModel(
             "项目",
-            "当前 Slice A 只冻结了项目导航，尚未提供项目目录或详情。",
+            "当前 Slice B 尚未提供项目目录或详情。",
             "后续切片将先定义项目快照和只读列表。",
             "你现在不需要操作。"),
-        NavigationRoute.TaskCenter => new EmptyStatePageViewModel(
-            "任务中心",
-            "现有 2.2 耐久任务列表能力已保留，专用任务中心页面尚未接入。",
-            "下一切片将把筛选、详情和任务动作接入此页面。",
-            "你现在不需要操作。"),
+        NavigationRoute.TaskCenter => TaskCenterPageViewModel.CreateForSmokeTest(
+            Array.Empty<TaskRecord>(),
+            WorkerSnapshot.NotDeployed),
         NavigationRoute.Results => new EmptyStatePageViewModel(
             "结果",
             "Mac Core 尚未声明结果列表和预览能力。",
@@ -256,7 +256,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             "你现在不需要操作。"),
         NavigationRoute.Automation => new EmptyStatePageViewModel(
             "自动化",
-            "自动化策略和执行器尚未进入 Slice A。",
+            "自动化策略和执行器尚未进入 Slice B。",
             "后续切片将先冻结策略合同和审批边界。",
             "你现在不需要操作。"),
         NavigationRoute.Health => new EmptyStatePageViewModel(
@@ -299,7 +299,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         ConnectionMessage = FormatConnectionMessage(snapshot);
         ApprovalText      = FormatApproval(snapshot.State.Capabilities);
         StatusMessage     = snapshot.StatusMessage;
-        CurrentPage       = CreatePage(route, snapshot);
+
+        if (route == NavigationRoute.TaskCenter
+            && CurrentPage is TaskCenterPageViewModel taskCenter)
+        {
+            taskCenter.UpdateSnapshot(snapshot);
+        }
+        else
+        {
+            CurrentPage = CreatePage(route, snapshot);
+        }
     }
 
     private static string FormatConnection(ConnectionState state) => state switch

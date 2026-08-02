@@ -1,4 +1,4 @@
-"""Phase 2.3 Slice A Windows Control Center 源码边界测试。"""
+"""Phase 2.3 Windows Control Center 源码与交付边界测试。"""
 
 from __future__ import annotations
 
@@ -6,12 +6,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "windows" / "desktop" / "src" / "PicotooPet.Desktop"
+CORE = ROOT / "windows" / "desktop" / "src" / "PicotooPet.Desktop.Core"
 
 
 def read(relative: str) -> str:
     """读取 Control Center 源文件。"""
 
     return (DESKTOP / relative).read_text(encoding="utf-8")
+
+
+def read_core(relative: str) -> str:
+    """读取 Windows Core 源文件。"""
+
+    return (CORE / relative).read_text(encoding="utf-8")
 
 
 def test_shell_exists_and_desktop_remains_winexe() -> None:
@@ -21,6 +28,7 @@ def test_shell_exists_and_desktop_remains_winexe() -> None:
     assert "NavigationItems" in shell
     assert "CurrentPage" in shell
     assert 'Width="232"' in shell
+    assert "Control Center · Slice B" in shell
 
     project = read("PicotooPet.Desktop.csproj")
     assert "<OutputType>WinExe</OutputType>" in project
@@ -37,6 +45,7 @@ def test_control_center_session_owns_connection_lifecycle() -> None:
         "StateSyncCoordinator",
         "CredentialManagerTokenStore",
         "DesktopSettingsStore",
+        "WorkerStore",
     ):
         assert required in session
 
@@ -109,8 +118,77 @@ def test_explicit_exit_disposes_session_and_tray_before_shutdown() -> None:
         assert required in app
 
 
+def test_worker_status_is_synchronized_without_starting_a_worker() -> None:
+    """客户端只能读取 Worker 状态，不能在 Slice B 自动创建或启动执行器。"""
+
+    client = read_core("Networking/MacCoreClient.cs")
+    coordinator = read_core("State/StateSyncCoordinator.cs")
+    worker_store = read_core("State/WorkerStateStore.cs")
+
+    assert "GetWorkerStatusAsync" in client
+    assert '"api/v1/workers/status"' in client
+    assert "LoadWorkerStatusAsync" in coordinator
+    assert "WorkerSnapshot.NotDeployed" in worker_store
+    forbidden = (
+        "lease_next",
+        "StartWorker",
+        "RunWorker",
+        "ProcessQueuedTasks",
+    )
+    combined = client + coordinator + worker_store
+    assert all(item not in combined for item in forbidden)
+
+
+def test_task_center_uses_real_queue_and_truthful_waiting_state() -> None:
+    """任务中心必须展示真实队列并把无 Worker 的 Queued 解释为等待执行器。"""
+
+    view_model = read("ViewModels/TaskCenterPageViewModel.cs")
+    task_row = read("ViewModels/TaskRowViewModel.cs")
+    view = read("Views/Pages/TaskCenterPage.xaml")
+    app = read("App.xaml")
+    shell = read("ViewModels/ShellViewModel.cs")
+
+    for required in (
+        "VisibleTasks",
+        "SelectedFilter",
+        "CancelSelectedAsync",
+        "RetrySelectedAsync",
+        "WorkerStatusText",
+    ):
+        assert required in view_model
+    assert '"Queued" when !worker.Available => "等待执行器"' in task_row
+    assert "DisplayStatus" in task_row
+    assert "VirtualizationMode=\"Recycling\"" in view
+    assert "TaskCenterPageViewModel" in app
+    assert "new TaskCenterPageViewModel(_session, snapshot)" in shell
+
+
+def test_terminal_cancel_requires_confirmation_and_retry_is_new_task() -> None:
+    """取消必须显式确认；重试必须调用服务端创建子任务而不是重开原任务。"""
+
+    view_code = read("Views/Pages/TaskCenterPage.xaml.cs")
+    session_actions = read("Services/ControlCenterSession.Tasks.cs")
+    coordinator = read_core("State/StateSyncCoordinator.cs")
+
+    assert "MessageBoxButton.YesNo" in view_code
+    assert "MessageBoxResult.No" in view_code
+    assert "CancelTaskAsync" in session_actions
+    assert "RetryTaskAsync" in session_actions
+    assert "_client.RetryTaskAsync" in coordinator
+
+
+def test_dashboard_exposes_worker_state_without_fake_availability() -> None:
+    """总览必须显示 Worker 状态和等待数量，不能只显示任务数量。"""
+
+    view_model = read("ViewModels/OverviewPageViewModel.cs")
+    view = read("Views/Pages/OverviewPage.xaml")
+    for required in ("WorkerText", "WorkerReason", "WaitingForWorkerCount"):
+        assert required in view_model
+        assert required in view
+
+
 def test_control_center_native_windows_ci_has_required_gates() -> None:
-    """独立 Slice A CI 必须在原生 Windows 上执行全部合同、构建和包级复验。"""
+    """独立 Slice B CI 必须在原生 Windows 上执行合同、构建、自检和包级复验。"""
 
     workflow = (
         ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
@@ -122,7 +200,8 @@ def test_control_center_native_windows_ci_has_required_gates() -> None:
         "pytest",
         "dotnet build",
         "PicotooPet.Desktop.Core.SmokeTests",
-        "--self-test",
+        "PHASE23_TASK_CENTER_SELF_TEST=PASS",
+        "2.3.0-slice-b-",
         "Build-Phase2WindowsRelease.ps1",
         "Test-Phase2WindowsRelease.ps1",
         "powershell",
@@ -131,8 +210,8 @@ def test_control_center_native_windows_ci_has_required_gates() -> None:
         assert required in workflow
 
 
-def test_control_center_ci_uses_version_label_and_shell_self_test_marker() -> None:
-    """非发布包必须有独立版本标签，包级复验必须确认新 Shell 自检。"""
+def test_package_verifies_task_center_and_worker_fallback() -> None:
+    """真实 ZIP 载荷必须再次验证任务中心策略和 Worker 保守降级。"""
 
     build = (
         ROOT / "windows" / "desktop" / "scripts" / "Build-Phase2WindowsRelease.ps1"
@@ -143,5 +222,12 @@ def test_control_center_ci_uses_version_label_and_shell_self_test_marker() -> No
     self_test = read("Services/AppSelfTest.cs")
 
     assert "$VersionLabel" in build
-    assert "control_center_shell" in verify
+    for required in (
+        "control_center_shell",
+        "task_center_policy",
+        "worker_fallback",
+        "PHASE23_TASK_CENTER_PACKAGE_TEST=PASS",
+    ):
+        assert required in verify
     assert "PHASE23_CONTROL_CENTER_SELF_TEST=PASS" in self_test
+    assert "PHASE23_TASK_CENTER_SELF_TEST=PASS" in self_test

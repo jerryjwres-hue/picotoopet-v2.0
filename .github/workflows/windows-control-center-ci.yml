@@ -83,23 +83,30 @@ jobs:
             --nologo `
             -warnaserror
 
-      - name: Run Control Center shell self-test
+      - name: Run Control Center and Task Center self-test
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path windows/desktop/artifacts -Force | Out-Null
-          dotnet run `
+          $output = dotnet run `
             --project windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj `
             --configuration Release `
             -- `
             --self-test `
             --self-test-output windows/desktop/artifacts/control-center-self-test.json
+          $output | Write-Host
+          if ($output -notcontains "PHASE23_CONTROL_CENTER_SELF_TEST=PASS") {
+            throw "Control Center self-test marker missing."
+          }
+          if ($output -notcontains "PHASE23_TASK_CENTER_SELF_TEST=PASS") {
+            throw "Task Center self-test marker missing."
+          }
 
-      - name: Build prebuilt Control Center package
+      - name: Build prebuilt Slice B package
         shell: powershell
         run: |
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 `
             -OutputRoot "windows\desktop\artifacts\control-center-release" `
-            -VersionLabel "2.3.0-slice-a-${{ github.run_number }}-${{ github.sha }}"
+            -VersionLabel "2.3.0-slice-b-${{ github.run_number }}-${{ github.sha }}"
 
       - name: Verify package on Windows PowerShell 5.1
         shell: powershell
@@ -110,7 +117,7 @@ jobs:
       - name: Upload Control Center package and evidence
         uses: actions/upload-artifact@v7
         with:
-          name: windows-control-center-${{ github.run_number }}
+          name: windows-control-center-slice-b-${{ github.run_number }}
           if-no-files-found: error
           retention-days: 14
           path: |

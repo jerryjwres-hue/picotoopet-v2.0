@@ -1,22 +1,43 @@
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.State;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>任务列表使用的可增量更新行模型，避免每条事件重建整张视觉树。</summary>
+/// <summary>任务列表使用的可增量更新行模型，并将 Worker 可用性解释为真实用户状态。</summary>
 public sealed class TaskRowViewModel : ObservableObject
 {
     private string _taskType;
     private string _status;
+    private string _displayStatus;
+    private DateTimeOffset _createdAt;
     private DateTimeOffset _updatedAt;
     private string? _error;
+    private string? _errorCode;
+    private string _attemptText;
+    private bool _isWaitingForWorker;
+    private bool _canCancel;
+    private bool _canRetry;
+    private int _priority;
+    private int _timeoutSeconds;
+    private string? _projectId;
 
-    private TaskRowViewModel(TaskRecord task)
+    private TaskRowViewModel(TaskRecord task, WorkerSnapshot worker)
     {
-        TaskId    = task.TaskId;
-        _taskType = task.TaskType;
-        _status   = task.Status;
-        _updatedAt = task.UpdatedAt;
-        _error    = task.ErrorMessage;
+        TaskId         = task.TaskId;
+        _taskType      = task.TaskType;
+        _status        = task.Status;
+        _displayStatus = FormatStatus(task.Status, worker);
+        _createdAt     = task.CreatedAt;
+        _updatedAt     = task.UpdatedAt;
+        _error         = task.ErrorMessage;
+        _errorCode     = task.ErrorCode;
+        _attemptText   = FormatAttempt(task);
+        _isWaitingForWorker = IsWaiting(task.Status, worker);
+        _canCancel     = CanCancelStatus(task.Status);
+        _canRetry      = CanRetryStatus(task.Status);
+        _priority      = task.Priority;
+        _timeoutSeconds = task.TimeoutSeconds;
+        _projectId     = task.ProjectId;
     }
 
     public string TaskId { get; }
@@ -27,10 +48,24 @@ public sealed class TaskRowViewModel : ObservableObject
         private set => SetProperty(ref _taskType, value);
     }
 
+    /// <summary>服务端原始任务状态，不被客户端改写。</summary>
     public string Status
     {
         get => _status;
         private set => SetProperty(ref _status, value);
+    }
+
+    /// <summary>结合 Worker 可用性形成的真实用户状态。</summary>
+    public string DisplayStatus
+    {
+        get => _displayStatus;
+        private set => SetProperty(ref _displayStatus, value);
+    }
+
+    public DateTimeOffset CreatedAt
+    {
+        get => _createdAt;
+        private set => SetProperty(ref _createdAt, value);
     }
 
     public DateTimeOffset UpdatedAt
@@ -45,19 +80,124 @@ public sealed class TaskRowViewModel : ObservableObject
         private set => SetProperty(ref _error, value);
     }
 
-    /// <summary>从领域任务快照创建界面行。</summary>
-    public static TaskRowViewModel FromRecord(TaskRecord task) => new(task);
+    public string? ErrorCode
+    {
+        get => _errorCode;
+        private set => SetProperty(ref _errorCode, value);
+    }
+
+    public string AttemptText
+    {
+        get => _attemptText;
+        private set => SetProperty(ref _attemptText, value);
+    }
+
+    public bool IsWaitingForWorker
+    {
+        get => _isWaitingForWorker;
+        private set => SetProperty(ref _isWaitingForWorker, value);
+    }
+
+    public bool CanCancel
+    {
+        get => _canCancel;
+        private set => SetProperty(ref _canCancel, value);
+    }
+
+    public bool CanRetry
+    {
+        get => _canRetry;
+        private set => SetProperty(ref _canRetry, value);
+    }
+
+    public int Priority
+    {
+        get => _priority;
+        private set => SetProperty(ref _priority, value);
+    }
+
+    public int TimeoutSeconds
+    {
+        get => _timeoutSeconds;
+        private set => SetProperty(ref _timeoutSeconds, value);
+    }
+
+    public string? ProjectId
+    {
+        get => _projectId;
+        private set => SetProperty(ref _projectId, value);
+    }
+
+    /// <summary>保留旧总览调用面；未知 Worker 一律视为未部署。</summary>
+    public static TaskRowViewModel FromRecord(TaskRecord task) =>
+        new(task, WorkerSnapshot.NotDeployed);
+
+    /// <summary>从领域任务和 Worker 快照创建任务中心行。</summary>
+    public static TaskRowViewModel FromRecord(
+        TaskRecord task,
+        WorkerSnapshot worker) => new(task, worker);
+
+    /// <summary>保留旧增量更新调用面；未知 Worker 一律视为未部署。</summary>
+    public void UpdateFrom(TaskRecord task) =>
+        UpdateFrom(task, WorkerSnapshot.NotDeployed);
 
     /// <summary>只更新真正变化的字段，降低 UI Dispatcher 和绑定通知开销。</summary>
-    public void UpdateFrom(TaskRecord task)
+    public void UpdateFrom(TaskRecord task, WorkerSnapshot worker)
     {
         if (!string.Equals(TaskId, task.TaskId, StringComparison.Ordinal))
         {
             throw new ArgumentException("不能使用其他任务的数据更新当前行。", nameof(task));
         }
-        TaskType = task.TaskType;
-        Status    = task.Status;
-        UpdatedAt = task.UpdatedAt;
-        Error     = task.ErrorMessage;
+        TaskType          = task.TaskType;
+        Status            = task.Status;
+        DisplayStatus     = FormatStatus(task.Status, worker);
+        CreatedAt         = task.CreatedAt;
+        UpdatedAt         = task.UpdatedAt;
+        Error             = task.ErrorMessage;
+        ErrorCode         = task.ErrorCode;
+        AttemptText       = FormatAttempt(task);
+        IsWaitingForWorker = IsWaiting(task.Status, worker);
+        CanCancel         = CanCancelStatus(task.Status);
+        CanRetry          = CanRetryStatus(task.Status);
+        Priority          = task.Priority;
+        TimeoutSeconds    = task.TimeoutSeconds;
+        ProjectId         = task.ProjectId;
     }
+
+    private static bool IsWaiting(string status, WorkerSnapshot worker) =>
+        string.Equals(status, "Queued", StringComparison.Ordinal)
+        && !worker.Available;
+
+    private static bool CanCancelStatus(string status) => status is
+        "Created" or
+        "Validating" or
+        "Queued" or
+        "Running" or
+        "WaitingForTool" or
+        "WaitingForApproval" or
+        "Retrying";
+
+    private static bool CanRetryStatus(string status) => status is
+        "Failed" or
+        "Cancelled";
+
+    private static string FormatAttempt(TaskRecord task) =>
+        $"{task.AttemptCount}/{task.MaxAttempts}";
+
+    private static string FormatStatus(string status, WorkerSnapshot worker) => status switch
+    {
+        "Created"            => "已创建",
+        "Validating"         => "校验中",
+        "Queued" when !worker.Available => "等待执行器",
+        "Queued"             => "排队中",
+        "Running"            => "运行中",
+        "WaitingForTool"     => "等待工具",
+        "WaitingForApproval" => "等待审批",
+        "Retrying"           => "正在重试",
+        "Completed"          => "已完成",
+        "Failed"             => "失败",
+        "Cancelled"          => "已取消",
+        "Archived"           => "已归档",
+        _                    => status,
+    };
 }

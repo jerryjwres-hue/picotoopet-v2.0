@@ -11,4 +11,13 @@ internal static class SmokeAssert
             throw new InvalidOperationException(message);
         }
     }
+
+    /// <summary>两个确定性值不相等时抛出带业务语义的异常。</summary>
+    public static void Equal<T>(T expected, T actual, string message)
+    {
+        if (!EqualityComparer<T>.Default.Equals(expected, actual))
+        {
+            throw new InvalidOperationException($"{message}；expected={expected} actual={actual}");
+        }
+    }
 }

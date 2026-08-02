@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/phase-2.3-control-center-design
+      - feature/phase-2.3-slice-a-foundation
     paths:
       - "src/**"
       - "tests/**"
@@ -52,30 +53,34 @@ jobs:
         run: |
           git diff --exit-code -- contracts/openapi/mac_core_v1.openapi.json
 
-      - name: Run capability contract first
+      - name: Run capability and Worker contracts first
         shell: bash
         run: |
-          PYTHONPATH=.:src pytest -q tests/contract/test_phase23_capabilities_contract.py
+          PYTHONPATH=.:src pytest -q \
+            tests/contract/test_phase23_capabilities_contract.py \
+            tests/contract/test_phase23_worker_status_contract.py
 
       - name: Run Python regression suite
         shell: bash
         run: |
           PYTHONPATH=.:src pytest -q
 
-      - name: Lint Slice A Python changes
+      - name: Lint Phase 2.3 Python changes
         shell: bash
         run: |
           ruff check \
             src/picotoopet_core/api/contracts \
             src/picotoopet_core/api/routes/health.py \
+            src/picotoopet_core/api/routes/workers.py \
             tests/contract/test_phase23_capabilities_contract.py \
+            tests/contract/test_phase23_worker_status_contract.py \
             tests/contract/test_connector_contract_v1.py \
             tests/contract/test_handoff_contract_v1.py
 
       - name: Upload generated OpenAPI evidence
         uses: actions/upload-artifact@v7
         with:
-          name: PicotooPet-Phase23-OpenAPI
+          name: PicotooPet-Phase23-SliceB-OpenAPI
           path: contracts/openapi/mac_core_v1.openapi.json
           if-no-files-found: error
           retention-days: 30

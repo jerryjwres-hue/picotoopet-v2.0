@@ -3,6 +3,7 @@ using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.ViewModels;
 
@@ -78,6 +79,14 @@ internal static class AppSelfTest
             {
                 throw new InvalidOperationException("云端开发能力关闭自检失败。");
             }
+            shell.Navigate(NavigationRoute.TaskCenter);
+            if (shell.CurrentPage is not TaskCenterPageViewModel taskCenter
+                || taskCenter.WorkerStatusText != "执行器未部署")
+            {
+                throw new InvalidOperationException("任务中心 Worker 解释自检失败。");
+            }
+            checks["task_center_policy"] = "pass";
+
             shell.Navigate(NavigationRoute.Settings);
             if (shell.CurrentPage is not SettingsPageViewModel)
             {
@@ -85,12 +94,20 @@ internal static class AppSelfTest
             }
             checks["control_center_shell"] = "pass";
 
+            var worker = WorkerSnapshot.NotDeployed;
+            if (worker.Available || worker.State != "not_deployed")
+            {
+                throw new InvalidOperationException("Worker 保守降级自检失败。");
+            }
+            checks["worker_fallback"] = "pass";
+
             Directory.Delete(tempRoot, recursive: true);
             checks["filesystem_cleanup"] = "pass";
             report["status"] = "pass";
             WriteReport(outputPath, report);
             Console.WriteLine("PHASE2_DESKTOP_SELF_TEST=PASS");
             Console.WriteLine("PHASE23_CONTROL_CENTER_SELF_TEST=PASS");
+            Console.WriteLine("PHASE23_TASK_CENTER_SELF_TEST=PASS");
             return 0;
         }
         catch (Exception exception)
@@ -102,6 +119,8 @@ internal static class AppSelfTest
                 $"PHASE2_DESKTOP_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(
                 $"PHASE23_CONTROL_CENTER_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE23_TASK_CENTER_SELF_TEST=FAIL | {exception.Message}");
             return 1;
         }
     }

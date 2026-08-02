@@ -10,7 +10,17 @@ public sealed class AppStateStore
         : this(
             new ConnectionStateStore(),
             new CapabilityStateStore(),
+            new WorkerStateStore(),
             new TaskStateStore())
+    {
+    }
+
+    /// <summary>保留 Slice A 三仓库构造器，并默认使用保守 Worker 状态。</summary>
+    public AppStateStore(
+        ConnectionStateStore connectionStore,
+        CapabilityStateStore capabilityStore,
+        TaskStateStore taskStore)
+        : this(connectionStore, capabilityStore, new WorkerStateStore(), taskStore)
     {
     }
 
@@ -18,10 +28,12 @@ public sealed class AppStateStore
     public AppStateStore(
         ConnectionStateStore connectionStore,
         CapabilityStateStore capabilityStore,
+        WorkerStateStore workerStore,
         TaskStateStore taskStore)
     {
         ConnectionStore = connectionStore ?? throw new ArgumentNullException(nameof(connectionStore));
         CapabilityStore = capabilityStore ?? throw new ArgumentNullException(nameof(capabilityStore));
+        WorkerStore     = workerStore ?? throw new ArgumentNullException(nameof(workerStore));
         TaskStore       = taskStore ?? throw new ArgumentNullException(nameof(taskStore));
 
         ConnectionStore.SnapshotChanged += OnConnectionSnapshotChanged;
@@ -33,6 +45,9 @@ public sealed class AppStateStore
 
     /// <summary>独立能力状态仓库。</summary>
     public CapabilityStateStore CapabilityStore { get; }
+
+    /// <summary>独立 Worker 状态仓库。</summary>
+    public WorkerStateStore WorkerStore { get; }
 
     /// <summary>独立任务状态仓库。</summary>
     public TaskStateStore TaskStore { get; }
@@ -49,6 +64,7 @@ public sealed class AppStateStore
     public ControlCenterSnapshot ControlCenterSnapshot => new(
         ConnectionStore.Snapshot,
         CapabilityStore.Snapshot,
+        WorkerStore.Snapshot,
         TaskStore.Snapshot);
 
     /// <summary>用 REST 初始数据替换任务集合，并通知旧界面执行完整归并。</summary>

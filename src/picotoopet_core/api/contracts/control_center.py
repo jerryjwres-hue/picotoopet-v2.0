@@ -1,5 +1,8 @@
 """Windows Control Center 的版本化公共契约。"""
 
+from datetime import UTC, datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -23,6 +26,8 @@ class ControlCenterCapabilities(BaseModel):
     manual_goal: bool = False
     connector_contract_v1: bool = True
     handoff_contract_v1: bool = True
+    worker_status: bool = True
+    local_worker: bool = False
     windows_worker: bool = False
 
 
@@ -46,3 +51,23 @@ class CapabilitiesResponse(BaseModel):
     durable_queue: bool = True
     mcp_hub: bool = True
     windows_worker: bool = False
+
+
+class WorkerStatusResponse(BaseModel):
+    """只读报告执行器部署状态；不会因此启动或领取任务。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "2.3.0"
+    available: bool = False
+    state: Literal[
+        "not_deployed",
+        "starting",
+        "online",
+        "degraded",
+        "offline",
+    ] = "not_deployed"
+    reason: str = "worker_runtime_not_installed"
+    worker_id: str | None = None
+    supported_task_types: list[str] = Field(default_factory=list)
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -149,8 +149,15 @@ try {
     if ([string]$selfTest.checks.control_center_shell -ne "pass") {
         throw "Control Center Shell 自检不是 pass。"
     }
+    if ([string]$selfTest.checks.task_center_policy -ne "pass") {
+        throw "Task Center 策略自检不是 pass。"
+    }
+    if ([string]$selfTest.checks.worker_fallback -ne "pass") {
+        throw "Worker 保守降级自检不是 pass。"
+    }
 
     Write-Host "PHASE2_WINDOWS_RELEASE_TEST=PASS"
+    Write-Host "PHASE23_TASK_CENTER_PACKAGE_TEST=PASS"
     Write-Host "PACKAGE=$($zip.FullName)"
 }
 finally {

@@ -22,6 +22,27 @@ public sealed record CapabilitySnapshot(
         "manual_approval_only");
 }
 
+/// <summary>Worker 状态仓库发布的不可变快照。</summary>
+public sealed record WorkerSnapshot(
+    string SchemaVersion,
+    bool Available,
+    string State,
+    string Reason,
+    string? WorkerId,
+    IReadOnlyList<string> SupportedTaskTypes,
+    DateTimeOffset ObservedAt)
+{
+    /// <summary>旧服务或未部署执行器的保守状态。</summary>
+    public static WorkerSnapshot NotDeployed { get; } = new(
+        "2.3.0",
+        Available: false,
+        State: "not_deployed",
+        Reason: "Mac 任务执行器尚未部署；Queued 任务不会自动执行。",
+        WorkerId: null,
+        SupportedTaskTypes: Array.Empty<string>(),
+        ObservedAt: DateTimeOffset.UnixEpoch);
+}
+
 /// <summary>任务状态仓库发布的不可变快照。</summary>
 public sealed record TaskStateSnapshot(
     IReadOnlyList<TaskRecord> Tasks,
@@ -33,4 +54,5 @@ public sealed record TaskStateSnapshot(
 public sealed record ControlCenterSnapshot(
     ConnectionSnapshot Connection,
     CapabilitySnapshot Capabilities,
+    WorkerSnapshot Worker,
     TaskStateSnapshot Tasks);

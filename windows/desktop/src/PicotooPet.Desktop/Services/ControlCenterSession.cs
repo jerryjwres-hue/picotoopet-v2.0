@@ -7,7 +7,7 @@ using PicotooPet.Desktop.Core.State;
 namespace PicotooPet.Desktop.Services;
 
 /// <summary>集中管理真实 Mac Core 连接、状态快照、凭据和非敏感设置。</summary>
-public sealed class ControlCenterSession : IAsyncDisposable
+public sealed partial class ControlCenterSession : IAsyncDisposable
 {
     private readonly object _snapshotGate = new();
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
@@ -45,6 +45,7 @@ public sealed class ControlCenterSession : IAsyncDisposable
 
         _stateStore.ConnectionStore.SnapshotChanged += OnConnectionChanged;
         _stateStore.CapabilityStore.SnapshotChanged += OnCapabilitiesChanged;
+        _stateStore.WorkerStore.SnapshotChanged     += OnWorkerChanged;
         _stateStore.TaskStore.SnapshotChanged       += OnTasksChanged;
     }
 
@@ -95,7 +96,7 @@ public sealed class ControlCenterSession : IAsyncDisposable
         SetStatus("双机控制链已连接，配对信息已安全保存。");
     }
 
-    /// <summary>从 Mac Core 重新加载 health、capabilities 和任务快照。</summary>
+    /// <summary>从 Mac Core 重新加载 health、capabilities、Worker 和任务快照。</summary>
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
@@ -146,6 +147,7 @@ public sealed class ControlCenterSession : IAsyncDisposable
                 client,
                 _stateStore.ConnectionStore,
                 _stateStore.CapabilityStore,
+                _stateStore.WorkerStore,
                 _stateStore.TaskStore,
                 sequence => new EventStreamClient(baseUri, token, sequence));
             Subscribe(coordinator);
@@ -244,6 +246,9 @@ public sealed class ControlCenterSession : IAsyncDisposable
         PublishSnapshot();
 
     private void OnCapabilitiesChanged(object? sender, CapabilitySnapshot snapshot) =>
+        PublishSnapshot();
+
+    private void OnWorkerChanged(object? sender, WorkerSnapshot snapshot) =>
         PublishSnapshot();
 
     private void OnTasksChanged(object? sender, TaskStateSnapshot snapshot) =>
@@ -368,6 +373,7 @@ public sealed class ControlCenterSession : IAsyncDisposable
 
         _stateStore.ConnectionStore.SnapshotChanged -= OnConnectionChanged;
         _stateStore.CapabilityStore.SnapshotChanged -= OnCapabilitiesChanged;
+        _stateStore.WorkerStore.SnapshotChanged     -= OnWorkerChanged;
         _stateStore.TaskStore.SnapshotChanged       -= OnTasksChanged;
         _connectionGate.Dispose();
         _lifetime.Dispose();
