@@ -24,6 +24,24 @@
       "status": "closed"
     },
     {
+      "id": "WIN-2026-08-02-DESKTOP-SHORTCUT",
+      "platform": "windows",
+      "symptom": "The installed Control Center had Start Menu and Startup shortcuts but no desktop shortcut, so the user could not find the UI after installation.",
+      "root_cause": "Get-PicotooShortcutPaths omitted the current user's redirected DesktopDirectory.",
+      "required_controls": [
+        "Every successful Windows installation creates Picotoo Pet AI.lnk on the current user's DesktopDirectory.",
+        "The installer verifies the desktop, Start Menu and Startup shortcuts point to the active version executable.",
+        "Shortcut creation failure participates in activation rollback.",
+        "The installation report records desktop_shortcut_created=true and the resolved shortcut path."
+      ],
+      "enforced_by": [
+        "tests/contract/test_windows_desktop_shortcut_release_gate.py",
+        "windows/desktop/release/Install-Phase2Prebuilt.ps1",
+        ".github/workflows/windows-control-center-ci.yml"
+      ],
+      "status": "closed"
+    },
+    {
       "id": "MAC-2026-08-02-SPACED-RUNTIME-PATH",
       "platform": "macos-arm64",
       "symptom": "The Slice B installer failed while reading the existing Python version from ~/Library/Application Support/PicotooPetV2.",
