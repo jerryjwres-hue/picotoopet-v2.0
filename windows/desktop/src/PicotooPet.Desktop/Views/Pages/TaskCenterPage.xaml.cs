@@ -13,10 +13,24 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
 
     private async void Cancel_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not TaskCenterPageViewModel viewModel)
+        if (DataContext is not TaskCenterPageViewModel viewModel
+            || viewModel.SelectedTask is null)
         {
             return;
         }
+
+        var confirmation = MessageBox.Show(
+            Window.GetWindow(this),
+            $"确定取消任务 {viewModel.SelectedTask.TaskId}？\n\n取消后原任务进入终态；如需再次执行，只能创建新的重试子任务。",
+            "确认取消任务",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
         try
         {
             await viewModel.CancelSelectedAsync(CancellationToken.None);
