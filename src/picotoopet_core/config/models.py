@@ -20,6 +20,10 @@ class AppSettings(BaseModel):
     ollama_model: str = "gpt-oss:20b"
     resident_check_seconds: int = Field(default=60, ge=10)
     protected_roots: tuple[str, ...] = ()
+    worker_poll_seconds: float = Field(default=2.0, gt=0, le=60)
+    worker_lease_seconds: int = Field(default=60, ge=2, le=3600)
+    worker_heartbeat_seconds: int = Field(default=15, ge=1, le=1800)
+    worker_status_stale_seconds: int = Field(default=45, ge=2, le=7200)
 
     def redacted_dict(self) -> dict[str, object]:
         """返回可安全写入日志的配置副本。"""

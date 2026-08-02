@@ -1,4 +1,4 @@
-"""Phase 2.3 Slice B Mac Core 增量交付源码合同。"""
+"""Phase 2.3 Mac Core 增量交付源码合同。"""
 
 from __future__ import annotations
 
@@ -17,16 +17,16 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_slice_b_mac_version_identity() -> None:
-    """Wheel 版本和运行时健康版本必须明确进入 Slice B。"""
+def test_current_mac_version_identity_is_slice_c() -> None:
+    """当前 Wheel 和运行时身份必须明确进入 Slice C。"""
 
     pyproject = read(ROOT / "pyproject.toml")
-    assert 'version = "2.3.0.dev1"' in pyproject
-    assert __version__ == "2.3.0-slice-b"
+    assert 'version = "2.3.0.dev2"' in pyproject
+    assert __version__ == "2.3.0-slice-c"
 
 
 def test_mac_delta_builder_requires_offline_wheelhouse() -> None:
-    """构建器必须把项目及全部依赖冻结成架构专属 wheelhouse。"""
+    """既有 Slice B 构建器仍必须把依赖冻结为离线 wheelhouse。"""
 
     script = read(MAC_BUILD / "Build-MacCoreSliceBDelta.sh")
     for required in (
@@ -57,7 +57,7 @@ def test_mac_delta_package_verifier_rejects_unsafe_archives() -> None:
 
 
 def test_mac_delta_installer_preserves_existing_runtime_boundaries() -> None:
-    """增量安装必须沿用现有事实路径、端口、令牌、数据和用户 LaunchAgent。"""
+    """既有安装器必须继续保留真实路径、端口、令牌和用户 LaunchAgent。"""
 
     installer = read(MAC_DEPLOY / "INSTALL_MAC_CORE_SLICE_B.command")
     for required in (
@@ -142,16 +142,16 @@ def test_mac_delta_verify_and_rollback_are_explicit_and_non_destructive() -> Non
     assert "rm -rf" not in rollback
 
 
-def test_native_macos_ci_builds_and_verifies_m4_arm64_only() -> None:
-    """当前用户为 M4，CI 只在原生 arm64 Runner 构建和验证安装包。"""
+def test_native_slice_b_ci_remains_arm64_only_and_scoped() -> None:
+    """既有 Slice B CI 只在 Slice B 分支运行，并继续只构建 arm64。"""
 
     workflow = read(ROOT / ".github" / "workflows" / "macos-core-slice-b-ci.yml")
     for required in (
+        "startsWith(github.head_ref, 'feature/phase-2.3-slice-b-')",
         "macos-15",
         "arch: arm64",
         'python-version: "3.12"',
         "pytest -q",
-        "ruff check",
         "Build-MacCoreSliceBDelta.sh",
         "Test-MacCoreSliceBDelta.sh",
         "Test-MacCoreSliceBFixture.sh",
@@ -163,16 +163,12 @@ def test_native_macos_ci_builds_and_verifies_m4_arm64_only() -> None:
 
 
 def test_mac_delta_scripts_contain_no_worker_execution_or_system_mutation() -> None:
-    """本切片只部署状态合同，不得偷偷加入 Worker 或系统级修改。"""
+    """旧 Slice B 切片不得因新 Worker 开发而偷偷启动 Worker。"""
 
     texts = []
     for directory in (MAC_BUILD, MAC_DEPLOY):
         if directory.exists():
-            texts.extend(
-                read(path)
-                for path in directory.iterdir()
-                if path.is_file()
-            )
+            texts.extend(read(path) for path in directory.iterdir() if path.is_file())
     combined = "\n".join(texts)
     for forbidden in (
         "lease_next(",

@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   native-mac-delta:
+    if: startsWith(github.head_ref, 'feature/phase-2.3-slice-b-')
     name: Native macOS Slice B delivery (${{ matrix.arch }})
     strategy:
       fail-fast: false

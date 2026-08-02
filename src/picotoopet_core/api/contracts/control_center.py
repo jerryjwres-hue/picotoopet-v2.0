@@ -27,7 +27,7 @@ class ControlCenterCapabilities(BaseModel):
     connector_contract_v1: bool = True
     handoff_contract_v1: bool = True
     worker_status: bool = True
-    local_worker: bool = False
+    local_worker: bool = True
     windows_worker: bool = False
 
 
@@ -54,7 +54,7 @@ class CapabilitiesResponse(BaseModel):
 
 
 class WorkerStatusResponse(BaseModel):
-    """只读报告执行器部署状态；不会因此启动或领取任务。"""
+    """独立 Worker 的只读部署、心跳和活动任务快照。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -70,4 +70,6 @@ class WorkerStatusResponse(BaseModel):
     reason: str = "worker_runtime_not_installed"
     worker_id: str | None = None
     supported_task_types: list[str] = Field(default_factory=list)
+    active_task_id: str | None = None
+    last_heartbeat_at: datetime | None = None
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

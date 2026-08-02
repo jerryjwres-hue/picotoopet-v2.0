@@ -44,4 +44,10 @@ def load_settings() -> AppSettings:
         ollama_model=os.getenv("PICOTOO_OLLAMA_MODEL", "gpt-oss:20b"),
         resident_check_seconds=int(os.getenv("PICOTOO_RESIDENT_CHECK_SECONDS", "60")),
         protected_roots=protected,
+        worker_poll_seconds=float(os.getenv("PICOTOO_WORKER_POLL_SECONDS", "2")),
+        worker_lease_seconds=int(os.getenv("PICOTOO_WORKER_LEASE_SECONDS", "60")),
+        worker_heartbeat_seconds=int(os.getenv("PICOTOO_WORKER_HEARTBEAT_SECONDS", "15")),
+        worker_status_stale_seconds=int(
+            os.getenv("PICOTOO_WORKER_STATUS_STALE_SECONDS", "45")
+        ),
     )

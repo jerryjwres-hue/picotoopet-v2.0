@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
+import socket
 import time
 from collections.abc import Sequence
+from threading import Event
 
 from picotoopet_core.api.app import create_app
 from picotoopet_core.config.loader import load_settings
@@ -18,6 +22,7 @@ from picotoopet_core.ollama.resident_manager import (
     ResidentStatus,
 )
 from picotoopet_core.services import build_services
+from picotoopet_core.worker.runtime import WorkerRuntime
 
 
 class _HealthyResident:
@@ -50,6 +55,12 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("serve", help="启动 REST、WebSocket 和 OpenAPI 服务")
+
+    worker = commands.add_parser("worker", help="启动独立本地任务执行器")
+    worker_mode = worker.add_mutually_exclusive_group(required=True)
+    worker_mode.add_argument("--once", action="store_true", help="最多处理一个任务后退出")
+    worker_mode.add_argument("--loop", action="store_true", help="持续轮询任务队列")
+    worker.add_argument("--worker-id", default="", help="可选稳定 Worker 标识")
 
     health = commands.add_parser("health", help="执行一次本地健康检查")
     health.add_argument("--skip-ollama", action="store_true")
@@ -104,11 +115,62 @@ def _run_supervisor(settings: AppSettings, *, loop: bool) -> int:
         time.sleep(settings.resident_check_seconds)
 
 
+def _run_worker(
+    settings: AppSettings,
+    *,
+    once: bool,
+    loop: bool,
+    worker_id: str,
+) -> int:
+    """运行独立 Worker；不会由 API serve 隐式调用。"""
+
+    services = build_services(settings)
+    resolved_worker_id = worker_id.strip() or f"{socket.gethostname()}-{os.getpid()}"
+    runtime = WorkerRuntime(
+        queue=services.queue,
+        state_store=services.worker_state,
+        worker_id=resolved_worker_id,
+        lease_seconds=settings.worker_lease_seconds,
+        heartbeat_seconds=settings.worker_heartbeat_seconds,
+        poll_seconds=settings.worker_poll_seconds,
+    )
+    try:
+        if once:
+            result = runtime.run_once()
+            print(
+                json.dumps(
+                    {
+                        "processed": result.processed,
+                        "succeeded": result.succeeded,
+                        "task_id": result.task_id,
+                        "worker_id": resolved_worker_id,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0 if result.succeeded else 5
+
+        if not loop:
+            raise AssertionError("Worker 必须选择 --once 或 --loop。")
+        stop_event = Event()
+
+        def request_stop(_signum: int, _frame: object) -> None:
+            stop_event.set()
+
+        signal.signal(signal.SIGINT, request_stop)
+        signal.signal(signal.SIGTERM, request_stop)
+        runtime.run_loop(stop_event)
+        return 0
+    finally:
+        services.close()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """解析参数并返回进程退出码。"""
 
     arguments = _parser().parse_args(argv)
-    settings  = load_settings()
+    settings = load_settings()
     if arguments.command == "serve":
         import uvicorn
 
@@ -119,6 +181,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             log_level="info",
         )
         return 0
+    if arguments.command == "worker":
+        return _run_worker(
+            settings,
+            once=arguments.once,
+            loop=arguments.loop,
+            worker_id=arguments.worker_id,
+        )
     if arguments.command == "health":
         return _run_health(settings, skip_ollama=arguments.skip_ollama)
     if arguments.command == "resident-check":

@@ -13,7 +13,7 @@ class RuntimePaths:
     root: Path
 
     @classmethod
-    def from_root(cls, root: Path | str) -> "RuntimePaths":
+    def from_root(cls, root: Path | str) -> RuntimePaths:
         """从显式根目录构建并标准化路径。"""
 
         return cls(root=Path(root).expanduser().resolve())

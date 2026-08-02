@@ -16,6 +16,7 @@ from picotoopet_core.ollama.resident_manager import ResidentManager
 from picotoopet_core.projects.repository import ProjectRepository
 from picotoopet_core.queue.repository import QueueRepository
 from picotoopet_core.results.store import ResultStore
+from picotoopet_core.worker.state import WorkerStateStore
 
 
 @dataclass(slots=True)
@@ -34,6 +35,7 @@ class Services:
     dispatcher: OutboxDispatcher
     ollama: OllamaClient
     resident: ResidentManager
+    worker_state: WorkerStateStore
 
     def close(self) -> None:
         """按依赖顺序关闭外部资源。"""
@@ -49,11 +51,15 @@ def build_services(settings: AppSettings) -> Services:
     database = Database(settings.paths.database_file)
     database.open()
     database.apply_migrations()
-    outbox    = EventOutbox(database)
-    broker    = EventBroker()
+    outbox = EventOutbox(database)
+    broker = EventBroker()
     dispatcher = OutboxDispatcher(outbox, broker)
-    queue     = QueueRepository(database, outbox=outbox)
+    queue = QueueRepository(database, outbox=outbox)
     ollama = OllamaClient(settings.ollama_base_url, timeout_seconds=2.0)
+    worker_state = WorkerStateStore(
+        settings.paths.state_dir / "worker-status.json",
+        stale_after_seconds=settings.worker_status_stale_seconds,
+    )
     return Services(
         settings=settings,
         database=database,
@@ -67,4 +73,5 @@ def build_services(settings: AppSettings) -> Services:
         dispatcher=dispatcher,
         ollama=ollama,
         resident=ResidentManager(ollama, settings.ollama_model),
+        worker_state=worker_state,
     )

@@ -128,8 +128,14 @@ function Assert-ManifestFiles {
 }
 
 function Get-PicotooShortcutPaths {
-    # 开始菜单和开机启动入口由同一个函数集中管理，避免版本指针不一致。
+    # 桌面、开始菜单和开机启动入口由同一个函数集中管理，避免版本指针不一致。
+    $desktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+    if ([string]::IsNullOrWhiteSpace($desktopPath)) {
+        throw "Windows 未返回当前用户桌面路径。"
+    }
+
     return @(
+        (Join-Path $desktopPath "Picotoo Pet AI.lnk"),
         (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet AI.lnk"),
         (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\Picotoo Pet AI.lnk")
     )
@@ -141,11 +147,31 @@ function Set-PicotooShortcuts {
     # 快捷方式只指向已通过清单哈希校验的版本目录。
     $shell = New-Object -ComObject WScript.Shell
     foreach ($shortcutPath in Get-PicotooShortcutPaths) {
+        $shortcutDirectory = Split-Path -Parent $shortcutPath
+        New-Item -ItemType Directory -Path $shortcutDirectory -Force | Out-Null
         $shortcut = $shell.CreateShortcut($shortcutPath)
         $shortcut.TargetPath       = $Executable
         $shortcut.WorkingDirectory = Split-Path -Parent $Executable
+        $shortcut.IconLocation     = "$Executable,0"
         $shortcut.Description      = "Picotoo Pet V2 双机 AI 控制面板"
         $shortcut.Save()
+    }
+}
+
+function Assert-PicotooShortcuts {
+    param([Parameter(Mandatory)][string]$Executable)
+
+    $expectedExecutable = [System.IO.Path]::GetFullPath($Executable)
+    $shell = New-Object -ComObject WScript.Shell
+    foreach ($shortcutPath in Get-PicotooShortcutPaths) {
+        if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) {
+            throw "快捷方式创建失败：$shortcutPath"
+        }
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $actualExecutable = [System.IO.Path]::GetFullPath([string]$shortcut.TargetPath)
+        if (-not $actualExecutable.Equals($expectedExecutable, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "快捷方式目标不一致：$shortcutPath"
+        }
     }
 }
 
@@ -160,6 +186,7 @@ function Restore-PreviousActivation {
     if ($null -ne $previousCurrent) {
         Write-JsonAtomic -Value $previousCurrent -Path $currentPath
         Set-PicotooShortcuts -Executable ([string]$previousCurrent.executable)
+        Assert-PicotooShortcuts -Executable ([string]$previousCurrent.executable)
         Start-Process -FilePath $previousCurrent.executable -WorkingDirectory $previousCurrent.path
     }
     else {
@@ -184,6 +211,8 @@ $report = [ordered]@{
     log                  = $logPath
     executable_sha256    = $null
     diagnostic_sha256    = $null
+    desktop_shortcut     = $null
+    desktop_shortcut_created = $false
     source_build_on_user_pc = $false
     error                = $null
 }
@@ -253,7 +282,7 @@ try {
     $diagEntry  = $manifest.files | Where-Object { [string]$_.path -eq "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe" } | Select-Object -First 1
     if ($null -eq $appEntry -or $null -eq $diagEntry) { throw "发布清单缺少主程序或诊断程序。" }
 
-    Write-InstallProgress -Percent 70 -Stage "激活新版本" -Detail "原子更新版本指针与快捷方式"
+    Write-InstallProgress -Percent 70 -Stage "激活新版本" -Detail "原子更新版本指针与桌面、开始菜单、开机启动快捷方式"
     $activationStarted = $true
     if ($null -ne $previousCurrent) {
         Write-JsonAtomic -Value $previousCurrent -Path $previousPath
@@ -268,6 +297,9 @@ try {
     }
     Write-JsonAtomic -Value $currentPointer -Path $currentPath
     Set-PicotooShortcuts -Executable $executable
+    Assert-PicotooShortcuts -Executable $executable
+    $report.desktop_shortcut = (Get-PicotooShortcutPaths | Select-Object -First 1)
+    $report.desktop_shortcut_created = $true
 
     Write-InstallProgress -Percent 85 -Stage "启动应用" -Detail "检查新进程能否保持运行"
     Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -280,7 +312,7 @@ try {
     $report.executable_sha256 = [string]$appEntry.sha256
     $report.diagnostic_sha256 = [string]$diagEntry.sha256
     Write-JsonAtomic -Value $report -Path $reportPath
-    Write-InstallProgress -Percent 100 -Stage "安装完成" -Detail "预编译版本已安装并启动"
+    Write-InstallProgress -Percent 100 -Stage "安装完成" -Detail "预编译版本已安装、创建桌面快捷方式并启动"
     $exitCode = 0
 }
 catch {

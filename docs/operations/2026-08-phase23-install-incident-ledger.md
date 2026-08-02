@@ -34,6 +34,39 @@ Windows PowerShell 5.1 的 `Get-Content` 默认文本编码受系统区域设置
 4. 预检报告必须为 `pass` 才能上传正式 Artifact。
 5. 用户电脑不得构建源码。
 
+## WIN-2026-08-02-DESKTOP-SHORTCUT
+
+### 现场症状
+
+Windows Control Center 已经安装，但桌面没有入口。用户没有保存安装目录，也没有创建快捷方式，因此无法确认如何重新打开之前做好的图形界面。
+
+### 根因
+
+安装器的 `Get-PicotooShortcutPaths` 只包含：
+
+- 开始菜单；
+- 开机启动目录。
+
+它没有包含当前用户的 `DesktopDirectory`。因此程序虽然已经安装并设置为登录启动，但用户在桌面上找不到可见入口。
+
+### 修复
+
+- 使用 `[Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)` 获取真实桌面路径，兼容 OneDrive 或系统重定向桌面。
+- 每次成功安装同时创建桌面、开始菜单和开机启动三个快捷方式。
+- 快捷方式创建后重新读取 `.lnk`，验证目标确实指向当前激活版本的 `Picotoo Pet AI.exe`。
+- 安装报告增加 `desktop_shortcut` 和 `desktop_shortcut_created`。
+- 快捷方式创建或验证失败时，纳入既有激活回滚事务。
+- 提供无需编译的一键桌面快捷方式修复脚本，供已经安装的旧包使用。
+
+### 永久发布门
+
+1. 每个 Windows 安装候选必须包含桌面快捷方式创建逻辑。
+2. 必须通过 `tests/contract/test_windows_desktop_shortcut_release_gate.py`。
+3. Windows 原生包级安装测试必须验证桌面 `.lnk` 存在且目标正确。
+4. 安装报告必须记录 `desktop_shortcut_created=true`。
+5. 回滚必须恢复上一版本对应的桌面、开始菜单和开机启动快捷方式。
+6. 用户不需要知道版本目录或手工寻找 EXE。
+
 ## MAC-2026-08-02-SPACED-RUNTIME-PATH
 
 ### 现场症状
