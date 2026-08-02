@@ -89,8 +89,8 @@ def test_slice_c_package_verifier_rejects_unsafe_or_unfrozen_content() -> None:
         assert required in verifier
 
 
-def test_slice_c_fixture_executes_noop_but_preserves_historical_analysis() -> None:
-    """包级夹具必须证明 Worker 只处理 system.noop。"""
+def test_slice_c_fixture_executes_noop_and_preserves_historical_analysis() -> None:
+    """包级夹具必须证明 Worker 只处理明确支持的 system.noop。"""
 
     fixture = read(BUILD / "Test-MacWorkerSliceCFixture.sh")
     for required in (
@@ -102,9 +102,29 @@ def test_slice_c_fixture_executes_noop_but_preserves_historical_analysis() -> No
         "task_attempts",
         "PHASE23_MAC_WORKER_EXECUTION_FIXTURE=PASS",
         "PHASE23_MAC_WORKER_HISTORICAL_PROTECTION=PASS",
-        "ROLLBACK_MAC_WORKER_SLICE_C.command",
-        "PHASE23_MAC_WORKER_ROLLBACK_FIXTURE=PASS",
         '"source_build_on_user_mac": False',
+    ):
+        assert required in fixture
+
+
+def test_slice_c_fixture_proves_cancellation_and_expired_lease_recovery() -> None:
+    """实际归档必须保护取消任务并恢复崩溃 Worker 的过期租约。"""
+
+    fixture = read(BUILD / "Test-MacWorkerSliceCFixture.sh")
+    for required in (
+        "/cancel",
+        'current.get("status") != "Cancelled"',
+        'current.get("attempt_count") != 0',
+        "PHASE23_MAC_WORKER_CANCELLATION_FIXTURE=PASS",
+        '"dead-worker"',
+        "lease_expires_at",
+        'current.get("status") != "Retrying"',
+        'current.get("error_code") != "LEASE_EXPIRED"',
+        'payload.get("status") != "Failed"',
+        "PHASE23_MAC_WORKER_EXPIRED_LEASE_FIXTURE=PASS",
+        '"cancelled_task_preserved": True',
+        '"expired_lease_recovered": True',
+        '"expired_attempt_closed": True',
     ):
         assert required in fixture
 
@@ -132,6 +152,10 @@ def test_slice_c_rollback_restores_core_and_worker_definition_without_deletion()
         "sudo ",
     ):
         assert forbidden not in rollback
+
+    fixture = read(BUILD / "Test-MacWorkerSliceCFixture.sh")
+    assert "ROLLBACK_MAC_WORKER_SLICE_C.command" in fixture
+    assert "PHASE23_MAC_WORKER_ROLLBACK_FIXTURE=PASS" in fixture
 
 
 def test_slice_c_native_ci_is_m4_only_and_uploads_diagnostics_separately() -> None:
