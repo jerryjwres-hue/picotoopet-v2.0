@@ -24,6 +24,15 @@ _ACTIVE_DEDUPE_STATUSES = (
     TaskStatus.WAITING_FOR_APPROVAL,
     TaskStatus.RETRYING,
 )
+_TERMINAL_STATUSES = {
+    TaskStatus.COMPLETED,
+    TaskStatus.FAILED,
+    TaskStatus.CANCELLED,
+}
+
+
+class LeaseOwnershipError(RuntimeError):
+    """Worker 不拥有任务、租约已过期或任务已离开 Running。"""
 
 
 class QueueRepository:
@@ -31,7 +40,7 @@ class QueueRepository:
 
     def __init__(self, database: Database, *, outbox: EventOutbox | None = None) -> None:
         self.database = database
-        self.outbox   = outbox or EventOutbox(database)
+        self.outbox = outbox or EventOutbox(database)
 
     def create(self, request: TaskCreate, *, trace_id: str | None = None) -> TaskRecord:
         """在单一事务中幂等创建任务和对应 Outbox 事件。"""
@@ -71,8 +80,8 @@ class QueueRepository:
             if existing is not None:
                 return self._row_to_record(existing)
 
-        now          = datetime.now(UTC)
-        task_id      = str(uuid4())
+        now = datetime.now(UTC)
+        task_id = str(uuid4())
         final_status = (
             TaskStatus.WAITING_FOR_APPROVAL
             if request.cloud_policy is CloudPolicy.CLOUD_MANUAL
@@ -204,43 +213,71 @@ class QueueRepository:
         worker_id: str,
         lease_seconds: int = 60,
         *,
+        supported_task_types: tuple[str, ...] | None = None,
         trace_id: str | None = None,
     ) -> TaskRecord | None:
-        """按优先级领取一个任务，并写入可恢复租约和状态事件。"""
+        """按优先级领取明确支持的任务，并写入租约、attempt 和状态事件。"""
 
-        now          = datetime.now(UTC)
+        if supported_task_types is not None and not supported_task_types:
+            return None
+
+        now = datetime.now(UTC)
         lease_expiry = now + timedelta(seconds=lease_seconds)
         with self.database.transaction() as connection:
+            clauses = [
+                "status = ?",
+                "(not_before IS NULL OR not_before <= ?)",
+            ]
+            parameters: list[object] = [TaskStatus.QUEUED.value, now.isoformat()]
+            if supported_task_types is not None:
+                placeholders = ",".join("?" for _ in supported_task_types)
+                clauses.append(f"task_type IN ({placeholders})")
+                parameters.extend(supported_task_types)
             row = connection.execute(
-                """
-                SELECT * FROM tasks
-                WHERE status = ?
-                  AND (not_before IS NULL OR not_before <= ?)
-                ORDER BY priority ASC, created_at ASC
-                LIMIT 1
-                """,
-                (TaskStatus.QUEUED.value, now.isoformat()),
+                "SELECT * FROM tasks WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY priority ASC, created_at ASC LIMIT 1",
+                tuple(parameters),
             ).fetchone()
             if row is None:
                 return None
 
             task_id = row["task_id"]
+            attempt_number = int(row["attempt_count"]) + 1
+            attempt_id = str(uuid4())
             ensure_transition(TaskStatus(row["status"]), TaskStatus.RUNNING)
             connection.execute(
                 """
                 UPDATE tasks
-                SET status = ?, attempt_count = attempt_count + 1,
+                SET status = ?, attempt_count = ?,
                     lease_owner = ?, lease_expires_at = ?, started_at = COALESCE(started_at, ?),
-                    updated_at = ?
+                    updated_at = ?, error_code = NULL, error_message = NULL
                 WHERE task_id = ?
                 """,
                 (
                     TaskStatus.RUNNING.value,
+                    attempt_number,
                     worker_id,
                     lease_expiry.isoformat(),
                     now.isoformat(),
                     now.isoformat(),
                     task_id,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO task_attempts (
+                    attempt_id, task_id, attempt_number, worker_id,
+                    started_at, status, metrics_json
+                ) VALUES (?, ?, ?, ?, ?, ?, '{}')
+                """,
+                (
+                    attempt_id,
+                    task_id,
+                    attempt_number,
+                    worker_id,
+                    now.isoformat(),
+                    TaskStatus.RUNNING.value,
                 ),
             )
             reason = f"leased:{worker_id}"
@@ -267,6 +304,173 @@ class QueueRepository:
                 created_at=now,
             )
             return record
+
+    def renew_lease(
+        self,
+        task_id: str,
+        *,
+        worker_id: str,
+        lease_seconds: int = 60,
+        now: datetime | None = None,
+    ) -> TaskRecord:
+        """仅允许当前所有者续期仍有效的 Running 租约。"""
+
+        checked_at = now or datetime.now(UTC)
+        lease_expiry = checked_at + timedelta(seconds=lease_seconds)
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            self._assert_active_lease(row, worker_id=worker_id, now=checked_at)
+            connection.execute(
+                "UPDATE tasks SET lease_expires_at = ?, updated_at = ? WHERE task_id = ?",
+                (lease_expiry.isoformat(), checked_at.isoformat(), task_id),
+            )
+            updated = connection.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            assert updated is not None
+            return self._row_to_record(updated)
+
+    def complete_leased(
+        self,
+        task_id: str,
+        *,
+        worker_id: str,
+        trace_id: str | None = None,
+    ) -> TaskRecord:
+        """仅由当前租约所有者幂等提交 Completed。"""
+
+        return self._finish_leased(
+            task_id,
+            worker_id=worker_id,
+            target=TaskStatus.COMPLETED,
+            reason="worker_completed",
+            error_code=None,
+            error_message=None,
+            trace_id=trace_id,
+        )
+
+    def fail_leased(
+        self,
+        task_id: str,
+        *,
+        worker_id: str,
+        error_code: str,
+        error_message: str,
+        trace_id: str | None = None,
+    ) -> TaskRecord:
+        """仅由当前租约所有者提交脱敏失败终态。"""
+
+        return self._finish_leased(
+            task_id,
+            worker_id=worker_id,
+            target=TaskStatus.FAILED,
+            reason="worker_failed",
+            error_code=error_code,
+            error_message=error_message,
+            trace_id=trace_id,
+        )
+
+    def _finish_leased(
+        self,
+        task_id: str,
+        *,
+        worker_id: str,
+        target: TaskStatus,
+        reason: str,
+        error_code: str | None,
+        error_message: str | None,
+        trace_id: str | None,
+    ) -> TaskRecord:
+        """在所有权保护下原子更新任务、attempt、事件和 Outbox。"""
+
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            self._assert_active_lease(row, worker_id=worker_id, now=now)
+            assert row is not None
+            current = TaskStatus(row["status"])
+            ensure_transition(current, target)
+            connection.execute(
+                """
+                UPDATE tasks
+                SET status = ?, updated_at = ?, finished_at = ?,
+                    lease_owner = NULL, lease_expires_at = NULL,
+                    error_code = ?, error_message = ?
+                WHERE task_id = ?
+                """,
+                (
+                    target.value,
+                    now.isoformat(),
+                    now.isoformat(),
+                    error_code,
+                    error_message,
+                    task_id,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE task_attempts
+                SET finished_at = ?, status = ?, error_code = ?, error_message = ?
+                WHERE task_id = ? AND worker_id = ? AND finished_at IS NULL
+                """,
+                (
+                    now.isoformat(),
+                    target.value,
+                    error_code,
+                    error_message,
+                    task_id,
+                    worker_id,
+                ),
+            )
+            self._insert_event(
+                connection,
+                task_id=task_id,
+                from_status=current,
+                to_status=target,
+                reason=reason,
+                trace_id=trace_id,
+                created_at=now,
+            )
+            updated = connection.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            assert updated is not None
+            record = self._row_to_record(updated)
+            self._append_task_update(
+                connection,
+                record=record,
+                reason=reason,
+                trace_id=trace_id,
+                created_at=now,
+            )
+            return record
+
+    @staticmethod
+    def _assert_active_lease(
+        row: Row | None,
+        *,
+        worker_id: str,
+        now: datetime,
+    ) -> None:
+        """拒绝不存在、非 Running、所有者不符或已过期的租约。"""
+
+        if row is None:
+            raise KeyError("任务不存在。")
+        if TaskStatus(row["status"]) is not TaskStatus.RUNNING:
+            raise LeaseOwnershipError("任务已不处于 Running。")
+        if row["lease_owner"] != worker_id:
+            raise LeaseOwnershipError("Worker 不拥有该任务租约。")
+        expiry = row["lease_expires_at"]
+        if expiry is None or datetime.fromisoformat(expiry) < now:
+            raise LeaseOwnershipError("任务租约已过期。")
 
     def recover_expired_leases(self, now: datetime | None = None) -> list[str]:
         """恢复租约过期任务；达到重试上限时转为失败。"""
@@ -306,6 +510,20 @@ class QueueRepository:
                         checked_at.isoformat(),
                         "LEASE_EXPIRED",
                         "任务租约过期，已由恢复流程处理。",
+                        row["task_id"],
+                    ),
+                )
+                connection.execute(
+                    """
+                    UPDATE task_attempts
+                    SET finished_at = ?, status = ?, error_code = ?, error_message = ?
+                    WHERE task_id = ? AND finished_at IS NULL
+                    """,
+                    (
+                        checked_at.isoformat(),
+                        TaskStatus.FAILED.value,
+                        "LEASE_EXPIRED",
+                        "任务租约过期。",
                         row["task_id"],
                     ),
                 )
@@ -374,11 +592,7 @@ class QueueRepository:
 
         current = TaskStatus(row["status"])
         ensure_transition(current, target)
-        terminal_at = now.isoformat() if target in {
-            TaskStatus.COMPLETED,
-            TaskStatus.FAILED,
-            TaskStatus.CANCELLED,
-        } else None
+        terminal_at = now.isoformat() if target in _TERMINAL_STATUSES else None
         connection.execute(
             """
             UPDATE tasks
@@ -399,6 +613,15 @@ class QueueRepository:
                 task_id,
             ),
         )
+        if current is TaskStatus.RUNNING and target in _TERMINAL_STATUSES:
+            connection.execute(
+                """
+                UPDATE task_attempts
+                SET finished_at = ?, status = ?
+                WHERE task_id = ? AND finished_at IS NULL
+                """,
+                (now.isoformat(), target.value, task_id),
+            )
         self._insert_event(
             connection,
             task_id=task_id,
