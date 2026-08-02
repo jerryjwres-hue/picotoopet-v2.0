@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src" / "picotoopet_core"
 
@@ -73,9 +72,7 @@ def test_foundation_contains_no_provider_or_external_execution() -> None:
     """Worker 基础不得调用 Provider、上传或外部命令。"""
 
     worker_root = SRC / "worker"
-    combined = "\n".join(
-        read(path) for path in worker_root.glob("*.py") if path.is_file()
-    )
+    combined = "\n".join(read(path) for path in worker_root.glob("*.py") if path.is_file())
     for forbidden in (
         "OpenAI",
         "Anthropic",
