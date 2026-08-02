@@ -63,6 +63,7 @@ def test_mac_delta_installer_preserves_existing_runtime_boundaries() -> None:
     for required in (
         "phase23_runtime_root",
         "current/.venv/bin/python",
+        'python_version="$("$current_python" --version 2>&1)"',
         "--no-index",
         "--find-links",
         "picotoopet-core==2.3.0.dev1",
@@ -73,6 +74,8 @@ def test_mac_delta_installer_preserves_existing_runtime_boundaries() -> None:
         "rollback_after_failed_activation",
     ):
         assert required in installer
+
+    assert 'python_version="$($current_python --version 2>&1)"' not in installer
 
     for forbidden in (
         "sudo ",
@@ -85,6 +88,14 @@ def test_mac_delta_installer_preserves_existing_runtime_boundaries() -> None:
         "recover_expired_leases",
     ):
         assert forbidden not in installer
+
+
+def test_mac_fixture_reproduces_real_application_support_path() -> None:
+    """包级安装夹具必须在含空格的真实同类路径中运行。"""
+
+    fixture = read(MAC_BUILD / "Test-MacCoreSliceBFixture.sh")
+    assert 'runtime_root="$temp_root/Application Support/PicotooPetV2"' in fixture
+    assert '"runtime_path_with_spaces": True' in fixture
 
 
 def test_mac_delta_shared_library_uses_safe_json_and_path_validation() -> None:
