@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "handoff_id": "handoff-main-0001",
+  "task_id": "task-0001",
+  "project_id": "project-0001",
+  "trace_id": "trace-0001",
+  "provider": "codex",
+  "adapter_version": "1.0.0",
+  "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "package_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "sensitivity": "internal",
+  "repo_url": "https://github.com/example/picotoopet-fixture.git",
+  "base_ref": "main",
+  "base_commit": "cccccccccccccccccccccccccccccccccccccccc",
+  "allowed_read": [
+    "D:/PicotooPet/DevSandbox/worktrees/handoff-main-0001/repo"
+  ],
+  "allowed_write": [
+    "D:/PicotooPet/Production/main"
+  ],
+  "required_tests": [
+    "python -m pytest -q"
+  ],
+  "max_turns": 20,
+  "timeout_seconds": 3600,
+  "budget": {
+    "max_turns": 20,
+    "timeout_seconds": 3600,
+    "max_usage_units": 100000,
+    "max_cost_usd": 10,
+    "max_parallel": 1,
+    "max_output_bytes": 10485760,
+    "network_mode": "disabled"
+  },
+  "created_at": "2026-08-01T00:00:00Z",
+  "expires_at": "2026-08-01T01:00:00Z",
+  "approval_id": "approval-0001"
+}

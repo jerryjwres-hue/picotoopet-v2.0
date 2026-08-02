@@ -2,14 +2,15 @@
 [CmdletBinding()]
 param(
     [string]$OutputRoot = "",
-    [string]$Version = ""
+    [string]$Version = "",
+    [string]$VersionLabel = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference    = "SilentlyContinue"
-$env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
-$env:DOTNET_NOLOGO              = "1"
+$env:DOTNET_CLI_TELEMETRY_OPTOUT       = "1"
+$env:DOTNET_NOLOGO                     = "1"
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
 
 function ConvertTo-NativeArgument {
@@ -149,18 +150,25 @@ function Get-FileEntry {
         [Parameter(Mandatory)][string]$Path
     )
 
-    # 路径归一化              使用 .NET 提供的 char，避免 PowerShell 反斜杠字面量歧义。
+    # 路径归一化              清单路径必须相对 payload，且不得越过发布根目录。
     $trimChars = [char[]]@(
         [System.IO.Path]::DirectorySeparatorChar,
         [System.IO.Path]::AltDirectorySeparatorChar
     )
-    $relative = (
-        $Path.Substring($PayloadRoot.Length).TrimStart($trimChars)
-    ) -replace '\\', '/'
+    $payloadRootFull = [System.IO.Path]::GetFullPath($PayloadRoot).TrimEnd($trimChars)
+    $pathFull        = [System.IO.Path]::GetFullPath($Path)
+    $payloadPrefix   = $payloadRootFull + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $pathFull.StartsWith(
+            $payloadPrefix,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "发布文件越过 payload 根目录：$pathFull"
+    }
+
+    $relative = $pathFull.Substring($payloadPrefix.Length) -replace '\\', '/'
     return [ordered]@{
         path       = $relative
-        sha256     = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
-        size_bytes = (Get-Item -LiteralPath $Path).Length
+        sha256     = (Get-FileHash -LiteralPath $pathFull -Algorithm SHA256).Hash.ToLowerInvariant()
+        size_bytes = (Get-Item -LiteralPath $pathFull).Length
     }
 }
 
@@ -168,6 +176,22 @@ $desktopRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot    = Split-Path -Parent (Split-Path -Parent $desktopRoot)
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $desktopRoot "artifacts\release"
+}
+elseif (-not [System.IO.Path]::IsPathRooted($OutputRoot)) {
+    # 相对输出路径            统一以仓库根目录解析，避免清单混用相对路径与绝对路径。
+    $OutputRoot = Join-Path $repoRoot $OutputRoot
+}
+$OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
+
+# 版本兼容                新 CI 使用 VersionLabel；旧调用方继续使用 Version 或默认值。
+if (-not [string]::IsNullOrWhiteSpace($Version) -and
+    -not [string]::IsNullOrWhiteSpace($VersionLabel) -and
+    $Version -ne $VersionLabel) {
+    throw "Version 与 VersionLabel 同时指定时必须一致。"
+}
+if ([string]::IsNullOrWhiteSpace($Version) -and
+    -not [string]::IsNullOrWhiteSpace($VersionLabel)) {
+    $Version = $VersionLabel
 }
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $runNumber = if ([string]::IsNullOrWhiteSpace($env:GITHUB_RUN_NUMBER)) { "local" } else { $env:GITHUB_RUN_NUMBER }

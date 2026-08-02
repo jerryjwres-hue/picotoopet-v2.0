@@ -47,11 +47,11 @@ public sealed class MacCoreClient : IAsyncDisposable
 
         var handler = new SocketsHttpHandler
         {
-            PooledConnectionLifetime      = options.PooledConnectionLifetime,
-            PooledConnectionIdleTimeout   = TimeSpan.FromMinutes(2),
-            ConnectTimeout                = options.ConnectTimeout,
-            MaxConnectionsPerServer       = 16,
-            AutomaticDecompression        = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            PooledConnectionLifetime       = options.PooledConnectionLifetime,
+            PooledConnectionIdleTimeout    = TimeSpan.FromMinutes(2),
+            ConnectTimeout                 = options.ConnectTimeout,
+            MaxConnectionsPerServer        = 16,
+            AutomaticDecompression         = DecompressionMethods.GZip | DecompressionMethods.Deflate,
             EnableMultipleHttp2Connections = false,
         };
         var client = new HttpClient(handler, disposeHandler: true)
@@ -65,6 +65,17 @@ public sealed class MacCoreClient : IAsyncDisposable
     /// <summary>读取公共健康状态。</summary>
     public Task<HealthResponse> GetHealthAsync(CancellationToken cancellationToken = default) =>
         SendAsync<HealthResponse>(HttpMethod.Get, "api/v1/health", null, "health", null, cancellationToken);
+
+    /// <summary>读取服务端显式能力，避免客户端猜测或伪造功能。</summary>
+    public Task<CapabilitiesResponse> GetCapabilitiesAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<CapabilitiesResponse>(
+            HttpMethod.Get,
+            "api/v1/capabilities",
+            null,
+            "capabilities",
+            null,
+            cancellationToken);
 
     /// <summary>读取服务与队列聚合状态。</summary>
     public Task<StatusResponse> GetStatusAsync(CancellationToken cancellationToken = default) =>
@@ -137,7 +148,7 @@ public sealed class MacCoreClient : IAsyncDisposable
             request.Content = JsonContent.Create(payload, options: JsonOptions);
         }
 
-        var started = Stopwatch.GetTimestamp();
+        var started             = Stopwatch.GetTimestamp();
         var measurementRecorded = false;
         try
         {
@@ -215,9 +226,11 @@ public sealed class MacCoreClient : IAsyncDisposable
         {
             if (!measurementRecorded)
             {
-                RecordMeasurement(operation, started, traceId, exception.StatusCode is null
-                    ? 0
-                    : (int)exception.StatusCode.Value);
+                RecordMeasurement(
+                    operation,
+                    started,
+                    traceId,
+                    exception.StatusCode is null ? 0 : (int)exception.StatusCode.Value);
             }
             throw new ApiException(
                 "NETWORK_ERROR",
@@ -273,8 +286,9 @@ public sealed class MacCoreClient : IAsyncDisposable
     {
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         client.DefaultRequestHeaders.Accept.Clear();
-        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.2-phase2");
+        client.DefaultRequestHeaders.Accept.Add(
+            new MediaTypeWithQualityHeaderValue("application/json"));
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-slice-a");
     }
 
     private static Uri EnsureTrailingSlash(Uri baseUri)

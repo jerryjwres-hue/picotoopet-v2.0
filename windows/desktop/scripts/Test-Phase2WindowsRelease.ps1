@@ -16,6 +16,15 @@ function ConvertTo-NativeArgument {
     return '"' + ($Value -replace '"', '\\"') + '"'
 }
 
+function Read-JsonUtf8 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    # 发布门与用户安装器使用相同的严格 UTF-8 语义。
+    $encoding = [System.Text.UTF8Encoding]::new($false, $true)
+    $json = [System.IO.File]::ReadAllText($Path, $encoding)
+    return ($json | ConvertFrom-Json)
+}
+
 function Invoke-CheckedProcess {
     param(
         [Parameter(Mandatory)][string]$FilePath,
@@ -86,7 +95,7 @@ try {
     $manifestPath = Join-Path $tempRoot "release-manifest.json"
     $payloadRoot  = Join-Path $tempRoot "payload"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "ZIP 缺少 release-manifest.json。" }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Read-JsonUtf8 -Path $manifestPath
     if ([string]$manifest.release_type -ne "prebuilt") { throw "发布类型不是 prebuilt。" }
     if ([string]$manifest.target -ne "win-x64")       { throw "发布目标不是 win-x64。" }
     Assert-ManifestFiles -Manifest $manifest -PayloadRoot $payloadRoot
@@ -97,6 +106,30 @@ try {
     Assert-PowerShellSyntax -Path $installer
     Assert-PowerShellSyntax -Path $verifier
     Assert-PowerShellSyntax -Path $rollback
+
+    # 在隔离 LOCALAPPDATA 中真实运行安装器的读取与哈希路径，不复制或激活应用。
+    $originalLocalAppData = $env:LOCALAPPDATA
+    $preflightLocalAppData = Join-Path $tempRoot "preflight-localappdata"
+    New-Item -ItemType Directory -Path $preflightLocalAppData -Force | Out-Null
+    try {
+        $env:LOCALAPPDATA = $preflightLocalAppData
+        & $installer -PackageRoot $tempRoot -PreflightOnly
+        $preflightReport = Get-ChildItem `
+            -LiteralPath (Join-Path $preflightLocalAppData "PicotooPetV2\DesktopApp\reports") `
+            -Filter "phase2-prebuilt-install-*.json" `
+            -File |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($null -eq $preflightReport) { throw "安装器预检未生成报告。" }
+        $preflight = Read-JsonUtf8 -Path $preflightReport.FullName
+        if ([string]$preflight.status -ne "pass") { throw "安装器预检报告不是 pass。" }
+        if ([string]$preflight.version -ne [string]$manifest.version) {
+            throw "安装器预检版本与发布清单不一致。"
+        }
+    }
+    finally {
+        $env:LOCALAPPDATA = $originalLocalAppData
+    }
 
     $vbsBytes = [System.IO.File]::ReadAllBytes((Join-Path $tempRoot "INSTALL_PHASE2_WINDOWS.vbs"))
     if ($vbsBytes.Length -ge 3 -and $vbsBytes[0] -eq 0xEF -and $vbsBytes[1] -eq 0xBB -and $vbsBytes[2] -eq 0xBF) {
@@ -111,8 +144,11 @@ try {
     ))
     [void](Invoke-CheckedProcess -FilePath $diagExecutable -Arguments @("--self-test"))
     if (-not (Test-Path -LiteralPath $selfTestPath)) { throw "桌面自检报告缺失。" }
-    $selfTest = Get-Content -LiteralPath $selfTestPath -Raw | ConvertFrom-Json
+    $selfTest = Read-JsonUtf8 -Path $selfTestPath
     if ([string]$selfTest.status -ne "pass") { throw "桌面自检报告不是 pass。" }
+    if ([string]$selfTest.checks.control_center_shell -ne "pass") {
+        throw "Control Center Shell 自检不是 pass。"
+    }
 
     Write-Host "PHASE2_WINDOWS_RELEASE_TEST=PASS"
     Write-Host "PACKAGE=$($zip.FullName)"

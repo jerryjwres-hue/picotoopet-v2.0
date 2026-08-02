@@ -173,6 +173,54 @@
         "title": "ApprovalRequestBody",
         "type": "object"
       },
+      "CapabilitiesResponse": {
+        "additionalProperties": false,
+        "description": "新旧客户端都可读取的能力和冻结合同版本快照。",
+        "properties": {
+          "cloud_upload": {
+            "default": "manual_approval_only",
+            "title": "Cloud Upload",
+            "type": "string"
+          },
+          "contract_versions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Contract Versions",
+            "type": "object"
+          },
+          "durable_queue": {
+            "default": true,
+            "title": "Durable Queue",
+            "type": "boolean"
+          },
+          "features": {
+            "$ref": "#/components/schemas/ControlCenterCapabilities"
+          },
+          "local_agent": {
+            "default": true,
+            "title": "Local Agent",
+            "type": "boolean"
+          },
+          "mcp_hub": {
+            "default": true,
+            "title": "Mcp Hub",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "default": "2.3.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "windows_worker": {
+            "default": false,
+            "title": "Windows Worker",
+            "type": "boolean"
+          }
+        },
+        "title": "CapabilitiesResponse",
+        "type": "object"
+      },
       "Classification": {
         "enum": [
           "PUBLIC",
@@ -189,6 +237,94 @@
         ],
         "title": "CloudPolicy",
         "type": "string"
+      },
+      "ControlCenterCapabilities": {
+        "additionalProperties": false,
+        "description": "Control Center 只启用服务端明确声明的真实能力。",
+        "properties": {
+          "approval_digest": {
+            "default": false,
+            "title": "Approval Digest",
+            "type": "boolean"
+          },
+          "approval_list": {
+            "default": false,
+            "title": "Approval List",
+            "type": "boolean"
+          },
+          "connector_contract_v1": {
+            "default": true,
+            "title": "Connector Contract V1",
+            "type": "boolean"
+          },
+          "dashboard": {
+            "default": false,
+            "title": "Dashboard",
+            "type": "boolean"
+          },
+          "durable_queue": {
+            "default": true,
+            "title": "Durable Queue",
+            "type": "boolean"
+          },
+          "handoff_contract_v1": {
+            "default": true,
+            "title": "Handoff Contract V1",
+            "type": "boolean"
+          },
+          "health_detailed": {
+            "default": false,
+            "title": "Health Detailed",
+            "type": "boolean"
+          },
+          "local_agent": {
+            "default": true,
+            "title": "Local Agent",
+            "type": "boolean"
+          },
+          "logs_query": {
+            "default": false,
+            "title": "Logs Query",
+            "type": "boolean"
+          },
+          "manual_goal": {
+            "default": false,
+            "title": "Manual Goal",
+            "type": "boolean"
+          },
+          "mcp_hub": {
+            "default": true,
+            "title": "Mcp Hub",
+            "type": "boolean"
+          },
+          "result_list": {
+            "default": false,
+            "title": "Result List",
+            "type": "boolean"
+          },
+          "result_preview": {
+            "default": false,
+            "title": "Result Preview",
+            "type": "boolean"
+          },
+          "task_detail": {
+            "default": false,
+            "title": "Task Detail",
+            "type": "boolean"
+          },
+          "task_pause_resume": {
+            "default": false,
+            "title": "Task Pause Resume",
+            "type": "boolean"
+          },
+          "windows_worker": {
+            "default": false,
+            "title": "Windows Worker",
+            "type": "boolean"
+          }
+        },
+        "title": "ControlCenterCapabilities",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -840,16 +976,14 @@
     },
     "/api/v1/capabilities": {
       "get": {
-        "description": "列出当前纵向切片能力，不宣称 Windows Worker 已上线。",
+        "description": "返回显式能力；未实现功能保持关闭且不伪造运行状态。",
         "operationId": "capabilities_api_v1_capabilities_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Capabilities Api V1 Capabilities Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/CapabilitiesResponse"
                 }
               }
             },
@@ -863,9 +997,7 @@
       }
     },
     "/api/v1/events": {
-      "summary": "认证、可续传的任务事件流",
-      "x-application-ping-pong": true,
-      "x-resume-query": "after_sequence",
+      "summary": "认证后的任务与健康事件流",
       "x-websocket": true
     },
     "/api/v1/health": {

@@ -1,7 +1,8 @@
 ﻿# Phase 2 Windows 预编译安装器；用户电脑不执行源码编译、不安装 SDK。
 [CmdletBinding()]
 param(
-    [string]$PackageRoot = $PSScriptRoot
+    [string]$PackageRoot = $PSScriptRoot,
+    [switch]$PreflightOnly
 )
 
 Set-StrictMode -Version Latest
@@ -42,6 +43,20 @@ function Write-Utf8NoBom {
     # Windows PowerShell 5.1 默认编码不稳定；所有状态文件固定为 UTF-8 无 BOM。
     $encoding = [System.Text.UTF8Encoding]::new($false)
     [System.IO.File]::WriteAllText($Path, $Value, $encoding)
+}
+
+function Read-JsonUtf8 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    # 机器 JSON 固定按严格 UTF-8 读取，绕过 Windows PowerShell 5.1 的区域默认编码。
+    $encoding = [System.Text.UTF8Encoding]::new($false, $true)
+    try {
+        $json = [System.IO.File]::ReadAllText($Path, $encoding)
+        return ($json | ConvertFrom-Json)
+    }
+    catch {
+        throw "JSON 解析失败：$Path | $($_.Exception.Message)"
+    }
 }
 
 function Write-JsonAtomic {
@@ -186,7 +201,7 @@ try {
     Write-InstallProgress -Percent 5 -Stage "校验安装包" -Detail "读取预编译发布清单"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "安装包缺少 release-manifest.json。" }
     if (-not (Test-Path -LiteralPath $payloadRoot))  { throw "安装包缺少 payload 目录。" }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Read-JsonUtf8 -Path $manifestPath
     if ([string]$manifest.release_type -ne "prebuilt") { throw "安装包不是预编译发布类型。" }
     if ([string]$manifest.target -ne "win-x64")       { throw "安装包目标不是 win-x64。" }
     if ([string]$manifest.version -notmatch '^[A-Za-z0-9._-]+$') { throw "安装包版本号非法。" }
@@ -197,12 +212,20 @@ try {
     $report.install_path = $finalPath
     Assert-ManifestFiles -Manifest $manifest -Root $payloadRoot
 
+    if ($PreflightOnly) {
+        $report.status = "pass"
+        Write-JsonAtomic -Value $report -Path $reportPath
+        Write-InstallProgress -Percent 100 -Stage "预检完成" -Detail "严格 UTF-8 清单解析与文件哈希校验通过"
+        $exitCode = 0
+        return
+    }
+
     Write-InstallProgress -Percent 20 -Stage "检查当前版本" -Detail "保存可回滚版本指针"
     if ($hadCurrentPointer) {
-        $previousCurrent = Get-Content -LiteralPath $currentPath -Raw | ConvertFrom-Json
+        $previousCurrent = Read-JsonUtf8 -Path $currentPath
     }
     if ($hadPreviousPointer) {
-        $previousPrevious = Get-Content -LiteralPath $previousPath -Raw | ConvertFrom-Json
+        $previousPrevious = Read-JsonUtf8 -Path $previousPath
     }
 
     if (-not (Test-Path -LiteralPath $finalPath)) {
@@ -294,7 +317,7 @@ finally {
     Write-Progress -Activity "Picotoo Pet V2 Windows Desktop" -Completed
     if ($mutexOwned) { $installMutex.ReleaseMutex() }
     $installMutex.Dispose()
-    if (Test-Path -LiteralPath $reportPath) {
+    if (-not $PreflightOnly -and (Test-Path -LiteralPath $reportPath)) {
         Start-Process -FilePath "notepad.exe" -ArgumentList @($reportPath)
     }
 }

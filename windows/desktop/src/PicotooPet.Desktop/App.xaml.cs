@@ -2,18 +2,28 @@ using System.IO;
 using System.Windows;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
+using PicotooPet.Desktop.Core.State;
+using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Views;
+using WpfApplication = System.Windows.Application;
+using WpfMessageBox = System.Windows.MessageBox;
 
 namespace PicotooPet.Desktop;
 
 /// <summary>桌面应用组合根；不使用隐藏的全局 Service Locator。</summary>
-public partial class App : Application, IDisposable
+public partial class App : WpfApplication, IDisposable
 {
     private Mutex? _singleInstanceMutex;
+    private ControlCenterSession? _session;
+    private ShellViewModel? _shellViewModel;
+    private ShellWindow? _shellWindow;
+    private WindowsTrayService? _trayService;
     private bool _ownsSingleInstance;
+    private bool _runtimeDisposing;
 
-    /// <summary>创建单实例保护、日志、安全令牌存储和主窗口。</summary>
+    /// <summary>创建单实例保护、日志、安全令牌存储、状态仓库和 Control Center Shell。</summary>
     protected override void OnStartup(StartupEventArgs e)
     {
         if (e.Args.Any(argument =>
@@ -32,7 +42,7 @@ public partial class App : Application, IDisposable
         _ownsSingleInstance = createdNew;
         if (!createdNew)
         {
-            MessageBox.Show(
+            WpfMessageBox.Show(
                 "Picotoo Pet AI 已经在运行。",
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
@@ -46,35 +56,133 @@ public partial class App : Application, IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "PicotooPetV2",
             "Desktop");
-        var logger      = new SafeFileLogger(Path.Combine(dataRoot, "logs", "desktop.log"));
-        var tokenStore  = new CredentialManagerTokenStore();
-        var settings    = new DesktopSettingsStore(Path.Combine(dataRoot, "settings.json"));
-        var dispatcher  = new WpfUiDispatcher(Current.Dispatcher);
-        var viewModel   = new MainWindowViewModel(tokenStore, settings, dispatcher, logger);
-        var window      = new MainWindow(viewModel);
-        MainWindow      = window;
-        window.Show();
-        _ = InitializeViewModelAsync(viewModel, window, logger);
+        var logger          = new SafeFileLogger(Path.Combine(dataRoot, "logs", "desktop.log"));
+        var tokenStore      = new CredentialManagerTokenStore();
+        var settings        = new DesktopSettingsStore(Path.Combine(dataRoot, "settings.json"));
+        var dispatcher      = new WpfUiDispatcher(Current.Dispatcher);
+        var connectionStore = new ConnectionStateStore();
+        var capabilityStore = new CapabilityStateStore();
+        var taskStore       = new TaskStateStore();
+
+        _session = new ControlCenterSession(
+            tokenStore,
+            settings,
+            logger,
+            connectionStore,
+            capabilityStore,
+            taskStore);
+        _shellViewModel = new ShellViewModel(_session, dispatcher);
+        _shellWindow    = new ShellWindow(_shellViewModel, _session);
+        _trayService    = new WindowsTrayService();
+
+        _trayService.OpenRequested += OnTrayOpenRequested;
+        _trayService.PendingApprovalsRequested += OnPendingApprovalsRequested;
+        _trayService.ExitRequested += OnTrayExitRequested;
+        _shellWindow.ExitRequested += OnShellExitRequested;
+
+        MainWindow = _shellWindow;
+        _shellWindow.Show();
+        _ = InitializeViewModelAsync(_session, _shellWindow, logger);
     }
 
     private static async Task InitializeViewModelAsync(
-        MainWindowViewModel viewModel,
+        ControlCenterSession session,
         Window owner,
         SafeFileLogger logger)
     {
         try
         {
-            await viewModel.InitializeAsync(CancellationToken.None);
+            await session.InitializeAsync(CancellationToken.None);
         }
         catch (Exception exception)
         {
-            logger.Error("桌面初始化失败", exception);
-            await owner.Dispatcher.InvokeAsync(() => MessageBox.Show(
+            logger.Error("Control Center 初始化失败", exception);
+            await owner.Dispatcher.InvokeAsync(() => WpfMessageBox.Show(
                 owner,
-                $"初始化失败：{exception.Message}\n\n详细日志位于本地应用数据目录。",
+                $"初始化失败：{exception.Message}\n\n你仍可在设置页重新配对；详细日志位于本地应用数据目录。",
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning));
+        }
+    }
+
+    private void OnTrayOpenRequested(object? sender, EventArgs e) =>
+        RunOnUiThread(() => _shellWindow?.ShowFromTray());
+
+    private void OnPendingApprovalsRequested(object? sender, EventArgs e) =>
+        RunOnUiThread(() =>
+        {
+            _shellWindow?.ShowFromTray();
+            _shellViewModel?.Navigate(NavigationRoute.Approvals);
+        });
+
+    private void OnTrayExitRequested(object? sender, EventArgs e) =>
+        RunOnUiThread(() => _shellWindow?.RequestExplicitExit());
+
+    private async void OnShellExitRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            await DisposeRuntimeAsync();
+        }
+        catch (Exception exception)
+        {
+            WpfMessageBox.Show(
+                _shellWindow,
+                $"退出时释放资源失败：{exception.Message}",
+                "Picotoo Pet AI",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+        finally
+        {
+            _shellWindow?.AllowExplicitClose();
+            Shutdown();
+        }
+    }
+
+    private void RunOnUiThread(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+        _ = Dispatcher.InvokeAsync(action);
+    }
+
+    /// <summary>按 ViewModel、Session、托盘的顺序解除订阅并释放所有运行时资源。</summary>
+    private async Task DisposeRuntimeAsync()
+    {
+        if (_runtimeDisposing)
+        {
+            return;
+        }
+        _runtimeDisposing = true;
+
+        if (_shellWindow is not null)
+        {
+            _shellWindow.ExitRequested -= OnShellExitRequested;
+        }
+        if (_trayService is not null)
+        {
+            _trayService.OpenRequested -= OnTrayOpenRequested;
+            _trayService.PendingApprovalsRequested -= OnPendingApprovalsRequested;
+            _trayService.ExitRequested -= OnTrayExitRequested;
+        }
+
+        _shellViewModel?.Dispose();
+        _shellViewModel = null;
+
+        if (_session is not null)
+        {
+            await _session.DisposeAsync();
+            _session = null;
+        }
+        if (_trayService is not null)
+        {
+            _trayService.Dispose();
+            _trayService = null;
         }
     }
 

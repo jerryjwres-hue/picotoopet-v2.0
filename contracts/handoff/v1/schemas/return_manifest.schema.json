@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/handoff/v1/return_manifest.schema.json",
+  "title": "Picotoo Pet ReturnManifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "handoff_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "request_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "package_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider": {
+      "enum": ["grok_build", "codex", "claude_code", "chatgpt_work", "manual"]
+    },
+    "adapter_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "provider_version": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "external_session_id": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "head_commit": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "stop_reason": {
+      "enum": [
+        "completed",
+        "max_turns",
+        "budget",
+        "timeout",
+        "policy",
+        "user_stop",
+        "provider_error"
+      ]
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ended_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "turns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "usage_units": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "cost_usd": {
+          "type": ["number", "null"],
+          "minimum": 0
+        }
+      },
+      "required": ["turns", "usage_units", "cost_usd"]
+    },
+    "changed_file_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "report_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "changed_files": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "test_report": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "build_report": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "security_report": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "changed_files",
+        "test_report",
+        "build_report",
+        "security_report"
+      ]
+    },
+    "manifest_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "schema_version",
+    "handoff_id",
+    "request_digest",
+    "package_digest",
+    "provider",
+    "adapter_version",
+    "provider_version",
+    "external_session_id",
+    "base_commit",
+    "head_commit",
+    "stop_reason",
+    "started_at",
+    "ended_at",
+    "usage",
+    "changed_file_count",
+    "report_refs",
+    "manifest_digest"
+  ]
+}

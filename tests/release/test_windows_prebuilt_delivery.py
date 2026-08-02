@@ -59,6 +59,22 @@ def test_user_installer_only_installs_prebuilt_payload() -> None:
     assert "Start-Transcript" not in installer
 
 
+def test_release_json_is_read_as_strict_utf8_on_windows_powershell_51() -> None:
+    """机器 JSON 必须绕过 Windows PowerShell 5.1 的区域默认编码。"""
+
+    scripts = (
+        DESKTOP / "release" / "Install-Phase2Prebuilt.ps1",
+        DESKTOP / "release" / "Verify-Phase2Prebuilt.ps1",
+        DESKTOP / "release" / "Rollback-Phase2Prebuilt.ps1",
+    )
+    for path in scripts:
+        text = read(path)
+        assert "function Read-JsonUtf8" in text, path
+        assert "[System.IO.File]::ReadAllText" in text, path
+        assert "[System.Text.UTF8Encoding]::new($false, $true)" in text, path
+        assert "Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json" not in text, path
+
+
 def test_installer_vbs_is_ascii_without_bom_and_visible() -> None:
     path = DESKTOP / "release" / "INSTALL_PHASE2_WINDOWS.vbs"
     payload = path.read_bytes()

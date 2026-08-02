@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/connector/v1/writeback_result.schema.json",
+  "title": "Picotoo Pet WritebackResult v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "writeback_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "connector_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "state": {
+      "enum": [
+        "accepted",
+        "validating",
+        "writing",
+        "completed",
+        "conflict",
+        "rejected",
+        "failed_retryable",
+        "failed_terminal",
+        "unknown_side_effect"
+      ]
+    },
+    "result_code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,99}$"
+    },
+    "target_revision": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "written_artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "https://schemas.picotoopet.local/connector/v1/artifact_manifest.schema.json"
+      },
+      "maxItems": 10000
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "audit_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "https://schemas.picotoopet.local/connector/v1/connector_error.schema.json"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "writeback_id",
+    "connector_id",
+    "state",
+    "result_code",
+    "target_revision",
+    "written_artifacts",
+    "started_at",
+    "completed_at",
+    "trace_id",
+    "audit_ref",
+    "error"
+  ]
+}

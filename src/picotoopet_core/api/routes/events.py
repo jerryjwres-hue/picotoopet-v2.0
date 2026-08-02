@@ -92,10 +92,14 @@ async def events(websocket: WebSocket) -> None:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
         for task in done:
+            # 客户端关闭与应用停机都可能先取消子任务；读取其异常会再次抛出取消。
+            if task.cancelled():
+                continue
             exception = task.exception()
             if exception is not None:
                 raise exception
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        # WebSocket 断开或连接生命周期取消均进入同一幂等清理路径。
         pass
     finally:
         sender.cancel()

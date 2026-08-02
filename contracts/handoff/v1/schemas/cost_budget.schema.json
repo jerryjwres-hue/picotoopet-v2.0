@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.picotoopet.local/handoff/v1/cost_budget.schema.json",
+  "title": "Picotoo Pet Handoff CostBudget v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "max_turns": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 86400
+    },
+    "max_usage_units": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "max_cost_usd": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "max_parallel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "max_output_bytes": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 1073741824
+    },
+    "network_mode": {
+      "enum": ["disabled", "allowlisted"]
+    }
+  },
+  "required": [
+    "max_turns",
+    "timeout_seconds",
+    "max_usage_units",
+    "max_cost_usd",
+    "max_parallel",
+    "max_output_bytes",
+    "network_mode"
+  ]
+}

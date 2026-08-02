@@ -12,7 +12,7 @@ using PicotooPet.Desktop.Core.State;
 namespace PicotooPet.Desktop.Core.Networking;
 
 /// <summary>支持事件续传、有界背压、Ping/Pong 和自动重连的 WebSocket 客户端。</summary>
-public sealed class EventStreamClient : IAsyncDisposable
+public sealed class EventStreamClient : IEventStreamSession
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -307,7 +307,6 @@ public sealed class EventStreamClient : IAsyncDisposable
             // 主任务已经保留原始断线异常，清理配套任务时不重复覆盖。
         }
     }
-
 
     private static bool IsAuthenticationFailure(Exception exception)
     {
