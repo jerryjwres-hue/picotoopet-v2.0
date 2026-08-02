@@ -61,7 +61,7 @@ def test_mac_delta_installer_preserves_existing_runtime_boundaries() -> None:
 
     installer = read(MAC_DEPLOY / "INSTALL_MAC_CORE_SLICE_B.command")
     for required in (
-        "Library/Application Support/PicotooPetV2",
+        "phase23_runtime_root",
         "current/.venv/bin/python",
         "--no-index",
         "--find-links",
@@ -100,6 +100,7 @@ def test_mac_delta_shared_library_uses_safe_json_and_path_validation() -> None:
         "write_report",
         "verify_api_contract",
         "PICOTOO_RUNTIME_ROOT_OVERRIDE",
+        "Library/Application Support/PicotooPetV2",
     ):
         assert required in library
     assert "eval " not in library
