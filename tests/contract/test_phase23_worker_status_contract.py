@@ -7,11 +7,14 @@ from picotoopet_core.api.app import create_app
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
 
+_TOKEN = "0123456789abcdef0123456789abcdef"
+_HEADERS = {"Authorization": f"Bearer {_TOKEN}"}
+
 
 def _settings(tmp_path: Path) -> AppSettings:
     return AppSettings(
         paths=RuntimePaths.from_root(tmp_path / "runtime"),
-        api_token="0123456789abcdef0123456789abcdef",
+        api_token=_TOKEN,
     )
 
 
@@ -19,7 +22,7 @@ def test_worker_status_is_truthful_when_worker_is_not_deployed(tmp_path: Path) -
     """没有常驻 Worker 时必须显式报告 not_deployed，不能伪造在线。"""
 
     with TestClient(create_app(_settings(tmp_path))) as client:
-        response = client.get("/api/v1/workers/status")
+        response = client.get("/api/v1/workers/status", headers=_HEADERS)
 
     assert response.status_code == 200
     body = response.json()
