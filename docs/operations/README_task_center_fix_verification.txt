@@ -1,0 +1,1 @@
+Verification evidence must distinguish: source-contract checks, WPF compile, real page instantiation/layout, package preflight, user-machine install, and field retest. A source-only pass is not a user-installable repair candidate.
