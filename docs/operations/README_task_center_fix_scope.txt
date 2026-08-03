@@ -1,0 +1,1 @@
+Scope lock: fix only the read-only WPF binding crash, add global UI exception logging/containment, and add native page-layout regression coverage. Do not change task semantics, Worker leasing, Mac Core, database schema, token storage, or Provider behavior.
