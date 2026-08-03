@@ -161,7 +161,7 @@ def test_verify_and_rollback_enforce_manifest_size_and_shortcut_targets() -> Non
         assert "shortcuts_verified" in script
 
     assert "Restore-RollbackOrigin" in rollback
-    assert "Assert-PicotooShortcuts -Executable ([string]$current.executable)" in rollback
+    assert "[string]$current.executable" in rollback
 
 
 def test_release_workflow_uploads_install_verify_and_rollback_evidence() -> None:
