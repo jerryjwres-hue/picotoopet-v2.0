@@ -92,10 +92,17 @@ def test_result_metadata_for_wrong_task_is_integrity_error(tmp_path: Path) -> No
     client, headers = make_client(tmp_path)
     with client:
         completed = complete_diagnostic(client, headers)
+        other = client.post(
+            "/api/v1/tasks",
+            headers=headers,
+            json={"task_type": "analysis"},
+        )
+        assert other.status_code == 201
+        other_task_id = other.json()["task_id"]
         services = client.app.state.services
         services.database.execute(
             "UPDATE results SET task_id = ? WHERE result_id = ?",
-            ("different-task", completed["result_id"]),
+            (other_task_id, completed["result_id"]),
         )
         response = client.get(
             f"/api/v1/tasks/{completed['task_id']}/result",
