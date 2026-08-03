@@ -293,7 +293,7 @@ class DiagnosticQueueRepository(QueueRepository):
         now: datetime | None = None,
         limit: int = 100,
     ) -> list[str]:
-        """只恢复当前 Worker 明确支持且租约已过期的 Running 任务。"""
+        """只恢复明确支持类型；已有取消意图的过期租约直接进入 Cancelled。"""
 
         if not supported_task_types:
             return []
@@ -316,13 +316,32 @@ class DiagnosticQueueRepository(QueueRepository):
                 ),
             ).fetchall()
             for row in rows:
-                target = (
-                    TaskStatus.FAILED
-                    if int(row["attempt_count"]) >= int(row["max_attempts"])
-                    else TaskStatus.RETRYING
+                cancel_requested = self._cancel_requested_in_transaction(
+                    connection,
+                    row["task_id"],
                 )
+                if cancel_requested:
+                    target = TaskStatus.CANCELLED
+                    task_error_code = "WORKER_TASK_CANCELLED"
+                    task_error_message = "任务已取消。"
+                    attempt_status = TaskStatus.CANCELLED
+                    event_reason = "cancelled_after_lease_expiry"
+                else:
+                    target = (
+                        TaskStatus.FAILED
+                        if int(row["attempt_count"]) >= int(row["max_attempts"])
+                        else TaskStatus.RETRYING
+                    )
+                    task_error_code = "LEASE_EXPIRED"
+                    task_error_message = "任务租约过期，已由受控恢复流程处理。"
+                    attempt_status = TaskStatus.FAILED
+                    event_reason = "lease_expired"
                 ensure_transition(TaskStatus.RUNNING, target)
-                terminal_at = checked_at.isoformat() if target is TaskStatus.FAILED else None
+                terminal_at = (
+                    checked_at.isoformat()
+                    if target in {TaskStatus.FAILED, TaskStatus.CANCELLED}
+                    else None
+                )
                 connection.execute(
                     """
                     UPDATE tasks
@@ -335,8 +354,8 @@ class DiagnosticQueueRepository(QueueRepository):
                         target.value,
                         checked_at.isoformat(),
                         terminal_at,
-                        "LEASE_EXPIRED",
-                        "任务租约过期，已由受控恢复流程处理。",
+                        task_error_code,
+                        task_error_message,
                         row["task_id"],
                     ),
                 )
@@ -348,9 +367,9 @@ class DiagnosticQueueRepository(QueueRepository):
                     """,
                     (
                         checked_at.isoformat(),
-                        TaskStatus.FAILED.value,
-                        "LEASE_EXPIRED",
-                        "任务租约过期。",
+                        attempt_status.value,
+                        task_error_code,
+                        task_error_message,
                         row["task_id"],
                     ),
                 )
@@ -359,7 +378,7 @@ class DiagnosticQueueRepository(QueueRepository):
                     task_id=row["task_id"],
                     from_status=TaskStatus.RUNNING,
                     to_status=target,
-                    reason="lease_expired",
+                    reason=event_reason,
                     trace_id=None,
                     created_at=checked_at,
                 )
@@ -371,7 +390,7 @@ class DiagnosticQueueRepository(QueueRepository):
                 self._append_task_update(
                     connection,
                     record=self._row_to_record(updated),
-                    reason="lease_expired",
+                    reason=event_reason,
                     trace_id=None,
                     created_at=checked_at,
                 )
