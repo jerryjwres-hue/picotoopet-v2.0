@@ -11,6 +11,27 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
         InitializeComponent();
     }
 
+    private async void CreateDiagnostic_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not TaskCenterPageViewModel viewModel)
+        {
+            return;
+        }
+        try
+        {
+            await viewModel.CreateDiagnosticAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                Window.GetWindow(this),
+                exception.Message,
+                "创建系统诊断失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
     private async void Cancel_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not TaskCenterPageViewModel viewModel
@@ -21,7 +42,7 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
 
         var confirmation = MessageBox.Show(
             Window.GetWindow(this),
-            $"确定取消任务 {viewModel.SelectedTask.TaskId}？\n\n取消后原任务进入终态；如需再次执行，只能创建新的重试子任务。",
+            $"确定取消任务 {viewModel.SelectedTask.TaskId}？\n\n如果任务正在运行，Mac Worker 会先安全停止子进程，再提交唯一取消终态。",
             "确认取消任务",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
@@ -62,6 +83,27 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
                 Window.GetWindow(this),
                 exception.Message,
                 "重试任务失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private async void ViewDiagnosticResult_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not TaskCenterPageViewModel viewModel)
+        {
+            return;
+        }
+        try
+        {
+            await viewModel.LoadSelectedDiagnosticResultAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                Window.GetWindow(this),
+                exception.Message,
+                "读取诊断结果失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
