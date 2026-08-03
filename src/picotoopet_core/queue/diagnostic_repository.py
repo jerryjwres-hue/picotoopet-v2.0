@@ -8,7 +8,7 @@ from sqlite3 import Connection, Row
 from uuid import uuid4
 
 from picotoopet_core.domain.enums import TaskStatus
-from picotoopet_core.domain.models import TaskRecord
+from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.results.models import StoredResult
 
 from .repository import LeaseOwnershipError, QueueRepository
@@ -21,6 +21,44 @@ class DiagnosticCancelRequestedError(LeaseOwnershipError):
 
 class DiagnosticQueueRepository(QueueRepository):
     """在基础耐久队列上增加诊断结果的专属事务边界。"""
+
+    def retry(
+        self,
+        task_id: str,
+        *,
+        trace_id: str | None = None,
+    ) -> TaskRecord:
+        """幂等重试诊断任务，并继承活动去重键。"""
+
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"任务不存在：{task_id}")
+            original = self._row_to_record(row)
+            if original.status not in {TaskStatus.FAILED, TaskStatus.CANCELLED}:
+                raise InvalidTransitionError("只有 Failed 或 Cancelled 任务可以重试。")
+            if original.task_type != "system.diagnostic_snapshot":
+                return super().retry(task_id, trace_id=trace_id)
+
+            return self._create_in_transaction(
+                connection,
+                request=TaskCreate(
+                    project_id=original.project_id,
+                    task_type=original.task_type,
+                    payload=original.payload,
+                    priority=original.priority,
+                    resource_tag=original.resource_tag,
+                    idempotency_key=f"retry:{original.task_id}",
+                    dedupe_key=row["dedupe_key"],
+                    max_attempts=original.max_attempts,
+                    timeout_seconds=original.timeout_seconds,
+                ),
+                parent_task_id=original.task_id,
+                trace_id=trace_id,
+            )
 
     def complete_leased_with_result(
         self,
