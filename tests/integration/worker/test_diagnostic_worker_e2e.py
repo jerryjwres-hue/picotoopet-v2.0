@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -208,5 +207,6 @@ def test_worker_rejects_invalid_diagnostic_payload_without_child_execution(
     failed = queue.get(task.task_id)
     assert failed.status is TaskStatus.FAILED
     assert failed.error_code == "DIAGNOSTIC_PAYLOAD_INVALID"
-    assert "logs" not in json.dumps(failed.model_dump(mode="json"), ensure_ascii=False)
+    assert failed.error_message == "诊断任务请求无效。"
+    assert "logs" not in failed.error_message
     database.close()
