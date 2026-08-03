@@ -79,7 +79,7 @@ jobs:
       - name: Verify packaged install, verify and rollback lifecycle on Windows PowerShell 5.1
         shell: pwsh
         run: |
-          .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1
+          .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
 
       - name: Upload prebuilt installer and lifecycle evidence
         uses: actions/upload-artifact@v7
