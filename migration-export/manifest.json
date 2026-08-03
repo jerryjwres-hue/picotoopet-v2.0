@@ -3,10 +3,10 @@
   "source_repository": "jerryjwres-hue/picotoopet-v2.0",
   "source_branch": "feature/phase-2.3-slice-c-worker-runtime-foundation",
   "source_base_commit": "0e1090067f3543021294fef65555df944c054fed",
-  "export_commit": "6ee48ee8f293c83fabfc11935e2e622be608e7ca",
-  "tracked_file_count": 337,
-  "archive_bytes": 472962,
-  "archive_sha256": "a4832b931232df7eff0db881ec06c912327ec781c92525ac532fb6ccb68ceb19",
-  "chunk_size": 60000,
-  "chunk_count": 11
+  "export_commit": "21883ebe01afa4d46d4e4faeb17fe18cddfa4492",
+  "tracked_file_count": 336,
+  "archive_bytes": 471490,
+  "archive_sha256": "ffb3d5559750ef67b925436bafe9248d38bc6eb3c5a2c8e2b85cab6fa8c15420",
+  "chunk_size": 24000,
+  "chunk_count": 27
 }
