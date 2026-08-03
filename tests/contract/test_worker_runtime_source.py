@@ -58,7 +58,14 @@ def test_worker_runtime_uses_owner_guarded_queue_operations() -> None:
     ):
         assert required in runtime
     assert ".transition(" not in runtime
-    assert "self.queue.recover_expired_leases()" not in runtime
+
+    diagnostic_branch = runtime.split(
+        "if isinstance(self.queue, DiagnosticQueueRepository):",
+        maxsplit=1,
+    )[1].split("else:", maxsplit=1)[0]
+    assert "recover_expired_supported_leases" in diagnostic_branch
+    assert "recover_expired_leases" not in diagnostic_branch
+    assert "supported_task_types=self.supported_task_types" in diagnostic_branch
 
 
 def test_worker_status_is_read_from_atomic_state_store() -> None:
