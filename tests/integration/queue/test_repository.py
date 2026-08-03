@@ -95,6 +95,62 @@ def test_retry_creates_new_child_task_instead_of_reopening_terminal_task(tmp_pat
     database.close()
 
 
+def test_retry_replay_returns_same_child_and_preserves_dedupe_key(
+    tmp_path: Path,
+) -> None:
+    """双击或网络重放同一次重试不得生成多个活动子任务。"""
+
+    database, repository = make_repository(tmp_path)
+    original = repository.create(
+        TaskCreate(
+            task_type="system.diagnostic_snapshot",
+            payload={"schema_version": "1.0", "sections": ["core"]},
+            dedupe_key="system-diagnostic:active",
+        )
+    )
+    repository.transition(original.task_id, TaskStatus.CANCELLED, reason="cancel")
+
+    first = repository.retry(original.task_id)
+    replay = repository.retry(original.task_id)
+
+    assert replay.task_id == first.task_id
+    assert replay.parent_task_id == original.task_id
+    rows = database.fetchall(
+        "SELECT task_id, idempotency_key, dedupe_key FROM tasks ORDER BY rowid"
+    )
+    assert len(rows) == 2
+    assert rows[1]["idempotency_key"] == f"retry:{original.task_id}"
+    assert rows[1]["dedupe_key"] == "system-diagnostic:active"
+    database.close()
+
+
+def test_retry_returns_existing_active_task_with_same_dedupe_key(
+    tmp_path: Path,
+) -> None:
+    """已有活动诊断时，重试不得绕过全局活动去重。"""
+
+    database, repository = make_repository(tmp_path)
+    original = repository.create(
+        TaskCreate(
+            task_type="system.diagnostic_snapshot",
+            dedupe_key="system-diagnostic:active",
+        )
+    )
+    repository.transition(original.task_id, TaskStatus.CANCELLED, reason="cancel")
+    active = repository.create(
+        TaskCreate(
+            task_type="system.diagnostic_snapshot",
+            dedupe_key="system-diagnostic:active",
+        )
+    )
+
+    retried = repository.retry(original.task_id)
+
+    assert retried.task_id == active.task_id
+    assert len(repository.list()) == 2
+    database.close()
+
+
 def test_retry_writes_parent_link_inside_creation_transaction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
