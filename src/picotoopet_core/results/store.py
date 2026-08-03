@@ -32,11 +32,23 @@ class ResultStore:
     def _object_path(self, object_hash: str) -> Path:
         return self.objects_dir / object_hash[:2] / object_hash[2:]
 
-    def _write_atomic(self, destination: Path, data: bytes) -> None:
+    def _write_atomic(
+        self,
+        destination: Path,
+        data: bytes,
+        *,
+        replace_existing: bool = False,
+    ) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
+        if destination.exists() and not replace_existing:
             return
-        descriptor, temporary_name = tempfile.mkstemp(prefix=".partial-", dir=destination.parent)
+        if destination.exists() and not destination.is_file():
+            raise ValueError(f"结果存储目标不是普通文件：{destination}")
+
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=".partial-",
+            dir=destination.parent,
+        )
         temporary = Path(temporary_name)
         try:
             with os.fdopen(descriptor, "wb") as handle:
@@ -47,12 +59,65 @@ class ResultStore:
         finally:
             temporary.unlink(missing_ok=True)
 
+    @staticmethod
+    def _object_is_valid(
+        path: Path,
+        *,
+        object_hash: str,
+        size_bytes: int,
+    ) -> bool:
+        try:
+            return (
+                path.is_file()
+                and path.stat().st_size == size_bytes
+                and sha256_file(path) == object_hash
+            )
+        except OSError:
+            return False
+
+    @staticmethod
+    def _manifest_is_valid(
+        path: Path,
+        *,
+        object_hash: str,
+        size_bytes: int,
+        result_type: str,
+    ) -> bool:
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return (
+            isinstance(document, dict)
+            and document.get("object_hash") == object_hash
+            and document.get("size_bytes") == size_bytes
+            and document.get("result_type") == result_type
+            and isinstance(document.get("created_at"), str)
+            and bool(document["created_at"])
+        )
+
     def put_bytes(self, data: bytes, *, result_type: str) -> StoredResult:
-        """存储字节并写入不可变清单。"""
+        """存储字节并写入不可变清单；损坏同哈希对象会被原子修复。"""
 
         object_hash = hashlib.sha256(data).hexdigest()
         object_path = self._object_path(object_hash)
-        self._write_atomic(object_path, data)
+        object_exists = object_path.exists()
+        object_valid = self._object_is_valid(
+            object_path,
+            object_hash=object_hash,
+            size_bytes=len(data),
+        )
+        self._write_atomic(
+            object_path,
+            data,
+            replace_existing=object_exists and not object_valid,
+        )
+        if not self._object_is_valid(
+            object_path,
+            object_hash=object_hash,
+            size_bytes=len(data),
+        ):
+            raise ValueError("结果对象写入后的 SHA-256 或大小校验失败。")
 
         manifest_path = self.manifests_dir / f"{object_hash}.json"
         manifest = {
@@ -61,16 +126,32 @@ class ResultStore:
             "result_type": result_type,
             "created_at": datetime.now(UTC).isoformat(),
         }
-        if not manifest_path.exists():
-            self._write_atomic(
-                manifest_path,
-                json.dumps(
-                    manifest,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    indent=2,
-                ).encode("utf-8"),
-            )
+        manifest_data = json.dumps(
+            manifest,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        ).encode("utf-8")
+        manifest_exists = manifest_path.exists()
+        manifest_valid = self._manifest_is_valid(
+            manifest_path,
+            object_hash=object_hash,
+            size_bytes=len(data),
+            result_type=result_type,
+        )
+        self._write_atomic(
+            manifest_path,
+            manifest_data,
+            replace_existing=manifest_exists and not manifest_valid,
+        )
+        if not self._manifest_is_valid(
+            manifest_path,
+            object_hash=object_hash,
+            size_bytes=len(data),
+            result_type=result_type,
+        ):
+            raise ValueError("结果清单写入后校验失败。")
+
         return StoredResult(
             object_hash,
             object_path,
