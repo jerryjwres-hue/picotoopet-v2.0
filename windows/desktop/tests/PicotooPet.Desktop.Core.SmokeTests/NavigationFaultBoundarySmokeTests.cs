@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -8,8 +10,33 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>在真实 WPF 布局流水线中验证页面故障边界可以隔离异常并恢复。</summary>
 internal static class NavigationFaultBoundarySmokeTests
 {
-    /// <summary>强制子元素在 Measure 阶段抛错，再验证替换内容仍能完成布局。</summary>
+    /// <summary>在专用 STA 线程强制页面抛错，并传播任意测试失败。</summary>
     public static void Run()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                RunOnStaThread();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    /// <summary>强制子元素在 Measure 阶段抛错，再验证替换内容仍能完成布局。</summary>
+    private static void RunOnStaThread()
     {
         Exception? observedException = null;
         var host = new NavigationContentHost
