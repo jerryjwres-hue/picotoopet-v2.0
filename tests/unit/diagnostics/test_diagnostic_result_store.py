@@ -34,6 +34,23 @@ def test_put_json_is_canonical_and_content_addressed(tmp_path: Path) -> None:
     assert store.read_json(first.object_hash, max_bytes=64 * 1024) == {"a": 1, "b": 2}
 
 
+def test_shared_object_manifest_is_not_rewritten_by_another_result_type(
+    tmp_path: Path,
+) -> None:
+    """对象按内容哈希共享，结果类型由数据库记录持有，不能互相改写清单。"""
+
+    store = ResultStore(tmp_path)
+    first = store.put_bytes(b"same-object", result_type="type-a")
+    manifest_before = first.manifest_path.read_bytes()
+
+    second = store.put_bytes(b"same-object", result_type="type-b")
+
+    assert second.object_hash == first.object_hash
+    assert second.result_type == "type-b"
+    assert second.manifest_path.read_bytes() == manifest_before
+    assert store.verify(second.object_hash) is True
+
+
 def test_put_json_repairs_corrupted_existing_object_atomically(tmp_path: Path) -> None:
     store = ResultStore(tmp_path)
     document = {"schema_version": "1.0", "checks": ["core"]}
