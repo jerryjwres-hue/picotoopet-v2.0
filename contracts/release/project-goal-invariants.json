@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "policy_id": "GOV-GOAL-001",
+  "status_semantics": {
+    "blocked_environment": [
+      "BLOCKED",
+      "UNVERIFIED",
+      "DIAGNOSTIC"
+    ],
+    "blocked_environment_must_not_change_goal": true
+  },
+  "windows": {
+    "required_manifest_values": {
+      "release_type": "prebuilt",
+      "target": "win-x64",
+      "source_build_on_user_pc": false,
+      "delivery_surface": "existing-native-wpf-desktop",
+      "ui_framework": "WPF",
+      "entry_executable": "Picotoo Pet AI.exe",
+      "integration_target": "TaskCenter",
+      "browser_ui": false,
+      "local_http_ui": false
+    },
+    "required_archive_paths": [
+      "payload/Picotoo Pet AI.exe",
+      "INSTALL_PHASE2_WINDOWS.vbs",
+      "VERIFY_PHASE2_WINDOWS.vbs",
+      "ROLLBACK_PHASE2_WINDOWS.vbs"
+    ],
+    "forbidden_name_fragments": [
+      "slicedhelper",
+      "windows-helper",
+      "picotoopet slice d.exe"
+    ],
+    "forbidden_suffixes": [
+      ".html",
+      ".htm",
+      ".js",
+      ".css"
+    ],
+    "user_install_requires_native_ci": true
+  },
+  "architecture": {
+    "fact_source": "Mac Core + SQLite Queue/Outbox",
+    "windows_role": "native WPF observation and controlled-command UI",
+    "worker_role": "explicitly registered task execution",
+    "historical_analysis_tasks": "unsupported-unleased-unmodified"
+  },
+  "change_control": {
+    "explicit_user_approval_required_before_implementation": [
+      "product_form",
+      "ui_technology",
+      "host_application",
+      "integration_point",
+      "control_execution_boundary",
+      "fact_source",
+      "persistence_model",
+      "install_verify_rollback_workflow",
+      "acceptance_criteria",
+      "native_platform_gates",
+      "security_privacy_approval_boundaries"
+    ]
+  }
+}
