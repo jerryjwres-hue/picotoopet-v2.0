@@ -34,6 +34,7 @@ internal static class Program
             NavigationContentRenderingSmokeTests.Run();
             TaskCenterSmokeTests.Run();
             TaskCenterWpfLayoutSmokeTests.Run();
+            await DiagnosticSnapshotSmokeTests.RunAsync().ConfigureAwait(false);
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
@@ -89,6 +90,7 @@ internal static class Program
             updated_at = DateTimeOffset.UtcNow,
             error_code = (string?)null,
             error_message = (string?)null,
+            result_id = (string?)null,
         });
         var first = new EventEnvelope(
             "2.2.0",
