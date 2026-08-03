@@ -13,11 +13,12 @@ def _read(path: Path) -> str:
 
 def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
     stamper = _read(ROOT / "scripts" / "stamp_windows_goal_integrity.py")
+    verifier = _read(ROOT / "scripts" / "verify_project_goal_integrity.py")
     contract = _read(
         ROOT / "contracts" / "release" / "project-goal-invariants.json"
     )
 
-    required = (
+    required_contract_values = (
         '"source_build_on_user_pc": false',
         '"delivery_surface": "existing-native-wpf-desktop"',
         '"ui_framework": "WPF"',
@@ -26,12 +27,26 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
         '"browser_ui": false',
         '"local_http_ui": false',
     )
-    for declaration in required:
+    for declaration in required_contract_values:
         assert declaration in contract
+
+    required_runtime_controls = (
+        "PICOTOO_GOAL_INTEGRITY_GATE_V1",
+        "Install-Phase2Prebuilt.ps1",
+        "Verify-Phase2Prebuilt.ps1",
+        "native_ci_verified",
+        "user_install_allowed",
+        "forbidden web UI payload",
+    )
+    for declaration in required_runtime_controls:
+        assert declaration in stamper
+        assert declaration in verifier
 
     assert 'manifest["user_install_allowed"] = native_verified' in stamper
     assert "PicotooPet-Phase2-Windows-Prebuilt-*.zip" in stamper
     assert "goal-integrity-stamp-report.json" in stamper
+    assert '"installer_goal_gate": "pass"' in stamper
+    assert '"installer_goal_gate": "pass"' in verifier
 
 
 def test_windows_release_runs_goal_integrity_gate_before_artifact_upload() -> None:
@@ -64,3 +79,12 @@ def test_windows_release_does_not_name_or_package_a_helper_surface() -> None:
     for value in forbidden:
         assert value not in builder
         assert value not in workflow
+
+
+def test_only_existing_native_wpf_executable_is_formal_entrypoint() -> None:
+    builder = _read(DESKTOP / "scripts" / "Build-Phase2WindowsRelease.ps1")
+    stamper = _read(ROOT / "scripts" / "stamp_windows_goal_integrity.py")
+
+    assert '$appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"' in builder
+    assert '"Picotoo Pet AI.exe"' in stamper
+    assert "forbidden web UI payload" in stamper
