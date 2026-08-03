@@ -7,12 +7,18 @@ from datetime import UTC, datetime
 from sqlite3 import Connection, Row
 from uuid import uuid4
 
-from picotoopet_core.domain.enums import TaskStatus
+from pydantic import ValidationError
+
+from picotoopet_core.diagnostics.models import DiagnosticSnapshotRequest
+from picotoopet_core.domain.enums import CloudPolicy, TaskStatus
 from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.results.models import StoredResult
 
 from .repository import LeaseOwnershipError, QueueRepository
 from .state_machine import InvalidTransitionError, ensure_transition
+
+_DIAGNOSTIC_TASK_TYPE = "system.diagnostic_snapshot"
+_DIAGNOSTIC_DEDUPE_KEY = "system-diagnostic:active"
 
 
 class DiagnosticCancelRequestedError(LeaseOwnershipError):
@@ -28,7 +34,7 @@ class DiagnosticQueueRepository(QueueRepository):
         *,
         trace_id: str | None = None,
     ) -> TaskRecord:
-        """诊断重试防重放；普通任务保持基础仓储语义且不嵌套事务。"""
+        """诊断重试重新冻结合同；普通任务保持基础仓储语义。"""
 
         with self.database.transaction() as connection:
             row = connection.execute(
@@ -40,23 +46,43 @@ class DiagnosticQueueRepository(QueueRepository):
             original = self._row_to_record(row)
             if original.status not in {TaskStatus.FAILED, TaskStatus.CANCELLED}:
                 raise InvalidTransitionError("只有 Failed 或 Cancelled 任务可以重试。")
-            is_diagnostic = original.task_type == "system.diagnostic_snapshot"
 
-            return self._create_in_transaction(
-                connection,
-                request=TaskCreate(
+            if original.task_type == _DIAGNOSTIC_TASK_TYPE:
+                try:
+                    diagnostic_request = DiagnosticSnapshotRequest.model_validate(
+                        original.payload
+                    )
+                except ValidationError as error:
+                    raise InvalidTransitionError(
+                        "历史系统诊断请求无效，禁止重试。"
+                    ) from error
+
+                retry_request = TaskCreate(
+                    project_id=original.project_id,
+                    task_type=_DIAGNOSTIC_TASK_TYPE,
+                    payload=diagnostic_request.model_dump(mode="json"),
+                    priority=50,
+                    resource_tag="system-diagnostic",
+                    idempotency_key=f"retry:{original.task_id}",
+                    dedupe_key=_DIAGNOSTIC_DEDUPE_KEY,
+                    max_attempts=2,
+                    timeout_seconds=30,
+                    cloud_policy=CloudPolicy.LOCAL_ONLY,
+                )
+            else:
+                retry_request = TaskCreate(
                     project_id=original.project_id,
                     task_type=original.task_type,
                     payload=original.payload,
                     priority=original.priority,
                     resource_tag=original.resource_tag,
-                    idempotency_key=(
-                        f"retry:{original.task_id}" if is_diagnostic else None
-                    ),
-                    dedupe_key=row["dedupe_key"] if is_diagnostic else None,
                     max_attempts=original.max_attempts,
                     timeout_seconds=original.timeout_seconds,
-                ),
+                )
+
+            return self._create_in_transaction(
+                connection,
+                request=retry_request,
                 parent_task_id=original.task_id,
                 trace_id=trace_id,
             )
