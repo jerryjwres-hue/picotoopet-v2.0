@@ -35,10 +35,13 @@ public sealed record DiagnosticSnapshotRequest(
     [property: JsonPropertyName("schema_version")] string SchemaVersion,
     [property: JsonPropertyName("sections")] IReadOnlyList<string> Sections)
 {
+    private static readonly IReadOnlyList<string> DefaultSections =
+        Array.AsReadOnly(["core", "worker", "queue"]);
+
     /// <summary>创建包含全部安全白名单卡片的默认请求。</summary>
     public static DiagnosticSnapshotRequest CreateDefault() => new(
         "1.0",
-        new[] { "core", "worker", "queue" });
+        DefaultSections);
 }
 
 /// <summary>Mac Core 返回的稳定任务快照。</summary>
