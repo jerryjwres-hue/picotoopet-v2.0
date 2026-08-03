@@ -27,7 +27,10 @@ from picotoopet_core.diagnostics.subprocess_runner import (
 )
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.models import TaskRecord
-from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
+from picotoopet_core.queue.diagnostic_repository import (
+    DiagnosticCancelRequestedError,
+    DiagnosticQueueRepository,
+)
 from picotoopet_core.queue.repository import LeaseOwnershipError, QueueRepository
 from picotoopet_core.results.store import ResultStore, ResultTooLargeError
 
@@ -195,6 +198,8 @@ class WorkerRuntime:
             else:
                 self._commit_result(task, handler_result)
         except DiagnosticCancelledError:
+            return self._finish_cancelled(task)
+        except DiagnosticCancelRequestedError:
             return self._finish_cancelled(task)
         except ValidationError:
             return self._finish_failed(
