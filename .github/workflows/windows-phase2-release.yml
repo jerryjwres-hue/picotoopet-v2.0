@@ -4,6 +4,13 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - "AGENTS.md"
+      - "contracts/release/project-goal-invariants.json"
+      - "scripts/stamp_windows_goal_integrity.py"
+      - "scripts/verify_project_goal_integrity.py"
+      - "tests/contract/test_project_goal_integrity.py"
+      - "tests/contract/test_windows_goal_integrity_stamper.py"
+      - "tests/release/test_windows_goal_integrity_release_contract.py"
       - "windows/desktop/**"
       - "tests/release/test_windows_prebuilt_delivery.py"
       - ".github/workflows/windows-phase2-release.yml"
@@ -11,6 +18,13 @@ on:
     branches:
       - main
     paths:
+      - "AGENTS.md"
+      - "contracts/release/project-goal-invariants.json"
+      - "scripts/stamp_windows_goal_integrity.py"
+      - "scripts/verify_project_goal_integrity.py"
+      - "tests/contract/test_project_goal_integrity.py"
+      - "tests/contract/test_windows_goal_integrity_stamper.py"
+      - "tests/release/test_windows_goal_integrity_release_contract.py"
       - "windows/desktop/**"
       - "tests/release/test_windows_prebuilt_delivery.py"
       - ".github/workflows/windows-phase2-release.yml"
@@ -49,10 +63,10 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check pytest pytest-asyncio PyYAML
 
-      - name: Run Windows release contract tests
+      - name: Run Windows release and goal-integrity contracts
         shell: powershell
         run: |
-          python -m pytest tests/release/test_windows_prebuilt_delivery.py -q
+          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_goal_integrity_release_contract.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
@@ -81,6 +95,26 @@ jobs:
           $version = "2.3.0-slice-d-diagnostic-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 -Version $version
 
+      - name: Stamp approved native WPF delivery invariants
+        shell: powershell
+        run: |
+          python scripts/stamp_windows_goal_integrity.py --output-root windows/desktop/artifacts/release
+          if ($LASTEXITCODE -ne 0) {
+            throw "GOAL_INTEGRITY_VIOLATION: 无法加盖原生 WPF 目标合同。"
+          }
+
+      - name: Validate actual installer against project goal contract
+        shell: powershell
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath windows/desktop/artifacts/release -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
+          if ($packages.Count -ne 1) {
+            throw "GOAL_INTEGRITY_VIOLATION: 原生 Windows 安装包数量必须为 1，实际为 $($packages.Count)。"
+          }
+          python scripts/verify_project_goal_integrity.py $packages[0].FullName --report windows/desktop/artifacts/release/goal-integrity-report.json
+          if ($LASTEXITCODE -ne 0) {
+            throw "GOAL_INTEGRITY_VIOLATION: 实际 ZIP 改变了批准的 WPF 产品目标。"
+          }
+
       - name: Verify packaged install verify and rollback lifecycle on Windows PowerShell 5.1
         shell: pwsh
         run: |
@@ -94,6 +128,8 @@ jobs:
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
             windows/desktop/artifacts/release/windows-build-report.json
+            windows/desktop/artifacts/release/goal-integrity-stamp-report.json
+            windows/desktop/artifacts/release/goal-integrity-report.json
             windows/desktop/artifacts/release/fixture-evidence/**
           if-no-files-found: error
           retention-days: 30
