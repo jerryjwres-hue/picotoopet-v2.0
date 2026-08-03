@@ -1,0 +1,1 @@
+Artifact boundary: no repair ZIP may be labeled SUCCESS until a hosted or equivalent native Windows runner compiles the WPF application, instantiates and lays out TaskCenterPage, validates package SHA/manifest under Windows PowerShell 5.1, and uploads evidence separately from DIAGNOSTIC artifacts.
