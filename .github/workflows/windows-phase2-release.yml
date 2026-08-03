@@ -5,9 +5,11 @@ on:
   pull_request:
     paths:
       - "AGENTS.md"
+      - "skills/preserving-project-goals/SKILL.md"
       - "contracts/release/project-goal-invariants.json"
       - "scripts/stamp_windows_goal_integrity.py"
       - "scripts/verify_project_goal_integrity.py"
+      - "tests/contract/test_preserving_project_goals_skill.py"
       - "tests/contract/test_project_goal_integrity.py"
       - "tests/contract/test_windows_goal_integrity_stamper.py"
       - "tests/release/test_windows_analyzer_regressions.py"
@@ -20,9 +22,11 @@ on:
       - main
     paths:
       - "AGENTS.md"
+      - "skills/preserving-project-goals/SKILL.md"
       - "contracts/release/project-goal-invariants.json"
       - "scripts/stamp_windows_goal_integrity.py"
       - "scripts/verify_project_goal_integrity.py"
+      - "tests/contract/test_preserving_project_goals_skill.py"
       - "tests/contract/test_project_goal_integrity.py"
       - "tests/contract/test_windows_goal_integrity_stamper.py"
       - "tests/release/test_windows_analyzer_regressions.py"
@@ -68,7 +72,7 @@ jobs:
       - name: Run Windows release analyzer and goal-integrity contracts
         shell: powershell
         run: |
-          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
+          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/contract/test_preserving_project_goals_skill.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
