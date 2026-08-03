@@ -81,8 +81,9 @@ class ResultStore:
         *,
         object_hash: str,
         size_bytes: int,
-        result_type: str,
     ) -> bool:
+        """对象清单按哈希共享；结果类型由数据库结果记录持有。"""
+
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -91,7 +92,6 @@ class ResultStore:
             isinstance(document, dict)
             and document.get("object_hash") == object_hash
             and document.get("size_bytes") == size_bytes
-            and document.get("result_type") == result_type
             and isinstance(document.get("created_at"), str)
             and bool(document["created_at"])
         )
@@ -137,7 +137,6 @@ class ResultStore:
             manifest_path,
             object_hash=object_hash,
             size_bytes=len(data),
-            result_type=result_type,
         )
         self._write_atomic(
             manifest_path,
@@ -148,7 +147,6 @@ class ResultStore:
             manifest_path,
             object_hash=object_hash,
             size_bytes=len(data),
-            result_type=result_type,
         ):
             raise ValueError("结果清单写入后校验失败。")
 
