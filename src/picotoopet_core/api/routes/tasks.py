@@ -28,8 +28,15 @@ def create_task(
     request: Request,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> TaskRecord:
-    """创建本地或人工审批任务。"""
+    """创建通用任务；保留系统诊断类型只能使用固定端点。"""
 
+    if payload.task_type == _DIAGNOSTIC_TASK_TYPE:
+        raise ApiError(
+            status_code=422,
+            code="RESERVED_TASK_TYPE",
+            message="系统诊断快照必须使用固定诊断端点创建。",
+            retryable=False,
+        )
     if idempotency_key:
         payload = payload.model_copy(update={"idempotency_key": idempotency_key})
     return request.app.state.services.queue.create(
