@@ -31,19 +31,6 @@ DiagnosticWarning = Literal[
     "QUEUE_BACKLOG",
     "QUEUE_OLD",
 ]
-PublicTaskStatus = Literal[
-    "Created",
-    "Validating",
-    "Queued",
-    "Running",
-    "WaitingForTool",
-    "WaitingForApproval",
-    "Retrying",
-    "Completed",
-    "Failed",
-    "Cancelled",
-    "Archived",
-]
 
 _SECTION_ORDER: tuple[DiagnosticSection, ...] = ("core", "worker", "queue")
 _PUBLIC_STATUSES: frozenset[str] = frozenset(
@@ -89,6 +76,39 @@ class DiagnosticSnapshotRequest(_StrictModel):
         return tuple(section for section in _SECTION_ORDER if section in selected)
 
 
+class DiagnosticFacts(_StrictModel):
+    """父 Worker 预先裁剪的唯一子进程输入。"""
+
+    core_version: str = Field(min_length=1, max_length=64)
+    core_health_state: Literal["online", "degraded", "offline"]
+    database_schema_version: int = Field(ge=0, le=10000)
+    worker_id: str | None = Field(default=None, max_length=128)
+    worker_state: Literal["starting", "online", "degraded", "offline"]
+    worker_reason: str = Field(min_length=1, max_length=100)
+    worker_supported_task_types: tuple[str, ...] = Field(default_factory=tuple, max_length=32)
+    worker_last_heartbeat_at: datetime | None = None
+    queue_counts: dict[str, int]
+    oldest_queued_age_seconds: int | None = Field(default=None, ge=0, le=315360000)
+
+    @field_validator("worker_supported_task_types")
+    @classmethod
+    def _normalize_supported_task_types(
+        cls,
+        values: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        if len(set(values)) != len(values):
+            raise ValueError("worker_supported_task_types 不允许重复。")
+        for value in values:
+            if not value or len(value) > 100:
+                raise ValueError("worker_supported_task_types 包含非法值。")
+        return tuple(sorted(values))
+
+    @field_validator("queue_counts")
+    @classmethod
+    def _validate_queue_counts(cls, counts: dict[str, int]) -> dict[str, int]:
+        return _normalize_counts(counts)
+
+
 class DiagnosticCoreSnapshot(_StrictModel):
     """Mac Core 非敏感公开状态。"""
 
@@ -126,13 +146,7 @@ class DiagnosticQueueSnapshot(_StrictModel):
     @field_validator("counts")
     @classmethod
     def _validate_counts(cls, counts: dict[str, int]) -> dict[str, int]:
-        unknown = set(counts) - _PUBLIC_STATUSES
-        if unknown:
-            raise ValueError("counts 包含未知任务状态。")
-        for value in counts.values():
-            if isinstance(value, bool) or value < 0:
-                raise ValueError("counts 必须是非负整数。")
-        return {key: counts[key] for key in sorted(counts)}
+        return _normalize_counts(counts)
 
 
 class DiagnosticCheck(_StrictModel):
@@ -148,9 +162,9 @@ class DiagnosticSnapshotResult(_StrictModel):
 
     schema_version: Literal["1.0"] = "1.0"
     generated_at: datetime
-    core: DiagnosticCoreSnapshot
-    worker: DiagnosticWorkerSnapshot
-    queue: DiagnosticQueueSnapshot
+    core: DiagnosticCoreSnapshot | None = None
+    worker: DiagnosticWorkerSnapshot | None = None
+    queue: DiagnosticQueueSnapshot | None = None
     checks: tuple[DiagnosticCheck, ...]
     warnings: tuple[DiagnosticWarning, ...] = ()
 
@@ -177,3 +191,13 @@ class DiagnosticSnapshotResult(_StrictModel):
         if len(set(warnings)) != len(warnings):
             raise ValueError("warnings 不允许重复。")
         return tuple(sorted(warnings))
+
+
+def _normalize_counts(counts: dict[str, int]) -> dict[str, int]:
+    unknown = set(counts) - _PUBLIC_STATUSES
+    if unknown:
+        raise ValueError("counts 包含未知任务状态。")
+    for value in counts.values():
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("counts 必须是非负整数。")
+    return {key: counts[key] for key in sorted(counts)}
