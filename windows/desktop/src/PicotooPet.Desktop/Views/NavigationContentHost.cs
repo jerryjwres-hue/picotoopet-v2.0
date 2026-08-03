@@ -8,6 +8,7 @@ namespace PicotooPet.Desktop.Views;
 public sealed class NavigationContentHost : ContentControl
 {
     private object? _faultedContent;
+    private bool _hasFaultedContent;
     private bool _faultNotificationQueued;
 
     /// <summary>页面布局故障被隔离后，在 Dispatcher 上发布一次恢复通知。</summary>
@@ -16,7 +17,7 @@ public sealed class NavigationContentHost : ContentControl
     /// <summary>执行子页面 Measure；可恢复异常只隔离当前内容。</summary>
     protected override System.Windows.Size MeasureOverride(System.Windows.Size constraint)
     {
-        if (ReferenceEquals(_faultedContent, Content))
+        if (_hasFaultedContent && ReferenceEquals(_faultedContent, Content))
         {
             return new System.Windows.Size();
         }
@@ -36,7 +37,7 @@ public sealed class NavigationContentHost : ContentControl
     /// <summary>执行子页面 Arrange；已故障内容不再进入重复布局。</summary>
     protected override System.Windows.Size ArrangeOverride(System.Windows.Size arrangeBounds)
     {
-        if (ReferenceEquals(_faultedContent, Content))
+        if (_hasFaultedContent && ReferenceEquals(_faultedContent, Content))
         {
             return arrangeBounds;
         }
@@ -56,12 +57,13 @@ public sealed class NavigationContentHost : ContentControl
     /// <summary>新内容替换故障内容后，允许正常布局并接受新的独立故障。</summary>
     private void ResetFaultStateForReplacementContent()
     {
-        if (_faultedContent is null || ReferenceEquals(_faultedContent, Content))
+        if (!_hasFaultedContent || ReferenceEquals(_faultedContent, Content))
         {
             return;
         }
 
         _faultedContent          = null;
+        _hasFaultedContent       = false;
         _faultNotificationQueued = false;
     }
 
@@ -69,7 +71,8 @@ public sealed class NavigationContentHost : ContentControl
     private void QueueFaultNotification(Exception exception)
     {
         var failedContent = Content;
-        _faultedContent = failedContent;
+        _faultedContent    = failedContent;
+        _hasFaultedContent = true;
         if (_faultNotificationQueued)
         {
             return;
