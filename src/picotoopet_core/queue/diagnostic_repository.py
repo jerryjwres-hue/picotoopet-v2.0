@@ -15,6 +15,10 @@ from .repository import LeaseOwnershipError, QueueRepository
 from .state_machine import InvalidTransitionError, ensure_transition
 
 
+class DiagnosticCancelRequestedError(LeaseOwnershipError):
+    """结果提交边界观察到仍由当前 Worker 持有的取消意图。"""
+
+
 class DiagnosticQueueRepository(QueueRepository):
     """在基础耐久队列上增加诊断结果的专属事务边界。"""
 
@@ -45,7 +49,9 @@ class DiagnosticQueueRepository(QueueRepository):
             self._assert_active_lease(row, worker_id=worker_id, now=now)
             assert row is not None
             if self._cancel_requested_in_transaction(connection, task_id):
-                raise LeaseOwnershipError("任务已有取消意图，禁止提交结果。")
+                raise DiagnosticCancelRequestedError(
+                    "任务已有取消意图，禁止提交结果。"
+                )
             current = TaskStatus(row["status"])
             ensure_transition(current, TaskStatus.COMPLETED)
 
