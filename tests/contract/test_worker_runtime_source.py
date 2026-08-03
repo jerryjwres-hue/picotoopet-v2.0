@@ -26,11 +26,12 @@ def test_worker_cli_is_explicit_and_not_started_by_serve() -> None:
     assert "lease_next" not in serve_block
 
 
-def test_worker_registry_is_closed_and_supports_only_noop_in_foundation() -> None:
-    """本切片不得动态发现处理器或误支持历史 analysis。"""
+def test_worker_registry_is_closed_and_supports_only_frozen_local_types() -> None:
+    """Slice D 只允许 noop 与诊断任务，不得动态发现或误支持 analysis。"""
 
     handlers = read(SRC / "worker" / "handlers.py")
     assert '"system.noop"' in handlers
+    assert '"system.diagnostic_snapshot"' in handlers
     assert '"analysis"' not in handlers
     assert "importlib" not in handlers
     assert "entry_points" not in handlers
@@ -48,12 +49,16 @@ def test_worker_runtime_uses_owner_guarded_queue_operations() -> None:
         "lease_next",
         "renew_lease",
         "complete_leased",
+        "complete_leased_with_result",
+        "cancel_leased",
         "fail_leased",
-        "recover_expired_leases",
+        "recover_expired_supported_leases",
+        "promote_retries",
         "LeaseHeartbeat",
     ):
         assert required in runtime
     assert ".transition(" not in runtime
+    assert "self.queue.recover_expired_leases()" not in runtime
 
 
 def test_worker_status_is_read_from_atomic_state_store() -> None:
@@ -68,21 +73,33 @@ def test_worker_status_is_read_from_atomic_state_store() -> None:
     assert "WorkerRuntime" not in route
 
 
-def test_foundation_contains_no_provider_or_external_execution() -> None:
-    """Worker 基础不得调用 Provider、上传或外部命令。"""
+def test_worker_allows_only_the_bounded_diagnostic_subprocess_runner() -> None:
+    """Worker 只能调用经过专门超时、取消和进程组清理的诊断 runner。"""
 
+    runtime = read(SRC / "worker" / "runtime.py")
+    runner = read(SRC / "diagnostics" / "subprocess_runner.py")
     worker_root = SRC / "worker"
     combined = "\n".join(read(path) for path in worker_root.glob("*.py") if path.is_file())
+
+    assert "from picotoopet_core.diagnostics.subprocess_runner import" in runtime
+    assert "DiagnosticSubprocessRunner" in runtime
+    assert "start_new_session=os.name == \"posix\"" in runner
+    assert "os.killpg(process.pid, signal.SIGTERM)" in runner
+    assert "os.killpg(process.pid, signal.SIGKILL)" in runner
+    assert "terminate_grace_seconds" in runner
+
     for forbidden in (
-        "OpenAI",
-        "Anthropic",
-        "ComfyUI",
-        "subprocess",
+        "import subprocess",
+        "from subprocess",
+        "subprocess.Popen",
         "os.system",
         "requests.",
         "httpx.",
         "urllib.",
+        "OpenAI",
+        "Anthropic",
+        "ComfyUI",
         "upload",
-        "lease_next(\"analysis\"",
+        'lease_next("analysis"',
     ):
         assert forbidden not in combined
