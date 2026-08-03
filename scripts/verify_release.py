@@ -31,6 +31,15 @@ GENERATED_REPORTS = {
     "docs/phase2/PHASE2_LOCAL_VERIFICATION_REPORT.json",
     "docs/phase2/PHASE2_LOCAL_VERIFICATION_REPORT.md",
 }
+# 这些仓库内脚本会被用户直接调用，因此源码本身必须兼容 Windows PowerShell 5.1。
+# 新的预编译 release 脚本在 Build-Phase2WindowsRelease.ps1 打包时统一写入 UTF-8 BOM，
+# CI 构建/测试脚本则由 PowerShell 7 执行，不应被误判为用户入口。
+POWERSHELL_BOM_REQUIRED = {
+    "windows/desktop/scripts/Install-Phase2Windows.ps1",
+    "windows/desktop/scripts/Verify-Phase2Windows.ps1",
+    "windows/desktop/scripts/Rollback-Phase2Windows.ps1",
+    "windows/desktop/scripts/Build-Phase2Windows.ps1",
+}
 
 
 def _files() -> list[Path]:
@@ -72,7 +81,9 @@ def verify() -> dict[str, object]:
     """执行模型哈希格式、契约存在和秘密扫描。"""
 
     model_manifest = json.loads(
-        (ROOT / "windows" / "bootstrap" / "model_manifest.json").read_text(encoding="utf-8")
+        (ROOT / "windows" / "bootstrap" / "model_manifest.json").read_text(
+            encoding="utf-8"
+        )
     )
     malformed_hashes = [
         model["filename"]
@@ -84,7 +95,9 @@ def verify() -> dict[str, object]:
         text = path.read_text(encoding="utf-8", errors="replace")
         for name, pattern in SECRET_PATTERNS.items():
             if pattern.search(text):
-                findings.append({"type": name, "file": path.relative_to(ROOT).as_posix()})
+                findings.append(
+                    {"type": name, "file": path.relative_to(ROOT).as_posix()}
+                )
 
     required = [
         ROOT / "contracts" / "openapi" / "mac_core_v1.openapi.json",
@@ -110,9 +123,10 @@ def verify() -> dict[str, object]:
         digest.update(relative + b"\0" + hashlib.sha256(path.read_bytes()).digest())
 
     powershell_bom_failures = [
-        path.relative_to(ROOT).as_posix()
-        for path in scanned_files
-        if path.suffix.lower() == ".ps1" and not path.read_bytes().startswith(b"\xef\xbb\xbf")
+        relative
+        for relative in sorted(POWERSHELL_BOM_REQUIRED)
+        if not (ROOT / relative).is_file()
+        or not (ROOT / relative).read_bytes().startswith(b"\xef\xbb\xbf")
     ]
     status = (
         "pass"
@@ -137,7 +151,6 @@ def verify() -> dict[str, object]:
     }
 
 
-
 def _stable_generated_at(output: Path, source_hash: str) -> str:
     """同一源码摘要复用原报告时间，保证重复验证不会制造无意义差异。"""
 
@@ -154,6 +167,7 @@ def _stable_generated_at(output: Path, source_hash: str) -> str:
             pass
     return datetime.now(UTC).isoformat()
 
+
 def main() -> int:
     """写入 JSON/Markdown 验证报告并返回退出码。"""
 
@@ -163,7 +177,10 @@ def main() -> int:
         output,
         str(report["source_tree_sha256"]),
     )
-    output.write_text(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    output.write_text(
+        json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
     markdown = ROOT / "docs" / "phase2" / "RELEASE_VERIFICATION_REPORT.md"
     markdown.write_text(
         "# 发布验证报告\n\n"
