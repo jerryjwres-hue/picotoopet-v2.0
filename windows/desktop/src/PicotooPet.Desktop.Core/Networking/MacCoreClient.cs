@@ -420,5 +420,7 @@ public sealed class MacCoreClient : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    private sealed class ResponseTooLargeException : Exception;
+    private sealed class ResponseTooLargeException : Exception
+    {
+    }
 }
