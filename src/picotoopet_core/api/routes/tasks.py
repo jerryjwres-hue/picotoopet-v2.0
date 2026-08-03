@@ -152,15 +152,10 @@ def get_task_result(task_id: str, request: Request) -> DiagnosticSnapshotResult:
     if task.status is not TaskStatus.COMPLETED or task.result_id is None:
         raise InvalidTransitionError("诊断结果尚未可用。")
 
-    metadata = services.result_records.get(task.result_id)
-    if metadata.task_id != task_id or metadata.result_type != _DIAGNOSTIC_TASK_TYPE:
-        raise ApiError(
-            status_code=500,
-            code="RESULT_INTEGRITY_ERROR",
-            message="诊断结果关联校验失败。",
-            retryable=False,
-        )
     try:
+        metadata = services.result_records.get(task.result_id)
+        if metadata.task_id != task_id or metadata.result_type != _DIAGNOSTIC_TASK_TYPE:
+            raise ValueError("诊断结果元数据关联不一致。")
         document = services.results.read_json(
             metadata.object_hash,
             max_bytes=_DIAGNOSTIC_RESULT_BYTES,
