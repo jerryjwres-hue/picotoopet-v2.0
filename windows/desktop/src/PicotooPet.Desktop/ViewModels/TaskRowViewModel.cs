@@ -6,6 +6,8 @@ namespace PicotooPet.Desktop.ViewModels;
 /// <summary>任务列表使用的可增量更新行模型，并将 Worker 可用性解释为真实用户状态。</summary>
 public sealed class TaskRowViewModel : ObservableObject
 {
+    private const string DiagnosticTaskType = "system.diagnostic_snapshot";
+
     private string _taskType;
     private string _status;
     private string _displayStatus;
@@ -34,7 +36,7 @@ public sealed class TaskRowViewModel : ObservableObject
         _errorCode      = task.ErrorCode;
         _attemptText    = FormatAttempt(task);
         _isWaitingForWorker = IsWaiting(task.Status, worker);
-        _canCancel      = CanCancelStatus(task.Status);
+        _canCancel      = CanCancelStatus(task.TaskType, task.Status);
         _canRetry       = CanRetryStatus(task.Status);
         _priority       = task.Priority;
         _timeoutSeconds = task.TimeoutSeconds;
@@ -138,7 +140,7 @@ public sealed class TaskRowViewModel : ObservableObject
 
     public bool IsDiagnostic => string.Equals(
         TaskType,
-        "system.diagnostic_snapshot",
+        DiagnosticTaskType,
         StringComparison.Ordinal);
 
     public bool CanViewDiagnosticResult =>
@@ -175,7 +177,7 @@ public sealed class TaskRowViewModel : ObservableObject
         ErrorCode          = task.ErrorCode;
         AttemptText        = FormatAttempt(task);
         IsWaitingForWorker = IsWaiting(task.Status, worker);
-        CanCancel          = CanCancelStatus(task.Status);
+        CanCancel          = CanCancelStatus(task.TaskType, task.Status);
         CanRetry           = CanRetryStatus(task.Status);
         Priority           = task.Priority;
         TimeoutSeconds     = task.TimeoutSeconds;
@@ -189,14 +191,22 @@ public sealed class TaskRowViewModel : ObservableObject
         string.Equals(status, "Queued", StringComparison.Ordinal)
         && !worker.Available;
 
-    private static bool CanCancelStatus(string status) => status is
-        "Created" or
-        "Validating" or
-        "Queued" or
-        "Running" or
-        "WaitingForTool" or
-        "WaitingForApproval" or
-        "Retrying";
+    private static bool CanCancelStatus(string taskType, string status)
+    {
+        if (string.Equals(taskType, DiagnosticTaskType, StringComparison.Ordinal))
+        {
+            return status is "Queued" or "Running";
+        }
+
+        return status is
+            "Created" or
+            "Validating" or
+            "Queued" or
+            "Running" or
+            "WaitingForTool" or
+            "WaitingForApproval" or
+            "Retrying";
+    }
 
     private static bool CanRetryStatus(string status) => status is
         "Failed" or
