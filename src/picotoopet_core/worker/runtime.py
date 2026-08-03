@@ -152,14 +152,20 @@ class WorkerRuntime:
         return tuple(sorted(self.handlers))
 
     def run_once(self) -> WorkerCycleResult:
-        """恢复过期租约，并最多处理一个明确支持的任务。"""
+        """恢复当前 Worker 支持的任务，并最多处理一个任务。"""
 
-        self.queue.recover_expired_leases()
         if isinstance(self.queue, DiagnosticQueueRepository):
+            self.queue.recover_expired_supported_leases(
+                supported_task_types=self.supported_task_types,
+                limit=100,
+            )
             self.queue.promote_retries(
                 supported_task_types=self.supported_task_types,
                 limit=100,
             )
+        else:
+            self.queue.recover_expired_leases()
+
         self._publish(state="online", reason="idle", active_task_id=None)
         task = self.queue.lease_next(
             self.worker_id,
