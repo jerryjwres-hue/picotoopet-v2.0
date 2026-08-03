@@ -242,9 +242,9 @@ public sealed class TaskCenterPageViewModel : PageViewModel
             }
             StatusMessage = $"诊断任务 {created.TaskId} 已入队。";
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            StatusMessage = $"创建诊断任务失败：{exception.Message}";
+            StatusMessage = "创建诊断任务失败；详细信息已写入脱敏日志。";
             throw;
         }
         finally
@@ -279,12 +279,12 @@ public sealed class TaskCenterPageViewModel : PageViewModel
             IsDiagnosticResultVisible = true;
             StatusMessage = "诊断结果已加载并通过固定合同校验。";
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             DiagnosticResult = DiagnosticResultViewModel.FromError(
                 "诊断结果无法安全显示；详细信息已写入脱敏日志。");
             IsDiagnosticResultVisible = true;
-            StatusMessage = $"读取诊断结果失败：{exception.Message}";
+            StatusMessage = "读取诊断结果失败；详细信息已写入脱敏日志。";
             throw;
         }
         finally
@@ -315,9 +315,9 @@ public sealed class TaskCenterPageViewModel : PageViewModel
                 ? "取消意图已提交，Worker 正在安全停止子进程。"
                 : "取消请求已由 Mac Core 完成。";
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            StatusMessage = $"取消失败：{exception.Message}";
+            StatusMessage = "取消失败；详细信息已写入脱敏日志。";
             throw;
         }
         finally
@@ -346,9 +346,9 @@ public sealed class TaskCenterPageViewModel : PageViewModel
                 .ConfigureAwait(true);
             StatusMessage = $"已创建重试子任务 {retried.TaskId}。";
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            StatusMessage = $"重试失败：{exception.Message}";
+            StatusMessage = "重试失败；详细信息已写入脱敏日志。";
             throw;
         }
         finally
@@ -384,9 +384,9 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         {
             StatusMessage = "诊断任务观察已取消；任务仍由 Mac Core 管理。";
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            StatusMessage = $"诊断任务观察暂时中断：{exception.Message}";
+            StatusMessage = "诊断任务观察暂时中断；任务仍由 Mac Core 管理。";
         }
         finally
         {
