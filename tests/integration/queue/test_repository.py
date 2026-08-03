@@ -105,6 +105,30 @@ def test_retry_creates_new_child_task_instead_of_reopening_terminal_task(tmp_pat
     database.close()
 
 
+def test_diagnostic_repository_keeps_non_diagnostic_retry_semantics(
+    tmp_path: Path,
+) -> None:
+    """Core 的增强仓储不得为普通任务制造嵌套事务或改变重试语义。"""
+
+    database, repository = make_diagnostic_repository(tmp_path)
+    original = repository.create(TaskCreate(task_type="analysis", payload={"a": 1}))
+    repository.transition(original.task_id, TaskStatus.CANCELLED, reason="cancel")
+
+    retried = repository.retry(original.task_id)
+
+    assert retried.task_id != original.task_id
+    assert retried.parent_task_id == original.task_id
+    assert retried.status is TaskStatus.QUEUED
+    row = database.fetchone(
+        "SELECT idempotency_key, dedupe_key FROM tasks WHERE task_id = ?",
+        (retried.task_id,),
+    )
+    assert row is not None
+    assert row["idempotency_key"] is None
+    assert row["dedupe_key"] is None
+    database.close()
+
+
 def test_diagnostic_retry_replay_returns_same_child_and_preserves_dedupe_key(
     tmp_path: Path,
 ) -> None:
