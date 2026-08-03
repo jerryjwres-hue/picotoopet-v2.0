@@ -175,3 +175,8 @@ CREATE TABLE IF NOT EXISTS event_outbox (
     delivery_attempts  INTEGER NOT NULL DEFAULT 0
 );
 """
+
+MIGRATION_002 = r"""
+ALTER TABLE tasks
+ADD COLUMN cloud_policy TEXT NOT NULL DEFAULT 'local_only';
+"""
