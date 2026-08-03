@@ -1,11 +1,16 @@
 using System.IO;
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Views;
+using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Services;
 
@@ -87,6 +92,9 @@ internal static class AppSelfTest
             }
             checks["task_center_policy"] = "pass";
 
+            VerifyTaskCenterContentRendering(taskCenter);
+            checks["task_center_rendering"] = "pass";
+
             shell.Navigate(NavigationRoute.Settings);
             if (shell.CurrentPage is not SettingsPageViewModel)
             {
@@ -123,6 +131,62 @@ internal static class AppSelfTest
                 $"PHASE23_TASK_CENTER_SELF_TEST=FAIL | {exception.Message}");
             return 1;
         }
+    }
+
+    /// <summary>在当前发布进程中验证生产 DataTemplate 会生成可见任务中心页面。</summary>
+    private static void VerifyTaskCenterContentRendering(
+        TaskCenterPageViewModel taskCenter)
+    {
+        var host = new NavigationContentHost
+        {
+            Content = taskCenter,
+        };
+        var root = new System.Windows.Controls.Border
+        {
+            Width  = 960,
+            Height = 680,
+            Child  = host,
+        };
+
+        root.Measure(new Size(960, 680));
+        root.Arrange(new Rect(0, 0, 960, 680));
+        root.UpdateLayout();
+        root.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+        root.UpdateLayout();
+
+        var page = FindVisualDescendant<TaskCenterPage>(host);
+        if (page is null)
+        {
+            throw new InvalidOperationException(
+                "发布 EXE 未通过生产 DataTemplate 渲染 TaskCenterPage。");
+        }
+        if (page.ActualWidth <= 0 || page.ActualHeight <= 0)
+        {
+            throw new InvalidOperationException(
+                "发布 EXE 中的 TaskCenterPage 没有可见布局尺寸。");
+        }
+    }
+
+    private static T? FindVisualDescendant<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        var childCount = VisualTreeHelper.GetChildrenCount(parent);
+        for (var index = 0; index < childCount; index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            var nested = FindVisualDescendant<T>(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
     }
 
     private static string? GetArgumentValue(string[] args, string name)
