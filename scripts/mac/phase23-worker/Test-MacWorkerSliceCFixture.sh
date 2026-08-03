@@ -1,5 +1,5 @@
 #!/bin/bash
-# 在临时含空格目录中验证 Slice C 安装、执行、取消、恢复、历史保护与回滚。
+# 在临时含空格目录中验证 Slice D 安装、诊断结果、取消、超时、恢复、历史保护与回滚。
 set -euo pipefail
 
 release_root="${1:-}"
@@ -37,13 +37,14 @@ package_root="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d -print | he
 source "$package_root/lib.sh"
 # shellcheck source=/dev/null
 source "$package_root/worker-lib.sh"
+package_version="$(read_manifest "$package_root" package_version)"
 
 export HOME="$fixture_home"
 export PICOTOO_RUNTIME_ROOT_OVERRIDE="$runtime_root"
 export PICOTOO_RUNTIME_ROOT="$runtime_root"
 export PICOTOO_FIXTURE_MODE=1
 token="fixture-token-0123456789abcdef0123456789"
-worker_id="picotoopet-m4-501"
+worker_id="picotoopet-m4-fixture"
 export PICOTOO_API_TOKEN="$token"
 
 cleanup() {
@@ -53,12 +54,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-baseline="$runtime_root/versions/baseline-slice-b-compatible"
+baseline="$runtime_root/versions/baseline-slice-c-compatible"
 python3 -m venv "$baseline/.venv"
 "$baseline/.venv/bin/python" -m pip install \
   --no-index \
   --find-links "$package_root/payload/wheelhouse" \
-  "picotoopet-core==2.3.0.dev2"
+  "picotoopet-core==$package_version"
 ln -s "$baseline" "$runtime_root/current"
 
 port="$(choose_free_port)"
@@ -78,12 +79,11 @@ import urllib.request
 from pathlib import Path
 
 base, token, output = sys.argv[1:]
-body = json.dumps(
-    {"task_type": "analysis", "payload": {"historical": True}, "priority": 1}
-).encode("utf-8")
 request = urllib.request.Request(
     f"{base}/api/v1/tasks",
-    data=body,
+    data=json.dumps(
+        {"task_type": "analysis", "payload": {"historical": True}}
+    ).encode("utf-8"),
     method="POST",
     headers={
         "Authorization": f"Bearer {token}",
@@ -105,22 +105,24 @@ bash "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" --package-root "$package
 bash "$package_root/VERIFY_MAC_WORKER_SLICE_C.command"
 
 historical_after="$temp_root/historical-after.json"
-noop_after="$temp_root/noop-after.json"
+diagnostic_task="$temp_root/diagnostic-task.json"
+diagnostic_result="$temp_root/diagnostic-result.json"
 python3 - \
   "$base_url" \
   "$token" \
   "$historical_before" \
   "$historical_after" \
-  "$noop_after" <<'PY'
+  "$diagnostic_task" \
+  "$diagnostic_result" <<'PY'
 import json
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
-base, token, historical_before_path, historical_after_path, noop_after_path = sys.argv[1:]
+base, token, before_path, after_path, task_path, result_path = sys.argv[1:]
 headers = {"Authorization": f"Bearer {token}"}
-before = json.loads(Path(historical_before_path).read_text(encoding="utf-8"))
+before = json.loads(Path(before_path).read_text(encoding="utf-8"))
 request = urllib.request.Request(
     f"{base}/api/v1/tasks/{before['task_id']}",
     headers=headers,
@@ -131,25 +133,31 @@ if historical.get("status") != "Queued":
     raise SystemExit(f"historical analysis task changed: {historical!r}")
 if historical.get("updated_at") != before.get("updated_at"):
     raise SystemExit("historical analysis updated_at changed")
-Path(historical_after_path).write_text(
+Path(after_path).write_text(
     json.dumps(historical, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
     encoding="utf-8",
 )
 
-body = json.dumps(
-    {"task_type": "system.noop", "payload": {"fixture": True}, "priority": 10}
-).encode("utf-8")
 create = urllib.request.Request(
-    f"{base}/api/v1/tasks",
-    data=body,
+    f"{base}/api/v1/tasks/system-diagnostic-snapshot",
+    data=json.dumps(
+        {
+            "schema_version": "1.0",
+            "sections": ["core", "worker", "queue"],
+        }
+    ).encode("utf-8"),
     method="POST",
-    headers={**headers, "Content-Type": "application/json"},
+    headers={
+        **headers,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "fixture-diagnostic-complete",
+    },
 )
 with urllib.request.urlopen(create, timeout=5) as response:
-    noop = json.load(response)
-for _ in range(100):
+    created = json.load(response)
+for _ in range(200):
     get = urllib.request.Request(
-        f"{base}/api/v1/tasks/{noop['task_id']}",
+        f"{base}/api/v1/tasks/{created['task_id']}",
         headers=headers,
     )
     with urllib.request.urlopen(get, timeout=5) as response:
@@ -157,49 +165,43 @@ for _ in range(100):
     if current.get("status") == "Completed":
         break
     if current.get("status") in {"Failed", "Cancelled"}:
-        raise SystemExit(f"system.noop entered unexpected terminal state: {current!r}")
+        raise SystemExit(f"diagnostic task entered unexpected terminal: {current!r}")
     time.sleep(0.1)
 else:
-    raise SystemExit("system.noop did not complete")
-Path(noop_after_path).write_text(
+    raise SystemExit("diagnostic task did not complete")
+if not current.get("result_id"):
+    raise SystemExit(f"diagnostic result_id missing: {current!r}")
+Path(task_path).write_text(
     json.dumps(current, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
     encoding="utf-8",
 )
-PY
 
-attempt_snapshot="$temp_root/noop-attempt.json"
-python3 - "$runtime_root/database/core.db" "$noop_after" "$attempt_snapshot" <<'PY'
-import json
-import sqlite3
-import sys
-from pathlib import Path
-
-database_path, noop_path, output_path = sys.argv[1:]
-noop = json.loads(Path(noop_path).read_text(encoding="utf-8"))
-connection = sqlite3.connect(database_path)
-connection.row_factory = sqlite3.Row
-try:
-    row = connection.execute(
-        "SELECT * FROM task_attempts WHERE task_id = ? ORDER BY attempt_number DESC LIMIT 1",
-        (noop["task_id"],),
-    ).fetchone()
-finally:
-    connection.close()
-if row is None:
-    raise SystemExit("system.noop attempt record is missing")
-payload = dict(row)
-if payload.get("status") != "Completed" or not payload.get("finished_at"):
-    raise SystemExit(f"attempt is not completed: {payload!r}")
-Path(output_path).write_text(
-    json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-    encoding="utf-8",
+result_request = urllib.request.Request(
+    f"{base}/api/v1/tasks/{created['task_id']}/result",
+    headers=headers,
 )
+with urllib.request.urlopen(result_request, timeout=5) as response:
+    result_bytes = response.read()
+if len(result_bytes) > 64 * 1024:
+    raise SystemExit("diagnostic result exceeded 64 KiB")
+result = json.loads(result_bytes)
+if result.get("schema_version") != "1.0":
+    raise SystemExit(f"diagnostic schema mismatch: {result!r}")
+if not result.get("checks"):
+    raise SystemExit(f"diagnostic checks missing: {result!r}")
+worker = result.get("worker") or {}
+if worker.get("supported_task_types") != [
+    "system.diagnostic_snapshot",
+    "system.noop",
+]:
+    raise SystemExit(f"diagnostic Worker card mismatch: {worker!r}")
+Path(result_path).write_bytes(result_bytes)
 PY
 
-echo "PHASE23_MAC_WORKER_EXECUTION_FIXTURE=PASS"
+echo "PHASE23_MAC_WORKER_DIAGNOSTIC_FIXTURE=PASS"
 echo "PHASE23_MAC_WORKER_HISTORICAL_PROTECTION=PASS"
 
-# Worker 停止时创建并取消支持任务；重启后它必须保持 Cancelled 且 attempt_count 为 0。
+# Worker 停止时创建并取消诊断任务；重启后它必须保持 Cancelled 且没有结果。
 stop_fixture_worker "$runtime_root"
 cancelled_after="$temp_root/cancelled-after.json"
 python3 - "$base_url" "$token" "$cancelled_after" <<'PY'
@@ -214,12 +216,12 @@ headers = {
     "Content-Type": "application/json",
 }
 create = urllib.request.Request(
-    f"{base}/api/v1/tasks",
+    f"{base}/api/v1/tasks/system-diagnostic-snapshot",
     data=json.dumps(
-        {"task_type": "system.noop", "payload": {"cancel_fixture": True}}
+        {"schema_version": "1.0", "sections": ["core", "worker", "queue"]}
     ).encode("utf-8"),
     method="POST",
-    headers=headers,
+    headers={**headers, "Idempotency-Key": "fixture-diagnostic-cancelled"},
 )
 with urllib.request.urlopen(create, timeout=5) as response:
     task = json.load(response)
@@ -231,8 +233,10 @@ cancel = urllib.request.Request(
 )
 with urllib.request.urlopen(cancel, timeout=5) as response:
     cancelled = json.load(response)
-if cancelled.get("status") != "Cancelled" or cancelled.get("attempt_count") != 0:
-    raise SystemExit(f"cancel contract failed: {cancelled!r}")
+if cancelled.get("status") != "Cancelled":
+    raise SystemExit(f"queued cancel contract failed: {cancelled!r}")
+if cancelled.get("attempt_count") != 0 or cancelled.get("result_id") is not None:
+    raise SystemExit(f"cancelled task has attempt or result: {cancelled!r}")
 Path(output).write_text(
     json.dumps(cancelled, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
     encoding="utf-8",
@@ -255,135 +259,200 @@ request = urllib.request.Request(
 )
 with urllib.request.urlopen(request, timeout=5) as response:
     current = json.load(response)
-if current.get("status") != "Cancelled" or current.get("attempt_count") != 0:
+if current.get("status") != "Cancelled":
     raise SystemExit(f"Worker touched cancelled task: {current!r}")
-Path(path).write_text(
-    json.dumps(current, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-    encoding="utf-8",
-)
+if current.get("attempt_count") != 0 or current.get("result_id") is not None:
+    raise SystemExit(f"Worker added attempt/result to cancelled task: {current!r}")
 PY
 echo "PHASE23_MAC_WORKER_CANCELLATION_FIXTURE=PASS"
 
-# 模拟 Worker 崩溃后的过期租约；重启 Worker 必须恢复为 Retrying 并关闭 attempt。
+# 用实际安装 wheel 验证子进程取消、硬超时和无孤儿进程。
 stop_fixture_worker "$runtime_root"
-expired_created="$temp_root/expired-created.json"
-python3 - "$base_url" "$token" "$expired_created" <<'PY'
+subprocess_evidence="$temp_root/subprocess-evidence.json"
+"$runtime_root/current/.venv/bin/python" - "$temp_root/subprocess" "$subprocess_evidence" <<'PY'
 import json
+import os
 import sys
-import urllib.request
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
-base, token, output = sys.argv[1:]
-request = urllib.request.Request(
-    f"{base}/api/v1/tasks",
-    data=json.dumps(
-        {"task_type": "system.noop", "payload": {"expired_lease_fixture": True}}
-    ).encode("utf-8"),
-    method="POST",
-    headers={
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    },
+from picotoopet_core.diagnostics.models import DiagnosticFacts, DiagnosticSnapshotRequest
+from picotoopet_core.diagnostics.subprocess_runner import (
+    DiagnosticCancelledError,
+    DiagnosticSubprocessRunner,
+    DiagnosticTimeoutError,
 )
-with urllib.request.urlopen(request, timeout=5) as response:
-    task = json.load(response)
-Path(output).write_text(
-    json.dumps(task, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+
+root = Path(sys.argv[1])
+output = Path(sys.argv[2])
+root.mkdir(parents=True, exist_ok=True)
+request = DiagnosticSnapshotRequest()
+facts = DiagnosticFacts(
+    core_version="2.3.0",
+    core_health_state="online",
+    database_schema_version=1,
+    worker_id="worker-fixture",
+    worker_state="online",
+    worker_reason="executing",
+    worker_supported_task_types=("system.diagnostic_snapshot", "system.noop"),
+    worker_last_heartbeat_at=datetime.now(UTC),
+    queue_counts={"Queued": 1},
+    oldest_queued_age_seconds=1,
+)
+
+
+def assert_reaped(pid: int | None) -> None:
+    if pid is None:
+        raise SystemExit("runner did not expose child pid")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return
+    raise SystemExit(f"orphan diagnostic process remains: {pid}")
+
+cancel_runner = DiagnosticSubprocessRunner(
+    poll_seconds=0.02,
+    terminate_grace_seconds=0.5,
+)
+started = time.monotonic()
+try:
+    cancel_runner.run(
+        request,
+        facts,
+        output_dir=root / "cancel",
+        timeout_seconds=3,
+        cancel_requested=lambda: time.monotonic() - started >= 0.15,
+        test_delay_seconds=5,
+    )
+except DiagnosticCancelledError:
+    pass
+else:
+    raise SystemExit("cancel test did not raise DiagnosticCancelledError")
+assert_reaped(cancel_runner.last_pid)
+
+timeout_runner = DiagnosticSubprocessRunner(
+    poll_seconds=0.02,
+    terminate_grace_seconds=0.5,
+)
+try:
+    timeout_runner.run(
+        request,
+        facts,
+        output_dir=root / "timeout",
+        timeout_seconds=0.15,
+        cancel_requested=lambda: False,
+        test_delay_seconds=5,
+    )
+except DiagnosticTimeoutError:
+    pass
+else:
+    raise SystemExit("timeout test did not raise DiagnosticTimeoutError")
+assert_reaped(timeout_runner.last_pid)
+
+output.write_text(
+    json.dumps(
+        {
+            "status": "pass",
+            "cancelled_process_reaped": True,
+            "timed_out_process_reaped": True,
+            "hard_timeout_seconds": 30,
+            "termination_grace_seconds": 5,
+        },
+        sort_keys=True,
+        indent=2,
+    )
+    + "\n",
     encoding="utf-8",
 )
 PY
+echo "PHASE23_MAC_WORKER_SUBPROCESS_FIXTURE=PASS"
+
+# 直接制造受支持类型的过期租约，并验证有界恢复只处理该类型且关闭 attempt。
+expired_after="$temp_root/expired-after.json"
+expired_attempt="$temp_root/expired-attempt.json"
 "$runtime_root/current/.venv/bin/python" - \
   "$runtime_root/database/core.db" \
-  "$expired_created" <<'PY'
+  "$expired_after" \
+  "$expired_attempt" <<'PY'
 import json
+import sqlite3
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from picotoopet_core.db.database import Database
-from picotoopet_core.queue.repository import QueueRepository
+from picotoopet_core.domain.models import TaskCreate
+from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 
-database_path, task_path = sys.argv[1:]
-task = json.loads(Path(task_path).read_text(encoding="utf-8"))
+database_path, task_output, attempt_output = sys.argv[1:]
 database = Database(Path(database_path))
 database.open()
 try:
-    repository = QueueRepository(database)
+    repository = DiagnosticQueueRepository(database)
+    task = repository.create(
+        TaskCreate(
+            task_type="system.diagnostic_snapshot",
+            payload={"schema_version": "1.0", "sections": ["core", "worker", "queue"]},
+            idempotency_key="fixture-expired-diagnostic",
+            dedupe_key="fixture-expired-diagnostic",
+            max_attempts=2,
+            timeout_seconds=30,
+        )
+    )
     leased = repository.lease_next(
         "dead-worker",
         lease_seconds=60,
-        supported_task_types=("system.noop",),
+        supported_task_types=("system.diagnostic_snapshot",),
     )
-    if leased is None or leased.task_id != task["task_id"]:
+    if leased is None or leased.task_id != task.task_id:
         raise SystemExit(f"unexpected leased task: {leased!r}")
     database.execute(
         "UPDATE tasks SET lease_expires_at = ? WHERE task_id = ?",
-        ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), task["task_id"]),
+        ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), task.task_id),
     )
+    recovered = repository.recover_expired_supported_leases(
+        supported_task_types=("system.diagnostic_snapshot", "system.noop"),
+    )
+    if recovered != [task.task_id]:
+        raise SystemExit(f"unexpected recovered tasks: {recovered!r}")
+    current = repository.get(task.task_id)
+    if current.status.value != "Retrying" or current.error_code != "LEASE_EXPIRED":
+        raise SystemExit(f"expired lease recovery failed: {current!r}")
 finally:
     database.close()
-PY
-start_fixture_worker "$runtime_root" "$worker_id" "$token"
-wait_for_worker_state "$runtime_root" "online"
-expired_after="$temp_root/expired-after.json"
-python3 - "$base_url" "$token" "$expired_created" "$expired_after" <<'PY'
-import json
-import sys
-import time
-import urllib.request
-from pathlib import Path
 
-base, token, created_path, output_path = sys.argv[1:]
-created = json.loads(Path(created_path).read_text(encoding="utf-8"))
-headers = {"Authorization": f"Bearer {token}"}
-for _ in range(100):
-    request = urllib.request.Request(
-        f"{base}/api/v1/tasks/{created['task_id']}",
-        headers=headers,
-    )
-    with urllib.request.urlopen(request, timeout=5) as response:
-        current = json.load(response)
-    if current.get("status") in {"Retrying", "Failed"}:
-        break
-    time.sleep(0.1)
-else:
-    raise SystemExit("expired lease was not recovered")
-if current.get("status") != "Retrying":
-    raise SystemExit(f"expired lease did not enter Retrying: {current!r}")
-if current.get("error_code") != "LEASE_EXPIRED":
-    raise SystemExit(f"expired lease error code missing: {current!r}")
-Path(output_path).write_text(
-    json.dumps(current, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-    encoding="utf-8",
-)
-PY
-expired_attempt="$temp_root/expired-attempt.json"
-python3 - "$runtime_root/database/core.db" "$expired_created" "$expired_attempt" <<'PY'
-import json
-import sqlite3
-import sys
-from pathlib import Path
-
-database_path, task_path, output_path = sys.argv[1:]
-task = json.loads(Path(task_path).read_text(encoding="utf-8"))
 connection = sqlite3.connect(database_path)
 connection.row_factory = sqlite3.Row
 try:
     row = connection.execute(
         "SELECT * FROM task_attempts WHERE task_id = ? ORDER BY attempt_number DESC LIMIT 1",
-        (task["task_id"],),
+        (task.task_id,),
     ).fetchone()
 finally:
     connection.close()
 if row is None:
-    raise SystemExit("expired lease attempt is missing")
-payload = dict(row)
-if payload.get("status") != "Failed":
-    raise SystemExit(f"expired attempt status is invalid: {payload!r}")
-if payload.get("error_code") != "LEASE_EXPIRED" or not payload.get("finished_at"):
-    raise SystemExit(f"expired attempt was not closed safely: {payload!r}")
-Path(output_path).write_text(
-    json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+    raise SystemExit("expired attempt is missing")
+attempt = dict(row)
+if attempt.get("status") != "Failed" or attempt.get("error_code") != "LEASE_EXPIRED":
+    raise SystemExit(f"expired attempt was not closed: {attempt!r}")
+if not attempt.get("finished_at"):
+    raise SystemExit(f"expired attempt has no finished_at: {attempt!r}")
+Path(task_output).write_text(
+    json.dumps(
+        {
+            "task_id": current.task_id,
+            "status": current.status.value,
+            "error_code": current.error_code,
+        },
+        sort_keys=True,
+        indent=2,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+Path(attempt_output).write_text(
+    json.dumps(attempt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
     encoding="utf-8",
 )
 PY
@@ -391,7 +460,13 @@ echo "PHASE23_MAC_WORKER_EXPIRED_LEASE_FIXTURE=PASS"
 
 bash "$package_root/ROLLBACK_MAC_WORKER_SLICE_C.command"
 verify_health "$base_url"
-if [[ "$(resolve_current_version "$runtime_root")" != "$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$baseline")" ]]; then
+resolved_baseline="$(python3 - "$baseline" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve())
+PY
+)"
+if [[ "$(resolve_current_version "$runtime_root")" != "$resolved_baseline" ]]; then
   echo "回滚后 current 未恢复 baseline。" >&2
   exit 1
 fi
@@ -406,15 +481,16 @@ fi
 
 cp "$historical_before" "$evidence_root/historical-before.json"
 cp "$historical_after" "$evidence_root/historical-after.json"
-cp "$noop_after" "$evidence_root/noop-after.json"
-cp "$attempt_snapshot" "$evidence_root/noop-attempt.json"
+cp "$diagnostic_task" "$evidence_root/diagnostic-task.json"
+cp "$diagnostic_result" "$evidence_root/diagnostic-result.json"
 cp "$cancelled_after" "$evidence_root/cancelled-after.json"
+cp "$subprocess_evidence" "$evidence_root/subprocess-evidence.json"
 cp "$expired_after" "$evidence_root/expired-after.json"
 cp "$expired_attempt" "$evidence_root/expired-attempt.json"
-cp "$runtime_root/state/slice-c-previous-version.txt" "$evidence_root/previous-version.txt"
-cp "$runtime_root/state/slice-c-rollback-from.txt" "$evidence_root/rollback-from.txt"
+cp "$runtime_root/state/slice-d-previous-version.txt" "$evidence_root/previous-version.txt"
+cp "$runtime_root/state/slice-d-rollback-from.txt" "$evidence_root/rollback-from.txt"
 find "$runtime_root/reports" -maxdepth 1 -type f -name '*.json' -exec cp {} "$evidence_root/" \;
-python3 - "$evidence_root/fixture-summary.json" <<'PY'
+python3 - "$evidence_root/fixture-summary.json" "$package_version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -424,15 +500,23 @@ Path(sys.argv[1]).write_text(
         {
             "status": "pass",
             "architecture": "arm64",
+            "package_version": sys.argv[2],
+            "runtime_version": "2.3.0-slice-d-worker",
             "runtime_path_with_spaces": True,
             "offline_install": True,
             "worker_online_verified": True,
-            "supported_task_types": ["system.noop"],
-            "system_noop_completed": True,
-            "attempt_record_completed": True,
+            "supported_task_types": [
+                "system.diagnostic_snapshot",
+                "system.noop",
+            ],
+            "diagnostic_completed": True,
+            "diagnostic_result_verified": True,
+            "diagnostic_result_max_bytes": 65536,
             "historical_analysis_preserved": True,
             "cancelled_task_preserved": True,
-            "expired_lease_recovered": True,
+            "cancelled_process_reaped": True,
+            "timed_out_process_reaped": True,
+            "expired_supported_lease_recovered": True,
             "expired_attempt_closed": True,
             "rollback_verified": True,
             "worker_stopped_after_rollback": True,
@@ -447,5 +531,7 @@ Path(sys.argv[1]).write_text(
 )
 PY
 
+echo "PHASE23_MAC_WORKER_EXECUTION_FIXTURE=PASS"
 echo "PHASE23_MAC_WORKER_ROLLBACK_FIXTURE=PASS"
+echo "PHASE23_MAC_WORKER_SLICE_D_FIXTURE=PASS"
 echo "EVIDENCE=$evidence_root"
