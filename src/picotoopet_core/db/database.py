@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
-from .schema import MIGRATION_001
+from .schema import MIGRATION_001, MIGRATION_002
 
 
 class Database:
@@ -67,21 +67,36 @@ class Database:
                 connection.commit()
 
     def apply_migrations(self) -> None:
-        """幂等应用 Phase 1 数据库迁移。"""
+        """幂等应用数据库迁移，并兼容已存在的 Phase 1 数据库。"""
 
         with self.transaction() as connection:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS schema_migrations "
                 "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
             )
-            exists = connection.execute(
+            migration_001_exists = connection.execute(
                 "SELECT 1 FROM schema_migrations WHERE version = 1"
             ).fetchone()
-            if exists is None:
+            if migration_001_exists is None:
                 connection.executescript(MIGRATION_001)
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (1, datetime.now(UTC).isoformat()),
+                )
+
+            migration_002_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 2"
+            ).fetchone()
+            if migration_002_exists is None:
+                task_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+                }
+                if "cloud_policy" not in task_columns:
+                    connection.executescript(MIGRATION_002)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (2, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
