@@ -1,5 +1,5 @@
 #!/bin/bash
-# 在临时目录中验证离线安装、API 合同、历史 Queued 保持和回滚。
+# 在临时含空格目录中验证 Slice D Core 离线安装、现有 Worker 保持、历史任务保护和回滚。
 set -euo pipefail
 
 release_root="${1:-}"
@@ -13,9 +13,8 @@ bash "$script_dir/Test-MacCoreSliceBDelta.sh" "$release_root"
 
 archive="$(find "$release_root" -maxdepth 1 -type f \
   -name 'PicotooPet-MacCore-*.tar.gz' -print | sort | tail -n 1)"
-temp_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-mac-fixture.XXXXXX")"
+temp_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-mac-core-fixture.XXXXXX")"
 extract_root="$temp_root/package"
-# 必须包含空格，复现真实路径 ~/Library/Application Support/PicotooPetV2。
 runtime_root="$temp_root/Application Support/PicotooPetV2"
 evidence_root="$release_root/fixture-evidence"
 mkdir -p \
@@ -34,6 +33,7 @@ fi
 package_root="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)"
 # shellcheck source=/dev/null
 source "$package_root/lib.sh"
+package_version="$(read_manifest "$package_root" package_version)"
 
 cleanup() {
   stop_fixture_service "$runtime_root" || true
@@ -41,12 +41,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-baseline="$runtime_root/versions/baseline"
+baseline="$runtime_root/versions/baseline-slice-c-compatible"
 python3 -m venv "$baseline/.venv"
 "$baseline/.venv/bin/python" -m pip install \
   --no-index \
   --find-links "$package_root/payload/wheelhouse" \
-  "picotoopet-core==2.3.0.dev1"
+  "picotoopet-core==$package_version"
 ln -s "$baseline" "$runtime_root/current"
 
 port="$(choose_free_port)"
@@ -55,6 +55,37 @@ token="fixture-token-0123456789abcdef0123456789"
 export PICOTOO_RUNTIME_ROOT_OVERRIDE="$runtime_root"
 export PICOTOO_API_TOKEN="$token"
 export PICOTOO_FIXTURE_MODE=1
+
+# 模拟用户已经安装并运行 Slice C Worker；Core 升级不得要求它不存在。
+python3 - "$runtime_root/state/worker-status.json" <<'PY'
+import json
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+now = datetime.now(UTC).isoformat()
+Path(sys.argv[1]).write_text(
+    json.dumps(
+        {
+            "schema_version": "2.3.0",
+            "available": True,
+            "state": "online",
+            "reason": "idle",
+            "worker_id": "picotoopet-m4-fixture",
+            "supported_task_types": ["system.diagnostic_snapshot", "system.noop"],
+            "active_task_id": None,
+            "last_heartbeat_at": now,
+            "observed_at": now,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+cp "$runtime_root/state/worker-status.json" "$temp_root/worker-before.json"
 
 start_fixture_service \
   "$runtime_root" \
@@ -97,36 +128,55 @@ bash "$package_root/INSTALL_MAC_CORE_SLICE_B.command" --package-root "$package_r
 bash "$package_root/VERIFY_MAC_CORE_SLICE_B.command"
 
 after_snapshot="$temp_root/queued-after.json"
+worker_after="$temp_root/worker-after.json"
 python3 - \
   "http://127.0.0.1:$port" \
   "$token" \
   "$before_snapshot" \
-  "$after_snapshot" <<'PY'
+  "$after_snapshot" \
+  "$worker_after" <<'PY'
 import json
 import sys
 import urllib.request
 from pathlib import Path
 
-base, token, before_path, after_path = sys.argv[1:]
+base, token, before_path, after_path, worker_path = sys.argv[1:]
+headers = {"Authorization": f"Bearer {token}"}
 before = json.loads(Path(before_path).read_text(encoding="utf-8"))
 request = urllib.request.Request(
     f"{base}/api/v1/tasks/{before['task_id']}",
-    headers={"Authorization": f"Bearer {token}"},
+    headers=headers,
 )
 with urllib.request.urlopen(request, timeout=5) as response:
     after = json.load(response)
-Path(after_path).write_text(
-    json.dumps(after, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-    encoding="utf-8",
-)
 if after.get("status") != "Queued":
     raise SystemExit(f"historical task changed state: {after!r}")
 if after.get("updated_at") != before.get("updated_at"):
     raise SystemExit("historical Queued task updated_at changed during verification")
+Path(after_path).write_text(
+    json.dumps(after, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+    encoding="utf-8",
+)
+
+worker_request = urllib.request.Request(
+    f"{base}/api/v1/workers/status",
+    headers=headers,
+)
+with urllib.request.urlopen(worker_request, timeout=5) as response:
+    worker = json.load(response)
+if worker.get("state") != "online" or worker.get("available") is not True:
+    raise SystemExit(f"existing Worker state was not preserved: {worker!r}")
+if worker.get("worker_id") != "picotoopet-m4-fixture":
+    raise SystemExit(f"existing Worker identity changed: {worker!r}")
+Path(worker_path).write_text(
+    json.dumps(worker, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+    encoding="utf-8",
+)
 PY
 
 echo "PHASE23_MAC_DELTA_INSTALL_FIXTURE=PASS"
 echo "PHASE23_MAC_DELTA_QUEUED_PRESERVATION=PASS"
+echo "PHASE23_MAC_SLICE_D_CORE_WORKER_PRESERVATION=PASS"
 
 bash "$package_root/ROLLBACK_MAC_CORE_SLICE_B.command"
 start_fixture_service \
@@ -136,12 +186,25 @@ start_fixture_service \
   "$token"
 verify_health "http://127.0.0.1:$port"
 
+resolved_baseline="$(python3 - "$baseline" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve())
+PY
+)"
+if [[ "$(resolve_current_version "$runtime_root")" != "$resolved_baseline" ]]; then
+  echo "回滚后 current 未恢复 baseline。" >&2
+  exit 1
+fi
+
 cp "$before_snapshot" "$evidence_root/queued-before.json"
 cp "$after_snapshot" "$evidence_root/queued-after.json"
+cp "$temp_root/worker-before.json" "$evidence_root/worker-before.json"
+cp "$worker_after" "$evidence_root/worker-after.json"
 cp "$runtime_root/state/previous-version.txt" "$evidence_root/previous-version.txt"
 cp "$runtime_root/state/rollback-from.txt" "$evidence_root/rollback-from.txt"
 find "$runtime_root/reports" -maxdepth 1 -type f -name '*.json' -exec cp {} "$evidence_root/" \;
-python3 - "$evidence_root/fixture-summary.json" "$(uname -m)" <<'PY'
+python3 - "$evidence_root/fixture-summary.json" "$(uname -m)" "$package_version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -151,11 +214,15 @@ Path(sys.argv[1]).write_text(
         {
             "status": "pass",
             "architecture": sys.argv[2],
+            "package_version": sys.argv[3],
+            "runtime_version": "2.3.0-slice-d-core",
             "offline_install": True,
             "queued_task_preserved": True,
+            "existing_worker_state_preserved": True,
+            "diagnostic_api_verified": True,
             "rollback_verified": True,
             "runtime_path_with_spaces": True,
-            "worker_runtime_installed": False,
+            "source_build_on_user_mac": False,
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -167,4 +234,5 @@ Path(sys.argv[1]).write_text(
 PY
 
 echo "PHASE23_MAC_DELTA_ROLLBACK_FIXTURE=PASS"
+echo "PHASE23_MAC_SLICE_D_CORE_FIXTURE=PASS"
 echo "EVIDENCE=$evidence_root"
