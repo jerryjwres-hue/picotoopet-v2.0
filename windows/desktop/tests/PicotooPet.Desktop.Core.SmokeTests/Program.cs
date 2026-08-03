@@ -9,10 +9,20 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 internal static class Program
 {
     /// <summary>运行确定性断言；任一失败返回非零退出码。</summary>
-    private static async Task<int> Main()
+    [STAThread]
+    private static async Task<int> Main(string[] args)
     {
         try
         {
+            if (args.Contains(
+                    "--expect-task-center-legacy-binding-failure",
+                    StringComparer.Ordinal))
+            {
+                TaskCenterWpfLayoutSmokeTests.RunExpectingLegacyBindingFailure();
+                Console.WriteLine("PHASE23_TASK_CENTER_LEGACY_BINDING_RED=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
@@ -20,14 +30,17 @@ internal static class Program
             WorkerStatusSmokeTests.Run();
             StateStoreSmokeTests.Run();
             NavigationSmokeTests.Run();
+            NavigationFaultBoundarySmokeTests.Run();
+            NavigationContentRenderingSmokeTests.Run();
             TaskCenterSmokeTests.Run();
+            TaskCenterWpfLayoutSmokeTests.Run();
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"PHASE2_CORE_SMOKE=FAIL | {exception.Message}");
+            Console.Error.WriteLine($"PHASE2_CORE_SMOKE=FAIL | {exception}");
             return 1;
         }
     }

@@ -211,7 +211,7 @@ def test_control_center_native_windows_ci_has_required_gates() -> None:
 
 
 def test_package_verifies_task_center_and_worker_fallback() -> None:
-    """真实 ZIP 载荷必须再次验证任务中心策略和 Worker 保守降级。"""
+    """真实 ZIP 载荷必须运行桌面自检，并由自检报告覆盖任务中心与 Worker 降级。"""
 
     build = (
         ROOT / "windows" / "desktop" / "scripts" / "Build-Phase2WindowsRelease.ps1"
@@ -222,12 +222,14 @@ def test_package_verifies_task_center_and_worker_fallback() -> None:
     self_test = read("Services/AppSelfTest.cs")
 
     assert "$VersionLabel" in build
+    assert '"--self-test"' in verify
+    assert "selfTest.status" in verify
+    assert "PHASE23_TASK_CENTER_PACKAGE_TEST=PASS" in verify
     for required in (
         "control_center_shell",
         "task_center_policy",
         "worker_fallback",
-        "PHASE23_TASK_CENTER_PACKAGE_TEST=PASS",
+        "PHASE23_CONTROL_CENTER_SELF_TEST=PASS",
+        "PHASE23_TASK_CENTER_SELF_TEST=PASS",
     ):
-        assert required in verify
-    assert "PHASE23_CONTROL_CENTER_SELF_TEST=PASS" in self_test
-    assert "PHASE23_TASK_CENTER_SELF_TEST=PASS" in self_test
+        assert required in self_test

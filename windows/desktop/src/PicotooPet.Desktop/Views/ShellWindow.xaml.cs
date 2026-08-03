@@ -3,26 +3,30 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views;
 
-/// <summary>Shell 视图只处理窗口生命周期、路由命令和 PasswordBox 密文转交。</summary>
+/// <summary>Shell 视图处理窗口生命周期、路由命令、页面故障隔离和 PasswordBox 密文转交。</summary>
 public partial class ShellWindow : Window
 {
     private readonly ShellViewModel _viewModel;
     private readonly ControlCenterSession _session;
+    private readonly SafeFileLogger _logger;
     private bool _explicitExit;
 
-    /// <summary>绑定 Shell 展示模型和统一连接 Session。</summary>
+    /// <summary>绑定 Shell 展示模型、统一连接 Session 和脱敏日志器。</summary>
     public ShellWindow(
         ShellViewModel viewModel,
-        ControlCenterSession session)
+        ControlCenterSession session,
+        SafeFileLogger logger)
     {
         InitializeComponent();
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         _session   = session ?? throw new ArgumentNullException(nameof(session));
+        _logger    = logger ?? throw new ArgumentNullException(nameof(logger));
         DataContext = viewModel;
     }
 
@@ -60,6 +64,16 @@ public partial class ShellWindow : Window
             Hide();
         }
         base.OnClosing(e);
+    }
+
+    /// <summary>记录被隔离的页面故障，并用安全说明页替换当前路由内容。</summary>
+    private void ContentHost_NavigationFaulted(
+        object sender,
+        NavigationFaultEventArgs e)
+    {
+        var failedRoute = _viewModel.CurrentRoute;
+        _logger.Error($"页面导航故障已隔离：{failedRoute}", e.Exception);
+        _viewModel.ShowNavigationFailure(failedRoute);
     }
 
     private async void SaveAndConnect_Click(

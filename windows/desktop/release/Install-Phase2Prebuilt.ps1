@@ -1,8 +1,12 @@
-﻿# Phase 2 Windows 预编译安装器；用户电脑不执行源码编译、不安装 SDK。
+# Phase 2 Windows 预编译安装器；用户电脑不执行源码编译、不安装 SDK。
 [CmdletBinding()]
 param(
     [string]$PackageRoot = $PSScriptRoot,
-    [switch]$PreflightOnly
+    [string]$DataRoot = "",
+    [string]$DesktopDirectory = "",
+    [switch]$PreflightOnly,
+    [switch]$ActivationSelfTest,
+    [switch]$SuppressReportOpen
 )
 
 Set-StrictMode -Version Latest
@@ -10,20 +14,32 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference    = "Continue"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
-$dataRoot       = Join-Path $env:LOCALAPPDATA "PicotooPetV2\DesktopApp"
-$versionsRoot   = Join-Path $dataRoot "versions"
-$reportsRoot    = Join-Path $dataRoot "reports"
-$logsRoot       = Join-Path $dataRoot "logs"
-$currentPath    = Join-Path $dataRoot "current_version.json"
-$previousPath   = Join-Path $dataRoot "previous_version.json"
-$statePath      = Join-Path $dataRoot "install-state.json"
-$manifestPath   = Join-Path $PackageRoot "release-manifest.json"
-$payloadRoot    = Join-Path $PackageRoot "payload"
-$timestamp      = Get-Date -Format "yyyyMMdd-HHmmss"
-$reportPath     = Join-Path $reportsRoot "phase2-prebuilt-install-$timestamp.json"
-$logPath        = Join-Path $logsRoot "phase2-prebuilt-install-$timestamp.log"
-$installMutex   = [System.Threading.Mutex]::new($false, "Global\PicotooPetV2.Phase2Installer")
-$mutexOwned     = $false
+$commonScript = Join-Path $PSScriptRoot "Phase2Prebuilt.Common.ps1"
+if (-not (Test-Path -LiteralPath $commonScript -PathType Leaf)) {
+    throw "安装包缺少 Phase2Prebuilt.Common.ps1。"
+}
+. $commonScript
+
+if ([string]::IsNullOrWhiteSpace($DataRoot)) {
+    $DataRoot = Join-Path $env:LOCALAPPDATA "PicotooPetV2\DesktopApp"
+}
+$DataRoot = [System.IO.Path]::GetFullPath($DataRoot)
+
+$dataRoot         = $DataRoot
+$versionsRoot     = Join-Path $dataRoot "versions"
+$reportsRoot      = Join-Path $dataRoot "reports"
+$logsRoot         = Join-Path $dataRoot "logs"
+$currentPath      = Join-Path $dataRoot "current_version.json"
+$previousPath     = Join-Path $dataRoot "previous_version.json"
+$statePath        = Join-Path $dataRoot "install-state.json"
+$manifestPath     = Join-Path $PackageRoot "release-manifest.json"
+$payloadRoot      = Join-Path $PackageRoot "payload"
+$timestamp        = Get-Date -Format "yyyyMMdd-HHmmss-fff"
+$reportPath       = Join-Path $reportsRoot "phase2-prebuilt-install-$timestamp.json"
+$logPath          = Join-Path $logsRoot "phase2-prebuilt-install-$timestamp.log"
+$activationReport = Join-Path $reportsRoot "phase2-prebuilt-activation-$timestamp.json"
+$installMutex     = [System.Threading.Mutex]::new($false, "Global\PicotooPetV2.Phase2Installer")
+$mutexOwned       = $false
 $previousCurrent  = $null
 $previousPrevious = $null
 $activationStarted = $false
@@ -34,13 +50,19 @@ $finalPath          = $null
 
 New-Item -ItemType Directory -Path $versionsRoot, $reportsRoot, $logsRoot -Force | Out-Null
 
+function ConvertTo-NativeArgument {
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ($Value -notmatch '[\s"]') { return $Value }
+    return '"' + ($Value -replace '"', '\\"') + '"'
+}
+
 function Write-Utf8NoBom {
     param(
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)][string]$Value
     )
 
-    # Windows PowerShell 5.1 默认编码不稳定；所有状态文件固定为 UTF-8 无 BOM。
     $encoding = [System.Text.UTF8Encoding]::new($false)
     [System.IO.File]::WriteAllText($Path, $Value, $encoding)
 }
@@ -48,7 +70,6 @@ function Write-Utf8NoBom {
 function Read-JsonUtf8 {
     param([Parameter(Mandatory)][string]$Path)
 
-    # 机器 JSON 固定按严格 UTF-8 读取，绕过 Windows PowerShell 5.1 的区域默认编码。
     $encoding = [System.Text.UTF8Encoding]::new($false, $true)
     try {
         $json = [System.IO.File]::ReadAllText($Path, $encoding)
@@ -65,7 +86,6 @@ function Write-JsonAtomic {
         [Parameter(Mandatory)][string]$Path
     )
 
-    # 同卷临时文件原子替换，避免断电留下半个版本指针或状态文件。
     $temporary = "$Path.tmp"
     Write-Utf8NoBom -Path $temporary -Value ($Value | ConvertTo-Json -Depth 20)
     Move-Item -LiteralPath $temporary -Destination $Path -Force
@@ -77,9 +97,11 @@ function Write-InstallLog {
         [Parameter(Mandatory)][string]$Message
     )
 
-    # 安装日志不记录令牌和业务数据，只记录本地安装阶段与错误摘要。
     $line = "{0}`t{1}`t{2}" -f (Get-Date).ToUniversalTime().ToString("o"), $Level, $Message
-    [System.IO.File]::AppendAllText($logPath, $line + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::AppendAllText(
+        $logPath,
+        $line + [Environment]::NewLine,
+        [System.Text.UTF8Encoding]::new($false))
 }
 
 function Write-InstallProgress {
@@ -89,9 +111,8 @@ function Write-InstallProgress {
         [Parameter(Mandatory)][string]$Detail
     )
 
-    # 控制台、Write-Progress 和 install-state.json 同步更新，用户不再依赖任务管理器猜状态。
     $state = [ordered]@{
-        schema_version = "2.2.0"
+        schema_version = "2.3.0"
         updated_at     = (Get-Date).ToUniversalTime().ToString("o")
         status         = if ($Percent -eq 100) { "completed" } else { "running" }
         percent        = $Percent
@@ -114,84 +135,88 @@ function Assert-ManifestFiles {
 
     foreach ($entry in $Manifest.files) {
         $relative = [string]$entry.path
-        if ([string]::IsNullOrWhiteSpace($relative) -or $relative.Contains("..") -or [System.IO.Path]::IsPathRooted($relative)) {
+        if ([string]::IsNullOrWhiteSpace($relative) -or
+            $relative.Contains("..") -or
+            [System.IO.Path]::IsPathRooted($relative)) {
             throw "发布清单包含非法路径：$relative"
         }
-        $path = Join-Path $Root ($relative -replace '/', '\\')
-        if (-not (Test-Path -LiteralPath $path)) { throw "发布文件缺失：$relative" }
+        $path = Join-Path $Root ($relative -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "发布文件缺失：$relative"
+        }
         $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($actual -ne [string]$entry.sha256) { throw "发布文件 SHA-256 不一致：$relative" }
+        if ($actual -ne [string]$entry.sha256) {
+            throw "发布文件 SHA-256 不一致：$relative"
+        }
         if ((Get-Item -LiteralPath $path).Length -ne [long]$entry.size_bytes) {
             throw "发布文件大小不一致：$relative"
         }
     }
 }
 
-function Get-PicotooShortcutPaths {
-    # 桌面、开始菜单和开机启动入口由同一个函数集中管理，避免版本指针不一致。
-    $desktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
-    if ([string]::IsNullOrWhiteSpace($desktopPath)) {
-        throw "Windows 未返回当前用户桌面路径。"
-    }
-
-    return @(
-        (Join-Path $desktopPath "Picotoo Pet AI.lnk"),
-        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet AI.lnk"),
-        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\Picotoo Pet AI.lnk")
+function Invoke-ActivationCheck {
+    param(
+        [Parameter(Mandatory)][string]$Executable,
+        [Parameter(Mandatory)][string]$WorkingDirectory,
+        [switch]$SelfTest
     )
-}
 
-function Set-PicotooShortcuts {
-    param([Parameter(Mandatory)][string]$Executable)
-
-    # 快捷方式只指向已通过清单哈希校验的版本目录。
-    $shell = New-Object -ComObject WScript.Shell
-    foreach ($shortcutPath in Get-PicotooShortcutPaths) {
-        $shortcutDirectory = Split-Path -Parent $shortcutPath
-        New-Item -ItemType Directory -Path $shortcutDirectory -Force | Out-Null
-        $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath       = $Executable
-        $shortcut.WorkingDirectory = Split-Path -Parent $Executable
-        $shortcut.IconLocation     = "$Executable,0"
-        $shortcut.Description      = "Picotoo Pet V2 双机 AI 控制面板"
-        $shortcut.Save()
-    }
-}
-
-function Assert-PicotooShortcuts {
-    param([Parameter(Mandatory)][string]$Executable)
-
-    $expectedExecutable = [System.IO.Path]::GetFullPath($Executable)
-    $shell = New-Object -ComObject WScript.Shell
-    foreach ($shortcutPath in Get-PicotooShortcutPaths) {
-        if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) {
-            throw "快捷方式创建失败：$shortcutPath"
+    Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
+    if ($SelfTest) {
+        $arguments = @("--self-test", "--self-test-output", $activationReport)
+        $argumentLine = ($arguments | ForEach-Object { ConvertTo-NativeArgument -Value $_ }) -join ' '
+        $process = Start-Process -FilePath $Executable -ArgumentList $argumentLine `
+            -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -Wait -PassThru
+        if ($process.ExitCode -ne 0) {
+            throw "激活自检失败，退出码 $($process.ExitCode)。"
         }
-        $shortcut = $shell.CreateShortcut($shortcutPath)
-        $actualExecutable = [System.IO.Path]::GetFullPath([string]$shortcut.TargetPath)
-        if (-not $actualExecutable.Equals($expectedExecutable, [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "快捷方式目标不一致：$shortcutPath"
+        if (-not (Test-Path -LiteralPath $activationReport -PathType Leaf)) {
+            throw "激活自检未生成报告。"
+        }
+        $selfTestReport = Read-JsonUtf8 -Path $activationReport
+        if ([string]$selfTestReport.status -ne "pass") {
+            throw "激活自检报告不是 pass。"
+        }
+        return [pscustomobject][ordered]@{
+            mode        = "self-test"
+            status      = "pass"
+            report      = $activationReport
+            process_id  = $process.Id
         }
     }
-}
 
-function Remove-PicotooShortcuts {
-    foreach ($shortcutPath in Get-PicotooShortcutPaths) {
-        Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+    $process = Start-Process -FilePath $Executable -WorkingDirectory $WorkingDirectory -PassThru
+    Start-Sleep -Seconds 2
+    $process.Refresh()
+    if ($process.HasExited) {
+        throw "Picotoo Pet AI 启动后立即退出，退出码 $($process.ExitCode)。"
+    }
+    return [pscustomobject][ordered]@{
+        mode        = "interactive"
+        status      = "pass"
+        report      = $null
+        process_id  = $process.Id
     }
 }
 
 function Restore-PreviousActivation {
-    # 激活失败时同时恢复当前指针、上一版本指针和快捷方式。
     if ($null -ne $previousCurrent) {
         Write-JsonAtomic -Value $previousCurrent -Path $currentPath
-        Set-PicotooShortcuts -Executable ([string]$previousCurrent.executable)
-        Assert-PicotooShortcuts -Executable ([string]$previousCurrent.executable)
-        Start-Process -FilePath $previousCurrent.executable -WorkingDirectory $previousCurrent.path
+        Set-PicotooShortcuts `
+            -Executable ([string]$previousCurrent.executable) `
+            -DesktopDirectory $DesktopDirectory | Out-Null
+        $restoredShortcuts = Assert-PicotooShortcuts `
+            -Executable ([string]$previousCurrent.executable) `
+            -DesktopDirectory $DesktopDirectory
+        Invoke-ActivationCheck `
+            -Executable ([string]$previousCurrent.executable) `
+            -WorkingDirectory ([string]$previousCurrent.path) `
+            -SelfTest:$ActivationSelfTest | Out-Null
+        $report.recovery_shortcuts = $restoredShortcuts
     }
     else {
         Remove-Item -LiteralPath $currentPath -Force -ErrorAction SilentlyContinue
-        Remove-PicotooShortcuts
+        $report.recovery_shortcuts = Remove-PicotooShortcuts -DesktopDirectory $DesktopDirectory
     }
 
     if ($hadPreviousPointer -and $null -ne $previousPrevious) {
@@ -203,18 +228,23 @@ function Restore-PreviousActivation {
 }
 
 $report = [ordered]@{
-    schema_version       = "2.2.0"
-    generated_at         = (Get-Date).ToUniversalTime().ToString("o")
-    status               = "running"
-    version              = $null
-    install_path         = $null
-    log                  = $logPath
-    executable_sha256    = $null
-    diagnostic_sha256    = $null
-    desktop_shortcut     = $null
+    schema_version           = "2.3.0"
+    generated_at             = (Get-Date).ToUniversalTime().ToString("o")
+    status                   = "running"
+    version                  = $null
+    install_path             = $null
+    data_root                = $dataRoot
+    log                      = $logPath
+    executable_sha256        = $null
+    diagnostic_sha256        = $null
+    desktop_shortcut         = $null
     desktop_shortcut_created = $false
-    source_build_on_user_pc = $false
-    error                = $null
+    shortcut_paths           = $null
+    shortcuts_verified       = $false
+    activation               = $null
+    recovery_shortcuts       = $null
+    source_build_on_user_pc  = $false
+    error                    = $null
 }
 
 $exitCode = 1
@@ -228,13 +258,24 @@ try {
     if (-not $mutexOwned) { throw "已有 Phase 2 安装或回滚正在运行。" }
 
     Write-InstallProgress -Percent 5 -Stage "校验安装包" -Detail "读取预编译发布清单"
-    if (-not (Test-Path -LiteralPath $manifestPath)) { throw "安装包缺少 release-manifest.json。" }
-    if (-not (Test-Path -LiteralPath $payloadRoot))  { throw "安装包缺少 payload 目录。" }
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "安装包缺少 release-manifest.json。"
+    }
+    if (-not (Test-Path -LiteralPath $payloadRoot -PathType Container)) {
+        throw "安装包缺少 payload 目录。"
+    }
     $manifest = Read-JsonUtf8 -Path $manifestPath
     if ([string]$manifest.release_type -ne "prebuilt") { throw "安装包不是预编译发布类型。" }
     if ([string]$manifest.target -ne "win-x64")       { throw "安装包目标不是 win-x64。" }
-    if ([string]$manifest.version -notmatch '^[A-Za-z0-9._-]+$') { throw "安装包版本号非法。" }
-    $versionId = [string]$manifest.version
+    if ([string]$manifest.version -notmatch '^[A-Za-z0-9._-]+$') {
+        throw "安装包版本号非法。"
+    }
+    if ($manifest.PSObject.Properties.Name -contains "user_install_allowed" -and
+        -not [bool]$manifest.user_install_allowed) {
+        throw "发布清单不允许用户安装。"
+    }
+
+    $versionId           = [string]$manifest.version
     $report.version      = $versionId
     $finalPath           = Join-Path $versionsRoot $versionId
     $stagingPath         = Join-Path $versionsRoot ".staging-$versionId-$PID"
@@ -244,7 +285,7 @@ try {
     if ($PreflightOnly) {
         $report.status = "pass"
         Write-JsonAtomic -Value $report -Path $reportPath
-        Write-InstallProgress -Percent 100 -Stage "预检完成" -Detail "严格 UTF-8 清单解析与文件哈希校验通过"
+        Write-InstallProgress -Percent 100 -Stage "预检完成" -Detail "严格 UTF-8、文件大小与 SHA-256 校验通过"
         $exitCode = 0
         return
     }
@@ -257,7 +298,7 @@ try {
         $previousPrevious = Read-JsonUtf8 -Path $previousPath
     }
 
-    if (-not (Test-Path -LiteralPath $finalPath)) {
+    if (-not (Test-Path -LiteralPath $finalPath -PathType Container)) {
         Write-InstallProgress -Percent 35 -Stage "安装预编译文件" -Detail "复制到版本暂存目录"
         if (Test-Path -LiteralPath $stagingPath) {
             Remove-Item -LiteralPath $stagingPath -Recurse -Force
@@ -278,48 +319,62 @@ try {
 
     $executable = Join-Path $finalPath "Picotoo Pet AI.exe"
     $diagnostic = Join-Path $finalPath "tools\diagnostics\PicotooPet.Desktop.Diagnostics.exe"
-    $appEntry   = $manifest.files | Where-Object { [string]$_.path -eq "Picotoo Pet AI.exe" } | Select-Object -First 1
-    $diagEntry  = $manifest.files | Where-Object { [string]$_.path -eq "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe" } | Select-Object -First 1
-    if ($null -eq $appEntry -or $null -eq $diagEntry) { throw "发布清单缺少主程序或诊断程序。" }
+    $appEntry   = $manifest.files | Where-Object {
+        [string]$_.path -eq "Picotoo Pet AI.exe"
+    } | Select-Object -First 1
+    $diagEntry  = $manifest.files | Where-Object {
+        [string]$_.path -eq "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe"
+    } | Select-Object -First 1
+    if ($null -eq $appEntry -or $null -eq $diagEntry) {
+        throw "发布清单缺少主程序或诊断程序。"
+    }
 
-    Write-InstallProgress -Percent 70 -Stage "激活新版本" -Detail "原子更新版本指针与桌面、开始菜单、开机启动快捷方式"
+    Write-InstallProgress -Percent 70 -Stage "激活新版本" -Detail "原子更新指针和三处快捷方式"
     $activationStarted = $true
     if ($null -ne $previousCurrent) {
         Write-JsonAtomic -Value $previousCurrent -Path $previousPath
     }
     $currentPointer = [ordered]@{
-        version             = $versionId
-        path                = $finalPath
-        executable          = $executable
-        activated_at        = (Get-Date).ToUniversalTime().ToString("o")
-        executable_sha256   = [string]$appEntry.sha256
-        diagnostic_sha256   = [string]$diagEntry.sha256
+        version           = $versionId
+        path              = $finalPath
+        executable        = $executable
+        activated_at      = (Get-Date).ToUniversalTime().ToString("o")
+        executable_sha256 = [string]$appEntry.sha256
+        diagnostic_sha256 = [string]$diagEntry.sha256
     }
     Write-JsonAtomic -Value $currentPointer -Path $currentPath
-    Set-PicotooShortcuts -Executable $executable
-    Assert-PicotooShortcuts -Executable $executable
-    $report.desktop_shortcut = (Get-PicotooShortcutPaths | Select-Object -First 1)
+    Set-PicotooShortcuts -Executable $executable -DesktopDirectory $DesktopDirectory | Out-Null
+    $shortcutValidation = Assert-PicotooShortcuts `
+        -Executable $executable `
+        -DesktopDirectory $DesktopDirectory
+    $report.shortcut_paths           = $shortcutValidation.shortcut_paths
+    $report.shortcuts_verified       = [bool]$shortcutValidation.shortcuts_verified
+    $report.desktop_shortcut         = [string]$shortcutValidation.shortcut_paths.desktop
     $report.desktop_shortcut_created = $true
 
-    Write-InstallProgress -Percent 85 -Stage "启动应用" -Detail "检查新进程能否保持运行"
-    Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
-    $process = Start-Process -FilePath $executable -WorkingDirectory $finalPath -PassThru
-    Start-Sleep -Seconds 2
-    $process.Refresh()
-    if ($process.HasExited) { throw "Picotoo Pet AI 启动后立即退出，退出码 $($process.ExitCode)。" }
+    Write-InstallProgress -Percent 85 -Stage "启动应用" -Detail "执行新版本激活健康检查"
+    $report.activation = Invoke-ActivationCheck `
+        -Executable $executable `
+        -WorkingDirectory $finalPath `
+        -SelfTest:$ActivationSelfTest
 
     $report.status            = "pass"
     $report.executable_sha256 = [string]$appEntry.sha256
     $report.diagnostic_sha256 = [string]$diagEntry.sha256
     Write-JsonAtomic -Value $report -Path $reportPath
-    Write-InstallProgress -Percent 100 -Stage "安装完成" -Detail "预编译版本已安装、创建桌面快捷方式并启动"
+    Write-InstallProgress -Percent 100 -Stage "安装完成" -Detail "预编译版本已激活并验证三处快捷方式"
     $exitCode = 0
 }
 catch {
     $primaryError = $_.Exception.Message
     $restoreError = $null
     if ($activationStarted) {
-        try { Restore-PreviousActivation } catch { $restoreError = $_.Exception.Message }
+        try {
+            Restore-PreviousActivation
+        }
+        catch {
+            $restoreError = $_.Exception.Message
+        }
     }
     if ($null -ne $stagingPath -and (Test-Path -LiteralPath $stagingPath)) {
         Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue
@@ -327,13 +382,14 @@ catch {
     $report.status = "fail"
     $report.error  = if ($null -eq $restoreError) {
         $primaryError
-    } else {
+    }
+    else {
         "$primaryError | 自动恢复失败：$restoreError"
     }
     Write-JsonAtomic -Value $report -Path $reportPath
     Write-InstallLog -Level "ERROR" -Message $report.error
     $failedState = [ordered]@{
-        schema_version = "2.2.0"
+        schema_version = "2.3.0"
         updated_at     = (Get-Date).ToUniversalTime().ToString("o")
         status         = "fail"
         percent        = 100
@@ -349,7 +405,9 @@ finally {
     Write-Progress -Activity "Picotoo Pet V2 Windows Desktop" -Completed
     if ($mutexOwned) { $installMutex.ReleaseMutex() }
     $installMutex.Dispose()
-    if (-not $PreflightOnly -and (Test-Path -LiteralPath $reportPath)) {
+    if (-not $PreflightOnly -and
+        -not $SuppressReportOpen -and
+        (Test-Path -LiteralPath $reportPath)) {
         Start-Process -FilePath "notepad.exe" -ArgumentList @($reportPath)
     }
 }

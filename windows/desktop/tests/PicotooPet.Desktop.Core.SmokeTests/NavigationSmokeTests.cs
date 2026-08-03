@@ -35,5 +35,19 @@ internal static class NavigationSmokeTests
             page.NextStep == "Phase 10A 将先加入包预览和审批；Phase 10B 才加入 Dev Broker。",
             "云端开发后续步骤被改写");
         SmokeAssert.True(page.UserAction == "你现在不需要操作。", "用户动作说明被改写");
+
+        shell.ShowNavigationFailure(NavigationRoute.TaskCenter);
+        var failurePage = shell.CurrentPage as EmptyStatePageViewModel;
+        SmokeAssert.True(failurePage is not null, "故障页面必须替换为安全空状态");
+        SmokeAssert.True(failurePage!.Title == "任务中心暂时不可用", "故障回退标题错误");
+        SmokeAssert.True(
+            failurePage.Reason == "页面加载时发生故障，Control Center 已隔离该页面。",
+            "故障隔离原因错误");
+        SmokeAssert.True(
+            shell.StatusMessage == "任务中心页面加载失败，其他页面仍可使用。",
+            "Shell 未展示页面隔离状态");
+
+        shell.Navigate(NavigationRoute.Dashboard);
+        SmokeAssert.True(shell.CurrentRoute == NavigationRoute.Dashboard, "页面故障后其他导航不可用");
     }
 }

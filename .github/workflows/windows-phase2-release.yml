@@ -5,12 +5,14 @@ on:
   pull_request:
     paths:
       - "windows/desktop/**"
+      - "tests/release/test_windows_prebuilt_delivery.py"
       - ".github/workflows/windows-phase2-release.yml"
   push:
     branches:
       - main
     paths:
       - "windows/desktop/**"
+      - "tests/release/test_windows_prebuilt_delivery.py"
       - ".github/workflows/windows-phase2-release.yml"
 
 permissions:
@@ -24,16 +26,33 @@ jobs:
   windows-release:
     name: Native Windows build and release gate
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       CI: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+      PICOTOO_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PICOTOO_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+
+      - name: Install Python for release contracts
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install release contract dependencies
+        shell: powershell
+        run: |
+          python -m pip install --disable-pip-version-check pytest pytest-asyncio PyYAML
+
+      - name: Run Windows release contract tests
+        shell: powershell
+        run: |
+          python -m pytest tests/release/test_windows_prebuilt_delivery.py -q
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
@@ -47,17 +66,23 @@ jobs:
           dotnet --info
           $PSVersionTable.PSVersion
 
+      - name: Reproduce legacy Task Center WPF binding failure
+        shell: pwsh
+        run: |
+          .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
+
       - name: Build, analyze, publish and self-test
-        shell: powershell
+        shell: pwsh
         run: |
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1
 
-      - name: Verify packaged payload on Windows PowerShell 5.1
-        shell: powershell
+      - name: Verify packaged install, verify and rollback lifecycle on Windows PowerShell 5.1
+        shell: pwsh
         run: |
-          .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1
+          # Test-Phase2WindowsRelease.ps1 is executed through a codepage-safe CI wrapper.
+          .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
 
-      - name: Upload prebuilt installer and verification evidence
+      - name: Upload prebuilt installer and lifecycle evidence
         uses: actions/upload-artifact@v7
         with:
           name: PicotooPet-Phase2-Windows-Prebuilt
@@ -65,5 +90,6 @@ jobs:
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
             windows/desktop/artifacts/release/windows-build-report.json
+            windows/desktop/artifacts/release/fixture-evidence/**
           if-no-files-found: error
           retention-days: 30

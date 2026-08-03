@@ -34,9 +34,12 @@ def test_windows_ci_builds_on_native_runner() -> None:
     steps = job["steps"]
     uses = [step.get("uses") for step in steps if "uses" in step]
     assert "actions/checkout@v6" in uses
+    assert "actions/setup-python@v6" in uses
     assert "actions/setup-dotnet@v6" in uses
     assert "actions/upload-artifact@v7" in uses
     run_text = "\n".join(step.get("run", "") for step in steps)
+    assert "pytest tests/release/test_windows_prebuilt_delivery.py" in run_text
+    assert "Test-TaskCenterLegacyBindingRegression.ps1" in run_text
     assert "Build-Phase2WindowsRelease.ps1" in run_text
     assert "Test-Phase2WindowsRelease.ps1" in run_text
 
@@ -94,20 +97,79 @@ def test_desktop_has_headless_self_test() -> None:
     assert "PHASE2_DESKTOP_SELF_TEST=PASS" in self_test
 
 
-def test_release_builder_generates_manifest_and_zip() -> None:
+def test_release_builder_generates_single_root_manifest_and_zip() -> None:
     builder = read(DESKTOP / "scripts" / "Build-Phase2WindowsRelease.ps1")
     assert "release-manifest.json" in builder
-    assert "Compress-Archive" in builder
+    assert "Compress-Archive -LiteralPath $packageRoot" in builder
+    assert "Compress-Archive -Path (Join-Path $packageRoot \"*\")" not in builder
     assert "PicotooPet-Phase2-Windows-Prebuilt" in builder
+    assert '"2.3.0-slice-b-taskcenter-fix-$runNumber-$commit"' in builder
+    assert "native_ci_verified" in builder
+    assert "user_install_allowed" in builder
+    assert "source_head" in builder
+    assert "source_ref" in builder
     assert "--self-test" in builder
 
 
-def test_release_verifier_checks_payload_and_process_exit() -> None:
+def test_release_verifier_checks_payload_process_shortcuts_and_lifecycle() -> None:
     verifier = read(DESKTOP / "scripts" / "Test-Phase2WindowsRelease.ps1")
     assert "Get-FileHash" in verifier
     assert "release-manifest.json" in verifier
     assert "--self-test" in verifier
     assert "ExitCode" in verifier
+    assert "-PreflightOnly" in verifier
+    assert "-ActivationSelfTest" in verifier
+    assert "-OfflinePackageOnly" in verifier
+    assert "Rollback-Phase2Prebuilt.ps1" in verifier
+    assert "DesktopDirectory" in verifier
+    assert "OneDrive" in verifier
+    assert "fixture-evidence" in verifier
+    assert "phase2-prebuilt-install" in verifier
+    assert "phase2-windows-verification" in verifier
+    assert "phase2-rollback" in verifier
+
+
+def test_shortcut_resolution_is_shared_across_install_verify_and_rollback() -> None:
+    common_path = DESKTOP / "release" / "Phase2Prebuilt.Common.ps1"
+    common = read(common_path)
+    assert "function Get-PicotooShortcutPaths" in common
+    assert "DesktopDirectory" in common
+    assert "Microsoft\\Windows\\Start Menu\\Programs\\Picotoo Pet AI.lnk" in common
+    assert "Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Picotoo Pet AI.lnk" in common
+    assert "function Set-PicotooShortcuts" in common
+    assert "function Assert-PicotooShortcuts" in common
+    assert "TargetPath" in common
+
+    for name in (
+        "Install-Phase2Prebuilt.ps1",
+        "Verify-Phase2Prebuilt.ps1",
+        "Rollback-Phase2Prebuilt.ps1",
+    ):
+        script = read(DESKTOP / "release" / name)
+        assert '"Phase2Prebuilt.Common.ps1"' in script, name
+        assert ". $commonScript" in script, name
+
+
+def test_verify_and_rollback_enforce_manifest_size_and_shortcut_targets() -> None:
+    verifier = read(DESKTOP / "release" / "Verify-Phase2Prebuilt.ps1")
+    rollback = read(DESKTOP / "release" / "Rollback-Phase2Prebuilt.ps1")
+
+    for script in (verifier, rollback):
+        assert "size_bytes" in script
+        assert "Assert-PicotooShortcuts" in script
+        assert "shortcut_paths" in script
+        assert "shortcuts_verified" in script
+
+    assert "Restore-RollbackOrigin" in rollback
+    assert "[string]$current.executable" in rollback
+
+
+def test_release_workflow_uploads_install_verify_and_rollback_evidence() -> None:
+    workflow = read(ROOT / ".github" / "workflows" / "windows-phase2-release.yml")
+    assert "tests/release/test_windows_prebuilt_delivery.py" in workflow
+    assert "fixture-evidence/**" in workflow
+    assert "PICOTOO_SOURCE_HEAD_SHA" in workflow
+    assert "PICOTOO_SOURCE_REF" in workflow
 
 
 def test_new_powershell_scripts_have_balanced_delimiters_and_safe_wildcards() -> None:
@@ -116,6 +178,8 @@ def test_new_powershell_scripts_have_balanced_delimiters_and_safe_wildcards() ->
     paths = [
         DESKTOP / "scripts" / "Build-Phase2WindowsRelease.ps1",
         DESKTOP / "scripts" / "Test-Phase2WindowsRelease.ps1",
+        DESKTOP / "scripts" / "Test-TaskCenterLegacyBindingRegression.ps1",
+        DESKTOP / "release" / "Phase2Prebuilt.Common.ps1",
         DESKTOP / "release" / "Install-Phase2Prebuilt.ps1",
         DESKTOP / "release" / "Verify-Phase2Prebuilt.ps1",
         DESKTOP / "release" / "Rollback-Phase2Prebuilt.ps1",
@@ -128,7 +192,7 @@ def test_new_powershell_scripts_have_balanced_delimiters_and_safe_wildcards() ->
     for path in paths:
         text = read(path)
         assert "-LiteralPath (Join-Path $payloadRoot \"*\")" not in text
-        assert "Compress-Archive -LiteralPath" not in text
+        assert "Compress-Archive -LiteralPath" not in text or path.name == "Build-Phase2WindowsRelease.ps1"
         cleaned = scrub.sub("", text)
         stack: list[str] = []
         for character in cleaned:

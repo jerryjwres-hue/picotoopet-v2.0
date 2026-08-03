@@ -50,9 +50,11 @@ def test_windows_utf8_incident_cannot_regress() -> None:
         assert "Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json" not in text
 
     package_gate = read(desktop / "scripts" / "Test-Phase2WindowsRelease.ps1")
-    assert "& $installer -PackageRoot $tempRoot -PreflightOnly" in package_gate
+    assert "Invoke-ReleaseScript" in package_gate
+    assert '"-PreflightOnly"' in package_gate
+    assert "preflight-install.json" in package_gate
     assert "phase2-prebuilt-install" in package_gate
-    assert "preflight.status" in package_gate
+    assert 'ExpectedStatus "pass"' in package_gate
 
 
 def test_mac_spaced_path_incident_cannot_regress() -> None:
@@ -84,6 +86,7 @@ def test_release_jobs_keep_success_and_diagnostic_artifacts_separate() -> None:
     windows_workflow = read(ROOT / ".github" / "workflows" / "windows-phase2-release.yml")
     assert "upload-artifact" in windows_workflow
     assert "Test-Phase2WindowsRelease.ps1" in windows_workflow
+    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" in windows_workflow
 
 
 def test_user_installers_never_build_source() -> None:

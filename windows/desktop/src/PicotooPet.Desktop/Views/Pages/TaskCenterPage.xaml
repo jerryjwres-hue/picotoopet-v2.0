@@ -110,9 +110,9 @@
                             <TextBlock Margin="0,3,0,12" Text="{Binding UpdatedAt, StringFormat={}{0:yyyy-MM-dd HH:mm:ss zzz}}" />
                             <TextBlock FontWeight="SemiBold" Text="优先级 / 超时" />
                             <TextBlock Margin="0,3,0,12">
-                                <Run Text="{Binding Priority}" />
+                                <Run Text="{Binding Priority, Mode=OneWay}" />
                                 <Run Text=" / " />
-                                <Run Text="{Binding TimeoutSeconds}" />
+                                <Run Text="{Binding TimeoutSeconds, Mode=OneWay}" />
                                 <Run Text=" 秒" />
                             </TextBlock>
                             <TextBlock FontWeight="SemiBold" Text="错误" />
