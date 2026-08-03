@@ -28,7 +28,7 @@ class DiagnosticQueueRepository(QueueRepository):
         *,
         trace_id: str | None = None,
     ) -> TaskRecord:
-        """幂等重试诊断任务，并继承活动去重键。"""
+        """诊断重试防重放；普通任务保持基础仓储语义且不嵌套事务。"""
 
         with self.database.transaction() as connection:
             row = connection.execute(
@@ -40,8 +40,7 @@ class DiagnosticQueueRepository(QueueRepository):
             original = self._row_to_record(row)
             if original.status not in {TaskStatus.FAILED, TaskStatus.CANCELLED}:
                 raise InvalidTransitionError("只有 Failed 或 Cancelled 任务可以重试。")
-            if original.task_type != "system.diagnostic_snapshot":
-                return super().retry(task_id, trace_id=trace_id)
+            is_diagnostic = original.task_type == "system.diagnostic_snapshot"
 
             return self._create_in_transaction(
                 connection,
@@ -51,8 +50,10 @@ class DiagnosticQueueRepository(QueueRepository):
                     payload=original.payload,
                     priority=original.priority,
                     resource_tag=original.resource_tag,
-                    idempotency_key=f"retry:{original.task_id}",
-                    dedupe_key=row["dedupe_key"],
+                    idempotency_key=(
+                        f"retry:{original.task_id}" if is_diagnostic else None
+                    ),
+                    dedupe_key=row["dedupe_key"] if is_diagnostic else None,
                     max_attempts=original.max_attempts,
                     timeout_seconds=original.timeout_seconds,
                 ),
