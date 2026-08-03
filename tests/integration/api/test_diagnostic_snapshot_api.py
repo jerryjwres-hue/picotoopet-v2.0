@@ -56,13 +56,18 @@ def _result_document() -> dict[str, object]:
     return result.model_dump(mode="json")
 
 
-def test_diagnostic_create_requires_auth_and_writes_fixed_server_fields(
+def test_diagnostic_create_requires_auth_and_idempotency_key(
     tmp_path: Path,
 ) -> None:
     client, headers = make_client(tmp_path)
     with client:
         denied = client.post(
             "/api/v1/tasks/system-diagnostic-snapshot",
+            json=_request(),
+        )
+        missing_key = client.post(
+            "/api/v1/tasks/system-diagnostic-snapshot",
+            headers=headers,
             json=_request(),
         )
         created = client.post(
@@ -72,6 +77,8 @@ def test_diagnostic_create_requires_auth_and_writes_fixed_server_fields(
         )
 
     assert denied.status_code == 401
+    assert missing_key.status_code == 422
+    assert missing_key.json()["error"]["code"] == "VALIDATION_ERROR"
     assert created.status_code == 201
     body = created.json()
     assert body["task_type"] == "system.diagnostic_snapshot"
