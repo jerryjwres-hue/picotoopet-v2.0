@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Core.State;
@@ -20,6 +21,7 @@ public partial class App : WpfApplication, IDisposable
     private ShellViewModel? _shellViewModel;
     private ShellWindow? _shellWindow;
     private WindowsTrayService? _trayService;
+    private SafeFileLogger? _logger;
     private bool _ownsSingleInstance;
     private bool _runtimeDisposing;
 
@@ -64,6 +66,8 @@ public partial class App : WpfApplication, IDisposable
         var capabilityStore = new CapabilityStateStore();
         var taskStore       = new TaskStateStore();
 
+        _logger = logger;
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
         _session = new ControlCenterSession(
             tokenStore,
             settings,
@@ -72,7 +76,7 @@ public partial class App : WpfApplication, IDisposable
             capabilityStore,
             taskStore);
         _shellViewModel = new ShellViewModel(_session, dispatcher);
-        _shellWindow    = new ShellWindow(_shellViewModel, _session);
+        _shellWindow    = new ShellWindow(_shellViewModel, _session, logger);
         _trayService    = new WindowsTrayService();
 
         _trayService.OpenRequested += OnTrayOpenRequested;
@@ -83,6 +87,14 @@ public partial class App : WpfApplication, IDisposable
         MainWindow = _shellWindow;
         _shellWindow.Show();
         _ = InitializeViewModelAsync(_session, _shellWindow, logger);
+    }
+
+    /// <summary>记录逃出页面故障边界的 WPF 异常，不静默吞掉未知进程级故障。</summary>
+    private void OnDispatcherUnhandledException(
+        object sender,
+        DispatcherUnhandledExceptionEventArgs e)
+    {
+        _logger?.Error("WPF 未处理异常", e.Exception);
     }
 
     private static async Task InitializeViewModelAsync(
@@ -160,6 +172,7 @@ public partial class App : WpfApplication, IDisposable
         }
         _runtimeDisposing = true;
 
+        DispatcherUnhandledException -= OnDispatcherUnhandledException;
         if (_shellWindow is not null)
         {
             _shellWindow.ExitRequested -= OnShellExitRequested;
@@ -179,6 +192,7 @@ public partial class App : WpfApplication, IDisposable
             await _session.DisposeAsync();
             _session = null;
         }
+        _logger = null;
         if (_trayService is not null)
         {
             _trayService.Dispose();
