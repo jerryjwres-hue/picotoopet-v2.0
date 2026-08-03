@@ -187,6 +187,7 @@ Path(sys.argv[1]).write_text(
 )
 PY
 
+echo "PHASE23_MAC_DELTA_BUILD=PASS"
 echo "PHASE23_MAC_SLICE_D_CORE_BUILD=PASS"
 echo "PACKAGE=$tarball"
 echo "SHA256=$outer_sha"
