@@ -173,15 +173,15 @@ function Invoke-ActivationCheck {
         if (-not (Test-Path -LiteralPath $activationReport -PathType Leaf)) {
             throw "激活自检未生成报告。"
         }
-        $selfTest = Read-JsonUtf8 -Path $activationReport
-        if ([string]$selfTest.status -ne "pass") {
+        $selfTestReport = Read-JsonUtf8 -Path $activationReport
+        if ([string]$selfTestReport.status -ne "pass") {
             throw "激活自检报告不是 pass。"
         }
         return [pscustomobject][ordered]@{
-            mode       = "self-test"
-            status     = "pass"
-            report     = $activationReport
-            process_id = $process.Id
+            mode        = "self-test"
+            status      = "pass"
+            report      = $activationReport
+            process_id  = $process.Id
         }
     }
 
@@ -192,10 +192,10 @@ function Invoke-ActivationCheck {
         throw "Picotoo Pet AI 启动后立即退出，退出码 $($process.ExitCode)。"
     }
     return [pscustomobject][ordered]@{
-        mode       = "interactive"
-        status     = "pass"
-        report     = $null
-        process_id = $process.Id
+        mode        = "interactive"
+        status      = "pass"
+        report      = $null
+        process_id  = $process.Id
     }
 }
 
