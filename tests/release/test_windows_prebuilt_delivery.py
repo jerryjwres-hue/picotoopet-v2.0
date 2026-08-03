@@ -26,11 +26,12 @@ def test_known_csharp_build_break_is_fixed() -> None:
     assert 'EndsWith("/", StringComparison.Ordinal)' not in source
 
 
-def test_windows_ci_builds_on_native_runner() -> None:
+def test_windows_ci_builds_slice_d_on_native_runner() -> None:
     workflow_path = ROOT / ".github" / "workflows" / "windows-phase2-release.yml"
     workflow = yaml.safe_load(read(workflow_path))
     job = workflow["jobs"]["windows-release"]
     assert job["runs-on"] == "windows-2025"
+    assert job["timeout-minutes"] <= 60
     steps = job["steps"]
     uses = [step.get("uses") for step in steps if "uses" in step]
     assert "actions/checkout@v6" in uses
@@ -40,8 +41,9 @@ def test_windows_ci_builds_on_native_runner() -> None:
     run_text = "\n".join(step.get("run", "") for step in steps)
     assert "pytest tests/release/test_windows_prebuilt_delivery.py" in run_text
     assert "Test-TaskCenterLegacyBindingRegression.ps1" in run_text
-    assert "Build-Phase2WindowsRelease.ps1" in run_text
-    assert "Test-Phase2WindowsRelease.ps1" in run_text
+    assert "Build-Phase2WindowsRelease.ps1 -Version $version" in run_text
+    assert "2.3.0-slice-d-diagnostic" in run_text
+    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" in run_text
 
 
 def test_user_installer_only_installs_prebuilt_payload() -> None:
@@ -87,14 +89,27 @@ def test_installer_vbs_is_ascii_without_bom_and_visible() -> None:
     assert "shell.Run(command, 1, True)" in text
 
 
-def test_desktop_has_headless_self_test() -> None:
+def test_desktop_has_headless_self_test_with_diagnostic_smoke() -> None:
     app = read(DESKTOP / "src" / "PicotooPet.Desktop" / "App.xaml.cs")
     self_test = read(
         DESKTOP / "src" / "PicotooPet.Desktop" / "Services" / "AppSelfTest.cs"
     )
+    smoke = read(
+        DESKTOP
+        / "tests"
+        / "PicotooPet.Desktop.Core.SmokeTests"
+        / "DiagnosticSnapshotSmokeTests.cs"
+    )
+    program = read(
+        DESKTOP / "tests" / "PicotooPet.Desktop.Core.SmokeTests" / "Program.cs"
+    )
     assert '"--self-test"' in app
     assert "AppSelfTest.Run" in app
     assert "PHASE2_DESKTOP_SELF_TEST=PASS" in self_test
+    assert "DiagnosticSnapshotSmokeTests.RunAsync" in program
+    assert "system-diagnostic-snapshot" in smoke
+    assert "Idempotency-Key" in smoke
+    assert "DiagnosticObservationDelays" in smoke
 
 
 def test_release_builder_generates_single_root_manifest_and_zip() -> None:
@@ -103,7 +118,7 @@ def test_release_builder_generates_single_root_manifest_and_zip() -> None:
     assert "Compress-Archive -LiteralPath $packageRoot" in builder
     assert "Compress-Archive -Path (Join-Path $packageRoot \"*\")" not in builder
     assert "PicotooPet-Phase2-Windows-Prebuilt" in builder
-    assert '"2.3.0-slice-b-taskcenter-fix-$runNumber-$commit"' in builder
+    assert "[string]$Version" in builder
     assert "native_ci_verified" in builder
     assert "user_install_allowed" in builder
     assert "source_head" in builder
@@ -164,12 +179,25 @@ def test_verify_and_rollback_enforce_manifest_size_and_shortcut_targets() -> Non
     assert "[string]$current.executable" in rollback
 
 
-def test_release_workflow_uploads_install_verify_and_rollback_evidence() -> None:
+def test_release_workflow_uploads_slice_d_lifecycle_evidence() -> None:
     workflow = read(ROOT / ".github" / "workflows" / "windows-phase2-release.yml")
     assert "tests/release/test_windows_prebuilt_delivery.py" in workflow
     assert "fixture-evidence/**" in workflow
     assert "PICOTOO_SOURCE_HEAD_SHA" in workflow
     assert "PICOTOO_SOURCE_REF" in workflow
+    assert "PicotooPet-Phase23-SliceD-Windows-Prebuilt" in workflow
+
+
+def test_windows_task_dialogs_do_not_render_raw_exception_messages() -> None:
+    code_behind = read(
+        DESKTOP / "src" / "PicotooPet.Desktop" / "Views" / "Pages" / "TaskCenterPage.xaml.cs"
+    )
+    session = read(
+        DESKTOP / "src" / "PicotooPet.Desktop" / "Services" / "ControlCenterSession.Tasks.cs"
+    )
+    assert "exception.Message" not in code_behind
+    assert "详细信息已写入脱敏日志" in code_behind
+    assert "_logger.Error" in session
 
 
 def test_new_powershell_scripts_have_balanced_delimiters_and_safe_wildcards() -> None:
@@ -192,7 +220,10 @@ def test_new_powershell_scripts_have_balanced_delimiters_and_safe_wildcards() ->
     for path in paths:
         text = read(path)
         assert "-LiteralPath (Join-Path $payloadRoot \"*\")" not in text
-        assert "Compress-Archive -LiteralPath" not in text or path.name == "Build-Phase2WindowsRelease.ps1"
+        assert (
+            "Compress-Archive -LiteralPath" not in text
+            or path.name == "Build-Phase2WindowsRelease.ps1"
+        )
         cleaned = scrub.sub("", text)
         stack: list[str] = []
         for character in cleaned:
