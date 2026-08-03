@@ -1,4 +1,4 @@
-name: Windows Control Center CI
+name: Windows Control Center Slice D CI
 
 on:
   pull_request:
@@ -7,6 +7,7 @@ on:
       - "windows/desktop/**"
       - "tests/contract/**"
       - "tests/security/**"
+      - "tests/release/test_windows_prebuilt_delivery.py"
       - "src/**"
       - "pyproject.toml"
   workflow_dispatch:
@@ -15,14 +16,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-control-center-${{ github.workflow }}-${{ github.ref }}
+  group: windows-control-center-slice-d-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   control-center:
-    name: Native Windows Control Center gate
+    name: Native Windows Control Center Slice D gate
     runs-on: windows-2025
-    timeout-minutes: 40
+    timeout-minutes: 50
     env:
       CI: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -50,13 +51,17 @@ jobs:
             pytest-asyncio==1.4.0 `
             pytest-cov==7.1.0 `
             ruff==0.16.1 `
-            jsonschema==4.26.0
+            jsonschema==4.26.0 `
+            PyYAML
 
-      - name: Run contract and security tests
+      - name: Run contract security and Windows release tests
         shell: powershell
         run: |
           $env:PYTHONPATH = ".;src"
-          python -m pytest -q tests/contract tests/security
+          python -m pytest -q `
+            tests/contract `
+            tests/security `
+            tests/release/test_windows_prebuilt_delivery.py
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
@@ -70,7 +75,7 @@ jobs:
           dotnet --info
           $PSVersionTable.PSVersion
 
-      - name: Run Core smoke executable
+      - name: Run Core and Slice D diagnostic smoke executable
         shell: powershell
         run: |
           dotnet run `
@@ -85,7 +90,7 @@ jobs:
             --nologo `
             -warnaserror
 
-      - name: Run Control Center and Task Center self-test
+      - name: Run Control Center Task Center and diagnostic rendering self-test
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path windows/desktop/artifacts -Force | Out-Null
@@ -103,24 +108,28 @@ jobs:
             throw "Task Center self-test marker missing."
           }
 
-      - name: Build prebuilt Slice B package
+      - name: Build prebuilt Slice D Windows package
         shell: pwsh
         run: |
+          $head = $env:PICOTOO_SOURCE_HEAD_SHA
+          if ([string]::IsNullOrWhiteSpace($head) -or $head.Length -lt 12) {
+            throw "PICOTOO_SOURCE_HEAD_SHA 无效。"
+          }
+          $version = "2.3.0-slice-d-diagnostic-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 `
             -OutputRoot "windows\desktop\artifacts\control-center-release" `
-            -VersionLabel "2.3.0-slice-b-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}"
+            -Version $version
 
       - name: Verify package lifecycle on Windows PowerShell 5.1
         shell: pwsh
         run: |
-          # Delegates to Test-Phase2WindowsRelease.ps1 through the codepage-safe wrapper.
           .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1 `
             -ReleaseRoot "windows\desktop\artifacts\control-center-release"
 
-      - name: Upload Control Center package and evidence
+      - name: Upload Control Center Slice D package and evidence
         uses: actions/upload-artifact@v7
         with:
-          name: windows-control-center-slice-b-${{ github.run_number }}
+          name: windows-control-center-slice-d-${{ github.run_number }}
           if-no-files-found: error
           retention-days: 14
           path: |
