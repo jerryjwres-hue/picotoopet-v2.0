@@ -1,4 +1,4 @@
-name: Phase 2 Windows Prebuilt Release
+name: Phase 2.3 Slice D Windows Prebuilt Release
 
 on:
   workflow_dispatch:
@@ -19,14 +19,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: phase2-windows-${{ github.ref }}
+  group: phase23-slice-d-windows-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   windows-release:
-    name: Native Windows build and release gate
+    name: Native Windows Slice D build and release gate
     runs-on: windows-2025
-    timeout-minutes: 40
+    timeout-minutes: 50
     env:
       CI: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -71,21 +71,25 @@ jobs:
         run: |
           .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
 
-      - name: Build, analyze, publish and self-test
+      - name: Build analyze publish and self-test Slice D
         shell: pwsh
         run: |
-          .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1
+          $head = $env:PICOTOO_SOURCE_HEAD_SHA
+          if ([string]::IsNullOrWhiteSpace($head) -or $head.Length -lt 12) {
+            throw "PICOTOO_SOURCE_HEAD_SHA 无效。"
+          }
+          $version = "2.3.0-slice-d-diagnostic-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
+          .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 -Version $version
 
-      - name: Verify packaged install, verify and rollback lifecycle on Windows PowerShell 5.1
+      - name: Verify packaged install verify and rollback lifecycle on Windows PowerShell 5.1
         shell: pwsh
         run: |
-          # Test-Phase2WindowsRelease.ps1 is executed through a codepage-safe CI wrapper.
           .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
 
-      - name: Upload prebuilt installer and lifecycle evidence
+      - name: Upload prebuilt Slice D installer and lifecycle evidence
         uses: actions/upload-artifact@v7
         with:
-          name: PicotooPet-Phase2-Windows-Prebuilt
+          name: PicotooPet-Phase23-SliceD-Windows-Prebuilt-${{ github.run_number }}
           path: |
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
