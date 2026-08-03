@@ -23,9 +23,18 @@
     },
     "required_archive_paths": [
       "payload/Picotoo Pet AI.exe",
+      "payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
+      "Phase2Prebuilt.Common.ps1",
+      "Install-Phase2Prebuilt.ps1",
+      "Verify-Phase2Prebuilt.ps1",
+      "Rollback-Phase2Prebuilt.ps1",
       "INSTALL_PHASE2_WINDOWS.vbs",
       "VERIFY_PHASE2_WINDOWS.vbs",
       "ROLLBACK_PHASE2_WINDOWS.vbs"
+    ],
+    "allowed_payload_executable_paths": [
+      "Picotoo Pet AI.exe",
+      "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe"
     ],
     "forbidden_name_fragments": [
       "slicedhelper",
