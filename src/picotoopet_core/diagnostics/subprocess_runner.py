@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 
 from .collector import collect_snapshot
@@ -153,10 +154,8 @@ class DiagnosticSubprocessRunner:
             process.wait(timeout=self.terminate_grace_seconds)
             return
         if os.name == "posix":
-            try:
+            with suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
         else:
             process.terminate()
         try:
@@ -165,10 +164,8 @@ class DiagnosticSubprocessRunner:
         except subprocess.TimeoutExpired:
             pass
         if os.name == "posix":
-            try:
+            with suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
         else:
             process.kill()
         process.wait(timeout=self.terminate_grace_seconds)
