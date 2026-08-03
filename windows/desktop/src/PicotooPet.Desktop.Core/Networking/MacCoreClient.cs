@@ -11,6 +11,7 @@ namespace PicotooPet.Desktop.Core.Networking;
 public sealed class MacCoreClient : IAsyncDisposable
 {
     private const int MaxDiagnosticResultBytes = 64 * 1024;
+    private const int MaxApiErrorBytes = 64 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -359,13 +360,17 @@ public sealed class MacCoreClient : IAsyncDisposable
     {
         try
         {
-            await using var stream = await content.ReadAsStreamAsync(cancellationToken)
-                .ConfigureAwait(false);
-            var envelope = await JsonSerializer.DeserializeAsync<ApiErrorEnvelope>(
-                stream,
-                JsonOptions,
+            var data = await ReadBoundedAsync(
+                content,
+                MaxApiErrorBytes,
                 cancellationToken).ConfigureAwait(false);
+            var envelope = JsonSerializer.Deserialize<ApiErrorEnvelope>(data, JsonOptions);
             return envelope?.Error;
+        }
+        catch (ResponseTooLargeException)
+        {
+            // 超大错误页不进入内存、日志或用户消息，保留 HTTP 状态和 Trace ID。
+            return null;
         }
         catch (JsonException)
         {
