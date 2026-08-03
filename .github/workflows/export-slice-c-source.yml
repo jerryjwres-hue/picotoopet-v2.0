@@ -1,0 +1,89 @@
+name: Export Slice C Source
+
+on:
+  push:
+    branches:
+      - migration/export-slice-c-to-picotoopet-v2-20260802
+    paths:
+      - .github/workflows/export-slice-c-source.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: export-slice-c-source-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  export-source:
+    name: Export exact Slice C source tree
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Build deterministic source archive chunks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $exportCommit = (git rev-parse HEAD).Trim()
+          $sourceCommit = (git rev-parse HEAD^).Trim()
+          $exportRoot = Join-Path $PWD "migration-export"
+          $archivePath = Join-Path $env:RUNNER_TEMP "picotoopet-slice-c-source.zip"
+
+          if (Test-Path $exportRoot) {
+            Remove-Item $exportRoot -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $exportRoot -Force | Out-Null
+          git archive --format=zip --output="$archivePath" HEAD
+
+          if (-not (Test-Path $archivePath -PathType Leaf)) {
+            throw "Source archive was not created."
+          }
+
+          $archiveBytes = [System.IO.File]::ReadAllBytes($archivePath)
+          $archiveBase64 = [Convert]::ToBase64String($archiveBytes)
+          $chunkSize = 60000
+          $chunkCount = [Math]::Ceiling($archiveBase64.Length / $chunkSize)
+
+          for ($index = 0; $index -lt $chunkCount; $index++) {
+            $offset = $index * $chunkSize
+            $length = [Math]::Min($chunkSize, $archiveBase64.Length - $offset)
+            $chunk = $archiveBase64.Substring($offset, $length)
+            $chunkPath = Join-Path $exportRoot ("source.part{0:D3}" -f $index)
+            [System.IO.File]::WriteAllText($chunkPath, $chunk, [System.Text.Encoding]::ASCII)
+          }
+
+          $trackedFiles = @(git ls-tree -r --name-only HEAD)
+          $manifest = [ordered]@{
+            format = "picotoopet-source-export-v1"
+            source_repository = "jerryjwres-hue/picotoopet-v2.0"
+            source_branch = "feature/phase-2.3-slice-c-worker-runtime-foundation"
+            source_base_commit = $sourceCommit
+            export_commit = $exportCommit
+            tracked_file_count = $trackedFiles.Count
+            archive_bytes = $archiveBytes.Length
+            archive_sha256 = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            chunk_size = $chunkSize
+            chunk_count = [int]$chunkCount
+          }
+
+          $manifestPath = Join-Path $exportRoot "manifest.json"
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -Path $manifestPath -Encoding UTF8
+
+      - name: Commit migration payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          git config user.name "OpenAI Assistant"
+          git config user.email "assistant@openai.local"
+          git add migration-export
+          git commit -m "chore: export Slice C source archive [skip ci]"
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
