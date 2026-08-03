@@ -1,22 +1,46 @@
-﻿# Phase 2 Windows 预编译版本回滚；只切换已验证版本，不删除用户数据。
+# Phase 2 Windows 预编译版本回滚；只切换已验证版本，不删除用户数据。
 [CmdletBinding()]
-param()
+param(
+    [string]$DataRoot = "",
+    [string]$DesktopDirectory = "",
+    [switch]$ActivationSelfTest,
+    [switch]$SuppressReportOpen
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$dataRoot      = Join-Path $env:LOCALAPPDATA "PicotooPetV2\DesktopApp"
-$currentPath   = Join-Path $dataRoot "current_version.json"
-$previousPath  = Join-Path $dataRoot "previous_version.json"
-$reportsRoot   = Join-Path $dataRoot "reports"
-$timestamp     = Get-Date -Format "yyyyMMdd-HHmmss"
-$reportPath    = Join-Path $reportsRoot "phase2-rollback-$timestamp.json"
-$rollbackMutex = [System.Threading.Mutex]::new($false, "Global\PicotooPetV2.Phase2Installer")
-$mutexOwned    = $false
-$current       = $null
-$previous      = $null
-$switched      = $false
+$commonScript = Join-Path $PSScriptRoot "Phase2Prebuilt.Common.ps1"
+if (-not (Test-Path -LiteralPath $commonScript -PathType Leaf)) {
+    throw "安装目录缺少 Phase2Prebuilt.Common.ps1。"
+}
+. $commonScript
+
+if ([string]::IsNullOrWhiteSpace($DataRoot)) {
+    $DataRoot = Join-Path $env:LOCALAPPDATA "PicotooPetV2\DesktopApp"
+}
+$DataRoot = [System.IO.Path]::GetFullPath($DataRoot)
+
+$dataRoot       = $DataRoot
+$currentPath    = Join-Path $dataRoot "current_version.json"
+$previousPath   = Join-Path $dataRoot "previous_version.json"
+$reportsRoot    = Join-Path $dataRoot "reports"
+$timestamp      = Get-Date -Format "yyyyMMdd-HHmmss-fff"
+$reportPath     = Join-Path $reportsRoot "phase2-rollback-$timestamp.json"
+$activationPath = Join-Path $reportsRoot "phase2-rollback-activation-$timestamp.json"
+$rollbackMutex  = [System.Threading.Mutex]::new($false, "Global\PicotooPetV2.Phase2Installer")
+$mutexOwned     = $false
+$current        = $null
+$previous       = $null
+$switched       = $false
 New-Item -ItemType Directory -Path $reportsRoot -Force | Out-Null
+
+function ConvertTo-NativeArgument {
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ($Value -notmatch '[\s"]') { return $Value }
+    return '"' + ($Value -replace '"', '\\"') + '"'
+}
 
 function Write-Utf8NoBom {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Value)
@@ -28,7 +52,6 @@ function Write-Utf8NoBom {
 function Read-JsonUtf8 {
     param([Parameter(Mandatory)][string]$Path)
 
-    # 机器 JSON 固定按严格 UTF-8 读取，绕过 Windows PowerShell 5.1 的区域默认编码。
     $encoding = [System.Text.UTF8Encoding]::new($false, $true)
     try {
         $json = [System.IO.File]::ReadAllText($Path, $encoding)
@@ -52,76 +75,177 @@ function Assert-ManifestFiles {
 
     foreach ($entry in $Manifest.files) {
         $relative = [string]$entry.path
-        $path     = Join-Path $Root ($relative -replace '/', '\\')
-        if (-not (Test-Path -LiteralPath $path)) { throw "回滚版本文件缺失：$relative" }
+        if ([string]::IsNullOrWhiteSpace($relative) -or
+            $relative.Contains("..") -or
+            [System.IO.Path]::IsPathRooted($relative)) {
+            throw "回滚版本清单包含非法路径：$relative"
+        }
+        $path = Join-Path $Root ($relative -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "回滚版本文件缺失：$relative"
+        }
         $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($actual -ne [string]$entry.sha256) { throw "回滚版本 SHA-256 不一致：$relative" }
+        if ($actual -ne [string]$entry.sha256) {
+            throw "回滚版本 SHA-256 不一致：$relative"
+        }
+        if ((Get-Item -LiteralPath $path).Length -ne [long]$entry.size_bytes) {
+            throw "回滚版本文件大小不一致：$relative"
+        }
     }
 }
 
-function Set-PicotooShortcuts {
-    param([Parameter(Mandatory)][string]$Executable)
-
-    $shell = New-Object -ComObject WScript.Shell
-    $paths = @(
-        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet AI.lnk"),
-        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\Picotoo Pet AI.lnk")
+function Invoke-RollbackActivationCheck {
+    param(
+        [Parameter(Mandatory)][string]$Executable,
+        [Parameter(Mandatory)][string]$WorkingDirectory,
+        [switch]$SelfTest
     )
-    foreach ($shortcutPath in $paths) {
-        $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath       = $Executable
-        $shortcut.WorkingDirectory = Split-Path -Parent $Executable
-        $shortcut.Description      = "Picotoo Pet V2 双机 AI 控制面板"
-        $shortcut.Save()
+
+    Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
+    if ($SelfTest) {
+        $arguments = @("--self-test", "--self-test-output", $activationPath)
+        $argumentLine = ($arguments | ForEach-Object {
+            ConvertTo-NativeArgument -Value $_
+        }) -join ' '
+        $process = Start-Process -FilePath $Executable -ArgumentList $argumentLine `
+            -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -Wait -PassThru
+        if ($process.ExitCode -ne 0) {
+            throw "回滚版本自检失败，退出码 $($process.ExitCode)。"
+        }
+        if (-not (Test-Path -LiteralPath $activationPath -PathType Leaf)) {
+            throw "回滚版本自检未生成报告。"
+        }
+        $selfTest = Read-JsonUtf8 -Path $activationPath
+        if ([string]$selfTest.status -ne "pass") {
+            throw "回滚版本自检报告不是 pass。"
+        }
+        return [pscustomobject][ordered]@{
+            mode       = "self-test"
+            status     = "pass"
+            report     = $activationPath
+            process_id = $process.Id
+        }
+    }
+
+    $process = Start-Process -FilePath $Executable -WorkingDirectory $WorkingDirectory -PassThru
+    Start-Sleep -Seconds 2
+    $process.Refresh()
+    if ($process.HasExited) {
+        throw "回滚版本启动后立即退出，退出码 $($process.ExitCode)。"
+    }
+    return [pscustomobject][ordered]@{
+        mode       = "interactive"
+        status     = "pass"
+        report     = $null
+        process_id = $process.Id
+    }
+}
+
+function Restore-RollbackOrigin {
+    Write-JsonAtomic -Value $current -Path $currentPath
+    Write-JsonAtomic -Value $previous -Path $previousPath
+    Set-PicotooShortcuts `
+        -Executable ([string]$current.executable) `
+        -DesktopDirectory $DesktopDirectory | Out-Null
+    $restoredShortcuts = Assert-PicotooShortcuts `
+        -Executable ([string]$current.executable) `
+        -DesktopDirectory $DesktopDirectory
+    $restoredActivation = Invoke-RollbackActivationCheck `
+        -Executable ([string]$current.executable) `
+        -WorkingDirectory ([string]$current.path) `
+        -SelfTest:$ActivationSelfTest
+    return [pscustomobject][ordered]@{
+        status     = "pass"
+        current    = [string]$current.version
+        previous   = [string]$previous.version
+        shortcuts  = $restoredShortcuts
+        activation = $restoredActivation
     }
 }
 
 $report = [ordered]@{
-    schema_version = "2.2.0"
-    generated_at   = (Get-Date).ToUniversalTime().ToString("o")
-    status         = "running"
-    restored       = $null
-    replaced       = $null
-    error          = $null
+    schema_version             = "2.3.0"
+    generated_at               = (Get-Date).ToUniversalTime().ToString("o")
+    status                     = "running"
+    data_root                  = $dataRoot
+    restored                   = $null
+    replaced                   = $null
+    current_before             = $null
+    previous_before            = $null
+    current_after              = $null
+    previous_after             = $null
+    restored_executable_sha256 = $null
+    shortcut_paths             = $null
+    shortcuts_verified         = $false
+    activation                 = $null
+    recovery                   = $null
+    error                      = $null
 }
 $exitCode = 1
 try {
-    try { $mutexOwned = $rollbackMutex.WaitOne(0) }
-    catch [System.Threading.AbandonedMutexException] { $mutexOwned = $true }
+    try {
+        $mutexOwned = $rollbackMutex.WaitOne(0)
+    }
+    catch [System.Threading.AbandonedMutexException] {
+        $mutexOwned = $true
+    }
     if (-not $mutexOwned) { throw "安装或回滚正在运行。" }
-    if (-not (Test-Path -LiteralPath $currentPath))  { throw "当前版本指针不存在。" }
-    if (-not (Test-Path -LiteralPath $previousPath)) { throw "没有可回滚的上一版本。" }
+    if (-not (Test-Path -LiteralPath $currentPath -PathType Leaf)) {
+        throw "当前版本指针不存在。"
+    }
+    if (-not (Test-Path -LiteralPath $previousPath -PathType Leaf)) {
+        throw "没有可回滚的上一版本。"
+    }
 
-    $current      = Read-JsonUtf8 -Path $currentPath
-    $previous     = Read-JsonUtf8 -Path $previousPath
-    $manifestPath = Join-Path $previous.path "release-manifest.json"
-    if (-not (Test-Path -LiteralPath $manifestPath)) { throw "上一版本缺少发布清单。" }
+    $current  = Read-JsonUtf8 -Path $currentPath
+    $previous = Read-JsonUtf8 -Path $previousPath
+    $report.current_before  = [string]$current.version
+    $report.previous_before = [string]$previous.version
+    $manifestPath = Join-Path ([string]$previous.path) "release-manifest.json"
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "上一版本缺少发布清单。"
+    }
     $manifest = Read-JsonUtf8 -Path $manifestPath
-    Assert-ManifestFiles -Manifest $manifest -Root $previous.path
+    Assert-ManifestFiles -Manifest $manifest -Root ([string]$previous.path)
+
+    $appEntry = $manifest.files | Where-Object {
+        [string]$_.path -eq "Picotoo Pet AI.exe"
+    } | Select-Object -First 1
+    if ($null -eq $appEntry) {
+        throw "上一版本清单缺少主程序。"
+    }
 
     Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
     $switched = $true
     Write-JsonAtomic -Value $previous -Path $currentPath
     Write-JsonAtomic -Value $current -Path $previousPath
-    Set-PicotooShortcuts -Executable ([string]$previous.executable)
-    $process = Start-Process -FilePath $previous.executable -WorkingDirectory $previous.path -PassThru
-    Start-Sleep -Seconds 2
-    $process.Refresh()
-    if ($process.HasExited) { throw "回滚版本启动后立即退出。" }
+    Set-PicotooShortcuts `
+        -Executable ([string]$previous.executable) `
+        -DesktopDirectory $DesktopDirectory | Out-Null
+    $shortcutValidation = Assert-PicotooShortcuts `
+        -Executable ([string]$previous.executable) `
+        -DesktopDirectory $DesktopDirectory
+    $activation = Invoke-RollbackActivationCheck `
+        -Executable ([string]$previous.executable) `
+        -WorkingDirectory ([string]$previous.path) `
+        -SelfTest:$ActivationSelfTest
 
-    $report.status   = "pass"
-    $report.restored = $previous.version
-    $report.replaced = $current.version
-    $exitCode        = 0
+    $report.status                     = "pass"
+    $report.restored                   = [string]$previous.version
+    $report.replaced                   = [string]$current.version
+    $report.current_after              = [string]$previous.version
+    $report.previous_after             = [string]$current.version
+    $report.restored_executable_sha256 = [string]$appEntry.sha256
+    $report.shortcut_paths             = $shortcutValidation.shortcut_paths
+    $report.shortcuts_verified         = [bool]$shortcutValidation.shortcuts_verified
+    $report.activation                 = $activation
+    $exitCode                          = 0
 }
 catch {
     $primaryError = $_.Exception.Message
     if ($switched -and $null -ne $current -and $null -ne $previous) {
         try {
-            Write-JsonAtomic -Value $current -Path $currentPath
-            Write-JsonAtomic -Value $previous -Path $previousPath
-            Set-PicotooShortcuts -Executable ([string]$current.executable)
-            Start-Process -FilePath $current.executable -WorkingDirectory $current.path
+            $report.recovery = Restore-RollbackOrigin
         }
         catch {
             $primaryError = "$primaryError | 恢复回滚前版本失败：$($_.Exception.Message)"
@@ -134,7 +258,9 @@ finally {
     Write-JsonAtomic -Value $report -Path $reportPath
     if ($mutexOwned) { $rollbackMutex.ReleaseMutex() }
     $rollbackMutex.Dispose()
-    Start-Process -FilePath "notepad.exe" -ArgumentList @($reportPath)
+    if (-not $SuppressReportOpen) {
+        Start-Process -FilePath "notepad.exe" -ArgumentList @($reportPath)
+    }
 }
 
 exit $exitCode
