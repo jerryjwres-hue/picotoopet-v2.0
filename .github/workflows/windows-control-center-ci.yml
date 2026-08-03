@@ -28,6 +28,8 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+      PICOTOO_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PICOTOO_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
     steps:
       - name: Check out source
@@ -102,16 +104,17 @@ jobs:
           }
 
       - name: Build prebuilt Slice B package
-        shell: powershell
+        shell: pwsh
         run: |
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 `
             -OutputRoot "windows\desktop\artifacts\control-center-release" `
-            -VersionLabel "2.3.0-slice-b-${{ github.run_number }}-${{ github.sha }}"
+            -VersionLabel "2.3.0-slice-b-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}"
 
-      - name: Verify package on Windows PowerShell 5.1
-        shell: powershell
+      - name: Verify package lifecycle on Windows PowerShell 5.1
+        shell: pwsh
         run: |
-          .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1 `
+          # Delegates to Test-Phase2WindowsRelease.ps1 through the codepage-safe wrapper.
+          .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1 `
             -ReleaseRoot "windows\desktop\artifacts\control-center-release"
 
       - name: Upload Control Center package and evidence
@@ -124,4 +127,5 @@ jobs:
             windows/desktop/artifacts/control-center-release/*.zip
             windows/desktop/artifacts/control-center-release/*.sha256.txt
             windows/desktop/artifacts/control-center-release/windows-build-report.json
+            windows/desktop/artifacts/control-center-release/fixture-evidence/**
             windows/desktop/artifacts/control-center-self-test.json
