@@ -10,6 +10,8 @@ namespace PicotooPet.Desktop.Core.Networking;
 /// <summary>复用连接池、幂等键和 Trace Header 的 Mac Core REST 客户端。</summary>
 public sealed class MacCoreClient : IAsyncDisposable
 {
+    private const int MaxDiagnosticResultBytes = 64 * 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -150,7 +152,8 @@ public sealed class MacCoreClient : IAsyncDisposable
             null,
             "tasks.diagnostic.result",
             null,
-            cancellationToken);
+            cancellationToken,
+            MaxDiagnosticResultBytes);
 
     /// <summary>取消尚未进入不可逆终态的任务。</summary>
     public Task<TaskRecord> CancelTaskAsync(
@@ -182,7 +185,8 @@ public sealed class MacCoreClient : IAsyncDisposable
         object? payload,
         string operation,
         string? idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? maxResponseBytes = null)
     {
         var traceId = Guid.NewGuid().ToString("N");
         using var request = new HttpRequestMessage(method, relativeUri);
@@ -224,18 +228,40 @@ public sealed class MacCoreClient : IAsyncDisposable
 
             try
             {
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                var result = await JsonSerializer.DeserializeAsync<T>(
-                    stream,
-                    JsonOptions,
-                    cancellationToken).ConfigureAwait(false);
+                T? result;
+                if (maxResponseBytes is int limit)
+                {
+                    var data = await ReadBoundedAsync(
+                        response.Content,
+                        limit,
+                        cancellationToken).ConfigureAwait(false);
+                    result = JsonSerializer.Deserialize<T>(data, JsonOptions);
+                }
+                else
+                {
+                    await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    result = await JsonSerializer.DeserializeAsync<T>(
+                        stream,
+                        JsonOptions,
+                        cancellationToken).ConfigureAwait(false);
+                }
                 return result ?? throw new ApiException(
                     "EMPTY_RESPONSE",
                     "Mac Core 返回了空响应。",
                     retryable: true,
                     responseTrace,
                     (int)response.StatusCode);
+            }
+            catch (ResponseTooLargeException exception)
+            {
+                throw new ApiException(
+                    "RESPONSE_TOO_LARGE",
+                    "Mac Core 返回的诊断结果超过 64 KiB 上限。",
+                    retryable: false,
+                    responseTrace,
+                    (int)response.StatusCode,
+                    exception);
             }
             catch (JsonException exception)
             {
@@ -287,6 +313,43 @@ public sealed class MacCoreClient : IAsyncDisposable
                 traceId,
                 exception.StatusCode is null ? 0 : (int)exception.StatusCode.Value,
                 exception);
+        }
+    }
+
+    private static async Task<byte[]> ReadBoundedAsync(
+        HttpContent content,
+        int maxBytes,
+        CancellationToken cancellationToken)
+    {
+        if (maxBytes < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        }
+        if (content.Headers.ContentLength is long length && length > maxBytes)
+        {
+            throw new ResponseTooLargeException();
+        }
+
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var buffer = new MemoryStream(capacity: Math.Min(maxBytes, 16 * 1024));
+        var block = new byte[8 * 1024];
+        var total = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(block.AsMemory(), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                return buffer.ToArray();
+            }
+            total = checked(total + read);
+            if (total > maxBytes)
+            {
+                throw new ResponseTooLargeException();
+            }
+            await buffer.WriteAsync(block.AsMemory(0, read), cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -356,4 +419,6 @@ public sealed class MacCoreClient : IAsyncDisposable
         }
         return ValueTask.CompletedTask;
     }
+
+    private sealed class ResponseTooLargeException : Exception;
 }
