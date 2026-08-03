@@ -1,5 +1,5 @@
 #!/bin/bash
-# Picotoo Pet V2 Phase 2.3 Slice C Mac Worker 离线安装器。
+# Picotoo Pet V2 Phase 2.3 Slice D Mac Worker 离线安装器。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -38,9 +38,9 @@ activated=0
 worker_started=0
 backup_captured=0
 previous_worker_present=0
-previous_worker_backup="$state_root/slice-c-previous-worker.plist"
-previous_version_file="$state_root/slice-c-previous-version.txt"
-worker_present_file="$state_root/slice-c-previous-worker-present.txt"
+previous_worker_backup="$state_root/slice-d-previous-worker.plist"
+previous_version_file="$state_root/slice-d-previous-version.txt"
+worker_present_file="$state_root/slice-d-previous-worker-present.txt"
 worker_id="picotoopet-m4-$(id -u)"
 
 mkdir -p "$versions_root" "$state_root" "$runtime_root/reports" "$runtime_root/logs"
@@ -96,7 +96,7 @@ rollback_after_failed_activation() {
     worker_started=0
   fi
   if [[ "$activated" == "1" && -n "$previous_target" ]]; then
-    echo "Slice C 激活失败，正在恢复上一 Core/Worker 组合。" >&2
+    echo "Slice D 激活失败，正在恢复上一 Core/Worker 组合。" >&2
     atomic_switch_current "$runtime_root" "$previous_target"
     restart_core_runtime
     activated=0
@@ -119,7 +119,7 @@ on_error() {
     "$new_version" \
     "命令失败：$failed_command" \
     "false")" || true
-  echo "Slice C Worker 安装失败。报告：$report" >&2
+  echo "Slice D Worker 安装失败。报告：$report" >&2
   exit "$code"
 }
 trap on_error ERR
@@ -131,13 +131,24 @@ package_version="$(read_manifest "$package_root" package_version)"
 runtime_version="$(read_manifest "$package_root" runtime_version)"
 package_arch="$(read_manifest "$package_root" architecture)"
 worker_included="$(read_manifest "$package_root" worker_runtime_included)"
+supported_types="$(read_manifest "$package_root" worker_supported_task_types)"
+timeout_seconds="$(read_manifest "$package_root" diagnostic_hard_timeout_seconds)"
+grace_seconds="$(read_manifest "$package_root" diagnostic_termination_grace_seconds)"
 
-if [[ "$package_version" != "2.3.0.dev2" ]]; then
-  echo "包版本不符合 Slice C：$package_version" >&2
+if [[ -z "$package_version" || ! "$package_version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+  echo "包内 package_version 无效：$package_version" >&2
   exit 1
 fi
-if [[ "$runtime_version" != "2.3.0-slice-c" ]]; then
-  echo "运行时版本不符合 Slice C：$runtime_version" >&2
+if [[ "$runtime_version" != "2.3.0-slice-d-worker" ]]; then
+  echo "运行时版本不符合 Slice D Worker：$runtime_version" >&2
+  exit 1
+fi
+if [[ "$supported_types" != '["system.diagnostic_snapshot", "system.noop"]' ]]; then
+  echo "Worker 支持类型不符合 Slice D 冻结合同：$supported_types" >&2
+  exit 1
+fi
+if [[ "$timeout_seconds" != "30" || "$grace_seconds" != "5" ]]; then
+  echo "诊断超时或进程清理宽限不符合冻结合同。" >&2
   exit 1
 fi
 if [[ "$package_arch" != "arm64" || "$package_arch" != "$(uname -m)" ]]; then
@@ -146,6 +157,12 @@ if [[ "$package_arch" != "arm64" || "$package_arch" != "$(uname -m)" ]]; then
 fi
 if [[ "$worker_included" != "True" && "$worker_included" != "true" ]]; then
   echo "发布清单未声明 Worker Runtime。" >&2
+  exit 1
+fi
+wheel_count="$(find "$package_root/payload/wheelhouse" -maxdepth 1 -type f \
+  -name "picotoopet_core-${package_version//-/_}-*.whl" | wc -l | tr -d ' ')"
+if [[ "$wheel_count" != "1" ]]; then
+  echo "包内项目 wheel 与 package_version 不一致或数量不是 1。" >&2
   exit 1
 fi
 if [[ ! -x "$current_python" ]]; then
@@ -188,9 +205,9 @@ mkdir -p "$new_version"
 "$new_version/.venv/bin/python" -m pip install \
   --no-index \
   --find-links "$package_root/payload/wheelhouse" \
-  "picotoopet-core==2.3.0.dev2"
+  "picotoopet-core==$package_version"
 
-candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-c-candidate.XXXXXX")"
+candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-d-worker-candidate.XXXXXX")"
 candidate_port="$(choose_free_port)"
 PICOTOO_RUNTIME_ROOT="$candidate_root" \
 PICOTOO_API_HOST="127.0.0.1" \
@@ -202,14 +219,14 @@ PICOTOO_API_TOKEN="$api_token" \
 candidate_pid=$!
 candidate_url="http://127.0.0.1:$candidate_port"
 wait_for_health "$candidate_url"
-verify_slice_c_candidate_contract "$candidate_url" "$api_token"
+verify_slice_d_candidate_contract "$candidate_url" "$api_token"
 cleanup_candidate
 
 stop_worker_agent
 atomic_switch_current "$runtime_root" "$new_version"
 activated=1
 restart_core_runtime
-verify_slice_c_candidate_contract "http://127.0.0.1:$existing_port" "$api_token"
+verify_slice_d_candidate_contract "http://127.0.0.1:$existing_port" "$api_token"
 
 write_worker_plist "$runtime_root" "$worker_id"
 start_worker_agent "$runtime_root" "$worker_id" "$api_token"
