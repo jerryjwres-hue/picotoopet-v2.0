@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from picotoopet_core.api.app import create_app
@@ -111,3 +112,28 @@ def test_result_metadata_for_wrong_task_is_integrity_error(tmp_path: Path) -> No
 
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "RESULT_INTEGRITY_ERROR"
+
+
+def test_result_store_io_failure_is_integrity_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, headers = make_client(tmp_path)
+    with client:
+        completed = complete_diagnostic(client, headers)
+        services = client.app.state.services
+
+        def fail_read(*args, **kwargs):  # type: ignore[no-untyped-def]
+            raise OSError("simulated storage failure")
+
+        monkeypatch.setattr(services.results, "read_json", fail_read)
+        response = client.get(
+            f"/api/v1/tasks/{completed['task_id']}/result",
+            headers=headers,
+        )
+
+    assert response.status_code == 500
+    body = response.json()["error"]
+    assert body["code"] == "RESULT_INTEGRITY_ERROR"
+    assert body["retryable"] is False
+    assert "storage" not in body["message"].lower()
