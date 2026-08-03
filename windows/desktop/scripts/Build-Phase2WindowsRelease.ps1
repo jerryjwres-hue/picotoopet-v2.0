@@ -103,6 +103,25 @@ function Write-Json {
     Write-Utf8NoBom -Path $Path -Value ($Value | ConvertTo-Json -Depth 20)
 }
 
+function Copy-ReleaseFile {
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination
+    )
+
+    if ([System.IO.Path]::GetExtension($Source).Equals(
+            ".ps1",
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        $strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
+        $withBom    = [System.Text.UTF8Encoding]::new($true)
+        $text       = [System.IO.File]::ReadAllText($Source, $strictUtf8)
+        [System.IO.File]::WriteAllText($Destination, $text, $withBom)
+        return
+    }
+
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
 function Get-FileEntry {
     param(
         [Parameter(Mandatory)][string]$PayloadRoot,
@@ -310,7 +329,9 @@ $releaseFiles = @(
     "README_INSTALL_CN.txt"
 )
 foreach ($file in $releaseFiles) {
-    Copy-Item -LiteralPath (Join-Path $desktopRoot "release\$file") -Destination $packageRoot -Force
+    Copy-ReleaseFile `
+        -Source (Join-Path $desktopRoot "release\$file") `
+        -Destination (Join-Path $packageRoot $file)
 }
 
 Compress-Archive -LiteralPath $packageRoot -DestinationPath $zipPath -CompressionLevel Optimal
