@@ -1,5 +1,5 @@
 #!/bin/bash
-# Phase 2.3 Slice B Mac Core 增量交付共享安全函数。
+# Phase 2.3 Mac Core / Worker 离线交付共享安全函数。
 set -euo pipefail
 
 phase23_runtime_root() {
@@ -43,10 +43,14 @@ manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 entries = manifest.get("files")
 if not isinstance(entries, list) or not entries:
     raise SystemExit("release manifest has no files")
+seen: set[str] = set()
 for entry in entries:
     relative = entry.get("path")
     if not isinstance(relative, str) or not relative:
         raise SystemExit("manifest path is empty")
+    if relative in seen:
+        raise SystemExit(f"duplicate manifest path: {relative}")
+    seen.add(relative)
     path = Path(relative)
     if path.is_absolute() or ".." in path.parts:
         raise SystemExit(f"unsafe manifest path: {relative}")
@@ -77,8 +81,7 @@ import sys
 from pathlib import Path
 
 runtime = Path(sys.argv[1]).resolve()
-current = Path(sys.argv[2])
-target = current.resolve()
+target = Path(sys.argv[2]).resolve()
 versions = (runtime / "versions").resolve()
 try:
     target.relative_to(versions)
@@ -195,17 +198,26 @@ def get(path: str, *, authenticated: bool = False):
 health = get("/api/v1/health")
 if health.get("status") != "ok":
     raise SystemExit("health.status must be ok")
-capabilities = get("/api/v1/capabilities")
-features = capabilities.get("features", {})
+features = get("/api/v1/capabilities").get("features", {})
 if features.get("worker_status") is not True:
     raise SystemExit("capabilities.features.worker_status must be true")
-if features.get("local_worker") is not False:
-    raise SystemExit("capabilities.features.local_worker must be false")
+if features.get("local_worker") is not True:
+    raise SystemExit("capabilities.features.local_worker must be true")
 worker = get("/api/v1/workers/status", authenticated=True)
-if worker.get("state") != "not_deployed":
-    raise SystemExit("workers.status.state must be not_deployed")
-if worker.get("available") is not False:
-    raise SystemExit("workers.status.available must be false")
+if worker.get("state") not in {
+    "not_deployed", "starting", "online", "degraded", "offline"
+}:
+    raise SystemExit(f"unexpected workers.status.state: {worker!r}")
+if worker.get("state") == "online" and worker.get("available") is not True:
+    raise SystemExit(f"online worker must be available: {worker!r}")
+paths = get("/openapi.json").get("paths", {})
+required = {
+    "/api/v1/tasks/system-diagnostic-snapshot",
+    "/api/v1/tasks/{task_id}/result",
+}
+missing = sorted(required - set(paths))
+if missing:
+    raise SystemExit(f"Slice D diagnostic paths missing: {missing!r}")
 PY
 }
 
@@ -250,25 +262,26 @@ restart_user_agent() {
 stop_fixture_service() {
   local runtime_root="$1"
   local pid_file="$runtime_root/state/fixture-service.pid"
-  if [[ -f "$pid_file" ]]; then
-    local pid
-    pid="$(cat "$pid_file")"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" >/dev/null 2>&1; then
-      kill "$pid" >/dev/null 2>&1 || true
-      local index
-      for ((index = 0; index < 40; index += 1)); do
-        if ! kill -0 "$pid" >/dev/null 2>&1; then
-          break
-        fi
-        sleep 0.1
-      done
-      if kill -0 "$pid" >/dev/null 2>&1; then
-        kill -9 "$pid" >/dev/null 2>&1 || true
-      fi
-      wait "$pid" >/dev/null 2>&1 || true
-    fi
-    rm -f "$pid_file"
+  if [[ ! -f "$pid_file" ]]; then
+    return 0
   fi
+  local pid
+  pid="$(cat "$pid_file")"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" >/dev/null 2>&1; then
+    kill "$pid" >/dev/null 2>&1 || true
+    local index
+    for ((index = 0; index < 40; index += 1)); do
+      if ! kill -0 "$pid" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.1
+    done
+    if kill -0 "$pid" >/dev/null 2>&1; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+    wait "$pid" >/dev/null 2>&1 || true
+  fi
+  rm -f "$pid_file"
 }
 
 start_fixture_service() {
@@ -299,8 +312,6 @@ start_fixture_service() {
     cat "$stderr_log" >&2 || true
     return 1
   fi
-
-  # 首次健康可能来自刚退出的旧进程；要求新 PID 持续存活并再次通过健康检查。
   sleep 1
   if ! kill -0 "$pid" >/dev/null 2>&1; then
     echo "fixture service exited after initial health check; stderr follows:" >&2
@@ -325,7 +336,7 @@ write_report() {
   mkdir -p "$reports"
   local stamp
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  local report="$reports/phase23-slice-b-${kind}-${stamp}.json"
+  local report="$reports/phase23-slice-d-core-${kind}-${stamp}.json"
   python3 - "$report" "$status" "$version" "$install_path" "$error_message" <<'PY'
 import json
 import sys
@@ -335,9 +346,10 @@ path = Path(sys.argv[1])
 payload = {
     "status": sys.argv[2],
     "version": sys.argv[3] or None,
+    "runtime_version": "2.3.0-slice-d-core",
     "install_path": sys.argv[4] or None,
     "source_build_on_user_mac": False,
-    "worker_runtime_installed": False,
+    "worker_runtime_preserved": True,
     "error": sys.argv[5] or None,
 }
 path.write_text(
