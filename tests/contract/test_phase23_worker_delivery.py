@@ -1,4 +1,4 @@
-"""Slice C Worker 安装包、原生 CI 和回滚边界。"""
+"""Slice D Worker 安装包、原生 CI、诊断执行和回滚边界。"""
 
 from __future__ import annotations
 
@@ -13,38 +13,46 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_slice_c_builder_is_arm64_offline_and_worker_explicit() -> None:
-    """构建器只产出 M4/arm64 离线 Worker 包。"""
+def test_slice_d_builder_is_arm64_offline_and_manifest_driven() -> None:
+    """构建器只产出 M4/arm64 离线 Worker 包，并从项目元数据解析 wheel。"""
 
     builder = read(BUILD / "Build-MacWorkerSliceC.sh")
     for required in (
-        'architecture" != "arm64"',
+        '"$(uname -m)" != "arm64"',
         "python3 -m pip wheel",
         "--wheel-dir",
-        "picotoopet_core-2.3.0.dev2",
-        '"runtime_version": "2.3.0-slice-c"',
+        "tomllib",
+        "expected exactly one picotoopet_core wheel",
+        '"runtime_version": "2.3.0-slice-d-worker"',
         '"worker_runtime_included": True',
-        '"worker_supported_task_types": ["system.noop"]',
+        '"system.diagnostic_snapshot"',
+        '"system.noop"',
+        '"diagnostic_hard_timeout_seconds": 30',
+        '"diagnostic_termination_grace_seconds": 5',
+        '"source_build_on_user_mac": False',
         "release-manifest.json",
         "shasum -a 256",
         "PHASE23_MAC_WORKER_BUILD=PASS",
+        "PHASE23_MAC_WORKER_SLICE_D_BUILD=PASS",
     ):
         assert required in builder
+    assert "picotoopet_core-2.3.0.dev2" not in builder
     assert "x86_64" not in builder
 
 
-def test_slice_c_installer_is_transactional_and_inherits_incident_gates() -> None:
+def test_slice_d_installer_is_transactional_and_manifest_driven() -> None:
     """安装器必须先验证候选，再切换、启用 Worker，并能恢复组合。"""
 
     installer = read(DEPLOY / "INSTALL_MAC_WORKER_SLICE_C.command")
+    worker_library = read(DEPLOY / "worker-lib.sh")
     for required in (
         "verify_manifest_files",
         'python_version="$("$current_python" --version 2>&1)"',
         '"$current_python" -m venv',
         "--no-index",
         "--find-links",
-        "picotoopet-core==2.3.0.dev2",
-        "verify_slice_c_candidate_contract",
+        '"picotoopet-core==$package_version"',
+        "verify_slice_d_candidate_contract",
         "atomic_switch_current",
         "restart_core_runtime",
         "write_worker_plist",
@@ -53,12 +61,15 @@ def test_slice_c_installer_is_transactional_and_inherits_incident_gates() -> Non
         "verify_worker_api_contract",
         "rollback_after_failed_activation",
         "backup_captured",
-        "source_build_on_user_mac",
+        "slice-d-previous-version.txt",
+        "diagnostic_hard_timeout_seconds",
+        "diagnostic_termination_grace_seconds",
     ):
-        assert required in installer or required in read(DEPLOY / "worker-lib.sh")
+        assert required in installer or required in worker_library
+    assert "picotoopet-core==2.3.0.dev" not in installer
     assert 'python_version="$($current_python --version 2>&1)"' not in installer
 
-    combined = installer + read(DEPLOY / "worker-lib.sh")
+    combined = installer + worker_library
     for forbidden in (
         "sudo ",
         "/Library/LaunchDaemons",
@@ -71,8 +82,8 @@ def test_slice_c_installer_is_transactional_and_inherits_incident_gates() -> Non
         assert forbidden not in combined
 
 
-def test_slice_c_package_verifier_rejects_unsafe_or_unfrozen_content() -> None:
-    """实际 tar.gz 必须验证外层 SHA、归档路径、清单和脚本语法。"""
+def test_slice_d_package_verifier_rejects_unsafe_or_unfrozen_content() -> None:
+    """实际 tar.gz 必须验证外层 SHA、归档路径、清单、唯一 wheel 和脚本语法。"""
 
     verifier = read(BUILD / "Test-MacWorkerSliceC.sh")
     for required in (
@@ -83,71 +94,94 @@ def test_slice_c_package_verifier_rejects_unsafe_or_unfrozen_content() -> None:
         "verify_manifest_files",
         "worker_runtime_included",
         "worker_supported_task_types",
+        "diagnostic_hard_timeout_seconds",
+        "diagnostic_termination_grace_seconds",
+        "package_version",
         "bash -n",
         "PHASE23_MAC_WORKER_PACKAGE_TEST=PASS",
+        "PHASE23_MAC_WORKER_SLICE_D_PACKAGE_TEST=PASS",
     ):
         assert required in verifier
 
 
-def test_slice_c_fixture_executes_noop_and_preserves_historical_analysis() -> None:
-    """包级夹具必须证明 Worker 只处理明确支持的 system.noop。"""
+def test_slice_d_fixture_executes_diagnostic_and_preserves_analysis() -> None:
+    """包级夹具必须完成真实诊断结果，并保持历史 analysis 不变。"""
 
     fixture = read(BUILD / "Test-MacWorkerSliceCFixture.sh")
     for required in (
         'runtime_root="$temp_root/Application Support/PicotooPetV2"',
+        '"picotoopet-core==$package_version"',
         '"task_type": "analysis"',
-        '"task_type": "system.noop"',
-        'historical.get("status") != "Queued"',
+        "/api/v1/tasks/system-diagnostic-snapshot",
+        '"Idempotency-Key": "fixture-diagnostic-complete"',
         'current.get("status") == "Completed"',
-        "task_attempts",
-        "PHASE23_MAC_WORKER_EXECUTION_FIXTURE=PASS",
+        'len(result_bytes) > 64 * 1024',
+        'result.get("schema_version") != "1.0"',
+        '"historical_analysis_preserved": True',
+        '"diagnostic_completed": True',
+        '"diagnostic_result_verified": True',
+        "PHASE23_MAC_WORKER_DIAGNOSTIC_FIXTURE=PASS",
         "PHASE23_MAC_WORKER_HISTORICAL_PROTECTION=PASS",
-        '"source_build_on_user_mac": False',
     ):
         assert required in fixture
 
 
-def test_slice_c_fixture_proves_cancellation_and_expired_lease_recovery() -> None:
-    """实际归档必须保护取消任务并恢复崩溃 Worker 的过期租约。"""
+def test_slice_d_fixture_proves_cancellation_timeout_and_no_orphans() -> None:
+    """实际安装 wheel 必须证明取消、超时和进程回收。"""
 
     fixture = read(BUILD / "Test-MacWorkerSliceCFixture.sh")
     for required in (
-        "/cancel",
+        '"Idempotency-Key": "fixture-diagnostic-cancelled"',
         'current.get("status") != "Cancelled"',
-        'current.get("attempt_count") != 0',
+        "DiagnosticCancelledError",
+        "DiagnosticTimeoutError",
+        "assert_reaped",
+        "os.kill(pid, 0)",
+        '"cancelled_process_reaped": True',
+        '"timed_out_process_reaped": True',
         "PHASE23_MAC_WORKER_CANCELLATION_FIXTURE=PASS",
-        '"dead-worker"',
-        "lease_expires_at",
-        'current.get("status") != "Retrying"',
-        'current.get("error_code") != "LEASE_EXPIRED"',
-        'payload.get("status") != "Failed"',
-        "PHASE23_MAC_WORKER_EXPIRED_LEASE_FIXTURE=PASS",
-        '"cancelled_task_preserved": True',
-        '"expired_lease_recovered": True',
-        '"expired_attempt_closed": True',
+        "PHASE23_MAC_WORKER_SUBPROCESS_FIXTURE=PASS",
     ):
         assert required in fixture
 
 
-def test_slice_c_rollback_restores_core_and_worker_definition_without_deletion() -> None:
-    """回滚必须恢复兼容组合且保留数据库、版本和报告。"""
+def test_slice_d_fixture_recovers_only_supported_expired_lease() -> None:
+    """过期租约恢复必须限定为 Worker 明确支持的任务类型并关闭 attempt。"""
+
+    fixture = read(BUILD / "Test-MacWorkerSliceCFixture.sh")
+    for required in (
+        "recover_expired_supported_leases",
+        '("system.diagnostic_snapshot", "system.noop")',
+        'current.status.value != "Retrying"',
+        'current.error_code != "LEASE_EXPIRED"',
+        'attempt.get("status") != "Failed"',
+        'attempt.get("error_code") != "LEASE_EXPIRED"',
+        '"expired_supported_lease_recovered": True',
+        '"expired_attempt_closed": True',
+        "PHASE23_MAC_WORKER_EXPIRED_LEASE_FIXTURE=PASS",
+    ):
+        assert required in fixture
+
+
+def test_slice_d_rollback_restores_core_and_worker_without_deletion() -> None:
+    """回滚必须恢复兼容组合且保留数据库、结果、版本和报告。"""
 
     rollback = read(DEPLOY / "ROLLBACK_MAC_WORKER_SLICE_C.command")
     for required in (
-        "slice-c-previous-version.txt",
-        "slice-c-previous-worker-present.txt",
-        "slice-c-previous-worker.plist",
+        "slice-d-previous-version.txt",
+        "slice-d-previous-worker-present.txt",
+        "slice-d-previous-worker.plist",
         "stop_worker_agent",
         "atomic_switch_current",
         "restart_user_agent",
         "verify_health",
-        "slice-c-rollback-from.txt",
-        '"false"',
+        "slice-d-rollback-from.txt",
     ):
         assert required in rollback
     for forbidden in (
         'rm -rf "$runtime_root"',
         'rm -rf "$runtime_root/database"',
+        'rm -rf "$runtime_root/results"',
         "security delete-generic-password",
         "sudo ",
     ):
@@ -156,37 +190,41 @@ def test_slice_c_rollback_restores_core_and_worker_definition_without_deletion()
     fixture = read(BUILD / "Test-MacWorkerSliceCFixture.sh")
     assert "ROLLBACK_MAC_WORKER_SLICE_C.command" in fixture
     assert "PHASE23_MAC_WORKER_ROLLBACK_FIXTURE=PASS" in fixture
+    assert "PHASE23_MAC_WORKER_SLICE_D_FIXTURE=PASS" in fixture
 
 
-def test_slice_c_native_ci_is_m4_only_and_uploads_diagnostics_separately() -> None:
-    """新工作流必须只在 arm64 运行并区分失败证据与正式候选。"""
+def test_slice_d_native_ci_is_m4_only_and_uploads_diagnostics_separately() -> None:
+    """工作流只在 arm64 运行，并区分失败证据与正式候选。"""
 
     workflow = read(ROOT / ".github" / "workflows" / "macos-worker-slice-c-ci.yml")
     for required in (
+        "Mac Worker Slice D CI",
         "macos-15",
         "arm64",
-        "python-version: \"3.12\"",
-        "test_install_regression_registry.py",
-        "test_worker_runtime_source.py",
-        "test_phase23_worker_delivery.py",
+        'python-version: "3.12"',
+        "test_phase23_diagnostic_contract.py",
+        "test_diagnostic_snapshot_api.py",
+        "test_diagnostic_result_transaction.py",
+        "test_diagnostic_worker_runtime.py",
+        "test_diagnostic_subprocess_runner.py",
         "Build-MacWorkerSliceC.sh",
         "Test-MacWorkerSliceC.sh",
         "Test-MacWorkerSliceCFixture.sh",
         "if: failure()",
-        "DIAGNOSTIC",
-        "Upload verified M4 Worker candidate",
+        "SliceD-DIAGNOSTIC",
+        "Upload verified M4 Slice D Worker candidate",
     ):
         assert required in workflow
     assert "macos-15-intel" not in workflow
     assert "x86_64" not in workflow
 
 
-def test_slice_c_ci_cannot_upload_candidate_before_package_fixture() -> None:
-    """正式候选只能在真实归档安装、执行、取消、恢复和回滚后上传。"""
+def test_slice_d_ci_cannot_upload_candidate_before_full_fixture() -> None:
+    """正式候选只能在真实归档诊断、取消、超时、恢复和回滚后上传。"""
 
     workflow = read(ROOT / ".github" / "workflows" / "macos-worker-slice-c-ci.yml")
-    build = workflow.index("Build M4 arm64 offline Worker package")
-    verify = workflow.index("Verify actual Worker archive and manifest")
-    fixture = workflow.index("Exercise install execution historical protection and rollback")
-    upload = workflow.index("Upload verified M4 Worker candidate")
+    build = workflow.index("Build M4 arm64 offline Slice D Worker package")
+    verify = workflow.index("Verify actual Slice D Worker archive and manifest")
+    fixture = workflow.index("Exercise diagnostic cancellation timeout recovery and rollback")
+    upload = workflow.index("Upload verified M4 Slice D Worker candidate")
     assert build < verify < fixture < upload
