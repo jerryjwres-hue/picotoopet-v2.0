@@ -115,8 +115,8 @@ function Invoke-RollbackActivationCheck {
         if (-not (Test-Path -LiteralPath $activationPath -PathType Leaf)) {
             throw "回滚版本自检未生成报告。"
         }
-        $selfTest = Read-JsonUtf8 -Path $activationPath
-        if ([string]$selfTest.status -ne "pass") {
+        $selfTestReport = Read-JsonUtf8 -Path $activationPath
+        if ([string]$selfTestReport.status -ne "pass") {
             throw "回滚版本自检报告不是 pass。"
         }
         return [pscustomobject][ordered]@{
