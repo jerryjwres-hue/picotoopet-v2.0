@@ -122,6 +122,7 @@ internal static class DiagnosticSnapshotSmokeTests
             ErrorMessage: null,
             ResultId: "result-1");
         var worker = new WorkerSnapshot(
+            SchemaVersion: "2.3.0",
             Available: true,
             State: "online",
             Reason: "idle",
@@ -185,7 +186,7 @@ internal static class DiagnosticSnapshotSmokeTests
                 ? values.Single()
                 : null;
             Requests.Add(new RecordedRequest(
-                request.RequestUri?.ToString() ?? string.Empty,
+                request.RequestUri?.PathAndQuery.TrimStart('/') ?? string.Empty,
                 body,
                 idempotencyKey));
 
