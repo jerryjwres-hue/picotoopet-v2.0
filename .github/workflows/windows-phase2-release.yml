@@ -10,6 +10,7 @@ on:
       - "scripts/verify_project_goal_integrity.py"
       - "tests/contract/test_project_goal_integrity.py"
       - "tests/contract/test_windows_goal_integrity_stamper.py"
+      - "tests/release/test_windows_analyzer_regressions.py"
       - "tests/release/test_windows_goal_integrity_release_contract.py"
       - "windows/desktop/**"
       - "tests/release/test_windows_prebuilt_delivery.py"
@@ -24,6 +25,7 @@ on:
       - "scripts/verify_project_goal_integrity.py"
       - "tests/contract/test_project_goal_integrity.py"
       - "tests/contract/test_windows_goal_integrity_stamper.py"
+      - "tests/release/test_windows_analyzer_regressions.py"
       - "tests/release/test_windows_goal_integrity_release_contract.py"
       - "windows/desktop/**"
       - "tests/release/test_windows_prebuilt_delivery.py"
@@ -63,10 +65,10 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check pytest pytest-asyncio PyYAML
 
-      - name: Run Windows release and goal-integrity contracts
+      - name: Run Windows release analyzer and goal-integrity contracts
         shell: powershell
         run: |
-          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_goal_integrity_release_contract.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
+          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
