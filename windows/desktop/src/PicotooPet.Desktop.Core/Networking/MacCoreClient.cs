@@ -102,6 +102,18 @@ public sealed class MacCoreClient : IAsyncDisposable
             null,
             cancellationToken);
 
+    /// <summary>按 ID 读取单个任务，用于事件断流后的有界恢复。</summary>
+    public Task<TaskRecord> GetTaskAsync(
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<TaskRecord>(
+            HttpMethod.Get,
+            $"api/v1/tasks/{Uri.EscapeDataString(taskId)}",
+            null,
+            "tasks.get",
+            null,
+            cancellationToken);
+
     /// <summary>幂等创建任务；重试必须复用相同 Idempotency-Key。</summary>
     public Task<TaskRecord> CreateTaskAsync(
         TaskCreateRequest request,
@@ -113,6 +125,31 @@ public sealed class MacCoreClient : IAsyncDisposable
             request,
             "tasks.create",
             idempotencyKey,
+            cancellationToken);
+
+    /// <summary>通过固定端点幂等创建系统诊断快照。</summary>
+    public Task<TaskRecord> CreateDiagnosticSnapshotAsync(
+        DiagnosticSnapshotRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<TaskRecord>(
+            HttpMethod.Post,
+            "api/v1/tasks/system-diagnostic-snapshot",
+            request,
+            "tasks.diagnostic.create",
+            idempotencyKey,
+            cancellationToken);
+
+    /// <summary>读取已完成诊断任务关联的固定结果合同。</summary>
+    public Task<DiagnosticSnapshotResult> GetTaskResultAsync(
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<DiagnosticSnapshotResult>(
+            HttpMethod.Get,
+            $"api/v1/tasks/{Uri.EscapeDataString(taskId)}/result",
+            null,
+            "tasks.diagnostic.result",
+            null,
             cancellationToken);
 
     /// <summary>取消尚未进入不可逆终态的任务。</summary>
@@ -299,7 +336,7 @@ public sealed class MacCoreClient : IAsyncDisposable
         client.DefaultRequestHeaders.Accept.Clear();
         client.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-slice-b");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-slice-d");
     }
 
     private static Uri EnsureTrailingSlash(Uri baseUri)
