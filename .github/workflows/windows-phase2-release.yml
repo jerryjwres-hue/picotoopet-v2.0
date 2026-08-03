@@ -47,7 +47,7 @@ jobs:
       - name: Install release contract dependencies
         shell: powershell
         run: |
-          python -m pip install --disable-pip-version-check pytest PyYAML
+          python -m pip install --disable-pip-version-check pytest pytest-asyncio PyYAML
 
       - name: Run Windows release contract tests
         shell: powershell
@@ -67,17 +67,17 @@ jobs:
           $PSVersionTable.PSVersion
 
       - name: Reproduce legacy Task Center WPF binding failure
-        shell: powershell
+        shell: pwsh
         run: |
           .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
 
       - name: Build, analyze, publish and self-test
-        shell: powershell
+        shell: pwsh
         run: |
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1
 
       - name: Verify packaged install, verify and rollback lifecycle on Windows PowerShell 5.1
-        shell: powershell
+        shell: pwsh
         run: |
           .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1
 
