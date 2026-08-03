@@ -13,6 +13,11 @@ class GoalIntegrityError(ValueError):
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_CONTRACT = _REPO_ROOT / "contracts" / "release" / "project-goal-invariants.json"
+_GOAL_GATE_MARKER = "# PICOTOO_GOAL_INTEGRITY_GATE_V1"
+_FORMAL_RUNTIME_SCRIPTS = (
+    "Install-Phase2Prebuilt.ps1",
+    "Verify-Phase2Prebuilt.ps1",
+)
 
 
 def _load_contract(path: Path) -> dict[str, Any]:
@@ -120,6 +125,64 @@ def _reject_forbidden_paths(
         )
 
 
+def _powershell_literal(key: str, value: object) -> str:
+    if isinstance(value, bool):
+        return f'"{key}" = ${str(value).lower()}'
+    if isinstance(value, str):
+        return f'"{key}" = "{value}"'
+    raise GoalIntegrityError(
+        f"GOAL_INTEGRITY_VIOLATION: 运行时目标门不支持字段 {key}={value!r}。"
+    )
+
+
+def _require_runtime_goal_gates(
+    archive: zipfile.ZipFile,
+    *,
+    root: str,
+    required_values: dict[str, Any],
+) -> None:
+    expected = [
+        _powershell_literal(key, value)
+        for key, value in required_values.items()
+    ]
+    expected.extend(
+        (
+            '"native_ci_verified" = $true',
+            '"user_install_allowed" = $true',
+            '"picotoo pet ai.exe"',
+            '"tools/diagnostics/picotoopet.desktop.diagnostics.exe"',
+            "forbidden web UI payload",
+        )
+    )
+
+    for script_name in _FORMAL_RUNTIME_SCRIPTS:
+        archive_name = f"{root}/{script_name}"
+        try:
+            script = archive.read(archive_name).decode("utf-8-sig")
+        except KeyError as error:
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: 正式 Windows 包缺少 "
+                f"{script_name} runtime gate。"
+            ) from error
+        except UnicodeDecodeError as error:
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: "
+                f"{script_name} 不是有效 UTF-8 PowerShell。"
+            ) from error
+
+        if script.count(_GOAL_GATE_MARKER) != 1:
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: "
+                f"{script_name} runtime gate 缺失或重复。"
+            )
+        missing = [fragment for fragment in expected if fragment not in script]
+        if missing:
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: "
+                f"{script_name} runtime gate 不完整，缺少：{missing!r}"
+            )
+
+
 def verify_windows_package(
     package: Path | str,
     *,
@@ -186,6 +249,11 @@ def verify_windows_package(
             fragments=forbidden_fragments,
             suffixes=forbidden_suffixes,
         )
+        _require_runtime_goal_gates(
+            archive,
+            root=root,
+            required_values=required_values,
+        )
 
         if (
             windows.get("user_install_requires_native_ci") is True
@@ -209,6 +277,7 @@ def verify_windows_package(
         "integration_target": manifest["integration_target"],
         "native_ci_verified": manifest.get("native_ci_verified"),
         "user_install_allowed": manifest.get("user_install_allowed"),
+        "installer_goal_gate": "pass",
     }
 
 
