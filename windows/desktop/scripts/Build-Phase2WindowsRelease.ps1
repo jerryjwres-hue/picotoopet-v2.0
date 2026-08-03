@@ -1,4 +1,4 @@
-﻿# Phase 2 Windows 原生发布构建器；仅在 Windows CI 或受控构建机运行。
+# Phase 2 Windows 原生发布构建器；仅在 Windows CI 或受控构建机运行。
 [CmdletBinding()]
 param(
     [string]$OutputRoot = "",
@@ -16,7 +16,6 @@ $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
 function ConvertTo-NativeArgument {
     param([Parameter(Mandatory)][string]$Value)
 
-    # Start-Process 会重新拼接参数；包含空格或引号时必须显式加引号。
     if ($Value -notmatch '[\s"]') { return $Value }
     return '"' + ($Value -replace '"', '\\"') + '"'
 }
@@ -29,15 +28,10 @@ function Invoke-NativeCommand {
         [int]$TimeoutSeconds = 900
     )
 
-    # 参数构造                Windows PowerShell 5.1 没有 ProcessStartInfo.ArgumentList。
-    $argumentLine = (
-        $Arguments |
-        ForEach-Object {
-            ConvertTo-NativeArgument -Value $_
-        }
-    ) -join ' '
+    $argumentLine = ($Arguments | ForEach-Object {
+        ConvertTo-NativeArgument -Value $_
+    }) -join ' '
 
-    # 进程配置                不使用 Start-Process，避免 PassThru ExitCode 为空。
     $startInfo                        = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName               = $FilePath
     $startInfo.Arguments              = $argumentLine
@@ -48,42 +42,19 @@ function Invoke-NativeCommand {
 
     $process           = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
-
     try {
-        # 启动进程                启动失败立即终止，不产生伪退出码。
         if (-not $process.Start()) {
             throw "无法启动原生命令：$FilePath"
         }
-
-        # 异步读取                同时排空 stdout/stderr，避免缓冲区导致死锁。
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
-
-        # 超时控制                有限等待；超时后终止并等待进程真正退出。
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            try {
-                $process.Kill()
-            }
-            catch {
-                Write-Warning (
-                    "终止超时进程失败：{0}" -f $_.Exception.Message
-                )
-            }
-
-            try {
-                $process.WaitForExit()
-            }
-            catch {
-                # 超时错误优先        保留原始超时原因。
-            }
-
+            try { $process.Kill() } catch { }
+            try { $process.WaitForExit() } catch { }
             throw "原生命令超时（$TimeoutSeconds 秒）：$FilePath"
         }
-
-        # 完成等待                确保重定向输出和进程管理信息均已刷新。
         $process.WaitForExit()
         $process.Refresh()
-
         $stdout   = $stdoutTask.GetAwaiter().GetResult()
         $stderr   = $stderrTask.GetAwaiter().GetResult()
         $exitCode = [int]$process.ExitCode
@@ -91,23 +62,13 @@ function Invoke-NativeCommand {
         if (-not [string]::IsNullOrWhiteSpace($stdout)) {
             Write-Host $stdout.TrimEnd()
         }
-
         if (-not [string]::IsNullOrWhiteSpace($stderr)) {
             Write-Host $stderr.TrimEnd()
         }
-
         if ($exitCode -ne 0) {
-            $tail = (
-                ($stderr + "`n" + $stdout) -split "`r?`n" |
-                Select-Object -Last 80
-            ) -join "`n"
-
-            throw (
-                "原生命令失败（退出码 {0}）：{1}`n{2}" -f
-                $exitCode,
-                $FilePath,
-                $tail
-            )
+            $tail = (($stderr + "`n" + $stdout) -split "`r?`n" |
+                Select-Object -Last 80) -join "`n"
+            throw "原生命令失败（退出码 $exitCode）：$FilePath`n$tail"
         }
 
         return [pscustomobject]@{
@@ -117,7 +78,6 @@ function Invoke-NativeCommand {
         }
     }
     finally {
-        # 资源释放                CI 长流程中不保留已退出进程句柄。
         if ($null -ne $process) {
             $process.Dispose()
         }
@@ -130,7 +90,6 @@ function Write-Utf8NoBom {
         [Parameter(Mandatory)][string]$Value
     )
 
-    # 发布清单必须跨 PowerShell 5.1、.NET 和 JSON 解析器稳定读取。
     $encoding = [System.Text.UTF8Encoding]::new($false)
     [System.IO.File]::WriteAllText($Path, $Value, $encoding)
 }
@@ -150,7 +109,6 @@ function Get-FileEntry {
         [Parameter(Mandatory)][string]$Path
     )
 
-    # 路径归一化              清单路径必须相对 payload，且不得越过发布根目录。
     $trimChars = [char[]]@(
         [System.IO.Path]::DirectorySeparatorChar,
         [System.IO.Path]::AltDirectorySeparatorChar
@@ -178,12 +136,10 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $desktopRoot "artifacts\release"
 }
 elseif (-not [System.IO.Path]::IsPathRooted($OutputRoot)) {
-    # 相对输出路径            统一以仓库根目录解析，避免清单混用相对路径与绝对路径。
     $OutputRoot = Join-Path $repoRoot $OutputRoot
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 
-# 版本兼容                新 CI 使用 VersionLabel；旧调用方继续使用 Version 或默认值。
 if (-not [string]::IsNullOrWhiteSpace($Version) -and
     -not [string]::IsNullOrWhiteSpace($VersionLabel) -and
     $Version -ne $VersionLabel) {
@@ -194,16 +150,27 @@ if ([string]::IsNullOrWhiteSpace($Version) -and
     $Version = $VersionLabel
 }
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    $runNumber = if ([string]::IsNullOrWhiteSpace($env:GITHUB_RUN_NUMBER)) { "local" } else { $env:GITHUB_RUN_NUMBER }
-    $commit    = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) { "nogit" } else { $env:GITHUB_SHA.Substring(0, 12) }
-    $Version   = "2.2.0-phase2-slice1-$runNumber-$commit"
+    $runNumber = if ([string]::IsNullOrWhiteSpace($env:GITHUB_RUN_NUMBER)) {
+        "local"
+    }
+    else {
+        $env:GITHUB_RUN_NUMBER
+    }
+    $sourceHead = if ([string]::IsNullOrWhiteSpace($env:PICOTOO_SOURCE_HEAD_SHA)) {
+        if ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) { "nogit" } else { $env:GITHUB_SHA }
+    }
+    else {
+        $env:PICOTOO_SOURCE_HEAD_SHA
+    }
+    $commit = if ($sourceHead -eq "nogit") { "nogit" } else { $sourceHead.Substring(0, 12) }
+    $Version = "2.3.0-slice-b-taskcenter-fix-$runNumber-$commit"
 }
 if ($Version -notmatch '^[A-Za-z0-9._-]+$') {
     throw "版本号只允许字母、数字、点、下划线和连字符。"
 }
 
-$dotnet      = (Get-Command "dotnet.exe" -ErrorAction Stop).Source
-$sdkVersion  = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version")).StdOut.Trim()
+$dotnet     = (Get-Command "dotnet.exe" -ErrorAction Stop).Source
+$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version")).StdOut.Trim()
 if ($sdkVersion -ne "10.0.302") {
     throw "Windows 发布必须使用 .NET SDK 10.0.302，实际为 $sdkVersion。"
 }
@@ -265,35 +232,67 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
 
 $appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"
 $diagExecutable = Join-Path $diagOutput "PicotooPet.Desktop.Diagnostics.exe"
-if (-not (Test-Path -LiteralPath $appExecutable))  { throw "发布结果缺少 Picotoo Pet AI.exe。" }
-if (-not (Test-Path -LiteralPath $diagExecutable)) { throw "发布结果缺少诊断工具。" }
+if (-not (Test-Path -LiteralPath $appExecutable -PathType Leaf)) {
+    throw "发布结果缺少 Picotoo Pet AI.exe。"
+}
+if (-not (Test-Path -LiteralPath $diagExecutable -PathType Leaf)) {
+    throw "发布结果缺少诊断工具。"
+}
 
 Invoke-NativeCommand -FilePath $appExecutable -Arguments @(
     "--self-test", "--self-test-output", $selfTestPath
 ) -TimeoutSeconds 60 | Out-Null
 Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--self-test") -TimeoutSeconds 30 | Out-Null
-if (-not (Test-Path -LiteralPath $selfTestPath)) { throw "桌面自检没有生成报告。" }
+if (-not (Test-Path -LiteralPath $selfTestPath -PathType Leaf)) {
+    throw "桌面自检没有生成报告。"
+}
 $selfTest = Get-Content -LiteralPath $selfTestPath -Raw | ConvertFrom-Json
-if ([string]$selfTest.status -ne "pass") { throw "桌面自检报告不是 pass。" }
+if ([string]$selfTest.status -ne "pass") {
+    throw "桌面自检报告不是 pass。"
+}
 
 $files = @(
     Get-ChildItem -LiteralPath $payloadRoot -File -Recurse |
     Sort-Object FullName |
     ForEach-Object { Get-FileEntry -PayloadRoot $payloadRoot -Path $_.FullName }
 )
+$buildCommit = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) {
+    $null
+}
+else {
+    $env:GITHUB_SHA
+}
+$sourceHead = if ([string]::IsNullOrWhiteSpace($env:PICOTOO_SOURCE_HEAD_SHA)) {
+    $buildCommit
+}
+else {
+    $env:PICOTOO_SOURCE_HEAD_SHA
+}
+$sourceRef = if ([string]::IsNullOrWhiteSpace($env:PICOTOO_SOURCE_REF)) {
+    if ([string]::IsNullOrWhiteSpace($env:GITHUB_REF_NAME)) { $null } else { $env:GITHUB_REF_NAME }
+}
+else {
+    $env:PICOTOO_SOURCE_REF
+}
+$nativeCiVerified = -not [string]::IsNullOrWhiteSpace($env:CI) -and $env:CI.ToLowerInvariant() -eq "true"
 $manifest = [ordered]@{
-    schema_version = "2.2.0"
-    release_type   = "prebuilt"
-    version        = $Version
-    target         = "win-x64"
-    sdk_version    = $sdkVersion
-    built_at       = (Get-Date).ToUniversalTime().ToString("o")
-    commit         = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) { $null } else { $env:GITHUB_SHA }
-    signature      = [ordered]@{
+    schema_version       = "2.3.0"
+    release_type         = "prebuilt"
+    version              = $Version
+    target               = "win-x64"
+    sdk_version          = $sdkVersion
+    built_at             = (Get-Date).ToUniversalTime().ToString("o")
+    commit               = $buildCommit
+    build_commit         = $buildCommit
+    source_head          = $sourceHead
+    source_ref           = $sourceRef
+    native_ci_verified   = $nativeCiVerified
+    user_install_allowed = $true
+    signature            = [ordered]@{
         status = "unsigned-ci"
-        note   = "Phase 2 内部验收包；正式公开发布前必须加入代码签名。"
+        note   = "原生 Windows CI 内部验收包；公开发布前仍需代码签名。"
     }
-    files          = $files
+    files                = $files
 }
 $manifestPath = Join-Path $workRoot "release-manifest.json"
 Write-Json -Value $manifest -Path $manifestPath
@@ -301,6 +300,7 @@ Write-Json -Value $manifest -Path $manifestPath
 Copy-Item -LiteralPath $payloadRoot -Destination (Join-Path $packageRoot "payload") -Recurse -Force
 Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $packageRoot "release-manifest.json") -Force
 $releaseFiles = @(
+    "Phase2Prebuilt.Common.ps1",
     "INSTALL_PHASE2_WINDOWS.vbs",
     "Install-Phase2Prebuilt.ps1",
     "VERIFY_PHASE2_WINDOWS.vbs",
@@ -313,21 +313,27 @@ foreach ($file in $releaseFiles) {
     Copy-Item -LiteralPath (Join-Path $desktopRoot "release\$file") -Destination $packageRoot -Force
 }
 
-Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath $zipPath -CompressionLevel Optimal
+Compress-Archive -LiteralPath $packageRoot -DestinationPath $zipPath -CompressionLevel Optimal
 $zipSha = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 Write-Utf8NoBom -Path $shaPath -Value "$zipSha  $([System.IO.Path]::GetFileName($zipPath))`n"
 
 $report = [ordered]@{
-    schema_version = "2.2.0"
-    generated_at   = (Get-Date).ToUniversalTime().ToString("o")
-    status         = "pass"
-    version        = $Version
-    sdk_version    = $sdkVersion
-    runner         = [Environment]::OSVersion.VersionString
-    package        = $zipPath
-    package_sha256 = $zipSha
-    file_count     = $files.Count
-    self_test      = $selfTest
+    schema_version       = "2.3.0"
+    generated_at         = (Get-Date).ToUniversalTime().ToString("o")
+    status               = "pass"
+    version              = $Version
+    sdk_version          = $sdkVersion
+    runner               = [Environment]::OSVersion.VersionString
+    target               = "win-x64"
+    package              = $zipPath
+    package_sha256       = $zipSha
+    file_count           = $files.Count
+    native_ci_verified   = $nativeCiVerified
+    user_install_allowed = $true
+    source_head          = $sourceHead
+    source_ref           = $sourceRef
+    build_commit         = $buildCommit
+    self_test            = $selfTest
 }
 Write-Json -Value $report -Path $reportPath
 Write-Host "PHASE2_WINDOWS_RELEASE_BUILD=PASS"
