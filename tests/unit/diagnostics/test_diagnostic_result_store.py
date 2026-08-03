@@ -19,6 +19,7 @@ def test_put_json_is_canonical_and_content_addressed(tmp_path: Path) -> None:
         result_type="system.diagnostic_snapshot",
         max_bytes=64 * 1024,
     )
+    manifest_before = first.manifest_path.read_bytes()
     second = store.put_json(
         {"a": 1, "b": 2},
         result_type="system.diagnostic_snapshot",
@@ -29,7 +30,30 @@ def test_put_json_is_canonical_and_content_addressed(tmp_path: Path) -> None:
     assert first.object_hash == hashlib.sha256(expected).hexdigest()
     assert second.object_hash == first.object_hash
     assert first.object_path.read_bytes() == expected
+    assert second.manifest_path.read_bytes() == manifest_before
     assert store.read_json(first.object_hash, max_bytes=64 * 1024) == {"a": 1, "b": 2}
+
+
+def test_put_json_repairs_corrupted_existing_object_atomically(tmp_path: Path) -> None:
+    store = ResultStore(tmp_path)
+    document = {"schema_version": "1.0", "checks": ["core"]}
+    first = store.put_json(
+        document,
+        result_type="system.diagnostic_snapshot",
+        max_bytes=64 * 1024,
+    )
+    first.object_path.write_bytes(b"corrupted-existing-object")
+
+    repaired = store.put_json(
+        document,
+        result_type="system.diagnostic_snapshot",
+        max_bytes=64 * 1024,
+    )
+
+    assert repaired.object_hash == first.object_hash
+    assert store.verify(repaired.object_hash) is True
+    assert store.read_json(repaired.object_hash, max_bytes=64 * 1024) == document
+    assert list(repaired.object_path.parent.glob(".partial-*")) == []
 
 
 def test_put_json_rejects_payload_over_limit_without_partial_object(tmp_path: Path) -> None:
