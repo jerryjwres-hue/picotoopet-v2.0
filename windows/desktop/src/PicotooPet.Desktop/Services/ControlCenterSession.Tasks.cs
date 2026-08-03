@@ -176,9 +176,9 @@ public sealed partial class ControlCenterSession
         }
     }
 
-    /// <summary>返回冻结的有界轮询间隔，供原生 smoke 验证。</summary>
-    internal static IReadOnlyList<TimeSpan> GetDiagnosticObservationDelays() =>
-        DiagnosticObservationDelays;
+    /// <summary>返回冻结的只读轮询间隔，供原生 smoke 验证。</summary>
+    public static IReadOnlyList<TimeSpan> GetDiagnosticObservationDelaysForSmoke() =>
+        Array.AsReadOnly(DiagnosticObservationDelays);
 
     private MacCoreClient CreateTaskActionClient()
     {
