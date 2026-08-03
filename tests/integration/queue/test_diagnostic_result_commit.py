@@ -10,19 +10,19 @@ from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.models import TaskCreate
 from picotoopet_core.events.outbox import EventOutbox
-from picotoopet_core.queue.repository import QueueRepository
+from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.results.store import ResultStore
 
 
 def make_repository(
     tmp_path: Path,
-) -> tuple[Database, QueueRepository, ResultStore, EventOutbox]:
+) -> tuple[Database, DiagnosticQueueRepository, ResultStore, EventOutbox]:
     database = Database(tmp_path / "core.db")
     database.open()
     database.apply_migrations()
     outbox = EventOutbox(database)
     store = ResultStore(tmp_path / "results")
-    return database, QueueRepository(database, outbox=outbox), store, outbox
+    return database, DiagnosticQueueRepository(database, outbox=outbox), store, outbox
 
 
 def test_complete_with_result_is_one_database_transaction(tmp_path: Path) -> None:
