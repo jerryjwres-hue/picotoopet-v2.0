@@ -206,6 +206,10 @@ public sealed class DiagnosticResultViewModel
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var check in checks)
         {
+            if (check is null)
+            {
+                throw new InvalidDataException("诊断结果包含空检查项。");
+            }
             if (!seen.Add(check.Name) || !expected.Contains(check.Name))
             {
                 throw new InvalidDataException("诊断结果包含未知或重复检查项。");
@@ -253,12 +257,13 @@ public sealed class DiagnosticResultViewModel
     }
 
     private static void ValidateText(
-        string value,
+        string? value,
         string field,
         int minLength,
         int maxLength)
     {
-        if (value.Length < minLength
+        if (value is null
+            || value.Length < minLength
             || value.Length > maxLength
             || value.Any(char.IsControl))
         {
