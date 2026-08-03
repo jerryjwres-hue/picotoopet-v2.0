@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Services;
 
-/// <summary>Control Center 的任务动作边界；错误统一写入脱敏日志。</summary>
+/// <summary>Control Center 的任务动作边界；原始错误只写入脱敏日志。</summary>
 public sealed partial class ControlCenterSession
 {
     private static readonly TimeSpan DiagnosticObservationWindow = TimeSpan.FromMinutes(2);
@@ -16,7 +16,7 @@ public sealed partial class ControlCenterSession
         TimeSpan.FromSeconds(10),
     };
 
-    /// <summary>通过固定端点创建诊断任务；调用方在网络重试时必须复用幂等键。</summary>
+    /// <summary>通过固定端点创建诊断任务；网络重试必须复用幂等键。</summary>
     public async Task<TaskRecord> CreateDiagnosticSnapshotAsync(
         string idempotencyKey,
         CancellationToken cancellationToken)
@@ -39,11 +39,16 @@ public sealed partial class ControlCenterSession
             SetStatus($"已创建系统诊断任务 {task.TaskId}。");
             return task;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception exception)
         {
             _logger.Error("创建系统诊断任务失败", exception);
-            SetStatus("创建系统诊断任务失败；详细信息已写入脱敏日志。");
-            throw;
+            const string message = "创建系统诊断任务失败；详细信息已写入脱敏日志。";
+            SetStatus(message);
+            throw new InvalidOperationException(message, exception);
         }
     }
 
@@ -62,43 +67,59 @@ public sealed partial class ControlCenterSession
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             _lifetime.Token);
-        var deadline = DateTimeOffset.UtcNow + DiagnosticObservationWindow;
-        var delayIndex = 0;
-        await using var client = CreateTaskActionClient();
-
-        while (DateTimeOffset.UtcNow < deadline)
+        try
         {
-            linked.Token.ThrowIfCancellationRequested();
-            var eventTask = FindTaskSnapshot(taskId);
-            if (eventTask is not null && IsTerminal(eventTask.Status))
+            var deadline = DateTimeOffset.UtcNow + DiagnosticObservationWindow;
+            var delayIndex = 0;
+            await using var client = CreateTaskActionClient();
+
+            while (DateTimeOffset.UtcNow < deadline)
             {
-                return new TaskObservationResult(eventTask, ObservationWindowExpired: false);
+                linked.Token.ThrowIfCancellationRequested();
+                var eventTask = FindTaskSnapshot(taskId);
+                if (eventTask is not null && IsTerminal(eventTask.Status))
+                {
+                    return new TaskObservationResult(eventTask, ObservationWindowExpired: false);
+                }
+
+                var refreshed = await client.GetTaskAsync(taskId, linked.Token)
+                    .ConfigureAwait(false);
+                _stateStore.TaskStore.UpsertTask(refreshed);
+                if (IsTerminal(refreshed.Status))
+                {
+                    return new TaskObservationResult(refreshed, ObservationWindowExpired: false);
+                }
+
+                var delay = DiagnosticObservationDelays[
+                    Math.Min(delayIndex, DiagnosticObservationDelays.Length - 1)];
+                delayIndex++;
+                var remaining = deadline - DateTimeOffset.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    break;
+                }
+                await Task.Delay(delay <= remaining ? delay : remaining, linked.Token)
+                    .ConfigureAwait(false);
             }
 
-            var refreshed = await client.GetTaskAsync(taskId, linked.Token)
-                .ConfigureAwait(false);
-            _stateStore.TaskStore.UpsertTask(refreshed);
-            if (IsTerminal(refreshed.Status))
-            {
-                return new TaskObservationResult(refreshed, ObservationWindowExpired: false);
-            }
-
-            var delay = DiagnosticObservationDelays[
-                Math.Min(delayIndex, DiagnosticObservationDelays.Length - 1)];
-            delayIndex++;
-            var remaining = deadline - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-            {
-                break;
-            }
-            await Task.Delay(delay <= remaining ? delay : remaining, linked.Token)
-                .ConfigureAwait(false);
+            var current = FindTaskSnapshot(taskId)
+                ?? await client.GetTaskAsync(taskId, linked.Token).ConfigureAwait(false);
+            _stateStore.TaskStore.UpsertTask(current);
+            return new TaskObservationResult(
+                current,
+                ObservationWindowExpired: !IsTerminal(current.Status));
         }
-
-        var current = FindTaskSnapshot(taskId)
-            ?? await client.GetTaskAsync(taskId, linked.Token).ConfigureAwait(false);
-        _stateStore.TaskStore.UpsertTask(current);
-        return new TaskObservationResult(current, ObservationWindowExpired: !IsTerminal(current.Status));
+        catch (OperationCanceledException) when (linked.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error($"观察诊断任务失败 task_id={taskId}", exception);
+            const string message = "诊断任务观察暂时中断；任务仍由 Mac Core 管理。";
+            SetStatus(message);
+            throw new InvalidOperationException(message, exception);
+        }
     }
 
     /// <summary>读取已完成诊断任务的固定结果合同。</summary>
@@ -119,11 +140,16 @@ public sealed partial class ControlCenterSession
             return await client.GetTaskResultAsync(taskId, cancellationToken)
                 .ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception exception)
         {
             _logger.Error($"读取诊断结果失败 task_id={taskId}", exception);
-            SetStatus("读取诊断结果失败；详细信息已写入脱敏日志。");
-            throw;
+            const string message = "诊断结果无法安全显示；详细信息已写入脱敏日志。";
+            SetStatus(message);
+            throw new InvalidOperationException(message, exception);
         }
     }
 
@@ -145,11 +171,16 @@ public sealed partial class ControlCenterSession
                     : $"任务 {taskId} 已取消。");
             return task;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception exception)
         {
             _logger.Error($"取消任务失败 task_id={taskId}", exception);
-            SetStatus("取消任务失败；详细信息已写入脱敏日志。");
-            throw;
+            const string message = "取消任务失败；详细信息已写入脱敏日志。";
+            SetStatus(message);
+            throw new InvalidOperationException(message, exception);
         }
     }
 
@@ -168,11 +199,16 @@ public sealed partial class ControlCenterSession
             SetStatus($"已创建重试子任务 {task.TaskId}。");
             return task;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception exception)
         {
             _logger.Error($"重试任务失败 task_id={taskId}", exception);
-            SetStatus("重试任务失败；详细信息已写入脱敏日志。");
-            throw;
+            const string message = "创建重试任务失败；详细信息已写入脱敏日志。";
+            SetStatus(message);
+            throw new InvalidOperationException(message, exception);
         }
     }
 
