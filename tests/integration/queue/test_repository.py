@@ -6,6 +6,7 @@ import pytest
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import CloudPolicy, TaskStatus
 from picotoopet_core.domain.models import TaskCreate
+from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.queue.repository import QueueRepository
 from picotoopet_core.queue.state_machine import InvalidTransitionError
 
@@ -15,6 +16,15 @@ def make_repository(tmp_path: Path) -> tuple[Database, QueueRepository]:
     database.open()
     database.apply_migrations()
     return database, QueueRepository(database)
+
+
+def make_diagnostic_repository(
+    tmp_path: Path,
+) -> tuple[Database, DiagnosticQueueRepository]:
+    database = Database(tmp_path / "core.db")
+    database.open()
+    database.apply_migrations()
+    return database, DiagnosticQueueRepository(database)
 
 
 def test_queue_is_idempotent_deduplicated_and_priority_ordered(tmp_path: Path) -> None:
@@ -95,12 +105,12 @@ def test_retry_creates_new_child_task_instead_of_reopening_terminal_task(tmp_pat
     database.close()
 
 
-def test_retry_replay_returns_same_child_and_preserves_dedupe_key(
+def test_diagnostic_retry_replay_returns_same_child_and_preserves_dedupe_key(
     tmp_path: Path,
 ) -> None:
-    """双击或网络重放同一次重试不得生成多个活动子任务。"""
+    """双击或网络重放同一次诊断重试不得生成多个活动子任务。"""
 
-    database, repository = make_repository(tmp_path)
+    database, repository = make_diagnostic_repository(tmp_path)
     original = repository.create(
         TaskCreate(
             task_type="system.diagnostic_snapshot",
@@ -124,12 +134,12 @@ def test_retry_replay_returns_same_child_and_preserves_dedupe_key(
     database.close()
 
 
-def test_retry_returns_existing_active_task_with_same_dedupe_key(
+def test_diagnostic_retry_returns_existing_active_task_with_same_dedupe_key(
     tmp_path: Path,
 ) -> None:
     """已有活动诊断时，重试不得绕过全局活动去重。"""
 
-    database, repository = make_repository(tmp_path)
+    database, repository = make_diagnostic_repository(tmp_path)
     original = repository.create(
         TaskCreate(
             task_type="system.diagnostic_snapshot",
