@@ -35,6 +35,7 @@ internal static class Program
             TaskCenterSmokeTests.Run();
             DiagnosticTaskActionStateSmokeTests.Run();
             TaskCenterWpfLayoutSmokeTests.Run();
+            await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
             await DiagnosticSnapshotSmokeTests.RunAsync().ConfigureAwait(false);
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
