@@ -1,0 +1,1 @@
+Implementation follows the executable RED contracts in tests/contract. Do not deliver a Windows repair package until a native Windows WPF run proves the real Task Center page opens against both empty and non-empty task lists.
