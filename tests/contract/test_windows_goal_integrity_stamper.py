@@ -116,6 +116,9 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
         assert '"native_ci_verified" = $true' in script
         assert '"user_install_allowed" = $true' in script
         assert "forbidden web UI payload" in script
+        assert "[System.IO.Path]::DirectorySeparatorChar" in script
+        assert "[System.IO.Path]::AltDirectorySeparatorChar" in script
+        assert ".Replace('\\\\', '/')" not in script
 
     checksum = package.with_name(package.name + ".sha256.txt")
     assert package.name in checksum.read_text(encoding="utf-8")
