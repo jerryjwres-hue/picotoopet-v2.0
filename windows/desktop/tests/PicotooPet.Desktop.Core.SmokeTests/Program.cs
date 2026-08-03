@@ -21,6 +21,7 @@ internal static class Program
             WorkerStatusSmokeTests.Run();
             StateStoreSmokeTests.Run();
             NavigationSmokeTests.Run();
+            NavigationFaultBoundarySmokeTests.Run();
             TaskCenterSmokeTests.Run();
             TaskCenterWpfLayoutSmokeTests.Run();
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
