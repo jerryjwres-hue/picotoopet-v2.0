@@ -56,6 +56,18 @@ class TimeoutRunner:
         raise DiagnosticTimeoutError("timeout")
 
 
+class CancelOnPutResultStore(ResultStore):
+    """在对象写入前注入取消，复现最后检查与提交事务之间的竞态。"""
+
+    def __init__(self, root: Path, cancel) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(root)
+        self.cancel = cancel
+
+    def put_json(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        self.cancel()
+        return super().put_json(*args, **kwargs)
+
+
 def make_runtime(
     tmp_path: Path,
     *,
@@ -161,6 +173,59 @@ def test_worker_cancellation_produces_cancelled_without_result(tmp_path: Path) -
         "SELECT result_id FROM results WHERE task_id = ?",
         (task.task_id,),
     ) is None
+    database.close()
+
+
+def test_cancel_arriving_during_result_commit_finishes_cancelled_without_result(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "core.db")
+    database.open()
+    database.apply_migrations()
+    queue = DiagnosticQueueRepository(database)
+    task = queue.create(
+        TaskCreate(
+            task_type="system.diagnostic_snapshot",
+            payload={"schema_version": "1.0", "sections": ["core"]},
+            timeout_seconds=30,
+        )
+    )
+    result_store = CancelOnPutResultStore(
+        tmp_path / "results",
+        lambda: queue.request_cancel(task.task_id),
+    )
+    runtime = WorkerRuntime(
+        queue=queue,
+        state_store=WorkerStateStore(
+            tmp_path / "state.json",
+            stale_after_seconds=30,
+        ),
+        worker_id="worker-m4",
+        database=database,
+        result_store=result_store,
+        diagnostic_runner=SuccessfulRunner(),
+        lease_seconds=60,
+        heartbeat_seconds=5,
+    )
+
+    cycle = runtime.run_once()
+
+    assert cycle.processed is True
+    assert cycle.succeeded is True
+    cancelled = queue.get(task.task_id)
+    assert cancelled.status is TaskStatus.CANCELLED
+    assert cancelled.result_id is None
+    assert database.fetchone(
+        "SELECT result_id FROM results WHERE task_id = ?",
+        (task.task_id,),
+    ) is None
+    attempt = database.fetchone(
+        "SELECT status, error_code FROM task_attempts WHERE task_id = ?",
+        (task.task_id,),
+    )
+    assert attempt is not None
+    assert attempt["status"] == TaskStatus.CANCELLED.value
+    assert attempt["error_code"] == "WORKER_TASK_CANCELLED"
     database.close()
 
 
