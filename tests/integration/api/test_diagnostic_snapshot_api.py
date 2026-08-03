@@ -90,6 +90,32 @@ def test_diagnostic_create_requires_auth_and_idempotency_key(
     assert body["result_id"] is None
 
 
+def test_generic_task_endpoint_rejects_reserved_diagnostic_type(
+    tmp_path: Path,
+) -> None:
+    client, headers = make_client(tmp_path)
+    with client:
+        response = client.post(
+            "/api/v1/tasks",
+            headers=headers,
+            json={
+                "task_type": "system.diagnostic_snapshot",
+                "payload": {
+                    "schema_version": "1.0",
+                    "sections": ["core"],
+                },
+                "timeout_seconds": 3600,
+            },
+        )
+        task_count = client.app.state.services.database.scalar(
+            "SELECT COUNT(*) FROM tasks"
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "RESERVED_TASK_TYPE"
+    assert task_count == 0
+
+
 def test_diagnostic_create_is_idempotent_and_dedupes_active_task(tmp_path: Path) -> None:
     client, headers = make_client(tmp_path)
     with client:
