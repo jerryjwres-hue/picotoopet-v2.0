@@ -43,6 +43,12 @@ public sealed partial class ControlCenterSession
         {
             throw;
         }
+        catch (ApiException exception)
+        {
+            _logger.Error("创建系统诊断任务失败", exception);
+            SetStatus("创建系统诊断任务失败；详细信息已写入脱敏日志。");
+            throw;
+        }
         catch (Exception exception)
         {
             _logger.Error("创建系统诊断任务失败", exception);
