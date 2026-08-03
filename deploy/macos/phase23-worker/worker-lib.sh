@@ -1,57 +1,282 @@
 #!/bin/bash
+# Phase 2.3 Slice D Worker 安装、验证和回滚共享函数。
 set -euo pipefail
-worker_label(){ printf '%s\n' com.picotoopet.worker; }
-worker_plist_path(){ printf '%s\n' "$HOME/Library/LaunchAgents/$(worker_label).plist"; }
-write_worker_plist(){ local root="$1" id="$2" target; target="$(worker_plist_path)"; mkdir -p "$(dirname "$target")" "$root/logs"; python3 - "$target" "$root" "$id" <<'PY'
-import plistlib, sys
+
+worker_label() {
+  printf '%s\n' "com.picotoopet.worker"
+}
+
+worker_plist_path() {
+  printf '%s\n' "$HOME/Library/LaunchAgents/$(worker_label).plist"
+}
+
+write_worker_plist() {
+  local runtime_root="$1"
+  local worker_id="$2"
+  local target
+  target="$(worker_plist_path)"
+  mkdir -p "$(dirname "$target")" "$runtime_root/logs"
+  python3 - "$target" "$runtime_root" "$worker_id" <<'PY'
+import plistlib
+import sys
 from pathlib import Path
-path=Path(sys.argv[1]); root=Path(sys.argv[2]); worker_id=sys.argv[3]
-payload={"Label":"com.picotoopet.worker","ProgramArguments":[str(root/"current"/".venv"/"bin"/"picotoopet-core"),"worker","--loop","--worker-id",worker_id],"EnvironmentVariables":{"PICOTOO_RUNTIME_ROOT":str(root),"PICOTOO_WORKER_POLL_SECONDS":"2","PICOTOO_WORKER_LEASE_SECONDS":"60","PICOTOO_WORKER_HEARTBEAT_SECONDS":"15","PICOTOO_WORKER_STATUS_STALE_SECONDS":"45"},"RunAtLoad":True,"KeepAlive":True,"ProcessType":"Background","StandardOutPath":str(root/"logs"/"worker.stdout.log"),"StandardErrorPath":str(root/"logs"/"worker.stderr.log")}
-with path.open("wb") as handle: plistlib.dump(payload,handle,sort_keys=True)
+
+path = Path(sys.argv[1])
+runtime_root = Path(sys.argv[2])
+worker_id = sys.argv[3]
+payload = {
+    "Label": "com.picotoopet.worker",
+    "ProgramArguments": [
+        str(runtime_root / "current" / ".venv" / "bin" / "picotoopet-core"),
+        "worker",
+        "--loop",
+        "--worker-id",
+        worker_id,
+    ],
+    "EnvironmentVariables": {
+        "PICOTOO_RUNTIME_ROOT": str(runtime_root),
+        "PICOTOO_WORKER_POLL_SECONDS": "2",
+        "PICOTOO_WORKER_LEASE_SECONDS": "60",
+        "PICOTOO_WORKER_HEARTBEAT_SECONDS": "15",
+        "PICOTOO_WORKER_STATUS_STALE_SECONDS": "45",
+    },
+    "RunAtLoad": True,
+    "KeepAlive": True,
+    "ProcessType": "Background",
+    "StandardOutPath": str(runtime_root / "logs" / "worker.stdout.log"),
+    "StandardErrorPath": str(runtime_root / "logs" / "worker.stderr.log"),
+}
+with path.open("wb") as handle:
+    plistlib.dump(payload, handle, sort_keys=True)
 PY
-chmod 600 "$target"; }
-stop_fixture_worker(){ local root="$1" file="$root/state/fixture-worker.pid"; [[ -f "$file" ]] || return 0; local pid; pid="$(cat "$file")"; if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" >/dev/null 2>&1; then kill "$pid" || true; for _ in {1..50}; do kill -0 "$pid" >/dev/null 2>&1 || break; sleep .1; done; kill -0 "$pid" >/dev/null 2>&1 && kill -9 "$pid" || true; wait "$pid" || true; fi; rm -f "$file"; }
-stop_worker_agent(){ if [[ "${PICOTOO_FIXTURE_MODE:-0}" == 1 ]]; then stop_fixture_worker "$(phase23_runtime_root)"; else launchctl bootout "gui/$UID/$(worker_label)" >/dev/null 2>&1 || true; fi; }
-start_fixture_worker(){ local root="$1" id="$2" token="$3" exe="$root/current/.venv/bin/picotoopet-core"; mkdir -p "$root/state" "$root/logs"; stop_fixture_worker "$root"; nohup env PICOTOO_RUNTIME_ROOT="$root" PICOTOO_API_TOKEN="$token" PICOTOO_WORKER_POLL_SECONDS=.2 PICOTOO_WORKER_LEASE_SECONDS=10 PICOTOO_WORKER_HEARTBEAT_SECONDS=2 PICOTOO_WORKER_STATUS_STALE_SECONDS=8 "$exe" worker --loop --worker-id "$id" </dev/null >"$root/logs/fixture-worker.stdout.log" 2>"$root/logs/fixture-worker.stderr.log" & local pid=$!; printf '%s\n' "$pid" > "$root/state/fixture-worker.pid"; sleep .5; kill -0 "$pid" >/dev/null 2>&1 || { cat "$root/logs/fixture-worker.stderr.log" >&2 || true; return 1; }; }
-start_worker_agent(){ local root="$1" id="$2" token="${3:-}"; if [[ "${PICOTOO_FIXTURE_MODE:-0}" == 1 ]]; then start_fixture_worker "$root" "$id" "$token"; else local plist; plist="$(worker_plist_path)"; stop_worker_agent; launchctl bootstrap "gui/$UID" "$plist"; launchctl kickstart -k "gui/$UID/$(worker_label)"; fi; }
-wait_for_worker_state(){ local root="$1" expected="${2:-online}" attempts="${3:-80}" path="$root/state/worker-status.json"; for ((i=0;i<attempts;i++)); do if python3 - "$path" "$expected" <<'PY'
-import json,sys
+  chmod 600 "$target"
+}
+
+stop_fixture_worker() {
+  local runtime_root="$1"
+  local pid_file="$runtime_root/state/fixture-worker.pid"
+  if [[ ! -f "$pid_file" ]]; then
+    return 0
+  fi
+  local pid
+  pid="$(cat "$pid_file")"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" >/dev/null 2>&1; then
+    kill "$pid" >/dev/null 2>&1 || true
+    local index
+    for ((index = 0; index < 50; index += 1)); do
+      if ! kill -0 "$pid" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.1
+    done
+    if kill -0 "$pid" >/dev/null 2>&1; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+    wait "$pid" >/dev/null 2>&1 || true
+  fi
+  rm -f "$pid_file"
+}
+
+stop_worker_agent() {
+  if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
+    stop_fixture_worker "$(phase23_runtime_root)"
+    return 0
+  fi
+  launchctl bootout "gui/$UID/$(worker_label)" >/dev/null 2>&1 || true
+}
+
+start_fixture_worker() {
+  local runtime_root="$1"
+  local worker_id="$2"
+  local token="$3"
+  local executable="$runtime_root/current/.venv/bin/picotoopet-core"
+  local stdout_log="$runtime_root/logs/fixture-worker.stdout.log"
+  local stderr_log="$runtime_root/logs/fixture-worker.stderr.log"
+  mkdir -p "$runtime_root/state" "$runtime_root/logs"
+  stop_fixture_worker "$runtime_root"
+
+  nohup env \
+    PICOTOO_RUNTIME_ROOT="$runtime_root" \
+    PICOTOO_API_TOKEN="$token" \
+    PICOTOO_WORKER_POLL_SECONDS="0.2" \
+    PICOTOO_WORKER_LEASE_SECONDS="10" \
+    PICOTOO_WORKER_HEARTBEAT_SECONDS="2" \
+    PICOTOO_WORKER_STATUS_STALE_SECONDS="8" \
+    "$executable" worker --loop --worker-id "$worker_id" \
+      </dev/null >"$stdout_log" 2>"$stderr_log" &
+  local pid=$!
+  printf '%s\n' "$pid" > "$runtime_root/state/fixture-worker.pid"
+  sleep 0.5
+  if ! kill -0 "$pid" >/dev/null 2>&1; then
+    echo "fixture Worker 启动失败；stderr：" >&2
+    cat "$stderr_log" >&2 || true
+    return 1
+  fi
+}
+
+start_worker_agent() {
+  local runtime_root="$1"
+  local worker_id="$2"
+  local token="${3:-}"
+  if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
+    start_fixture_worker "$runtime_root" "$worker_id" "$token"
+    return 0
+  fi
+  local plist
+  plist="$(worker_plist_path)"
+  stop_worker_agent
+  launchctl bootstrap "gui/$UID" "$plist"
+  launchctl kickstart -k "gui/$UID/$(worker_label)"
+}
+
+wait_for_worker_state() {
+  local runtime_root="$1"
+  local expected="${2:-online}"
+  local attempts="${3:-80}"
+  local path="$runtime_root/state/worker-status.json"
+  local index
+  for ((index = 0; index < attempts; index += 1)); do
+    if python3 - "$path" "$expected" <<'PY'
+import json
+import sys
 from pathlib import Path
-p=Path(sys.argv[1]); expected=sys.argv[2]
-if not p.is_file(): raise SystemExit(1)
-data=json.loads(p.read_text(encoding="utf-8"))
-if data.get("state") != expected: raise SystemExit(1)
-if expected == "online" and (data.get("available") is not True or data.get("supported_task_types") != ["system.diagnostic_snapshot","system.noop"]): raise SystemExit(1)
+
+path = Path(sys.argv[1])
+expected = sys.argv[2]
+if not path.is_file():
+    raise SystemExit(1)
+payload = json.loads(path.read_text(encoding="utf-8"))
+if payload.get("state") != expected:
+    raise SystemExit(1)
+if expected == "online":
+    if payload.get("available") is not True:
+        raise SystemExit(1)
+    if payload.get("supported_task_types") != [
+        "system.diagnostic_snapshot",
+        "system.noop",
+    ]:
+        raise SystemExit(1)
 PY
-then return 0; fi; sleep .25; done; echo "Worker 状态未进入 $expected" >&2; return 1; }
-verify_slice_d_candidate_contract(){ local base="$1" token="$2"; python3 - "$base" "$token" <<'PY'
-import json,sys,urllib.request
-base=sys.argv[1].rstrip('/'); token=sys.argv[2]
-def get(path,auth=False):
- h={"Authorization":f"Bearer {token}"} if auth else {}; r=urllib.request.Request(base+path,headers=h)
- with urllib.request.urlopen(r,timeout=5) as resp:return json.load(resp)
-if get('/api/v1/health').get('status')!='ok': raise SystemExit('health failed')
-features=get('/api/v1/capabilities').get('features',{})
-if features.get('worker_status') is not True or features.get('local_worker') is not True: raise SystemExit('capabilities failed')
-paths=get('/openapi.json').get('paths',{})
-required={'/api/v1/tasks/system-diagnostic-snapshot','/api/v1/tasks/{task_id}/result'}
-if required-set(paths): raise SystemExit('diagnostic paths missing')
-get('/api/v1/workers/status',True)
+    then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "Worker 状态未进入 $expected：$path" >&2
+  return 1
+}
+
+verify_slice_d_candidate_contract() {
+  local base_url="$1"
+  local token="$2"
+  python3 - "$base_url" "$token" <<'PY'
+import json
+import sys
+import urllib.request
+
+base = sys.argv[1].rstrip("/")
+token = sys.argv[2]
+
+
+def get(path: str, *, authenticated: bool = False):
+    headers = {"Authorization": f"Bearer {token}"} if authenticated else {}
+    request = urllib.request.Request(f"{base}{path}", headers=headers)
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return json.load(response)
+
+health = get("/api/v1/health")
+if health.get("status") != "ok":
+    raise SystemExit(f"health failed: {health!r}")
+features = get("/api/v1/capabilities").get("features", {})
+if features.get("worker_status") is not True or features.get("local_worker") is not True:
+    raise SystemExit(f"capabilities failed: {features!r}")
+paths = get("/openapi.json").get("paths", {})
+required = {
+    "/api/v1/tasks/system-diagnostic-snapshot",
+    "/api/v1/tasks/{task_id}/result",
+}
+missing = sorted(required - set(paths))
+if missing:
+    raise SystemExit(f"diagnostic paths missing: {missing!r}")
+status = get("/api/v1/workers/status", authenticated=True)
+if status.get("state") not in {
+    "not_deployed", "starting", "online", "degraded", "offline"
+}:
+    raise SystemExit(f"unexpected Worker state: {status!r}")
 PY
 }
-verify_worker_api_contract(){ local base="$1" token="$2"; python3 - "$base" "$token" <<'PY'
-import json,sys,urllib.request
-r=urllib.request.Request(sys.argv[1].rstrip('/')+'/api/v1/workers/status',headers={'Authorization':f'Bearer {sys.argv[2]}'})
-with urllib.request.urlopen(r,timeout=5) as resp:data=json.load(resp)
-if data.get('state')!='online' or data.get('available') is not True: raise SystemExit(f'worker offline: {data!r}')
-if data.get('supported_task_types') != ['system.diagnostic_snapshot','system.noop']: raise SystemExit(f'types mismatch: {data!r}')
-if not data.get('worker_id'): raise SystemExit('worker_id missing')
+
+verify_worker_api_contract() {
+  local base_url="$1"
+  local token="$2"
+  python3 - "$base_url" "$token" <<'PY'
+import json
+import sys
+import urllib.request
+
+base = sys.argv[1].rstrip("/")
+request = urllib.request.Request(
+    f"{base}/api/v1/workers/status",
+    headers={"Authorization": f"Bearer {sys.argv[2]}"},
+)
+with urllib.request.urlopen(request, timeout=5) as response:
+    status = json.load(response)
+if status.get("state") != "online" or status.get("available") is not True:
+    raise SystemExit(f"Worker 必须在线：{status!r}")
+if status.get("supported_task_types") != [
+    "system.diagnostic_snapshot",
+    "system.noop",
+]:
+    raise SystemExit(f"Worker 类型不符合冻结合同：{status!r}")
+if not status.get("worker_id"):
+    raise SystemExit(f"worker_id 缺失：{status!r}")
 PY
 }
-write_worker_report(){ local root="$1" kind="$2" status="$3" version="$4" path="$5" error="${6:-}" installed="${7:-false}" reports="$root/reports"; mkdir -p "$reports"; local report="$reports/phase23-slice-d-${kind}-$(date -u +%Y%m%dT%H%M%SZ).json"; python3 - "$report" "$status" "$version" "$path" "$error" "$installed" <<'PY'
-import json,sys
+
+write_worker_report() {
+  local runtime_root="$1"
+  local kind="$2"
+  local status="$3"
+  local version="$4"
+  local install_path="$5"
+  local error_message="${6:-}"
+  local worker_installed="${7:-false}"
+  local reports="$runtime_root/reports"
+  mkdir -p "$reports"
+  local stamp
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  local report="$reports/phase23-slice-d-worker-${kind}-${stamp}.json"
+  python3 - \
+    "$report" \
+    "$status" \
+    "$version" \
+    "$install_path" \
+    "$error_message" \
+    "$worker_installed" <<'PY'
+import json
+import sys
 from pathlib import Path
-data={"status":sys.argv[2],"version":sys.argv[3] or None,"runtime_version":"2.3.0-slice-d-worker","install_path":sys.argv[4] or None,"source_build_on_user_mac":False,"worker_runtime_installed":sys.argv[6].lower()=="true","worker_supported_task_types":["system.diagnostic_snapshot","system.noop"],"diagnostic_hard_timeout_seconds":30,"diagnostic_termination_grace_seconds":5,"error":sys.argv[5] or None}
-Path(sys.argv[1]).write_text(json.dumps(data,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8"); print(sys.argv[1])
+
+payload = {
+    "status": sys.argv[2],
+    "version": sys.argv[3] or None,
+    "runtime_version": "2.3.0-slice-d-worker",
+    "install_path": sys.argv[4] or None,
+    "source_build_on_user_mac": False,
+    "worker_runtime_installed": sys.argv[6].lower() == "true",
+    "worker_supported_task_types": [
+        "system.diagnostic_snapshot",
+        "system.noop",
+    ],
+    "diagnostic_hard_timeout_seconds": 30,
+    "diagnostic_termination_grace_seconds": 5,
+    "error": sys.argv[5] or None,
+}
+path = Path(sys.argv[1])
+path.write_text(
+    json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+    encoding="utf-8",
+)
+print(path)
 PY
 }
