@@ -135,6 +135,25 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CurrentPage  = CreateCurrentPage(route);
     }
 
+    /// <summary>用安全说明页替换故障路由，同时保留其他一级导航能力。</summary>
+    public void ShowNavigationFailure(NavigationRoute route)
+    {
+        var item = FindItem(NavigationItems, route);
+        if (!ReferenceEquals(_selectedNavigationItem, item))
+        {
+            _selectedNavigationItem = item;
+            RaisePropertyChanged(nameof(SelectedNavigationItem));
+        }
+
+        CurrentRoute = route;
+        CurrentPage = new EmptyStatePageViewModel(
+            $"{item.Title}暂时不可用",
+            "页面加载时发生故障，Control Center 已隔离该页面。",
+            "错误摘要已写入本地脱敏日志；你可以切换到其他页面继续使用。",
+            "稍后重新打开此页面；无需重启或重新安装。");
+        StatusMessage = $"{item.Title}页面加载失败，其他页面仍可使用。";
+    }
+
     private PageViewModel CreateCurrentPage(NavigationRoute route) =>
         _snapshot is null
             ? CreateStaticPage(route)
@@ -214,10 +233,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         string title,
         bool isAvailable,
         string unavailableMessage) => new(
-            route,
-            title,
-            isAvailable,
-            isAvailable ? "当前能力可用。" : unavailableMessage);
+        route,
+        title,
+        isAvailable,
+        isAvailable ? "当前能力可用。" : unavailableMessage);
 
     private static NavigationItem FindItem(
         IReadOnlyList<NavigationItem> items,
