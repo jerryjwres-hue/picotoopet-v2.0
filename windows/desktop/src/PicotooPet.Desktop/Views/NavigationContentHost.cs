@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 
@@ -15,11 +14,11 @@ public sealed class NavigationContentHost : ContentControl
     public event EventHandler<NavigationFaultEventArgs>? NavigationFaulted;
 
     /// <summary>执行子页面 Measure；可恢复异常只隔离当前内容。</summary>
-    protected override Size MeasureOverride(Size constraint)
+    protected override System.Windows.Size MeasureOverride(System.Windows.Size constraint)
     {
         if (ReferenceEquals(_faultedContent, Content))
         {
-            return new Size();
+            return new System.Windows.Size();
         }
 
         ResetFaultStateForReplacementContent();
@@ -30,12 +29,12 @@ public sealed class NavigationContentHost : ContentControl
         catch (Exception exception) when (IsRecoverable(exception))
         {
             QueueFaultNotification(exception);
-            return new Size();
+            return new System.Windows.Size();
         }
     }
 
     /// <summary>执行子页面 Arrange；已故障内容不再进入重复布局。</summary>
-    protected override Size ArrangeOverride(Size arrangeBounds)
+    protected override System.Windows.Size ArrangeOverride(System.Windows.Size arrangeBounds)
     {
         if (ReferenceEquals(_faultedContent, Content))
         {
@@ -92,7 +91,6 @@ public sealed class NavigationContentHost : ContentControl
         (OutOfMemoryException or
          AccessViolationException or
          BadImageFormatException or
-         CannotUnloadAppDomainException or
          InvalidProgramException or
          SEHException);
 }
