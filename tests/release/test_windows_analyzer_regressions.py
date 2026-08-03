@@ -18,8 +18,10 @@ CONTRACTS = (
 def test_default_diagnostic_sections_use_one_static_readonly_instance() -> None:
     source = CONTRACTS.read_text(encoding="utf-8-sig")
 
-    assert "private static readonly string[] DefaultSections" in source
-    assert 'DefaultSections = ["core", "worker", "queue"]' in source
+    assert (
+        "private static readonly IReadOnlyList<string> DefaultSections" in source
+    )
+    assert 'Array.AsReadOnly(["core", "worker", "queue"])' in source
 
     create_default = source.split(
         "public static DiagnosticSnapshotRequest CreateDefault()",
