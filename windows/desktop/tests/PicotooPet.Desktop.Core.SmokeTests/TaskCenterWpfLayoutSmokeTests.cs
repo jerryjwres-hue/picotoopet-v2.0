@@ -1,4 +1,6 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
@@ -11,8 +13,33 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>在真实 STA WPF 页面上验证任务中心绑定可以完成布局。</summary>
 internal static class TaskCenterWpfLayoutSmokeTests
 {
-    /// <summary>构造含只读优先级和超时字段的页面，并执行完整布局流水线。</summary>
+    /// <summary>在专用 STA 线程构造页面，并传播任意布局异常。</summary>
     public static void Run()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                RunOnStaThread();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    /// <summary>构造含只读优先级和超时字段的页面，并执行完整布局流水线。</summary>
+    private static void RunOnStaThread()
     {
         var timestamp = new DateTimeOffset(2026, 8, 2, 20, 0, 0, TimeSpan.Zero);
         var task      = new TaskRecord(
