@@ -35,6 +35,7 @@ jobs:
           $sourceCommit = "0e1090067f3543021294fef65555df944c054fed"
           $exportRoot = Join-Path $PWD "migration-export"
           $archivePath = Join-Path $env:RUNNER_TEMP "picotoopet-slice-c-source.zip"
+          $artifactName = "picotoopet-slice-c-source-0e109006"
 
           if (Test-Path $exportRoot) {
             Remove-Item $exportRoot -Recurse -Force
@@ -67,6 +68,8 @@ jobs:
             source_branch = "feature/phase-2.3-slice-c-worker-runtime-foundation"
             source_base_commit = $sourceCommit
             export_commit = $exportCommit
+            workflow_run_id = [long]$env:GITHUB_RUN_ID
+            artifact_name = $artifactName
             tracked_file_count = $trackedFiles.Count
             archive_bytes = $archiveBytes.Length
             archive_sha256 = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -76,6 +79,14 @@ jobs:
 
           $manifestPath = Join-Path $exportRoot "manifest.json"
           $manifest | ConvertTo-Json -Depth 4 | Set-Content -Path $manifestPath -Encoding UTF8
+
+      - name: Upload exact source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: picotoopet-slice-c-source-0e109006
+          path: ${{ runner.temp }}/picotoopet-slice-c-source.zip
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Commit migration payload
         shell: pwsh
