@@ -4,23 +4,41 @@ import json
 import zipfile
 from pathlib import Path
 
-from scripts.stamp_windows_goal_integrity import stamp_windows_release
+import pytest
+
+from scripts.stamp_windows_goal_integrity import GoalStampError, stamp_windows_release
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "release" / "project-goal-invariants.json"
+INSTALLER_MARKER = "PICOTOO_GOAL_INTEGRITY_GATE_V1"
 
 
-def test_stamps_native_wpf_package_and_disables_unverified_install(
+def _write_candidate(
     tmp_path: Path,
-) -> None:
+    *,
+    native_ci_verified: bool,
+    include_scripts: bool = True,
+) -> tuple[Path, str]:
     archive_root = "candidate"
     package = tmp_path / "PicotooPet-Phase2-Windows-Prebuilt-test.zip"
     manifest = {
         "release_type": "prebuilt",
         "target": "win-x64",
-        "native_ci_verified": False,
+        "native_ci_verified": native_ci_verified,
         "user_install_allowed": True,
+        "files": [
+            {
+                "path": "Picotoo Pet AI.exe",
+                "sha256": "0" * 64,
+                "size_bytes": 13,
+            },
+            {
+                "path": "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
+                "sha256": "1" * 64,
+                "size_bytes": 14,
+            },
+        ],
     }
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr(
@@ -31,28 +49,73 @@ def test_stamps_native_wpf_package_and_disables_unverified_install(
             f"{archive_root}/payload/Picotoo Pet AI.exe",
             b"MZ-native-wpf",
         )
+        archive.writestr(
+            f"{archive_root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
+            b"MZ-diagnostics",
+        )
+        if include_scripts:
+            script = (
+                "$manifest = Read-JsonUtf8 -Path $manifestPath\r\n"
+                "Write-Host 'continue'\r\n"
+            ).encode("utf-8-sig")
+            archive.writestr(
+                f"{archive_root}/Install-Phase2Prebuilt.ps1",
+                script,
+            )
+            archive.writestr(
+                f"{archive_root}/Verify-Phase2Prebuilt.ps1",
+                script,
+            )
     (tmp_path / "windows-build-report.json").write_text(
         json.dumps({"status": "pass"}),
         encoding="utf-8",
+    )
+    return package, archive_root
+
+
+def test_stamps_native_wpf_package_and_injects_install_time_gate(
+    tmp_path: Path,
+) -> None:
+    package, archive_root = _write_candidate(
+        tmp_path,
+        native_ci_verified=False,
     )
 
     report = stamp_windows_release(tmp_path, contract_path=CONTRACT)
 
     assert report["status"] == "pass"
     assert report["user_install_allowed"] is False
+    assert report["installer_goal_gate"] == "pass"
     with zipfile.ZipFile(package) as archive:
         updated = json.loads(
             archive.read(
                 f"{archive_root}/release-manifest.json"
             ).decode("utf-8")
         )
+        installer = archive.read(
+            f"{archive_root}/Install-Phase2Prebuilt.ps1"
+        ).decode("utf-8-sig")
+        verifier = archive.read(
+            f"{archive_root}/Verify-Phase2Prebuilt.ps1"
+        ).decode("utf-8-sig")
+
     assert updated["delivery_surface"] == "existing-native-wpf-desktop"
     assert updated["ui_framework"] == "WPF"
     assert updated["entry_executable"] == "Picotoo Pet AI.exe"
     assert updated["integration_target"] == "TaskCenter"
     assert updated["browser_ui"] is False
     assert updated["local_http_ui"] is False
+    assert updated["source_build_on_user_pc"] is False
     assert updated["user_install_allowed"] is False
+
+    for script in (installer, verifier):
+        assert INSTALLER_MARKER in script
+        assert '"delivery_surface" = "existing-native-wpf-desktop"' in script
+        assert '"ui_framework" = "WPF"' in script
+        assert '"integration_target" = "TaskCenter"' in script
+        assert '"native_ci_verified" = $true' in script
+        assert '"user_install_allowed" = $true' in script
+        assert "forbidden web UI payload" in script
 
     checksum = package.with_name(package.name + ".sha256.txt")
     assert package.name in checksum.read_text(encoding="utf-8")
@@ -61,3 +124,17 @@ def test_stamps_native_wpf_package_and_disables_unverified_install(
     )
     assert build_report["delivery_surface"] == "existing-native-wpf-desktop"
     assert build_report["user_install_allowed"] is False
+    assert build_report["installer_goal_gate"] == "pass"
+
+
+def test_stamp_rejects_package_without_formal_install_and_verify_scripts(
+    tmp_path: Path,
+) -> None:
+    _write_candidate(
+        tmp_path,
+        native_ci_verified=True,
+        include_scripts=False,
+    )
+
+    with pytest.raises(GoalStampError, match="Install-Phase2Prebuilt.ps1"):
+        stamp_windows_release(tmp_path, contract_path=CONTRACT)
