@@ -148,8 +148,8 @@ internal static class AppSelfTest
             Child  = host,
         };
 
-        root.Measure(new Size(960, 680));
-        root.Arrange(new Rect(0, 0, 960, 680));
+        root.Measure(new System.Windows.Size(960, 680));
+        root.Arrange(new System.Windows.Rect(0, 0, 960, 680));
         root.UpdateLayout();
         root.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
         root.UpdateLayout();
