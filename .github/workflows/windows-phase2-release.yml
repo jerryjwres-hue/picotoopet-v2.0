@@ -79,6 +79,7 @@ jobs:
       - name: Verify packaged install, verify and rollback lifecycle on Windows PowerShell 5.1
         shell: pwsh
         run: |
+          # Test-Phase2WindowsRelease.ps1 is executed through a codepage-safe CI wrapper.
           .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
 
       - name: Upload prebuilt installer and lifecycle evidence
