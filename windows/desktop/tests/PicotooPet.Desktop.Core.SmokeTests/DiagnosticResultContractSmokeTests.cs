@@ -53,6 +53,21 @@ internal static class DiagnosticResultContractSmokeTests
                 },
             },
             "未知队列状态未被拒绝");
+        AssertInvalid(
+            valid with
+            {
+                Core = new DiagnosticCoreResult(
+                    null!,
+                    "online",
+                    3),
+            },
+            "运行时 null core.version 未转换为合同错误");
+        AssertInvalid(
+            valid with
+            {
+                Checks = new DiagnosticCheckResult[] { null! },
+            },
+            "运行时 null 检查项未转换为合同错误");
     }
 
     private static DiagnosticSnapshotResult CreateResult(
