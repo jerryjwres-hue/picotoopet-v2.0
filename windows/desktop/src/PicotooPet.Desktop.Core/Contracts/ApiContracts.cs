@@ -51,14 +51,14 @@ public sealed record TaskRecord(
     [property: JsonPropertyName("priority")] int Priority,
     [property: JsonPropertyName("resource_tag")] string? ResourceTag,
     [property: JsonPropertyName("payload")] JsonElement Payload,
-    [property: JsonPropertyName("result_id")] string? ResultId,
     [property: JsonPropertyName("attempt_count")] int AttemptCount,
     [property: JsonPropertyName("max_attempts")] int MaxAttempts,
     [property: JsonPropertyName("timeout_seconds")] int TimeoutSeconds,
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
     [property: JsonPropertyName("error_code")] string? ErrorCode,
-    [property: JsonPropertyName("error_message")] string? ErrorMessage);
+    [property: JsonPropertyName("error_message")] string? ErrorMessage,
+    [property: JsonPropertyName("result_id")] string? ResultId = null);
 
 /// <summary>诊断结果中的 Core 固定卡片。</summary>
 public sealed record DiagnosticCoreResult(
