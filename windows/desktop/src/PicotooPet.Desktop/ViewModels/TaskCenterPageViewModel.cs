@@ -162,6 +162,7 @@ public sealed class TaskCenterPageViewModel : PageViewModel
 
     public bool CanCreateDiagnostic =>
         !IsBusy
+        && (_observationTask is null || _observationTask.IsCompleted)
         && _worker.Available
         && _worker.SupportedTaskTypes.Contains(
             DiagnosticTaskType,
@@ -175,6 +176,10 @@ public sealed class TaskCenterPageViewModel : PageViewModel
             if (IsBusy)
             {
                 return "正在处理任务操作。";
+            }
+            if (_observationTask is { IsCompleted: false })
+            {
+                return "正在观察刚创建的系统诊断任务。";
             }
             if (!_worker.Available)
             {
@@ -248,6 +253,7 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         }
 
         _observationTask = ObserveCreatedTaskAsync(created.TaskId, cancellationToken);
+        RaiseActionProperties();
     }
 
     /// <summary>加载当前已完成诊断任务的固定卡片。</summary>
@@ -382,6 +388,10 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         {
             StatusMessage = $"诊断任务观察暂时中断：{exception.Message}";
         }
+        finally
+        {
+            RaiseActionProperties();
+        }
     }
 
     private void ApplySnapshot(
@@ -437,14 +447,15 @@ public sealed class TaskCenterPageViewModel : PageViewModel
     }
 
     private static bool IsActiveDiagnostic(TaskRowViewModel task) =>
-        task.IsDiagnostic && task.Status is
+        task.IsDiagnostic
+        && task.Status is (
             "Created" or
             "Validating" or
             "Queued" or
             "Running" or
             "WaitingForTool" or
             "WaitingForApproval" or
-            "Retrying";
+            "Retrying");
 
     private static TaskRowViewModel? ResolveSelection(
         IReadOnlyList<TaskRowViewModel> tasks,
