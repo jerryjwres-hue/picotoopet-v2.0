@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 from pydantic import ValidationError
 
@@ -50,14 +48,14 @@ def create_system_diagnostic_snapshot(
     request: Request,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> TaskRecord:
-    """使用服务端冻结参数幂等创建本地诊断任务。"""
+    """使用服务端冻结参数和调用方幂等键创建本地诊断任务。"""
 
-    stable_key = idempotency_key.strip() if idempotency_key else f"diagnostic-{uuid4()}"
+    stable_key = idempotency_key.strip() if idempotency_key else ""
     if not stable_key or len(stable_key) > 200:
         raise ApiError(
             status_code=422,
             code="VALIDATION_ERROR",
-            message="Idempotency-Key 不符合接口契约。",
+            message="Idempotency-Key 是必需字段，且长度不得超过 200。",
             retryable=False,
         )
     return request.app.state.services.queue.create(
