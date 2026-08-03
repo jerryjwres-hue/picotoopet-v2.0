@@ -24,7 +24,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Build deterministic source archive chunks
         shell: pwsh
@@ -32,7 +32,7 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $exportCommit = (git rev-parse HEAD).Trim()
-          $sourceCommit = (git rev-parse HEAD^).Trim()
+          $sourceCommit = "0e1090067f3543021294fef65555df944c054fed"
           $exportRoot = Join-Path $PWD "migration-export"
           $archivePath = Join-Path $env:RUNNER_TEMP "picotoopet-slice-c-source.zip"
 
@@ -41,7 +41,7 @@ jobs:
           }
 
           New-Item -ItemType Directory -Path $exportRoot -Force | Out-Null
-          git archive --format=zip --output="$archivePath" HEAD
+          git archive --format=zip --output="$archivePath" $sourceCommit
 
           if (-not (Test-Path $archivePath -PathType Leaf)) {
             throw "Source archive was not created."
@@ -49,7 +49,7 @@ jobs:
 
           $archiveBytes = [System.IO.File]::ReadAllBytes($archivePath)
           $archiveBase64 = [Convert]::ToBase64String($archiveBytes)
-          $chunkSize = 60000
+          $chunkSize = 24000
           $chunkCount = [Math]::Ceiling($archiveBase64.Length / $chunkSize)
 
           for ($index = 0; $index -lt $chunkCount; $index++) {
@@ -60,7 +60,7 @@ jobs:
             [System.IO.File]::WriteAllText($chunkPath, $chunk, [System.Text.Encoding]::ASCII)
           }
 
-          $trackedFiles = @(git ls-tree -r --name-only HEAD)
+          $trackedFiles = @(git ls-tree -r --name-only $sourceCommit)
           $manifest = [ordered]@{
             format = "picotoopet-source-export-v1"
             source_repository = "jerryjwres-hue/picotoopet-v2.0"
@@ -84,6 +84,6 @@ jobs:
 
           git config user.name "OpenAI Assistant"
           git config user.email "assistant@openai.local"
-          git add migration-export
-          git commit -m "chore: export Slice C source archive [skip ci]"
+          git add --all migration-export
+          git commit -m "chore: refresh Slice C source archive [skip ci]"
           git push origin "HEAD:$env:GITHUB_REF_NAME"
