@@ -161,7 +161,7 @@ def get_task_result(task_id: str, request: Request) -> DiagnosticSnapshotResult:
             max_bytes=_DIAGNOSTIC_RESULT_BYTES,
         )
         return DiagnosticSnapshotResult.model_validate(document)
-    except (KeyError, ValueError, ValidationError) as error:
+    except (KeyError, OSError, ValueError, ValidationError) as error:
         raise ApiError(
             status_code=500,
             code="RESULT_INTEGRITY_ERROR",
