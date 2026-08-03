@@ -3,7 +3,7 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
-/// <summary>任务中心视图只转发显式用户动作；状态规则保留在 ViewModel 和 Mac Core。</summary>
+/// <summary>任务中心视图只转发显式用户动作；原始异常仅由 Session 写入脱敏日志。</summary>
 public partial class TaskCenterPage : System.Windows.Controls.UserControl
 {
     public TaskCenterPage()
@@ -21,14 +21,11 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
         {
             await viewModel.CreateDiagnosticAsync(CancellationToken.None);
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                exception.Message,
+            ShowSafeError(
                 "创建系统诊断失败",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                "系统诊断任务未能创建。详细信息已写入脱敏日志，请稍后重试。");
         }
     }
 
@@ -56,14 +53,11 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
         {
             await viewModel.CancelSelectedAsync(CancellationToken.None);
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                exception.Message,
+            ShowSafeError(
                 "取消任务失败",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                "取消请求未能完成。任务仍由 Mac Core 的状态机管理，详细信息已写入脱敏日志。");
         }
     }
 
@@ -77,14 +71,11 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
         {
             await viewModel.RetrySelectedAsync(CancellationToken.None);
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                exception.Message,
+            ShowSafeError(
                 "重试任务失败",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                "重试子任务未能创建。原任务不会被重新打开，详细信息已写入脱敏日志。");
         }
     }
 
@@ -98,14 +89,21 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
         {
             await viewModel.LoadSelectedDiagnosticResultAsync(CancellationToken.None);
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                exception.Message,
+            ShowSafeError(
                 "读取诊断结果失败",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                "诊断结果无法安全显示。详细信息已写入脱敏日志，任务结果不会被修改。");
         }
+    }
+
+    private void ShowSafeError(string title, string message)
+    {
+        MessageBox.Show(
+            Window.GetWindow(this),
+            message,
+            title,
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
     }
 }
