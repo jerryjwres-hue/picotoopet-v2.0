@@ -9,15 +9,22 @@ import pytest
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.models import TaskCreate
-from picotoopet_core.queue.repository import LeaseOwnershipError, QueueRepository
+from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
+from picotoopet_core.queue.repository import LeaseOwnershipError
 from picotoopet_core.results.store import ResultStore
 
 
-def make_repository(tmp_path: Path) -> tuple[Database, QueueRepository, ResultStore]:
+def make_repository(
+    tmp_path: Path,
+) -> tuple[Database, DiagnosticQueueRepository, ResultStore]:
     database = Database(tmp_path / "core.db")
     database.open()
     database.apply_migrations()
-    return database, QueueRepository(database), ResultStore(tmp_path / "results")
+    return (
+        database,
+        DiagnosticQueueRepository(database),
+        ResultStore(tmp_path / "results"),
+    )
 
 
 def test_queued_cancel_is_immediate_and_running_cancel_is_owner_completed(
