@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import json
+import zipfile
+from pathlib import Path
+
+import pytest
+
+from scripts.verify_project_goal_integrity import (
+    GoalIntegrityError,
+    verify_windows_package,
+)
+
+
+def _make_package(
+    tmp_path: Path,
+    *,
+    manifest: dict[str, object],
+    extra_files: dict[str, bytes] | None = None,
+) -> Path:
+    root = "candidate"
+    package = tmp_path / "candidate.zip"
+    files = {
+        f"{root}/release-manifest.json": json.dumps(
+            manifest,
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        f"{root}/payload/Picotoo Pet AI.exe": b"MZ-native-wpf",
+        f"{root}/INSTALL_PHASE2_WINDOWS.vbs": b"ascii",
+        f"{root}/VERIFY_PHASE2_WINDOWS.vbs": b"ascii",
+        f"{root}/ROLLBACK_PHASE2_WINDOWS.vbs": b"ascii",
+    }
+    files.update(extra_files or {})
+    with zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return package
+
+
+def _compliant_manifest() -> dict[str, object]:
+    return {
+        "schema_version": "2.3.0",
+        "release_type": "prebuilt",
+        "version": "2.3.0-slice-d-native-wpf-test",
+        "target": "win-x64",
+        "native_ci_verified": True,
+        "user_install_allowed": True,
+        "source_build_on_user_pc": False,
+        "delivery_surface": "existing-native-wpf-desktop",
+        "ui_framework": "WPF",
+        "entry_executable": "Picotoo Pet AI.exe",
+        "integration_target": "TaskCenter",
+        "browser_ui": False,
+        "local_http_ui": False,
+    }
+
+
+def test_accepts_existing_native_wpf_task_center_delivery(tmp_path: Path) -> None:
+    package = _make_package(tmp_path, manifest=_compliant_manifest())
+
+    report = verify_windows_package(package)
+
+    assert report["status"] == "pass"
+    assert report["delivery_surface"] == "existing-native-wpf-desktop"
+    assert report["entry_executable"] == "Picotoo Pet AI.exe"
+
+
+def test_rejects_browser_helper_even_when_prebuilt_and_hashable(
+    tmp_path: Path,
+) -> None:
+    manifest = _compliant_manifest() | {
+        "release_type": "prebuilt-helper",
+        "version": "2.3.0-slice-d-helper",
+        "delivery_surface": "browser-localhost-helper",
+        "ui_framework": "web",
+        "entry_executable": "PicotooPet Slice D.exe",
+        "integration_target": "separate-helper",
+        "browser_ui": True,
+        "local_http_ui": True,
+        "native_ci_verified": False,
+    }
+    package = _make_package(
+        tmp_path,
+        manifest=manifest,
+        extra_files={
+            "candidate/payload/PicotooPet Slice D.exe": b"MZ-helper",
+            "candidate/assets/index.html": b"<html></html>",
+        },
+    )
+
+    with pytest.raises(
+        GoalIntegrityError,
+        match="GOAL_INTEGRITY_VIOLATION|不得降级|WPF",
+    ):
+        verify_windows_package(package)
+
+
+def test_rejects_user_install_allowed_without_native_platform_verification(
+    tmp_path: Path,
+) -> None:
+    manifest = _compliant_manifest() | {"native_ci_verified": False}
+    package = _make_package(tmp_path, manifest=manifest)
+
+    with pytest.raises(GoalIntegrityError, match="native_ci_verified"):
+        verify_windows_package(package)
+
+
+def test_rejects_separate_executable_instead_of_existing_desktop_app(
+    tmp_path: Path,
+) -> None:
+    manifest = _compliant_manifest() | {"entry_executable": "SliceD.exe"}
+    package = _make_package(tmp_path, manifest=manifest)
+
+    with pytest.raises(GoalIntegrityError, match="Picotoo Pet AI.exe"):
+        verify_windows_package(package)
+
+
+def test_rejects_web_assets_in_formally_native_package(tmp_path: Path) -> None:
+    package = _make_package(
+        tmp_path,
+        manifest=_compliant_manifest(),
+        extra_files={"candidate/assets/app.js": b"window.open('/')"},
+    )
+
+    with pytest.raises(GoalIntegrityError, match="浏览器|Helper|WPF"):
+        verify_windows_package(package)
