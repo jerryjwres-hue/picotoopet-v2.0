@@ -71,12 +71,14 @@ jobs:
             tests/contract/test_phase23_worker_status_contract.py \
             tests/contract/test_phase23_diagnostic_contract.py \
             tests/integration/api/test_diagnostic_snapshot_api.py \
-            tests/integration/queue/test_diagnostic_result_transaction.py \
+            tests/integration/queue/test_diagnostic_cancellation.py \
+            tests/integration/queue/test_diagnostic_result_commit.py \
             tests/integration/queue/test_worker_leases.py \
-            tests/integration/worker/test_diagnostic_worker_runtime.py \
+            tests/integration/worker/test_diagnostic_worker_e2e.py \
             tests/unit/diagnostics/test_diagnostic_collector.py \
-            tests/unit/diagnostics/test_diagnostic_subprocess_runner.py \
-            tests/unit/results/test_diagnostic_result_store.py \
+            tests/unit/diagnostics/test_diagnostic_models.py \
+            tests/unit/diagnostics/test_diagnostic_result_store.py \
+            tests/unit/diagnostics/test_diagnostic_subprocess.py \
             tests/unit/worker/test_worker_runtime_foundation.py
 
       - name: Run full Python regression
@@ -102,10 +104,10 @@ jobs:
             tests/contract/test_phase23_worker_delivery.py \
             tests/contract/test_phase23_diagnostic_contract.py \
             tests/integration/api/test_diagnostic_snapshot_api.py \
-            tests/integration/queue/test_diagnostic_result_transaction.py \
-            tests/integration/worker/test_diagnostic_worker_runtime.py \
+            tests/integration/queue/test_diagnostic_cancellation.py \
+            tests/integration/queue/test_diagnostic_result_commit.py \
+            tests/integration/worker/test_diagnostic_worker_e2e.py \
             tests/unit/diagnostics \
-            tests/unit/results/test_diagnostic_result_store.py \
             tests/unit/worker/test_worker_runtime_foundation.py
           ruff check --ignore I001 src/picotoopet_core/queue/repository.py
 
