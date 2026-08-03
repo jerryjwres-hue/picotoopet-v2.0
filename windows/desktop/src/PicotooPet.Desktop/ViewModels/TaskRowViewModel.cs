@@ -20,24 +20,26 @@ public sealed class TaskRowViewModel : ObservableObject
     private int _priority;
     private int _timeoutSeconds;
     private string? _projectId;
+    private string? _resultId;
 
     private TaskRowViewModel(TaskRecord task, WorkerSnapshot worker)
     {
-        TaskId         = task.TaskId;
-        _taskType      = task.TaskType;
-        _status        = task.Status;
-        _displayStatus = FormatStatus(task.Status, worker);
-        _createdAt     = task.CreatedAt;
-        _updatedAt     = task.UpdatedAt;
-        _error         = task.ErrorMessage;
-        _errorCode     = task.ErrorCode;
-        _attemptText   = FormatAttempt(task);
+        TaskId          = task.TaskId;
+        _taskType       = task.TaskType;
+        _status         = task.Status;
+        _displayStatus  = FormatStatus(task.Status, worker);
+        _createdAt      = task.CreatedAt;
+        _updatedAt      = task.UpdatedAt;
+        _error          = task.ErrorMessage;
+        _errorCode      = task.ErrorCode;
+        _attemptText    = FormatAttempt(task);
         _isWaitingForWorker = IsWaiting(task.Status, worker);
-        _canCancel     = CanCancelStatus(task.Status);
-        _canRetry      = CanRetryStatus(task.Status);
-        _priority      = task.Priority;
+        _canCancel      = CanCancelStatus(task.Status);
+        _canRetry       = CanRetryStatus(task.Status);
+        _priority       = task.Priority;
         _timeoutSeconds = task.TimeoutSeconds;
-        _projectId     = task.ProjectId;
+        _projectId      = task.ProjectId;
+        _resultId       = task.ResultId;
     }
 
     public string TaskId { get; }
@@ -128,6 +130,22 @@ public sealed class TaskRowViewModel : ObservableObject
         private set => SetProperty(ref _projectId, value);
     }
 
+    public string? ResultId
+    {
+        get => _resultId;
+        private set => SetProperty(ref _resultId, value);
+    }
+
+    public bool IsDiagnostic => string.Equals(
+        TaskType,
+        "system.diagnostic_snapshot",
+        StringComparison.Ordinal);
+
+    public bool CanViewDiagnosticResult =>
+        IsDiagnostic
+        && string.Equals(Status, "Completed", StringComparison.Ordinal)
+        && !string.IsNullOrWhiteSpace(ResultId);
+
     /// <summary>保留旧总览调用面；未知 Worker 一律视为未部署。</summary>
     public static TaskRowViewModel FromRecord(TaskRecord task) =>
         new(task, WorkerSnapshot.NotDeployed);
@@ -148,20 +166,23 @@ public sealed class TaskRowViewModel : ObservableObject
         {
             throw new ArgumentException("不能使用其他任务的数据更新当前行。", nameof(task));
         }
-        TaskType          = task.TaskType;
-        Status            = task.Status;
-        DisplayStatus     = FormatStatus(task.Status, worker);
-        CreatedAt         = task.CreatedAt;
-        UpdatedAt         = task.UpdatedAt;
-        Error             = task.ErrorMessage;
-        ErrorCode         = task.ErrorCode;
-        AttemptText       = FormatAttempt(task);
+        TaskType           = task.TaskType;
+        Status             = task.Status;
+        DisplayStatus      = FormatStatus(task.Status, worker);
+        CreatedAt          = task.CreatedAt;
+        UpdatedAt          = task.UpdatedAt;
+        Error              = task.ErrorMessage;
+        ErrorCode          = task.ErrorCode;
+        AttemptText        = FormatAttempt(task);
         IsWaitingForWorker = IsWaiting(task.Status, worker);
-        CanCancel         = CanCancelStatus(task.Status);
-        CanRetry          = CanRetryStatus(task.Status);
-        Priority          = task.Priority;
-        TimeoutSeconds    = task.TimeoutSeconds;
-        ProjectId         = task.ProjectId;
+        CanCancel          = CanCancelStatus(task.Status);
+        CanRetry           = CanRetryStatus(task.Status);
+        Priority           = task.Priority;
+        TimeoutSeconds     = task.TimeoutSeconds;
+        ProjectId          = task.ProjectId;
+        ResultId           = task.ResultId;
+        RaisePropertyChanged(nameof(IsDiagnostic));
+        RaisePropertyChanged(nameof(CanViewDiagnosticResult));
     }
 
     private static bool IsWaiting(string status, WorkerSnapshot worker) =>
@@ -198,6 +219,6 @@ public sealed class TaskRowViewModel : ObservableObject
         "Failed"             => "失败",
         "Cancelled"          => "已取消",
         "Archived"           => "已归档",
-        _                    => status,
+        _                     => status,
     };
 }

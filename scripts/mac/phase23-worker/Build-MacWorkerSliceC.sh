@@ -1,5 +1,5 @@
 #!/bin/bash
-# 在原生 M4/Apple Silicon Runner 构建离线 Slice C Core + Worker 包。
+# 在原生 M4/Apple Silicon Runner 构建离线 Slice D Core + Worker 包。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -31,14 +31,14 @@ if [[ "$python_version" != Python\ 3.12.* ]]; then
 fi
 architecture="$(uname -m)"
 if [[ "$architecture" != "arm64" ]]; then
-  echo "Slice C 用户交付仅支持 M4/Apple Silicon arm64：$architecture" >&2
+  echo "Slice D Worker 用户交付仅支持 M4/Apple Silicon arm64：$architecture" >&2
   exit 1
 fi
 
 commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 short_commit="${commit:0:12}"
 if [[ -z "$version_label" ]]; then
-  version_label="2.3.0-slice-c-local-$short_commit"
+  version_label="2.3.0-slice-d-worker-local-$short_commit"
 fi
 if [[ ! "$version_label" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "版本标签只能包含 ASCII 字母、数字、点、下划线和连字符。" >&2
@@ -61,8 +61,28 @@ if find "$wheelhouse" -type f ! -name '*.whl' | grep -q .; then
   echo "wheelhouse 包含非 wheel 文件。" >&2
   exit 1
 fi
-if ! find "$wheelhouse" -maxdepth 1 -type f -name 'picotoopet_core-2.3.0.dev2-*.whl' | grep -q .; then
-  echo "缺少 picotoopet-core 2.3.0.dev2 wheel。" >&2
+
+package_version="$(python3 - "$repo_root/pyproject.toml" "$wheelhouse" <<'PY'
+import sys
+import tomllib
+from pathlib import Path
+
+pyproject = Path(sys.argv[1])
+wheelhouse = Path(sys.argv[2])
+version = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+wheels = sorted(wheelhouse.glob("picotoopet_core-*.whl"))
+if len(wheels) != 1:
+    raise SystemExit(f"expected exactly one picotoopet_core wheel, found {len(wheels)}")
+expected_prefix = f"picotoopet_core-{version.replace('-', '_')}-"
+if not wheels[0].name.startswith(expected_prefix):
+    raise SystemExit(
+        f"project version {version!r} does not match wheel {wheels[0].name!r}"
+    )
+print(version)
+PY
+)"
+if [[ -z "$package_version" ]]; then
+  echo "无法从 pyproject.toml 解析项目版本。" >&2
   exit 1
 fi
 
@@ -87,7 +107,8 @@ python3 - \
   "$version_label" \
   "$architecture" \
   "$python_version" \
-  "$commit" <<'PY'
+  "$commit" \
+  "$package_version" <<'PY'
 import hashlib
 import json
 import sys
@@ -98,6 +119,7 @@ version = sys.argv[2]
 architecture = sys.argv[3]
 python_version = sys.argv[4]
 commit = sys.argv[5]
+package_version = sys.argv[6]
 files = []
 for path in sorted(item for item in root.rglob("*") if item.is_file()):
     relative = path.relative_to(root).as_posix()
@@ -116,14 +138,20 @@ manifest = {
     "release_type": "prebuilt-offline-worker",
     "target": "macos",
     "version": version,
-    "package_version": "2.3.0.dev2",
-    "runtime_version": "2.3.0-slice-c",
+    "package_version": package_version,
+    "runtime_version": "2.3.0-slice-d-worker",
     "api_schema_version": "2.3.0",
     "architecture": architecture,
     "python_version": python_version,
     "commit": commit,
     "worker_runtime_included": True,
-    "worker_supported_task_types": ["system.noop"],
+    "worker_supported_task_types": [
+        "system.diagnostic_snapshot",
+        "system.noop",
+    ],
+    "diagnostic_hard_timeout_seconds": 30,
+    "diagnostic_termination_grace_seconds": 5,
+    "source_build_on_user_mac": False,
     "files": files,
 }
 (root / "release-manifest.json").write_text(
@@ -147,7 +175,8 @@ python3 - \
   "$python_version" \
   "$commit" \
   "$tarball" \
-  "$outer_sha" <<'PY'
+  "$outer_sha" \
+  "$package_version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -155,8 +184,8 @@ from pathlib import Path
 report = {
     "status": "pass",
     "version": sys.argv[2],
-    "runtime_version": "2.3.0-slice-c",
-    "package_version": "2.3.0.dev2",
+    "runtime_version": "2.3.0-slice-d-worker",
+    "package_version": sys.argv[8],
     "architecture": sys.argv[3],
     "python_version": sys.argv[4],
     "commit": sys.argv[5],
@@ -164,7 +193,12 @@ report = {
     "sha256": sys.argv[7],
     "source_build_on_user_mac": False,
     "worker_runtime_included": True,
-    "worker_supported_task_types": ["system.noop"],
+    "worker_supported_task_types": [
+        "system.diagnostic_snapshot",
+        "system.noop",
+    ],
+    "diagnostic_hard_timeout_seconds": 30,
+    "diagnostic_termination_grace_seconds": 5,
 }
 Path(sys.argv[1]).write_text(
     json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
@@ -175,3 +209,4 @@ PY
 echo "PHASE23_MAC_WORKER_BUILD=PASS"
 echo "PACKAGE=$tarball"
 echo "SHA256=$outer_sha"
+echo "PACKAGE_VERSION=$package_version"

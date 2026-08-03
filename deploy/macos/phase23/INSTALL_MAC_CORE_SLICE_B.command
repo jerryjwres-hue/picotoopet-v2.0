@@ -1,5 +1,5 @@
 #!/bin/bash
-# Picotoo Pet V2 Phase 2.3 Slice B Mac Core 增量安装器。
+# Picotoo Pet V2 Phase 2.3 Slice D Mac Core 增量安装器。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -98,14 +98,30 @@ trap cleanup_candidate EXIT
 verify_manifest_files "$package_root"
 version="$(read_manifest "$package_root" version)"
 package_version="$(read_manifest "$package_root" package_version)"
+runtime_version="$(read_manifest "$package_root" runtime_version)"
 package_arch="$(read_manifest "$package_root" architecture)"
+diagnostic_api="$(read_manifest "$package_root" diagnostic_snapshot_api_included)"
 
-if [[ "$package_version" != "2.3.0.dev1" ]]; then
-  echo "包版本不符合 Slice B：$package_version" >&2
+if [[ -z "$package_version" || ! "$package_version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+  echo "包内 package_version 无效：$package_version" >&2
+  exit 1
+fi
+if [[ "$runtime_version" != "2.3.0-slice-d-core" ]]; then
+  echo "运行时版本不符合 Slice D Core：$runtime_version" >&2
+  exit 1
+fi
+if [[ "$diagnostic_api" != "True" && "$diagnostic_api" != "true" ]]; then
+  echo "发布清单未声明诊断快照 API。" >&2
   exit 1
 fi
 if [[ "$package_arch" != "$(uname -m)" ]]; then
   echo "安装包架构 $package_arch 与本机 $(uname -m) 不一致。" >&2
+  exit 1
+fi
+wheel_count="$(find "$package_root/payload/wheelhouse" -maxdepth 1 -type f \
+  -name "picotoopet_core-${package_version//-/_}-*.whl" | wc -l | tr -d ' ')"
+if [[ "$wheel_count" != "1" ]]; then
+  echo "包内项目 wheel 与 package_version 不一致或数量不是 1。" >&2
   exit 1
 fi
 if [[ ! -x "$current_python" ]]; then
@@ -138,9 +154,9 @@ mkdir -p "$new_version"
 "$new_version/.venv/bin/python" -m pip install \
   --no-index \
   --find-links "$package_root/payload/wheelhouse" \
-  "picotoopet-core==2.3.0.dev1"
+  "picotoopet-core==$package_version"
 
-candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-b-candidate.XXXXXX")"
+candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-d-core-candidate.XXXXXX")"
 candidate_port="$(choose_free_port)"
 PICOTOO_RUNTIME_ROOT="$candidate_root" \
 PICOTOO_API_HOST="127.0.0.1" \

@@ -130,6 +130,8 @@ def _run_worker(
         queue=services.queue,
         state_store=services.worker_state,
         worker_id=resolved_worker_id,
+        database=services.database,
+        result_store=services.results,
         lease_seconds=settings.worker_lease_seconds,
         heartbeat_seconds=settings.worker_heartbeat_seconds,
         poll_seconds=settings.worker_poll_seconds,

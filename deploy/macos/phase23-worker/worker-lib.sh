@@ -1,5 +1,5 @@
 #!/bin/bash
-# Phase 2.3 Slice C Worker 安装、验证和回滚共享函数。
+# Phase 2.3 Slice D Worker 安装、验证和回滚共享函数。
 set -euo pipefail
 
 worker_label() {
@@ -151,7 +151,10 @@ if payload.get("state") != expected:
     raise SystemExit(1)
 if expected == "online" and payload.get("available") is not True:
     raise SystemExit(1)
-if expected == "online" and payload.get("supported_task_types") != ["system.noop"]:
+if expected == "online" and payload.get("supported_task_types") != [
+    "system.diagnostic_snapshot",
+    "system.noop",
+]:
     raise SystemExit(1)
 PY
     then
@@ -163,7 +166,7 @@ PY
   return 1
 }
 
-verify_slice_c_candidate_contract() {
+verify_slice_d_candidate_contract() {
   local base_url="$1"
   local token="$2"
   python3 - "$base_url" "$token" <<'PY'
@@ -182,14 +185,23 @@ def get(path: str, authenticated: bool = False):
         return json.load(response)
 
 health = get("/api/v1/health")
-if health.get("status") != "ok" or health.get("version") != "2.3.0-slice-c":
-    raise SystemExit(f"Slice C health contract failed: {health!r}")
+if health.get("status") != "ok":
+    raise SystemExit(f"Slice D health contract failed: {health!r}")
 features = get("/api/v1/capabilities").get("features", {})
 if features.get("worker_status") is not True or features.get("local_worker") is not True:
-    raise SystemExit(f"Slice C capabilities failed: {features!r}")
+    raise SystemExit(f"Slice D capabilities failed: {features!r}")
 status = get("/api/v1/workers/status", authenticated=True)
 if status.get("state") not in {"not_deployed", "offline", "online"}:
     raise SystemExit(f"unexpected worker state: {status!r}")
+openapi = get("/openapi.json")
+paths = openapi.get("paths", {})
+required = {
+    "/api/v1/tasks/system-diagnostic-snapshot",
+    "/api/v1/tasks/{task_id}/result",
+}
+missing = sorted(required - set(paths))
+if missing:
+    raise SystemExit(f"Slice D diagnostic API paths missing: {missing!r}")
 PY
 }
 
@@ -211,7 +223,10 @@ if status.get("state") != "online":
     raise SystemExit(f"worker state must be online: {status!r}")
 if status.get("available") is not True:
     raise SystemExit(f"worker available must be true: {status!r}")
-if status.get("supported_task_types") != ["system.noop"]:
+if status.get("supported_task_types") != [
+    "system.diagnostic_snapshot",
+    "system.noop",
+]:
     raise SystemExit(f"worker task types are not frozen: {status!r}")
 if status.get("worker_id") in {None, ""}:
     raise SystemExit(f"worker_id is missing: {status!r}")
@@ -237,7 +252,7 @@ write_worker_report() {
   mkdir -p "$reports"
   local stamp
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  local report="$reports/phase23-slice-c-${kind}-${stamp}.json"
+  local report="$reports/phase23-slice-d-${kind}-${stamp}.json"
   python3 - \
     "$report" \
     "$status" \
@@ -253,10 +268,16 @@ path = Path(sys.argv[1])
 payload = {
     "status": sys.argv[2],
     "version": sys.argv[3] or None,
+    "runtime_version": "2.3.0-slice-d-worker",
     "install_path": sys.argv[4] or None,
     "source_build_on_user_mac": False,
     "worker_runtime_installed": sys.argv[6].lower() == "true",
-    "worker_supported_task_types": ["system.noop"],
+    "worker_supported_task_types": [
+        "system.diagnostic_snapshot",
+        "system.noop",
+    ],
+    "diagnostic_hard_timeout_seconds": 30,
+    "diagnostic_termination_grace_seconds": 5,
     "error": sys.argv[5] or None,
 }
 path.write_text(

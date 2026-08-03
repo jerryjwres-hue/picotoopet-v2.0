@@ -1,5 +1,5 @@
 #!/bin/bash
-# 在原生 M4/arm64 macOS 上验证 Slice C Worker 包结构、哈希和脚本语法。
+# 在原生 M4/arm64 macOS 上验证 Slice D Worker 包结构、哈希和脚本语法。
 set -euo pipefail
 
 release_root="${1:-}"
@@ -8,14 +8,14 @@ if [[ -z "$release_root" || ! -d "$release_root" ]]; then
   exit 2
 fi
 if [[ "$(uname -m)" != "arm64" ]]; then
-  echo "Slice C 包级复验必须在原生 arm64 Runner 执行。" >&2
+  echo "Slice D 包级复验必须在原生 arm64 Runner 执行。" >&2
   exit 1
 fi
 
 archive="$(find "$release_root" -maxdepth 1 -type f \
   -name 'PicotooPet-MacWorker-*.tar.gz' -print | sort | tail -n 1)"
 if [[ -z "$archive" ]]; then
-  echo "未找到 Mac Worker Slice C tar.gz。" >&2
+  echo "未找到 Mac Worker Slice D tar.gz。" >&2
   exit 1
 fi
 sha_file="$archive.sha256.txt"
@@ -70,12 +70,13 @@ if [[ "$(read_manifest "$package_root" architecture)" != "arm64" ]]; then
   echo "清单架构不是 arm64。" >&2
   exit 1
 fi
-if [[ "$(read_manifest "$package_root" package_version)" != "2.3.0.dev2" ]]; then
-  echo "清单 package_version 不正确。" >&2
+package_version="$(read_manifest "$package_root" package_version)"
+if [[ -z "$package_version" ]]; then
+  echo "清单缺少 package_version。" >&2
   exit 1
 fi
-if [[ "$(read_manifest "$package_root" runtime_version)" != "2.3.0-slice-c" ]]; then
-  echo "清单 runtime_version 不正确。" >&2
+if [[ "$(read_manifest "$package_root" runtime_version)" != "2.3.0-slice-d-worker" ]]; then
+  echo "清单 runtime_version 不是 Slice D Worker。" >&2
   exit 1
 fi
 worker_included="$(read_manifest "$package_root" worker_runtime_included)"
@@ -83,8 +84,16 @@ if [[ "$worker_included" != "True" && "$worker_included" != "true" ]]; then
   echo "清单未声明 Worker Runtime。" >&2
   exit 1
 fi
-if [[ "$(read_manifest "$package_root" worker_supported_task_types)" != '["system.noop"]' ]]; then
-  echo "清单 Worker 类型不符合冻结合同。" >&2
+if [[ "$(read_manifest "$package_root" worker_supported_task_types)" != '["system.diagnostic_snapshot", "system.noop"]' ]]; then
+  echo "清单 Worker 类型不符合 Slice D 冻结合同。" >&2
+  exit 1
+fi
+if [[ "$(read_manifest "$package_root" diagnostic_hard_timeout_seconds)" != "30" ]]; then
+  echo "诊断硬超时不是 30 秒。" >&2
+  exit 1
+fi
+if [[ "$(read_manifest "$package_root" diagnostic_termination_grace_seconds)" != "5" ]]; then
+  echo "诊断进程清理宽限不是 5 秒。" >&2
   exit 1
 fi
 
@@ -93,8 +102,10 @@ if [[ ! -d "$wheelhouse" ]]; then
   echo "wheelhouse 缺失。" >&2
   exit 1
 fi
-if ! find "$wheelhouse" -maxdepth 1 -type f -name 'picotoopet_core-2.3.0.dev2-*.whl' | grep -q .; then
-  echo "Slice C wheel 缺失。" >&2
+wheel_count="$(find "$wheelhouse" -maxdepth 1 -type f \
+  -name "picotoopet_core-${package_version//-/_}-*.whl" | wc -l | tr -d ' ')"
+if [[ "$wheel_count" != "1" ]]; then
+  echo "Slice D wheel 与 package_version 不一致或数量不是 1。" >&2
   exit 1
 fi
 if find "$wheelhouse" -type f ! -name '*.whl' | grep -q .; then
@@ -130,6 +141,16 @@ for forbidden in \
   fi
 done
 
+if grep -Fq 'picotoopet-core==2.3.0.dev' \
+  "$package_root/INSTALL_MAC_WORKER_SLICE_C.command"; then
+  echo "安装器仍包含硬编码项目版本。" >&2
+  exit 1
+fi
+if ! grep -Fq '"picotoopet-core==$package_version"' \
+  "$package_root/INSTALL_MAC_WORKER_SLICE_C.command"; then
+  echo "安装器没有使用清单 package_version。" >&2
+  exit 1
+fi
 if ! grep -Fq 'python_version="$("$current_python" --version 2>&1)"' \
   "$package_root/INSTALL_MAC_WORKER_SLICE_C.command"; then
   echo "安装器缺少含空格路径引用回归修复。" >&2

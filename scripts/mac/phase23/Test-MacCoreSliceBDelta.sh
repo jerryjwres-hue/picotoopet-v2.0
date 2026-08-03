@@ -1,5 +1,5 @@
 #!/bin/bash
-# 在原生 macOS 上验证 Mac Core Slice B 增量包结构、哈希与脚本语法。
+# 在原生 macOS 上验证 Mac Core Slice D 增量包结构、哈希与脚本语法。
 set -euo pipefail
 
 release_root="${1:-}"
@@ -11,7 +11,7 @@ fi
 archive="$(find "$release_root" -maxdepth 1 -type f \
   -name 'PicotooPet-MacCore-*.tar.gz' -print | sort | tail -n 1)"
 if [[ -z "$archive" ]]; then
-  echo "未找到 Mac Core Slice B tar.gz。" >&2
+  echo "未找到 Mac Core Slice D tar.gz。" >&2
   exit 1
 fi
 sha_file="$archive.sha256.txt"
@@ -67,18 +67,38 @@ if [[ "$manifest_arch" != "$(uname -m)" ]]; then
   echo "清单架构与 Runner 不一致：$manifest_arch" >&2
   exit 1
 fi
+if [[ "$(read_manifest "$package_root" runtime_version)" != "2.3.0-slice-d-core" ]]; then
+  echo "清单 runtime_version 不是 Slice D Core。" >&2
+  exit 1
+fi
 if [[ "$(read_manifest "$package_root" worker_runtime_included)" != "False" ]]; then
-  echo "增量包不得包含 Worker runtime。" >&2
+  echo "Core 增量包不得启用 Worker runtime。" >&2
+  exit 1
+fi
+diagnostic_api="$(read_manifest "$package_root" diagnostic_snapshot_api_included)"
+if [[ "$diagnostic_api" != "True" && "$diagnostic_api" != "true" ]]; then
+  echo "清单未声明诊断快照 API。" >&2
+  exit 1
+fi
+if [[ "$(read_manifest "$package_root" source_build_on_user_mac)" != "False" ]]; then
+  echo "清单必须禁止用户 Mac 源码构建。" >&2
   exit 1
 fi
 
+package_version="$(read_manifest "$package_root" package_version)"
+if [[ -z "$package_version" ]]; then
+  echo "清单缺少 package_version。" >&2
+  exit 1
+fi
 wheelhouse="$package_root/payload/wheelhouse"
 if [[ ! -d "$wheelhouse" ]]; then
   echo "wheelhouse 缺失。" >&2
   exit 1
 fi
-if ! find "$wheelhouse" -maxdepth 1 -type f -name '*.whl' | grep -q .; then
-  echo "wheelhouse 为空。" >&2
+wheel_count="$(find "$wheelhouse" -maxdepth 1 -type f \
+  -name "picotoopet_core-${package_version//-/_}-*.whl" | wc -l | tr -d ' ')"
+if [[ "$wheel_count" != "1" ]]; then
+  echo "项目 wheel 与 package_version 不一致或数量不是 1。" >&2
   exit 1
 fi
 if find "$wheelhouse" -type f ! -name '*.whl' | grep -q .; then
@@ -93,6 +113,17 @@ for script in \
   lib.sh; do
   bash -n "$package_root/$script"
 done
+
+if grep -Fq 'picotoopet-core==2.3.0.dev' \
+  "$package_root/INSTALL_MAC_CORE_SLICE_B.command"; then
+  echo "安装器仍包含硬编码项目版本。" >&2
+  exit 1
+fi
+if ! grep -Fq '"picotoopet-core==$package_version"' \
+  "$package_root/INSTALL_MAC_CORE_SLICE_B.command"; then
+  echo "安装器没有使用清单 package_version。" >&2
+  exit 1
+fi
 
 echo "PHASE23_MAC_DELTA_PACKAGE_TEST=PASS"
 echo "PACKAGE=$archive"

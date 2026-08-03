@@ -7,6 +7,7 @@ on:
       - "src/**"
       - "tests/**"
       - "scripts/mac/phase23/**"
+      - "scripts/export_slice_d_openapi.py"
       - "deploy/macos/phase23/**"
       - "contracts/openapi/**"
       - "pyproject.toml"
@@ -21,8 +22,10 @@ concurrency:
 
 jobs:
   native-mac-delta:
-    if: startsWith(github.head_ref, 'feature/phase-2.3-slice-b-')
-    name: Native macOS Slice B delivery (${{ matrix.arch }})
+    if: >-
+      startsWith(github.head_ref, 'feature/phase-2.3-slice-b-') ||
+      startsWith(github.head_ref, 'feature/phase23-slice-d-')
+    name: Native macOS Core delivery (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -65,27 +68,51 @@ jobs:
           test "$(uname -m)" = "${{ matrix.arch }}"
           test "$(python -c 'import platform; print(platform.machine())')" = "${{ matrix.arch }}"
 
-      - name: Run focused Mac delivery contracts
+      - name: Run focused Mac and Slice D contracts
         shell: bash
         run: |
           PYTHONPATH=.:src python -m pytest -q \
             tests/test_package_baseline.py \
             tests/contract/test_phase23_mac_delta_source.py \
-            tests/contract/test_phase23_worker_status_contract.py
+            tests/contract/test_phase23_worker_status_contract.py \
+            tests/contract/test_phase23_diagnostic_contract.py \
+            tests/unit/diagnostics \
+            tests/integration/queue/test_diagnostic_result_commit.py \
+            tests/integration/queue/test_diagnostic_cancellation.py \
+            tests/integration/api/test_diagnostic_snapshot_api.py \
+            tests/integration/worker/test_diagnostic_worker_e2e.py
 
       - name: Run full Python regression
         shell: bash
         run: |
           PYTHONPATH=.:src python -m pytest -q
 
-      - name: Lint Slice B Python changes
+      - name: Lint Slice B and Slice D Python changes
         shell: bash
         run: |
           ruff check \
             src/picotoopet_core/api/contracts \
+            src/picotoopet_core/api/routes/tasks.py \
             src/picotoopet_core/api/routes/workers.py \
-            tests/contract/test_phase23_mac_delta_source.py \
-            tests/contract/test_phase23_worker_status_contract.py
+            src/picotoopet_core/diagnostics \
+            src/picotoopet_core/queue/diagnostic_repository.py \
+            src/picotoopet_core/results/repository.py \
+            src/picotoopet_core/results/store.py \
+            src/picotoopet_core/worker \
+            scripts/export_slice_d_openapi.py \
+            tests/contract/test_phase23_diagnostic_contract.py \
+            tests/unit/diagnostics \
+            tests/integration/api/test_diagnostic_snapshot_api.py \
+            tests/integration/queue/test_diagnostic_result_commit.py \
+            tests/integration/queue/test_diagnostic_cancellation.py \
+            tests/integration/worker/test_diagnostic_worker_e2e.py
+
+      - name: Export authoritative Slice D OpenAPI
+        shell: bash
+        run: |
+          PYTHONPATH=.:src python scripts/export_slice_d_openapi.py \
+            --output artifacts/openapi/mac_core_v1.openapi.json
+          python -m json.tool artifacts/openapi/mac_core_v1.openapi.json >/dev/null
 
       - name: Validate shell syntax on macOS Bash
         shell: bash
@@ -104,7 +131,7 @@ jobs:
           mkdir -p "$output"
           bash scripts/mac/phase23/Build-MacCoreSliceBDelta.sh \
             --output-root "$output" \
-            --version-label "2.3.0-slice-b-${{ github.run_number }}-${{ github.sha }}"
+            --version-label "2.3.0-slice-d-core-${{ github.run_number }}-${{ github.sha }}"
 
       - name: Verify package structure and hashes
         shell: bash
@@ -118,11 +145,19 @@ jobs:
           bash scripts/mac/phase23/Test-MacCoreSliceBFixture.sh \
             "artifacts/mac-slice-b/${{ matrix.arch }}"
 
+      - name: Upload authoritative OpenAPI
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-SliceD-OpenAPI-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 14
+          path: artifacts/openapi/mac_core_v1.openapi.json
+
       - name: Upload failed-run diagnostic package and evidence
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: PicotooPet-MacCore-SliceB-DIAGNOSTIC-${{ matrix.arch }}-${{ github.run_number }}
+          name: PicotooPet-MacCore-SliceD-DIAGNOSTIC-${{ matrix.arch }}-${{ github.run_number }}
           if-no-files-found: warn
           retention-days: 7
           path: |
@@ -131,11 +166,12 @@ jobs:
             artifacts/mac-slice-b/${{ matrix.arch }}/mac-build-report.json
             artifacts/mac-slice-b/${{ matrix.arch }}/fixture-evidence/*.json
             artifacts/mac-slice-b/${{ matrix.arch }}/fixture-evidence/*.txt
+            artifacts/openapi/mac_core_v1.openapi.json
 
       - name: Upload architecture-specific package and evidence
         uses: actions/upload-artifact@v7
         with:
-          name: PicotooPet-MacCore-SliceB-${{ matrix.arch }}-${{ github.run_number }}
+          name: PicotooPet-MacCore-SliceD-${{ matrix.arch }}-${{ github.run_number }}
           if-no-files-found: error
           retention-days: 14
           path: |
