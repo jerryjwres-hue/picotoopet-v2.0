@@ -49,6 +49,7 @@ class TaskRecord(BaseModel):
     priority: int
     resource_tag: str | None = None
     payload: dict[str, Any]
+    result_id: str | None = None
     attempt_count: int
     max_attempts: int
     timeout_seconds: int
