@@ -92,8 +92,9 @@ class QueueRepository:
             INSERT INTO tasks (
                 task_id, parent_task_id, project_id, task_type, status, priority,
                 resource_tag, idempotency_key, dedupe_key, payload_json,
-                attempt_count, max_attempts, timeout_seconds, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+                cloud_policy, attempt_count, max_attempts, timeout_seconds,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -106,6 +107,7 @@ class QueueRepository:
                 request.idempotency_key,
                 request.dedupe_key,
                 json.dumps(request.payload, ensure_ascii=False, separators=(",", ":")),
+                request.cloud_policy.value,
                 request.max_attempts,
                 request.timeout_seconds,
                 now.isoformat(),
