@@ -344,7 +344,13 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         {
             var retried = await session.RetryTaskAsync(selected.TaskId, cancellationToken)
                 .ConfigureAwait(true);
-            StatusMessage = $"已创建重试子任务 {retried.TaskId}。";
+            StatusMessage = selected.IsDiagnostic
+                && !string.Equals(
+                    retried.ParentTaskId,
+                    selected.TaskId,
+                    StringComparison.Ordinal)
+                ? $"已有活动诊断任务 {retried.TaskId}，未重复创建。"
+                : $"已创建重试子任务 {retried.TaskId}。";
         }
         catch (Exception)
         {
@@ -390,6 +396,7 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         }
         finally
         {
+            _observationTask = null;
             RaiseActionProperties();
         }
     }
