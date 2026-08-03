@@ -38,9 +38,12 @@ internal static class NavigationContentRenderingSmokeTests
         root.UpdateLayout();
 
         var page = FindVisualDescendant<TaskCenterPage>(host);
-        SmokeAssert.True(
-            page is not null,
-            "NavigationContentHost 未通过生产 DataTemplate 渲染 TaskCenterPage");
+        if (page is null)
+        {
+            throw new InvalidOperationException(
+                "NavigationContentHost 未通过生产 DataTemplate 渲染 TaskCenterPage");
+        }
+
         SmokeAssert.True(
             page.ActualWidth > 0 && page.ActualHeight > 0,
             "TaskCenterPage 已创建但没有可见布局尺寸");
