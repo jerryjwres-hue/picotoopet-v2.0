@@ -1,0 +1,1 @@
+User boundary: until the native Windows repair candidate is verified and installed, avoid Task Center. Other pages may be used. No Mac reinstall, rollback, token rotation, database deletion, or user-PC compilation is required for this incident.
