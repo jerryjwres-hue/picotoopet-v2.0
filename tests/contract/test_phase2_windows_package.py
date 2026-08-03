@@ -31,7 +31,7 @@ def test_double_click_entry_points_are_hidden_and_complete() -> None:
 
 
 def test_powershell_scripts_are_bom_encoded_for_windows_powershell_51() -> None:
-    """所有面向用户的 PowerShell 脚本必须使用 UTF-8 BOM。"""
+    """直接面向用户的仓库脚本必须有 BOM；预编译包脚本由构建器写入 BOM。"""
 
     expected = {
         "Install-Phase2Windows.ps1",
@@ -40,8 +40,20 @@ def test_powershell_scripts_are_bom_encoded_for_windows_powershell_51() -> None:
         "Build-Phase2Windows.ps1",
     }
     assert expected <= {path.name for path in SCRIPTS.glob("*.ps1")}
-    for path in SCRIPTS.glob("*.ps1"):
+    for name in expected:
+        path = SCRIPTS / name
         assert path.read_bytes().startswith(b"\xef\xbb\xbf"), path
+
+    builder = read("scripts/Build-Phase2WindowsRelease.ps1")
+    assert "function Copy-ReleaseFile" in builder
+    assert "[System.Text.UTF8Encoding]::new($true)" in builder
+    for name in (
+        "Install-Phase2Prebuilt.ps1",
+        "Verify-Phase2Prebuilt.ps1",
+        "Rollback-Phase2Prebuilt.ps1",
+        "Phase2Prebuilt.Common.ps1",
+    ):
+        assert name in builder
 
 
 def test_installer_uses_official_sdk_self_contained_publish_and_version_switch() -> None:
