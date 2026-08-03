@@ -286,6 +286,98 @@ class DiagnosticQueueRepository(QueueRepository):
             )
             return record
 
+    def recover_expired_supported_leases(
+        self,
+        *,
+        supported_task_types: tuple[str, ...],
+        now: datetime | None = None,
+        limit: int = 100,
+    ) -> list[str]:
+        """只恢复当前 Worker 明确支持且租约已过期的 Running 任务。"""
+
+        if not supported_task_types:
+            return []
+        checked_at = now or datetime.now(UTC)
+        bounded_limit = max(1, min(int(limit), 1000))
+        placeholders = ",".join("?" for _ in supported_task_types)
+        recovered: list[str] = []
+        with self.database.transaction() as connection:
+            rows = connection.execute(
+                "SELECT * FROM tasks "
+                "WHERE status = ? AND lease_expires_at IS NOT NULL "
+                "AND lease_expires_at < ? "
+                f"AND task_type IN ({placeholders}) "
+                "ORDER BY lease_expires_at ASC, rowid ASC LIMIT ?",
+                (
+                    TaskStatus.RUNNING.value,
+                    checked_at.isoformat(),
+                    *supported_task_types,
+                    bounded_limit,
+                ),
+            ).fetchall()
+            for row in rows:
+                target = (
+                    TaskStatus.FAILED
+                    if int(row["attempt_count"]) >= int(row["max_attempts"])
+                    else TaskStatus.RETRYING
+                )
+                ensure_transition(TaskStatus.RUNNING, target)
+                terminal_at = checked_at.isoformat() if target is TaskStatus.FAILED else None
+                connection.execute(
+                    """
+                    UPDATE tasks
+                    SET status = ?, lease_owner = NULL, lease_expires_at = NULL,
+                        updated_at = ?, finished_at = COALESCE(?, finished_at),
+                        error_code = ?, error_message = ?
+                    WHERE task_id = ?
+                    """,
+                    (
+                        target.value,
+                        checked_at.isoformat(),
+                        terminal_at,
+                        "LEASE_EXPIRED",
+                        "任务租约过期，已由受控恢复流程处理。",
+                        row["task_id"],
+                    ),
+                )
+                connection.execute(
+                    """
+                    UPDATE task_attempts
+                    SET finished_at = ?, status = ?, error_code = ?, error_message = ?
+                    WHERE task_id = ? AND finished_at IS NULL
+                    """,
+                    (
+                        checked_at.isoformat(),
+                        TaskStatus.FAILED.value,
+                        "LEASE_EXPIRED",
+                        "任务租约过期。",
+                        row["task_id"],
+                    ),
+                )
+                self._insert_event(
+                    connection,
+                    task_id=row["task_id"],
+                    from_status=TaskStatus.RUNNING,
+                    to_status=target,
+                    reason="lease_expired",
+                    trace_id=None,
+                    created_at=checked_at,
+                )
+                updated = connection.execute(
+                    "SELECT * FROM tasks WHERE task_id = ?",
+                    (row["task_id"],),
+                ).fetchone()
+                assert updated is not None
+                self._append_task_update(
+                    connection,
+                    record=self._row_to_record(updated),
+                    reason="lease_expired",
+                    trace_id=None,
+                    created_at=checked_at,
+                )
+                recovered.append(row["task_id"])
+        return recovered
+
     def promote_retries(
         self,
         *,
