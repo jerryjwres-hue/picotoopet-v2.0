@@ -9,6 +9,7 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 internal static class Program
 {
     /// <summary>运行确定性断言；任一失败返回非零退出码。</summary>
+    [STAThread]
     private static async Task<int> Main()
     {
         try
@@ -21,6 +22,7 @@ internal static class Program
             StateStoreSmokeTests.Run();
             NavigationSmokeTests.Run();
             TaskCenterSmokeTests.Run();
+            TaskCenterWpfLayoutSmokeTests.Run();
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
