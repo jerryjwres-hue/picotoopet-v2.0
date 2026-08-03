@@ -3,10 +3,16 @@ name: Windows Control Center Slice D CI
 on:
   pull_request:
     paths:
+      - "AGENTS.md"
+      - "contracts/release/project-goal-invariants.json"
+      - "scripts/stamp_windows_goal_integrity.py"
+      - "scripts/verify_project_goal_integrity.py"
       - ".github/workflows/windows-control-center-ci.yml"
       - "windows/desktop/**"
       - "tests/contract/**"
       - "tests/security/**"
+      - "tests/release/test_windows_analyzer_regressions.py"
+      - "tests/release/test_windows_goal_integrity_release_contract.py"
       - "tests/release/test_windows_prebuilt_delivery.py"
       - "src/**"
       - "pyproject.toml"
@@ -54,14 +60,16 @@ jobs:
             jsonschema==4.26.0 `
             PyYAML
 
-      - name: Run contract security and Windows release tests
+      - name: Run contract security release analyzer and goal-integrity tests
         shell: powershell
         run: |
           $env:PYTHONPATH = ".;src"
           python -m pytest -q `
             tests/contract `
             tests/security `
-            tests/release/test_windows_prebuilt_delivery.py
+            tests/release/test_windows_prebuilt_delivery.py `
+            tests/release/test_windows_analyzer_regressions.py `
+            tests/release/test_windows_goal_integrity_release_contract.py
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
@@ -120,6 +128,23 @@ jobs:
             -OutputRoot "windows\desktop\artifacts\control-center-release" `
             -Version $version
 
+      - name: Stamp and validate approved native WPF package
+        shell: powershell
+        run: |
+          $releaseRoot = "windows/desktop/artifacts/control-center-release"
+          python scripts/stamp_windows_goal_integrity.py --output-root $releaseRoot
+          if ($LASTEXITCODE -ne 0) {
+            throw "GOAL_INTEGRITY_VIOLATION: 无法加盖原生 WPF 目标合同。"
+          }
+          $packages = @(Get-ChildItem -LiteralPath $releaseRoot -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
+          if ($packages.Count -ne 1) {
+            throw "GOAL_INTEGRITY_VIOLATION: 原生包数量必须为 1，实际为 $($packages.Count)。"
+          }
+          python scripts/verify_project_goal_integrity.py $packages[0].FullName --report "$releaseRoot/goal-integrity-report.json"
+          if ($LASTEXITCODE -ne 0) {
+            throw "GOAL_INTEGRITY_VIOLATION: 实际 ZIP 改变了批准的 WPF 产品目标。"
+          }
+
       - name: Verify package lifecycle on Windows PowerShell 5.1
         shell: pwsh
         run: |
@@ -136,5 +161,7 @@ jobs:
             windows/desktop/artifacts/control-center-release/*.zip
             windows/desktop/artifacts/control-center-release/*.sha256.txt
             windows/desktop/artifacts/control-center-release/windows-build-report.json
+            windows/desktop/artifacts/control-center-release/goal-integrity-stamp-report.json
+            windows/desktop/artifacts/control-center-release/goal-integrity-report.json
             windows/desktop/artifacts/control-center-release/fixture-evidence/**
             windows/desktop/artifacts/control-center-self-test.json
