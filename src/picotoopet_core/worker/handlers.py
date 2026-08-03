@@ -11,9 +11,12 @@ from picotoopet_core.domain.models import TaskRecord
 
 @dataclass(frozen=True, slots=True)
 class HandlerResult:
-    """处理器的确定性最小结果；本切片不写外部结果对象。"""
+    """处理器的确定性结果；父 Runtime 仍拥有持久化和终态。"""
 
     summary: dict[str, Any]
+    result_document: dict[str, Any] | None = None
+    result_type: str | None = None
+    schema_version: str | None = None
 
 
 WorkerHandler = Callable[[TaskRecord], HandlerResult]
@@ -32,7 +35,12 @@ def _system_noop(task: TaskRecord) -> HandlerResult:
     )
 
 
-def default_handlers() -> dict[str, WorkerHandler]:
+def default_handlers(
+    diagnostic_handler: WorkerHandler | None = None,
+) -> dict[str, WorkerHandler]:
     """返回显式冻结的处理器映射，不做动态发现。"""
 
-    return {"system.noop": _system_noop}
+    handlers: dict[str, WorkerHandler] = {"system.noop": _system_noop}
+    if diagnostic_handler is not None:
+        handlers["system.diagnostic_snapshot"] = diagnostic_handler
+    return handlers
