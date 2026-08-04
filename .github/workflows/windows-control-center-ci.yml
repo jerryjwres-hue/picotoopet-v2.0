@@ -16,9 +16,19 @@ on:
       - "tests/release/test_windows_goal_integrity_release_contract.py"
       - "tests/release/test_windows_native_install_permission.py"
       - "tests/release/test_windows_native_ci_provenance.py"
+      - "tests/release/test_self_hosted_native_runner_fallback.py"
       - "src/**"
       - "pyproject.toml"
   workflow_dispatch:
+    inputs:
+      runner_target:
+        description: "Native Windows runner label"
+        required: true
+        default: picotoopet-windows-release
+        type: choice
+        options:
+          - picotoopet-windows-release
+          - windows-2025
 
 permissions:
   contents: read
@@ -30,7 +40,7 @@ concurrency:
 jobs:
   control-center:
     name: Native Windows Control Center Slice D gate
-    runs-on: windows-2025
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_target || 'windows-2025' }}
     timeout-minutes: 50
     env:
       CI: "true"
@@ -73,7 +83,8 @@ jobs:
             tests/release/test_windows_analyzer_regressions.py `
             tests/release/test_windows_goal_integrity_release_contract.py `
             tests/release/test_windows_native_install_permission.py `
-            tests/release/test_windows_native_ci_provenance.py
+            tests/release/test_windows_native_ci_provenance.py `
+            tests/release/test_self_hosted_native_runner_fallback.py
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
