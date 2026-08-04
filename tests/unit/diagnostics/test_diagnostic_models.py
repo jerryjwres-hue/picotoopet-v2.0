@@ -21,7 +21,7 @@ def _minimal_result() -> dict[str, object]:
         "core": {
             "version": "2.3.0",
             "health_state": "online",
-            "database_schema_version": 1,
+            "database_schema_version": 2,
         },
         "worker": {
             "worker_id": "picotoopet-m4-test",
@@ -42,7 +42,17 @@ def _minimal_result() -> dict[str, object]:
                 "name": "core_health",
                 "status": "pass",
                 "reason_code": "CORE_HEALTHY",
-            }
+            },
+            {
+                "name": "worker_heartbeat",
+                "status": "pass",
+                "reason_code": "WORKER_ONLINE",
+            },
+            {
+                "name": "queue_backlog",
+                "status": "pass",
+                "reason_code": "QUEUE_HEALTHY",
+            },
         ],
         "warnings": [],
     }
@@ -86,6 +96,16 @@ def test_result_accepts_only_fixed_cards_and_reason_codes() -> None:
             status="pass",
             reason_code="CORE_HEALTHY",
         ),
+        DiagnosticCheck(
+            name="worker_heartbeat",
+            status="pass",
+            reason_code="WORKER_ONLINE",
+        ),
+        DiagnosticCheck(
+            name="queue_backlog",
+            status="pass",
+            reason_code="QUEUE_HEALTHY",
+        ),
     )
 
 
@@ -118,6 +138,80 @@ def test_result_rejects_unknown_check_reason_code() -> None:
             "reason_code": "RAW_EXCEPTION_TEXT",
         }
     ]
+
+    with pytest.raises(ValidationError):
+        DiagnosticSnapshotResult.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "checks",
+    [
+        [
+            {
+                "name": "core_health",
+                "status": "pass",
+                "reason_code": "CORE_DEGRADED",
+            },
+            {
+                "name": "worker_heartbeat",
+                "status": "pass",
+                "reason_code": "WORKER_ONLINE",
+            },
+            {
+                "name": "queue_backlog",
+                "status": "pass",
+                "reason_code": "QUEUE_HEALTHY",
+            },
+        ],
+        [
+            {
+                "name": "core_health",
+                "status": "pass",
+                "reason_code": "CORE_HEALTHY",
+            },
+            {
+                "name": "worker_heartbeat",
+                "status": "fail",
+                "reason_code": "WORKER_STALE",
+            },
+            {
+                "name": "queue_backlog",
+                "status": "pass",
+                "reason_code": "QUEUE_HEALTHY",
+            },
+        ],
+    ],
+)
+def test_result_rejects_check_status_reason_mismatch(
+    checks: list[dict[str, str]],
+) -> None:
+    payload = _minimal_result()
+    payload["checks"] = checks
+
+    with pytest.raises(ValidationError):
+        DiagnosticSnapshotResult.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_worker_check",
+        "extra_worker_check",
+    ],
+)
+def test_result_requires_exactly_one_check_for_each_present_card(
+    mutation: str,
+) -> None:
+    payload = _minimal_result()
+    checks = list(payload["checks"])
+    if mutation == "missing_worker_check":
+        payload["checks"] = [
+            check
+            for check in checks
+            if check["name"] != "worker_heartbeat"
+        ]
+    else:
+        payload["worker"] = None
 
     with pytest.raises(ValidationError):
         DiagnosticSnapshotResult.model_validate(payload)
