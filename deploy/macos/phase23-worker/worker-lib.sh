@@ -2,6 +2,27 @@
 # Phase 2.3 Slice D Worker 安装、验证和回滚共享函数。
 set -euo pipefail
 
+phase23_worker_product_version() {
+  local package_root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+  phase23_product_version "$package_root"
+}
+
+verify_worker_product_version() {
+  local runtime_root="$1"
+  local expected_product_version="$2"
+  "$runtime_root/current/.venv/bin/python" - "$expected_product_version" <<'PY'
+import sys
+from picotoopet_core import __version__
+
+expected_product_version = sys.argv[1]
+if __version__ != expected_product_version:
+    raise SystemExit(
+        "Mac Worker product version mismatch: "
+        f"expected={expected_product_version!r}, actual={__version__!r}"
+    )
+PY
+}
+
 worker_label() {
   printf '%s\n' "com.picotoopet.worker"
 }
@@ -169,13 +190,15 @@ PY
 verify_slice_d_candidate_contract() {
   local base_url="$1"
   local token="$2"
-  python3 - "$base_url" "$token" <<'PY'
+  local expected_product_version="${3:-}"
+  python3 - "$base_url" "$token" "$expected_product_version" <<'PY'
 import json
 import sys
 import urllib.request
 
 base = sys.argv[1].rstrip("/")
 token = sys.argv[2]
+expected_product_version = sys.argv[3]
 
 
 def get(path: str, *, authenticated: bool = False):
@@ -187,6 +210,11 @@ def get(path: str, *, authenticated: bool = False):
 health = get("/api/v1/health")
 if health.get("status") != "ok":
     raise SystemExit(f"health failed: {health!r}")
+if expected_product_version and health.get("version") != expected_product_version:
+    raise SystemExit(
+        "Mac Worker Core product version mismatch: "
+        f"expected={expected_product_version!r}, actual={health.get('version')!r}"
+    )
 features = get("/api/v1/capabilities").get("features", {})
 if features.get("worker_status") is not True or features.get("local_worker") is not True:
     raise SystemExit(f"capabilities failed: {features!r}")
@@ -241,6 +269,7 @@ write_worker_report() {
   local install_path="$5"
   local error_message="${6:-}"
   local worker_installed="${7:-false}"
+  local product_version="${8:-}"
   local reports="$runtime_root/reports"
   mkdir -p "$reports"
   local stamp
@@ -252,7 +281,8 @@ write_worker_report() {
     "$version" \
     "$install_path" \
     "$error_message" \
-    "$worker_installed" <<'PY'
+    "$worker_installed" \
+    "$product_version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -260,6 +290,7 @@ from pathlib import Path
 payload = {
     "status": sys.argv[2],
     "version": sys.argv[3] or None,
+    "product_version": sys.argv[7] or None,
     "runtime_version": "2.3.0-slice-d-worker",
     "install_path": sys.argv[4] or None,
     "source_build_on_user_mac": False,
