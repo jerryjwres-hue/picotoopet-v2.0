@@ -102,6 +102,7 @@ def _manifest(*, extra_executable: bool) -> dict[str, object]:
 def _package(tmp_path: Path, *, extra_executable: bool) -> Path:
     package = tmp_path / "candidate.zip"
     root = "candidate"
+    gate = _gate_script()
     files: dict[str, bytes] = {
         f"{root}/release-manifest.json": json.dumps(
             _manifest(extra_executable=extra_executable)
@@ -110,9 +111,9 @@ def _package(tmp_path: Path, *, extra_executable: bool) -> Path:
         f"{root}/payload/Picotoo Pet AI.exe": _APP_BYTES,
         f"{root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe": _DIAGNOSTIC_BYTES,
         f"{root}/Phase2Prebuilt.Common.ps1": b"common",
-        f"{root}/Install-Phase2Prebuilt.ps1": _gate_script(),
-        f"{root}/Verify-Phase2Prebuilt.ps1": _gate_script(),
-        f"{root}/Rollback-Phase2Prebuilt.ps1": b"rollback",
+        f"{root}/Install-Phase2Prebuilt.ps1": gate,
+        f"{root}/Verify-Phase2Prebuilt.ps1": gate,
+        f"{root}/Rollback-Phase2Prebuilt.ps1": gate,
         f"{root}/INSTALL_PHASE2_WINDOWS.vbs": b"ascii",
         f"{root}/VERIFY_PHASE2_WINDOWS.vbs": b"ascii",
         f"{root}/ROLLBACK_PHASE2_WINDOWS.vbs": b"ascii",
