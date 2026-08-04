@@ -398,6 +398,8 @@ def _rewrite_manifest(
                     if data is None:
                         data = source.read(info.filename)
                     destination.writestr(info, data)
+            # Windows does not permit replacing a ZIP while its source handle is open.
+            source.close()
             os.replace(temporary, package)
         finally:
             temporary.unlink(missing_ok=True)
