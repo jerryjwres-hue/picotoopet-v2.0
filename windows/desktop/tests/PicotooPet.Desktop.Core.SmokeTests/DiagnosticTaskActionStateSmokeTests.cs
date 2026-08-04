@@ -8,6 +8,12 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>确保原生任务中心动作按钮与 Mac Core 的诊断状态机一致。</summary>
 internal static class DiagnosticTaskActionStateSmokeTests
 {
+    private static readonly string[] SupportedDiagnosticTaskTypes =
+    {
+        "system.diagnostic_snapshot",
+        "system.noop",
+    };
+
     public static void Run()
     {
         var now = new DateTimeOffset(2026, 8, 3, 12, 0, 0, TimeSpan.Zero);
@@ -17,11 +23,7 @@ internal static class DiagnosticTaskActionStateSmokeTests
             State: "online",
             Reason: "idle",
             WorkerId: "worker-m4",
-            SupportedTaskTypes: new[]
-            {
-                "system.diagnostic_snapshot",
-                "system.noop",
-            },
+            SupportedTaskTypes: SupportedDiagnosticTaskTypes,
             ObservedAt: now);
 
         var diagnosticRetrying = CreateTask(
