@@ -117,7 +117,7 @@ jobs:
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 -Version $version
 
       - name: Stamp approved native WPF delivery invariants
-        shell: powershell
+        shell: pwsh
         run: |
           python scripts/stamp_windows_goal_integrity.py --output-root windows/desktop/artifacts/release
           if ($LASTEXITCODE -ne 0) {
@@ -125,7 +125,7 @@ jobs:
           }
 
       - name: Validate actual installer against project goal contract
-        shell: powershell
+        shell: pwsh
         run: |
           $packages = @(Get-ChildItem -LiteralPath windows/desktop/artifacts/release -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
           if ($packages.Count -ne 1) {
