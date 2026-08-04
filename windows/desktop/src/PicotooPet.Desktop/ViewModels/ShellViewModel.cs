@@ -2,6 +2,7 @@ using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
+using PicotooPet.Desktop.Versioning;
 
 namespace PicotooPet.Desktop.ViewModels;
 
@@ -52,6 +53,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _approvalText      = capabilities.ApprovalList ? "审批能力可用" : "审批能力未启用";
         _statusMessage     = "确定性导航测试。";
     }
+
+    /// <summary>Windows 主窗口用户可见标题。</summary>
+    public string WindowTitle => ProductVersionInfo.WindowTitle;
+
+    /// <summary>Control Center 左上角用户可见版本副标题。</summary>
+    public string ControlCenterSubtitle => ProductVersionInfo.ControlCenterSubtitle;
 
     /// <summary>十个冻结的一级导航项。</summary>
     public IReadOnlyList<NavigationItem> NavigationItems
