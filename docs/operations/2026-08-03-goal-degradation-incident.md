@@ -43,10 +43,11 @@ Picotoo Pet AI.exe
 
 - r4 Helper 不能作为 Windows Slice D 正式包；
 - 不再维护或继续扩展浏览器 Helper；
-- Mac Core 已通过的安装/验证事实保持有效；
 - Windows run189 主程序保持有效；
 - 后续 Windows Slice D 只能作为现有 WPF 程序升级包交付；
 - 若原生构建或验证再次受阻，状态只能是 `BLOCKED`、`UNVERIFIED` 或 `DIAGNOSTIC`。
+
+此前 Mac Core Slice D 的安装和 VERIFY 报告仍然是此前已安装基线的有效证据，但不能证明之后的源码变化已经通过目标平台验证。当前分支后来增加了数据库迁移 002、诊断重试参数重新冻结、服务端与 WPF 结果合同一致性校验以及发布溯源门，因此正式交付前必须重新运行 Mac Core、Mac Worker 和 Windows 原生门。
 
 ## 永久门
 
@@ -57,13 +58,25 @@ Picotoo Pet AI.exe
 5. Windows 构建 Manifest 必须声明 WPF、现有入口 EXE、Task Center 集成和无浏览器 UI。
 6. Windows 发布工作流在上传 SUCCESS Artifact 前运行目标完整性验证。
 7. `user_install_allowed=true` 必须同时满足 `native_ci_verified=true`。
-8. 任何架构或交付表面变化必须在实现前获得用户明确批准。
+8. 可安装包必须记录仓库、GitHub Actions run ID、run attempt、workflow ref、源码头提交、源码分支和构建提交。
+9. `github_workflow_ref` 只允许来自以下原生 Windows 门：
+   - `.github/workflows/windows-control-center-ci.yml`；
+   - `.github/workflows/windows-phase2-release.yml`。
+10. 正式加盖器把同一目标与溯源检查注入安装脚本和 VERIFY 脚本；仅在 Manifest 中声明不算通过。
+11. 任何架构或交付表面变化必须在实现前获得用户明确批准。
+
+## 证据语义
+
+目标平台测试、安装、VERIFY 和 ROLLBACK 证据只适用于被验证的确切源码提交和确切安装包。旧基线的 `pass` 不得被解释为当前头提交的 `pass`。
+
+没有任何 Step 的 GitHub Actions Job 不提供测试、编译、打包或生命周期证据。该状态只能记录为 `BLOCKED` 或 `UNVERIFIED`，不能生成或推广正式可安装包。
 
 ## 验收结论
 
 ```text
 r4 Helper 安装：PASS
 Windows Slice D 项目目标：FAIL / 未交付
+当前最新分支：源码候选 / 原生未验证
 ```
 
 只有现有 `Picotoo Pet AI.exe` 的原生 WPF Slice D 包通过目标合同、WPF 测试、安装、VERIFY、ROLLBACK 和原生 Windows 验证后，才可以改为 Windows Slice D `PASS`。
