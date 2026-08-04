@@ -12,6 +12,8 @@ from scripts.verify_project_goal_integrity import GoalIntegrityError, verify_win
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "release" / "project-goal-invariants.json"
+PRODUCT_VERSION = "2.3.6.1"
+PRODUCT_VERSION_BYTES = (PRODUCT_VERSION + "\n").encode("utf-8")
 _APP_BYTES = b"MZ-native-wpf"
 _DIAGNOSTIC_BYTES = b"MZ-diagnostics"
 _UPDATER_BYTES = b"MZ-unapproved"
@@ -31,6 +33,7 @@ def _gate_script() -> bytes:
         '        "browser_ui" = $false\r\n'
         '        "local_http_ui" = $false\r\n'
         '        "github_repository" = "jerryjwres-hue/picotoopet-v2.0"\r\n'
+        '        "product_version" = "2.3.6.1"\r\n'
         '        "native_ci_verified" = $true\r\n'
         '        "user_install_allowed" = $true\r\n'
         '        "github_run_id"\r\n'
@@ -58,6 +61,7 @@ def _file_entry(path: str, data: bytes) -> dict[str, object]:
 
 def _manifest(*, extra_executable: bool) -> dict[str, object]:
     files = [
+        _file_entry("product-version.txt", PRODUCT_VERSION_BYTES),
         _file_entry("Picotoo Pet AI.exe", _APP_BYTES),
         _file_entry(
             "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
@@ -70,6 +74,7 @@ def _manifest(*, extra_executable: bool) -> dict[str, object]:
         "schema_version": "2.3.0",
         "release_type": "prebuilt",
         "version": "2.3.0-slice-d-native-wpf-test",
+        "product_version": PRODUCT_VERSION,
         "target": "win-x64",
         "native_ci_verified": True,
         "user_install_allowed": True,
@@ -101,6 +106,7 @@ def _package(tmp_path: Path, *, extra_executable: bool) -> Path:
         f"{root}/release-manifest.json": json.dumps(
             _manifest(extra_executable=extra_executable)
         ).encode(),
+        f"{root}/payload/product-version.txt": PRODUCT_VERSION_BYTES,
         f"{root}/payload/Picotoo Pet AI.exe": _APP_BYTES,
         f"{root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe": _DIAGNOSTIC_BYTES,
         f"{root}/Phase2Prebuilt.Common.ps1": b"common",
@@ -142,4 +148,5 @@ def test_accepts_only_the_two_approved_executables(tmp_path: Path) -> None:
     report = verify_windows_package(package, contract_path=CONTRACT)
 
     assert report["status"] == "pass"
-    assert report["verified_payload_files"] == 2
+    assert report["product_version"] == PRODUCT_VERSION
+    assert report["verified_payload_files"] == 3
