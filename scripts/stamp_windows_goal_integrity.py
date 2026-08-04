@@ -77,9 +77,24 @@ def _required_provenance_fields(windows_contract: dict[str, Any]) -> list[str]:
     return fields
 
 
+def _allowed_workflow_paths(windows_contract: dict[str, Any]) -> list[str]:
+    paths = windows_contract.get("allowed_native_ci_workflow_paths")
+    if not isinstance(paths, list) or not all(
+        isinstance(value, str) and value.startswith(".github/workflows/")
+        for value in paths
+    ):
+        raise GoalStampError(
+            "目标合同缺少 allowed_native_ci_workflow_paths。"
+        )
+    return paths
+
+
 def _validate_manifest_provenance(
     manifest: dict[str, Any],
     provenance_fields: list[str],
+    *,
+    repository: str,
+    allowed_workflow_paths: list[str],
 ) -> None:
     values: dict[str, str] = {}
     for field in provenance_fields:
@@ -93,8 +108,14 @@ def _validate_manifest_provenance(
             raise GoalStampError(f"原生 CI 溯源字段必须为正整数：{field}")
 
     workflow_ref = values.get("github_workflow_ref", "")
-    if ".github/workflows/" not in workflow_ref or "@" not in workflow_ref:
-        raise GoalStampError("github_workflow_ref 不是有效工作流引用。")
+    allowed_prefixes = tuple(
+        f"{repository}/{workflow_path}@".lower()
+        for workflow_path in allowed_workflow_paths
+    )
+    if not workflow_ref.lower().startswith(allowed_prefixes):
+        raise GoalStampError(
+            "github_workflow_ref 不属于批准的 Windows 原生 CI 工作流。"
+        )
 
     for field in ("source_head", "build_commit"):
         if not _GIT_SHA_PATTERN.fullmatch(values.get(field, "")):
@@ -131,6 +152,10 @@ def _goal_gate_block(
             raise GoalStampError(f"目标合同缺少字符串字段：{name}")
         string_lines.append(f"        {_ps_string(name)} = {_ps_string(value)}")
 
+    repository = required_values.get("github_repository")
+    if not isinstance(repository, str) or not repository:
+        raise GoalStampError("目标合同缺少 github_repository。")
+
     for name in ("source_build_on_user_pc", "browser_ui", "local_http_ui"):
         value = required_values.get(name)
         if not isinstance(value, bool):
@@ -144,6 +169,11 @@ def _goal_gate_block(
     provenance_fields = _required_provenance_fields(windows_contract)
     provenance_lines = ", ".join(
         _ps_string(field) for field in provenance_fields
+    )
+    allowed_workflows = _allowed_workflow_paths(windows_contract)
+    allowed_workflow_prefixes = ", ".join(
+        _ps_string(f"{repository}/{workflow_path}@")
+        for workflow_path in allowed_workflows
     )
 
     required_paths = windows_contract.get("required_archive_paths")
@@ -214,6 +244,20 @@ def _goal_gate_block(
         "    }",
         "    if ([string]$manifest.github_workflow_ref -notmatch '\\.github/workflows/.+@.+$') {",
         "        throw \"GOAL_INTEGRITY_VIOLATION: github_workflow_ref is invalid.\"",
+        "    }",
+        f"    $goalAllowedWorkflowPrefixes = @({allowed_workflow_prefixes})",
+        "    $goalWorkflowAllowed = $false",
+        "    foreach ($goalWorkflowPrefix in $goalAllowedWorkflowPrefixes) {",
+        "        if ([string]$manifest.github_workflow_ref -and",
+        "            ([string]$manifest.github_workflow_ref).StartsWith(",
+        "                $goalWorkflowPrefix,",
+        "                [System.StringComparison]::OrdinalIgnoreCase)) {",
+        "            $goalWorkflowAllowed = $true",
+        "            break",
+        "        }",
+        "    }",
+        "    if (-not $goalWorkflowAllowed) {",
+        "        throw \"GOAL_INTEGRITY_VIOLATION: github_workflow_ref is not an approved Windows native workflow.\"",
         "    }",
         "    if ([string]$manifest.source_head -notmatch '^[0-9a-fA-F]{40}$' -or",
         "        [string]$manifest.build_commit -notmatch '^[0-9a-fA-F]{40}$') {",
@@ -304,8 +348,17 @@ def _rewrite_manifest(
         native_verified = manifest.get("native_ci_verified") is True
         manifest["user_install_allowed"] = native_verified
         provenance_fields = _required_provenance_fields(windows_contract)
+        allowed_workflows = _allowed_workflow_paths(windows_contract)
+        repository = required_values.get("github_repository")
+        if not isinstance(repository, str) or not repository:
+            raise GoalStampError("目标合同缺少 github_repository。")
         if native_verified:
-            _validate_manifest_provenance(manifest, provenance_fields)
+            _validate_manifest_provenance(
+                manifest,
+                provenance_fields,
+                repository=repository,
+                allowed_workflow_paths=allowed_workflows,
+            )
         manifest_data = (
             json.dumps(
                 manifest,
@@ -368,6 +421,7 @@ def stamp_windows_release(
     if not isinstance(required, dict):
         raise GoalStampError("目标合同缺少 required_manifest_values。")
     provenance_fields = _required_provenance_fields(windows)
+    _allowed_workflow_paths(windows)
 
     package = _single_package(output)
     manifest = _rewrite_manifest(package, required, windows)
