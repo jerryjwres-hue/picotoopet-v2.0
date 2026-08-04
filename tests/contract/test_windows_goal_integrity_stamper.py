@@ -228,7 +228,7 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
         assert '"ui_framework" = "WPF"' in script
         assert '"integration_target" = "TaskCenter"' in script
         assert '"github_repository" = "jerryjwres-hue/picotoopet-v2.0"' in script
-        assert '"product_version" = "2.3.6.1"' in script
+        assert '"product_version" = ' not in script
         assert '"native_ci_verified" = $true' in script
         assert '"user_install_allowed" = $true' in script
         assert '"github_run_id"' in script
