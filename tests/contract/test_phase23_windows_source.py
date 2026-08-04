@@ -22,13 +22,14 @@ def read_core(relative: str) -> str:
 
 
 def test_shell_exists_and_desktop_remains_winexe() -> None:
-    """新 Shell 必须绑定冻结导航，同时保持无控制台的 WinExe 交付。"""
+    """新 Shell 必须绑定冻结导航和产品版本，同时保持无控制台 WinExe。"""
 
     shell = read("Views/ShellWindow.xaml")
     assert "NavigationItems" in shell
     assert "CurrentPage" in shell
     assert 'Width="232"' in shell
-    assert "Control Center · Slice B" in shell
+    assert 'Title="{Binding WindowTitle, Mode=OneWay}"' in shell
+    assert 'Text="{Binding ControlCenterSubtitle, Mode=OneWay}"' in shell
 
     project = read("PicotooPet.Desktop.csproj")
     assert "<OutputType>WinExe</OutputType>" in project
