@@ -173,6 +173,7 @@ function Invoke-ActivationCheck {
     param(
         [Parameter(Mandatory)][string]$Executable,
         [Parameter(Mandatory)][string]$WorkingDirectory,
+        [string]$ExpectedProductVersion = "",
         [switch]$SelfTest
     )
 
@@ -192,8 +193,9 @@ function Invoke-ActivationCheck {
         if ([string]$selfTestReport.status -ne "pass") {
             throw "激活自检报告不是 pass。"
         }
-        if ([string]$selfTestReport.product_version -ne $productVersion) {
-            throw "激活自检产品版本不一致：$($selfTestReport.product_version)"
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedProductVersion) -and
+            [string]$selfTestReport.product_version -ne $ExpectedProductVersion) {
+            throw "激活自检产品版本不一致：expected=$ExpectedProductVersion actual=$($selfTestReport.product_version)"
         }
         return [pscustomobject][ordered]@{
             mode        = "self-test"
@@ -234,9 +236,17 @@ function Restore-PreviousActivation {
     }
 
     if ($null -ne $previousCurrent) {
+        $previousProductVersion = ""
+        if ($previousCurrent.PSObject.Properties.Name -contains "product_version") {
+            $previousProductVersion = [string]$previousCurrent.product_version
+        }
+        elseif (Test-Path -LiteralPath (Join-Path ([string]$previousCurrent.path) "product-version.txt") -PathType Leaf) {
+            $previousProductVersion = Read-InstalledProductVersion -Root ([string]$previousCurrent.path)
+        }
         Invoke-ActivationCheck `
             -Executable ([string]$previousCurrent.executable) `
             -WorkingDirectory ([string]$previousCurrent.path) `
+            -ExpectedProductVersion $previousProductVersion `
             -SelfTest:$ActivationSelfTest | Out-Null
     }
 
@@ -419,6 +429,7 @@ try {
     $report.activation = Invoke-ActivationCheck `
         -Executable $executable `
         -WorkingDirectory $finalPath `
+        -ExpectedProductVersion $productVersion `
         -SelfTest:$ActivationSelfTest
 
     $report.status            = "pass"
