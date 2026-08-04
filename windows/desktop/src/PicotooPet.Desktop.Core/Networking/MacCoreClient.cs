@@ -322,10 +322,7 @@ public sealed class MacCoreClient : IAsyncDisposable
         int maxBytes,
         CancellationToken cancellationToken)
     {
-        if (maxBytes < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxBytes));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxBytes, 1);
         if (content.Headers.ContentLength is long length && length > maxBytes)
         {
             throw new ResponseTooLargeException();
