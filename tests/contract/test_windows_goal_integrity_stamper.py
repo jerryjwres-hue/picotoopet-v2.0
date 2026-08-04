@@ -19,10 +19,11 @@ def _write_candidate(
     *,
     native_ci_verified: bool,
     include_scripts: bool = True,
+    include_provenance: bool = True,
 ) -> tuple[Path, str]:
     archive_root = "candidate"
     package = tmp_path / "PicotooPet-Phase2-Windows-Prebuilt-test.zip"
-    manifest = {
+    manifest: dict[str, object] = {
         "release_type": "prebuilt",
         "target": "win-x64",
         "native_ci_verified": native_ci_verified,
@@ -40,6 +41,20 @@ def _write_candidate(
             },
         ],
     }
+    if include_provenance:
+        manifest.update(
+            {
+                "github_run_id": "123456789",
+                "github_run_attempt": "1",
+                "github_workflow_ref": (
+                    "jerryjwres-hue/picotoopet-v2.0/"
+                    ".github/workflows/windows-phase2-release.yml@refs/pull/8/merge"
+                ),
+                "source_head": "a" * 40,
+                "source_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
+                "build_commit": "b" * 40,
+            }
+        )
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr(
             f"{archive_root}/release-manifest.json",
@@ -103,6 +118,7 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
     assert updated["ui_framework"] == "WPF"
     assert updated["entry_executable"] == "Picotoo Pet AI.exe"
     assert updated["integration_target"] == "TaskCenter"
+    assert updated["github_repository"] == "jerryjwres-hue/picotoopet-v2.0"
     assert updated["browser_ui"] is False
     assert updated["local_http_ui"] is False
     assert updated["source_build_on_user_pc"] is False
@@ -113,8 +129,12 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
         assert '"delivery_surface" = "existing-native-wpf-desktop"' in script
         assert '"ui_framework" = "WPF"' in script
         assert '"integration_target" = "TaskCenter"' in script
+        assert '"github_repository" = "jerryjwres-hue/picotoopet-v2.0"' in script
         assert '"native_ci_verified" = $true' in script
         assert '"user_install_allowed" = $true' in script
+        assert '"github_run_id"' in script
+        assert '"github_workflow_ref"' in script
+        assert "native CI provenance is missing" in script
         assert "forbidden web UI payload" in script
         assert "[System.IO.Path]::DirectorySeparatorChar" in script
         assert "[System.IO.Path]::AltDirectorySeparatorChar" in script
@@ -127,7 +147,21 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
     )
     assert build_report["delivery_surface"] == "existing-native-wpf-desktop"
     assert build_report["user_install_allowed"] is False
+    assert build_report["github_run_id"] == "123456789"
     assert build_report["installer_goal_gate"] == "pass"
+
+
+def test_stamp_rejects_native_package_without_run_provenance(
+    tmp_path: Path,
+) -> None:
+    _write_candidate(
+        tmp_path,
+        native_ci_verified=True,
+        include_provenance=False,
+    )
+
+    with pytest.raises(GoalStampError, match="原生 CI 溯源字段"):
+        stamp_windows_release(tmp_path, contract_path=CONTRACT)
 
 
 def test_stamp_rejects_package_without_formal_install_and_verify_scripts(
