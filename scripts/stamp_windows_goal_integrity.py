@@ -6,7 +6,6 @@ import json
 import os
 import posixpath
 import re
-import shutil
 import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -27,6 +26,9 @@ _FORMAL_SCRIPTS = (
 )
 _GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 _POSITIVE_INTEGER_PATTERN = re.compile(r"^[1-9][0-9]*$")
+_MANIFEST_LOAD_PATTERN = re.compile(
+    r"(?m)^[ \t]*\$manifest = Read-JsonUtf8 -Path \$manifestPath[ \t]*$"
+)
 
 
 def _fail(message: str) -> GoalStampError:
@@ -230,11 +232,7 @@ $goalGateExpected = [ordered]@{{
 $goalGateRequiredProvenance = @({provenance_names})
 $goalGateAllowedWorkflowPaths = @({workflow_names})
 $goalGateAllowedExecutables = @({executable_names})
-$goalGateManifestPath = Join-Path $PSScriptRoot "release-manifest.json"
-if (-not (Test-Path -LiteralPath $goalGateManifestPath -PathType Leaf)) {{
-    throw "GOAL_INTEGRITY_VIOLATION: release-manifest.json missing"
-}}
-$goalGateManifest = Get-Content -LiteralPath $goalGateManifestPath -Raw | ConvertFrom-Json
+$goalGateManifest = $manifest
 foreach ($goalGateEntry in $goalGateExpected.GetEnumerator()) {{
     $goalGateProperty = $goalGateManifest.PSObject.Properties[$goalGateEntry.Key]
     if ($null -eq $goalGateProperty -or $goalGateProperty.Value -ne $goalGateEntry.Value) {{
@@ -293,8 +291,18 @@ def _inject_runtime_gate(path: Path, gate: str) -> None:
     except (OSError, UnicodeDecodeError) as error:
         raise _fail(f"无法读取正式脚本：{path.name}") from error
     if _GOAL_GATE_MARKER in text:
-        text = text.split(_GOAL_GATE_MARKER, 1)[0].rstrip() + "\n"
-    path.write_text(gate + "\n" + text, encoding="utf-8")
+        raise _fail(f"正式脚本已经包含目标门：{path.name}")
+
+    matches = list(_MANIFEST_LOAD_PATTERN.finditer(text))
+    if len(matches) != 1:
+        raise _fail(
+            f"无法在 {path.name} 中唯一定位 Manifest 读取边界。"
+        )
+    newline = "\r\n" if "\r\n" in text else "\n"
+    gate_text = gate.rstrip().replace("\n", newline)
+    insert_at = matches[0].end()
+    patched = text[:insert_at] + newline + gate_text + text[insert_at:]
+    path.write_text(patched, encoding="utf-8-sig")
 
 
 def _product_version(
