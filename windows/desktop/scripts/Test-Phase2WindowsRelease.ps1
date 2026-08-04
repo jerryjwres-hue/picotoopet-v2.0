@@ -36,6 +36,15 @@ function Write-JsonUtf8 {
         $encoding)
 }
 
+function Write-Utf8NoBom {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Value)
+
+    [System.IO.File]::WriteAllText(
+        $Path,
+        $Value,
+        [System.Text.UTF8Encoding]::new($false))
+}
+
 function Invoke-CheckedProcess {
     param(
         [Parameter(Mandatory)][string]$FilePath,
@@ -171,6 +180,24 @@ function Copy-PackageRoot {
     return $Destination
 }
 
+function Update-ManifestFileEntry {
+    param(
+        [Parameter(Mandatory)]$Manifest,
+        [Parameter(Mandatory)][string]$PackageRoot,
+        [Parameter(Mandatory)][string]$RelativePath
+    )
+
+    $path = Join-Path $PackageRoot ("payload\" + ($RelativePath -replace '/', '\'))
+    $entry = $Manifest.files | Where-Object {
+        [string]$_.path -eq $RelativePath
+    } | Select-Object -First 1
+    if ($null -eq $entry) {
+        throw "夹具清单缺少文件：$RelativePath"
+    }
+    $entry.sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $entry.size_bytes = (Get-Item -LiteralPath $path).Length
+}
+
 function Set-PackageVersion {
     param(
         [Parameter(Mandatory)][string]$PackageRoot,
@@ -180,6 +207,28 @@ function Set-PackageVersion {
     $manifestPath = Join-Path $PackageRoot "release-manifest.json"
     $manifest = Read-JsonUtf8 -Path $manifestPath
     $manifest.version = $Version
+    Write-JsonUtf8 -Value $manifest -Path $manifestPath
+    return $manifest
+}
+
+function Set-PackageProductVersion {
+    param(
+        [Parameter(Mandatory)][string]$PackageRoot,
+        [Parameter(Mandatory)][string]$ProductVersion
+    )
+
+    if ($ProductVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$') {
+        throw "夹具产品版本必须是四段数字：$ProductVersion"
+    }
+    $manifestPath = Join-Path $PackageRoot "release-manifest.json"
+    $manifest = Read-JsonUtf8 -Path $manifestPath
+    $manifest.product_version = $ProductVersion
+    $versionFile = Join-Path $PackageRoot "payload\product-version.txt"
+    Write-Utf8NoBom -Path $versionFile -Value "$ProductVersion`n"
+    Update-ManifestFileEntry `
+        -Manifest $manifest `
+        -PackageRoot $PackageRoot `
+        -RelativePath "product-version.txt"
     Write-JsonUtf8 -Value $manifest -Path $manifestPath
     return $manifest
 }
@@ -197,14 +246,10 @@ function Set-FastExitApplication {
     }
     $appPath = Join-Path $PackageRoot "payload\Picotoo Pet AI.exe"
     Copy-Item -LiteralPath $fastExit -Destination $appPath -Force
-    $entry = $manifest.files | Where-Object {
-        [string]$_.path -eq "Picotoo Pet AI.exe"
-    } | Select-Object -First 1
-    if ($null -eq $entry) {
-        throw "激活失败夹具清单缺少主程序。"
-    }
-    $entry.sha256 = (Get-FileHash -LiteralPath $appPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $entry.size_bytes = (Get-Item -LiteralPath $appPath).Length
+    Update-ManifestFileEntry `
+        -Manifest $manifest `
+        -PackageRoot $PackageRoot `
+        -RelativePath "Picotoo Pet AI.exe"
     Write-JsonUtf8 -Value $manifest -Path (Join-Path $PackageRoot "release-manifest.json")
 }
 
@@ -245,7 +290,9 @@ function Assert-PointerVersions {
     param(
         [Parameter(Mandatory)][string]$DataRoot,
         [Parameter(Mandatory)][string]$CurrentVersion,
-        [Parameter(Mandatory)][string]$PreviousVersion
+        [Parameter(Mandatory)][string]$PreviousVersion,
+        [string]$CurrentProductVersion = "",
+        [string]$PreviousProductVersion = ""
     )
 
     $current = Read-JsonUtf8 -Path (Join-Path $DataRoot "current_version.json")
@@ -256,21 +303,76 @@ function Assert-PointerVersions {
     if ([string]$previous.version -ne $PreviousVersion) {
         throw "previous_version.json 版本错误：$($previous.version)"
     }
+    if (-not [string]::IsNullOrWhiteSpace($CurrentProductVersion) -and
+        [string]$current.product_version -ne $CurrentProductVersion) {
+        throw "current_version.json 产品版本错误：$($current.product_version)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($PreviousProductVersion) -and
+        [string]$previous.product_version -ne $PreviousProductVersion) {
+        throw "previous_version.json 产品版本错误：$($previous.product_version)"
+    }
+    if (-not ($current.PSObject.Properties.Name -contains "shortcut_state") -or
+        -not ($previous.PSObject.Properties.Name -contains "shortcut_state")) {
+        throw "版本指针缺少 shortcut_state。"
+    }
     return [pscustomobject][ordered]@{
         current  = $current
         previous = $previous
     }
 }
 
-function Set-CorruptDesktopShortcut {
-    param([Parameter(Mandatory)][string]$DesktopDirectory)
+function Convert-ShortcutSnapshotToJson {
+    param([Parameter(Mandatory)]$ShortcutState)
 
-    $path = Join-Path $DesktopDirectory "Picotoo Pet AI.lnk"
+    return (@($ShortcutState | Sort-Object location, name) |
+        ConvertTo-Json -Depth 20 -Compress)
+}
+
+function Assert-ShortcutSnapshotEqual {
+    param(
+        [Parameter(Mandatory)]$Expected,
+        [Parameter(Mandatory)]$Actual
+    )
+
+    $expectedJson = Convert-ShortcutSnapshotToJson -ShortcutState $Expected
+    $actualJson = Convert-ShortcutSnapshotToJson -ShortcutState $Actual
+    if ($expectedJson -ne $actualJson) {
+        throw "快捷方式快照不一致。expected=$expectedJson actual=$actualJson"
+    }
+}
+
+function Assert-VersionedShortcutNames {
+    param(
+        [Parameter(Mandatory)]$ShortcutState,
+        [Parameter(Mandatory)][string]$ProductVersion
+    )
+
+    $expectedName = "Picotoo Pet AI $ProductVersion.lnk"
+    $entries = @($ShortcutState)
+    if ($entries.Count -ne 3) {
+        throw "版本快捷方式数量不是 3：$($entries.Count)"
+    }
+    foreach ($entry in $entries) {
+        if ([string]$entry.name -ne $expectedName) {
+            throw "快捷方式名称错误：$($entry.name)"
+        }
+    }
+}
+
+function Set-CorruptDesktopShortcut {
+    param(
+        [Parameter(Mandatory)][string]$DesktopDirectory,
+        [Parameter(Mandatory)][string]$ProductVersion
+    )
+
+    $path = Join-Path $DesktopDirectory "Picotoo Pet AI $ProductVersion.lnk"
     $shell = New-Object -ComObject WScript.Shell
     try {
         $shortcut = $shell.CreateShortcut($path)
         $shortcut.TargetPath = Join-Path $env:SystemRoot "System32\notepad.exe"
+        $shortcut.Arguments = "/fixture-corrupt"
         $shortcut.WorkingDirectory = $env:SystemRoot
+        $shortcut.Description = "fixture-corrupt"
         $shortcut.Save()
     }
     finally {
@@ -314,8 +416,13 @@ function Invoke-LifecycleFixture {
         $versionA = "fixture-$Name-a"
         $versionB = "fixture-$Name-b"
         $versionFailure = "fixture-$Name-activation-failure"
+        $productVersionA = "2.3.5.9"
+        $productVersionB = "2.3.6.1"
         [void](Set-PackageVersion -PackageRoot $packageA -Version $versionA)
+        [void](Set-PackageProductVersion -PackageRoot $packageA -ProductVersion $productVersionA)
         [void](Set-PackageVersion -PackageRoot $packageB -Version $versionB)
+        [void](Set-PackageProductVersion -PackageRoot $packageB -ProductVersion $productVersionB)
+        [void](Set-PackageProductVersion -PackageRoot $packageFailure -ProductVersion $productVersionB)
         Set-FastExitApplication -PackageRoot $packageFailure -Version $versionFailure
 
         $installerA       = Join-Path $packageA "Install-Phase2Prebuilt.ps1"
@@ -324,6 +431,7 @@ function Invoke-LifecycleFixture {
         $verifierB        = Join-Path $packageB "Verify-Phase2Prebuilt.ps1"
         $rollbackB        = Join-Path $packageB "Rollback-Phase2Prebuilt.ps1"
         $commonB          = Join-Path $packageB "Phase2Prebuilt.Common.ps1"
+        . $commonB
 
         [void](Invoke-ReleaseScript -ScriptPath $installerA -Arguments @(
             "-PackageRoot", $packageA,
@@ -337,9 +445,11 @@ function Invoke-LifecycleFixture {
             -Filter "phase2-prebuilt-install-*.json" `
             -Destination (Join-Path $EvidenceRoot "$Name-install-a.json") `
             -ExpectedStatus "pass"
-        if (-not [bool]$installA.shortcuts_verified) {
-            throw "版本 A 安装没有验证三处快捷方式。"
-        }
+        Assert-VersionedShortcutNames `
+            -ShortcutState $installA.shortcut_state `
+            -ProductVersion $productVersionA
+        $snapshotA = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+        Assert-ShortcutSnapshotEqual -Expected $installA.shortcut_state -Actual $snapshotA
 
         [void](Invoke-ReleaseScript -ScriptPath $installerB -Arguments @(
             "-PackageRoot", $packageB,
@@ -353,13 +463,23 @@ function Invoke-LifecycleFixture {
             -Filter "phase2-prebuilt-install-*.json" `
             -Destination (Join-Path $EvidenceRoot "$Name-install-b.json") `
             -ExpectedStatus "pass"
-        if (-not [bool]$installB.shortcuts_verified) {
-            throw "版本 B 安装没有验证三处快捷方式。"
+        Assert-VersionedShortcutNames `
+            -ShortcutState $installB.shortcut_state `
+            -ProductVersion $productVersionB
+        $snapshotB = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+        Assert-ShortcutSnapshotEqual -Expected $installB.shortcut_state -Actual $snapshotB
+        if (Test-Path -LiteralPath (Join-Path $DesktopDirectory "Picotoo Pet AI 2.3.5.9.lnk")) {
+            throw "升级后仍保留旧版本快捷方式。"
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $DesktopDirectory "Picotoo Pet AI 2.3.6.1.lnk"))) {
+            throw "升级后缺少当前版本快捷方式。"
         }
         [void](Assert-PointerVersions `
             -DataRoot $dataRoot `
             -CurrentVersion $versionB `
-            -PreviousVersion $versionA)
+            -PreviousVersion $versionA `
+            -CurrentProductVersion $productVersionB `
+            -PreviousProductVersion $productVersionA)
 
         [void](Invoke-ReleaseScript -ScriptPath $verifierB -Arguments @(
             "-DataRoot", $dataRoot,
@@ -372,11 +492,14 @@ function Invoke-LifecycleFixture {
             -Filter "phase2-windows-verification.json" `
             -Destination (Join-Path $EvidenceRoot "$Name-verify-b.json") `
             -ExpectedStatus "pass"
-        if (-not [bool]$verification.release_validation.shortcuts_verified) {
-            throw "VERIFY 没有验证三处快捷方式。"
+        if ([string]$verification.product_version -ne $productVersionB -or
+            -not [bool]$verification.release_validation.shortcuts_verified) {
+            throw "VERIFY 没有验证产品版本和三处快捷方式。"
         }
 
-        Set-CorruptDesktopShortcut -DesktopDirectory $DesktopDirectory
+        Set-CorruptDesktopShortcut `
+            -DesktopDirectory $DesktopDirectory `
+            -ProductVersion $productVersionB
         [void](Invoke-ReleaseScript -ScriptPath $rollbackB -Arguments @(
             "-DataRoot", $dataRoot,
             "-DesktopDirectory", $DesktopDirectory,
@@ -388,19 +511,25 @@ function Invoke-LifecycleFixture {
             -Filter "phase2-rollback-*.json" `
             -Destination (Join-Path $EvidenceRoot "$Name-rollback-a.json") `
             -ExpectedStatus "pass"
-        if (-not [bool]$rollback.shortcuts_verified) {
-            throw "ROLLBACK 没有恢复并验证三处快捷方式。"
+        if (-not [bool]$rollback.shortcuts_verified -or
+            [string]$rollback.restored_product_version -ne $productVersionA) {
+            throw "ROLLBACK 没有恢复产品版本和快捷方式。"
         }
         $pointers = Assert-PointerVersions `
             -DataRoot $dataRoot `
             -CurrentVersion $versionA `
-            -PreviousVersion $versionB
-
-        . $commonB
+            -PreviousVersion $versionB `
+            -CurrentProductVersion $productVersionA `
+            -PreviousProductVersion $productVersionB
+        $restoredA = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+        Assert-ShortcutSnapshotEqual -Expected $snapshotA -Actual $restoredA
         [void](Assert-PicotooShortcuts `
             -Executable ([string]$pointers.current.executable) `
-            -DesktopDirectory $DesktopDirectory)
+            -ProductVersion $productVersionA `
+            -DesktopDirectory $DesktopDirectory `
+            -RequireNoLegacy)
 
+        $beforeFailure = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         [void](Invoke-ReleaseScript `
             -ScriptPath $installerFailure `
             -Arguments @(
@@ -417,16 +546,22 @@ function Invoke-LifecycleFixture {
             -Destination (Join-Path $EvidenceRoot "$Name-activation-failure-recovery.json") `
             -ExpectedStatus "fail"
         if ($null -eq $failureReport.recovery_shortcuts -or
-            -not [bool]$failureReport.recovery_shortcuts.shortcuts_verified) {
-            throw "激活失败后没有恢复并验证三处快捷方式。"
+            [string]$failureReport.recovery_shortcuts.restore_mode -ne "pre-activation-snapshot") {
+            throw "激活失败后没有按快照恢复快捷方式。"
         }
+        $afterFailure = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+        Assert-ShortcutSnapshotEqual -Expected $beforeFailure -Actual $afterFailure
         $restoredPointers = Assert-PointerVersions `
             -DataRoot $dataRoot `
             -CurrentVersion $versionA `
-            -PreviousVersion $versionB
+            -PreviousVersion $versionB `
+            -CurrentProductVersion $productVersionA `
+            -PreviousProductVersion $productVersionB
         [void](Assert-PicotooShortcuts `
             -Executable ([string]$restoredPointers.current.executable) `
-            -DesktopDirectory $DesktopDirectory)
+            -ProductVersion $productVersionA `
+            -DesktopDirectory $DesktopDirectory `
+            -RequireNoLegacy)
 
         Write-Host "PHASE2_WINDOWS_LIFECYCLE_FIXTURE=PASS | $Name"
     }
@@ -477,6 +612,12 @@ try {
     }
     if ([string]$manifest.target -ne "win-x64") {
         throw "发布目标不是 win-x64。"
+    }
+    if ([string]$manifest.product_version -ne "2.3.6.1") {
+        throw "正式包 product_version 不是 2.3.6.1。"
+    }
+    if ($zip.Name -notlike "*-$($manifest.product_version)-*") {
+        throw "正式 ZIP 名称没有产品版本。"
     }
     if (-not [bool]$manifest.native_ci_verified) {
         throw "发布清单没有 native_ci_verified=true。"
@@ -545,8 +686,9 @@ try {
         throw "桌面自检报告缺失。"
     }
     $selfTest = Read-JsonUtf8 -Path $selfTestPath
-    if ([string]$selfTest.status -ne "pass") {
-        throw "桌面自检报告不是 pass。"
+    if ([string]$selfTest.status -ne "pass" -or
+        [string]$selfTest.product_version -ne "2.3.6.1") {
+        throw "桌面自检报告产品版本不是 pass/2.3.6.1。"
     }
 
     $normalDesktop = Join-Path $fixtureRoot "normal\User\Desktop"
@@ -571,7 +713,9 @@ try {
 
     Write-Host "PHASE2_WINDOWS_RELEASE_TEST=PASS"
     Write-Host "PHASE23_TASK_CENTER_PACKAGE_TEST=PASS"
+    Write-Host "PHASE23_PRODUCT_VERSION_PACKAGE_TEST=PASS"
     Write-Host "PHASE2_WINDOWS_INSTALL_VERIFY_ROLLBACK=PASS"
+    Write-Host "PRODUCT_VERSION=$($manifest.product_version)"
     Write-Host "PACKAGE=$($zip.FullName)"
 }
 finally {
