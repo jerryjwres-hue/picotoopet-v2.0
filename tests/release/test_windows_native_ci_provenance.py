@@ -16,6 +16,10 @@ from scripts.verify_project_goal_integrity import (
 ROOT = Path(__file__).resolve().parents[2]
 BUILDER = ROOT / "windows" / "desktop" / "scripts" / "Build-Phase2WindowsRelease.ps1"
 CONTRACT = ROOT / "contracts" / "release" / "project-goal-invariants.json"
+_ALLOWED_WORKFLOWS = [
+    ".github/workflows/windows-control-center-ci.yml",
+    ".github/workflows/windows-phase2-release.yml",
+]
 
 
 def _goal_gate_script() -> bytes:
@@ -40,6 +44,8 @@ def _goal_gate_script() -> bytes:
         '        "source_head"\r\n'
         '        "source_ref"\r\n'
         '        "build_commit"\r\n'
+        '        ".github/workflows/windows-control-center-ci.yml"\r\n'
+        '        ".github/workflows/windows-phase2-release.yml"\r\n'
         '        throw "GOAL_INTEGRITY_VIOLATION: forbidden web UI payload"\r\n'
     ).encode("utf-8-sig")
 
@@ -63,6 +69,17 @@ def _manifest() -> dict[str, object]:
         "source_head": "a" * 40,
         "source_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
         "build_commit": "b" * 40,
+    }
+
+
+def _complete_manifest(*, workflow_path: str) -> dict[str, object]:
+    return _manifest() | {
+        "github_run_id": "123456789",
+        "github_run_attempt": "1",
+        "github_workflow_ref": (
+            "jerryjwres-hue/picotoopet-v2.0/"
+            f"{workflow_path}@refs/pull/8/merge"
+        ),
     }
 
 
@@ -92,6 +109,16 @@ def test_installable_package_requires_native_ci_run_provenance(tmp_path: Path) -
         verify_windows_package(package)
 
 
+def test_installable_package_rejects_unapproved_workflow(tmp_path: Path) -> None:
+    package = _make_package(
+        tmp_path,
+        _complete_manifest(workflow_path=".github/workflows/untrusted.yml"),
+    )
+
+    with pytest.raises(GoalIntegrityError, match="workflow|工作流"):
+        verify_windows_package(package)
+
+
 def test_builder_records_native_ci_run_provenance() -> None:
     source = BUILDER.read_text(encoding="utf-8-sig")
     assignments = {
@@ -104,6 +131,8 @@ def test_builder_records_native_ci_run_provenance() -> None:
     for field, environment_name in assignments.items():
         pattern = rf"{field}\s*=\s*\$env:{environment_name}"
         assert re.search(pattern, source), field
+    for workflow_path in _ALLOWED_WORKFLOWS:
+        assert workflow_path in source
 
 
 def test_goal_contract_freezes_repository_and_provenance_fields() -> None:
@@ -121,3 +150,4 @@ def test_goal_contract_freezes_repository_and_provenance_fields() -> None:
         "source_ref",
         "build_commit",
     ]
+    assert windows["allowed_native_ci_workflow_paths"] == _ALLOWED_WORKFLOWS
