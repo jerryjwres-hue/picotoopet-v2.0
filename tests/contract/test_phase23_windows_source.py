@@ -188,23 +188,27 @@ def test_dashboard_exposes_worker_state_without_fake_availability() -> None:
 
 
 def test_control_center_native_windows_ci_has_required_gates() -> None:
-    """独立 Slice B CI 必须在原生 Windows 上执行合同、构建、自检和包级复验。"""
+    """独立 Slice D CI 必须执行原生构建、自检、盖章和安装生命周期复验。"""
 
     workflow = (
         ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
     ).read_text(encoding="utf-8")
     for required in (
         "windows-2025",
+        "workflow_dispatch",
+        "inputs.runner_target",
         "setup-python",
         "setup-dotnet",
         "pytest",
         "dotnet build",
         "PicotooPet.Desktop.Core.SmokeTests",
         "PHASE23_TASK_CENTER_SELF_TEST=PASS",
-        "2.3.0-slice-b-",
+        "2.3.0-slice-d-diagnostic-",
         "Build-Phase2WindowsRelease.ps1",
-        "Test-Phase2WindowsRelease.ps1",
-        "powershell",
+        "stamp_windows_goal_integrity.py",
+        "verify_project_goal_integrity.py",
+        "Invoke-Phase2WindowsReleaseLifecycleGate.ps1",
+        "shell: pwsh",
         "upload-artifact",
     ):
         assert required in workflow
