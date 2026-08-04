@@ -67,6 +67,7 @@ def _make_package(
 ) -> Path:
     root = "candidate"
     package = tmp_path / "candidate.zip"
+    gate = _goal_gate_script()
     files = {
         f"{root}/release-manifest.json": json.dumps(
             manifest,
@@ -81,9 +82,9 @@ def _make_package(
         f"{root}/INSTALL_PHASE2_WINDOWS.vbs": b"ascii",
         f"{root}/VERIFY_PHASE2_WINDOWS.vbs": b"ascii",
         f"{root}/ROLLBACK_PHASE2_WINDOWS.vbs": b"ascii",
-        f"{root}/Install-Phase2Prebuilt.ps1": _goal_gate_script(),
-        f"{root}/Verify-Phase2Prebuilt.ps1": _goal_gate_script(),
-        f"{root}/Rollback-Phase2Prebuilt.ps1": b"Write-Host rollback",
+        f"{root}/Install-Phase2Prebuilt.ps1": gate,
+        f"{root}/Verify-Phase2Prebuilt.ps1": gate,
+        f"{root}/Rollback-Phase2Prebuilt.ps1": gate,
     }
     files.update(extra_files or {})
     with zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED) as archive:
