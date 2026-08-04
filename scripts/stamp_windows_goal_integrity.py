@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import tempfile
 import zipfile
 from pathlib import Path
@@ -18,6 +19,8 @@ _FORMAL_SCRIPTS = (
     "Install-Phase2Prebuilt.ps1",
     "Verify-Phase2Prebuilt.ps1",
 )
+_GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+_POSITIVE_INTEGER_PATTERN = re.compile(r"^[1-9][0-9]*$")
 
 
 class GoalStampError(RuntimeError):
@@ -63,6 +66,41 @@ def _ps_string(value: str) -> str:
     return '"' + value.replace("`", "``").replace('"', '`"') + '"'
 
 
+def _required_provenance_fields(windows_contract: dict[str, Any]) -> list[str]:
+    fields = windows_contract.get("required_native_ci_provenance_fields")
+    if not isinstance(fields, list) or not all(
+        isinstance(value, str) and value for value in fields
+    ):
+        raise GoalStampError(
+            "目标合同缺少 required_native_ci_provenance_fields。"
+        )
+    return fields
+
+
+def _validate_manifest_provenance(
+    manifest: dict[str, Any],
+    provenance_fields: list[str],
+) -> None:
+    values: dict[str, str] = {}
+    for field in provenance_fields:
+        value = manifest.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise GoalStampError(f"可安装包缺少原生 CI 溯源字段：{field}")
+        values[field] = value.strip()
+
+    for field in ("github_run_id", "github_run_attempt"):
+        if not _POSITIVE_INTEGER_PATTERN.fullmatch(values.get(field, "")):
+            raise GoalStampError(f"原生 CI 溯源字段必须为正整数：{field}")
+
+    workflow_ref = values.get("github_workflow_ref", "")
+    if ".github/workflows/" not in workflow_ref or "@" not in workflow_ref:
+        raise GoalStampError("github_workflow_ref 不是有效工作流引用。")
+
+    for field in ("source_head", "build_commit"):
+        if not _GIT_SHA_PATTERN.fullmatch(values.get(field, "")):
+            raise GoalStampError(f"原生 CI 溯源字段必须为 40 位 Git SHA：{field}")
+
+
 def _goal_gate_block(
     required_values: dict[str, Any],
     windows_contract: dict[str, Any],
@@ -76,6 +114,7 @@ def _goal_gate_block(
         "ui_framework",
         "entry_executable",
         "integration_target",
+        "github_repository",
     )
     boolean_values: dict[str, bool] = {
         "source_build_on_user_pc": False,
@@ -102,6 +141,10 @@ def _goal_gate_block(
         f"        {_ps_string(name)} = ${str(value).lower()}"
         for name, value in boolean_values.items()
     ]
+    provenance_fields = _required_provenance_fields(windows_contract)
+    provenance_lines = ", ".join(
+        _ps_string(field) for field in provenance_fields
+    )
 
     required_paths = windows_contract.get("required_archive_paths")
     if not isinstance(required_paths, list) or not required_paths:
@@ -156,6 +199,25 @@ def _goal_gate_block(
         "            [bool]$goalProperty.Value -ne [bool]$goalRequiredBooleans[$goalName]) {",
         "            throw \"GOAL_INTEGRITY_VIOLATION: manifest boolean $goalName does not match the approved native WPF goal.\"",
         "        }",
+        "    }",
+        f"    $goalRequiredProvenance = @({provenance_lines})",
+        "    foreach ($goalName in $goalRequiredProvenance) {",
+        "        $goalProperty = $manifest.PSObject.Properties[$goalName]",
+        "        if ($null -eq $goalProperty -or",
+        "            [string]::IsNullOrWhiteSpace([string]$goalProperty.Value)) {",
+        "            throw \"GOAL_INTEGRITY_VIOLATION: native CI provenance is missing: $goalName\"",
+        "        }",
+        "    }",
+        "    if ([string]$manifest.github_run_id -notmatch '^[1-9][0-9]*$' -or",
+        "        [string]$manifest.github_run_attempt -notmatch '^[1-9][0-9]*$') {",
+        "        throw \"GOAL_INTEGRITY_VIOLATION: native CI run provenance is invalid.\"",
+        "    }",
+        "    if ([string]$manifest.github_workflow_ref -notmatch '\\.github/workflows/.+@.+$') {",
+        "        throw \"GOAL_INTEGRITY_VIOLATION: github_workflow_ref is invalid.\"",
+        "    }",
+        "    if ([string]$manifest.source_head -notmatch '^[0-9a-fA-F]{40}$' -or",
+        "        [string]$manifest.build_commit -notmatch '^[0-9a-fA-F]{40}$') {",
+        "        throw \"GOAL_INTEGRITY_VIOLATION: source commit provenance is invalid.\"",
         "    }",
         "    if (-not ($manifest.PSObject.Properties.Name -contains \"files\") -or",
         "        $null -eq $manifest.files) {",
@@ -241,6 +303,9 @@ def _rewrite_manifest(
         manifest.update(required_values)
         native_verified = manifest.get("native_ci_verified") is True
         manifest["user_install_allowed"] = native_verified
+        provenance_fields = _required_provenance_fields(windows_contract)
+        if native_verified:
+            _validate_manifest_provenance(manifest, provenance_fields)
         manifest_data = (
             json.dumps(
                 manifest,
@@ -302,6 +367,7 @@ def stamp_windows_release(
     required = windows.get("required_manifest_values")
     if not isinstance(required, dict):
         raise GoalStampError("目标合同缺少 required_manifest_values。")
+    provenance_fields = _required_provenance_fields(windows)
 
     package = _single_package(output)
     manifest = _rewrite_manifest(package, required, windows)
@@ -318,6 +384,8 @@ def stamp_windows_release(
     build_report["user_install_allowed"] = (
         manifest.get("user_install_allowed") is True
     )
+    for field in provenance_fields:
+        build_report[field] = manifest.get(field)
     build_report["installer_goal_gate"] = "pass"
     build_report["package"] = str(package)
     build_report["package_sha256"] = digest
@@ -335,6 +403,12 @@ def stamp_windows_release(
         "integration_target": manifest["integration_target"],
         "native_ci_verified": manifest.get("native_ci_verified"),
         "user_install_allowed": manifest.get("user_install_allowed"),
+        "github_repository": manifest.get("github_repository"),
+        "github_run_id": manifest.get("github_run_id"),
+        "github_run_attempt": manifest.get("github_run_attempt"),
+        "github_workflow_ref": manifest.get("github_workflow_ref"),
+        "source_head": manifest.get("source_head"),
+        "build_commit": manifest.get("build_commit"),
         "installer_goal_gate": "pass",
     }
     _write_json(output / "goal-integrity-stamp-report.json", report)
