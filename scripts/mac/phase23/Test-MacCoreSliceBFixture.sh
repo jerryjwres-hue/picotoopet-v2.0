@@ -34,6 +34,11 @@ package_root="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d -print | he
 # shellcheck source=/dev/null
 source "$package_root/lib.sh"
 package_version="$(read_manifest "$package_root" package_version)"
+product_version="$(phase23_product_version "$package_root")"
+if [[ "$(read_manifest "$package_root" product_version)" != "$product_version" ]]; then
+  echo "Fixture Manifest product_version 不一致。" >&2
+  exit 1
+fi
 
 cleanup() {
   stop_fixture_service "$runtime_root" || true
@@ -127,6 +132,16 @@ stop_fixture_service "$runtime_root"
 bash "$package_root/INSTALL_MAC_CORE_SLICE_B.command" --package-root "$package_root"
 bash "$package_root/VERIFY_MAC_CORE_SLICE_B.command"
 
+active_product_version="$("$runtime_root/current/.venv/bin/python" - <<'PY'
+from picotoopet_core import __version__
+print(__version__)
+PY
+)"
+if [[ "$active_product_version" != "$product_version" ]]; then
+  echo "Fixture 激活 Core 产品版本不一致：expected=$product_version actual=$active_product_version" >&2
+  exit 1
+fi
+
 after_snapshot="$temp_root/queued-after.json"
 worker_after="$temp_root/worker-after.json"
 python3 - \
@@ -177,6 +192,7 @@ PY
 echo "PHASE23_MAC_DELTA_INSTALL_FIXTURE=PASS"
 echo "PHASE23_MAC_DELTA_QUEUED_PRESERVATION=PASS"
 echo "PHASE23_MAC_SLICE_D_CORE_WORKER_PRESERVATION=PASS"
+echo "PHASE23_MAC_SLICE_D_CORE_PRODUCT_VERSION=PASS"
 
 bash "$package_root/ROLLBACK_MAC_CORE_SLICE_B.command"
 start_fixture_service \
@@ -204,7 +220,11 @@ cp "$worker_after" "$evidence_root/worker-after.json"
 cp "$runtime_root/state/previous-version.txt" "$evidence_root/previous-version.txt"
 cp "$runtime_root/state/rollback-from.txt" "$evidence_root/rollback-from.txt"
 find "$runtime_root/reports" -maxdepth 1 -type f -name '*.json' -exec cp {} "$evidence_root/" \;
-python3 - "$evidence_root/fixture-summary.json" "$(uname -m)" "$package_version" <<'PY'
+python3 - \
+  "$evidence_root/fixture-summary.json" \
+  "$(uname -m)" \
+  "$package_version" \
+  "$product_version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -215,11 +235,13 @@ Path(sys.argv[1]).write_text(
             "status": "pass",
             "architecture": sys.argv[2],
             "package_version": sys.argv[3],
+            "product_version": sys.argv[4],
             "runtime_version": "2.3.0-slice-d-core",
             "offline_install": True,
             "queued_task_preserved": True,
             "existing_worker_state_preserved": True,
             "diagnostic_api_verified": True,
+            "active_product_version_verified": True,
             "rollback_verified": True,
             "runtime_path_with_spaces": True,
             "source_build_on_user_mac": False,
@@ -235,4 +257,5 @@ PY
 
 echo "PHASE23_MAC_DELTA_ROLLBACK_FIXTURE=PASS"
 echo "PHASE23_MAC_SLICE_D_CORE_FIXTURE=PASS"
+echo "PRODUCT_VERSION=$product_version"
 echo "EVIDENCE=$evidence_root"
