@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DiagnosticSection = Literal["core", "worker", "queue"]
 DiagnosticStatus = Literal["pass", "warn", "fail"]
@@ -46,6 +46,19 @@ _PUBLIC_STATUSES: frozenset[str] = frozenset(
         "Failed",
         "Cancelled",
         "Archived",
+    }
+)
+_ALLOWED_CHECK_COMBINATIONS: frozenset[tuple[str, str, str]] = frozenset(
+    {
+        ("core_health", "pass", "CORE_HEALTHY"),
+        ("core_health", "warn", "CORE_DEGRADED"),
+        ("core_health", "fail", "CORE_DEGRADED"),
+        ("worker_heartbeat", "pass", "WORKER_ONLINE"),
+        ("worker_heartbeat", "warn", "WORKER_STALE"),
+        ("worker_heartbeat", "fail", "WORKER_OFFLINE"),
+        ("queue_backlog", "pass", "QUEUE_HEALTHY"),
+        ("queue_backlog", "warn", "QUEUE_BACKLOG"),
+        ("queue_backlog", "warn", "QUEUE_OLD"),
     }
 )
 
@@ -191,6 +204,25 @@ class DiagnosticSnapshotResult(_StrictModel):
         if len(set(warnings)) != len(warnings):
             raise ValueError("warnings 不允许重复。")
         return tuple(sorted(warnings))
+
+    @model_validator(mode="after")
+    def _validate_cards_and_checks(self) -> DiagnosticSnapshotResult:
+        expected_checks: set[str] = set()
+        if self.core is not None:
+            expected_checks.add("core_health")
+        if self.worker is not None:
+            expected_checks.add("worker_heartbeat")
+        if self.queue is not None:
+            expected_checks.add("queue_backlog")
+
+        actual_checks = {check.name for check in self.checks}
+        if actual_checks != expected_checks:
+            raise ValueError("每张诊断结果卡片必须且只能对应一个固定检查项。")
+        for check in self.checks:
+            combination = (check.name, check.status, check.reason_code)
+            if combination not in _ALLOWED_CHECK_COMBINATIONS:
+                raise ValueError("诊断检查状态与原因码不符合固定合同。")
+        return self
 
 
 def _normalize_counts(counts: dict[str, int]) -> dict[str, int]:
