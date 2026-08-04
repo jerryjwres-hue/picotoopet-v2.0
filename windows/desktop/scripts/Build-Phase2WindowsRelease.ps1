@@ -300,8 +300,13 @@ $nativeCiVerified = (
     $env:GITHUB_ACTIONS.Equals("true", [System.StringComparison]::OrdinalIgnoreCase) -and
     -not [string]::IsNullOrWhiteSpace($env:RUNNER_OS) -and
     $env:RUNNER_OS.Equals("Windows", [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY) -and
+    $env:GITHUB_REPOSITORY.Equals(
+        "jerryjwres-hue/picotoopet-v2.0",
+        [System.StringComparison]::OrdinalIgnoreCase) -and
     -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ID) -and
-    -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ATTEMPT)
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ATTEMPT) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_WORKFLOW_REF)
 )
 $manifest = [ordered]@{
     schema_version       = "2.3.0"
@@ -314,6 +319,10 @@ $manifest = [ordered]@{
     build_commit         = $buildCommit
     source_head          = $sourceHead
     source_ref           = $sourceRef
+    github_repository    = $env:GITHUB_REPOSITORY
+    github_run_id        = $env:GITHUB_RUN_ID
+    github_run_attempt   = $env:GITHUB_RUN_ATTEMPT
+    github_workflow_ref  = $env:GITHUB_WORKFLOW_REF
     native_ci_verified   = $nativeCiVerified
     user_install_allowed = $nativeCiVerified
     signature            = [ordered]@{
@@ -363,6 +372,10 @@ $report = [ordered]@{
     source_head          = $sourceHead
     source_ref           = $sourceRef
     build_commit         = $buildCommit
+    github_repository    = $env:GITHUB_REPOSITORY
+    github_run_id        = $env:GITHUB_RUN_ID
+    github_run_attempt   = $env:GITHUB_RUN_ATTEMPT
+    github_workflow_ref  = $env:GITHUB_WORKFLOW_REF
     self_test            = $selfTest
 }
 Write-Json -Value $report -Path $reportPath
