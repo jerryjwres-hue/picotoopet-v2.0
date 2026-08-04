@@ -107,8 +107,14 @@ def _write_candidate(
         )
         if include_scripts:
             script = (
+                "# fixture\r\n"
+                "[CmdletBinding()]\r\n"
+                "param()\r\n"
+                "try {\r\n"
                 "    $manifest = Read-JsonUtf8 -Path $manifestPath\r\n"
-                "Write-Host 'continue'\r\n"
+                "    Write-Host 'continue'\r\n"
+                "}\r\n"
+                "catch { throw }\r\n"
             ).encode("utf-8-sig")
             archive.writestr(
                 f"{archive_root}/Phase2Prebuilt.Common.ps1",
@@ -124,7 +130,7 @@ def _write_candidate(
             )
             archive.writestr(
                 f"{archive_root}/Rollback-Phase2Prebuilt.ps1",
-                b"Write-Host rollback",
+                script,
             )
             archive.writestr(
                 f"{archive_root}/INSTALL_PHASE2_WINDOWS.vbs",
@@ -193,6 +199,9 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
         verifier = archive.read(
             f"{archive_root}/Verify-Phase2Prebuilt.ps1"
         ).decode("utf-8-sig")
+        rollback = archive.read(
+            f"{archive_root}/Rollback-Phase2Prebuilt.ps1"
+        ).decode("utf-8-sig")
 
     assert updated["product_version"] == PRODUCT_VERSION
     assert updated["delivery_surface"] == "existing-native-wpf-desktop"
@@ -206,8 +215,15 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
     assert updated["native_ci_verified"] is True
     assert updated["user_install_allowed"] is True
 
-    for script in (installer, verifier):
+    for script in (installer, verifier, rollback):
         assert INSTALLER_MARKER in script
+        assert script.index("[CmdletBinding()]") < script.index("param()")
+        assert script.index("param()") < script.index(
+            "$manifest = Read-JsonUtf8 -Path $manifestPath"
+        )
+        assert script.index(
+            "$manifest = Read-JsonUtf8 -Path $manifestPath"
+        ) < script.index(INSTALLER_MARKER)
         assert '"delivery_surface" = "existing-native-wpf-desktop"' in script
         assert '"ui_framework" = "WPF"' in script
         assert '"integration_target" = "TaskCenter"' in script
