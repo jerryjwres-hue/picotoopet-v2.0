@@ -6,6 +6,22 @@ phase23_runtime_root() {
   printf '%s\n' "${PICOTOO_RUNTIME_ROOT_OVERRIDE:-$HOME/Library/Application Support/PicotooPetV2}"
 }
 
+phase23_product_version() {
+  local package_root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+  local version_file="$package_root/product-version.txt"
+  if [[ ! -f "$version_file" ]]; then
+    echo "missing product-version.txt: $version_file" >&2
+    return 1
+  fi
+  local value
+  value="$(tr -d '\r\n' < "$version_file")"
+  if [[ ! "$value" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "invalid product version: $value" >&2
+    return 1
+  fi
+  printf '%s\n' "$value"
+}
+
 read_manifest() {
   local package_root="$1"
   local key="$2"
@@ -180,13 +196,15 @@ PY
 verify_api_contract() {
   local base_url="$1"
   local token="$2"
-  python3 - "$base_url" "$token" <<'PY'
+  local expected_product_version="${3:-}"
+  python3 - "$base_url" "$token" "$expected_product_version" <<'PY'
 import json
 import sys
 import urllib.request
 
 base = sys.argv[1].rstrip("/")
 token = sys.argv[2]
+expected_product_version = sys.argv[3]
 
 
 def get(path: str, *, authenticated: bool = False):
@@ -198,6 +216,11 @@ def get(path: str, *, authenticated: bool = False):
 health = get("/api/v1/health")
 if health.get("status") != "ok":
     raise SystemExit("health.status must be ok")
+if expected_product_version and health.get("version") != expected_product_version:
+    raise SystemExit(
+        "Mac Core product version mismatch: "
+        f"expected={expected_product_version!r}, actual={health.get('version')!r}"
+    )
 features = get("/api/v1/capabilities").get("features", {})
 if features.get("worker_status") is not True:
     raise SystemExit("capabilities.features.worker_status must be true")
@@ -332,12 +355,19 @@ write_report() {
   local version="$4"
   local install_path="$5"
   local error_message="${6:-}"
+  local product_version="${7:-}"
   local reports="$runtime_root/reports"
   mkdir -p "$reports"
   local stamp
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   local report="$reports/phase23-slice-d-core-${kind}-${stamp}.json"
-  python3 - "$report" "$status" "$version" "$install_path" "$error_message" <<'PY'
+  python3 - \
+    "$report" \
+    "$status" \
+    "$version" \
+    "$install_path" \
+    "$error_message" \
+    "$product_version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -346,6 +376,7 @@ path = Path(sys.argv[1])
 payload = {
     "status": sys.argv[2],
     "version": sys.argv[3] or None,
+    "product_version": sys.argv[6] or None,
     "runtime_version": "2.3.0-slice-d-core",
     "install_path": sys.argv[4] or None,
     "source_build_on_user_mac": False,
