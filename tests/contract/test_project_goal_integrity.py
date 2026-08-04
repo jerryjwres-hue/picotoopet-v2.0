@@ -25,11 +25,20 @@ def _goal_gate_script() -> bytes:
         '        "ui_framework" = "WPF"\r\n'
         '        "entry_executable" = "Picotoo Pet AI.exe"\r\n'
         '        "integration_target" = "TaskCenter"\r\n'
+        '        "github_repository" = "jerryjwres-hue/picotoopet-v2.0"\r\n'
         '        "source_build_on_user_pc" = $false\r\n'
         '        "browser_ui" = $false\r\n'
         '        "local_http_ui" = $false\r\n'
         '        "native_ci_verified" = $true\r\n'
         '        "user_install_allowed" = $true\r\n'
+        '        "github_run_id"\r\n'
+        '        "github_run_attempt"\r\n'
+        '        "github_workflow_ref"\r\n'
+        '        "source_head"\r\n'
+        '        "source_ref"\r\n'
+        '        "build_commit"\r\n'
+        '        "picotoo pet ai.exe"\r\n'
+        '        "tools/diagnostics/picotoopet.desktop.diagnostics.exe"\r\n'
         '        throw "GOAL_INTEGRITY_VIOLATION: forbidden web UI payload"\r\n'
     ).encode("utf-8-sig")
 
@@ -79,6 +88,16 @@ def _compliant_manifest() -> dict[str, object]:
         "integration_target": "TaskCenter",
         "browser_ui": False,
         "local_http_ui": False,
+        "github_repository": "jerryjwres-hue/picotoopet-v2.0",
+        "github_run_id": "123456789",
+        "github_run_attempt": "1",
+        "github_workflow_ref": (
+            "jerryjwres-hue/picotoopet-v2.0/"
+            ".github/workflows/windows-phase2-release.yml@refs/pull/8/merge"
+        ),
+        "source_head": "a" * 40,
+        "source_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
+        "build_commit": "b" * 40,
     }
 
 
@@ -90,6 +109,7 @@ def test_accepts_existing_native_wpf_task_center_delivery(tmp_path: Path) -> Non
     assert report["status"] == "pass"
     assert report["delivery_surface"] == "existing-native-wpf-desktop"
     assert report["entry_executable"] == "Picotoo Pet AI.exe"
+    assert report["github_run_id"] == "123456789"
     assert report["installer_goal_gate"] == "pass"
 
 
