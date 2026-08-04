@@ -28,6 +28,7 @@ state_root="$runtime_root/state"
 current_python="$runtime_root/current/.venv/bin/python"
 core_label="com.picotoopet.mac-core"
 version=""
+product_version=""
 new_version=""
 previous_target=""
 existing_port=""
@@ -117,7 +118,8 @@ on_error() {
     "$version" \
     "$new_version" \
     "命令失败：$failed_command" \
-    "false")" || true
+    "false" \
+    "$product_version")" || true
   echo "Slice D Worker 安装失败。报告：$report" >&2
   exit "$code"
 }
@@ -126,6 +128,8 @@ trap cleanup_candidate EXIT
 
 verify_manifest_files "$package_root"
 version="$(read_manifest "$package_root" version)"
+product_version="$(phase23_worker_product_version "$package_root")"
+manifest_product_version="$(read_manifest "$package_root" product_version)"
 package_version="$(read_manifest "$package_root" package_version)"
 runtime_version="$(read_manifest "$package_root" runtime_version)"
 package_arch="$(read_manifest "$package_root" architecture)"
@@ -134,6 +138,10 @@ supported_types="$(read_manifest "$package_root" worker_supported_task_types)"
 hard_timeout="$(read_manifest "$package_root" diagnostic_hard_timeout_seconds)"
 termination_grace="$(read_manifest "$package_root" diagnostic_termination_grace_seconds)"
 
+if [[ "$manifest_product_version" != "$product_version" ]]; then
+  echo "包内产品版本不一致：expected=$product_version actual=$manifest_product_version" >&2
+  exit 1
+fi
 if [[ -z "$package_version" || ! "$package_version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
   echo "包内 package_version 无效：$package_version" >&2
   exit 1
@@ -205,6 +213,15 @@ mkdir -p "$new_version"
   --no-index \
   --find-links "$package_root/payload/wheelhouse" \
   "picotoopet-core==$package_version"
+installed_product_version="$("$new_version/.venv/bin/python" - <<'PY'
+from picotoopet_core import __version__
+print(__version__)
+PY
+)"
+if [[ "$installed_product_version" != "$product_version" ]]; then
+  echo "候选 Worker 运行时产品版本不一致：expected=$product_version actual=$installed_product_version" >&2
+  exit 1
+fi
 
 candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-d-worker-candidate.XXXXXX")"
 candidate_port="$(choose_free_port)"
@@ -218,14 +235,15 @@ PICOTOO_API_TOKEN="$api_token" \
 candidate_pid=$!
 candidate_url="http://127.0.0.1:$candidate_port"
 wait_for_health "$candidate_url"
-verify_slice_d_candidate_contract "$candidate_url" "$api_token"
+verify_slice_d_candidate_contract "$candidate_url" "$api_token" "$product_version"
 cleanup_candidate
 
 stop_worker_agent
 atomic_switch_current "$runtime_root" "$new_version"
 activated=1
 restart_core_runtime
-verify_slice_d_candidate_contract "http://127.0.0.1:$existing_port" "$api_token"
+verify_worker_product_version "$runtime_root" "$product_version"
+verify_slice_d_candidate_contract "http://127.0.0.1:$existing_port" "$api_token" "$product_version"
 
 write_worker_plist "$runtime_root" "$worker_id"
 start_worker_agent "$runtime_root" "$worker_id" "$api_token"
@@ -242,9 +260,11 @@ report="$(write_worker_report \
   "$version" \
   "$new_version" \
   "" \
-  "true")"
+  "true" \
+  "$product_version")"
 echo "PHASE23_MAC_WORKER_INSTALL=PASS"
 echo "PHASE23_MAC_WORKER_SLICE_D_INSTALL=PASS"
+echo "PRODUCT_VERSION=$product_version"
 echo "REPORT=$report"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" != "1" ]]; then
   open "$report"
