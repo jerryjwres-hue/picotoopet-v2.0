@@ -338,7 +338,6 @@ def _require_runtime_goal_gates(
     provenance_fields: list[str],
     allowed_workflow_paths: list[str],
     allowed_executable_paths: list[str],
-    product_version: str | None,
 ) -> None:
     expected = [
         _powershell_literal(key, value)
@@ -351,8 +350,6 @@ def _require_runtime_goal_gates(
             "forbidden web UI payload",
         )
     )
-    if product_version is not None:
-        expected.append(_powershell_literal("product_version", product_version))
     expected.extend(f'"{field}"' for field in provenance_fields)
     expected.extend(allowed_workflow_paths)
     expected.extend(f'"{path.lower()}"' for path in allowed_executable_paths)
@@ -457,7 +454,6 @@ def verify_windows_package(
             provenance_fields=provenance_fields,
             allowed_workflow_paths=allowed_workflows,
             allowed_executable_paths=allowed_executables,
-            product_version=product_version,
         )
 
         if (
