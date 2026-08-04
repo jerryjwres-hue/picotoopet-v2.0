@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import zipfile
 from pathlib import Path
@@ -13,6 +14,16 @@ from scripts.verify_project_goal_integrity import verify_windows_package
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "release" / "project-goal-invariants.json"
 INSTALLER_MARKER = "PICOTOO_GOAL_INTEGRITY_GATE_V1"
+_APP_BYTES = b"MZ-native-wpf"
+_DIAGNOSTIC_BYTES = b"MZ-diagnostics"
+
+
+def _file_entry(path: str, data: bytes) -> dict[str, object]:
+    return {
+        "path": path,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "size_bytes": len(data),
+    }
 
 
 def _write_candidate(
@@ -30,16 +41,11 @@ def _write_candidate(
         "native_ci_verified": native_ci_verified,
         "user_install_allowed": True,
         "files": [
-            {
-                "path": "Picotoo Pet AI.exe",
-                "sha256": "0" * 64,
-                "size_bytes": 13,
-            },
-            {
-                "path": "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
-                "sha256": "1" * 64,
-                "size_bytes": 14,
-            },
+            _file_entry("Picotoo Pet AI.exe", _APP_BYTES),
+            _file_entry(
+                "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
+                _DIAGNOSTIC_BYTES,
+            ),
         ],
     }
     if include_provenance:
@@ -63,11 +69,11 @@ def _write_candidate(
         )
         archive.writestr(
             f"{archive_root}/payload/Picotoo Pet AI.exe",
-            b"MZ-native-wpf",
+            _APP_BYTES,
         )
         archive.writestr(
             f"{archive_root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
-            b"MZ-diagnostics",
+            _DIAGNOSTIC_BYTES,
         )
         if include_scripts:
             script = (
@@ -184,6 +190,7 @@ def test_formal_stamp_output_passes_independent_zip_verifier(tmp_path: Path) -> 
 
     report = verify_windows_package(package, contract_path=CONTRACT)
     assert report["status"] == "pass"
+    assert report["verified_payload_files"] == 2
     assert report["github_workflow_ref"].endswith("@refs/pull/8/merge")
 
 
