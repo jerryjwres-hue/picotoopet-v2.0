@@ -30,7 +30,10 @@ def test_windows_ci_builds_slice_d_on_native_runner() -> None:
     workflow_path = ROOT / ".github" / "workflows" / "windows-phase2-release.yml"
     workflow = yaml.safe_load(read(workflow_path))
     job = workflow["jobs"]["windows-release"]
-    assert job["runs-on"] == "windows-2025"
+    runner = str(job["runs-on"])
+    assert "windows-2025" in runner
+    assert "workflow_dispatch" in runner
+    assert "inputs.runner_target" in runner
     assert job["timeout-minutes"] <= 60
     steps = job["steps"]
     uses = [step.get("uses") for step in steps if "uses" in step]
