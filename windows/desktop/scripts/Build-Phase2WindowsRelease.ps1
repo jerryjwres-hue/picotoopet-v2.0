@@ -293,6 +293,17 @@ $sourceRef = if ([string]::IsNullOrWhiteSpace($env:PICOTOO_SOURCE_REF)) {
 else {
     $env:PICOTOO_SOURCE_REF
 }
+$workflowRefAllowed = (
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_WORKFLOW_REF) -and
+    (
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/windows-control-center-ci.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/windows-phase2-release.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase)
+    )
+)
 $nativeCiVerified = (
     -not [string]::IsNullOrWhiteSpace($env:CI) -and
     $env:CI.Equals("true", [System.StringComparison]::OrdinalIgnoreCase) -and
@@ -306,7 +317,7 @@ $nativeCiVerified = (
         [System.StringComparison]::OrdinalIgnoreCase) -and
     -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ID) -and
     -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ATTEMPT) -and
-    -not [string]::IsNullOrWhiteSpace($env:GITHUB_WORKFLOW_REF)
+    $workflowRefAllowed
 )
 $manifest = [ordered]@{
     schema_version       = "2.3.0"
