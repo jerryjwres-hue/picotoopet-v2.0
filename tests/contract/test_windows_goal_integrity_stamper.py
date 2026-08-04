@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.stamp_windows_goal_integrity import GoalStampError, stamp_windows_release
+from scripts.verify_project_goal_integrity import verify_windows_package
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,12 +75,32 @@ def _write_candidate(
                 "Write-Host 'continue'\r\n"
             ).encode("utf-8-sig")
             archive.writestr(
+                f"{archive_root}/Phase2Prebuilt.Common.ps1",
+                b"function Read-JsonUtf8 { }",
+            )
+            archive.writestr(
                 f"{archive_root}/Install-Phase2Prebuilt.ps1",
                 script,
             )
             archive.writestr(
                 f"{archive_root}/Verify-Phase2Prebuilt.ps1",
                 script,
+            )
+            archive.writestr(
+                f"{archive_root}/Rollback-Phase2Prebuilt.ps1",
+                b"Write-Host rollback",
+            )
+            archive.writestr(
+                f"{archive_root}/INSTALL_PHASE2_WINDOWS.vbs",
+                b"ascii",
+            )
+            archive.writestr(
+                f"{archive_root}/VERIFY_PHASE2_WINDOWS.vbs",
+                b"ascii",
+            )
+            archive.writestr(
+                f"{archive_root}/ROLLBACK_PHASE2_WINDOWS.vbs",
+                b"ascii",
             )
     (tmp_path / "windows-build-report.json").write_text(
         json.dumps({"status": "pass"}),
@@ -135,6 +156,8 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
         assert '"github_run_id"' in script
         assert '"github_workflow_ref"' in script
         assert "native CI provenance is missing" in script
+        assert "windows-control-center-ci.yml" in script
+        assert "windows-phase2-release.yml" in script
         assert "forbidden web UI payload" in script
         assert "[System.IO.Path]::DirectorySeparatorChar" in script
         assert "[System.IO.Path]::AltDirectorySeparatorChar" in script
@@ -149,6 +172,19 @@ def test_stamps_native_wpf_package_and_injects_install_time_gate(
     assert build_report["user_install_allowed"] is False
     assert build_report["github_run_id"] == "123456789"
     assert build_report["installer_goal_gate"] == "pass"
+
+
+def test_formal_stamp_output_passes_independent_zip_verifier(tmp_path: Path) -> None:
+    package, _ = _write_candidate(
+        tmp_path,
+        native_ci_verified=True,
+    )
+
+    stamp_windows_release(tmp_path, contract_path=CONTRACT)
+
+    report = verify_windows_package(package, contract_path=CONTRACT)
+    assert report["status"] == "pass"
+    assert report["github_workflow_ref"].endswith("@refs/pull/8/merge")
 
 
 def test_stamp_rejects_native_package_without_run_provenance(
