@@ -11,9 +11,10 @@ on:
       - "windows/desktop/**"
       - "tests/contract/**"
       - "tests/security/**"
+      - "tests/release/test_windows_prebuilt_delivery.py"
       - "tests/release/test_windows_analyzer_regressions.py"
       - "tests/release/test_windows_goal_integrity_release_contract.py"
-      - "tests/release/test_windows_prebuilt_delivery.py"
+      - "tests/release/test_windows_native_install_permission.py"
       - "src/**"
       - "pyproject.toml"
   workflow_dispatch:
@@ -69,7 +70,8 @@ jobs:
             tests/security `
             tests/release/test_windows_prebuilt_delivery.py `
             tests/release/test_windows_analyzer_regressions.py `
-            tests/release/test_windows_goal_integrity_release_contract.py
+            tests/release/test_windows_goal_integrity_release_contract.py `
+            tests/release/test_windows_native_install_permission.py
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
