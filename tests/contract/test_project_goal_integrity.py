@@ -14,6 +14,8 @@ from scripts.verify_project_goal_integrity import (
 
 
 _GOAL_GATE_MARKER = "# PICOTOO_GOAL_INTEGRITY_GATE_V1"
+_PRODUCT_VERSION = "2.3.6.1"
+_PRODUCT_VERSION_BYTES = (_PRODUCT_VERSION + "\n").encode("utf-8")
 _APP_BYTES = b"MZ-native-wpf"
 _DIAGNOSTIC_BYTES = b"MZ-diagnostics"
 
@@ -29,6 +31,7 @@ def _goal_gate_script() -> bytes:
         '        "entry_executable" = "Picotoo Pet AI.exe"\r\n'
         '        "integration_target" = "TaskCenter"\r\n'
         '        "github_repository" = "jerryjwres-hue/picotoopet-v2.0"\r\n'
+        '        "product_version" = "2.3.6.1"\r\n'
         '        "source_build_on_user_pc" = $false\r\n'
         '        "browser_ui" = $false\r\n'
         '        "local_http_ui" = $false\r\n'
@@ -69,6 +72,7 @@ def _make_package(
             manifest,
             ensure_ascii=False,
         ).encode("utf-8"),
+        f"{root}/payload/product-version.txt": _PRODUCT_VERSION_BYTES,
         f"{root}/payload/Picotoo Pet AI.exe": _APP_BYTES,
         f"{root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe": (
             _DIAGNOSTIC_BYTES
@@ -93,6 +97,7 @@ def _compliant_manifest() -> dict[str, object]:
         "schema_version": "2.3.0",
         "release_type": "prebuilt",
         "version": "2.3.0-slice-d-native-wpf-test",
+        "product_version": _PRODUCT_VERSION,
         "target": "win-x64",
         "native_ci_verified": True,
         "user_install_allowed": True,
@@ -114,6 +119,7 @@ def _compliant_manifest() -> dict[str, object]:
         "source_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
         "build_commit": "b" * 40,
         "files": [
+            _file_entry("product-version.txt", _PRODUCT_VERSION_BYTES),
             _file_entry("Picotoo Pet AI.exe", _APP_BYTES),
             _file_entry(
                 "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
@@ -129,10 +135,11 @@ def test_accepts_existing_native_wpf_task_center_delivery(tmp_path: Path) -> Non
     report = verify_windows_package(package)
 
     assert report["status"] == "pass"
+    assert report["product_version"] == _PRODUCT_VERSION
     assert report["delivery_surface"] == "existing-native-wpf-desktop"
     assert report["entry_executable"] == "Picotoo Pet AI.exe"
     assert report["github_run_id"] == "123456789"
-    assert report["verified_payload_files"] == 2
+    assert report["verified_payload_files"] == 3
     assert report["installer_goal_gate"] == "pass"
 
 
