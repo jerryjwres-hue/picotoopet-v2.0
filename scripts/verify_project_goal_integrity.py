@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,8 @@ _FORMAL_RUNTIME_SCRIPTS = (
     "Install-Phase2Prebuilt.ps1",
     "Verify-Phase2Prebuilt.ps1",
 )
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+_POSITIVE_INTEGER_PATTERN = re.compile(r"^[1-9][0-9]*$")
 
 
 def _load_contract(path: Path) -> dict[str, Any]:
@@ -82,6 +85,51 @@ def _require_manifest_values(
             )
 
 
+def _require_native_ci_provenance(
+    manifest: dict[str, Any],
+    required_fields: list[str],
+) -> None:
+    """可安装原生包必须可追溯到具体 GitHub Actions Windows run。"""
+
+    if not (
+        manifest.get("native_ci_verified") is True
+        or manifest.get("user_install_allowed") is True
+    ):
+        return
+
+    values: dict[str, str] = {}
+    for field in required_fields:
+        value = manifest.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: 可安装包缺少原生 CI 溯源字段 "
+                f"{field}。"
+            )
+        values[field] = value.strip()
+
+    for field in ("github_run_id", "github_run_attempt"):
+        value = values.get(field, "")
+        if not _POSITIVE_INTEGER_PATTERN.fullmatch(value):
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: 原生 CI 溯源字段 "
+                f"{field} 必须为正整数。"
+            )
+
+    workflow_ref = values.get("github_workflow_ref", "")
+    if ".github/workflows/" not in workflow_ref or "@" not in workflow_ref:
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: github_workflow_ref 不是有效工作流引用。"
+        )
+
+    for field in ("source_head", "build_commit"):
+        value = values.get(field, "")
+        if not _SHA256_PATTERN.fullmatch(value):
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: 原生 CI 溯源字段 "
+                f"{field} 必须为 40 位 Git 提交 SHA。"
+            )
+
+
 def _require_archive_paths(
     names: list[str],
     *,
@@ -140,6 +188,7 @@ def _require_runtime_goal_gates(
     *,
     root: str,
     required_values: dict[str, Any],
+    provenance_fields: list[str],
 ) -> None:
     expected = [
         _powershell_literal(key, value)
@@ -154,6 +203,7 @@ def _require_runtime_goal_gates(
             "forbidden web UI payload",
         )
     )
+    expected.extend(f'"{field}"' for field in provenance_fields)
 
     for script_name in _FORMAL_RUNTIME_SCRIPTS:
         archive_name = f"{root}/{script_name}"
@@ -201,12 +251,19 @@ def verify_windows_package(
             "GOAL_INTEGRITY_VIOLATION: 目标合同缺少 windows 对象。"
         )
     required_values = windows.get("required_manifest_values")
+    provenance_fields = windows.get("required_native_ci_provenance_fields")
     required_paths = windows.get("required_archive_paths")
     forbidden_fragments = windows.get("forbidden_name_fragments")
     forbidden_suffixes = windows.get("forbidden_suffixes")
     if not isinstance(required_values, dict):
         raise GoalIntegrityError(
             "GOAL_INTEGRITY_VIOLATION: required_manifest_values 无效。"
+        )
+    if not isinstance(provenance_fields, list) or not all(
+        isinstance(value, str) and value for value in provenance_fields
+    ):
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: required_native_ci_provenance_fields 无效。"
         )
     if not isinstance(required_paths, list) or not all(
         isinstance(value, str) for value in required_paths
@@ -239,6 +296,7 @@ def verify_windows_package(
         root = _single_root(names)
         manifest = _read_manifest(archive, root)
         _require_manifest_values(manifest, required_values)
+        _require_native_ci_provenance(manifest, provenance_fields)
         _require_archive_paths(
             names,
             root=root,
@@ -253,6 +311,7 @@ def verify_windows_package(
             archive,
             root=root,
             required_values=required_values,
+            provenance_fields=provenance_fields,
         )
 
         if (
@@ -277,6 +336,12 @@ def verify_windows_package(
         "integration_target": manifest["integration_target"],
         "native_ci_verified": manifest.get("native_ci_verified"),
         "user_install_allowed": manifest.get("user_install_allowed"),
+        "github_repository": manifest.get("github_repository"),
+        "github_run_id": manifest.get("github_run_id"),
+        "github_run_attempt": manifest.get("github_run_attempt"),
+        "github_workflow_ref": manifest.get("github_workflow_ref"),
+        "source_head": manifest.get("source_head"),
+        "build_commit": manifest.get("build_commit"),
         "installer_goal_gate": "pass",
     }
 
