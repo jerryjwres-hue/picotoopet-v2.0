@@ -65,6 +65,15 @@ fi
 source "$package_root/lib.sh"
 verify_manifest_files "$package_root"
 
+product_version="$(phase23_product_version "$package_root")"
+if [[ "$(read_manifest "$package_root" product_version)" != "$product_version" ]]; then
+  echo "清单 product_version 与包内唯一版本文件不一致。" >&2
+  exit 1
+fi
+if [[ "$(basename "$archive")" != *"-$product_version-"* ]]; then
+  echo "包名未包含产品版本：$product_version" >&2
+  exit 1
+fi
 if [[ "$(read_manifest "$package_root" architecture)" != "$(uname -m)" ]]; then
   echo "清单架构与 Runner 不一致。" >&2
   exit 1
@@ -124,6 +133,10 @@ if ! grep -Fq '"picotoopet-core==$package_version"' "$installer"; then
   echo "安装器没有使用 Manifest package_version。" >&2
   exit 1
 fi
+if ! grep -Fq 'verify_api_contract "$candidate_url" "$api_token" "$product_version"' "$installer"; then
+  echo "安装器没有校验候选 Core 的精确产品版本。" >&2
+  exit 1
+fi
 
 combined="$(cat \
   "$package_root/INSTALL_MAC_CORE_SLICE_B.command" \
@@ -146,4 +159,5 @@ done
 
 echo "PHASE23_MAC_DELTA_PACKAGE_TEST=PASS"
 echo "PHASE23_MAC_SLICE_D_CORE_PACKAGE_TEST=PASS"
+echo "PRODUCT_VERSION=$product_version"
 echo "PACKAGE=$archive"
