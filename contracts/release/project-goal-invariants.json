@@ -30,6 +30,10 @@
       "source_ref",
       "build_commit"
     ],
+    "allowed_native_ci_workflow_paths": [
+      ".github/workflows/windows-control-center-ci.yml",
+      ".github/workflows/windows-phase2-release.yml"
+    ],
     "required_archive_paths": [
       "payload/Picotoo Pet AI.exe",
       "payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
