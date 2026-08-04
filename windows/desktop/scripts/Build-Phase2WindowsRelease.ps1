@@ -293,7 +293,16 @@ $sourceRef = if ([string]::IsNullOrWhiteSpace($env:PICOTOO_SOURCE_REF)) {
 else {
     $env:PICOTOO_SOURCE_REF
 }
-$nativeCiVerified = -not [string]::IsNullOrWhiteSpace($env:CI) -and $env:CI.ToLowerInvariant() -eq "true"
+$nativeCiVerified = (
+    -not [string]::IsNullOrWhiteSpace($env:CI) -and
+    $env:CI.Equals("true", [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_ACTIONS) -and
+    $env:GITHUB_ACTIONS.Equals("true", [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not [string]::IsNullOrWhiteSpace($env:RUNNER_OS) -and
+    $env:RUNNER_OS.Equals("Windows", [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ID) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ATTEMPT)
+)
 $manifest = [ordered]@{
     schema_version       = "2.3.0"
     release_type         = "prebuilt"
