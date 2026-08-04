@@ -26,6 +26,8 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
         '"integration_target": "TaskCenter"',
         '"browser_ui": false',
         '"local_http_ui": false',
+        '"github_repository": "jerryjwres-hue/picotoopet-v2.0"',
+        '"required_native_ci_provenance_fields"',
     )
     for declaration in required_contract_values:
         assert declaration in contract
@@ -36,6 +38,11 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
         "Verify-Phase2Prebuilt.ps1",
         "native_ci_verified",
         "user_install_allowed",
+        "github_run_id",
+        "github_run_attempt",
+        "github_workflow_ref",
+        "source_head",
+        "build_commit",
         "forbidden web UI payload",
     )
     for declaration in required_runtime_controls:
@@ -60,6 +67,7 @@ def test_windows_release_runs_goal_integrity_gate_before_artifact_upload() -> No
     assert "tests/contract/test_project_goal_integrity.py" in workflow
     assert "tests/contract/test_windows_goal_integrity_stamper.py" in workflow
     assert "tests/release/test_windows_goal_integrity_release_contract.py" in workflow
+    assert "tests/release/test_windows_native_ci_provenance.py" in workflow
     assert "goal-integrity-report.json" in workflow
     assert "goal-integrity-stamp-report.json" in workflow
     assert workflow.index(stamper) < workflow.index(validator) < workflow.index(upload)
