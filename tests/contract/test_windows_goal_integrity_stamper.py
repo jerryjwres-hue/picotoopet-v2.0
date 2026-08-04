@@ -77,7 +77,7 @@ def _write_candidate(
         )
         if include_scripts:
             script = (
-                "$manifest = Read-JsonUtf8 -Path $manifestPath\r\n"
+                "    $manifest = Read-JsonUtf8 -Path $manifestPath\r\n"
                 "Write-Host 'continue'\r\n"
             ).encode("utf-8-sig")
             archive.writestr(
