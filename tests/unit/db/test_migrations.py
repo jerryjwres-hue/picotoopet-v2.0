@@ -22,7 +22,7 @@ REQUIRED_TABLES = {
 
 
 def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
-    """数据库必须启用耐久参数并创建完整 Phase 1 表结构。"""
+    """数据库必须启用耐久参数并幂等创建当前完整表结构。"""
 
     database = Database(tmp_path / "core.db")
     database.open()
@@ -37,6 +37,11 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
     }
+    task_columns = {
+        row["name"]
+        for row in database.fetchall("PRAGMA table_info(tasks)")
+    }
     assert REQUIRED_TABLES <= tables
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 1
+    assert "cloud_policy" in task_columns
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 2
     database.close()
