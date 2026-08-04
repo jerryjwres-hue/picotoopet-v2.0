@@ -248,7 +248,7 @@ def test_new_powershell_scripts_have_balanced_delimiters_and_safe_wildcards() ->
         DESKTOP / "release" / "Rollback-Phase2Prebuilt.ps1",
     ]
     scrub = re.compile(
-        r'@?"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|#[^\n]*',
+        r'@?"(?:`.|""|[^"])*"|\'(?:\'\'|[^\'])*\'|#[^\n]*',
         re.DOTALL,
     )
     pairs = {"(": ")", "[": "]", "{": "}"}
