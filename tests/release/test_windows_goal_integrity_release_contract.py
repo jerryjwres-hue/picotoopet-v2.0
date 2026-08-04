@@ -28,6 +28,8 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
         '"local_http_ui": false',
         '"github_repository": "jerryjwres-hue/picotoopet-v2.0"',
         '"required_native_ci_provenance_fields"',
+        '"product_version"',
+        '"value": "2.3.6.1"',
     )
     for declaration in required_contract_values:
         assert declaration in contract
@@ -44,13 +46,15 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
         "source_head",
         "build_commit",
         "forbidden web UI payload",
+        "product_version",
     )
     for declaration in required_runtime_controls:
         assert declaration in stamper
         assert declaration in verifier
 
-    assert 'manifest["user_install_allowed"] = native_verified' in stamper
-    assert "PicotooPet-Phase2-Windows-Prebuilt-*.zip" in stamper
+    assert 'manifest["native_ci_verified"] = True' in stamper
+    assert 'manifest["user_install_allowed"] = True' in stamper
+    assert "output_package" in stamper
     assert "goal-integrity-stamp-report.json" in stamper
     assert '"installer_goal_gate": "pass"' in stamper
     assert '"installer_goal_gate": "pass"' in verifier
@@ -92,7 +96,9 @@ def test_windows_release_does_not_name_or_package_a_helper_surface() -> None:
 def test_only_existing_native_wpf_executable_is_formal_entrypoint() -> None:
     builder = _read(DESKTOP / "scripts" / "Build-Phase2WindowsRelease.ps1")
     stamper = _read(ROOT / "scripts" / "stamp_windows_goal_integrity.py")
+    contract = _read(ROOT / "contracts" / "release" / "project-goal-invariants.json")
 
     assert '$appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"' in builder
-    assert '"Picotoo Pet AI.exe"' in stamper
+    assert '"entry_executable": "Picotoo Pet AI.exe"' in contract
+    assert "allowed_payload_executable_paths" in contract
     assert "forbidden web UI payload" in stamper
