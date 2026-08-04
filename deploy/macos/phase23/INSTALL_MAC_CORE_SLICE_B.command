@@ -31,6 +31,7 @@ state_root="$runtime_root/state"
 current_python="$runtime_root/current/.venv/bin/python"
 label="com.picotoopet.mac-core"
 version=""
+product_version=""
 new_version=""
 previous_target=""
 existing_port=""
@@ -75,7 +76,14 @@ on_error() {
   cleanup_candidate
   rollback_after_failed_activation || true
   local report
-  report="$(write_report "$runtime_root" install fail "$version" "$new_version" "命令失败：$failed_command")" || true
+  report="$(write_report \
+    "$runtime_root" \
+    install \
+    fail \
+    "$version" \
+    "$new_version" \
+    "命令失败：$failed_command" \
+    "$product_version")" || true
   echo "安装失败。报告：$report" >&2
   exit "$code"
 }
@@ -84,11 +92,17 @@ trap cleanup_candidate EXIT
 
 verify_manifest_files "$package_root"
 version="$(read_manifest "$package_root" version)"
+product_version="$(phase23_product_version "$package_root")"
+manifest_product_version="$(read_manifest "$package_root" product_version)"
 package_version="$(read_manifest "$package_root" package_version)"
 runtime_version="$(read_manifest "$package_root" runtime_version)"
 package_arch="$(read_manifest "$package_root" architecture)"
 diagnostic_api="$(read_manifest "$package_root" diagnostic_snapshot_api_included)"
 
+if [[ "$manifest_product_version" != "$product_version" ]]; then
+  echo "包内产品版本不一致：expected=$product_version actual=$manifest_product_version" >&2
+  exit 1
+fi
 if [[ -z "$package_version" || ! "$package_version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
   echo "包内 package_version 无效：$package_version" >&2
   exit 1
@@ -136,6 +150,15 @@ fi
 mkdir -p "$new_version"
 "$current_python" -m venv "$new_version/.venv"
 "$new_version/.venv/bin/python" -m pip install --no-index --find-links "$package_root/payload/wheelhouse" "picotoopet-core==$package_version"
+installed_product_version="$("$new_version/.venv/bin/python" - <<'PY'
+from picotoopet_core import __version__
+print(__version__)
+PY
+)"
+if [[ "$installed_product_version" != "$product_version" ]]; then
+  echo "候选运行时产品版本不一致：expected=$product_version actual=$installed_product_version" >&2
+  exit 1
+fi
 
 candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-d-core-candidate.XXXXXX")"
 candidate_port="$(choose_free_port)"
@@ -144,12 +167,20 @@ PICOTOO_RUNTIME_ROOT="$candidate_root" PICOTOO_API_HOST="127.0.0.1" PICOTOO_API_
 candidate_pid=$!
 candidate_url="http://127.0.0.1:$candidate_port"
 wait_for_health "$candidate_url"
-verify_api_contract "$candidate_url" "$api_token"
+verify_api_contract "$candidate_url" "$api_token" "$product_version"
 cleanup_candidate
 
 if [[ "$preflight_only" == "1" ]]; then
-  report="$(write_report "$runtime_root" install-preflight pass "$version" "$new_version" "")"
+  report="$(write_report \
+    "$runtime_root" \
+    install-preflight \
+    pass \
+    "$version" \
+    "$new_version" \
+    "" \
+    "$product_version")"
   echo "PHASE23_MAC_SLICE_D_CORE_PREFLIGHT=PASS"
+  echo "PRODUCT_VERSION=$product_version"
   echo "REPORT=$report"
   exit 0
 fi
@@ -162,11 +193,19 @@ else
   restart_user_agent "$label"
   wait_for_health "http://127.0.0.1:$existing_port"
 fi
-verify_api_contract "http://127.0.0.1:$existing_port" "$api_token"
+verify_api_contract "http://127.0.0.1:$existing_port" "$api_token" "$product_version"
 activated=0
 
-report="$(write_report "$runtime_root" install pass "$version" "$new_version" "")"
+report="$(write_report \
+  "$runtime_root" \
+  install \
+  pass \
+  "$version" \
+  "$new_version" \
+  "" \
+  "$product_version")"
 echo "PHASE23_MAC_SLICE_D_CORE_INSTALL=PASS"
+echo "PRODUCT_VERSION=$product_version"
 echo "REPORT=$report"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" != "1" ]]; then
   open "$report"
