@@ -15,12 +15,12 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_current_mac_version_identity_remains_compatible_with_slice_c() -> None:
-    """Slice D 增量继续使用当前离线 wheel，不伪造新的包版本。"""
+def test_internal_python_distribution_version_remains_compatible() -> None:
+    """产品版本独立于当前内部 Python distribution 版本。"""
 
     pyproject = read(ROOT / "pyproject.toml")
     assert 'version = "2.3.0.dev2"' in pyproject
-    assert __version__ == "2.3.0-slice-c"
+    assert __version__ == "2.3.6.1"
 
 
 def test_mac_core_builder_is_manifest_driven_and_offline() -> None:
@@ -145,6 +145,16 @@ def test_mac_core_shared_library_validates_json_paths_hashes_and_api() -> None:
         assert required in library
     assert "eval " not in library
     assert "security find-generic-password" in library
+
+
+def test_core_verify_rejects_wrong_running_product_version() -> None:
+    verifier = read(MAC_DEPLOY / "VERIFY_MAC_CORE_SLICE_B.command")
+    library = read(MAC_DEPLOY / "lib.sh")
+    assert "phase23_product_version" in verifier
+    assert "expected_product_version" in library
+    assert 'health.get("version") != expected_product_version' in library
+    assert "expected=" in library
+    assert "actual=" in library
 
 
 def test_mac_core_verify_and_rollback_are_explicit_and_non_destructive() -> None:
