@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.IO;
 using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.ViewModels;
@@ -88,7 +90,9 @@ public sealed class DiagnosticResultViewModel
         return new DiagnosticResultViewModel(
             isAvailable: true,
             statusText: "诊断结果已通过固定合同校验。",
-            generatedAtText: result.GeneratedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz"),
+            generatedAtText: result.GeneratedAt.ToLocalTime().ToString(
+                "yyyy-MM-dd HH:mm:ss zzz",
+                CultureInfo.CurrentCulture),
             coreText: FormatCore(result.Core),
             workerText: FormatWorker(result.Worker),
             queueText: FormatQueue(result.Queue),
