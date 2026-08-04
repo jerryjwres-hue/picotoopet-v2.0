@@ -12,6 +12,38 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>验证固定诊断端点、幂等键、结果卡片和有界观察策略。</summary>
 internal static class DiagnosticSnapshotSmokeTests
 {
+    private static readonly string[] DiagnosticTaskTypes =
+    {
+        "system.diagnostic_snapshot",
+        "system.noop",
+    };
+
+    private static readonly string[] NoopTaskTypes =
+    {
+        "system.noop",
+    };
+
+    private static readonly string[] DiagnosticSections =
+    {
+        "core",
+        "worker",
+        "queue",
+    };
+
+    private static readonly DiagnosticCheckResult[] HealthyDiagnosticChecks =
+    {
+        new("core_health", "pass", "CORE_HEALTHY"),
+        new("worker_heartbeat", "pass", "WORKER_ONLINE"),
+        new("queue_backlog", "pass", "QUEUE_HEALTHY"),
+    };
+
+    private static readonly object[] HealthyDiagnosticCheckDocuments =
+    {
+        new { name = "core_health", status = "pass", reason_code = "CORE_HEALTHY" },
+        new { name = "worker_heartbeat", status = "pass", reason_code = "WORKER_ONLINE" },
+        new { name = "queue_backlog", status = "pass", reason_code = "QUEUE_HEALTHY" },
+    };
+
     public static async Task RunAsync()
     {
         await VerifyFixedClientContractsAsync().ConfigureAwait(false);
@@ -71,7 +103,7 @@ internal static class DiagnosticSnapshotSmokeTests
                 "worker-m4",
                 "online",
                 "idle",
-                new[] { "system.diagnostic_snapshot", "system.noop" },
+                DiagnosticTaskTypes,
                 new DateTimeOffset(2026, 8, 3, 12, 0, 0, TimeSpan.Zero)),
             new DiagnosticQueueResult(
                 new Dictionary<string, int>
@@ -80,12 +112,7 @@ internal static class DiagnosticSnapshotSmokeTests
                     ["Queued"] = 1,
                 },
                 2),
-            new[]
-            {
-                new DiagnosticCheckResult("core_health", "pass", "CORE_HEALTHY"),
-                new DiagnosticCheckResult("worker_heartbeat", "pass", "WORKER_ONLINE"),
-                new DiagnosticCheckResult("queue_backlog", "pass", "QUEUE_HEALTHY"),
-            },
+            HealthyDiagnosticChecks,
             Array.Empty<string>());
 
         var viewModel = DiagnosticResultViewModel.FromResult(result);
@@ -131,7 +158,7 @@ internal static class DiagnosticSnapshotSmokeTests
             State: "online",
             Reason: "idle",
             WorkerId: "worker-m4",
-            SupportedTaskTypes: new[] { "system.diagnostic_snapshot", "system.noop" },
+            SupportedTaskTypes: DiagnosticTaskTypes,
             ObservedAt: now);
         var page = TaskCenterPageViewModel.CreateForSmokeTest(
             new[] { completedDiagnostic },
@@ -156,7 +183,7 @@ internal static class DiagnosticSnapshotSmokeTests
             activePage.DiagnosticCreateReason.Contains("已有", StringComparison.Ordinal),
             "重复创建禁用原因不明确");
 
-        var unsupported = worker with { SupportedTaskTypes = new[] { "system.noop" } };
+        var unsupported = worker with { SupportedTaskTypes = NoopTaskTypes };
         var unsupportedPage = TaskCenterPageViewModel.CreateForSmokeTest(
             Array.Empty<TaskRecord>(),
             unsupported);
@@ -211,11 +238,7 @@ internal static class DiagnosticSnapshotSmokeTests
                         worker_id = "worker-m4",
                         state = "online",
                         reason = "idle",
-                        supported_task_types = new[]
-                        {
-                            "system.diagnostic_snapshot",
-                            "system.noop",
-                        },
+                        supported_task_types = DiagnosticTaskTypes,
                         last_heartbeat_at = "2026-08-03T12:00:00+00:00",
                     },
                     queue = new
@@ -223,12 +246,7 @@ internal static class DiagnosticSnapshotSmokeTests
                         counts = new Dictionary<string, int> { ["Queued"] = 1 },
                         oldest_queued_age_seconds = 2,
                     },
-                    checks = new[]
-                    {
-                        new { name = "core_health", status = "pass", reason_code = "CORE_HEALTHY" },
-                        new { name = "worker_heartbeat", status = "pass", reason_code = "WORKER_ONLINE" },
-                        new { name = "queue_backlog", status = "pass", reason_code = "QUEUE_HEALTHY" },
-                    },
+                    checks = HealthyDiagnosticCheckDocuments,
                     warnings = Array.Empty<string>(),
                 });
             }
@@ -242,7 +260,7 @@ internal static class DiagnosticSnapshotSmokeTests
                 status = "Queued",
                 priority = 50,
                 resource_tag = "system-diagnostic",
-                payload = new { schema_version = "1.0", sections = new[] { "core", "worker", "queue" } },
+                payload = new { schema_version = "1.0", sections = DiagnosticSections },
                 attempt_count = 0,
                 max_attempts = 2,
                 timeout_seconds = 30,
