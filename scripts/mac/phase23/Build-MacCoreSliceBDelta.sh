@@ -30,6 +30,17 @@ if [[ "$python_version" != Python\ 3.12.* ]]; then
   exit 1
 fi
 
+product_version_file="$repo_root/src/picotoopet_core/product-version.txt"
+if [[ ! -f "$product_version_file" ]]; then
+  echo "缺少唯一产品版本源：$product_version_file" >&2
+  exit 1
+fi
+product_version="$(tr -d '\r\n' < "$product_version_file")"
+if [[ ! "$product_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "产品版本必须是四段数字：$product_version" >&2
+  exit 1
+fi
+
 architecture="$(uname -m)"
 case "$architecture" in
   arm64|x86_64) ;;
@@ -51,7 +62,7 @@ fi
 
 mkdir -p "$output_root"
 staging_parent="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-mac-build.XXXXXX")"
-package_name="PicotooPet-MacCore-${version_label}-${architecture}"
+package_name="PicotooPet-MacCore-${product_version}-${version_label}-${architecture}"
 package_root="$staging_parent/$package_name"
 wheelhouse="$package_root/payload/wheelhouse"
 cleanup() {
@@ -94,6 +105,7 @@ for file in \
   README_INSTALL_CN.txt; do
   cp "$repo_root/deploy/macos/phase23/$file" "$package_root/$file"
 done
+cp "$product_version_file" "$package_root/product-version.txt"
 chmod 755 \
   "$package_root/INSTALL_MAC_CORE_SLICE_B.command" \
   "$package_root/VERIFY_MAC_CORE_SLICE_B.command" \
@@ -106,7 +118,8 @@ python3 - \
   "$architecture" \
   "$python_version" \
   "$commit" \
-  "$package_version" <<'PY'
+  "$package_version" \
+  "$product_version" <<'PY'
 import hashlib
 import json
 import sys
@@ -131,6 +144,7 @@ manifest = {
     "release_type": "prebuilt-offline-delta",
     "target": "macos",
     "version": sys.argv[2],
+    "product_version": sys.argv[7],
     "package_version": sys.argv[6],
     "runtime_version": "2.3.0-slice-d-core",
     "api_schema_version": "2.3.0",
@@ -148,7 +162,7 @@ manifest = {
 )
 PY
 
-rm -f "$output_root"/PicotooPet-MacCore-"$version_label"-"$architecture".tar.gz*
+rm -f "$output_root"/PicotooPet-MacCore-"$product_version"-"$version_label"-"$architecture".tar.gz*
 tarball="$output_root/$package_name.tar.gz"
 tar -czf "$tarball" -C "$staging_parent" "$package_name"
 outer_sha="$(shasum -a 256 "$tarball" | awk '{print tolower($1)}')"
@@ -162,7 +176,8 @@ python3 - \
   "$commit" \
   "$tarball" \
   "$outer_sha" \
-  "$package_version" <<'PY'
+  "$package_version" \
+  "$product_version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -170,6 +185,7 @@ from pathlib import Path
 report = {
     "status": "pass",
     "version": sys.argv[2],
+    "product_version": sys.argv[9],
     "runtime_version": "2.3.0-slice-d-core",
     "package_version": sys.argv[8],
     "architecture": sys.argv[3],
@@ -192,3 +208,4 @@ echo "PHASE23_MAC_SLICE_D_CORE_BUILD=PASS"
 echo "PACKAGE=$tarball"
 echo "SHA256=$outer_sha"
 echo "PACKAGE_VERSION=$package_version"
+echo "PRODUCT_VERSION=$product_version"
