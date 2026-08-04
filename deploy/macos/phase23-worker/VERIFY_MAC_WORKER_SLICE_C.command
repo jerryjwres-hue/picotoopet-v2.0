@@ -9,6 +9,12 @@ source "$script_dir/lib.sh"
 source "$script_dir/worker-lib.sh"
 
 runtime_root="$(phase23_runtime_root)"
+expected_product_version="$(phase23_worker_product_version "$script_dir")"
+manifest_product_version="$(read_manifest "$script_dir" product_version)"
+if [[ "$manifest_product_version" != "$expected_product_version" ]]; then
+  echo "Mac Worker Manifest 产品版本不一致：expected=$expected_product_version actual=$manifest_product_version" >&2
+  exit 1
+fi
 port="$(read_existing_port "$runtime_root")"
 token="$(read_api_token)"
 current_target="$(resolve_current_version "$runtime_root")"
@@ -25,7 +31,8 @@ on_error() {
     "2.3.0-slice-d-worker" \
     "$current_target" \
     "命令失败：$failed_command" \
-    "false")" || true
+    "false" \
+    "$expected_product_version")" || true
   echo "Slice D Worker 验证失败。报告：$report" >&2
   exit "$code"
 }
@@ -36,8 +43,9 @@ if [[ ! -f "$(worker_plist_path)" && "${PICOTOO_FIXTURE_MODE:-0}" != "1" ]]; the
   exit 1
 fi
 base_url="http://127.0.0.1:$port"
+verify_worker_product_version "$runtime_root" "$expected_product_version"
 wait_for_health "$base_url"
-verify_slice_d_candidate_contract "$base_url" "$token"
+verify_slice_d_candidate_contract "$base_url" "$token" "$expected_product_version"
 wait_for_worker_state "$runtime_root" "online"
 verify_worker_api_contract "$base_url" "$token"
 
@@ -63,9 +71,11 @@ report="$(write_worker_report \
   "2.3.0-slice-d-worker" \
   "$current_target" \
   "" \
-  "true")"
+  "true" \
+  "$expected_product_version")"
 echo "PHASE23_MAC_WORKER_VERIFY=PASS"
 echo "PHASE23_MAC_WORKER_SLICE_D_VERIFY=PASS"
+echo "PRODUCT_VERSION=$expected_product_version"
 echo "REPORT=$report"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" != "1" ]]; then
   open "$report"
