@@ -14,6 +14,15 @@ on:
       - "docs/operations/**"
       - "pyproject.toml"
   workflow_dispatch:
+    inputs:
+      runner_target:
+        description: "Native Apple Silicon runner label"
+        required: true
+        default: picotoopet-macos-arm64-release
+        type: choice
+        options:
+          - picotoopet-macos-arm64-release
+          - macos-15
 
 permissions:
   contents: read
@@ -25,7 +34,7 @@ concurrency:
 jobs:
   native-m4-worker-delivery:
     name: Native M4/arm64 Slice D Worker delivery
-    runs-on: macos-15
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_target || 'macos-15' }}
     timeout-minutes: 60
     env:
       PYTHONDONTWRITEBYTECODE: "1"
