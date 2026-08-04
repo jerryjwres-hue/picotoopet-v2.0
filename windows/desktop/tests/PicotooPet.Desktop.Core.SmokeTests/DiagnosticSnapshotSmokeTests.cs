@@ -35,6 +35,7 @@ internal static class DiagnosticSnapshotSmokeTests
             CancellationToken.None).ConfigureAwait(false);
         var result = await client.GetTaskResultAsync(task.TaskId, CancellationToken.None)
             .ConfigureAwait(false);
+        var resultViewModel = DiagnosticResultViewModel.FromResult(result);
 
         SmokeAssert.Equal(
             "api/v1/tasks/system-diagnostic-snapshot",
@@ -55,6 +56,9 @@ internal static class DiagnosticSnapshotSmokeTests
             handler.Requests[1].Path,
             "诊断结果未使用任务关联固定端点");
         SmokeAssert.Equal("1.0", result.SchemaVersion, "诊断结果 schema 解析错误");
+        SmokeAssert.True(
+            resultViewModel.IsAvailable,
+            "HTTP 反序列化后的固定诊断结果未通过 WPF 卡片合同");
     }
 
     private static void VerifyResultViewModel()
@@ -62,7 +66,7 @@ internal static class DiagnosticSnapshotSmokeTests
         var result = new DiagnosticSnapshotResult(
             "1.0",
             new DateTimeOffset(2026, 8, 3, 12, 0, 0, TimeSpan.Zero),
-            new DiagnosticCoreResult("2.3.0", "online", 1),
+            new DiagnosticCoreResult("2.3.0", "online", 2),
             new DiagnosticWorkerResult(
                 "worker-m4",
                 "online",
@@ -200,7 +204,7 @@ internal static class DiagnosticSnapshotSmokeTests
                     {
                         version = "2.3.0",
                         health_state = "online",
-                        database_schema_version = 1,
+                        database_schema_version = 2,
                     },
                     worker = new
                     {
@@ -222,6 +226,8 @@ internal static class DiagnosticSnapshotSmokeTests
                     checks = new[]
                     {
                         new { name = "core_health", status = "pass", reason_code = "CORE_HEALTHY" },
+                        new { name = "worker_heartbeat", status = "pass", reason_code = "WORKER_ONLINE" },
+                        new { name = "queue_backlog", status = "pass", reason_code = "QUEUE_HEALTHY" },
                     },
                     warnings = Array.Empty<string>(),
                 });
