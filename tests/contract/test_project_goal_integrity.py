@@ -73,11 +73,13 @@ def _make_package(
         f"{root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe": (
             _DIAGNOSTIC_BYTES
         ),
+        f"{root}/Phase2Prebuilt.Common.ps1": b"function Read-JsonUtf8 { }",
         f"{root}/INSTALL_PHASE2_WINDOWS.vbs": b"ascii",
         f"{root}/VERIFY_PHASE2_WINDOWS.vbs": b"ascii",
         f"{root}/ROLLBACK_PHASE2_WINDOWS.vbs": b"ascii",
         f"{root}/Install-Phase2Prebuilt.ps1": _goal_gate_script(),
         f"{root}/Verify-Phase2Prebuilt.ps1": _goal_gate_script(),
+        f"{root}/Rollback-Phase2Prebuilt.ps1": b"Write-Host rollback",
     }
     files.update(extra_files or {})
     with zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED) as archive:
