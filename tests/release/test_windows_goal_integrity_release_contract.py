@@ -55,7 +55,7 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
     assert 'manifest["native_ci_verified"] = True' in stamper
     assert 'manifest["user_install_allowed"] = True' in stamper
     assert "output_package" in stamper
-    assert "goal-integrity-stamp-report.json" in stamper
+    assert "project-goal-integrity-report.json" in stamper
     assert '"installer_goal_gate": "pass"' in stamper
     assert '"installer_goal_gate": "pass"' in verifier
 
@@ -73,7 +73,7 @@ def test_windows_release_runs_goal_integrity_gate_before_artifact_upload() -> No
     assert "tests/release/test_windows_goal_integrity_release_contract.py" in workflow
     assert "tests/release/test_windows_native_ci_provenance.py" in workflow
     assert "goal-integrity-report.json" in workflow
-    assert "goal-integrity-stamp-report.json" in workflow
+    assert "project-goal-integrity-report.json" in workflow
     assert workflow.index(stamper) < workflow.index(validator) < workflow.index(upload)
 
 
