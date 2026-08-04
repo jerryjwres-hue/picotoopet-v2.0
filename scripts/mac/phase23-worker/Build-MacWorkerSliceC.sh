@@ -34,6 +34,17 @@ if [[ "$(uname -m)" != "arm64" ]]; then
   exit 1
 fi
 
+product_version_file="$repo_root/src/picotoopet_core/product-version.txt"
+if [[ ! -f "$product_version_file" ]]; then
+  echo "缺少唯一产品版本源：$product_version_file" >&2
+  exit 1
+fi
+product_version="$(tr -d '\r\n' < "$product_version_file")"
+if [[ ! "$product_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "产品版本必须是四段数字：$product_version" >&2
+  exit 1
+fi
+
 commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 short_commit="${commit:0:12}"
 if [[ -z "$version_label" ]]; then
@@ -46,7 +57,7 @@ fi
 
 mkdir -p "$output_root"
 staging_parent="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-worker-build.XXXXXX")"
-package_name="PicotooPet-MacWorker-${version_label}-arm64"
+package_name="PicotooPet-MacWorker-${product_version}-${version_label}-arm64"
 package_root="$staging_parent/$package_name"
 wheelhouse="$package_root/payload/wheelhouse"
 cleanup() {
@@ -90,6 +101,7 @@ for file in \
   README_INSTALL_CN.txt; do
   cp "$repo_root/deploy/macos/phase23-worker/$file" "$package_root/$file"
 done
+cp "$product_version_file" "$package_root/product-version.txt"
 chmod 755 \
   "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" \
   "$package_root/VERIFY_MAC_WORKER_SLICE_C.command" \
@@ -102,7 +114,8 @@ python3 - \
   "$version_label" \
   "$python_version" \
   "$commit" \
-  "$package_version" <<'PY'
+  "$package_version" \
+  "$product_version" <<'PY'
 import hashlib
 import json
 import sys
@@ -127,6 +140,7 @@ manifest = {
     "release_type": "prebuilt-offline-worker",
     "target": "macos",
     "version": sys.argv[2],
+    "product_version": sys.argv[6],
     "package_version": sys.argv[5],
     "runtime_version": "2.3.0-slice-d-worker",
     "api_schema_version": "2.3.0",
@@ -149,7 +163,7 @@ manifest = {
 )
 PY
 
-rm -f "$output_root"/PicotooPet-MacWorker-"$version_label"-arm64.tar.gz*
+rm -f "$output_root"/PicotooPet-MacWorker-"$product_version"-"$version_label"-arm64.tar.gz*
 tarball="$output_root/$package_name.tar.gz"
 tar -czf "$tarball" -C "$staging_parent" "$package_name"
 outer_sha="$(shasum -a 256 "$tarball" | awk '{print tolower($1)}')"
@@ -162,7 +176,8 @@ python3 - \
   "$commit" \
   "$tarball" \
   "$outer_sha" \
-  "$package_version" <<'PY'
+  "$package_version" \
+  "$product_version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -170,6 +185,7 @@ from pathlib import Path
 report = {
     "status": "pass",
     "version": sys.argv[2],
+    "product_version": sys.argv[8],
     "runtime_version": "2.3.0-slice-d-worker",
     "package_version": sys.argv[7],
     "architecture": "arm64",
@@ -197,3 +213,4 @@ echo "PHASE23_MAC_WORKER_SLICE_D_BUILD=PASS"
 echo "PACKAGE=$tarball"
 echo "SHA256=$outer_sha"
 echo "PACKAGE_VERSION=$package_version"
+echo "PRODUCT_VERSION=$product_version"
