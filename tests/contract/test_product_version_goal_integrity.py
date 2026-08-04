@@ -25,13 +25,13 @@ def test_goal_contract_names_canonical_product_version_source_and_payload() -> N
 def test_stamper_rejects_product_version_drift_and_records_it() -> None:
     source = STAMPER.read_text(encoding="utf-8")
     for required in (
-        "_require_product_version",
-        'product_version_contract["source_path"]',
-        'product_version_contract["payload_path"]',
+        "def _product_version(",
+        'product_contract.get("source_path")',
+        'product_contract.get("payload_path")',
         'manifest.get("product_version")',
-        'report["product_version"]',
-        'build_report["product_version"]',
-        '"product_version"',
+        'source_report["product_version"]',
+        '"product_version": product_version',
+        'manifest["product_version"] = product_version',
     ):
         assert required in source
 
@@ -39,11 +39,11 @@ def test_stamper_rejects_product_version_drift_and_records_it() -> None:
 def test_independent_verifier_recomputes_product_version_from_zip_payload() -> None:
     source = VERIFIER.read_text(encoding="utf-8")
     for required in (
-        "_require_product_version",
-        'product_version_contract["payload_path"]',
+        "def _product_version(",
+        'product_contract.get("payload_path")',
         'manifest.get("product_version")',
-        "archive_path.name",
-        'report.get("product_version")',
+        "package_path.name",
+        "archive.read(member)",
         '"product_version": product_version',
     ):
         assert required in source
