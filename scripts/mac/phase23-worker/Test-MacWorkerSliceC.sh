@@ -67,8 +67,19 @@ fi
 
 # shellcheck source=/dev/null
 source "$package_root/lib.sh"
+# shellcheck source=/dev/null
+source "$package_root/worker-lib.sh"
 verify_manifest_files "$package_root"
 
+product_version="$(phase23_worker_product_version "$package_root")"
+if [[ "$(read_manifest "$package_root" product_version)" != "$product_version" ]]; then
+  echo "清单 product_version 与包内唯一版本文件不一致。" >&2
+  exit 1
+fi
+if [[ "$(basename "$archive")" != *"-$product_version-"* ]]; then
+  echo "包名未包含产品版本：$product_version" >&2
+  exit 1
+fi
 if [[ "$(read_manifest "$package_root" architecture)" != "arm64" ]]; then
   echo "清单架构不是 arm64。" >&2
   exit 1
@@ -142,6 +153,10 @@ if ! grep -Fq 'python_version="$("$current_python" --version 2>&1)"' "$installer
   echo "安装器缺少含空格路径引用回归修复。" >&2
   exit 1
 fi
+if ! grep -Fq 'verify_worker_product_version "$runtime_root" "$product_version"' "$installer"; then
+  echo "安装器没有验证激活 Worker 的产品版本。" >&2
+  exit 1
+fi
 
 combined="$(cat \
   "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" \
@@ -164,4 +179,5 @@ done
 
 echo "PHASE23_MAC_WORKER_PACKAGE_TEST=PASS"
 echo "PHASE23_MAC_WORKER_SLICE_D_PACKAGE_TEST=PASS"
+echo "PRODUCT_VERSION=$product_version"
 echo "PACKAGE=$archive"
