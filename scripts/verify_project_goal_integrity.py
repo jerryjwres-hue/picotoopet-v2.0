@@ -215,9 +215,7 @@ def _require_runtime_goal_gates(
         )
     )
     expected.extend(f'"{field}"' for field in provenance_fields)
-    expected.extend(
-        f'"{workflow_path}"' for workflow_path in allowed_workflow_paths
-    )
+    expected.extend(allowed_workflow_paths)
 
     for script_name in _FORMAL_RUNTIME_SCRIPTS:
         archive_name = f"{root}/{script_name}"
