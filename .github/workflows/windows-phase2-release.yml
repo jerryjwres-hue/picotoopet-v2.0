@@ -119,9 +119,38 @@ jobs:
       - name: Stamp approved native WPF delivery invariants
         shell: pwsh
         run: |
-          python scripts/stamp_windows_goal_integrity.py --output-root windows/desktop/artifacts/release
+          $releaseRoot = (Resolve-Path "windows/desktop/artifacts/release").Path
+          $packages = @(Get-ChildItem -LiteralPath $releaseRoot -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
+          if ($packages.Count -ne 1) {
+            throw "GOAL_INTEGRITY_VIOLATION: 盖章前原生 Windows ZIP 数量必须为 1，实际为 $($packages.Count)。"
+          }
+          $stampRoot = Join-Path $env:RUNNER_TEMP "picotoopet-windows-stamped"
+          if (Test-Path -LiteralPath $stampRoot) {
+            Remove-Item -LiteralPath $stampRoot -Recurse -Force
+          }
+          python scripts/stamp_windows_goal_integrity.py `
+            $packages[0].FullName `
+            --output-root $stampRoot `
+            --source-head $env:PICOTOO_SOURCE_HEAD_SHA `
+            --source-ref $env:PICOTOO_SOURCE_REF
           if ($LASTEXITCODE -ne 0) {
             throw "GOAL_INTEGRITY_VIOLATION: 无法加盖原生 WPF 目标合同。"
+          }
+
+          $replaceNames = @(
+            $packages[0].Name,
+            "$($packages[0].Name).sha256.txt",
+            "windows-build-report.json",
+            "project-goal-integrity-report.json"
+          )
+          foreach ($name in $replaceNames) {
+            $existing = Join-Path $releaseRoot $name
+            if (Test-Path -LiteralPath $existing) {
+              Remove-Item -LiteralPath $existing -Force
+            }
+          }
+          foreach ($file in Get-ChildItem -LiteralPath $stampRoot -File) {
+            Copy-Item -LiteralPath $file.FullName -Destination $releaseRoot -Force
           }
 
       - name: Validate actual installer against project goal contract
@@ -149,7 +178,7 @@ jobs:
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
             windows/desktop/artifacts/release/windows-build-report.json
-            windows/desktop/artifacts/release/goal-integrity-stamp-report.json
+            windows/desktop/artifacts/release/project-goal-integrity-report.json
             windows/desktop/artifacts/release/goal-integrity-report.json
             windows/desktop/artifacts/release/fixture-evidence/**
           if-no-files-found: error
