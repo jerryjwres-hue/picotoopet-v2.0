@@ -74,8 +74,8 @@ internal static class AppSelfTest
 
             using var shell = ShellViewModel.CreateForSmokeTest(
                 ControlCenterCapabilities.Legacy22);
-            if (shell.WindowTitle != "Picotoo Pet AI 2.3.6.1"
-                || shell.ControlCenterSubtitle != "Control Center · v2.3.6.1")
+            if (shell.WindowTitle != ProductVersionInfo.WindowTitle
+                || shell.ControlCenterSubtitle != ProductVersionInfo.ControlCenterSubtitle)
             {
                 throw new InvalidOperationException("Control Center 产品版本文案自检失败。");
             }
