@@ -122,6 +122,9 @@ def test_release_builder_generates_single_root_manifest_and_zip() -> None:
     assert "Compress-Archive -Path (Join-Path $packageRoot \"*\")" not in builder
     assert "PicotooPet-Phase2-Windows-Prebuilt" in builder
     assert "[string]$Version" in builder
+    assert "[string]$ProductVersion" in builder
+    assert "product_version" in builder
+    assert "product-version.txt" in builder
     assert "native_ci_verified" in builder
     assert "user_install_allowed" in builder
     assert "source_head" in builder
@@ -133,6 +136,10 @@ def test_release_verifier_checks_payload_process_shortcuts_and_lifecycle() -> No
     verifier = read(DESKTOP / "scripts" / "Test-Phase2WindowsRelease.ps1")
     assert "Get-FileHash" in verifier
     assert "release-manifest.json" in verifier
+    assert "product_version" in verifier
+    assert "Set-PackageProductVersion" in verifier
+    assert "shortcut_state" in verifier
+    assert "Assert-ShortcutSnapshotEqual" in verifier
     assert "--self-test" in verifier
     assert "ExitCode" in verifier
     assert "-PreflightOnly" in verifier
@@ -150,35 +157,60 @@ def test_release_verifier_checks_payload_process_shortcuts_and_lifecycle() -> No
 def test_shortcut_resolution_is_shared_across_install_verify_and_rollback() -> None:
     common_path = DESKTOP / "release" / "Phase2Prebuilt.Common.ps1"
     common = read(common_path)
-    assert "function Get-PicotooShortcutPaths" in common
-    assert "DesktopDirectory" in common
-    assert "Microsoft\\Windows\\Start Menu\\Programs\\Picotoo Pet AI.lnk" in common
-    assert "Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Picotoo Pet AI.lnk" in common
-    assert "function Set-PicotooShortcuts" in common
-    assert "function Assert-PicotooShortcuts" in common
-    assert "TargetPath" in common
-
-    for name in (
-        "Install-Phase2Prebuilt.ps1",
-        "Verify-Phase2Prebuilt.ps1",
-        "Rollback-Phase2Prebuilt.ps1",
+    for required in (
+        "function Get-PicotooManagedShortcutLocations",
+        "function Get-PicotooShortcutPaths",
+        "function Get-PicotooManagedShortcutSnapshot",
+        "function Restore-PicotooManagedShortcutSnapshot",
+        "function Remove-PicotooManagedShortcuts",
+        "function Set-PicotooShortcuts",
+        "function Assert-PicotooShortcuts",
+        '"Picotoo Pet AI $ProductVersion.lnk"',
+        "Microsoft\\Windows\\Start Menu\\Programs",
+        "Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        "RequireNoLegacy",
+        "TargetPath",
+        "Arguments",
+        "WorkingDirectory",
+        "IconLocation",
+        "Description",
     ):
-        script = read(DESKTOP / "release" / name)
+        assert required in common
+
+    scripts = {
+        name: read(DESKTOP / "release" / name)
+        for name in (
+            "Install-Phase2Prebuilt.ps1",
+            "Verify-Phase2Prebuilt.ps1",
+            "Rollback-Phase2Prebuilt.ps1",
+        )
+    }
+    for name, script in scripts.items():
         assert '"Phase2Prebuilt.Common.ps1"' in script, name
         assert ". $commonScript" in script, name
+        assert "product_version" in script, name
+
+    assert "Get-PicotooManagedShortcutSnapshot" in scripts["Install-Phase2Prebuilt.ps1"]
+    assert "Restore-PicotooManagedShortcutSnapshot" in scripts["Install-Phase2Prebuilt.ps1"]
+    assert "RequireNoLegacy" in scripts["Verify-Phase2Prebuilt.ps1"]
+    assert "Restore-PicotooManagedShortcutSnapshot" in scripts["Rollback-Phase2Prebuilt.ps1"]
 
 
-def test_verify_and_rollback_enforce_manifest_size_and_shortcut_targets() -> None:
+def test_verify_and_rollback_enforce_manifest_size_and_shortcut_state() -> None:
     verifier = read(DESKTOP / "release" / "Verify-Phase2Prebuilt.ps1")
     rollback = read(DESKTOP / "release" / "Rollback-Phase2Prebuilt.ps1")
 
     for script in (verifier, rollback):
         assert "size_bytes" in script
-        assert "Assert-PicotooShortcuts" in script
         assert "shortcut_paths" in script
+        assert "shortcut_state" in script
         assert "shortcuts_verified" in script
 
+    assert "Assert-PicotooShortcuts" in verifier
+    assert "RequireNoLegacy" in verifier
     assert "Restore-RollbackOrigin" in rollback
+    assert "Restore-PicotooManagedShortcutSnapshot" in rollback
+    assert "Assert-ShortcutSnapshotEqual" in rollback
     assert "[string]$current.executable" in rollback
 
 
