@@ -58,7 +58,9 @@ def _write_candidate(
     include_provenance: bool = True,
 ) -> tuple[Path, str]:
     archive_root = "candidate"
-    package = tmp_path / "PicotooPet-Phase2-Windows-Prebuilt-test.zip"
+    package = tmp_path / (
+        "PicotooPet-Phase2-Windows-Prebuilt-2.3.6.1-test.zip"
+    )
     manifest: dict[str, object] = {
         "release_type": "prebuilt",
         "target": "win-x64",
