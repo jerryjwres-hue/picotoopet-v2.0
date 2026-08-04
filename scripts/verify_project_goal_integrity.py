@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -20,6 +21,7 @@ _FORMAL_RUNTIME_SCRIPTS = (
     "Verify-Phase2Prebuilt.ps1",
 )
 _GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 _POSITIVE_INTEGER_PATTERN = re.compile(r"^[1-9][0-9]*$")
 
 
@@ -159,6 +161,143 @@ def _require_archive_paths(
         )
 
 
+def _normalize_payload_path(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: Manifest payload 路径不能为空。"
+        )
+    if "\\" in value or ":" in value or value.startswith("/"):
+        raise GoalIntegrityError(
+            f"GOAL_INTEGRITY_VIOLATION: Manifest payload 路径非法：{value!r}"
+        )
+    path = PurePosixPath(value)
+    normalized = path.as_posix()
+    if (
+        normalized != value
+        or normalized in {"", "."}
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise GoalIntegrityError(
+            f"GOAL_INTEGRITY_VIOLATION: Manifest payload 路径非法：{value!r}"
+        )
+    return normalized
+
+
+def _verify_manifest_payload(
+    archive: zipfile.ZipFile,
+    *,
+    root: str,
+    manifest: dict[str, Any],
+    allowed_executable_paths: list[str],
+) -> int:
+    """独立重算 payload 的路径、大小和 SHA-256，并要求 Manifest 全覆盖。"""
+
+    entries = manifest.get("files")
+    if not isinstance(entries, list) or not entries:
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: Manifest files 必须是非空数组。"
+        )
+
+    payload_prefix = f"{root}/payload/"
+    payload_members: dict[str, zipfile.ZipInfo] = {}
+    for info in archive.infolist():
+        if info.is_dir() or not info.filename.startswith(payload_prefix):
+            continue
+        relative = _normalize_payload_path(info.filename[len(payload_prefix) :])
+        key = relative.casefold()
+        if key in payload_members:
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: ZIP payload 包含大小写冲突或重复路径："
+                f"{relative}"
+            )
+        payload_members[key] = info
+
+    listed_paths: dict[str, str] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: Manifest files 项必须是对象。"
+            )
+        relative = _normalize_payload_path(entry.get("path"))
+        key = relative.casefold()
+        if key in listed_paths:
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: Manifest files 包含重复路径："
+                f"{relative}"
+            )
+        listed_paths[key] = relative
+
+        expected_hash = entry.get("sha256")
+        expected_size = entry.get("size_bytes")
+        if not isinstance(expected_hash, str) or not _SHA256_PATTERN.fullmatch(
+            expected_hash
+        ):
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: Manifest SHA-256 非法："
+                f"{relative}"
+            )
+        if isinstance(expected_size, bool) or not isinstance(expected_size, int):
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: Manifest 文件大小非法："
+                f"{relative}"
+            )
+        if expected_size < 0:
+            raise GoalIntegrityError(
+                "GOAL_INTEGRITY_VIOLATION: Manifest 文件大小不能为负数："
+                f"{relative}"
+            )
+
+        member = payload_members.get(key)
+        if member is None:
+            raise GoalIntegrityError(
+                f"GOAL_INTEGRITY_VIOLATION: Manifest 文件缺失：{relative}"
+            )
+        data = archive.read(member)
+        if len(data) != expected_size:
+            raise GoalIntegrityError(
+                f"GOAL_INTEGRITY_VIOLATION: payload 文件大小不一致：{relative}"
+            )
+        actual_hash = hashlib.sha256(data).hexdigest()
+        if actual_hash.lower() != expected_hash.lower():
+            raise GoalIntegrityError(
+                f"GOAL_INTEGRITY_VIOLATION: payload 文件 SHA-256 不一致：{relative}"
+            )
+
+    unmanifested = sorted(
+        payload_members[key].filename[len(payload_prefix) :]
+        for key in payload_members.keys() - listed_paths.keys()
+    )
+    if unmanifested:
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: payload 包含未列入 Manifest 的文件："
+            f"{unmanifested!r}"
+        )
+    missing = sorted(
+        listed_paths[key]
+        for key in listed_paths.keys() - payload_members.keys()
+    )
+    if missing:
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: Manifest 列出不存在的 payload 文件："
+            f"{missing!r}"
+        )
+
+    allowed_executables = {
+        _normalize_payload_path(path).casefold()
+        for path in allowed_executable_paths
+    }
+    actual_executables = {
+        key for key in payload_members if key.endswith(".exe")
+    }
+    unexpected_executables = sorted(actual_executables - allowed_executables)
+    if unexpected_executables:
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: payload 包含未批准的可执行文件："
+            f"{unexpected_executables!r}"
+        )
+    return len(listed_paths)
+
+
 def _reject_forbidden_paths(
     names: list[str],
     *,
@@ -266,6 +405,7 @@ def verify_windows_package(
     provenance_fields = windows.get("required_native_ci_provenance_fields")
     allowed_workflow_paths = windows.get("allowed_native_ci_workflow_paths")
     required_paths = windows.get("required_archive_paths")
+    allowed_executable_paths = windows.get("allowed_payload_executable_paths")
     forbidden_fragments = windows.get("forbidden_name_fragments")
     forbidden_suffixes = windows.get("forbidden_suffixes")
     if not isinstance(required_values, dict):
@@ -295,6 +435,12 @@ def verify_windows_package(
     ):
         raise GoalIntegrityError(
             "GOAL_INTEGRITY_VIOLATION: required_archive_paths 无效。"
+        )
+    if not isinstance(allowed_executable_paths, list) or not all(
+        isinstance(value, str) and value for value in allowed_executable_paths
+    ):
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: allowed_payload_executable_paths 无效。"
         )
     if not isinstance(forbidden_fragments, list) or not all(
         isinstance(value, str) for value in forbidden_fragments
@@ -331,6 +477,12 @@ def verify_windows_package(
             names,
             root=root,
             required=required_paths,
+        )
+        verified_payload_files = _verify_manifest_payload(
+            archive,
+            root=root,
+            manifest=manifest,
+            allowed_executable_paths=allowed_executable_paths,
         )
         _reject_forbidden_paths(
             names,
@@ -373,6 +525,7 @@ def verify_windows_package(
         "github_workflow_ref": manifest.get("github_workflow_ref"),
         "source_head": manifest.get("source_head"),
         "build_commit": manifest.get("build_commit"),
+        "verified_payload_files": verified_payload_files,
         "installer_goal_gate": "pass",
     }
 
