@@ -22,6 +22,11 @@
       "local_http_ui": false,
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
+    "product_version": {
+      "value": "2.3.6.1",
+      "source_path": "src/picotoopet_core/product-version.txt",
+      "payload_path": "product-version.txt"
+    },
     "required_native_ci_provenance_fields": [
       "github_run_id",
       "github_run_attempt",
@@ -35,6 +40,7 @@
       ".github/workflows/windows-phase2-release.yml"
     ],
     "required_archive_paths": [
+      "payload/product-version.txt",
       "payload/Picotoo Pet AI.exe",
       "payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
       "Phase2Prebuilt.Common.ps1",
