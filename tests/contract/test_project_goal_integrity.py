@@ -37,6 +37,8 @@ def _goal_gate_script() -> bytes:
         '        "source_head"\r\n'
         '        "source_ref"\r\n'
         '        "build_commit"\r\n'
+        '        ".github/workflows/windows-control-center-ci.yml"\r\n'
+        '        ".github/workflows/windows-phase2-release.yml"\r\n'
         '        "picotoo pet ai.exe"\r\n'
         '        "tools/diagnostics/picotoopet.desktop.diagnostics.exe"\r\n'
         '        throw "GOAL_INTEGRITY_VIOLATION: forbidden web UI payload"\r\n'
