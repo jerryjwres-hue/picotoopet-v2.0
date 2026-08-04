@@ -206,7 +206,6 @@ def _runtime_gate(
     allowed_workflow_paths: list[str],
     *,
     allowed_executable_paths: list[str] | None = None,
-    product_version: str | None = None,
 ) -> str:
     expected_lines = [
         _ps_literal(key, value) for key, value in required_values.items()
@@ -217,8 +216,6 @@ def _runtime_gate(
             _ps_literal("user_install_allowed", True),
         )
     )
-    if product_version is not None:
-        expected_lines.append(_ps_literal("product_version", product_version))
     expected_block = "\n".join(expected_lines)
     provenance_names = ", ".join(f'"{value}"' for value in provenance_fields)
     workflow_names = ", ".join(f'"{value}"' for value in allowed_workflow_paths)
@@ -454,7 +451,6 @@ def stamp_windows_release(
             provenance_fields,
             allowed_workflows,
             allowed_executable_paths=allowed_executables,
-            product_version=product_version,
         )
         for script_name in _FORMAL_SCRIPTS:
             script_path = package_root / script_name
