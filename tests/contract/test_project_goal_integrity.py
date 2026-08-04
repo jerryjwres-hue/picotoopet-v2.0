@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import zipfile
 from pathlib import Path
@@ -13,6 +14,8 @@ from scripts.verify_project_goal_integrity import (
 
 
 _GOAL_GATE_MARKER = "# PICOTOO_GOAL_INTEGRITY_GATE_V1"
+_APP_BYTES = b"MZ-native-wpf"
+_DIAGNOSTIC_BYTES = b"MZ-diagnostics"
 
 
 def _goal_gate_script() -> bytes:
@@ -45,6 +48,14 @@ def _goal_gate_script() -> bytes:
     ).encode("utf-8-sig")
 
 
+def _file_entry(path: str, data: bytes) -> dict[str, object]:
+    return {
+        "path": path,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "size_bytes": len(data),
+    }
+
+
 def _make_package(
     tmp_path: Path,
     *,
@@ -58,9 +69,9 @@ def _make_package(
             manifest,
             ensure_ascii=False,
         ).encode("utf-8"),
-        f"{root}/payload/Picotoo Pet AI.exe": b"MZ-native-wpf",
+        f"{root}/payload/Picotoo Pet AI.exe": _APP_BYTES,
         f"{root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe": (
-            b"MZ-diagnostics"
+            _DIAGNOSTIC_BYTES
         ),
         f"{root}/INSTALL_PHASE2_WINDOWS.vbs": b"ascii",
         f"{root}/VERIFY_PHASE2_WINDOWS.vbs": b"ascii",
@@ -100,6 +111,13 @@ def _compliant_manifest() -> dict[str, object]:
         "source_head": "a" * 40,
         "source_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
         "build_commit": "b" * 40,
+        "files": [
+            _file_entry("Picotoo Pet AI.exe", _APP_BYTES),
+            _file_entry(
+                "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
+                _DIAGNOSTIC_BYTES,
+            ),
+        ],
     }
 
 
@@ -112,7 +130,30 @@ def test_accepts_existing_native_wpf_task_center_delivery(tmp_path: Path) -> Non
     assert report["delivery_surface"] == "existing-native-wpf-desktop"
     assert report["entry_executable"] == "Picotoo Pet AI.exe"
     assert report["github_run_id"] == "123456789"
+    assert report["verified_payload_files"] == 2
     assert report["installer_goal_gate"] == "pass"
+
+
+def test_rejects_payload_hash_or_size_tampering(tmp_path: Path) -> None:
+    package = _make_package(
+        tmp_path,
+        manifest=_compliant_manifest(),
+        extra_files={"candidate/payload/Picotoo Pet AI.exe": b"MZ-tampered"},
+    )
+
+    with pytest.raises(GoalIntegrityError, match="SHA-256|大小"):
+        verify_windows_package(package)
+
+
+def test_rejects_unmanifested_payload_file(tmp_path: Path) -> None:
+    package = _make_package(
+        tmp_path,
+        manifest=_compliant_manifest(),
+        extra_files={"candidate/payload/unlisted.bin": b"unlisted"},
+    )
+
+    with pytest.raises(GoalIntegrityError, match="未列入|清单"):
+        verify_windows_package(package)
 
 
 def test_rejects_browser_helper_even_when_prebuilt_and_hashable(
