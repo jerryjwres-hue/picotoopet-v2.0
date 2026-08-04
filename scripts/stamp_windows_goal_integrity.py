@@ -5,19 +5,32 @@ import hashlib
 import json
 import os
 import posixpath
+import re
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-GOAL_GATE_START = "# PICOTOO_GOAL_GATE_START"
-GOAL_GATE_END = "# PICOTOO_GOAL_GATE_END"
-FORMAL_SCRIPTS = (
+
+class GoalStampError(ValueError):
+    """The native package cannot be safely promoted to user-installable status."""
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_DEFAULT_CONTRACT = _REPO_ROOT / "contracts" / "release" / "project-goal-invariants.json"
+_GOAL_GATE_MARKER = "# PICOTOO_GOAL_INTEGRITY_GATE_V1"
+_FORMAL_SCRIPTS = (
     "Install-Phase2Prebuilt.ps1",
     "Verify-Phase2Prebuilt.ps1",
     "Rollback-Phase2Prebuilt.ps1",
 )
+_GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+_POSITIVE_INTEGER_PATTERN = re.compile(r"^[1-9][0-9]*$")
+
+
+def _fail(message: str) -> GoalStampError:
+    return GoalStampError(f"GOAL_STAMP_REJECTED: {message}")
 
 
 def _sha256(path: Path) -> str:
@@ -29,34 +42,139 @@ def _sha256(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise _fail(f"无法读取 JSON：{path}") from error
+    if not isinstance(payload, dict):
+        raise _fail(f"JSON 顶层必须是对象：{path}")
+    return payload
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
 
 
-def _single_root(expand_root: Path) -> Path:
-    entries = list(expand_root.iterdir())
-    if len(entries) != 1 or not entries[0].is_dir():
-        raise RuntimeError("Windows ZIP 必须只有一个顶层目录。")
-    return entries[0]
+def _validated_nonempty(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise _fail(f"缺少 {field}。")
+    return value.strip()
 
 
-def _copy_tree_contents(source: Path, destination: Path) -> None:
-    destination.mkdir(parents=True, exist_ok=True)
-    for item in source.iterdir():
-        target = destination / item.name
-        if item.is_dir():
-            shutil.copytree(item, target)
-        else:
-            shutil.copy2(item, target)
+def _workflow_path(repository: str, workflow_ref: str) -> str:
+    prefix = f"{repository}/"
+    if not workflow_ref.lower().startswith(prefix.lower()) or "@" not in workflow_ref:
+        raise _fail("GITHUB_WORKFLOW_REF 与批准仓库不一致。")
+    path, _, _ = workflow_ref[len(prefix) :].partition("@")
+    if not path:
+        raise _fail("GITHUB_WORKFLOW_REF 缺少 workflow 路径。")
+    return path
 
 
-def _manifest_entries(payload_root: Path) -> list[dict[str, Any]]:
+def _provenance(
+    *,
+    source_head: str,
+    source_ref: str,
+    repository: str,
+    allowed_workflow_paths: list[str],
+) -> dict[str, str]:
+    if os.environ.get("CI", "").lower() != "true":
+        raise _fail("只允许在 CI=true 的原生 Windows 流程盖章。")
+    if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
+        raise _fail("只允许在 GITHUB_ACTIONS=true 的流程盖章。")
+    if os.environ.get("RUNNER_OS", "").lower() != "windows":
+        raise _fail("只允许原生 Windows Runner 盖章。")
+    actual_repository = _validated_nonempty(
+        os.environ.get("GITHUB_REPOSITORY"), "GITHUB_REPOSITORY"
+    )
+    if actual_repository.lower() != repository.lower():
+        raise _fail("GITHUB_REPOSITORY 与目标合同不一致。")
+
+    run_id = _validated_nonempty(os.environ.get("GITHUB_RUN_ID"), "GITHUB_RUN_ID")
+    run_attempt = _validated_nonempty(
+        os.environ.get("GITHUB_RUN_ATTEMPT"), "GITHUB_RUN_ATTEMPT"
+    )
+    workflow_ref = _validated_nonempty(
+        os.environ.get("GITHUB_WORKFLOW_REF"), "GITHUB_WORKFLOW_REF"
+    )
+    build_commit = _validated_nonempty(os.environ.get("GITHUB_SHA"), "GITHUB_SHA")
+    if not _POSITIVE_INTEGER_PATTERN.fullmatch(run_id):
+        raise _fail("GITHUB_RUN_ID 必须为正整数。")
+    if not _POSITIVE_INTEGER_PATTERN.fullmatch(run_attempt):
+        raise _fail("GITHUB_RUN_ATTEMPT 必须为正整数。")
+    if not _GIT_SHA_PATTERN.fullmatch(source_head):
+        raise _fail("source_head 必须为 40 位 Git SHA。")
+    if not _GIT_SHA_PATTERN.fullmatch(build_commit):
+        raise _fail("build_commit 必须为 40 位 Git SHA。")
+    if not source_ref.strip():
+        raise _fail("source_ref 不能为空。")
+
+    workflow_path = _workflow_path(repository, workflow_ref)
+    allowed = {value.casefold() for value in allowed_workflow_paths}
+    if workflow_path.casefold() not in allowed:
+        raise _fail(f"未批准的 Windows 原生 workflow：{workflow_path}")
+
+    return {
+        "github_run_id": run_id,
+        "github_run_attempt": run_attempt,
+        "github_workflow_ref": workflow_ref,
+        "source_head": source_head,
+        "source_ref": source_ref,
+        "build_commit": build_commit,
+    }
+
+
+def _validate_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    infos = archive.infolist()
+    if not infos:
+        raise _fail("输入发布 ZIP 为空。")
+    seen: set[str] = set()
+    for info in infos:
+        name = info.filename
+        path = PurePosixPath(name)
+        if not name or path.is_absolute() or ".." in path.parts:
+            raise _fail(f"输入 ZIP 包含不安全路径：{name!r}")
+        if "\\" in name or ":" in name:
+            raise _fail(f"输入 ZIP 包含非规范路径：{name!r}")
+        if posixpath.normpath(name) != name.rstrip("/"):
+            raise _fail(f"输入 ZIP 包含非规范路径：{name!r}")
+        key = name.rstrip("/").casefold()
+        if key in seen:
+            raise _fail(f"输入 ZIP 包含重复路径：{name!r}")
+        seen.add(key)
+        mode = (info.external_attr >> 16) & 0o170000
+        if mode == 0o120000:
+            raise _fail(f"输入 ZIP 禁止符号链接：{name!r}")
+        if info.flag_bits & 0x1:
+            raise _fail(f"输入 ZIP 禁止加密成员：{name!r}")
+    return infos
+
+
+def _extract_archive(package: Path, destination: Path) -> Path:
+    try:
+        with zipfile.ZipFile(package) as archive:
+            infos = _validate_members(archive)
+            roots = {
+                PurePosixPath(info.filename).parts[0]
+                for info in infos
+                if PurePosixPath(info.filename).parts
+            }
+            if len(roots) != 1:
+                raise _fail("输入发布 ZIP 必须只有一个顶层目录。")
+            archive.extractall(destination)
+    except zipfile.BadZipFile as error:
+        raise _fail("输入发布文件不是有效 ZIP。") from error
+    root = destination / next(iter(roots))
+    if not root.is_dir():
+        raise _fail("输入发布 ZIP 顶层目录无效。")
+    return root
+
+
+def _manifest_file_entries(payload_root: Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for path in sorted(item for item in payload_root.rglob("*") if item.is_file()):
         entries.append(
@@ -66,401 +184,350 @@ def _manifest_entries(payload_root: Path) -> list[dict[str, Any]]:
                 "size_bytes": path.stat().st_size,
             }
         )
+    if not entries:
+        raise _fail("Windows payload 为空。")
     return entries
 
 
-def _ps_literal(value: str) -> str:
-    return value.replace('"', '`"')
+def _ps_literal(key: str, value: object) -> str:
+    if isinstance(value, bool):
+        return f'    "{key}" = ${str(value).lower()}'
+    if isinstance(value, str):
+        escaped = value.replace('"', '`"')
+        return f'    "{key}" = "{escaped}"'
+    raise _fail(f"运行时目标门不支持字段 {key}={value!r}。")
 
 
-def _goal_gate_block(
+def _runtime_gate(
     required_values: dict[str, Any],
-    provenance: dict[str, str],
-    workflow_path: str,
-    product_version: str,
+    provenance_fields: list[str],
+    allowed_workflow_paths: list[str],
+    *,
+    allowed_executable_paths: list[str] | None = None,
+    product_version: str | None = None,
 ) -> str:
-    string_names = (
-        "release_type",
-        "target",
-        "delivery_surface",
-        "ui_framework",
-        "entry_executable",
-        "integration_target",
-        "github_repository",
-    )
-    boolean_names = (
-        "source_build_on_user_pc",
-        "browser_ui",
-        "local_http_ui",
-    )
-    lines = [
-        GOAL_GATE_START,
-        "$goalGateExpected = [ordered]@{",
+    expected_lines = [
+        _ps_literal(key, value) for key, value in required_values.items()
     ]
-    for name in string_names:
-        lines.append(f'    "{name}" = "{_ps_literal(str(required_values[name]))}"')
-    for name in boolean_names:
-        value = "$true" if bool(required_values[name]) else "$false"
-        lines.append(f'    "{name}" = {value}')
-    lines.append(f'    "product_version" = "{_ps_literal(product_version)}"')
-    lines.extend(
-        [
-            '    "native_ci_verified" = $true',
-            '    "user_install_allowed" = $true',
-            f'    "github_run_id" = "{_ps_literal(provenance["github_run_id"])}"',
-            f'    "github_run_attempt" = "{_ps_literal(provenance["github_run_attempt"])}"',
-            f'    "github_workflow_ref" = "{_ps_literal(provenance["github_workflow_ref"])}"',
-            f'    "github_workflow_path" = "{_ps_literal(workflow_path)}"',
-            f'    "source_head" = "{_ps_literal(provenance["source_head"])}"',
-            f'    "source_ref" = "{_ps_literal(provenance["source_ref"])}"',
-            f'    "build_commit" = "{_ps_literal(provenance["build_commit"])}"',
-            "}",
-            "$goalGateManifestPath = Join-Path $PSScriptRoot \"release-manifest.json\"",
-            "if (-not (Test-Path -LiteralPath $goalGateManifestPath -PathType Leaf)) {",
-            '    throw "目标完整性门禁：release-manifest.json 缺失。"',
-            "}",
-            "$goalGateEncoding = [System.Text.UTF8Encoding]::new($false, $true)",
-            "$goalGateManifest = ([System.IO.File]::ReadAllText(",
-            "    $goalGateManifestPath,",
-            "    $goalGateEncoding) | ConvertFrom-Json)",
-            "foreach ($goalGateEntry in $goalGateExpected.GetEnumerator()) {",
-            "    if (-not ($goalGateManifest.PSObject.Properties.Name -contains $goalGateEntry.Key)) {",
-            '        throw "目标完整性门禁：Manifest 缺少字段 $($goalGateEntry.Key)。"',
-            "    }",
-            "    $goalGateActual = $goalGateManifest.($goalGateEntry.Key)",
-            "    if ($goalGateEntry.Value -is [bool]) {",
-            "        if ([bool]$goalGateActual -ne [bool]$goalGateEntry.Value) {",
-            '            throw "目标完整性门禁失败：$($goalGateEntry.Key)。"',
-            "        }",
-            "    }",
-            "    elseif ([string]$goalGateActual -ne [string]$goalGateEntry.Value) {",
-            '        throw "目标完整性门禁失败：$($goalGateEntry.Key)。"',
-            "    }",
-            "}",
-            GOAL_GATE_END,
-        ]
+    expected_lines.extend(
+        (
+            _ps_literal("native_ci_verified", True),
+            _ps_literal("user_install_allowed", True),
+        )
     )
-    return "\n".join(lines) + "\n"
+    if product_version is not None:
+        expected_lines.append(_ps_literal("product_version", product_version))
+    expected_block = "\n".join(expected_lines)
+    provenance_names = ", ".join(f'"{value}"' for value in provenance_fields)
+    workflow_names = ", ".join(f'"{value}"' for value in allowed_workflow_paths)
+    executable_names = ", ".join(
+        f'"{value.lower()}"' for value in (allowed_executable_paths or [])
+    )
+    return f'''{_GOAL_GATE_MARKER}
+$goalGateExpected = [ordered]@{{
+{expected_block}
+}}
+$goalGateRequiredProvenance = @({provenance_names})
+$goalGateAllowedWorkflowPaths = @({workflow_names})
+$goalGateAllowedExecutables = @({executable_names})
+$goalGateManifestPath = Join-Path $PSScriptRoot "release-manifest.json"
+if (-not (Test-Path -LiteralPath $goalGateManifestPath -PathType Leaf)) {{
+    throw "GOAL_INTEGRITY_VIOLATION: release-manifest.json missing"
+}}
+$goalGateManifest = Get-Content -LiteralPath $goalGateManifestPath -Raw | ConvertFrom-Json
+foreach ($goalGateEntry in $goalGateExpected.GetEnumerator()) {{
+    $goalGateProperty = $goalGateManifest.PSObject.Properties[$goalGateEntry.Key]
+    if ($null -eq $goalGateProperty -or $goalGateProperty.Value -ne $goalGateEntry.Value) {{
+        throw "GOAL_INTEGRITY_VIOLATION: manifest goal mismatch: $($goalGateEntry.Key)"
+    }}
+}}
+foreach ($goalGateField in $goalGateRequiredProvenance) {{
+    $goalGateValue = [string]$goalGateManifest.$goalGateField
+    if ([string]::IsNullOrWhiteSpace($goalGateValue)) {{
+        throw "GOAL_INTEGRITY_VIOLATION: native provenance missing: $goalGateField"
+    }}
+}}
+$goalGateRepository = [string]$goalGateManifest.github_repository
+$goalGateWorkflowRef = [string]$goalGateManifest.github_workflow_ref
+$goalGateWorkflowAllowed = $false
+foreach ($goalGateWorkflowPath in $goalGateAllowedWorkflowPaths) {{
+    if ($goalGateWorkflowRef.StartsWith(
+            "$goalGateRepository/$goalGateWorkflowPath@",
+            [System.StringComparison]::OrdinalIgnoreCase)) {{
+        $goalGateWorkflowAllowed = $true
+        break
+    }}
+}}
+if (-not $goalGateWorkflowAllowed) {{
+    throw "GOAL_INTEGRITY_VIOLATION: unapproved native workflow"
+}}
+$goalGateForbiddenSuffixes = @(".html", ".htm", ".js", ".css")
+$goalGateForbiddenFragments = @("slicedhelper", "windows-helper", "picotoopet slice d.exe")
+$goalGateExecutableRoot = Join-Path $PSScriptRoot "payload"
+foreach ($goalGateFile in Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File) {{
+    $goalGateName = $goalGateFile.Name.ToLowerInvariant()
+    foreach ($goalGateFragment in $goalGateForbiddenFragments) {{
+        if ($goalGateName.Contains($goalGateFragment)) {{
+            throw "GOAL_INTEGRITY_VIOLATION: forbidden helper payload"
+        }}
+    }}
+    foreach ($goalGateSuffix in $goalGateForbiddenSuffixes) {{
+        if ($goalGateName.EndsWith($goalGateSuffix)) {{
+            throw "GOAL_INTEGRITY_VIOLATION: forbidden web UI payload"
+        }}
+    }}
+    if ($goalGateName.EndsWith(".exe")) {{
+        $goalGateRelative = $goalGateFile.FullName.Substring(
+            $goalGateExecutableRoot.Length).TrimStart("\\").Replace("\\", "/").ToLowerInvariant()
+        if ($goalGateAllowedExecutables -notcontains $goalGateRelative) {{
+            throw "GOAL_INTEGRITY_VIOLATION: unapproved executable payload"
+        }}
+    }}
+}}
+'''
 
 
-def _inject_goal_gate(
-    package_root: Path,
-    required_values: dict[str, Any],
-    provenance: dict[str, str],
-    workflow_path: str,
-    product_version: str,
-) -> None:
-    block = _goal_gate_block(
-        required_values,
-        provenance,
-        workflow_path,
-        product_version,
-    )
-    for relative in FORMAL_SCRIPTS:
-        path = package_root / relative
+def _inject_runtime_gate(path: Path, gate: str) -> None:
+    try:
         text = path.read_text(encoding="utf-8-sig")
-        start = text.find(GOAL_GATE_START)
-        end = text.find(GOAL_GATE_END)
-        if (start >= 0 or end >= 0:
-            if start < 0 or end < 0 or end < start:
-                raise RuntimeError(f"目标完整性门禁标记损坏：{relative}")
-            end += len(GOAL_GATE_END)
-            while end < len(text) and text[end] in "\r\n":
-                end += 1
-            text = text[:start] + text[end:]
-        if text.startswith("#!"):
-            line_end = text.find("\n")
-            if line_end >= 0:
-                text = text[: line_end + 1] + block + text[line_end + 1 :]
-            else:
-                text = text + "\n" + block
-        else:
-            text = block + text
-        path.write_text(text, encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise _fail(f"无法读取正式脚本：{path.name}") from error
+    if _GOAL_GATE_MARKER in text:
+        text = text.split(_GOAL_GATE_MARKER, 1)[0].rstrip() + "\n"
+    path.write_text(gate + "\n" + text, encoding="utf-8")
 
 
-def _extract_zip(archive: Path, destination: Path) -> None:
-    with zipfile.ZipFile(archive) as bundle:
-        for info in bundle.infolist():
-            name = info.filename
-            path = PurePosixPath(name)
-            if path.is_absolute() or ".." in path.parts:
-                raise RuntimeError(f"Windows ZIP 包含不安全路径：{name}")
-            if "\\" in name or ":" in name:
-                raise RuntimeError(f"Windows ZIP 包含非规范路径：{name}")
-            normalized = posixpath.normpath(name)
-            if normalized != name.rstrip("/"):
-                raise RuntimeError(f"Windows ZIP 包含非规范路径：{name}")
-            mode = (info.external_attr >> 16) & 0o170000
-            if mode == 0o120000:
-                raise RuntimeError(f"Windows ZIP 禁止符号链接：{name}")
-        bundle.extractall(destination)
+def _product_version(
+    *,
+    package_root: Path,
+    manifest: dict[str, Any],
+    build_report: dict[str, Any],
+    product_contract: object,
+) -> str | None:
+    if product_contract is None:
+        return None
+    if not isinstance(product_contract, dict):
+        raise _fail("product_version 合同无效。")
+    expected = product_contract.get("value")
+    source_relative = product_contract.get("source_path")
+    payload_relative = product_contract.get("payload_path")
+    if not all(isinstance(value, str) and value for value in (
+        expected,
+        source_relative,
+        payload_relative,
+    )):
+        raise _fail("product_version 合同字段无效。")
+    source_path = _REPO_ROOT / str(source_relative)
+    payload_path = package_root / "payload" / str(payload_relative)
+    try:
+        source_value = source_path.read_text(encoding="utf-8").strip()
+        payload_value = payload_path.read_text(encoding="utf-8-sig").strip()
+    except (OSError, UnicodeDecodeError) as error:
+        raise _fail("无法读取产品版本源或 payload 版本文件。") from error
+    if source_value != expected:
+        raise _fail("唯一产品版本源与目标合同不一致。")
+    if payload_value != expected:
+        raise _fail("Windows payload 产品版本与目标合同不一致。")
+    if manifest.get("product_version") != expected:
+        raise _fail("Windows Manifest 产品版本与目标合同不一致。")
+    if build_report.get("product_version") != expected:
+        raise _fail("Windows 构建报告产品版本与目标合同不一致。")
+    return str(expected)
 
 
-def _build_zip(package_root: Path, archive_path: Path) -> None:
-    if archive_path.exists():
-        archive_path.unlink()
+def _write_zip(source_root: Path, target: Path) -> None:
+    if target.exists():
+        target.unlink()
     with zipfile.ZipFile(
-        archive_path,
+        target,
         mode="w",
         compression=zipfile.ZIP_DEFLATED,
         compresslevel=9,
-    ) as bundle:
-        root_name = package_root.name
-        for path in sorted(package_root.rglob("*")):
-            relative = path.relative_to(package_root).as_posix()
-            archive_name = f"{root_name}/{relative}"
+    ) as archive:
+        for path in sorted(source_root.rglob("*")):
+            relative = path.relative_to(source_root.parent).as_posix()
             if path.is_dir():
-                bundle.writestr(archive_name.rstrip("/") + "/", b"")
+                archive.writestr(relative.rstrip("/") + "/", b"")
             else:
-                bundle.write(path, archive_name)
+                archive.write(path, relative)
 
 
-def _validated_string(value: Any, name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise RuntimeError(f"缺少原生 CI 溯源字段：{name}")
-    return value.strip()
+def stamp_windows_release(
+    package: Path | str,
+    *,
+    output_root: Path | str,
+    source_head: str,
+    source_ref: str,
+    contract_path: Path | str = _DEFAULT_CONTRACT,
+) -> dict[str, object]:
+    source_package = Path(package)
+    output = Path(output_root)
+    contract_file = Path(contract_path)
+    if not source_package.is_file() or source_package.stat().st_size <= 0:
+        raise _fail("输入 Windows ZIP 不存在或为空。")
 
+    source_report_path = source_package.parent / "windows-build-report.json"
+    source_report = _read_json(source_report_path)
+    if source_report.get("status") != "pass":
+        raise _fail("输入 Windows 构建报告不是 pass。")
+    if source_report.get("native_ci_verified") is not True:
+        raise _fail("输入 Windows 构建报告没有原生 CI 证明。")
+    if source_report.get("user_install_allowed") is not True:
+        raise _fail("输入 Windows 构建报告未允许用户安装。")
+    actual_input_sha = _sha256(source_package)
+    if source_report.get("package_sha256") != actual_input_sha:
+        raise _fail("输入 Windows ZIP 与构建报告 SHA-256 不一致。")
 
-def _workflow_path_from_ref(repository: str, workflow_ref: str) -> str:
-    prefix = f"{repository}/"
-    if not workflow_ref.startswith(prefix) or "@" not in workflow_ref:
-        raise RuntimeError("GITHUB_WORKFLOW_REF 与批准仓库不一致。")
-    path, _, _ = workflow_ref[len(prefix) :].partition("@")
-    if not path:
-        raise RuntimeError("GITHUB_WORKFLOW_REF 缺少 workflow 路径。")
-    return path
-
-
-def _require_ci_provenance(
-    required_values: dict[str, Any],
-    windows_contract: dict[str, Any],
-    manifest: dict[str, Any],
-    build_report: dict[str, Any],
-) -> tuple[dict[str, str], str]:
-    if os.environ.get("CI", "").lower() != "true":
-        raise RuntimeError("只允许在 CI=true 的原生 Windows 流程盖章。")
-    if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
-        raise RuntimeError("只允许在 GITHUB_ACTIONS=true 的流程盖章。")
-    if os.environ.get("RUNNER_OS", "").lower() != "windows":
-        raise RuntimeError("只允许原生 Windows Runner 盖章。")
-
-    repository = _validated_string(
-        os.environ.get("GITHUB_REPOSITORY"),
-        "GITHUB_REPOSITORY",
+    contract = _read_json(contract_file)
+    windows = contract.get("windows")
+    if not isinstance(windows, dict):
+        raise _fail("目标合同缺少 windows 对象。")
+    required_values = windows.get("required_manifest_values")
+    provenance_fields = windows.get("required_native_ci_provenance_fields")
+    allowed_workflows = windows.get("allowed_native_ci_workflow_paths")
+    allowed_executables = windows.get("allowed_payload_executable_paths")
+    if not isinstance(required_values, dict):
+        raise _fail("required_manifest_values 无效。")
+    for value, name in (
+        (provenance_fields, "required_native_ci_provenance_fields"),
+        (allowed_workflows, "allowed_native_ci_workflow_paths"),
+        (allowed_executables, "allowed_payload_executable_paths"),
+    ):
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item for item in value
+        ):
+            raise _fail(f"{name} 无效。")
+    repository = _validated_nonempty(
+        required_values.get("github_repository"), "github_repository"
     )
-    expected_repository = str(required_values["github_repository"])
-    if repository.lower() != expected_repository.lower():
-        raise RuntimeError(
-            f"盖章仓库不一致：{repository!r} != {expected_repository!r}"
-        )
-
-    provenance = {
-        "github_run_id": _validated_string(
-            os.environ.get("GITHUB_RUN_ID"),
-            "GITHUB_RUN_ID",
-        ),
-        "github_run_attempt": _validated_string(
-            os.environ.get("GITHUB_RUN_ATTEMPT"),
-            "GITHUB_RUN_ATTEMPT",
-        ),
-        "github_workflow_ref": _validated_string(
-            os.environ.get("GITHUB_WORKFLOW_REF"),
-            "GITHUB_WORKFLOW_REF",
-        ),
-        "source_head": _validated_string(
-            os.environ.get("PICOTOO_SOURCE_HEAD_SHA"),
-            "PICOTOO_SOURCE_HEAD_SHA",
-        ),
-        "source_ref": _validated_string(
-            os.environ.get("PICOTOO_SOURCE_REF"),
-            "PICOTOO_SOURCE_REF",
-        ),
-        "build_commit": _validated_string(
-            os.environ.get("GITHUB_SHA"),
-            "GITHUB_SHA",
-        ),
-    }
-    workflow_path = _workflow_path_from_ref(
-        repository,
-        provenance["github_workflow_ref"],
+    provenance = _provenance(
+        source_head=source_head,
+        source_ref=source_ref,
+        repository=repository,
+        allowed_workflow_paths=allowed_workflows,
     )
-    allowed_workflows = windows_contract.get("allowed_native_ci_workflow_paths", [])
-    if not isinstance(allowed_workflows, list) or not allowed_workflows:
-        raise RuntimeError("目标合同缺少批准的 Windows 原生 workflow 白名单。")
-    allowed = {str(item).lower() for item in allowed_workflows}
-    if workflow_path.lower() not in allowed:
-        raise RuntimeError(f"未批准的 Windows 原生 workflow：{workflow_path}")
 
-    fields = windows_contract.get("required_native_ci_provenance_fields", [])
-    if not isinstance(fields, list) or not fields:
-        raise RuntimeError("目标合同缺少原生 CI 溯源字段定义。")
-    for field in fields:
-        if field not in provenance:
-            raise RuntimeError(f"目标合同声明了未知溯源字段：{field}")
-        expected = provenance[field]
-        if str(manifest.get(field) or "") != expected:
-            raise RuntimeError(
-                f"Manifest 溯源字段不一致：{field} | "
-                f"{manifest.get(field)!r} != {expected!r}"
-            )
-        if str(build_report.get(field) or "") != expected:
-            raise RuntimeError(
-                f"构建报告溯源字段不一致：{field} | "
-                f"{build_report.get(field)!r} != {expected!r}"
-            )
-
-    return provenance, workflow_path
-
-
-def _require_product_version(
-    repo_root: Path,
-    package_root: Path,
-    manifest: dict[str, Any],
-    contract: dict[str, Any],
-) -> str:
-    windows_contract = contract["windows"]
-    product_version_contract = windows_contract["product_version"]
-    expected = _validated_string(product_version_contract.get("value"), "product_version.value")
-    source_path = repo_root / _validated_string(
-        product_version_contract.get("source_path"),
-        "product_version.source_path",
-    )
-    payload_path = package_root / "payload" / _validated_string(
-        product_version_contract.get("payload_path"),
-        "product_version.payload_path",
-    )
-    if source_path.read_text(encoding="utf-8").strip() != expected:
-        raise RuntimeError("唯一产品版本源与目标合同不一致。")
-    if payload_path.read_text(encoding="utf-8-sig").strip() != expected:
-        raise RuntimeError("Windows payload 产品版本与目标合同不一致。")
-    if manifest.get("product_version") != expected:
-        raise RuntimeError("Windows Manifest 产品版本与目标合同不一致。")
-    return expected
-
-
-def _stamp(
-    repo_root: Path,
-    archive_path: Path,
-    build_report_path: Path,
-    contract_path: Path,
-) -> tuple[str, Path, Path]:
-    contract = _read_json(contract_path)
-    windows_contract = contract["windows"]
-    required_values = dict(windows_contract["required_manifest_values"])
-    build_report = _read_json(build_report_path)
-
+    output.mkdir(parents=True, exist_ok=True)
+    output_package = output / source_package.name
+    output_report = output / "windows-build-report.json"
     with tempfile.TemporaryDirectory(prefix="picotoo-goal-stamp-") as temporary:
-        expand_root = Path(temporary) / "expanded"
-        expand_root.mkdir()
-        _extract_zip(archive_path, expand_root)
-        package_root = _single_root(expand_root)
+        package_root = _extract_archive(source_package, Path(temporary))
         manifest_path = package_root / "release-manifest.json"
         manifest = _read_json(manifest_path)
+        if manifest.get("native_ci_verified") is not True:
+            raise _fail("输入 Manifest 没有原生 CI 证明。")
+        if manifest.get("user_install_allowed") is not True:
+            raise _fail("输入 Manifest 未允许用户安装。")
+        for field in provenance_fields:
+            if manifest.get(field) != provenance[field]:
+                raise _fail(f"输入 Manifest 溯源字段不一致：{field}")
+            if source_report.get(field) != provenance[field]:
+                raise _fail(f"输入构建报告溯源字段不一致：{field}")
+        if manifest.get("github_repository") != repository:
+            raise _fail("输入 Manifest github_repository 不一致。")
+        if source_report.get("github_repository") != repository:
+            raise _fail("输入构建报告 github_repository 不一致。")
 
-        provenance, workflow_path = _require_ci_provenance(
-            required_values,
-            windows_contract,
-            manifest,
-            build_report,
-        )
-        product_version = _require_product_version(
-            repo_root,
-            package_root,
-            manifest,
-            contract,
-        )
-
-        source_build_on_user_pc = required_values.pop(
-            "source_build_on_user_pc",
-            None,
+        product_version = _product_version(
+            package_root=package_root,
+            manifest=manifest,
+            build_report=source_report,
+            product_contract=windows.get("product_version"),
         )
         manifest.update(required_values)
-        if source_build_on_user_pc is not None:
-            manifest["source_build_on_user_pc"] = source_build_on_user_pc
-        manifest["product_version"] = product_version
         manifest["native_ci_verified"] = True
         manifest["user_install_allowed"] = True
         manifest.update(provenance)
-        _write_json(manifest_path, manifest)
+        if product_version is not None:
+            manifest["product_version"] = product_version
 
-        _inject_goal_gate(
-            package_root,
-            {
-                **required_values,
-                "source_build_on_user_pc": source_build_on_user_pc,
-            },
-            provenance,
-            workflow_path,
-            product_version,
+        gate = _runtime_gate(
+            required_values,
+            provenance_fields,
+            allowed_workflows,
+            allowed_executable_paths=allowed_executables,
+            product_version=product_version,
         )
+        for script_name in _FORMAL_SCRIPTS:
+            script_path = package_root / script_name
+            if not script_path.is_file():
+                raise _fail(f"输入正式包缺少 {script_name}。")
+            _inject_runtime_gate(script_path, gate)
 
-        manifest["files"] = _manifest_entries(package_root / "payload")
+        manifest["files"] = _manifest_file_entries(package_root / "payload")
         _write_json(manifest_path, manifest)
-        _build_zip(package_root, archive_path)
+        _write_zip(package_root, output_package)
 
-    digest = _sha256(archive_path)
-    sidecar_path = archive_path.with_name(f"{archive_path.name}.sha256.txt")
-    sidecar_path.write_text(
-        f"{digest}  {archive_path.name}\n",
+    output_sha = _sha256(output_package)
+    sha_file = output / f"{output_package.name}.sha256.txt"
+    sha_file.write_text(
+        f"{output_sha}  {output_package.name}\n",
         encoding="utf-8",
     )
 
-    build_report.update(required_values)
-    if source_build_on_user_pc is not None:
-        build_report["source_build_on_user_pc"] = source_build_on_user_pc
-    build_report["product_version"] = product_version
-    build_report["native_ci_verified"] = True
-    build_report["user_install_allowed"] = True
-    build_report.update(provenance)
-    build_report["package"] = str(archive_path.resolve())
-    build_report["package_sha256"] = digest
-    _write_json(build_report_path, build_report)
+    source_report.update(required_values)
+    source_report["native_ci_verified"] = True
+    source_report["user_install_allowed"] = True
+    source_report.update(provenance)
+    if product_version is not None:
+        source_report["product_version"] = product_version
+    source_report["package"] = str(output_package.resolve())
+    source_report["package_sha256"] = output_sha
+    _write_json(output_report, source_report)
 
-    report = {
+    goal_report = output / "project-goal-integrity-report.json"
+    goal_payload: dict[str, Any] = {
         "schema_version": "1.0",
-        "policy_id": contract["policy_id"],
+        "policy_id": contract.get("policy_id"),
         "status": "pass",
+        "package": str(output_package.resolve()),
+        "package_sha256": output_sha,
         "product_version": product_version,
-        "archive": str(archive_path.resolve()),
-        "archive_sha256": digest,
-        "build_report": str(build_report_path.resolve()),
-        "contract": str(contract_path.resolve()),
-        "workflow_path": workflow_path,
-        "goal_values": {
-            **required_values,
-            "source_build_on_user_pc": source_build_on_user_pc,
-            "product_version": product_version,
-            "native_ci_verified": True,
-            "user_install_allowed": True,
-            **provenance,
-        },
+        "delivery_surface": required_values.get("delivery_surface"),
+        "ui_framework": required_values.get("ui_framework"),
+        "integration_target": required_values.get("integration_target"),
+        "native_ci_verified": True,
+        "user_install_allowed": True,
+        "github_repository": repository,
+        **provenance,
+        "installer_goal_gate": "pass",
     }
-    report_path = archive_path.parent / "project-goal-integrity-stamp.json"
-    _write_json(report_path, report)
-    return digest, sidecar_path, report_path
+    _write_json(goal_report, goal_payload)
+    return {
+        "package": output_package,
+        "build_report": output_report,
+        "sha256_file": sha_file,
+        "goal_integrity_report": goal_report,
+        "package_sha256": output_sha,
+        "product_version": product_version,
+    }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="在原生 Windows CI 验证并盖章项目目标完整性。"
-    )
-    parser.add_argument("--repo-root", type=Path, required=True)
-    parser.add_argument("--archive", type=Path, required=True)
-    parser.add_argument("--build-report", type=Path, required=True)
-    parser.add_argument("--contract", type=Path, required=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("package", type=Path)
+    parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--source-head", required=True)
+    parser.add_argument("--source-ref", required=True)
+    parser.add_argument("--contract", type=Path, default=_DEFAULT_CONTRACT)
     args = parser.parse_args()
 
-    digest, sidecar, report = _stamp(
-        args.repo_root.resolve(),
-        args.archive.resolve(),
-        args.build_report.resolve(),
-        args.contract.resolve(),
-    )
+    try:
+        result = stamp_windows_release(
+            args.package,
+            output_root=args.output_root,
+            source_head=args.source_head,
+            source_ref=args.source_ref,
+            contract_path=args.contract,
+        )
+    except GoalStampError as error:
+        print(str(error))
+        return 1
+
     print("PROJECT_GOAL_INTEGRITY_STAMP=PASS")
-    print(f"SHA256={digest}")
-    print(f"SIDECAR={sidecar}")
-    print(f"REPORT={report}")
+    print(f"PACKAGE={result['package']}")
+    print(f"SHA256={result['package_sha256']}")
+    print(f"REPORT={result['goal_integrity_report']}")
     return 0
 
 
