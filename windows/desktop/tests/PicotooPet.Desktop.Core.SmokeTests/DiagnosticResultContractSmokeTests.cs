@@ -6,34 +6,44 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>锁定 Windows 固定结果卡片只接受 Slice D 白名单值。</summary>
 internal static class DiagnosticResultContractSmokeTests
 {
+    private static readonly DiagnosticCheckResult[] CoreHealthyChecks =
+    {
+        new("core_health", "pass", "CORE_HEALTHY"),
+    };
+
+    private static readonly DiagnosticCheckResult[] UnknownChecks =
+    {
+        new("arbitrary_probe", "pass", "CORE_HEALTHY"),
+    };
+
+    private static readonly DiagnosticCheckResult[] QueueHealthyChecks =
+    {
+        new("queue_backlog", "pass", "QUEUE_HEALTHY"),
+    };
+
+    private static readonly DiagnosticCheckResult[] NullChecks =
+    {
+        null!,
+    };
+
+    private static readonly string[] TokenLeakWarnings =
+    {
+        "TOKEN_LEAK",
+    };
+
     public static void Run()
     {
         var valid = CreateResult(
-            checks: new[]
-            {
-                new DiagnosticCheckResult(
-                    "core_health",
-                    "pass",
-                    "CORE_HEALTHY"),
-            },
+            checks: CoreHealthyChecks,
             warnings: Array.Empty<string>());
         var viewModel = DiagnosticResultViewModel.FromResult(valid);
         SmokeAssert.True(viewModel.IsAvailable, "合法固定结果未生成结果卡片");
 
         AssertInvalid(
-            valid with
-            {
-                Checks = new[]
-                {
-                    new DiagnosticCheckResult(
-                        "arbitrary_probe",
-                        "pass",
-                        "CORE_HEALTHY"),
-                },
-            },
+            valid with { Checks = UnknownChecks },
             "未知检查名未被拒绝");
         AssertInvalid(
-            valid with { Warnings = new[] { "TOKEN_LEAK" } },
+            valid with { Warnings = TokenLeakWarnings },
             "未知警告值未被拒绝");
         AssertInvalid(
             valid with
@@ -44,13 +54,7 @@ internal static class DiagnosticResultContractSmokeTests
                         ["InjectedStatus"] = 1,
                     },
                     null),
-                Checks = new[]
-                {
-                    new DiagnosticCheckResult(
-                        "queue_backlog",
-                        "pass",
-                        "QUEUE_HEALTHY"),
-                },
+                Checks = QueueHealthyChecks,
             },
             "未知队列状态未被拒绝");
         AssertInvalid(
@@ -63,10 +67,7 @@ internal static class DiagnosticResultContractSmokeTests
             },
             "运行时 null core.version 未转换为合同错误");
         AssertInvalid(
-            valid with
-            {
-                Checks = new DiagnosticCheckResult[] { null! },
-            },
+            valid with { Checks = NullChecks },
             "运行时 null 检查项未转换为合同错误");
     }
 
