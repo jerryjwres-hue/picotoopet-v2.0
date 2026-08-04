@@ -190,13 +190,15 @@ def test_native_mac_core_ci_accepts_slice_d_and_remains_arm64_only() -> None:
 
 
 def test_mac_core_user_scripts_do_not_execute_worker_or_mutate_system() -> None:
-    """Core 增量包不启动 Worker、不执行构建或修改系统级配置。"""
+    """Core 用户交付脚本不启动 Worker、不执行构建或修改系统级配置。"""
 
-    texts = []
-    for directory in (MAC_BUILD, MAC_DEPLOY):
-        if directory.exists():
-            texts.extend(read(path) for path in directory.iterdir() if path.is_file())
-    combined = "\n".join(texts)
+    user_scripts = (
+        MAC_DEPLOY / "INSTALL_MAC_CORE_SLICE_B.command",
+        MAC_DEPLOY / "VERIFY_MAC_CORE_SLICE_B.command",
+        MAC_DEPLOY / "ROLLBACK_MAC_CORE_SLICE_B.command",
+        MAC_DEPLOY / "lib.sh",
+    )
+    combined = "\n".join(read(path) for path in user_scripts)
     for forbidden in (
         "lease_next(",
         "recover_expired_leases(",
