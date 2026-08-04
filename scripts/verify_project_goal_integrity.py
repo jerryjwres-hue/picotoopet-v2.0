@@ -19,7 +19,7 @@ _FORMAL_RUNTIME_SCRIPTS = (
     "Install-Phase2Prebuilt.ps1",
     "Verify-Phase2Prebuilt.ps1",
 )
-_SHA256_PATTERN = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+_GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 _POSITIVE_INTEGER_PATTERN = re.compile(r"^[1-9][0-9]*$")
 
 
@@ -88,8 +88,11 @@ def _require_manifest_values(
 def _require_native_ci_provenance(
     manifest: dict[str, Any],
     required_fields: list[str],
+    *,
+    repository: str,
+    allowed_workflow_paths: list[str],
 ) -> None:
-    """可安装原生包必须可追溯到具体 GitHub Actions Windows run。"""
+    """可安装原生包必须可追溯到批准的 GitHub Actions Windows run。"""
 
     if not (
         manifest.get("native_ci_verified") is True
@@ -116,14 +119,21 @@ def _require_native_ci_provenance(
             )
 
     workflow_ref = values.get("github_workflow_ref", "")
-    if ".github/workflows/" not in workflow_ref or "@" not in workflow_ref:
+    allowed_prefixes = tuple(
+        f"{repository}/{workflow_path}@"
+        for workflow_path in allowed_workflow_paths
+    )
+    if not workflow_ref.lower().startswith(
+        tuple(prefix.lower() for prefix in allowed_prefixes)
+    ):
         raise GoalIntegrityError(
-            "GOAL_INTEGRITY_VIOLATION: github_workflow_ref 不是有效工作流引用。"
+            "GOAL_INTEGRITY_VIOLATION: github_workflow_ref 不属于批准的 "
+            "Windows 原生 CI 工作流。"
         )
 
     for field in ("source_head", "build_commit"):
         value = values.get(field, "")
-        if not _SHA256_PATTERN.fullmatch(value):
+        if not _GIT_SHA_PATTERN.fullmatch(value):
             raise GoalIntegrityError(
                 "GOAL_INTEGRITY_VIOLATION: 原生 CI 溯源字段 "
                 f"{field} 必须为 40 位 Git 提交 SHA。"
@@ -189,6 +199,7 @@ def _require_runtime_goal_gates(
     root: str,
     required_values: dict[str, Any],
     provenance_fields: list[str],
+    allowed_workflow_paths: list[str],
 ) -> None:
     expected = [
         _powershell_literal(key, value)
@@ -204,6 +215,9 @@ def _require_runtime_goal_gates(
         )
     )
     expected.extend(f'"{field}"' for field in provenance_fields)
+    expected.extend(
+        f'"{workflow_path}"' for workflow_path in allowed_workflow_paths
+    )
 
     for script_name in _FORMAL_RUNTIME_SCRIPTS:
         archive_name = f"{root}/{script_name}"
@@ -252,6 +266,7 @@ def verify_windows_package(
         )
     required_values = windows.get("required_manifest_values")
     provenance_fields = windows.get("required_native_ci_provenance_fields")
+    allowed_workflow_paths = windows.get("allowed_native_ci_workflow_paths")
     required_paths = windows.get("required_archive_paths")
     forbidden_fragments = windows.get("forbidden_name_fragments")
     forbidden_suffixes = windows.get("forbidden_suffixes")
@@ -259,11 +274,23 @@ def verify_windows_package(
         raise GoalIntegrityError(
             "GOAL_INTEGRITY_VIOLATION: required_manifest_values 无效。"
         )
+    repository = required_values.get("github_repository")
+    if not isinstance(repository, str) or not repository:
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: github_repository 合同无效。"
+        )
     if not isinstance(provenance_fields, list) or not all(
         isinstance(value, str) and value for value in provenance_fields
     ):
         raise GoalIntegrityError(
             "GOAL_INTEGRITY_VIOLATION: required_native_ci_provenance_fields 无效。"
+        )
+    if not isinstance(allowed_workflow_paths, list) or not all(
+        isinstance(value, str) and value.startswith(".github/workflows/")
+        for value in allowed_workflow_paths
+    ):
+        raise GoalIntegrityError(
+            "GOAL_INTEGRITY_VIOLATION: allowed_native_ci_workflow_paths 无效。"
         )
     if not isinstance(required_paths, list) or not all(
         isinstance(value, str) for value in required_paths
@@ -296,7 +323,12 @@ def verify_windows_package(
         root = _single_root(names)
         manifest = _read_manifest(archive, root)
         _require_manifest_values(manifest, required_values)
-        _require_native_ci_provenance(manifest, provenance_fields)
+        _require_native_ci_provenance(
+            manifest,
+            provenance_fields,
+            repository=repository,
+            allowed_workflow_paths=allowed_workflow_paths,
+        )
         _require_archive_paths(
             names,
             root=root,
@@ -312,6 +344,7 @@ def verify_windows_package(
             root=root,
             required_values=required_values,
             provenance_fields=provenance_fields,
+            allowed_workflow_paths=allowed_workflow_paths,
         )
 
         if (
