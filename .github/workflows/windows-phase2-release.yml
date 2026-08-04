@@ -2,6 +2,15 @@ name: Phase 2.3 Slice D Windows Prebuilt Release
 
 on:
   workflow_dispatch:
+    inputs:
+      runner_target:
+        description: "Native Windows runner label"
+        required: true
+        default: picotoopet-windows-release
+        type: choice
+        options:
+          - picotoopet-windows-release
+          - windows-2025
   pull_request:
     paths:
       - "AGENTS.md"
@@ -16,6 +25,7 @@ on:
       - "tests/release/test_windows_goal_integrity_release_contract.py"
       - "tests/release/test_windows_native_install_permission.py"
       - "tests/release/test_windows_native_ci_provenance.py"
+      - "tests/release/test_self_hosted_native_runner_fallback.py"
       - "windows/desktop/**"
       - "tests/release/test_windows_prebuilt_delivery.py"
       - ".github/workflows/windows-phase2-release.yml"
@@ -35,6 +45,7 @@ on:
       - "tests/release/test_windows_goal_integrity_release_contract.py"
       - "tests/release/test_windows_native_install_permission.py"
       - "tests/release/test_windows_native_ci_provenance.py"
+      - "tests/release/test_self_hosted_native_runner_fallback.py"
       - "windows/desktop/**"
       - "tests/release/test_windows_prebuilt_delivery.py"
       - ".github/workflows/windows-phase2-release.yml"
@@ -49,7 +60,7 @@ concurrency:
 jobs:
   windows-release:
     name: Native Windows Slice D build and release gate
-    runs-on: windows-2025
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_target || 'windows-2025' }}
     timeout-minutes: 50
     env:
       CI: "true"
@@ -76,7 +87,7 @@ jobs:
       - name: Run Windows release analyzer and goal-integrity contracts
         shell: powershell
         run: |
-          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/release/test_windows_native_install_permission.py tests/release/test_windows_native_ci_provenance.py tests/contract/test_preserving_project_goals_skill.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
+          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/release/test_windows_native_install_permission.py tests/release/test_windows_native_ci_provenance.py tests/release/test_self_hosted_native_runner_fallback.py tests/contract/test_preserving_project_goals_skill.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
