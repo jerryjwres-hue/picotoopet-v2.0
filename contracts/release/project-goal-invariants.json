@@ -19,8 +19,17 @@
       "entry_executable": "Picotoo Pet AI.exe",
       "integration_target": "TaskCenter",
       "browser_ui": false,
-      "local_http_ui": false
+      "local_http_ui": false,
+      "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
+    "required_native_ci_provenance_fields": [
+      "github_run_id",
+      "github_run_attempt",
+      "github_workflow_ref",
+      "source_head",
+      "source_ref",
+      "build_commit"
+    ],
     "required_archive_paths": [
       "payload/Picotoo Pet AI.exe",
       "payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
