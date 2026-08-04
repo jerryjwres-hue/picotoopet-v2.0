@@ -8,5 +8,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
     <ProjectReference Include="..\..\src\PicotooPet.Desktop\PicotooPet.Desktop.csproj" />
+    <Content Include="..\..\..\..\src\picotoopet_core\product-version.txt"
+             Link="product-version.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>
