@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -36,6 +37,9 @@ def _goal_gate_script() -> bytes:
         '        "github_run_id"\r\n'
         '        "github_run_attempt"\r\n'
         '        "github_workflow_ref"\r\n'
+        '        "source_head"\r\n'
+        '        "source_ref"\r\n'
+        '        "build_commit"\r\n'
         '        throw "GOAL_INTEGRITY_VIOLATION: forbidden web UI payload"\r\n'
     ).encode("utf-8-sig")
 
@@ -90,11 +94,16 @@ def test_installable_package_requires_native_ci_run_provenance(tmp_path: Path) -
 
 def test_builder_records_native_ci_run_provenance() -> None:
     source = BUILDER.read_text(encoding="utf-8-sig")
+    assignments = {
+        "github_run_id": "GITHUB_RUN_ID",
+        "github_run_attempt": "GITHUB_RUN_ATTEMPT",
+        "github_workflow_ref": "GITHUB_WORKFLOW_REF",
+        "github_repository": "GITHUB_REPOSITORY",
+    }
 
-    assert "github_run_id       = $env:GITHUB_RUN_ID" in source
-    assert "github_run_attempt  = $env:GITHUB_RUN_ATTEMPT" in source
-    assert "github_workflow_ref = $env:GITHUB_WORKFLOW_REF" in source
-    assert "github_repository   = $env:GITHUB_REPOSITORY" in source
+    for field, environment_name in assignments.items():
+        pattern = rf"{field}\s*=\s*\$env:{environment_name}"
+        assert re.search(pattern, source), field
 
 
 def test_goal_contract_freezes_repository_and_provenance_fields() -> None:
