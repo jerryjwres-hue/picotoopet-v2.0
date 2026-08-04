@@ -144,7 +144,7 @@ jobs:
             -Version $version
 
       - name: Stamp and validate approved native WPF package
-        shell: powershell
+        shell: pwsh
         run: |
           $releaseRoot = "windows/desktop/artifacts/control-center-release"
           python scripts/stamp_windows_goal_integrity.py --output-root $releaseRoot
