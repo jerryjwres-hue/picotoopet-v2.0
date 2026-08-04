@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import zipfile
 from pathlib import Path
@@ -11,6 +12,9 @@ from scripts.verify_project_goal_integrity import GoalIntegrityError, verify_win
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "release" / "project-goal-invariants.json"
+_APP_BYTES = b"MZ-native-wpf"
+_DIAGNOSTIC_BYTES = b"MZ-diagnostics"
+_UPDATER_BYTES = b"MZ-unapproved"
 
 
 def _gate_script() -> bytes:
@@ -26,8 +30,17 @@ def _gate_script() -> bytes:
         '        "integration_target" = "TaskCenter"\r\n'
         '        "browser_ui" = $false\r\n'
         '        "local_http_ui" = $false\r\n'
+        '        "github_repository" = "jerryjwres-hue/picotoopet-v2.0"\r\n'
         '        "native_ci_verified" = $true\r\n'
         '        "user_install_allowed" = $true\r\n'
+        '        "github_run_id"\r\n'
+        '        "github_run_attempt"\r\n'
+        '        "github_workflow_ref"\r\n'
+        '        "source_head"\r\n'
+        '        "source_ref"\r\n'
+        '        "build_commit"\r\n'
+        '        ".github/workflows/windows-control-center-ci.yml"\r\n'
+        '        ".github/workflows/windows-phase2-release.yml"\r\n'
         '        "picotoo pet ai.exe"\r\n'
         '        "tools/diagnostics/picotoopet.desktop.diagnostics.exe"\r\n'
         '        throw "GOAL_INTEGRITY_VIOLATION: forbidden web UI payload"\r\n'
@@ -35,7 +48,24 @@ def _gate_script() -> bytes:
     ).encode("utf-8-sig")
 
 
-def _manifest() -> dict[str, object]:
+def _file_entry(path: str, data: bytes) -> dict[str, object]:
+    return {
+        "path": path,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "size_bytes": len(data),
+    }
+
+
+def _manifest(*, extra_executable: bool) -> dict[str, object]:
+    files = [
+        _file_entry("Picotoo Pet AI.exe", _APP_BYTES),
+        _file_entry(
+            "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
+            _DIAGNOSTIC_BYTES,
+        ),
+    ]
+    if extra_executable:
+        files.append(_file_entry("Updater.exe", _UPDATER_BYTES))
     return {
         "schema_version": "2.3.0",
         "release_type": "prebuilt",
@@ -50,6 +80,17 @@ def _manifest() -> dict[str, object]:
         "integration_target": "TaskCenter",
         "browser_ui": False,
         "local_http_ui": False,
+        "github_repository": "jerryjwres-hue/picotoopet-v2.0",
+        "github_run_id": "123456789",
+        "github_run_attempt": "1",
+        "github_workflow_ref": (
+            "jerryjwres-hue/picotoopet-v2.0/"
+            ".github/workflows/windows-phase2-release.yml@refs/pull/8/merge"
+        ),
+        "source_head": "a" * 40,
+        "source_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
+        "build_commit": "b" * 40,
+        "files": files,
     }
 
 
@@ -57,9 +98,11 @@ def _package(tmp_path: Path, *, extra_executable: bool) -> Path:
     package = tmp_path / "candidate.zip"
     root = "candidate"
     files: dict[str, bytes] = {
-        f"{root}/release-manifest.json": json.dumps(_manifest()).encode(),
-        f"{root}/payload/Picotoo Pet AI.exe": b"MZ-native-wpf",
-        f"{root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe": b"MZ-diagnostics",
+        f"{root}/release-manifest.json": json.dumps(
+            _manifest(extra_executable=extra_executable)
+        ).encode(),
+        f"{root}/payload/Picotoo Pet AI.exe": _APP_BYTES,
+        f"{root}/payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe": _DIAGNOSTIC_BYTES,
         f"{root}/Phase2Prebuilt.Common.ps1": b"common",
         f"{root}/Install-Phase2Prebuilt.ps1": _gate_script(),
         f"{root}/Verify-Phase2Prebuilt.ps1": _gate_script(),
@@ -69,7 +112,7 @@ def _package(tmp_path: Path, *, extra_executable: bool) -> Path:
         f"{root}/ROLLBACK_PHASE2_WINDOWS.vbs": b"ascii",
     }
     if extra_executable:
-        files[f"{root}/payload/Updater.exe"] = b"MZ-unapproved"
+        files[f"{root}/payload/Updater.exe"] = _UPDATER_BYTES
     with zipfile.ZipFile(package, "w") as archive:
         for name, data in files.items():
             archive.writestr(name, data)
@@ -99,3 +142,4 @@ def test_accepts_only_the_two_approved_executables(tmp_path: Path) -> None:
     report = verify_windows_package(package, contract_path=CONTRACT)
 
     assert report["status"] == "pass"
+    assert report["verified_payload_files"] == 2
