@@ -6,8 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
-from typing import Iterable
 
 COMPONENTS = ("core", "worker", "windows")
 WORKER_PREFIXES = (
