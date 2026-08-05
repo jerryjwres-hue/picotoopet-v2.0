@@ -20,7 +20,7 @@ def test_internal_python_distribution_version_remains_compatible() -> None:
 
     pyproject = read(ROOT / "pyproject.toml")
     assert 'version = "2.3.0.dev2"' in pyproject
-    assert __version__ == "2.3.7.1"
+    assert __version__ == "2.3.8.1"
 
 
 def test_mac_core_builder_is_manifest_driven_and_offline() -> None:
@@ -179,11 +179,13 @@ def test_mac_core_verify_and_rollback_are_explicit_and_non_destructive() -> None
 
 
 def test_native_mac_core_ci_accepts_slice_d_and_remains_arm64_only() -> None:
-    """原生门同时覆盖 Slice D 分支，仍只生成 M4/arm64 候选。"""
+    """原生门按组件基线判定影响，仍只生成 M4/arm64 候选。"""
 
     workflow = read(ROOT / ".github" / "workflows" / "macos-core-slice-b-ci.yml")
     for required in (
-        "startsWith(github.head_ref, 'feature/phase23-slice-d-')",
+        "Detect Core impact",
+        "component-baselines.json",
+        "needs.impact.outputs.core == 'true'",
         "macos-15",
         "arch: arm64",
         'python-version: "3.12"',
