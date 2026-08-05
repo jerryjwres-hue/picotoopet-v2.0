@@ -16,7 +16,7 @@ def test_goal_contract_names_canonical_product_version_source_and_payload() -> N
     version = contract["windows"]["product_version"]
 
     assert version == {
-        "value": "2.3.6.2",
+        "value": "2.3.7.1",
         "source_path": "src/picotoopet_core/product-version.txt",
         "payload_path": "product-version.txt",
     }
