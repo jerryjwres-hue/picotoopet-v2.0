@@ -299,7 +299,7 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
         {
             throw new ArgumentException("Mac Core 地址必须是绝对 URI。", nameof(uri));
         }
-        return uri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
+        return uri.AbsoluteUri.EndsWith('/')
             ? uri
             : new Uri(uri.AbsoluteUri + "/", UriKind.Absolute);
     }
