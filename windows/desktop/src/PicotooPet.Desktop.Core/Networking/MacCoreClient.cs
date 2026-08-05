@@ -10,6 +10,10 @@ namespace PicotooPet.Desktop.Core.Networking;
 /// <summary>复用连接池、幂等键和 Trace Header 的 Mac Core REST 客户端。</summary>
 public sealed class MacCoreClient : IAsyncDisposable
 {
+    private const int MaxDiagnosticResultBytes = 64 * 1024;
+    private const int MaxApprovalListBytes = 128 * 1024;
+    private const int MaxApiErrorBytes = 64 * 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -102,6 +106,45 @@ public sealed class MacCoreClient : IAsyncDisposable
             null,
             cancellationToken);
 
+    /// <summary>读取有界审批中心安全快照。</summary>
+    public Task<ApprovalRecord[]> GetApprovalsAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ApprovalRecord[]>(
+            HttpMethod.Get,
+            "api/v1/approvals?limit=200",
+            null,
+            "approvals.list",
+            null,
+            cancellationToken,
+            MaxApprovalListBytes);
+
+    /// <summary>使用当前摘要和幂等键批准或拒绝审批。</summary>
+    public Task<ApprovalRecord> DecideApprovalAsync(
+        string approvalId,
+        ApprovalDecisionRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ApprovalRecord>(
+            HttpMethod.Post,
+            $"api/v1/approvals/{Uri.EscapeDataString(approvalId)}/decision",
+            request,
+            "approvals.decision",
+            idempotencyKey,
+            cancellationToken,
+            MaxApprovalListBytes);
+
+    /// <summary>按 ID 读取单个任务，用于事件断流后的有界恢复。</summary>
+    public Task<TaskRecord> GetTaskAsync(
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<TaskRecord>(
+            HttpMethod.Get,
+            $"api/v1/tasks/{Uri.EscapeDataString(taskId)}",
+            null,
+            "tasks.get",
+            null,
+            cancellationToken);
+
     /// <summary>幂等创建任务；重试必须复用相同 Idempotency-Key。</summary>
     public Task<TaskRecord> CreateTaskAsync(
         TaskCreateRequest request,
@@ -114,6 +157,32 @@ public sealed class MacCoreClient : IAsyncDisposable
             "tasks.create",
             idempotencyKey,
             cancellationToken);
+
+    /// <summary>通过固定端点幂等创建系统诊断快照。</summary>
+    public Task<TaskRecord> CreateDiagnosticSnapshotAsync(
+        DiagnosticSnapshotRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<TaskRecord>(
+            HttpMethod.Post,
+            "api/v1/tasks/system-diagnostic-snapshot",
+            request,
+            "tasks.diagnostic.create",
+            idempotencyKey,
+            cancellationToken);
+
+    /// <summary>读取已完成诊断任务关联的固定结果合同。</summary>
+    public Task<DiagnosticSnapshotResult> GetTaskResultAsync(
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<DiagnosticSnapshotResult>(
+            HttpMethod.Get,
+            $"api/v1/tasks/{Uri.EscapeDataString(taskId)}/result",
+            null,
+            "tasks.diagnostic.result",
+            null,
+            cancellationToken,
+            MaxDiagnosticResultBytes);
 
     /// <summary>取消尚未进入不可逆终态的任务。</summary>
     public Task<TaskRecord> CancelTaskAsync(
@@ -145,7 +214,8 @@ public sealed class MacCoreClient : IAsyncDisposable
         object? payload,
         string operation,
         string? idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? maxResponseBytes = null)
     {
         var traceId = Guid.NewGuid().ToString("N");
         using var request = new HttpRequestMessage(method, relativeUri);
@@ -187,18 +257,40 @@ public sealed class MacCoreClient : IAsyncDisposable
 
             try
             {
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                var result = await JsonSerializer.DeserializeAsync<T>(
-                    stream,
-                    JsonOptions,
-                    cancellationToken).ConfigureAwait(false);
+                T? result;
+                if (maxResponseBytes is int limit)
+                {
+                    var data = await ReadBoundedAsync(
+                        response.Content,
+                        limit,
+                        cancellationToken).ConfigureAwait(false);
+                    result = JsonSerializer.Deserialize<T>(data, JsonOptions);
+                }
+                else
+                {
+                    await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    result = await JsonSerializer.DeserializeAsync<T>(
+                        stream,
+                        JsonOptions,
+                        cancellationToken).ConfigureAwait(false);
+                }
                 return result ?? throw new ApiException(
                     "EMPTY_RESPONSE",
                     "Mac Core 返回了空响应。",
                     retryable: true,
                     responseTrace,
                     (int)response.StatusCode);
+            }
+            catch (ResponseTooLargeException exception)
+            {
+                throw new ApiException(
+                    "RESPONSE_TOO_LARGE",
+                    "Mac Core 返回的数据超过安全读取上限。",
+                    retryable: false,
+                    responseTrace,
+                    (int)response.StatusCode,
+                    exception);
             }
             catch (JsonException exception)
             {
@@ -253,19 +345,57 @@ public sealed class MacCoreClient : IAsyncDisposable
         }
     }
 
+    private static async Task<byte[]> ReadBoundedAsync(
+        HttpContent content,
+        int maxBytes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxBytes, 1);
+        if (content.Headers.ContentLength is long length && length > maxBytes)
+        {
+            throw new ResponseTooLargeException();
+        }
+
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var buffer = new MemoryStream(capacity: Math.Min(maxBytes, 16 * 1024));
+        var block = new byte[8 * 1024];
+        var total = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(block.AsMemory(), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                return buffer.ToArray();
+            }
+            total = checked(total + read);
+            if (total > maxBytes)
+            {
+                throw new ResponseTooLargeException();
+            }
+            await buffer.WriteAsync(block.AsMemory(0, read), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
     private static async Task<ApiErrorDetail?> ReadErrorAsync(
         HttpContent content,
         CancellationToken cancellationToken)
     {
         try
         {
-            await using var stream = await content.ReadAsStreamAsync(cancellationToken)
-                .ConfigureAwait(false);
-            var envelope = await JsonSerializer.DeserializeAsync<ApiErrorEnvelope>(
-                stream,
-                JsonOptions,
+            var data = await ReadBoundedAsync(
+                content,
+                MaxApiErrorBytes,
                 cancellationToken).ConfigureAwait(false);
+            var envelope = JsonSerializer.Deserialize<ApiErrorEnvelope>(data, JsonOptions);
             return envelope?.Error;
+        }
+        catch (ResponseTooLargeException)
+        {
+            // 超大错误页不进入内存、日志或用户消息，保留 HTTP 状态和 Trace ID。
+            return null;
         }
         catch (JsonException)
         {
@@ -299,7 +429,7 @@ public sealed class MacCoreClient : IAsyncDisposable
         client.DefaultRequestHeaders.Accept.Clear();
         client.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-slice-b");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-approval-center");
     }
 
     private static Uri EnsureTrailingSlash(Uri baseUri)
@@ -318,5 +448,9 @@ public sealed class MacCoreClient : IAsyncDisposable
             _httpClient.Dispose();
         }
         return ValueTask.CompletedTask;
+    }
+
+    private sealed class ResponseTooLargeException : Exception
+    {
     }
 }

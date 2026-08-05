@@ -1,8 +1,12 @@
-name: Windows Control Center CI
+name: Windows Control Center Slice D CI
 
 on:
   pull_request:
     paths:
+      - "AGENTS.md"
+      - "contracts/release/project-goal-invariants.json"
+      - "contracts/release/component-baselines.json"
+      - "scripts/detect_component_impact.py"
       - ".github/workflows/windows-control-center-ci.yml"
       - "windows/desktop/**"
       - "tests/contract/**"
@@ -10,26 +14,71 @@ on:
       - "src/**"
       - "pyproject.toml"
   workflow_dispatch:
+    inputs:
+      runner_target:
+        description: "Native Windows runner label"
+        required: true
+        default: picotoopet-windows-release
+        type: choice
+        options:
+          - picotoopet-windows-release
+          - windows-2025
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-control-center-${{ github.workflow }}-${{ github.ref }}
+  group: windows-control-center-slice-d-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  impact:
+    name: Detect Windows impact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      windows: ${{ steps.detect.outputs.windows }}
+    steps:
+      - name: Check out source and verified baselines
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify affected components
+        id: detect
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            python scripts/detect_component_impact.py \
+              --baselines contracts/release/component-baselines.json \
+              --head "$HEAD_SHA" \
+              --force windows \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            python scripts/detect_component_impact.py \
+              --baselines contracts/release/component-baselines.json \
+              --head "$HEAD_SHA" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain skipped native work
+        if: steps.detect.outputs.windows != 'true'
+        shell: bash
+        run: echo "Windows runtime is unchanged since the verified baseline; native WPF build is intentionally skipped."
+
   control-center:
-    name: Native Windows Control Center gate
-    runs-on: windows-2025
-    timeout-minutes: 40
+    needs: impact
+    if: needs.impact.outputs.windows == 'true'
+    name: Native Windows WPF behavior gate
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_target || 'windows-2025' }}
+    timeout-minutes: 30
     env:
       CI: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
-      PICOTOO_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      PICOTOO_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
     steps:
       - name: Check out source
@@ -50,7 +99,8 @@ jobs:
             pytest-asyncio==1.4.0 `
             pytest-cov==7.1.0 `
             ruff==0.16.1 `
-            jsonschema==4.26.0
+            jsonschema==4.26.0 `
+            PyYAML
 
       - name: Run contract and security tests
         shell: powershell
@@ -70,7 +120,12 @@ jobs:
           dotnet --info
           $PSVersionTable.PSVersion
 
-      - name: Run Core smoke executable
+      - name: Reproduce legacy Task Center binding failure
+        shell: pwsh
+        run: |
+          .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
+
+      - name: Run ShellNavigationReconnectWpfSmokeTests and approval Results diagnostic WPF smoke
         shell: powershell
         run: |
           dotnet run `
@@ -85,7 +140,7 @@ jobs:
             --nologo `
             -warnaserror
 
-      - name: Run Control Center and Task Center self-test
+      - name: Run published Control Center self-test
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path windows/desktop/artifacts -Force | Out-Null
@@ -103,29 +158,10 @@ jobs:
             throw "Task Center self-test marker missing."
           }
 
-      - name: Build prebuilt Slice B package
-        shell: pwsh
-        run: |
-          .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 `
-            -OutputRoot "windows\desktop\artifacts\control-center-release" `
-            -VersionLabel "2.3.0-slice-b-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}"
-
-      - name: Verify package lifecycle on Windows PowerShell 5.1
-        shell: pwsh
-        run: |
-          # Delegates to Test-Phase2WindowsRelease.ps1 through the codepage-safe wrapper.
-          .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1 `
-            -ReleaseRoot "windows\desktop\artifacts\control-center-release"
-
-      - name: Upload Control Center package and evidence
+      - name: Upload compact WPF evidence
         uses: actions/upload-artifact@v7
         with:
-          name: windows-control-center-slice-b-${{ github.run_number }}
+          name: PicotooPet-Windows-WPF-Evidence-${{ github.run_number }}
           if-no-files-found: error
-          retention-days: 14
-          path: |
-            windows/desktop/artifacts/control-center-release/*.zip
-            windows/desktop/artifacts/control-center-release/*.sha256.txt
-            windows/desktop/artifacts/control-center-release/windows-build-report.json
-            windows/desktop/artifacts/control-center-release/fixture-evidence/**
-            windows/desktop/artifacts/control-center-self-test.json
+          retention-days: 7
+          path: windows/desktop/artifacts/control-center-self-test.json

@@ -32,8 +32,22 @@ internal static class Program
             NavigationSmokeTests.Run();
             NavigationFaultBoundarySmokeTests.Run();
             NavigationContentRenderingSmokeTests.Run();
+            ShellNavigationReconnectWpfSmokeTests.Run();
             TaskCenterSmokeTests.Run();
+            ResultsCenterSmokeTests.Run();
+            ApprovalCenterSmokeTests.Run();
+            CloudDevelopmentSmokeTests.Run();
+            DiagnosticTaskActionStateSmokeTests.Run();
+            DiagnosticResultContractSmokeTests.Run();
+            ProductVersionWpfSmokeTests.Run();
             TaskCenterWpfLayoutSmokeTests.Run();
+            ResultsPageWpfLayoutSmokeTests.Run();
+            ApprovalsPageWpfLayoutSmokeTests.Run();
+            CloudDevelopmentPageWpfLayoutSmokeTests.Run();
+            await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
+            await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
+            await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
+            await DiagnosticSnapshotSmokeTests.RunAsync().ConfigureAwait(false);
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
@@ -89,6 +103,7 @@ internal static class Program
             updated_at = DateTimeOffset.UtcNow,
             error_code = (string?)null,
             error_message = (string?)null,
+            result_id = (string?)null,
         });
         var first = new EventEnvelope(
             "2.2.0",

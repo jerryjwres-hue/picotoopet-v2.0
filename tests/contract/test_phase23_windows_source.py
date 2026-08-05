@@ -22,13 +22,14 @@ def read_core(relative: str) -> str:
 
 
 def test_shell_exists_and_desktop_remains_winexe() -> None:
-    """新 Shell 必须绑定冻结导航，同时保持无控制台的 WinExe 交付。"""
+    """新 Shell 必须绑定冻结导航和产品版本，同时保持无控制台 WinExe。"""
 
     shell = read("Views/ShellWindow.xaml")
     assert "NavigationItems" in shell
     assert "CurrentPage" in shell
     assert 'Width="232"' in shell
-    assert "Control Center · Slice B" in shell
+    assert 'Title="{Binding WindowTitle, Mode=OneWay}"' in shell
+    assert 'Text="{Binding ControlCenterSubtitle, Mode=OneWay}"' in shell
 
     project = read("PicotooPet.Desktop.csproj")
     assert "<OutputType>WinExe</OutputType>" in project
@@ -187,27 +188,47 @@ def test_dashboard_exposes_worker_state_without_fake_availability() -> None:
         assert required in view
 
 
-def test_control_center_native_windows_ci_has_required_gates() -> None:
-    """独立 Slice B CI 必须在原生 Windows 上执行合同、构建、自检和包级复验。"""
+def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> None:
+    """WPF 行为门不重复打包；正式 Release 独占盖章和安装生命周期。"""
 
-    workflow = (
+    control = (
         ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
     ).read_text(encoding="utf-8")
+    release = (
+        ROOT / ".github" / "workflows" / "windows-phase2-release.yml"
+    ).read_text(encoding="utf-8")
+
     for required in (
+        "Detect Windows impact",
         "windows-2025",
+        "workflow_dispatch",
+        "inputs.runner_target",
         "setup-python",
         "setup-dotnet",
         "pytest",
         "dotnet build",
         "PicotooPet.Desktop.Core.SmokeTests",
+        "ShellNavigationReconnectWpfSmokeTests",
         "PHASE23_TASK_CENTER_SELF_TEST=PASS",
-        "2.3.0-slice-b-",
-        "Build-Phase2WindowsRelease.ps1",
-        "Test-Phase2WindowsRelease.ps1",
-        "powershell",
         "upload-artifact",
     ):
-        assert required in workflow
+        assert required in control
+    for forbidden in (
+        "Build-Phase2WindowsRelease.ps1",
+        "stamp_windows_goal_integrity.py",
+        "verify_project_goal_integrity.py",
+        "Invoke-Phase2WindowsReleaseLifecycleGate.ps1",
+    ):
+        assert forbidden not in control
+    for required in (
+        "Detect Windows release impact",
+        "Build-Phase2WindowsRelease.ps1",
+        "stamp_windows_goal_integrity.py",
+        "verify_project_goal_integrity.py",
+        "Invoke-Phase2WindowsReleaseLifecycleGate.ps1",
+        "PicotooPet-Phase23-CloudContract-Windows-Prebuilt",
+    ):
+        assert required in release
 
 
 def test_package_verifies_task_center_and_worker_fallback() -> None:

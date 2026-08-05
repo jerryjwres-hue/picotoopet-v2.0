@@ -35,6 +35,17 @@ current_target="$(resolve_current_version "$runtime_root")"
 printf '%s\n' "$current_target" > "$runtime_root/state/rollback-from.txt"
 port="$(read_existing_port "$runtime_root")"
 token="$(read_api_token)"
+product_version=""
+if [[ -x "$previous_target/.venv/bin/python" ]]; then
+  product_version="$("$previous_target/.venv/bin/python" - <<'PY' 2>/dev/null || true
+from picotoopet_core import __version__
+print(__version__)
+PY
+)"
+  if [[ ! "$product_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    product_version=""
+  fi
+fi
 
 atomic_switch_current "$runtime_root" "$previous_target"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
@@ -45,8 +56,10 @@ else
   restart_user_agent "com.picotoopet.mac-core"
   wait_for_health "http://127.0.0.1:$port"
 
-  # 回滚到另一个 Slice B 时验证完整合同；回滚到 2.2 时至少验证健康。
-  if ! verify_api_contract "http://127.0.0.1:$port" "$token"; then
+  # 新版指针验证精确产品版本；历史 2.2/旧 Slice 只验证原有合同或健康。
+  if [[ -n "$product_version" ]]; then
+    verify_api_contract "http://127.0.0.1:$port" "$token" "$product_version"
+  elif ! verify_api_contract "http://127.0.0.1:$port" "$token"; then
     verify_health "http://127.0.0.1:$port"
   fi
 fi
@@ -57,8 +70,12 @@ report="$(write_report \
   "pass" \
   "previous" \
   "$previous_target" \
-  "")"
+  "" \
+  "$product_version")"
 echo "PHASE23_MAC_DELTA_ROLLBACK=PASS"
+if [[ -n "$product_version" ]]; then
+  echo "PRODUCT_VERSION=$product_version"
+fi
 echo "REPORT=$report"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" != "1" ]]; then
   open "$report"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 回滚 Phase 2.3 Slice C Core 与 Worker 组合，不删除任何版本或数据。
+# 回滚 Phase 2.3 Slice D Core 与 Worker 组合，不删除版本、数据库或结果。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -10,9 +10,9 @@ source "$script_dir/worker-lib.sh"
 
 runtime_root="$(phase23_runtime_root)"
 state_root="$runtime_root/state"
-previous_version_file="$state_root/slice-c-previous-version.txt"
-worker_present_file="$state_root/slice-c-previous-worker-present.txt"
-previous_worker_backup="$state_root/slice-c-previous-worker.plist"
+previous_version_file="$state_root/slice-d-previous-version.txt"
+worker_present_file="$state_root/slice-d-previous-worker-present.txt"
+previous_worker_backup="$state_root/slice-d-previous-worker.plist"
 current_target="$(resolve_current_version "$runtime_root")"
 port="$(read_existing_port "$runtime_root")"
 token="$(read_api_token)"
@@ -27,24 +27,36 @@ on_error() {
     "$runtime_root" \
     "rollback" \
     "fail" \
-    "2.3.0-slice-c" \
+    "2.3.0-slice-d-worker" \
     "$current_target" \
     "命令失败：$failed_command" \
     "false")" || true
-  echo "Slice C Worker 回滚失败。报告：$report" >&2
+  echo "Slice D Worker 回滚失败。报告：$report" >&2
   exit "$code"
 }
 trap on_error ERR
 
 if [[ ! -f "$previous_version_file" ]]; then
-  echo "缺少 Slice C 上一版本记录：$previous_version_file" >&2
+  echo "缺少 Slice D 上一版本记录：$previous_version_file" >&2
   exit 1
 fi
-previous_target="$(cat "$previous_version_file")"
+previous_target="$(tr -d '\r\n' < "$previous_version_file")"
 if [[ -z "$previous_target" || ! -d "$previous_target" ]]; then
   echo "上一版本目录无效：$previous_target" >&2
   exit 1
 fi
+python3 - "$runtime_root/versions" "$previous_target" <<'PY'
+import sys
+from pathlib import Path
+
+versions = Path(sys.argv[1]).resolve()
+target = Path(sys.argv[2]).resolve()
+try:
+    target.relative_to(versions)
+except ValueError as exc:
+    raise SystemExit(f"rollback target is outside versions: {target}") from exc
+PY
+
 previous_worker_present="0"
 if [[ -f "$worker_present_file" ]]; then
   previous_worker_present="$(tr -d '[:space:]' < "$worker_present_file")"
@@ -78,7 +90,7 @@ else
   rm -f "$runtime_root/state/worker-status.json"
 fi
 
-printf '%s\n' "$current_target" > "$state_root/slice-c-rollback-from.txt"
+printf '%s\n' "$current_target" > "$state_root/slice-d-rollback-from.txt"
 report="$(write_worker_report \
   "$runtime_root" \
   "rollback" \
@@ -88,6 +100,7 @@ report="$(write_worker_report \
   "" \
   "false")"
 echo "PHASE23_MAC_WORKER_ROLLBACK=PASS"
+echo "PHASE23_MAC_WORKER_SLICE_D_ROLLBACK=PASS"
 echo "REPORT=$report"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" != "1" ]]; then
   open "$report"

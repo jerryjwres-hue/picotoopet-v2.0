@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "policy_id": "GOV-GOAL-001",
+  "status_semantics": {
+    "blocked_environment": [
+      "BLOCKED",
+      "UNVERIFIED",
+      "DIAGNOSTIC"
+    ],
+    "blocked_environment_must_not_change_goal": true
+  },
+  "windows": {
+    "required_manifest_values": {
+      "release_type": "prebuilt",
+      "target": "win-x64",
+      "source_build_on_user_pc": false,
+      "delivery_surface": "existing-native-wpf-desktop",
+      "ui_framework": "WPF",
+      "entry_executable": "Picotoo Pet AI.exe",
+      "integration_target": "TaskCenter",
+      "browser_ui": false,
+      "local_http_ui": false,
+      "github_repository": "jerryjwres-hue/picotoopet-v2.0"
+    },
+    "product_version": {
+      "value": "2.3.9.1",
+      "source_path": "src/picotoopet_core/product-version.txt",
+      "payload_path": "product-version.txt"
+    },
+    "required_native_ci_provenance_fields": [
+      "github_run_id",
+      "github_run_attempt",
+      "github_workflow_ref",
+      "source_head",
+      "source_ref",
+      "build_commit"
+    ],
+    "allowed_native_ci_workflow_paths": [
+      ".github/workflows/windows-control-center-ci.yml",
+      ".github/workflows/windows-phase2-release.yml"
+    ],
+    "required_archive_paths": [
+      "payload/product-version.txt",
+      "payload/Picotoo Pet AI.exe",
+      "payload/tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe",
+      "Phase2Prebuilt.Common.ps1",
+      "Install-Phase2Prebuilt.ps1",
+      "Verify-Phase2Prebuilt.ps1",
+      "Rollback-Phase2Prebuilt.ps1",
+      "INSTALL_PHASE2_WINDOWS.vbs",
+      "VERIFY_PHASE2_WINDOWS.vbs",
+      "ROLLBACK_PHASE2_WINDOWS.vbs"
+    ],
+    "allowed_payload_executable_paths": [
+      "Picotoo Pet AI.exe",
+      "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe"
+    ],
+    "forbidden_name_fragments": [
+      "slicedhelper",
+      "windows-helper",
+      "picotoopet slice d.exe"
+    ],
+    "forbidden_suffixes": [
+      ".html",
+      ".htm",
+      ".js",
+      ".css"
+    ],
+    "user_install_requires_native_ci": true
+  },
+  "architecture": {
+    "fact_source": "Mac Core + SQLite Queue/Outbox",
+    "windows_role": "native WPF observation and controlled-command UI",
+    "worker_role": "explicitly registered task execution",
+    "historical_analysis_tasks": "unsupported-unleased-unmodified"
+  },
+  "change_control": {
+    "explicit_user_approval_required_before_implementation": [
+      "product_form",
+      "ui_technology",
+      "host_application",
+      "integration_point",
+      "control_execution_boundary",
+      "fact_source",
+      "persistence_model",
+      "install_verify_rollback_workflow",
+      "acceptance_criteria",
+      "native_platform_gates",
+      "security_privacy_approval_boundaries"
+    ]
+  }
+}

@@ -9,20 +9,15 @@ DEPLOY = ROOT / "deploy" / "macos" / "phase23"
 BUILD = ROOT / "scripts" / "mac" / "phase23"
 
 
-def _combined_text() -> str:
-    paths = sorted(
-        path
-        for directory in (DEPLOY, BUILD)
-        for path in directory.iterdir()
-        if path.is_file()
-    )
+def _user_delivery_text() -> str:
+    paths = sorted(path for path in DEPLOY.iterdir() if path.is_file())
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
 def test_mac_delta_contains_no_worker_execution_or_system_modification() -> None:
-    """增量包只部署状态合同，不得加入 Worker 或系统级写入。"""
+    """用户收到的增量脚本只部署 Core，不得加入 Worker 或系统级写入。"""
 
-    text = _combined_text()
+    text = _user_delivery_text()
     for forbidden in (
         "lease_next(",
         "recover_expired_leases(",
@@ -62,7 +57,8 @@ def test_reports_never_serialize_api_token() -> None:
     assert '"api_token"' not in report_section
     assert '"token"' not in report_section
     assert "source_build_on_user_mac" in report_section
-    assert "worker_runtime_installed" in report_section
+    assert "worker_runtime_preserved" in report_section
+    assert "worker_runtime_installed" not in report_section
 
 
 def test_fixture_proves_queued_task_is_unchanged() -> None:

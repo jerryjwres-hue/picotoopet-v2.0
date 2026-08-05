@@ -47,6 +47,8 @@ $hadCurrentPointer  = Test-Path -LiteralPath $currentPath
 $hadPreviousPointer = Test-Path -LiteralPath $previousPath
 $stagingPath        = $null
 $finalPath          = $null
+$productVersion     = ""
+$preActivationShortcutState = @()
 
 New-Item -ItemType Directory -Path $versionsRoot, $reportsRoot, $logsRoot -Force | Out-Null
 
@@ -87,7 +89,7 @@ function Write-JsonAtomic {
     )
 
     $temporary = "$Path.tmp"
-    Write-Utf8NoBom -Path $temporary -Value ($Value | ConvertTo-Json -Depth 20)
+    Write-Utf8NoBom -Path $temporary -Value ($Value | ConvertTo-Json -Depth 30)
     Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
@@ -154,10 +156,24 @@ function Assert-ManifestFiles {
     }
 }
 
+function Read-InstalledProductVersion {
+    param([Parameter(Mandatory)][string]$Root)
+
+    $versionFile = Join-Path $Root "product-version.txt"
+    if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) {
+        throw "版本目录缺少 product-version.txt：$Root"
+    }
+    $value = [System.IO.File]::ReadAllText(
+        $versionFile,
+        [System.Text.UTF8Encoding]::new($false, $true)).Trim()
+    return Assert-PicotooProductVersion -ProductVersion $value
+}
+
 function Invoke-ActivationCheck {
     param(
         [Parameter(Mandatory)][string]$Executable,
         [Parameter(Mandatory)][string]$WorkingDirectory,
+        [string]$ExpectedProductVersion = "",
         [switch]$SelfTest
     )
 
@@ -176,6 +192,10 @@ function Invoke-ActivationCheck {
         $selfTestReport = Read-JsonUtf8 -Path $activationReport
         if ([string]$selfTestReport.status -ne "pass") {
             throw "激活自检报告不是 pass。"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedProductVersion) -and
+            [string]$selfTestReport.product_version -ne $ExpectedProductVersion) {
+            throw "激活自检产品版本不一致：expected=$ExpectedProductVersion actual=$($selfTestReport.product_version)"
         }
         return [pscustomobject][ordered]@{
             mode        = "self-test"
@@ -202,21 +222,32 @@ function Invoke-ActivationCheck {
 function Restore-PreviousActivation {
     if ($null -ne $previousCurrent) {
         Write-JsonAtomic -Value $previousCurrent -Path $currentPath
-        Set-PicotooShortcuts `
-            -Executable ([string]$previousCurrent.executable) `
-            -DesktopDirectory $DesktopDirectory | Out-Null
-        $restoredShortcuts = Assert-PicotooShortcuts `
-            -Executable ([string]$previousCurrent.executable) `
-            -DesktopDirectory $DesktopDirectory
-        Invoke-ActivationCheck `
-            -Executable ([string]$previousCurrent.executable) `
-            -WorkingDirectory ([string]$previousCurrent.path) `
-            -SelfTest:$ActivationSelfTest | Out-Null
-        $report.recovery_shortcuts = $restoredShortcuts
     }
     else {
         Remove-Item -LiteralPath $currentPath -Force -ErrorAction SilentlyContinue
-        $report.recovery_shortcuts = Remove-PicotooShortcuts -DesktopDirectory $DesktopDirectory
+    }
+
+    $restoredState = Restore-PicotooManagedShortcutSnapshot `
+        -ShortcutState $preActivationShortcutState `
+        -DesktopDirectory $DesktopDirectory
+    $report.recovery_shortcuts = [ordered]@{
+        restore_mode = "pre-activation-snapshot"
+        shortcut_state = @($restoredState)
+    }
+
+    if ($null -ne $previousCurrent) {
+        $previousProductVersion = ""
+        if ($previousCurrent.PSObject.Properties.Name -contains "product_version") {
+            $previousProductVersion = [string]$previousCurrent.product_version
+        }
+        elseif (Test-Path -LiteralPath (Join-Path ([string]$previousCurrent.path) "product-version.txt") -PathType Leaf) {
+            $previousProductVersion = Read-InstalledProductVersion -Root ([string]$previousCurrent.path)
+        }
+        Invoke-ActivationCheck `
+            -Executable ([string]$previousCurrent.executable) `
+            -WorkingDirectory ([string]$previousCurrent.path) `
+            -ExpectedProductVersion $previousProductVersion `
+            -SelfTest:$ActivationSelfTest | Out-Null
     }
 
     if ($hadPreviousPointer -and $null -ne $previousPrevious) {
@@ -232,6 +263,7 @@ $report = [ordered]@{
     generated_at             = (Get-Date).ToUniversalTime().ToString("o")
     status                   = "running"
     version                  = $null
+    product_version          = $null
     install_path             = $null
     data_root                = $dataRoot
     log                      = $logPath
@@ -240,6 +272,7 @@ $report = [ordered]@{
     desktop_shortcut         = $null
     desktop_shortcut_created = $false
     shortcut_paths           = $null
+    shortcut_state           = @()
     shortcuts_verified       = $false
     activation               = $null
     recovery_shortcuts       = $null
@@ -270,33 +303,45 @@ try {
     if ([string]$manifest.version -notmatch '^[A-Za-z0-9._-]+$') {
         throw "安装包版本号非法。"
     }
+    if (-not ($manifest.PSObject.Properties.Name -contains "product_version")) {
+        throw "发布清单缺少 product_version。"
+    }
+    $productVersion = Assert-PicotooProductVersion -ProductVersion ([string]$manifest.product_version)
     if ($manifest.PSObject.Properties.Name -contains "user_install_allowed" -and
         -not [bool]$manifest.user_install_allowed) {
         throw "发布清单不允许用户安装。"
     }
 
-    $versionId           = [string]$manifest.version
-    $report.version      = $versionId
-    $finalPath           = Join-Path $versionsRoot $versionId
-    $stagingPath         = Join-Path $versionsRoot ".staging-$versionId-$PID"
-    $report.install_path = $finalPath
+    $versionId              = [string]$manifest.version
+    $report.version         = $versionId
+    $report.product_version = $productVersion
+    $finalPath              = Join-Path $versionsRoot $versionId
+    $stagingPath            = Join-Path $versionsRoot ".staging-$versionId-$PID"
+    $report.install_path    = $finalPath
     Assert-ManifestFiles -Manifest $manifest -Root $payloadRoot
+    $payloadProductVersion = Read-InstalledProductVersion -Root $payloadRoot
+    if ($payloadProductVersion -ne $productVersion) {
+        throw "发布清单与 payload 产品版本不一致。"
+    }
 
     if ($PreflightOnly) {
         $report.status = "pass"
         Write-JsonAtomic -Value $report -Path $reportPath
-        Write-InstallProgress -Percent 100 -Stage "预检完成" -Detail "严格 UTF-8、文件大小与 SHA-256 校验通过"
+        Write-InstallProgress -Percent 100 -Stage "预检完成" -Detail "严格 UTF-8、产品版本、文件大小与 SHA-256 校验通过"
         $exitCode = 0
         return
     }
 
-    Write-InstallProgress -Percent 20 -Stage "检查当前版本" -Detail "保存可回滚版本指针"
+    Write-InstallProgress -Percent 20 -Stage "检查当前版本" -Detail "保存可回滚版本指针和快捷方式状态"
     if ($hadCurrentPointer) {
         $previousCurrent = Read-JsonUtf8 -Path $currentPath
     }
     if ($hadPreviousPointer) {
         $previousPrevious = Read-JsonUtf8 -Path $previousPath
     }
+    $preActivationShortcutState = @(
+        Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory
+    )
 
     if (-not (Test-Path -LiteralPath $finalPath -PathType Container)) {
         Write-InstallProgress -Percent 35 -Stage "安装预编译文件" -Detail "复制到版本暂存目录"
@@ -307,13 +352,19 @@ try {
         Copy-Item -Path (Join-Path $payloadRoot "*") -Destination $stagingPath -Recurse -Force
         Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $stagingPath "release-manifest.json") -Force
 
-        Write-InstallProgress -Percent 55 -Stage "校验已安装文件" -Detail "重新计算 SHA-256 与文件大小"
+        Write-InstallProgress -Percent 55 -Stage "校验已安装文件" -Detail "重新计算 SHA-256、文件大小和产品版本"
         Assert-ManifestFiles -Manifest $manifest -Root $stagingPath
+        if ((Read-InstalledProductVersion -Root $stagingPath) -ne $productVersion) {
+            throw "暂存目录产品版本不一致。"
+        }
         Move-Item -LiteralPath $stagingPath -Destination $finalPath
     }
     else {
         Write-InstallProgress -Percent 55 -Stage "复用已验证版本" -Detail "版本目录已存在，重新校验"
         Assert-ManifestFiles -Manifest $manifest -Root $finalPath
+        if ((Read-InstalledProductVersion -Root $finalPath) -ne $productVersion) {
+            throw "已安装目录产品版本不一致。"
+        }
         Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $finalPath "release-manifest.json") -Force
     }
 
@@ -325,29 +376,51 @@ try {
     $diagEntry  = $manifest.files | Where-Object {
         [string]$_.path -eq "tools/diagnostics/PicotooPet.Desktop.Diagnostics.exe"
     } | Select-Object -First 1
-    if ($null -eq $appEntry -or $null -eq $diagEntry) {
-        throw "发布清单缺少主程序或诊断程序。"
+    $versionEntry = $manifest.files | Where-Object {
+        [string]$_.path -eq "product-version.txt"
+    } | Select-Object -First 1
+    if ($null -eq $appEntry -or $null -eq $diagEntry -or $null -eq $versionEntry) {
+        throw "发布清单缺少主程序、诊断程序或产品版本文件。"
     }
 
-    Write-InstallProgress -Percent 70 -Stage "激活新版本" -Detail "原子更新指针和三处快捷方式"
+    Write-InstallProgress -Percent 70 -Stage "激活新版本" -Detail "原子更新指针和三处版本快捷方式"
     $activationStarted = $true
     if ($null -ne $previousCurrent) {
+        $previousCurrent | Add-Member -NotePropertyName "shortcut_state" `
+            -NotePropertyValue @($preActivationShortcutState) -Force
+        if (-not ($previousCurrent.PSObject.Properties.Name -contains "product_version")) {
+            $previousVersionFile = Join-Path ([string]$previousCurrent.path) "product-version.txt"
+            if (Test-Path -LiteralPath $previousVersionFile -PathType Leaf) {
+                $previousProductVersion = Read-InstalledProductVersion -Root ([string]$previousCurrent.path)
+                $previousCurrent | Add-Member -NotePropertyName "product_version" `
+                    -NotePropertyValue $previousProductVersion -Force
+            }
+        }
         Write-JsonAtomic -Value $previousCurrent -Path $previousPath
     }
+
+    Set-PicotooShortcuts `
+        -Executable $executable `
+        -ProductVersion $productVersion `
+        -DesktopDirectory $DesktopDirectory | Out-Null
+    $shortcutValidation = Assert-PicotooShortcuts `
+        -Executable $executable `
+        -ProductVersion $productVersion `
+        -DesktopDirectory $DesktopDirectory `
+        -RequireNoLegacy
     $currentPointer = [ordered]@{
         version           = $versionId
+        product_version   = $productVersion
         path              = $finalPath
         executable        = $executable
         activated_at      = (Get-Date).ToUniversalTime().ToString("o")
         executable_sha256 = [string]$appEntry.sha256
         diagnostic_sha256 = [string]$diagEntry.sha256
+        shortcut_state    = @($shortcutValidation.shortcut_state)
     }
     Write-JsonAtomic -Value $currentPointer -Path $currentPath
-    Set-PicotooShortcuts -Executable $executable -DesktopDirectory $DesktopDirectory | Out-Null
-    $shortcutValidation = Assert-PicotooShortcuts `
-        -Executable $executable `
-        -DesktopDirectory $DesktopDirectory
     $report.shortcut_paths           = $shortcutValidation.shortcut_paths
+    $report.shortcut_state           = @($shortcutValidation.shortcut_state)
     $report.shortcuts_verified       = [bool]$shortcutValidation.shortcuts_verified
     $report.desktop_shortcut         = [string]$shortcutValidation.shortcut_paths.desktop
     $report.desktop_shortcut_created = $true
@@ -356,13 +429,14 @@ try {
     $report.activation = Invoke-ActivationCheck `
         -Executable $executable `
         -WorkingDirectory $finalPath `
+        -ExpectedProductVersion $productVersion `
         -SelfTest:$ActivationSelfTest
 
     $report.status            = "pass"
     $report.executable_sha256 = [string]$appEntry.sha256
     $report.diagnostic_sha256 = [string]$diagEntry.sha256
     Write-JsonAtomic -Value $report -Path $reportPath
-    Write-InstallProgress -Percent 100 -Stage "安装完成" -Detail "预编译版本已激活并验证三处快捷方式"
+    Write-InstallProgress -Percent 100 -Stage "安装完成" -Detail "预编译版本已激活并验证三处唯一版本快捷方式"
     $exitCode = 0
 }
 catch {

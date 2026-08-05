@@ -163,12 +163,17 @@ def test_scripts_and_diagnostics_have_balanced_delimiters() -> None:
     paths = list(SCRIPTS.glob("*.ps1")) + list(
         (DESKTOP / "tools/PicotooPet.Desktop.Diagnostics").glob("*.cs")
     )
-    scrub = re.compile(
-        r'@?"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|#[^\n]*|//[^\n]*',
+    powershell_scrub = re.compile(
+        r'@?"(?:`.|""|[^"])*"|\'(?:\'\'|[^\'])*\'|#[^\n]*',
+        re.DOTALL,
+    )
+    csharp_scrub = re.compile(
+        r'@?"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*',
         re.DOTALL,
     )
     pairs = {"(": ")", "[": "]", "{": "}"}
     for path in paths:
+        scrub = powershell_scrub if path.suffix.lower() == ".ps1" else csharp_scrub
         cleaned = scrub.sub("", path.read_text(encoding="utf-8-sig"))
         stack: list[str] = []
         for character in cleaned:

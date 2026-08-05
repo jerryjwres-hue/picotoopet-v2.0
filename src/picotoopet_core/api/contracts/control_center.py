@@ -17,10 +17,10 @@ class ControlCenterCapabilities(BaseModel):
     dashboard: bool = False
     task_detail: bool = False
     task_pause_resume: bool = False
-    approval_list: bool = False
-    approval_digest: bool = False
-    result_list: bool = False
-    result_preview: bool = False
+    approval_list: bool = True
+    approval_digest: bool = True
+    result_list: bool = True
+    result_preview: bool = True
     health_detailed: bool = False
     logs_query: bool = False
     manual_goal: bool = False

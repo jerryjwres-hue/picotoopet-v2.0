@@ -6,6 +6,7 @@ import pytest
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import CloudPolicy, TaskStatus
 from picotoopet_core.domain.models import TaskCreate
+from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.queue.repository import QueueRepository
 from picotoopet_core.queue.state_machine import InvalidTransitionError
 
@@ -15,6 +16,15 @@ def make_repository(tmp_path: Path) -> tuple[Database, QueueRepository]:
     database.open()
     database.apply_migrations()
     return database, QueueRepository(database)
+
+
+def make_diagnostic_repository(
+    tmp_path: Path,
+) -> tuple[Database, DiagnosticQueueRepository]:
+    database = Database(tmp_path / "core.db")
+    database.open()
+    database.apply_migrations()
+    return database, DiagnosticQueueRepository(database)
 
 
 def test_queue_is_idempotent_deduplicated_and_priority_ordered(tmp_path: Path) -> None:
@@ -92,6 +102,86 @@ def test_retry_creates_new_child_task_instead_of_reopening_terminal_task(tmp_pat
     assert retried.status is TaskStatus.QUEUED
     assert repository.get(original.task_id).status is TaskStatus.CANCELLED
     assert [item.task_id for item in repository.list()] == [retried.task_id, original.task_id]
+    database.close()
+
+
+def test_diagnostic_repository_keeps_non_diagnostic_retry_semantics(
+    tmp_path: Path,
+) -> None:
+    """Core 的增强仓储不得为普通任务制造嵌套事务或改变重试语义。"""
+
+    database, repository = make_diagnostic_repository(tmp_path)
+    original = repository.create(TaskCreate(task_type="analysis", payload={"a": 1}))
+    repository.transition(original.task_id, TaskStatus.CANCELLED, reason="cancel")
+
+    retried = repository.retry(original.task_id)
+
+    assert retried.task_id != original.task_id
+    assert retried.parent_task_id == original.task_id
+    assert retried.status is TaskStatus.QUEUED
+    row = database.fetchone(
+        "SELECT idempotency_key, dedupe_key FROM tasks WHERE task_id = ?",
+        (retried.task_id,),
+    )
+    assert row is not None
+    assert row["idempotency_key"] is None
+    assert row["dedupe_key"] is None
+    database.close()
+
+
+def test_diagnostic_retry_replay_returns_same_child_and_preserves_dedupe_key(
+    tmp_path: Path,
+) -> None:
+    """双击或网络重放同一次诊断重试不得生成多个活动子任务。"""
+
+    database, repository = make_diagnostic_repository(tmp_path)
+    original = repository.create(
+        TaskCreate(
+            task_type="system.diagnostic_snapshot",
+            payload={"schema_version": "1.0", "sections": ["core"]},
+            dedupe_key="system-diagnostic:active",
+        )
+    )
+    repository.transition(original.task_id, TaskStatus.CANCELLED, reason="cancel")
+
+    first = repository.retry(original.task_id)
+    replay = repository.retry(original.task_id)
+
+    assert replay.task_id == first.task_id
+    assert replay.parent_task_id == original.task_id
+    rows = database.fetchall(
+        "SELECT task_id, idempotency_key, dedupe_key FROM tasks ORDER BY rowid"
+    )
+    assert len(rows) == 2
+    assert rows[1]["idempotency_key"] == f"retry:{original.task_id}"
+    assert rows[1]["dedupe_key"] == "system-diagnostic:active"
+    database.close()
+
+
+def test_diagnostic_retry_returns_existing_active_task_with_same_dedupe_key(
+    tmp_path: Path,
+) -> None:
+    """已有活动诊断时，重试不得绕过全局活动去重。"""
+
+    database, repository = make_diagnostic_repository(tmp_path)
+    original = repository.create(
+        TaskCreate(
+            task_type="system.diagnostic_snapshot",
+            dedupe_key="system-diagnostic:active",
+        )
+    )
+    repository.transition(original.task_id, TaskStatus.CANCELLED, reason="cancel")
+    active = repository.create(
+        TaskCreate(
+            task_type="system.diagnostic_snapshot",
+            dedupe_key="system-diagnostic:active",
+        )
+    )
+
+    retried = repository.retry(original.task_id)
+
+    assert retried.task_id == active.task_id
+    assert len(repository.list()) == 2
     database.close()
 
 

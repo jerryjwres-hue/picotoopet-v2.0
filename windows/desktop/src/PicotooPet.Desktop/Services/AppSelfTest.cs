@@ -8,6 +8,7 @@ using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Navigation;
+using PicotooPet.Desktop.Versioning;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views;
 using PicotooPet.Desktop.Views.Pages;
@@ -31,11 +32,14 @@ internal static class AppSelfTest
                 $"picotoo-desktop-self-test-{Guid.NewGuid():N}.json");
         var report = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["schema_version"] = "2.3.0",
-            ["generated_at"]   = DateTimeOffset.UtcNow,
-            ["status"]         = "running",
-            ["checks"]         = new Dictionary<string, string>(StringComparer.Ordinal),
-            ["error"]          = null,
+            ["schema_version"]             = "2.3.0",
+            ["product_version"]            = ProductVersionInfo.Current,
+            ["window_title"]               = ProductVersionInfo.WindowTitle,
+            ["control_center_subtitle"]    = ProductVersionInfo.ControlCenterSubtitle,
+            ["generated_at"]               = DateTimeOffset.UtcNow,
+            ["status"]                     = "running",
+            ["checks"]                     = new Dictionary<string, string>(StringComparer.Ordinal),
+            ["error"]                      = null,
         };
 
         try
@@ -70,6 +74,13 @@ internal static class AppSelfTest
 
             using var shell = ShellViewModel.CreateForSmokeTest(
                 ControlCenterCapabilities.Legacy22);
+            if (shell.WindowTitle != ProductVersionInfo.WindowTitle
+                || shell.ControlCenterSubtitle != ProductVersionInfo.ControlCenterSubtitle)
+            {
+                throw new InvalidOperationException("Control Center 产品版本文案自检失败。");
+            }
+            checks["product_version_surfaces"] = "pass";
+
             if (shell.NavigationItems.Count != 10)
             {
                 throw new InvalidOperationException("Control Center 一级导航数量自检失败。");
@@ -79,11 +90,21 @@ internal static class AppSelfTest
             {
                 throw new InvalidOperationException("Legacy 2.2 任务中心兼容自检失败。");
             }
-            if (shell.NavigationItems.Single(
+            if (!shell.NavigationItems.Single(
                     item => item.Route == NavigationRoute.CloudDevelopment).IsAvailable)
             {
-                throw new InvalidOperationException("云端开发能力关闭自检失败。");
+                throw new InvalidOperationException("云端开发合同状态页可用性自检失败。");
             }
+
+            shell.Navigate(NavigationRoute.CloudDevelopment);
+            if (shell.CurrentPage is not CloudDevelopmentPageViewModel cloudDevelopment
+                || cloudDevelopment.ContractVersion != "1.0.0"
+                || cloudDevelopment.ProviderConfigured)
+            {
+                throw new InvalidOperationException("云端开发冻结合同边界自检失败。");
+            }
+            checks["cloud_development_contract"] = "pass";
+
             shell.Navigate(NavigationRoute.TaskCenter);
             if (shell.CurrentPage is not TaskCenterPageViewModel taskCenter
                 || taskCenter.WorkerStatusText != "执行器未部署")
@@ -116,6 +137,7 @@ internal static class AppSelfTest
             Console.WriteLine("PHASE2_DESKTOP_SELF_TEST=PASS");
             Console.WriteLine("PHASE23_CONTROL_CENTER_SELF_TEST=PASS");
             Console.WriteLine("PHASE23_TASK_CENTER_SELF_TEST=PASS");
+            Console.WriteLine("PHASE23_PRODUCT_VERSION_SELF_TEST=PASS");
             return 0;
         }
         catch (Exception exception)
@@ -129,6 +151,8 @@ internal static class AppSelfTest
                 $"PHASE23_CONTROL_CENTER_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(
                 $"PHASE23_TASK_CENTER_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE23_PRODUCT_VERSION_SELF_TEST=FAIL | {exception.Message}");
             return 1;
         }
     }

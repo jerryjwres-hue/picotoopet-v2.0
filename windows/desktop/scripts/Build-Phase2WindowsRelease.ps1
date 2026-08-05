@@ -3,7 +3,8 @@
 param(
     [string]$OutputRoot = "",
     [string]$Version = "",
-    [string]$VersionLabel = ""
+    [string]$VersionLabel = "",
+    [string]$ProductVersion = ""
 )
 
 Set-StrictMode -Version Latest
@@ -100,7 +101,7 @@ function Write-Json {
         [Parameter(Mandatory)][string]$Path
     )
 
-    Write-Utf8NoBom -Path $Path -Value ($Value | ConvertTo-Json -Depth 20)
+    Write-Utf8NoBom -Path $Path -Value ($Value | ConvertTo-Json -Depth 30)
 }
 
 function Copy-ReleaseFile {
@@ -159,6 +160,23 @@ elseif (-not [System.IO.Path]::IsPathRooted($OutputRoot)) {
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 
+$canonicalProductVersionFile = Join-Path $repoRoot "src\picotoopet_core\product-version.txt"
+if (-not (Test-Path -LiteralPath $canonicalProductVersionFile -PathType Leaf)) {
+    throw "缺少唯一产品版本源：$canonicalProductVersionFile"
+}
+$canonicalProductVersion = [System.IO.File]::ReadAllText(
+    $canonicalProductVersionFile,
+    [System.Text.UTF8Encoding]::new($false, $true)).Trim()
+if ($canonicalProductVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$') {
+    throw "唯一产品版本必须是四段数字：$canonicalProductVersion"
+}
+if ([string]::IsNullOrWhiteSpace($ProductVersion)) {
+    $ProductVersion = $canonicalProductVersion
+}
+elseif ($ProductVersion -ne $canonicalProductVersion) {
+    throw "ProductVersion 必须与唯一版本源一致：expected=$canonicalProductVersion actual=$ProductVersion"
+}
+
 if (-not [string]::IsNullOrWhiteSpace($Version) -and
     -not [string]::IsNullOrWhiteSpace($VersionLabel) -and
     $Version -ne $VersionLabel) {
@@ -182,7 +200,7 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
         $env:PICOTOO_SOURCE_HEAD_SHA
     }
     $commit = if ($sourceHead -eq "nogit") { "nogit" } else { $sourceHead.Substring(0, 12) }
-    $Version = "2.3.0-slice-b-taskcenter-fix-$runNumber-$commit"
+    $Version = "2.3.0-slice-d-diagnostic-$runNumber-$commit"
 }
 if ($Version -notmatch '^[A-Za-z0-9._-]+$') {
     throw "版本号只允许字母、数字、点、下划线和连字符。"
@@ -202,7 +220,7 @@ $workRoot     = Join-Path $OutputRoot "work"
 $payloadRoot  = Join-Path $workRoot "payload"
 $appOutput    = $payloadRoot
 $diagOutput   = Join-Path $payloadRoot "tools\diagnostics"
-$packageName  = "PicotooPet-Phase2-Windows-Prebuilt-$Version"
+$packageName  = "PicotooPet-Phase2-Windows-Prebuilt-$ProductVersion-$Version"
 $packageRoot  = Join-Path $workRoot $packageName
 $zipPath      = Join-Path $OutputRoot "$packageName.zip"
 $shaPath      = "$zipPath.sha256.txt"
@@ -251,11 +269,21 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
 
 $appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"
 $diagExecutable = Join-Path $diagOutput "PicotooPet.Desktop.Diagnostics.exe"
+$publishedProductVersionFile = Join-Path $payloadRoot "product-version.txt"
 if (-not (Test-Path -LiteralPath $appExecutable -PathType Leaf)) {
     throw "发布结果缺少 Picotoo Pet AI.exe。"
 }
 if (-not (Test-Path -LiteralPath $diagExecutable -PathType Leaf)) {
     throw "发布结果缺少诊断工具。"
+}
+if (-not (Test-Path -LiteralPath $publishedProductVersionFile -PathType Leaf)) {
+    throw "发布结果缺少 product-version.txt。"
+}
+$publishedProductVersion = [System.IO.File]::ReadAllText(
+    $publishedProductVersionFile,
+    [System.Text.UTF8Encoding]::new($false, $true)).Trim()
+if ($publishedProductVersion -ne $ProductVersion) {
+    throw "发布输出产品版本不一致：expected=$ProductVersion actual=$publishedProductVersion"
 }
 
 Invoke-NativeCommand -FilePath $appExecutable -Arguments @(
@@ -268,6 +296,11 @@ if (-not (Test-Path -LiteralPath $selfTestPath -PathType Leaf)) {
 $selfTest = Get-Content -LiteralPath $selfTestPath -Raw | ConvertFrom-Json
 if ([string]$selfTest.status -ne "pass") {
     throw "桌面自检报告不是 pass。"
+}
+if ([string]$selfTest.product_version -ne $ProductVersion -or
+    [string]$selfTest.window_title -ne "Picotoo Pet AI $ProductVersion" -or
+    [string]$selfTest.control_center_subtitle -ne "Control Center · v$ProductVersion") {
+    throw "桌面自检产品版本文案不一致。"
 }
 
 $files = @(
@@ -293,11 +326,37 @@ $sourceRef = if ([string]::IsNullOrWhiteSpace($env:PICOTOO_SOURCE_REF)) {
 else {
     $env:PICOTOO_SOURCE_REF
 }
-$nativeCiVerified = -not [string]::IsNullOrWhiteSpace($env:CI) -and $env:CI.ToLowerInvariant() -eq "true"
+$workflowRefAllowed = (
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_WORKFLOW_REF) -and
+    (
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/windows-control-center-ci.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/windows-phase2-release.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase)
+    )
+)
+$nativeCiVerified = (
+    -not [string]::IsNullOrWhiteSpace($env:CI) -and
+    $env:CI.Equals("true", [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_ACTIONS) -and
+    $env:GITHUB_ACTIONS.Equals("true", [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not [string]::IsNullOrWhiteSpace($env:RUNNER_OS) -and
+    $env:RUNNER_OS.Equals("Windows", [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY) -and
+    $env:GITHUB_REPOSITORY.Equals(
+        "jerryjwres-hue/picotoopet-v2.0",
+        [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ID) -and
+    -not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ATTEMPT) -and
+    $workflowRefAllowed
+)
 $manifest = [ordered]@{
     schema_version       = "2.3.0"
     release_type         = "prebuilt"
     version              = $Version
+    product_version      = $ProductVersion
     target               = "win-x64"
     sdk_version          = $sdkVersion
     built_at             = (Get-Date).ToUniversalTime().ToString("o")
@@ -305,8 +364,12 @@ $manifest = [ordered]@{
     build_commit         = $buildCommit
     source_head          = $sourceHead
     source_ref           = $sourceRef
+    github_repository    = $env:GITHUB_REPOSITORY
+    github_run_id        = $env:GITHUB_RUN_ID
+    github_run_attempt   = $env:GITHUB_RUN_ATTEMPT
+    github_workflow_ref  = $env:GITHUB_WORKFLOW_REF
     native_ci_verified   = $nativeCiVerified
-    user_install_allowed = $true
+    user_install_allowed = $nativeCiVerified
     signature            = [ordered]@{
         status = "unsigned-ci"
         note   = "原生 Windows CI 内部验收包；公开发布前仍需代码签名。"
@@ -343,6 +406,7 @@ $report = [ordered]@{
     generated_at         = (Get-Date).ToUniversalTime().ToString("o")
     status               = "pass"
     version              = $Version
+    product_version      = $ProductVersion
     sdk_version          = $sdkVersion
     runner               = [Environment]::OSVersion.VersionString
     target               = "win-x64"
@@ -350,12 +414,18 @@ $report = [ordered]@{
     package_sha256       = $zipSha
     file_count           = $files.Count
     native_ci_verified   = $nativeCiVerified
-    user_install_allowed = $true
+    user_install_allowed = $nativeCiVerified
     source_head          = $sourceHead
     source_ref           = $sourceRef
     build_commit         = $buildCommit
+    github_repository    = $env:GITHUB_REPOSITORY
+    github_run_id        = $env:GITHUB_RUN_ID
+    github_run_attempt   = $env:GITHUB_RUN_ATTEMPT
+    github_workflow_ref  = $env:GITHUB_WORKFLOW_REF
     self_test            = $selfTest
 }
 Write-Json -Value $report -Path $reportPath
 Write-Host "PHASE2_WINDOWS_RELEASE_BUILD=PASS"
+Write-Host "PRODUCT_VERSION=$ProductVersion"
 Write-Host "PACKAGE=$zipPath"
+Write-Host "SHA256=$zipSha"

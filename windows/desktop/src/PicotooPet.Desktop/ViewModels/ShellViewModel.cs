@@ -2,6 +2,7 @@ using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
+using PicotooPet.Desktop.Versioning;
 
 namespace PicotooPet.Desktop.ViewModels;
 
@@ -46,12 +47,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _navigationItems = BuildNavigation(capabilities);
         _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.Dashboard);
         _currentRoute      = NavigationRoute.Dashboard;
-        _currentPage       = CreateStaticPage(_currentRoute);
+        _currentPage       = CreateStaticPage(_currentRoute, capabilities);
         _connectionText    = "离线";
         _connectionMessage = "Smoke test 模式未连接 Mac Core。";
         _approvalText      = capabilities.ApprovalList ? "审批能力可用" : "审批能力未启用";
         _statusMessage     = "确定性导航测试。";
     }
+
+    /// <summary>Windows 主窗口用户可见标题。</summary>
+    public string WindowTitle => ProductVersionInfo.WindowTitle;
+
+    /// <summary>Control Center 左上角用户可见版本副标题。</summary>
+    public string ControlCenterSubtitle => ProductVersionInfo.ControlCenterSubtitle;
 
     /// <summary>十个冻结的一级导航项。</summary>
     public IReadOnlyList<NavigationItem> NavigationItems
@@ -60,13 +67,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _navigationItems, value);
     }
 
-    /// <summary>当前选中的导航项；不可用项仍允许打开解释页。</summary>
+    /// <summary>当前选中的导航项；WPF 重建 ItemsSource 时的瞬时 null 不改变现有页面。</summary>
     public NavigationItem SelectedNavigationItem
     {
         get => _selectedNavigationItem;
         set
         {
-            ArgumentNullException.ThrowIfNull(value);
+            if (value is null)
+            {
+                // ListBox 在 NavigationItems 替换时会先清空选择，再恢复同路由项。
+                // 该瞬时状态不是用户导航，不应抛出进程级异常或清除当前页面。
+                return;
+            }
             if (!SetProperty(ref _selectedNavigationItem, value))
             {
                 return;
@@ -156,7 +168,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     private PageViewModel CreateCurrentPage(NavigationRoute route) =>
         _snapshot is null
-            ? CreateStaticPage(route)
+            ? CreateStaticPage(route, ControlCenterCapabilities.Legacy22)
             : CreatePage(route, _snapshot);
 
     private PageViewModel CreatePage(
@@ -168,8 +180,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             FormatConnection(snapshot.State.Connection.State)),
         NavigationRoute.TaskCenter when _session is not null =>
             new TaskCenterPageViewModel(_session, snapshot),
+        NavigationRoute.Results when _session is not null =>
+            new ResultsPageViewModel(_session, snapshot),
+        NavigationRoute.Approvals when _session is not null =>
+            new ApprovalsPageViewModel(_session),
+        NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
         NavigationRoute.Settings => new SettingsPageViewModel(snapshot.MacBaseUrl),
-        _ => CreateStaticPage(route),
+        _ => CreateStaticPage(route, snapshot.State.Capabilities.Features),
     };
 
     private static NavigationItem[] BuildNavigation(
@@ -199,13 +216,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Item(
                 NavigationRoute.Approvals,
                 "审批",
-                capabilities.ApprovalList,
-                "Mac Core 尚未声明审批列表能力。"),
+                capabilities.ApprovalList && capabilities.ApprovalDigest,
+                "Mac Core 尚未同时声明审批列表和摘要决策能力。"),
             Item(
                 NavigationRoute.CloudDevelopment,
                 "云端开发",
-                isAvailable: false,
-                "当前只冻结 Handoff / Return Contract，未安装或调用外部 Provider。"),
+                isAvailable: true,
+                "Handoff / Return Contract v1 已冻结；Provider 尚未配置。"),
             Item(
                 NavigationRoute.Automation,
                 "自动化",
@@ -243,7 +260,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute route) =>
         items.Single(item => item.Route == route);
 
-    private static PageViewModel CreateStaticPage(NavigationRoute route) => route switch
+    private static PageViewModel CreateStaticPage(
+        NavigationRoute route,
+        ControlCenterCapabilities capabilities) => route switch
     {
         NavigationRoute.Dashboard => new EmptyStatePageViewModel(
             "总览",
@@ -258,21 +277,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.TaskCenter => TaskCenterPageViewModel.CreateForSmokeTest(
             Array.Empty<TaskRecord>(),
             WorkerSnapshot.NotDeployed),
-        NavigationRoute.Results => new EmptyStatePageViewModel(
-            "结果",
-            "Mac Core 尚未声明结果列表和预览能力。",
-            "后续切片将先加入只读结果清单，再加入安全预览。",
-            "你现在不需要操作。"),
+        NavigationRoute.Results => ResultsPageViewModel.CreateForSmokeTest(
+            Array.Empty<TaskRecord>()),
+        NavigationRoute.Approvals when capabilities.ApprovalList && capabilities.ApprovalDigest =>
+            ApprovalsPageViewModel.CreateForSmokeTest(Array.Empty<ApprovalRecord>()),
         NavigationRoute.Approvals => new EmptyStatePageViewModel(
             "审批",
-            "Mac Core 尚未声明审批列表或审批摘要能力。",
-            "后续切片将先接入只读审批队列，再加入显式审批动作。",
+            "Mac Core 尚未同时声明审批列表和审批摘要能力。",
+            "升级 Core 后页面将接入只读审批队列和显式摘要决策。",
             "你现在不需要操作。"),
-        NavigationRoute.CloudDevelopment => new EmptyStatePageViewModel(
-            "云端开发",
-            "当前版本只冻结了 Handoff / Return Contract，尚未安装或调用外部 Provider。",
-            "Phase 10A 将先加入包预览和审批；Phase 10B 才加入 Dev Broker。",
-            "你现在不需要操作。"),
+        NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
         NavigationRoute.Automation => new EmptyStatePageViewModel(
             "自动化",
             "自动化策略和执行器尚未进入 Slice B。",
@@ -324,6 +338,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             taskCenter.UpdateSnapshot(snapshot);
         }
+        else if (route == NavigationRoute.Results
+            && CurrentPage is ResultsPageViewModel results)
+        {
+            results.UpdateSnapshot(snapshot);
+        }
+        else if (route == NavigationRoute.Approvals
+            && CurrentPage is ApprovalsPageViewModel)
+        {
+            // 审批页面维护自己的选择、原因和幂等操作；普通连接快照不得替换页面实例。
+        }
         else
         {
             CurrentPage = CreatePage(route, snapshot);
@@ -349,7 +373,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     private static string FormatApproval(CapabilitySnapshot capabilities) =>
-        capabilities.Features.ApprovalList
+        capabilities.Features.ApprovalList && capabilities.Features.ApprovalDigest
             ? "审批能力已接入"
             : "审批能力未启用";
 

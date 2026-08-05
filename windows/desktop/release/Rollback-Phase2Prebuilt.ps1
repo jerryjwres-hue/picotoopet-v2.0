@@ -33,6 +33,8 @@ $mutexOwned     = $false
 $current        = $null
 $previous       = $null
 $switched       = $false
+$originShortcutState = @()
+$targetProductVersion = $null
 New-Item -ItemType Directory -Path $reportsRoot -Force | Out-Null
 
 function ConvertTo-NativeArgument {
@@ -66,7 +68,7 @@ function Write-JsonAtomic {
     param([Parameter(Mandatory)]$Value, [Parameter(Mandatory)][string]$Path)
 
     $temporary = "$Path.tmp"
-    Write-Utf8NoBom -Path $temporary -Value ($Value | ConvertTo-Json -Depth 20)
+    Write-Utf8NoBom -Path $temporary -Value ($Value | ConvertTo-Json -Depth 30)
     Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
@@ -94,10 +96,72 @@ function Assert-ManifestFiles {
     }
 }
 
+function Resolve-PointerProductVersion {
+    param(
+        [Parameter(Mandatory)]$Pointer,
+        [Parameter(Mandatory)]$Manifest
+    )
+
+    if ($Pointer.PSObject.Properties.Name -contains "product_version" -and
+        -not [string]::IsNullOrWhiteSpace([string]$Pointer.product_version)) {
+        return Assert-PicotooProductVersion -ProductVersion ([string]$Pointer.product_version)
+    }
+    if ($Manifest.PSObject.Properties.Name -contains "product_version" -and
+        -not [string]::IsNullOrWhiteSpace([string]$Manifest.product_version)) {
+        return Assert-PicotooProductVersion -ProductVersion ([string]$Manifest.product_version)
+    }
+    $versionFile = Join-Path ([string]$Pointer.path) "product-version.txt"
+    if (Test-Path -LiteralPath $versionFile -PathType Leaf) {
+        $value = [System.IO.File]::ReadAllText(
+            $versionFile,
+            [System.Text.UTF8Encoding]::new($false, $true)).Trim()
+        return Assert-PicotooProductVersion -ProductVersion $value
+    }
+    return $null
+}
+
+function New-LegacyShortcutState {
+    param(
+        [Parameter(Mandatory)][string]$Executable,
+        [string]$DesktopDirectory = ""
+    )
+
+    $target = [System.IO.Path]::GetFullPath($Executable)
+    $entries = @()
+    foreach ($location in @(Get-PicotooManagedShortcutLocations -DesktopDirectory $DesktopDirectory)) {
+        $path = Join-Path ([string]$location.directory) "Picotoo Pet AI.lnk"
+        $entries += [pscustomobject][ordered]@{
+            location          = [string]$location.location
+            name              = "Picotoo Pet AI.lnk"
+            path              = $path
+            target_path       = $target
+            arguments         = ""
+            working_directory = Split-Path -Parent $target
+            icon_location     = "$target,0"
+            description       = "Picotoo Pet V2 双机 AI 控制面板"
+        }
+    }
+    return $entries
+}
+
+function Assert-ShortcutSnapshotEqual {
+    param(
+        [Parameter(Mandatory)]$Expected,
+        [Parameter(Mandatory)]$Actual
+    )
+
+    $expectedJson = @($Expected | Sort-Object location, name) | ConvertTo-Json -Depth 20 -Compress
+    $actualJson = @($Actual | Sort-Object location, name) | ConvertTo-Json -Depth 20 -Compress
+    if ($expectedJson -ne $actualJson) {
+        throw "快捷方式快照恢复不精确。expected=$expectedJson actual=$actualJson"
+    }
+}
+
 function Invoke-RollbackActivationCheck {
     param(
         [Parameter(Mandatory)][string]$Executable,
         [Parameter(Mandatory)][string]$WorkingDirectory,
+        [string]$ExpectedProductVersion = "",
         [switch]$SelfTest
     )
 
@@ -118,6 +182,10 @@ function Invoke-RollbackActivationCheck {
         $selfTestReport = Read-JsonUtf8 -Path $activationPath
         if ([string]$selfTestReport.status -ne "pass") {
             throw "回滚版本自检报告不是 pass。"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedProductVersion) -and
+            [string]$selfTestReport.product_version -ne $ExpectedProductVersion) {
+            throw "回滚版本产品版本不一致：expected=$ExpectedProductVersion actual=$($selfTestReport.product_version)"
         }
         return [pscustomobject][ordered]@{
             mode       = "self-test"
@@ -144,22 +212,27 @@ function Invoke-RollbackActivationCheck {
 function Restore-RollbackOrigin {
     Write-JsonAtomic -Value $current -Path $currentPath
     Write-JsonAtomic -Value $previous -Path $previousPath
-    Set-PicotooShortcuts `
-        -Executable ([string]$current.executable) `
-        -DesktopDirectory $DesktopDirectory | Out-Null
-    $restoredShortcuts = Assert-PicotooShortcuts `
-        -Executable ([string]$current.executable) `
-        -DesktopDirectory $DesktopDirectory
+    $restoredState = @(
+        Restore-PicotooManagedShortcutSnapshot `
+            -ShortcutState $originShortcutState `
+            -DesktopDirectory $DesktopDirectory
+    )
+    Assert-ShortcutSnapshotEqual -Expected $originShortcutState -Actual $restoredState
+    $currentProductVersion = ""
+    if ($current.PSObject.Properties.Name -contains "product_version") {
+        $currentProductVersion = [string]$current.product_version
+    }
     $restoredActivation = Invoke-RollbackActivationCheck `
         -Executable ([string]$current.executable) `
         -WorkingDirectory ([string]$current.path) `
+        -ExpectedProductVersion $currentProductVersion `
         -SelfTest:$ActivationSelfTest
     return [pscustomobject][ordered]@{
-        status     = "pass"
-        current    = [string]$current.version
-        previous   = [string]$previous.version
-        shortcuts  = $restoredShortcuts
-        activation = $restoredActivation
+        status       = "pass"
+        current      = [string]$current.version
+        previous     = [string]$previous.version
+        shortcut_state = @($restoredState)
+        activation   = $restoredActivation
     }
 }
 
@@ -169,13 +242,16 @@ $report = [ordered]@{
     status                     = "running"
     data_root                  = $dataRoot
     restored                   = $null
+    restored_product_version   = $null
     replaced                   = $null
     current_before             = $null
     previous_before            = $null
     current_after              = $null
     previous_after             = $null
     restored_executable_sha256 = $null
+    shortcut_restore_mode      = $null
     shortcut_paths             = $null
+    shortcut_state             = @()
     shortcuts_verified         = $false
     activation                 = $null
     recovery                   = $null
@@ -199,6 +275,9 @@ try {
 
     $current  = Read-JsonUtf8 -Path $currentPath
     $previous = Read-JsonUtf8 -Path $previousPath
+    $originShortcutState = @(
+        Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory
+    )
     $report.current_before  = [string]$current.version
     $report.previous_before = [string]$previous.version
     $manifestPath = Join-Path ([string]$previous.path) "release-manifest.json"
@@ -207,6 +286,7 @@ try {
     }
     $manifest = Read-JsonUtf8 -Path $manifestPath
     Assert-ManifestFiles -Manifest $manifest -Root ([string]$previous.path)
+    $targetProductVersion = Resolve-PointerProductVersion -Pointer $previous -Manifest $manifest
 
     $appEntry = $manifest.files | Where-Object {
         [string]$_.path -eq "Picotoo Pet AI.exe"
@@ -215,29 +295,75 @@ try {
         throw "上一版本清单缺少主程序。"
     }
 
+    $targetShortcutState = @()
+    $restoreMode = "pointer-snapshot"
+    if ($previous.PSObject.Properties.Name -contains "shortcut_state") {
+        $targetShortcutState = @($previous.shortcut_state)
+    }
+    else {
+        $restoreMode = "legacy-pointer-fallback"
+        if ($null -ne $targetProductVersion) {
+            Set-PicotooShortcuts `
+                -Executable ([string]$previous.executable) `
+                -ProductVersion $targetProductVersion `
+                -DesktopDirectory $DesktopDirectory | Out-Null
+            $validation = Assert-PicotooShortcuts `
+                -Executable ([string]$previous.executable) `
+                -ProductVersion $targetProductVersion `
+                -DesktopDirectory $DesktopDirectory `
+                -RequireNoLegacy
+            $targetShortcutState = @($validation.shortcut_state)
+        }
+        else {
+            $targetShortcutState = @(
+                New-LegacyShortcutState `
+                    -Executable ([string]$previous.executable) `
+                    -DesktopDirectory $DesktopDirectory
+            )
+        }
+    }
+
     Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
     $switched = $true
+    $restoredShortcutState = @(
+        Restore-PicotooManagedShortcutSnapshot `
+            -ShortcutState $targetShortcutState `
+            -DesktopDirectory $DesktopDirectory
+    )
+    Assert-ShortcutSnapshotEqual -Expected $targetShortcutState -Actual $restoredShortcutState
+
+    $previous | Add-Member -NotePropertyName "shortcut_state" `
+        -NotePropertyValue @($restoredShortcutState) -Force
+    if ($null -ne $targetProductVersion) {
+        $previous | Add-Member -NotePropertyName "product_version" `
+            -NotePropertyValue $targetProductVersion -Force
+    }
+    $current | Add-Member -NotePropertyName "shortcut_state" `
+        -NotePropertyValue @($originShortcutState) -Force
     Write-JsonAtomic -Value $previous -Path $currentPath
     Write-JsonAtomic -Value $current -Path $previousPath
-    Set-PicotooShortcuts `
-        -Executable ([string]$previous.executable) `
-        -DesktopDirectory $DesktopDirectory | Out-Null
-    $shortcutValidation = Assert-PicotooShortcuts `
-        -Executable ([string]$previous.executable) `
-        -DesktopDirectory $DesktopDirectory
+
     $activation = Invoke-RollbackActivationCheck `
         -Executable ([string]$previous.executable) `
         -WorkingDirectory ([string]$previous.path) `
+        -ExpectedProductVersion ([string]$targetProductVersion) `
         -SelfTest:$ActivationSelfTest
 
+    $shortcutPaths = [ordered]@{}
+    foreach ($entry in @($restoredShortcutState)) {
+        $shortcutPaths[[string]$entry.location] = [string]$entry.path
+    }
     $report.status                     = "pass"
     $report.restored                   = [string]$previous.version
+    $report.restored_product_version   = $targetProductVersion
     $report.replaced                   = [string]$current.version
     $report.current_after              = [string]$previous.version
     $report.previous_after             = [string]$current.version
     $report.restored_executable_sha256 = [string]$appEntry.sha256
-    $report.shortcut_paths             = $shortcutValidation.shortcut_paths
-    $report.shortcuts_verified         = [bool]$shortcutValidation.shortcuts_verified
+    $report.shortcut_restore_mode      = $restoreMode
+    $report.shortcut_paths             = [pscustomobject]$shortcutPaths
+    $report.shortcut_state             = @($restoredShortcutState)
+    $report.shortcuts_verified         = $true
     $report.activation                 = $activation
     $exitCode                          = 0
 }

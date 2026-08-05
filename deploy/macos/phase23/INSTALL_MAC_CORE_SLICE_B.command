@@ -1,5 +1,5 @@
 #!/bin/bash
-# Picotoo Pet V2 Phase 2.3 Slice B Mac Core 增量安装器。
+# Picotoo Pet V2 Phase 2.3 Slice D Mac Core 增量安装器。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -23,16 +23,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# shellcheck source=lib.sh
 source "$package_root/lib.sh"
 
 runtime_root="$(phase23_runtime_root)"
 versions_root="$runtime_root/versions"
 state_root="$runtime_root/state"
-reports_root="$runtime_root/reports"
 current_python="$runtime_root/current/.venv/bin/python"
 label="com.picotoopet.mac-core"
 version=""
+product_version=""
 new_version=""
 previous_target=""
 existing_port=""
@@ -41,7 +40,7 @@ candidate_pid=""
 candidate_root=""
 activated=0
 
-mkdir -p "$versions_root" "$state_root" "$reports_root" "$runtime_root/logs"
+mkdir -p "$versions_root" "$state_root" "$runtime_root/reports" "$runtime_root/logs"
 
 cleanup_candidate() {
   if [[ -n "$candidate_pid" ]] && kill -0 "$candidate_pid" >/dev/null 2>&1; then
@@ -59,15 +58,10 @@ rollback_after_failed_activation() {
   if [[ "$activated" != "1" || -z "$previous_target" ]]; then
     return 0
   fi
-  echo "激活后验证失败，正在恢复上一版本。" >&2
   atomic_switch_current "$runtime_root" "$previous_target"
   if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
     stop_fixture_service "$runtime_root"
-    start_fixture_service \
-      "$runtime_root" \
-      "$runtime_root/current/.venv/bin/picotoopet-core" \
-      "$existing_port" \
-      "$api_token"
+    start_fixture_service "$runtime_root" "$runtime_root/current/.venv/bin/picotoopet-core" "$existing_port" "$api_token"
   else
     restart_user_agent "$label"
     wait_for_health "http://127.0.0.1:$existing_port"
@@ -84,11 +78,12 @@ on_error() {
   local report
   report="$(write_report \
     "$runtime_root" \
-    "install" \
-    "fail" \
+    install \
+    fail \
     "$version" \
     "$new_version" \
-    "命令失败：$failed_command")" || true
+    "命令失败：$failed_command" \
+    "$product_version")" || true
   echo "安装失败。报告：$report" >&2
   exit "$code"
 }
@@ -97,15 +92,36 @@ trap cleanup_candidate EXIT
 
 verify_manifest_files "$package_root"
 version="$(read_manifest "$package_root" version)"
+product_version="$(phase23_product_version "$package_root")"
+manifest_product_version="$(read_manifest "$package_root" product_version)"
 package_version="$(read_manifest "$package_root" package_version)"
+runtime_version="$(read_manifest "$package_root" runtime_version)"
 package_arch="$(read_manifest "$package_root" architecture)"
+diagnostic_api="$(read_manifest "$package_root" diagnostic_snapshot_api_included)"
 
-if [[ "$package_version" != "2.3.0.dev1" ]]; then
-  echo "包版本不符合 Slice B：$package_version" >&2
+if [[ "$manifest_product_version" != "$product_version" ]]; then
+  echo "包内产品版本不一致：expected=$product_version actual=$manifest_product_version" >&2
+  exit 1
+fi
+if [[ -z "$package_version" || ! "$package_version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+  echo "包内 package_version 无效：$package_version" >&2
+  exit 1
+fi
+if [[ "$runtime_version" != "2.3.0-slice-d-core" ]]; then
+  echo "运行时版本不符合 Slice D Core：$runtime_version" >&2
+  exit 1
+fi
+if [[ "$diagnostic_api" != "True" && "$diagnostic_api" != "true" ]]; then
+  echo "发布清单未声明诊断快照 API。" >&2
   exit 1
 fi
 if [[ "$package_arch" != "$(uname -m)" ]]; then
   echo "安装包架构 $package_arch 与本机 $(uname -m) 不一致。" >&2
+  exit 1
+fi
+wheel_count="$(find "$package_root/payload/wheelhouse" -maxdepth 1 -type f -name "picotoopet_core-${package_version//-/_}-*.whl" | wc -l | tr -d ' ')"
+if [[ "$wheel_count" != "1" ]]; then
+  echo "包内项目 wheel 与 package_version 不一致或数量不是 1。" >&2
   exit 1
 fi
 if [[ ! -x "$current_python" ]]; then
@@ -125,7 +141,6 @@ if [[ ${#api_token} -lt 16 ]]; then
   echo "现有 API 令牌无效；安装已停止。" >&2
   exit 1
 fi
-
 printf '%s\n' "$previous_target" > "$state_root/previous-version.txt"
 new_version="$versions_root/${version}-${package_arch}"
 if [[ -e "$new_version" ]]; then
@@ -133,67 +148,64 @@ if [[ -e "$new_version" ]]; then
   exit 1
 fi
 mkdir -p "$new_version"
-
 "$current_python" -m venv "$new_version/.venv"
-"$new_version/.venv/bin/python" -m pip install \
-  --no-index \
-  --find-links "$package_root/payload/wheelhouse" \
-  "picotoopet-core==2.3.0.dev1"
+"$new_version/.venv/bin/python" -m pip install --no-index --find-links "$package_root/payload/wheelhouse" "picotoopet-core==$package_version"
+installed_product_version="$("$new_version/.venv/bin/python" - <<'PY'
+from picotoopet_core import __version__
+print(__version__)
+PY
+)"
+if [[ "$installed_product_version" != "$product_version" ]]; then
+  echo "候选运行时产品版本不一致：expected=$product_version actual=$installed_product_version" >&2
+  exit 1
+fi
 
-candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-b-candidate.XXXXXX")"
+candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-d-core-candidate.XXXXXX")"
 candidate_port="$(choose_free_port)"
-PICOTOO_RUNTIME_ROOT="$candidate_root" \
-PICOTOO_API_HOST="127.0.0.1" \
-PICOTOO_API_PORT="$candidate_port" \
-PICOTOO_API_TOKEN="$api_token" \
-  "$new_version/.venv/bin/picotoopet-core" serve \
-    >"$candidate_root/candidate.stdout.log" \
-    2>"$candidate_root/candidate.stderr.log" &
+PICOTOO_RUNTIME_ROOT="$candidate_root" PICOTOO_API_HOST="127.0.0.1" PICOTOO_API_PORT="$candidate_port" PICOTOO_API_TOKEN="$api_token" \
+  "$new_version/.venv/bin/picotoopet-core" serve >"$candidate_root/candidate.stdout.log" 2>"$candidate_root/candidate.stderr.log" &
 candidate_pid=$!
-
 candidate_url="http://127.0.0.1:$candidate_port"
 wait_for_health "$candidate_url"
-verify_api_contract "$candidate_url" "$api_token"
+verify_api_contract "$candidate_url" "$api_token" "$product_version"
 cleanup_candidate
 
 if [[ "$preflight_only" == "1" ]]; then
   report="$(write_report \
     "$runtime_root" \
-    "install-preflight" \
-    "pass" \
+    install-preflight \
+    pass \
     "$version" \
     "$new_version" \
-    "")"
-  echo "PHASE23_MAC_DELTA_PREFLIGHT=PASS"
+    "" \
+    "$product_version")"
+  echo "PHASE23_MAC_SLICE_D_CORE_PREFLIGHT=PASS"
+  echo "PRODUCT_VERSION=$product_version"
   echo "REPORT=$report"
   exit 0
 fi
 
 atomic_switch_current "$runtime_root" "$new_version"
 activated=1
-
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
-  start_fixture_service \
-    "$runtime_root" \
-    "$runtime_root/current/.venv/bin/picotoopet-core" \
-    "$existing_port" \
-    "$api_token"
+  start_fixture_service "$runtime_root" "$runtime_root/current/.venv/bin/picotoopet-core" "$existing_port" "$api_token"
 else
   restart_user_agent "$label"
   wait_for_health "http://127.0.0.1:$existing_port"
 fi
-
-verify_api_contract "http://127.0.0.1:$existing_port" "$api_token"
+verify_api_contract "http://127.0.0.1:$existing_port" "$api_token" "$product_version"
 activated=0
 
 report="$(write_report \
   "$runtime_root" \
-  "install" \
-  "pass" \
+  install \
+  pass \
   "$version" \
   "$new_version" \
-  "")"
-echo "PHASE23_MAC_DELTA_INSTALL=PASS"
+  "" \
+  "$product_version")"
+echo "PHASE23_MAC_SLICE_D_CORE_INSTALL=PASS"
+echo "PRODUCT_VERSION=$product_version"
 echo "REPORT=$report"
 if [[ "${PICOTOO_FIXTURE_MODE:-0}" != "1" ]]; then
   open "$report"

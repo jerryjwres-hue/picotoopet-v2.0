@@ -12,7 +12,7 @@ public sealed record MacCoreClientOptions(
     public static MacCoreClientOptions CreateDefault(Uri baseUri, string token) => new(
         BaseUri: baseUri,
         Token: token,
-        RequestTimeout: TimeSpan.FromSeconds(5),
-        ConnectTimeout: TimeSpan.FromSeconds(2),
+        RequestTimeout: TimeSpan.FromSeconds(10),
+        ConnectTimeout: TimeSpan.FromSeconds(5),
         PooledConnectionLifetime: TimeSpan.FromMinutes(5));
 }

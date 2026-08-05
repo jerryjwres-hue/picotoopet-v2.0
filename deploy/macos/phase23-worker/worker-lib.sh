@@ -1,6 +1,27 @@
 #!/bin/bash
-# Phase 2.3 Slice C Worker 安装、验证和回滚共享函数。
+# Phase 2.3 Slice D Worker 安装、验证和回滚共享函数。
 set -euo pipefail
+
+phase23_worker_product_version() {
+  local package_root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+  phase23_product_version "$package_root"
+}
+
+verify_worker_product_version() {
+  local runtime_root="$1"
+  local expected_product_version="$2"
+  "$runtime_root/current/.venv/bin/python" - "$expected_product_version" <<'PY'
+import sys
+from picotoopet_core import __version__
+
+expected_product_version = sys.argv[1]
+if __version__ != expected_product_version:
+    raise SystemExit(
+        "Mac Worker product version mismatch: "
+        f"expected={expected_product_version!r}, actual={__version__!r}"
+    )
+PY
+}
 
 worker_label() {
   printf '%s\n' "com.picotoopet.worker"
@@ -52,31 +73,6 @@ PY
   chmod 600 "$target"
 }
 
-stop_worker_agent() {
-  local label
-  label="$(worker_label)"
-  if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
-    stop_fixture_worker "$(phase23_runtime_root)"
-    return 0
-  fi
-  launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
-}
-
-start_worker_agent() {
-  local runtime_root="$1"
-  local worker_id="$2"
-  local token="${3:-}"
-  if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
-    start_fixture_worker "$runtime_root" "$worker_id" "$token"
-    return 0
-  fi
-  local plist
-  plist="$(worker_plist_path)"
-  stop_worker_agent
-  launchctl bootstrap "gui/$UID" "$plist"
-  launchctl kickstart -k "gui/$UID/$(worker_label)"
-}
-
 stop_fixture_worker() {
   local runtime_root="$1"
   local pid_file="$runtime_root/state/fixture-worker.pid"
@@ -102,6 +98,14 @@ stop_fixture_worker() {
   rm -f "$pid_file"
 }
 
+stop_worker_agent() {
+  if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
+    stop_fixture_worker "$(phase23_runtime_root)"
+    return 0
+  fi
+  launchctl bootout "gui/$UID/$(worker_label)" >/dev/null 2>&1 || true
+}
+
 start_fixture_worker() {
   local runtime_root="$1"
   local worker_id="$2"
@@ -111,6 +115,7 @@ start_fixture_worker() {
   local stderr_log="$runtime_root/logs/fixture-worker.stderr.log"
   mkdir -p "$runtime_root/state" "$runtime_root/logs"
   stop_fixture_worker "$runtime_root"
+
   nohup env \
     PICOTOO_RUNTIME_ROOT="$runtime_root" \
     PICOTOO_API_TOKEN="$token" \
@@ -128,6 +133,21 @@ start_fixture_worker() {
     cat "$stderr_log" >&2 || true
     return 1
   fi
+}
+
+start_worker_agent() {
+  local runtime_root="$1"
+  local worker_id="$2"
+  local token="${3:-}"
+  if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
+    start_fixture_worker "$runtime_root" "$worker_id" "$token"
+    return 0
+  fi
+  local plist
+  plist="$(worker_plist_path)"
+  stop_worker_agent
+  launchctl bootstrap "gui/$UID" "$plist"
+  launchctl kickstart -k "gui/$UID/$(worker_label)"
 }
 
 wait_for_worker_state() {
@@ -149,10 +169,14 @@ if not path.is_file():
 payload = json.loads(path.read_text(encoding="utf-8"))
 if payload.get("state") != expected:
     raise SystemExit(1)
-if expected == "online" and payload.get("available") is not True:
-    raise SystemExit(1)
-if expected == "online" and payload.get("supported_task_types") != ["system.noop"]:
-    raise SystemExit(1)
+if expected == "online":
+    if payload.get("available") is not True:
+        raise SystemExit(1)
+    if payload.get("supported_task_types") != [
+        "system.diagnostic_snapshot",
+        "system.noop",
+    ]:
+        raise SystemExit(1)
 PY
     then
       return 0
@@ -163,33 +187,50 @@ PY
   return 1
 }
 
-verify_slice_c_candidate_contract() {
+verify_slice_d_candidate_contract() {
   local base_url="$1"
   local token="$2"
-  python3 - "$base_url" "$token" <<'PY'
+  local expected_product_version="${3:-}"
+  python3 - "$base_url" "$token" "$expected_product_version" <<'PY'
 import json
 import sys
 import urllib.request
 
 base = sys.argv[1].rstrip("/")
 token = sys.argv[2]
+expected_product_version = sys.argv[3]
 
 
-def get(path: str, authenticated: bool = False):
+def get(path: str, *, authenticated: bool = False):
     headers = {"Authorization": f"Bearer {token}"} if authenticated else {}
     request = urllib.request.Request(f"{base}{path}", headers=headers)
     with urllib.request.urlopen(request, timeout=5) as response:
         return json.load(response)
 
 health = get("/api/v1/health")
-if health.get("status") != "ok" or health.get("version") != "2.3.0-slice-c":
-    raise SystemExit(f"Slice C health contract failed: {health!r}")
+if health.get("status") != "ok":
+    raise SystemExit(f"health failed: {health!r}")
+if expected_product_version and health.get("version") != expected_product_version:
+    raise SystemExit(
+        "Mac Worker Core product version mismatch: "
+        f"expected={expected_product_version!r}, actual={health.get('version')!r}"
+    )
 features = get("/api/v1/capabilities").get("features", {})
 if features.get("worker_status") is not True or features.get("local_worker") is not True:
-    raise SystemExit(f"Slice C capabilities failed: {features!r}")
+    raise SystemExit(f"capabilities failed: {features!r}")
+paths = get("/openapi.json").get("paths", {})
+required = {
+    "/api/v1/tasks/system-diagnostic-snapshot",
+    "/api/v1/tasks/{task_id}/result",
+}
+missing = sorted(required - set(paths))
+if missing:
+    raise SystemExit(f"diagnostic paths missing: {missing!r}")
 status = get("/api/v1/workers/status", authenticated=True)
-if status.get("state") not in {"not_deployed", "offline", "online"}:
-    raise SystemExit(f"unexpected worker state: {status!r}")
+if status.get("state") not in {
+    "not_deployed", "starting", "online", "degraded", "offline"
+}:
+    raise SystemExit(f"unexpected Worker state: {status!r}")
 PY
 }
 
@@ -202,19 +243,21 @@ import sys
 import urllib.request
 
 base = sys.argv[1].rstrip("/")
-token = sys.argv[2]
-headers = {"Authorization": f"Bearer {token}"}
-request = urllib.request.Request(f"{base}/api/v1/workers/status", headers=headers)
+request = urllib.request.Request(
+    f"{base}/api/v1/workers/status",
+    headers={"Authorization": f"Bearer {sys.argv[2]}"},
+)
 with urllib.request.urlopen(request, timeout=5) as response:
     status = json.load(response)
-if status.get("state") != "online":
-    raise SystemExit(f"worker state must be online: {status!r}")
-if status.get("available") is not True:
-    raise SystemExit(f"worker available must be true: {status!r}")
-if status.get("supported_task_types") != ["system.noop"]:
-    raise SystemExit(f"worker task types are not frozen: {status!r}")
-if status.get("worker_id") in {None, ""}:
-    raise SystemExit(f"worker_id is missing: {status!r}")
+if status.get("state") != "online" or status.get("available") is not True:
+    raise SystemExit(f"Worker 必须在线：{status!r}")
+if status.get("supported_task_types") != [
+    "system.diagnostic_snapshot",
+    "system.noop",
+]:
+    raise SystemExit(f"Worker 类型不符合冻结合同：{status!r}")
+if not status.get("worker_id"):
+    raise SystemExit(f"worker_id 缺失：{status!r}")
 PY
 }
 
@@ -225,40 +268,42 @@ write_worker_report() {
   local version="$4"
   local install_path="$5"
   local error_message="${6:-}"
-  local worker_installed="${7:-}"
-  if [[ -z "$worker_installed" ]]; then
-    if [[ "$status" == "pass" ]]; then
-      worker_installed="true"
-    else
-      worker_installed="false"
-    fi
-  fi
+  local worker_installed="${7:-false}"
+  local product_version="${8:-}"
   local reports="$runtime_root/reports"
   mkdir -p "$reports"
   local stamp
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  local report="$reports/phase23-slice-c-${kind}-${stamp}.json"
+  local report="$reports/phase23-slice-d-worker-${kind}-${stamp}.json"
   python3 - \
     "$report" \
     "$status" \
     "$version" \
     "$install_path" \
     "$error_message" \
-    "$worker_installed" <<'PY'
+    "$worker_installed" \
+    "$product_version" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-path = Path(sys.argv[1])
 payload = {
     "status": sys.argv[2],
     "version": sys.argv[3] or None,
+    "product_version": sys.argv[7] or None,
+    "runtime_version": "2.3.0-slice-d-worker",
     "install_path": sys.argv[4] or None,
     "source_build_on_user_mac": False,
     "worker_runtime_installed": sys.argv[6].lower() == "true",
-    "worker_supported_task_types": ["system.noop"],
+    "worker_supported_task_types": [
+        "system.diagnostic_snapshot",
+        "system.noop",
+    ],
+    "diagnostic_hard_timeout_seconds": 30,
+    "diagnostic_termination_grace_seconds": 5,
     "error": sys.argv[5] or None,
 }
+path = Path(sys.argv[1])
 path.write_text(
     json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
     encoding="utf-8",

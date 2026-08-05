@@ -1,4 +1,4 @@
-# Phase 2 Windows 预编译安装验证；校验文件、快捷方式、进程和真实双机链路。
+# Phase 2 Windows 预编译安装验证；校验文件、版本、快捷方式、进程和真实双机链路。
 [CmdletBinding()]
 param(
     [int]$RestSamples = 500,
@@ -55,7 +55,7 @@ function Write-JsonAtomic {
     param([Parameter(Mandatory)]$Value, [Parameter(Mandatory)][string]$Path)
 
     $temporary = "$Path.tmp"
-    Write-Utf8NoBom -Path $temporary -Value ($Value | ConvertTo-Json -Depth 20)
+    Write-Utf8NoBom -Path $temporary -Value ($Value | ConvertTo-Json -Depth 30)
     Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
@@ -131,19 +131,41 @@ try {
     }
     $manifest = Read-JsonUtf8 -Path $manifestPath
     Assert-ManifestFiles -Manifest $manifest -Root ([string]$current.path)
+    if (-not ($manifest.PSObject.Properties.Name -contains "product_version")) {
+        throw "当前版本 Manifest 缺少 product_version。"
+    }
+    $productVersion = Assert-PicotooProductVersion -ProductVersion ([string]$manifest.product_version)
+    if (-not ($current.PSObject.Properties.Name -contains "product_version") -or
+        [string]$current.product_version -ne $productVersion) {
+        throw "当前版本指针 product_version 不一致。"
+    }
+    $versionFile = Join-Path ([string]$current.path) "product-version.txt"
+    if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) {
+        throw "当前版本缺少 product-version.txt。"
+    }
+    $installedProductVersion = [System.IO.File]::ReadAllText(
+        $versionFile,
+        [System.Text.UTF8Encoding]::new($false, $true)).Trim()
+    if ((Assert-PicotooProductVersion -ProductVersion $installedProductVersion) -ne $productVersion) {
+        throw "当前版本文件与 Manifest 产品版本不一致。"
+    }
 
     $executable = [string]$current.executable
     $diagnostic = Join-Path ([string]$current.path) "tools\diagnostics\PicotooPet.Desktop.Diagnostics.exe"
     $shortcutValidation = Assert-PicotooShortcuts `
         -Executable $executable `
-        -DesktopDirectory $DesktopDirectory
+        -ProductVersion $productVersion `
+        -DesktopDirectory $DesktopDirectory `
+        -RequireNoLegacy
     $releaseValidation = [ordered]@{
         version             = [string]$current.version
+        product_version     = $productVersion
         data_root           = $dataRoot
         manifest            = $manifestPath
         manifest_file_count = @($manifest.files).Count
         shortcuts_verified  = [bool]$shortcutValidation.shortcuts_verified
         shortcut_paths      = $shortcutValidation.shortcut_paths
+        shortcut_state      = @($shortcutValidation.shortcut_state)
         executable_sha256   = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
         diagnostic_sha256   = (Get-FileHash -LiteralPath $diagnostic -Algorithm SHA256).Hash.ToLowerInvariant()
     }
@@ -159,9 +181,15 @@ try {
         if ([string]$selfTest.status -ne "pass") {
             throw "桌面自检报告不是 pass。"
         }
+        if ([string]$selfTest.product_version -ne $productVersion -or
+            [string]$selfTest.window_title -ne "Picotoo Pet AI $productVersion" -or
+            [string]$selfTest.control_center_subtitle -ne "Control Center · v$productVersion") {
+            throw "桌面自检产品版本文案不一致。"
+        }
         $diagnosticCheck = Invoke-CheckedProcess -FilePath $diagnostic -Arguments @("--self-test")
         $offlineReport = [ordered]@{
             schema_version     = "2.3.0"
+            product_version    = $productVersion
             generated_at       = (Get-Date).ToUniversalTime().ToString("o")
             status             = "pass"
             mode               = "offline-package"
@@ -208,6 +236,8 @@ try {
             throw "诊断程序未生成报告。"
         }
         $diagnosticReport = Read-JsonUtf8 -Path $reportPath
+        $diagnosticReport | Add-Member -NotePropertyName "product_version" `
+            -NotePropertyValue $productVersion -Force
         $diagnosticReport | Add-Member -NotePropertyName "release_validation" `
             -NotePropertyValue $releaseValidation -Force
         Write-JsonAtomic -Value $diagnosticReport -Path $reportPath
