@@ -67,8 +67,8 @@ def test_return_validator_fails_closed_on_links_paths_secrets_and_claims() -> No
         "EVENT_SEQUENCE_INVALID",
         "EVENT_ID_DUPLICATE",
         "SHA256_COVERAGE_MISMATCH",
-        "contract_validated",
-        "quarantined",
+        "ReturnStatus.CONTRACT_VALIDATED",
+        "ReturnStatus.QUARANTINED",
     ):
         assert required in service
     for forbidden in (
