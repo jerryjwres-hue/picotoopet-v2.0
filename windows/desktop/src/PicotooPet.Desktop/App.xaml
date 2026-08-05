@@ -16,6 +16,9 @@
     <DataTemplate DataType="{x:Type viewModels:ResultsPageViewModel}">
       <pages:ResultsPage />
     </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:ApprovalsPageViewModel}">
+      <pages:ApprovalsPage />
+    </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:SettingsPageViewModel}">
       <pages:SettingsPage />
     </DataTemplate>
