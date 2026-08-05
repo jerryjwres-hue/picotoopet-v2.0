@@ -1,23 +1,44 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.db.database import Database
+from picotoopet_core.handoffs.approvals import HandoffApprovalService
 from picotoopet_core.handoffs.models import HandoffPrepareRequest, HandoffStatus
-from picotoopet_core.handoffs.service import HandoffConflict, HandoffPolicyError, HandoffService
+from picotoopet_core.handoffs.service import (
+    HandoffConflict,
+    HandoffPolicyError,
+    HandoffService,
+)
 from picotoopet_core.queue.repository import QueueRepository
 
 
-def make_service(tmp_path: Path) -> tuple[Database, HandoffService]:
+class MutableClock:
+    """让创建、读取和过期判断共享同一个确定性 UTC 时钟。"""
+
+    def __init__(self, current: datetime) -> None:
+        self.current = current
+
+    def __call__(self) -> datetime:
+        return self.current
+
+    def advance(self, delta: timedelta) -> None:
+        self.current += delta
+
+
+def make_service(
+    tmp_path: Path,
+    *,
+    clock: MutableClock | None = None,
+) -> tuple[Database, HandoffService]:
     database = Database(tmp_path / "core.db")
     database.open()
     database.apply_migrations()
     queue = QueueRepository(database)
-    approvals = ApprovalService(database, queue)
-    return database, HandoffService(database, approvals)
+    approvals = HandoffApprovalService(database, queue)
+    return database, HandoffService(database, approvals, clock=clock)
 
 
 def request(
@@ -34,11 +55,11 @@ def request(
 
 
 def test_prepare_is_deterministic_and_idempotent(tmp_path: Path) -> None:
-    database, service = make_service(tmp_path)
-    now = datetime(2026, 8, 5, 19, 30, tzinfo=UTC)
+    clock = MutableClock(datetime(2026, 8, 5, 19, 30, tzinfo=UTC))
+    database, service = make_service(tmp_path, clock=clock)
 
-    first = service.prepare(request(), idempotency_key="prepare-001", now=now)
-    replay = service.prepare(request(), idempotency_key="prepare-001", now=now)
+    first = service.prepare(request(), idempotency_key="prepare-001")
+    replay = service.prepare(request(), idempotency_key="prepare-001")
 
     assert replay == first
     assert first.status is HandoffStatus.PREPARED
@@ -56,6 +77,23 @@ def test_prepare_is_deterministic_and_idempotent(tmp_path: Path) -> None:
         "mac-core-arm64",
     ]
     assert database.scalar("SELECT COUNT(*) FROM handoffs") == 1
+    database.close()
+
+
+def test_expiry_uses_the_same_injected_clock_as_prepare(tmp_path: Path) -> None:
+    clock = MutableClock(datetime(2026, 8, 5, 19, 30, tzinfo=UTC))
+    database, service = make_service(tmp_path, clock=clock)
+    prepared = service.prepare(request(), idempotency_key="prepare-expiry")
+
+    clock.advance(timedelta(seconds=1801))
+    expired = service.get(prepared.handoff_id)
+
+    assert expired.status is HandoffStatus.EXPIRED
+    assert expired.updated_at == clock.current
+    assert database.scalar(
+        "SELECT status FROM handoffs WHERE handoff_id = ?",
+        (prepared.handoff_id,),
+    ) == HandoffStatus.EXPIRED.value
     database.close()
 
 
