@@ -9,7 +9,7 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>验证 Phase 10A 页面使用有界原生 WPF 控件并完成真实布局。</summary>
+/// <summary>验证 Phase 10A 与 10B-A 使用有界原生 WPF 控件并完成真实布局。</summary>
 internal static class CloudDevelopmentPageWpfLayoutSmokeTests
 {
     public static void Run()
@@ -43,8 +43,8 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
             DataContext = new CloudDevelopmentPageViewModel(),
         };
 
-        page.Measure(new Size(1100, 820));
-        page.Arrange(new Rect(0, 0, 1100, 820));
+        page.Measure(new Size(1100, 980));
+        page.Arrange(new Rect(0, 0, 1100, 980));
         page.UpdateLayout();
         page.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
 
@@ -53,19 +53,23 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
         SmokeAssert.True(page.ActualWidth > 0, "Cloud Development Page 实际宽度无效");
         SmokeAssert.True(page.ActualHeight > 0, "Cloud Development Page 实际高度无效");
         SmokeAssert.True(
-            FindVisualChildren<Button>(page).Count >= 3,
-            "Phase 10A 必须提供刷新、准备和提交审批按钮");
+            FindVisualChildren<Button>(page).Count >= 5,
+            "页面必须提供 Handoff 刷新/准备/审批和 Return 刷新/演练按钮");
         SmokeAssert.True(
             FindVisualChildren<TextBox>(page).Count >= 2,
-            "Phase 10A 必须提供标题和目标摘要输入框");
+            "Phase 10A 必须保留标题和目标摘要输入框");
+        SmokeAssert.Equal(
+            1,
+            FindVisualChildren<ReturnValidationPanel>(page).Count,
+            "Phase 10B-A 必须提供唯一的原生 Return 验证面板");
         SmokeAssert.Equal(
             0,
             FindVisualChildren<PasswordBox>(page).Count,
-            "Phase 10A 页面不得收集 Provider 或仓库凭据");
+            "云端开发页面不得收集 Provider、仓库或 Return 凭据");
         SmokeAssert.Equal(
             0,
             FindVisualChildren<WebBrowser>(page).Count,
-            "Phase 10A 页面不得使用浏览器 UI");
+            "云端开发页面不得使用浏览器 UI");
     }
 
     private static List<T> FindVisualChildren<T>(DependencyObject root)
