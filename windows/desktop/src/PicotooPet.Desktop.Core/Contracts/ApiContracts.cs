@@ -63,6 +63,27 @@ public sealed record TaskRecord(
     [property: JsonPropertyName("error_message")] string? ErrorMessage,
     [property: JsonPropertyName("result_id")] string? ResultId = null);
 
+/// <summary>审批中心读取的安全记录，不包含令牌、令牌哈希或原始任意路径。</summary>
+public sealed record ApprovalRecord(
+    [property: JsonPropertyName("approval_id")] string ApprovalId,
+    [property: JsonPropertyName("task_id")] string? TaskId,
+    [property: JsonPropertyName("approval_type")] string ApprovalType,
+    [property: JsonPropertyName("scope_summary")] string ScopeSummary,
+    [property: JsonPropertyName("request_digest")] string RequestDigest,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("requested_by")] string RequestedBy,
+    [property: JsonPropertyName("resolved_by")] string? ResolvedBy,
+    [property: JsonPropertyName("expires_at")] DateTimeOffset ExpiresAt,
+    [property: JsonPropertyName("requested_at")] DateTimeOffset RequestedAt,
+    [property: JsonPropertyName("resolved_at")] DateTimeOffset? ResolvedAt,
+    [property: JsonPropertyName("decision_reason")] string? DecisionReason);
+
+/// <summary>审批中心的摘要绑定终态决策。</summary>
+public sealed record ApprovalDecisionRequest(
+    [property: JsonPropertyName("decision")] string Decision,
+    [property: JsonPropertyName("request_digest")] string RequestDigest,
+    [property: JsonPropertyName("reason")] string Reason);
+
 /// <summary>诊断结果中的 Core 固定卡片。</summary>
 public sealed record DiagnosticCoreResult(
     [property: JsonPropertyName("version")] string Version,
