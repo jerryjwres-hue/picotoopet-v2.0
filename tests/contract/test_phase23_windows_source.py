@@ -226,7 +226,7 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         "stamp_windows_goal_integrity.py",
         "verify_project_goal_integrity.py",
         "Invoke-Phase2WindowsReleaseLifecycleGate.ps1",
-        "PicotooPet-Phase23-Approval-Windows-Prebuilt",
+        "PicotooPet-Phase23-CloudContract-Windows-Prebuilt",
     ):
         assert required in release
 

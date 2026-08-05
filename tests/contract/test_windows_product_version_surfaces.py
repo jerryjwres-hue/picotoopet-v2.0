@@ -54,8 +54,8 @@ def test_real_sta_smoke_runs_version_binding_and_layout() -> None:
         "Arrange(new Rect(0, 0, 900, 700))",
         "UpdateLayout()",
         "DispatcherPriority.DataBind",
-        '"Picotoo Pet AI 2.3.8.1"',
-        '"Control Center · v2.3.8.1"',
+        '"Picotoo Pet AI 2.3.9.1"',
+        '"Control Center · v2.3.9.1"',
     ):
         assert required in smoke
 

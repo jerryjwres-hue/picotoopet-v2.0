@@ -14,10 +14,10 @@ internal static class NavigationSmokeTests
 
         SmokeAssert.True(shell.NavigationItems.Count == 10, "一级导航数量错误");
         SmokeAssert.True(
-            !shell.NavigationItems
+            shell.NavigationItems
                 .Single(item => item.Route == NavigationRoute.CloudDevelopment)
                 .IsAvailable,
-            "未实现云端开发不得可操作");
+            "冻结合同状态页必须可打开");
         SmokeAssert.True(
             shell.NavigationItems
                 .Single(item => item.Route == NavigationRoute.TaskCenter)
@@ -25,16 +25,11 @@ internal static class NavigationSmokeTests
             "2.2 任务列表必须保持可用");
 
         shell.Navigate(NavigationRoute.CloudDevelopment);
-        var page = shell.CurrentPage as EmptyStatePageViewModel;
-        SmokeAssert.True(page is not null, "云端开发必须显示解释性空状态");
+        var page = shell.CurrentPage as CloudDevelopmentPageViewModel;
+        SmokeAssert.True(page is not null, "云端开发必须显示冻结合同状态页");
         SmokeAssert.True(page!.Title == "云端开发", "云端开发标题被改写");
-        SmokeAssert.True(
-            page.Reason == "当前版本只冻结了 Handoff / Return Contract，尚未安装或调用外部 Provider。",
-            "云端开发原因说明被改写");
-        SmokeAssert.True(
-            page.NextStep == "Phase 10A 将先加入包预览和审批；Phase 10B 才加入 Dev Broker。",
-            "云端开发后续步骤被改写");
-        SmokeAssert.True(page.UserAction == "你现在不需要操作。", "用户动作说明被改写");
+        SmokeAssert.True(page.ContractVersion == "1.0.0", "云端开发合同版本错误");
+        SmokeAssert.True(!page.ProviderConfigured, "云端开发不得伪造 Provider 已配置");
 
         shell.ShowNavigationFailure(NavigationRoute.TaskCenter);
         var failurePage = shell.CurrentPage as EmptyStatePageViewModel;

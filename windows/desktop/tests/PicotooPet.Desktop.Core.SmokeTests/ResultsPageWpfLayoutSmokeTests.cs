@@ -83,7 +83,7 @@ internal static class ResultsPageWpfLayoutSmokeTests
         viewModel.UpdateSnapshot(new ControlCenterSessionSnapshot(
             "http://127.0.0.1:8765",
             store.ControlCenterSnapshot,
-            "online · 2.3.8.1",
+            "online · 2.3.9.1",
             "REST p95 1.0 ms",
             "双机控制链已连接。"));
         page.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
