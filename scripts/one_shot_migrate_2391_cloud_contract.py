@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchronize the current cloud-contract milestone, then delete this script."""
+"""Synchronize non-workflow cloud-contract milestone files, then delete this script."""
 
 from pathlib import Path
 
@@ -38,13 +38,6 @@ if '"2.3.8"' not in text:
 parser_test.write_text(text.replace('"2.3.8"', '"2.3.9"'), encoding="utf-8")
 
 release_replacements = {
-    ".github/workflows/windows-phase2-release.yml": (
-        ("2.3.0-slice-d-approval", "2.3.0-slice-d-cloud-contract"),
-        (
-            "PicotooPet-Phase23-Approval-Windows-Prebuilt",
-            "PicotooPet-Phase23-CloudContract-Windows-Prebuilt",
-        ),
-    ),
     "tests/contract/test_phase23_windows_source.py": (
         (
             "PicotooPet-Phase23-Approval-Windows-Prebuilt",
@@ -138,6 +131,7 @@ allowed_old_version = {
     ".github/workflows/one-shot-version-2391-cloud-contract-v2.yml",
 }
 allowed_old_label = {
+    ".github/workflows/windows-phase2-release.yml",
     ".github/workflows/one-shot-version-2391-cloud-contract.yml",
     ".github/workflows/one-shot-audit-version-2381.yml",
     "scripts/one_shot_migrate_2391_cloud_contract.py",
