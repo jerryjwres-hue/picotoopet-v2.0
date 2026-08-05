@@ -45,7 +45,7 @@ def test_windows_ci_builds_slice_d_on_native_runner() -> None:
     assert "pytest tests/release/test_windows_prebuilt_delivery.py" in run_text
     assert "Test-TaskCenterLegacyBindingRegression.ps1" in run_text
     assert "Build-Phase2WindowsRelease.ps1 -Version $version" in run_text
-    assert "2.3.0-slice-d-diagnostic" in run_text
+    assert "2.3.0-slice-d-approval" in run_text
     assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" in run_text
 
 
@@ -220,7 +220,7 @@ def test_release_workflow_uploads_slice_d_lifecycle_evidence() -> None:
     assert "fixture-evidence/**" in workflow
     assert "PICOTOO_SOURCE_HEAD_SHA" in workflow
     assert "PICOTOO_SOURCE_REF" in workflow
-    assert "PicotooPet-Phase23-SliceD-Windows-Prebuilt" in workflow
+    assert "PicotooPet-Phase23-Approval-Windows-Prebuilt" in workflow
 
 
 def test_windows_task_dialogs_do_not_render_raw_exception_messages() -> None:
