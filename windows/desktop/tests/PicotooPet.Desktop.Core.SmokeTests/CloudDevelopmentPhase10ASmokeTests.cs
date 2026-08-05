@@ -18,13 +18,16 @@ internal static class CloudDevelopmentPhase10ASmokeTests
         SmokeAssert.True(!page.ProviderConfigured, "Phase 10A 不得伪造 Provider 已配置");
         SmokeAssert.True(!page.CanPrepare, "空输入不得允许准备 Handoff");
 
-        page.DraftTitle    = "准备安全修复";
+        page.DraftTitle     = "准备安全修复";
         page.DraftObjective = "只生成受控摘要并提交审批。";
-        SmokeAssert.True(page.CanPrepare, "合法输入未启用准备动作");
+        SmokeAssert.True(
+            !page.CanPrepare,
+            "Mac Core 固定模板尚未加载时不得允许准备 Handoff");
 
         await page.LoadAsync(CancellationToken.None).ConfigureAwait(false);
         SmokeAssert.Equal(1, page.TemplateOptions.Count, "模板加载数量错误");
         SmokeAssert.Equal(1, page.RecentHandoffs.Count, "最近 Handoff 加载数量错误");
+        SmokeAssert.True(page.CanPrepare, "固定模板和合法输入就绪后未启用准备动作");
 
         await page.PrepareAsync(CancellationToken.None).ConfigureAwait(false);
         SmokeAssert.True(page.IsPreviewVisible, "准备完成后没有显示安全预览");
