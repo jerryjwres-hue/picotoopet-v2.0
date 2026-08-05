@@ -1,0 +1,88 @@
+name: One-shot sync 2.3.7.1 formal contracts
+
+on:
+  push:
+    branches:
+      - feature/phase23-slice-d-diagnostic-snapshot-release
+    paths:
+      - .github/workflows/one-shot-sync-2371.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync-formal-version-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/phase23-slice-d-diagnostic-snapshot-release
+          fetch-depth: 0
+
+      - name: Replace only formal current-version fixtures
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          old = "2.3.6.2"
+          new = "2.3.7.1"
+          targets = [
+              "tests/contract/test_project_goal_integrity.py",
+              "tests/contract/test_windows_executable_allowlist.py",
+              "tests/contract/test_windows_goal_integrity_stamper.py",
+              "tests/contract/test_product_version_single_source.py",
+              "tests/release/test_windows_analyzer_regressions.py",
+              "tests/release/test_windows_goal_integrity_release_contract.py",
+              "tests/release/test_windows_native_ci_provenance.py",
+              "tests/release/test_windows_native_install_permission.py",
+              "tests/release/test_windows_prebuilt_delivery.py",
+              "tests/release/test_windows_versioned_shortcuts.py",
+              "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/ProductVersionWpfSmokeTests.cs",
+              "windows/desktop/scripts/Test-Phase2WindowsRelease.ps1",
+              "windows/desktop/scripts/Build-Phase2WindowsRelease.ps1",
+          ]
+          changed = []
+          for relative in targets:
+              path = Path(relative)
+              if not path.is_file():
+                  continue
+              text = path.read_text(encoding="utf-8")
+              updated = text.replace(old, new)
+              if updated != text:
+                  path.write_text(updated, encoding="utf-8")
+                  changed.append(relative)
+          if not changed:
+              raise SystemExit("No formal 2.3.6.2 fixtures were updated")
+          print("UPDATED_FORMAL_VERSION_FILES")
+          for relative in changed:
+              print(relative)
+          print("REMAINING_NON_DOC_OCCURRENCES")
+          for path in Path(".").rglob("*"):
+              if not path.is_file() or ".git" in path.parts or "docs" in path.parts:
+                  continue
+              if path.suffix.lower() not in {".py", ".cs", ".ps1", ".json", ".yml", ".yaml", ".sh", ".command", ".txt"}:
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              if old in text:
+                  print(path.as_posix())
+          PY
+
+      - name: Commit synchronized formal fixtures
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            tests/contract \
+            tests/release \
+            windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/ProductVersionWpfSmokeTests.cs \
+            windows/desktop/scripts/Test-Phase2WindowsRelease.ps1 \
+            windows/desktop/scripts/Build-Phase2WindowsRelease.ps1
+          git diff --cached --check
+          git commit -m "test: sync formal release fixtures to 2.3.7.1"
+          git push origin HEAD:feature/phase23-slice-d-diagnostic-snapshot-release
