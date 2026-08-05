@@ -58,7 +58,7 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
             "合同状态页不得包含执行按钮");
     }
 
-    private static IReadOnlyList<T> FindVisualChildren<T>(DependencyObject root)
+    private static List<T> FindVisualChildren<T>(DependencyObject root)
         where T : DependencyObject
     {
         var matches = new List<T>();
