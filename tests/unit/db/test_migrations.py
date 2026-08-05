@@ -18,6 +18,25 @@ REQUIRED_TABLES = {
     "device_pairings",
     "service_health",
     "event_outbox",
+    "handoffs",
+}
+
+REQUIRED_HANDOFF_COLUMNS = {
+    "handoff_id",
+    "template_id",
+    "title",
+    "objective_summary",
+    "status",
+    "request_digest",
+    "package_digest",
+    "manifest_json",
+    "preview_json",
+    "approval_id",
+    "prepare_idempotency_key",
+    "approval_idempotency_key",
+    "created_at",
+    "updated_at",
+    "expires_at",
 }
 
 
@@ -37,11 +56,35 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
     }
-    task_columns = {
-        row["name"]
-        for row in database.fetchall("PRAGMA table_info(tasks)")
+    task_columns = {row["name"] for row in database.fetchall("PRAGMA table_info(tasks)")}
+    handoff_columns = {
+        row["name"] for row in database.fetchall("PRAGMA table_info(handoffs)")
     }
     assert REQUIRED_TABLES <= tables
     assert "cloud_policy" in task_columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 2
+    assert REQUIRED_HANDOFF_COLUMNS <= handoff_columns
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 3
+    database.close()
+
+
+def test_migration_three_repairs_partially_registered_handoff_table(tmp_path: Path) -> None:
+    """表已存在但 migration 记录缺失时必须安全登记，而不是重复破坏数据。"""
+
+    database = Database(tmp_path / "partial.db")
+    database.open()
+    database.execute(
+        "CREATE TABLE handoffs ("
+        "handoff_id TEXT PRIMARY KEY, template_id TEXT NOT NULL, title TEXT NOT NULL, "
+        "objective_summary TEXT NOT NULL, status TEXT NOT NULL, request_digest TEXT NOT NULL, "
+        "package_digest TEXT NOT NULL, manifest_json TEXT NOT NULL, preview_json TEXT NOT NULL, "
+        "approval_id TEXT, prepare_idempotency_key TEXT NOT NULL UNIQUE, "
+        "approval_idempotency_key TEXT UNIQUE, created_at TEXT NOT NULL, "
+        "updated_at TEXT NOT NULL, expires_at TEXT NOT NULL)"
+    )
+    database.apply_migrations()
+
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 3") == 1
+    assert REQUIRED_HANDOFF_COLUMNS <= {
+        row["name"] for row in database.fetchall("PRAGMA table_info(handoffs)")
+    }
     database.close()
