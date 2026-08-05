@@ -33,10 +33,12 @@ internal static class Program
             NavigationFaultBoundarySmokeTests.Run();
             NavigationContentRenderingSmokeTests.Run();
             TaskCenterSmokeTests.Run();
+            ResultsCenterSmokeTests.Run();
             DiagnosticTaskActionStateSmokeTests.Run();
             DiagnosticResultContractSmokeTests.Run();
             ProductVersionWpfSmokeTests.Run();
             TaskCenterWpfLayoutSmokeTests.Run();
+            ResultsPageWpfLayoutSmokeTests.Run();
             await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
