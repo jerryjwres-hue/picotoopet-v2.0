@@ -5,13 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from picotoopet_core.approvals.service import ApprovalRecord, ApprovalService
+from picotoopet_core.approvals.service import ApprovalRecord
 from picotoopet_core.db.database import Database
 
+from .approvals import HandoffApprovalService
 from .models import HandoffPrepareRequest, HandoffRecord, HandoffStatus, HandoffTemplate
 
 
@@ -58,15 +60,25 @@ class HandoffService:
         re.compile(r"protected\s*(?:原件|source|original)", re.IGNORECASE),
         re.compile(r"raw\s+evidence", re.IGNORECASE),
         re.compile(r"authorization\s*:\s*bearer", re.IGNORECASE),
-        re.compile(r"\b(?:token|secret|credential|password)\s*[=:]", re.IGNORECASE),
+        re.compile(
+            r"\b(?:token|secret|credential|password)\s*[=:]",
+            re.IGNORECASE,
+        ),
         re.compile(r"(?:~[/\\]\.ssh|id_ed25519|id_rsa)", re.IGNORECASE),
         re.compile(r"powershell|executionpolicy|\bbypass\b", re.IGNORECASE),
         re.compile(r"\b(?:push|merge|tag|release)\b", re.IGNORECASE),
     )
 
-    def __init__(self, database: Database, approvals: ApprovalService) -> None:
+    def __init__(
+        self,
+        database: Database,
+        approvals: HandoffApprovalService,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self.database  = database
         self.approvals = approvals
+        self._clock    = clock or (lambda: datetime.now(UTC))
 
     def templates(self) -> list[HandoffTemplate]:
         """返回固定模板，禁止客户端自行构造权限事实。"""
@@ -78,7 +90,6 @@ class HandoffService:
         request: HandoffPrepareRequest,
         *,
         idempotency_key: str,
-        now: datetime | None = None,
     ) -> HandoffRecord:
         """规范化输入并生成不执行 Provider 的确定性 Handoff 草稿。"""
 
@@ -98,9 +109,9 @@ class HandoffService:
             stored_input = json.loads(existing["manifest_json"])["prepare_input"]
             if stored_input != normalized_input:
                 raise HandoffConflict("Idempotency-Key 已绑定不同的 Handoff 请求。")
-            return self._record_from_row(existing)
+            return self._record_from_row(self._expire_if_needed(existing))
 
-        created_at = self._as_utc(now or datetime.now(UTC))
+        created_at = self._now()
         expires_at = created_at + timedelta(seconds=request.expires_seconds)
         handoff_id = str(uuid4())
         read_root  = f"D:/PicotooPet/DevSandbox/worktrees/{handoff_id}/source"
@@ -127,7 +138,7 @@ class HandoffService:
             "expires_at": expires_at.isoformat(),
         }
         request_digest = self._digest(request_payload)
-        package_files  = self._build_package_files(
+        package_files = self._build_package_files(
             handoff_id=handoff_id,
             title=request.title,
             objective=request.objective,
@@ -220,7 +231,6 @@ class HandoffService:
         handoff_id: str,
         *,
         idempotency_key: str,
-        now: datetime | None = None,
     ) -> HandoffRecord:
         """在一个事务中创建资源审批并把 Handoff 推进到等待状态。"""
 
@@ -239,7 +249,7 @@ class HandoffService:
         if current.status is not HandoffStatus.PREPARED:
             raise HandoffConflict("只有 prepared Handoff 可以提交审批。")
 
-        occurred_at = self._as_utc(now or datetime.now(UTC))
+        occurred_at = self._now()
         scope = {
             "action": "handoff.prepare",
             "handoff_id": current.handoff_id,
@@ -309,9 +319,14 @@ class HandoffService:
         )
         if row is None:
             return
-        updated_at = approval.resolved_at or datetime.now(UTC)
+        updated_at = self._as_utc(approval.resolved_at or self._now())
         preview = json.loads(row["preview_json"])
-        preview.update({"status": target.value, "updated_at": updated_at.isoformat()})
+        preview.update(
+            {
+                "status": target.value,
+                "updated_at": updated_at.isoformat(),
+            }
+        )
         with self.database.transaction() as connection:
             connection.execute(
                 "UPDATE handoffs SET status = ?, preview_json = ?, updated_at = ? "
@@ -325,14 +340,18 @@ class HandoffService:
             )
 
     def _expire_if_needed(self, row: Any) -> Any:
-        status = HandoffStatus(row["status"])
-        expires_at = datetime.fromisoformat(row["expires_at"])
-        if status in {HandoffStatus.PREPARED, HandoffStatus.WAITING_APPROVAL} and expires_at <= datetime.now(UTC):
+        status     = HandoffStatus(row["status"])
+        expires_at = self._as_utc(datetime.fromisoformat(row["expires_at"]))
+        now        = self._now()
+        if (
+            status in {HandoffStatus.PREPARED, HandoffStatus.WAITING_APPROVAL}
+            and expires_at <= now
+        ):
             preview = json.loads(row["preview_json"])
             preview.update(
                 {
                     "status": HandoffStatus.EXPIRED.value,
-                    "updated_at": datetime.now(UTC).isoformat(),
+                    "updated_at": now.isoformat(),
                 }
             )
             with self.database.transaction() as connection:
@@ -342,7 +361,7 @@ class HandoffService:
                     (
                         HandoffStatus.EXPIRED.value,
                         self._canonical_json(preview),
-                        preview["updated_at"],
+                        now.isoformat(),
                         row["handoff_id"],
                     ),
                 )
@@ -375,16 +394,38 @@ class HandoffService:
             ),
             "TASK_SPEC.md": f"# {title}\n\n{objective}\n",
             "ACCEPTANCE.json": cls._canonical_json(
-                {"required_tests": cls._REQUIRED_TESTS, "local_validation": True}
+                {
+                    "required_tests": cls._REQUIRED_TESTS,
+                    "local_validation": True,
+                }
             ),
             "ALLOWED_PATHS.json": cls._canonical_json(
-                {"read_count": 1, "write_count": 1, "read_root": read_root, "write_root": write_root}
+                {
+                    "read_count": 1,
+                    "write_count": 1,
+                    "read_root": read_root,
+                    "write_root": write_root,
+                }
             ),
             "DENIED_ACTIONS.json": cls._canonical_json(
-                {"actions": ["protected_source", "branch_main", "push", "merge", "tag", "release"]}
+                {
+                    "actions": [
+                        "protected_source",
+                        "branch_main",
+                        "push",
+                        "merge",
+                        "tag",
+                        "release",
+                    ]
+                }
             ),
             "COST_BUDGET.json": cls._canonical_json(
-                {"max_turns": 20, "timeout_seconds": 1800, "concurrency": 1, "network_tools": False}
+                {
+                    "max_turns": 20,
+                    "timeout_seconds": 1800,
+                    "concurrency": 1,
+                    "network_tools": False,
+                }
             ),
         }
         return [
@@ -421,6 +462,9 @@ class HandoffService:
             sort_keys=True,
             separators=(",", ":"),
         )
+
+    def _now(self) -> datetime:
+        return self._as_utc(self._clock())
 
     @staticmethod
     def _as_utc(value: datetime) -> datetime:
