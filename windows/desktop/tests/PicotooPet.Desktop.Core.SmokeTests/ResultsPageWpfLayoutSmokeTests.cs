@@ -1,9 +1,12 @@
+using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.State;
+using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views.Pages;
 
@@ -69,5 +72,40 @@ internal static class ResultsPageWpfLayoutSmokeTests
         SmokeAssert.True(page.IsArrangeValid, "Results Page Arrange 未完成");
         SmokeAssert.True(page.ActualWidth > 0, "Results Page 实际宽度无效");
         SmokeAssert.True(page.ActualHeight > 0, "Results Page 实际高度无效");
+
+        var preview = DiagnosticResultViewModel.FromError("已加载的固定诊断预览");
+        SetPrivateProperty(viewModel, nameof(ResultsPageViewModel.DiagnosticPreview), preview);
+        SetPrivateProperty(viewModel, nameof(ResultsPageViewModel.IsPreviewVisible), true);
+        page.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+
+        var store = new AppStateStore();
+        store.ReplaceTasks(new[] { task with { UpdatedAt = timestamp.AddSeconds(5) } });
+        viewModel.UpdateSnapshot(new ControlCenterSessionSnapshot(
+            "http://127.0.0.1:8765",
+            store.ControlCenterSnapshot,
+            "online · 2.3.8.1",
+            "REST p95 1.0 ms",
+            "双机控制链已连接。"));
+        page.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+        page.UpdateLayout();
+
+        SmokeAssert.True(viewModel.IsPreviewVisible, "WPF ItemsSource 刷新后安全预览被隐藏");
+        SmokeAssert.True(
+            ReferenceEquals(preview, viewModel.DiagnosticPreview),
+            "WPF ItemsSource 刷新后安全预览对象被清空或替换");
+        SmokeAssert.True(page.IsMeasureValid, "Results Page 刷新后 Measure 失效");
+        SmokeAssert.True(page.IsArrangeValid, "Results Page 刷新后 Arrange 失效");
+    }
+
+    private static void SetPrivateProperty<T>(
+        ResultsPageViewModel viewModel,
+        string propertyName,
+        T value)
+    {
+        var setter = typeof(ResultsPageViewModel)
+            .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)?
+            .GetSetMethod(nonPublic: true)
+            ?? throw new InvalidOperationException($"缺少结果中心属性 setter：{propertyName}。");
+        setter.Invoke(viewModel, new object?[] { value });
     }
 }
