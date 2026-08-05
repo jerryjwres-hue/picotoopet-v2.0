@@ -62,7 +62,7 @@ internal static class ResultsCenterSmokeTests
             "Completed",
             "result-unknown",
             new DateTimeOffset(2026, 8, 5, 2, 0, 0, TimeSpan.Zero)));
-        SmokeAssert.False(unknown.CanPreview, "未知结果类型不得回退到通用预览");
+        SmokeAssert.True(!unknown.CanPreview, "未知结果类型不得回退到通用预览");
         SmokeAssert.True(
             unknown.PreviewUnavailableReason.Contains("尚不支持", StringComparison.Ordinal),
             "未知结果类型缺少安全说明");
