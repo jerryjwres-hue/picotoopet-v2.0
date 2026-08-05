@@ -175,6 +175,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             FormatConnection(snapshot.State.Connection.State)),
         NavigationRoute.TaskCenter when _session is not null =>
             new TaskCenterPageViewModel(_session, snapshot),
+        NavigationRoute.Results when _session is not null =>
+            new ResultsPageViewModel(_session, snapshot),
         NavigationRoute.Settings => new SettingsPageViewModel(snapshot.MacBaseUrl),
         _ => CreateStaticPage(route),
     };
@@ -265,11 +267,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.TaskCenter => TaskCenterPageViewModel.CreateForSmokeTest(
             Array.Empty<TaskRecord>(),
             WorkerSnapshot.NotDeployed),
-        NavigationRoute.Results => new EmptyStatePageViewModel(
-            "结果",
-            "Mac Core 尚未声明结果列表和预览能力。",
-            "后续切片将先加入只读结果清单，再加入安全预览。",
-            "你现在不需要操作。"),
+        NavigationRoute.Results => ResultsPageViewModel.CreateForSmokeTest(
+            Array.Empty<TaskRecord>()),
         NavigationRoute.Approvals => new EmptyStatePageViewModel(
             "审批",
             "Mac Core 尚未声明审批列表或审批摘要能力。",
@@ -330,6 +329,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             && CurrentPage is TaskCenterPageViewModel taskCenter)
         {
             taskCenter.UpdateSnapshot(snapshot);
+        }
+        else if (route == NavigationRoute.Results
+            && CurrentPage is ResultsPageViewModel results)
+        {
+            results.UpdateSnapshot(snapshot);
         }
         else
         {
