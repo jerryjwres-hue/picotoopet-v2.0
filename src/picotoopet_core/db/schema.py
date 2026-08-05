@@ -1,4 +1,4 @@
-"""Phase 1 SQLite 数据库结构。"""
+"""PicotooPet SQLite 数据库结构与增量迁移。"""
 
 MIGRATION_001 = r"""
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -179,4 +179,29 @@ CREATE TABLE IF NOT EXISTS event_outbox (
 MIGRATION_002 = r"""
 ALTER TABLE tasks
 ADD COLUMN cloud_policy TEXT NOT NULL DEFAULT 'local_only';
+"""
+
+MIGRATION_003 = r"""
+CREATE TABLE IF NOT EXISTS handoffs (
+    handoff_id                 TEXT PRIMARY KEY,
+    template_id                TEXT NOT NULL,
+    title                      TEXT NOT NULL,
+    objective_summary          TEXT NOT NULL,
+    status                     TEXT NOT NULL,
+    request_digest             TEXT NOT NULL,
+    package_digest             TEXT NOT NULL,
+    manifest_json              TEXT NOT NULL,
+    preview_json               TEXT NOT NULL,
+    approval_id                TEXT REFERENCES approvals(approval_id) ON DELETE RESTRICT,
+    prepare_idempotency_key    TEXT NOT NULL UNIQUE,
+    approval_idempotency_key   TEXT UNIQUE,
+    created_at                 TEXT NOT NULL,
+    updated_at                 TEXT NOT NULL,
+    expires_at                 TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_handoffs_status_created
+    ON handoffs(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_handoffs_approval_id
+    ON handoffs(approval_id) WHERE approval_id IS NOT NULL;
 """
