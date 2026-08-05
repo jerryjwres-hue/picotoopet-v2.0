@@ -1,3 +1,4 @@
+using System.Globalization;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Services;
@@ -51,9 +52,15 @@ public sealed class ApprovalRowViewModel
         "Expired" => "已过期",
         _ => $"未识别状态 · {Record.Status}",
     };
-    public string RequestedAtText => Record.RequestedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
-    public string ExpiresAtText => Record.ExpiresAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
-    public string ResolvedAtText => Record.ResolvedAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss") ?? "尚未处理";
+    public string RequestedAtText => Record.RequestedAt.LocalDateTime.ToString(
+        "yyyy-MM-dd HH:mm:ss",
+        CultureInfo.InvariantCulture);
+    public string ExpiresAtText => Record.ExpiresAt.LocalDateTime.ToString(
+        "yyyy-MM-dd HH:mm:ss",
+        CultureInfo.InvariantCulture);
+    public string ResolvedAtText => Record.ResolvedAt?.LocalDateTime.ToString(
+        "yyyy-MM-dd HH:mm:ss",
+        CultureInfo.InvariantCulture) ?? "尚未处理";
     public string DecisionReason => string.IsNullOrWhiteSpace(Record.DecisionReason)
         ? "尚无决策原因"
         : Record.DecisionReason;
@@ -75,6 +82,7 @@ public sealed class ApprovalsPageViewModel : PageViewModel
         };
 
     private readonly ControlCenterSession? _session;
+    private readonly IReadOnlyList<ApprovalCenterFilterOption> _filterOptions = DefaultFilters;
     private IReadOnlyList<ApprovalRowViewModel> _allApprovals = Array.Empty<ApprovalRowViewModel>();
     private IReadOnlyList<ApprovalRowViewModel> _visibleApprovals = Array.Empty<ApprovalRowViewModel>();
     private ApprovalCenterFilter _selectedFilter;
@@ -97,7 +105,7 @@ public sealed class ApprovalsPageViewModel : PageViewModel
         _isLoaded = true;
     }
 
-    public IReadOnlyList<ApprovalCenterFilterOption> FilterOptions => DefaultFilters;
+    public IReadOnlyList<ApprovalCenterFilterOption> FilterOptions => _filterOptions;
 
     public IReadOnlyList<ApprovalRowViewModel> AllApprovals
     {
@@ -186,11 +194,7 @@ public sealed class ApprovalsPageViewModel : PageViewModel
     /// <summary>首次打开或用户刷新时读取有界审批快照。</summary>
     public async Task LoadAsync(CancellationToken cancellationToken)
     {
-        if (_session is null)
-        {
-            return;
-        }
-        if (IsBusy)
+        if (_session is null || IsBusy)
         {
             return;
         }
@@ -277,9 +281,8 @@ public sealed class ApprovalsPageViewModel : PageViewModel
             .ToArray();
         ApplyFilter();
         SelectedApproval = selectedId is null
-            ? VisibleApprovals.FirstOrDefault()
-            : VisibleApprovals.FirstOrDefault(item => item.ApprovalId == selectedId)
-                ?? VisibleApprovals.FirstOrDefault();
+            ? FirstOrNull(VisibleApprovals)
+            : FindById(VisibleApprovals, selectedId) ?? FirstOrNull(VisibleApprovals);
     }
 
     private void ApplyFilter()
@@ -288,9 +291,9 @@ public sealed class ApprovalsPageViewModel : PageViewModel
             .Where(MatchesFilter)
             .ToArray();
         if (SelectedApproval is not null
-            && !VisibleApprovals.Any(item => item.ApprovalId == SelectedApproval.ApprovalId))
+            && FindById(VisibleApprovals, SelectedApproval.ApprovalId) is null)
         {
-            SelectedApproval = VisibleApprovals.FirstOrDefault();
+            SelectedApproval = FirstOrNull(VisibleApprovals);
         }
         RaisePropertyChanged(nameof(VisibleApprovals));
     }
@@ -302,6 +305,27 @@ public sealed class ApprovalsPageViewModel : PageViewModel
         ApprovalCenterFilter.Expired => item.Status == "Expired",
         _ => true,
     };
+
+    private static ApprovalRowViewModel? FirstOrNull(
+        IReadOnlyList<ApprovalRowViewModel> items) =>
+        items.Count == 0 ? null : items[0];
+
+    private static ApprovalRowViewModel? FindById(
+        IReadOnlyList<ApprovalRowViewModel> items,
+        string approvalId)
+    {
+        for (var index = 0; index < items.Count; index++)
+        {
+            if (string.Equals(
+                    items[index].ApprovalId,
+                    approvalId,
+                    StringComparison.Ordinal))
+            {
+                return items[index];
+            }
+        }
+        return null;
+    }
 
     private void RaiseActionProperties()
     {
