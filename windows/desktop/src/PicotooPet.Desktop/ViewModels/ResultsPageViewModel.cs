@@ -141,13 +141,28 @@ public sealed class ResultsPageViewModel : PageViewModel
         get => _selectedResult;
         set
         {
+            if (value is null
+                && _selectedResult is not null
+                && ContainsResult(VisibleResults, _selectedResult.ResultId))
+            {
+                // WPF 在 ItemsSource 刷新期间会短暂回写 null；同一逻辑结果仍可见时忽略该框架瞬态。
+                return;
+            }
+
+            var previousResultId = _selectedResult?.ResultId;
             if (!SetProperty(ref _selectedResult, value))
             {
                 return;
             }
 
-            DiagnosticPreview = null;
-            IsPreviewVisible = false;
+            if (!string.Equals(
+                    previousResultId,
+                    value?.ResultId,
+                    StringComparison.Ordinal))
+            {
+                DiagnosticPreview = null;
+                IsPreviewVisible = false;
+            }
             RaiseActionProperties();
         }
     }
@@ -287,6 +302,24 @@ public sealed class ResultsPageViewModel : PageViewModel
     private static bool IsResultTask(TaskRecord task) =>
         !string.IsNullOrWhiteSpace(task.ResultId)
         && task.Status is "Completed" or "Archived";
+
+    private static bool ContainsResult(
+        IReadOnlyList<ResultRowViewModel> results,
+        string resultId)
+    {
+        for (var index = 0; index < results.Count; index++)
+        {
+            if (string.Equals(
+                    results[index].ResultId,
+                    resultId,
+                    StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static ResultRowViewModel? ResolveSelection(
         IReadOnlyList<ResultRowViewModel> results,
