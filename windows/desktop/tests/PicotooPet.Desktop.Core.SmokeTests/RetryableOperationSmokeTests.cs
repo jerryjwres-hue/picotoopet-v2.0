@@ -89,7 +89,7 @@ internal static class RetryableOperationSmokeTests
         }
         catch (OperationCanceledException)
         {
-            Assert(attempts == 1, "取消后不应继续重试。");
+            Assert(attempts == 0, "预先取消时不应调用操作。");
         }
     }
 
