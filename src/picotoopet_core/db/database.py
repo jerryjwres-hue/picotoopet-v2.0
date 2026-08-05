@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
-from .schema import MIGRATION_001, MIGRATION_002, MIGRATION_003
+from .schema import MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004
 
 
 class Database:
@@ -107,6 +107,16 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (3, datetime.now(UTC).isoformat()),
+                )
+
+            migration_004_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 4"
+            ).fetchone()
+            if migration_004_exists is None:
+                connection.executescript(MIGRATION_004)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (4, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
