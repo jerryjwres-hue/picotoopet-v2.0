@@ -1,0 +1,22 @@
+name: One-shot audit 2.3.8.1 references
+
+on:
+  push:
+    branches:
+      - feature/phase23-slice-d-diagnostic-snapshot-release
+    paths:
+      - .github/workflows/one-shot-audit-version-2381.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/phase23-slice-d-diagnostic-snapshot-release
+      - name: List current-version references
+        shell: bash
+        run: git grep -n -- '2.3.8.1' || true
