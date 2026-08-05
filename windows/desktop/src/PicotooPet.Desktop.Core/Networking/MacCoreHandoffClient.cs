@@ -10,7 +10,7 @@ namespace PicotooPet.Desktop.Core.Networking;
 public sealed class MacCoreHandoffClient : IAsyncDisposable
 {
     private const int MaxHandoffResponseBytes = 128 * 1024;
-    private const int MaxApiErrorBytes = 64 * 1024;
+    private const int MaxApiErrorBytes        = 64 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -35,7 +35,8 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
         bool ownsClient)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _baseUri = EnsureTrailingSlash(baseUri ?? throw new ArgumentNullException(nameof(baseUri)));
+        _baseUri    = EnsureTrailingSlash(
+            baseUri ?? throw new ArgumentNullException(nameof(baseUri)));
         _token = string.IsNullOrWhiteSpace(token)
             ? throw new ArgumentException("设备令牌不能为空。", nameof(token))
             : token;
@@ -47,11 +48,11 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
     {
         var handler = new SocketsHttpHandler
         {
-            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            PooledConnectionLifetime    = TimeSpan.FromMinutes(5),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-            ConnectTimeout = TimeSpan.FromSeconds(5),
-            MaxConnectionsPerServer = 8,
-            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            ConnectTimeout              = TimeSpan.FromSeconds(5),
+            MaxConnectionsPerServer     = 8,
+            AutomaticDecompression      = DecompressionMethods.GZip | DecompressionMethods.Deflate,
         };
         var client = new HttpClient(handler, disposeHandler: true)
         {
@@ -194,7 +195,7 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
                     exception);
             }
         }
-        catch (ResponseTooLargeException exception)
+        catch (HandoffResponseTooLargeException exception)
         {
             throw new ApiException(
                 "RESPONSE_TOO_LARGE",
@@ -237,7 +238,7 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
     {
         if (content.Headers.ContentLength is long length && length > maxBytes)
         {
-            throw new ResponseTooLargeException();
+            throw new HandoffResponseTooLargeException();
         }
 
         await using var stream = await content.ReadAsStreamAsync(cancellationToken)
@@ -256,7 +257,7 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
             total = checked(total + read);
             if (total > maxBytes)
             {
-                throw new ResponseTooLargeException();
+                throw new HandoffResponseTooLargeException();
             }
             await buffer.WriteAsync(block.AsMemory(0, read), cancellationToken)
                 .ConfigureAwait(false);
@@ -275,7 +276,7 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
                 cancellationToken).ConfigureAwait(false);
             return JsonSerializer.Deserialize<ApiErrorEnvelope>(data, JsonOptions)?.Error;
         }
-        catch (ResponseTooLargeException)
+        catch (HandoffResponseTooLargeException)
         {
             return null;
         }
@@ -298,11 +299,12 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
         {
             throw new ArgumentException("Mac Core 地址必须是绝对 URI。", nameof(uri));
         }
-        return uri.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)
+        return uri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
             ? uri
             : new Uri(uri.AbsoluteUri + "/", UriKind.Absolute);
     }
 
+    /// <summary>仅在客户端拥有连接池时释放底层资源。</summary>
     public ValueTask DisposeAsync()
     {
         if (_ownsClient)
@@ -310,5 +312,9 @@ public sealed class MacCoreHandoffClient : IAsyncDisposable
             _httpClient.Dispose();
         }
         return ValueTask.CompletedTask;
+    }
+
+    private sealed class HandoffResponseTooLargeException : Exception
+    {
     }
 }
