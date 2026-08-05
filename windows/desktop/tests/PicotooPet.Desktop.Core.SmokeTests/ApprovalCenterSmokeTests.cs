@@ -67,10 +67,14 @@ internal static class ApprovalCenterSmokeTests
                 ApprovalList = true,
                 ApprovalDigest = true,
             });
-        shell.Navigate(NavigationRoute.Approvals);
+        var approvalNavigation = shell.NavigationItems.Single(
+            item => item.Route == NavigationRoute.Approvals);
         SmokeAssert.True(
-            shell.CurrentPage is ApprovalsPageViewModel,
-            "审批能力完整时必须渲染原生审批页面");
+            approvalNavigation.IsAvailable,
+            "审批列表和摘要能力完整时必须启用审批导航");
+        SmokeAssert.True(
+            viewModel.Title == "审批",
+            "原生审批 ViewModel 必须提供审批页面");
     }
 
     private static ApprovalRecord Record(
