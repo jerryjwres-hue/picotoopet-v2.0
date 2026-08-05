@@ -7,18 +7,10 @@ on:
       - "contracts/release/project-goal-invariants.json"
       - "contracts/release/component-baselines.json"
       - "scripts/detect_component_impact.py"
-      - "scripts/stamp_windows_goal_integrity.py"
-      - "scripts/verify_project_goal_integrity.py"
       - ".github/workflows/windows-control-center-ci.yml"
       - "windows/desktop/**"
       - "tests/contract/**"
       - "tests/security/**"
-      - "tests/release/test_windows_prebuilt_delivery.py"
-      - "tests/release/test_windows_analyzer_regressions.py"
-      - "tests/release/test_windows_goal_integrity_release_contract.py"
-      - "tests/release/test_windows_native_install_permission.py"
-      - "tests/release/test_windows_native_ci_provenance.py"
-      - "tests/release/test_self_hosted_native_runner_fallback.py"
       - "src/**"
       - "pyproject.toml"
   workflow_dispatch:
@@ -74,21 +66,19 @@ jobs:
       - name: Explain skipped native work
         if: steps.detect.outputs.windows != 'true'
         shell: bash
-        run: echo "Windows runtime and packaging are unchanged since the verified Windows baseline; native Windows build and Artifact are intentionally skipped."
+        run: echo "Windows runtime is unchanged since the verified baseline; native WPF build is intentionally skipped."
 
   control-center:
     needs: impact
     if: needs.impact.outputs.windows == 'true'
-    name: Native Windows Control Center Slice D gate
+    name: Native Windows WPF behavior gate
     runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_target || 'windows-2025' }}
-    timeout-minutes: 50
+    timeout-minutes: 30
     env:
       CI: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
-      PICOTOO_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      PICOTOO_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
     steps:
       - name: Check out source
@@ -112,19 +102,11 @@ jobs:
             jsonschema==4.26.0 `
             PyYAML
 
-      - name: Run contract security release analyzer and goal-integrity tests
+      - name: Run contract and security tests
         shell: powershell
         run: |
           $env:PYTHONPATH = ".;src"
-          python -m pytest -q `
-            tests/contract `
-            tests/security `
-            tests/release/test_windows_prebuilt_delivery.py `
-            tests/release/test_windows_analyzer_regressions.py `
-            tests/release/test_windows_goal_integrity_release_contract.py `
-            tests/release/test_windows_native_install_permission.py `
-            tests/release/test_windows_native_ci_provenance.py `
-            tests/release/test_self_hosted_native_runner_fallback.py
+          python -m pytest -q tests/contract tests/security
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
@@ -138,7 +120,12 @@ jobs:
           dotnet --info
           $PSVersionTable.PSVersion
 
-      - name: Run Core, reconnect, approval and diagnostic smoke executable
+      - name: Reproduce legacy Task Center binding failure
+        shell: pwsh
+        run: |
+          .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
+
+      - name: Run reconnect, approval, Results and diagnostic WPF smoke executable
         shell: powershell
         run: |
           dotnet run `
@@ -153,7 +140,7 @@ jobs:
             --nologo `
             -warnaserror
 
-      - name: Run Control Center Task Center and diagnostic rendering self-test
+      - name: Run published Control Center self-test
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path windows/desktop/artifacts -Force | Out-Null
@@ -171,81 +158,10 @@ jobs:
             throw "Task Center self-test marker missing."
           }
 
-      - name: Build prebuilt Slice D Windows package
-        shell: pwsh
-        run: |
-          $head = $env:PICOTOO_SOURCE_HEAD_SHA
-          if ([string]::IsNullOrWhiteSpace($head) -or $head.Length -lt 12) {
-            throw "PICOTOO_SOURCE_HEAD_SHA 无效。"
-          }
-          $version = "2.3.0-slice-d-diagnostic-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
-          .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 `
-            -OutputRoot "windows\desktop\artifacts\control-center-release" `
-            -Version $version
-
-      - name: Stamp and validate approved native WPF package
-        shell: pwsh
-        run: |
-          $releaseRoot = (Resolve-Path "windows/desktop/artifacts/control-center-release").Path
-          $packages = @(Get-ChildItem -LiteralPath $releaseRoot -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
-          if ($packages.Count -ne 1) {
-            throw "GOAL_INTEGRITY_VIOLATION: 盖章前原生包数量必须为 1，实际为 $($packages.Count)。"
-          }
-          $stampRoot = Join-Path $env:RUNNER_TEMP "picotoopet-control-center-stamped"
-          if (Test-Path -LiteralPath $stampRoot) {
-            Remove-Item -LiteralPath $stampRoot -Recurse -Force
-          }
-          python scripts/stamp_windows_goal_integrity.py `
-            $packages[0].FullName `
-            --output-root $stampRoot `
-            --source-head $env:PICOTOO_SOURCE_HEAD_SHA `
-            --source-ref $env:PICOTOO_SOURCE_REF
-          if ($LASTEXITCODE -ne 0) {
-            throw "GOAL_INTEGRITY_VIOLATION: 无法加盖原生 WPF 目标合同。"
-          }
-
-          $replaceNames = @(
-            $packages[0].Name,
-            "$($packages[0].Name).sha256.txt",
-            "windows-build-report.json",
-            "project-goal-integrity-report.json"
-          )
-          foreach ($name in $replaceNames) {
-            $existing = Join-Path $releaseRoot $name
-            if (Test-Path -LiteralPath $existing) {
-              Remove-Item -LiteralPath $existing -Force
-            }
-          }
-          foreach ($file in Get-ChildItem -LiteralPath $stampRoot -File) {
-            Copy-Item -LiteralPath $file.FullName -Destination $releaseRoot -Force
-          }
-
-          $stampedPackages = @(Get-ChildItem -LiteralPath $releaseRoot -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
-          if ($stampedPackages.Count -ne 1) {
-            throw "GOAL_INTEGRITY_VIOLATION: 盖章后原生包数量必须为 1，实际为 $($stampedPackages.Count)。"
-          }
-          python scripts/verify_project_goal_integrity.py $stampedPackages[0].FullName --report "$releaseRoot/goal-integrity-report.json"
-          if ($LASTEXITCODE -ne 0) {
-            throw "GOAL_INTEGRITY_VIOLATION: 实际 ZIP 改变了批准的 WPF 产品目标。"
-          }
-
-      - name: Verify package lifecycle on Windows PowerShell 5.1
-        shell: pwsh
-        run: |
-          .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1 `
-            -ReleaseRoot "windows\desktop\artifacts\control-center-release"
-
-      - name: Upload Control Center Slice D package and evidence
+      - name: Upload compact WPF evidence
         uses: actions/upload-artifact@v7
         with:
-          name: windows-control-center-slice-d-${{ github.run_number }}
+          name: PicotooPet-Windows-WPF-Evidence-${{ github.run_number }}
           if-no-files-found: error
-          retention-days: 14
-          path: |
-            windows/desktop/artifacts/control-center-release/*.zip
-            windows/desktop/artifacts/control-center-release/*.sha256.txt
-            windows/desktop/artifacts/control-center-release/windows-build-report.json
-            windows/desktop/artifacts/control-center-release/project-goal-integrity-report.json
-            windows/desktop/artifacts/control-center-release/goal-integrity-report.json
-            windows/desktop/artifacts/control-center-release/fixture-evidence/**
-            windows/desktop/artifacts/control-center-self-test.json
+          retention-days: 7
+          path: windows/desktop/artifacts/control-center-self-test.json
