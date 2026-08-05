@@ -16,6 +16,7 @@ SCHEMA_SET = {
     "denied_actions.schema.json",
     "cost_budget.schema.json",
     "return_manifest.schema.json",
+    "return_preview.schema.json",
     "changed_files.schema.json",
     "test_report.schema.json",
     "security_report.schema.json",
