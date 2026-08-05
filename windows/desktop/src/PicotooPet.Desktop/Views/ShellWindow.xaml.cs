@@ -27,6 +27,9 @@ public partial class ShellWindow : Window
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         _session   = session ?? throw new ArgumentNullException(nameof(session));
         _logger    = logger ?? throw new ArgumentNullException(nameof(logger));
+        ReturnGatewayContext.SetGateway(
+            this,
+            new ControlCenterReturnGateway(_session));
         DataContext = viewModel;
     }
 
