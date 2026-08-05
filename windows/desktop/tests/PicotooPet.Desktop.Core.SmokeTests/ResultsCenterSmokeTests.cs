@@ -1,5 +1,8 @@
+using System.Reflection;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.State;
+using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
@@ -40,8 +43,8 @@ internal static class ResultsCenterSmokeTests
             null,
             new DateTimeOffset(2026, 8, 2, 2, 22, 1, TimeSpan.Zero));
 
-        var viewModel = ResultsPageViewModel.CreateForSmokeTest(
-            new[] { older, newer, archived, queued, completedWithoutResult });
+        var tasks = new[] { older, newer, archived, queued, completedWithoutResult };
+        var viewModel = ResultsPageViewModel.CreateForSmokeTest(tasks);
 
         SmokeAssert.Equal(3, viewModel.AllResults.Count, "结果中心包含无结果或非终态任务");
         SmokeAssert.Equal("diagnostic-new", viewModel.AllResults[0].TaskId, "结果没有按更新时间倒序");
@@ -56,6 +59,8 @@ internal static class ResultsCenterSmokeTests
         viewModel.SelectedResult = viewModel.VisibleResults[0];
         SmokeAssert.True(viewModel.CanLoadSelectedPreview, "可预览结果未启用动作");
 
+        VerifyLoadedPreviewSurvivesEquivalentSnapshotRefresh(viewModel, tasks);
+
         var unknown = ResultRowViewModel.FromRecord(CreateTask(
             "unknown-result",
             "future.result_type",
@@ -66,6 +71,50 @@ internal static class ResultsCenterSmokeTests
         SmokeAssert.True(
             unknown.PreviewUnavailableReason.Contains("尚不支持", StringComparison.Ordinal),
             "未知结果类型缺少安全说明");
+    }
+
+    private static void VerifyLoadedPreviewSurvivesEquivalentSnapshotRefresh(
+        ResultsPageViewModel viewModel,
+        IReadOnlyList<TaskRecord> tasks)
+    {
+        var preview = DiagnosticResultViewModel.FromError("已加载的固定诊断预览");
+        SetPrivateField(viewModel, "_diagnosticPreview", preview);
+        SetPrivateField(viewModel, "_isPreviewVisible", true);
+
+        var selectedResultId = viewModel.SelectedResult?.ResultId
+            ?? throw new InvalidOperationException("刷新回归缺少已选结果。");
+        var refreshedTasks = tasks
+            .Select(task => string.Equals(task.ResultId, selectedResultId, StringComparison.Ordinal)
+                ? task with { UpdatedAt = task.UpdatedAt.AddSeconds(5) }
+                : task)
+            .ToArray();
+        var store = new AppStateStore();
+        store.ReplaceTasks(refreshedTasks);
+
+        viewModel.UpdateSnapshot(new ControlCenterSessionSnapshot(
+            "http://127.0.0.1:8765",
+            store.ControlCenterSnapshot,
+            "online · 2.3.8.1",
+            "REST p95 1.0 ms",
+            "双机控制链已连接。"));
+
+        SmokeAssert.Equal(selectedResultId, viewModel.SelectedResult?.ResultId, "刷新后选中结果漂移");
+        SmokeAssert.True(viewModel.IsPreviewVisible, "同一 result_id 刷新后安全预览被隐藏");
+        SmokeAssert.True(
+            ReferenceEquals(preview, viewModel.DiagnosticPreview),
+            "同一 result_id 刷新后安全预览对象被清空或替换");
+    }
+
+    private static void SetPrivateField<T>(
+        ResultsPageViewModel viewModel,
+        string fieldName,
+        T value)
+    {
+        var field = typeof(ResultsPageViewModel).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"缺少结果中心字段 {fieldName}。");
+        field.SetValue(viewModel, value);
     }
 
     private static TaskRecord CreateTask(
