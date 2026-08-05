@@ -15,19 +15,13 @@ on:
     paths:
       - "AGENTS.md"
       - "skills/preserving-project-goals/SKILL.md"
-      - "contracts/release/project-goal-invariants.json"
+      - "contracts/release/**"
+      - "scripts/detect_component_impact.py"
       - "scripts/stamp_windows_goal_integrity.py"
       - "scripts/verify_project_goal_integrity.py"
-      - "tests/contract/test_preserving_project_goals_skill.py"
-      - "tests/contract/test_project_goal_integrity.py"
-      - "tests/contract/test_windows_goal_integrity_stamper.py"
-      - "tests/release/test_windows_analyzer_regressions.py"
-      - "tests/release/test_windows_goal_integrity_release_contract.py"
-      - "tests/release/test_windows_native_install_permission.py"
-      - "tests/release/test_windows_native_ci_provenance.py"
-      - "tests/release/test_self_hosted_native_runner_fallback.py"
+      - "tests/**"
+      - "src/**"
       - "windows/desktop/**"
-      - "tests/release/test_windows_prebuilt_delivery.py"
       - ".github/workflows/windows-phase2-release.yml"
   push:
     branches:
@@ -35,19 +29,13 @@ on:
     paths:
       - "AGENTS.md"
       - "skills/preserving-project-goals/SKILL.md"
-      - "contracts/release/project-goal-invariants.json"
+      - "contracts/release/**"
+      - "scripts/detect_component_impact.py"
       - "scripts/stamp_windows_goal_integrity.py"
       - "scripts/verify_project_goal_integrity.py"
-      - "tests/contract/test_preserving_project_goals_skill.py"
-      - "tests/contract/test_project_goal_integrity.py"
-      - "tests/contract/test_windows_goal_integrity_stamper.py"
-      - "tests/release/test_windows_analyzer_regressions.py"
-      - "tests/release/test_windows_goal_integrity_release_contract.py"
-      - "tests/release/test_windows_native_install_permission.py"
-      - "tests/release/test_windows_native_ci_provenance.py"
-      - "tests/release/test_self_hosted_native_runner_fallback.py"
+      - "tests/**"
+      - "src/**"
       - "windows/desktop/**"
-      - "tests/release/test_windows_prebuilt_delivery.py"
       - ".github/workflows/windows-phase2-release.yml"
 
 permissions:
@@ -58,8 +46,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  impact:
+    name: Detect Windows release impact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      windows: ${{ steps.detect.outputs.windows }}
+    steps:
+      - name: Check out source and verified baselines
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify affected components
+        id: detect
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            python scripts/detect_component_impact.py \
+              --baselines contracts/release/component-baselines.json \
+              --head "$HEAD_SHA" \
+              --force windows \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            python scripts/detect_component_impact.py \
+              --baselines contracts/release/component-baselines.json \
+              --head "$HEAD_SHA" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain skipped release work
+        if: steps.detect.outputs.windows != 'true'
+        shell: bash
+        run: echo "Windows runtime and packaging are unchanged since the verified baseline; formal ZIP construction is intentionally skipped."
+
   windows-release:
-    name: Native Windows Slice D build and release gate
+    needs: impact
+    if: needs.impact.outputs.windows == 'true'
+    name: Native Windows build and single formal release gate
     runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_target || 'windows-2025' }}
     timeout-minutes: 50
     env:
@@ -87,7 +113,7 @@ jobs:
       - name: Run Windows release analyzer and goal-integrity contracts
         shell: powershell
         run: |
-          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/release/test_windows_native_install_permission.py tests/release/test_windows_native_ci_provenance.py tests/release/test_self_hosted_native_runner_fallback.py tests/contract/test_preserving_project_goals_skill.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
+          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/release/test_windows_native_install_permission.py tests/release/test_windows_native_ci_provenance.py tests/release/test_self_hosted_native_runner_fallback.py tests/contract/test_component_impact_detection.py tests/contract/test_preserving_project_goals_skill.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
@@ -113,7 +139,7 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($head) -or $head.Length -lt 12) {
             throw "PICOTOO_SOURCE_HEAD_SHA 无效。"
           }
-          $version = "2.3.0-slice-d-diagnostic-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
+          $version = "2.3.0-slice-d-approval-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 -Version $version
 
       - name: Stamp approved native WPF delivery invariants
@@ -165,15 +191,15 @@ jobs:
             throw "GOAL_INTEGRITY_VIOLATION: 实际 ZIP 改变了批准的 WPF 产品目标。"
           }
 
-      - name: Verify packaged install verify and rollback lifecycle on Windows PowerShell 5.1
+      - name: Verify packaged install upgrade recovery and rollback lifecycle on Windows PowerShell 5.1
         shell: pwsh
         run: |
           .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
 
-      - name: Upload prebuilt Slice D installer and lifecycle evidence
+      - name: Upload the single formal Windows installer and lifecycle evidence
         uses: actions/upload-artifact@v7
         with:
-          name: PicotooPet-Phase23-SliceD-Windows-Prebuilt-${{ github.run_number }}
+          name: PicotooPet-Phase23-Approval-Windows-Prebuilt-${{ github.run_number }}
           path: |
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
