@@ -184,6 +184,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             new ResultsPageViewModel(_session, snapshot),
         NavigationRoute.Approvals when _session is not null =>
             new ApprovalsPageViewModel(_session),
+        NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
         NavigationRoute.Settings => new SettingsPageViewModel(snapshot.MacBaseUrl),
         _ => CreateStaticPage(route, snapshot.State.Capabilities.Features),
     };
@@ -220,8 +221,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Item(
                 NavigationRoute.CloudDevelopment,
                 "云端开发",
-                isAvailable: false,
-                "当前只冻结 Handoff / Return Contract，未安装或调用外部 Provider。"),
+                isAvailable: true,
+                "Handoff / Return Contract v1 已冻结；Provider 尚未配置。"),
             Item(
                 NavigationRoute.Automation,
                 "自动化",
@@ -285,11 +286,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             "Mac Core 尚未同时声明审批列表和审批摘要能力。",
             "升级 Core 后页面将接入只读审批队列和显式摘要决策。",
             "你现在不需要操作。"),
-        NavigationRoute.CloudDevelopment => new EmptyStatePageViewModel(
-            "云端开发",
-            "当前版本只冻结了 Handoff / Return Contract，尚未安装或调用外部 Provider。",
-            "Phase 10A 将先加入包预览和审批；Phase 10B 才加入 Dev Broker。",
-            "你现在不需要操作。"),
+        NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
         NavigationRoute.Automation => new EmptyStatePageViewModel(
             "自动化",
             "自动化策略和执行器尚未进入 Slice B。",
