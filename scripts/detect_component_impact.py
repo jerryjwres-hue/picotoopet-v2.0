@@ -63,7 +63,8 @@ def _normalise(path: str) -> str:
     pure = PurePosixPath(cleaned)
     if pure.is_absolute() or ".." in pure.parts:
         raise ValueError(f"invalid repository path: {path!r}")
-    return pure.as_posix().lstrip("./")
+    normalised = pure.as_posix()
+    return normalised[2:] if normalised.startswith("./") else normalised
 
 
 def classify(paths: Iterable[str]) -> dict[str, bool]:
