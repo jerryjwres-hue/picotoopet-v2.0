@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Classify changed repository paths without building unaffected native components."""
+"""Classify changed paths without rebuilding unaffected native components."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
+COMPONENTS = ("core", "worker", "windows")
 WORKER_PREFIXES = (
     "src/picotoopet_core/worker/",
     "src/picotoopet_core/diagnostics/",
@@ -78,9 +80,7 @@ def classify(paths: Iterable[str]) -> dict[str, bool]:
             impact["worker"] = True
 
         if path in SHARED_DEPENDENCY_FILES:
-            impact["core"] = True
-            impact["worker"] = True
-            impact["windows"] = True
+            impact = {key: True for key in impact}
             continue
 
         if path.startswith(CORE_PREFIXES) and not worker_specific:
@@ -101,21 +101,58 @@ def classify(paths: Iterable[str]) -> dict[str, bool]:
     return impact
 
 
+def classify_from_verified_baselines(
+    repository_root: Path,
+    baselines_path: Path,
+    head: str = "HEAD",
+) -> dict[str, bool]:
+    """Compare each component only with its last verified source head."""
+
+    root = repository_root.resolve()
+    baselines = json.loads(baselines_path.read_text(encoding="utf-8"))
+    impact: dict[str, bool] = {}
+    for component in COMPONENTS:
+        baseline = baselines.get(component)
+        if not isinstance(baseline, str) or len(baseline) != 40:
+            raise ValueError(f"missing valid {component} component baseline")
+        result = subprocess.run(
+            ["git", "diff", "--name-only", baseline, head, "--"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        impact[component] = classify(result.stdout.splitlines())[component]
+    return impact
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("paths", nargs="*", help="Changed repository paths")
     parser.add_argument("--paths-file", type=Path)
+    parser.add_argument("--baselines", type=Path)
+    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    parser.add_argument("--head", default="HEAD")
     parser.add_argument("--github-output", type=Path)
-    parser.add_argument("--force", choices=("all", "core", "worker", "windows"))
+    parser.add_argument("--force", choices=("all", *COMPONENTS))
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
-    paths = list(args.paths)
-    if args.paths_file is not None:
-        paths.extend(args.paths_file.read_text(encoding="utf-8").splitlines())
-    impact = classify(paths)
+    if args.baselines is not None:
+        impact = classify_from_verified_baselines(
+            args.repository_root,
+            args.baselines,
+            args.head,
+        )
+    else:
+        paths = list(args.paths)
+        if args.paths_file is not None:
+            paths.extend(args.paths_file.read_text(encoding="utf-8").splitlines())
+        impact = classify(paths)
+
     if args.force == "all":
         impact = {key: True for key in impact}
     elif args.force is not None:
