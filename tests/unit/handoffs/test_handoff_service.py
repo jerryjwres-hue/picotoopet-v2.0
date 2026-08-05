@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.db.database import Database
@@ -19,7 +20,11 @@ def make_service(tmp_path: Path) -> tuple[Database, HandoffService]:
     return database, HandoffService(database, approvals)
 
 
-def request(*, title: str = "修复结果预览", objective: str = "保持同一结果刷新后的安全预览。") -> HandoffPrepareRequest:
+def request(
+    *,
+    title: str = "修复结果预览",
+    objective: str = "保持同一结果刷新后的安全预览。",
+) -> HandoffPrepareRequest:
     return HandoffPrepareRequest(
         template_id="picotoopet-repo-maintenance-v1",
         title=title,
@@ -86,7 +91,6 @@ def test_bound_fields_change_request_digest(tmp_path: Path) -> None:
         ("正常标题", "包含 ../ 路径逃逸。"),
         ("正常标题", "请上传 Protected 原件。"),
         ("正常标题", "token=0123456789abcdef0123456789abcdef"),
-        ("带\x00控制字符", "正常目标"),
     ],
 )
 def test_prepare_rejects_unsafe_free_text(
@@ -101,3 +105,10 @@ def test_prepare_rejects_unsafe_free_text(
             idempotency_key="prepare-unsafe",
         )
     database.close()
+
+
+def test_request_model_rejects_control_characters_before_service() -> None:
+    """不可见控制字符必须在进入数据库或领域服务前被拒绝。"""
+
+    with pytest.raises(ValidationError, match="控制字符"):
+        request(title="带\x00控制字符", objective="正常目标")
