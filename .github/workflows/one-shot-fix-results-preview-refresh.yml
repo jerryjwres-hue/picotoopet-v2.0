@@ -1,0 +1,179 @@
+name: One-shot repair Results preview refresh
+
+on:
+  push:
+    branches:
+      - feature/phase23-slice-d-diagnostic-snapshot-release
+    paths:
+      - .github/workflows/one-shot-fix-results-preview-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/phase23-slice-d-diagnostic-snapshot-release
+          fetch-depth: 0
+
+      - name: Preserve logical Results selection and preview
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          view_model = Path("windows/desktop/src/PicotooPet.Desktop/ViewModels/ResultsPageViewModel.cs")
+          text = view_model.read_text(encoding="utf-8")
+          old = '''    public ResultRowViewModel? SelectedResult
+              {
+                  get => _selectedResult;
+                  set
+                  {
+                      if (!SetProperty(ref _selectedResult, value))
+                      {
+                          return;
+                      }
+
+                      DiagnosticPreview = null;
+                      IsPreviewVisible = false;
+                      RaiseActionProperties();
+                  }
+              }
+          '''.replace("              ", "")
+          new = '''    public ResultRowViewModel? SelectedResult
+              {
+                  get => _selectedResult;
+                  set
+                  {
+                      if (value is null
+                          && _selectedResult is not null
+                          && ContainsResult(VisibleResults, _selectedResult.ResultId))
+                      {
+                          // WPF 在 ItemsSource 刷新期间会短暂回写 null；同一逻辑结果仍可见时忽略该框架瞬态。
+                          return;
+                      }
+
+                      var previousResultId = _selectedResult?.ResultId;
+                      if (!SetProperty(ref _selectedResult, value))
+                      {
+                          return;
+                      }
+
+                      if (!string.Equals(
+                              previousResultId,
+                              value?.ResultId,
+                              StringComparison.Ordinal))
+                      {
+                          DiagnosticPreview = null;
+                          IsPreviewVisible = false;
+                      }
+                      RaiseActionProperties();
+                  }
+              }
+          '''.replace("              ", "")
+          if old not in text:
+              raise SystemExit("SelectedResult block not found")
+          text = text.replace(old, new)
+
+          marker = '''    private static ResultRowViewModel? ResolveSelection(
+              IReadOnlyList<ResultRowViewModel> results,
+              string? selectedResultId)
+          '''.replace("              ", "")
+          helper = '''    private static bool ContainsResult(
+              IReadOnlyList<ResultRowViewModel> results,
+              string resultId)
+              {
+                  for (var index = 0; index < results.Count; index++)
+                  {
+                      if (string.Equals(
+                              results[index].ResultId,
+                              resultId,
+                              StringComparison.Ordinal))
+                      {
+                          return true;
+                      }
+                  }
+
+                  return false;
+              }
+
+          '''.replace("              ", "")
+          if marker not in text:
+              raise SystemExit("ResolveSelection marker not found")
+          view_model.write_text(text.replace(marker, helper + marker), encoding="utf-8")
+
+          wpf_test = Path("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/ResultsPageWpfLayoutSmokeTests.cs")
+          text = wpf_test.read_text(encoding="utf-8")
+          text = text.replace(
+              "using System.Runtime.ExceptionServices;\n",
+              "using System.Reflection;\nusing System.Runtime.ExceptionServices;\n",
+          )
+          text = text.replace(
+              "using PicotooPet.Desktop.Core.Contracts;\n",
+              "using PicotooPet.Desktop.Core.Contracts;\nusing PicotooPet.Desktop.Core.State;\nusing PicotooPet.Desktop.Services;\n",
+          )
+          old_asserts = '''        SmokeAssert.True(page.IsMeasureValid, "Results Page Measure 未完成");
+                  SmokeAssert.True(page.IsArrangeValid, "Results Page Arrange 未完成");
+                  SmokeAssert.True(page.ActualWidth > 0, "Results Page 实际宽度无效");
+                  SmokeAssert.True(page.ActualHeight > 0, "Results Page 实际高度无效");
+              }
+          '''.replace("                  ", "")
+          new_asserts = '''        SmokeAssert.True(page.IsMeasureValid, "Results Page Measure 未完成");
+                  SmokeAssert.True(page.IsArrangeValid, "Results Page Arrange 未完成");
+                  SmokeAssert.True(page.ActualWidth > 0, "Results Page 实际宽度无效");
+                  SmokeAssert.True(page.ActualHeight > 0, "Results Page 实际高度无效");
+
+                  var preview = DiagnosticResultViewModel.FromError("已加载的固定诊断预览");
+                  SetPrivateProperty(viewModel, nameof(ResultsPageViewModel.DiagnosticPreview), preview);
+                  SetPrivateProperty(viewModel, nameof(ResultsPageViewModel.IsPreviewVisible), true);
+                  page.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+
+                  var store = new AppStateStore();
+                  store.ReplaceTasks(new[] { task with { UpdatedAt = timestamp.AddSeconds(5) } });
+                  viewModel.UpdateSnapshot(new ControlCenterSessionSnapshot(
+                      "http://127.0.0.1:8765",
+                      store.ControlCenterSnapshot,
+                      "online · 2.3.8.1",
+                      "REST p95 1.0 ms",
+                      "双机控制链已连接。"));
+                  page.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+                  page.UpdateLayout();
+
+                  SmokeAssert.True(viewModel.IsPreviewVisible, "WPF ItemsSource 刷新后安全预览被隐藏");
+                  SmokeAssert.True(
+                      ReferenceEquals(preview, viewModel.DiagnosticPreview),
+                      "WPF ItemsSource 刷新后安全预览对象被清空或替换");
+              }
+
+              private static void SetPrivateProperty<T>(
+                  ResultsPageViewModel viewModel,
+                  string propertyName,
+                  T value)
+              {
+                  var setter = typeof(ResultsPageViewModel)
+                      .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)?
+                      .GetSetMethod(nonPublic: true)
+                      ?? throw new InvalidOperationException($"缺少结果中心属性 setter：{propertyName}。");
+                  setter.Invoke(viewModel, new object?[] { value });
+              }
+          '''.replace("                  ", "")
+          if old_asserts not in text:
+              raise SystemExit("Results WPF assertion block not found")
+          wpf_test.write_text(text.replace(old_asserts, new_asserts), encoding="utf-8")
+          PY
+
+      - name: Commit repair and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/one-shot-fix-results-preview-refresh.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/desktop/src/PicotooPet.Desktop/ViewModels/ResultsPageViewModel.cs \
+                  windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/ResultsPageWpfLayoutSmokeTests.cs \
+                  .github/workflows/one-shot-fix-results-preview-refresh.yml
+          git diff --cached --check
+          git commit -m "fix: preserve loaded Results preview across refresh"
+          git push origin HEAD:feature/phase23-slice-d-diagnostic-snapshot-release
