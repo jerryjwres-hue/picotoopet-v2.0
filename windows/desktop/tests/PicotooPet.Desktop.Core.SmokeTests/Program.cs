@@ -37,6 +37,7 @@ internal static class Program
             DiagnosticResultContractSmokeTests.Run();
             ProductVersionWpfSmokeTests.Run();
             TaskCenterWpfLayoutSmokeTests.Run();
+            await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
             await DiagnosticSnapshotSmokeTests.RunAsync().ConfigureAwait(false);
