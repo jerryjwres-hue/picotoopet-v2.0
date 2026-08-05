@@ -63,10 +63,10 @@ def test_native_lifecycle_fixture_covers_version_replacement_and_exact_restore()
     for required in (
         "Set-PackageProductVersion",
         '"2.3.5.9"',
-        '"2.3.6.1"',
+        '"2.3.6.2"',
         "shortcut_state",
         "Assert-ShortcutSnapshotEqual",
         "Picotoo Pet AI 2.3.5.9.lnk",
-        "Picotoo Pet AI 2.3.6.1.lnk",
+        "Picotoo Pet AI 2.3.6.2.lnk",
     ):
         assert required in lifecycle
