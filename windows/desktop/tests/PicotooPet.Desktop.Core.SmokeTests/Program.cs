@@ -48,6 +48,7 @@ internal static class Program
             await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
             await DiagnosticSnapshotSmokeTests.RunAsync().ConfigureAwait(false);
+            await HandoffPreparationSmokeTests.RunAsync().ConfigureAwait(false);
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
@@ -85,7 +86,7 @@ internal static class Program
 
     private static void VerifyStateDeduplication()
     {
-        var store   = new AppStateStore();
+        var store = new AppStateStore();
         var payload = JsonSerializer.SerializeToElement(new
         {
             task_id = "task-1",
