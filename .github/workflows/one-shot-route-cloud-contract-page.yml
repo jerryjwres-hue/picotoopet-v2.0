@@ -1,0 +1,37 @@
+name: One-shot route cloud contract page
+
+on:
+  push:
+    branches:
+      - feature/phase23-slice-d-diagnostic-snapshot-release
+    paths:
+      - .github/workflows/one-shot-route-cloud-contract-page.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/phase23-slice-d-diagnostic-snapshot-release
+          fetch-depth: 0
+
+      - name: Update Shell routes
+        run: python scripts/one_shot_route_cloud_contract_page.py
+
+      - name: Commit route and remove one-shot files
+        shell: bash
+        run: |
+          rm scripts/one_shot_route_cloud_contract_page.py
+          rm .github/workflows/one-shot-route-cloud-contract-page.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/desktop/src/PicotooPet.Desktop/ViewModels/ShellViewModel.cs \
+                  scripts/one_shot_route_cloud_contract_page.py \
+                  .github/workflows/one-shot-route-cloud-contract-page.yml
+          git diff --cached --check
+          git commit -m "feat: route native cloud contract status page"
+          git push origin HEAD:feature/phase23-slice-d-diagnostic-snapshot-release
