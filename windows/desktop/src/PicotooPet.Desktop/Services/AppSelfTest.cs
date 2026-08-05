@@ -32,14 +32,14 @@ internal static class AppSelfTest
                 $"picotoo-desktop-self-test-{Guid.NewGuid():N}.json");
         var report = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["schema_version"]             = "2.3.0",
-            ["product_version"]            = ProductVersionInfo.Current,
-            ["window_title"]               = ProductVersionInfo.WindowTitle,
-            ["control_center_subtitle"]    = ProductVersionInfo.ControlCenterSubtitle,
-            ["generated_at"]               = DateTimeOffset.UtcNow,
-            ["status"]                     = "running",
-            ["checks"]                     = new Dictionary<string, string>(StringComparer.Ordinal),
-            ["error"]                      = null,
+            ["schema_version"]          = "2.3.0",
+            ["product_version"]         = ProductVersionInfo.Current,
+            ["window_title"]            = ProductVersionInfo.WindowTitle,
+            ["control_center_subtitle"] = ProductVersionInfo.ControlCenterSubtitle,
+            ["generated_at"]            = DateTimeOffset.UtcNow,
+            ["status"]                  = "running",
+            ["checks"]                  = new Dictionary<string, string>(StringComparer.Ordinal),
+            ["error"]                   = null,
         };
 
         try
@@ -93,17 +93,24 @@ internal static class AppSelfTest
             if (!shell.NavigationItems.Single(
                     item => item.Route == NavigationRoute.CloudDevelopment).IsAvailable)
             {
-                throw new InvalidOperationException("云端开发合同状态页可用性自检失败。");
+                throw new InvalidOperationException("云端开发 Phase 10A 页面可用性自检失败。");
             }
 
             shell.Navigate(NavigationRoute.CloudDevelopment);
             if (shell.CurrentPage is not CloudDevelopmentPageViewModel cloudDevelopment
                 || cloudDevelopment.ContractVersion != "1.0.0"
-                || cloudDevelopment.ProviderConfigured)
+                || cloudDevelopment.ProviderConfigured
+                || cloudDevelopment.TemplateOptions.Count != 1
+                || !cloudDevelopment.CurrentDelivery.Contains(
+                    "Phase 10A",
+                    StringComparison.Ordinal))
             {
-                throw new InvalidOperationException("云端开发冻结合同边界自检失败。");
+                throw new InvalidOperationException("云端开发 Phase 10A 安全边界自检失败。");
             }
-            checks["cloud_development_contract"] = "pass";
+            checks["cloud_development_phase10a"] = "pass";
+
+            VerifyCloudDevelopmentContentRendering(cloudDevelopment);
+            checks["cloud_development_rendering"] = "pass";
 
             shell.Navigate(NavigationRoute.TaskCenter);
             if (shell.CurrentPage is not TaskCenterPageViewModel taskCenter
@@ -138,6 +145,7 @@ internal static class AppSelfTest
             Console.WriteLine("PHASE23_CONTROL_CENTER_SELF_TEST=PASS");
             Console.WriteLine("PHASE23_TASK_CENTER_SELF_TEST=PASS");
             Console.WriteLine("PHASE23_PRODUCT_VERSION_SELF_TEST=PASS");
+            Console.WriteLine("PHASE10A_HANDOFF_SELF_TEST=PASS");
             return 0;
         }
         catch (Exception exception)
@@ -153,7 +161,49 @@ internal static class AppSelfTest
                 $"PHASE23_TASK_CENTER_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(
                 $"PHASE23_PRODUCT_VERSION_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE10A_HANDOFF_SELF_TEST=FAIL | {exception.Message}");
             return 1;
+        }
+    }
+
+    /// <summary>验证发布进程中的 Phase 10A DataTemplate 可生成原生页面。</summary>
+    private static void VerifyCloudDevelopmentContentRendering(
+        CloudDevelopmentPageViewModel cloudDevelopment)
+    {
+        var host = new NavigationContentHost
+        {
+            Content = cloudDevelopment,
+        };
+        var root = new System.Windows.Controls.Border
+        {
+            Width  = 1100,
+            Height = 820,
+            Child  = host,
+        };
+
+        root.Measure(new System.Windows.Size(1100, 820));
+        root.Arrange(new System.Windows.Rect(0, 0, 1100, 820));
+        root.UpdateLayout();
+        root.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+        root.UpdateLayout();
+
+        var page = FindVisualDescendant<CloudDevelopmentPage>(host);
+        if (page is null)
+        {
+            throw new InvalidOperationException(
+                "发布 EXE 未通过生产 DataTemplate 渲染 CloudDevelopmentPage。");
+        }
+        if (page.ActualWidth <= 0 || page.ActualHeight <= 0)
+        {
+            throw new InvalidOperationException(
+                "发布 EXE 中的 CloudDevelopmentPage 没有可见布局尺寸。");
+        }
+        if (FindVisualDescendants<System.Windows.Controls.Button>(page).Count < 3
+            || FindVisualDescendants<System.Windows.Controls.TextBox>(page).Count < 2)
+        {
+            throw new InvalidOperationException(
+                "发布 EXE 中的 Phase 10A 原生准备控件不完整。");
         }
     }
 
@@ -192,25 +242,24 @@ internal static class AppSelfTest
     }
 
     private static T? FindVisualDescendant<T>(DependencyObject parent)
+        where T : DependencyObject =>
+        FindVisualDescendants<T>(parent).FirstOrDefault();
+
+    private static List<T> FindVisualDescendants<T>(DependencyObject parent)
         where T : DependencyObject
     {
+        var matches    = new List<T>();
         var childCount = VisualTreeHelper.GetChildrenCount(parent);
         for (var index = 0; index < childCount; index++)
         {
             var child = VisualTreeHelper.GetChild(parent, index);
             if (child is T match)
             {
-                return match;
+                matches.Add(match);
             }
-
-            var nested = FindVisualDescendant<T>(child);
-            if (nested is not null)
-            {
-                return nested;
-            }
+            matches.AddRange(FindVisualDescendants<T>(child));
         }
-
-        return null;
+        return matches;
     }
 
     private static string? GetArgumentValue(string[] args, string name)
