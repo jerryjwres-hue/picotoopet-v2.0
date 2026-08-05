@@ -70,3 +70,18 @@ def test_native_lifecycle_fixture_covers_version_replacement_and_exact_restore()
         "Picotoo Pet AI 2.3.6.1.lnk",
     ):
         assert required in lifecycle
+
+
+def test_ci_lifecycle_wrapper_uses_canonical_version_for_formal_package_only() -> None:
+    wrapper = read(SCRIPTS / "Invoke-Phase2WindowsReleaseLifecycleGate.ps1")
+
+    for required in (
+        "product-version.txt",
+        "expectedProductVersion",
+        "formalManifestAssertion",
+        "formalSelfTestAssertion",
+        "正式包 product_version",
+        "桌面自检报告产品版本",
+    ):
+        assert required in wrapper
+    assert "Set-PackageProductVersion" not in wrapper
