@@ -49,6 +49,7 @@ internal static class Program
             await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
             await DiagnosticSnapshotSmokeTests.RunAsync().ConfigureAwait(false);
             await HandoffPreparationSmokeTests.RunAsync().ConfigureAwait(false);
+            await CloudDevelopmentPhase10ASmokeTests.RunAsync().ConfigureAwait(false);
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
