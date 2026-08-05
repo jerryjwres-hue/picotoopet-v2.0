@@ -10,25 +10,24 @@ internal static class ReturnValidationSmokeTests
 {
     public static async Task RunAsync()
     {
-        var approved = CreateHandoff("approved");
+        var approved  = CreateHandoff("approved");
         var validated = CreateReturn("contract_validated", updatedSeconds: 0);
         var gateway = new FixtureGateway(approved, validated)
         {
             ThrowOnceOnRun = true,
         };
-        var page = new CloudDevelopmentPageViewModel(gateway);
+        var page = new ReturnValidationViewModel(gateway);
 
         await page.LoadAsync(CancellationToken.None).ConfigureAwait(false);
-        await page.LoadReturnsAsync(CancellationToken.None).ConfigureAwait(false);
-
         SmokeAssert.True(page.CanRunReturnSelfTest, "approved Handoff 未启用本地 Return 验证");
+
         await page.RunReturnSelfTestAsync(CancellationToken.None).ConfigureAwait(false);
         SmokeAssert.Equal(2, gateway.RunCount, "瞬态错误后必须只重试一次");
         SmokeAssert.Equal(
             gateway.RunIdempotencyKeys[0],
             gateway.RunIdempotencyKeys[1],
             "Return 重试没有复用同一幂等键");
-        SmokeAssert.True(page.IsReturnPreviewVisible, "Return 验证后未显示安全预览");
+        SmokeAssert.True(page.IsPreviewVisible, "Return 验证后未显示安全预览");
         SmokeAssert.Equal(
             "contract_validated",
             page.SelectedReturn?.Status,
@@ -39,35 +38,26 @@ internal static class ReturnValidationSmokeTests
 
         var preview = page.SelectedReturn;
         gateway.NextReturns = [CreateReturn("contract_validated", updatedSeconds: 5)];
-        await page.RefreshReturnsAsync(CancellationToken.None).ConfigureAwait(false);
-        SmokeAssert.True(page.IsReturnPreviewVisible, "同一 return_id 刷新后预览被隐藏");
+        await page.RefreshAsync(CancellationToken.None).ConfigureAwait(false);
+        SmokeAssert.True(page.IsPreviewVisible, "同一 return_id 刷新后预览被隐藏");
         SmokeAssert.True(
             ReferenceEquals(preview, page.SelectedReturn),
             "同一 return_id 刷新后预览对象被替换");
 
         gateway.ThrowOnListReturns = true;
-        await page.RefreshReturnsAsync(CancellationToken.None).ConfigureAwait(false);
-        SmokeAssert.True(page.IsReturnPreviewVisible, "Return 刷新失败后已有预览被清空");
+        await page.RefreshAsync(CancellationToken.None).ConfigureAwait(false);
+        SmokeAssert.True(page.IsPreviewVisible, "Return 刷新失败后已有预览被清空");
         SmokeAssert.True(
-            page.ReturnStatusMessage.Contains("保留", StringComparison.Ordinal),
+            page.StatusMessage.Contains("保留", StringComparison.Ordinal),
             "Return 刷新失败没有说明预览已保留");
 
         var unapprovedGateway = new FixtureGateway(CreateHandoff("prepared"), validated);
-        var unapprovedPage = new CloudDevelopmentPageViewModel(unapprovedGateway);
+        var unapprovedPage    = new ReturnValidationViewModel(unapprovedGateway);
         await unapprovedPage.LoadAsync(CancellationToken.None).ConfigureAwait(false);
         SmokeAssert.True(
             !unapprovedPage.CanRunReturnSelfTest,
             "未批准 Handoff 错误启用了 Return 验证");
     }
-
-    private static HandoffTemplateRecord CreateTemplate() => new(
-        "picotoopet-repo-maintenance-v1",
-        "PicotooPet 仓库维护",
-        "manual",
-        ProviderConfigured: false,
-        "https://github.com/jerryjwres-hue/picotoopet-v2.0",
-        "feature/phase10a-handoff-preparation",
-        "7a97694dfe4c1850def24d48b57ce8a8dbdee454");
 
     private static HandoffRecord CreateHandoff(string status) => new(
         "handoff-approved-001",
@@ -117,7 +107,7 @@ internal static class ReturnValidationSmokeTests
 
     private sealed class FixtureGateway(
         HandoffRecord handoff,
-        ReturnRecord validated) : IHandoffGateway, IReturnGateway
+        ReturnRecord validated) : IReturnGateway
     {
         public ReturnRecord[] NextReturns { get; set; } = [validated];
         public bool ThrowOnceOnRun { get; set; }
@@ -125,25 +115,9 @@ internal static class ReturnValidationSmokeTests
         public int RunCount { get; private set; }
         public List<string> RunIdempotencyKeys { get; } = [];
 
-        public Task<HandoffTemplateRecord[]> GetTemplatesAsync(
-            CancellationToken cancellationToken) =>
-            Task.FromResult(new[] { CreateTemplate() });
-
         public Task<HandoffRecord[]> GetHandoffsAsync(
             CancellationToken cancellationToken) =>
             Task.FromResult(new[] { handoff });
-
-        public Task<HandoffRecord> PrepareAsync(
-            HandoffPrepareRequest request,
-            string idempotencyKey,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(handoff);
-
-        public Task<HandoffRecord> SubmitApprovalAsync(
-            string handoffId,
-            string idempotencyKey,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(handoff);
 
         public Task<ReturnRecord[]> GetReturnsAsync(
             CancellationToken cancellationToken)
