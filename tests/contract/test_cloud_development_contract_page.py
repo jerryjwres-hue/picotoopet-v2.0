@@ -4,10 +4,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "windows" / "desktop" / "src" / "PicotooPet.Desktop"
+DESKTOP_CORE = ROOT / "windows" / "desktop" / "src" / "PicotooPet.Desktop.Core"
 
 
 def read(relative: str) -> str:
     return (DESKTOP / relative).read_text(encoding="utf-8")
+
+
+def read_core(relative: str) -> str:
+    return (DESKTOP_CORE / relative).read_text(encoding="utf-8")
 
 
 def test_cloud_development_route_uses_live_native_phase10a_page() -> None:
@@ -26,7 +31,8 @@ def test_cloud_development_page_exposes_only_bounded_phase10a_actions() -> None:
     view_model = read("ViewModels/CloudDevelopmentPageViewModel.cs")
     page = read("Views/Pages/CloudDevelopmentPage.xaml")
     gateway = read("Services/IHandoffGateway.cs")
-    combined = view_model + "\n" + page + "\n" + gateway
+    client = read_core("Networking/MacCoreHandoffClient.cs")
+    combined = "\n".join((view_model, page, gateway, client))
 
     for required in (
         'ContractVersion => "1.0.0"',
@@ -52,6 +58,7 @@ def test_cloud_development_page_exposes_only_bounded_phase10a_actions() -> None:
         "HandoffPrepareRequest",
         "Idempotency-Key",
         "Provider 未安装、未配置、未调用",
+        "MaxHandoffResponseBytes",
     ):
         assert required in combined
 
