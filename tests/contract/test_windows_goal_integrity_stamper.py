@@ -14,14 +14,14 @@ from scripts.verify_project_goal_integrity import verify_windows_package
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "release" / "project-goal-invariants.json"
 INSTALLER_MARKER = "PICOTOO_GOAL_INTEGRITY_GATE_V1"
-PRODUCT_VERSION = "2.3.9.1"
+PRODUCT_VERSION = "2.3.10.1"
 PRODUCT_VERSION_BYTES = (PRODUCT_VERSION + "\n").encode("utf-8")
 SOURCE_HEAD = "a" * 40
-SOURCE_REF = "feature/phase23-slice-d-diagnostic-snapshot-release"
+SOURCE_REF = "feature/phase10a-handoff-preparation"
 BUILD_COMMIT = "b" * 40
 WORKFLOW_REF = (
     "jerryjwres-hue/picotoopet-v2.0/"
-    ".github/workflows/windows-phase2-release.yml@refs/pull/8/merge"
+    ".github/workflows/windows-phase2-release.yml@refs/pull/9/merge"
 )
 _APP_BYTES = b"MZ-native-wpf"
 _DIAGNOSTIC_BYTES = b"MZ-diagnostics"
@@ -59,7 +59,7 @@ def _write_candidate(
 ) -> tuple[Path, str]:
     archive_root = "candidate"
     package = tmp_path / (
-        "PicotooPet-Phase2-Windows-Prebuilt-2.3.9.1-test.zip"
+        "PicotooPet-Phase2-Windows-Prebuilt-2.3.10.1-test.zip"
     )
     manifest: dict[str, object] = {
         "release_type": "prebuilt",
@@ -263,7 +263,7 @@ def test_formal_stamp_output_passes_independent_zip_verifier(
     assert report["status"] == "pass"
     assert report["product_version"] == PRODUCT_VERSION
     assert report["verified_payload_files"] == 3
-    assert report["github_workflow_ref"].endswith("@refs/pull/8/merge")
+    assert report["github_workflow_ref"].endswith("@refs/pull/9/merge")
 
 
 def test_stamp_rejects_native_package_without_run_provenance(
