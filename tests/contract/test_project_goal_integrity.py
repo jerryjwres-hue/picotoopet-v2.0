@@ -14,7 +14,7 @@ from scripts.verify_project_goal_integrity import (
 
 
 _GOAL_GATE_MARKER = "# PICOTOO_GOAL_INTEGRITY_GATE_V1"
-_PRODUCT_VERSION = "2.3.9.1"
+_PRODUCT_VERSION = "2.3.10.1"
 _PRODUCT_VERSION_BYTES = (_PRODUCT_VERSION + "\n").encode("utf-8")
 _APP_BYTES = b"MZ-native-wpf"
 _DIAGNOSTIC_BYTES = b"MZ-diagnostics"
@@ -31,7 +31,7 @@ def _goal_gate_script() -> bytes:
         '        "entry_executable" = "Picotoo Pet AI.exe"\r\n'
         '        "integration_target" = "TaskCenter"\r\n'
         '        "github_repository" = "jerryjwres-hue/picotoopet-v2.0"\r\n'
-        '        "product_version" = "2.3.9.1"\r\n'
+        '        "product_version" = "2.3.10.1"\r\n'
         '        "source_build_on_user_pc" = $false\r\n'
         '        "browser_ui" = $false\r\n'
         '        "local_http_ui" = $false\r\n'
@@ -114,10 +114,10 @@ def _compliant_manifest() -> dict[str, object]:
         "github_run_attempt": "1",
         "github_workflow_ref": (
             "jerryjwres-hue/picotoopet-v2.0/"
-            ".github/workflows/windows-phase2-release.yml@refs/pull/8/merge"
+            ".github/workflows/windows-phase2-release.yml@refs/pull/9/merge"
         ),
         "source_head": "a" * 40,
-        "source_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
+        "source_ref": "feature/phase10a-handoff-preparation",
         "build_commit": "b" * 40,
         "files": [
             _file_entry("product-version.txt", _PRODUCT_VERSION_BYTES),
