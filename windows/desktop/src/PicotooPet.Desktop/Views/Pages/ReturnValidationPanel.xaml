@@ -1,0 +1,301 @@
+<UserControl x:Class="PicotooPet.Desktop.Views.Pages.ReturnValidationPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Loaded="OnLoaded">
+    <Border Margin="0,14,0,0"
+            Padding="18"
+            Background="#F8FAFC"
+            BorderBrush="#CBD5E1"
+            BorderThickness="1"
+            CornerRadius="10">
+        <StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock FontSize="21"
+                               FontWeight="SemiBold"
+                               Text="Phase 10B-A 本地 Return 验证" />
+                    <TextBlock Margin="0,6,0,0"
+                               Foreground="#475569"
+                               Text="{Binding SafetyNotice, Mode=OneWay}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+                <Button Grid.Column="1"
+                        MinWidth="138"
+                        Padding="12,7"
+                        Command="{Binding RefreshCommand}"
+                        Content="刷新 Return 状态" />
+                <Button Grid.Column="3"
+                        MinWidth="190"
+                        Padding="12,7"
+                        Command="{Binding RunSelfTestCommand}"
+                        IsEnabled="{Binding CanRunReturnSelfTest, Mode=OneWay}"
+                        Content="运行本地 Return 合同验证" />
+            </Grid>
+
+            <Border Margin="0,12,0,0"
+                    Padding="12"
+                    Background="#FFF7ED"
+                    BorderBrush="#FED7AA"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <TextBlock Foreground="#9A3412"
+                           Text="合同通过只表示结构、哈希、事件和隔离策略有效；不表示代码可合并、测试已通过或 Provider 已运行。"
+                           TextWrapping="Wrap" />
+            </Border>
+
+            <Grid Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="360" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel>
+                    <TextBlock FontSize="16"
+                               FontWeight="SemiBold"
+                               Text="Approved Handoff" />
+                    <ListBox Margin="0,7,0,0"
+                             MinHeight="92"
+                             MaxHeight="150"
+                             ItemsSource="{Binding ApprovedHandoffs, Mode=OneWay}"
+                             SelectedItem="{Binding SelectedHandoff, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="4">
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding Title, Mode=OneWay}" />
+                                    <TextBlock Margin="0,3,0,0"
+                                               Foreground="#64748B"
+                                               Text="{Binding HandoffId, Mode=OneWay}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Margin="0,14,0,0"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               Text="最近 Return" />
+                    <ListBox Margin="0,7,0,0"
+                             MinHeight="120"
+                             MaxHeight="220"
+                             ItemsSource="{Binding RecentReturns, Mode=OneWay}"
+                             SelectedItem="{Binding SelectedRecentReturn, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock FontWeight="SemiBold"
+                                                   Text="{Binding ReturnId, Mode=OneWay}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Margin="0,3,0,0"
+                                                   Foreground="#64748B"
+                                                   Text="{Binding UpdatedAt, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <Border Grid.Column="1"
+                                            Margin="8,0,0,0"
+                                            Padding="7,3"
+                                            VerticalAlignment="Top"
+                                            Background="#EFF6FF"
+                                            BorderBrush="#BFDBFE"
+                                            BorderThickness="1"
+                                            CornerRadius="9">
+                                        <TextBlock Foreground="#1D4ED8"
+                                                   Text="{Binding Status, Mode=OneWay}" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+
+                <Border Grid.Column="2"
+                        Padding="16"
+                        Background="White"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="9">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Text="Return 安全预览" />
+                            <Border Grid.Column="1"
+                                    Padding="9,4"
+                                    Background="#EFF6FF"
+                                    BorderBrush="#BFDBFE"
+                                    BorderThickness="1"
+                                    CornerRadius="10">
+                                <TextBlock Foreground="#1D4ED8"
+                                           FontWeight="SemiBold"
+                                           Text="{Binding SelectedReturn.Status, Mode=OneWay}" />
+                            </Border>
+                        </Grid>
+
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock FontWeight="SemiBold" Text="Return ID" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding SelectedReturn.ReturnId, Mode=OneWay}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="1"
+                                       Margin="0,7,0,0"
+                                       FontWeight="SemiBold"
+                                       Text="Handoff ID" />
+                            <TextBlock Grid.Row="1"
+                                       Grid.Column="1"
+                                       Margin="0,7,0,0"
+                                       Text="{Binding SelectedReturn.HandoffId, Mode=OneWay}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="2"
+                                       Margin="0,7,0,0"
+                                       FontWeight="SemiBold"
+                                       Text="Provider" />
+                            <TextBlock Grid.Row="2"
+                                       Grid.Column="1"
+                                       Margin="0,7,0,0"
+                                       Text="{Binding SelectedReturn.Provider, Mode=OneWay}" />
+                            <TextBlock Grid.Row="3"
+                                       Margin="0,7,0,0"
+                                       FontWeight="SemiBold"
+                                       Text="变更文件" />
+                            <TextBlock Grid.Row="3"
+                                       Grid.Column="1"
+                                       Margin="0,7,0,0"
+                                       Text="{Binding SelectedReturn.ChangedFileCount, Mode=OneWay}" />
+                            <TextBlock Grid.Row="4"
+                                       Margin="0,7,0,0"
+                                       FontWeight="SemiBold"
+                                       Text="事件数量" />
+                            <TextBlock Grid.Row="4"
+                                       Grid.Column="1"
+                                       Margin="0,7,0,0"
+                                       Text="{Binding SelectedReturn.EventCount, Mode=OneWay}" />
+                        </Grid>
+
+                        <Border Margin="0,12,0,0"
+                                Padding="11"
+                                Background="#F8FAFC"
+                                BorderBrush="#E2E8F0"
+                                BorderThickness="1"
+                                CornerRadius="7">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" Text="request digest" />
+                                <TextBlock Margin="0,3,0,0"
+                                           Text="{Binding SelectedReturn.RequestDigest, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,8,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="package digest" />
+                                <TextBlock Margin="0,3,0,0"
+                                           Text="{Binding SelectedReturn.PackageDigest, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,8,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="manifest digest" />
+                                <TextBlock Margin="0,3,0,0"
+                                           Text="{Binding SelectedReturn.ManifestDigest, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Padding="11"
+                                    Background="#F8FAFC"
+                                    BorderBrush="#E2E8F0"
+                                    BorderThickness="1"
+                                    CornerRadius="7">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" Text="验证检查" />
+                                    <ItemsControl Margin="0,6,0,0"
+                                                  ItemsSource="{Binding SelectedReturn.ValidationChecks, Mode=OneWay}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Margin="0,3,0,0">
+                                                    <Run Text="• " />
+                                                    <Run Text="{Binding Name, Mode=OneWay}" />
+                                                    <Run Text=" · " />
+                                                    <Run Text="{Binding Passed, Mode=OneWay}" />
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2"
+                                    Padding="11"
+                                    Background="#F8FAFC"
+                                    BorderBrush="#E2E8F0"
+                                    BorderThickness="1"
+                                    CornerRadius="7">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" Text="脱敏事件摘要" />
+                                    <ItemsControl Margin="0,6,0,0"
+                                                  ItemsSource="{Binding SelectedReturn.EventSummaries, Mode=OneWay}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Margin="0,3,0,0"
+                                                           Text="{Binding Summary, Mode=OneWay}"
+                                                           TextWrapping="Wrap" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Margin="0,12,0,0"
+                                Padding="11"
+                                Background="#ECFDF5"
+                                BorderBrush="#A7F3D0"
+                                BorderThickness="1"
+                                CornerRadius="7">
+                            <TextBlock Foreground="#065F46"
+                                       Text="{Binding SelectedReturn.ExecutionNotice, Mode=OneWay}"
+                                       TextWrapping="Wrap" />
+                        </Border>
+                        <TextBlock Margin="0,8,0,0"
+                                   Foreground="#991B1B"
+                                   Text="{Binding SelectedReturn.QuarantineCode, Mode=OneWay}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <TextBlock Margin="0,12,0,0"
+                       Foreground="#475569"
+                       Text="{Binding StatusMessage, Mode=OneWay}"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+    </Border>
+</UserControl>

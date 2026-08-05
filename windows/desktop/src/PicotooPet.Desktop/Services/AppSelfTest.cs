@@ -110,7 +110,8 @@ internal static class AppSelfTest
             checks["cloud_development_phase10a"] = "pass";
 
             VerifyCloudDevelopmentContentRendering(cloudDevelopment);
-            checks["cloud_development_rendering"] = "pass";
+            checks["cloud_development_rendering"]            = "pass";
+            checks["cloud_development_phase10b_return_panel"] = "pass";
 
             shell.Navigate(NavigationRoute.TaskCenter);
             if (shell.CurrentPage is not TaskCenterPageViewModel taskCenter
@@ -146,6 +147,7 @@ internal static class AppSelfTest
             Console.WriteLine("PHASE23_TASK_CENTER_SELF_TEST=PASS");
             Console.WriteLine("PHASE23_PRODUCT_VERSION_SELF_TEST=PASS");
             Console.WriteLine("PHASE10A_HANDOFF_SELF_TEST=PASS");
+            Console.WriteLine("PHASE10B_RETURN_SELF_TEST=PASS");
             return 0;
         }
         catch (Exception exception)
@@ -163,11 +165,13 @@ internal static class AppSelfTest
                 $"PHASE23_PRODUCT_VERSION_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(
                 $"PHASE10A_HANDOFF_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE10B_RETURN_SELF_TEST=FAIL | {exception.Message}");
             return 1;
         }
     }
 
-    /// <summary>验证发布进程中的 Phase 10A DataTemplate 可生成原生页面。</summary>
+    /// <summary>验证发布进程中的 Phase 10A/10B-A DataTemplate 可生成原生页面。</summary>
     private static void VerifyCloudDevelopmentContentRendering(
         CloudDevelopmentPageViewModel cloudDevelopment)
     {
@@ -178,12 +182,12 @@ internal static class AppSelfTest
         var root = new System.Windows.Controls.Border
         {
             Width  = 1100,
-            Height = 820,
+            Height = 980,
             Child  = host,
         };
 
-        root.Measure(new System.Windows.Size(1100, 820));
-        root.Arrange(new System.Windows.Rect(0, 0, 1100, 820));
+        root.Measure(new System.Windows.Size(1100, 980));
+        root.Arrange(new System.Windows.Rect(0, 0, 1100, 980));
         root.UpdateLayout();
         root.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
         root.UpdateLayout();
@@ -199,11 +203,18 @@ internal static class AppSelfTest
             throw new InvalidOperationException(
                 "发布 EXE 中的 CloudDevelopmentPage 没有可见布局尺寸。");
         }
-        if (FindVisualDescendants<System.Windows.Controls.Button>(page).Count < 3
-            || FindVisualDescendants<System.Windows.Controls.TextBox>(page).Count < 2)
+        if (FindVisualDescendants<System.Windows.Controls.Button>(page).Count < 5
+            || FindVisualDescendants<System.Windows.Controls.TextBox>(page).Count < 2
+            || FindVisualDescendant<ReturnValidationPanel>(page) is null)
         {
             throw new InvalidOperationException(
-                "发布 EXE 中的 Phase 10A 原生准备控件不完整。");
+                "发布 EXE 中的 Phase 10A 准备控件或 Phase 10B-A Return 面板不完整。");
+        }
+        if (FindVisualDescendants<System.Windows.Controls.PasswordBox>(page).Count != 0
+            || FindVisualDescendants<System.Windows.Controls.WebBrowser>(page).Count != 0)
+        {
+            throw new InvalidOperationException(
+                "发布 EXE 中的云端开发页面包含凭据或浏览器控件。");
         }
     }
 

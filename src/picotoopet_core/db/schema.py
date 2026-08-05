@@ -205,3 +205,28 @@ CREATE INDEX IF NOT EXISTS idx_handoffs_status_created
 CREATE INDEX IF NOT EXISTS idx_handoffs_approval_id
     ON handoffs(approval_id) WHERE approval_id IS NOT NULL;
 """
+
+MIGRATION_004 = r"""
+CREATE TABLE IF NOT EXISTS returns (
+    return_id                 TEXT PRIMARY KEY,
+    handoff_id                TEXT NOT NULL REFERENCES handoffs(handoff_id) ON DELETE RESTRICT,
+    status                    TEXT NOT NULL,
+    provider                  TEXT NOT NULL,
+    request_digest            TEXT NOT NULL,
+    package_digest            TEXT NOT NULL,
+    manifest_digest           TEXT NOT NULL,
+    changed_file_count        INTEGER NOT NULL,
+    event_count               INTEGER NOT NULL,
+    validation_checks_json    TEXT NOT NULL,
+    preview_json              TEXT NOT NULL,
+    quarantine_code           TEXT,
+    idempotency_key           TEXT NOT NULL UNIQUE,
+    created_at                TEXT NOT NULL,
+    updated_at                TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_returns_handoff_created
+    ON returns(handoff_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_returns_status_created
+    ON returns(status, created_at DESC);
+"""

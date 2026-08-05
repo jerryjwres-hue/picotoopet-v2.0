@@ -20,6 +20,7 @@ from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepositor
 from picotoopet_core.queue.repository import QueueRepository
 from picotoopet_core.results.repository import ResultRepository
 from picotoopet_core.results.store import ResultStore
+from picotoopet_core.returns.service import ReturnValidationService
 from picotoopet_core.worker.state import WorkerStateStore
 
 
@@ -33,6 +34,7 @@ class Services:
     queue: QueueRepository
     approvals: ApprovalService
     handoffs: HandoffService
+    returns: ReturnValidationService
     audit: AuditWriter
     results: ResultStore
     result_records: ResultRepository
@@ -63,6 +65,7 @@ def build_services(settings: AppSettings) -> Services:
     queue = DiagnosticQueueRepository(database, outbox=outbox)
     approvals = HandoffApprovalService(database, queue)
     handoffs = HandoffService(database, approvals)
+    returns = ReturnValidationService(database, handoffs)
     result_store = ResultStore(settings.paths.results_dir)
     ollama = OllamaClient(settings.ollama_base_url, timeout_seconds=2.0)
     worker_state = WorkerStateStore(
@@ -76,6 +79,7 @@ def build_services(settings: AppSettings) -> Services:
         queue=queue,
         approvals=approvals,
         handoffs=handoffs,
+        returns=returns,
         audit=AuditWriter(database),
         results=result_store,
         result_records=ResultRepository(database),

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from picotoopet_core.approvals.service import ApprovalError
 from picotoopet_core.handoffs.service import HandoffConflict, HandoffError, HandoffPolicyError
 from picotoopet_core.queue.state_machine import InvalidTransitionError
+from picotoopet_core.returns.service import ReturnConflict, ReturnError, ReturnPolicyError
 
 
 class ErrorBody(BaseModel):
@@ -100,6 +101,51 @@ def install_error_handlers(app: FastAPI) -> None:
         trace_id = request.headers.get("X-Picotoo-Trace-Id", str(uuid4()))
         payload = ErrorBody(
             code="HANDOFF_ERROR",
+            message=str(exc),
+            retryable=False,
+            trace_id=trace_id,
+        )
+        return JSONResponse(status_code=400, content={"error": payload.model_dump()})
+
+    @app.exception_handler(ReturnPolicyError)
+    async def handle_return_policy_error(
+        request: Request,
+        exc: ReturnPolicyError,
+    ) -> JSONResponse:
+        """把固定 Return 安全策略拒绝转换为非重试请求错误。"""
+
+        trace_id = request.headers.get("X-Picotoo-Trace-Id", str(uuid4()))
+        payload = ErrorBody(
+            code="RETURN_POLICY_DENIED",
+            message=str(exc),
+            retryable=False,
+            trace_id=trace_id,
+        )
+        return JSONResponse(status_code=400, content={"error": payload.model_dump()})
+
+    @app.exception_handler(ReturnConflict)
+    async def handle_return_conflict(
+        request: Request,
+        exc: ReturnConflict,
+    ) -> JSONResponse:
+        """把 Return 幂等或资源绑定冲突转换为 409。"""
+
+        trace_id = request.headers.get("X-Picotoo-Trace-Id", str(uuid4()))
+        payload = ErrorBody(
+            code="RETURN_CONFLICT",
+            message=str(exc),
+            retryable=False,
+            trace_id=trace_id,
+        )
+        return JSONResponse(status_code=409, content={"error": payload.model_dump()})
+
+    @app.exception_handler(ReturnError)
+    async def handle_return_error(request: Request, exc: ReturnError) -> JSONResponse:
+        """处理其他有界 Return 领域错误。"""
+
+        trace_id = request.headers.get("X-Picotoo-Trace-Id", str(uuid4()))
+        payload = ErrorBody(
+            code="RETURN_ERROR",
             message=str(exc),
             retryable=False,
             trace_id=trace_id,
