@@ -139,7 +139,7 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($head) -or $head.Length -lt 12) {
             throw "PICOTOO_SOURCE_HEAD_SHA 无效。"
           }
-          $version = "2.3.0-slice-d-approval-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
+          $version = "2.3.0-slice-d-cloud-contract-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 -Version $version
 
       - name: Stamp approved native WPF delivery invariants
@@ -199,7 +199,7 @@ jobs:
       - name: Upload the single formal Windows installer and lifecycle evidence
         uses: actions/upload-artifact@v7
         with:
-          name: PicotooPet-Phase23-Approval-Windows-Prebuilt-${{ github.run_number }}
+          name: PicotooPet-Phase23-CloudContract-Windows-Prebuilt-${{ github.run_number }}
           path: |
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
             windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
