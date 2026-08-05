@@ -13,6 +13,9 @@
     <DataTemplate DataType="{x:Type viewModels:TaskCenterPageViewModel}">
       <pages:TaskCenterPage />
     </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:ResultsPageViewModel}">
+      <pages:ResultsPage />
+    </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:SettingsPageViewModel}">
       <pages:SettingsPage />
     </DataTemplate>
