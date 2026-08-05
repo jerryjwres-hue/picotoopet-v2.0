@@ -11,6 +11,7 @@ namespace PicotooPet.Desktop.Core.Networking;
 public sealed class MacCoreClient : IAsyncDisposable
 {
     private const int MaxDiagnosticResultBytes = 64 * 1024;
+    private const int MaxApprovalListBytes = 128 * 1024;
     private const int MaxApiErrorBytes = 64 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -104,6 +105,33 @@ public sealed class MacCoreClient : IAsyncDisposable
             "tasks.list",
             null,
             cancellationToken);
+
+    /// <summary>读取有界审批中心安全快照。</summary>
+    public Task<ApprovalRecord[]> GetApprovalsAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ApprovalRecord[]>(
+            HttpMethod.Get,
+            "api/v1/approvals?limit=200",
+            null,
+            "approvals.list",
+            null,
+            cancellationToken,
+            MaxApprovalListBytes);
+
+    /// <summary>使用当前摘要和幂等键批准或拒绝审批。</summary>
+    public Task<ApprovalRecord> DecideApprovalAsync(
+        string approvalId,
+        ApprovalDecisionRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ApprovalRecord>(
+            HttpMethod.Post,
+            $"api/v1/approvals/{Uri.EscapeDataString(approvalId)}/decision",
+            request,
+            "approvals.decision",
+            idempotencyKey,
+            cancellationToken,
+            MaxApprovalListBytes);
 
     /// <summary>按 ID 读取单个任务，用于事件断流后的有界恢复。</summary>
     public Task<TaskRecord> GetTaskAsync(
@@ -258,7 +286,7 @@ public sealed class MacCoreClient : IAsyncDisposable
             {
                 throw new ApiException(
                     "RESPONSE_TOO_LARGE",
-                    "Mac Core 返回的诊断结果超过 64 KiB 上限。",
+                    "Mac Core 返回的数据超过安全读取上限。",
                     retryable: false,
                     responseTrace,
                     (int)response.StatusCode,
@@ -401,7 +429,7 @@ public sealed class MacCoreClient : IAsyncDisposable
         client.DefaultRequestHeaders.Accept.Clear();
         client.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-slice-d");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Desktop/2.3-approval-center");
     }
 
     private static Uri EnsureTrailingSlash(Uri baseUri)
