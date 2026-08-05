@@ -3,8 +3,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             d:DesignHeight="760"
-             d:DesignWidth="1040"
+             d:DesignHeight="900"
+             d:DesignWidth="1180"
+             Loaded="OnLoaded"
              mc:Ignorable="d">
     <ScrollViewer VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
@@ -18,19 +19,21 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="18" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="360" />
                     </Grid.ColumnDefinitions>
-
                     <StackPanel>
-                        <TextBlock Text="Handoff / Return Contract"
-                                   FontSize="21"
+                        <TextBlock Text="Handoff 准备与审批"
+                                   FontSize="22"
                                    FontWeight="SemiBold" />
                         <TextBlock Margin="0,7,0,0"
                                    Foreground="#475569"
                                    Text="{Binding CurrentDelivery, Mode=OneWay}"
                                    TextWrapping="Wrap" />
+                        <TextBlock Margin="0,7,0,0"
+                                   Foreground="#7C2D12"
+                                   Text="{Binding ProviderStatus, Mode=OneWay}"
+                                   TextWrapping="Wrap" />
                     </StackPanel>
-
                     <Grid Grid.Column="2">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -45,7 +48,7 @@
                             <StackPanel>
                                 <TextBlock Foreground="#64748B" Text="合同版本" />
                                 <TextBlock Margin="0,5,0,0"
-                                           FontSize="18"
+                                           FontSize="17"
                                            FontWeight="SemiBold"
                                            Text="{Binding ContractVersion, Mode=OneWay}" />
                             </StackPanel>
@@ -59,7 +62,7 @@
                             <StackPanel>
                                 <TextBlock Foreground="#64748B" Text="合同状态" />
                                 <TextBlock Margin="0,5,0,0"
-                                           FontSize="18"
+                                           FontSize="17"
                                            FontWeight="SemiBold"
                                            Text="{Binding ContractStatus, Mode=OneWay}" />
                             </StackPanel>
@@ -69,24 +72,403 @@
             </Border>
 
             <Border Margin="0,14,0,0"
-                    Padding="16"
-                    Background="#FFF7ED"
-                    BorderBrush="#FED7AA"
+                    Padding="14"
+                    Background="#EFF6FF"
+                    BorderBrush="#BFDBFE"
                     BorderThickness="1"
-                    CornerRadius="10">
+                    CornerRadius="9">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Text="Phase 10A 安全边界" />
+                        <TextBlock Margin="0,5,0,0"
+                                   Foreground="#1E3A8A"
+                                   Text="只生成确定性 Handoff 摘要并提交审批；不会上传文件、创建真实 worktree、运行命令或启动 Provider。"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1"
+                               Margin="20,0,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="#1D4ED8"
+                               FontWeight="SemiBold"
+                               Text="固定模板 · 默认拒绝" />
+                </Grid>
+            </Border>
+
+            <Grid Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="5*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="7*" />
+                </Grid.ColumnDefinitions>
+
                 <StackPanel>
-                    <TextBlock Text="外部执行状态"
-                               FontSize="17"
-                               FontWeight="SemiBold" />
-                    <TextBlock Margin="0,6,0,0"
-                               Foreground="#9A3412"
-                               Text="{Binding ProviderStatus, Mode=OneWay}"
-                               TextWrapping="Wrap" />
-                    <TextBlock Margin="0,6,0,0"
-                               Foreground="#7C2D12"
-                               Text="此页面只展示合同，不会上传文件、创建沙盒、运行命令或启动外部会话。"
-                               TextWrapping="Wrap" />
+                    <Border Padding="18"
+                            Background="#F8FAFC"
+                            BorderBrush="#E2E8F0"
+                            BorderThickness="1"
+                            CornerRadius="10">
+                        <StackPanel>
+                            <TextBlock Text="准备 Handoff 草稿"
+                                       FontSize="19"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Margin="0,5,0,12"
+                                       Foreground="#64748B"
+                                       Text="你只填写目标；仓库、基线、路径范围、测试门和预算由 Mac Core 固定提供。"
+                                       TextWrapping="Wrap" />
+
+                            <TextBlock Margin="4,0,0,4"
+                                       FontWeight="SemiBold"
+                                       Text="固定模板" />
+                            <ComboBox Margin="4,0,4,12"
+                                      MinHeight="38"
+                                      DisplayMemberPath="DisplayName"
+                                      ItemsSource="{Binding TemplateOptions, Mode=OneWay}"
+                                      SelectedItem="{Binding SelectedTemplate, Mode=TwoWay}" />
+
+                            <TextBlock Margin="4,0,0,4"
+                                       FontWeight="SemiBold"
+                                       Text="任务标题" />
+                            <TextBox MaxLength="120"
+                                     Text="{Binding DraftTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Margin="4,10,0,4"
+                                       FontWeight="SemiBold"
+                                       Text="目标摘要" />
+                            <TextBox Height="112"
+                                     AcceptsReturn="True"
+                                     MaxLength="1000"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Text="{Binding DraftObjective, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Margin="4,8,4,0"
+                                       Foreground="#475569"
+                                       Text="{Binding InputValidationMessage, Mode=OneWay}"
+                                       TextWrapping="Wrap" />
+
+                            <WrapPanel Margin="0,12,0,0"
+                                       HorizontalAlignment="Right">
+                                <Button Content="刷新状态"
+                                        Command="{Binding RefreshCommand, Mode=OneWay}" />
+                                <Button Content="准备安全预览"
+                                        IsDefault="True"
+                                        Command="{Binding PrepareCommand, Mode=OneWay}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="0,14,0,0"
+                            Padding="18"
+                            Background="#F8FAFC"
+                            BorderBrush="#E2E8F0"
+                            BorderThickness="1"
+                            CornerRadius="10">
+                        <StackPanel>
+                            <TextBlock Text="最近 Handoff"
+                                       FontSize="19"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Margin="0,5,0,10"
+                                       Foreground="#64748B"
+                                       Text="最多显示 100 条固定安全投影；选择记录可重新查看摘要。"
+                                       TextWrapping="Wrap" />
+                            <ListBox MinHeight="180"
+                                     MaxHeight="300"
+                                     ItemsSource="{Binding RecentHandoffs, Mode=OneWay}"
+                                     SelectedItem="{Binding SelectedRecentHandoff, Mode=TwoWay}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="2,3"
+                                                Padding="10"
+                                                Background="White"
+                                                BorderBrush="#E2E8F0"
+                                                BorderThickness="1"
+                                                CornerRadius="6">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock FontWeight="SemiBold"
+                                                           Text="{Binding Title, Mode=OneWay}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1"
+                                                           Margin="12,0,0,0"
+                                                           Foreground="#1D4ED8"
+                                                           Text="{Binding Status, Mode=OneWay}" />
+                                                <TextBlock Grid.Row="1"
+                                                           Grid.ColumnSpan="2"
+                                                           Margin="0,4,0,0"
+                                                           Foreground="#64748B"
+                                                           FontSize="12"
+                                                           Text="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
+
+                <Border Grid.Column="2"
+                        Padding="18"
+                        Background="#F8FAFC"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="10">
+                    <Grid>
+                        <Border Padding="18"
+                                Background="White"
+                                BorderBrush="#CBD5E1"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPreviewVisible, Mode=OneWay}"
+                                                     Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                <TextBlock HorizontalAlignment="Center"
+                                           FontSize="19"
+                                           FontWeight="SemiBold"
+                                           Text="安全预览尚未生成" />
+                                <TextBlock Margin="0,8,0,0"
+                                           MaxWidth="460"
+                                           TextAlignment="Center"
+                                           Foreground="#64748B"
+                                           Text="填写标题和目标摘要后点击“准备安全预览”，或从最近记录中选择一个 Handoff。"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel>
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPreviewVisible, Mode=OneWay}"
+                                                     Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Handoff 安全预览"
+                                               FontSize="20"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               Foreground="#64748B"
+                                               Text="固定字段投影；不读取文件正文、环境变量、日志、Token 或任意命令。"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Border Grid.Column="1"
+                                        Margin="12,0,0,0"
+                                        Padding="10,6"
+                                        VerticalAlignment="Top"
+                                        Background="#EFF6FF"
+                                        BorderBrush="#BFDBFE"
+                                        BorderThickness="1"
+                                        CornerRadius="14">
+                                    <TextBlock Foreground="#1D4ED8"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding SelectedHandoff.Status, Mode=OneWay}" />
+                                </Border>
+                            </Grid>
+
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock FontWeight="SemiBold" Text="Handoff ID" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding SelectedHandoff.HandoffId, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="1"
+                                           Margin="0,8,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="模板" />
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="1"
+                                           Margin="0,8,0,0"
+                                           Text="{Binding SelectedHandoff.TemplateName, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="2"
+                                           Margin="0,8,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="任务标题" />
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="1"
+                                           Margin="0,8,0,0"
+                                           Text="{Binding SelectedHandoff.Title, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="3"
+                                           Margin="0,8,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="目标摘要" />
+                                <TextBlock Grid.Row="3"
+                                           Grid.Column="1"
+                                           Margin="0,8,0,0"
+                                           Text="{Binding SelectedHandoff.ObjectiveSummary, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="4"
+                                           Margin="0,8,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="基线" />
+                                <TextBlock Grid.Row="4"
+                                           Grid.Column="1"
+                                           Margin="0,8,0,0"
+                                           Text="{Binding SelectedHandoff.BaseRef, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="5"
+                                           Margin="0,8,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="基线提交" />
+                                <TextBlock Grid.Row="5"
+                                           Grid.Column="1"
+                                           Margin="0,8,0,0"
+                                           FontFamily="Consolas"
+                                           Text="{Binding SelectedHandoff.BaseCommit, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                            </Grid>
+
+                            <Border Margin="0,16,0,0"
+                                    Padding="12"
+                                    Background="#F8FAFC"
+                                    BorderBrush="#E2E8F0"
+                                    BorderThickness="1"
+                                    CornerRadius="7">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" Text="request digest" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               Text="{Binding SelectedHandoff.RequestDigest, Mode=OneWay}"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Margin="0,10,0,0"
+                                               FontWeight="SemiBold"
+                                               Text="package digest" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               Text="{Binding SelectedHandoff.PackageDigest, Mode=OneWay}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="16" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Padding="12"
+                                        Background="White"
+                                        BorderBrush="#E2E8F0"
+                                        BorderThickness="1"
+                                        CornerRadius="7">
+                                    <StackPanel>
+                                        <TextBlock FontWeight="SemiBold" Text="测试门" />
+                                        <ItemsControl Margin="0,7,0,0"
+                                                      ItemsSource="{Binding SelectedHandoff.RequiredTests, Mode=OneWay}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Margin="0,2"
+                                                               Text="{Binding Mode=OneWay, StringFormat=• {0}}"
+                                                               TextWrapping="Wrap" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="2"
+                                        Padding="12"
+                                        Background="White"
+                                        BorderBrush="#E2E8F0"
+                                        BorderThickness="1"
+                                        CornerRadius="7">
+                                    <StackPanel>
+                                        <TextBlock FontWeight="SemiBold" Text="预算与范围" />
+                                        <TextBlock Margin="0,7,0,0"
+                                                   Text="{Binding SelectedHandoff.BudgetSummary, Mode=OneWay}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Margin="0,7,0,0"
+                                                   Foreground="#475569"
+                                                   Text="{Binding SelectedHandoff.PlannedReadCount, Mode=OneWay, StringFormat=计划只读范围：{0}}" />
+                                        <TextBlock Margin="0,3,0,0"
+                                                   Foreground="#475569"
+                                                   Text="{Binding SelectedHandoff.PlannedWriteCount, Mode=OneWay, StringFormat=计划可写范围：{0}}" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <ItemsControl Margin="0,14,0,0"
+                                          ItemsSource="{Binding SelectedHandoff.SecurityBoundaries, Mode=OneWay}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,6"
+                                                Padding="9"
+                                                Background="#FFF7ED"
+                                                BorderBrush="#FED7AA"
+                                                BorderThickness="1"
+                                                CornerRadius="6">
+                                            <TextBlock Foreground="#7C2D12"
+                                                       Text="{Binding Mode=OneWay}"
+                                                       TextWrapping="Wrap" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Button Margin="4,14,4,0"
+                                    HorizontalAlignment="Right"
+                                    Content="提交到审批中心"
+                                    Command="{Binding SubmitCommand, Mode=OneWay}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <Border Margin="0,14,0,0"
+                    Padding="14"
+                    Background="#F8FAFC"
+                    BorderBrush="#E2E8F0"
+                    BorderThickness="1"
+                    CornerRadius="9">
+                <TextBlock Foreground="#334155"
+                           Text="{Binding StatusMessage, Mode=OneWay}"
+                           TextWrapping="Wrap" />
             </Border>
 
             <Grid Margin="0,14,0,0">
@@ -95,7 +477,6 @@
                     <ColumnDefinition Width="18" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-
                 <Border Padding="18"
                         Background="#F8FAFC"
                         BorderBrush="#E2E8F0"
@@ -105,15 +486,12 @@
                         <TextBlock Text="冻结信任链"
                                    FontSize="19"
                                    FontWeight="SemiBold" />
-                        <TextBlock Margin="0,5,0,12"
-                                   Foreground="#64748B"
-                                   Text="缺少任一阶段，都不得自动进入下一高风险阶段。"
-                                   TextWrapping="Wrap" />
-                        <ItemsControl ItemsSource="{Binding TrustChain, Mode=OneWay}">
+                        <ItemsControl Margin="0,10,0,0"
+                                      ItemsSource="{Binding TrustChain, Mode=OneWay}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Margin="0,0,0,7"
-                                            Padding="10,8"
+                                    <Border Margin="0,0,0,6"
+                                            Padding="9,7"
                                             Background="White"
                                             BorderBrush="#E2E8F0"
                                             BorderThickness="1"
@@ -126,7 +504,6 @@
                         </ItemsControl>
                     </StackPanel>
                 </Border>
-
                 <Border Grid.Column="2"
                         Padding="18"
                         Background="#F8FAFC"
@@ -134,18 +511,15 @@
                         BorderThickness="1"
                         CornerRadius="10">
                     <StackPanel>
-                        <TextBlock Text="安全与数据边界"
+                        <TextBlock Text="永久安全边界"
                                    FontSize="19"
                                    FontWeight="SemiBold" />
-                        <TextBlock Margin="0,5,0,12"
-                                   Foreground="#64748B"
-                                   Text="默认拒绝；Provider 不是事实源、权限门或发布系统。"
-                                   TextWrapping="Wrap" />
-                        <ItemsControl ItemsSource="{Binding SecurityBoundaries, Mode=OneWay}">
+                        <ItemsControl Margin="0,10,0,0"
+                                      ItemsSource="{Binding SecurityBoundaries, Mode=OneWay}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Margin="0,0,0,8"
-                                            Padding="10"
+                                    <Border Margin="0,0,0,7"
+                                            Padding="9"
                                             Background="White"
                                             BorderBrush="#E2E8F0"
                                             BorderThickness="1"
