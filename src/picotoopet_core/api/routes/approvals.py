@@ -72,7 +72,7 @@ def decide_from_control_center(
 ) -> ApprovalRecord:
     """校验当前请求摘要后执行幂等批准或拒绝。"""
 
-    return request.app.state.services.approvals.decide_for_control_center(
+    record = request.app.state.services.approvals.decide_for_control_center(
         approval_id=approval_id,
         decision=payload.decision,
         request_digest=payload.request_digest,
@@ -80,6 +80,8 @@ def decide_from_control_center(
         resolved_by="owner",
         reason=payload.reason,
     )
+    request.app.state.services.handoffs.reconcile_approval(record)
+    return record
 
 
 @router.post("/approvals/{approval_id}/approve", response_model=ApprovalRecord)
@@ -90,12 +92,14 @@ def approve(
 ) -> ApprovalRecord:
     """消费一次性审批令牌。"""
 
-    return request.app.state.services.approvals.approve(
+    record = request.app.state.services.approvals.approve(
         approval_id=approval_id,
         token=payload.token,
         resolved_by="owner",
         reason=payload.reason,
     )
+    request.app.state.services.handoffs.reconcile_approval(record)
+    return record
 
 
 @router.post("/approvals/{approval_id}/reject", response_model=ApprovalRecord)
@@ -106,9 +110,11 @@ def reject(
 ) -> ApprovalRecord:
     """拒绝审批并取消对应等待任务。"""
 
-    return request.app.state.services.approvals.reject(
+    record = request.app.state.services.approvals.reject(
         approval_id=approval_id,
         token=payload.token,
         resolved_by="owner",
         reason=payload.reason,
     )
+    request.app.state.services.handoffs.reconcile_approval(record)
+    return record

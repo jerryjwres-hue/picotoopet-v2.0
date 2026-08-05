@@ -184,6 +184,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             new ResultsPageViewModel(_session, snapshot),
         NavigationRoute.Approvals when _session is not null =>
             new ApprovalsPageViewModel(_session),
+        NavigationRoute.CloudDevelopment when _session is not null =>
+            new CloudDevelopmentPageViewModel(
+                new ControlCenterHandoffGateway(_session)),
         NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
         NavigationRoute.Settings => new SettingsPageViewModel(snapshot.MacBaseUrl),
         _ => CreateStaticPage(route, snapshot.State.Capabilities.Features),
@@ -347,6 +350,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             && CurrentPage is ApprovalsPageViewModel)
         {
             // 审批页面维护自己的选择、原因和幂等操作；普通连接快照不得替换页面实例。
+        }
+        else if (route == NavigationRoute.CloudDevelopment
+            && CurrentPage is CloudDevelopmentPageViewModel)
+        {
+            // Handoff 表单、预览和幂等操作由页面维护；普通连接快照不得清空页面实例。
         }
         else
         {

@@ -2,7 +2,7 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 Handoff / Return Contract v1 的只读展示边界。</summary>
+/// <summary>验证冻结合同仍完整显示，同时 Phase 10A 只开放准备与审批。</summary>
 internal static class CloudDevelopmentSmokeTests
 {
     public static void Run()
@@ -11,27 +11,42 @@ internal static class CloudDevelopmentSmokeTests
 
         SmokeAssert.Equal("云端开发", page.Title, "云端开发页面标题错误");
         SmokeAssert.Equal("1.0.0", page.ContractVersion, "Handoff 合同版本错误");
-        SmokeAssert.Equal("Approved / Frozen", page.ContractStatus, "Handoff 合同状态错误");
-        SmokeAssert.True(!page.ProviderConfigured, "当前版本不得伪造 Provider 已配置");
+        SmokeAssert.Equal(
+            "Approved / Frozen",
+            page.ContractStatus,
+            "Handoff 合同状态错误");
         SmokeAssert.True(
-            page.ProviderStatus.Contains("未安装", StringComparison.Ordinal),
-            "当前 Provider 状态必须明确未安装");
+            !page.ProviderConfigured,
+            "Phase 10A 不得伪造 Provider 已配置");
         SmokeAssert.Equal(9, page.TrustChain.Count, "冻结信任链必须完整显示九个阶段");
         SmokeAssert.True(
             page.SecurityBoundaries.Any(value =>
                 value.Contains("Protected 原件", StringComparison.Ordinal)),
-            "缺少 Protected 原件边界");
+            "缺少 Protected 边界");
         SmokeAssert.True(
             page.SecurityBoundaries.Any(value =>
                 value.Contains("本地验证", StringComparison.Ordinal)),
-            "缺少本地验证边界");
+            "缺少本地复验边界");
         SmokeAssert.True(
             page.SecurityBoundaries.Any(value =>
                 value.Contains("自动 push", StringComparison.Ordinal)),
             "缺少自动发布禁止项");
-        SmokeAssert.Equal(3, page.PhaseMilestones.Count, "阶段状态必须覆盖 Phase 2.3、10A 和 10B");
         SmokeAssert.True(
-            page.PhaseMilestones.All(milestone => !string.IsNullOrWhiteSpace(milestone.Status)),
-            "阶段状态不得为空");
+            page.PhaseMilestones.Any(value =>
+                value.Phase == "Phase 10A" && value.Status == "当前可用"),
+            "缺少 Phase 10A 当前可用状态");
+        SmokeAssert.True(
+            page.PhaseMilestones.Any(value =>
+                value.Phase == "Phase 10B" && value.Status == "未实施"),
+            "Phase 10B 必须保持未实施");
+        SmokeAssert.True(
+            page.ProviderStatus.Contains("未安装", StringComparison.Ordinal),
+            "页面必须明确 Provider 未安装");
+        SmokeAssert.True(
+            page.CurrentDelivery.Contains("Phase 10A", StringComparison.Ordinal)
+            && page.CurrentDelivery.Contains("审批", StringComparison.Ordinal),
+            "页面必须明确当前只交付准备和审批");
+        SmokeAssert.Equal(1, page.TemplateOptions.Count, "Smoke 页面固定模板数量错误");
+        SmokeAssert.True(!page.CanPrepare, "空输入不得启用准备动作");
     }
 }

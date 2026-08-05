@@ -84,6 +84,49 @@ public sealed record ApprovalDecisionRequest(
     [property: JsonPropertyName("request_digest")] string RequestDigest,
     [property: JsonPropertyName("reason")] string Reason);
 
+/// <summary>Phase 10A 由 Mac Core 发布的固定 Handoff 模板。</summary>
+public sealed record HandoffTemplateRecord(
+    [property: JsonPropertyName("template_id")] string TemplateId,
+    [property: JsonPropertyName("display_name")] string DisplayName,
+    [property: JsonPropertyName("provider")] string Provider,
+    [property: JsonPropertyName("provider_configured")] bool ProviderConfigured,
+    [property: JsonPropertyName("repo_url")] string RepoUrl,
+    [property: JsonPropertyName("base_ref")] string BaseRef,
+    [property: JsonPropertyName("base_commit")] string BaseCommit);
+
+/// <summary>Phase 10A 唯一允许的用户输入；不包含路径、命令、仓库或凭据。</summary>
+public sealed record HandoffPrepareRequest(
+    [property: JsonPropertyName("template_id")] string TemplateId,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("objective")] string Objective,
+    [property: JsonPropertyName("expires_seconds")] int ExpiresSeconds);
+
+/// <summary>Handoff 准备、审批和终态观察使用的固定安全投影。</summary>
+public sealed record HandoffRecord(
+    [property: JsonPropertyName("handoff_id")] string HandoffId,
+    [property: JsonPropertyName("template_id")] string TemplateId,
+    [property: JsonPropertyName("template_name")] string TemplateName,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("objective_summary")] string ObjectiveSummary,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("provider")] string Provider,
+    [property: JsonPropertyName("provider_configured")] bool ProviderConfigured,
+    [property: JsonPropertyName("repo_url")] string RepoUrl,
+    [property: JsonPropertyName("base_ref")] string BaseRef,
+    [property: JsonPropertyName("base_commit")] string BaseCommit,
+    [property: JsonPropertyName("sensitivity")] string Sensitivity,
+    [property: JsonPropertyName("planned_read_count")] int PlannedReadCount,
+    [property: JsonPropertyName("planned_write_count")] int PlannedWriteCount,
+    [property: JsonPropertyName("required_tests")] IReadOnlyList<string> RequiredTests,
+    [property: JsonPropertyName("budget_summary")] string BudgetSummary,
+    [property: JsonPropertyName("request_digest")] string RequestDigest,
+    [property: JsonPropertyName("package_digest")] string PackageDigest,
+    [property: JsonPropertyName("approval_id")] string? ApprovalId,
+    [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
+    [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
+    [property: JsonPropertyName("expires_at")] DateTimeOffset ExpiresAt,
+    [property: JsonPropertyName("security_boundaries")] IReadOnlyList<string> SecurityBoundaries);
+
 /// <summary>诊断结果中的 Core 固定卡片。</summary>
 public sealed record DiagnosticCoreResult(
     [property: JsonPropertyName("version")] string Version,

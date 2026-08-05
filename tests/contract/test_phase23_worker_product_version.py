@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BUILD = ROOT / "scripts" / "mac" / "phase23-worker"
 DEPLOY = ROOT / "deploy" / "macos" / "phase23-worker"
+VERSION_FILE = ROOT / "src" / "picotoopet_core" / "product-version.txt"
 
 
 def read(path: Path) -> str:
@@ -32,3 +33,4 @@ def test_worker_builder_packages_canonical_product_version() -> None:
     ):
         assert required in builder
     assert "phase23_worker_product_version" in verifier
+    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.10.1"

@@ -4,12 +4,13 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-ROOT       = Path(__file__).resolve().parents[2]
-CONTRACT   = ROOT / "contracts" / "handoff" / "v1"
-SCHEMAS    = CONTRACT / "schemas"
-FIXTURES   = CONTRACT / "fixtures"
+ROOT = Path(__file__).resolve().parents[2]
+CONTRACT = ROOT / "contracts" / "handoff" / "v1"
+SCHEMAS = CONTRACT / "schemas"
+FIXTURES = CONTRACT / "fixtures"
 SCHEMA_SET = {
     "handoff.schema.json",
+    "handoff_draft.schema.json",
     "acceptance.schema.json",
     "allowed_paths.schema.json",
     "denied_actions.schema.json",
@@ -32,7 +33,7 @@ def _registry() -> Registry:
 
     registry = Registry()
     for path in sorted(SCHEMAS.glob("*.json")):
-        schema   = _read_json(path)
+        schema = _read_json(path)
         resource = Resource.from_contents(schema)
         registry = registry.with_resource(str(schema["$id"]), resource)
     return registry
@@ -83,7 +84,7 @@ def test_main_and_out_of_sandbox_write_scope_are_rejected() -> None:
     """外部 Agent 不能编辑 main，也不能写入隔离 worktree 之外。"""
 
     errors = _handoff_errors("main_write_scope_handoff.json")
-    paths  = {tuple(error.absolute_path) for error in errors}
+    paths = {tuple(error.absolute_path) for error in errors}
 
     assert errors
     assert ("base_ref",) in paths

@@ -9,12 +9,11 @@ from fastapi import FastAPI
 
 from picotoopet_core import __version__
 from picotoopet_core.api.middleware import TraceTimingMiddleware
-
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.services import build_services
 
 from .errors import install_error_handlers
-from .routes import approvals, events, health, projects, results, status, tasks, workers
+from .routes import approvals, events, handoffs, health, projects, results, status, tasks, workers
 
 
 def create_app(settings: AppSettings) -> FastAPI:
@@ -25,8 +24,8 @@ def create_app(settings: AppSettings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.services = services
-        stop_event         = asyncio.Event()
-        dispatcher_task    = asyncio.create_task(
+        stop_event = asyncio.Event()
+        dispatcher_task = asyncio.create_task(
             services.dispatcher.run(stop_event),
             name="picotoo-outbox-dispatcher",
         )
@@ -51,6 +50,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
     app.include_router(workers.router, prefix=prefix, tags=["workers"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
+    app.include_router(handoffs.router, prefix=prefix, tags=["handoffs"])
     app.include_router(results.router, prefix=prefix, tags=["results"])
     app.include_router(events.router, prefix=prefix, tags=["events"])
     app.include_router(status.router, prefix=prefix, tags=["status", "audit"])

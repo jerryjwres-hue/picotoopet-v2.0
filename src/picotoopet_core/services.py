@@ -11,6 +11,8 @@ from picotoopet_core.db.database import Database
 from picotoopet_core.events.broker import EventBroker
 from picotoopet_core.events.dispatcher import OutboxDispatcher
 from picotoopet_core.events.outbox import EventOutbox
+from picotoopet_core.handoffs.approvals import HandoffApprovalService
+from picotoopet_core.handoffs.service import HandoffService
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import ResidentManager
 from picotoopet_core.projects.repository import ProjectRepository
@@ -30,6 +32,7 @@ class Services:
     projects: ProjectRepository
     queue: QueueRepository
     approvals: ApprovalService
+    handoffs: HandoffService
     audit: AuditWriter
     results: ResultStore
     result_records: ResultRepository
@@ -58,6 +61,8 @@ def build_services(settings: AppSettings) -> Services:
     broker = EventBroker()
     dispatcher = OutboxDispatcher(outbox, broker)
     queue = DiagnosticQueueRepository(database, outbox=outbox)
+    approvals = HandoffApprovalService(database, queue)
+    handoffs = HandoffService(database, approvals)
     result_store = ResultStore(settings.paths.results_dir)
     ollama = OllamaClient(settings.ollama_base_url, timeout_seconds=2.0)
     worker_state = WorkerStateStore(
@@ -69,7 +74,8 @@ def build_services(settings: AppSettings) -> Services:
         database=database,
         projects=ProjectRepository(database),
         queue=queue,
-        approvals=ApprovalService(database, queue),
+        approvals=approvals,
+        handoffs=handoffs,
         audit=AuditWriter(database),
         results=result_store,
         result_records=ResultRepository(database),
