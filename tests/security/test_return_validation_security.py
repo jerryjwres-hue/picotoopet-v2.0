@@ -134,14 +134,16 @@ def test_untrusted_return_mutations_are_quarantined_without_raw_content(
 ) -> None:
     database, handoffs, returns, handoff_id = make_approved(tmp_path)
     handoff = handoffs.get(handoff_id)
-    entries = returns.build_self_test_entries(handoff, return_id=f"return-{name}")
+    return_id = f"return-{name}"
+    entries = returns.build_self_test_entries(handoff, return_id=return_id)
     mutate(entries)
     returns.resign_entries(entries)
 
     record = returns.validate_entries(
         handoff,
         entries,
-        idempotency_key=f"return-{name}",
+        idempotency_key=return_id,
+        return_id=return_id,
     )
 
     assert record.status is ReturnStatus.QUARANTINED
@@ -180,11 +182,17 @@ def test_event_sequence_gap_and_duplicate_event_id_are_quarantined(tmp_path: Pat
     )
     returns.resign_entries(duplicate_entries)
 
-    gap = returns.validate_entries(handoff, gap_entries, idempotency_key="return-gap")
+    gap = returns.validate_entries(
+        handoff,
+        gap_entries,
+        idempotency_key="return-gap",
+        return_id="return-gap",
+    )
     duplicate = returns.validate_entries(
         handoff,
         duplicate_entries,
         idempotency_key="return-duplicate",
+        return_id="return-duplicate",
     )
 
     assert gap.status is ReturnStatus.QUARANTINED
