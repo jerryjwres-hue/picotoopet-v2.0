@@ -24,7 +24,10 @@ FORBIDDEN_RESPONSE_KEYS = {
 
 def make_client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
     token = "0123456789abcdef0123456789abcdef"
-    settings = AppSettings(paths=RuntimePaths.from_root(tmp_path / "runtime"), api_token=token)
+    settings = AppSettings(
+        paths=RuntimePaths.from_root(tmp_path / "runtime"),
+        api_token=token,
+    )
     return TestClient(create_app(settings)), {"Authorization": f"Bearer {token}"}
 
 
@@ -84,7 +87,10 @@ def test_handoff_prepare_rejects_policy_bypass_text(
     with client:
         response = client.post(
             "/api/v1/handoffs/prepare",
-            headers={**headers, "Idempotency-Key": f"security-reject-{abs(hash(objective))}"},
+            headers={
+                **headers,
+                "Idempotency-Key": f"security-reject-{abs(hash(objective))}",
+            },
             json={
                 "template_id": "picotoopet-repo-maintenance-v1",
                 "title": "拒绝危险请求",
@@ -97,7 +103,9 @@ def test_handoff_prepare_rejects_policy_bypass_text(
     assert "trace_id" in response.json()["error"]
 
 
-def test_handoff_database_json_contains_no_credentials_or_protected_content(tmp_path: Path) -> None:
+def test_handoff_database_json_contains_no_credentials_or_protected_content(
+    tmp_path: Path,
+) -> None:
     client, headers = make_client(tmp_path)
     with client:
         response = client.post(
@@ -121,4 +129,5 @@ def test_handoff_database_json_contains_no_credentials_or_protected_content(tmp_
     assert "authorization" not in stored
     assert "protected 原件" not in stored
     assert "raw evidence" not in stored
-    assert "main\"" not in stored
+    assert '"base_ref":"main"' not in stored
+    assert '"base_ref":"master"' not in stored
