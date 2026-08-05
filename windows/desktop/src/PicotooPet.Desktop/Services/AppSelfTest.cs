@@ -90,11 +90,21 @@ internal static class AppSelfTest
             {
                 throw new InvalidOperationException("Legacy 2.2 任务中心兼容自检失败。");
             }
-            if (shell.NavigationItems.Single(
+            if (!shell.NavigationItems.Single(
                     item => item.Route == NavigationRoute.CloudDevelopment).IsAvailable)
             {
-                throw new InvalidOperationException("云端开发能力关闭自检失败。");
+                throw new InvalidOperationException("云端开发合同状态页可用性自检失败。");
             }
+
+            shell.Navigate(NavigationRoute.CloudDevelopment);
+            if (shell.CurrentPage is not CloudDevelopmentPageViewModel cloudDevelopment
+                || cloudDevelopment.ContractVersion != "1.0.0"
+                || cloudDevelopment.ProviderConfigured)
+            {
+                throw new InvalidOperationException("云端开发冻结合同边界自检失败。");
+            }
+            checks["cloud_development_contract"] = "pass";
+
             shell.Navigate(NavigationRoute.TaskCenter);
             if (shell.CurrentPage is not TaskCenterPageViewModel taskCenter
                 || taskCenter.WorkerStatusText != "执行器未部署")
