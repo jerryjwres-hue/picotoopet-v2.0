@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picotoopet.local/contracts/handoff/v1/return_preview.schema.json",
+  "title": "PicotooPet Phase 10B-A Return Safe Projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "return_id",
+    "handoff_id",
+    "status",
+    "provider",
+    "request_digest",
+    "package_digest",
+    "manifest_digest",
+    "changed_file_count",
+    "event_count",
+    "validation_checks",
+    "event_summaries",
+    "quarantine_code",
+    "created_at",
+    "updated_at",
+    "execution_notice"
+  ],
+  "properties": {
+    "return_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "handoff_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "received",
+        "validating",
+        "contract_validated",
+        "quarantined"
+      ]
+    },
+    "provider": {
+      "const": "local-contract-self-test"
+    },
+    "request_digest": {
+      "$ref": "#/$defs/sha256"
+    },
+    "package_digest": {
+      "$ref": "#/$defs/sha256"
+    },
+    "manifest_digest": {
+      "$ref": "#/$defs/sha256"
+    },
+    "changed_file_count": {
+      "const": 0
+    },
+    "event_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 16
+    },
+    "validation_checks": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "passed"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "event_summaries": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sequence", "event_type", "summary"],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "provider.session.started",
+              "provider.progress",
+              "provider.warning",
+              "provider.returned"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        }
+      }
+    },
+    "quarantine_code": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[A-Z0-9_]+$"
+        }
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "execution_notice": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
