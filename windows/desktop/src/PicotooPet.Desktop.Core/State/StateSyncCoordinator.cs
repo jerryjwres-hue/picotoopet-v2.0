@@ -157,6 +157,31 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         return task;
     }
 
+    /// <summary>读取审批中心安全快照；审批不进入任务事件 reducer。</summary>
+    public Task<ApprovalRecord[]> GetApprovalsAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _client.GetApprovalsAsync(cancellationToken);
+    }
+
+    /// <summary>执行摘要绑定审批决策，并由调用方刷新审批与任务快照。</summary>
+    public Task<ApprovalRecord> DecideApprovalAsync(
+        string approvalId,
+        ApprovalDecisionRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(approvalId);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+        return _client.DecideApprovalAsync(
+            approvalId,
+            request,
+            idempotencyKey,
+            cancellationToken);
+    }
+
     /// <summary>请求 Mac Core 取消任务，并归并服务端裁决后的状态。</summary>
     public async Task<TaskRecord> CancelTaskAsync(
         string taskId,
