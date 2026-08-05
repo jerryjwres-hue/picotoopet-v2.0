@@ -55,4 +55,4 @@ def test_results_page_is_native_wpf_and_registered_in_shell() -> None:
 
 
 def test_results_center_version_is_2371() -> None:
-    assert read("product-version.txt").strip() == "2.3.7.1"
+    assert read("src/picotoopet_core/product-version.txt").strip() == "2.3.7.1"
