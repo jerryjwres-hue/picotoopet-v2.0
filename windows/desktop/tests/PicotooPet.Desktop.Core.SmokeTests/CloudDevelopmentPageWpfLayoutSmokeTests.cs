@@ -9,7 +9,7 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>验证云端开发合同页是可布局、无执行动作的原生 WPF 页面。</summary>
+/// <summary>验证 Phase 10A 页面使用有界原生 WPF 控件并完成真实布局。</summary>
 internal static class CloudDevelopmentPageWpfLayoutSmokeTests
 {
     public static void Run()
@@ -43,8 +43,8 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
             DataContext = new CloudDevelopmentPageViewModel(),
         };
 
-        page.Measure(new Size(960, 680));
-        page.Arrange(new Rect(0, 0, 960, 680));
+        page.Measure(new Size(1100, 820));
+        page.Arrange(new Rect(0, 0, 1100, 820));
         page.UpdateLayout();
         page.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
 
@@ -52,10 +52,20 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
         SmokeAssert.True(page.IsArrangeValid, "Cloud Development Page Arrange 未完成");
         SmokeAssert.True(page.ActualWidth > 0, "Cloud Development Page 实际宽度无效");
         SmokeAssert.True(page.ActualHeight > 0, "Cloud Development Page 实际高度无效");
+        SmokeAssert.True(
+            FindVisualChildren<Button>(page).Count >= 3,
+            "Phase 10A 必须提供刷新、准备和提交审批按钮");
+        SmokeAssert.True(
+            FindVisualChildren<TextBox>(page).Count >= 2,
+            "Phase 10A 必须提供标题和目标摘要输入框");
         SmokeAssert.Equal(
             0,
-            FindVisualChildren<Button>(page).Count,
-            "合同状态页不得包含执行按钮");
+            FindVisualChildren<PasswordBox>(page).Count,
+            "Phase 10A 页面不得收集 Provider 或仓库凭据");
+        SmokeAssert.Equal(
+            0,
+            FindVisualChildren<WebBrowser>(page).Count,
+            "Phase 10A 页面不得使用浏览器 UI");
     }
 
     private static List<T> FindVisualChildren<T>(DependencyObject root)
