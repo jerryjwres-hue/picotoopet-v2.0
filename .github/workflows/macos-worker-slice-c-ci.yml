@@ -4,14 +4,13 @@ on:
   pull_request:
     paths:
       - ".github/workflows/macos-worker-slice-c-ci.yml"
-      - ".github/workflows/macos-core-slice-b-ci.yml"
+      - "scripts/detect_component_impact.py"
       - "src/**"
       - "tests/**"
       - "scripts/mac/phase23-worker/**"
       - "deploy/macos/phase23-worker/**"
       - "deploy/macos/phase23/lib.sh"
       - "contracts/release/**"
-      - "docs/operations/**"
       - "pyproject.toml"
   workflow_dispatch:
     inputs:
@@ -32,7 +31,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  impact:
+    name: Detect Worker impact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      worker: ${{ steps.detect.outputs.worker }}
+    steps:
+      - name: Check out source and comparison history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify affected components
+        id: detect
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            python scripts/detect_component_impact.py \
+              --force worker \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-paths.txt"
+            python scripts/detect_component_impact.py \
+              --paths-file "$RUNNER_TEMP/changed-paths.txt" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain skipped native work
+        if: steps.detect.outputs.worker != 'true'
+        shell: bash
+        run: echo "Worker runtime and packaging are unchanged; native macOS build and Artifact are intentionally skipped."
+
   native-m4-worker-delivery:
+    needs: impact
+    if: needs.impact.outputs.worker == 'true'
     name: Native M4/arm64 Slice D Worker delivery
     runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_target || 'macos-15' }}
     timeout-minutes: 60
