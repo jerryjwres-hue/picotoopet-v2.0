@@ -1,4 +1,4 @@
-name: One-shot audit 2.3.8.1 references
+name: One-shot audit release references
 
 on:
   push:
@@ -17,6 +17,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: feature/phase23-slice-d-diagnostic-snapshot-release
-      - name: List current-version references
+      - name: List current-version and release-label references
         shell: bash
-        run: git grep -n -- '2.3.8.1' || true
+        run: |
+          git grep -n -- '2.3.8.1' || true
+          git grep -n -E -- 'slice-d-approval|Phase23-Approval' || true
