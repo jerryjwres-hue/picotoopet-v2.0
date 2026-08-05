@@ -9,16 +9,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
-from .schema import MIGRATION_001, MIGRATION_002
+from .schema import MIGRATION_001, MIGRATION_002, MIGRATION_003
 
 
 class Database:
     """Mac Core SQLite 数据库。"""
 
     def __init__(self, path: Path | str) -> None:
-        self.path        = Path(path).expanduser().resolve()
+        self.path = Path(path).expanduser().resolve()
         self._connection: sqlite3.Connection | None = None
-        self._lock       = threading.RLock()
+        self._lock = threading.RLock()
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -67,7 +67,7 @@ class Database:
                 connection.commit()
 
     def apply_migrations(self) -> None:
-        """幂等应用数据库迁移，并兼容已存在的 Phase 1 数据库。"""
+        """幂等应用数据库迁移，并兼容部分升级状态。"""
 
         with self.transaction() as connection:
             connection.execute(
@@ -97,6 +97,16 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (2, datetime.now(UTC).isoformat()),
+                )
+
+            migration_003_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 3"
+            ).fetchone()
+            if migration_003_exists is None:
+                connection.executescript(MIGRATION_003)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (3, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
