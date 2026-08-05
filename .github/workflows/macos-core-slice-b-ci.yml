@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/macos-core-slice-b-ci.yml"
+      - "scripts/detect_component_impact.py"
       - "src/**"
       - "tests/**"
       - "scripts/mac/phase23/**"
@@ -30,11 +31,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  impact:
+    name: Detect Core impact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      core: ${{ steps.detect.outputs.core }}
+    steps:
+      - name: Check out source and comparison history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify affected components
+        id: detect
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            python scripts/detect_component_impact.py \
+              --force core \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-paths.txt"
+            python scripts/detect_component_impact.py \
+              --paths-file "$RUNNER_TEMP/changed-paths.txt" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain skipped native work
+        if: steps.detect.outputs.core != 'true'
+        shell: bash
+        run: echo "Mac Core runtime and packaging are unchanged; native macOS build and Artifact are intentionally skipped."
+
   native-mac-delta:
-    if: >-
-      startsWith(github.head_ref, 'feature/phase-2.3-slice-b-') ||
-      startsWith(github.head_ref, 'feature/phase23-slice-d-') ||
-      github.event_name == 'workflow_dispatch'
+    needs: impact
+    if: needs.impact.outputs.core == 'true'
     name: Native macOS Core delivery (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -86,6 +120,8 @@ jobs:
             tests/contract/test_phase23_mac_delta_source.py \
             tests/contract/test_phase23_worker_status_contract.py \
             tests/contract/test_phase23_diagnostic_contract.py \
+            tests/integration/approvals/test_control_center_approval.py \
+            tests/integration/api/test_approval_center_api.py \
             tests/unit/diagnostics \
             tests/integration/queue/test_diagnostic_result_commit.py \
             tests/integration/queue/test_diagnostic_cancellation.py \
@@ -102,15 +138,21 @@ jobs:
         run: |
           ruff check \
             src/picotoopet_core/api/contracts \
+            src/picotoopet_core/api/routes/approvals.py \
             src/picotoopet_core/api/routes/tasks.py \
             src/picotoopet_core/api/routes/workers.py \
+            src/picotoopet_core/approvals \
             src/picotoopet_core/diagnostics \
             src/picotoopet_core/queue/diagnostic_repository.py \
             src/picotoopet_core/results/repository.py \
             src/picotoopet_core/results/store.py \
             src/picotoopet_core/worker \
+            scripts/detect_component_impact.py \
             scripts/export_slice_d_openapi.py \
+            tests/contract/test_component_impact_detection.py \
             tests/contract/test_phase23_diagnostic_contract.py \
+            tests/integration/approvals/test_control_center_approval.py \
+            tests/integration/api/test_approval_center_api.py \
             tests/unit/diagnostics \
             tests/integration/api/test_diagnostic_snapshot_api.py \
             tests/integration/queue/test_diagnostic_result_commit.py \
