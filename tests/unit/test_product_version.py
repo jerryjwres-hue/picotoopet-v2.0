@@ -14,15 +14,15 @@ ROOT = Path(__file__).resolve().parents[2]
 VERSION_FILE = ROOT / "src" / "picotoopet_core" / "product-version.txt"
 
 
-def test_canonical_product_version_is_23121() -> None:
-    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.12.1"
-    assert PRODUCT_VERSION == "2.3.12.1"
+def test_canonical_product_version_is_23122() -> None:
+    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.12.2"
+    assert PRODUCT_VERSION == "2.3.12.2"
     assert __version__ == PRODUCT_VERSION
 
 
 @pytest.mark.parametrize(
     "value",
-    ["2.3.12", "2.3.12.1.0", "v2.3.12.1", "2.3.x.1", ""],
+    ["2.3.12", "2.3.12.2.0", "v2.3.12.2", "2.3.x.2", ""],
 )
 def test_rejects_non_four_part_product_versions(value: str) -> None:
     with pytest.raises(ValueError, match="四段"):
