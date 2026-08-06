@@ -10,7 +10,7 @@ public sealed record BrokerSandboxPaths(
     string ReturnEnvelopePath)
 {
     /// <summary>唯一允许的工作区相对变更路径。</summary>
-    public string ProofRelativePath => "docs/mock-provider-proof.txt";
+    public const string ProofRelativePath = "docs/mock-provider-proof.txt";
 
     /// <summary>根据当前用户 LocalAppData 创建固定路径投影，不访问文件系统。</summary>
     public static BrokerSandboxPaths FromLocalAppData(string sessionId)
@@ -25,7 +25,7 @@ public sealed record BrokerSandboxPaths(
             Environment.SpecialFolderOption.DoNotVerify);
         if (string.IsNullOrWhiteSpace(localAppData))
         {
-            throw new InvalidOperationException("无法解析当前用户 LocalAppData。 ");
+            throw new InvalidOperationException("无法解析当前用户 LocalAppData。");
         }
 
         var trustedRoot = Path.GetFullPath(Path.Combine(
@@ -41,7 +41,7 @@ public sealed record BrokerSandboxPaths(
             : trustedRoot + Path.DirectorySeparatorChar;
         if (!sessionRoot.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Broker 沙盒路径越过固定 LocalAppData 根。 ");
+            throw new InvalidOperationException("Broker 沙盒路径越过固定 LocalAppData 根。");
         }
 
         return new BrokerSandboxPaths(
