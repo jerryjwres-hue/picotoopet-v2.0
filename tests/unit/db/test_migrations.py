@@ -20,6 +20,7 @@ REQUIRED_TABLES = {
     "event_outbox",
     "handoffs",
     "returns",
+    "broker_sessions",
 }
 
 REQUIRED_HANDOFF_COLUMNS = {
@@ -64,7 +65,7 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
     assert REQUIRED_TABLES <= tables
     assert "cloud_policy" in task_columns
     assert REQUIRED_HANDOFF_COLUMNS <= handoff_columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 4
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 5
     database.close()
 
 
