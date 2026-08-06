@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using PicotooPet.Desktop.Core.DevBroker;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Core.State;
@@ -25,9 +26,20 @@ public partial class App : WpfApplication, IDisposable
     private bool _ownsSingleInstance;
     private bool _runtimeDisposing;
 
-    /// <summary>创建单实例保护、日志、安全令牌存储、状态仓库和 Control Center Shell。</summary>
+    /// <summary>先处理无界面 Broker 子进程，再创建常规桌面组合根。</summary>
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (MockProviderChild.TryRun(
+                e.Args,
+                Console.Out,
+                Console.Error,
+                out var brokerExitCode))
+        {
+            base.OnStartup(e);
+            Shutdown(brokerExitCode);
+            return;
+        }
+
         if (e.Args.Any(argument =>
                 string.Equals(argument, "--self-test", StringComparison.OrdinalIgnoreCase)))
         {
