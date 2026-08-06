@@ -37,6 +37,7 @@ internal static class Program
             ResultsCenterSmokeTests.Run();
             ApprovalCenterSmokeTests.Run();
             CloudDevelopmentSmokeTests.Run();
+            DevBrokerPolicySmokeTests.Run();
             DiagnosticTaskActionStateSmokeTests.Run();
             DiagnosticResultContractSmokeTests.Run();
             ProductVersionWpfSmokeTests.Run();
