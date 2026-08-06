@@ -6,6 +6,7 @@ from typing import TypeVar
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.broker.lifecycle import mark_failed, mark_timed_out
 from picotoopet_core.broker.models import (
     BrokerSessionCreateResult,
     BrokerSessionRecord,
@@ -112,6 +113,56 @@ async def cancel_mock_broker_session(
     await require_empty_body(request)
     return execute_broker(
         lambda: request.app.state.services.broker_sessions.cancel_session(session_id)
+    )
+
+
+@router.post(
+    "/broker-sessions/{session_id}/timeout",
+    response_model=BrokerSessionRecord,
+)
+async def timeout_mock_broker_session(
+    session_id: str,
+    request: Request,
+    idempotency_key: str = Header(
+        min_length=1,
+        max_length=200,
+        alias="Idempotency-Key",
+    ),
+) -> BrokerSessionRecord:
+    """记录固定 30 秒 Job Object 超时事实；接口不接受正文。"""
+
+    del idempotency_key
+    await require_empty_body(request)
+    return execute_broker(
+        lambda: mark_timed_out(
+            request.app.state.services.broker_sessions,
+            session_id,
+        )
+    )
+
+
+@router.post(
+    "/broker-sessions/{session_id}/fail",
+    response_model=BrokerSessionRecord,
+)
+async def fail_mock_broker_session(
+    session_id: str,
+    request: Request,
+    idempotency_key: str = Header(
+        min_length=1,
+        max_length=200,
+        alias="Idempotency-Key",
+    ),
+) -> BrokerSessionRecord:
+    """记录固定 Broker 子进程失败事实；不接收错误正文或命令。"""
+
+    del idempotency_key
+    await require_empty_body(request)
+    return execute_broker(
+        lambda: mark_failed(
+            request.app.state.services.broker_sessions,
+            session_id,
+        )
     )
 
 
