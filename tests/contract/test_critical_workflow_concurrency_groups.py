@@ -1,4 +1,4 @@
-"""Critical native workflows must keep distinct groups and a stable impact runner."""
+"""Critical native workflows must keep distinct groups and stable runners."""
 
 from __future__ import annotations
 
@@ -13,6 +13,12 @@ WORKFLOWS = (
     ROOT / ".github/workflows/macos-core-slice-b-ci.yml",
     ROOT / ".github/workflows/macos-worker-slice-c-ci.yml",
 )
+NATIVE_RUNNER_MARKERS = {
+    "windows-control-center-ci.yml": "'windows-2025'",
+    "windows-phase2-release.yml": "'windows-2025'",
+    "macos-core-slice-b-ci.yml": "runner: macos-15",
+    "macos-worker-slice-c-ci.yml": "'macos-15'",
+}
 
 
 def test_critical_native_workflows_use_distinct_branch_scoped_groups() -> None:
@@ -39,3 +45,9 @@ def test_critical_native_workflows_use_stable_impact_runner() -> None:
         )
         assert match is not None, f"{workflow.name} must declare impact runs-on"
         assert match.group(1) == "ubuntu-22.04"
+
+
+def test_native_platform_runner_labels_are_unchanged() -> None:
+    for workflow in WORKFLOWS:
+        source = workflow.read_text(encoding="utf-8")
+        assert NATIVE_RUNNER_MARKERS[workflow.name] in source
