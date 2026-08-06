@@ -222,6 +222,12 @@ public sealed class EventStreamClient : IEventStreamSession
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            if (DeferPingWhileEventsPending())
+            {
+                await Task.Delay(_pingInterval, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             ThrowIfPongExpired();
             var nonce   = Guid.NewGuid().ToString("N");
             var started = Stopwatch.GetTimestamp();
@@ -251,7 +257,12 @@ public sealed class EventStreamClient : IEventStreamSession
 
     private void ThrowIfPongExpired()
     {
-        // 超过两秒仍无 Pong 视为半连接；主动断开后由重连循环恢复事件续传。
+        if (DeferPingWhileEventsPending())
+        {
+            return;
+        }
+
+        // 超过两秒且当前没有待消费事件时才视为半连接；事件积压本身证明链路仍有入站流量。
         foreach (var pending in _pendingPings)
         {
             if (Stopwatch.GetElapsedTime(pending.Value) < _pongTimeout)
@@ -261,6 +272,18 @@ public sealed class EventStreamClient : IEventStreamSession
             throw new TimeoutException(
                 $"WebSocket Pong 超时：{_pongTimeout.TotalMilliseconds:F0} ms。");
         }
+    }
+
+    private bool DeferPingWhileEventsPending()
+    {
+        if (!_channel.Reader.CanCount || _channel.Reader.Count == 0)
+        {
+            return false;
+        }
+
+        // 冷启动重放期间 Pong 可能排在历史事件之后；旧 Ping 已不再代表可用延迟样本。
+        _pendingPings.Clear();
+        return true;
     }
 
     private async Task ConsumeAsync(
