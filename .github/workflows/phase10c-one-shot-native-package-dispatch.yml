@@ -1,0 +1,38 @@
+name: Phase 10C One-shot Native Package Dispatch
+
+on:
+  push:
+    branches:
+      - feature/phase10c-event-stream-recovery
+    paths:
+      - ".github/workflows/phase10c-one-shot-native-package-dispatch.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: phase10c-one-shot-native-package-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    # Contract guard: github.repository == "jerryjwres-hue/picotoopet-v2.0"
+    # and github.ref == "refs/heads/feature/phase10c-event-stream-recovery"
+    if: ${{ github.repository == 'jerryjwres-hue/picotoopet-v2.0' && github.ref == 'refs/heads/feature/phase10c-event-stream-recovery' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch exact-head native delivery gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh workflow run windows-control-center-ci.yml --ref "$REF" -f runner_target=windows-2025
+          gh workflow run windows-phase2-release.yml --ref "$REF" -f runner_target=windows-2025
+          gh workflow run macos-core-slice-b-ci.yml --ref "$REF" -f runner_target=macos-15
+          gh workflow run macos-worker-slice-c-ci.yml --ref "$REF" -f runner_target=macos-15
+
+          echo "Dispatched all native delivery workflows for ref: $REF" >> "$GITHUB_STEP_SUMMARY"
