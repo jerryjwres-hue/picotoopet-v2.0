@@ -15,6 +15,8 @@ public static class MockProviderChild
     private const string Provider      = "local-mock-dev-broker";
     private const string SchemaVersion = "1.0.0";
 
+    private static readonly string[] SecurityChecks = ["sandbox", "secret_scan"];
+
     private static readonly UTF8Encoding Utf8NoBom = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -151,7 +153,7 @@ public static class MockProviderChild
             BuildEvent(input, returnId, 3, "provider.returned", "Mock Provider 已生成固定文本变更。"),
             BuildEvent(input, returnId, 4, "broker.return.submitted", "Broker 已准备提交有界 Return。"),
         };
-        var eventText  = string.Join('\n', events.Select(SerializeCompact)) + "\n";
+        var eventText   = string.Join('\n', events.Select(SerializeCompact)) + "\n";
         var proofDigest = Sha256(proof);
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -189,7 +191,7 @@ public static class MockProviderChild
             }),
             ["security_report.json"] = SerializeFile(new SortedDictionary<string, object?>
             {
-                ["checks"]         = new[] { "sandbox", "secret_scan" },
+                ["checks"]         = SecurityChecks,
                 ["schema_version"] = SchemaVersion,
             }),
             ["questions.md"] = "# Questions\n\nNone.\n",
@@ -293,9 +295,9 @@ public static class MockProviderChild
         }
     }
 
-    private static string ParseSessionId(IReadOnlyList<string> args)
+    private static string ParseSessionId(string[] args)
     {
-        if (args.Count != 3
+        if (args.Length != 3
             || !string.Equals(args[0], ChildFlag, StringComparison.Ordinal)
             || !string.Equals(args[1], SessionFlag, StringComparison.Ordinal)
             || !Guid.TryParseExact(args[2], "D", out var sessionId))
