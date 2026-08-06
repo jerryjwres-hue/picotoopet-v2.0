@@ -9,11 +9,11 @@ namespace PicotooPet.Desktop.Core.DevBroker;
 /// <summary>同一预编译 EXE 的无界面固定 Mock Provider 子进程入口。</summary>
 public static class MockProviderChild
 {
-    private const string ChildFlag      = "--dev-broker-mock-child";
-    private const string SessionFlag    = "--session-id";
-    private const int MaxInputBytes     = 8 * 1024;
-    private const string Provider       = "local-mock-dev-broker";
-    private const string SchemaVersion  = "1.0.0";
+    private const string ChildFlag     = "--dev-broker-mock-child";
+    private const string SessionFlag   = "--session-id";
+    private const int MaxInputBytes    = 8 * 1024;
+    private const string Provider      = "local-mock-dev-broker";
+    private const string SchemaVersion = "1.0.0";
 
     private static readonly UTF8Encoding Utf8NoBom = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -98,22 +98,22 @@ public static class MockProviderChild
             "mock-provider-proof.txt");
         File.WriteAllText(proofPath, proof, Utf8NoBom);
 
-        var sandboxDigest = ComputeSandboxDigest(paths, proof);
-        var entries = BuildBaseEntries(input, returnId, proof);
+        var sandboxDigest  = ComputeSandboxDigest(paths, proof);
+        var entries        = BuildBaseEntries(input, returnId, proof);
         var manifestDigest = ComputeContentManifestDigest(entries);
-        entries["return_manifest.json"] = SerializeCanonical(new SortedDictionary<string, object?>
+        entries["return_manifest.json"] = SerializeFile(new SortedDictionary<string, object?>
         {
-            ["base_commit"]         = input.BaseCommit,
-            ["changed_file_count"]  = 1,
-            ["handoff_id"]          = input.HandoffId,
-            ["manifest_digest"]     = manifestDigest,
-            ["package_digest"]      = input.PackageDigest,
-            ["provider"]            = Provider,
-            ["request_digest"]      = input.RequestDigest,
-            ["return_id"]           = returnId,
-            ["sandbox_digest"]      = sandboxDigest,
-            ["schema_version"]      = SchemaVersion,
-            ["session_id"]          = input.SessionId,
+            ["base_commit"]        = input.BaseCommit,
+            ["changed_file_count"] = 1,
+            ["handoff_id"]         = input.HandoffId,
+            ["manifest_digest"]    = manifestDigest,
+            ["package_digest"]     = input.PackageDigest,
+            ["provider"]           = Provider,
+            ["request_digest"]     = input.RequestDigest,
+            ["return_id"]          = returnId,
+            ["sandbox_digest"]     = sandboxDigest,
+            ["schema_version"]     = SchemaVersion,
+            ["session_id"]         = input.SessionId,
         });
         entries["signatures/manifest.sha256"] = BuildSignature(entries);
 
@@ -151,13 +151,13 @@ public static class MockProviderChild
             BuildEvent(input, returnId, 3, "provider.returned", "Mock Provider 已生成固定文本变更。"),
             BuildEvent(input, returnId, 4, "broker.return.submitted", "Broker 已准备提交有界 Return。"),
         };
-        var eventText = string.Join('\n', events.Select(SerializeCanonical)) + "\n";
+        var eventText  = string.Join('\n', events.Select(SerializeCompact)) + "\n";
         var proofDigest = Sha256(proof);
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["session_events.ndjson"] = eventText,
             ["summary.md"] = "# Mock Broker Return\n\n仅生成固定证明文本。\n",
-            ["changed_files.json"] = SerializeCanonical(new SortedDictionary<string, object?>
+            ["changed_files.json"] = SerializeFile(new SortedDictionary<string, object?>
             {
                 ["files"] = new[]
                 {
@@ -170,7 +170,7 @@ public static class MockProviderChild
                 },
                 ["schema_version"] = SchemaVersion,
             }),
-            ["test_report.json"] = SerializeCanonical(new SortedDictionary<string, object?>
+            ["test_report.json"] = SerializeFile(new SortedDictionary<string, object?>
             {
                 ["schema_version"] = SchemaVersion,
                 ["tests"] = new[]
@@ -182,12 +182,12 @@ public static class MockProviderChild
                     },
                 },
             }),
-            ["build_report.json"] = SerializeCanonical(new SortedDictionary<string, object?>
+            ["build_report.json"] = SerializeFile(new SortedDictionary<string, object?>
             {
                 ["schema_version"] = SchemaVersion,
                 ["status"]         = "not_run",
             }),
-            ["security_report.json"] = SerializeCanonical(new SortedDictionary<string, object?>
+            ["security_report.json"] = SerializeFile(new SortedDictionary<string, object?>
             {
                 ["checks"]         = new[] { "sandbox", "secret_scan" },
                 ["schema_version"] = SchemaVersion,
@@ -232,7 +232,7 @@ public static class MockProviderChild
                 ["sha256"] = Sha256(pair.Value),
             })
             .ToArray();
-        return Sha256(SerializeCanonical(new SortedDictionary<string, object?>
+        return Sha256(SerializeCompact(new SortedDictionary<string, object?>
         {
             ["files"] = files,
         }));
@@ -256,7 +256,7 @@ public static class MockProviderChild
                 Utf8NoBom)),
             ["proof_sha256"] = Sha256(proof),
         };
-        return Sha256(SerializeCanonical(facts));
+        return Sha256(SerializeCompact(facts));
     }
 
     private static MockBrokerSessionInput ReadSessionInput(string path)
@@ -305,8 +305,11 @@ public static class MockProviderChild
         return sessionId.ToString("D");
     }
 
-    private static string SerializeCanonical(object value) =>
-        JsonSerializer.Serialize(value, JsonOptions) + "\n";
+    private static string SerializeCompact(object value) =>
+        JsonSerializer.Serialize(value, JsonOptions);
+
+    private static string SerializeFile(object value) =>
+        SerializeCompact(value) + "\n";
 
     private static string Sha256(string value) =>
         Convert.ToHexString(SHA256.HashData(Utf8NoBom.GetBytes(value))).ToLowerInvariant();
