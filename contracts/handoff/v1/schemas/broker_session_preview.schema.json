@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picotoopet.local/contracts/handoff/v1/broker_session_preview.schema.json",
+  "title": "PicotooPet Phase 10B-B Broker Session Safe Projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_id",
+    "handoff_id",
+    "status",
+    "provider",
+    "timeout_seconds",
+    "request_digest",
+    "package_digest",
+    "return_id",
+    "event_count",
+    "sandbox_digest",
+    "failure_code",
+    "created_at",
+    "updated_at",
+    "finished_at",
+    "execution_notice"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "handoff_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "reserved",
+        "running",
+        "returning",
+        "completed",
+        "cancelled",
+        "timed_out",
+        "failed",
+        "quarantined"
+      ]
+    },
+    "provider": {
+      "const": "local-mock-dev-broker"
+    },
+    "timeout_seconds": {
+      "const": 30
+    },
+    "request_digest": {
+      "$ref": "#/$defs/sha256"
+    },
+    "package_digest": {
+      "$ref": "#/$defs/sha256"
+    },
+    "return_id": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 80}
+      ]
+    },
+    "event_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 16
+    },
+    "sandbox_digest": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/sha256"}
+      ]
+    },
+    "failure_code": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[A-Z0-9_]+$"
+        }
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "format": "date-time"}
+      ]
+    },
+    "execution_notice": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 280
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
