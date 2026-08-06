@@ -230,3 +230,29 @@ CREATE INDEX IF NOT EXISTS idx_returns_handoff_created
 CREATE INDEX IF NOT EXISTS idx_returns_status_created
     ON returns(status, created_at DESC);
 """
+
+MIGRATION_005 = r"""
+CREATE TABLE IF NOT EXISTS broker_sessions (
+    session_id          TEXT PRIMARY KEY,
+    handoff_id          TEXT NOT NULL REFERENCES handoffs(handoff_id) ON DELETE RESTRICT,
+    status              TEXT NOT NULL,
+    provider            TEXT NOT NULL,
+    timeout_seconds     INTEGER NOT NULL,
+    request_digest      TEXT NOT NULL,
+    package_digest      TEXT NOT NULL,
+    return_id           TEXT REFERENCES returns(return_id) ON DELETE RESTRICT,
+    event_count         INTEGER NOT NULL DEFAULT 0,
+    sandbox_digest      TEXT,
+    failure_code        TEXT,
+    idempotency_key     TEXT NOT NULL UNIQUE,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    finished_at         TEXT,
+    preview_json        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_broker_sessions_handoff_created
+    ON broker_sessions(handoff_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_broker_sessions_status_created
+    ON broker_sessions(status, created_at DESC);
+"""

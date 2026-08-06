@@ -30,6 +30,9 @@ public partial class ShellWindow : Window
         ReturnGatewayContext.SetGateway(
             this,
             new ControlCenterReturnGateway(_session));
+        BrokerGatewayContext.SetGateway(
+            this,
+            new ControlCenterBrokerGateway(_session));
         DataContext = viewModel;
     }
 

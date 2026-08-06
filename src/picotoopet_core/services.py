@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.audit.writer import AuditWriter
+from picotoopet_core.broker.service import BrokerSessionService
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.db.database import Database
 from picotoopet_core.events.broker import EventBroker
@@ -35,6 +36,7 @@ class Services:
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
+    broker_sessions: BrokerSessionService
     audit: AuditWriter
     results: ResultStore
     result_records: ResultRepository
@@ -66,6 +68,12 @@ def build_services(settings: AppSettings) -> Services:
     approvals = HandoffApprovalService(database, queue)
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
+    broker_sessions = BrokerSessionService(
+        database,
+        handoffs,
+        returns,
+        api_token=settings.api_token,
+    )
     result_store = ResultStore(settings.paths.results_dir)
     ollama = OllamaClient(settings.ollama_base_url, timeout_seconds=2.0)
     worker_state = WorkerStateStore(
@@ -80,6 +88,7 @@ def build_services(settings: AppSettings) -> Services:
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,
+        broker_sessions=broker_sessions,
         audit=AuditWriter(database),
         results=result_store,
         result_records=ResultRepository(database),

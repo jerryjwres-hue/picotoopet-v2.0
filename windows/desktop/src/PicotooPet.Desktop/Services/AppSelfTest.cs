@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.DevBroker;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.State;
@@ -110,8 +111,12 @@ internal static class AppSelfTest
             checks["cloud_development_phase10a"] = "pass";
 
             VerifyCloudDevelopmentContentRendering(cloudDevelopment);
-            checks["cloud_development_rendering"]            = "pass";
+            checks["cloud_development_rendering"]             = "pass";
             checks["cloud_development_phase10b_return_panel"] = "pass";
+            checks["cloud_development_phase10b_broker_panel"] = "pass";
+
+            VerifyPublishedBrokerChildProcess();
+            checks["cloud_development_phase10b_broker_process"] = "pass";
 
             shell.Navigate(NavigationRoute.TaskCenter);
             if (shell.CurrentPage is not TaskCenterPageViewModel taskCenter
@@ -148,6 +153,8 @@ internal static class AppSelfTest
             Console.WriteLine("PHASE23_PRODUCT_VERSION_SELF_TEST=PASS");
             Console.WriteLine("PHASE10A_HANDOFF_SELF_TEST=PASS");
             Console.WriteLine("PHASE10B_RETURN_SELF_TEST=PASS");
+            Console.WriteLine("PHASE10B_BROKER_SELF_TEST=PASS");
+            Console.WriteLine("PHASE10B_BROKER_PROCESS_SELF_TEST=PASS");
             return 0;
         }
         catch (Exception exception)
@@ -167,11 +174,84 @@ internal static class AppSelfTest
                 $"PHASE10A_HANDOFF_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(
                 $"PHASE10B_RETURN_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE10B_BROKER_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE10B_BROKER_PROCESS_SELF_TEST=FAIL | {exception.Message}");
             return 1;
         }
     }
 
-    /// <summary>验证发布进程中的 Phase 10A/10B-A DataTemplate 可生成原生页面。</summary>
+    /// <summary>使用当前正式 WinExe 验证隐藏子进程、固定沙盒文件和 Return 合同闭环。</summary>
+    private static void VerifyPublishedBrokerChildProcess()
+    {
+        var now           = DateTimeOffset.UtcNow;
+        var sessionId     = Guid.NewGuid().ToString("D");
+        var handoffId     = Guid.NewGuid().ToString("D");
+        var requestDigest = new string('a', 64);
+        var packageDigest = new string('b', 64);
+        var baseCommit    = new string('c', 40);
+        var record = new BrokerSessionRecord(
+            sessionId,
+            handoffId,
+            "reserved",
+            "local-mock-dev-broker",
+            30,
+            requestDigest,
+            packageDigest,
+            null,
+            0,
+            null,
+            null,
+            now,
+            now,
+            null,
+            "只运行固定内置 Mock Provider。");
+        var session = new BrokerSessionCreateResult(record, new string('d', 64));
+        var handoff = new HandoffRecord(
+            handoffId,
+            "picotoopet-repository-maintenance",
+            "PicotooPet 仓库维护",
+            "发布 EXE Broker 子进程自检",
+            "验证正式 WinExe 可以启动固定子模式并从沙盒文件读取 Return。",
+            "approved",
+            "none",
+            false,
+            "https://github.com/jerryjwres-hue/picotoopet-v2.0",
+            "main",
+            baseCommit,
+            "internal",
+            1,
+            1,
+            ["broker-self-test"],
+            "1 turn · 30 秒 · 无网络",
+            requestDigest,
+            packageDigest,
+            null,
+            now,
+            now,
+            now.AddMinutes(5),
+            ["fixed-local-sandbox"]);
+
+        var envelope = DevBrokerProcessRunner.RunAsync(
+                session,
+                handoff,
+                CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+        if (envelope.SessionId != sessionId
+            || envelope.HandoffId != handoffId
+            || envelope.Provider != "local-mock-dev-broker"
+            || envelope.Files.Count != 10
+            || !envelope.Files.Any(file =>
+                file.Name == "changes/docs/mock-provider-proof.txt"))
+        {
+            throw new InvalidOperationException(
+                "发布 EXE 的 Mock Broker 子进程 Return 合同自检失败。");
+        }
+    }
+
+    /// <summary>验证发布进程中的 Phase 10A/10B-A/10B-B DataTemplate 可生成原生页面。</summary>
     private static void VerifyCloudDevelopmentContentRendering(
         CloudDevelopmentPageViewModel cloudDevelopment)
     {
@@ -182,12 +262,12 @@ internal static class AppSelfTest
         var root = new System.Windows.Controls.Border
         {
             Width  = 1100,
-            Height = 980,
+            Height = 1320,
             Child  = host,
         };
 
-        root.Measure(new System.Windows.Size(1100, 980));
-        root.Arrange(new System.Windows.Rect(0, 0, 1100, 980));
+        root.Measure(new System.Windows.Size(1100, 1320));
+        root.Arrange(new System.Windows.Rect(0, 0, 1100, 1320));
         root.UpdateLayout();
         root.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
         root.UpdateLayout();
@@ -203,12 +283,13 @@ internal static class AppSelfTest
             throw new InvalidOperationException(
                 "发布 EXE 中的 CloudDevelopmentPage 没有可见布局尺寸。");
         }
-        if (FindVisualDescendants<System.Windows.Controls.Button>(page).Count < 5
+        if (FindVisualDescendants<System.Windows.Controls.Button>(page).Count < 8
             || FindVisualDescendants<System.Windows.Controls.TextBox>(page).Count < 2
-            || FindVisualDescendant<ReturnValidationPanel>(page) is null)
+            || FindVisualDescendant<ReturnValidationPanel>(page) is null
+            || FindVisualDescendant<BrokerSessionPanel>(page) is null)
         {
             throw new InvalidOperationException(
-                "发布 EXE 中的 Phase 10A 准备控件或 Phase 10B-A Return 面板不完整。");
+                "发布 EXE 中的 Phase 10A、Return 或 Mock Dev Broker 原生控件不完整。");
         }
         if (FindVisualDescendants<System.Windows.Controls.PasswordBox>(page).Count != 0
             || FindVisualDescendants<System.Windows.Controls.WebBrowser>(page).Count != 0)

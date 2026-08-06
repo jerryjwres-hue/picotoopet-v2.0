@@ -7,6 +7,7 @@
     <RootNamespace>PicotooPet.Desktop</RootNamespace>
     <AssemblyName>Picotoo Pet AI</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>PicotooPet.Desktop.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />

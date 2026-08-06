@@ -25,7 +25,7 @@ public partial class App : WpfApplication, IDisposable
     private bool _ownsSingleInstance;
     private bool _runtimeDisposing;
 
-    /// <summary>创建单实例保护、日志、安全令牌存储、状态仓库和 Control Center Shell。</summary>
+    /// <summary>只创建常规桌面组合根；Broker 子模式已在 Program 中提前分流。</summary>
     protected override void OnStartup(StartupEventArgs e)
     {
         if (e.Args.Any(argument =>

@@ -42,7 +42,7 @@ def test_migration_four_creates_return_fact_table_idempotently(tmp_path: Path) -
 
     assert "returns" in tables
     assert REQUIRED_RETURN_COLUMNS <= return_columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 4
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 5
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 4") == 1
     database.close()
 

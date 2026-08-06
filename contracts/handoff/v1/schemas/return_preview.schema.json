@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://picotoopet.local/contracts/handoff/v1/return_preview.schema.json",
-  "title": "PicotooPet Phase 10B-A Return Safe Projection",
+  "title": "PicotooPet Phase 10B Return Safe Projection",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -42,7 +42,11 @@
       ]
     },
     "provider": {
-      "const": "local-contract-self-test"
+      "type": "string",
+      "enum": [
+        "local-contract-self-test",
+        "local-mock-dev-broker"
+      ]
     },
     "request_digest": {
       "$ref": "#/$defs/sha256"
@@ -54,7 +58,9 @@
       "$ref": "#/$defs/sha256"
     },
     "changed_file_count": {
-      "const": 0
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1
     },
     "event_count": {
       "type": "integer",
@@ -99,7 +105,10 @@
               "provider.session.started",
               "provider.progress",
               "provider.warning",
-              "provider.returned"
+              "provider.returned",
+              "broker.started",
+              "broker.sandbox.ready",
+              "broker.return.submitted"
             ]
           },
           "summary": {
@@ -134,9 +143,37 @@
     "execution_notice": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 240
+      "maxLength": 280
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provider": {"const": "local-contract-self-test"}
+        },
+        "required": ["provider"]
+      },
+      "then": {
+        "properties": {
+          "changed_file_count": {"const": 0}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provider": {"const": "local-mock-dev-broker"}
+        },
+        "required": ["provider"]
+      },
+      "then": {
+        "properties": {
+          "changed_file_count": {"const": 1}
+        }
+      }
+    }
+  ],
   "$defs": {
     "sha256": {
       "type": "string",
