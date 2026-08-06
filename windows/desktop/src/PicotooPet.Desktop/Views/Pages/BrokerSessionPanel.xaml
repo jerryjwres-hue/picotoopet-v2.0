@@ -192,6 +192,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <TextBlock FontWeight="SemiBold" Text="Session ID" />
                                 <TextBlock Grid.Column="1"
@@ -220,6 +221,11 @@
                                 <TextBlock Grid.Row="6" Margin="0,7,0,0" FontWeight="SemiBold" Text="固定变更" />
                                 <TextBlock Grid.Row="6" Grid.Column="1" Margin="0,7,0,0"
                                            Text="{Binding ChangedFileSummary, Mode=OneWay}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="7" Margin="0,7,0,0" FontWeight="SemiBold" Text="失败代码" />
+                                <TextBlock Grid.Row="7" Grid.Column="1" Margin="0,7,0,0"
+                                           FontFamily="Consolas"
+                                           Text="{Binding SelectedSession.FailureCode, Mode=OneWay}"
                                            TextWrapping="Wrap" />
                             </Grid>
 
