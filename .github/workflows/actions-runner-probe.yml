@@ -1,0 +1,27 @@
+name: Actions Runner Probe
+
+on:
+  push:
+    branches:
+      - feature/phase10b-mock-dev-broker
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actions-runner-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: Probe GitHub-hosted runner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Report runner allocation
+        shell: bash
+        run: |
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "RUNNER_ARCH=$RUNNER_ARCH"
+          echo "GITHUB_SHA=$GITHUB_SHA"
