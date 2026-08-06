@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = "2.3.13.1"
-STALE_VERSION = "2.3.12.5"
+EXPECTED_PRODUCT_VERSION = "2.3.13.1"
+PREVIOUS_PRODUCT_VERSION = "2.3.12.5"
 
 ACTIVE_VERSION_FILES = (
     ROOT / "contracts/release/project-goal-invariants.json",
@@ -29,12 +29,12 @@ def test_rollup_uses_23131_on_every_active_version_surface() -> None:
     version_file = ROOT / "src/picotoopet_core/product-version.txt"
     goal = json.loads(read(ROOT / "contracts/release/project-goal-invariants.json"))
 
-    assert read(version_file).strip() == VERSION
-    assert goal["windows"]["product_version"]["value"] == VERSION
+    assert read(version_file).strip() == EXPECTED_PRODUCT_VERSION
+    assert goal["windows"]["product_version"]["value"] == EXPECTED_PRODUCT_VERSION
     for path in ACTIVE_VERSION_FILES:
         source = read(path)
-        assert VERSION in source, path
-        assert STALE_VERSION not in source, path
+        assert EXPECTED_PRODUCT_VERSION in source, path
+        assert PREVIOUS_PRODUCT_VERSION not in source, path
 
 
 def test_rollup_retains_the_23125_cold_start_recovery_behavior() -> None:
