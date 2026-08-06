@@ -7,10 +7,10 @@ namespace PicotooPet.Desktop.Core.DevBroker;
 
 /// <summary>使用 KILL_ON_JOB_CLOSE 约束 Mock Broker 完整进程树。</summary>
 [SupportedOSPlatform("windows")]
-public sealed partial class WindowsJobObject : IDisposable
+public sealed class WindowsJobObject : IDisposable
 {
-    private const int JobObjectExtendedLimitInformation = 9;
-    private const uint JobObjectLimitKillOnJobClose      = 0x00002000;
+    private const int ExtendedLimitInformationClass = 9;
+    private const uint JobObjectLimitKillOnJobClose  = 0x00002000;
 
     private nint _handle;
 
@@ -37,7 +37,7 @@ public sealed partial class WindowsJobObject : IDisposable
             Marshal.StructureToPtr(information, buffer, fDeleteOld: false);
             if (!SetInformationJobObject(
                     _handle,
-                    JobObjectExtendedLimitInformation,
+                    ExtendedLimitInformationClass,
                     buffer,
                     checked((uint)size)))
             {
@@ -113,26 +113,28 @@ public sealed partial class WindowsJobObject : IDisposable
         internal nuint PeakJobMemoryUsed;
     }
 
-    [LibraryImport(
+#pragma warning disable SYSLIB1054 // Job Object 封装避免为整个核心项目开启 unsafe。
+    [DllImport(
         "kernel32.dll",
         EntryPoint = "CreateJobObjectW",
         SetLastError = true,
-        StringMarshalling = StringMarshalling.Utf16)]
-    private static partial nint CreateJobObject(nint jobAttributes, string? name);
+        CharSet = CharSet.Unicode)]
+    private static extern nint CreateJobObject(nint jobAttributes, string? name);
 
-    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool SetInformationJobObject(
+    private static extern bool SetInformationJobObject(
         nint job,
         int informationClass,
         nint information,
         uint informationLength);
 
-    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool AssignProcessToJobObject(nint job, nint process);
+    private static extern bool AssignProcessToJobObject(nint job, nint process);
 
-    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool CloseHandle(nint handle);
+    private static extern bool CloseHandle(nint handle);
+#pragma warning restore SYSLIB1054
 }
