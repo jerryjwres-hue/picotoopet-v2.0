@@ -158,7 +158,7 @@ public static class DevBrokerProcessRunner
         startInfo.ArgumentList.Add(Path.GetFileName(paths.Root));
 
         using var process = new Process { StartInfo = startInfo };
-        using var job     = new WindowsJobObject();
+        using var job     = CreateJobObject();
         try
         {
             if (!process.Start())
@@ -168,6 +168,7 @@ public static class DevBrokerProcessRunner
                     "Mock Broker 子进程未能启动。");
             }
             job.Assign(process);
+            ReleaseStartGate(paths);
         }
         catch (BrokerProcessException)
         {
@@ -235,15 +236,83 @@ public static class DevBrokerProcessRunner
         if (process.ExitCode != 0)
         {
             _ = stdout;
-            _ = stderr;
-            throw new BrokerProcessException(
-                "BROKER_CHILD_FAILED",
-                "Mock Broker 子进程返回固定失败状态。");
+            throw MapChildFailure(process.ExitCode, stderr);
         }
 
         _ = stdout;
         _ = stderr;
         return ParseEnvelope(ReadBoundedEnvelopeFile(paths));
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static WindowsJobObject CreateJobObject()
+    {
+        try
+        {
+            return new WindowsJobObject();
+        }
+        catch (System.ComponentModel.Win32Exception exception)
+        {
+            throw new BrokerProcessException(
+                "BROKER_PROCESS_START_FAILED",
+                "Mock Broker Job Object 创建失败。",
+                exception);
+        }
+    }
+
+    private static void ReleaseStartGate(BrokerSandboxPaths paths)
+    {
+        try
+        {
+            BrokerSandboxBuilder.RejectExistingReparsePoint(paths.Root);
+            using var stream = new FileStream(
+                paths.StartGatePath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.Read,
+                bufferSize: 1,
+                FileOptions.WriteThrough);
+            stream.WriteByte(1);
+            stream.Flush(flushToDisk: true);
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException)
+        {
+            throw new BrokerProcessException(
+                "BROKER_START_GATE_FAILED",
+                "Mock Broker 固定启动闸门无法安全放行。",
+                exception);
+        }
+    }
+
+    private static BrokerProcessException MapChildFailure(int exitCode, string stderr)
+    {
+        var reportedCode = stderr.Trim();
+        var mapped = exitCode switch
+        {
+            2 or 3 => new BrokerProcessException(
+                "BROKER_OUTPUT_INVALID",
+                "Mock Broker 子进程拒绝了固定输入或输出合同。"),
+            4 => new BrokerProcessException(
+                "BROKER_SANDBOX_IO_FAILED",
+                "Mock Broker 固定沙盒发生 I/O 失败。"),
+            5 => new BrokerProcessException(
+                "BROKER_SANDBOX_ACCESS_DENIED",
+                "Mock Broker 固定沙盒访问被系统拒绝。"),
+            6 => new BrokerProcessException(
+                "BROKER_DIGEST_FAILED",
+                "Mock Broker 固定摘要计算失败。"),
+            _ => new BrokerProcessException(
+                "BROKER_CHILD_FAILED",
+                "Mock Broker 子进程返回未知固定失败状态。"),
+        };
+        return reportedCode.Length == 0
+            || string.Equals(reportedCode, mapped.Code, StringComparison.Ordinal)
+            ? mapped
+            : new BrokerProcessException(
+                "BROKER_CHILD_FAILED",
+                "Mock Broker 子进程错误码不符合白名单。");
     }
 
     private static string ReadBoundedEnvelopeFile(BrokerSandboxPaths paths)
