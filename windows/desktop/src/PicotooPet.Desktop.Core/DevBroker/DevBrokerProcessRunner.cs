@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -21,10 +22,29 @@ public sealed class BrokerProcessException : Exception
 }
 
 /// <summary>以固定参数启动同一预编译 EXE，并通过 Job Object 约束完整进程树。</summary>
-public sealed class DevBrokerProcessRunner
+public static class DevBrokerProcessRunner
 {
     private const int MaxStandardOutputBytes = 64 * 1024;
     private const int MaxStandardErrorBytes  = 64 * 1024;
+
+    private static readonly HashSet<string> EnvelopeProperties = new(StringComparer.Ordinal)
+    {
+        "schema_version",
+        "session_id",
+        "handoff_id",
+        "return_id",
+        "provider",
+        "request_digest",
+        "package_digest",
+        "sandbox_digest",
+        "files",
+    };
+
+    private static readonly HashSet<string> FileProperties = new(StringComparer.Ordinal)
+    {
+        "name",
+        "content",
+    };
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -37,7 +57,7 @@ public sealed class DevBrokerProcessRunner
     };
 
     /// <summary>创建沙盒、启动固定子进程、读取有界 JSON 并清理沙盒。</summary>
-    public async Task<MockBrokerReturnEnvelope> RunAsync(
+    public static async Task<MockBrokerReturnEnvelope> RunAsync(
         BrokerSessionCreateResult session,
         HandoffRecord handoff,
         CancellationToken cancellationToken)
@@ -47,7 +67,7 @@ public sealed class DevBrokerProcessRunner
         ValidateBindings(session, handoff);
         if (!OperatingSystem.IsWindows())
         {
-            throw new PlatformNotSupportedException("Mock Dev Broker 只在 Windows 运行。 ");
+            throw new PlatformNotSupportedException("Mock Dev Broker 只在 Windows 运行。");
         }
 
         var executable = Environment.ProcessPath;
@@ -56,7 +76,7 @@ public sealed class DevBrokerProcessRunner
         {
             throw new BrokerProcessException(
                 "BROKER_EXECUTABLE_INVALID",
-                "无法解析当前预编译 Windows 应用。 ");
+                "无法解析当前预编译 Windows 应用。");
         }
 
         var paths = BrokerSandboxPaths.FromLocalAppData(session.Record.SessionId);
@@ -69,33 +89,52 @@ public sealed class DevBrokerProcessRunner
                 session.Record.RequestDigest,
                 session.Record.PackageDigest,
                 handoff.BaseCommit));
+
+        MockBrokerReturnEnvelope envelope;
         try
         {
-            return await RunChildAsync(
+            envelope = await RunChildAsync(
                     executable,
                     paths,
                     session.Record.TimeoutSeconds,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
-        finally
+        catch (Exception operationError)
         {
             try
             {
                 BrokerSandboxBuilder.Cleanup(paths);
             }
-            catch (Exception exception) when (exception is IOException
+            catch (Exception cleanupError) when (cleanupError is IOException
                 or UnauthorizedAccessException
                 or InvalidOperationException)
             {
                 throw new BrokerProcessException(
                     "BROKER_PROCESS_CLEANUP_FAILED",
-                    "Mock Broker 沙盒清理失败。",
-                    exception);
+                    "Mock Broker 失败后沙盒清理未完成。",
+                    new AggregateException(operationError, cleanupError));
             }
+            throw;
         }
+
+        try
+        {
+            BrokerSandboxBuilder.Cleanup(paths);
+        }
+        catch (Exception cleanupError) when (cleanupError is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException)
+        {
+            throw new BrokerProcessException(
+                "BROKER_PROCESS_CLEANUP_FAILED",
+                "Mock Broker 沙盒清理失败。",
+                cleanupError);
+        }
+        return envelope;
     }
 
+    [SupportedOSPlatform("windows")]
     private static async Task<MockBrokerReturnEnvelope> RunChildAsync(
         string executable,
         BrokerSandboxPaths paths,
@@ -125,7 +164,7 @@ public sealed class DevBrokerProcessRunner
             {
                 throw new BrokerProcessException(
                     "BROKER_PROCESS_START_FAILED",
-                    "Mock Broker 子进程未能启动。 ");
+                    "Mock Broker 子进程未能启动。");
             }
             job.Assign(process);
         }
@@ -197,7 +236,7 @@ public sealed class DevBrokerProcessRunner
             _ = stderr;
             throw new BrokerProcessException(
                 "BROKER_CHILD_FAILED",
-                "Mock Broker 子进程返回固定失败状态。 ");
+                "Mock Broker 子进程返回固定失败状态。");
         }
         return ParseEnvelope(stdout);
     }
@@ -219,7 +258,7 @@ public sealed class DevBrokerProcessRunner
             {
                 throw new BrokerProcessException(
                     "BROKER_OUTPUT_TOO_LARGE",
-                    "Mock Broker 输出超过 64 KiB 安全上限。 ");
+                    "Mock Broker 输出超过 64 KiB 安全上限。");
             }
             await buffer.WriteAsync(block.AsMemory(0, read)).ConfigureAwait(false);
         }
@@ -239,7 +278,7 @@ public sealed class DevBrokerProcessRunner
             return JsonSerializer.Deserialize<MockBrokerReturnEnvelope>(stdout, JsonOptions)
                 ?? throw new BrokerProcessException(
                     "BROKER_OUTPUT_INVALID",
-                    "Mock Broker 返回空 JSON。 ");
+                    "Mock Broker 返回空 JSON。");
         }
         catch (JsonException exception)
         {
@@ -256,21 +295,9 @@ public sealed class DevBrokerProcessRunner
         {
             throw new JsonException("Envelope root must be an object.");
         }
-        var required = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "schema_version",
-            "session_id",
-            "handoff_id",
-            "return_id",
-            "provider",
-            "request_digest",
-            "package_digest",
-            "sandbox_digest",
-            "files",
-        };
         var actual = root.EnumerateObject().Select(property => property.Name).ToHashSet(
             StringComparer.Ordinal);
-        if (!actual.SetEquals(required))
+        if (!actual.SetEquals(EnvelopeProperties))
         {
             throw new JsonException("Envelope properties do not match the fixed contract.");
         }
@@ -287,7 +314,7 @@ public sealed class DevBrokerProcessRunner
             }
             var properties = file.EnumerateObject().Select(property => property.Name).ToHashSet(
                 StringComparer.Ordinal);
-            if (!properties.SetEquals(["name", "content"]))
+            if (!properties.SetEquals(FileProperties))
             {
                 throw new JsonException("Envelope file properties are invalid.");
             }
@@ -315,7 +342,7 @@ public sealed class DevBrokerProcessRunner
                 StringComparison.Ordinal)
             || session.Capability.Length != 64)
         {
-            throw new ArgumentException("Broker Session 与 Handoff 安全投影不匹配。 ");
+            throw new ArgumentException("Broker Session 与 Handoff 安全投影不匹配。");
         }
     }
 
