@@ -1,5 +1,8 @@
+using System.Collections.Concurrent;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
+using System.Threading.Channels;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -72,6 +75,9 @@ internal static class AppSelfTest
                 throw new InvalidOperationException("Mac Core 客户端参数自检失败。");
             }
             checks["client_options"] = "pass";
+
+            VerifyColdStartEventStreamRecovery();
+            checks["event_stream_cold_start_recovery"] = "pass";
 
             using var shell = ShellViewModel.CreateForSmokeTest(
                 ControlCenterCapabilities.Legacy22);
@@ -155,6 +161,7 @@ internal static class AppSelfTest
             Console.WriteLine("PHASE10B_RETURN_SELF_TEST=PASS");
             Console.WriteLine("PHASE10B_BROKER_SELF_TEST=PASS");
             Console.WriteLine("PHASE10B_BROKER_PROCESS_SELF_TEST=PASS");
+            Console.WriteLine("PHASE10C_EVENT_STREAM_RECOVERY_SELF_TEST=PASS");
             return 0;
         }
         catch (Exception exception)
@@ -178,7 +185,85 @@ internal static class AppSelfTest
                 $"PHASE10B_BROKER_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(
                 $"PHASE10B_BROKER_PROCESS_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE10C_EVENT_STREAM_RECOVERY_SELF_TEST=FAIL | {exception.Message}");
             return 1;
+        }
+    }
+
+    /// <summary>验证发布程序集保留冷启动历史事件回放期间的心跳恢复边界。</summary>
+    private static void VerifyColdStartEventStreamRecovery()
+    {
+        var client = new EventStreamClient(
+            new Uri("http://127.0.0.1:8766/", UriKind.Absolute),
+            "self-test-token",
+            channelCapacity: 16,
+            pongTimeout: TimeSpan.FromMilliseconds(50),
+            pingInterval: TimeSpan.FromMilliseconds(10));
+        try
+        {
+            var clientType = typeof(EventStreamClient);
+            var channelField = clientType.GetField("_channel", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("缺少事件流有界队列字段。");
+            var pendingField = clientType.GetField("_pendingPings", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("缺少事件流待确认 Ping 字段。");
+            var timeoutCheck = clientType.GetMethod("ThrowIfPongExpired", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("缺少事件流 Pong 超时检查入口。");
+
+            var channel = channelField.GetValue(client) as Channel<EventEnvelope>
+                ?? throw new InvalidOperationException("事件流有界队列类型错误。");
+            var pending = pendingField.GetValue(client) as ConcurrentDictionary<string, long>
+                ?? throw new InvalidOperationException("事件流待确认 Ping 类型错误。");
+            var envelope = new EventEnvelope(
+                "2.3.0",
+                1,
+                "published-self-test-event",
+                "task.updated",
+                "published-self-test-trace",
+                DateTimeOffset.UtcNow,
+                JsonSerializer.SerializeToElement(new { }));
+
+            channel.Writer.WriteAsync(envelope).AsTask().GetAwaiter().GetResult();
+            pending["cold-start-replay"] = 0;
+            try
+            {
+                timeoutCheck.Invoke(client, parameters: null);
+            }
+            catch (TargetInvocationException exception)
+                when (exception.InnerException is TimeoutException)
+            {
+                throw new InvalidOperationException(
+                    "冷启动历史事件积压被错误判定为 Pong 超时。",
+                    exception.InnerException);
+            }
+            if (!pending.IsEmpty)
+            {
+                throw new InvalidOperationException("冷启动积压期间未清除失效 Ping 样本。");
+            }
+            if (!channel.Reader.TryRead(out _))
+            {
+                throw new InvalidOperationException("无法清空冷启动事件积压夹具。");
+            }
+
+            pending["real-timeout"] = 0;
+            var timeoutObserved = false;
+            try
+            {
+                timeoutCheck.Invoke(client, parameters: null);
+            }
+            catch (TargetInvocationException exception)
+                when (exception.InnerException is TimeoutException)
+            {
+                timeoutObserved = true;
+            }
+            if (!timeoutObserved)
+            {
+                throw new InvalidOperationException("事件积压清空后未恢复真实 Pong 超时检测。");
+            }
+        }
+        finally
+        {
+            client.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
 
