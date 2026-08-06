@@ -1,12 +1,10 @@
 using System.Windows;
-using System.Windows.Controls;
-using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
 /// <summary>Phase 10B-B 固定 Mock Dev Broker 的独立原生 WPF 面板。</summary>
-public partial class BrokerSessionPanel : UserControl
+public partial class BrokerSessionPanel : System.Windows.Controls.UserControl
 {
     private bool _loadStarted;
 
