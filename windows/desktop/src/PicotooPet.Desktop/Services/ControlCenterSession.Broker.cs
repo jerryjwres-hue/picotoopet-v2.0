@@ -108,8 +108,9 @@ public sealed partial class ControlCenterSession
                     BrokerTerminalAction.Fail,
                     $"{idempotencyKey}-fail",
                     CancellationToken.None).ConfigureAwait(false);
-                progress.Report(failed);
-                return failed;
+                var visibleFailed = failed with { FailureCode = exception.Code };
+                progress.Report(visibleFailed);
+                return visibleFailed;
             }
 
             var completed = await client.SubmitReturnAsync(
