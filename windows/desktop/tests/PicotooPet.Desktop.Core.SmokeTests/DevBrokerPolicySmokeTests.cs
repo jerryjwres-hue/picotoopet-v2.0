@@ -34,7 +34,7 @@ internal static class DevBrokerPolicySmokeTests
             paths.Root.StartsWith(localRoot, StringComparison.OrdinalIgnoreCase),
             "Broker 沙盒逃离 LocalAppData");
         Assert(
-            paths.ProofRelativePath == "docs/mock-provider-proof.txt",
+            BrokerSandboxPaths.ProofRelativePath == "docs/mock-provider-proof.txt",
             "Broker 唯一允许变更路径发生漂移");
         AssertThrows<ArgumentException>(
             () => BrokerSandboxPaths.FromLocalAppData("../outside"),
