@@ -1,7 +1,6 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
-using PicotooPet.Desktop.Core.DevBroker;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Core.State;
@@ -26,20 +25,9 @@ public partial class App : WpfApplication, IDisposable
     private bool _ownsSingleInstance;
     private bool _runtimeDisposing;
 
-    /// <summary>先处理无界面 Broker 子进程，再创建常规桌面组合根。</summary>
+    /// <summary>只创建常规桌面组合根；Broker 子模式已在 Program 中提前分流。</summary>
     protected override void OnStartup(StartupEventArgs e)
     {
-        if (MockProviderChild.TryRun(
-                e.Args,
-                Console.Out,
-                Console.Error,
-                out var brokerExitCode))
-        {
-            base.OnStartup(e);
-            Shutdown(brokerExitCode);
-            return;
-        }
-
         if (e.Args.Any(argument =>
                 string.Equals(argument, "--self-test", StringComparison.OrdinalIgnoreCase)))
         {
