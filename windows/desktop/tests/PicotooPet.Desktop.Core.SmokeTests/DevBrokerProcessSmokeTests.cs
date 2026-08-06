@@ -21,6 +21,7 @@ internal static class DevBrokerProcessSmokeTests
             new string('b', 64),
             new string('c', 40));
         BrokerSandboxBuilder.Prepare(paths, input);
+        File.WriteAllBytes(paths.StartGatePath, [1]);
         try
         {
             var envelope = MockProviderChild.Run(sessionId);
