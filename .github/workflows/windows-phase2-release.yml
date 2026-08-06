@@ -48,7 +48,7 @@ concurrency:
 jobs:
   impact:
     name: Detect Windows release impact
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 5
     outputs:
       windows: ${{ steps.detect.outputs.windows }}

@@ -34,7 +34,7 @@ concurrency:
 jobs:
   impact:
     name: Detect Core impact
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 5
     outputs:
       core: ${{ steps.detect.outputs.core }}

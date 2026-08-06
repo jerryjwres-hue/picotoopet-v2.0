@@ -1,4 +1,4 @@
-"""Critical native workflows must not share a GitHub Actions concurrency group."""
+"""Critical native workflows must keep distinct groups and a stable impact runner."""
 
 from __future__ import annotations
 
@@ -28,3 +28,14 @@ def test_critical_native_workflows_use_distinct_branch_scoped_groups() -> None:
         groups[workflow.name] = group
 
     assert len(set(groups.values())) == len(groups), groups
+
+
+def test_critical_native_workflows_use_stable_impact_runner() -> None:
+    for workflow in WORKFLOWS:
+        source = workflow.read_text(encoding="utf-8")
+        match = re.search(
+            r"(?ms)^  impact:\n.*?^    runs-on:\s*([^\s]+)\s*$",
+            source,
+        )
+        assert match is not None, f"{workflow.name} must declare impact runs-on"
+        assert match.group(1) == "ubuntu-22.04"
