@@ -47,9 +47,7 @@ public static class MockProviderChild
         try
         {
             var sessionId = ParseSessionId(args);
-            var envelope  = Run(sessionId);
-            standardOutput.Write(JsonSerializer.Serialize(envelope, JsonOptions));
-            standardOutput.Write('\n');
+            _ = Run(sessionId);
             exitCode = 0;
         }
         catch (ArgumentException)
