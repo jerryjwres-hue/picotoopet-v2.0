@@ -12,6 +12,7 @@ public static class MockProviderChild
     private const string ChildFlag     = "--dev-broker-mock-child";
     private const string SessionFlag   = "--session-id";
     private const int MaxInputBytes    = 8 * 1024;
+    private const int StartGateWaitMilliseconds = 5_000;
     private const string Provider      = "local-mock-dev-broker";
     private const string SchemaVersion = "1.0.0";
 
@@ -84,6 +85,7 @@ public static class MockProviderChild
     {
         var paths = BrokerSandboxPaths.FromLocalAppData(sessionId);
         BrokerSandboxBuilder.RejectExistingReparsePoint(paths.Root);
+        WaitForStartGate(paths);
         var input = ReadSessionInput(paths.SessionInputPath);
         ValidateInput(input, sessionId);
 
@@ -259,6 +261,25 @@ public static class MockProviderChild
             ["proof_sha256"] = Sha256(proof),
         };
         return Sha256(SerializeCompact(facts));
+    }
+
+    private static void WaitForStartGate(BrokerSandboxPaths paths)
+    {
+        var deadline = Environment.TickCount64 + StartGateWaitMilliseconds;
+        while (Environment.TickCount64 <= deadline)
+        {
+            if (File.Exists(paths.StartGatePath))
+            {
+                var attributes = File.GetAttributes(paths.StartGatePath);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidDataException("Broker 启动闸门不能是 reparse point。");
+                }
+                return;
+            }
+            Thread.Sleep(10);
+        }
+        throw new InvalidDataException("Broker 启动闸门未在固定时限内放行。");
     }
 
     private static MockBrokerSessionInput ReadSessionInput(string path)
