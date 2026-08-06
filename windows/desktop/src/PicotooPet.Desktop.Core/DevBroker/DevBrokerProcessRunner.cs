@@ -26,6 +26,7 @@ public static class DevBrokerProcessRunner
 {
     private const int MaxStandardOutputBytes = 64 * 1024;
     private const int MaxStandardErrorBytes  = 64 * 1024;
+    private const int MaxEnvelopeFileBytes   = 64 * 1024;
 
     private static readonly HashSet<string> EnvelopeProperties = new(StringComparer.Ordinal)
     {
@@ -233,12 +234,84 @@ public static class DevBrokerProcessRunner
 
         if (process.ExitCode != 0)
         {
+            _ = stdout;
             _ = stderr;
             throw new BrokerProcessException(
                 "BROKER_CHILD_FAILED",
                 "Mock Broker 子进程返回固定失败状态。");
         }
-        return ParseEnvelope(stdout);
+
+        _ = stdout;
+        _ = stderr;
+        return ParseEnvelope(ReadBoundedEnvelopeFile(paths));
+    }
+
+    private static string ReadBoundedEnvelopeFile(BrokerSandboxPaths paths)
+    {
+        try
+        {
+            BrokerSandboxBuilder.RejectExistingReparsePoint(paths.Root);
+            var info = new FileInfo(paths.ReturnEnvelopePath);
+            if (!info.Exists || info.Length <= 0 || info.Length > MaxEnvelopeFileBytes)
+            {
+                throw new BrokerProcessException(
+                    "BROKER_OUTPUT_INVALID",
+                    "Mock Broker 固定 Return 文件不存在、为空或超过 64 KiB。 ");
+            }
+            if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new BrokerProcessException(
+                    "BROKER_OUTPUT_INVALID",
+                    "Mock Broker 固定 Return 文件不能是 reparse point。");
+            }
+
+            var expectedLength = checked((int)info.Length);
+            var bytes          = new byte[expectedLength];
+            using var stream = new FileStream(
+                paths.ReturnEnvelopePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 8 * 1024,
+                FileOptions.SequentialScan);
+            var total = 0;
+            while (total < bytes.Length)
+            {
+                var read = stream.Read(bytes, total, bytes.Length - total);
+                if (read == 0)
+                {
+                    break;
+                }
+                total = checked(total + read);
+            }
+            if (total != bytes.Length || stream.ReadByte() != -1)
+            {
+                throw new BrokerProcessException(
+                    "BROKER_OUTPUT_INVALID",
+                    "Mock Broker 固定 Return 文件在读取期间发生变化。");
+            }
+            return StrictUtf8.GetString(bytes);
+        }
+        catch (BrokerProcessException)
+        {
+            throw;
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new BrokerProcessException(
+                "BROKER_OUTPUT_INVALID",
+                "Mock Broker 固定 Return 文件不是严格 UTF-8。",
+                exception);
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException)
+        {
+            throw new BrokerProcessException(
+                "BROKER_OUTPUT_INVALID",
+                "Mock Broker 固定 Return 文件无法安全读取。",
+                exception);
+        }
     }
 
     private static async Task<string> ReadBoundedUtf8Async(Stream stream, int maxBytes)
@@ -264,18 +337,18 @@ public static class DevBrokerProcessRunner
         }
     }
 
-    private static MockBrokerReturnEnvelope ParseEnvelope(string stdout)
+    private static MockBrokerReturnEnvelope ParseEnvelope(string json)
     {
         try
         {
-            using var document = JsonDocument.Parse(stdout, new JsonDocumentOptions
+            using var document = JsonDocument.Parse(json, new JsonDocumentOptions
             {
                 AllowTrailingCommas = false,
                 CommentHandling     = JsonCommentHandling.Disallow,
                 MaxDepth            = 32,
             });
             ValidateEnvelopeShape(document.RootElement);
-            return JsonSerializer.Deserialize<MockBrokerReturnEnvelope>(stdout, JsonOptions)
+            return JsonSerializer.Deserialize<MockBrokerReturnEnvelope>(json, JsonOptions)
                 ?? throw new BrokerProcessException(
                     "BROKER_OUTPUT_INVALID",
                     "Mock Broker 返回空 JSON。");
