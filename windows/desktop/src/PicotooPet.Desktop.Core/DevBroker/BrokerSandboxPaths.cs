@@ -7,6 +7,7 @@ public sealed record BrokerSandboxPaths(
     string WorkspaceRoot,
     string ReturnRoot,
     string SessionInputPath,
+    string StartGatePath,
     string ReturnEnvelopePath)
 {
     /// <summary>唯一允许的工作区相对变更路径。</summary>
@@ -50,6 +51,7 @@ public sealed record BrokerSandboxPaths(
             Path.Combine(sessionRoot, "workspace"),
             Path.Combine(sessionRoot, "return"),
             Path.Combine(sessionRoot, "session-input.json"),
+            Path.Combine(sessionRoot, "start.ready"),
             Path.Combine(sessionRoot, "return", "return-envelope.json"));
     }
 }
