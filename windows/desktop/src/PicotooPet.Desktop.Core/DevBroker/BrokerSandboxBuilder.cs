@@ -76,7 +76,7 @@ public static class BrokerSandboxBuilder
         var fullRoot = Path.GetFullPath(root);
         if (File.Exists(fullRoot))
         {
-            throw new InvalidOperationException("Broker 沙盒根不能是文件。 ");
+            throw new InvalidOperationException("Broker 沙盒根不能是文件。");
         }
         if (!Directory.Exists(fullRoot))
         {
@@ -109,23 +109,23 @@ public static class BrokerSandboxBuilder
             || !string.Equals(input.SessionId, expectedSession, StringComparison.Ordinal)
             || !Guid.TryParseExact(input.SessionId, "D", out _)
             || !Guid.TryParseExact(input.HandoffId, "D", out _)
-            || !IsSha256(input.RequestDigest)
-            || !IsSha256(input.PackageDigest)
-            || !IsSha256(input.BaseCommit))
+            || !IsHexDigest(input.RequestDigest, 64)
+            || !IsHexDigest(input.PackageDigest, 64)
+            || !(IsHexDigest(input.BaseCommit, 40) || IsHexDigest(input.BaseCommit, 64)))
         {
             throw new ArgumentException("Broker Session 输入不符合固定安全合同。", nameof(input));
         }
     }
 
-    private static bool IsSha256(string value) =>
-        value.Length == 64 && value.All(character =>
+    private static bool IsHexDigest(string value, int length) =>
+        value.Length == length && value.All(character =>
             character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     private static void RejectReparseAttribute(string path)
     {
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
         {
-            throw new InvalidOperationException("Broker 沙盒拒绝 reparse point。 ");
+            throw new InvalidOperationException("Broker 沙盒拒绝 reparse point。");
         }
     }
 
