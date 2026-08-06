@@ -64,6 +64,43 @@ internal static class DevBrokerProcessSmokeTests
             BrokerSandboxBuilder.Cleanup(paths);
         }
 
+        var processSessionId = Guid.NewGuid().ToString("D");
+        var processPaths     = BrokerSandboxPaths.FromLocalAppData(processSessionId);
+        BrokerSandboxBuilder.Prepare(
+            processPaths,
+            new MockBrokerSessionInput(
+                "1.0.0",
+                processSessionId,
+                Guid.NewGuid().ToString("D"),
+                new string('d', 64),
+                new string('e', 64),
+                new string('f', 40)));
+        File.WriteAllBytes(processPaths.StartGatePath, [1]);
+        using var successOutput = new StringWriter();
+        using var successError  = new StringWriter();
+        try
+        {
+            Assert(
+                MockProviderChild.TryRun(
+                    ["--dev-broker-mock-child", "--session-id", processSessionId],
+                    successOutput,
+                    successError,
+                    out var successExitCode),
+                "有效子进程参数未进入 Broker 模式");
+            Assert(successExitCode == 0, "有效子进程返回失败状态");
+            Assert(
+                successOutput.ToString().Length == 0,
+                "成功子进程不得再通过 stdout 传输含本地化文本的 Return Envelope");
+            Assert(successError.ToString().Length == 0, "成功子进程写入了错误输出");
+            Assert(
+                File.Exists(processPaths.ReturnEnvelopePath),
+                "成功子进程未写入固定 Return 文件");
+        }
+        finally
+        {
+            BrokerSandboxBuilder.Cleanup(processPaths);
+        }
+
         using var output = new StringWriter();
         using var error  = new StringWriter();
         Assert(
