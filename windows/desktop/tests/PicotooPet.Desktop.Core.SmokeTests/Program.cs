@@ -56,6 +56,7 @@ internal static class Program
             await MacCoreBrokerClientSmokeTests.RunAsync().ConfigureAwait(false);
             await ReturnValidationSmokeTests.RunAsync().ConfigureAwait(false);
             await BrokerSessionSmokeTests.RunAsync().ConfigureAwait(false);
+            await EventStreamColdStartSmokeTests.RunAsync().ConfigureAwait(false);
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
