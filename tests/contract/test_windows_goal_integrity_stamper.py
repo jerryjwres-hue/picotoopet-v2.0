@@ -14,7 +14,7 @@ from scripts.verify_project_goal_integrity import verify_windows_package
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "release" / "project-goal-invariants.json"
 INSTALLER_MARKER = "PICOTOO_GOAL_INTEGRITY_GATE_V1"
-PRODUCT_VERSION = "2.3.12.4"
+PRODUCT_VERSION = "2.3.12.5"
 PRODUCT_VERSION_BYTES = (PRODUCT_VERSION + "\n").encode("utf-8")
 SOURCE_HEAD = "a" * 40
 SOURCE_REF = "feature/phase10b-return-intake"
@@ -59,7 +59,7 @@ def _write_candidate(
 ) -> tuple[Path, str]:
     archive_root = "candidate"
     package = tmp_path / (
-        "PicotooPet-Phase2-Windows-Prebuilt-2.3.12.4-test.zip"
+        "PicotooPet-Phase2-Windows-Prebuilt-2.3.12.5-test.zip"
     )
     manifest: dict[str, object] = {
         "release_type": "prebuilt",
