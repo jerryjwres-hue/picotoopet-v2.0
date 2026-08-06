@@ -142,16 +142,21 @@ public sealed class MacCoreBrokerTerminalClient : IAsyncDisposable
                         retryable: false,
                         traceId: null,
                         statusCode: (int)response.StatusCode,
-                        exception);
+                        innerException: exception);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
-            catch (HttpRequestException exception) when (attempt == 0)
+            catch (HttpRequestException exception)
             {
                 networkError = exception;
+                if (attempt == 0)
+                {
+                    continue;
+                }
+                break;
             }
         }
 
@@ -161,7 +166,7 @@ public sealed class MacCoreBrokerTerminalClient : IAsyncDisposable
             retryable: true,
             traceId: null,
             statusCode: 0,
-            networkError);
+            innerException: networkError);
     }
 
     private static async Task<byte[]> ReadBoundedAsync(
