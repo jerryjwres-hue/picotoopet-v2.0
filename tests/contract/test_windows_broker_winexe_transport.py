@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "windows" / "desktop" / "src" / "PicotooPet.Desktop"
 CORE = ROOT / "windows" / "desktop" / "src" / "PicotooPet.Desktop.Core"
 RUNNER = CORE / "DevBroker" / "DevBrokerProcessRunner.cs"
+CHILD = CORE / "DevBroker" / "MockProviderChild.cs"
+PATHS = CORE / "DevBroker" / "BrokerSandboxPaths.cs"
 SELF_TEST = DESKTOP / "Services" / "AppSelfTest.cs"
 PROJECT = DESKTOP / "PicotooPet.Desktop.csproj"
 PROGRAM = DESKTOP / "Program.cs"
@@ -46,6 +48,19 @@ def test_mock_child_is_intercepted_before_wpf_application_bootstrap() -> None:
     assert program.index("MockProviderChild.TryRun") < program.index("new App()")
     assert "application.InitializeComponent()" in program
     assert "MockProviderChild.TryRun" not in app
+
+
+def test_parent_assigns_job_before_releasing_fixed_child_start_gate() -> None:
+    """快速子进程不得在 Job Object 绑定完成前执行或退出。"""
+
+    runner = RUNNER.read_text(encoding="utf-8")
+    child = CHILD.read_text(encoding="utf-8")
+    paths = PATHS.read_text(encoding="utf-8")
+
+    assert "StartGatePath" in paths
+    assert "ReleaseStartGate" in runner
+    assert "WaitForStartGate" in child
+    assert runner.index("job.Assign(process)") < runner.index("ReleaseStartGate(paths)")
 
 
 def test_child_exit_codes_remain_bounded_and_visible_to_the_current_session() -> None:
