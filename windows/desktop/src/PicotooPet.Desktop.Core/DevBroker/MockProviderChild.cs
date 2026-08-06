@@ -265,21 +265,18 @@ public static class MockProviderChild
 
     private static void WaitForStartGate(BrokerSandboxPaths paths)
     {
-        var deadline = Environment.TickCount64 + StartGateWaitMilliseconds;
-        while (Environment.TickCount64 <= deadline)
+        var released = SpinWait.SpinUntil(
+            () => File.Exists(paths.StartGatePath),
+            StartGateWaitMilliseconds);
+        if (!released)
         {
-            if (File.Exists(paths.StartGatePath))
-            {
-                var attributes = File.GetAttributes(paths.StartGatePath);
-                if ((attributes & FileAttributes.ReparsePoint) != 0)
-                {
-                    throw new InvalidDataException("Broker 启动闸门不能是 reparse point。");
-                }
-                return;
-            }
-            Thread.Sleep(10);
+            throw new InvalidDataException("Broker 启动闸门未在固定时限内放行。");
         }
-        throw new InvalidDataException("Broker 启动闸门未在固定时限内放行。");
+        var attributes = File.GetAttributes(paths.StartGatePath);
+        if ((attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException("Broker 启动闸门不能是 reparse point。");
+        }
     }
 
     private static MockBrokerSessionInput ReadSessionInput(string path)
