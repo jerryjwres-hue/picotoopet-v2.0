@@ -4,20 +4,22 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
-/// <summary>Phase 10A Handoff 与 Phase 10B-A Return 验证的原生 WPF 页面。</summary>
+/// <summary>Phase 10A Handoff、Phase 10B-A Return 与 Phase 10B-B Broker 原生 WPF 页面。</summary>
 public partial class CloudDevelopmentPage : System.Windows.Controls.UserControl
 {
     private readonly ReturnValidationPanel _returnValidationPanel;
+    private readonly BrokerSessionPanel _brokerSessionPanel;
     private bool _loadStarted;
 
     public CloudDevelopmentPage()
     {
         InitializeComponent();
         _returnValidationPanel = new ReturnValidationPanel();
-        AppendReturnValidationPanel();
+        _brokerSessionPanel    = new BrokerSessionPanel();
+        AppendPhase10BPanels();
     }
 
-    private void AppendReturnValidationPanel()
+    private void AppendPhase10BPanels()
     {
         if (Content is not ScrollViewer scrollViewer
             || scrollViewer.Content is not StackPanel stackPanel)
@@ -27,6 +29,7 @@ public partial class CloudDevelopmentPage : System.Windows.Controls.UserControl
             );
         }
         stackPanel.Children.Add(_returnValidationPanel);
+        stackPanel.Children.Add(_brokerSessionPanel);
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
