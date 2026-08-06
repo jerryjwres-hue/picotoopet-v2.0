@@ -11,25 +11,26 @@ public partial class BrokerSessionPanel : System.Windows.Controls.UserControl
     public BrokerSessionPanel()
     {
         InitializeComponent();
+        DataContext = new BrokerSessionViewModel();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not BrokerSessionViewModel)
-        {
-            var gateway = BrokerGatewayContext.GetGateway(this);
-            if (gateway is null)
-            {
-                return;
-            }
-            DataContext = new BrokerSessionViewModel(gateway);
-        }
-        if (_loadStarted || DataContext is not BrokerSessionViewModel viewModel)
+        if (_loadStarted)
         {
             return;
         }
 
         _loadStarted = true;
+        var gateway = BrokerGatewayContext.GetGateway(this);
+        if (gateway is null)
+        {
+            // 独立布局测试没有运行时 Session，继续使用确定性 smoke 安全投影。
+            return;
+        }
+
+        var viewModel = new BrokerSessionViewModel(gateway);
+        DataContext = viewModel;
         try
         {
             await viewModel.LoadAsync(CancellationToken.None);
