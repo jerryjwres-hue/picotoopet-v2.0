@@ -1,4 +1,4 @@
-"""Native Results Center contract regressions retained in 2.3.12.2."""
+"""Native Results Center contract regressions retained in 2.3.12.3."""
 
 from pathlib import Path
 
@@ -54,5 +54,5 @@ def test_results_page_is_native_wpf_and_registered_in_shell() -> None:
         assert disallowed not in page
 
 
-def test_results_center_is_retained_in_23122() -> None:
-    assert read("src/picotoopet_core/product-version.txt").strip() == "2.3.12.2"
+def test_results_center_is_retained_in_23123() -> None:
+    assert read("src/picotoopet_core/product-version.txt").strip() == "2.3.12.3"
