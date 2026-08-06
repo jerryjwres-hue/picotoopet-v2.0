@@ -13,23 +13,28 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_return_safe_projection_schema_is_strict_and_bounded() -> None:
-    """Return API 投影必须拒绝未知字段、任意 changed file 和外部 Provider。"""
+def test_return_safe_projection_schema_is_strict_and_provider_bounded() -> None:
+    """Return 投影只允许两个内置 Provider 及最多一个固定文本变更。"""
 
     schema = json.loads(
         read("contracts/handoff/v1/schemas/return_preview.schema.json")
     )
 
     assert schema["additionalProperties"] is False
-    assert schema["properties"]["provider"]["const"] == "local-contract-self-test"
-    assert schema["properties"]["changed_file_count"]["const"] == 0
+    assert schema["properties"]["provider"]["enum"] == [
+        "local-contract-self-test",
+        "local-mock-dev-broker",
+    ]
+    assert schema["properties"]["changed_file_count"]["minimum"] == 0
+    assert schema["properties"]["changed_file_count"]["maximum"] == 1
     assert schema["properties"]["event_count"]["maximum"] == 16
     assert schema["properties"]["event_summaries"]["maxItems"] == 16
-    assert schema["properties"]["execution_notice"]["maxLength"] == 240
+    assert schema["properties"]["execution_notice"]["maxLength"] == 280
+    assert len(schema["allOf"]) == 2
 
 
-def test_return_api_accepts_no_file_path_command_or_manifest_body() -> None:
-    """Phase 10B-A REST 写入只能触发服务器自有演练，不能接收任意包。"""
+def test_phase10b_a_return_api_accepts_no_file_path_command_or_manifest_body() -> None:
+    """原有无正文自测接口不能因 Mock Broker 扩展而接收任意包。"""
 
     route = read("src/picotoopet_core/api/routes/returns.py")
 
@@ -51,8 +56,8 @@ def test_return_api_accepts_no_file_path_command_or_manifest_body() -> None:
         assert forbidden not in route
 
 
-def test_return_validator_fails_closed_on_links_paths_secrets_and_claims() -> None:
-    """验证器必须保留整体隔离错误码且不执行 Return 中的内容。"""
+def test_zero_change_return_validator_remains_fail_closed() -> None:
+    """Phase 10B-A 验证器仍必须保持零变更整体隔离策略。"""
 
     service = read("src/picotoopet_core/returns/service.py")
 
@@ -82,8 +87,37 @@ def test_return_validator_fails_closed_on_links_paths_secrets_and_claims() -> No
         assert forbidden not in service
 
 
+def test_mock_broker_validator_has_independent_fixed_policy() -> None:
+    """Mock Broker 策略必须独立锁定单一变更、四事件和秘密扫描。"""
+
+    service = read("src/picotoopet_core/returns/mock_broker.py")
+
+    for required in (
+        '"local-mock-dev-broker"',
+        '"changes/docs/mock-provider-proof.txt"',
+        '"broker.started"',
+        '"broker.sandbox.ready"',
+        '"provider.returned"',
+        '"broker.return.submitted"',
+        '"SECRET_CONTENT_DENIED"',
+        '"PROVIDER_CLAIM_DENIED"',
+        '"SHA256_COVERAGE_MISMATCH"',
+        "changed_file_count=1",
+    ):
+        assert required in service
+    for forbidden in (
+        "subprocess",
+        "Popen",
+        "os.system",
+        "shell=True",
+        "git push",
+        "git merge",
+    ):
+        assert forbidden not in service
+
+
 def test_windows_return_client_and_panel_are_bounded_native_wpf() -> None:
-    """Windows 只能观察安全投影和触发无正文自测，不得提供文件或命令 UI。"""
+    """现有 Return 面板仍只能观察安全投影和触发无正文自测。"""
 
     client = read(
         "windows/desktop/src/PicotooPet.Desktop.Core/Networking/"
