@@ -8,6 +8,14 @@ namespace PicotooPet.Desktop.Core.DevBroker;
 /// <summary>只在应用自有 LocalAppData 根中创建固定 Mock Provider 沙盒。</summary>
 public static class BrokerSandboxBuilder
 {
+    private static readonly EnumerationOptions DirectChildren = new()
+    {
+        RecurseSubdirectories = false,
+        AttributesToSkip      = 0,
+        IgnoreInaccessible    = false,
+        ReturnSpecialDirectories = false,
+    };
+
     private static readonly UTF8Encoding Utf8NoBom = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -69,7 +77,7 @@ public static class BrokerSandboxBuilder
         Directory.Delete(paths.Root, recursive: true);
     }
 
-    /// <summary>拒绝目标路径及其已存在子目录中的 reparse point。</summary>
+    /// <summary>逐层检查并在下降前拒绝任何 reparse point。</summary>
     public static void RejectExistingReparsePoint(string root)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
@@ -83,20 +91,27 @@ public static class BrokerSandboxBuilder
             return;
         }
 
-        RejectReparseAttribute(fullRoot);
-        foreach (var directory in Directory.EnumerateDirectories(
-                     fullRoot,
-                     "*",
-                     SearchOption.AllDirectories))
+        var pending = new Stack<string>();
+        pending.Push(fullRoot);
+        while (pending.Count > 0)
         {
-            RejectReparseAttribute(directory);
-        }
-        foreach (var file in Directory.EnumerateFiles(
-                     fullRoot,
-                     "*",
-                     SearchOption.AllDirectories))
-        {
-            RejectReparseAttribute(file);
+            var current = pending.Pop();
+            RejectReparseAttribute(current);
+            foreach (var entry in Directory.EnumerateFileSystemEntries(
+                         current,
+                         "*",
+                         DirectChildren))
+            {
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidOperationException("Broker 沙盒拒绝 reparse point。");
+                }
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    pending.Push(entry);
+                }
+            }
         }
     }
 
