@@ -49,7 +49,7 @@ def approve_handoff(
         f"/api/v1/handoffs/{handoff['handoff_id']}/submit-approval",
         headers={**headers, "Idempotency-Key": f"{key}-submit"},
     )
-    assert submitted.status_code == 201
+    assert submitted.status_code == 200
     approval = client.get("/api/v1/approvals?limit=20", headers=headers).json()[0]
     decided = client.post(
         f"/api/v1/approvals/{approval['approval_id']}/decision",
