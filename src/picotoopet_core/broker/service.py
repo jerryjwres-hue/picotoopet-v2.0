@@ -12,6 +12,8 @@ from uuid import uuid4
 from picotoopet_core.db.database import Database
 from picotoopet_core.handoffs.models import HandoffRecord, HandoffStatus
 from picotoopet_core.handoffs.service import HandoffService
+from picotoopet_core.returns.mock_broker import validate_mock_broker_return
+from picotoopet_core.returns.models import ReturnPackageEntry, ReturnStatus
 from picotoopet_core.returns.service import ReturnValidationService
 
 from .models import (
@@ -205,9 +207,9 @@ class BrokerSessionService:
         capability: str,
         idempotency_key: str,
     ) -> BrokerSessionRecord:
-        """验证 capability 与 Session 绑定；Return 细节由 Return 服务独立验证。"""
+        """验证 capability、Session 绑定和固定 Mock Return 合同。"""
 
-        del idempotency_key
+        key      = self._require_idempotency_key(idempotency_key)
         current  = self.get_session(session_id)
         expected = self._session_capability(current.session_id, current.handoff_id)
         if not hmac.compare_digest(capability, expected):
@@ -222,7 +224,60 @@ class BrokerSessionService:
             or envelope.package_digest != current.package_digest
         ):
             raise BrokerSessionPolicyError("Broker Return digest 与 Session 事实不匹配。")
-        raise NotImplementedError("Mock Return 验证将在 Return 策略任务中实现。")
+        if current.status in {
+            BrokerSessionStatus.COMPLETED,
+            BrokerSessionStatus.QUARANTINED,
+        }:
+            if current.return_id == envelope.return_id:
+                return current
+            raise BrokerSessionConflict("Broker Session 已绑定其他 Return。")
+        if current.status in {
+            BrokerSessionStatus.CANCELLED,
+            BrokerSessionStatus.TIMED_OUT,
+            BrokerSessionStatus.FAILED,
+        }:
+            raise BrokerSessionConflict("终态 Broker Session 不能提交 Return。")
+        if current.status not in {
+            BrokerSessionStatus.RESERVED,
+            BrokerSessionStatus.RUNNING,
+            BrokerSessionStatus.RETURNING,
+        }:
+            raise BrokerSessionConflict("Broker Session 当前状态不能提交 Return。")
+        if current.status is not BrokerSessionStatus.RETURNING:
+            current = self._transition(current, BrokerSessionStatus.RETURNING)
+
+        handoff = self._require_approved_handoff(current.handoff_id)
+        entries = {
+            item.name.value: ReturnPackageEntry(content=item.content.encode("utf-8"))
+            for item in envelope.files
+        }
+        record = validate_mock_broker_return(
+            self.returns,
+            handoff,
+            entries,
+            session_id=current.session_id,
+            return_id=envelope.return_id,
+            sandbox_digest=envelope.sandbox_digest,
+            idempotency_key=key,
+        )
+        if record.status is ReturnStatus.CONTRACT_VALIDATED:
+            return self._transition(
+                current,
+                BrokerSessionStatus.COMPLETED,
+                return_id=record.return_id,
+                event_count=record.event_count,
+                sandbox_digest=envelope.sandbox_digest,
+                finished=True,
+            )
+        return self._transition(
+            current,
+            BrokerSessionStatus.QUARANTINED,
+            failure_code="BROKER_RETURN_QUARANTINED",
+            return_id=record.return_id,
+            event_count=record.event_count,
+            sandbox_digest=envelope.sandbox_digest,
+            finished=True,
+        )
 
     def _transition(
         self,
