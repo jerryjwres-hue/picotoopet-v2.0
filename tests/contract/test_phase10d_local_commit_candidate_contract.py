@@ -33,9 +33,11 @@ def test_phase10d_c_migration_and_worker_are_registered() -> None:
 
 def test_phase10d_c_security_boundary_is_frozen_in_source() -> None:
     execution = _read("src/picotoopet_core/providers/commit_execution.py")
+    service = _read("src/picotoopet_core/providers/commit_service.py")
     routes = _read("src/picotoopet_core/api/routes/provider_commits.py")
 
-    assert "refs/picotoopet/commit-candidates/" in execution
+    assert "refs/picotoopet/commit-candidates/" in service
+    assert "ProviderCommitService.local_ref" in execution
     assert "hash-object" in execution
     assert "--no-filters" in execution
     assert "commit-tree" in execution
