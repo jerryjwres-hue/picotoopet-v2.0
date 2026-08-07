@@ -1,7 +1,5 @@
 """Phase 10D-B Return 审阅与落地候选的安全模型。"""
 
-from __future__ import annotations
-
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
