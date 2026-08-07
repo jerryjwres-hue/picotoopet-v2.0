@@ -131,7 +131,7 @@ def test_provider_api_rejects_arbitrary_body_and_low_usage(tmp_path: Path) -> No
     assert arbitrary_confirmation.status_code == 422
     assert low.status_code == 201
     assert denied.status_code == 400
-    assert denied.json()["code"] == "PROVIDER_POLICY_DENIED"
+    assert denied.json()["error"]["code"] == "PROVIDER_POLICY_DENIED"
     assert arbitrary_create.status_code == 422
 
 
