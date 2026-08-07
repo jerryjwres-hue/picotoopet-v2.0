@@ -18,6 +18,16 @@ class ProviderReviewDecision(StrEnum):
     REJECTED = "rejected"
 
 
+class ProviderReviewStatus(StrEnum):
+    """Windows 可见的 Review 状态。"""
+
+    UNAVAILABLE = "unavailable"
+    REVIEWABLE = "reviewable"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    LEGACY_NO_ARTIFACT = "legacy_no_artifact"
+
+
 class ProviderAdoptionStatus(StrEnum):
     """落地候选的固定状态集合。"""
 
@@ -63,6 +73,36 @@ class ProviderReviewDecisionRecord(BaseModel):
     decision: ProviderReviewDecision
     change_set_digest: str = Field(pattern=_SHA256_PATTERN)
     created_at: datetime
+
+
+class ProviderReviewFilePreview(BaseModel):
+    """只读变更文件投影。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    operation: Literal["add", "modify", "delete"]
+    path: str = Field(min_length=1, max_length=240)
+    size_bytes: int = Field(ge=0, le=65536)
+    base_sha256: str | None = Field(default=None, pattern=_SHA256_PATTERN)
+    result_sha256: str | None = Field(default=None, pattern=_SHA256_PATTERN)
+
+
+class ProviderReviewRecord(BaseModel):
+    """Windows 可读取的有界 Review 事实。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(pattern=_UUID_PATTERN)
+    return_id: str | None = Field(default=None, max_length=80)
+    review_status: ProviderReviewStatus
+    change_set_digest: str | None = Field(default=None, pattern=_SHA256_PATTERN)
+    review_diff_digest: str | None = Field(default=None, pattern=_SHA256_PATTERN)
+    changed_file_count: int = Field(default=0, ge=0, le=5)
+    payload_bytes: int = Field(default=0, ge=0, le=262144)
+    files: list[ProviderReviewFilePreview] = Field(default_factory=list, max_length=5)
+    review_diff: str = Field(default="", max_length=131072)
+    decision: ProviderReviewDecision | None = None
+    candidate_id: str | None = Field(default=None, pattern=_UUID_PATTERN)
 
 
 class ProviderAdoptionCandidateRecord(BaseModel):
