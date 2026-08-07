@@ -77,6 +77,7 @@ jobs:
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PICOTOOPET_CODEX_EXECUTABLE: "${{ github.workspace }}/tests/fixtures/codex/fake_codex_jsonl.py"
 
     steps:
       - name: Check out source
@@ -98,6 +99,7 @@ jobs:
             pytest-cov==7.1.0 \
             ruff==0.16.1 \
             jsonschema==4.26.0
+          chmod +x "$PICOTOOPET_CODEX_EXECUTABLE"
 
       - name: Verify native M4-class environment
         shell: bash
@@ -117,6 +119,8 @@ jobs:
             tests/contract/test_phase23_worker_delivery.py \
             tests/contract/test_phase23_worker_status_contract.py \
             tests/contract/test_phase23_diagnostic_contract.py \
+            tests/contract/test_phase10d_codex_provider_contract.py \
+            tests/contract/test_phase10d_codex_worker_contract.py \
             tests/integration/api/test_diagnostic_snapshot_api.py \
             tests/integration/queue/test_diagnostic_cancellation.py \
             tests/integration/queue/test_diagnostic_result_commit.py \
@@ -138,10 +142,12 @@ jobs:
         run: |
           ruff check \
             src/picotoopet_core/diagnostics \
+            src/picotoopet_core/providers \
             src/picotoopet_core/results \
             src/picotoopet_core/worker \
             src/picotoopet_core/queue/diagnostic_repository.py \
             src/picotoopet_core/api/contracts/control_center.py \
+            src/picotoopet_core/api/routes/provider_sessions.py \
             src/picotoopet_core/api/routes/tasks.py \
             src/picotoopet_core/api/routes/workers.py \
             src/picotoopet_core/config \
@@ -150,6 +156,9 @@ jobs:
             tests/contract/test_worker_runtime_source.py \
             tests/contract/test_phase23_worker_delivery.py \
             tests/contract/test_phase23_diagnostic_contract.py \
+            tests/contract/test_phase10d_codex_provider_contract.py \
+            tests/contract/test_phase10d_codex_worker_contract.py \
+            tests/fixtures/codex/fake_codex_jsonl.py \
             tests/integration/api/test_diagnostic_snapshot_api.py \
             tests/integration/queue/test_diagnostic_cancellation.py \
             tests/integration/queue/test_diagnostic_result_commit.py \
