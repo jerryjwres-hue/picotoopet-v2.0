@@ -6,15 +6,24 @@ import ast
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from picotoopet_core.db.database import Database
+from picotoopet_core.domain.models import TaskCreate, TaskRecord
+from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.worker.codex_worktree import (
     CodexWorktree,
     CodexWorktreeError,
     CodexWorktreeManager,
 )
+from picotoopet_core.worker.handlers import HandlerResult
 
 from .artifact_store import ProviderArtifactError, ProviderReturnArtifactStore
+from .change_set import NormalizedChange
+from .review_models import ProviderAdoptionStatus
 
 
 class AdoptionExecutionError(RuntimeError):
@@ -32,6 +41,26 @@ class AdoptionApplyResult:
     changed_file_count: int
     validation_checks: list[str]
     candidate_digest: str
+
+
+class AdoptionTaskPayload(BaseModel):
+    """只由 Mac Core 生成的固定 Adoption Worker payload。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    session_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    return_id: str = Field(min_length=1, max_length=80)
+    base_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    change_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    allowed_write: tuple[str, ...] = (
+        "src",
+        "tests",
+        "windows",
+        "docs",
+        "scripts",
+        ".github",
+    )
 
 
 class AdoptionArtifactApplier:
@@ -111,7 +140,12 @@ class AdoptionArtifactApplier:
                 except CodexWorktreeError as error:
                     raise AdoptionExecutionError("ADOPTION_WORKTREE_CLEANUP_FAILED") from error
 
-    def _apply_one(self, worktree: CodexWorktree, return_id: str, change: object) -> None:
+    def _apply_one(
+        self,
+        worktree: CodexWorktree,
+        return_id: str,
+        change: NormalizedChange,
+    ) -> None:
         relative = PurePosixPath(change.path)
         target = worktree.path / Path(*relative.parts)
         if change.operation in {"modify", "delete"}:
@@ -158,7 +192,7 @@ class AdoptionArtifactApplier:
     def _validate_result(
         manager: CodexWorktreeManager,
         worktree: CodexWorktree,
-        expected_changes: tuple[object, ...],
+        expected_changes: tuple[NormalizedChange, ...],
     ) -> None:
         captured = manager.capture_changes(worktree)
         by_path = {change.path: change for change in captured.changes}
@@ -199,3 +233,159 @@ class AdoptionArtifactApplier:
             separators=(",", ":"),
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
+
+
+class AdoptionExecutionCoordinator:
+    """把 accepted Review 的 queued Candidate 映射到固定 Worker 任务。"""
+
+    TASK_TYPE = "provider.adoption.apply-v1"
+
+    def __init__(
+        self,
+        *,
+        database: Database,
+        queue: DiagnosticQueueRepository,
+        repository: Path,
+        worktree_root: Path,
+        artifact_store: ProviderReturnArtifactStore,
+    ) -> None:
+        self.database = database
+        self.queue = queue
+        self.applier = AdoptionArtifactApplier(
+            repository=repository,
+            worktree_root=worktree_root,
+            artifact_store=artifact_store,
+        )
+
+    def enqueue_pending(self) -> None:
+        """幂等为 queued Candidate 创建唯一 Worker 任务。"""
+
+        rows = self.database.fetchall(
+            "SELECT candidate_id, session_id, return_id, base_commit, change_set_digest "
+            "FROM provider_adoption_candidates WHERE status = ? ORDER BY created_at LIMIT 20",
+            (ProviderAdoptionStatus.QUEUED.value,),
+        )
+        for row in rows:
+            payload = AdoptionTaskPayload(
+                candidate_id=row["candidate_id"],
+                session_id=row["session_id"],
+                return_id=row["return_id"],
+                base_commit=row["base_commit"],
+                change_set_digest=row["change_set_digest"],
+            )
+            self.queue.create(
+                TaskCreate(
+                    task_type=self.TASK_TYPE,
+                    payload=payload.model_dump(mode="json"),
+                    priority=45,
+                    resource_tag="provider-adoption",
+                    idempotency_key=f"adoption-task:{row['candidate_id']}",
+                    dedupe_key=f"provider-adoption:{row['session_id']}",
+                    max_attempts=1,
+                    timeout_seconds=300,
+                )
+            )
+
+    def handler(self, task: TaskRecord) -> HandlerResult:
+        """执行一个固定 Adoption Candidate，绝不产生 Git commit 或远端写入。"""
+
+        payload = AdoptionTaskPayload.model_validate(task.payload)
+        row = self.database.fetchone(
+            "SELECT * FROM provider_adoption_candidates WHERE candidate_id = ?",
+            (payload.candidate_id,),
+        )
+        if row is None:
+            raise KeyError(payload.candidate_id)
+        if row["session_id"] != payload.session_id or row["return_id"] != payload.return_id:
+            raise AdoptionExecutionError("ADOPTION_ARTIFACT_INVALID")
+        if row["base_commit"] != payload.base_commit:
+            raise AdoptionExecutionError("ADOPTION_BASE_MISMATCH")
+        if row["change_set_digest"] != payload.change_set_digest:
+            raise AdoptionExecutionError("ADOPTION_ARTIFACT_INVALID")
+        if row["status"] not in {
+            ProviderAdoptionStatus.QUEUED.value,
+            ProviderAdoptionStatus.STAGING.value,
+            ProviderAdoptionStatus.APPLYING.value,
+        }:
+            raise AdoptionExecutionError("ADOPTION_ALREADY_CREATED")
+
+        self._set_status(payload.candidate_id, ProviderAdoptionStatus.STAGING)
+        self._set_status(payload.candidate_id, ProviderAdoptionStatus.APPLYING)
+        try:
+            result = self.applier.apply(
+                candidate_id=payload.candidate_id,
+                return_id=payload.return_id,
+                base_commit=payload.base_commit,
+                change_set_digest=payload.change_set_digest,
+                allowed_write=payload.allowed_write,
+            )
+            self._set_status(payload.candidate_id, ProviderAdoptionStatus.VALIDATING)
+            self._finish_ready(payload.candidate_id, result)
+            return HandlerResult(
+                summary={
+                    "candidate_id": payload.candidate_id,
+                    "status": ProviderAdoptionStatus.ADOPTION_READY.value,
+                    "changed_file_count": result.changed_file_count,
+                    "candidate_digest": result.candidate_digest,
+                }
+            )
+        except AdoptionExecutionError as error:
+            self._finish_failure(payload.candidate_id, error.code)
+            raise
+
+    def _set_status(self, candidate_id: str, status: ProviderAdoptionStatus) -> None:
+        now = datetime.now(UTC).isoformat()
+        self.database.execute(
+            "UPDATE provider_adoption_candidates SET status = ?, updated_at = ? "
+            "WHERE candidate_id = ?",
+            (status.value, now, candidate_id),
+        )
+
+    def _finish_ready(self, candidate_id: str, result: AdoptionApplyResult) -> None:
+        now = datetime.now(UTC).isoformat()
+        validation_json = json.dumps(
+            result.validation_checks,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        preview_json = json.dumps(
+            {
+                "candidate_id": candidate_id,
+                "status": ProviderAdoptionStatus.ADOPTION_READY.value,
+                "changed_file_count": result.changed_file_count,
+                "validation_checks": result.validation_checks,
+                "candidate_digest": result.candidate_digest,
+                "updated_at": now,
+                "finished_at": now,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        self.database.execute(
+            "UPDATE provider_adoption_candidates SET status = ?, validation_json = ?, "
+            "failure_code = NULL, updated_at = ?, finished_at = ?, preview_json = ? "
+            "WHERE candidate_id = ?",
+            (
+                ProviderAdoptionStatus.ADOPTION_READY.value,
+                validation_json,
+                now,
+                now,
+                preview_json,
+                candidate_id,
+            ),
+        )
+
+    def _finish_failure(self, candidate_id: str, code: str) -> None:
+        status = {
+            "ADOPTION_ARTIFACT_INVALID": ProviderAdoptionStatus.ARTIFACT_INVALID,
+            "ADOPTION_BASE_MISMATCH": ProviderAdoptionStatus.BASE_MISMATCH,
+            "ADOPTION_PATH_POLICY": ProviderAdoptionStatus.POLICY_BLOCKED,
+            "ADOPTION_WORKTREE_CLEANUP_FAILED": ProviderAdoptionStatus.FAILED,
+        }.get(code, ProviderAdoptionStatus.VALIDATION_FAILED)
+        now = datetime.now(UTC).isoformat()
+        self.database.execute(
+            "UPDATE provider_adoption_candidates SET status = ?, failure_code = ?, "
+            "updated_at = ?, finished_at = ? WHERE candidate_id = ?",
+            (status.value, code, now, now, candidate_id),
+        )
