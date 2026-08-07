@@ -17,6 +17,8 @@ from picotoopet_core.handoffs.service import HandoffService
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import ResidentManager
 from picotoopet_core.projects.repository import ProjectRepository
+from picotoopet_core.providers.readiness import CodexReadinessProbe
+from picotoopet_core.providers.service import ProviderSessionService
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.queue.repository import QueueRepository
 from picotoopet_core.results.repository import ResultRepository
@@ -27,8 +29,6 @@ from picotoopet_core.worker.state import WorkerStateStore
 
 @dataclass(slots=True)
 class Services:
-    """应用内共享服务集合。"""
-
     settings: AppSettings
     database: Database
     projects: ProjectRepository
@@ -37,6 +37,7 @@ class Services:
     handoffs: HandoffService
     returns: ReturnValidationService
     broker_sessions: BrokerSessionService
+    provider_sessions: ProviderSessionService
     audit: AuditWriter
     results: ResultStore
     result_records: ResultRepository
@@ -48,15 +49,11 @@ class Services:
     worker_state: WorkerStateStore
 
     def close(self) -> None:
-        """按依赖顺序关闭外部资源。"""
-
         self.ollama.close()
         self.database.close()
 
 
 def build_services(settings: AppSettings) -> Services:
-    """创建目录、迁移数据库并装配全部服务。"""
-
     settings.paths.ensure()
     database = Database(settings.paths.database_file)
     database.open()
@@ -74,6 +71,12 @@ def build_services(settings: AppSettings) -> Services:
         returns,
         api_token=settings.api_token,
     )
+    readiness = CodexReadinessProbe(settings.codex_executable)
+    provider_sessions = ProviderSessionService(
+        database,
+        handoffs,
+        readiness=readiness.status,
+    )
     result_store = ResultStore(settings.paths.results_dir)
     ollama = OllamaClient(settings.ollama_base_url, timeout_seconds=2.0)
     worker_state = WorkerStateStore(
@@ -89,6 +92,7 @@ def build_services(settings: AppSettings) -> Services:
         handoffs=handoffs,
         returns=returns,
         broker_sessions=broker_sessions,
+        provider_sessions=provider_sessions,
         audit=AuditWriter(database),
         results=result_store,
         result_records=ResultRepository(database),

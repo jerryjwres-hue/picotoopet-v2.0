@@ -52,8 +52,10 @@ internal static class Program
             await DiagnosticSnapshotSmokeTests.RunAsync().ConfigureAwait(false);
             await HandoffPreparationSmokeTests.RunAsync().ConfigureAwait(false);
             await CloudDevelopmentPhase10ASmokeTests.RunAsync().ConfigureAwait(false);
+            await CodexHandoffTemplateSmokeTests.RunAsync().ConfigureAwait(false);
             await MacCoreReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
             await MacCoreBrokerClientSmokeTests.RunAsync().ConfigureAwait(false);
+            await ProviderSessionSmokeTests.RunAsync().ConfigureAwait(false);
             await ReturnValidationSmokeTests.RunAsync().ConfigureAwait(false);
             await BrokerSessionSmokeTests.RunAsync().ConfigureAwait(false);
             await EventStreamColdStartSmokeTests.RunAsync().ConfigureAwait(false);

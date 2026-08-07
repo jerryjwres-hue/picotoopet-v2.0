@@ -1,4 +1,4 @@
-"""Phase 10B Return 包条目、状态和安全投影模型。"""
+"""Phase 10B/10D Return 包条目、状态和安全投影模型。"""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field
 class ReturnEntryKind(StrEnum):
     """验证器可识别的包条目类型；当前合同只允许普通文件。"""
 
-    FILE     = "file"
-    SYMLINK  = "symlink"
+    FILE = "file"
+    SYMLINK = "symlink"
     HARDLINK = "hardlink"
-    DEVICE   = "device"
+    DEVICE = "device"
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,12 +28,12 @@ class ReturnPackageEntry:
 
 
 class ReturnStatus(StrEnum):
-    """Phase 10B 允许的最小 Return 状态集合。"""
+    """Return 允许的最小状态集合。"""
 
-    RECEIVED           = "received"
-    VALIDATING         = "validating"
+    RECEIVED = "received"
+    VALIDATING = "validating"
     CONTRACT_VALIDATED = "contract_validated"
-    QUARANTINED        = "quarantined"
+    QUARANTINED = "quarantined"
 
 
 class ReturnValidationCheck(BaseModel):
@@ -50,7 +50,7 @@ class ReturnEventSummary(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    sequence: int = Field(ge=1, le=16)
+    sequence: int = Field(ge=1, le=100)
     event_type: str = Field(min_length=1, max_length=80)
     summary: str = Field(min_length=1, max_length=160)
 
@@ -63,14 +63,18 @@ class ReturnRecord(BaseModel):
     return_id: str = Field(min_length=1, max_length=80)
     handoff_id: str = Field(min_length=1, max_length=80)
     status: ReturnStatus
-    provider: Literal["local-contract-self-test", "local-mock-dev-broker"]
+    provider: Literal[
+        "local-contract-self-test",
+        "local-mock-dev-broker",
+        "codex",
+    ]
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     package_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    changed_file_count: int = Field(ge=0, le=1)
-    event_count: int = Field(ge=0, le=16)
+    changed_file_count: int = Field(ge=0, le=5)
+    event_count: int = Field(ge=0, le=100)
     validation_checks: list[ReturnValidationCheck] = Field(max_length=16)
-    event_summaries: list[ReturnEventSummary] = Field(max_length=16)
+    event_summaries: list[ReturnEventSummary] = Field(max_length=100)
     quarantine_code: str | None = Field(default=None, max_length=80)
     created_at: datetime
     updated_at: datetime

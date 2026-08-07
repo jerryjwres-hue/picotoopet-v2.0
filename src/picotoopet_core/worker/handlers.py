@@ -23,8 +23,6 @@ WorkerHandler = Callable[[TaskRecord], HandlerResult]
 
 
 def _system_noop(task: TaskRecord) -> HandlerResult:
-    """无网络、无文件和无模型副作用的基础处理器。"""
-
     if task.payload.get("raise_error") is True:
         raise RuntimeError("requested noop failure")
     return HandlerResult(
@@ -37,10 +35,13 @@ def _system_noop(task: TaskRecord) -> HandlerResult:
 
 def default_handlers(
     diagnostic_handler: WorkerHandler | None = None,
+    provider_handler: WorkerHandler | None = None,
 ) -> dict[str, WorkerHandler]:
     """返回显式冻结的处理器映射，不做动态发现。"""
 
     handlers: dict[str, WorkerHandler] = {"system.noop": _system_noop}
     if diagnostic_handler is not None:
         handlers["system.diagnostic_snapshot"] = diagnostic_handler
+    if provider_handler is not None:
+        handlers["provider.codex.handoff-v1"] = provider_handler
     return handlers

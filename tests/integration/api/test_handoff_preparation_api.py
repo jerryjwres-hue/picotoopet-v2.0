@@ -74,7 +74,16 @@ def test_prepare_list_get_submit_and_approve_handoff(tmp_path: Path) -> None:
             "repo_url": "https://github.com/jerryjwres-hue/picotoopet-v2.0",
             "base_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
             "base_commit": "5db6b1f9340ff5abe0d38bbb7b6e3ee9b48c34bb",
-        }
+        },
+        {
+            "template_id": "picotoopet-repo-maintenance-codex-v1",
+            "display_name": "PicotooPet 受控 Codex 仓库维护",
+            "provider": "codex",
+            "provider_configured": False,
+            "repo_url": "https://github.com/jerryjwres-hue/picotoopet-v2.0",
+            "base_ref": "feature/phase10c-event-stream-recovery",
+            "base_commit": "65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f",
+        },
     ]
     assert prepared.status_code == 201
     assert replay.status_code == 201

@@ -256,3 +256,48 @@ CREATE INDEX IF NOT EXISTS idx_broker_sessions_handoff_created
 CREATE INDEX IF NOT EXISTS idx_broker_sessions_status_created
     ON broker_sessions(status, created_at DESC);
 """
+
+MIGRATION_006 = r"""
+CREATE TABLE IF NOT EXISTS provider_usage_confirmations (
+    confirmation_id     TEXT PRIMARY KEY,
+    handoff_id           TEXT NOT NULL REFERENCES handoffs(handoff_id) ON DELETE RESTRICT,
+    provider             TEXT NOT NULL,
+    status               TEXT NOT NULL,
+    request_digest       TEXT NOT NULL,
+    package_digest       TEXT NOT NULL,
+    budget_json          TEXT NOT NULL,
+    idempotency_key      TEXT NOT NULL UNIQUE,
+    confirmed_at         TEXT NOT NULL,
+    expires_at           TEXT NOT NULL,
+    preview_json         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_usage_handoff_confirmed
+    ON provider_usage_confirmations(handoff_id, confirmed_at DESC);
+
+CREATE TABLE IF NOT EXISTS provider_sessions (
+    session_id              TEXT PRIMARY KEY,
+    handoff_id              TEXT NOT NULL REFERENCES handoffs(handoff_id) ON DELETE RESTRICT,
+    provider                TEXT NOT NULL,
+    status                  TEXT NOT NULL,
+    request_digest          TEXT NOT NULL,
+    package_digest          TEXT NOT NULL,
+    budget_json             TEXT NOT NULL,
+    turns_used              INTEGER NOT NULL DEFAULT 0,
+    elapsed_seconds         INTEGER NOT NULL DEFAULT 0,
+    changed_file_count      INTEGER NOT NULL DEFAULT 0,
+    return_id               TEXT REFERENCES returns(return_id) ON DELETE RESTRICT,
+    failure_code            TEXT,
+    provider_usage_unknown  INTEGER NOT NULL DEFAULT 1,
+    idempotency_key         TEXT NOT NULL UNIQUE,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    finished_at             TEXT,
+    preview_json            TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_sessions_one_codex_per_handoff
+    ON provider_sessions(handoff_id, provider);
+CREATE INDEX IF NOT EXISTS idx_provider_sessions_status_created
+    ON provider_sessions(status, created_at DESC);
+"""

@@ -15,6 +15,7 @@ from .schema import (
     MIGRATION_003,
     MIGRATION_004,
     MIGRATION_005,
+    MIGRATION_006,
 )
 
 
@@ -133,6 +134,16 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (5, datetime.now(UTC).isoformat()),
+                )
+
+            migration_006_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 6"
+            ).fetchone()
+            if migration_006_exists is None:
+                connection.executescript(MIGRATION_006)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (6, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:

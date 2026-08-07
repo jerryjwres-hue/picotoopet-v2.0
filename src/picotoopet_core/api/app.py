@@ -23,6 +23,7 @@ from .routes import (
     handoffs,
     health,
     projects,
+    provider_sessions,
     results,
     returns,
     status,
@@ -72,6 +73,11 @@ def create_app(settings: AppSettings) -> FastAPI:
         broker_sessions.router,
         prefix=prefix,
         tags=["broker-sessions"],
+    )
+    app.include_router(
+        provider_sessions.router,
+        prefix=prefix,
+        tags=["provider-sessions"],
     )
     app.include_router(results.router, prefix=prefix, tags=["results"])
     app.include_router(events.router, prefix=prefix, tags=["events"])

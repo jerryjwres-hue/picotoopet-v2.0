@@ -14,6 +14,7 @@ public sealed record CloudDevelopmentMilestone(
 public sealed class CloudDevelopmentPageViewModel : PageViewModel
 {
     private const string DefaultTemplateId = "picotoopet-repo-maintenance-v1";
+    private const string CodexTemplateId   = "picotoopet-repo-maintenance-codex-v1";
     private const int MaxTitleLength        = 120;
     private const int MaxObjectiveLength    = 1000;
 
@@ -454,9 +455,14 @@ public sealed class CloudDevelopmentPageViewModel : PageViewModel
         ArgumentNullException.ThrowIfNull(templates);
         var safe = templates
             .Where(item =>
-                string.Equals(item.TemplateId, DefaultTemplateId, StringComparison.Ordinal)
-                && string.Equals(item.Provider, "manual", StringComparison.Ordinal)
-                && !item.ProviderConfigured)
+                (string.Equals(item.TemplateId, DefaultTemplateId, StringComparison.Ordinal)
+                 && string.Equals(item.Provider, "manual", StringComparison.Ordinal))
+                || (string.Equals(item.TemplateId, CodexTemplateId, StringComparison.Ordinal)
+                    && string.Equals(item.Provider, "codex", StringComparison.Ordinal)))
+            .OrderBy(item => string.Equals(
+                item.TemplateId,
+                DefaultTemplateId,
+                StringComparison.Ordinal) ? 0 : 1)
             .ToArray();
         TemplateOptions = safe;
         SelectedTemplate = safe.FirstOrDefault(item =>
@@ -464,6 +470,8 @@ public sealed class CloudDevelopmentPageViewModel : PageViewModel
                     item.TemplateId,
                     SelectedTemplate?.TemplateId,
                     StringComparison.Ordinal))
+            ?? safe.FirstOrDefault(item =>
+                string.Equals(item.TemplateId, DefaultTemplateId, StringComparison.Ordinal))
             ?? safe.FirstOrDefault();
     }
 

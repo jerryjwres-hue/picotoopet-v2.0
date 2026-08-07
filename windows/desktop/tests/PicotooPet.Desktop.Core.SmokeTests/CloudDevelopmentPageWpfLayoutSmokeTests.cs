@@ -9,7 +9,7 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>验证 Phase 10A、10B-A 与 10B-B 使用有界原生 WPF 控件并完成真实布局。</summary>
+/// <summary>验证 Handoff、真实 Provider、Return 与 Mock Broker 使用有界原生 WPF 控件并完成真实布局。</summary>
 internal static class CloudDevelopmentPageWpfLayoutSmokeTests
 {
     public static void Run()
@@ -43,12 +43,12 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
             DataContext = new CloudDevelopmentPageViewModel(),
         };
 
-        page.Measure(new Size(1100, 1320));
-        page.Arrange(new Rect(0, 0, 1100, 1320));
+        page.Measure(new Size(1100, 1700));
+        page.Arrange(new Rect(0, 0, 1100, 1700));
         page.UpdateLayout();
         page.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
-        page.Measure(new Size(1100, 1320));
-        page.Arrange(new Rect(0, 0, 1100, 1320));
+        page.Measure(new Size(1100, 1700));
+        page.Arrange(new Rect(0, 0, 1100, 1700));
         page.UpdateLayout();
 
         SmokeAssert.True(page.IsMeasureValid, "Cloud Development Page Measure 未完成");
@@ -56,19 +56,23 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
         SmokeAssert.True(page.ActualWidth > 0, "Cloud Development Page 实际宽度无效");
         SmokeAssert.True(page.ActualHeight > 0, "Cloud Development Page 实际高度无效");
         SmokeAssert.True(
-            FindVisualChildren<Button>(page).Count >= 8,
-            "页面必须提供 Handoff、Return 和 Broker 的原生刷新/执行/取消按钮");
+            FindVisualChildren<Button>(page).Count >= 12,
+            "页面必须提供 Handoff、Provider、Return 和 Broker 的原生刷新/执行/取消按钮");
         SmokeAssert.True(
             FindVisualChildren<TextBox>(page).Count >= 2,
-            "Phase 10A 必须保留标题和目标摘要输入框");
+            "Handoff 必须保留标题和目标摘要输入框");
+        SmokeAssert.Equal(
+            1,
+            FindVisualChildren<ProviderSessionPanel>(page).Count,
+            "Phase 10D-A 必须提供唯一的原生真实 Codex Provider 面板");
         SmokeAssert.Equal(
             1,
             FindVisualChildren<ReturnValidationPanel>(page).Count,
-            "Phase 10B-A 必须提供唯一的原生 Return 验证面板");
+            "Return 必须提供唯一的原生验证面板");
         SmokeAssert.Equal(
             1,
             FindVisualChildren<BrokerSessionPanel>(page).Count,
-            "Phase 10B-B 必须提供唯一的原生 Mock Dev Broker 面板");
+            "Mock Dev Broker 必须提供唯一的原生面板");
         SmokeAssert.Equal(
             0,
             FindVisualChildren<PasswordBox>(page).Count,
@@ -76,7 +80,7 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
         SmokeAssert.Equal(
             0,
             FindVisualChildren<WebBrowser>(page).Count,
-            "云端开发页面不得使用浏览器 UI");
+            "云端开发页面不得使用浏览器 UI 或抓取 Usage 页面");
     }
 
     private static List<T> FindVisualChildren<T>(DependencyObject root)

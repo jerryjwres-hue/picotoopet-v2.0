@@ -30,7 +30,7 @@ class HandoffPolicyError(HandoffError):
 
 
 class HandoffService:
-    """Mac Core 中 Phase 10A Handoff 的唯一事实服务。"""
+    """Mac Core 中 Handoff 的唯一事实服务。"""
 
     _TEMPLATE = HandoffTemplate(
         template_id="picotoopet-repo-maintenance-v1",
@@ -41,18 +41,60 @@ class HandoffService:
         base_ref="feature/phase23-slice-d-diagnostic-snapshot-release",
         base_commit="5db6b1f9340ff5abe0d38bbb7b6e3ee9b48c34bb",
     )
+    _CODEX_TEMPLATE = HandoffTemplate(
+        template_id="picotoopet-repo-maintenance-codex-v1",
+        display_name="PicotooPet 受控 Codex 仓库维护",
+        provider="codex",
+        provider_configured=False,
+        repo_url="https://github.com/jerryjwres-hue/picotoopet-v2.0",
+        base_ref="feature/phase10c-event-stream-recovery",
+        base_commit="65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f",
+    )
     _REQUIRED_TESTS = [
         "python-regression",
         "windows-wpf-behavior",
         "windows-formal-release",
         "mac-core-arm64",
     ]
+    _CODEX_REQUIRED_TESTS = [
+        "python-regression",
+        "windows-wpf-behavior",
+        "windows-formal-release",
+        "mac-core-arm64",
+        "mac-worker-arm64",
+    ]
+    _MANUAL_BUDGET = {
+        "max_turns": 20,
+        "timeout_seconds": 1800,
+        "concurrency": 1,
+        "network_tools": False,
+    }
+    _CODEX_BUDGET = {
+        "max_turns": 8,
+        "timeout_seconds": 900,
+        "concurrency": 1,
+        "max_changed_files": 5,
+        "max_file_bytes": 65536,
+        "max_return_bytes": 262144,
+        "automatic_retries": 0,
+        "network_tools": False,
+        "automatic_top_up": False,
+        "automatic_publish": False,
+    }
     _SECURITY_BOUNDARIES = [
         "Protected source is excluded from every package.",
         "Provider execution is disabled in Phase 10A.",
         "Only an isolated future worktree may be writable.",
         "Local validation and human review remain mandatory.",
         "Push, merge, tag and release remain independently prohibited.",
+    ]
+    _CODEX_SECURITY_BOUNDARIES = [
+        "Protected source and Raw Evidence are excluded from every package.",
+        "Windows controls the Session but never receives Codex credentials.",
+        "Mac Worker may write only inside one Session-exclusive Git worktree.",
+        "One manual Usage confirmation permits one low-budget Session only.",
+        "Local validation and human review remain mandatory.",
+        "Automatic commit, push, PR, merge, tag, release and top-up are prohibited.",
     ]
     _UNSAFE_TEXT_PATTERNS = (
         re.compile(r"(?:^|[\s/\\])\.\.(?:[/\\\s]|$)", re.IGNORECASE),
@@ -76,14 +118,17 @@ class HandoffService:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        self.database  = database
+        self.database = database
         self.approvals = approvals
-        self._clock    = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     def templates(self) -> list[HandoffTemplate]:
         """返回固定模板，禁止客户端自行构造权限事实。"""
 
-        return [self._TEMPLATE.model_copy(deep=True)]
+        return [
+            self._TEMPLATE.model_copy(deep=True),
+            self._CODEX_TEMPLATE.model_copy(deep=True),
+        ]
 
     def prepare(
         self,
@@ -91,10 +136,24 @@ class HandoffService:
         *,
         idempotency_key: str,
     ) -> HandoffRecord:
-        """规范化输入并生成不执行 Provider 的确定性 Handoff 草稿。"""
+        """规范化输入并生成确定性 Handoff 草稿。"""
 
         key = self._require_idempotency_key(idempotency_key)
         self._enforce_safe_text(request.title, request.objective)
+        template = self._template(request.template_id)
+        required_tests = (
+            self._CODEX_REQUIRED_TESTS
+            if template.provider == "codex"
+            else self._REQUIRED_TESTS
+        )
+        budget = (
+            self._CODEX_BUDGET if template.provider == "codex" else self._MANUAL_BUDGET
+        )
+        boundaries = (
+            self._CODEX_SECURITY_BOUNDARIES
+            if template.provider == "codex"
+            else self._SECURITY_BOUNDARIES
+        )
         normalized_input = {
             "template_id": request.template_id,
             "title": request.title,
@@ -114,27 +173,26 @@ class HandoffService:
         created_at = self._now()
         expires_at = created_at + timedelta(seconds=request.expires_seconds)
         handoff_id = str(uuid4())
-        read_root  = f"D:/PicotooPet/DevSandbox/worktrees/{handoff_id}/source"
-        write_root = f"D:/PicotooPet/DevSandbox/worktrees/{handoff_id}/workspace"
+        if template.provider == "codex":
+            read_root = "workspace/source"
+            write_root = "workspace/changes"
+        else:
+            read_root = f"D:/PicotooPet/DevSandbox/worktrees/{handoff_id}/source"
+            write_root = f"D:/PicotooPet/DevSandbox/worktrees/{handoff_id}/workspace"
         request_payload = {
             "schema_version": "1.0.0-draft",
-            "template_id": self._TEMPLATE.template_id,
+            "template_id": template.template_id,
             "title": request.title,
             "objective_summary": request.objective,
-            "provider": self._TEMPLATE.provider,
+            "provider": template.provider,
             "sensitivity": "internal",
-            "repo_url": self._TEMPLATE.repo_url,
-            "base_ref": self._TEMPLATE.base_ref,
-            "base_commit": self._TEMPLATE.base_commit,
+            "repo_url": template.repo_url,
+            "base_ref": template.base_ref,
+            "base_commit": template.base_commit,
             "planned_read": [read_root],
             "planned_write": [write_root],
-            "required_tests": self._REQUIRED_TESTS,
-            "budget": {
-                "max_turns": 20,
-                "timeout_seconds": 1800,
-                "concurrency": 1,
-                "network_tools": False,
-            },
+            "required_tests": required_tests,
+            "budget": budget,
             "expires_at": expires_at.isoformat(),
         }
         request_digest = self._digest(request_payload)
@@ -145,32 +203,34 @@ class HandoffService:
             read_root=read_root,
             write_root=write_root,
             request_digest=request_digest,
+            required_tests=required_tests,
+            budget=budget,
         )
         package_digest = self._digest(package_files)
         preview = {
             "handoff_id": handoff_id,
-            "template_id": self._TEMPLATE.template_id,
-            "template_name": self._TEMPLATE.display_name,
+            "template_id": template.template_id,
+            "template_name": template.display_name,
             "title": request.title,
             "objective_summary": request.objective,
             "status": HandoffStatus.PREPARED.value,
-            "provider": self._TEMPLATE.provider,
-            "provider_configured": False,
-            "repo_url": self._TEMPLATE.repo_url,
-            "base_ref": self._TEMPLATE.base_ref,
-            "base_commit": self._TEMPLATE.base_commit,
+            "provider": template.provider,
+            "provider_configured": template.provider_configured,
+            "repo_url": template.repo_url,
+            "base_ref": template.base_ref,
+            "base_commit": template.base_commit,
             "sensitivity": "internal",
             "planned_read_count": 1,
             "planned_write_count": 1,
-            "required_tests": self._REQUIRED_TESTS,
-            "budget_summary": "20 turns · 1800 秒 · 1 并发 · 无网络工具",
+            "required_tests": required_tests,
+            "budget_summary": self._budget_summary(template.provider),
             "request_digest": request_digest,
             "package_digest": package_digest,
             "approval_id": None,
             "created_at": created_at.isoformat(),
             "updated_at": created_at.isoformat(),
             "expires_at": expires_at.isoformat(),
-            "security_boundaries": self._SECURITY_BOUNDARIES,
+            "security_boundaries": boundaries,
         }
         manifest = {
             "prepare_input": normalized_input,
@@ -189,7 +249,7 @@ class HandoffService:
                 """,
                 (
                     handoff_id,
-                    self._TEMPLATE.template_id,
+                    template.template_id,
                     request.title,
                     request.objective,
                     HandoffStatus.PREPARED.value,
@@ -340,38 +400,42 @@ class HandoffService:
             )
 
     def _expire_if_needed(self, row: Any) -> Any:
-        status     = HandoffStatus(row["status"])
+        status = HandoffStatus(row["status"])
         expires_at = self._as_utc(datetime.fromisoformat(row["expires_at"]))
-        now        = self._now()
-        if (
+        now = self._now()
+        if status is HandoffStatus.APPROVED and expires_at <= now:
+            target_status = HandoffStatus.EXPIRED
+        elif (
             status in {HandoffStatus.PREPARED, HandoffStatus.WAITING_APPROVAL}
             and expires_at <= now
         ):
-            preview = json.loads(row["preview_json"])
-            preview.update(
-                {
-                    "status": HandoffStatus.EXPIRED.value,
-                    "updated_at": now.isoformat(),
-                }
+            target_status = HandoffStatus.EXPIRED
+        else:
+            return row
+        preview = json.loads(row["preview_json"])
+        preview.update(
+            {
+                "status": target_status.value,
+                "updated_at": now.isoformat(),
+            }
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE handoffs SET status = ?, preview_json = ?, updated_at = ? "
+                "WHERE handoff_id = ?",
+                (
+                    target_status.value,
+                    self._canonical_json(preview),
+                    now.isoformat(),
+                    row["handoff_id"],
+                ),
             )
-            with self.database.transaction() as connection:
-                connection.execute(
-                    "UPDATE handoffs SET status = ?, preview_json = ?, updated_at = ? "
-                    "WHERE handoff_id = ?",
-                    (
-                        HandoffStatus.EXPIRED.value,
-                        self._canonical_json(preview),
-                        now.isoformat(),
-                        row["handoff_id"],
-                    ),
-                )
-            refreshed = self.database.fetchone(
-                "SELECT * FROM handoffs WHERE handoff_id = ?",
-                (row["handoff_id"],),
-            )
-            assert refreshed is not None
-            return refreshed
-        return row
+        refreshed = self.database.fetchone(
+            "SELECT * FROM handoffs WHERE handoff_id = ?",
+            (row["handoff_id"],),
+        )
+        assert refreshed is not None
+        return refreshed
 
     @classmethod
     def _build_package_files(
@@ -383,6 +447,8 @@ class HandoffService:
         read_root: str,
         write_root: str,
         request_digest: str,
+        required_tests: list[str],
+        budget: dict[str, object],
     ) -> list[dict[str, str]]:
         contents = {
             "handoff.json": cls._canonical_json(
@@ -395,7 +461,7 @@ class HandoffService:
             "TASK_SPEC.md": f"# {title}\n\n{objective}\n",
             "ACCEPTANCE.json": cls._canonical_json(
                 {
-                    "required_tests": cls._REQUIRED_TESTS,
+                    "required_tests": required_tests,
                     "local_validation": True,
                 }
             ),
@@ -416,17 +482,11 @@ class HandoffService:
                         "merge",
                         "tag",
                         "release",
+                        "automatic_top_up",
                     ]
                 }
             ),
-            "COST_BUDGET.json": cls._canonical_json(
-                {
-                    "max_turns": 20,
-                    "timeout_seconds": 1800,
-                    "concurrency": 1,
-                    "network_tools": False,
-                }
-            ),
+            "COST_BUDGET.json": cls._canonical_json(budget),
         }
         return [
             {
@@ -462,6 +522,20 @@ class HandoffService:
             sort_keys=True,
             separators=(",", ":"),
         )
+
+    @classmethod
+    def _template(cls, template_id: str) -> HandoffTemplate:
+        if template_id == cls._TEMPLATE.template_id:
+            return cls._TEMPLATE
+        if template_id == cls._CODEX_TEMPLATE.template_id:
+            return cls._CODEX_TEMPLATE
+        raise HandoffPolicyError("未知 Handoff 模板。")
+
+    @staticmethod
+    def _budget_summary(provider: str) -> str:
+        if provider == "codex":
+            return "8 turns · 900 秒 · 1 并发 · 5 文件 · 0 自动重试 · 无网络工具"
+        return "20 turns · 1800 秒 · 1 并发 · 无网络工具"
 
     def _now(self) -> datetime:
         return self._as_utc(self._clock())

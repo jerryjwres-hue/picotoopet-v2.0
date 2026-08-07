@@ -4,9 +4,10 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
-/// <summary>Phase 10A Handoff、Phase 10B-A Return 与 Phase 10B-B Broker 原生 WPF 页面。</summary>
+/// <summary>Handoff、真实 Codex Provider、Return 与 Mock Broker 的原生 WPF 页面。</summary>
 public partial class CloudDevelopmentPage : System.Windows.Controls.UserControl
 {
+    private readonly ProviderSessionPanel _providerSessionPanel;
     private readonly ReturnValidationPanel _returnValidationPanel;
     private readonly BrokerSessionPanel _brokerSessionPanel;
     private bool _loadStarted;
@@ -14,12 +15,13 @@ public partial class CloudDevelopmentPage : System.Windows.Controls.UserControl
     public CloudDevelopmentPage()
     {
         InitializeComponent();
+        _providerSessionPanel   = new ProviderSessionPanel();
         _returnValidationPanel = new ReturnValidationPanel();
         _brokerSessionPanel    = new BrokerSessionPanel();
-        AppendPhase10BPanels();
+        AppendExecutionPanels();
     }
 
-    private void AppendPhase10BPanels()
+    private void AppendExecutionPanels()
     {
         if (Content is not ScrollViewer scrollViewer
             || scrollViewer.Content is not StackPanel stackPanel)
@@ -28,6 +30,7 @@ public partial class CloudDevelopmentPage : System.Windows.Controls.UserControl
                 "Cloud Development 页面缺少固定 ScrollViewer/StackPanel 内容根。"
             );
         }
+        stackPanel.Children.Add(_providerSessionPanel);
         stackPanel.Children.Add(_returnValidationPanel);
         stackPanel.Children.Add(_brokerSessionPanel);
     }
