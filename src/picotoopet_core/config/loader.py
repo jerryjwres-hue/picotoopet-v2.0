@@ -13,11 +13,14 @@ from .paths import RuntimePaths
 
 
 def _default_runtime_root() -> Path:
-    """根据平台选择本机应用数据目录。"""
-
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "PicotooPetV2"
     return Path.home() / ".local" / "share" / "PicotooPetV2"
+
+
+def _optional_path(name: str) -> Path | None:
+    value = os.getenv(name, "").strip()
+    return Path(value).expanduser() if value else None
 
 
 def load_settings() -> AppSettings:
@@ -34,7 +37,6 @@ def load_settings() -> AppSettings:
         for item in os.getenv("PICOTOO_PROTECTED_ROOTS", "").split(os.pathsep)
         if item.strip()
     )
-
     return AppSettings(
         paths=RuntimePaths.from_root(runtime_root),
         api_token=api_token,
@@ -50,4 +52,7 @@ def load_settings() -> AppSettings:
         worker_status_stale_seconds=int(
             os.getenv("PICOTOO_WORKER_STATUS_STALE_SECONDS", "45")
         ),
+        provider_repository=_optional_path("PICOTOO_PROVIDER_REPOSITORY"),
+        provider_worktree_root=_optional_path("PICOTOO_PROVIDER_WORKTREE_ROOT"),
+        codex_executable=_optional_path("PICOTOO_CODEX_EXECUTABLE"),
     )
