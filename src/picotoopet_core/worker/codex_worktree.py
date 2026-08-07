@@ -101,7 +101,11 @@ class CodexWorktreeManager:
             relative = self._normalize_relative(value)
             if relative.parts and relative.parts[0].lower() in _PROTECTED_BRANCH_NAMES:
                 raise CodexWorktreeError("保护分支路径被拒绝。")
-            if not any(relative == root or root in relative.parents for root in worktree.allowed_write):
+            allowed = any(
+                relative == root or root in relative.parents
+                for root in worktree.allowed_write
+            )
+            if not allowed:
                 raise CodexWorktreeError("变更路径不在 allowed_write 中。")
             actual = (worktree.path / Path(*relative.parts)).resolve()
             if worktree.path not in actual.parents:
