@@ -351,3 +351,32 @@ CREATE TABLE IF NOT EXISTS provider_adoption_candidates (
 CREATE INDEX IF NOT EXISTS idx_provider_adoption_status_created
     ON provider_adoption_candidates(status, created_at DESC);
 """
+
+MIGRATION_008 = r"""
+CREATE TABLE IF NOT EXISTS provider_commit_candidates (
+    commit_candidate_id     TEXT PRIMARY KEY,
+    adoption_candidate_id   TEXT NOT NULL UNIQUE REFERENCES provider_adoption_candidates(candidate_id) ON DELETE RESTRICT,
+    session_id              TEXT NOT NULL REFERENCES provider_sessions(session_id) ON DELETE RESTRICT,
+    return_id               TEXT NOT NULL REFERENCES returns(return_id) ON DELETE RESTRICT,
+    status                  TEXT NOT NULL,
+    base_commit             TEXT NOT NULL,
+    change_set_digest       TEXT NOT NULL,
+    tree_sha                TEXT,
+    commit_sha              TEXT,
+    local_ref               TEXT NOT NULL UNIQUE,
+    approval_id             TEXT NOT NULL UNIQUE REFERENCES approvals(approval_id) ON DELETE RESTRICT,
+    idempotency_key         TEXT NOT NULL UNIQUE,
+    validation_json         TEXT NOT NULL,
+    failure_code            TEXT,
+    author_time_utc         TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    finished_at             TEXT,
+    preview_json            TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_commit_status_created
+    ON provider_commit_candidates(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_provider_commit_session_created
+    ON provider_commit_candidates(session_id, created_at DESC);
+"""

@@ -1,4 +1,4 @@
-"""在现有 ApprovalService 上增加 Handoff 资源审批能力。"""
+"""在现有 ApprovalService 上增加 Handoff 与受控资源审批能力。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from picotoopet_core.domain.enums import ApprovalStatus
 
 
 class HandoffApprovalService(ApprovalService):
-    """兼容现有任务审批，并允许无 task_id 的资源审批。"""
+    """兼容现有任务审批，并允许无 task_id 的 digest-bound 资源审批。"""
 
     _SUMMARY_KEYS = ApprovalService._SUMMARY_KEYS | frozenset(
         {
@@ -21,6 +21,14 @@ class HandoffApprovalService(ApprovalService):
             "request_digest",
             "template_id",
             "test_count",
+            "commit_candidate_id",
+            "adoption_candidate_id",
+            "session_id",
+            "return_id",
+            "base_commit",
+            "change_set_digest",
+            "local_ref",
+            "message_digest",
         }
     )
 

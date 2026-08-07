@@ -38,3 +38,25 @@ public sealed record ProviderAdoptionCandidateRecord(
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
     [property: JsonPropertyName("finished_at")] DateTimeOffset? FinishedAt);
+
+/// <summary>Phase 10D-C 本地 Git Commit Candidate 的只读安全事实。</summary>
+public sealed record ProviderCommitCandidateRecord(
+    [property: JsonPropertyName("commit_candidate_id")] string CommitCandidateId,
+    [property: JsonPropertyName("adoption_candidate_id")] string AdoptionCandidateId,
+    [property: JsonPropertyName("session_id")] string SessionId,
+    [property: JsonPropertyName("return_id")] string ReturnId,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("base_commit")] string BaseCommit,
+    [property: JsonPropertyName("change_set_digest")] string ChangeSetDigest,
+    [property: JsonPropertyName("approval_id")] string ApprovalId,
+    [property: JsonPropertyName("message_preview")] string MessagePreview,
+    [property: JsonPropertyName("message_digest")] string MessageDigest,
+    [property: JsonPropertyName("tree_sha")] string? TreeSha,
+    [property: JsonPropertyName("commit_sha")] string? CommitSha,
+    [property: JsonPropertyName("local_ref")] string LocalRef,
+    [property: JsonPropertyName("validation_checks")] IReadOnlyList<string> ValidationChecks,
+    [property: JsonPropertyName("failure_code")] string? FailureCode,
+    [property: JsonPropertyName("author_time_utc")] DateTimeOffset? AuthorTimeUtc,
+    [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
+    [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
+    [property: JsonPropertyName("finished_at")] DateTimeOffset? FinishedAt);

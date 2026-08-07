@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Services;
 
-/// <summary>把 Phase 10D-B Review/Adoption 操作接入当前安全配对会话。</summary>
+/// <summary>把 Phase 10D Review/Adoption/Commit 操作接入当前安全配对会话。</summary>
 public sealed partial class ControlCenterSession
 {
     public async Task<ProviderReviewRecord> GetProviderReviewAsync(
@@ -46,6 +46,29 @@ public sealed partial class ControlCenterSession
         ThrowIfDisposed();
         await using var client = CreateProviderReviewClient();
         return await client.GetCandidatesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ProviderCommitCandidateRecord> PrepareProviderCommitAsync(
+        string adoptionCandidateId,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(adoptionCandidateId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+        await using var client = CreateProviderReviewClient();
+        return await client.PrepareCommitAsync(
+            adoptionCandidateId,
+            idempotencyKey,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ProviderCommitCandidateRecord[]> GetProviderCommitCandidatesAsync(
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await using var client = CreateProviderReviewClient();
+        return await client.GetCommitCandidatesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private MacCoreProviderReviewClient CreateProviderReviewClient()

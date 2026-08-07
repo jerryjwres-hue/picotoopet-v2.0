@@ -23,6 +23,7 @@ from .routes import (
     handoffs,
     health,
     projects,
+    provider_commits,
     provider_reviews,
     provider_sessions,
     results,
@@ -84,6 +85,11 @@ def create_app(settings: AppSettings) -> FastAPI:
         provider_reviews.router,
         prefix=prefix,
         tags=["provider-reviews"],
+    )
+    app.include_router(
+        provider_commits.router,
+        prefix=prefix,
+        tags=["provider-commits"],
     )
     app.include_router(results.router, prefix=prefix, tags=["results"])
     app.include_router(events.router, prefix=prefix, tags=["events"])
