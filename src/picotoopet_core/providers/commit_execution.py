@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+
 import ast
 import hashlib
 import json
@@ -194,10 +196,8 @@ class ProviderLocalCommitBuilder:
         except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:
             raise CommitExecutionError("COMMIT_OBJECT_FAILED") from error
         finally:
-            try:
+            with suppress(OSError):
                 index_path.unlink(missing_ok=True)
-            except OSError:
-                pass
             if worktree_added:
                 try:
                     self._git_text(
@@ -281,7 +281,11 @@ class ProviderLocalCommitBuilder:
                 ast.parse(text, filename=change.path)
             except SyntaxError as error:
                 raise CommitExecutionError("COMMIT_VALIDATION_FAILED") from error
-        return "100644" if change.operation == "add" else (entry[0] if entry is not None else "100644")
+        return (
+            "100644"
+            if change.operation == "add"
+            else (entry[0] if entry is not None else "100644")
+        )
 
     def _build_tree(
         self,
@@ -573,8 +577,7 @@ class ProviderLocalCommitBuilder:
         result = subprocess.run(
             command,
             input=input_bytes,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             env=safe_env,
             timeout=timeout,
             check=False,
@@ -753,7 +756,11 @@ class ProviderCommitExecutionCoordinator:
 
     def _finish_ready(self, commit_candidate_id: str, result: LocalCommitBuildResult) -> None:
         now = datetime.now(UTC).isoformat()
-        validation_json = json.dumps(result.validation_checks, ensure_ascii=False, separators=(",", ":"))
+        validation_json = json.dumps(
+            result.validation_checks,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         preview = {
             "commit_candidate_id": commit_candidate_id,
             "status": ProviderCommitStatus.COMMIT_READY.value,

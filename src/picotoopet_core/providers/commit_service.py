@@ -149,7 +149,8 @@ class ProviderCommitService:
                     "base_commit, change_set_digest, tree_sha, commit_sha, local_ref, approval_id, "
                     "idempotency_key, validation_json, failure_code, author_time_utc, created_at, "
                     "updated_at, finished_at, preview_json"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?)",
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, "
+                    "NULL, NULL, ?, ?, NULL, ?)",
                     (
                         commit_candidate_id,
                         adoption_candidate_id,
@@ -164,7 +165,12 @@ class ProviderCommitService:
                         "[]",
                         now.isoformat(),
                         now.isoformat(),
-                        json.dumps(preview, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                        json.dumps(
+                            preview,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
                     ),
                 )
         except ProviderCommitError:
@@ -218,5 +224,9 @@ class ProviderCommitService:
             ),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
-            finished_at=(datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None),
+            finished_at=(
+                datetime.fromisoformat(row["finished_at"])
+                if row["finished_at"]
+                else None
+            ),
         )

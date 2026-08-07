@@ -24,9 +24,14 @@ public interface IProviderReviewGateway
     Task<ProviderCommitCandidateRecord> PrepareCommitAsync(
         string adoptionCandidateId,
         string idempotencyKey,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken) =>
+        Task.FromException<ProviderCommitCandidateRecord>(
+            new InvalidOperationException(
+                "该 Review gateway 未配置 Commit Candidate 写入。"));
 
-    Task<ProviderCommitCandidateRecord[]> GetCommitCandidatesAsync(CancellationToken cancellationToken);
+    Task<ProviderCommitCandidateRecord[]> GetCommitCandidatesAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult(Array.Empty<ProviderCommitCandidateRecord>());
 }
 
 /// <summary>把 Review/Adoption/Commit typed client 接入现有配对会话。</summary>
