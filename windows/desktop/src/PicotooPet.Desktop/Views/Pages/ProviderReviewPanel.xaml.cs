@@ -1,12 +1,11 @@
 using System.ComponentModel;
-using System.Windows.Controls;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
 /// <summary>Phase 10D-B Return Review 只读面板。</summary>
-public partial class ProviderReviewPanel : UserControl
+public partial class ProviderReviewPanel : System.Windows.Controls.UserControl
 {
     public ProviderReviewPanel()
     {
