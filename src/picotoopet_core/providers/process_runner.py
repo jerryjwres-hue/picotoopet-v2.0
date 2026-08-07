@@ -6,10 +6,10 @@ import os
 import signal
 import subprocess
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import Sequence
 
 
 class BoundedProcessError(RuntimeError):
