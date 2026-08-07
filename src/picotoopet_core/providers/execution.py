@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event, Thread
@@ -318,15 +319,13 @@ class ProviderExecutionCoordinator:
         status: ProviderSessionStatus,
         failure_code: str,
     ) -> None:
-        try:
+        with suppress(Exception):
             self.sessions.transition(
                 session_id,
                 status,
                 failure_code=failure_code,
                 finished=True,
             )
-        except Exception:
-            pass
 
     @staticmethod
     def _build_prompt(payload: ProviderTaskPayload) -> str:
