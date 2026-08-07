@@ -21,6 +21,7 @@ from picotoopet_core.ollama.resident_manager import (
     ResidentResult,
     ResidentStatus,
 )
+from picotoopet_core.providers.artifact_store import ProviderReturnArtifactStore
 from picotoopet_core.providers.execution import ProviderExecutionCoordinator
 from picotoopet_core.services import build_services
 from picotoopet_core.worker.runtime import WorkerRuntime
@@ -129,6 +130,7 @@ def _run_worker(
             worktree_root=settings.provider_worktree_root,
             codex_executable=settings.codex_executable,
             worker_id=resolved_worker_id,
+            artifact_store=ProviderReturnArtifactStore(settings.paths.provider_returns_dir),
         )
         runtime.handlers[ProviderExecutionCoordinator.TASK_TYPE] = coordinator.handler
 
