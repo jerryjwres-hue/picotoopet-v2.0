@@ -301,3 +301,53 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_sessions_one_codex_per_handoff
 CREATE INDEX IF NOT EXISTS idx_provider_sessions_status_created
     ON provider_sessions(status, created_at DESC);
 """
+
+MIGRATION_007 = r"""
+CREATE TABLE IF NOT EXISTS provider_return_artifacts (
+    return_id            TEXT PRIMARY KEY REFERENCES returns(return_id) ON DELETE RESTRICT,
+    session_id           TEXT NOT NULL UNIQUE REFERENCES provider_sessions(session_id) ON DELETE RESTRICT,
+    handoff_id           TEXT NOT NULL REFERENCES handoffs(handoff_id) ON DELETE RESTRICT,
+    base_commit          TEXT NOT NULL,
+    change_set_digest    TEXT NOT NULL,
+    review_diff_digest   TEXT NOT NULL,
+    changed_file_count   INTEGER NOT NULL,
+    payload_bytes        INTEGER NOT NULL,
+    artifact_status      TEXT NOT NULL,
+    created_at           TEXT NOT NULL,
+    preview_json         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_return_artifacts_handoff_created
+    ON provider_return_artifacts(handoff_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS provider_review_decisions (
+    decision_id          TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL UNIQUE REFERENCES provider_sessions(session_id) ON DELETE RESTRICT,
+    return_id            TEXT NOT NULL REFERENCES returns(return_id) ON DELETE RESTRICT,
+    decision             TEXT NOT NULL,
+    change_set_digest    TEXT NOT NULL,
+    idempotency_key      TEXT NOT NULL UNIQUE,
+    created_at           TEXT NOT NULL,
+    preview_json         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS provider_adoption_candidates (
+    candidate_id         TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL UNIQUE REFERENCES provider_sessions(session_id) ON DELETE RESTRICT,
+    return_id            TEXT NOT NULL REFERENCES returns(return_id) ON DELETE RESTRICT,
+    status               TEXT NOT NULL,
+    base_commit          TEXT NOT NULL,
+    change_set_digest    TEXT NOT NULL,
+    changed_file_count   INTEGER NOT NULL,
+    validation_json      TEXT NOT NULL,
+    failure_code         TEXT,
+    idempotency_key      TEXT NOT NULL UNIQUE,
+    created_at           TEXT NOT NULL,
+    updated_at           TEXT NOT NULL,
+    finished_at          TEXT,
+    preview_json         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_adoption_status_created
+    ON provider_adoption_candidates(status, created_at DESC);
+"""
