@@ -210,11 +210,57 @@ class ProviderLocalCommitBuilder:
                     raise CommitExecutionError("COMMIT_WORKTREE_CLEANUP_FAILED") from error
 
     def _validate_repository_boundary(self) -> None:
-        branch = self._git_text("branch", "--show-current").strip()
+        """不运行 clean/smudge filter 地验证主仓库边界与 raw-byte clean 状态。"""
+
+        branch = self._git_text("symbolic-ref", "--short", "HEAD").strip()
         if branch.lower() in {"main", "master"}:
             raise CommitExecutionError("COMMIT_PATH_POLICY")
-        if self._git_text("status", "--porcelain").strip():
+
+        head_tree = self._git_text("rev-parse", "HEAD^{tree}").strip()
+        index_tree = self._git_text("write-tree").strip()
+        if index_tree != head_tree:
             raise CommitExecutionError("COMMIT_PATH_POLICY")
+        if self._git_bytes("ls-files", "--others", "--exclude-standard", "-z"):
+            raise CommitExecutionError("COMMIT_PATH_POLICY")
+
+        entries = self._git_bytes("ls-files", "-s", "-z")
+        for raw_entry in entries.split(b"\0"):
+            if not raw_entry:
+                continue
+            metadata, separator, raw_path = raw_entry.partition(b"\t")
+            if not separator:
+                raise CommitExecutionError("COMMIT_PATH_POLICY")
+            try:
+                mode, expected_blob, stage = metadata.decode("ascii").split()
+                relative = Path(os.fsdecode(raw_path))
+            except (UnicodeDecodeError, ValueError) as error:
+                raise CommitExecutionError("COMMIT_PATH_POLICY") from error
+            if stage != "0" or relative.is_absolute() or ".." in relative.parts:
+                raise CommitExecutionError("COMMIT_PATH_POLICY")
+
+            target = self.repository / relative
+            if mode in {"100644", "100755"}:
+                if not target.is_file() or target.is_symlink():
+                    raise CommitExecutionError("COMMIT_PATH_POLICY")
+                executable = bool(target.stat().st_mode & 0o111)
+                if executable != (mode == "100755"):
+                    raise CommitExecutionError("COMMIT_PATH_POLICY")
+                raw_bytes = target.read_bytes()
+            elif mode == "120000":
+                if not target.is_symlink():
+                    raise CommitExecutionError("COMMIT_PATH_POLICY")
+                raw_bytes = os.fsencode(os.readlink(target))
+            else:
+                raise CommitExecutionError("COMMIT_PATH_POLICY")
+
+            actual_blob = self._git_text(
+                "hash-object",
+                "--no-filters",
+                "--stdin",
+                input_bytes=raw_bytes,
+            ).strip()
+            if actual_blob != expected_blob:
+                raise CommitExecutionError("COMMIT_PATH_POLICY")
 
     def _validate_change_path(self, base_commit: str, change: NormalizedChange) -> None:
         relative = PurePosixPath(change.path)

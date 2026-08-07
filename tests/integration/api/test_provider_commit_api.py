@@ -180,7 +180,7 @@ def test_commit_prepare_is_bodyless_idempotent_and_digest_bound(tmp_path: Path) 
             (body["approval_id"],),
         )
         assert approval is not None
-        assert approval["status"] == "pending"
+        assert approval["status"] == "Pending"
         scope = json.loads(approval["scope_json"])
         assert scope == {
             "action": "provider.commit.create-v1",
