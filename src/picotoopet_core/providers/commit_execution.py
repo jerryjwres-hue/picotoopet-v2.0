@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
-
 import ast
 import hashlib
 import json
 import os
 import subprocess
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
