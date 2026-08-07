@@ -1,7 +1,6 @@
 """Phase 10D-A 受控 Codex Provider REST 路由。"""
 
 from collections.abc import Callable
-from typing import TypeVar
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 
@@ -20,7 +19,6 @@ from picotoopet_core.providers.service import (
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
-TResult = TypeVar("TResult")
 
 
 @router.get("/providers/codex/status", response_model=ProviderStatusRecord)
@@ -141,7 +139,7 @@ async def require_empty_body(request: Request) -> None:
         )
 
 
-def execute_provider(operation: Callable[[], TResult]) -> TResult:
+def execute_provider[TResult](operation: Callable[[], TResult]) -> TResult:
     """把 Provider 领域错误映射为固定、不泄密的 API 错误。"""
 
     try:
