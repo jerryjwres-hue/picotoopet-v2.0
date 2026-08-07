@@ -36,6 +36,9 @@ public partial class ShellWindow : Window
         ProviderGatewayContext.SetGateway(
             this,
             new ControlCenterProviderGateway(_session));
+        ProviderReviewGatewayContext.SetGateway(
+            this,
+            new ControlCenterProviderReviewGateway(_session));
         DataContext = viewModel;
     }
 
