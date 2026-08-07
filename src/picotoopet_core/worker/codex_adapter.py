@@ -1,16 +1,21 @@
-"""固定、无交互、低预算的 Codex CLI JSONL 适配器。"""
+"""固定、无交互、低预算的 Codex JSONL 适配器。"""
 
 from __future__ import annotations
 
 import json
 import os
-import signal
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from time import monotonic
 from typing import Any
+
+from picotoopet_core.providers.process_runner import (
+    BoundedProcessCancelled,
+    BoundedProcessError,
+    BoundedProcessOutputLimit,
+    BoundedProcessRunner,
+    BoundedProcessTimeout,
+)
 
 TASK_TYPE = "provider.codex.handoff-v1"
 _MAX_CAPTURE_BYTES = 256 * 1024
@@ -51,12 +56,18 @@ class CodexRunResult:
 class CodexAdapter:
     """只在 Session 独占 worktree 内运行固定 Codex exec 命令。"""
 
-    def __init__(self, executable: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        executable: Path | str | None = None,
+        *,
+        runner: BoundedProcessRunner | None = None,
+    ) -> None:
         configured = executable or os.environ.get(
             "PICOTOOPET_CODEX_EXECUTABLE",
             "/opt/homebrew/bin/codex",
         )
         self.executable = Path(configured).expanduser()
+        self.runner = runner or BoundedProcessRunner()
 
     def build_argv(self) -> list[str]:
         """构造固定参数；用户不能添加模型、目录、工具或环境参数。"""
@@ -93,60 +104,30 @@ class CodexAdapter:
         if not self.executable.is_file():
             raise CodexAdapterError("Codex CLI 不可用。")
 
-        started = monotonic()
-        process = subprocess.Popen(
-            self.build_argv(),
-            cwd=cwd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            start_new_session=True,
-            shell=False,
-        )
-        if process.stdin is None:
-            self._terminate_group(process)
-            raise CodexAdapterError("Codex stdin 不可用。")
-        process.stdin.write(prompt)
-        process.stdin.close()
+        try:
+            result = self.runner.run(
+                argv=self.build_argv(),
+                cwd=cwd,
+                stdin_text=prompt,
+                timeout_seconds=_TIMEOUT_SECONDS,
+                output_limit_bytes=_MAX_CAPTURE_BYTES,
+                cancel_event=cancel_event,
+            )
+        except BoundedProcessTimeout as error:
+            raise CodexAdapterTimeout("Codex Session 达到 900 秒上限。") from error
+        except BoundedProcessCancelled as error:
+            raise CodexAdapterCancelled("Codex Session 已取消。") from error
+        except BoundedProcessOutputLimit as error:
+            raise CodexAdapterProtocolError("Codex 输出超过大小上限。") from error
+        except BoundedProcessError as error:
+            raise CodexAdapterError("Codex 子进程失败。") from error
 
-        stdout_chunks: list[str] = []
-        stderr_bytes = 0
-        while process.poll() is None:
-            if cancel_event is not None and cancel_event.wait(0.05):
-                self._terminate_group(process)
-                raise CodexAdapterCancelled("Codex Session 已取消。")
-            if monotonic() - started > _TIMEOUT_SECONDS:
-                self._terminate_group(process)
-                raise CodexAdapterTimeout("Codex Session 达到 900 秒上限。")
-            if process.stdout is not None:
-                line = process.stdout.readline()
-                if line:
-                    stdout_chunks.append(line)
-                    if sum(len(chunk.encode("utf-8")) for chunk in stdout_chunks) > _MAX_CAPTURE_BYTES:
-                        self._terminate_group(process)
-                        raise CodexAdapterProtocolError("Codex JSONL 超过大小上限。")
-            if process.stderr is not None:
-                line = process.stderr.readline()
-                if line:
-                    stderr_bytes += len(line.encode("utf-8"))
-                    if stderr_bytes > _MAX_CAPTURE_BYTES:
-                        self._terminate_group(process)
-                        raise CodexAdapterProtocolError("Codex stderr 超过大小上限。")
-
-        if process.stdout is not None:
-            remainder = process.stdout.read()
-            if remainder:
-                stdout_chunks.append(remainder)
-        elapsed = max(0, int(monotonic() - started))
-        events, turns, usage_unknown = self.parse_jsonl("".join(stdout_chunks))
+        events, turns, usage_unknown = self.parse_jsonl(result.stdout)
         return CodexRunResult(
-            exit_code=int(process.returncode or 0),
+            exit_code=result.return_code,
             event_count=len(events),
             turns_used=turns,
-            elapsed_seconds=min(elapsed, _TIMEOUT_SECONDS),
+            elapsed_seconds=result.elapsed_seconds,
             provider_usage_unknown=usage_unknown,
             events=events,
         )
@@ -195,17 +176,3 @@ class CodexAdapter:
         if not events:
             raise CodexAdapterProtocolError("Codex 未返回 JSONL 事件。")
         return tuple(events), turns, usage_unknown
-
-    @staticmethod
-    def _terminate_group(process: subprocess.Popen[str]) -> None:
-        """终止 Codex 所在的完整 macOS 进程组。"""
-
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=5)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait(timeout=5)

@@ -1,4 +1,4 @@
-"""Phase 10A Handoff 准备、预览和审批绑定模型。"""
+"""Phase 10A/10D Handoff 准备、预览和审批绑定模型。"""
 
 from __future__ import annotations
 
@@ -6,35 +6,45 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+HandoffTemplateId = Literal[
+    "picotoopet-repo-maintenance-v1",
+    "picotoopet-repo-maintenance-codex-v1",
+]
+HandoffProvider = Literal["manual", "codex"]
 
 
 class HandoffStatus(StrEnum):
-    """Phase 10A 允许的最小 Handoff 状态集合。"""
+    """Handoff 允许的状态集合。"""
 
-    PREPARED         = "prepared"
+    PREPARED = "prepared"
     WAITING_APPROVAL = "waiting_approval"
-    APPROVED         = "approved"
-    REJECTED         = "rejected"
-    EXPIRED          = "expired"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
 
 
 class HandoffTemplate(BaseModel):
     """Mac Core 发布的固定安全模板；Windows 不复制模板事实。"""
 
-    template_id: Literal["picotoopet-repo-maintenance-v1"]
-    display_name: str
-    provider: Literal["manual"]
-    provider_configured: Literal[False] = False
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: HandoffTemplateId
+    display_name: str = Field(min_length=1, max_length=120)
+    provider: HandoffProvider
+    provider_configured: bool = False
     repo_url: str
     base_ref: str
-    base_commit: str
+    base_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
 
 
 class HandoffPrepareRequest(BaseModel):
     """用户可编辑的有界 Handoff 准备参数。"""
 
-    template_id: Literal["picotoopet-repo-maintenance-v1"]
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: HandoffTemplateId
     title: str = Field(min_length=1, max_length=120)
     objective: str = Field(min_length=1, max_length=1000)
     expires_seconds: int = Field(default=1800, ge=300, le=3600)
@@ -55,17 +65,19 @@ class HandoffPrepareRequest(BaseModel):
 class HandoffRecord(BaseModel):
     """Control Center 可读取的固定安全投影。"""
 
+    model_config = ConfigDict(extra="forbid")
+
     handoff_id: str
-    template_id: str
+    template_id: HandoffTemplateId
     template_name: str
     title: str
     objective_summary: str
     status: HandoffStatus
-    provider: Literal["manual"]
-    provider_configured: Literal[False] = False
+    provider: HandoffProvider
+    provider_configured: bool = False
     repo_url: str
     base_ref: str
-    base_commit: str
+    base_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
     sensitivity: Literal["internal"]
     planned_read_count: int = Field(ge=0, le=16)
     planned_write_count: int = Field(ge=0, le=16)

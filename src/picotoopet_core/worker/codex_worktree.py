@@ -1,13 +1,14 @@
-"""Session 独占 Git worktree 的创建、路径检查和清理。"""
+"""Session 独占 Git worktree 的策略门面。"""
 
 from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from uuid import UUID
+
+from picotoopet_core.providers.git_runner import GitCommandRunner
 
 _GIT_WORKTREE_ADD = "git worktree add"
 _GIT_WORKTREE_REMOVE = "git worktree remove"
@@ -44,6 +45,7 @@ class CodexWorktreeManager:
         self.worktree_root.mkdir(parents=True, exist_ok=True)
         if self.worktree_root.is_symlink():
             raise CodexWorktreeError("worktree 根不能是 symlink。")
+        self.git = GitCommandRunner(self.repository)
 
     def create(
         self,
@@ -67,17 +69,7 @@ class CodexWorktreeManager:
         if destination.exists():
             raise CodexWorktreeError("Session worktree 已存在。")
 
-        command = [
-            "git",
-            "-C",
-            str(self.repository),
-            "worktree",
-            "add",
-            "--detach",
-            str(destination),
-            base_commit,
-        ]
-        self._run(command, operation=_GIT_WORKTREE_ADD)
+        self.git.add_detached_worktree(destination, base_commit)
         try:
             self._reject_links(destination)
         except Exception:
@@ -89,6 +81,11 @@ class CodexWorktreeManager:
             base_commit=base_commit,
             allowed_write=roots,
         )
+
+    def changed_paths(self, worktree: CodexWorktree) -> tuple[str, ...]:
+        """读取 worktree 的 Git 变更路径，不返回文件正文。"""
+
+        return self.git.changed_paths(worktree.path)
 
     def validate_changed_paths(
         self,
@@ -125,30 +122,17 @@ class CodexWorktreeManager:
             raise CodexWorktreeError("拒绝清理 worktree 根之外目录。")
         if not resolved.exists():
             return
-        command = [
-            "git",
-            "-C",
-            str(self.repository),
-            "worktree",
-            "remove",
-            str(resolved),
-        ]
-        self._run(command, operation=_GIT_WORKTREE_REMOVE)
+        self.git.remove_worktree(resolved)
         if resolved.exists():
             shutil.rmtree(resolved)
         if resolved.exists():
             raise CodexWorktreeError("worktree cleanup 未完成。")
 
     def _check_repository_state(self) -> None:
-        branch = self._capture(
-            ["git", "-C", str(self.repository), "branch", "--show-current"]
-        ).strip()
+        branch = self.git.current_branch()
         if branch.lower() in _PROTECTED_BRANCH_NAMES:
             raise CodexWorktreeError("受信任仓库当前位于保护分支。")
-        status = self._capture(
-            ["git", "-C", str(self.repository), "status", "--porcelain"]
-        )
-        if status.strip():
+        if not self.git.is_clean():
             raise CodexWorktreeError("受信任仓库不是 clean 状态。")
 
     @staticmethod
@@ -167,34 +151,3 @@ class CodexWorktreeManager:
         for path in root.rglob("*"):
             if path.is_symlink():
                 raise CodexWorktreeError("worktree 包含 symlink。")
-
-    @staticmethod
-    def _run(command: list[str], *, operation: str) -> None:
-        result = subprocess.run(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            timeout=60,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise CodexWorktreeError(f"{operation} 失败。")
-
-    @staticmethod
-    def _capture(command: list[str]) -> str:
-        result = subprocess.run(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            timeout=30,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise CodexWorktreeError("Git 仓库检查失败。")
-        return result.stdout
