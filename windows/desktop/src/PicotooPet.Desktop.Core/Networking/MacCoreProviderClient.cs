@@ -311,7 +311,7 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
         {
             throw new ArgumentException("Mac Core 地址必须是绝对 URI。", nameof(uri));
         }
-        return uri.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)
+        return uri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
             ? uri
             : new Uri(uri.AbsoluteUri + "/", UriKind.Absolute);
     }
