@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .paths import RuntimePaths
@@ -24,6 +26,20 @@ class AppSettings(BaseModel):
     worker_lease_seconds: int = Field(default=60, ge=2, le=3600)
     worker_heartbeat_seconds: int = Field(default=15, ge=1, le=1800)
     worker_status_stale_seconds: int = Field(default=45, ge=2, le=7200)
+    provider_repository: Path | None = None
+    provider_worktree_root: Path | None = None
+    codex_executable: Path | None = None
+
+    @property
+    def provider_execution_configured(self) -> bool:
+        return all(
+            value is not None
+            for value in (
+                self.provider_repository,
+                self.provider_worktree_root,
+                self.codex_executable,
+            )
+        )
 
     def redacted_dict(self) -> dict[str, object]:
         """返回可安全写入日志的配置副本。"""
@@ -31,4 +47,13 @@ class AppSettings(BaseModel):
         payload = self.model_dump(mode="python")
         payload["paths"] = {"root": str(self.paths.root)}
         payload["api_token"] = "***REDACTED***"
+        payload["provider_repository"] = (
+            "configured" if self.provider_repository is not None else "disabled"
+        )
+        payload["provider_worktree_root"] = (
+            "configured" if self.provider_worktree_root is not None else "disabled"
+        )
+        payload["codex_executable"] = (
+            "configured" if self.codex_executable is not None else "disabled"
+        )
         return payload
