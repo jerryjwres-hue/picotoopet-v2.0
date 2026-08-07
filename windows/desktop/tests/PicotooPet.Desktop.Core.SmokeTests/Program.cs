@@ -46,6 +46,7 @@ internal static class Program
             ResultsPageWpfLayoutSmokeTests.Run();
             ApprovalsPageWpfLayoutSmokeTests.Run();
             CloudDevelopmentPageWpfLayoutSmokeTests.Run();
+            ProviderReviewPanelWpfLayoutSmokeTests.Run();
             await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
@@ -56,6 +57,7 @@ internal static class Program
             await MacCoreReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
             await MacCoreBrokerClientSmokeTests.RunAsync().ConfigureAwait(false);
             await ProviderSessionSmokeTests.RunAsync().ConfigureAwait(false);
+            await ProviderReviewSmokeTests.RunAsync().ConfigureAwait(false);
             await ReturnValidationSmokeTests.RunAsync().ConfigureAwait(false);
             await BrokerSessionSmokeTests.RunAsync().ConfigureAwait(false);
             await EventStreamColdStartSmokeTests.RunAsync().ConfigureAwait(false);
@@ -81,7 +83,7 @@ internal static class Program
         Assert(summary.P50Milliseconds == 50, "p50 计算错误");
         Assert(summary.P95Milliseconds == 95, "p95 计算错误");
         Assert(summary.P99Milliseconds == 99, "p99 计算错误");
-        Assert(summary.MaximumMilliseconds == 100, "最大值计算错误");
+        Assert(summary.MaximumMilliseconds == 100, "最大值错误");
     }
 
     private static void VerifyReconnectBounds()

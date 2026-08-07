@@ -1,8 +1,7 @@
-"""Phase 10D-A Provider 任务排队、隔离执行和安全 Return 收口。"""
+"""Phase 10D-A/10D-B Provider 任务排队、隔离执行和安全 Return 收口。"""
 
 from __future__ import annotations
 
-import hashlib
 import json
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -28,11 +27,13 @@ from picotoopet_core.worker.codex_adapter import (
     CodexAdapterTimeout,
 )
 from picotoopet_core.worker.codex_worktree import (
+    CapturedProviderChanges,
     CodexWorktreeError,
     CodexWorktreeManager,
 )
 from picotoopet_core.worker.handlers import HandlerResult
 
+from .artifact_store import ProviderArtifactError, ProviderReturnArtifactStore
 from .models import ProviderSessionStatus
 from .service import ProviderSessionService
 
@@ -72,6 +73,7 @@ class ProviderExecutionCoordinator:
         worktree_root: Path,
         codex_executable: Path,
         worker_id: str,
+        artifact_store: ProviderReturnArtifactStore,
     ) -> None:
         self.queue = queue
         self.sessions = sessions
@@ -79,6 +81,7 @@ class ProviderExecutionCoordinator:
         self.worktree_root = worktree_root
         self.codex_executable = codex_executable
         self.worker_id = worker_id
+        self.artifact_store = artifact_store
 
     def enqueue_pending(self) -> None:
         """幂等地为所有等待执行的 Session 创建唯一 Worker 任务。"""
@@ -159,26 +162,14 @@ class ProviderExecutionCoordinator:
                 elapsed_seconds=run.elapsed_seconds,
                 provider_usage_unknown=run.provider_usage_unknown,
             )
-            changed_paths = manager.changed_paths(worktree)
-            safe_paths = manager.validate_changed_paths(worktree, changed_paths)
-            files = []
-            for relative in safe_paths:
-                path = worktree.path / Path(*relative.parts)
-                content = path.read_bytes()
-                files.append(
-                    {
-                        "path": str(relative),
-                        "size_bytes": len(content),
-                        "sha256": hashlib.sha256(content).hexdigest(),
-                    }
-                )
-            record = self._persist_return(payload, files, run.events)
+            captured = manager.capture_changes(worktree)
+            record = self._persist_return(payload, captured, run.events)
             self.sessions.transition(
                 payload.session_id,
                 ProviderSessionStatus.READY_FOR_REVIEW,
                 turns_used=run.turns_used,
                 elapsed_seconds=run.elapsed_seconds,
-                changed_file_count=len(files),
+                changed_file_count=len(captured.changes),
                 return_id=record.return_id,
                 provider_usage_unknown=run.provider_usage_unknown,
                 finished=True,
@@ -187,7 +178,7 @@ class ProviderExecutionCoordinator:
                 summary={
                     "session_id": payload.session_id,
                     "return_id": record.return_id,
-                    "changed_file_count": len(files),
+                    "changed_file_count": len(captured.changes),
                 }
             )
         except CodexAdapterCancelled:
@@ -219,27 +210,31 @@ class ProviderExecutionCoordinator:
     def _persist_return(
         self,
         payload: ProviderTaskPayload,
-        files: list[dict[str, object]],
+        captured: CapturedProviderChanges,
         events: tuple[dict[str, object], ...],
     ) -> ReturnRecord:
-        """Core 侧重新校验有界元数据后写入 Return 安全事实。"""
+        """Artifact 先落盘，DB 再原子登记 Return 与 reviewable artifact 事实。"""
 
-        if len(files) > 5 or len(events) > 100:
+        if len(captured.changes) > 5 or len(events) > 100:
             raise CodexWorktreeError("Provider Return 超过固定预算。")
         allowed = payload.allowed_write
-        for item in files:
-            path = str(item["path"])
+        for change in captured.changes:
+            path = change.path
             if not any(path == root or path.startswith(f"{root}/") for root in allowed):
                 raise CodexWorktreeError("Provider Return 路径不在批准范围。")
-            if int(item["size_bytes"]) > 65536:
-                raise CodexWorktreeError("Provider Return 文件超过 64 KiB。")
-            if len(str(item["sha256"])) != 64:
-                raise CodexWorktreeError("Provider Return 哈希无效。")
+
         now = datetime.now(UTC)
         return_id = str(uuid4())
-        manifest_digest = hashlib.sha256(
-            json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        try:
+            stored = self.artifact_store.write(
+                return_id=return_id,
+                base_commit=payload.base_commit,
+                changes=list(captured.changes),
+                review_diff=captured.review_diff,
+            )
+        except ProviderArtifactError as exc:
+            raise CodexWorktreeError(exc.code) from exc
+
         summaries = [
             ReturnEventSummary(
                 sequence=index,
@@ -255,8 +250,8 @@ class ProviderExecutionCoordinator:
             provider="codex",
             request_digest=payload.request_digest,
             package_digest=payload.package_digest,
-            manifest_digest=manifest_digest,
-            changed_file_count=len(files),
+            manifest_digest=stored.change_set_digest,
+            changed_file_count=stored.changed_file_count,
             event_count=len(events),
             validation_checks=[
                 ReturnValidationCheck(name="session_binding", passed=True),
@@ -265,13 +260,14 @@ class ProviderExecutionCoordinator:
                 ReturnValidationCheck(name="size_budget", passed=True),
                 ReturnValidationCheck(name="hash_coverage", passed=True),
                 ReturnValidationCheck(name="event_bounds", passed=True),
+                ReturnValidationCheck(name="immutable_artifact", passed=True),
             ],
             event_summaries=summaries,
             created_at=now,
             updated_at=now,
             execution_notice=(
-                "Codex Return 已通过本地合同校验；未自动提交、推送、创建 PR、合并、"
-                "标签或发布。"
+                "Codex Return 已通过本地合同校验并生成只读落地 Artifact；未自动提交、"
+                "推送、创建 PR、合并、标签或发布。"
             ),
         )
         preview = json.dumps(
@@ -280,37 +276,90 @@ class ProviderExecutionCoordinator:
             sort_keys=True,
             separators=(",", ":"),
         )
-        with self.sessions.database.transaction() as connection:
-            connection.execute(
-                """
-                INSERT INTO returns (
-                    return_id, handoff_id, status, provider, request_digest,
-                    package_digest, manifest_digest, changed_file_count, event_count,
-                    validation_checks_json, preview_json, quarantine_code,
-                    idempotency_key, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
-                """,
-                (
-                    return_id,
-                    payload.handoff_id,
-                    record.status.value,
-                    "codex",
-                    payload.request_digest,
-                    payload.package_digest,
-                    manifest_digest,
-                    len(files),
-                    len(events),
-                    json.dumps(
-                        [item.model_dump(mode="json") for item in record.validation_checks],
-                        ensure_ascii=False,
-                        separators=(",", ":"),
+        artifact_preview = json.dumps(
+            {
+                "return_id": return_id,
+                "session_id": payload.session_id,
+                "handoff_id": payload.handoff_id,
+                "base_commit": payload.base_commit,
+                "change_set_digest": stored.change_set_digest,
+                "review_diff_digest": stored.review_diff_digest,
+                "changed_file_count": stored.changed_file_count,
+                "payload_bytes": stored.payload_bytes,
+                "artifact_status": "reviewable",
+                "files": [
+                    {
+                        "operation": item.operation,
+                        "path": item.path,
+                        "size_bytes": item.size_bytes,
+                        "base_sha256": item.base_sha256,
+                        "result_sha256": item.result_sha256,
+                    }
+                    for item in stored.changes
+                ],
+                "created_at": now.isoformat(),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        try:
+            with self.sessions.database.transaction() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO returns (
+                        return_id, handoff_id, status, provider, request_digest,
+                        package_digest, manifest_digest, changed_file_count, event_count,
+                        validation_checks_json, preview_json, quarantine_code,
+                        idempotency_key, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                    """,
+                    (
+                        return_id,
+                        payload.handoff_id,
+                        record.status.value,
+                        "codex",
+                        payload.request_digest,
+                        payload.package_digest,
+                        stored.change_set_digest,
+                        stored.changed_file_count,
+                        len(events),
+                        json.dumps(
+                            [item.model_dump(mode="json") for item in record.validation_checks],
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
+                        preview,
+                        f"provider-return:{payload.session_id}",
+                        now.isoformat(),
+                        now.isoformat(),
                     ),
-                    preview,
-                    f"provider-return:{payload.session_id}",
-                    now.isoformat(),
-                    now.isoformat(),
-                ),
-            )
+                )
+                connection.execute(
+                    """
+                    INSERT INTO provider_return_artifacts (
+                        return_id, session_id, handoff_id, base_commit,
+                        change_set_digest, review_diff_digest, changed_file_count,
+                        payload_bytes, artifact_status, created_at, preview_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        return_id,
+                        payload.session_id,
+                        payload.handoff_id,
+                        payload.base_commit,
+                        stored.change_set_digest,
+                        stored.review_diff_digest,
+                        stored.changed_file_count,
+                        stored.payload_bytes,
+                        "reviewable",
+                        now.isoformat(),
+                        artifact_preview,
+                    ),
+                )
+        except Exception:
+            self.artifact_store.discard(return_id)
+            raise
         return record
 
     def _fail(

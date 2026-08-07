@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import difflib
+import hashlib
 import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from uuid import UUID
 
-from picotoopet_core.providers.git_runner import GitCommandRunner
+from picotoopet_core.providers.change_set import ProviderChangeInput
+from picotoopet_core.providers.git_runner import GitChangeEntry, GitCommandRunner
 
 _GIT_WORKTREE_ADD = "git worktree add"
 _GIT_WORKTREE_REMOVE = "git worktree remove"
@@ -28,6 +31,14 @@ class CodexWorktree:
     path: Path
     base_commit: str
     allowed_write: tuple[PurePosixPath, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CapturedProviderChanges:
+    """Provider worktree 清理前捕获的有界文本变更。"""
+
+    changes: tuple[ProviderChangeInput, ...]
+    review_diff: str
 
 
 class CodexWorktreeManager:
@@ -77,6 +88,61 @@ class CodexWorktreeManager:
     def changed_paths(self, worktree: CodexWorktree) -> tuple[str, ...]:
         return self.git.changed_paths(worktree.path)
 
+    def capture_changes(self, worktree: CodexWorktree) -> CapturedProviderChanges:
+        """在 cleanup 前捕获 add/modify/delete 文本变化与确定性只读 diff。"""
+
+        entries = self.git.change_entries(worktree.path)
+        if any("R" in entry.status or "C" in entry.status for entry in entries):
+            raise CodexWorktreeError("rename/copy 变更必须拆分为明确 add/delete。")
+        if any("U" in entry.status for entry in entries):
+            raise CodexWorktreeError("存在未解决冲突，拒绝捕获。")
+
+        sorted_entries = tuple(sorted(entries, key=lambda item: item.path))
+        paths = tuple(entry.path for entry in sorted_entries)
+        self.validate_changed_paths(worktree, paths)
+
+        changes: list[ProviderChangeInput] = []
+        diff_parts: list[str] = []
+        for entry in sorted_entries:
+            operation = self._operation(entry)
+            base_text = ""
+            base_sha256: str | None = None
+            if operation in {"modify", "delete"}:
+                base_bytes = self.git.base_file_bytes(worktree.base_commit, entry.path)
+                try:
+                    base_text = base_bytes.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise CodexWorktreeError("base 文件不是 UTF-8 文本。") from exc
+                base_sha256 = hashlib.sha256(base_bytes).hexdigest()
+
+            result_text: str | None = None
+            if operation in {"add", "modify"}:
+                result_path = worktree.path / Path(*PurePosixPath(entry.path).parts)
+                try:
+                    result_text = result_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError as exc:
+                    raise CodexWorktreeError("结果文件不是 UTF-8 文本。") from exc
+
+            changes.append(
+                ProviderChangeInput(
+                    operation=operation,
+                    path=entry.path,
+                    base_sha256=base_sha256,
+                    result_text=result_text,
+                )
+            )
+            diff_parts.extend(
+                difflib.unified_diff(
+                    base_text.splitlines(keepends=True),
+                    (result_text or "").splitlines(keepends=True),
+                    fromfile=f"a/{entry.path}",
+                    tofile=f"b/{entry.path}",
+                    lineterm="\n",
+                )
+            )
+
+        return CapturedProviderChanges(tuple(changes), "".join(diff_parts))
+
     def validate_changed_paths(
         self,
         worktree: CodexWorktree,
@@ -124,6 +190,15 @@ class CodexWorktreeManager:
             raise CodexWorktreeError("受信任仓库当前位于保护分支。")
         if not self.git.is_clean():
             raise CodexWorktreeError("受信任仓库不是 clean 状态。")
+
+    @staticmethod
+    def _operation(entry: GitChangeEntry) -> str:
+        status = entry.status
+        if status == "??" or "A" in status:
+            return "add"
+        if "D" in status:
+            return "delete"
+        return "modify"
 
     @staticmethod
     def _normalize_relative(value: str) -> PurePosixPath:
