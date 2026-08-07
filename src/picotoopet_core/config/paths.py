@@ -62,6 +62,12 @@ class RuntimePaths:
     def runtime_dir(self) -> Path:
         return self.root / "runtime"
 
+    @property
+    def provider_returns_dir(self) -> Path:
+        """返回仅由 Mac Core 推导的 Provider Return Artifact 根目录。"""
+
+        return self.runtime_dir / "provider-returns"
+
     def managed_directories(self) -> tuple[Path, ...]:
         """返回安装器和运行时允许创建的全部目录。"""
 
@@ -77,6 +83,7 @@ class RuntimePaths:
             self.pairing_dir,
             self.backups_dir,
             self.runtime_dir,
+            self.provider_returns_dir,
         )
 
     def ensure(self) -> None:
