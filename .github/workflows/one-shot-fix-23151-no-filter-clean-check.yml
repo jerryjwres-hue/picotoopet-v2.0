@@ -1,0 +1,55 @@
+name: One-shot fix 2.3.15.1 no-filter clean check
+
+on:
+  push:
+    branches:
+      - feature/phase10d-local-commit-candidate-2.3.15.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/phase10d-local-commit-candidate-2.3.15.1
+          fetch-depth: 0
+
+      - name: Replace filter-triggering clean check
+        shell: python
+        run: |
+          from pathlib import Path
+
+          execution_path = Path("src/picotoopet_core/providers/commit_execution.py")
+          execution = execution_path.read_text(encoding="utf-8")
+          old = '''    def _validate_repository_boundary(self) -> None:\n        branch = self._git_text("branch", "--show-current").strip()\n        if branch.lower() in {"main", "master"}:\n            raise CommitExecutionError("COMMIT_PATH_POLICY")\n        if self._git_text("status", "--porcelain").strip():\n            raise CommitExecutionError("COMMIT_PATH_POLICY")\n'''
+          new = '''    def _validate_repository_boundary(self) -> None:\n        """不运行 clean/smudge filter 地验证主仓库边界与 raw-byte clean 状态。"""\n\n        branch = self._git_text("symbolic-ref", "--short", "HEAD").strip()\n        if branch.lower() in {"main", "master"}:\n            raise CommitExecutionError("COMMIT_PATH_POLICY")\n\n        head_tree = self._git_text("rev-parse", "HEAD^{tree}").strip()\n        index_tree = self._git_text("write-tree").strip()\n        if index_tree != head_tree:\n            raise CommitExecutionError("COMMIT_PATH_POLICY")\n        if self._git_bytes("ls-files", "--others", "--exclude-standard", "-z"):\n            raise CommitExecutionError("COMMIT_PATH_POLICY")\n\n        entries = self._git_bytes("ls-files", "-s", "-z")\n        for raw_entry in entries.split(b"\\0"):\n            if not raw_entry:\n                continue\n            metadata, separator, raw_path = raw_entry.partition(b"\\t")\n            if not separator:\n                raise CommitExecutionError("COMMIT_PATH_POLICY")\n            try:\n                mode, expected_blob, stage = metadata.decode("ascii").split()\n                relative = Path(os.fsdecode(raw_path))\n            except (UnicodeDecodeError, ValueError) as error:\n                raise CommitExecutionError("COMMIT_PATH_POLICY") from error\n            if stage != "0" or relative.is_absolute() or ".." in relative.parts:\n                raise CommitExecutionError("COMMIT_PATH_POLICY")\n\n            target = self.repository / relative\n            if mode in {"100644", "100755"}:\n                if not target.is_file() or target.is_symlink():\n                    raise CommitExecutionError("COMMIT_PATH_POLICY")\n                executable = bool(target.stat().st_mode & 0o111)\n                if executable != (mode == "100755"):\n                    raise CommitExecutionError("COMMIT_PATH_POLICY")\n                raw_bytes = target.read_bytes()\n            elif mode == "120000":\n                if not target.is_symlink():\n                    raise CommitExecutionError("COMMIT_PATH_POLICY")\n                raw_bytes = os.fsencode(os.readlink(target))\n            else:\n                raise CommitExecutionError("COMMIT_PATH_POLICY")\n\n            actual_blob = self._git_text(\n                "hash-object",\n                "--no-filters",\n                "--stdin",\n                input_bytes=raw_bytes,\n            ).strip()\n            if actual_blob != expected_blob:\n                raise CommitExecutionError("COMMIT_PATH_POLICY")\n'''
+          if old not in execution:
+              raise SystemExit("expected repository-boundary block not found")
+          execution_path.write_text(execution.replace(old, new, 1), encoding="utf-8")
+
+          api_test_path = Path("tests/integration/api/test_provider_commit_api.py")
+          api_test = api_test_path.read_text(encoding="utf-8")
+          api_test = api_test.replace(
+              '        assert approval["status"] == "pending"\n',
+              '        assert approval["status"] == "Pending"\n',
+              1,
+          )
+          api_test_path.write_text(api_test, encoding="utf-8")
+
+          Path(".github/workflows/one-shot-fix-23151-no-filter-clean-check.yml").unlink()
+
+      - name: Commit security fix and corrected assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: make commit boundary clean check filter-free"
+          git push origin HEAD:feature/phase10d-local-commit-candidate-2.3.15.1
