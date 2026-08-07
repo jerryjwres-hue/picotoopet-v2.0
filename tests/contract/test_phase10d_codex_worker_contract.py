@@ -1,5 +1,8 @@
-from pathlib import Path
+"""Phase 10D-A Codex Worker 静态安全合同。"""
 
+from __future__ import annotations
+
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
