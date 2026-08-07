@@ -34,9 +34,12 @@ class GitCommandRunner:
         )
 
     def remove_worktree(self, destination: Path) -> None:
+        """固定强制删除 Session worktree，避免 Provider 变更阻止清理。"""
+
         self._run(
             "worktree",
             "remove",
+            "--force",
             str(destination),
             timeout_seconds=60,
         )

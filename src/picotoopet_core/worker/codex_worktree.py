@@ -54,8 +54,6 @@ class CodexWorktreeManager:
         base_commit: str,
         allowed_write: tuple[str, ...],
     ) -> CodexWorktree:
-        """使用 detached immutable commit 创建新 worktree。"""
-
         normalized_session = str(UUID(session_id))
         if not _COMMIT_PATTERN.fullmatch(base_commit):
             raise CodexWorktreeError("base_commit 必须是 40 位小写 SHA。")
@@ -68,23 +66,15 @@ class CodexWorktreeManager:
             raise CodexWorktreeError("Session 目录逃逸。")
         if destination.exists():
             raise CodexWorktreeError("Session worktree 已存在。")
-
         self.git.add_detached_worktree(destination, base_commit)
         try:
             self._reject_links(destination)
         except Exception:
             self.cleanup(destination)
             raise
-        return CodexWorktree(
-            session_id=normalized_session,
-            path=destination,
-            base_commit=base_commit,
-            allowed_write=roots,
-        )
+        return CodexWorktree(normalized_session, destination, base_commit, roots)
 
     def changed_paths(self, worktree: CodexWorktree) -> tuple[str, ...]:
-        """读取 worktree 的 Git 变更路径，不返回文件正文。"""
-
         return self.git.changed_paths(worktree.path)
 
     def validate_changed_paths(
@@ -92,8 +82,6 @@ class CodexWorktreeManager:
         worktree: CodexWorktree,
         changed_paths: tuple[str, ...],
     ) -> tuple[PurePosixPath, ...]:
-        """拒绝 symlink、路径逃逸、保护分支名和允许根之外的变更。"""
-
         if len(changed_paths) > 5:
             raise CodexWorktreeError("变更文件数量超过 5。")
         normalized: list[PurePosixPath] = []
@@ -101,25 +89,23 @@ class CodexWorktreeManager:
             relative = self._normalize_relative(value)
             if relative.parts and relative.parts[0].lower() in _PROTECTED_BRANCH_NAMES:
                 raise CodexWorktreeError("保护分支路径被拒绝。")
-            allowed = any(
+            if not any(
                 relative == root or root in relative.parents
                 for root in worktree.allowed_write
-            )
-            if not allowed:
+            ):
                 raise CodexWorktreeError("变更路径不在 allowed_write 中。")
-            actual = (worktree.path / Path(*relative.parts)).resolve()
+            candidate = worktree.path / Path(*relative.parts)
+            if candidate.is_symlink():
+                raise CodexWorktreeError("symlink 变更被拒绝。")
+            actual = candidate.resolve()
             if worktree.path not in actual.parents:
                 raise CodexWorktreeError("变更路径逃逸 worktree。")
-            if actual.is_symlink():
-                raise CodexWorktreeError("symlink 变更被拒绝。")
             if actual.is_file() and actual.stat().st_size > 65536:
                 raise CodexWorktreeError("变更文件超过 64 KiB。")
             normalized.append(relative)
         return tuple(normalized)
 
     def cleanup(self, worktree: CodexWorktree | Path) -> None:
-        """删除 Git 登记和 Session 目录；失败时阻止继续执行。"""
-
         path = worktree.path if isinstance(worktree, CodexWorktree) else worktree
         resolved = path.expanduser().resolve()
         if resolved.parent != self.worktree_root:
