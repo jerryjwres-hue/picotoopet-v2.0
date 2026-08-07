@@ -36,6 +36,25 @@ internal static class ProviderReviewSmokeTests
 
     private sealed class FakeProviderReviewGateway : IProviderReviewGateway
     {
+        private readonly ProviderSessionRecord _session = new(
+            "22222222-2222-2222-2222-222222222222",
+            "handoff-review",
+            "codex",
+            "ready_for_review",
+            new string('a', 64),
+            new string('b', 64),
+            ProviderBudgetRecord.Fixed,
+            2,
+            20,
+            1,
+            "return-review",
+            null,
+            ProviderUsageUnknown: true,
+            DateTimeOffset.UtcNow.AddMinutes(-2),
+            DateTimeOffset.UtcNow.AddMinutes(-1),
+            DateTimeOffset.UtcNow,
+            "Review smoke session");
+
         private ProviderReviewRecord _review = new(
             "22222222-2222-2222-2222-222222222222",
             "return-review",
@@ -57,6 +76,9 @@ internal static class ProviderReviewSmokeTests
             null);
 
         private ProviderAdoptionCandidateRecord? _candidate;
+
+        public Task<ProviderSessionRecord[]> GetSessionsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new[] { _session });
 
         public Task<ProviderReviewRecord> GetReviewAsync(
             string sessionId,
