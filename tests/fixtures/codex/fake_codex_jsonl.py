@@ -12,6 +12,8 @@ def emit(payload: dict[str, object]) -> None:
 
 
 def main() -> int:
+    if sys.argv[1:] == ["login", "status"]:
+        return 0
     prompt = sys.stdin.read()
     if not prompt.strip():
         return 2
