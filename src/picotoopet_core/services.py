@@ -17,7 +17,9 @@ from picotoopet_core.handoffs.service import HandoffService
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import ResidentManager
 from picotoopet_core.projects.repository import ProjectRepository
+from picotoopet_core.providers.artifact_store import ProviderReturnArtifactStore
 from picotoopet_core.providers.readiness import CodexReadinessProbe
+from picotoopet_core.providers.review_service import ProviderReviewService
 from picotoopet_core.providers.service import ProviderSessionService
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.queue.repository import QueueRepository
@@ -38,6 +40,8 @@ class Services:
     returns: ReturnValidationService
     broker_sessions: BrokerSessionService
     provider_sessions: ProviderSessionService
+    provider_artifacts: ProviderReturnArtifactStore
+    provider_reviews: ProviderReviewService
     audit: AuditWriter
     results: ResultStore
     result_records: ResultRepository
@@ -77,6 +81,8 @@ def build_services(settings: AppSettings) -> Services:
         handoffs,
         readiness=readiness.status,
     )
+    provider_artifacts = ProviderReturnArtifactStore(settings.paths.provider_returns_dir)
+    provider_reviews = ProviderReviewService(database, provider_artifacts)
     result_store = ResultStore(settings.paths.results_dir)
     ollama = OllamaClient(settings.ollama_base_url, timeout_seconds=2.0)
     worker_state = WorkerStateStore(
@@ -93,6 +99,8 @@ def build_services(settings: AppSettings) -> Services:
         returns=returns,
         broker_sessions=broker_sessions,
         provider_sessions=provider_sessions,
+        provider_artifacts=provider_artifacts,
+        provider_reviews=provider_reviews,
         audit=AuditWriter(database),
         results=result_store,
         result_records=ResultRepository(database),
