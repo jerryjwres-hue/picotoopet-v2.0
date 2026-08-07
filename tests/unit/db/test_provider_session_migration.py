@@ -78,7 +78,7 @@ def test_migration_six_creates_provider_fact_tables_idempotently(tmp_path: Path)
 
     assert REQUIRED_CONFIRMATION_COLUMNS <= confirmation_columns
     assert REQUIRED_PROVIDER_SESSION_COLUMNS <= session_columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 6
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 7
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 6") == 1
     database.close()
 
@@ -155,5 +155,5 @@ def test_migration_six_preserves_existing_handoff_return_and_broker_rows(
     assert database.scalar("SELECT COUNT(*) FROM returns") == 1
     assert database.scalar("SELECT COUNT(*) FROM broker_sessions") == 1
     assert database.scalar("SELECT COUNT(*) FROM provider_sessions") == 0
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 6
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 7
     database.close()
