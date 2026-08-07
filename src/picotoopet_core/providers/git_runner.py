@@ -73,8 +73,7 @@ class GitCommandRunner:
         result = subprocess.run(
             command,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             env=self._safe_environment(),
             text=True,
             encoding="utf-8",
