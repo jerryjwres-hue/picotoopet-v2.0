@@ -8,9 +8,9 @@ import os
 import re
 import shutil
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable
 
 from .change_set import NormalizedChange, ProviderChangeInput
 
@@ -240,7 +240,10 @@ class ProviderReturnArtifactStore:
 
             change_bytes = (artifact_dir / "change-set.json").read_bytes()
             change_digest = _sha256(change_bytes)
-            if expected_change_set_digest is not None and change_digest != expected_change_set_digest:
+            if (
+                expected_change_set_digest is not None
+                and change_digest != expected_change_set_digest
+            ):
                 raise ProviderArtifactError("ADOPTION_ARTIFACT_INVALID")
             raw_changes = json.loads(change_bytes.decode("utf-8"))
             if not isinstance(raw_changes, list) or len(raw_changes) > MAX_CHANGED_FILES:
@@ -323,5 +326,5 @@ class ProviderReturnArtifactStore:
             )
         except ProviderArtifactError:
             raise
-        except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        except (OSError, UnicodeError, ValueError, TypeError) as exc:
             raise ProviderArtifactError("ADOPTION_ARTIFACT_INVALID") from exc
