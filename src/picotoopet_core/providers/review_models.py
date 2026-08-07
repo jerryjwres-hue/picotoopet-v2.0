@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 _COMMIT_PATTERN = r"^[0-9a-f]{40,64}$"
 _UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
