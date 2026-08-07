@@ -161,7 +161,7 @@ public sealed class ProviderReviewViewModel : ObservableObject
                 .Take(100)
                 .ToArray();
             SelectedSession = ReviewableSessions.FirstOrDefault(item => item.SessionId == selectedId)
-                ?? ReviewableSessions.FirstOrDefault();
+                ?? (ReviewableSessions.Count > 0 ? ReviewableSessions[0] : null);
             if (SelectedSession is null)
             {
                 Review = null;
@@ -268,7 +268,7 @@ public sealed class ProviderReviewViewModel : ObservableObject
             .Take(100)
             .ToArray();
         SelectedCandidate = Candidates.FirstOrDefault(item => item.CandidateId == selectedId)
-            ?? Candidates.FirstOrDefault();
+            ?? (Candidates.Count > 0 ? Candidates[0] : null);
     }
 
     private void RaiseActions()
