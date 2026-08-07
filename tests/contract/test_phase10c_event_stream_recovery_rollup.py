@@ -1,4 +1,4 @@
-"""2.3.14.1 must retain and formally publish the cold-start recovery fix."""
+"""2.3.15.1 must retain and formally publish the cold-start recovery fix."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_PRODUCT_VERSION = "2.3.14.1"
-PREVIOUS_PRODUCT_VERSION = "2.3.13.2"
+EXPECTED_PRODUCT_VERSION = "2.3.15.1"
+PREVIOUS_PRODUCT_VERSION = "2.3.14.1"
 
 ACTIVE_VERSION_FILES = (
     ROOT / "contracts/release/project-goal-invariants.json",
@@ -25,7 +25,7 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_rollup_uses_23141_on_every_active_version_surface() -> None:
+def test_rollup_uses_23151_on_every_active_version_surface() -> None:
     version_file = ROOT / "src/picotoopet_core/product-version.txt"
     goal = json.loads(read(ROOT / "contracts/release/project-goal-invariants.json"))
 

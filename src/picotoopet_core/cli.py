@@ -22,6 +22,7 @@ from picotoopet_core.ollama.resident_manager import (
     ResidentStatus,
 )
 from picotoopet_core.providers.adoption_execution import AdoptionExecutionCoordinator
+from picotoopet_core.providers.commit_execution import ProviderCommitExecutionCoordinator
 from picotoopet_core.providers.execution import ProviderExecutionCoordinator
 from picotoopet_core.services import build_services
 from picotoopet_core.worker.runtime import WorkerRuntime
@@ -104,7 +105,7 @@ def _run_worker(
     loop: bool,
     worker_id: str,
 ) -> int:
-    """运行独立 Worker；Provider/Adoption 仅在固定配置完整时注册。"""
+    """运行独立 Worker；Provider/Adoption/Commit 仅在固定配置完整时注册。"""
 
     services = build_services(settings)
     resolved_worker_id = worker_id.strip() or f"{socket.gethostname()}-{os.getpid()}"
@@ -120,6 +121,7 @@ def _run_worker(
     )
     provider_coordinator: ProviderExecutionCoordinator | None = None
     adoption_coordinator: AdoptionExecutionCoordinator | None = None
+    commit_coordinator: ProviderCommitExecutionCoordinator | None = None
     if settings.provider_execution_configured:
         assert settings.provider_repository is not None
         assert settings.provider_worktree_root is not None
@@ -140,14 +142,24 @@ def _run_worker(
             worktree_root=settings.paths.runtime_dir / "adoption-worktrees",
             artifact_store=services.provider_artifacts,
         )
+        commit_coordinator = ProviderCommitExecutionCoordinator(
+            database=services.database,
+            queue=services.queue,
+            repository=settings.provider_repository,
+            worktree_root=settings.paths.runtime_dir / "commit-worktrees",
+            artifact_store=services.provider_artifacts,
+        )
         runtime.handlers[ProviderExecutionCoordinator.TASK_TYPE] = provider_coordinator.handler
         runtime.handlers[AdoptionExecutionCoordinator.TASK_TYPE] = adoption_coordinator.handler
+        runtime.handlers[ProviderCommitExecutionCoordinator.TASK_TYPE] = commit_coordinator.handler
 
     def enqueue_controlled_work() -> None:
         if provider_coordinator is not None:
             provider_coordinator.enqueue_pending()
         if adoption_coordinator is not None:
             adoption_coordinator.enqueue_pending()
+        if commit_coordinator is not None:
+            commit_coordinator.enqueue_pending()
 
     try:
         if once:

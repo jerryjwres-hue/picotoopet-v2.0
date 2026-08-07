@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.14.1",
+      "value": "2.3.15.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -72,7 +72,22 @@
     "fact_source": "Mac Core + SQLite Queue/Outbox",
     "windows_role": "native WPF observation and controlled-command UI",
     "worker_role": "explicitly registered task execution",
-    "historical_analysis_tasks": "unsupported-unleased-unmodified"
+    "historical_analysis_tasks": "unsupported-unleased-unmodified",
+    "phase10d_c_commit_boundary": {
+      "source_state": "adoption_ready",
+      "success_state": "commit_ready",
+      "approval_type": "provider.commit.create-v1",
+      "local_ref_prefix": "refs/picotoopet/commit-candidates/",
+      "git_hooks": false,
+      "git_filters": false,
+      "network": false,
+      "automatic_branch": false,
+      "automatic_push": false,
+      "automatic_pr": false,
+      "automatic_merge": false,
+      "automatic_tag": false,
+      "automatic_release": false
+    }
   },
   "change_control": {
     "explicit_user_approval_required_before_implementation": [
