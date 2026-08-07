@@ -5,6 +5,8 @@ namespace PicotooPet.Desktop.Services;
 /// <summary>Review/Adoption 面板只通过固定 typed gateway 访问 Mac Core。</summary>
 public interface IProviderReviewGateway
 {
+    Task<ProviderSessionRecord[]> GetSessionsAsync(CancellationToken cancellationToken);
+
     Task<ProviderReviewRecord> GetReviewAsync(string sessionId, CancellationToken cancellationToken);
 
     Task<ProviderReviewRecord> AcceptAsync(
@@ -24,6 +26,9 @@ public interface IProviderReviewGateway
 public sealed class ControlCenterProviderReviewGateway(ControlCenterSession session) : IProviderReviewGateway
 {
     private readonly ControlCenterSession _session = session ?? throw new ArgumentNullException(nameof(session));
+
+    public Task<ProviderSessionRecord[]> GetSessionsAsync(CancellationToken cancellationToken) =>
+        _session.GetProviderSessionsAsync(cancellationToken);
 
     public Task<ProviderReviewRecord> GetReviewAsync(
         string sessionId,
