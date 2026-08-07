@@ -24,10 +24,10 @@ public partial class ProviderSessionPanel : System.Windows.Controls.UserControl
 
         _loadStarted = true;
         var gateway = ProviderGatewayContext.GetGateway(this);
-        if (ControlCenterContext.HasSession)
+        var reviewGateway = ProviderReviewGatewayContext.GetGateway(this);
+        if (reviewGateway is not null)
         {
-            ReviewPanel.SetGateway(
-                new ControlCenterProviderReviewGateway(ControlCenterContext.Session));
+            ReviewPanel.SetGateway(reviewGateway);
         }
         if (gateway is null)
         {
