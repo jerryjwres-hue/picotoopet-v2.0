@@ -45,6 +45,11 @@ def _workflow() -> WorkflowCreate:
     )
 
 
+def _finish_task(service: WorkflowService, task_id: str, status: TaskStatus) -> None:
+    service.queue.transition(task_id, TaskStatus.RUNNING, "test_running")
+    service.queue.transition(task_id, status, f"test_{status.value.lower()}")
+
+
 def test_workflow_create_is_idempotent_and_reconcile_materializes_queue_task(tmp_path: Path) -> None:
     database = _database(tmp_path)
     service = WorkflowService(database)
@@ -61,6 +66,8 @@ def test_workflow_create_is_idempotent_and_reconcile_materializes_queue_task(tmp
     assert step_one.status is WorkflowStepStatus.RUNNING
     assert step_one.task_id is not None
     assert step_two.status is WorkflowStepStatus.BLOCKED
+    task = service.queue.get(step_one.task_id)
+    assert task.max_attempts == 1
     assert database.scalar("SELECT COUNT(*) FROM tasks") == 1
     database.close()
 
@@ -72,7 +79,7 @@ def test_dependency_unlock_pause_resume_cancel_and_restart_reconcile(tmp_path: P
     running = service.reconcile(created.workflow_id)
     first = running.steps[0]
     assert first.task_id is not None
-    service.queue.transition(first.task_id, TaskStatus.COMPLETED, "test_complete")
+    _finish_task(service, first.task_id, TaskStatus.COMPLETED)
 
     paused = service.pause(created.workflow_id)
     assert paused.status is WorkflowStatus.PAUSED
@@ -92,6 +99,48 @@ def test_dependency_unlock_pause_resume_cancel_and_restart_reconcile(tmp_path: P
     current_task = service.queue.get(second.task_id)
     assert current_task.status is TaskStatus.CANCELLED
     reopened.close()
+
+
+def test_workflow_retry_budget_is_not_multiplied_by_queue_retry_budget(tmp_path: Path) -> None:
+    database = _database(tmp_path)
+    service = WorkflowService(database)
+    created = service.create_workflow(
+        WorkflowCreate(
+            project_id=None,
+            name="bounded-retry",
+            priority=50,
+            max_concurrency=1,
+            idempotency_key="bounded-retry-v1",
+            steps=[
+                WorkflowStepCreate(
+                    step_key="fragile",
+                    task_type="system.noop",
+                    max_attempts=2,
+                    timeout_seconds=30,
+                )
+            ],
+        )
+    )
+
+    first = service.reconcile(created.workflow_id).steps[0]
+    assert first.task_id is not None
+    assert service.queue.get(first.task_id).max_attempts == 1
+    _finish_task(service, first.task_id, TaskStatus.FAILED)
+
+    second = service.reconcile(created.workflow_id).steps[0]
+    assert second.status is WorkflowStepStatus.RUNNING
+    assert second.attempt_count == 2
+    assert second.task_id is not None
+    assert second.task_id != first.task_id
+    assert service.queue.get(second.task_id).max_attempts == 1
+    _finish_task(service, second.task_id, TaskStatus.FAILED)
+
+    terminal = service.reconcile(created.workflow_id)
+    assert terminal.status is WorkflowStatus.FAILED
+    assert terminal.steps[0].status is WorkflowStepStatus.FAILED
+    assert terminal.steps[0].attempt_count == 2
+    assert database.scalar("SELECT COUNT(*) FROM tasks") == 2
+    database.close()
 
 
 def test_capability_router_rejects_stale_and_tie_breaks_worker_id(tmp_path: Path) -> None:
