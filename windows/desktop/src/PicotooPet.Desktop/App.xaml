@@ -10,6 +10,9 @@
     <DataTemplate DataType="{x:Type viewModels:OverviewPageViewModel}">
       <pages:OverviewPage />
     </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:ProjectsPageViewModel}">
+      <pages:ProjectsPage />
+    </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:TaskCenterPageViewModel}">
       <pages:TaskCenterPage />
     </DataTemplate>
@@ -21,6 +24,15 @@
     </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:CloudDevelopmentPageViewModel}">
       <pages:CloudDevelopmentPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:AutomationPageViewModel}">
+      <pages:AutomationPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:HealthPageViewModel}">
+      <pages:HealthPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:DiagnosticsPageViewModel}">
+      <pages:DiagnosticsPage />
     </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:SettingsPageViewModel}">
       <pages:SettingsPage />
