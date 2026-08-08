@@ -9,6 +9,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+SAFE_BUILTIN_WORKFLOW_TASK_TYPES = frozenset(
+    {
+        "system.noop",
+        "system.diagnostic_snapshot",
+    }
+)
+
 
 class WorkflowStatus(StrEnum):
     """Persisted workflow lifecycle."""
@@ -55,7 +62,7 @@ class WorkflowStepCreate(BaseModel):
     step_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
     task_type: str = Field(min_length=1, max_length=100)
     depends_on: list[str] = Field(default_factory=list)
-    required_capability: str | None = Field(default=None, max_length=120)
+    required_capability: str | None = Field(default=None, min_length=1, max_length=120)
     payload: dict[str, Any] = Field(default_factory=dict)
     max_attempts: int = Field(default=3, ge=1, le=20)
     timeout_seconds: int = Field(default=3600, ge=1, le=86400)
@@ -66,6 +73,17 @@ class WorkflowStepCreate(BaseModel):
         if len(value) != len(set(value)):
             raise ValueError("duplicate workflow dependency")
         return value
+
+    @model_validator(mode="after")
+    def _require_capability_for_non_builtin_task_type(self) -> WorkflowStepCreate:
+        if (
+            self.task_type not in SAFE_BUILTIN_WORKFLOW_TASK_TYPES
+            and self.required_capability is None
+        ):
+            raise ValueError(
+                "required_capability is required for non-builtin workflow task_type"
+            )
+        return self
 
 
 class WorkflowCreate(BaseModel):
