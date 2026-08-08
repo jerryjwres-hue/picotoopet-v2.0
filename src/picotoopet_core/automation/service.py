@@ -247,12 +247,9 @@ class WorkflowService:
             TaskCreate(
                 project_id=workflow.project_id,
                 task_type=step.task_type,
-                payload={
-                    **step.payload,
-                    "workflow_id": workflow.workflow_id,
-                    "workflow_step_key": step.step_key,
-                    "workflow_attempt": next_attempt,
-                },
+                # Task payload belongs exclusively to the task contract. Workflow linkage
+                # stays in durable workflow-step facts, resource_tag and idempotency_key.
+                payload=step.payload,
                 priority=workflow.priority,
                 resource_tag=f"workflow:{workflow.workflow_id}",
                 idempotency_key=(
