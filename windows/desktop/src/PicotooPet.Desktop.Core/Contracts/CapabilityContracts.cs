@@ -28,7 +28,11 @@ public sealed record ControlCenterCapabilities(
     [property: JsonPropertyName("handoff_contract_v1")] bool HandoffContractV1,
     [property: JsonPropertyName("worker_status")] bool WorkerStatus = false,
     [property: JsonPropertyName("local_worker")] bool LocalWorker = false,
-    [property: JsonPropertyName("windows_worker")] bool WindowsWorker = false)
+    [property: JsonPropertyName("windows_worker")] bool WindowsWorker = false,
+    [property: JsonPropertyName("projects")] bool Projects = false,
+    [property: JsonPropertyName("workflow_automation")] bool WorkflowAutomation = false,
+    [property: JsonPropertyName("automation_health")] bool AutomationHealth = false,
+    [property: JsonPropertyName("automation_diagnostics")] bool AutomationDiagnostics = false)
 {
     /// <summary>旧版 2.2 服务的保守能力集；未知功能一律关闭。</summary>
     public static ControlCenterCapabilities Legacy22 { get; } = new(
@@ -49,10 +53,15 @@ public sealed record ControlCenterCapabilities(
         HandoffContractV1: false,
         WorkerStatus: false,
         LocalWorker: false,
-        WindowsWorker: false);
+        WindowsWorker: false,
+        Projects: false,
+        WorkflowAutomation: false,
+        AutomationHealth: false,
+        AutomationDiagnostics: false);
 }
 
 /// <summary>已冻结但不代表运行时已实现的合同版本。</summary>
 public sealed record ContractVersions(
     [property: JsonPropertyName("connector")] string Connector,
-    [property: JsonPropertyName("handoff_return")] string HandoffReturn);
+    [property: JsonPropertyName("handoff_return")] string HandoffReturn,
+    [property: JsonPropertyName("workflow_automation")] string? WorkflowAutomation = null);
