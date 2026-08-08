@@ -12,7 +12,7 @@ from picotoopet_core.domain.models import ProjectCreate, ProjectRecord
 
 
 class ProjectRepository:
-    """创建和读取 V2 项目元数据。"""
+    """创建、读取和归档 V2 项目元数据。"""
 
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -56,6 +56,17 @@ class ProjectRepository:
 
         rows = self.database.fetchall("SELECT * FROM projects ORDER BY created_at DESC")
         return [self._row_to_record(row) for row in rows]
+
+    def archive(self, project_id: str) -> ProjectRecord:
+        """只归档项目元数据；不会读取、移动或删除 workspace_root。"""
+
+        self.get(project_id)
+        now = datetime.now(UTC)
+        self.database.execute(
+            "UPDATE projects SET status = ?, updated_at = ? WHERE project_id = ?",
+            ("Archived", now.isoformat(), project_id),
+        )
+        return self.get(project_id)
 
     @staticmethod
     def _row_to_record(row: Row) -> ProjectRecord:
