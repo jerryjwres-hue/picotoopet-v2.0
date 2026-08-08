@@ -178,6 +178,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.Dashboard => new OverviewPageViewModel(
             snapshot,
             FormatConnection(snapshot.State.Connection.State)),
+        NavigationRoute.Projects when _session is not null =>
+            new ProjectsPageViewModel(_session),
         NavigationRoute.TaskCenter when _session is not null =>
             new TaskCenterPageViewModel(_session, snapshot),
         NavigationRoute.Results when _session is not null =>
@@ -188,6 +190,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             new CloudDevelopmentPageViewModel(
                 new ControlCenterHandoffGateway(_session)),
         NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
+        NavigationRoute.Automation when _session is not null =>
+            new AutomationPageViewModel(_session),
+        NavigationRoute.Health when _session is not null =>
+            new HealthPageViewModel(_session),
+        NavigationRoute.Diagnostics when _session is not null =>
+            new DiagnosticsPageViewModel(_session),
         NavigationRoute.Settings => new SettingsPageViewModel(snapshot.MacBaseUrl),
         _ => CreateStaticPage(route, snapshot.State.Capabilities.Features),
     };
@@ -204,8 +212,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Item(
                 NavigationRoute.Projects,
                 "项目",
-                isAvailable: false,
-                "Slice B 尚未提供项目目录。"),
+                capabilities.Projects,
+                "Mac Core 尚未声明项目目录能力。"),
             Item(
                 NavigationRoute.TaskCenter,
                 "任务中心",
@@ -229,18 +237,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             Item(
                 NavigationRoute.Automation,
                 "自动化",
-                isAvailable: false,
-                "自动化策略尚未进入 Slice B。"),
+                capabilities.WorkflowAutomation,
+                "Mac Core 尚未声明耐久工作流自动化能力。"),
             Item(
                 NavigationRoute.Health,
                 "健康",
-                capabilities.HealthDetailed,
-                "Mac Core 尚未声明详细健康能力。"),
+                capabilities.AutomationHealth,
+                "Mac Core 尚未声明结构化平台健康能力。"),
             Item(
                 NavigationRoute.Diagnostics,
                 "诊断",
-                capabilities.LogsQuery,
-                "Mac Core 尚未声明日志查询能力。"),
+                capabilities.AutomationDiagnostics,
+                "Mac Core 尚未声明结构化自动化诊断能力。"),
             Item(
                 NavigationRoute.Settings,
                 "设置",
@@ -274,8 +282,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             "你现在不需要操作。"),
         NavigationRoute.Projects => new EmptyStatePageViewModel(
             "项目",
-            "当前 Slice B 尚未提供项目目录或详情。",
-            "后续切片将先定义项目快照和只读列表。",
+            "当前服务尚未声明项目目录能力。",
+            "升级 Mac Core 后项目页将读取真实项目元数据。",
             "你现在不需要操作。"),
         NavigationRoute.TaskCenter => TaskCenterPageViewModel.CreateForSmokeTest(
             Array.Empty<TaskRecord>(),
@@ -292,18 +300,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
         NavigationRoute.Automation => new EmptyStatePageViewModel(
             "自动化",
-            "自动化策略和执行器尚未进入 Slice B。",
-            "后续切片将先冻结策略合同和审批边界。",
+            "当前服务尚未声明耐久工作流自动化能力。",
+            "升级 Mac Core 后页面将接入工作流、步骤和安全控制动作。",
             "你现在不需要操作。"),
         NavigationRoute.Health => new EmptyStatePageViewModel(
             "健康",
-            "当前只保留轻量 health 快照，尚未声明详细健康能力。",
-            "后续切片将接入分组件健康状态和时间戳。",
+            "当前服务尚未声明结构化平台健康能力。",
+            "升级 Mac Core 后页面将显示数据库、队列和 Worker capability。",
             "你现在不需要操作。"),
         NavigationRoute.Diagnostics => new EmptyStatePageViewModel(
             "诊断",
-            "Mac Core 尚未声明日志查询能力。",
-            "后续切片将先加入脱敏、只读和有界的诊断查询。",
+            "当前服务尚未声明结构化自动化诊断能力。",
+            "升级 Mac Core 后页面将显示安全错误元数据和 Trace ID。",
             "你现在不需要操作。"),
         NavigationRoute.Settings => new SettingsPageViewModel(DesktopSettings.Default.MacBaseUrl),
         _ => throw new ArgumentOutOfRangeException(nameof(route), route, "未知导航路由。"),
@@ -355,6 +363,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             && CurrentPage is CloudDevelopmentPageViewModel)
         {
             // Handoff 表单、预览和幂等操作由页面维护；普通连接快照不得清空页面实例。
+        }
+        else if (route is NavigationRoute.Projects
+                 or NavigationRoute.Automation
+                 or NavigationRoute.Health
+                 or NavigationRoute.Diagnostics)
+        {
+            // 新平台页各自通过显式刷新读取较大事实集；连接心跳不得重建页面并清空选择。
         }
         else
         {
