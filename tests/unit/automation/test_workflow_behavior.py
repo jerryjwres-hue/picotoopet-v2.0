@@ -206,3 +206,70 @@ def test_quality_decision_is_persisted_and_moves_step_to_attention_state(tmp_pat
     assert updated.steps[0].status is WorkflowStepStatus.NEEDS_HUMAN
     assert database.scalar("SELECT COUNT(*) FROM quality_decisions") == 1
     database.close()
+
+
+def test_quality_pass_completes_step_and_unlocks_dependency(tmp_path: Path) -> None:
+    database = _database(tmp_path)
+    repository = AutomationRepository(database)
+    service = WorkflowService(database, repository=repository)
+    created = service.create_workflow(_workflow())
+    gate = QualityGate(repository)
+
+    gate.decide(
+        QualityDecision(
+            workflow_id=created.workflow_id,
+            step_key="one",
+            outcome=QualityOutcome.PASS,
+            rule_id="quality-pass",
+            evidence={"score": 0.99},
+        )
+    )
+    updated = service.reconcile(created.workflow_id)
+    first = next(step for step in updated.steps if step.step_key == "one")
+    second = next(step for step in updated.steps if step.step_key == "two")
+    assert first.status is WorkflowStepStatus.SUCCEEDED
+    assert second.status is WorkflowStepStatus.RUNNING
+    database.close()
+
+
+def test_quality_retry_cannot_exceed_step_attempt_budget(tmp_path: Path) -> None:
+    database = _database(tmp_path)
+    repository = AutomationRepository(database)
+    service = WorkflowService(database, repository=repository)
+    gate = QualityGate(repository)
+    created = service.create_workflow(
+        WorkflowCreate(
+            project_id=None,
+            name="quality-retry-budget",
+            priority=50,
+            max_concurrency=1,
+            idempotency_key="quality-retry-budget-v1",
+            steps=[
+                WorkflowStepCreate(
+                    step_key="quality",
+                    task_type="system.noop",
+                    max_attempts=1,
+                    timeout_seconds=30,
+                )
+            ],
+        )
+    )
+    running = service.reconcile(created.workflow_id)
+    assert running.steps[0].attempt_count == 1
+
+    gate.decide(
+        QualityDecision(
+            workflow_id=created.workflow_id,
+            step_key="quality",
+            outcome=QualityOutcome.RETRY,
+            rule_id="quality-retry",
+            evidence={"score": 0.2},
+        )
+    )
+    terminal = service.reconcile(created.workflow_id)
+    assert terminal.status is WorkflowStatus.FAILED
+    assert terminal.steps[0].status is WorkflowStepStatus.FAILED
+    assert terminal.steps[0].failure_code == "QUALITY_RETRY_EXHAUSTED"
+    assert terminal.steps[0].attempt_count == 1
+    assert database.scalar("SELECT COUNT(*) FROM tasks") == 1
+    database.close()
