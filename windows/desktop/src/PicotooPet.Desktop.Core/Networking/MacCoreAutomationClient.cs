@@ -189,7 +189,7 @@ public sealed class MacCoreAutomationClient : IAsyncDisposable
     }
 
     private static Uri EnsureTrailingSlash(Uri uri) =>
-        uri.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)
+        uri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
             ? uri
             : new Uri(uri.AbsoluteUri + "/", UriKind.Absolute);
 
