@@ -34,6 +34,7 @@ def capabilities() -> CapabilitiesResponse:
         contract_versions={
             "connector": "1.0.0",
             "handoff_return": "1.0.0",
+            "workflow_automation": "1.0.0",
         },
         # 兼容 2.2 客户端仍读取的顶层字段。
         local_agent=features.local_agent,
