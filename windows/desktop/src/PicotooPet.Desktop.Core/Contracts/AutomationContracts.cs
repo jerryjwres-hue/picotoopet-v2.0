@@ -20,7 +20,7 @@ public sealed record ProjectCreateRequest(
     [property: JsonPropertyName("title")] string Title,
     [property: JsonPropertyName("project_type")] string ProjectType,
     [property: JsonPropertyName("source_app")] string SourceApp,
-    [property: JsonPropertyName("classification")] string Classification = "Internal",
+    [property: JsonPropertyName("classification")] string Classification = "INTERNAL",
     [property: JsonPropertyName("workspace_root")] string? WorkspaceRoot = null);
 
 /// <summary>工作流步骤的持久化快照。</summary>

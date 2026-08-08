@@ -9,7 +9,7 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>真实 STA WPF 验证 2.3.16.1 四个基础页完成 Measure/Arrange/UpdateLayout。</summary>
+/// <summary>真实 STA WPF 验证 2.3.16.x 四个基础页完成 Measure/Arrange/UpdateLayout。</summary>
 internal static class PlatformFoundationPagesWpfLayoutSmokeTests
 {
     private static readonly string[] WorkerTaskTypes =
@@ -20,6 +20,8 @@ internal static class PlatformFoundationPagesWpfLayoutSmokeTests
 
     public static void Run()
     {
+        VerifyProjectCreateClassificationContract();
+
         Exception? failure = null;
         var thread = new Thread(() =>
         {
@@ -41,11 +43,19 @@ internal static class PlatformFoundationPagesWpfLayoutSmokeTests
         }
     }
 
+    private static void VerifyProjectCreateClassificationContract()
+    {
+        var request = new ProjectCreateRequest("平台验收项目", "automation", "PicotooPet");
+        SmokeAssert.True(
+            request.Classification == "INTERNAL",
+            "ProjectCreateRequest 默认 classification 必须与 Mac Core Classification.INTERNAL 的线协议值完全一致。");
+    }
+
     private static void RunLayout()
     {
         var now = DateTimeOffset.UtcNow;
         var project = new ProjectRecord(
-            "project-layout", "平台项目", "automation", "PicotooPet", "Internal",
+            "project-layout", "平台项目", "automation", "PicotooPet", "INTERNAL",
             null, "Active", now, now);
         var payload = JsonSerializer.SerializeToElement(new { purpose = "layout" });
         var step = new WorkflowStepRecord(
