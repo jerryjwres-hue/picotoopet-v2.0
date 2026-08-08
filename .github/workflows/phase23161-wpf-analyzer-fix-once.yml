@@ -1,0 +1,61 @@
+name: Phase 2.3.16.1 WPF analyzer cleanup once
+
+on:
+  push:
+    branches:
+      - feature/platform-automation-foundation-2.3.16.1
+    paths:
+      - .github/workflows/phase23161-wpf-analyzer-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/platform-automation-foundation-2.3.16.1
+          fetch-depth: 0
+      - name: Apply exact CA1826 and CA1859 fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              "windows/desktop/src/PicotooPet.Desktop/ViewModels/ProjectsPageViewModel.cs": [
+                  ("SelectedProject = projects.FirstOrDefault();", "SelectedProject = projects.Count > 0 ? projects[0] : null;"),
+                  ("?? Projects.FirstOrDefault();", "?? (Projects.Count > 0 ? Projects[0] : null);"),
+              ],
+              "windows/desktop/src/PicotooPet.Desktop/ViewModels/AutomationPageViewModel.cs": [
+                  ("SelectedWorkflow = workflows.FirstOrDefault();", "SelectedWorkflow = workflows.Count > 0 ? workflows[0] : null;"),
+                  ("?? Workflows.FirstOrDefault();", "?? (Workflows.Count > 0 ? Workflows[0] : null);"),
+              ],
+              "windows/desktop/src/PicotooPet.Desktop/ViewModels/DiagnosticsPageViewModel.cs": [
+                  ("SelectedFact = facts.FirstOrDefault();", "SelectedFact = facts.Count > 0 ? facts[0] : null;"),
+                  ("SelectedFact = Facts.FirstOrDefault();", "SelectedFact = Facts.Count > 0 ? Facts[0] : null;"),
+              ],
+              "windows/desktop/src/PicotooPet.Desktop/ViewModels/HealthPageViewModel.cs": [
+                  ("private static string FormatCounts(IReadOnlyDictionary<string, int>? counts)", "private static string FormatCounts(Dictionary<string, int>? counts)"),
+              ],
+          }
+          for name, pairs in replacements.items():
+              path = Path(name)
+              text = path.read_text(encoding="utf-8")
+              for old, new in pairs:
+                  if text.count(old) != 1:
+                      raise SystemExit(f"expected exactly one analyzer site in {name}: {old}")
+                  text = text.replace(old, new)
+              path.write_text(text, encoding="utf-8")
+          Path(".github/workflows/phase23161-wpf-analyzer-fix-once.yml").unlink()
+          PY
+      - name: Commit exact patch and self-delete
+        shell: bash
+        run: |
+          git config user.name "PicotooPet CI"
+          git config user.email "picotoopet@localhost"
+          git add windows/desktop/src/PicotooPet.Desktop/ViewModels .github/workflows/phase23161-wpf-analyzer-fix-once.yml
+          git commit -m "fix: satisfy WPF collection analyzers"
+          git push origin HEAD:feature/platform-automation-foundation-2.3.16.1
