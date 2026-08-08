@@ -73,7 +73,7 @@ public sealed class HealthPageViewModel : PageViewModel
         }
     }
 
-    private static string FormatCounts(IReadOnlyDictionary<string, int>? counts) =>
+    private static string FormatCounts(Dictionary<string, int>? counts) =>
         counts is null || counts.Count == 0
             ? "无记录"
             : string.Join(" · ", counts.OrderBy(item => item.Key).Select(item => $"{item.Key} {item.Value}"));

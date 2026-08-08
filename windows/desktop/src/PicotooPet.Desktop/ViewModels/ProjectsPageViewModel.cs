@@ -23,7 +23,7 @@ public sealed class ProjectsPageViewModel : PageViewModel
     private ProjectsPageViewModel(IReadOnlyList<ProjectRecord> projects) : base("项目")
     {
         Projects = projects;
-        SelectedProject = projects.FirstOrDefault();
+        SelectedProject = projects.Count > 0 ? projects[0] : null;
     }
 
     public IReadOnlyList<ProjectRecord> Projects
@@ -93,7 +93,7 @@ public sealed class ProjectsPageViewModel : PageViewModel
         {
             Projects = await session.GetProjectsAsync(cancellationToken).ConfigureAwait(false);
             SelectedProject = Projects.FirstOrDefault(item => item.ProjectId == SelectedProject?.ProjectId)
-                ?? Projects.FirstOrDefault();
+                ?? (Projects.Count > 0 ? Projects[0] : null);
             StatusMessage = Projects.Count == 0 ? "当前没有项目。" : $"已加载 {Projects.Count} 个项目。";
         }
         finally

@@ -20,7 +20,7 @@ public sealed class DiagnosticsPageViewModel : PageViewModel
     private DiagnosticsPageViewModel(IReadOnlyList<AutomationDiagnosticFact> facts) : base("诊断")
     {
         Facts = facts;
-        SelectedFact = facts.FirstOrDefault();
+        SelectedFact = facts.Count > 0 ? facts[0] : null;
     }
 
     public IReadOnlyList<AutomationDiagnosticFact> Facts
@@ -58,7 +58,7 @@ public sealed class DiagnosticsPageViewModel : PageViewModel
         {
             var snapshot = await session.GetAutomationDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
             Facts = snapshot.Facts;
-            SelectedFact = Facts.FirstOrDefault();
+            SelectedFact = Facts.Count > 0 ? Facts[0] : null;
             StatusMessage = Facts.Count == 0
                 ? "当前没有需要关注的工作流诊断事实。"
                 : $"已加载 {Facts.Count} 条结构化诊断事实；未读取日志正文。";

@@ -20,7 +20,7 @@ public sealed class AutomationPageViewModel : PageViewModel
     private AutomationPageViewModel(IReadOnlyList<WorkflowRecord> workflows) : base("自动化")
     {
         Workflows = workflows;
-        SelectedWorkflow = workflows.FirstOrDefault();
+        SelectedWorkflow = workflows.Count > 0 ? workflows[0] : null;
     }
 
     public IReadOnlyList<WorkflowRecord> Workflows
@@ -174,7 +174,7 @@ public sealed class AutomationPageViewModel : PageViewModel
         var selectedId = SelectedWorkflow?.WorkflowId;
         Workflows = await session.GetWorkflowsAsync(cancellationToken).ConfigureAwait(false);
         SelectedWorkflow = Workflows.FirstOrDefault(item => item.WorkflowId == selectedId)
-            ?? Workflows.FirstOrDefault();
+            ?? (Workflows.Count > 0 ? Workflows[0] : null);
     }
 
     private void RaiseActions()
