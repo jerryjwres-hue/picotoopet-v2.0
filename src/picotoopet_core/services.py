@@ -9,6 +9,7 @@ from picotoopet_core.audit.writer import AuditWriter
 from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.quality import QualityGate
 from picotoopet_core.automation.repository import AutomationRepository
+from picotoopet_core.automation.scheduler import WorkflowScheduler
 from picotoopet_core.automation.service import WorkflowService
 from picotoopet_core.broker.service import BrokerSessionService
 from picotoopet_core.config.models import AppSettings
@@ -41,6 +42,7 @@ class Services:
     projects: ProjectRepository
     queue: QueueRepository
     workflows: WorkflowService
+    workflow_scheduler: WorkflowScheduler
     automation_repository: AutomationRepository
     capability_router: CapabilityRouter
     quality_gate: QualityGate
@@ -82,6 +84,7 @@ def build_services(settings: AppSettings) -> Services:
         queue=queue,
         repository=automation_repository,
     )
+    workflow_scheduler = WorkflowScheduler(workflows)
     capability_router = workflows.capabilities
     quality_gate = QualityGate(automation_repository)
     approvals = HandoffApprovalService(database, queue)
@@ -114,6 +117,7 @@ def build_services(settings: AppSettings) -> Services:
         projects=ProjectRepository(database),
         queue=queue,
         workflows=workflows,
+        workflow_scheduler=workflow_scheduler,
         automation_repository=automation_repository,
         capability_router=capability_router,
         quality_gate=quality_gate,
