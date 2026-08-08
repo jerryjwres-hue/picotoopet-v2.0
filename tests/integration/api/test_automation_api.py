@@ -35,7 +35,7 @@ def test_project_archive_is_metadata_only_and_platform_routes_are_authenticated(
                 "title": "平台项目",
                 "project_type": "automation",
                 "source_app": "test",
-                "classification": "Internal",
+                "classification": "INTERNAL",
                 "workspace_root": str(workspace),
             },
         )
