@@ -1,0 +1,43 @@
+name: Phase 2.3.16.1 quality gate patch once
+
+on:
+  push:
+    branches:
+      - feature/platform-automation-foundation-2.3.16.1
+    paths:
+      - .github/workflows/phase23161-quality-gate-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/platform-automation-foundation-2.3.16.1
+          fetch-depth: 0
+      - name: Define complete and bounded quality outcome semantics
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/picotoopet_core/automation/repository.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''    def apply_quality_outcome(self, decision: QualityDecision) -> None:\n        mapping = {\n            QualityOutcome.RETRY: WorkflowStepStatus.RETRY_WAITING,\n            QualityOutcome.NEEDS_DEEP_AI: WorkflowStepStatus.NEEDS_DEEP_AI,\n            QualityOutcome.NEEDS_HUMAN: WorkflowStepStatus.NEEDS_HUMAN,\n            QualityOutcome.REJECT: WorkflowStepStatus.REJECTED,\n        }\n        target = mapping.get(decision.outcome)\n        if target is not None:\n            self.update_step(\n                decision.workflow_id,\n                decision.step_key,\n                status=target,\n                finished=decision.outcome is QualityOutcome.REJECT,\n            )\n'''
+          new = '''    def apply_quality_outcome(self, decision: QualityDecision) -> None:\n        workflow = self.get_workflow(decision.workflow_id)\n        step = next(\n            (item for item in workflow.steps if item.step_key == decision.step_key),\n            None,\n        )\n        if step is None:\n            raise KeyError(\n                f"workflow step not found: {decision.workflow_id}/{decision.step_key}"\n            )\n\n        if decision.outcome is QualityOutcome.PASS:\n            self.update_step(\n                decision.workflow_id,\n                decision.step_key,\n                status=WorkflowStepStatus.SUCCEEDED,\n                finished=True,\n            )\n            return\n        if decision.outcome is QualityOutcome.RETRY:\n            if step.attempt_count >= step.max_attempts:\n                self.update_step(\n                    decision.workflow_id,\n                    decision.step_key,\n                    status=WorkflowStepStatus.FAILED,\n                    failure_code="QUALITY_RETRY_EXHAUSTED",\n                    error_message="Quality gate retry budget exhausted.",\n                    finished=True,\n                )\n                return\n            self.update_step(\n                decision.workflow_id,\n                decision.step_key,\n                status=WorkflowStepStatus.RETRY_WAITING,\n            )\n            return\n\n        mapping = {\n            QualityOutcome.NEEDS_DEEP_AI: WorkflowStepStatus.NEEDS_DEEP_AI,\n            QualityOutcome.NEEDS_HUMAN: WorkflowStepStatus.NEEDS_HUMAN,\n            QualityOutcome.REJECT: WorkflowStepStatus.REJECTED,\n        }\n        target = mapping[decision.outcome]\n        self.update_step(\n            decision.workflow_id,\n            decision.step_key,\n            status=target,\n            finished=decision.outcome is QualityOutcome.REJECT,\n        )\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one quality outcome block, found {text.count(old)}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          Path(".github/workflows/phase23161-quality-gate-fix-once.yml").unlink()
+          PY
+      - name: Commit exact patch and self-delete
+        shell: bash
+        run: |
+          git config user.name "PicotooPet CI"
+          git config user.email "picotoopet@localhost"
+          git add src/picotoopet_core/automation/repository.py .github/workflows/phase23161-quality-gate-fix-once.yml
+          git commit -m "fix: complete and bound quality gate outcomes"
+          git push origin HEAD:feature/platform-automation-foundation-2.3.16.1
