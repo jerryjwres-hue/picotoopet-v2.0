@@ -12,6 +12,12 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>真实 STA WPF 验证 2.3.16.1 四个基础页完成 Measure/Arrange/UpdateLayout。</summary>
 internal static class PlatformFoundationPagesWpfLayoutSmokeTests
 {
+    private static readonly string[] WorkerTaskTypes =
+    [
+        "system.diagnostic_snapshot",
+        "system.noop",
+    ];
+
     public static void Run()
     {
         Exception? failure = null;
@@ -51,7 +57,7 @@ internal static class PlatformFoundationPagesWpfLayoutSmokeTests
             "layout-idempotency", now, now, null, null, null, new[] { step });
         var capability = new CapabilityRegistrationRecord(
             "mac-worker", "local.system.execution",
-            new[] { "system.diagnostic_snapshot", "system.noop" }, true,
+            WorkerTaskTypes, true,
             JsonSerializer.SerializeToElement(new { source = "worker-runtime" }),
             now, now);
         var health = new AutomationHealthResponse(
