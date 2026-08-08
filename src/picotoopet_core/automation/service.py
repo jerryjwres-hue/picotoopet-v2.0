@@ -258,7 +258,8 @@ class WorkflowService:
                 idempotency_key=(
                     f"workflow:{workflow.workflow_id}:step:{step.step_key}:attempt:{next_attempt}"
                 ),
-                max_attempts=step.max_attempts,
+                # Workflow owns the bounded retry budget; each queue task is one physical attempt.
+                max_attempts=1,
                 timeout_seconds=step.timeout_seconds,
             )
         )
