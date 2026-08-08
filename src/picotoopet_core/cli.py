@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from threading import Event
 
 from picotoopet_core.api.app import create_app
+from picotoopet_core.automation.models import CapabilityRegistration
 from picotoopet_core.config.loader import load_settings
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.health.supervisor import HealthSupervisor
@@ -161,8 +162,22 @@ def _run_worker(
         if commit_coordinator is not None:
             commit_coordinator.enqueue_pending()
 
+    def publish_execution_capability(*, healthy: bool) -> None:
+        """只声明当前封闭 handler 注册表能够真实执行的任务类型。"""
+
+        services.capability_router.register(
+            CapabilityRegistration(
+                worker_id=resolved_worker_id,
+                capability="local.system.execution",
+                task_types=list(runtime.supported_task_types),
+                healthy=healthy,
+                metadata={"runtime": "mac-worker"},
+            )
+        )
+
     try:
         if once:
+            publish_execution_capability(healthy=True)
             enqueue_controlled_work()
             result = runtime.run_once()
             print(
@@ -188,12 +203,16 @@ def _run_worker(
         signal.signal(signal.SIGINT, request_stop)
         signal.signal(signal.SIGTERM, request_stop)
         while not stop_event.is_set():
+            publish_execution_capability(healthy=True)
             enqueue_controlled_work()
             runtime.run_once()
             stop_event.wait(settings.worker_poll_seconds)
         return 0
     finally:
-        services.close()
+        try:
+            publish_execution_capability(healthy=False)
+        finally:
+            services.close()
 
 
 def main(argv: Sequence[str] | None = None) -> int:

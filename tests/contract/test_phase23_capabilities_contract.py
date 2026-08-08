@@ -24,7 +24,12 @@ def test_capabilities_are_explicit_and_backward_compatible(tmp_path: Path) -> No
     assert body["features"]["task_detail"] is False
     assert body["features"]["connector_contract_v1"] is True
     assert body["features"]["handoff_contract_v1"] is True
+    assert body["features"]["projects"] is True
+    assert body["features"]["workflow_automation"] is True
+    assert body["features"]["automation_health"] is True
+    assert body["features"]["automation_diagnostics"] is True
     assert body["contract_versions"] == {
         "connector": "1.0.0",
         "handoff_return": "1.0.0",
+        "workflow_automation": "1.0.0",
     }

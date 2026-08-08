@@ -26,6 +26,7 @@ class AppSettings(BaseModel):
     worker_lease_seconds: int = Field(default=60, ge=2, le=3600)
     worker_heartbeat_seconds: int = Field(default=15, ge=1, le=1800)
     worker_status_stale_seconds: int = Field(default=45, ge=2, le=7200)
+    workflow_reconcile_seconds: float = Field(default=1.0, ge=0.05, le=60.0)
     provider_repository: Path | None = None
     provider_worktree_root: Path | None = None
     codex_executable: Path | None = None

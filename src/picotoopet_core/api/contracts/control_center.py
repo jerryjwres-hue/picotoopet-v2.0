@@ -29,6 +29,10 @@ class ControlCenterCapabilities(BaseModel):
     worker_status: bool = True
     local_worker: bool = True
     windows_worker: bool = False
+    projects: bool = True
+    workflow_automation: bool = True
+    automation_health: bool = True
+    automation_diagnostics: bool = True
 
 
 class CapabilitiesResponse(BaseModel):
@@ -42,6 +46,7 @@ class CapabilitiesResponse(BaseModel):
         default_factory=lambda: {
             "connector": "1.0.0",
             "handoff_return": "1.0.0",
+            "workflow_automation": "1.0.0",
         }
     )
     cloud_upload: str = "manual_approval_only"
