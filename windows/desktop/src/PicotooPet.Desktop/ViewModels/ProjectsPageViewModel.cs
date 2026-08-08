@@ -39,7 +39,7 @@ public sealed class ProjectsPageViewModel : PageViewModel
         {
             if (SetProperty(ref _selectedProject, value))
             {
-                OnPropertyChanged(nameof(CanArchive));
+                RaisePropertyChanged(nameof(CanArchive));
             }
         }
     }
@@ -75,7 +75,7 @@ public sealed class ProjectsPageViewModel : PageViewModel
         {
             if (SetProperty(ref _isBusy, value))
             {
-                OnPropertyChanged(nameof(CanArchive));
+                RaisePropertyChanged(nameof(CanArchive));
             }
         }
     }

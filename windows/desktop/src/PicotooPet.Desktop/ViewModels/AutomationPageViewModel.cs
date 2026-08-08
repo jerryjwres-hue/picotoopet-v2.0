@@ -36,7 +36,7 @@ public sealed class AutomationPageViewModel : PageViewModel
         {
             if (SetProperty(ref _selectedWorkflow, value))
             {
-                OnPropertyChanged(nameof(SelectedSteps));
+                RaisePropertyChanged(nameof(SelectedSteps));
                 RaiseActions();
             }
         }
@@ -179,10 +179,10 @@ public sealed class AutomationPageViewModel : PageViewModel
 
     private void RaiseActions()
     {
-        OnPropertyChanged(nameof(CanPause));
-        OnPropertyChanged(nameof(CanResume));
-        OnPropertyChanged(nameof(CanCancel));
-        OnPropertyChanged(nameof(CanReconcile));
+        RaisePropertyChanged(nameof(CanPause));
+        RaisePropertyChanged(nameof(CanResume));
+        RaisePropertyChanged(nameof(CanCancel));
+        RaisePropertyChanged(nameof(CanReconcile));
     }
 
     private ControlCenterSession RequireSession() =>

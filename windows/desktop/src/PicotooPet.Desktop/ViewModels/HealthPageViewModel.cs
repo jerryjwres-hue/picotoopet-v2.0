@@ -28,10 +28,10 @@ public sealed class HealthPageViewModel : PageViewModel
         {
             if (SetProperty(ref _snapshot, value))
             {
-                OnPropertyChanged(nameof(WorkflowSummary));
-                OnPropertyChanged(nameof(TaskSummary));
-                OnPropertyChanged(nameof(Capabilities));
-                OnPropertyChanged(nameof(DatabaseSchemaText));
+                RaisePropertyChanged(nameof(WorkflowSummary));
+                RaisePropertyChanged(nameof(TaskSummary));
+                RaisePropertyChanged(nameof(Capabilities));
+                RaisePropertyChanged(nameof(DatabaseSchemaText));
             }
         }
     }
