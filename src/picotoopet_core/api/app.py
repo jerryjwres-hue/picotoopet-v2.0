@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -34,11 +35,29 @@ from .routes import (
     workers,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(settings: AppSettings) -> FastAPI:
-    """创建已迁移数据库和统一路由的 Mac Core 应用。"""
+    """创建已迁移数据库、后台工作流推进和统一路由的 Mac Core 应用。"""
 
     services = build_services(settings)
+
+    async def run_workflow_scheduler(stop_event: asyncio.Event) -> None:
+        """自动推进耐久工作流；异常只影响本轮，下一轮继续从 SQLite 重放。"""
+
+        while not stop_event.is_set():
+            try:
+                services.workflow_scheduler.reconcile_all()
+            except Exception:
+                logger.exception("workflow scheduler reconciliation failed")
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=settings.workflow_reconcile_seconds,
+                )
+            except TimeoutError:
+                continue
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -48,11 +67,15 @@ def create_app(settings: AppSettings) -> FastAPI:
             services.dispatcher.run(stop_event),
             name="picotoo-outbox-dispatcher",
         )
+        workflow_scheduler_task = asyncio.create_task(
+            run_workflow_scheduler(stop_event),
+            name="picotoo-workflow-scheduler",
+        )
         try:
             yield
         finally:
             stop_event.set()
-            await dispatcher_task
+            await asyncio.gather(dispatcher_task, workflow_scheduler_task)
             services.close()
 
     app = FastAPI(
