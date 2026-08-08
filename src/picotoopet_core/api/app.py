@@ -18,6 +18,7 @@ from picotoopet_core.services import build_services
 from .errors import install_error_handlers
 from .routes import (
     approvals,
+    automation,
     broker_sessions,
     events,
     handoffs,
@@ -66,6 +67,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     prefix = "/api/v1"
     app.include_router(health.router, prefix=prefix, tags=["health"])
     app.include_router(projects.router, prefix=prefix, tags=["projects"])
+    app.include_router(automation.router, prefix=prefix, tags=["automation"])
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
     app.include_router(workers.router, prefix=prefix, tags=["workers"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
