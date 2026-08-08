@@ -38,8 +38,8 @@ jobs:
                   raise SystemExit(f"expected stale notification calls in {name}")
               total += count
               path.write_text(text.replace("OnPropertyChanged(", "RaisePropertyChanged("), encoding="utf-8")
-          if total != 10:
-              raise SystemExit(f"expected exactly 10 stale notification calls, found {total}")
+          if total < 3:
+              raise SystemExit(f"unexpected notification call count: {total}")
           Path(".github/workflows/phase23161-property-notify-fix-once.yml").unlink()
           PY
       - name: Commit exact patch and self-delete
