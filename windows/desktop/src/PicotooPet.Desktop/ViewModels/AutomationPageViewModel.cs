@@ -108,7 +108,7 @@ public sealed class AutomationPageViewModel : PageViewModel
                         TaskType: "system.diagnostic_snapshot",
                         DependsOn: Array.Empty<string>(),
                         RequiredCapability: null,
-                        Payload: new { schema_version = "1.0.0" },
+                        Payload: new { schema_version = "1.0" },
                         MaxAttempts: 2,
                         TimeoutSeconds: 30),
                     new WorkflowStepCreateRequest(
