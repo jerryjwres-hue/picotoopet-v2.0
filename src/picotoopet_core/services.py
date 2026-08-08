@@ -6,6 +6,10 @@ from dataclasses import dataclass
 
 from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.audit.writer import AuditWriter
+from picotoopet_core.automation.capabilities import CapabilityRouter
+from picotoopet_core.automation.quality import QualityGate
+from picotoopet_core.automation.repository import AutomationRepository
+from picotoopet_core.automation.service import WorkflowService
 from picotoopet_core.broker.service import BrokerSessionService
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.db.database import Database
@@ -36,6 +40,10 @@ class Services:
     database: Database
     projects: ProjectRepository
     queue: QueueRepository
+    workflows: WorkflowService
+    automation_repository: AutomationRepository
+    capability_router: CapabilityRouter
+    quality_gate: QualityGate
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -68,6 +76,14 @@ def build_services(settings: AppSettings) -> Services:
     broker = EventBroker()
     dispatcher = OutboxDispatcher(outbox, broker)
     queue = DiagnosticQueueRepository(database, outbox=outbox)
+    automation_repository = AutomationRepository(database)
+    workflows = WorkflowService(
+        database,
+        queue=queue,
+        repository=automation_repository,
+    )
+    capability_router = workflows.capabilities
+    quality_gate = QualityGate(automation_repository)
     approvals = HandoffApprovalService(database, queue)
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
@@ -97,6 +113,10 @@ def build_services(settings: AppSettings) -> Services:
         database=database,
         projects=ProjectRepository(database),
         queue=queue,
+        workflows=workflows,
+        automation_repository=automation_repository,
+        capability_router=capability_router,
+        quality_gate=quality_gate,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,
