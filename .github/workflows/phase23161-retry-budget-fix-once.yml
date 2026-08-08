@@ -1,0 +1,43 @@
+name: Phase 2.3.16.1 bounded retry patch once
+
+on:
+  push:
+    branches:
+      - feature/platform-automation-foundation-2.3.16.1
+    paths:
+      - .github/workflows/phase23161-retry-budget-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/platform-automation-foundation-2.3.16.1
+          fetch-depth: 0
+      - name: Give each queue materialization exactly one attempt
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/picotoopet_core/automation/service.py")
+          text = path.read_text(encoding="utf-8")
+          old = "                max_attempts=step.max_attempts,\n                timeout_seconds=step.timeout_seconds,"
+          new = "                # Workflow owns the bounded retry budget; each queue task is one physical attempt.\n                max_attempts=1,\n                timeout_seconds=step.timeout_seconds,"
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one retry materialization site, found {text.count(old)}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          Path(".github/workflows/phase23161-retry-budget-fix-once.yml").unlink()
+          PY
+      - name: Commit exact patch and self-delete
+        shell: bash
+        run: |
+          git config user.name "PicotooPet CI"
+          git config user.email "picotoopet@localhost"
+          git add src/picotoopet_core/automation/service.py .github/workflows/phase23161-retry-budget-fix-once.yml
+          git commit -m "fix: keep workflow retries globally bounded"
+          git push origin HEAD:feature/platform-automation-foundation-2.3.16.1
