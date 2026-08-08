@@ -27,3 +27,10 @@ def get_project(project_id: str, request: Request) -> ProjectRecord:
     """读取指定项目。"""
 
     return request.app.state.services.projects.get(project_id)
+
+
+@router.post("/projects/{project_id}/archive", response_model=ProjectRecord)
+def archive_project(project_id: str, request: Request) -> ProjectRecord:
+    """归档项目元数据，不触碰项目目录或用户文件。"""
+
+    return request.app.state.services.projects.archive(project_id)
