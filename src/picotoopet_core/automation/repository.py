@@ -407,20 +407,54 @@ class AutomationRepository:
         )
 
     def apply_quality_outcome(self, decision: QualityDecision) -> None:
+        workflow = self.get_workflow(decision.workflow_id)
+        step = next(
+            (item for item in workflow.steps if item.step_key == decision.step_key),
+            None,
+        )
+        if step is None:
+            raise KeyError(
+                f"workflow step not found: {decision.workflow_id}/{decision.step_key}"
+            )
+
+        if decision.outcome is QualityOutcome.PASS:
+            self.update_step(
+                decision.workflow_id,
+                decision.step_key,
+                status=WorkflowStepStatus.SUCCEEDED,
+                finished=True,
+            )
+            return
+        if decision.outcome is QualityOutcome.RETRY:
+            if step.attempt_count >= step.max_attempts:
+                self.update_step(
+                    decision.workflow_id,
+                    decision.step_key,
+                    status=WorkflowStepStatus.FAILED,
+                    failure_code="QUALITY_RETRY_EXHAUSTED",
+                    error_message="Quality gate retry budget exhausted.",
+                    finished=True,
+                )
+                return
+            self.update_step(
+                decision.workflow_id,
+                decision.step_key,
+                status=WorkflowStepStatus.RETRY_WAITING,
+            )
+            return
+
         mapping = {
-            QualityOutcome.RETRY: WorkflowStepStatus.RETRY_WAITING,
             QualityOutcome.NEEDS_DEEP_AI: WorkflowStepStatus.NEEDS_DEEP_AI,
             QualityOutcome.NEEDS_HUMAN: WorkflowStepStatus.NEEDS_HUMAN,
             QualityOutcome.REJECT: WorkflowStepStatus.REJECTED,
         }
-        target = mapping.get(decision.outcome)
-        if target is not None:
-            self.update_step(
-                decision.workflow_id,
-                decision.step_key,
-                status=target,
-                finished=decision.outcome is QualityOutcome.REJECT,
-            )
+        target = mapping[decision.outcome]
+        self.update_step(
+            decision.workflow_id,
+            decision.step_key,
+            status=target,
+            finished=decision.outcome is QualityOutcome.REJECT,
+        )
 
     def recent_diagnostic_rows(self, *, limit: int = 100) -> list[Row]:
         bounded = max(1, min(int(limit), 500))
