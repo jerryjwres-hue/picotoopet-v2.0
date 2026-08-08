@@ -27,6 +27,15 @@ REQUIRED_TABLES = {
     "provider_review_decisions",
     "provider_adoption_candidates",
     "provider_commit_candidates",
+    "workflow_runs",
+    "workflow_steps",
+    "workflow_step_dependencies",
+    "workflow_checkpoints",
+    "artifact_provenance",
+    "artifact_links",
+    "capability_registrations",
+    "quality_decisions",
+    "workflow_handoff_continuations",
 }
 
 REQUIRED_HANDOFF_COLUMNS = {
@@ -71,7 +80,7 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
     assert REQUIRED_TABLES <= tables
     assert "cloud_policy" in task_columns
     assert REQUIRED_HANDOFF_COLUMNS <= handoff_columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 8
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 9
     database.close()
 
 
