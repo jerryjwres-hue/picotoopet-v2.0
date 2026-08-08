@@ -109,8 +109,7 @@ def test_workflow_api_materializes_only_registered_queue_contract_and_health_is_
 
         task = client.app.state.services.queue.get(first["task_id"])
         assert task.task_type == "system.noop"
-        assert task.payload["workflow_id"] == workflow_id
-        assert task.payload["workflow_step_key"] == "one"
+        assert task.payload == {"purpose": "api-smoke"}
 
         health = client.get("/api/v1/automation/health", headers=headers)
         assert health.status_code == 200

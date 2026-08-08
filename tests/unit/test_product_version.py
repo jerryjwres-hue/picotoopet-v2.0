@@ -14,9 +14,9 @@ ROOT = Path(__file__).resolve().parents[2]
 VERSION_FILE = ROOT / "src" / "picotoopet_core" / "product-version.txt"
 
 
-def test_canonical_product_version_is_23162() -> None:
-    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.16.2"
-    assert PRODUCT_VERSION == "2.3.16.2"
+def test_canonical_product_version_is_23163() -> None:
+    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.16.3"
+    assert PRODUCT_VERSION == "2.3.16.3"
     assert __version__ == PRODUCT_VERSION
 
 
