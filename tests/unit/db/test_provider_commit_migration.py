@@ -40,7 +40,7 @@ def test_migration_eight_creates_commit_candidate_table_idempotently(tmp_path: P
     }
 
     assert REQUIRED_COMMIT_COLUMNS <= columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 9
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 10
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 8") == 1
     database.close()
 
@@ -54,5 +54,5 @@ def test_migration_eight_preserves_existing_adoption_rows(tmp_path: Path) -> Non
 
     assert database.scalar("SELECT COUNT(*) FROM provider_adoption_candidates") == 0
     assert database.scalar("SELECT COUNT(*) FROM provider_commit_candidates") == 0
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 9
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 10
     database.close()
