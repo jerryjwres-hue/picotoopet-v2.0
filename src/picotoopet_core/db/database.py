@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 from .migration_009 import MIGRATION_009
+from .migration_010 import MIGRATION_010
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -177,6 +178,16 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (9, datetime.now(UTC).isoformat()),
+                )
+
+            migration_010_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 10"
+            ).fetchone()
+            if migration_010_exists is None:
+                connection.executescript(MIGRATION_010)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (10, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
