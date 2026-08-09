@@ -5,7 +5,7 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.Networking;
 
-/// <summary>访问固定 Review/Adoption/Commit REST 合同；不接受 patch、路径或任意正文。</summary>
+/// <summary>访问固定 Review/Adoption/Commit/Publication REST 合同；不接受 patch、路径或任意正文。</summary>
 public sealed class MacCoreProviderReviewClient : IAsyncDisposable
 {
     private const int MaxResponseBytes = 192 * 1024;
@@ -98,6 +98,25 @@ public sealed class MacCoreProviderReviewClient : IAsyncDisposable
         SendAsync<ProviderCommitCandidateRecord[]>(
             HttpMethod.Get,
             "api/v1/provider-commit-candidates?limit=100",
+            null,
+            cancellationToken);
+
+    /// <summary>空 body 准备 exact Push + Draft PR 组合审批。</summary>
+    public Task<ProviderPublicationCandidateRecord> PreparePublicationAsync(
+        string commitCandidateId,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ProviderPublicationCandidateRecord>(
+            HttpMethod.Post,
+            $"api/v1/provider-commit-candidates/{Uri.EscapeDataString(commitCandidateId)}/publication/prepare",
+            idempotencyKey,
+            cancellationToken);
+
+    public Task<ProviderPublicationCandidateRecord[]> GetPublicationCandidatesAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ProviderPublicationCandidateRecord[]>(
+            HttpMethod.Get,
+            "api/v1/provider-publication-candidates?limit=100",
             null,
             cancellationToken);
 
