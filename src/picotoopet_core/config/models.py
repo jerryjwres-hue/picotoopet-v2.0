@@ -30,6 +30,7 @@ class AppSettings(BaseModel):
     provider_repository: Path | None = None
     provider_worktree_root: Path | None = None
     codex_executable: Path | None = None
+    github_cli_executable: Path | None = None
 
     @property
     def provider_execution_configured(self) -> bool:
@@ -41,6 +42,12 @@ class AppSettings(BaseModel):
                 self.codex_executable,
             )
         )
+
+    @property
+    def provider_publication_configured(self) -> bool:
+        """远端 publication 只依赖本地 Provider 仓库和固定 GitHub CLI。"""
+
+        return self.provider_repository is not None and self.github_cli_executable is not None
 
     def redacted_dict(self) -> dict[str, object]:
         """返回可安全写入日志的配置副本。"""
@@ -56,5 +63,8 @@ class AppSettings(BaseModel):
         )
         payload["codex_executable"] = (
             "configured" if self.codex_executable is not None else "disabled"
+        )
+        payload["github_cli_executable"] = (
+            "configured" if self.github_cli_executable is not None else "disabled"
         )
         return payload
