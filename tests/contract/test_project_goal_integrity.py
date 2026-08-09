@@ -13,8 +13,11 @@ from scripts.verify_project_goal_integrity import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[2]
 _GOAL_GATE_MARKER = "# PICOTOO_GOAL_INTEGRITY_GATE_V1"
-_PRODUCT_VERSION = "2.3.16.3"
+_PRODUCT_VERSION = (
+    ROOT / "src/picotoopet_core/product-version.txt"
+).read_text(encoding="utf-8").strip()
 _PRODUCT_VERSION_BYTES = (_PRODUCT_VERSION + "\n").encode("utf-8")
 _APP_BYTES = b"MZ-native-wpf"
 _DIAGNOSTIC_BYTES = b"MZ-diagnostics"
@@ -31,7 +34,7 @@ def _goal_gate_script() -> bytes:
         '        "entry_executable" = "Picotoo Pet AI.exe"\r\n'
         '        "integration_target" = "TaskCenter"\r\n'
         '        "github_repository" = "jerryjwres-hue/picotoopet-v2.0"\r\n'
-        '        "product_version" = "2.3.16.3"\r\n'
+        f'        "product_version" = "{_PRODUCT_VERSION}"\r\n'
         '        "source_build_on_user_pc" = $false\r\n'
         '        "browser_ui" = $false\r\n'
         '        "local_http_ui" = $false\r\n'
