@@ -35,6 +35,7 @@ existing_port=""
 api_token=""
 candidate_pid=""
 candidate_root=""
+github_cli_executable=""
 activated=0
 worker_started=0
 backup_captured=0
@@ -45,6 +46,22 @@ worker_present_file="$state_root/slice-d-previous-worker-present.txt"
 worker_id="picotoopet-m4-$(id -u)"
 
 mkdir -p "$versions_root" "$state_root" "$runtime_root/reports" "$runtime_root/logs"
+
+discover_github_cli_executable() {
+  local candidate
+  for candidate in /opt/homebrew/bin/gh /usr/local/bin/gh; do
+    if [[ -x "$candidate" && -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  candidate="$(command -v gh 2>/dev/null || true)"
+  if [[ -n "$candidate" && "$candidate" == /* && -x "$candidate" && -f "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  return 1
+}
 
 cleanup_candidate() {
   if [[ -n "$candidate_pid" ]] && kill -0 "$candidate_pid" >/dev/null 2>&1; then
@@ -159,7 +176,7 @@ if [[ "$worker_included" != "True" && "$worker_included" != "true" ]]; then
   exit 1
 fi
 if [[ "$supported_types" != '["system.diagnostic_snapshot", "system.noop"]' ]]; then
-  echo "Worker 支持类型不符合冻结合同：$supported_types" >&2
+  echo "Worker 基础支持类型不符合冻结合同：$supported_types" >&2
   exit 1
 fi
 if [[ "$hard_timeout" != "30" || "$termination_grace" != "5" ]]; then
@@ -201,6 +218,8 @@ else
 fi
 printf '%s\n' "$previous_worker_present" > "$worker_present_file"
 backup_captured=1
+
+github_cli_executable="$(discover_github_cli_executable || true)"
 
 new_version="$versions_root/${version}-${package_arch}"
 if [[ -e "$new_version" ]]; then
@@ -245,7 +264,7 @@ restart_core_runtime
 verify_worker_product_version "$runtime_root" "$product_version"
 verify_slice_d_candidate_contract "http://127.0.0.1:$existing_port" "$api_token" "$product_version"
 
-write_worker_plist "$runtime_root" "$worker_id"
+write_worker_plist "$runtime_root" "$worker_id" "$github_cli_executable"
 start_worker_agent "$runtime_root" "$worker_id" "$api_token"
 worker_started=1
 wait_for_worker_state "$runtime_root" "online"
