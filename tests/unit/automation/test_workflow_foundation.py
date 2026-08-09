@@ -1,4 +1,4 @@
-"""RED contracts for the 2.3.16.1 durable workflow foundation."""
+"""Durable workflow foundation retained from 2.3.16.1."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _open_database(tmp_path: Path) -> Database:
     return database
 
 
-def test_migration_9_and_workflow_replay_survive_restart(tmp_path: Path) -> None:
+def test_workflow_replay_survives_restart_after_schema_10(tmp_path: Path) -> None:
     database = _open_database(tmp_path)
     service = WorkflowService(database)
     request = WorkflowCreate(
@@ -47,7 +47,7 @@ def test_migration_9_and_workflow_replay_survive_restart(tmp_path: Path) -> None
     created = service.create_workflow(request)
     assert created.status.value == "Ready"
     assert [step.step_key for step in created.steps] == ["collect", "review"]
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 9
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 10
     workflow_id = created.workflow_id
     database.close()
 
