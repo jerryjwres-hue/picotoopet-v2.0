@@ -34,10 +34,12 @@ worker_plist_path() {
 write_worker_plist() {
   local runtime_root="$1"
   local worker_id="$2"
+  local github_cli_executable="${3:-}"
   local target
   target="$(worker_plist_path)"
   mkdir -p "$(dirname "$target")" "$runtime_root/logs"
-  python3 - "$target" "$runtime_root" "$worker_id" <<'PY'
+  python3 - "$target" "$runtime_root" "$worker_id" "$github_cli_executable" <<'PY'
+import os
 import plistlib
 import sys
 from pathlib import Path
@@ -45,6 +47,48 @@ from pathlib import Path
 path = Path(sys.argv[1])
 runtime_root = Path(sys.argv[2])
 worker_id = sys.argv[3]
+github_cli_executable = sys.argv[4].strip()
+preserved_keys = (
+    "PICOTOO_PROVIDER_REPOSITORY",
+    "PICOTOO_PROVIDER_WORKTREE_ROOT",
+    "PICOTOO_CODEX_EXECUTABLE",
+    "PICOTOO_GITHUB_CLI_EXECUTABLE",
+)
+preserved_environment = {}
+if path.is_file():
+    try:
+        with path.open("rb") as handle:
+            existing = plistlib.load(handle)
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        existing = {}
+    existing_environment = existing.get("EnvironmentVariables", {})
+    if isinstance(existing_environment, dict):
+        for key in preserved_keys:
+            value = existing_environment.get(key)
+            if isinstance(value, str) and value.strip():
+                preserved_environment[key] = value.strip()
+
+# `gh` 必须是已存在的绝对可执行文件；发现失败时不注册 publication handler。
+existing_gh = preserved_environment.get("PICOTOO_GITHUB_CLI_EXECUTABLE", "")
+if existing_gh and (
+    not Path(existing_gh).is_absolute()
+    or not Path(existing_gh).is_file()
+    or not os.access(existing_gh, os.X_OK)
+):
+    preserved_environment.pop("PICOTOO_GITHUB_CLI_EXECUTABLE", None)
+if github_cli_executable:
+    candidate = Path(github_cli_executable)
+    if candidate.is_absolute() and candidate.is_file() and os.access(candidate, os.X_OK):
+        preserved_environment["PICOTOO_GITHUB_CLI_EXECUTABLE"] = str(candidate)
+
+environment = {
+    "PICOTOO_RUNTIME_ROOT": str(runtime_root),
+    "PICOTOO_WORKER_POLL_SECONDS": "2",
+    "PICOTOO_WORKER_LEASE_SECONDS": "60",
+    "PICOTOO_WORKER_HEARTBEAT_SECONDS": "15",
+    "PICOTOO_WORKER_STATUS_STALE_SECONDS": "45",
+}
+environment.update(preserved_environment)
 payload = {
     "Label": "com.picotoopet.worker",
     "ProgramArguments": [
@@ -54,13 +98,7 @@ payload = {
         "--worker-id",
         worker_id,
     ],
-    "EnvironmentVariables": {
-        "PICOTOO_RUNTIME_ROOT": str(runtime_root),
-        "PICOTOO_WORKER_POLL_SECONDS": "2",
-        "PICOTOO_WORKER_LEASE_SECONDS": "60",
-        "PICOTOO_WORKER_HEARTBEAT_SECONDS": "15",
-        "PICOTOO_WORKER_STATUS_STALE_SECONDS": "45",
-    },
+    "EnvironmentVariables": environment,
     "RunAtLoad": True,
     "KeepAlive": True,
     "ProcessType": "Background",
@@ -172,11 +210,19 @@ if payload.get("state") != expected:
 if expected == "online":
     if payload.get("available") is not True:
         raise SystemExit(1)
-    if payload.get("supported_task_types") != [
-        "system.diagnostic_snapshot",
-        "system.noop",
-    ]:
+    supported = payload.get("supported_task_types")
+    required = {"system.diagnostic_snapshot", "system.noop"}
+    allowed = required | {
+        "provider.codex.handoff-v1",
+        "provider.adoption.apply-v1",
+        "provider.commit.create-v1",
+        "provider.publish.pr-create-v1",
+    }
+    if not isinstance(supported, list) or not required <= set(supported):
         raise SystemExit(1)
+    unexpected = set(supported) - allowed
+    if unexpected:
+        raise SystemExit(f"unexpected Worker task type: {sorted(unexpected)!r}")
 PY
     then
       return 0
@@ -222,10 +268,13 @@ paths = get("/openapi.json").get("paths", {})
 required = {
     "/api/v1/tasks/system-diagnostic-snapshot",
     "/api/v1/tasks/{task_id}/result",
+    "/api/v1/provider-commit-candidates/{commit_candidate_id}/publication/prepare",
+    "/api/v1/provider-publication-candidates",
+    "/api/v1/provider-publication-candidates/{publication_candidate_id}",
 }
 missing = sorted(required - set(paths))
 if missing:
-    raise SystemExit(f"diagnostic paths missing: {missing!r}")
+    raise SystemExit(f"Slice D/Phase 10E paths missing: {missing!r}")
 status = get("/api/v1/workers/status", authenticated=True)
 if status.get("state") not in {
     "not_deployed", "starting", "online", "degraded", "offline"
@@ -251,11 +300,19 @@ with urllib.request.urlopen(request, timeout=5) as response:
     status = json.load(response)
 if status.get("state") != "online" or status.get("available") is not True:
     raise SystemExit(f"Worker 必须在线：{status!r}")
-if status.get("supported_task_types") != [
-    "system.diagnostic_snapshot",
-    "system.noop",
-]:
-    raise SystemExit(f"Worker 类型不符合冻结合同：{status!r}")
+supported = status.get("supported_task_types")
+required = {"system.diagnostic_snapshot", "system.noop"}
+allowed = required | {
+    "provider.codex.handoff-v1",
+    "provider.adoption.apply-v1",
+    "provider.commit.create-v1",
+    "provider.publish.pr-create-v1",
+}
+if not isinstance(supported, list) or not required <= set(supported):
+    raise SystemExit(f"Worker 缺少基础冻结类型：{status!r}")
+unexpected = set(supported) - allowed
+if unexpected:
+    raise SystemExit(f"unexpected Worker task type: {sorted(unexpected)!r}")
 if not status.get("worker_id"):
     raise SystemExit(f"worker_id 缺失：{status!r}")
 PY
@@ -298,6 +355,12 @@ payload = {
     "worker_supported_task_types": [
         "system.diagnostic_snapshot",
         "system.noop",
+    ],
+    "worker_optional_registered_task_types": [
+        "provider.codex.handoff-v1",
+        "provider.adoption.apply-v1",
+        "provider.commit.create-v1",
+        "provider.publish.pr-create-v1",
     ],
     "diagnostic_hard_timeout_seconds": 30,
     "diagnostic_termination_grace_seconds": 5,
