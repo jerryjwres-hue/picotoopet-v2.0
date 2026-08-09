@@ -12,7 +12,7 @@ _COMMIT_PATTERN = r"^[0-9a-f]{40}$"
 _UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 _REPO_URL_PATTERN = r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
 _REPO_SLUG_PATTERN = r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
-_BASE_REF_PATTERN = r"^(?!main$)(?!master$)[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$"
+_BASE_REF_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$"
 _REMOTE_REF_PATTERN = (
     r"^refs/heads/picotoopet/commit-candidates/"
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -79,9 +79,16 @@ class ProviderPublicationCandidateRecord(BaseModel):
     finished_at: datetime | None = None
 
     @model_validator(mode="after")
-    def validate_pr_ready_identity(self) -> "ProviderPublicationCandidateRecord":
-        """`pr_ready` 必须携带已经独立核验的 PR 身份。"""
+    def validate_publication_identity(self) -> "ProviderPublicationCandidateRecord":
+        """补充 Rust regex 不支持的 ref 策略，并冻结 `pr_ready` 身份。"""
 
+        if (
+            self.base_ref.lower() in {"main", "master"}
+            or self.base_ref.endswith("/")
+            or ".." in self.base_ref
+            or "//" in self.base_ref
+        ):
+            raise ValueError("Publication base ref 不符合安全策略。")
         if self.status is ProviderPublicationStatus.PR_READY:
             if self.pr_number is None or self.pr_url is None or self.pr_head_sha is None:
                 raise ValueError("pr_ready 缺少 PR 身份。")
