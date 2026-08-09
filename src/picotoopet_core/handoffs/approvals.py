@@ -29,6 +29,14 @@ class HandoffApprovalService(ApprovalService):
             "change_set_digest",
             "local_ref",
             "message_digest",
+            "publication_candidate_id",
+            "repository_slug",
+            "base_ref",
+            "remote_ref",
+            "commit_sha",
+            "pr_title_digest",
+            "pr_body_digest",
+            "draft",
         }
     )
 
