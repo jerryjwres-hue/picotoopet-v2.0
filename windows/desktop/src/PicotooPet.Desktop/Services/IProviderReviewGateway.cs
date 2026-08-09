@@ -2,7 +2,7 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Services;
 
-/// <summary>Review/Adoption/Commit 面板只通过固定 typed gateway 访问 Mac Core。</summary>
+/// <summary>Review/Adoption/Commit/Publication 面板只通过固定 typed gateway 访问 Mac Core。</summary>
 public interface IProviderReviewGateway
 {
     Task<ProviderSessionRecord[]> GetSessionsAsync(CancellationToken cancellationToken);
@@ -32,9 +32,21 @@ public interface IProviderReviewGateway
     Task<ProviderCommitCandidateRecord[]> GetCommitCandidatesAsync(
         CancellationToken cancellationToken) =>
         Task.FromResult(Array.Empty<ProviderCommitCandidateRecord>());
+
+    Task<ProviderPublicationCandidateRecord> PreparePublicationAsync(
+        string commitCandidateId,
+        string idempotencyKey,
+        CancellationToken cancellationToken) =>
+        Task.FromException<ProviderPublicationCandidateRecord>(
+            new InvalidOperationException(
+                "该 Review gateway 未配置 Publication Candidate 写入。"));
+
+    Task<ProviderPublicationCandidateRecord[]> GetPublicationCandidatesAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult(Array.Empty<ProviderPublicationCandidateRecord>());
 }
 
-/// <summary>把 Review/Adoption/Commit typed client 接入现有配对会话。</summary>
+/// <summary>把 Review/Adoption/Commit/Publication typed client 接入现有配对会话。</summary>
 public sealed class ControlCenterProviderReviewGateway(ControlCenterSession session) : IProviderReviewGateway
 {
     private readonly ControlCenterSession _session = session ?? throw new ArgumentNullException(nameof(session));
@@ -69,4 +81,13 @@ public sealed class ControlCenterProviderReviewGateway(ControlCenterSession sess
 
     public Task<ProviderCommitCandidateRecord[]> GetCommitCandidatesAsync(
         CancellationToken cancellationToken) => _session.GetProviderCommitCandidatesAsync(cancellationToken);
+
+    public Task<ProviderPublicationCandidateRecord> PreparePublicationAsync(
+        string commitCandidateId,
+        string idempotencyKey,
+        CancellationToken cancellationToken) =>
+        _session.PrepareProviderPublicationAsync(commitCandidateId, idempotencyKey, cancellationToken);
+
+    public Task<ProviderPublicationCandidateRecord[]> GetPublicationCandidatesAsync(
+        CancellationToken cancellationToken) => _session.GetProviderPublicationCandidatesAsync(cancellationToken);
 }
