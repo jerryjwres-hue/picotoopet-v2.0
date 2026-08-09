@@ -24,6 +24,12 @@ class PublicationGitPublisher:
         r"^refs/heads/picotoopet/commit-candidates/"
         r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     )
+    _DANGEROUS_CONFIG_PATTERNS = (
+        r"^remote\..*\.pushurl$",
+        r"^remote\..*\.vcs$",
+        r"^url\..*\.insteadof$",
+        r"^url\..*\.pushinsteadof$",
+    )
 
     def __init__(self, repository: Path) -> None:
         self.repository = repository.expanduser().resolve(strict=True)
@@ -91,27 +97,30 @@ class PublicationGitPublisher:
         return parts[0]
 
     def _validate_repository_config(self) -> None:
-        """拒绝会改写 publication URL 或 push destination 的本地 Git 配置。"""
+        """拒绝任何配置层级对 publication URL 或 push destination 的改写。"""
 
-        raw = self._run("config", "--local", "--null", "--list", timeout=30)
-        for entry in raw.split("\0"):
-            if not entry:
-                continue
-            key, separator, _value = entry.partition("\n")
-            if not separator:
-                continue
-            lowered = key.lower()
-            dangerous = (
-                lowered.startswith("remote.") and lowered.endswith(".pushurl")
-            ) or (
-                lowered.startswith("remote.") and lowered.endswith(".vcs")
-            ) or (
-                lowered.startswith("url.") and lowered.endswith(".insteadof")
-            ) or (
-                lowered.startswith("url.") and lowered.endswith(".pushinsteadof")
+        for pattern in self._DANGEROUS_CONFIG_PATTERNS:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.repository),
+                    "config",
+                    "--get-regexp",
+                    pattern,
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=self._safe_environment(),
+                timeout=30,
+                check=False,
+                shell=False,
             )
-            if dangerous:
+            if result.returncode == 0:
                 raise PublicationGitError("PUBLICATION_GIT_CONFIG_POLICY")
+            if result.returncode != 1:
+                raise PublicationGitError("PUBLICATION_GIT_FAILED")
 
     def _run(self, *arguments: str, timeout: int) -> str:
         result = subprocess.run(
@@ -137,6 +146,7 @@ class PublicationGitPublisher:
             value
             and len(value) <= 200
             and value.lower() not in {"main", "master"}
+            and not value.startswith("refs/")
             and not value.startswith("/")
             and not value.endswith("/")
             and ".." not in value
