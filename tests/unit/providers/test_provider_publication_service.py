@@ -28,6 +28,7 @@ def seed_commit_ready(
     adoption_id = str(uuid4())
     commit_id = str(uuid4())
     commit_approval_id = str(uuid4())
+    return_id = f"return-{adoption_id}"
     base_commit = "a" * 40
     commit_sha = "b" * 40
     change_digest = "c" * 64
@@ -62,16 +63,33 @@ def seed_commit_ready(
             ),
         )
         connection.execute(
+            "INSERT INTO returns (return_id, handoff_id, status, provider, request_digest, package_digest, "
+            "manifest_digest, changed_file_count, event_count, validation_checks_json, preview_json, "
+            "quarantine_code, idempotency_key, created_at, updated_at) "
+            "VALUES (?, ?, 'validated', 'codex', ?, ?, ?, 1, 1, '[]', '{}', NULL, ?, ?, ?)",
+            (
+                return_id,
+                handoff_id,
+                "d" * 64,
+                "e" * 64,
+                "f" * 64,
+                f"return-idempotency-{adoption_id}",
+                now.isoformat(),
+                now.isoformat(),
+            ),
+        )
+        connection.execute(
             "INSERT INTO provider_sessions (session_id, handoff_id, provider, status, request_digest, "
             "package_digest, budget_json, turns_used, elapsed_seconds, changed_file_count, return_id, "
             "failure_code, provider_usage_unknown, idempotency_key, created_at, updated_at, finished_at, "
-            "preview_json) VALUES (?, ?, 'codex', 'ready_for_review', ?, ?, '{}', 1, 1, 1, NULL, "
+            "preview_json) VALUES (?, ?, 'codex', 'ready_for_review', ?, ?, '{}', 1, 1, 1, ?, "
             "NULL, 1, ?, ?, ?, ?, '{}')",
             (
                 session_id,
                 handoff_id,
                 "d" * 64,
                 "e" * 64,
+                return_id,
                 f"session-{session_id}",
                 now.isoformat(),
                 now.isoformat(),
@@ -86,7 +104,7 @@ def seed_commit_ready(
             (
                 adoption_id,
                 session_id,
-                f"return-{adoption_id}",
+                return_id,
                 base_commit,
                 change_digest,
                 f"adoption-{adoption_id}",
@@ -117,7 +135,7 @@ def seed_commit_ready(
                 commit_id,
                 adoption_id,
                 session_id,
-                f"return-{adoption_id}",
+                return_id,
                 commit_status,
                 base_commit,
                 change_digest,
