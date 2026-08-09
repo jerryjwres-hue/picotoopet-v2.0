@@ -51,9 +51,11 @@ class PublicationTaskPayload(BaseModel):
 
 
 class ProviderPublicationExecutionCoordinator:
-    """把批准后的 Publication Candidate 映射到固定外部发布任务。"""
+    """把已批准候选映射到一次可恢复的固定外部发布任务。"""
 
     TASK_TYPE = "provider.publish.pr-create-v1"
+    # 正常执行错误直接进入终态；第二次 attempt 只给 Worker 进程崩溃/租约过期恢复使用。
+    MAX_ATTEMPTS = 2
 
     def __init__(
         self,
@@ -70,10 +72,11 @@ class ProviderPublicationExecutionCoordinator:
         self.github = PublicationGitHubClient(github_cli_executable)
 
     def enqueue_pending(self) -> None:
-        """只为已明确批准的 Publication Candidate 幂等排入一个固定任务。"""
+        """只为已批准候选创建一个固定、最多两次 lease attempt 的任务。"""
 
         rows = self.database.fetchall(
-            "SELECT p.*, a.status AS approval_status FROM provider_publication_candidates p "
+            "SELECT p.*, a.status AS approval_status "
+            "FROM provider_publication_candidates p "
             "JOIN approvals a ON a.approval_id = p.approval_id "
             "WHERE p.status IN (?, ?) ORDER BY p.created_at LIMIT 20",
             (
@@ -99,6 +102,7 @@ class ProviderPublicationExecutionCoordinator:
                 continue
             if approval_status != ApprovalStatus.APPROVED.value:
                 continue
+
             payload = self._payload_from_row(row)
             self.queue.create(
                 TaskCreate(
@@ -108,7 +112,7 @@ class ProviderPublicationExecutionCoordinator:
                     resource_tag="provider-publication",
                     idempotency_key=f"publication-task:{row['publication_candidate_id']}",
                     dedupe_key=f"provider-publication:{row['commit_candidate_id']}",
-                    max_attempts=1,
+                    max_attempts=self.MAX_ATTEMPTS,
                     timeout_seconds=300,
                 )
             )
@@ -119,7 +123,7 @@ class ProviderPublicationExecutionCoordinator:
                 )
 
     def handler(self, task: TaskRecord) -> HandlerResult:
-        """执行固定 publication 并只在独立核验后进入 `pr_ready`。"""
+        """执行 exact push + Draft PR；远端事实允许崩溃后幂等恢复。"""
 
         payload = PublicationTaskPayload.model_validate(task.payload)
         row = self.database.fetchone(
@@ -135,14 +139,9 @@ class ProviderPublicationExecutionCoordinator:
         if approval is None or approval["status"] != ApprovalStatus.APPROVED.value:
             raise PublicationExecutionError("PUBLICATION_APPROVAL_REJECTED")
         self._validate_payload_and_scope(row, payload, approval["scope_json"])
+
         if row["status"] == ProviderPublicationStatus.PR_READY.value:
-            return HandlerResult(
-                summary={
-                    "publication_candidate_id": payload.publication_candidate_id,
-                    "status": ProviderPublicationStatus.PR_READY.value,
-                    "pr_number": row["pr_number"],
-                }
-            )
+            return HandlerResult(summary=self._ready_summary(row))
 
         try:
             self._set_status(payload.publication_candidate_id, ProviderPublicationStatus.PREFLIGHT)
@@ -168,16 +167,7 @@ class ProviderPublicationExecutionCoordinator:
                 payload.publication_candidate_id,
                 payload.commit_sha,
             )
-            body_facts = {
-                "publication_candidate_id": payload.publication_candidate_id,
-                "commit_candidate_id": payload.commit_candidate_id,
-                "session_id": payload.session_id,
-                "handoff_id": payload.handoff_id,
-                "base_ref": payload.base_ref,
-                "base_commit": payload.base_commit,
-                "commit_sha": payload.commit_sha,
-                "change_set_digest": payload.change_set_digest,
-            }
+            body_facts = self._body_facts(payload)
             body = ProviderPublicationService.pr_body(**body_facts)
             self._validate_text_digests(payload, title, body, body_facts)
 
@@ -236,6 +226,29 @@ class ProviderPublicationExecutionCoordinator:
             pr_title_digest=row["pr_title_digest"],
             pr_body_digest=row["pr_body_digest"],
         )
+
+    @staticmethod
+    def _body_facts(payload: PublicationTaskPayload) -> dict[str, str]:
+        return {
+            "publication_candidate_id": payload.publication_candidate_id,
+            "commit_candidate_id": payload.commit_candidate_id,
+            "session_id": payload.session_id,
+            "handoff_id": payload.handoff_id,
+            "base_ref": payload.base_ref,
+            "base_commit": payload.base_commit,
+            "commit_sha": payload.commit_sha,
+            "change_set_digest": payload.change_set_digest,
+        }
+
+    @staticmethod
+    def _ready_summary(row: object) -> dict[str, object]:
+        return {
+            "publication_candidate_id": row["publication_candidate_id"],
+            "status": ProviderPublicationStatus.PR_READY.value,
+            "pr_number": row["pr_number"],
+            "pr_url": row["pr_url"],
+            "commit_sha": row["pr_head_sha"],
+        }
 
     def _validate_payload_and_scope(
         self,
@@ -303,7 +316,11 @@ class ProviderPublicationExecutionCoordinator:
         if not title or not body:
             raise PublicationExecutionError("PUBLICATION_APPROVAL_SCOPE_MISMATCH")
 
-    def _set_status(self, publication_candidate_id: str, status: ProviderPublicationStatus) -> None:
+    def _set_status(
+        self,
+        publication_candidate_id: str,
+        status: ProviderPublicationStatus,
+    ) -> None:
         self.database.execute(
             "UPDATE provider_publication_candidates SET status = ?, updated_at = ? "
             "WHERE publication_candidate_id = ?",
