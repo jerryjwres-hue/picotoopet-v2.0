@@ -56,6 +56,6 @@ def test_phase10d_c_windows_surface_is_read_only_and_explicit() -> None:
     assert "merge-ready" in panel.lower()
 
 
-def test_phase10d_c_product_version_is_23171() -> None:
+def test_phase10d_c_product_version_is_23172() -> None:
     version = _read("src/picotoopet_core/product-version.txt").strip()
-    assert version == "2.3.17.1"
+    assert version == "2.3.17.2"
