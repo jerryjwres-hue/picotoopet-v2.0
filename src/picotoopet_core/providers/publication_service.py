@@ -227,11 +227,12 @@ class ProviderPublicationService:
                 preview["approval_id"] = grant.approval_id
                 connection.execute(
                     "INSERT INTO provider_publication_candidates ("
-                    "publication_candidate_id, commit_candidate_id, session_id, handoff_id, status, "
-                    "repo_url, repository_slug, base_ref, base_commit, commit_sha, change_set_digest, "
-                    "remote_ref, remote_branch, approval_id, idempotency_key, pr_title_digest, "
-                    "pr_body_digest, pr_number, pr_url, pr_head_sha, validation_json, failure_code, "
-                    "created_at, updated_at, finished_at, preview_json"
+                    "publication_candidate_id, commit_candidate_id, session_id, "
+                    "handoff_id, status, repo_url, repository_slug, base_ref, "
+                    "base_commit, commit_sha, change_set_digest, remote_ref, "
+                    "remote_branch, approval_id, idempotency_key, pr_title_digest, "
+                    "pr_body_digest, pr_number, pr_url, pr_head_sha, validation_json, "
+                    "failure_code, created_at, updated_at, finished_at, preview_json"
                     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, "
                     "NULL, '[]', NULL, ?, ?, NULL, ?)",
                     (
