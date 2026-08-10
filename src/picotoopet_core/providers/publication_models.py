@@ -79,7 +79,7 @@ class ProviderPublicationCandidateRecord(BaseModel):
     finished_at: datetime | None = None
 
     @model_validator(mode="after")
-    def validate_publication_identity(self) -> "ProviderPublicationCandidateRecord":
+    def validate_publication_identity(self) -> ProviderPublicationCandidateRecord:
         """补充 Rust regex 不支持的 ref 策略，并冻结 `pr_ready` 身份。"""
 
         if (
