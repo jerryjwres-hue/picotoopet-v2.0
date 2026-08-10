@@ -159,9 +159,16 @@ class ProviderPublicationExecutionCoordinator:
                 payload.publication_candidate_id,
                 ProviderPublicationStatus.VERIFYING_REMOTE,
             )
-            if self.publisher.read_remote_ref(payload.repo_url, payload.remote_ref) != payload.commit_sha:
+            remote_sha = self.publisher.read_remote_ref(
+                payload.repo_url,
+                payload.remote_ref,
+            )
+            if remote_sha != payload.commit_sha:
                 raise PublicationExecutionError("PUBLICATION_REMOTE_VERIFY_FAILED")
-            self._set_status(payload.publication_candidate_id, ProviderPublicationStatus.REMOTE_READY)
+            self._set_status(
+                payload.publication_candidate_id,
+                ProviderPublicationStatus.REMOTE_READY,
+            )
 
             title = ProviderPublicationService.pr_title(
                 payload.publication_candidate_id,
@@ -171,7 +178,10 @@ class ProviderPublicationExecutionCoordinator:
             body = ProviderPublicationService.pr_body(**body_facts)
             self._validate_text_digests(payload, title, body, body_facts)
 
-            self._set_status(payload.publication_candidate_id, ProviderPublicationStatus.CREATING_PR)
+            self._set_status(
+                payload.publication_candidate_id,
+                ProviderPublicationStatus.CREATING_PR,
+            )
             pr = self.github.ensure_draft_pr(
                 repository_slug=payload.repository_slug,
                 base_ref=payload.base_ref,
@@ -180,7 +190,10 @@ class ProviderPublicationExecutionCoordinator:
                 title=title,
                 body=body,
             )
-            self._set_status(payload.publication_candidate_id, ProviderPublicationStatus.VERIFYING_PR)
+            self._set_status(
+                payload.publication_candidate_id,
+                ProviderPublicationStatus.VERIFYING_PR,
+            )
             checks = ["approval_scope", "base_exact", *git_checks, *pr.validation_checks]
             self._finish_ready(
                 payload.publication_candidate_id,
@@ -361,8 +374,8 @@ class ProviderPublicationExecutionCoordinator:
     ) -> None:
         now = datetime.now(UTC).isoformat()
         self.database.execute(
-            "UPDATE provider_publication_candidates SET status = ?, failure_code = ?, updated_at = ?, "
-            "finished_at = ? WHERE publication_candidate_id = ?",
+            "UPDATE provider_publication_candidates SET status = ?, failure_code = ?, "
+            "updated_at = ?, finished_at = ? WHERE publication_candidate_id = ?",
             (status.value, failure_code, now, now, publication_candidate_id),
         )
 
