@@ -20,6 +20,10 @@ class AppSettings(BaseModel):
     api_port: int = Field(default=8765, ge=1, le=65535)
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "gpt-oss:20b"
+    local_intelligence_base_url: str = "http://127.0.0.1:11434/v1/"
+    local_intelligence_model: str = "gpt-oss:20b"
+    local_intelligence_timeout_seconds: float = Field(default=900.0, ge=1.0, le=3600.0)
+    local_intelligence_max_context_chars: int = Field(default=240_000, ge=10_000, le=1_000_000)
     resident_check_seconds: int = Field(default=60, ge=10)
     protected_roots: tuple[str, ...] = ()
     worker_poll_seconds: float = Field(default=2.0, gt=0, le=60)
@@ -67,4 +71,6 @@ class AppSettings(BaseModel):
         payload["github_cli_executable"] = (
             "configured" if self.github_cli_executable is not None else "disabled"
         )
+        payload["local_intelligence_base_url"] = "loopback-configured"
+        payload["local_intelligence_model"] = self.local_intelligence_model
         return payload
