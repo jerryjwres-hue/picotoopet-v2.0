@@ -232,7 +232,7 @@ public sealed class MacCoreBusinessAutomationClient : IAsyncDisposable
             if (bounded.Length + read > maxBytes)
             {
                 bounded.Dispose();
-                throw new ApiException(code, "业务自动化响应超过安全上限。", false, null, null);
+                throw new ApiException(code, "业务自动化响应超过安全上限。", false, null, 0);
             }
             bounded.Write(buffer, 0, read);
         }
