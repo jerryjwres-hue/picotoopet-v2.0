@@ -13,6 +13,11 @@ from threading import Event
 
 from picotoopet_core.api.app import create_app
 from picotoopet_core.automation.models import CapabilityRegistration
+from picotoopet_core.business.execution import BusinessLocalIntelligenceCoordinator
+from picotoopet_core.business.local_intelligence import (
+    LocalIntelligenceConfig,
+    OpenAiCompatibleLocalIntelligenceAdapter,
+)
 from picotoopet_core.config.loader import load_settings
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.health.supervisor import HealthSupervisor
@@ -109,7 +114,7 @@ def _run_worker(
     loop: bool,
     worker_id: str,
 ) -> int:
-    """运行独立 Worker；受控 Provider 能力只在对应固定配置完整时注册。"""
+    """运行独立 Worker；只注册当前健康、封闭且受信配置的执行能力。"""
 
     services = build_services(settings)
     resolved_worker_id = worker_id.strip() or f"{socket.gethostname()}-{os.getpid()}"
@@ -127,6 +132,11 @@ def _run_worker(
     adoption_coordinator: AdoptionExecutionCoordinator | None = None
     commit_coordinator: ProviderCommitExecutionCoordinator | None = None
     publication_coordinator: ProviderPublicationExecutionCoordinator | None = None
+    business_adapter: OpenAiCompatibleLocalIntelligenceAdapter | None = None
+    business_coordinator: BusinessLocalIntelligenceCoordinator | None = None
+    business_healthy = False
+    last_business_probe = 0.0
+
     if settings.provider_execution_configured:
         assert settings.provider_repository is not None
         assert settings.provider_worktree_root is not None
@@ -170,6 +180,27 @@ def _run_worker(
             publication_coordinator.handler
         )
 
+    try:
+        local_config = LocalIntelligenceConfig(
+            base_url=settings.local_intelligence_base_url,
+            model_id=settings.local_intelligence_model,
+            timeout_seconds=settings.local_intelligence_timeout_seconds,
+            max_context_chars=settings.local_intelligence_max_context_chars,
+        )
+        business_adapter = OpenAiCompatibleLocalIntelligenceAdapter(local_config)
+        business_coordinator = BusinessLocalIntelligenceCoordinator(
+            database=services.database,
+            queue=services.queue,
+            repository=services.business_repository,
+            store=services.business_store,
+            adapter=business_adapter,
+            configured_model_id=local_config.model_id,
+        )
+    except ValueError:
+        # Invalid trusted configuration disables only this capability. Other Worker duties continue.
+        business_adapter = None
+        business_coordinator = None
+
     def enqueue_controlled_work() -> None:
         if provider_coordinator is not None:
             provider_coordinator.enqueue_pending()
@@ -179,6 +210,37 @@ def _run_worker(
             commit_coordinator.enqueue_pending()
         if publication_coordinator is not None:
             publication_coordinator.enqueue_pending()
+
+    def refresh_business_capability(*, force: bool = False) -> bool:
+        """Probe loopback model periodically; never download/start/install a model as a side effect."""
+
+        nonlocal business_healthy, last_business_probe
+        now = time.monotonic()
+        if force or now - last_business_probe >= 15.0:
+            business_healthy = bool(business_adapter is not None and business_adapter.health())
+            last_business_probe = now
+            if business_healthy and business_coordinator is not None:
+                runtime.handlers[BusinessLocalIntelligenceCoordinator.TASK_TYPE] = (
+                    business_coordinator.handler
+                )
+            else:
+                runtime.handlers.pop(BusinessLocalIntelligenceCoordinator.TASK_TYPE, None)
+        services.capability_router.register(
+            CapabilityRegistration(
+                worker_id=resolved_worker_id,
+                capability=BusinessLocalIntelligenceCoordinator.CAPABILITY,
+                task_types=(
+                    [BusinessLocalIntelligenceCoordinator.TASK_TYPE] if business_healthy else []
+                ),
+                healthy=business_healthy,
+                metadata={
+                    "runtime": "mac-worker",
+                    "transport": "loopback-openai-compatible",
+                    "model": settings.local_intelligence_model,
+                },
+            )
+        )
+        return business_healthy
 
     def publish_execution_capability(*, healthy: bool) -> None:
         """只声明当前封闭 handler 注册表能够真实执行的任务类型。"""
@@ -195,6 +257,7 @@ def _run_worker(
 
     try:
         if once:
+            refresh_business_capability(force=True)
             publish_execution_capability(healthy=True)
             enqueue_controlled_work()
             result = runtime.run_once()
@@ -221,6 +284,7 @@ def _run_worker(
         signal.signal(signal.SIGINT, request_stop)
         signal.signal(signal.SIGTERM, request_stop)
         while not stop_event.is_set():
+            refresh_business_capability()
             publish_execution_capability(healthy=True)
             enqueue_controlled_work()
             runtime.run_once()
@@ -228,8 +292,19 @@ def _run_worker(
         return 0
     finally:
         try:
+            services.capability_router.register(
+                CapabilityRegistration(
+                    worker_id=resolved_worker_id,
+                    capability=BusinessLocalIntelligenceCoordinator.CAPABILITY,
+                    task_types=[],
+                    healthy=False,
+                    metadata={"runtime": "mac-worker"},
+                )
+            )
             publish_execution_capability(healthy=False)
         finally:
+            if business_adapter is not None:
+                business_adapter.close()
             services.close()
 
 

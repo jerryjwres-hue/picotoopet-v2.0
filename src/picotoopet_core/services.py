@@ -12,6 +12,9 @@ from picotoopet_core.automation.repository import AutomationRepository
 from picotoopet_core.automation.scheduler import WorkflowScheduler
 from picotoopet_core.automation.service import WorkflowService
 from picotoopet_core.broker.service import BrokerSessionService
+from picotoopet_core.business.repository import BusinessRepository
+from picotoopet_core.business.service import BusinessAutomationService
+from picotoopet_core.business.store import BusinessArtifactStore
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.db.database import Database
 from picotoopet_core.events.broker import EventBroker
@@ -47,6 +50,9 @@ class Services:
     automation_repository: AutomationRepository
     capability_router: CapabilityRouter
     quality_gate: QualityGate
+    business_repository: BusinessRepository
+    business_store: BusinessArtifactStore
+    business: BusinessAutomationService
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -89,6 +95,9 @@ def build_services(settings: AppSettings) -> Services:
     workflow_scheduler = WorkflowScheduler(workflows)
     capability_router = workflows.capabilities
     quality_gate = QualityGate(automation_repository)
+    business_repository = BusinessRepository(database)
+    business_store = BusinessArtifactStore(settings.paths)
+    business = BusinessAutomationService(business_repository, business_store, queue)
     approvals = HandoffApprovalService(database, queue)
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
@@ -124,6 +133,9 @@ def build_services(settings: AppSettings) -> Services:
         automation_repository=automation_repository,
         capability_router=capability_router,
         quality_gate=quality_gate,
+        business_repository=business_repository,
+        business_store=business_store,
+        business=business,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,

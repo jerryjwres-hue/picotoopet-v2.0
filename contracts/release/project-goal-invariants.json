@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.17.2",
+      "value": "2.3.18.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -70,8 +70,8 @@
   },
   "architecture": {
     "fact_source": "Mac Core + SQLite Queue/Outbox",
-    "windows_role": "native WPF observation and controlled-command UI",
-    "worker_role": "explicitly registered task execution",
+    "windows_role": "native WPF observation, controlled-command UI, bounded business Inbox/Outbox bridge",
+    "worker_role": "explicitly registered task execution and loopback-only local intelligence",
     "historical_analysis_tasks": "unsupported-unleased-unmodified",
     "platform_automation_v1": {
       "workflow_persistence": "Mac Core SQLite",
@@ -79,7 +79,29 @@
       "restart_safe": true,
       "arbitrary_shell": false,
       "implicit_paid_provider_call": false,
-      "business_adapters": "deferred"
+      "business_adapters": "business-work-package-v1"
+    },
+    "business_automation_v1": {
+      "work_package_schema": "1.0",
+      "result_package_schema": "1.0",
+      "database_schema": 11,
+      "windows_ingress": "fixed-localappdata-inbox",
+      "windows_egress": "fixed-localappdata-outbox",
+      "upload_chunk_bytes": 4194304,
+      "analysis_profiles": [
+        "reviews.voice_of_customer.v1",
+        "ideas.pattern_analysis.v1"
+      ],
+      "worker_capability": "local.intelligence.v1",
+      "worker_task_type": "business.local_intelligence.v1",
+      "local_model_transport": "mac-loopback-openai-compatible",
+      "default_local_model": "gpt-oss:20b",
+      "producer_supplied_model_endpoint_prompt_path_command_tool": false,
+      "model_tools": false,
+      "automatic_paid_ai": false,
+      "automatic_comfyui": false,
+      "manual_deep_ai_handoff_only": true,
+      "max_model_attempts_per_stage": 2
     },
     "phase10d_c_commit_boundary": {
       "source_state": "adoption_ready",

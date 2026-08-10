@@ -37,13 +37,29 @@ def load_settings() -> AppSettings:
         for item in os.getenv("PICOTOO_PROTECTED_ROOTS", "").split(os.pathsep)
         if item.strip()
     )
+    ollama_base_url = os.getenv("PICOTOO_OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    ollama_model = os.getenv("PICOTOO_OLLAMA_MODEL", "gpt-oss:20b")
     return AppSettings(
         paths=RuntimePaths.from_root(runtime_root),
         api_token=api_token,
         api_host=os.getenv("PICOTOO_API_HOST", "0.0.0.0"),
         api_port=int(os.getenv("PICOTOO_API_PORT", "8765")),
-        ollama_base_url=os.getenv("PICOTOO_OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-        ollama_model=os.getenv("PICOTOO_OLLAMA_MODEL", "gpt-oss:20b"),
+        ollama_base_url=ollama_base_url,
+        ollama_model=ollama_model,
+        local_intelligence_base_url=os.getenv(
+            "PICOTOO_LOCAL_INTELLIGENCE_BASE_URL",
+            f"{ollama_base_url.rstrip('/')}/v1/",
+        ),
+        local_intelligence_model=os.getenv(
+            "PICOTOO_LOCAL_INTELLIGENCE_MODEL",
+            ollama_model,
+        ),
+        local_intelligence_timeout_seconds=float(
+            os.getenv("PICOTOO_LOCAL_INTELLIGENCE_TIMEOUT_SECONDS", "900")
+        ),
+        local_intelligence_max_context_chars=int(
+            os.getenv("PICOTOO_LOCAL_INTELLIGENCE_MAX_CONTEXT_CHARS", "240000")
+        ),
         resident_check_seconds=int(os.getenv("PICOTOO_RESIDENT_CHECK_SECONDS", "60")),
         protected_roots=protected,
         worker_poll_seconds=float(os.getenv("PICOTOO_WORKER_POLL_SECONDS", "2")),

@@ -68,6 +68,28 @@ class RuntimePaths:
 
         return self.runtime_dir / "provider-returns"
 
+    @property
+    def business_root(self) -> Path:
+        """业务自动化只使用 Mac Core 自主管理的运行目录。"""
+
+        return self.runtime_dir / "business"
+
+    @property
+    def business_staging_dir(self) -> Path:
+        return self.business_root / "staging"
+
+    @property
+    def business_packages_dir(self) -> Path:
+        return self.business_root / "packages"
+
+    @property
+    def business_results_dir(self) -> Path:
+        return self.business_root / "results"
+
+    @property
+    def business_handoffs_dir(self) -> Path:
+        return self.business_root / "handoffs"
+
     def managed_directories(self) -> tuple[Path, ...]:
         """返回安装器和运行时允许创建的全部目录。"""
 
@@ -84,6 +106,11 @@ class RuntimePaths:
             self.backups_dir,
             self.runtime_dir,
             self.provider_returns_dir,
+            self.business_root,
+            self.business_staging_dir,
+            self.business_packages_dir,
+            self.business_results_dir,
+            self.business_handoffs_dir,
         )
 
     def ensure(self) -> None:

@@ -60,7 +60,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Control Center 左上角用户可见版本副标题。</summary>
     public string ControlCenterSubtitle => ProductVersionInfo.ControlCenterSubtitle;
 
-    /// <summary>十个冻结的一级导航项。</summary>
+    /// <summary>冻结的一级导航项。</summary>
     public IReadOnlyList<NavigationItem> NavigationItems
     {
         get => _navigationItems;
@@ -192,6 +192,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
         NavigationRoute.Automation when _session is not null =>
             new AutomationPageViewModel(_session),
+        NavigationRoute.BusinessAutomation when _session is not null =>
+            new BusinessAutomationPageViewModel(_session),
         NavigationRoute.Health when _session is not null =>
             new HealthPageViewModel(_session),
         NavigationRoute.Diagnostics when _session is not null =>
@@ -239,6 +241,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 "自动化",
                 capabilities.WorkflowAutomation,
                 "Mac Core 尚未声明耐久工作流自动化能力。"),
+            Item(
+                NavigationRoute.BusinessAutomation,
+                "业务自动化",
+                isAvailable: true,
+                "需要 2.3.18.1 的 Work Package / Local Intelligence / Result Package 能力。"),
             Item(
                 NavigationRoute.Health,
                 "健康",
@@ -303,6 +310,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             "当前服务尚未声明耐久工作流自动化能力。",
             "升级 Mac Core 后页面将接入工作流、步骤和安全控制动作。",
             "你现在不需要操作。"),
+        NavigationRoute.BusinessAutomation => BusinessAutomationPageViewModel.CreateForSmokeTest(
+            Array.Empty<BusinessWorkPackageRecord>(),
+            "local.intelligence.v1 · smoke"),
         NavigationRoute.Health => new EmptyStatePageViewModel(
             "健康",
             "当前服务尚未声明结构化平台健康能力。",
@@ -366,10 +376,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
         else if (route is NavigationRoute.Projects
                  or NavigationRoute.Automation
+                 or NavigationRoute.BusinessAutomation
                  or NavigationRoute.Health
                  or NavigationRoute.Diagnostics)
         {
-            // 新平台页各自通过显式刷新读取较大事实集；连接心跳不得重建页面并清空选择。
+            // 平台页各自通过显式刷新读取较大事实集；连接心跳不得重建页面并清空选择。
         }
         else
         {

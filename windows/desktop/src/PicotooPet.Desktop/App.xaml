@@ -28,6 +28,9 @@
     <DataTemplate DataType="{x:Type viewModels:AutomationPageViewModel}">
       <pages:AutomationPage />
     </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:BusinessAutomationPageViewModel}">
+      <pages:BusinessAutomationPage />
+    </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:HealthPageViewModel}">
       <pages:HealthPage />
     </DataTemplate>

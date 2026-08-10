@@ -64,5 +64,5 @@ def test_phase10e_windows_surface_has_no_free_publication_inputs() -> None:
         assert forbidden_binding not in page
 
 
-def test_phase10e_product_version_is_23172() -> None:
-    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.17.2"
+def test_phase10e_product_version_is_23181() -> None:
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.18.1"

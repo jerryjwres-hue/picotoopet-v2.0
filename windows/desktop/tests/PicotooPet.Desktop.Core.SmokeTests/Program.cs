@@ -48,6 +48,7 @@ internal static class Program
             CloudDevelopmentPageWpfLayoutSmokeTests.Run();
             ProviderReviewPanelWpfLayoutSmokeTests.Run();
             PlatformFoundationPagesWpfLayoutSmokeTests.Run();
+            BusinessAutomationWpfSmokeTests.Run();
             await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
