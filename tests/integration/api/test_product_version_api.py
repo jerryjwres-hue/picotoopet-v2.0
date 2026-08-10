@@ -19,4 +19,4 @@ def test_health_returns_canonical_product_version(tmp_path) -> None:
         response = client.get("/api/v1/health")
 
     assert response.status_code == 200
-    assert response.json()["version"] == __version__ == "2.3.17.1"
+    assert response.json()["version"] == __version__ == "2.3.17.2"

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from picotoopet_core.db.database import Database
+from picotoopet_core.domain.enums import ApprovalStatus
 from picotoopet_core.handoffs.approvals import HandoffApprovalService
 
 from .commit_models import ProviderCommitCandidateRecord, ProviderCommitStatus
@@ -178,8 +179,9 @@ class ProviderCommitService:
         return self.get_candidate(commit_candidate_id)
 
     def list_candidates(self, *, limit: int = 100) -> list[ProviderCommitCandidateRecord]:
-        """返回最近的 Commit Candidate 安全事实。"""
+        """返回最近的 Commit Candidate 安全事实，并收敛审批终态。"""
 
+        self._reconcile_terminal_approvals()
         bounded = max(1, min(limit, 100))
         rows = self.database.fetchall(
             "SELECT * FROM provider_commit_candidates ORDER BY created_at DESC LIMIT ?",
@@ -188,8 +190,9 @@ class ProviderCommitService:
         return [self._record_from_row(row) for row in rows]
 
     def get_candidate(self, commit_candidate_id: str) -> ProviderCommitCandidateRecord:
-        """按 ID 返回 Commit Candidate 安全投影。"""
+        """按 ID 返回 Commit Candidate 安全投影，并收敛审批终态。"""
 
+        self._reconcile_terminal_approvals(commit_candidate_id=commit_candidate_id)
         row = self.database.fetchone(
             "SELECT * FROM provider_commit_candidates WHERE commit_candidate_id = ?",
             (commit_candidate_id,),
@@ -197,6 +200,48 @@ class ProviderCommitService:
         if row is None:
             raise KeyError(commit_candidate_id)
         return self._record_from_row(row)
+
+    def _reconcile_terminal_approvals(self, *, commit_candidate_id: str | None = None) -> None:
+        """拒绝/过期属于 Core 事实收敛，不依赖 Worker、Codex 或 Git 配置。"""
+
+        query = (
+            "SELECT c.commit_candidate_id, a.status AS approval_status "
+            "FROM provider_commit_candidates c "
+            "JOIN approvals a ON a.approval_id = c.approval_id "
+            "WHERE c.status IN (?, ?)"
+        )
+        parameters: list[object] = [
+            ProviderCommitStatus.WAITING_APPROVAL.value,
+            ProviderCommitStatus.QUEUED.value,
+        ]
+        if commit_candidate_id is not None:
+            query += " AND c.commit_candidate_id = ?"
+            parameters.append(commit_candidate_id)
+        rows = self.database.fetchall(query, tuple(parameters))
+        for row in rows:
+            if row["approval_status"] == ApprovalStatus.REJECTED.value:
+                status = ProviderCommitStatus.REJECTED
+                failure_code = "COMMIT_APPROVAL_REJECTED"
+            elif row["approval_status"] == ApprovalStatus.EXPIRED.value:
+                status = ProviderCommitStatus.CANCELLED
+                failure_code = "COMMIT_APPROVAL_EXPIRED"
+            else:
+                continue
+            now = datetime.now(UTC).isoformat()
+            self.database.execute(
+                "UPDATE provider_commit_candidates SET status = ?, failure_code = ?, "
+                "updated_at = ?, finished_at = ? WHERE commit_candidate_id = ? "
+                "AND status IN (?, ?)",
+                (
+                    status.value,
+                    failure_code,
+                    now,
+                    now,
+                    row["commit_candidate_id"],
+                    ProviderCommitStatus.WAITING_APPROVAL.value,
+                    ProviderCommitStatus.QUEUED.value,
+                ),
+            )
 
     def _record_from_row(self, row: object) -> ProviderCommitCandidateRecord:
         checks = json.loads(row["validation_json"])
