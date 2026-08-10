@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from picotoopet_core.db.database import Database
+from picotoopet_core.domain.enums import ApprovalStatus
 from picotoopet_core.handoffs.approvals import HandoffApprovalService
 
 from .publication_models import (
@@ -263,6 +264,9 @@ class ProviderPublicationService:
         return self.get_candidate(publication_id)
 
     def list_candidates(self, *, limit: int = 100) -> list[ProviderPublicationCandidateRecord]:
+        """返回最近的 Publication Candidate，并收敛审批终态。"""
+
+        self._reconcile_terminal_approvals()
         bounded = max(1, min(limit, 100))
         rows = self.database.fetchall(
             "SELECT * FROM provider_publication_candidates ORDER BY created_at DESC LIMIT ?",
@@ -271,6 +275,9 @@ class ProviderPublicationService:
         return [self._record_from_row(row) for row in rows]
 
     def get_candidate(self, publication_candidate_id: str) -> ProviderPublicationCandidateRecord:
+        """读取一个 Publication Candidate，并收敛审批终态。"""
+
+        self._reconcile_terminal_approvals(publication_candidate_id=publication_candidate_id)
         row = self.database.fetchone(
             "SELECT * FROM provider_publication_candidates WHERE publication_candidate_id = ?",
             (publication_candidate_id,),
@@ -278,6 +285,52 @@ class ProviderPublicationService:
         if row is None:
             raise KeyError(publication_candidate_id)
         return self._record_from_row(row)
+
+    def _reconcile_terminal_approvals(
+        self,
+        *,
+        publication_candidate_id: str | None = None,
+    ) -> None:
+        """拒绝/过期由 Core 收敛；无需 Worker、GitHub CLI 或远端访问。"""
+
+        query = (
+            "SELECT p.publication_candidate_id, a.status AS approval_status "
+            "FROM provider_publication_candidates p "
+            "JOIN approvals a ON a.approval_id = p.approval_id "
+            "WHERE p.status IN (?, ?)"
+        )
+        parameters: list[object] = [
+            ProviderPublicationStatus.WAITING_APPROVAL.value,
+            ProviderPublicationStatus.QUEUED.value,
+        ]
+        if publication_candidate_id is not None:
+            query += " AND p.publication_candidate_id = ?"
+            parameters.append(publication_candidate_id)
+        rows = self.database.fetchall(query, tuple(parameters))
+        for row in rows:
+            if row["approval_status"] == ApprovalStatus.REJECTED.value:
+                status = ProviderPublicationStatus.REJECTED
+                failure_code = "PUBLICATION_APPROVAL_REJECTED"
+            elif row["approval_status"] == ApprovalStatus.EXPIRED.value:
+                status = ProviderPublicationStatus.CANCELLED
+                failure_code = "PUBLICATION_APPROVAL_EXPIRED"
+            else:
+                continue
+            now = datetime.now(UTC).isoformat()
+            self.database.execute(
+                "UPDATE provider_publication_candidates SET status = ?, failure_code = ?, "
+                "updated_at = ?, finished_at = ? WHERE publication_candidate_id = ? "
+                "AND status IN (?, ?)",
+                (
+                    status.value,
+                    failure_code,
+                    now,
+                    now,
+                    row["publication_candidate_id"],
+                    ProviderPublicationStatus.WAITING_APPROVAL.value,
+                    ProviderPublicationStatus.QUEUED.value,
+                ),
+            )
 
     @classmethod
     def _canonical_repository_slug(cls, repo_url: str) -> str:
