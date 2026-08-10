@@ -83,14 +83,13 @@ def test_archive_rejects_duplicate_member_names(tmp_path: Path) -> None:
     package_id = str(uuid4())
     payload = b'{"review_id":"r1"}\n'
     archive_path = tmp_path / "duplicate.zip"
-    with zipfile.ZipFile(archive_path, "w") as archive:
-        archive.writestr(
-            f"{package_id}/work-package.json",
-            json.dumps(_manifest(package_id, payload), sort_keys=True),
-        )
-        archive.writestr(f"{package_id}/inputs/reviews.jsonl", payload)
-        archive.writestr(f"{package_id}/inputs/reviews.jsonl", payload)
-    with pytest.warns(UserWarning):
-        pass
+    with pytest.warns(UserWarning, match="Duplicate name"):
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr(
+                f"{package_id}/work-package.json",
+                json.dumps(_manifest(package_id, payload), sort_keys=True),
+            )
+            archive.writestr(f"{package_id}/inputs/reviews.jsonl", payload)
+            archive.writestr(f"{package_id}/inputs/reviews.jsonl", payload)
     with pytest.raises(WorkPackageArchiveError, match="duplicate_path"):
         validate_work_package_archive(archive_path)
