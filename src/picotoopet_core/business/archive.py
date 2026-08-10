@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import json
 import stat
@@ -16,6 +17,7 @@ from .models import WorkPackageManifest
 MAX_COMPRESSED_BYTES = 256 * 1024 * 1024
 MAX_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
 MAX_SINGLE_FILE_BYTES = 256 * 1024 * 1024
+MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_INPUT_FILES = 64
 _EXECUTABLE_SUFFIXES = {
     ".app",
@@ -125,6 +127,8 @@ def validate_work_package_archive(path: Path) -> ValidatedWorkPackage:
         manifest_info = normalized.get(manifest_key)
         if manifest_info is None or manifest_info.is_dir():
             raise WorkPackageArchiveError("manifest_missing")
+        if manifest_info.file_size > MAX_MANIFEST_BYTES:
+            raise WorkPackageArchiveError("manifest_too_large")
         try:
             manifest_bytes = archive.read(manifest_info)
             manifest = WorkPackageManifest.model_validate_json(manifest_bytes)
@@ -143,17 +147,17 @@ def validate_work_package_archive(path: Path) -> ValidatedWorkPackage:
             if info.file_size != descriptor.size_bytes:
                 raise WorkPackageArchiveError("input_size_mismatch")
             digest = hashlib.sha256()
-            payload = bytearray()
-            with archive.open(info, "r") as handle:
-                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                    digest.update(chunk)
-                    payload.extend(chunk)
-            if digest.hexdigest() != descriptor.sha256:
-                raise WorkPackageArchiveError("input_hash_mismatch")
+            decoder = codecs.getincrementaldecoder("utf-8")("strict")
             try:
-                bytes(payload).decode("utf-8")
+                with archive.open(info, "r") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                        decoder.decode(chunk, final=False)
+                decoder.decode(b"", final=True)
             except UnicodeDecodeError as error:
                 raise WorkPackageArchiveError("input_not_utf8") from error
+            if digest.hexdigest() != descriptor.sha256:
+                raise WorkPackageArchiveError("input_hash_mismatch")
 
         actual_files = {
             key for key, info in normalized.items() if not info.is_dir()
