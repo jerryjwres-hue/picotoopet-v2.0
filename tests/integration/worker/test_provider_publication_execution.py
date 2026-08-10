@@ -320,7 +320,7 @@ def test_approved_publication_pushes_exact_sha_and_creates_verified_draft_pr(tmp
     )
     assert queued is not None
     assert queued["status"] == TaskStatus.QUEUED.value
-    assert queued["max_attempts"] == 1
+    assert queued["max_attempts"] == ProviderPublicationExecutionCoordinator.MAX_ATTEMPTS
 
     runtime = WorkerRuntime(
         queue=queue,
