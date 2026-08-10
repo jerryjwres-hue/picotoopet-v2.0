@@ -82,7 +82,7 @@ class OpenAiCompatibleLocalIntelligenceAdapter:
         """Bounded readiness probe; never downloads or loads a model."""
 
         try:
-            response = self.client.get("models")
+            response = self.client.get("models", timeout=2.0)
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError):
