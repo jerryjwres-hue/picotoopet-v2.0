@@ -108,7 +108,12 @@ class PublicationGitHubClient:
             validation_checks=["pr_created", "pr_exact"],
         )
 
-    def _list_prs(self, repository_slug: str, base_ref: str, head_branch: str) -> list[dict[str, object]]:
+    def _list_prs(
+        self,
+        repository_slug: str,
+        base_ref: str,
+        head_branch: str,
+    ) -> list[dict[str, object]]:
         output = self._run(
             "pr",
             "list",
