@@ -22,7 +22,7 @@ This version deliberately changes the post-17 roadmap. It does **not** make Comf
 
 `Windows business program → Work Package v1 → Mac Core → deterministic preprocessing → Mac Worker local intelligence → quality gate → Result Package v1 → Windows business program`
 
-The first two real producer profiles are the user's existing program classes:
+The first two real producer profiles are the current business-program classes:
 
 1. review/data analysis producers, such as Amazon review collection/analysis;
 2. inspiration/idea producers, such as the Inspiration Assistant.
@@ -47,13 +47,13 @@ The architecture must remain generic so future Windows programs can use the same
 
 ### 3.1 Windows Business Bridge
 
-2.3.18.1 uses the existing signed/prebuilt Windows Control Center process as the bridge host. It does not introduce another always-on executable or Windows service.
+2.3.18.1 uses the existing **prebuilt Windows Control Center process** as the bridge host. It does not introduce another always-on executable or Windows service.
 
 Primary producer interface in 2.3.18.1 is a durable filesystem Inbox:
 
 `%LOCALAPPDATA%\PicotooPet\BusinessBridge\Inbox`
 
-A producer writes a complete package to a temporary sibling path and atomically renames it into Inbox only after all files are finished. The Control Center treats Inbox content as untrusted producer data, validates it, and uploads it through the existing authenticated Windows ↔ Mac Core control connection.
+A producer writes a complete package to a temporary sibling path and atomically renames it into Inbox only after all files are finished. The Control Center treats Inbox content as untrusted producer data, validates the local archive envelope, and uploads it through the existing authenticated Windows ↔ Mac Core control connection.
 
 When the Control Center is closed, packages remain durable on disk and are submitted after the next start. This avoids coupling producer availability to network availability.
 
@@ -144,7 +144,7 @@ Larger datasets must be partitioned into multiple Work Packages; 2.3.18.1 does n
 
 ## 5. Closed analysis profiles
 
-2.3.18.1 ships two pilot profiles matching the current business programs:
+2.3.18.1 ships two pilot profiles matching the current business programs.
 
 ### 5.1 `reviews.voice_of_customer.v1`
 
@@ -319,12 +319,11 @@ The Result Package must never claim a source citation that cannot be resolved to
 
 ## 12. Durable states
 
-Work Package lifecycle:
+Mac Core Work Package lifecycle:
 
 ```text
-Received
+Receiving
 → Validating
-→ Uploading
 → Ready
 → Preprocessing
 → LocalInference
@@ -340,9 +339,21 @@ Alternative terminal/attention states:
 - `Failed`
 - `Cancelled`
 
-Windows delivery state is recorded independently so a completed Mac result can be retried safely if the Windows Outbox was unavailable.
+Windows bridge delivery state is independent from the Core processing state:
 
-All state transitions are checkpointed and replay-safe.
+```text
+InboxQueued
+→ Uploading
+→ Submitted
+→ ResultReady
+→ Delivered
+```
+
+Local Windows alternative states include `Quarantined`, `UploadFailed` and `DeliveryFailed`, each with replay-safe retry rules.
+
+Keeping these state machines separate prevents a temporary Windows delivery failure from rewriting a completed Mac intelligence result.
+
+All Mac state transitions are checkpointed and replay-safe.
 
 ## 13. Transfer protocol
 
@@ -350,14 +361,15 @@ Business datasets are larger than ordinary control DTOs, so 2.3.18.1 introduces 
 
 Flow:
 
-1. Windows submits package manifest and archive digest.
-2. Core creates/reuses an upload session from `package_id + source_digest`.
+1. Windows submits package identity, manifest summary, total archive size and archive digest.
+2. Core creates/reuses an upload session from `package_id + source_digest` and enters `Receiving`.
 3. Windows sends fixed-size chunks with exact offset and chunk digest.
 4. Core writes only into a package-specific staging area.
 5. Finalize succeeds only when total size and full SHA-256 match.
-6. Core validates archive structure and manifest file hashes before moving the package into immutable storage.
+6. Core enters `Validating`, validates archive structure and manifest file hashes, then moves the package into immutable storage.
+7. Only a validated package may enter `Ready`.
 
-Recommended chunk size is 4 MiB. Duplicate exact chunks are idempotently accepted; wrong offsets/digests fail closed.
+Fixed chunk size in v1 is **4 MiB**, except the final chunk. Duplicate exact chunks are idempotently accepted; wrong offsets/digests fail closed.
 
 Download of Result Packages uses the same immutable digest principle but results are expected to be small and may use a bounded single response when under the configured threshold.
 
@@ -368,7 +380,7 @@ Current 2.3.17.x database schema is 10. 2.3.18.1 adds **Migration 11** with dura
 - `business_work_packages`
 - `business_artifacts`
 - `business_upload_sessions`
-- `business_upload_chunks` or equivalent durable progress facts
+- durable upload progress facts
 - `local_intelligence_runs`
 - `local_intelligence_chunks`
 - `business_result_packages`
@@ -403,6 +415,8 @@ Allowed fixed actions:
 - Export a safe manual Deep-AI Handoff
 
 The page does not expose arbitrary prompt/model/endpoint/path/command/tool fields.
+
+2.3.18.1 does not add a general raw-dataset browser. Normal UI and diagnostics show only bounded metadata and safe summaries.
 
 A real STA WPF Measure/Arrange/UpdateLayout smoke test is required.
 
@@ -450,7 +464,7 @@ The system must converge under retries and restarts.
 - no third-party data upload;
 - no raw business data in normal logs;
 - bounded/sanitized diagnostic facts;
-- raw dataset content excluded from Windows approval/diagnostic pages unless explicitly opened through a bounded safe preview;
+- no general raw business-data display in Windows UI;
 - Deep-AI Handoff sanitization before manual export;
 - secrets never enter prompts, packages, results or logs.
 
@@ -564,6 +578,6 @@ Only after deterministic/local-model paths are proven should the system add sepa
 
 ## 23. Success definition
 
-2.3.18.1 is successful when PicotooPet can accept structured output from the user's Windows business programs, process it primarily on Mac using deterministic logic plus the configured local OSS 20B-class model, enforce evidence/quality rules, and return a durable structured Result Package to Windows without involving ComfyUI or paid AI.
+2.3.18.1 is successful when PicotooPet can accept structured output from the Windows business programs, process it primarily on Mac using deterministic logic plus the configured local OSS 20B-class model, enforce evidence/quality rules, and return a durable structured Result Package to Windows without involving ComfyUI or paid AI.
 
 That establishes the reusable intelligence backbone needed for later creative generation and GPU production automation.
