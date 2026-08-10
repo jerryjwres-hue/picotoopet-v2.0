@@ -1,6 +1,6 @@
 namespace PicotooPet.Desktop.Navigation;
 
-/// <summary>Slice A 冻结的十个 Control Center 一级导航路由。</summary>
+/// <summary>Control Center 一级导航路由；业务自动化与软件开发自动化保持独立。</summary>
 public enum NavigationRoute
 {
     Dashboard,
@@ -10,6 +10,7 @@ public enum NavigationRoute
     Approvals,
     CloudDevelopment,
     Automation,
+    BusinessAutomation,
     Health,
     Diagnostics,
     Settings,
