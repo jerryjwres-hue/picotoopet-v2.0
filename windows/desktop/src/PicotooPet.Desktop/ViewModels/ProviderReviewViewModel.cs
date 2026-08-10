@@ -203,7 +203,7 @@ public sealed class ProviderReviewViewModel : ObservableObject
         : $"{SelectedPublicationCandidate.Status} · {SelectedPublicationCandidate.RepositorySlug} · "
           + $"base {SelectedPublicationCandidate.BaseRef}@{SelectedPublicationCandidate.BaseCommit[..12]} · "
           + $"head {SelectedPublicationCandidate.CommitSha[..12]} · "
-          + $"PR {(SelectedPublicationCandidate.PrNumber?.ToString() ?? "—")} · "
+          + $"PR {(SelectedPublicationCandidate.PrNumber?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—")} · "
           + "pr_ready != CI-green != merge-ready。";
 
     public string StatusMessage
