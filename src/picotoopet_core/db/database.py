@@ -11,6 +11,7 @@ from typing import Any, Iterator, Sequence
 
 from .migration_009 import MIGRATION_009
 from .migration_010 import MIGRATION_010
+from .migration_011 import MIGRATION_011
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -188,6 +189,16 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (10, datetime.now(UTC).isoformat()),
+                )
+
+            migration_011_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 11"
+            ).fetchone()
+            if migration_011_exists is None:
+                connection.executescript(MIGRATION_011)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (11, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
