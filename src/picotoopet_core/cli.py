@@ -25,6 +25,9 @@ from picotoopet_core.ollama.resident_manager import (
 from picotoopet_core.providers.adoption_execution import AdoptionExecutionCoordinator
 from picotoopet_core.providers.commit_execution import ProviderCommitExecutionCoordinator
 from picotoopet_core.providers.execution import ProviderExecutionCoordinator
+from picotoopet_core.providers.publication_execution import (
+    ProviderPublicationExecutionCoordinator,
+)
 from picotoopet_core.services import build_services
 from picotoopet_core.worker.runtime import WorkerRuntime
 
@@ -106,7 +109,7 @@ def _run_worker(
     loop: bool,
     worker_id: str,
 ) -> int:
-    """运行独立 Worker；Provider/Adoption/Commit 仅在固定配置完整时注册。"""
+    """运行独立 Worker；受控 Provider 能力只在对应固定配置完整时注册。"""
 
     services = build_services(settings)
     resolved_worker_id = worker_id.strip() or f"{socket.gethostname()}-{os.getpid()}"
@@ -123,6 +126,7 @@ def _run_worker(
     provider_coordinator: ProviderExecutionCoordinator | None = None
     adoption_coordinator: AdoptionExecutionCoordinator | None = None
     commit_coordinator: ProviderCommitExecutionCoordinator | None = None
+    publication_coordinator: ProviderPublicationExecutionCoordinator | None = None
     if settings.provider_execution_configured:
         assert settings.provider_repository is not None
         assert settings.provider_worktree_root is not None
@@ -153,6 +157,18 @@ def _run_worker(
         runtime.handlers[ProviderExecutionCoordinator.TASK_TYPE] = provider_coordinator.handler
         runtime.handlers[AdoptionExecutionCoordinator.TASK_TYPE] = adoption_coordinator.handler
         runtime.handlers[ProviderCommitExecutionCoordinator.TASK_TYPE] = commit_coordinator.handler
+    if settings.provider_publication_configured:
+        assert settings.provider_repository is not None
+        assert settings.github_cli_executable is not None
+        publication_coordinator = ProviderPublicationExecutionCoordinator(
+            database=services.database,
+            queue=services.queue,
+            repository=settings.provider_repository,
+            github_cli_executable=settings.github_cli_executable,
+        )
+        runtime.handlers[ProviderPublicationExecutionCoordinator.TASK_TYPE] = (
+            publication_coordinator.handler
+        )
 
     def enqueue_controlled_work() -> None:
         if provider_coordinator is not None:
@@ -161,6 +177,8 @@ def _run_worker(
             adoption_coordinator.enqueue_pending()
         if commit_coordinator is not None:
             commit_coordinator.enqueue_pending()
+        if publication_coordinator is not None:
+            publication_coordinator.enqueue_pending()
 
     def publish_execution_capability(*, healthy: bool) -> None:
         """只声明当前封闭 handler 注册表能够真实执行的任务类型。"""

@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.16.3",
+      "value": "2.3.17.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -92,6 +92,20 @@
       "automatic_branch": false,
       "automatic_push": false,
       "automatic_pr": false,
+      "automatic_merge": false,
+      "automatic_tag": false,
+      "automatic_release": false
+    },
+    "phase10e_publication_boundary": {
+      "source_state": "commit_ready",
+      "success_state": "pr_ready",
+      "approval_type": "provider.publish.pr-create-v1",
+      "remote_ref_prefix": "refs/heads/picotoopet/commit-candidates/",
+      "base_source": "immutable Handoff base_ref + base_commit",
+      "push_requires_human_approval": true,
+      "draft_pr_creation_requires_same_approval": true,
+      "force_push": false,
+      "user_supplied_repo_ref_base_head_title_body": false,
       "automatic_merge": false,
       "automatic_tag": false,
       "automatic_release": false

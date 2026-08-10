@@ -3,93 +3,122 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              MinHeight="520">
     <Border Padding="18" BorderBrush="#D7DEE8" BorderThickness="1" CornerRadius="12" Background="#FFFFFF">
-        <StackPanel>
-            <DockPanel Margin="0,0,0,12">
-                <StackPanel DockPanel.Dock="Left">
-                    <TextBlock Text="Return 人工审阅、落地候选与本地提交候选" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock Text="Phase 10D-B/C：只读审阅；本地 commit 仍需新的 digest-bound 明确审批。" Margin="0,4,0,0" Foreground="#53657A" />
-                </StackPanel>
-                <Button DockPanel.Dock="Right" Content="刷新 Review" Command="{Binding RefreshCommand}" Padding="12,6" MinWidth="96" />
-            </DockPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,12">
+                    <StackPanel DockPanel.Dock="Left">
+                        <TextBlock Text="Return 审阅、落地、提交与远端发布候选" FontSize="20" FontWeight="SemiBold" />
+                        <TextBlock Text="Phase 10D/E：每一层都绑定不可变事实；远端 Push + Draft PR 也需要新的明确审批。" Margin="0,4,0,0" Foreground="#53657A" />
+                    </StackPanel>
+                    <Button DockPanel.Dock="Right" Content="刷新 Review" Command="{Binding RefreshCommand}" Padding="12,6" MinWidth="96" />
+                </DockPanel>
 
-            <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Foreground="#3B556E" Margin="0,0,0,12" />
+                <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Foreground="#3B556E" Margin="0,0,0,12" />
 
-            <Grid Margin="0,0,0,12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*" />
-                    <ColumnDefinition Width="3*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                    <TextBlock Text="待审阅 Session" FontWeight="SemiBold" />
-                    <ComboBox ItemsSource="{Binding ReviewableSessions}"
-                              SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
-                              DisplayMemberPath="SessionId"
-                              Margin="0,6,0,8" />
-                    <TextBlock Text="{Binding ReviewSummary}" TextWrapping="Wrap" Foreground="#53657A" />
-                    <ItemsControl ItemsSource="{Binding Review.Files}" Margin="0,8,0,0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Padding="8" Margin="0,0,0,6" BorderBrush="#E3E8EF" BorderThickness="1" CornerRadius="6">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Path}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                        <TextBlock Foreground="#53657A">
-                                            <Run Text="{Binding Operation}" />
-                                            <Run Text=" · " />
-                                            <Run Text="{Binding SizeBytes}" />
-                                            <Run Text=" bytes" />
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="3*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                        <TextBlock Text="待审阅 Session" FontWeight="SemiBold" />
+                        <ComboBox ItemsSource="{Binding ReviewableSessions}"
+                                  SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
+                                  DisplayMemberPath="SessionId"
+                                  Margin="0,6,0,8" />
+                        <TextBlock Text="{Binding ReviewSummary}" TextWrapping="Wrap" Foreground="#53657A" />
+                        <ItemsControl ItemsSource="{Binding Review.Files}" Margin="0,8,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="8" Margin="0,0,0,6" BorderBrush="#E3E8EF" BorderThickness="1" CornerRadius="6">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Path}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Foreground="#53657A">
+                                                <Run Text="{Binding Operation}" />
+                                                <Run Text=" · " />
+                                                <Run Text="{Binding SizeBytes}" />
+                                                <Run Text=" bytes" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
 
-                <StackPanel Grid.Column="1">
-                    <TextBlock Text="只读 diff（最多 128 KiB）" FontWeight="SemiBold" />
-                    <TextBox Text="{Binding Review.ReviewDiff, Mode=OneWay}"
-                             IsReadOnly="True"
-                             AcceptsReturn="True"
-                             TextWrapping="NoWrap"
-                             VerticalScrollBarVisibility="Auto"
-                             HorizontalScrollBarVisibility="Auto"
-                             FontFamily="Consolas"
-                             MinHeight="160"
-                             MaxHeight="260"
-                             Margin="0,6,0,8" />
-                    <WrapPanel>
-                        <Button Content="接受并创建落地候选" Command="{Binding AcceptCommand}" IsEnabled="{Binding CanAccept}" Padding="12,6" Margin="0,0,8,0" />
-                        <Button Content="拒绝此 Return" Command="{Binding RejectCommand}" IsEnabled="{Binding CanReject}" Padding="12,6" Margin="0,0,8,0" />
-                        <Button Content="刷新候选状态" Command="{Binding RefreshCandidateCommand}" Padding="12,6" />
-                    </WrapPanel>
-                </StackPanel>
-            </Grid>
-
-            <Border Padding="12" Background="#F7FAFC" CornerRadius="8" Margin="0,0,0,12">
-                <StackPanel>
-                    <TextBlock Text="Adoption Candidate" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding CandidateSummary}" TextWrapping="Wrap" Margin="0,4,0,0" />
-                    <TextBlock Text="adoption_ready 不是 merge-ready：只有通过新的人工审批后才允许创建本机 Git commit。"
-                               TextWrapping="Wrap" Foreground="#8A5A00" Margin="0,6,0,0" />
-                </StackPanel>
-            </Border>
-
-            <Border Padding="12" Background="#F7FAFC" CornerRadius="8">
-                <StackPanel>
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Left" Text="本地提交候选" FontWeight="SemiBold" />
-                        <WrapPanel DockPanel.Dock="Right">
-                            <Button Content="准备本地提交" Command="{Binding PrepareCommitCommand}" IsEnabled="{Binding CanPrepareCommit}" Padding="12,6" Margin="0,0,8,0" />
-                            <Button Content="刷新提交状态" Command="{Binding RefreshCommitCommand}" Padding="12,6" />
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="只读 diff（最多 128 KiB）" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Review.ReviewDiff, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="NoWrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas"
+                                 MinHeight="160"
+                                 MaxHeight="260"
+                                 Margin="0,6,0,8" />
+                        <WrapPanel>
+                            <Button Content="接受并创建落地候选" Command="{Binding AcceptCommand}" IsEnabled="{Binding CanAccept}" Padding="12,6" Margin="0,0,8,0" />
+                            <Button Content="拒绝此 Return" Command="{Binding RejectCommand}" IsEnabled="{Binding CanReject}" Padding="12,6" Margin="0,0,8,0" />
+                            <Button Content="刷新候选状态" Command="{Binding RefreshCandidateCommand}" Padding="12,6" />
                         </WrapPanel>
-                    </DockPanel>
-                    <TextBlock Text="{Binding CommitCandidateSummary}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                    <TextBlock Text="固定 commit message 由 Mac Core 生成；Windows 不能编辑 message、author、ref、path、command 或 remote。"
-                               TextWrapping="Wrap" Foreground="#53657A" Margin="0,6,0,0" />
-                    <TextBlock Text="commit_ready != pushed != PR-ready != merge-ready：本版不会自动创建普通 branch、push、PR、merge、tag 或 release。"
-                               TextWrapping="Wrap" Foreground="#8A5A00" Margin="0,6,0,0" />
-                </StackPanel>
-            </Border>
-        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <Border Padding="12" Background="#F7FAFC" CornerRadius="8" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="Adoption Candidate" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding CandidateSummary}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        <TextBlock Text="adoption_ready 不是 merge-ready：只有通过新的人工审批后才允许创建本机 Git commit。"
+                                   TextWrapping="Wrap" Foreground="#8A5A00" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="12" Background="#F7FAFC" CornerRadius="8" Margin="0,0,0,12">
+                    <StackPanel>
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="本地提交候选" FontWeight="SemiBold" />
+                            <WrapPanel DockPanel.Dock="Right">
+                                <Button Content="准备本地提交" Command="{Binding PrepareCommitCommand}" IsEnabled="{Binding CanPrepareCommit}" Padding="12,6" Margin="0,0,8,0" />
+                                <Button Content="刷新提交状态" Command="{Binding RefreshCommitCommand}" Padding="12,6" />
+                            </WrapPanel>
+                        </DockPanel>
+                        <TextBlock Text="{Binding CommitCandidateSummary}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        <TextBlock Text="固定 commit message 由 Mac Core 生成；Windows 不能编辑 message、author、ref、path 或 command。"
+                                   TextWrapping="Wrap" Foreground="#53657A" Margin="0,6,0,0" />
+                        <TextBlock Text="commit_ready 只表示 exact 本地提交候选已就绪；不会自行执行任何远端写。"
+                                   TextWrapping="Wrap" Foreground="#8A5A00" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="12" Background="#F1F7FF" CornerRadius="8">
+                    <StackPanel>
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="远端发布候选" FontWeight="SemiBold" />
+                            <WrapPanel DockPanel.Dock="Right">
+                                <Button Content="准备 Push + Draft PR"
+                                        Command="{Binding PreparePublicationCommand}"
+                                        IsEnabled="{Binding CanPreparePublication}"
+                                        Padding="12,6"
+                                        Margin="0,0,8,0" />
+                                <Button Content="刷新发布状态"
+                                        Command="{Binding RefreshPublicationCommand}"
+                                        Padding="12,6" />
+                            </WrapPanel>
+                        </DockPanel>
+                        <TextBlock Text="{Binding PublicationCandidateSummary}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        <TextBlock Text="{Binding SelectedPublicationCandidate.RemoteBranch, Mode=OneWay, StringFormat='固定远端分支：{0}'}"
+                                   TextWrapping="Wrap" Foreground="#53657A" Margin="0,6,0,0" />
+                        <TextBlock Text="{Binding SelectedPublicationCandidate.PrUrl, Mode=OneWay, StringFormat='Draft PR：{0}'}"
+                                   TextWrapping="Wrap" Foreground="#53657A" Margin="0,4,0,0" />
+                        <TextBlock Text="repository、base、head、title、body 与 remote ref 全部来自已验证 provenance；Windows 没有自由输入入口。"
+                                   TextWrapping="Wrap" Foreground="#53657A" Margin="0,6,0,0" />
+                        <TextBlock Text="pr_ready != CI-green != merge-ready：2.3.17.1 只到经过复核的 Draft PR，不会自动 merge、tag 或 release。"
+                                   TextWrapping="Wrap" Foreground="#8A5A00" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
     </Border>
 </UserControl>

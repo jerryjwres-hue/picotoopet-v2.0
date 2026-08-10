@@ -4,7 +4,7 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>Phase 10D-B/C 只读 Review、Adoption 与明确批准的本地 Commit Candidate 状态。</summary>
+/// <summary>Phase 10D/E Review、Adoption、Commit 与受控远端 Publication 状态。</summary>
 public sealed class ProviderReviewViewModel : ObservableObject
 {
     private readonly IProviderReviewGateway? _gateway;
@@ -15,7 +15,9 @@ public sealed class ProviderReviewViewModel : ObservableObject
     private ProviderAdoptionCandidateRecord? _selectedCandidate;
     private IReadOnlyList<ProviderCommitCandidateRecord> _commitCandidates = [];
     private ProviderCommitCandidateRecord? _selectedCommitCandidate;
-    private string _statusMessage = "Review 与本地提交均受控；commit_ready 仍不会自动 push、创建 PR 或 merge。";
+    private IReadOnlyList<ProviderPublicationCandidateRecord> _publicationCandidates = [];
+    private ProviderPublicationCandidateRecord? _selectedPublicationCandidate;
+    private string _statusMessage = "Review、本地提交与远端发布均受控；任何外部写都需要新的明确审批。";
     private bool _isBusy;
 
     public ProviderReviewViewModel()
@@ -55,6 +57,14 @@ public sealed class ProviderReviewViewModel : ObservableObject
             () => RefreshCommitAsync(CancellationToken.None),
             HandleCommandError,
             () => !IsBusy && SelectedCandidate is not null);
+        PreparePublicationCommand = new AsyncRelayCommand(
+            () => PreparePublicationAsync(CancellationToken.None),
+            HandleCommandError,
+            () => CanPreparePublication);
+        RefreshPublicationCommand = new AsyncRelayCommand(
+            () => RefreshPublicationAsync(CancellationToken.None),
+            HandleCommandError,
+            () => !IsBusy && SelectedCommitCandidate is not null);
 
         if (initializeSmoke)
         {
@@ -66,6 +76,8 @@ public sealed class ProviderReviewViewModel : ObservableObject
             SelectedCandidate = Candidates[0];
             CommitCandidates = [SmokeCommitCandidate(session.SessionId, SelectedCandidate.CandidateId)];
             SelectedCommitCandidate = CommitCandidates[0];
+            PublicationCandidates = [SmokePublicationCandidate(session.SessionId, SelectedCommitCandidate.CommitCandidateId)];
+            SelectedPublicationCandidate = PublicationCandidates[0];
         }
     }
 
@@ -144,6 +156,31 @@ public sealed class ProviderReviewViewModel : ObservableObject
         }
     }
 
+    public IReadOnlyList<ProviderPublicationCandidateRecord> PublicationCandidates
+    {
+        get => _publicationCandidates;
+        private set
+        {
+            if (SetProperty(ref _publicationCandidates, value))
+            {
+                RaiseActions();
+            }
+        }
+    }
+
+    public ProviderPublicationCandidateRecord? SelectedPublicationCandidate
+    {
+        get => _selectedPublicationCandidate;
+        private set
+        {
+            if (SetProperty(ref _selectedPublicationCandidate, value))
+            {
+                RaisePropertyChanged(nameof(PublicationCandidateSummary));
+                RaiseActions();
+            }
+        }
+    }
+
     public string ReviewSummary => Review is null
         ? "尚无可审阅 Return。"
         : $"{Review.ReviewStatus} · Return {Review.ReturnId ?? "—"} · "
@@ -160,6 +197,14 @@ public sealed class ProviderReviewViewModel : ObservableObject
         : $"{SelectedCommitCandidate.Status} · commit {SelectedCommitCandidate.CommitSha ?? "—"} · "
           + $"tree {SelectedCommitCandidate.TreeSha ?? "—"} · {SelectedCommitCandidate.LocalRef} · "
           + "commit_ready != pushed != PR-ready != merge-ready。";
+
+    public string PublicationCandidateSummary => SelectedPublicationCandidate is null
+        ? "尚无远端发布候选；只有 commit_ready 才能准备一次新的 Push + Draft PR 审批。"
+        : $"{SelectedPublicationCandidate.Status} · {SelectedPublicationCandidate.RepositorySlug} · "
+          + $"base {SelectedPublicationCandidate.BaseRef}@{SelectedPublicationCandidate.BaseCommit[..12]} · "
+          + $"head {SelectedPublicationCandidate.CommitSha[..12]} · "
+          + $"PR {(SelectedPublicationCandidate.PrNumber?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—")} · "
+          + "pr_ready != CI-green != merge-ready。";
 
     public string StatusMessage
     {
@@ -186,6 +231,12 @@ public sealed class ProviderReviewViewModel : ObservableObject
         && _gateway is not null
         && SelectedCandidate?.Status == "adoption_ready"
         && !CommitCandidates.Any(item => item.AdoptionCandidateId == SelectedCandidate.CandidateId);
+    public bool CanPreparePublication =>
+        !IsBusy
+        && _gateway is not null
+        && SelectedCommitCandidate?.Status == "commit_ready"
+        && !PublicationCandidates.Any(
+            item => item.CommitCandidateId == SelectedCommitCandidate.CommitCandidateId);
 
     public AsyncRelayCommand RefreshCommand { get; }
     public AsyncRelayCommand AcceptCommand { get; }
@@ -193,6 +244,8 @@ public sealed class ProviderReviewViewModel : ObservableObject
     public AsyncRelayCommand RefreshCandidateCommand { get; }
     public AsyncRelayCommand PrepareCommitCommand { get; }
     public AsyncRelayCommand RefreshCommitCommand { get; }
+    public AsyncRelayCommand PreparePublicationCommand { get; }
+    public AsyncRelayCommand RefreshPublicationCommand { get; }
 
     public async Task LoadAsync(CancellationToken cancellationToken)
     {
@@ -201,7 +254,7 @@ public sealed class ProviderReviewViewModel : ObservableObject
             return;
         }
         IsBusy = true;
-        StatusMessage = "正在读取 ready_for_review、Adoption 与 Commit Candidate 安全事实……";
+        StatusMessage = "正在读取 Review、Adoption、Commit 与 Publication 安全事实……";
         try
         {
             var selectedId = SelectedSession?.SessionId;
@@ -220,6 +273,8 @@ public sealed class ProviderReviewViewModel : ObservableObject
                 SelectedCandidate = null;
                 CommitCandidates = [];
                 SelectedCommitCandidate = null;
+                PublicationCandidates = [];
+                SelectedPublicationCandidate = null;
                 StatusMessage = "当前没有 ready_for_review Session。";
                 return;
             }
@@ -228,9 +283,10 @@ public sealed class ProviderReviewViewModel : ObservableObject
                 cancellationToken).ConfigureAwait(true);
             await RefreshCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
             await RefreshCommitCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
+            await RefreshPublicationCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
             StatusMessage = Review.ReviewStatus == "legacy_no_artifact"
-                ? "该 Session 来自旧格式，只能查看历史，不能接受落地或创建提交。"
-                : "Review 已重新验签；提交准备仍需要独立 Approval Center 明确批准。";
+                ? "该 Session 来自旧格式，只能查看历史，不能接受落地、创建提交或准备远端发布。"
+                : "Review 已重新验签；Commit 与 Publication 都需要各自独立的 Approval Center 明确批准。";
         }
         catch (Exception exception) when (IsBoundedOperationalError(exception))
         {
@@ -259,7 +315,8 @@ public sealed class ProviderReviewViewModel : ObservableObject
                 cancellationToken).ConfigureAwait(true);
             await RefreshCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
             await RefreshCommitCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
-            StatusMessage = "Return 已接受；先形成 adoption_ready，再由新的明确审批决定是否创建本地 commit。";
+            await RefreshPublicationCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
+            StatusMessage = "Return 已接受；先形成 adoption_ready，再通过独立审批逐步进入 Commit 与 Publication。";
         }
         finally
         {
@@ -286,7 +343,9 @@ public sealed class ProviderReviewViewModel : ObservableObject
             SelectedCandidate = null;
             CommitCandidates = [];
             SelectedCommitCandidate = null;
-            StatusMessage = "Return 已拒绝；决策不可反转，未创建落地候选或提交候选。";
+            PublicationCandidates = [];
+            SelectedPublicationCandidate = null;
+            StatusMessage = "Return 已拒绝；决策不可反转，未创建后续候选。";
         }
         finally
         {
@@ -305,7 +364,8 @@ public sealed class ProviderReviewViewModel : ObservableObject
         {
             await RefreshCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
             await RefreshCommitCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
-            StatusMessage = "候选状态已刷新；adoption_ready 与 commit_ready 都不等于 merge-ready。";
+            await RefreshPublicationCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
+            StatusMessage = "候选状态已刷新；所有 readiness 状态都有明确边界。";
         }
         catch (Exception exception) when (IsBoundedOperationalError(exception))
         {
@@ -333,7 +393,8 @@ public sealed class ProviderReviewViewModel : ObservableObject
                 $"windows-commit-prepare-{candidate.CandidateId}",
                 cancellationToken).ConfigureAwait(true);
             await RefreshCommitCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
-            StatusMessage = "Commit Candidate 已准备；必须在审批中心明确批准后 Mac Worker 才能写本地 Git object/ref。";
+            await RefreshPublicationCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
+            StatusMessage = "Commit Candidate 已准备；审批中心批准后只创建本地 Git object/ref。";
         }
         finally
         {
@@ -351,11 +412,58 @@ public sealed class ProviderReviewViewModel : ObservableObject
         try
         {
             await RefreshCommitCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
-            StatusMessage = "本地 Commit Candidate 已刷新；commit_ready 不会自动 push、PR、merge、tag 或 release。";
+            await RefreshPublicationCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
+            StatusMessage = "Commit Candidate 已刷新；只有 commit_ready 才能准备 Publication 审批。";
         }
         catch (Exception exception) when (IsBoundedOperationalError(exception))
         {
             StatusMessage = FormatError("Commit Candidate 刷新失败；已有安全投影已保留。", exception);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    public async Task PreparePublicationAsync(CancellationToken cancellationToken)
+    {
+        var gateway = _gateway ?? throw new InvalidOperationException("Smoke 模式不能准备远端发布。");
+        var commit = SelectedCommitCandidate ?? throw new InvalidOperationException("请先选择 Commit Candidate。");
+        if (!CanPreparePublication)
+        {
+            throw new InvalidOperationException("只有 commit_ready 且尚无 Publication Candidate 时才能准备发布审批。");
+        }
+        IsBusy = true;
+        try
+        {
+            SelectedPublicationCandidate = await gateway.PreparePublicationAsync(
+                commit.CommitCandidateId,
+                $"windows-publication-prepare-{commit.CommitCandidateId}",
+                cancellationToken).ConfigureAwait(true);
+            await RefreshPublicationCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
+            StatusMessage = "Publication Candidate 已准备；只有审批中心批准 exact repo/base/commit/ref 后才允许 Push + Draft PR。";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    public async Task RefreshPublicationAsync(CancellationToken cancellationToken)
+    {
+        if (_gateway is null || IsBusy)
+        {
+            return;
+        }
+        IsBusy = true;
+        try
+        {
+            await RefreshPublicationCandidatesCoreAsync(cancellationToken).ConfigureAwait(true);
+            StatusMessage = "Publication Candidate 已刷新；pr_ready != CI-green != merge-ready。";
+        }
+        catch (Exception exception) when (IsBoundedOperationalError(exception))
+        {
+            StatusMessage = FormatError("Publication Candidate 刷新失败；已有安全投影已保留。", exception);
         }
         finally
         {
@@ -389,21 +497,39 @@ public sealed class ProviderReviewViewModel : ObservableObject
             ?? (CommitCandidates.Count > 0 ? CommitCandidates[0] : null);
     }
 
+    private async Task RefreshPublicationCandidatesCoreAsync(CancellationToken cancellationToken)
+    {
+        var gateway = _gateway!;
+        var selectedId = SelectedPublicationCandidate?.PublicationCandidateId;
+        PublicationCandidates = (await gateway.GetPublicationCandidatesAsync(cancellationToken).ConfigureAwait(true))
+            .OrderByDescending(item => item.UpdatedAt)
+            .Take(100)
+            .ToArray();
+        SelectedPublicationCandidate = PublicationCandidates.FirstOrDefault(
+                item => item.PublicationCandidateId == selectedId)
+            ?? PublicationCandidates.FirstOrDefault(
+                item => item.CommitCandidateId == SelectedCommitCandidate?.CommitCandidateId)
+            ?? (PublicationCandidates.Count > 0 ? PublicationCandidates[0] : null);
+    }
+
     private void RaiseActions()
     {
         RaisePropertyChanged(nameof(CanAccept));
         RaisePropertyChanged(nameof(CanReject));
         RaisePropertyChanged(nameof(CanPrepareCommit));
+        RaisePropertyChanged(nameof(CanPreparePublication));
         RefreshCommand.NotifyCanExecuteChanged();
         AcceptCommand.NotifyCanExecuteChanged();
         RejectCommand.NotifyCanExecuteChanged();
         RefreshCandidateCommand.NotifyCanExecuteChanged();
         PrepareCommitCommand.NotifyCanExecuteChanged();
         RefreshCommitCommand.NotifyCanExecuteChanged();
+        PreparePublicationCommand.NotifyCanExecuteChanged();
+        RefreshPublicationCommand.NotifyCanExecuteChanged();
     }
 
     private void HandleCommandError(Exception exception) =>
-        StatusMessage = FormatError("Review/Commit 操作失败；已有安全投影已保留。", exception);
+        StatusMessage = FormatError("Review/Commit/Publication 操作失败；已有安全投影已保留。", exception);
 
     private static bool IsBoundedOperationalError(Exception exception) =>
         exception is ApiException or InvalidOperationException or IOException;
@@ -486,4 +612,32 @@ public sealed class ProviderReviewViewModel : ObservableObject
         DateTimeOffset.UtcNow.AddMinutes(-1),
         DateTimeOffset.UtcNow,
         DateTimeOffset.UtcNow);
+
+    private static ProviderPublicationCandidateRecord SmokePublicationCandidate(
+        string sessionId,
+        string commitCandidateId) => new(
+        "66666666-6666-6666-6666-666666666666",
+        commitCandidateId,
+        sessionId,
+        "77777777-7777-7777-7777-777777777777",
+        "waiting_approval",
+        "https://github.com/jerryjwres-hue/picotoopet-v2.0",
+        "jerryjwres-hue/picotoopet-v2.0",
+        "feature/verified-baseline",
+        new string('f', 40),
+        new string('d', 40),
+        new string('c', 64),
+        "refs/heads/picotoopet/commit-candidates/66666666-6666-6666-6666-666666666666",
+        "picotoopet/commit-candidates/66666666-6666-6666-6666-666666666666",
+        "88888888-8888-8888-8888-888888888888",
+        new string('a', 64),
+        new string('b', 64),
+        null,
+        null,
+        null,
+        [],
+        null,
+        DateTimeOffset.UtcNow.AddMinutes(-1),
+        DateTimeOffset.UtcNow,
+        null);
 }
