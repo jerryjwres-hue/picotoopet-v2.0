@@ -36,7 +36,6 @@
     </Border>
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
-      <Button Content="刷新" Click="Refresh_Click" IsEnabled="{Binding IsBusy, Converter={x:Static BooleanBoxes.FalseBox}}" Visibility="Collapsed" />
       <Button Content="刷新" Click="Refresh_Click" />
       <Button Content="提交 Inbox" Click="SubmitInbox_Click" />
       <Button Content="投递 Result 到 Outbox" Click="DeliverResult_Click" IsEnabled="{Binding CanDeliverResult, Mode=OneWay}" />
