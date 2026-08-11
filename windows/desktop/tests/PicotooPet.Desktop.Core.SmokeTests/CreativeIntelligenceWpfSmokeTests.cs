@@ -60,7 +60,7 @@ internal static class CreativeIntelligenceWpfSmokeTests
             viewModel.CanPrepare,
             "一个合法同项目 PASS source 应允许准备创意方案");
         SmokeAssert.True(
-            viewModel.BoundaryText.Contains(
+            CreativeIntelligencePanelViewModel.BoundaryText.Contains(
                 "creative_ready != rendered != publish-ready",
                 StringComparison.Ordinal),
             "必须明确 creative_ready 边界");
