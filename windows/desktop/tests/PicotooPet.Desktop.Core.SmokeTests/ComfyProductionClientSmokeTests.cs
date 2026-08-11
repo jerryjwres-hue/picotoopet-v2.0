@@ -8,6 +8,23 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>冻结 ComfyUI 只允许 127.0.0.1:8188，并覆盖 object_info/prompt/history 本地协议。</summary>
 internal static class ComfyProductionClientSmokeTests
 {
+    // ── 固定协议路径复用同一不可变测试基线，避免重复分配常量数组 ────────────────
+    private static readonly string[] ExpectedPaths =
+    [
+        "/object_info",
+        "/prompt",
+        "/history/prompt-1",
+    ];
+
+    // ── 所有非精确 IPv4 loopback endpoint 都必须被正式 client 拒绝 ───────────
+    private static readonly string[] RejectedEndpoints =
+    [
+        "http://localhost:8188/",
+        "http://127.0.0.1:8189/",
+        "https://127.0.0.1:8188/",
+        "http://192.168.1.9:8188/",
+    ];
+
     /// <summary>用内存 Handler 模拟本地 ComfyUI；测试不会访问网络或 GPU。</summary>
     public static async Task RunAsync()
     {
@@ -35,19 +52,13 @@ internal static class ComfyProductionClientSmokeTests
 
         var history = await client.GetHistoryAsync(promptId).ConfigureAwait(false);
         SmokeAssert.True(history.ContainsKey("prompt-1"), "Comfy history 未绑定提交 prompt_id。");
-        SmokeAssert.True(handler.Paths.SequenceEqual(new[] { "/object_info", "/prompt", "/history/prompt-1" }),
+        SmokeAssert.True(handler.Paths.SequenceEqual(ExpectedPaths),
             "Comfy 客户端访问了未批准的本地 API 路径。");
     }
 
     private static void RejectsNonFixedEndpoints()
     {
-        foreach (var uri in new[]
-        {
-            "http://localhost:8188/",
-            "http://127.0.0.1:8189/",
-            "https://127.0.0.1:8188/",
-            "http://192.168.1.9:8188/",
-        })
+        foreach (var uri in RejectedEndpoints)
         {
             using var http = new HttpClient(new FakeComfyHandler()) { BaseAddress = new Uri(uri) };
             try
