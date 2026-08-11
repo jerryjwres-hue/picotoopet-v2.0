@@ -13,7 +13,7 @@ def test_migration_four_creates_return_fact_table_idempotently(tmp_path: Path) -
     return_columns = {row["name"] for row in database.fetchall("PRAGMA table_info(returns)")}
     assert "returns" in tables
     assert REQUIRED_RETURN_COLUMNS <= return_columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 13
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 14
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 4") == 1
     database.close()
 
