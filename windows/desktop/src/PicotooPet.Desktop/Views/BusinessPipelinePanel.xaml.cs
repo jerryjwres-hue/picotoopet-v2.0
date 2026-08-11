@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Windows;
+using Microsoft.Win32;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views;
 
-/// <summary>Business Pipeline 面板只转发固定编排动作；不接受执行器、模型或路径参数。</summary>
+/// <summary>Business Pipeline 面板只转发 first-party 数据入口和固定编排动作。</summary>
 public partial class BusinessPipelinePanel : System.Windows.Controls.UserControl
 {
     private bool _loadedOnce;
@@ -36,6 +38,45 @@ public partial class BusinessPipelinePanel : System.Windows.Controls.UserControl
         }
     }
 
+    private void ChooseFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not BusinessPipelinePanelViewModel viewModel)
+        {
+            return;
+        }
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择 Amazon / 灵感业务数据文件",
+            Filter = "支持的数据文件 (*.csv;*.json;*.jsonl;*.txt)|*.csv;*.json;*.jsonl;*.txt|所有文件 (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) == true)
+        {
+            viewModel.SourcePath = dialog.FileName;
+        }
+    }
+
+    private void ChooseFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not BusinessPipelinePanelViewModel viewModel)
+        {
+            return;
+        }
+        var dialog = new OpenFolderDialog
+        {
+            Title = "选择只包含支持数据文件的业务数据目录",
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) == true)
+        {
+            viewModel.SourcePath = dialog.FolderName;
+        }
+    }
+
+    private async void SubmitSource_Click(object sender, RoutedEventArgs e) =>
+        await RunAsync(viewModel => viewModel.SubmitSourceAsync(CancellationToken.None));
+
     private async void Create_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.CreateSelectedAsync(CancellationToken.None));
 
@@ -47,6 +88,29 @@ public partial class BusinessPipelinePanel : System.Windows.Controls.UserControl
 
     private async void DownloadReturn_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.DownloadSelectedReturnPackageAsync(CancellationToken.None));
+
+    private void OpenOutbox_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not BusinessPipelinePanelViewModel viewModel)
+        {
+            return;
+        }
+        try
+        {
+            var fixedOutbox = viewModel.EnsureManagedOutboxPath();
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = fixedOutbox,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception)
+        {
+            ShowSafeError(
+                "固定 Outbox 打开失败",
+                "无法打开 PicotooPet 固定 Outbox；没有执行用户提供的命令或路径。详细信息由应用脱敏日志记录。");
+        }
+    }
 
     private async void Cancel_Click(object sender, RoutedEventArgs e)
     {
