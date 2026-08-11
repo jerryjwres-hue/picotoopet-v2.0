@@ -76,7 +76,7 @@ def test_published_self_test_reports_exact_product_version_surfaces() -> None:
 def test_published_self_test_tracks_business_automation_navigation() -> None:
     self_test = read(DESKTOP, "Services/AppSelfTest.cs")
 
-    # 2.3.18.1 added Business Automation as the eleventh top-level route; the
-    # cumulative 2.3.19.1 published EXE must validate the current shell shape.
+    # Business Automation is the eleventh top-level route; the current published
+    # EXE must validate the cumulative shell shape before a package is accepted.
     assert "shell.NavigationItems.Count != 11" in self_test
     assert "NavigationRoute.BusinessAutomation" in self_test
