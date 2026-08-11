@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>业务自动化事实页；串联 Business → Creative → Production，但不暴露自由模型/工作流/命令输入。</summary>
+/// <summary>业务自动化事实页；串联 Business → Pipeline → Creative → Production，但不暴露自由执行参数。</summary>
 public sealed class BusinessAutomationPageViewModel : PageViewModel
 {
     private readonly ControlCenterSession? _session;
@@ -18,6 +18,7 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _bridge = new BusinessBridgeService(session);
+        Pipeline = new BusinessPipelinePanelViewModel(session);
         Creative = new CreativeIntelligencePanelViewModel(session);
         Production = new ProductionPanelViewModel(session);
     }
@@ -29,12 +30,14 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         Packages = packages;
         SelectedPackage = packages.Count > 0 ? packages[0] : null;
         LocalIntelligenceStatus = localIntelligenceStatus;
+        Pipeline = BusinessPipelinePanelViewModel.CreateForSmokeTest(Array.Empty<BusinessPipelineRunRecord>());
         Creative = CreativeIntelligencePanelViewModel.CreateForSmokeTest(
             Array.Empty<CreativeEligibleSourceRecord>(),
             "creative.intelligence.v1 · smoke");
         Production = ProductionPanelViewModel.CreateForSmokeTest();
     }
 
+    public BusinessPipelinePanelViewModel Pipeline { get; }
     public CreativeIntelligencePanelViewModel Creative { get; }
     public ProductionPanelViewModel Production { get; }
 
@@ -96,7 +99,7 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         string localIntelligenceStatus = "local.intelligence.v1 · healthy") =>
         new(packages, localIntelligenceStatus);
 
-    /// <summary>刷新固定 Inbox/Outbox、Creative 与 Production；没有自由路径或 renderer 参数。</summary>
+    /// <summary>刷新固定 Inbox/Outbox 与完整 Business → Creative → Production 控制面。</summary>
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
         var session = RequireSession();
@@ -107,9 +110,10 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
             var bridgeResult = await bridge.ProcessInboxAsync(cancellationToken).ConfigureAwait(false);
             var delivered = await bridge.DeliverCompletedResultsAsync(cancellationToken).ConfigureAwait(false);
             await RefreshCoreAsync(session, cancellationToken).ConfigureAwait(false);
+            var pipelineTask = Pipeline.RefreshAsync(cancellationToken);
             var creativeTask = Creative.RefreshAsync(cancellationToken);
             var productionTask = Production.RefreshAsync(cancellationToken);
-            await Task.WhenAll(creativeTask, productionTask).ConfigureAwait(false);
+            await Task.WhenAll(pipelineTask, creativeTask, productionTask).ConfigureAwait(false);
             StatusMessage =
                 $"已加载 {Packages.Count} 个业务包；Inbox 提交 {bridgeResult.Submitted}，隔离 {bridgeResult.Quarantined}，暂缓 {bridgeResult.Deferred}；Result 投递 {delivered}。";
         }
@@ -128,6 +132,7 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         {
             var result = await bridge.ProcessInboxAsync(cancellationToken).ConfigureAwait(false);
             await RefreshCoreAsync(session, cancellationToken).ConfigureAwait(false);
+            await Pipeline.RefreshAsync(cancellationToken).ConfigureAwait(false);
             StatusMessage = $"Inbox：提交 {result.Submitted}，隔离 {result.Quarantined}，暂缓 {result.Deferred}。";
         }
         finally
@@ -145,6 +150,7 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         {
             var delivered = await bridge.DeliverCompletedResultsAsync(cancellationToken).ConfigureAwait(false);
             await RefreshCoreAsync(session, cancellationToken).ConfigureAwait(false);
+            await Pipeline.RefreshAsync(cancellationToken).ConfigureAwait(false);
             StatusMessage = $"已向固定 Outbox 幂等投递 {delivered} 个新 Result Package。";
         }
         finally
@@ -164,6 +170,7 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
                 .ConfigureAwait(false);
             await RefreshCoreAsync(session, cancellationToken).ConfigureAwait(false);
             SelectedPackage = Packages.FirstOrDefault(item => item.WorkPackageId == selected.WorkPackageId);
+            await Pipeline.RefreshAsync(cancellationToken).ConfigureAwait(false);
             StatusMessage = "业务包已进入 Cancelled；不会删除原业务程序文件。";
         }
         finally
