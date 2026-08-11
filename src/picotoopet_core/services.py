@@ -18,6 +18,7 @@ from picotoopet_core.business.store import BusinessArtifactStore
 from picotoopet_core.business_pipeline.repository import BusinessPipelineRepository
 from picotoopet_core.business_pipeline.scheduler import BusinessPipelineScheduler
 from picotoopet_core.business_pipeline.service import BusinessPipelineService
+from picotoopet_core.business_pipeline.store import BusinessReturnPackageStore
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.creative.repository import CreativeRepository
 from picotoopet_core.creative.service import CreativeIntelligenceService
@@ -71,6 +72,7 @@ class Services:
     production_store: ProductionArtifactStore
     production: ProductionService
     business_pipeline_repository: BusinessPipelineRepository
+    business_return_store: BusinessReturnPackageStore
     business_pipeline: BusinessPipelineService
     business_pipeline_scheduler: BusinessPipelineScheduler
     approvals: ApprovalService
@@ -131,11 +133,13 @@ def build_services(settings: AppSettings) -> Services:
         store=production_store,
     )
     business_pipeline_repository = BusinessPipelineRepository(database)
+    business_return_store = BusinessReturnPackageStore(settings.paths)
     business_pipeline = BusinessPipelineService(
         repository=business_pipeline_repository,
         business=business,
         creative=creative,
         production=production,
+        return_store=business_return_store,
     )
     business_pipeline_scheduler = BusinessPipelineScheduler(business_pipeline)
     approvals = HandoffApprovalService(database, queue)
@@ -175,6 +179,7 @@ def build_services(settings: AppSettings) -> Services:
         production_store=production_store,
         production=production,
         business_pipeline_repository=business_pipeline_repository,
+        business_return_store=business_return_store,
         business_pipeline=business_pipeline,
         business_pipeline_scheduler=business_pipeline_scheduler,
         approvals=approvals,
