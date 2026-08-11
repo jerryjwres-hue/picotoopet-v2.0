@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.20.1",
+      "value": "2.3.21.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -70,7 +70,7 @@
   },
   "architecture": {
     "fact_source": "Mac Core + SQLite Queue/Outbox",
-    "windows_role": "native WPF observation, controlled-command UI, bounded business Inbox/Outbox bridge, closed local ComfyUI production executor",
+    "windows_role": "native WPF observation, controlled-command UI, first-party business adapters, bounded business Inbox/Outbox bridge, closed local ComfyUI production executor",
     "worker_role": "explicitly registered task execution and loopback-only local intelligence",
     "historical_analysis_tasks": "unsupported-unleased-unmodified",
     "platform_automation_v1": {
@@ -152,6 +152,52 @@
       "automatic_custom_node_install": false,
       "automatic_cloud_renderer": false,
       "automatic_paid_ai": false,
+      "automatic_publish": false
+    },
+    "end_to_end_business_automation_v1": {
+      "database_schema": 14,
+      "pipeline_authority": "Mac Core SQLite",
+      "work_package_schema": "1.0",
+      "result_package_schema": "1.0",
+      "creative_package_schema": "1.0",
+      "production_package_schema": "1.0",
+      "return_package_schema": "1.0",
+      "adapter_profiles": [
+        "amazon.reviews_export.v1",
+        "inspiration.ideas_export.v1"
+      ],
+      "analysis_profiles": [
+        "reviews.voice_of_customer.v1",
+        "ideas.pattern_analysis.v1"
+      ],
+      "creative_profile": "creative.content_plan.v1",
+      "production_profile": "production.comfyui.v1",
+      "pipeline_statuses": [
+        "Ready",
+        "BusinessAnalysis",
+        "CreativeIntelligence",
+        "AwaitingGpu",
+        "Rendering",
+        "QualityCheck",
+        "Completed",
+        "NeedsDeepAI",
+        "NeedsHuman",
+        "Rejected",
+        "Failed",
+        "Cancelled"
+      ],
+      "restart_safe": true,
+      "child_identity_write_once": true,
+      "return_package_immutable": true,
+      "windows_source_selection": "explicit-file-or-directory",
+      "windows_ingress": "fixed-localappdata-inbox",
+      "windows_egress": "fixed-localappdata-outbox",
+      "windows_run_cache": "non-authoritative-managed-runs-metadata",
+      "windows_panel": "existing-business-automation-page",
+      "new_top_level_shell_route": false,
+      "producer_supplied_model_endpoint_prompt_workflow_path_command_provider_tool": false,
+      "automatic_paid_ai": false,
+      "automatic_cloud_renderer": false,
       "automatic_publish": false
     },
     "phase10d_c_commit_boundary": {
