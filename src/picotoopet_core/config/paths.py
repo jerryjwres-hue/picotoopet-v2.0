@@ -90,6 +90,20 @@ class RuntimePaths:
     def business_handoffs_dir(self) -> Path:
         return self.business_root / "handoffs"
 
+    @property
+    def creative_root(self) -> Path:
+        """Creative Intelligence 只使用 Mac Core 自主管理的运行目录。"""
+
+        return self.runtime_dir / "creative"
+
+    @property
+    def creative_packages_dir(self) -> Path:
+        return self.creative_root / "packages"
+
+    @property
+    def creative_handoffs_dir(self) -> Path:
+        return self.creative_root / "handoffs"
+
     def managed_directories(self) -> tuple[Path, ...]:
         """返回安装器和运行时允许创建的全部目录。"""
 
@@ -111,6 +125,9 @@ class RuntimePaths:
             self.business_packages_dir,
             self.business_results_dir,
             self.business_handoffs_dir,
+            self.creative_root,
+            self.creative_packages_dir,
+            self.creative_handoffs_dir,
         )
 
     def ensure(self) -> None:

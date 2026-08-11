@@ -48,7 +48,7 @@ def _manifest(**overrides: object) -> WorkPackageManifest:
     return WorkPackageManifest.model_validate(payload)
 
 
-def test_migration_11_creates_business_tables(tmp_path: Path) -> None:
+def test_business_tables_are_retained_through_schema_12(tmp_path: Path) -> None:
     database = _database(tmp_path)
     tables = {
         row[0]
@@ -66,7 +66,7 @@ def test_migration_11_creates_business_tables(tmp_path: Path) -> None:
         "business_result_packages",
         "deep_ai_handoffs",
     } <= tables
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 11
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 12
     database.close()
 
 

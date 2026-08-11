@@ -88,12 +88,13 @@ def test_wrong_offset_fails_closed(tmp_path: Path) -> None:
             source_digest=digest,
             total_size_bytes=len(payload),
         )
+        chunk = payload[:-1]
         with pytest.raises(BusinessUploadError, match="CHUNK_OFFSET_INVALID"):
             coordinator.write_chunk(
                 session.upload_session_id,
                 offset=1,
-                expected_sha256=digest,
-                payload=payload[:-1],
+                expected_sha256=hashlib.sha256(chunk).hexdigest(),
+                payload=chunk,
             )
     finally:
         database.close()

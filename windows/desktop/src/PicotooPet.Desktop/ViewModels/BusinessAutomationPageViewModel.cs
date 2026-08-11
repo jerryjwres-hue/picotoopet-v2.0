@@ -18,6 +18,7 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _bridge = new BusinessBridgeService(session);
+        Creative = new CreativeIntelligencePanelViewModel(session);
     }
 
     private BusinessAutomationPageViewModel(
@@ -27,7 +28,12 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         Packages = packages;
         SelectedPackage = packages.Count > 0 ? packages[0] : null;
         LocalIntelligenceStatus = localIntelligenceStatus;
+        Creative = CreativeIntelligencePanelViewModel.CreateForSmokeTest(
+            Array.Empty<CreativeEligibleSourceRecord>(),
+            "creative.intelligence.v1 · smoke");
     }
+
+    public CreativeIntelligencePanelViewModel Creative { get; }
 
     public IReadOnlyList<BusinessWorkPackageRecord> Packages
     {

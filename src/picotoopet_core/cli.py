@@ -20,6 +20,7 @@ from picotoopet_core.business.local_intelligence import (
 )
 from picotoopet_core.config.loader import load_settings
 from picotoopet_core.config.models import AppSettings
+from picotoopet_core.creative.execution import CreativeIntelligenceCoordinator
 from picotoopet_core.health.supervisor import HealthSupervisor
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import (
@@ -134,6 +135,7 @@ def _run_worker(
     publication_coordinator: ProviderPublicationExecutionCoordinator | None = None
     business_adapter: OpenAiCompatibleLocalIntelligenceAdapter | None = None
     business_coordinator: BusinessLocalIntelligenceCoordinator | None = None
+    creative_coordinator: CreativeIntelligenceCoordinator | None = None
     business_healthy = False
     last_business_probe = 0.0
 
@@ -196,10 +198,20 @@ def _run_worker(
             adapter=business_adapter,
             configured_model_id=local_config.model_id,
         )
+        creative_coordinator = CreativeIntelligenceCoordinator(
+            database=services.database,
+            queue=services.queue,
+            repository=services.creative_repository,
+            source_normalizer=services.creative_source,
+            store=services.creative_store,
+            adapter=business_adapter,
+            configured_model_id=local_config.model_id,
+        )
     except ValueError:
-        # Invalid trusted configuration disables only this capability. Other Worker duties continue.
+        # Invalid trusted configuration disables only local intelligence capabilities.
         business_adapter = None
         business_coordinator = None
+        creative_coordinator = None
 
     def enqueue_controlled_work() -> None:
         if provider_coordinator is not None:
@@ -212,8 +224,9 @@ def _run_worker(
             publication_coordinator.enqueue_pending()
 
     def refresh_business_capability(*, force: bool = False) -> bool:
-        """Probe loopback model periodically; never download/start/install a model as a side effect."""
+        """Probe one loopback model and atomically expose both closed intelligence capabilities."""
 
+        # creative.intelligence.v1 → creative.content_plan.v1
         nonlocal business_healthy, last_business_probe
         now = time.monotonic()
         if force or now - last_business_probe >= 15.0:
@@ -225,6 +238,12 @@ def _run_worker(
                 )
             else:
                 runtime.handlers.pop(BusinessLocalIntelligenceCoordinator.TASK_TYPE, None)
+            if business_healthy and creative_coordinator is not None:
+                runtime.handlers[CreativeIntelligenceCoordinator.TASK_TYPE] = (
+                    creative_coordinator.handler
+                )
+            else:
+                runtime.handlers.pop(CreativeIntelligenceCoordinator.TASK_TYPE, None)
         services.capability_router.register(
             CapabilityRegistration(
                 worker_id=resolved_worker_id,
@@ -232,6 +251,19 @@ def _run_worker(
                 task_types=(
                     [BusinessLocalIntelligenceCoordinator.TASK_TYPE] if business_healthy else []
                 ),
+                healthy=business_healthy,
+                metadata={
+                    "runtime": "mac-worker",
+                    "transport": "loopback-openai-compatible",
+                    "model": settings.local_intelligence_model,
+                },
+            )
+        )
+        services.capability_router.register(
+            CapabilityRegistration(
+                worker_id=resolved_worker_id,
+                capability=CreativeIntelligenceCoordinator.CAPABILITY,
+                task_types=[CreativeIntelligenceCoordinator.TASK_TYPE] if business_healthy else [],
                 healthy=business_healthy,
                 metadata={
                     "runtime": "mac-worker",
@@ -301,6 +333,17 @@ def _run_worker(
                     metadata={"runtime": "mac-worker"},
                 )
             )
+            services.capability_router.register(
+                CapabilityRegistration(
+                    worker_id=resolved_worker_id,
+                    capability=CreativeIntelligenceCoordinator.CAPABILITY,
+                    task_types=[],
+                    healthy=False,
+                    metadata={"runtime": "mac-worker"},
+                )
+            )
+            runtime.handlers.pop(BusinessLocalIntelligenceCoordinator.TASK_TYPE, None)
+            runtime.handlers.pop(CreativeIntelligenceCoordinator.TASK_TYPE, None)
             publish_execution_capability(healthy=False)
         finally:
             if business_adapter is not None:

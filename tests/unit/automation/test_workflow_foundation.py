@@ -1,4 +1,4 @@
-"""Durable workflow foundation retained through the 2.3.18.1 business schema."""
+"""Durable workflow foundation retained through the 2.3.19.1 creative schema."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _open_database(tmp_path: Path) -> Database:
     return database
 
 
-def test_workflow_replay_survives_restart_after_schema_11(tmp_path: Path) -> None:
+def test_workflow_replay_survives_restart_after_schema_12(tmp_path: Path) -> None:
     database = _open_database(tmp_path)
     service = WorkflowService(database)
     request = WorkflowCreate(
@@ -47,7 +47,7 @@ def test_workflow_replay_survives_restart_after_schema_11(tmp_path: Path) -> Non
     created = service.create_workflow(request)
     assert created.status.value == "Ready"
     assert [step.step_key for step in created.steps] == ["collect", "review"]
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 11
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 12
     workflow_id = created.workflow_id
     database.close()
 

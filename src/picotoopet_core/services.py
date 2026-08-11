@@ -16,6 +16,10 @@ from picotoopet_core.business.repository import BusinessRepository
 from picotoopet_core.business.service import BusinessAutomationService
 from picotoopet_core.business.store import BusinessArtifactStore
 from picotoopet_core.config.models import AppSettings
+from picotoopet_core.creative.repository import CreativeRepository
+from picotoopet_core.creative.service import CreativeIntelligenceService
+from picotoopet_core.creative.source import CreativeSourceNormalizer
+from picotoopet_core.creative.store import CreativeArtifactStore
 from picotoopet_core.db.database import Database
 from picotoopet_core.events.broker import EventBroker
 from picotoopet_core.events.dispatcher import OutboxDispatcher
@@ -53,6 +57,10 @@ class Services:
     business_repository: BusinessRepository
     business_store: BusinessArtifactStore
     business: BusinessAutomationService
+    creative_repository: CreativeRepository
+    creative_source: CreativeSourceNormalizer
+    creative_store: CreativeArtifactStore
+    creative: CreativeIntelligenceService
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -87,32 +95,28 @@ def build_services(settings: AppSettings) -> Services:
     dispatcher = OutboxDispatcher(outbox, broker)
     queue = DiagnosticQueueRepository(database, outbox=outbox)
     automation_repository = AutomationRepository(database)
-    workflows = WorkflowService(
-        database,
-        queue=queue,
-        repository=automation_repository,
-    )
+    workflows = WorkflowService(database, queue=queue, repository=automation_repository)
     workflow_scheduler = WorkflowScheduler(workflows)
     capability_router = workflows.capabilities
     quality_gate = QualityGate(automation_repository)
     business_repository = BusinessRepository(database)
     business_store = BusinessArtifactStore(settings.paths)
     business = BusinessAutomationService(business_repository, business_store, queue)
+    creative_repository = CreativeRepository(database)
+    creative_source = CreativeSourceNormalizer(database)
+    creative_store = CreativeArtifactStore(settings.paths)
+    creative = CreativeIntelligenceService(
+        repository=creative_repository,
+        source_normalizer=creative_source,
+        store=creative_store,
+        queue=queue,
+    )
     approvals = HandoffApprovalService(database, queue)
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
-    broker_sessions = BrokerSessionService(
-        database,
-        handoffs,
-        returns,
-        api_token=settings.api_token,
-    )
+    broker_sessions = BrokerSessionService(database, handoffs, returns, api_token=settings.api_token)
     readiness = CodexReadinessProbe(settings.codex_executable)
-    provider_sessions = ProviderSessionService(
-        database,
-        handoffs,
-        readiness=readiness.status,
-    )
+    provider_sessions = ProviderSessionService(database, handoffs, readiness=readiness.status)
     provider_artifacts = ProviderReturnArtifactStore(settings.paths.provider_returns_dir)
     provider_reviews = ProviderReviewService(database, provider_artifacts)
     provider_commits = ProviderCommitService(database, approvals)
@@ -136,6 +140,10 @@ def build_services(settings: AppSettings) -> Services:
         business_repository=business_repository,
         business_store=business_store,
         business=business,
+        creative_repository=creative_repository,
+        creative_source=creative_source,
+        creative_store=creative_store,
+        creative=creative,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,

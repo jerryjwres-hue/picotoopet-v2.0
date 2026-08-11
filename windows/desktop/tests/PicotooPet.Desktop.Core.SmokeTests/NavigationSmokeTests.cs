@@ -12,7 +12,7 @@ internal static class NavigationSmokeTests
     {
         var shell = ShellViewModel.CreateForSmokeTest(ControlCenterCapabilities.Legacy22);
 
-        SmokeAssert.True(shell.NavigationItems.Count == 10, "一级导航数量错误");
+        SmokeAssert.True(shell.NavigationItems.Count == 11, "一级导航数量错误");
         SmokeAssert.True(
             shell.NavigationItems
                 .Single(item => item.Route == NavigationRoute.CloudDevelopment)

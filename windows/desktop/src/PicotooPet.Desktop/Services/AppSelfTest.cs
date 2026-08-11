@@ -88,7 +88,7 @@ internal static class AppSelfTest
             }
             checks["product_version_surfaces"] = "pass";
 
-            if (shell.NavigationItems.Count != 10)
+            if (shell.NavigationItems.Count != 11)
             {
                 throw new InvalidOperationException("Control Center 一级导航数量自检失败。");
             }
@@ -102,6 +102,12 @@ internal static class AppSelfTest
             {
                 throw new InvalidOperationException("云端开发 Phase 10A 页面可用性自检失败。");
             }
+            if (!shell.NavigationItems.Single(
+                    item => item.Route == NavigationRoute.BusinessAutomation).IsAvailable)
+            {
+                throw new InvalidOperationException("业务自动化一级导航可用性自检失败。");
+            }
+            checks["business_automation_navigation"] = "pass";
 
             shell.Navigate(NavigationRoute.CloudDevelopment);
             if (shell.CurrentPage is not CloudDevelopmentPageViewModel cloudDevelopment
