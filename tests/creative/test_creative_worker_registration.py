@@ -11,7 +11,10 @@ def test_mac_worker_registers_creative_capability_only_with_local_model_health()
     assert "creative.content_plan.v1" in cli
     assert "business_adapter" in cli
     assert "creative_coordinator.handler" in cli
-    assert "runtime.handlers.pop(CreativeIntelligenceCoordinator.TASK_TYPE, None)" in cli
+    assert (
+        "runtime.handlers.pop(CreativeIntelligenceCoordinator.TASK_TYPE, None)"
+        in cli
+    )
     assert "capability=CreativeIntelligenceCoordinator.CAPABILITY" in cli
 
 
