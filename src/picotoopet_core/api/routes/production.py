@@ -19,6 +19,7 @@ from picotoopet_core.production.models import (
     ProductionPlan,
     ProductionTaskAttemptRequest,
     ProductionTaskCommitRequest,
+    ProductionTaskFailureRequest,
     ProductionTaskRecord,
 )
 from picotoopet_core.security.auth import require_auth
@@ -89,6 +90,26 @@ def mark_production_attempt(
 ) -> ProductionTaskRecord:
     return execute_production(
         lambda: request.app.state.services.production.mark_attempt(
+            production_job_id,
+            production_task_id,
+            payload,
+        )
+    )
+
+
+@router.post(
+    "/production/jobs/{production_job_id}/tasks/{production_task_id}/failure",
+    response_model=ProductionTaskRecord,
+)
+def fail_production_task(
+    production_job_id: str,
+    production_task_id: str,
+    payload: ProductionTaskFailureRequest,
+    request: Request,
+) -> ProductionTaskRecord:
+    # ── Renderer failure is an explicit bounded write, never a cancel alias ─
+    return execute_production(
+        lambda: request.app.state.services.production.fail_task(
             production_job_id,
             production_task_id,
             payload,
