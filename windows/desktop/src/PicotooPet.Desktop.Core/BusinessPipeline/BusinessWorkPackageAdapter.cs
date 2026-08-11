@@ -16,14 +16,13 @@ public abstract class BusinessWorkPackageAdapter
     {
         WriteIndented = true,
     };
-    private static readonly IReadOnlyDictionary<string, string> MediaTypes =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            [".csv"] = "text/csv",
-            [".json"] = "application/json",
-            [".jsonl"] = "application/x-ndjson",
-            [".txt"] = "text/plain",
-        };
+    private static readonly Dictionary<string, string> MediaTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".csv"] = "text/csv",
+        [".json"] = "application/json",
+        [".jsonl"] = "application/x-ndjson",
+        [".txt"] = "text/plain",
+    };
 
     protected abstract string AdapterProfile { get; }
     protected abstract string AnalysisProfile { get; }
@@ -116,7 +115,7 @@ public abstract class BusinessWorkPackageAdapter
 
     protected virtual string? RecordKeyField(string extension) => null;
 
-    private List<string> CollectSources(string sourcePath)
+    private static List<string> CollectSources(string sourcePath)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
@@ -161,7 +160,7 @@ public abstract class BusinessWorkPackageAdapter
         return files;
     }
 
-    private void WritePackage(
+    private static void WritePackage(
         string destination,
         BusinessWorkPackageManifest manifest,
         IReadOnlyList<SourceFact> sources)
