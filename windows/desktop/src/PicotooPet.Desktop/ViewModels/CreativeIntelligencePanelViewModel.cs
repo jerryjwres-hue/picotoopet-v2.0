@@ -101,7 +101,7 @@ public sealed class CreativeIntelligencePanelViewModel : ObservableObject
         }
     }
 
-    public string BoundaryText => CreativeBoundaryText;
+    public static string BoundaryText => CreativeBoundaryText;
 
     public bool CanPrepare
     {
