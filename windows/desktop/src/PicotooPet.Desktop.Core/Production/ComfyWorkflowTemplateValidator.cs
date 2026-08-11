@@ -19,6 +19,9 @@ public static class ComfyWorkflowTemplateValidator
     private const string FpsPlaceholder = "__PICOTOO_FPS__";
     private const string FilenamePrefixPlaceholder = "__PICOTOO_FILENAME_PREFIX__";
 
+    // ── Analyzer-safe immutable node surface; reused for every template node ─
+    private static readonly string[] RequiredNodeMembers = ["class_type", "inputs"];
+
     private static readonly HashSet<string> BaseClasses = new(StringComparer.Ordinal)
     {
         "UNETLoader",
@@ -58,7 +61,7 @@ public static class ComfyWorkflowTemplateValidator
                 throw new InvalidDataException("COMFY_TEMPLATE_NODE_ID_INVALID");
             }
             var members = property.Value.EnumerateObject().Select(item => item.Name).ToHashSet(StringComparer.Ordinal);
-            if (!members.SetEquals(new[] { "class_type", "inputs" }))
+            if (!members.SetEquals(RequiredNodeMembers))
             {
                 throw new InvalidDataException("COMFY_TEMPLATE_NODE_SHAPE_INVALID");
             }
