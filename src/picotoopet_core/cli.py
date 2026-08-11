@@ -239,7 +239,9 @@ def _run_worker(
             else:
                 runtime.handlers.pop(BusinessLocalIntelligenceCoordinator.TASK_TYPE, None)
             if business_healthy and creative_coordinator is not None:
-                runtime.handlers[CreativeIntelligenceCoordinator.TASK_TYPE] = creative_coordinator.handler
+                runtime.handlers[CreativeIntelligenceCoordinator.TASK_TYPE] = (
+                    creative_coordinator.handler
+                )
             else:
                 runtime.handlers.pop(CreativeIntelligenceCoordinator.TASK_TYPE, None)
         services.capability_router.register(
