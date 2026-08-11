@@ -170,6 +170,17 @@ def test_production_package_freezes_full_v1_provenance(tmp_path: Path) -> None:
         store=store,                # type: ignore[arg-type]  # CaptureStore implements the write_package contract used here.
     )
     claim = service.claim(job.production_job_id, "pc-gpu-1")
+
+    # ── Exercise the formal reserve → bind attempt protocol before result commit ──
+    service.mark_attempt(
+        job.production_job_id,
+        task.production_task_id,
+        ProductionTaskAttemptRequest(
+            executor_id="pc-gpu-1",
+            lease_token=claim.lease_token,
+            comfy_prompt_id=None,
+        ),
+    )
     service.mark_attempt(
         job.production_job_id,
         task.production_task_id,
