@@ -19,6 +19,7 @@ from .routes import (
     automation,
     broker_sessions,
     business_automation,
+    business_pipeline,
     creative_intelligence,
     events,
     handoffs,
@@ -104,6 +105,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(projects.router, prefix=prefix, tags=["projects"])
     app.include_router(automation.router, prefix=prefix, tags=["automation"])
     app.include_router(business_automation.router, prefix=prefix, tags=["business-automation"])
+    app.include_router(business_pipeline.router, prefix=prefix, tags=["business-pipeline"])
     app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
     app.include_router(production.router, prefix=prefix, tags=["production"])
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
