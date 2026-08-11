@@ -22,6 +22,6 @@ def test_platform_foundation_source_surfaces_exist() -> None:
     assert not missing, f"2.3.16.x foundation surfaces are missing: {missing}"
 
 
-def test_product_version_retains_foundation_in_23181() -> None:
+def test_product_version_retains_foundation_in_23191() -> None:
     version = (ROOT / "src/picotoopet_core/product-version.txt").read_text(encoding="utf-8").strip()
-    assert version == "2.3.18.1"
+    assert version == "2.3.19.1"
