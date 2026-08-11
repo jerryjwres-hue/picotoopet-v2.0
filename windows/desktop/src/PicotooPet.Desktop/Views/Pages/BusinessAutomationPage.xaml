@@ -22,7 +22,7 @@
                  TextWrapping="Wrap" />
       <TextBlock Margin="0,4,0,0"
                  FontWeight="SemiBold"
-                 Text="链路：Business Result → Creative Package → Windows 本地 ComfyUI Production；创意推理与 GPU 执行权限保持分离。"
+                 Text="端到端链路：Work Package → Business Result → Creative Package → Windows 本地 ComfyUI Production → Return Package；各层权限保持分离。"
                  TextWrapping="Wrap" />
     </StackPanel>
 
@@ -84,7 +84,10 @@
                TextWrapping="Wrap" />
 
     <StackPanel Grid.Row="6" Margin="0,18,0,0">
-      <views:CreativeIntelligencePanel MaxHeight="540"
+      <views:BusinessPipelinePanel MaxHeight="560"
+                                   DataContext="{Binding Pipeline, Mode=OneWay}" />
+      <views:CreativeIntelligencePanel Margin="0,16,0,0"
+                                       MaxHeight="540"
                                        DataContext="{Binding Creative, Mode=OneWay}" />
       <views:ProductionPanel Margin="0,16,0,0"
                              MaxHeight="520"
