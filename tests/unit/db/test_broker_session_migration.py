@@ -38,7 +38,7 @@ def test_migration_five_creates_broker_session_fact_table_idempotently(
     broker_columns = {row["name"] for row in database.fetchall("PRAGMA table_info(broker_sessions)")}
     assert "broker_sessions" in tables
     assert REQUIRED_BROKER_COLUMNS <= broker_columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 12
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 13
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 5") == 1
     database.close()
 
@@ -49,5 +49,5 @@ def test_migration_five_preserves_handoff_and_return_rows(tmp_path: Path) -> Non
     database.apply_migrations()
     assert database.scalar("SELECT COUNT(*) FROM handoffs") == 0
     assert database.scalar("SELECT COUNT(*) FROM returns") == 0
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 12
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 13
     database.close()

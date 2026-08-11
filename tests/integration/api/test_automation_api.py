@@ -113,7 +113,7 @@ def test_workflow_api_materializes_only_registered_queue_contract_and_health_is_
 
         health = client.get("/api/v1/automation/health", headers=headers)
         assert health.status_code == 200
-        assert health.json()["database_schema_version"] == 12
+        assert health.json()["database_schema_version"] == 13
         assert health.json()["workflow_counts"]["Running"] == 1
 
         diagnostics = client.get("/api/v1/automation/diagnostics", headers=headers)
