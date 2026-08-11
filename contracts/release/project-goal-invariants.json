@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.18.1",
+      "value": "2.3.19.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -102,6 +102,27 @@
       "automatic_comfyui": false,
       "manual_deep_ai_handoff_only": true,
       "max_model_attempts_per_stage": 2
+    },
+    "creative_intelligence_v1": {
+      "creative_package_schema": "1.0",
+      "database_schema": 12,
+      "source_quality_outcome": "PASS",
+      "source_package_minimum": 1,
+      "source_package_maximum": 8,
+      "same_project_required": true,
+      "creative_profile": "creative.content_plan.v1",
+      "worker_capability": "creative.intelligence.v1",
+      "worker_task_type": "creative.content_plan.v1",
+      "source_finding_ref": "<result_package_id>:finding:<rank>",
+      "max_model_attempts_per_stage": 2,
+      "success_state": "creative_ready",
+      "creative_ready_is_rendered": false,
+      "creative_ready_is_publish_ready": false,
+      "automatic_paid_ai": false,
+      "automatic_comfyui": false,
+      "comfyui_workflow_execution": false,
+      "manual_deep_ai_handoff_only": true,
+      "producer_supplied_model_endpoint_prompt_path_command_tool": false
     },
     "phase10d_c_commit_boundary": {
       "source_state": "adoption_ready",
