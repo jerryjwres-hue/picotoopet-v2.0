@@ -15,6 +15,9 @@ from picotoopet_core.broker.service import BrokerSessionService
 from picotoopet_core.business.repository import BusinessRepository
 from picotoopet_core.business.service import BusinessAutomationService
 from picotoopet_core.business.store import BusinessArtifactStore
+from picotoopet_core.business_pipeline.repository import BusinessPipelineRepository
+from picotoopet_core.business_pipeline.scheduler import BusinessPipelineScheduler
+from picotoopet_core.business_pipeline.service import BusinessPipelineService
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.creative.repository import CreativeRepository
 from picotoopet_core.creative.service import CreativeIntelligenceService
@@ -67,6 +70,9 @@ class Services:
     production_repository: ProductionRepository
     production_store: ProductionArtifactStore
     production: ProductionService
+    business_pipeline_repository: BusinessPipelineRepository
+    business_pipeline: BusinessPipelineService
+    business_pipeline_scheduler: BusinessPipelineScheduler
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -124,6 +130,14 @@ def build_services(settings: AppSettings) -> Services:
         creative_repository=creative_repository,
         store=production_store,
     )
+    business_pipeline_repository = BusinessPipelineRepository(database)
+    business_pipeline = BusinessPipelineService(
+        repository=business_pipeline_repository,
+        business=business,
+        creative=creative,
+        production=production,
+    )
+    business_pipeline_scheduler = BusinessPipelineScheduler(business_pipeline)
     approvals = HandoffApprovalService(database, queue)
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
@@ -160,6 +174,9 @@ def build_services(settings: AppSettings) -> Services:
         production_repository=production_repository,
         production_store=production_store,
         production=production,
+        business_pipeline_repository=business_pipeline_repository,
+        business_pipeline=business_pipeline,
+        business_pipeline_scheduler=business_pipeline_scheduler,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,
