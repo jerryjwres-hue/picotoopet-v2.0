@@ -16,26 +16,33 @@ class ProductionProfile(StrEnum):
 
 
 class ProductionJobStatus(StrEnum):
-    # ── Durable job lifecycle ────────────────────────────────────────────────
+    # ── Frozen 20.1 durable job lifecycle ───────────────────────────────────
     READY = "Ready"
-    PLANNED = "Planned"
     CLAIMED = "Claimed"
+    PREFLIGHT = "Preflight"
     RENDERING = "Rendering"
+    COLLECTING = "Collecting"
     QUALITY_CHECK = "QualityCheck"
     PRODUCTION_READY = "production_ready"
     NEEDS_HUMAN = "NeedsHuman"
     FAILED = "Failed"
     CANCELLED = "Cancelled"
 
+    # ── Internal source-compat alias; serialized/persisted value remains Ready ──
+    PLANNED = "Ready"
+
 
 class ProductionTaskStatus(StrEnum):
-    # ── Per-shot lifecycle ───────────────────────────────────────────────────
-    READY = "Ready"
+    # ── Frozen 20.1 per-shot lifecycle ──────────────────────────────────────
+    PENDING = "Pending"
     RUNNING = "Running"
     SUCCEEDED = "Succeeded"
     NEEDS_HUMAN = "NeedsHuman"
     FAILED = "Failed"
     CANCELLED = "Cancelled"
+
+    # ── Internal source-compat alias; serialized/persisted value remains Pending ──
+    READY = "Pending"
 
 
 class ProductionExecutionDisposition(StrEnum):
