@@ -17,6 +17,7 @@ from picotoopet_core.creative.repository import CreativeRepository
 
 from .attempts import reserve_or_bind_attempt
 from .compiler import compile_production_plan
+from .failures import fail_task_durably
 from .models import (
     ProductionClaimRecord,
     ProductionEligibleCreativeRecord,
@@ -28,6 +29,7 @@ from .models import (
     ProductionPlan,
     ProductionTaskAttemptRequest,
     ProductionTaskCommitRequest,
+    ProductionTaskFailureRequest,
     ProductionTaskRecord,
     ProductionTaskStatus,
 )
@@ -183,6 +185,20 @@ class ProductionService:
             executor_id=request.executor_id,
             lease_token=request.lease_token,
             comfy_prompt_id=request.comfy_prompt_id,
+        )
+
+    def fail_task(
+        self,
+        production_job_id: str,
+        production_task_id: str,
+        request: ProductionTaskFailureRequest,
+    ) -> ProductionTaskRecord:
+        # ── System render failure is durable and distinct from user cancel ───
+        return fail_task_durably(
+            self.repository,
+            production_job_id=production_job_id,
+            production_task_id=production_task_id,
+            request=request,
         )
 
     def commit_task(
