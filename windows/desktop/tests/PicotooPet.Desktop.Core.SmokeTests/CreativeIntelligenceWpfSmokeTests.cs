@@ -53,8 +53,16 @@ internal static class CreativeIntelligenceWpfSmokeTests
         panel.Arrange(new Rect(0, 0, 1100, 700));
         panel.UpdateLayout();
 
-        SmokeAssert.True(panel.ActualWidth > 0 && panel.ActualHeight > 0, "Creative Intelligence panel did not layout");
-        SmokeAssert.True(viewModel.CanPrepare, "一个合法同项目 PASS source 应允许准备创意方案");
-        SmokeAssert.True(viewModel.CreativeBoundaryText.Contains("creative_ready != rendered != publish-ready", StringComparison.Ordinal), "必须明确 creative_ready 边界");
+        SmokeAssert.True(
+            panel.ActualWidth > 0 && panel.ActualHeight > 0,
+            "Creative Intelligence panel did not layout");
+        SmokeAssert.True(
+            viewModel.CanPrepare,
+            "一个合法同项目 PASS source 应允许准备创意方案");
+        SmokeAssert.True(
+            viewModel.BoundaryText.Contains(
+                "creative_ready != rendered != publish-ready",
+                StringComparison.Ordinal),
+            "必须明确 creative_ready 边界");
     }
 }
