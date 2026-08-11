@@ -191,8 +191,10 @@ public sealed class ProductionExecutionService : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         Exception? lastRetryable = null;
+        string? lastPromptId = null;
         for (var attempt = 1; attempt <= 2; attempt++)
         {
+            string? currentPromptId = null;
             try
             {
                 var template = ComfyWorkflowCatalog.Load(task.WorkflowId!);
@@ -218,19 +220,19 @@ public sealed class ProductionExecutionService : IAsyncDisposable
                     task.ProductionTaskId,
                     new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null),
                     cancellationToken).ConfigureAwait(false);
-                var promptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken)
+                currentPromptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken)
                     .ConfigureAwait(false);
 
                 // ── prompt_id 只绑定刚才的 reservation，不消耗第二次 attempt ──────────
                 await _session.MarkProductionAttemptAsync(
                     claim.ProductionJobId,
                     task.ProductionTaskId,
-                    new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, promptId),
+                    new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, currentPromptId),
                     cancellationToken).ConfigureAwait(false);
 
                 var historyOutput = await WaitForOutputAsync(
                     claim,
-                    promptId,
+                    currentPromptId,
                     cancellationToken).ConfigureAwait(false);
                 var relativeOutput = BuildRelativeOutput(historyOutput.Subfolder, historyOutput.Filename);
                 var outputPath = ResolveUnderRoot(
@@ -250,7 +252,7 @@ public sealed class ProductionExecutionService : IAsyncDisposable
                     new ProductionTaskCommitRequest(
                         _executorId,
                         claim.LeaseToken,
-                        promptId,
+                        currentPromptId,
                         relativeOutput.Replace('\\', '/'),
                         sha256,
                         file.Length,
@@ -262,12 +264,30 @@ public sealed class ProductionExecutionService : IAsyncDisposable
                     cancellationToken).ConfigureAwait(false);
                 return;
             }
-            catch (Exception exception) when (IsRetryable(exception, cancellationToken) && attempt < 2)
+            catch (Exception exception) when (IsRetryable(exception, cancellationToken))
             {
                 lastRetryable = exception;
-                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                lastPromptId = currentPromptId;
+                if (attempt < 2)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+                break;
             }
         }
+
+        // ── Retry budget exhausted is a Core durable Failed state, never Cancelled ─
+        await _session.FailProductionTaskAsync(
+            claim.ProductionJobId,
+            task.ProductionTaskId,
+            new ProductionTaskFailureRequest(
+                _executorId,
+                claim.LeaseToken,
+                lastPromptId,
+                "COMFY_RETRY_BUDGET_EXHAUSTED",
+                null),
+            cancellationToken).ConfigureAwait(false);
         throw new InvalidOperationException("COMFY_RETRY_BUDGET_EXHAUSTED", lastRetryable);
     }
 
