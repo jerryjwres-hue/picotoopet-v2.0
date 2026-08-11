@@ -9,10 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from picotoopet_core import __version__
-from picotoopet_core.api.middleware import (
-    BrokerReturnBodyLimitMiddleware,
-    TraceTimingMiddleware,
-)
+from picotoopet_core.api.middleware import BrokerReturnBodyLimitMiddleware, TraceTimingMiddleware
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.services import build_services
 
@@ -22,6 +19,7 @@ from .routes import (
     automation,
     broker_sessions,
     business_automation,
+    creative_intelligence,
     events,
     handoffs,
     health,
@@ -46,18 +44,13 @@ def create_app(settings: AppSettings) -> FastAPI:
     services = build_services(settings)
 
     async def run_workflow_scheduler(stop_event: asyncio.Event) -> None:
-        """自动推进耐久工作流；异常只影响本轮，下一轮继续从 SQLite 重放。"""
-
         while not stop_event.is_set():
             try:
                 services.workflow_scheduler.reconcile_all()
             except Exception:
                 logger.exception("workflow scheduler reconciliation failed")
             try:
-                await asyncio.wait_for(
-                    stop_event.wait(),
-                    timeout=settings.workflow_reconcile_seconds,
-                )
+                await asyncio.wait_for(stop_event.wait(), timeout=settings.workflow_reconcile_seconds)
             except TimeoutError:
                 continue
 
@@ -80,11 +73,7 @@ def create_app(settings: AppSettings) -> FastAPI:
             await asyncio.gather(dispatcher_task, workflow_scheduler_task)
             services.close()
 
-    app = FastAPI(
-        title="Picotoo Pet Mac Core",
-        version=__version__,
-        lifespan=lifespan,
-    )
+    app = FastAPI(title="Picotoo Pet Mac Core", version=__version__, lifespan=lifespan)
     app.state.services = services
     app.add_middleware(BrokerReturnBodyLimitMiddleware)
     app.add_middleware(TraceTimingMiddleware)
@@ -94,36 +83,17 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(projects.router, prefix=prefix, tags=["projects"])
     app.include_router(automation.router, prefix=prefix, tags=["automation"])
     app.include_router(business_automation.router, prefix=prefix, tags=["business-automation"])
+    app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
     app.include_router(workers.router, prefix=prefix, tags=["workers"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
     app.include_router(handoffs.router, prefix=prefix, tags=["handoffs"])
     app.include_router(returns.router, prefix=prefix, tags=["returns"])
-    app.include_router(
-        broker_sessions.router,
-        prefix=prefix,
-        tags=["broker-sessions"],
-    )
-    app.include_router(
-        provider_sessions.router,
-        prefix=prefix,
-        tags=["provider-sessions"],
-    )
-    app.include_router(
-        provider_reviews.router,
-        prefix=prefix,
-        tags=["provider-reviews"],
-    )
-    app.include_router(
-        provider_commits.router,
-        prefix=prefix,
-        tags=["provider-commits"],
-    )
-    app.include_router(
-        provider_publications.router,
-        prefix=prefix,
-        tags=["provider-publications"],
-    )
+    app.include_router(broker_sessions.router, prefix=prefix, tags=["broker-sessions"])
+    app.include_router(provider_sessions.router, prefix=prefix, tags=["provider-sessions"])
+    app.include_router(provider_reviews.router, prefix=prefix, tags=["provider-reviews"])
+    app.include_router(provider_commits.router, prefix=prefix, tags=["provider-commits"])
+    app.include_router(provider_publications.router, prefix=prefix, tags=["provider-publications"])
     app.include_router(results.router, prefix=prefix, tags=["results"])
     app.include_router(events.router, prefix=prefix, tags=["events"])
     app.include_router(status.router, prefix=prefix, tags=["status", "audit"])
