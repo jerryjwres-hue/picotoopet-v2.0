@@ -4,4 +4,12 @@
     <RootNamespace>PicotooPet.Desktop.Core</RootNamespace>
     <AssemblyName>PicotooPet.Desktop.Core</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../../production/workflows/wan22-ti2v5b-t2v-api-v1.json"
+                      LogicalName="PicotooPet.Production.Workflows.wan22-ti2v5b-t2v-api-v1.json" />
+    <EmbeddedResource Include="../../../production/workflows/wan22-ti2v5b-i2v-api-v1.json"
+                      LogicalName="PicotooPet.Production.Workflows.wan22-ti2v5b-i2v-api-v1.json" />
+    <EmbeddedResource Include="../../../bootstrap/model_manifest.json"
+                      LogicalName="PicotooPet.Desktop.Core.Production.Resources.model_manifest.json" />
+  </ItemGroup>
 </Project>

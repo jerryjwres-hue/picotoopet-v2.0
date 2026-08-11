@@ -12,6 +12,7 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
     <StackPanel>
@@ -21,7 +22,7 @@
                  TextWrapping="Wrap" />
       <TextBlock Margin="0,4,0,0"
                  FontWeight="SemiBold"
-                 Text="本地智能负责业务理解与创意推理；ComfyUI 仍是后续版本的 Windows GPU 生产执行器。"
+                 Text="链路：Business Result → Creative Package → Windows 本地 ComfyUI Production；创意推理与 GPU 执行权限保持分离。"
                  TextWrapping="Wrap" />
     </StackPanel>
 
@@ -82,9 +83,12 @@
                Text="{Binding StatusMessage, Mode=OneWay}"
                TextWrapping="Wrap" />
 
-    <views:CreativeIntelligencePanel Grid.Row="6"
-                                     Margin="0,18,0,0"
-                                     MaxHeight="540"
-                                     DataContext="{Binding Creative, Mode=OneWay}" />
+    <StackPanel Grid.Row="6" Margin="0,18,0,0">
+      <views:CreativeIntelligencePanel MaxHeight="540"
+                                       DataContext="{Binding Creative, Mode=OneWay}" />
+      <views:ProductionPanel Margin="0,16,0,0"
+                             MaxHeight="520"
+                             DataContext="{Binding Production, Mode=OneWay}" />
+    </StackPanel>
   </Grid>
 </UserControl>

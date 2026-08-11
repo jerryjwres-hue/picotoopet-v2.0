@@ -115,5 +115,5 @@ def test_windows_business_page_has_no_free_model_prompt_or_command_inputs() -> N
         assert forbidden not in view_model
 
 
-def test_business_automation_is_retained_in_23191() -> None:
-    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.19.1"
+def test_business_automation_is_retained_in_23201() -> None:
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.20.1"

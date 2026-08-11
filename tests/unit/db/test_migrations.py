@@ -15,7 +15,8 @@ REQUIRED_TABLES = {
     "business_upload_sessions", "business_upload_chunks", "local_intelligence_runs",
     "local_intelligence_chunks", "business_result_packages", "deep_ai_handoffs", "creative_jobs",
     "creative_job_sources", "creative_source_findings", "creative_stage_runs", "creative_packages",
-    "creative_deep_ai_handoffs",
+    "creative_deep_ai_handoffs", "production_jobs", "production_tasks", "production_attempts",
+    "production_packages",
 }
 
 REQUIRED_HANDOFF_COLUMNS = {
@@ -43,7 +44,7 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
     assert REQUIRED_TABLES <= tables
     assert "cloud_policy" in task_columns
     assert REQUIRED_HANDOFF_COLUMNS <= handoff_columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 12
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 13
     database.close()
 
 

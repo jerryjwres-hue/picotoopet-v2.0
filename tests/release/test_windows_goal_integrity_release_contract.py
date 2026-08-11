@@ -20,7 +20,7 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
         '"ui_framework": "WPF"', '"entry_executable": "Picotoo Pet AI.exe"',
         '"integration_target": "TaskCenter"', '"browser_ui": false', '"local_http_ui": false',
         '"github_repository": "jerryjwres-hue/picotoopet-v2.0"', '"required_native_ci_provenance_fields"',
-        '"product_version"', '"value": "2.3.19.1"',
+        '"product_version"', '"value": "2.3.20.1"',
     )
     for declaration in required_contract_values: assert declaration in contract
     required_runtime_controls = (

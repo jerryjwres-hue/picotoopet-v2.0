@@ -18,7 +18,7 @@ def _database(tmp_path: Path) -> Database:
     return database
 
 
-def test_migration_12_creates_creative_tables(tmp_path: Path) -> None:
+def test_creative_tables_are_retained_through_current_schema(tmp_path: Path) -> None:
     database = _database(tmp_path)
     try:
         tables = {
@@ -35,7 +35,7 @@ def test_migration_12_creates_creative_tables(tmp_path: Path) -> None:
             "creative_packages",
             "creative_deep_ai_handoffs",
         } <= tables
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 12
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 13
     finally:
         database.close()
 
