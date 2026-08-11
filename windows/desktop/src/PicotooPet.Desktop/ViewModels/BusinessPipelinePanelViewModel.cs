@@ -228,12 +228,15 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
         {
             throw new InvalidOperationException("当前 Pipeline 尚无可下载 Return Package。");
         }
+        var session = RequireSession();
         var bridge = RequireBridge();
         IsBusy = true;
         try
         {
-            var destination = await bridge.DeliverBusinessReturnPackageAsync(selected, cancellationToken)
-                .ConfigureAwait(false);
+            var destination = await bridge.DeliverBusinessReturnPackageAsync(
+                session,
+                selected,
+                cancellationToken).ConfigureAwait(false);
             StatusMessage = $"Return Package 已幂等投递到固定 Outbox：{destination}";
         }
         finally
