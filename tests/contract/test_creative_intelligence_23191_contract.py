@@ -45,3 +45,26 @@ def test_creative_design_boundary_is_closed() -> None:
         "execute ComfyUI",
     ):
         assert required in design
+
+
+def test_creative_release_boundary_is_frozen() -> None:
+    release_goal = _read("contracts/release/project-goal-invariants.json")
+    for required in (
+        '"creative_intelligence_v1"',
+        '"database_schema": 12',
+        '"source_quality_outcome": "PASS"',
+        '"source_package_maximum": 8',
+        '"creative_profile": "creative.content_plan.v1"',
+        '"worker_capability": "creative.intelligence.v1"',
+        '"worker_task_type": "creative.content_plan.v1"',
+        '"success_state": "creative_ready"',
+        '"automatic_paid_ai": false',
+        '"automatic_comfyui": false',
+        '"comfyui_workflow_execution": false',
+        '"max_model_attempts_per_stage": 2',
+    ):
+        assert required in release_goal
+
+
+def test_creative_intelligence_product_version_is_23191() -> None:
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.19.1"
