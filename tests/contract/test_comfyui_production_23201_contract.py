@@ -1,4 +1,4 @@
-"""冻结 2.3.20.1 ComfyUI 本地生产执行边界。"""
+"""冻结 2.3.20.1 ComfyUI 本地生产边界，并证明它保留在当前累计版本。"""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-EXPECTED_PRODUCT_VERSION = "2.3.20.1"
-EXPECTED_DATABASE_SCHEMA = 13
+EXPECTED_PRODUCT_VERSION = "2.3.21.1"
+EXPECTED_DATABASE_SCHEMA = 14
 EXPECTED_PROFILE = "production.comfyui.v1"
 EXPECTED_COMFY_ENDPOINT = "http://127.0.0.1:8188"
 EXPECTED_WORKFLOW_IDS = {
@@ -56,12 +56,13 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_product_version_and_database_schema_advance_together() -> None:
+def test_production_is_retained_while_current_product_and_schema_advance() -> None:
     version = read(ROOT / "src/picotoopet_core/product-version.txt").strip()
     database = read(ROOT / "src/picotoopet_core/db/database.py")
 
     assert version == EXPECTED_PRODUCT_VERSION
     assert "MIGRATION_013" in database
+    assert "MIGRATION_014" in database
     assert f"version = {EXPECTED_DATABASE_SCHEMA}" in database
 
 

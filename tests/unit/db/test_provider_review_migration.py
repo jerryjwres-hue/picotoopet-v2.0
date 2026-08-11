@@ -18,7 +18,7 @@ def test_migration_seven_creates_review_and_adoption_tables_idempotently(tmp_pat
     assert REQUIRED_ARTIFACT_COLUMNS <= _columns(database, "provider_return_artifacts")
     assert REQUIRED_DECISION_COLUMNS <= _columns(database, "provider_review_decisions")
     assert REQUIRED_CANDIDATE_COLUMNS <= _columns(database, "provider_adoption_candidates")
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 13
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 14
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 7") == 1
     database.close()
 

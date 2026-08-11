@@ -49,10 +49,13 @@ internal static class Program
             ProviderReviewPanelWpfLayoutSmokeTests.Run();
             PlatformFoundationPagesWpfLayoutSmokeTests.Run();
             BusinessAutomationWpfSmokeTests.Run();
+            BusinessPipelineAdapterSmokeTests.Run();
+            BusinessPipelinePanelWpfSmokeTests.Run();
             CreativeIntelligenceWpfSmokeTests.Run();
             ProductionPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
             ComfyWorkflowTemplateSmokeTests.Run();
+            await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
             await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
             await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);

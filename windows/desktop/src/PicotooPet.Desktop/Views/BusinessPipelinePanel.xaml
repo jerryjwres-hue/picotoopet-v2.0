@@ -1,0 +1,113 @@
+<UserControl x:Class="PicotooPet.Desktop.Views.BusinessPipelinePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Loaded="Panel_Loaded">
+  <Border BorderThickness="1" BorderBrush="#33000000" Padding="14">
+    <StackPanel>
+      <TextBlock Text="端到端业务生产 · Business Pipeline" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Margin="0,5,0,0"
+                 Text="Work Package → Local Intelligence → PASS Result → Creative → Production → Return Package；Mac Core 是耐久状态权威。"
+                 TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,10" FontWeight="SemiBold"
+                 Text="只允许 Amazon Reviews / Inspiration Ideas 两个 first-party Adapter；不接受 Model / Endpoint / Prompt / Workflow / Command / Provider 参数。"
+                 TextWrapping="Wrap" />
+
+      <TextBlock FontWeight="SemiBold" Text="1. 选择业务数据并生成严格 Work Package" />
+      <Grid Margin="0,6,0,6">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock VerticalAlignment="Center" Text="来源" />
+        <TextBox Grid.Column="1" Margin="8,0,8,0"
+                 Text="{Binding SourcePath, Mode=OneWay}"
+                 IsReadOnly="True" />
+        <Button Grid.Column="2" Content="选择文件" Click="ChooseFile_Click" />
+        <Button Grid.Column="3" Margin="6,0,0,0" Content="选择目录" Click="ChooseFolder_Click" />
+      </Grid>
+
+      <Grid Margin="0,0,0,6">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="1.2*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="1.3*" />
+        </Grid.ColumnDefinitions>
+        <TextBlock VerticalAlignment="Center" Text="项目" />
+        <TextBox Grid.Column="1" Margin="8,0,16,0"
+                 Text="{Binding ProjectKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Adapter" />
+        <ComboBox Grid.Column="3" Margin="8,0,0,0"
+                  ItemsSource="{Binding AdapterProfiles, Mode=OneWay}"
+                  SelectedItem="{Binding SelectedAdapterProfile, Mode=TwoWay}" />
+      </Grid>
+
+      <Grid Margin="0,0,0,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock VerticalAlignment="Center" Text="目标" />
+        <TextBox Grid.Column="1" Margin="8,0,8,0"
+                 Text="{Binding Objective, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button Grid.Column="2" Content="安全提交 Adapter 到 Inbox" Click="SubmitSource_Click"
+                IsEnabled="{Binding CanSubmitSource, Mode=OneWay}" />
+      </Grid>
+
+      <TextBlock FontWeight="SemiBold" Text="2. 选择已验证 Work Package 并创建端到端 Pipeline" />
+      <Grid Margin="0,6,0,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <TextBlock VerticalAlignment="Center" Text="Work Package" />
+        <ComboBox Grid.Column="1" Margin="8,0,0,0"
+                  ItemsSource="{Binding WorkPackages, Mode=OneWay}"
+                  SelectedItem="{Binding SelectedWorkPackage, Mode=TwoWay}"
+                  DisplayMemberPath="WorkPackageId" />
+      </Grid>
+
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+        <Button Content="创建端到端 Pipeline" Click="Create_Click"
+                IsEnabled="{Binding CanCreate, Mode=OneWay}" />
+        <Button Content="刷新 Pipeline" Click="Refresh_Click" />
+        <Button Content="幂等推进一次" Click="Reconcile_Click"
+                IsEnabled="{Binding CanReconcile, Mode=OneWay}" />
+        <Button Content="取消所选 Pipeline" Click="Cancel_Click"
+                IsEnabled="{Binding CanCancel, Mode=OneWay}" />
+        <Button Content="投递 Return Package" Click="DownloadReturn_Click"
+                IsEnabled="{Binding CanDownloadReturnPackage, Mode=OneWay}" />
+        <Button Content="打开固定 Outbox" Click="OpenOutbox_Click" />
+      </StackPanel>
+
+      <TextBlock FontWeight="SemiBold" Text="3. Pipeline Run / Return Package" />
+      <DataGrid Margin="0,5,0,0" Height="150"
+                ItemsSource="{Binding Runs, Mode=OneWay}"
+                SelectedItem="{Binding SelectedRun, Mode=TwoWay}"
+                AutoGenerateColumns="False"
+                IsReadOnly="True"
+                CanUserAddRows="False"
+                SelectionMode="Single">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="项目" Binding="{Binding ProjectKey, Mode=OneWay}" Width="1.2*" />
+          <DataGridTextColumn Header="Adapter" Binding="{Binding AdapterProfile, Mode=OneWay}" Width="1.6*" />
+          <DataGridTextColumn Header="状态" Binding="{Binding Status, Mode=OneWay}" Width="120" />
+          <DataGridTextColumn Header="质量" Binding="{Binding QualityOutcome, Mode=OneWay}" Width="100" />
+          <DataGridTextColumn Header="Pipeline Run" Binding="{Binding PipelineRunId, Mode=OneWay}" Width="2*" />
+          <DataGridTextColumn Header="Return Package" Binding="{Binding ReturnPackageId, Mode=OneWay}" Width="2*" />
+          <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt, Mode=OneWay}" Width="175" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <TextBlock Margin="0,7,0,0"
+                 Text="{Binding StatusMessage, Mode=OneWay}"
+                 TextWrapping="Wrap" />
+      <TextBlock Margin="0,4,0,0" FontWeight="SemiBold"
+                 Text="来源路径只用于用户明确选择的本机普通文件/目录；Adapter 会复制到固定 Inbox 并重新生成包内安全路径。Completed 才产生 Return Package；其它质量终态不会自动切换付费 AI 或云渲染。"
+                 TextWrapping="Wrap" />
+    </StackPanel>
+  </Border>
+</UserControl>

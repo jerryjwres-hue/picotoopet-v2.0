@@ -19,6 +19,7 @@ from .routes import (
     automation,
     broker_sessions,
     business_automation,
+    business_pipeline,
     creative_intelligence,
     events,
     handoffs,
@@ -55,6 +56,18 @@ def create_app(settings: AppSettings) -> FastAPI:
             except TimeoutError:
                 continue
 
+    async def run_business_pipeline_scheduler(stop_event: asyncio.Event) -> None:
+        # ── Reuse the bounded workflow cadence; do not add a producer-controlled interval ──
+        while not stop_event.is_set():
+            try:
+                services.business_pipeline_scheduler.reconcile_all()
+            except Exception:
+                logger.exception("business pipeline scheduler reconciliation failed")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=settings.workflow_reconcile_seconds)
+            except TimeoutError:
+                continue
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.services = services
@@ -67,11 +80,19 @@ def create_app(settings: AppSettings) -> FastAPI:
             run_workflow_scheduler(stop_event),
             name="picotoo-workflow-scheduler",
         )
+        business_pipeline_scheduler_task = asyncio.create_task(
+            run_business_pipeline_scheduler(stop_event),
+            name="picotoo-business-pipeline-scheduler",
+        )
         try:
             yield
         finally:
             stop_event.set()
-            await asyncio.gather(dispatcher_task, workflow_scheduler_task)
+            await asyncio.gather(
+                dispatcher_task,
+                workflow_scheduler_task,
+                business_pipeline_scheduler_task,
+            )
             services.close()
 
     app = FastAPI(title="Picotoo Pet Mac Core", version=__version__, lifespan=lifespan)
@@ -84,6 +105,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(projects.router, prefix=prefix, tags=["projects"])
     app.include_router(automation.router, prefix=prefix, tags=["automation"])
     app.include_router(business_automation.router, prefix=prefix, tags=["business-automation"])
+    app.include_router(business_pipeline.router, prefix=prefix, tags=["business-pipeline"])
     app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
     app.include_router(production.router, prefix=prefix, tags=["production"])
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])

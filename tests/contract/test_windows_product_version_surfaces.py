@@ -54,8 +54,8 @@ def test_real_sta_smoke_runs_version_binding_and_layout() -> None:
         "Arrange(new Rect(0, 0, 900, 700))",
         "UpdateLayout()",
         "DispatcherPriority.DataBind",
-        '"Picotoo Pet AI 2.3.20.1"',
-        '"Control Center · v2.3.20.1"',
+        '"Picotoo Pet AI 2.3.21.1"',
+        '"Control Center · v2.3.21.1"',
     ):
         assert required in smoke
 
@@ -76,7 +76,7 @@ def test_published_self_test_reports_exact_product_version_surfaces() -> None:
 def test_published_self_test_tracks_business_automation_navigation() -> None:
     self_test = read(DESKTOP, "Services/AppSelfTest.cs")
 
-    # Business Automation is the eleventh top-level route; the current published
-    # EXE must validate the cumulative shell shape before a package is accepted.
+    # Business Automation remains the eleventh top-level route in the cumulative
+    # shell; 2.3.21.1 embeds End-to-End inside that existing route.
     assert "shell.NavigationItems.Count != 11" in self_test
     assert "NavigationRoute.BusinessAutomation" in self_test
