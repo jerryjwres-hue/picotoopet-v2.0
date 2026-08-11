@@ -147,6 +147,14 @@ public sealed record ProductionTaskAttemptRequest(
     [property: JsonPropertyName("lease_token")] string LeaseToken,
     [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId);
 
+/// <summary>最终本地渲染失败只回传有界身份、lease、prompt 与失败证据。</summary>
+public sealed record ProductionTaskFailureRequest(
+    [property: JsonPropertyName("executor_id")] string ExecutorId,
+    [property: JsonPropertyName("lease_token")] string LeaseToken,
+    [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId,
+    [property: JsonPropertyName("failure_code")] string FailureCode,
+    [property: JsonPropertyName("error_message")] string? ErrorMessage);
+
 /// <summary>Windows 回传的 content-addressed 输出证据。</summary>
 public sealed record ProductionTaskCommitRequest(
     [property: JsonPropertyName("executor_id")] string ExecutorId,
