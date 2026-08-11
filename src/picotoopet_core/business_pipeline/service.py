@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 from picotoopet_core.business.models import (
@@ -17,8 +19,11 @@ from .models import (
     BusinessPipelineQualityOutcome,
     BusinessPipelineRunRecord,
     BusinessPipelineStatus,
+    BusinessReturnPackageRecord,
 )
+from .package_builder import build_return_package
 from .repository import BusinessPipelineRepository
+from .store import BusinessReturnPackageStore
 
 _ADAPTER_ANALYSIS_PROFILE = {
     BusinessAdapterProfile.AMAZON_REVIEWS_EXPORT_V1: BusinessAnalysisProfile.REVIEWS_VOICE_OF_CUSTOMER_V1,
@@ -97,11 +102,13 @@ class BusinessPipelineService:
         business: object,
         creative: object,
         production: object,
+        return_store: BusinessReturnPackageStore | object | None = None,
     ) -> None:
         self.repository = repository
         self.business = business
         self.creative = creative
         self.production = production
+        self.return_store = return_store
 
     def create_run(
         self,
@@ -131,6 +138,15 @@ class BusinessPipelineService:
     def list_runs(self, *, limit: int = 100) -> list[BusinessPipelineRunRecord]:
         return self.repository.list_runs(limit=limit)
 
+    def get_return_package(self, pipeline_run_id: str) -> BusinessReturnPackageRecord | None:
+        return self.repository.return_package_for(pipeline_run_id)
+
+    def return_package_archive(self, pipeline_run_id: str) -> Path:
+        record = self.get_return_package(pipeline_run_id)
+        if record is None or self.return_store is None:
+            raise KeyError(pipeline_run_id)
+        return self.return_store.open_package(record.package_relpath)  # type: ignore[attr-defined]
+
     def _terminal(
         self,
         run: BusinessPipelineRunRecord,
@@ -144,6 +160,67 @@ class BusinessPipelineService:
             quality_outcome=outcome,
             failure_code=getattr(source, "failure_code", None),
             error_message=getattr(source, "error_message", None),
+            finished=True,
+        )
+
+    def _finalize_return_package(
+        self,
+        run: BusinessPipelineRunRecord,
+        *,
+        work: object,
+        result: object,
+        creative_package: object,
+        production_package: object,
+    ) -> BusinessPipelineRunRecord:
+        if self.return_store is None:
+            return self.repository.transition(run.pipeline_run_id, BusinessPipelineStatus.QUALITY_CHECK)
+
+        existing = self.repository.return_package_for(run.pipeline_run_id)
+        if existing is not None:
+            run = self.repository.bind_child_once(
+                run.pipeline_run_id,
+                "return_package_id",
+                existing.return_package_id,
+            )
+            return self.repository.transition(
+                run.pipeline_run_id,
+                BusinessPipelineStatus.COMPLETED,
+                quality_outcome=BusinessPipelineQualityOutcome.PASS,
+                finished=True,
+            )
+
+        return_package_id = run.return_package_id or str(uuid4())
+        run = self.repository.bind_child_once(
+            run.pipeline_run_id,
+            "return_package_id",
+            return_package_id,
+        )
+        payload = build_return_package(
+            return_package_id=return_package_id,
+            run=run,
+            work_package=work,
+            result_package=result,
+            creative_package=creative_package,
+            production_package=production_package,
+        )
+        relative, package_digest = self.return_store.write_package(  # type: ignore[attr-defined]
+            return_package_id,
+            payload,
+        )
+        record = BusinessReturnPackageRecord(
+            return_package_id=return_package_id,
+            pipeline_run_id=run.pipeline_run_id,
+            package_digest=package_digest,
+            package_relpath=relative,
+            manifest=payload,
+            quality_outcome="PASS",
+            created_at=datetime.now(UTC),
+        )
+        self.repository.save_return_package(record)
+        return self.repository.transition(
+            run.pipeline_run_id,
+            BusinessPipelineStatus.COMPLETED,
+            quality_outcome=BusinessPipelineQualityOutcome.PASS,
             finished=True,
         )
 
@@ -257,8 +334,13 @@ class BusinessPipelineService:
                 "production_package_id",
                 production_package.production_package_id,
             )
-            # Task 3 owns immutable Return Package creation and final Completed transition.
-            return self.repository.transition(run.pipeline_run_id, BusinessPipelineStatus.QUALITY_CHECK)
+            return self._finalize_return_package(
+                run,
+                work=work,
+                result=result,
+                creative_package=creative_package,
+                production_package=production_package,
+            )
         if production_job.status in {
             ProductionJobStatus.CLAIMED,
             ProductionJobStatus.PREFLIGHT,
