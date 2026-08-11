@@ -28,11 +28,13 @@ def test_business_pipeline_api_is_closed_and_complete() -> None:
     routes = read(CORE / "api" / "routes" / "business_pipeline.py")
     app = read(CORE / "api" / "app.py")
 
-    assert 'extra="forbid"' in models
+    request_block = models.split("class BusinessPipelineRunCreateRequest", 1)[1]
+    request_block = request_block.split("class ", 1)[0]
+    assert 'extra="forbid"' in request_block
+    for required in ("work_package_id:", "adapter_profile:", "idempotency_key:"):
+        assert required in request_block
     for forbidden in ("model_id", "endpoint", "workflow_json", "command", "provider"):
-        request_block = models.split("class BusinessPipelineRunCreateRequest", 1)[1]
-        request_block = request_block.split("class ", 1)[0]
-        assert forbidden not in request_block
+        assert f"{forbidden}:" not in request_block
 
     for route in (
         '@router.post("/business-pipeline/runs"',
