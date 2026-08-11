@@ -8,6 +8,17 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>冻结 2.3.21.1 Business Pipeline REST 路径与严格 create payload。</summary>
 internal static class BusinessPipelineClientSmokeTests
 {
+    private static readonly byte[] ExpectedArchive = [1, 2, 3, 4];
+    private static readonly string[] ForbiddenCreateFields =
+    [
+        "model_id",
+        "endpoint",
+        "workflow",
+        "path",
+        "command",
+        "provider",
+    ];
+
     public static async Task RunAsync()
     {
         var handler = new FakeHandler();
@@ -31,7 +42,7 @@ internal static class BusinessPipelineClientSmokeTests
         var returnPackage = await client.GetReturnPackageAsync(created.PipelineRunId).ConfigureAwait(false);
         SmokeAssert.True(returnPackage is not null, "Completed pipeline 应返回 Return Package 元数据。");
         var archive = await client.DownloadReturnPackageAsync(created.PipelineRunId).ConfigureAwait(false);
-        SmokeAssert.True(archive.SequenceEqual(new byte[] { 1, 2, 3, 4 }), "Return Package archive 下载错误。");
+        SmokeAssert.True(archive.SequenceEqual(ExpectedArchive), "Return Package archive 下载错误。");
         var cancelled = await client.CancelAsync(created.PipelineRunId).ConfigureAwait(false);
         SmokeAssert.True(cancelled.Status == "Cancelled", "Pipeline cancel 状态错误。");
 
@@ -47,13 +58,13 @@ internal static class BusinessPipelineClientSmokeTests
                 $"POST /api/v1/business-pipeline/runs/{created.PipelineRunId}/cancel",
             ]),
             "Business Pipeline client 访问了未批准 REST 路径。");
-        SmokeAssert.True(handler.CreateBody is not null, "Pipeline create body 缺失。");
-        SmokeAssert.True(handler.CreateBody!.Contains("\"work_package_id\"", StringComparison.Ordinal), "create body 缺 work_package_id。");
-        SmokeAssert.True(handler.CreateBody.Contains("\"adapter_profile\"", StringComparison.Ordinal), "create body 缺 adapter_profile。");
-        SmokeAssert.True(handler.CreateBody.Contains("\"idempotency_key\"", StringComparison.Ordinal), "create body 缺 idempotency_key。");
-        foreach (var forbidden in new[] { "model_id", "endpoint", "workflow", "path", "command", "provider" })
+        var createBody = handler.CreateBody ?? throw new InvalidOperationException("Pipeline create body 缺失。");
+        SmokeAssert.True(createBody.Contains("\"work_package_id\"", StringComparison.Ordinal), "create body 缺 work_package_id。");
+        SmokeAssert.True(createBody.Contains("\"adapter_profile\"", StringComparison.Ordinal), "create body 缺 adapter_profile。");
+        SmokeAssert.True(createBody.Contains("\"idempotency_key\"", StringComparison.Ordinal), "create body 缺 idempotency_key。");
+        foreach (var forbidden in ForbiddenCreateFields)
         {
-            SmokeAssert.True(!handler.CreateBody.Contains($"\"{forbidden}\"", StringComparison.Ordinal),
+            SmokeAssert.True(!createBody.Contains($"\"{forbidden}\"", StringComparison.Ordinal),
                 $"Pipeline create body 泄露禁止字段：{forbidden}");
         }
     }
@@ -96,7 +107,7 @@ internal static class BusinessPipelineClientSmokeTests
             {
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new ByteArrayContent([1, 2, 3, 4]),
+                    Content = new ByteArrayContent(ExpectedArchive),
                 };
             }
             if (request.Method == HttpMethod.Post && pathAndQuery == $"/api/v1/business-pipeline/runs/{RunId}/cancel")
