@@ -211,8 +211,17 @@ public sealed class ProductionExecutionService : IAsyncDisposable
                     task,
                     filenamePrefix,
                     trustedInput);
+
+                // ── Core 必须先预留 attempt，GPU submit 才允许发生；避免孤儿任务 ──────
+                await _session.MarkProductionAttemptAsync(
+                    claim.ProductionJobId,
+                    task.ProductionTaskId,
+                    new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null),
+                    cancellationToken).ConfigureAwait(false);
                 var promptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken)
                     .ConfigureAwait(false);
+
+                // ── prompt_id 只绑定刚才的 reservation，不消耗第二次 attempt ──────────
                 await _session.MarkProductionAttemptAsync(
                     claim.ProductionJobId,
                     task.ProductionTaskId,
