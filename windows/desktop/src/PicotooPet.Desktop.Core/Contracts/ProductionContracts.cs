@@ -62,34 +62,6 @@ public sealed record ProductionJobRecord(
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
     [property: JsonPropertyName("finished_at")] DateTimeOffset? FinishedAt);
 
-/// <summary>Windows executor 的短期 claim；raw lease token 只在 claim 响应中出现。</summary>
-public sealed record ProductionClaimRecord(
-    [property: JsonPropertyName("production_job_id")] string ProductionJobId,
-    [property: JsonPropertyName("executor_id")] string ExecutorId,
-    [property: JsonPropertyName("lease_token")] string LeaseToken,
-    [property: JsonPropertyName("lease_expires_at")] DateTimeOffset LeaseExpiresAt,
-    [property: JsonPropertyName("plan")] ProductionPlanRecord Plan);
-
-/// <summary>生产任务 attempt 只提交执行身份、lease 与 Comfy prompt identity。</summary>
-public sealed record ProductionTaskAttemptRequest(
-    [property: JsonPropertyName("executor_id")] string ExecutorId,
-    [property: JsonPropertyName("lease_token")] string LeaseToken,
-    [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId);
-
-/// <summary>Windows 回传的 content-addressed 输出证据。</summary>
-public sealed record ProductionTaskCommitRequest(
-    [property: JsonPropertyName("executor_id")] string ExecutorId,
-    [property: JsonPropertyName("lease_token")] string LeaseToken,
-    [property: JsonPropertyName("comfy_prompt_id")] string ComfyPromptId,
-    [property: JsonPropertyName("output_relpath")] string OutputRelpath,
-    [property: JsonPropertyName("output_sha256")] string OutputSha256,
-    [property: JsonPropertyName("output_bytes")] long OutputBytes,
-    [property: JsonPropertyName("mime_type")] string MimeType,
-    [property: JsonPropertyName("width")] int Width,
-    [property: JsonPropertyName("height")] int Height,
-    [property: JsonPropertyName("frame_count")] int FrameCount,
-    [property: JsonPropertyName("fps")] int Fps);
-
 /// <summary>Core 保存的任务执行事实。</summary>
 public sealed record ProductionTaskRecord(
     [property: JsonPropertyName("production_task_id")] string ProductionTaskId,
@@ -116,6 +88,35 @@ public sealed record ProductionTaskRecord(
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
     [property: JsonPropertyName("finished_at")] DateTimeOffset? FinishedAt);
+
+/// <summary>Windows executor 的短期 claim；包含 Core durable task snapshot 以支持 restart-safe resume。</summary>
+public sealed record ProductionClaimRecord(
+    [property: JsonPropertyName("production_job_id")] string ProductionJobId,
+    [property: JsonPropertyName("executor_id")] string ExecutorId,
+    [property: JsonPropertyName("lease_token")] string LeaseToken,
+    [property: JsonPropertyName("lease_expires_at")] DateTimeOffset LeaseExpiresAt,
+    [property: JsonPropertyName("plan")] ProductionPlanRecord Plan,
+    [property: JsonPropertyName("tasks")] ProductionTaskRecord[] Tasks);
+
+/// <summary>生产任务 attempt 只提交执行身份、lease 与 Comfy prompt identity。</summary>
+public sealed record ProductionTaskAttemptRequest(
+    [property: JsonPropertyName("executor_id")] string ExecutorId,
+    [property: JsonPropertyName("lease_token")] string LeaseToken,
+    [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId);
+
+/// <summary>Windows 回传的 content-addressed 输出证据。</summary>
+public sealed record ProductionTaskCommitRequest(
+    [property: JsonPropertyName("executor_id")] string ExecutorId,
+    [property: JsonPropertyName("lease_token")] string LeaseToken,
+    [property: JsonPropertyName("comfy_prompt_id")] string ComfyPromptId,
+    [property: JsonPropertyName("output_relpath")] string OutputRelpath,
+    [property: JsonPropertyName("output_sha256")] string OutputSha256,
+    [property: JsonPropertyName("output_bytes")] long OutputBytes,
+    [property: JsonPropertyName("mime_type")] string MimeType,
+    [property: JsonPropertyName("width")] int Width,
+    [property: JsonPropertyName("height")] int Height,
+    [property: JsonPropertyName("frame_count")] int FrameCount,
+    [property: JsonPropertyName("fps")] int Fps);
 
 /// <summary>Core 保存的不可变 Production Package 元数据。</summary>
 public sealed record ProductionPackageRecord(
