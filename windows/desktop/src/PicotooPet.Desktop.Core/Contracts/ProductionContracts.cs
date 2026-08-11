@@ -89,14 +89,57 @@ public sealed record ProductionTaskRecord(
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
     [property: JsonPropertyName("finished_at")] DateTimeOffset? FinishedAt);
 
-/// <summary>Windows executor 的短期 claim；包含 Core durable task snapshot 以支持 restart-safe resume。</summary>
-public sealed record ProductionClaimRecord(
-    [property: JsonPropertyName("production_job_id")] string ProductionJobId,
-    [property: JsonPropertyName("executor_id")] string ExecutorId,
-    [property: JsonPropertyName("lease_token")] string LeaseToken,
-    [property: JsonPropertyName("lease_expires_at")] DateTimeOffset LeaseExpiresAt,
-    [property: JsonPropertyName("plan")] ProductionPlanRecord Plan,
-    [property: JsonPropertyName("tasks")] ProductionTaskRecord[] Tasks);
+/// <summary>Windows executor 的短期 claim；durable task snapshot 决定重连后哪些 shot 仍可执行。</summary>
+public sealed record ProductionClaimRecord
+{
+    [JsonConstructor]
+    public ProductionClaimRecord(
+        string productionJobId,
+        string executorId,
+        string leaseToken,
+        DateTimeOffset leaseExpiresAt,
+        ProductionPlanRecord plan,
+        ProductionTaskRecord[] tasks)
+    {
+        ProductionJobId = productionJobId;
+        ExecutorId = executorId;
+        LeaseToken = leaseToken;
+        LeaseExpiresAt = leaseExpiresAt;
+        Tasks = tasks ?? Array.Empty<ProductionTaskRecord>();
+
+        // ── Recovery rule: a Core-committed Succeeded shot is never submitted again ──
+        var completedTaskIds = Tasks
+            .Where(item => string.Equals(item.Status, "Succeeded", StringComparison.Ordinal))
+            .Select(item => item.ProductionTaskId)
+            .ToHashSet(StringComparer.Ordinal);
+        Plan = plan with
+        {
+            Tasks = plan.Tasks
+                .Where(item => !completedTaskIds.Contains(item.ProductionTaskId))
+                .ToArray(),
+        };
+    }
+
+    [JsonPropertyName("production_job_id")]
+    public string ProductionJobId { get; }
+
+    [JsonPropertyName("executor_id")]
+    public string ExecutorId { get; }
+
+    [JsonPropertyName("lease_token")]
+    public string LeaseToken { get; }
+
+    [JsonPropertyName("lease_expires_at")]
+    public DateTimeOffset LeaseExpiresAt { get; }
+
+    /// <summary>本次 claim 的 resume plan；已 Succeeded shot 被安全过滤。</summary>
+    [JsonPropertyName("plan")]
+    public ProductionPlanRecord Plan { get; }
+
+    /// <summary>Core 返回的完整 durable task snapshot，用于审计与恢复判断。</summary>
+    [JsonPropertyName("tasks")]
+    public ProductionTaskRecord[] Tasks { get; }
+}
 
 /// <summary>生产任务 attempt 只提交执行身份、lease 与 Comfy prompt identity。</summary>
 public sealed record ProductionTaskAttemptRequest(
