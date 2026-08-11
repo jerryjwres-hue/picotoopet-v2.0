@@ -28,6 +28,7 @@ from .models import (
     ProductionTaskAttemptRequest,
     ProductionTaskCommitRequest,
     ProductionTaskRecord,
+    ProductionTaskStatus,
 )
 from .quality import validate_task_commit
 from .repository import ProductionRepository
@@ -132,7 +133,33 @@ class ProductionService:
         return self.repository.plan_for(production_job_id)
 
     def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
-        return self.repository.claim_job(production_job_id, executor_id)
+        # ── Claim returns full durable snapshots plus an unfinished-only plan ─
+        claim = self.repository.claim_job(production_job_id, executor_id)
+        snapshots = {task.production_task_id: task for task in claim.tasks}
+        resume_tasks = []
+        for planned in claim.plan.tasks:
+            snapshot = snapshots.get(planned.production_task_id)
+            if snapshot is None:
+                raise ValueError("PRODUCTION_TASK_SNAPSHOT_MISSING")
+            if snapshot.status is ProductionTaskStatus.SUCCEEDED:
+                continue
+            if snapshot.status in {
+                ProductionTaskStatus.NEEDS_HUMAN,
+                ProductionTaskStatus.FAILED,
+                ProductionTaskStatus.CANCELLED,
+            }:
+                raise ValueError("PRODUCTION_TASK_TERMINAL_STATE")
+            if snapshot.attempt_count >= self.repository.MAX_ATTEMPTS_PER_TASK:
+                raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
+            resume_tasks.append(planned)
+
+        # ── A crash may happen after final task commit but before packaging ──
+        if not resume_tasks and claim.tasks:
+            self._finalize_if_complete(production_job_id)
+
+        # ── Stored immutable plan is untouched; only this lease response narrows ─
+        resume_plan = claim.plan.model_copy(update={"tasks": resume_tasks})
+        return claim.model_copy(update={"plan": resume_plan})
 
     def heartbeat(self, production_job_id: str, request: ProductionHeartbeatRequest) -> ProductionJobRecord:
         return self.repository.heartbeat(
