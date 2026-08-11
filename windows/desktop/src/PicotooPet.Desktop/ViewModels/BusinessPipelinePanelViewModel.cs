@@ -5,7 +5,7 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>2.3.21.1 端到端业务编排控制面；只选择既有 Work Package，不暴露执行参数。</summary>
+/// <summary>2.3.21.1 端到端业务编排控制面；只接受 first-party Adapter 与既有 Work Package。</summary>
 public sealed class BusinessPipelinePanelViewModel : ObservableObject
 {
     private const string AmazonAnalysisProfile = "reviews.voice_of_customer.v1";
@@ -23,7 +23,10 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
     private BusinessWorkPackageRecord? _selectedWorkPackage;
     private BusinessPipelineRunRecord? _selectedRun;
     private string _selectedAdapterProfile = FixedAdapterProfiles[0];
-    private string _statusMessage = "Business Pipeline 由 Mac Core 耐久推进；Windows 只发起、查看和取消。";
+    private string _sourcePath = string.Empty;
+    private string _projectKey = string.Empty;
+    private string _objective = string.Empty;
+    private string _statusMessage = "Business Pipeline 由 Mac Core 耐久推进；Windows 只提交 first-party 数据入口与固定控制动作。";
     private bool _isBusy;
 
     public BusinessPipelinePanelViewModel(ControlCenterSession session)
@@ -89,7 +92,46 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
             {
                 throw new InvalidOperationException("只允许 first-party Business Adapter profile。");
             }
-            SetProperty(ref _selectedAdapterProfile, value);
+            if (SetProperty(ref _selectedAdapterProfile, value))
+            {
+                RaiseActions();
+            }
+        }
+    }
+
+    public string SourcePath
+    {
+        get => _sourcePath;
+        set
+        {
+            if (SetProperty(ref _sourcePath, value ?? string.Empty))
+            {
+                RaiseActions();
+            }
+        }
+    }
+
+    public string ProjectKey
+    {
+        get => _projectKey;
+        set
+        {
+            if (SetProperty(ref _projectKey, value ?? string.Empty))
+            {
+                RaiseActions();
+            }
+        }
+    }
+
+    public string Objective
+    {
+        get => _objective;
+        set
+        {
+            if (SetProperty(ref _objective, value ?? string.Empty))
+            {
+                RaiseActions();
+            }
         }
     }
 
@@ -111,6 +153,13 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
         }
     }
 
+    public bool CanSubmitSource =>
+        !IsBusy
+        && !string.IsNullOrWhiteSpace(SourcePath)
+        && !string.IsNullOrWhiteSpace(ProjectKey)
+        && !string.IsNullOrWhiteSpace(Objective)
+        && FixedAdapterProfiles.Contains(SelectedAdapterProfile, StringComparer.Ordinal);
+
     public bool CanCreate => !IsBusy && SelectedWorkPackage is not null;
 
     public bool CanReconcile =>
@@ -129,26 +178,49 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
         var session = RequireSession();
+        var bridge = RequireBridge();
         IsBusy = true;
         try
         {
-            var selectedWorkId = SelectedWorkPackage?.WorkPackageId;
-            var selectedRunId = SelectedRun?.PipelineRunId;
-            var workTask = session.GetBusinessWorkPackagesAsync(cancellationToken);
-            var runsTask = session.GetBusinessPipelineRunsAsync(cancellationToken);
-            await Task.WhenAll(workTask, runsTask).ConfigureAwait(false);
-            WorkPackages = (await workTask.ConfigureAwait(false))
-                .Where(item => item.AnalysisProfile is AmazonAnalysisProfile or InspirationAnalysisProfile)
-                .OrderByDescending(item => item.UpdatedAt)
-                .ToArray();
-            Runs = (await runsTask.ConfigureAwait(false))
-                .OrderByDescending(item => item.UpdatedAt)
-                .ToArray();
-            SelectedWorkPackage = WorkPackages.FirstOrDefault(item => item.WorkPackageId == selectedWorkId)
-                ?? (WorkPackages.Count > 0 ? WorkPackages[0] : null);
-            SelectedRun = Runs.FirstOrDefault(item => item.PipelineRunId == selectedRunId)
-                ?? (Runs.Count > 0 ? Runs[0] : null);
+            await LoadDataAsync(
+                session,
+                bridge,
+                SelectedWorkPackage?.WorkPackageId,
+                SelectedRun?.PipelineRunId,
+                cancellationToken).ConfigureAwait(false);
             StatusMessage = $"可编排 Work Package {WorkPackages.Count} 个；Pipeline Run {Runs.Count} 个。";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    public async Task SubmitSourceAsync(CancellationToken cancellationToken)
+    {
+        if (!CanSubmitSource)
+        {
+            throw new InvalidOperationException("请先选择来源文件/目录并填写项目与目标。");
+        }
+        var session = RequireSession();
+        var bridge = RequireBridge();
+        IsBusy = true;
+        try
+        {
+            var built = await bridge.SubmitAdapterSourceAsync(
+                session,
+                SelectedAdapterProfile,
+                SourcePath,
+                ProjectKey,
+                Objective,
+                cancellationToken).ConfigureAwait(false);
+            await LoadDataAsync(
+                session,
+                bridge,
+                built.Manifest.PackageId,
+                SelectedRun?.PipelineRunId,
+                cancellationToken).ConfigureAwait(false);
+            StatusMessage = $"Adapter Work Package 已安全提交：{built.Manifest.PackageId}；可继续创建端到端 Pipeline。";
         }
         finally
         {
@@ -176,7 +248,7 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
                 cancellationToken).ConfigureAwait(false);
             _ = await session.ReconcileBusinessPipelineRunAsync(created.PipelineRunId, cancellationToken)
                 .ConfigureAwait(false);
-            await RefreshCoreAsync(session, created.PipelineRunId, cancellationToken).ConfigureAwait(false);
+            await RefreshRunsAsync(session, created.PipelineRunId, cancellationToken).ConfigureAwait(false);
             StatusMessage = "端到端 Pipeline 已创建并提交首次 reconcile；后续由 Mac Core scheduler 耐久推进。";
         }
         finally
@@ -194,7 +266,7 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
         {
             _ = await session.ReconcileBusinessPipelineRunAsync(selected.PipelineRunId, cancellationToken)
                 .ConfigureAwait(false);
-            await RefreshCoreAsync(session, selected.PipelineRunId, cancellationToken).ConfigureAwait(false);
+            await RefreshRunsAsync(session, selected.PipelineRunId, cancellationToken).ConfigureAwait(false);
             StatusMessage = "已请求一次幂等 reconcile；不会重复创建已绑定的 Creative/Production 子任务。";
         }
         finally
@@ -212,7 +284,7 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
         {
             _ = await session.CancelBusinessPipelineRunAsync(selected.PipelineRunId, cancellationToken)
                 .ConfigureAwait(false);
-            await RefreshCoreAsync(session, selected.PipelineRunId, cancellationToken).ConfigureAwait(false);
+            await RefreshRunsAsync(session, selected.PipelineRunId, cancellationToken).ConfigureAwait(false);
             StatusMessage = "Pipeline 已进入取消路径；不会删除来源 Work/Result/Creative/Production Package。";
         }
         finally
@@ -245,12 +317,43 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
         }
     }
 
-    private async Task RefreshCoreAsync(
+    public string EnsureManagedOutboxPath()
+    {
+        var bridge = RequireBridge();
+        Directory.CreateDirectory(bridge.Outbox);
+        return bridge.Outbox;
+    }
+
+    private async Task LoadDataAsync(
+        ControlCenterSession session,
+        BusinessBridgeService bridge,
+        string? selectedWorkId,
+        string? selectedRunId,
+        CancellationToken cancellationToken)
+    {
+        var workTask = session.GetBusinessWorkPackagesAsync(cancellationToken);
+        var runsTask = bridge.SynchronizeBusinessPipelineRunsAsync(session, cancellationToken);
+        await Task.WhenAll(workTask, runsTask).ConfigureAwait(false);
+        WorkPackages = (await workTask.ConfigureAwait(false))
+            .Where(item => item.AnalysisProfile is AmazonAnalysisProfile or InspirationAnalysisProfile)
+            .OrderByDescending(item => item.UpdatedAt)
+            .ToArray();
+        Runs = (await runsTask.ConfigureAwait(false))
+            .OrderByDescending(item => item.UpdatedAt)
+            .ToArray();
+        SelectedWorkPackage = WorkPackages.FirstOrDefault(item => item.WorkPackageId == selectedWorkId)
+            ?? (WorkPackages.Count > 0 ? WorkPackages[0] : null);
+        SelectedRun = Runs.FirstOrDefault(item => item.PipelineRunId == selectedRunId)
+            ?? (Runs.Count > 0 ? Runs[0] : null);
+    }
+
+    private async Task RefreshRunsAsync(
         ControlCenterSession session,
         string selectedRunId,
         CancellationToken cancellationToken)
     {
-        Runs = (await session.GetBusinessPipelineRunsAsync(cancellationToken).ConfigureAwait(false))
+        var bridge = RequireBridge();
+        Runs = (await bridge.SynchronizeBusinessPipelineRunsAsync(session, cancellationToken).ConfigureAwait(false))
             .OrderByDescending(item => item.UpdatedAt)
             .ToArray();
         SelectedRun = Runs.FirstOrDefault(item => item.PipelineRunId == selectedRunId)
@@ -259,6 +362,7 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
 
     private void RaiseActions()
     {
+        RaisePropertyChanged(nameof(CanSubmitSource));
         RaisePropertyChanged(nameof(CanCreate));
         RaisePropertyChanged(nameof(CanReconcile));
         RaisePropertyChanged(nameof(CanCancel));
@@ -287,5 +391,5 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
         _session ?? throw new InvalidOperationException("Smoke test 模式不能访问 Mac Core。");
 
     private BusinessBridgeService RequireBridge() =>
-        _bridge ?? throw new InvalidOperationException("Smoke test 模式不能写固定 Outbox。");
+        _bridge ?? throw new InvalidOperationException("Smoke test 模式不能写固定 Inbox/Outbox。");
 }
