@@ -33,6 +33,7 @@ from .models import (
     ProductionTaskRecord,
     ProductionTaskStatus,
 )
+from .package import build_production_package_payload
 from .quality import validate_task_commit
 from .repository import ProductionRepository
 from .store import ProductionArtifactStore
@@ -54,7 +55,13 @@ class ProductionService:
     @staticmethod
     def _digest(value: object) -> str:
         # ── Canonical digest binds immutable plans and package manifests ─────
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     def _creative_package_by_id(self, creative_package_id: str) -> CreativePackageRecord:
@@ -263,47 +270,32 @@ class ProductionService:
             )
             return
 
+        # ── Capture lease/source/plan facts before the final transition clears lease ──
+        source_package = self._creative_package_by_id(job.creative_package_id)
+        plan = self.repository.plan_for(production_job_id)
         self.repository.transition_job(production_job_id, ProductionJobStatus.QUALITY_CHECK)
+
         package_id = str(uuid4())
-        payload = {
-            "schema_version": "1.0",
-            "production_package_id": package_id,
-            "production_job_id": production_job_id,
-            "creative_package_id": job.creative_package_id,
-            "creative_package_digest": job.creative_package_digest,
-            "production_profile": job.production_profile.value,
-            "plan_digest": job.plan_digest,
-            "outputs": [
-                {
-                    "production_task_id": task.production_task_id,
-                    "shot_id": task.shot_id,
-                    "workflow_id": task.workflow_id,
-                    "comfy_prompt_id": task.comfy_prompt_id,
-                    "output_relpath": task.output_relpath,
-                    "output_sha256": task.output_sha256,
-                    "output_bytes": task.output_bytes,
-                    "mime_type": task.output_mime_type,
-                    "width": task.output_width,
-                    "height": task.output_height,
-                    "frame_count": task.output_frame_count,
-                    "fps": task.output_fps,
-                }
-                for task in tasks
-            ],
-            "quality_outcome": "PASS",
-            "completed_at": datetime.now(UTC).isoformat(),
-        }
+        completed_at = datetime.now(UTC)
+        payload = build_production_package_payload(
+            production_package_id=package_id,
+            job=job,
+            source_package=source_package,
+            plan=plan,
+            tasks=tasks,
+            completed_at=completed_at,
+        )
         relative, package_digest = self.store.write_package(package_id, payload)
         record = ProductionPackageRecord(
             production_package_id=package_id,
             production_job_id=production_job_id,
             creative_package_id=job.creative_package_id,
-            plan_digest=job.plan_digest or self._digest(self.repository.plan_for(production_job_id).model_dump(mode="json")),
+            plan_digest=job.plan_digest or self._digest(plan.model_dump(mode="json")),
             package_digest=package_digest,
             package_relpath=relative,
             manifest=payload,
             quality_outcome="PASS",
-            created_at=datetime.now(UTC),
+            created_at=completed_at,
         )
         self.repository.save_package(record)
         self.repository.transition_job(
