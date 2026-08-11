@@ -209,6 +209,8 @@ class ProductionJobRecord(BaseModel):
 
 
 class ProductionClaimRecord(BaseModel):
+    """Active lease plus the durable task snapshot required for restart-safe resume."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     production_job_id: str
@@ -216,6 +218,7 @@ class ProductionClaimRecord(BaseModel):
     lease_token: str
     lease_expires_at: datetime
     plan: ProductionPlan
+    tasks: list[ProductionTaskRecord]
 
 
 class ProductionEligibleCreativeRecord(BaseModel):
