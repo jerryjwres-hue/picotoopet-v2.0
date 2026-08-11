@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Windows;
-using Microsoft.Win32;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views;
@@ -44,7 +43,7 @@ public partial class BusinessPipelinePanel : System.Windows.Controls.UserControl
         {
             return;
         }
-        var dialog = new OpenFileDialog
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = "选择 Amazon / 灵感业务数据文件",
             Filter = "支持的数据文件 (*.csv;*.json;*.jsonl;*.txt)|*.csv;*.json;*.jsonl;*.txt|所有文件 (*.*)|*.*",
@@ -63,7 +62,7 @@ public partial class BusinessPipelinePanel : System.Windows.Controls.UserControl
         {
             return;
         }
-        var dialog = new OpenFolderDialog
+        var dialog = new Microsoft.Win32.OpenFolderDialog
         {
             Title = "选择只包含支持数据文件的业务数据目录",
             Multiselect = false,
