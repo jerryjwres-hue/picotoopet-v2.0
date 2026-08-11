@@ -51,6 +51,7 @@ internal static class Program
             BusinessAutomationWpfSmokeTests.Run();
             CreativeIntelligenceWpfSmokeTests.Run();
             ProductionPanelWpfSmokeTests.Run();
+            ProductionRecoverySmokeTests.Run();
             ComfyWorkflowTemplateSmokeTests.Run();
             await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
             await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
