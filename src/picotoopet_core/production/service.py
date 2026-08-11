@@ -15,6 +15,7 @@ from picotoopet_core.creative.models import (
 )
 from picotoopet_core.creative.repository import CreativeRepository
 
+from .attempts import reserve_or_bind_attempt
 from .compiler import compile_production_plan
 from .models import (
     ProductionClaimRecord,
@@ -174,12 +175,14 @@ class ProductionService:
         production_task_id: str,
         request: ProductionTaskAttemptRequest,
     ) -> ProductionTaskRecord:
-        return self.repository.mark_task_attempt(
-            production_job_id,
-            production_task_id,
-            request.executor_id,
-            request.lease_token,
-            request.comfy_prompt_id,
+        # ── Reserve before GPU submit; later prompt binding reuses the same attempt ─
+        return reserve_or_bind_attempt(
+            self.repository,
+            production_job_id=production_job_id,
+            production_task_id=production_task_id,
+            executor_id=request.executor_id,
+            lease_token=request.lease_token,
+            comfy_prompt_id=request.comfy_prompt_id,
         )
 
     def commit_task(
