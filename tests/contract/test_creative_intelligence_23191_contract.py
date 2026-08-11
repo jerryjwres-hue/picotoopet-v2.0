@@ -66,5 +66,5 @@ def test_creative_release_boundary_is_frozen() -> None:
         assert required in release_goal
 
 
-def test_creative_intelligence_product_version_is_23191() -> None:
-    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.19.1"
+def test_creative_intelligence_is_retained_in_23201() -> None:
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.20.1"
