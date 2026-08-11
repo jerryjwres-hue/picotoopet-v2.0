@@ -80,6 +80,18 @@ class ProductionTaskAttemptRequest(BaseModel):
     comfy_prompt_id: str | None = Field(default=None, max_length=200)
 
 
+class ProductionTaskFailureRequest(BaseModel):
+    """Bounded terminal failure evidence returned by the active Windows executor."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    executor_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.-]+$")
+    lease_token: str = Field(min_length=16, max_length=200)
+    comfy_prompt_id: str | None = Field(default=None, max_length=200)
+    failure_code: str = Field(min_length=1, max_length=120, pattern=r"^[A-Z0-9_.-]+$")
+    error_message: str | None = Field(default=None, max_length=1000)
+
+
 class ProductionTaskCommitRequest(BaseModel):
     """Bounded evidence returned by the Windows executor."""
 
