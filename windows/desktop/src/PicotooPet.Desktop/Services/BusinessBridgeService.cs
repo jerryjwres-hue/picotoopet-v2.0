@@ -1,4 +1,6 @@
+using System.IO;
 using System.IO.Compression;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
@@ -234,7 +236,7 @@ public sealed class BusinessBridgeService
                 throw new BusinessBridgePackageException("unsafe_path");
             }
             var parts = name.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0 || name.StartsWith("/", StringComparison.Ordinal)
+            if (parts.Length == 0 || name.StartsWith('/')
                 || parts.Any(part => part is "." or ".."))
             {
                 throw new BusinessBridgePackageException("unsafe_path");
@@ -265,7 +267,7 @@ public sealed class BusinessBridgeService
             {
                 throw new BusinessBridgePackageException("uncompressed_size_invalid");
             }
-            if (!name.EndsWith("/", StringComparison.Ordinal)
+            if (!name.EndsWith('/')
                 && ForbiddenExtensions.Contains(Path.GetExtension(name)))
             {
                 throw new BusinessBridgePackageException("executable_payload");
@@ -290,7 +292,7 @@ public sealed class BusinessBridgeService
             var key = $"{root}/{descriptor.Path}";
             declared.Add(key);
             if (!normalized.TryGetValue(key, out var entry)
-                || entry.FullName.EndsWith("/", StringComparison.Ordinal))
+                || entry.FullName.EndsWith('/'))
             {
                 throw new BusinessBridgePackageException("declared_input_missing");
             }
@@ -306,7 +308,7 @@ public sealed class BusinessBridgeService
             }
         }
         var actualFiles = normalized
-            .Where(pair => !pair.Value.FullName.EndsWith("/", StringComparison.Ordinal))
+            .Where(pair => !pair.Value.FullName.EndsWith('/'))
             .Select(pair => pair.Key)
             .ToHashSet(StringComparer.Ordinal);
         if (!actualFiles.SetEquals(declared))
@@ -336,7 +338,7 @@ public sealed class BusinessBridgeService
                 || input.SizeBytes < 0
                 || input.SizeBytes > MaxSingleInputBytes
                 || input.Path.Contains('\\')
-                || input.Path.StartsWith("/", StringComparison.Ordinal)
+                || input.Path.StartsWith('/')
                 || !input.Path.StartsWith("inputs/", StringComparison.Ordinal)
                 || input.Path.Split('/').Any(part => part is "." or ".." or "")
                 || ForbiddenExtensions.Contains(Path.GetExtension(input.Path)))
