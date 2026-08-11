@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Text;
 using PicotooPet.Desktop.Core.Contracts;
@@ -18,7 +19,7 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
 
     private readonly ControlCenterSession? _session;
     private readonly BusinessBridgeService? _bridge;
-    private readonly IReadOnlyList<string> _adapterProfiles = Array.AsReadOnly(FixedAdapterProfiles);
+    private readonly ReadOnlyCollection<string> _adapterProfiles = Array.AsReadOnly(FixedAdapterProfiles);
     private IReadOnlyList<BusinessWorkPackageRecord> _workPackages = Array.Empty<BusinessWorkPackageRecord>();
     private IReadOnlyList<BusinessPipelineRunRecord> _runs = Array.Empty<BusinessPipelineRunRecord>();
     private BusinessWorkPackageRecord? _selectedWorkPackage;
