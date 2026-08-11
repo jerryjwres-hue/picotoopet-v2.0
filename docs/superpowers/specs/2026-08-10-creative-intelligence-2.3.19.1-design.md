@@ -20,115 +20,96 @@ The product architecture remains:
 
 ## 1. Product goal
 
-2.3.19.1 must turn validated business intelligence into a durable, evidence-linked creative plan:
+2.3.19.1 turns validated business intelligence into a durable, evidence-linked creative plan:
 
 `2.3.18.1 PASS Result Package(s) → Creative Job → Idea Ranking → Creative Brief → Script → Shot Plan → Creative Package v1`
 
-The successful terminal state is:
+The successful terminal state is `creative_ready`.
 
-`creative_ready`
-
-`creative_ready` explicitly means:
-
-- the creative package passed the 2.3.19.1 structural/provenance quality gates;
-- it is suitable as input to a later production orchestrator;
-- it is **not** a ComfyUI workflow;
-- it is **not** rendered media;
-- it is **not** automatically approved for publication.
+`creative_ready` means the Creative Package passed the 2.3.19.1 structural/provenance gates and is suitable as input to a later production orchestrator. It does **not** mean rendered, ComfyUI-executable, publish-ready, or automatically approved.
 
 ## 2. Why this boundary
 
-2.3.18.1 already provides the correct reusable contract for Windows business programs:
+2.3.18.1 already provides the reusable producer contract:
 
 `Work Package v1 → local intelligence → Result Package v1`
 
-2.3.19.1 must consume that contract rather than invent a second raw-data ingestion mechanism. This keeps raw review/idea datasets out of the creative layer by default and preserves the original evidence chain.
-
-The creative layer should reason over validated findings and selected evidence excerpts, not re-run the whole data ingestion pipeline.
+2.3.19.1 consumes that contract instead of inventing a second raw-data ingestion path. The creative layer reasons over validated findings and bounded evidence references rather than re-running raw review/idea ingestion.
 
 ## 3. Non-goals
 
-2.3.19.1 does **not**:
+2.3.19.1 does not:
 
-- execute ComfyUI;
-- generate executable ComfyUI API workflow JSON;
-- open ComfyUI port 8188 to the LAN;
-- install/download models, LoRAs, custom nodes, Ollama, or another local LLM runtime;
-- automatically call Web GPT or any paid AI API;
-- allow Windows producers to select arbitrary model IDs, endpoints, system prompts, tools, commands, scripts, executable paths, or sampling parameters;
-- give the local model shell, subprocess, browser, network tools, Git/GitHub, arbitrary filesystem-write, or ComfyUI authority;
+- execute ComfyUI or generate executable ComfyUI workflow JSON;
+- expose ComfyUI port 8188 to LAN;
+- install/download models, LoRAs, custom nodes, Ollama, or another LLM runtime;
+- automatically call Web GPT or paid AI APIs;
+- let Windows select arbitrary model IDs, endpoints, system prompts, tools, commands, scripts, executable paths, or sampling parameters;
+- give the local model shell, subprocess, browser/network tools, Git/GitHub, arbitrary filesystem-write, or ComfyUI authority;
 - create/push Git branches or PRs as part of creative generation;
-- merge `main`, tag, create GitHub Releases, or publish media;
-- claim objective creative quality where only human/semantic judgment is possible.
+- merge `main`, tag, create GitHub Releases, publish media, or claim objective creative quality where only semantic/human judgment is possible.
 
-## 4. Recommended architecture
+## 4. Creative Job
 
-### 4.1 Creative Job as the durable unit
+Mac Core adds a durable `CreativeJob`. A job consumes one to eight immutable 2.3.18.1 Result Packages.
 
-Mac Core adds a durable `CreativeJob` fact. A job consumes one to eight immutable 2.3.18.1 Result Packages.
-
-All source Result Packages must:
+Every source Result Package must:
 
 - exist in Core-managed immutable result storage;
 - have `quality_outcome = PASS`;
-- have Work Package state `Completed`;
+- have source Work Package state `Completed`;
 - belong to the same `project_key`;
 - use an allowed 2.3.18.1 analysis profile;
 - retain resolvable evidence references.
 
-A job may combine, for example:
+A preferred job can combine a review-analysis Result Package with an inspiration-analysis Result Package so customer demand and creative pattern evidence remain separately traceable.
 
-- one `reviews.voice_of_customer.v1` Result Package containing customer pain points; and
-- one `ideas.pattern_analysis.v1` Result Package containing inspiration patterns.
+### 4.1 Creative objective
 
-This is the preferred path for high-value creative synthesis because customer demand and creative pattern evidence remain separately traceable.
+A job may contain one optional `creative_objective`, maximum 2000 UTF-8 characters. This is **untrusted business intent**, never a system prompt. It can describe goals such as emphasizing a pain point, targeting a broad audience, or avoiding a claim category. It cannot change model identity, endpoint, system instructions, schemas, tools, paths, commands, retry budgets, safety policy, or production execution policy.
 
-### 4.2 Creative objective
-
-A Creative Job may contain one bounded `creative_objective` text field, maximum 2000 UTF-8 characters.
-
-This field is treated as **untrusted business intent**, not a system prompt. It can describe goals such as:
-
-- emphasize a specific customer pain point;
-- create short-form product-education concepts;
-- avoid a known claim category;
-- target a broad audience segment.
-
-It cannot alter model identity, system instructions, schemas, tools, paths, commands, retry budgets, safety rules, or production execution policy.
-
-If omitted, the job derives a default objective from the bound Result Packages and project context.
+If omitted, a deterministic default objective is derived from bound Result Package/project facts.
 
 ## 5. Closed creative profile
 
-2.3.19.1 ships one first-class creative profile:
+2.3.19.1 ships exactly one first-class profile:
 
 `creative.content_plan.v1`
 
-It owns the complete source-controlled stage templates and schemas for:
+It owns source-controlled templates and strict schemas for:
 
 1. `idea_ranking.v1`
 2. `creative_brief.v1`
 3. `script.v1`
 4. `shot_plan.v1`
 
-Windows cannot define new creative profile IDs or prompt templates.
+Windows cannot define new creative profiles or templates.
 
-Future profiles can be added as source-controlled product capabilities without changing the Result Package bridge.
+## 6. Source normalization and finding identity
 
-## 6. Stage 1 — Idea Ranking
+2.3.18.1 Result Package findings have ranked structured findings with evidence IDs but do **not** expose a standalone `finding_id`. 2.3.19.1 must not rewrite the historical 18.1 contract.
 
-Input:
+Mac Core therefore derives a stable read-only `source_finding_ref` for every source finding:
 
-- immutable PASS Result Package facts;
-- bounded evidence references and excerpts carried by those results;
-- project key;
-- bounded creative objective.
+`<result_package_id>:finding:<rank>`
 
-Output is a strict `IdeaRankingResult` containing 3–10 ranked concepts.
+and separately binds:
 
-Each concept includes at least:
+- source Result Package ID;
+- source Result Package digest;
+- finding rank;
+- canonical finding content digest;
+- original `evidence_ids[]`.
 
-- `idea_id` — deterministic job-scoped logical ID;
+If an 18.1 Result Package contains duplicate/invalid ranks or a finding cannot be canonically normalized, it is ineligible for Creative Intelligence and fails closed.
+
+The model can cite only the derived `source_finding_ref` values and the already-existing evidence IDs. It cannot manufacture new source identities.
+
+## 7. Stage 1 — Idea Ranking
+
+`IdeaRankingResult` contains 3–10 ranked concepts. Each concept includes:
+
+- deterministic job-scoped `idea_id`;
 - `rank`;
 - `title`;
 - `audience_problem`;
@@ -137,25 +118,23 @@ Each concept includes at least:
 - `value_proposition`;
 - `format_hint`;
 - `confidence`;
-- `source_finding_ids`;
-- `source_evidence_ids`;
-- `claim_risk` — `LOW | MEDIUM | HIGH`;
-- `warnings`.
+- `source_finding_refs[]`;
+- `source_evidence_ids[]`;
+- `claim_risk = LOW | MEDIUM | HIGH`;
+- warnings.
 
-Every ranked concept must be grounded in at least one bound source finding and at least one resolvable source evidence ID.
+Every concept must reference at least one bound finding and one resolvable evidence ID. Novel combinations are allowed, but factual claims must remain distinguishable from creative synthesis.
 
-The model may propose a novel combination, but it must distinguish the novel creative synthesis from source-supported factual claims.
+## 8. Stage 2 — Creative Brief
 
-## 7. Stage 2 — Creative Brief
-
-The default winner is the rank-1 idea unless a future product version introduces explicit human selection. 2.3.19.1 does not add arbitrary edit boxes for replacing the ranked idea with free-form model instructions.
+The default winner is the rank-1 idea. 2.3.19.1 favors unattended throughput and does not add an arbitrary prompt-edit workflow between stages.
 
 `CreativeBriefResult` contains:
 
 - selected `idea_id`;
 - target audience;
 - customer problem;
-- promise/value proposition;
+- value proposition;
 - primary hook;
 - emotional tone;
 - content format;
@@ -167,45 +146,28 @@ The default winner is the rank-1 idea unless a future product version introduces
 - continuity notes;
 - source finding/evidence references.
 
-The brief must preserve the difference between:
+The brief preserves the difference between evidence-backed facts and creative choices.
 
-- evidence-backed business facts; and
-- creative choices inferred from those facts.
+## 9. Stage 3 — Script
 
-## 8. Stage 3 — Script
-
-`CreativeScriptResult` is a production-oriented script, not free-form prose.
-
-It contains:
+`CreativeScriptResult` is a production-oriented structure, not free-form prose. It contains:
 
 - `script_id`;
-- `title`;
+- title;
 - target duration seconds;
 - ordered `beats[]`;
-- optional voiceover text;
+- optional voiceover;
 - optional on-screen text;
 - visual intent per beat;
 - CTA beat;
 - evidence-backed claim references;
 - unsupported-claim warnings.
 
-Each beat has a deterministic `beat_id` so the Shot Plan can reference it without copying/guessing text identities.
+Each beat has a deterministic `beat_id`. Deterministic checks include unique ordered beat IDs, duration bounds, evidence linkage for factual claims, and absence of internal prompt/config/tool leakage. The gate does not pretend to prove emotional appeal.
 
-The script quality gate checks deterministic facts such as:
+## 10. Stage 4 — Shot Plan
 
-- unique ordered beat IDs;
-- duration bounds;
-- all factual claims point to known source evidence or are clearly marked as creative/non-factual language;
-- no internal prompt/config metadata leakage;
-- no executable instructions or tool calls.
-
-It does not pretend to prove that a script is emotionally compelling; semantic uncertainty may become `NeedsHuman` or `NeedsDeepAI`.
-
-## 9. Stage 4 — Shot Plan
-
-`ShotPlanResult` converts script beats into renderer-neutral production instructions.
-
-Each shot contains:
+`ShotPlanResult` converts beats into renderer-neutral production instructions. Each shot contains:
 
 - `shot_id`;
 - `beat_id`;
@@ -218,12 +180,12 @@ Each shot contains:
 - lighting/style intent;
 - continuity keys;
 - required product/brand facts;
-- source evidence IDs when the shot visually represents a factual claim;
+- source evidence IDs for factual visual claims;
 - optional text/voiceover reference;
 - production notes;
-- `render_intent` enum.
+- `render_intent`.
 
-Allowed `render_intent` values in v1 are descriptive only, for example:
+Allowed descriptive `render_intent` values are:
 
 - `GENERATIVE_VIDEO`
 - `GENERATIVE_IMAGE`
@@ -232,67 +194,55 @@ Allowed `render_intent` values in v1 are descriptive only, for example:
 - `TEXT_CARD`
 - `EXISTING_ASSET`
 
-These values do not execute a renderer. They are a stable abstraction for 2.3.20.1.
+These values never execute a renderer.
 
-Shot Plan v1 must not contain:
+Shot Plan v1 cannot contain ComfyUI node IDs/workflow JSON, checkpoint/LoRA paths, custom-node install commands, Python/shell commands, or external download URLs.
 
-- ComfyUI node IDs;
-- ComfyUI workflow JSON;
-- checkpoint/LoRA filesystem paths;
-- custom-node install commands;
-- Python/shell commands;
-- URLs instructing external downloads.
+## 11. Creative Package v1
 
-## 10. Creative Package v1
-
-Successful completion writes one immutable `Creative Package v1` ZIP under a Core-managed creative artifact root.
-
-Logical shape:
+Successful completion writes one immutable ZIP under a Core-managed creative artifact root:
 
 ```text
 <creative-package-id>/
   creative-package.json
 ```
 
-The manifest includes:
+The manifest contains:
 
-- `schema_version = "1.0"`
-- `creative_package_id`
-- `creative_job_id`
-- `project_key`
-- `creative_profile = "creative.content_plan.v1"`
-- bound source Result Package IDs and digests
-- creative objective digest
-- configured local model ID
-- model adapter version
-- each stage template version
-- each stage result digest
-- quality outcome
-- `idea_rankings`
-- `creative_brief`
-- `script`
-- `shot_plan`
-- flattened provenance/evidence references
-- warnings
-- completion timestamp
+- `schema_version = "1.0"`;
+- `creative_package_id`;
+- `creative_job_id`;
+- `project_key`;
+- `creative_profile = "creative.content_plan.v1"`;
+- bound source Result Package IDs/digests;
+- derived source finding refs/digests;
+- creative objective digest;
+- configured local model ID;
+- model adapter version;
+- stage template versions;
+- stage result digests;
+- quality outcome;
+- idea rankings;
+- creative brief;
+- script;
+- shot plan;
+- flattened provenance/evidence references;
+- warnings;
+- completion timestamp.
 
-The package identity must be immutable and idempotently reusable after restart.
+The package identity is immutable and restart-safe.
 
-## 11. Evidence/provenance chain
+## 12. Provenance chain
 
-The critical 19.1 invariant is:
+The critical invariant is:
 
-`shot → beat → creative brief → ranked idea → source finding → source evidence`
+`shot → beat → creative brief → ranked idea → source_finding_ref → source evidence`
 
-The system must be able to resolve every factual production claim backwards to the exact 18.1 Result Package and original evidence identity.
+Every factual production claim must resolve backwards to the exact 18.1 Result Package and original evidence ID. Unknown finding refs/evidence IDs are deterministic quality failures.
 
-Mac Core stores stage input/output digests and source-package digests. The local model never gets permission to fabricate new source evidence identities.
+## 13. Local creative execution
 
-Unknown `source_finding_id` or `source_evidence_id` is a deterministic quality failure.
-
-## 12. Local Intelligence execution
-
-Mac Worker adds a closed capability:
+Mac Worker adds the closed capability:
 
 `creative.intelligence.v1`
 
@@ -300,50 +250,40 @@ Fixed queue task type:
 
 `creative.content_plan.v1`
 
-Task payload contains only identifiers/digests required to load trusted Core facts, such as:
+Task payload contains identifiers/digests only, such as `creative_job_id`, `source_set_digest`, and `creative_profile`. It does not contain arbitrary prompts, model IDs, endpoints, paths, commands, tools, or ComfyUI workflow data.
 
-- `creative_job_id`
-- `source_set_digest`
-- `creative_profile`
+The trusted loopback-only OpenAI-compatible adapter introduced in 18.1 is reused. The default configured model remains `gpt-oss:20b` unless trusted Mac-side configuration changes it.
 
-It does not carry arbitrary prompts, model IDs, endpoints, paths, commands, tools, ComfyUI workflow data, or executable content.
+## 14. Stage execution and retry policy
 
-The same trusted loopback-only OpenAI-compatible adapter introduced in 18.1 remains the default transport, with configured local model identity `gpt-oss:20b` unless Mac-side trusted configuration changes it.
+Each stage is independently checkpointed.
 
-## 13. Stage execution and retry policy
-
-Each of the four creative stages is independently checkpointed.
-
-For each stage:
+For every stage:
 
 - initial model attempt: 1;
-- deterministic correction retry when and only when the error is schema/provenance/format repairable: maximum 1;
-- maximum total model attempts per stage: 2.
+- at most one correction retry for schema/provenance/format-repairable failures;
+- total model attempts per stage: maximum 2.
 
-A successful completed stage is never re-run after process restart unless its exact immutable input identity changed, in which case the system must create a new job/revision identity rather than silently overwrite history.
+A persisted valid stage is adopted after restart. It is not regenerated unless its immutable input identity changes; a changed input creates a new job/revision identity rather than overwriting history. There is no unbounded regeneration loop.
 
-A Worker crash after a persisted valid stage result must adopt that result on recovery.
+## 15. Deterministic Creative Quality Gate
 
-There is no unbounded regeneration loop.
+The gate validates software-verifiable facts:
 
-## 14. Deterministic Creative Quality Gate
-
-The quality gate validates what software can reliably establish:
-
-- strict schema/version match;
-- allowed enum values;
+- strict schema/version;
+- allowed enums;
 - rank/order uniqueness;
-- duration/count bounds;
-- every stage reference resolves to an earlier immutable stage fact;
-- every source finding/evidence ID resolves to the bound PASS Result Packages;
-- factual claims have evidence linkage or an explicit unsupported/creative marker;
-- no tool/system prompt/config/secrets leakage;
+- duration/count/text-size bounds;
+- stage references resolve to earlier immutable stage facts;
+- every `source_finding_ref` resolves to a bound normalized finding;
+- every evidence ID resolves to a bound source result;
+- factual claims have evidence linkage or explicit unsupported/creative marking;
+- no prompt/config/secret leakage;
 - no arbitrary executable/path/URL/ComfyUI workflow payload;
-- output and text sizes remain within fixed limits;
-- final Shot Plan covers all required script beats;
-- no impossible duplicate shot/beat identities.
+- final Shot Plan covers required script beats;
+- no duplicate shot/beat identities.
 
-Quality outcomes are:
+Outcomes remain:
 
 - `PASS`
 - `RETRY`
@@ -351,53 +291,28 @@ Quality outcomes are:
 - `NEEDS_HUMAN`
 - `REJECT`
 
-Creative attractiveness, humor, emotional impact, and aesthetic taste are not misrepresented as deterministic facts. Low confidence, conflicting concepts, unsupported claims, or unresolved semantic problems may become `NEEDS_HUMAN` or `NEEDS_DEEP_AI`.
+Creative attractiveness, humor, emotional impact, and aesthetic taste are not asserted as deterministic facts. Low confidence, conflicting concepts, unsupported claims, or unresolved semantic uncertainty can become `NEEDS_HUMAN` or `NEEDS_DEEP_AI`.
 
-## 15. Deep-AI exception path
+## 16. Manual Deep-AI exception path
 
-If a creative stage reaches `NEEDS_DEEP_AI`, Mac Core may produce a sanitized **manual Creative Deep-AI Handoff**.
+A failed creative stage may create a sanitized manual Creative Deep-AI Handoff containing only bounded job/project facts, creative objective, prior validated stages, bounded source findings/evidence excerpts, failed local result, deterministic quality reasons, exact return schema, and digests.
 
-It contains only bounded information needed to resolve the failed stage:
+It excludes credentials, local absolute paths, full raw datasets, unrelated records, hidden system prompts, and any automatic external submission. 2.3.19.1 does not automatically call paid AI.
 
-- job/project identity;
-- creative objective;
-- prior validated creative stages;
-- bounded source findings/evidence excerpts;
-- failed local result;
-- deterministic quality reasons;
-- exact requested return schema;
-- source/stage digests.
+## 17. Persistence — Migration 12
 
-It excludes:
-
-- credentials/tokens;
-- local absolute paths;
-- full raw business datasets;
-- unrelated records;
-- hidden system prompts;
-- automatic external submission instructions.
-
-2.3.19.1 does not automatically call paid AI.
-
-## 16. Persistence — Migration 12
-
-Current 2.3.18.1 database schema is 11. 2.3.19.1 adds **Migration 12**.
-
-Durable facts include at least:
+Current schema is 11. 2.3.19.1 adds Migration 12 with at least:
 
 - `creative_jobs`
 - `creative_job_sources`
+- `creative_source_findings`
 - `creative_stage_runs`
 - `creative_packages`
 - `creative_deep_ai_handoffs`
 
-SQLite stores bounded identities, state, digests, JSON facts and managed relative paths. It does not store large raw media or duplicate the original 18.1 raw datasets as BLOBs.
+SQLite stores bounded identities, state, digests, normalized finding facts, JSON facts, and managed relative paths. It does not duplicate raw 18.1 datasets as BLOBs. A Creative Job source set is immutable after creation.
 
-A Creative Job source set is immutable after job creation.
-
-## 17. State model
-
-Creative Job lifecycle:
+## 18. State model
 
 ```text
 Ready
@@ -417,24 +332,13 @@ Attention/terminal alternatives:
 - `Failed`
 - `Cancelled`
 
-Stage state is separately durable so a restart does not restart the whole creative chain.
+Stage state is separately durable so restart does not restart the full chain.
 
-## 18. Windows UX
+## 19. Windows UX
 
-The existing **业务自动化** page remains the business-facing surface. 2.3.19.1 adds a clearly separated **Creative Intelligence / 创意智能** section instead of creating another unrelated application.
+The existing **业务自动化** page gains a separated **Creative Intelligence / 创意智能** section.
 
-It displays:
-
-- project key;
-- bound Result Package IDs;
-- creative profile;
-- creative job status;
-- current stage;
-- local creative capability health;
-- selected top idea title;
-- package availability;
-- warnings/attention state;
-- safe failure code/message.
+It shows project key, bound Result Package IDs, creative profile, job status, current stage, local creative capability health, selected top idea, package availability, warnings/attention, and safe failure facts.
 
 Fixed actions only:
 
@@ -442,181 +346,116 @@ Fixed actions only:
 - `刷新创意状态`
 - `取消所选创意任务`
 - `导出 Creative Package`
-- `导出 Creative Deep-AI Handoff` when available
+- `导出 Creative Deep-AI Handoff`
 
-`准备创意方案` may let the user choose one to eight eligible PASS Result Packages from the same project and optionally provide the bounded creative objective. It cannot accept free-form model/system prompt/endpoint/tool/command/path/ComfyUI workflow fields.
+Preparing can select one to eight eligible PASS Result Packages from one project and optionally provide the bounded creative objective. No free model/system-prompt/endpoint/tool/command/path/ComfyUI workflow inputs are allowed.
 
-The UI must clearly display:
+The UI must state:
 
 `creative_ready != rendered != publish-ready`
 
-All read-only record bindings must use explicit `Mode=OneWay`; a real STA WPF `Measure/Arrange/UpdateLayout` regression test is required.
+All read-only bindings use explicit `Mode=OneWay`; real STA `Measure/Arrange/UpdateLayout` coverage is mandatory.
 
-## 19. API boundary
+## 20. API boundary
 
-Mac Core adds authenticated bounded endpoints under `/api/v1/creative/...` for:
+Authenticated bounded endpoints live under `/api/v1/creative/...` for:
 
-- list eligible PASS Result Packages;
-- prepare/create a Creative Job;
-- list/get Creative Jobs;
-- cancel a nonterminal job;
-- read Creative Package metadata;
-- download Creative Package;
-- read/download manual Creative Deep-AI Handoff.
+- eligible PASS Result Packages;
+- create/prepare Creative Job;
+- list/get jobs;
+- cancel nonterminal job;
+- Creative Package metadata/download;
+- manual Creative Deep-AI Handoff metadata/download.
 
-Create accepts only source Result Package IDs, the closed profile ID and optional bounded creative objective. It does not accept arbitrary prompt/model/endpoint/path/command/tool/workflow fields.
+Create accepts only source Result Package IDs, closed profile ID, optional bounded objective, and idempotency identity. It cannot accept arbitrary prompt/model/endpoint/path/command/tool/workflow fields.
 
-## 20. Idempotency and recovery
+## 21. Idempotency and recovery
 
-A deterministic job source-set digest binds:
+A deterministic source-set digest binds:
 
 - sorted source Result Package IDs/digests;
+- normalized source finding refs/digests;
 - project key;
 - creative profile;
 - normalized creative objective digest;
 - stage-template version set.
 
-Same idempotency key + same source-set digest reuses the same Creative Job.
+Same idempotency key + same source-set digest reuses the job. Same key + different digest conflicts. Completed stage identity + same input digest is reused. Final Creative Package is immutable; a different package digest under the same identity is a conflict.
 
-Same idempotency key + different source-set digest conflicts and never overwrites history.
+## 22. Security/privacy boundary
 
-Completed stage identity + same input digest is reused after restart.
+2.3.19.1 preserves all 18.1 restrictions and adds:
 
-Final `Creative Package v1` is immutable; a different package digest under the same package/job identity is a conflict.
-
-## 21. Security/privacy boundary
-
-2.3.19.1 must preserve all 18.1 restrictions and additionally enforce:
-
-- only PASS Result Packages can enter creative generation;
-- source packages must belong to the same project;
-- no raw Work Package path may be supplied by Windows;
+- only PASS/Completed Result Packages are eligible;
+- all sources must share one project;
+- maximum eight sources;
+- no raw Work Package path from Windows;
 - no producer-selected model/endpoint/system prompt/tool/command/executable;
 - no model tools;
 - loopback-only model transport;
 - no automatic paid AI;
 - no ComfyUI execution;
-- no arbitrary URLs/download instructions in renderer-neutral Shot Plan fields;
+- no arbitrary URLs/download instructions in Shot Plan;
 - no raw business data in normal logs/UI;
-- no internal prompt/config/secrets in Creative Package or handoff;
-- bounded text/list sizes throughout;
-- evidence/provenance references fail closed.
+- no internal prompt/config/secrets in Creative Package/Handoff;
+- bounded text/list sizes;
+- provenance failures fail closed.
 
-## 22. TDD and native verification
+## 23. TDD and native verification
 
 Implementation is TDD-first.
 
-Required RED/GREEN coverage includes:
+Core/domain RED/GREEN coverage must include Migration 12, only PASS/Completed eligibility, cross-project rejection, max-eight sources, stable finding-ref derivation and digest binding, duplicate/invalid source-rank rejection, idempotency reuse/conflict, objective bounds, state transitions, and immutable package identity.
 
-### Core/domain
+Creative stage tests cover idea schema/ranks/provenance, brief selected-idea references, script beat identity/order/duration/claims, Shot Plan beat coverage/order/duration/allowed render intent, unknown refs, one correction retry, second failure attention, semantic uncertainty attention, and crash recovery reuse.
 
-- Migration 12 tables/indexes and replay;
-- only PASS/Completed Result Packages are eligible;
-- cross-project source selection rejected;
-- source set max 8;
-- idempotency reuse/conflict;
-- objective bounds and treatment as data;
-- exact state transitions;
-- immutable package identity.
+CI local-model tests use a deterministic fake loopback server and verify no real paid call, no tools/functions, non-loopback rejection, prompt-injection containment, output bounds, invalid JSON/reference containment, and that producer objective cannot alter model/endpoint/template/tool policy.
 
-### Creative stages
+Windows tests cover eligible source selection, same-project restriction, no arbitrary execution/config input surface, bounded atomic Creative Package download, real STA WPF layout/binding, and 18.1 Inbox/Outbox non-regression.
 
-- idea ranking schema/ranks/evidence;
-- brief references only valid ranked idea/source facts;
-- script beat IDs/order/duration/claims;
-- shot-plan beat coverage, shot order/duration, allowed `render_intent`;
-- unknown finding/evidence IDs rejected/retried;
-- schema repair gets at most one retry;
-- second repairable failure becomes attention, not a loop;
-- semantic uncertainty becomes attention;
-- crash recovery reuses persisted valid stage facts.
-
-### Local model security
-
-CI uses a deterministic fake loopback model server. It verifies:
-
-- no real paid model call;
-- no tools/functions;
-- non-loopback endpoint rejected;
-- prompt injection inside source result text cannot redefine system policy;
-- output size bounded;
-- invalid JSON/unknown references are contained;
-- producer objective cannot change model/endpoint/template/tool policy.
-
-### Windows
-
-- eligible Result Package selection;
-- same-project restriction reflected in UI/client behavior;
-- no arbitrary model/prompt/endpoint/path/command/tool/ComfyUI workflow inputs;
-- Creative Package download is bounded and atomic;
-- real STA WPF binding/layout smoke;
-- existing 18.1 Inbox/Outbox business bridge remains non-regressed.
-
-## 23. Product version, CI and packaging
+## 24. Product version, CI and packages
 
 Product version becomes `2.3.19.1`; database schema becomes 12.
 
-Impact is expected on all three runtime surfaces:
+Expected runtime impact:
 
-- Mac Core: Migration 12, creative facts/API/package storage;
-- Mac Worker: creative stage coordinator and closed creative capability;
-- Windows: Creative Intelligence UI/client/actions.
+- Mac Core: Migration 12, creative facts/API/storage;
+- Mac Worker: creative coordinator/capability;
+- Windows: creative UI/client/actions.
 
-Final delivery therefore requires current exact-head success for:
+Final delivery requires current exact-head success for Mac Core arm64 CI, Mac Worker arm64 CI, Windows WPF native CI, and Windows formal prebuilt release CI.
 
-- Mac Core arm64 CI;
-- Mac Worker arm64 CI;
-- Windows WPF native CI;
-- Windows formal prebuilt release CI.
+Deliverables include precompiled Windows, Mac Core, Mac Worker packages, SHA-256 sidecars/combined manifest, independent package verification, Chinese manual acceptance, and non-sensitive creative fixture/result samples where useful. User machines do not compile source or install SDKs.
 
-Final delivery must include:
+Implementation PR remains Draft/Open/Unmerged. No main merge, tag, or GitHub Release.
 
-- precompiled Windows 2.3.19.1 package + SHA-256;
-- Mac Core arm64 2.3.19.1 package + SHA-256;
-- Mac Worker arm64 2.3.19.1 package + SHA-256;
-- combined SHA manifest;
-- independent package verification;
-- Chinese manual acceptance guide;
-- non-sensitive creative fixture/result samples as appropriate.
+## 25. Real-machine acceptance
 
-User machines do not compile source and do not install SDKs.
-
-The implementation PR remains Draft/Open/Unmerged. No `main` merge, tag or GitHub Release is performed.
-
-## 24. Real-machine acceptance
-
-After 18.1 local intelligence is healthy and at least one Result Package is `Completed/PASS`, real-machine acceptance for 19.1 should:
+After 18.1 local intelligence is healthy and at least one Result Package is `Completed/PASS`:
 
 1. install Mac Core → Mac Worker → Windows 2.3.19.1;
-2. verify product version and schema 12;
-3. rerun the 18.1 safe diagnostic/business path for non-regression;
+2. verify version and schema 12;
+3. rerun 18.1 diagnostic/business non-regression;
 4. choose one or more eligible PASS Result Packages from one project;
 5. create one `creative.content_plan.v1` job;
-6. observe stage progression through Idea Ranking → Brief → Script → Shot Plan → QualityCheck;
+6. observe Idea Ranking → Brief → Script → Shot Plan → QualityCheck;
 7. reach `creative_ready`;
-8. download/export the exact Creative Package;
-9. restart Windows/Core/Worker and confirm the same job/stage/package identities remain and completed stages are not re-run;
-10. confirm no ComfyUI job, paid AI call, shell command, Git publication, `main` write, tag or Release occurred.
+8. export the exact Creative Package;
+9. restart Windows/Core/Worker and confirm identities remain and completed stages are not re-run;
+10. confirm no ComfyUI job, paid AI call, shell command, Git publication, main write, tag, or Release occurred.
 
-An optional negative acceptance can force invalid fake/local model structure and verify the two-attempt ceiling plus sanitized manual Creative Deep-AI Handoff.
+An optional negative acceptance forces invalid structure and verifies the two-attempt ceiling plus sanitized manual Creative Deep-AI Handoff.
 
-## 25. Roadmap after 2.3.19.1
+## 26. Roadmap after 2.3.19.1
 
 ### 2.3.20.1 — ComfyUI Production Orchestrator
 
-Consumes only validated `creative_ready` Creative Package / Shot Plan facts:
+Consumes only validated `creative_ready` Creative Package/Shot Plan facts:
 
-`creative_ready → renderer-neutral shot plan → Windows local ComfyUI adapter → preview → deterministic media QC → final media`
+`creative_ready → renderer-neutral Shot Plan → Windows local ComfyUI adapter → preview → deterministic media QC → final media`
 
-The production layer chooses audited ComfyUI workflow adapters; the Creative Package never contains arbitrary executable workflow JSON.
+The production layer chooses audited ComfyUI workflow adapters. Creative Package never carries arbitrary executable workflow JSON.
 
-### Later
+## 27. Success definition
 
-- creative/human revision workflow if real usage proves it necessary;
-- richer project memory and past-content performance feedback;
-- separately approved paid-AI escalation;
-- end-to-end content production and publishing controls.
-
-## 26. Success definition
-
-2.3.19.1 succeeds when validated 18.1 business intelligence can be transformed primarily by the Mac-local `gpt-oss:20b` path into an immutable, evidence-traceable Creative Package containing ranked ideas, a creative brief, a structured script and a renderer-neutral Shot Plan, with bounded retries and safe attention states, without invoking ComfyUI or paid AI.
+2.3.19.1 succeeds when validated 18.1 business intelligence is transformed primarily by the Mac-local `gpt-oss:20b` path into an immutable, evidence-traceable Creative Package containing ranked ideas, a creative brief, a structured script, and a renderer-neutral Shot Plan, with bounded retries and safe attention states, without invoking ComfyUI or paid AI.
