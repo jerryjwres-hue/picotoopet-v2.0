@@ -18,6 +18,7 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
 
     private readonly ControlCenterSession? _session;
     private readonly BusinessBridgeService? _bridge;
+    private readonly IReadOnlyList<string> _adapterProfiles = Array.AsReadOnly(FixedAdapterProfiles);
     private IReadOnlyList<BusinessWorkPackageRecord> _workPackages = Array.Empty<BusinessWorkPackageRecord>();
     private IReadOnlyList<BusinessPipelineRunRecord> _runs = Array.Empty<BusinessPipelineRunRecord>();
     private BusinessWorkPackageRecord? _selectedWorkPackage;
@@ -41,7 +42,7 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
         SelectedRun = runs.Count > 0 ? runs[0] : null;
     }
 
-    public IReadOnlyList<string> AdapterProfiles => FixedAdapterProfiles;
+    public IReadOnlyList<string> AdapterProfiles => _adapterProfiles;
 
     public IReadOnlyList<BusinessWorkPackageRecord> WorkPackages
     {
@@ -158,7 +159,7 @@ public sealed class BusinessPipelinePanelViewModel : ObservableObject
         && !string.IsNullOrWhiteSpace(SourcePath)
         && !string.IsNullOrWhiteSpace(ProjectKey)
         && !string.IsNullOrWhiteSpace(Objective)
-        && FixedAdapterProfiles.Contains(SelectedAdapterProfile, StringComparer.Ordinal);
+        && _adapterProfiles.Contains(SelectedAdapterProfile, StringComparer.Ordinal);
 
     public bool CanCreate => !IsBusy && SelectedWorkPackage is not null;
 
