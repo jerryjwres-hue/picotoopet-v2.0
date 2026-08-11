@@ -7,7 +7,7 @@ using PicotooPet.Desktop.Core.Contracts;
 namespace PicotooPet.Desktop.Core.Networking;
 
 /// <summary>2.3.20.1 Production REST 客户端；只发送 Core 定义的有界状态与执行证据。</summary>
-public sealed class MacCoreProductionClient : IAsyncDisposable
+public sealed partial class MacCoreProductionClient : IAsyncDisposable
 {
     private const int MaxJsonResponseBytes = 4 * 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
