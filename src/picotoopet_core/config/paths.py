@@ -104,6 +104,16 @@ class RuntimePaths:
     def creative_handoffs_dir(self) -> Path:
         return self.creative_root / "handoffs"
 
+    @property
+    def production_root(self) -> Path:
+        """Production 只保存 Core 管理的结果清单，不接管 ComfyUI 数据根。"""
+
+        return self.runtime_dir / "production"
+
+    @property
+    def production_packages_dir(self) -> Path:
+        return self.production_root / "packages"
+
     def managed_directories(self) -> tuple[Path, ...]:
         """返回安装器和运行时允许创建的全部目录。"""
 
@@ -128,6 +138,8 @@ class RuntimePaths:
             self.creative_root,
             self.creative_packages_dir,
             self.creative_handoffs_dir,
+            self.production_root,
+            self.production_packages_dir,
         )
 
     def ensure(self) -> None:

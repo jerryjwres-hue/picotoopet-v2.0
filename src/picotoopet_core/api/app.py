@@ -23,6 +23,7 @@ from .routes import (
     events,
     handoffs,
     health,
+    production,
     projects,
     provider_commits,
     provider_publications,
@@ -84,6 +85,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(automation.router, prefix=prefix, tags=["automation"])
     app.include_router(business_automation.router, prefix=prefix, tags=["business-automation"])
     app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
+    app.include_router(production.router, prefix=prefix, tags=["production"])
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
     app.include_router(workers.router, prefix=prefix, tags=["workers"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])

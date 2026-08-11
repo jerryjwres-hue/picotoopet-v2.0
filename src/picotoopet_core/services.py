@@ -28,6 +28,9 @@ from picotoopet_core.handoffs.approvals import HandoffApprovalService
 from picotoopet_core.handoffs.service import HandoffService
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import ResidentManager
+from picotoopet_core.production.repository import ProductionRepository
+from picotoopet_core.production.service import ProductionService
+from picotoopet_core.production.store import ProductionArtifactStore
 from picotoopet_core.projects.repository import ProjectRepository
 from picotoopet_core.providers.artifact_store import ProviderReturnArtifactStore
 from picotoopet_core.providers.commit_service import ProviderCommitService
@@ -61,6 +64,9 @@ class Services:
     creative_source: CreativeSourceNormalizer
     creative_store: CreativeArtifactStore
     creative: CreativeIntelligenceService
+    production_repository: ProductionRepository
+    production_store: ProductionArtifactStore
+    production: ProductionService
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -111,6 +117,13 @@ def build_services(settings: AppSettings) -> Services:
         store=creative_store,
         queue=queue,
     )
+    production_repository = ProductionRepository(database)
+    production_store = ProductionArtifactStore(settings.paths)
+    production = ProductionService(
+        repository=production_repository,
+        creative_repository=creative_repository,
+        store=production_store,
+    )
     approvals = HandoffApprovalService(database, queue)
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
@@ -144,6 +157,9 @@ def build_services(settings: AppSettings) -> Services:
         creative_source=creative_source,
         creative_store=creative_store,
         creative=creative,
+        production_repository=production_repository,
+        production_store=production_store,
+        production=production,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,

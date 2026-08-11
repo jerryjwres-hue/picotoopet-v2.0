@@ -13,6 +13,7 @@ from .migration_009 import MIGRATION_009
 from .migration_010 import MIGRATION_010
 from .migration_011 import MIGRATION_011
 from .migration_012 import MIGRATION_012
+from .migration_013 import MIGRATION_013
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -210,6 +211,17 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (12, datetime.now(UTC).isoformat()),
+                )
+
+            migration_013_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 13"
+            ).fetchone()
+            if migration_013_exists is None:
+                # ── 2.3.20.1 local ComfyUI production facts ─────────────────
+                connection.executescript(MIGRATION_013)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (13, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
