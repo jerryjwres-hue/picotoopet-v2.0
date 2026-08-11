@@ -2,32 +2,33 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 lease reclaim 恢复：Core 已提交 Succeeded 的 shot 不得再次进入 Windows resume plan。</summary>
+/// <summary>冻结 lease reclaim 响应：完整 snapshot 保留审计，resume plan 只含未完成 shot。</summary>
 internal static class ProductionRecoverySmokeTests
 {
     public static void Run()
     {
-        var firstTask = PlanTask("00000000-0000-4000-8000-000000000201", "shot-1", 1);
+        var firstTask  = PlanTask("00000000-0000-4000-8000-000000000201", "shot-1", 1);
         var secondTask = PlanTask("00000000-0000-4000-8000-000000000202", "shot-2", 2);
-        var plan = new ProductionPlanRecord(
+        var resumePlan = new ProductionPlanRecord(
             "1.0",
             "production.comfyui.v1",
             "00000000-0000-4000-8000-000000000200",
             "00000000-0000-4000-8000-000000000190",
             new string('a', 64),
             "pet-dryer-us",
-            [firstTask, secondTask]);
+            [secondTask]);
         var completed = TaskRecord(firstTask, "Succeeded", "outputs/shot-1.webm", new string('b', 64));
-        var pending = TaskRecord(secondTask, "Ready", null, null);
+        var pending   = TaskRecord(secondTask, "Ready", null, null);
 
         var claim = new ProductionClaimRecord(
-            plan.ProductionJobId,
+            resumePlan.ProductionJobId,
             "windows-production-smoke",
             "0123456789abcdef0123456789abcdef",
             DateTimeOffset.UtcNow.AddMinutes(2),
-            plan,
+            resumePlan,
             [completed, pending]);
 
+        // ── Core 保留全量事实，但 Windows render loop 只能看到未完成计划 ─────────
         SmokeAssert.True(claim.Tasks.Length == 2, "durable task snapshot 必须完整保留");
         SmokeAssert.True(claim.Plan.Tasks.Length == 1, "resume plan 必须过滤已 Succeeded shot");
         SmokeAssert.True(
