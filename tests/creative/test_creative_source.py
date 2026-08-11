@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,6 +32,7 @@ def _seed_result(
     result_package_id = str(uuid4())
     source_digest = "a" * 64
     preprocess_digest = "b" * 64
+    result_digest = hashlib.sha256(result_package_id.encode("utf-8")).hexdigest()
     evidence_id = f"reviews:key:{result_package_id[:16]}"
     result = {
         "schema_version": "1.0",
@@ -87,7 +89,7 @@ def _seed_result(
             "gpt-oss:20b",
             "reviews-v1.0.0",
             quality,
-            "c" * 64,
+            result_digest,
             f"runtime/business/results/{result_package_id}.zip",
             json.dumps(result, ensure_ascii=False, sort_keys=True),
             "[]",

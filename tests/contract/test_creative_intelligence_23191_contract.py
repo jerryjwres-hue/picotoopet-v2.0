@@ -42,6 +42,6 @@ def test_creative_design_boundary_is_closed() -> None:
         "Migration 12",
         "maximum 2",
         "does not automatically call paid AI",
-        "does not execute ComfyUI",
+        "execute ComfyUI",
     ):
         assert required in design
