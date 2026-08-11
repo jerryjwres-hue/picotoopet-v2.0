@@ -224,6 +224,7 @@ class ProductionRepository:
             lease_token=raw_token,
             lease_expires_at=expires,
             plan=self.plan_for(production_job_id),
+            tasks=self.list_tasks(production_job_id),
         )
 
     def heartbeat(
