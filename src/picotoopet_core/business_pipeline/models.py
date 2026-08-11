@@ -38,6 +38,16 @@ class BusinessPipelineQualityOutcome(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class BusinessPipelineRunCreateRequest(BaseModel):
+    """Producer-visible fields; renderer/model/provider authority is intentionally absent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_package_id: str = Field(min_length=1, max_length=128)
+    adapter_profile: BusinessAdapterProfile
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
 class BusinessPipelineRunRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
