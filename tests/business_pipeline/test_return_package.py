@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -12,6 +11,7 @@ import pytest
 from picotoopet_core.business.models import BusinessAnalysisProfile, BusinessQualityOutcome, BusinessWorkPackageStatus
 from picotoopet_core.business_pipeline.models import BusinessAdapterProfile, BusinessPipelineStatus
 from picotoopet_core.business_pipeline.repository import BusinessPipelineRepository
+from picotoopet_core.creative.models import CreativeJobStatus
 from picotoopet_core.db.database import Database
 from picotoopet_core.production.models import ProductionJobStatus
 
@@ -63,7 +63,7 @@ class _Business:
 class _Creative:
     def __init__(self) -> None:
         self.job = SimpleNamespace(
-            creative_job_id=str(uuid4()), status="creative_ready", creative_package_id=str(uuid4()),
+            creative_job_id=str(uuid4()), status=CreativeJobStatus.CREATIVE_READY, creative_package_id=str(uuid4()),
             failure_code=None, error_message=None,
         )
         self.package = SimpleNamespace(
