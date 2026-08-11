@@ -49,6 +49,7 @@ internal static class Program
             ProviderReviewPanelWpfLayoutSmokeTests.Run();
             PlatformFoundationPagesWpfLayoutSmokeTests.Run();
             BusinessAutomationWpfSmokeTests.Run();
+            BusinessPipelineAdapterSmokeTests.Run();
             CreativeIntelligenceWpfSmokeTests.Run();
             ProductionPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
