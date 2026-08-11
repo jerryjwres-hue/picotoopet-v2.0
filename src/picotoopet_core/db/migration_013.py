@@ -3,7 +3,7 @@
 MIGRATION_013 = r"""
 CREATE TABLE IF NOT EXISTS production_jobs (
     production_job_id        TEXT PRIMARY KEY,
-    creative_package_id      TEXT NOT NULL UNIQUE REFERENCES creative_packages(creative_package_id) ON DELETE RESTRICT,
+    creative_package_id      TEXT NOT NULL,
     creative_package_digest  TEXT NOT NULL,
     project_key              TEXT NOT NULL,
     production_profile       TEXT NOT NULL,
@@ -24,6 +24,8 @@ CREATE INDEX IF NOT EXISTS idx_production_jobs_status_created
     ON production_jobs(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_production_jobs_project_created
     ON production_jobs(project_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_production_jobs_creative_package
+    ON production_jobs(creative_package_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS production_tasks (
     production_task_id       TEXT PRIMARY KEY,
