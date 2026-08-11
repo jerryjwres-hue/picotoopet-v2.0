@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>业务自动化事实页；固定 Inbox/Outbox + Mac 本地智能，不暴露模型/prompt/命令输入。</summary>
+/// <summary>业务自动化事实页；串联 Business → Creative → Production，但不暴露自由模型/工作流/命令输入。</summary>
 public sealed class BusinessAutomationPageViewModel : PageViewModel
 {
     private readonly ControlCenterSession? _session;
@@ -19,6 +19,7 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _bridge = new BusinessBridgeService(session);
         Creative = new CreativeIntelligencePanelViewModel(session);
+        Production = new ProductionPanelViewModel(session);
     }
 
     private BusinessAutomationPageViewModel(
@@ -31,9 +32,11 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         Creative = CreativeIntelligencePanelViewModel.CreateForSmokeTest(
             Array.Empty<CreativeEligibleSourceRecord>(),
             "creative.intelligence.v1 · smoke");
+        Production = ProductionPanelViewModel.CreateForSmokeTest();
     }
 
     public CreativeIntelligencePanelViewModel Creative { get; }
+    public ProductionPanelViewModel Production { get; }
 
     public IReadOnlyList<BusinessWorkPackageRecord> Packages
     {
@@ -93,7 +96,7 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         string localIntelligenceStatus = "local.intelligence.v1 · healthy") =>
         new(packages, localIntelligenceStatus);
 
-    /// <summary>刷新时顺带消费固定 Inbox 并投递已完成 Result；没有自由路径或模型参数。</summary>
+    /// <summary>刷新固定 Inbox/Outbox、Creative 与 Production；没有自由路径或 renderer 参数。</summary>
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
         var session = RequireSession();
@@ -104,6 +107,9 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
             var bridgeResult = await bridge.ProcessInboxAsync(cancellationToken).ConfigureAwait(false);
             var delivered = await bridge.DeliverCompletedResultsAsync(cancellationToken).ConfigureAwait(false);
             await RefreshCoreAsync(session, cancellationToken).ConfigureAwait(false);
+            var creativeTask = Creative.RefreshAsync(cancellationToken);
+            var productionTask = Production.RefreshAsync(cancellationToken);
+            await Task.WhenAll(creativeTask, productionTask).ConfigureAwait(false);
             StatusMessage =
                 $"已加载 {Packages.Count} 个业务包；Inbox 提交 {bridgeResult.Submitted}，隔离 {bridgeResult.Quarantined}，暂缓 {bridgeResult.Deferred}；Result 投递 {delivered}。";
         }
