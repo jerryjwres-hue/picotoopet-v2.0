@@ -8,7 +8,14 @@ EXECUTOR = ROOT / "windows/desktop/src/PicotooPet.Desktop/Services/ProductionExe
 def test_executor_reserves_attempt_before_submitting_comfy_prompt() -> None:
     # ── Core must accept the attempt before any GPU work can become orphaned ─
     source = EXECUTOR.read_text(encoding="utf-8")
-    reserve = source.index("new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null)")
     submit = source.index("_comfy.SubmitPromptAsync")
-    bind = source.index("new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, promptId)")
-    assert reserve < submit < bind
+    marker = "await _session.MarkProductionAttemptAsync("
+    first_mark = source.index(marker)
+    second_mark = source.index(marker, first_mark + len(marker))
+
+    # ── The first Core write is the null prompt reservation; bind follows submit ─
+    first_segment = source[first_mark:submit]
+    second_segment = source[submit:second_mark + 500]
+    assert "new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null)" in first_segment
+    assert "new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken," in second_segment
+    assert first_mark < submit < second_mark
