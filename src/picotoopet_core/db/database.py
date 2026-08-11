@@ -14,6 +14,7 @@ from .migration_010 import MIGRATION_010
 from .migration_011 import MIGRATION_011
 from .migration_012 import MIGRATION_012
 from .migration_013 import MIGRATION_013
+from .migration_014 import MIGRATION_014
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -222,6 +223,17 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (13, datetime.now(UTC).isoformat()),
+                )
+
+            migration_014_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 14"
+            ).fetchone()
+            if migration_014_exists is None:
+                # ── 2.3.21.1 end-to-end business pipeline facts ─────────────
+                connection.executescript(MIGRATION_014)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (14, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
