@@ -67,6 +67,11 @@ internal static class BusinessPipelinePanelWpfSmokeTests
             UpdatedAt: now,
             FinishedAt: now);
         var viewModel = BusinessPipelinePanelViewModel.CreateForSmokeTest(new[] { run });
+        SmokeAssert.True(!viewModel.CanSubmitSource, "没有来源文件时不应允许 Adapter 提交。");
+        viewModel.SourcePath = @"C:\exports\reviews.csv";
+        viewModel.ProjectKey = "pet-dryer-us";
+        viewModel.Objective = "提取高置信 VOC 痛点并进入端到端生产。";
+        SmokeAssert.True(viewModel.CanSubmitSource, "合法 source/project/objective 应允许 first-party Adapter 提交。");
         var panel = new BusinessPipelinePanel { DataContext = viewModel };
 
         panel.Measure(new Size(1100, 560));
