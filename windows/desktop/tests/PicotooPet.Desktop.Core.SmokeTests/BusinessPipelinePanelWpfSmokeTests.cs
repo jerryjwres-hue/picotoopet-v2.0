@@ -13,6 +13,12 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>真实 STA WPF 冻结 2.3.21.1 Business Pipeline 内嵌控制面与只读状态绑定。</summary>
 internal static class BusinessPipelinePanelWpfSmokeTests
 {
+    private static readonly string[] ExpectedAdapterProfiles =
+    [
+        "amazon.reviews_export.v1",
+        "inspiration.ideas_export.v1",
+    ];
+
     public static void Run()
     {
         Exception? failure = null;
@@ -74,8 +80,8 @@ internal static class BusinessPipelinePanelWpfSmokeTests
         SmokeAssert.True(panel.ActualWidth > 0 && panel.ActualHeight > 0, "Business Pipeline Panel 布局尺寸无效");
         SmokeAssert.True(viewModel.CanDownloadReturnPackage, "Completed pipeline 应允许下载 Return Package。");
         SmokeAssert.True(!viewModel.CanCancel, "Completed pipeline 不允许取消。");
-        SmokeAssert.True(viewModel.AdapterProfiles.SequenceEqual(
-            new[] { "amazon.reviews_export.v1", "inspiration.ideas_export.v1" }),
+        SmokeAssert.True(
+            viewModel.AdapterProfiles.SequenceEqual(ExpectedAdapterProfiles),
             "Windows 控制面必须只暴露两个 first-party adapter profile。");
 
         var dataGrid = FindDescendant<DataGrid>(panel);
