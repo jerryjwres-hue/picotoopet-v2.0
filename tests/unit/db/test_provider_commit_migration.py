@@ -16,7 +16,7 @@ def test_migration_eight_creates_commit_candidate_table_idempotently(tmp_path: P
     database.open(); database.apply_migrations(); database.apply_migrations()
     columns = {row["name"] for row in database.fetchall("PRAGMA table_info(provider_commit_candidates)")}
     assert REQUIRED_COMMIT_COLUMNS <= columns
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 14
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 15
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 8") == 1
     database.close()
 
@@ -26,5 +26,5 @@ def test_migration_eight_preserves_existing_adoption_rows(tmp_path: Path) -> Non
     database.open(); database.apply_migrations()
     assert database.scalar("SELECT COUNT(*) FROM provider_adoption_candidates") == 0
     assert database.scalar("SELECT COUNT(*) FROM provider_commit_candidates") == 0
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 14
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 15
     database.close()
