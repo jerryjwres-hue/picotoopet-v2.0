@@ -24,4 +24,5 @@ def test_platform_foundation_source_surfaces_exist() -> None:
 
 def test_product_version_retains_platform_foundation_in_current_rollup() -> None:
     version = (ROOT / "src/picotoopet_core/product-version.txt").read_text(encoding="utf-8").strip()
-    assert version == "2.3.22.1"
+    # Version retention gate     Platform foundation remains present in cumulative 23.1.
+    assert version == "2.3.23.1"
