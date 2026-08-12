@@ -283,7 +283,11 @@ def test_creative_pass_completes_failed_stage_enqueues_resume_and_reopens_pipeli
         assert result_ref == resumed_stage.stage_run_id
         tasks = [item for item in queue.list(limit=100) if item.resource_tag == f"creative:{creative_id}"]
         assert len(tasks) == 1
-        assert tasks[0].idempotency_key == f"creative:{creative_id}:deep-ai-resume:{'a' * 64}"
+        queued_idempotency = database.scalar(
+            "SELECT idempotency_key FROM tasks WHERE task_id=?",
+            (tasks[0].task_id,),
+        )
+        assert queued_idempotency == f"creative:{creative_id}:deep-ai-resume:{'a' * 64}"
         assert pipelines.get_run(run.pipeline_run_id).status is BusinessPipelineStatus.CREATIVE_INTELLIGENCE
     finally:
         database.close()
