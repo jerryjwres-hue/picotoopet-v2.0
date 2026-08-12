@@ -166,10 +166,13 @@ def record_deep_ai_feedback(
     def operation() -> DeepAiLearningObservation:
         services = request.app.state.services
         job = services.deep_ai_repository.get_job(escalation_job_id)
-        context = services.deep_ai.source_resolver.resolve(job.source_kind, job.source_id)
+        project_key = services.deep_ai.source_resolver.project_key_for(
+            job.source_kind,
+            job.source_id,
+        )
         return DeepAiLearningLedger(services.deep_ai_repository).record_feedback(
             idempotency_key=payload.idempotency_key,
-            project_key=context.project_key,
+            project_key=project_key,
             job=job,
             action=DeepAiHumanAction(payload.action.value),
             reason_tags=payload.reason_tags,
