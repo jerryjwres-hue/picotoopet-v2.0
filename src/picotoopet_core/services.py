@@ -25,6 +25,10 @@ from picotoopet_core.creative.service import CreativeIntelligenceService
 from picotoopet_core.creative.source import CreativeSourceNormalizer
 from picotoopet_core.creative.store import CreativeArtifactStore
 from picotoopet_core.db.database import Database
+from picotoopet_core.deep_ai.policy import DeepAiEscalationPolicy
+from picotoopet_core.deep_ai.repository import DeepAiRepository
+from picotoopet_core.deep_ai.service import CoreDeepAiSourceResolver, DeepAiEscalationService
+from picotoopet_core.deep_ai.store import DeepAiSanitizedPackageStore
 from picotoopet_core.events.broker import EventBroker
 from picotoopet_core.events.dispatcher import OutboxDispatcher
 from picotoopet_core.events.outbox import EventOutbox
@@ -75,6 +79,9 @@ class Services:
     business_return_store: BusinessReturnPackageStore
     business_pipeline: BusinessPipelineService
     business_pipeline_scheduler: BusinessPipelineScheduler
+    deep_ai_repository: DeepAiRepository
+    deep_ai_store: DeepAiSanitizedPackageStore
+    deep_ai: DeepAiEscalationService
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -143,6 +150,15 @@ def build_services(settings: AppSettings) -> Services:
     )
     business_pipeline_scheduler = BusinessPipelineScheduler(business_pipeline)
     approvals = HandoffApprovalService(database, queue)
+    deep_ai_repository = DeepAiRepository(database)
+    deep_ai_store = DeepAiSanitizedPackageStore(settings.paths)
+    deep_ai = DeepAiEscalationService(
+        repository=deep_ai_repository,
+        store=deep_ai_store,
+        approvals=approvals,
+        source_resolver=CoreDeepAiSourceResolver(business_repository, creative_repository),
+        policy=DeepAiEscalationPolicy.default(),
+    )
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
     broker_sessions = BrokerSessionService(database, handoffs, returns, api_token=settings.api_token)
@@ -182,6 +198,9 @@ def build_services(settings: AppSettings) -> Services:
         business_return_store=business_return_store,
         business_pipeline=business_pipeline,
         business_pipeline_scheduler=business_pipeline_scheduler,
+        deep_ai_repository=deep_ai_repository,
+        deep_ai_store=deep_ai_store,
+        deep_ai=deep_ai,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,
