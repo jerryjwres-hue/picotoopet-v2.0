@@ -25,9 +25,13 @@ from .store import DeepAiSanitizedPackageStore
 class DeepAiSourceResolver(Protocol):
     def resolve(self, source_kind: str, source_id: str) -> DeepAiSourceContext: ...
 
+    def project_key_for(self, source_kind: str, source_id: str) -> str: ...
+
+    def manual_handoff_id_for(self, source_kind: str, source_id: str) -> str | None: ...
+
 
 class CoreDeepAiSourceResolver:
-    """Resolve only existing durable Business/Creative NEEDS_DEEP_AI facts."""
+    """Resolve strict eligibility for initiation and history-safe identity for audit/control reads."""
 
     def __init__(
         self,
@@ -38,6 +42,8 @@ class CoreDeepAiSourceResolver:
         self.creative_repository = creative_repository
 
     def resolve(self, source_kind: str, source_id: str) -> DeepAiSourceContext:
+        """Resolve only durable Business/Creative NEEDS_DEEP_AI facts for a new escalation."""
+
         if source_kind == "business.local_intelligence":
             work = self.business_repository.get_work_package(source_id)
             if work.status is not BusinessWorkPackageStatus.NEEDS_DEEP_AI:
@@ -80,6 +86,26 @@ class CoreDeepAiSourceResolver:
                 manual_handoff_id=handoff.handoff_id,
                 manual_handoff_digest=handoff.package_digest,
             )
+        raise ValueError("DEEP_AI_SOURCE_NOT_ELIGIBLE")
+
+    def project_key_for(self, source_kind: str, source_id: str) -> str:
+        """Read immutable source identity after escalation completion without reopening eligibility."""
+
+        if source_kind == "business.local_intelligence":
+            return self.business_repository.get_work_package(source_id).project_key
+        if source_kind == "creative.intelligence":
+            return self.creative_repository.get_job(source_id).project_key
+        raise ValueError("DEEP_AI_SOURCE_NOT_ELIGIBLE")
+
+    def manual_handoff_id_for(self, source_kind: str, source_id: str) -> str | None:
+        """Return historical manual-handoff identity even after a successful continuation resolves it."""
+
+        if source_kind == "business.local_intelligence":
+            handoff = self.business_repository.handoff_for(source_id)
+            return None if handoff is None else handoff.handoff_id
+        if source_kind == "creative.intelligence":
+            handoff = self.creative_repository.handoff_history_for(source_id)
+            return None if handoff is None else handoff.handoff_id
         raise ValueError("DEEP_AI_SOURCE_NOT_ELIGIBLE")
 
 
@@ -281,7 +307,10 @@ class DeepAiEscalationService:
 
     def readiness(self, escalation_job_id: str) -> DeepAiReadiness:
         job = self.repository.get_job(escalation_job_id)
-        context = self.source_resolver.resolve(job.source_kind, job.source_id)
+        manual_handoff_id = self.source_resolver.manual_handoff_id_for(
+            job.source_kind,
+            job.source_id,
+        )
         profile = self.policy.for_source(job.source_kind)
         if not profile.execution_enabled:
             return DeepAiReadiness(
@@ -289,7 +318,7 @@ class DeepAiEscalationService:
                 execution_enabled=False,
                 provider_ready=False,
                 reason_code="DEEP_AI_EXECUTION_DISABLED",
-                manual_handoff_id=context.manual_handoff_id,
+                manual_handoff_id=manual_handoff_id,
             )
         return DeepAiReadiness(
             escalation_job_id=job.escalation_job_id,
@@ -300,7 +329,7 @@ class DeepAiEscalationService:
                 if job.status is DeepAiEscalationStatus.PROVIDER_READY
                 else "DEEP_AI_WORKER_PROVIDER_NOT_READY"
             ),
-            manual_handoff_id=context.manual_handoff_id,
+            manual_handoff_id=manual_handoff_id,
         )
 
     def claim_provider_ready(self, *, limit: int = 10) -> list[DeepAiEscalationRecord]:
