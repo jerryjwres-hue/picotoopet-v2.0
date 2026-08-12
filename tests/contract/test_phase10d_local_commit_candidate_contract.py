@@ -58,4 +58,4 @@ def test_phase10d_c_windows_surface_is_read_only_and_explicit() -> None:
 
 def test_phase10d_c_is_retained_in_current_rollup() -> None:
     version = _read("src/picotoopet_core/product-version.txt").strip()
-    assert version == "2.3.21.1"
+    assert version == "2.3.22.1"
