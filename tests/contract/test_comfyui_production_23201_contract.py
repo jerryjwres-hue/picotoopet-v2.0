@@ -6,8 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-EXPECTED_PRODUCT_VERSION = "2.3.22.1"
-EXPECTED_DATABASE_SCHEMA = 15
+EXPECTED_PRODUCT_VERSION = "2.3.23.1"
+EXPECTED_DATABASE_SCHEMA = 16
 EXPECTED_PROFILE = "production.comfyui.v1"
 EXPECTED_COMFY_ENDPOINT = "http://127.0.0.1:8188"
 EXPECTED_WORKFLOW_IDS = {
@@ -64,6 +64,8 @@ def test_production_is_retained_while_current_product_and_schema_advance() -> No
     assert "MIGRATION_013" in database
     assert "MIGRATION_014" in database
     assert "MIGRATION_015" in database
+    assert "MIGRATION_016" in database
+    # Rollup gate              Production v1 remains in the current schema-16 cumulative product.
     assert f"version = {EXPECTED_DATABASE_SCHEMA}" in database
 
 
