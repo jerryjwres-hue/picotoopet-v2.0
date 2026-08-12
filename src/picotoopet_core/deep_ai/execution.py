@@ -6,10 +6,15 @@ import hashlib
 from decimal import Decimal
 from uuid import uuid4
 
+from picotoopet_core.domain.enums import ApprovalStatus
+from picotoopet_core.handoffs.approvals import HandoffApprovalService
+
 from .models import DeepAiAttemptStatus, DeepAiEscalationRecord, DeepAiEscalationStatus
+from .policy import DeepAiEscalationPolicy
 from .provider import (
     DeepAiProviderRequestReader,
     DeepAiProviderResultStore,
+    DeepAiWorkerProviderConfig,
     PaidAiProviderAdapter,
     ProviderExecutionError,
     ProviderResponse,
@@ -289,4 +294,127 @@ class DeepAiExecutionCoordinator:
         )
 
 
-__all__ = ["DeepAiExecutionCoordinator", "ProviderTransportAmbiguous"]
+class DeepAiWorkerExecutionLoop:
+    """Promote only exact-approved frozen jobs and execute at most one job per poll."""
+
+    CAPABILITY = "paid.ai.reasoning.v1"
+
+    def __init__(
+        self,
+        *,
+        repository: DeepAiRepository,
+        approvals: HandoffApprovalService,
+        policy: DeepAiEscalationPolicy,
+        config: DeepAiWorkerProviderConfig,
+        provider: PaidAiProviderAdapter,
+        request_reader: DeepAiProviderRequestReader,
+        result_store: DeepAiProviderResultStore,
+    ) -> None:
+        self.repository = repository
+        self.approvals = approvals
+        self.policy = policy
+        self.config = config
+        self.coordinator = DeepAiExecutionCoordinator(
+            repository=repository,
+            provider=provider,
+            request_reader=request_reader,
+            result_store=result_store,
+            execution_enabled=config.execution_enabled,
+        )
+
+    def run_once(self) -> int:
+        if not self.config.execution_enabled:
+            return 0
+        for job in self.repository.list_jobs(limit=100):
+            if job.status is DeepAiEscalationStatus.APPROVED:
+                if not self._promote_if_exact(job):
+                    continue
+                self.coordinator.execute(job.escalation_job_id)
+                return 1
+            if job.status in {
+                DeepAiEscalationStatus.PROVIDER_READY,
+                DeepAiEscalationStatus.CLAIMED,
+                DeepAiEscalationStatus.EXECUTING,
+            }:
+                if not self._frozen_profile_matches(job):
+                    self.repository.set_job_status(
+                        job.escalation_job_id,
+                        DeepAiEscalationStatus.NEEDS_HUMAN,
+                        failure_code="DEEP_AI_WORKER_PROFILE_MISMATCH",
+                        finished=True,
+                    )
+                    continue
+                self.coordinator.execute(job.escalation_job_id)
+                return 1
+        return 0
+
+    def _frozen_profile_matches(self, job: DeepAiEscalationRecord) -> bool:
+        try:
+            trusted = self.policy.for_source(job.source_kind)
+        except ValueError:
+            return False
+        return (
+            self.config.provider_profile_id == trusted.provider_profile_id
+            and self.config.provider_adapter_id == trusted.provider_adapter_id
+            and self.config.model_id == trusted.model_id
+            and job.provider_profile_id == trusted.provider_profile_id
+            and job.provider_profile_digest == trusted.provider_profile_digest
+            and job.model_id == trusted.model_id
+        )
+
+    def _promote_if_exact(self, job: DeepAiEscalationRecord) -> bool:
+        if not self._frozen_profile_matches(job):
+            self.repository.set_job_status(
+                job.escalation_job_id,
+                DeepAiEscalationStatus.NEEDS_HUMAN,
+                failure_code="DEEP_AI_WORKER_PROFILE_MISMATCH",
+                finished=True,
+            )
+            return False
+        if job.approval_id is None or job.approval_digest is None:
+            self.repository.set_job_status(
+                job.escalation_job_id,
+                DeepAiEscalationStatus.NEEDS_HUMAN,
+                failure_code="DEEP_AI_APPROVAL_MISSING",
+                finished=True,
+            )
+            return False
+        approval = self.approvals.get(job.approval_id)
+        if approval.request_digest != job.approval_digest:
+            self.repository.set_job_status(
+                job.escalation_job_id,
+                DeepAiEscalationStatus.NEEDS_HUMAN,
+                failure_code="DEEP_AI_APPROVAL_DIGEST_MISMATCH",
+                finished=True,
+            )
+            return False
+        if approval.status == ApprovalStatus.REJECTED.value:
+            self.repository.set_job_status(
+                job.escalation_job_id,
+                DeepAiEscalationStatus.REJECTED,
+                failure_code="DEEP_AI_APPROVAL_REJECTED",
+                finished=True,
+            )
+            return False
+        if approval.status == ApprovalStatus.EXPIRED.value:
+            self.repository.set_job_status(
+                job.escalation_job_id,
+                DeepAiEscalationStatus.CANCELLED,
+                failure_code="DEEP_AI_APPROVAL_EXPIRED",
+                finished=True,
+            )
+            return False
+        if approval.status != ApprovalStatus.APPROVED.value:
+            return False
+        self.repository.set_job_status(
+            job.escalation_job_id,
+            DeepAiEscalationStatus.PROVIDER_READY,
+        )
+        return True
+
+
+__all__ = [
+    "DeepAiExecutionCoordinator",
+    "DeepAiWorkerExecutionLoop",
+    "ProviderTransportAmbiguous",
+]
