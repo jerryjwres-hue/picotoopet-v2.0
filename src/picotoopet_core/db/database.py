@@ -16,6 +16,7 @@ from .migration_012 import MIGRATION_012
 from .migration_013 import MIGRATION_013
 from .migration_014 import MIGRATION_014
 from .migration_015 import MIGRATION_015
+from .migration_016 import MIGRATION_016
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -246,6 +247,17 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (15, datetime.now(UTC).isoformat()),
+                )
+
+            migration_016_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 16"
+            ).fetchone()
+            if migration_016_exists is None:
+                # ── 2.3.23.1 deterministic offline evaluation facts ─────────
+                connection.executescript(MIGRATION_016)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (16, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
