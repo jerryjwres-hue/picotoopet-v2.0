@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.23.1",
+      "value": "2.3.24.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -70,8 +70,8 @@
   },
   "architecture": {
     "fact_source": "Mac Core + SQLite Queue/Outbox",
-    "windows_role": "native WPF observation, controlled-command UI, first-party business adapters, bounded business Inbox/Outbox bridge, closed local ComfyUI production executor, bounded Paid-AI status/approval/usage/feedback control surface, and deterministic offline quality-evaluation review surface without provider secret or runtime policy-mutation authority",
-    "worker_role": "explicitly registered task execution, loopback-only local intelligence, and approval-bound trusted paid reasoning only when explicitly enabled; paid execution is disabled by default; offline quality evaluation adds no Worker model-execution role",
+    "windows_role": "native WPF observation, controlled-command UI, first-party business adapters, bounded business Inbox/Outbox bridge, closed local ComfyUI production executor, bounded Paid-AI status/approval/usage/feedback control surface, deterministic offline quality-evaluation review surface, and bounded controlled-shadow review surface without provider secret or runtime policy-mutation authority",
+    "worker_role": "explicitly registered task execution, loopback-only local intelligence, and approval-bound trusted paid reasoning only when explicitly enabled; paid execution is disabled by default; offline quality evaluation and controlled shadow validation add no Worker model-execution role",
     "historical_analysis_tasks": "unsupported-unleased-unmodified",
     "platform_automation_v1": {
       "workflow_persistence": "Mac Core SQLite",
@@ -271,6 +271,47 @@
       "windows_panel": "existing-business-automation-page",
       "new_top_level_shell_route": false,
       "automatic_publish": false
+    },
+    "controlled_shadow_validation_v1": {
+      "database_schema": 17,
+      "source_state": "AcceptedForShadow",
+      "shadow_profile": "quality.shadow.v1",
+      "split_version": "quality.shadow.split.v1",
+      "durable_authority": "Mac Core SQLite",
+      "sample_assignment": "deterministic-digest-split",
+      "minimum_human_decisions_per_arm": 5,
+      "verdicts": [
+        "Supported",
+        "NeedsMoreData",
+        "NotReproduced"
+      ],
+      "review_actions": [
+        "Reviewed",
+        "AcceptedForPromotionReview",
+        "Rejected",
+        "Cancelled"
+      ],
+      "accepted_for_promotion_review_requires_supported": true,
+      "accepted_for_promotion_review_is_execution": false,
+      "runtime_policy_promotion": false,
+      "runtime_policy_mutation": false,
+      "arbitrary_prompt": false,
+      "arbitrary_model": false,
+      "arbitrary_provider": false,
+      "arbitrary_endpoint": false,
+      "arbitrary_budget": false,
+      "arbitrary_threshold": false,
+      "arbitrary_formula": false,
+      "arbitrary_sql": false,
+      "local_ai_execution": false,
+      "paid_ai_execution": false,
+      "comfyui_execution": false,
+      "shell_execution": false,
+      "publication_execution": false,
+      "terminal_deep_ai_reopen": false,
+      "windows_panel": "existing-business-automation-page",
+      "new_top_level_shell_route": false,
+      "success_state": "shadow_evidence_ready"
     },
     "phase10d_c_commit_boundary": {
       "source_state": "adoption_ready",
