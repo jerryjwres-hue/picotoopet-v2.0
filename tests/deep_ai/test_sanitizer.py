@@ -21,11 +21,12 @@ def test_trusted_policy_is_closed_and_execution_disabled_by_default() -> None:
     creative = policy.for_source("creative.intelligence")
     assert business.provider_profile_id == "paid.reasoning.v1"
     assert creative.provider_profile_id == "paid.reasoning.v1"
-    assert business.model_id == "trusted-reasoning-model"
+    assert business.provider_adapter_id == "openai.responses.v1"
+    assert business.model_id == "gpt-5.6-terra"
     assert business.max_input_tokens == 12000
     assert business.max_output_tokens == 4000
     assert business.max_calls == 2
-    assert str(business.max_cost_usd) == "3.50"
+    assert str(business.max_cost_usd) == "0.50"
     assert business.execution_enabled is False
     assert business.provider_profile_digest == creative.provider_profile_digest
 
