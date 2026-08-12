@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_PRODUCT_VERSION = "2.3.23.1"
-CURRENT_DATABASE_SCHEMA = 16
+CURRENT_PRODUCT_VERSION = "2.3.24.1"
+CURRENT_DATABASE_SCHEMA = 17
 PAID_AI_DATABASE_SCHEMA = 15
 
 
@@ -16,11 +16,12 @@ def read(relative: str) -> str:
 
 
 def test_current_product_and_schema_advance_while_23221_is_retained() -> None:
-    # Rollup gate              22.1 remains frozen at schema 15 inside current 23.1/schema 16.
+    # Rollup gate              22.1 remains frozen at schema 15 inside current 24.1/schema 17.
     assert read("src/picotoopet_core/product-version.txt").strip() == CURRENT_PRODUCT_VERSION
     database = read("src/picotoopet_core/db/database.py")
     assert "MIGRATION_015" in database
     assert "MIGRATION_016" in database
+    assert "MIGRATION_017" in database
     assert f"version = {CURRENT_DATABASE_SCHEMA}" in database
 
 
