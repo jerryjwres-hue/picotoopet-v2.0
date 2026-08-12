@@ -273,7 +273,6 @@ def test_candidate_review_is_fact_only_and_never_mutates_paid_execution(tmp_path
     database = _database(tmp_path)
     try:
         repository = DeepAiRepository(database)
-        jobs = []
         for index in range(1, 6):
             _record_sample(
                 repository,
@@ -329,5 +328,47 @@ def test_candidate_review_is_fact_only_and_never_mutates_paid_execution(tmp_path
             for job in jobs
         }
         assert after == before
+    finally:
+        database.close()
+
+
+def test_reconcile_repairs_interrupted_run_without_creating_new_run(tmp_path: Path) -> None:
+    database = _database(tmp_path)
+    try:
+        deep_ai_repository = DeepAiRepository(database)
+        for index in range(1, 6):
+            _record_sample(
+                deep_ai_repository,
+                index=index,
+                action=DeepAiHumanAction.REJECTED if index <= 2 else DeepAiHumanAction.ACCEPTED,
+                paid_outcome="PASS",
+                cost_usd="0.35",
+                reason_tags=["missing_evidence"] if index <= 3 else [],
+            )
+        module = _evaluation_module()
+        evaluation_repository = module.QualityEvaluationRepository(database)
+        service = module.QualityEvaluationService(
+            repository=evaluation_repository,
+            deep_ai_repository=deep_ai_repository,
+        )
+        snapshot = service.create_snapshot(
+            module.QualityEvaluationScope(project_key="pet-dryer-us")
+        )
+        interrupted = evaluation_repository.create_completed_run(
+            snapshot=snapshot,
+            report_digest="0" * 64,
+        )
+        assert service.list_metrics(interrupted.evaluation_run_id) == []
+        assert service.list_candidates(evaluation_run_id=interrupted.evaluation_run_id) == []
+
+        repaired = service.reconcile(interrupted.evaluation_run_id)
+
+        # Recovery gate             Reconcile repairs facts under the same run identity after a crash window.
+        assert repaired.evaluation_run_id == interrupted.evaluation_run_id
+        assert service.list_metrics(repaired.evaluation_run_id)
+        assert service.list_candidates(evaluation_run_id=repaired.evaluation_run_id)
+        assert database.scalar("SELECT COUNT(*) FROM quality_evaluation_runs") == 1
+        # Zero-external-work gate   Recovery only derives schema-16 facts and never reserves paid attempts.
+        assert database.scalar("SELECT COUNT(*) FROM deep_ai_attempts") == 0
     finally:
         database.close()
