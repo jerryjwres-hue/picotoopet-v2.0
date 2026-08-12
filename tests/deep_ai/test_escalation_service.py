@@ -31,6 +31,16 @@ class FakeSourceResolver:
             raise KeyError(source_id)
         return self.context
 
+    def project_key_for(self, source_kind: str, source_id: str) -> str:
+        if source_kind != self.context.source_kind or source_id != self.context.source_id:
+            raise KeyError(source_id)
+        return self.context.project_key
+
+    def manual_handoff_id_for(self, source_kind: str, source_id: str) -> str | None:
+        if source_kind != self.context.source_kind or source_id != self.context.source_id:
+            raise KeyError(source_id)
+        return self.context.manual_handoff_id
+
 
 def _database(tmp_path: Path) -> Database:
     database = Database(tmp_path / "core.db")
@@ -157,6 +167,7 @@ def test_accepted_approval_remains_non_spending_when_execution_disabled(tmp_path
         assert readiness.execution_enabled is False
         assert readiness.provider_ready is False
         assert readiness.reason_code == "DEEP_AI_EXECUTION_DISABLED"
+        assert readiness.manual_handoff_id == "handoff-existing-001"
         assert service.claim_provider_ready(limit=10) == []
     finally:
         database.close()
