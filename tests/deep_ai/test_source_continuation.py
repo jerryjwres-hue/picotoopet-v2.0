@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -230,6 +231,7 @@ def test_creative_pass_completes_failed_stage_enqueues_resume_and_reopens_pipeli
                 package_digest="9" * 64,
                 package_relpath=f"runtime/creative/handoffs/{handoff_id}.zip",
                 status="Prepared",
+                created_at=datetime.now(UTC),
             )
         )
         creative.transition_job(
@@ -274,6 +276,10 @@ def test_creative_pass_completes_failed_stage_enqueues_resume_and_reopens_pipeli
         assert resumed_stage.result == output
         assert resumed_job.status is CreativeJobStatus.IDEA_RANKING
         assert resumed_job.finished_at is None
+        assert creative.handoff_for(creative_id) is None
+        historical_handoff = creative.handoff_history_for(creative_id)
+        assert historical_handoff is not None
+        assert historical_handoff.status == "Resolved"
         assert result_ref == resumed_stage.stage_run_id
         tasks = [item for item in queue.list(limit=100) if item.resource_tag == f"creative:{creative_id}"]
         assert len(tasks) == 1
@@ -283,14 +289,14 @@ def test_creative_pass_completes_failed_stage_enqueues_resume_and_reopens_pipeli
         database.close()
 
 
-def test_creative_worker_source_contains_resolved_handoff_resume_guard() -> None:
+def test_creative_repository_keeps_resolved_handoff_as_history_only() -> None:
     source = (
         Path(__file__).resolve().parents[2]
         / "src"
         / "picotoopet_core"
         / "creative"
-        / "execution.py"
+        / "repository.py"
     ).read_text(encoding="utf-8")
-    assert "resolved_deep_ai_stage" in source
-    assert 'stage.status == "Completed"' in source
-    assert "CreativeQualityOutcome.PASS" in source
+    assert "resolve_handoff" in source
+    assert "handoff_history_for" in source
+    assert "status!='Resolved'" in source
