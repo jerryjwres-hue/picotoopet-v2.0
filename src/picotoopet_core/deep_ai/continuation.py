@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
@@ -77,7 +76,10 @@ class DeepAiSourceContinuation:
         if existing is not None:
             if existing.result_digest != output_digest:
                 raise ValueError("DEEP_AI_SOURCE_RESULT_IMMUTABLE")
-            self._reopen_pipeline_for_business(work.work_package_id, existing.result_package_id)
+            self._reopen_pipeline_for_business(
+                work.work_package_id,
+                existing.result_package_id,
+            )
             return existing.result_package_id
         if work.status is not BusinessWorkPackageStatus.NEEDS_DEEP_AI:
             raise ValueError("DEEP_AI_BUSINESS_SOURCE_NOT_WAITING")
@@ -143,7 +145,11 @@ class DeepAiSourceContinuation:
         self._reopen_pipeline_for_business(work.work_package_id, saved.result_package_id)
         return saved.result_package_id
 
-    def _reopen_pipeline_for_business(self, work_package_id: str, result_package_id: str) -> None:
+    def _reopen_pipeline_for_business(
+        self,
+        work_package_id: str,
+        result_package_id: str,
+    ) -> None:
         for run in self.pipeline_repository.list_runs(limit=500):
             if run.work_package_id != work_package_id:
                 continue
@@ -166,10 +172,13 @@ class DeepAiSourceContinuation:
         output_digest: str,
     ) -> str:
         creative = self.creative_repository.get_job(job.source_id)
-        handoff = self.creative_repository.handoff_for(creative.creative_job_id)
+        handoff = self.creative_repository.handoff_history_for(creative.creative_job_id)
         if handoff is None or handoff.source_set_digest != job.source_digest:
             raise ValueError("DEEP_AI_CREATIVE_SOURCE_IDENTITY_MISMATCH")
-        stage = self.creative_repository.get_stage(creative.creative_job_id, handoff.stage_kind)
+        stage = self.creative_repository.get_stage(
+            creative.creative_job_id,
+            handoff.stage_kind,
+        )
         if stage is None:
             raise ValueError("DEEP_AI_CREATIVE_STAGE_MISSING")
         if stage.status == "Completed" and stage.quality_outcome is CreativeQualityOutcome.PASS:
@@ -185,6 +194,7 @@ class DeepAiSourceContinuation:
                 quality_outcome=CreativeQualityOutcome.PASS,
                 finished=True,
             )
+        self.creative_repository.resolve_handoff(creative.creative_job_id)
         resume_status = _STAGE_JOB_STATUS[handoff.stage_kind]
         now = datetime.now(UTC).isoformat()
         self.creative_repository.database.execute(
