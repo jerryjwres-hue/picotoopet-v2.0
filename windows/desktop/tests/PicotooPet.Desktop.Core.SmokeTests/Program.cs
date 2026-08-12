@@ -56,6 +56,7 @@ internal static class Program
             DeepAiEscalationPanelWpfSmokeTests.Run();
             QualityEvaluationPanelWpfSmokeTests.Run();
             QualityShadowPanelWpfSmokeTests.Run();
+            QualityPromotionPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
             ComfyWorkflowTemplateSmokeTests.Run();
             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
@@ -63,6 +64,7 @@ internal static class Program
             await DeepAiClientSmokeTests.RunAsync().ConfigureAwait(false);
             await QualityEvaluationClientSmokeTests.RunAsync().ConfigureAwait(false);
             await QualityShadowClientSmokeTests.RunAsync().ConfigureAwait(false);
+            await QualityPromotionClientSmokeTests.RunAsync().ConfigureAwait(false);
             await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);

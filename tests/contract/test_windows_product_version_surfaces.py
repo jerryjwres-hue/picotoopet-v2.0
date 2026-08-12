@@ -54,8 +54,8 @@ def test_real_sta_smoke_runs_version_binding_and_layout() -> None:
         "Arrange(new Rect(0, 0, 900, 700))",
         "UpdateLayout()",
         "DispatcherPriority.DataBind",
-        '"Picotoo Pet AI 2.3.24.1"',
-        '"Control Center · v2.3.24.1"',
+        '"Picotoo Pet AI 2.3.25.1"',
+        '"Control Center · v2.3.25.1"',
     ):
         assert required in smoke
 
@@ -77,6 +77,6 @@ def test_published_self_test_tracks_business_automation_navigation() -> None:
     self_test = read(DESKTOP, "Services/AppSelfTest.cs")
 
     # Navigation gate           Business Automation remains the eleventh top-level route;
-    #                           24.1 embeds Evaluation + Shadow inside that existing route.
+    #                           25.1 embeds Evaluation + Shadow + Promotion inside that existing route.
     assert "shell.NavigationItems.Count != 11" in self_test
     assert "NavigationRoute.BusinessAutomation" in self_test

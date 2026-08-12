@@ -66,8 +66,8 @@ def test_business_tables_are_retained_through_current_schema(tmp_path: Path) -> 
         "business_result_packages",
         "deep_ai_handoffs",
     } <= tables
-    # Schema retention gate      Business v1 facts must survive the cumulative schema-17 upgrade.
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 17
+    # Schema retention gate      Business v1 facts must survive the cumulative schema-18 upgrade.
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 18
     database.close()
 
 

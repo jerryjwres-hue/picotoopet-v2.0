@@ -32,6 +32,7 @@ from picotoopet_core.deep_ai.evaluation import (
 )
 from picotoopet_core.deep_ai.learning import DeepAiLearningLedger
 from picotoopet_core.deep_ai.policy import DeepAiEscalationPolicy
+from picotoopet_core.deep_ai.promotion import QualityPromotionRepository, QualityPromotionService
 from picotoopet_core.deep_ai.provider import DeepAiProviderResultStore
 from picotoopet_core.deep_ai.repository import DeepAiRepository
 from picotoopet_core.deep_ai.result_processing import DeepAiResultProcessor
@@ -97,6 +98,8 @@ class Services:
     quality_evaluation: QualityEvaluationService
     quality_shadow_repository: QualityShadowRepository
     quality_shadow: QualityShadowService
+    quality_promotion_repository: QualityPromotionRepository
+    quality_promotion: QualityPromotionService
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -202,6 +205,12 @@ def build_services(settings: AppSettings) -> Services:
         repository=quality_shadow_repository,
         evaluation_repository=quality_evaluation_repository,
     )
+    quality_promotion_repository = QualityPromotionRepository(database)
+    quality_promotion = QualityPromotionService(
+        repository=quality_promotion_repository,
+        shadow_repository=quality_shadow_repository,
+        evaluation_repository=quality_evaluation_repository,
+    )
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
     broker_sessions = BrokerSessionService(database, handoffs, returns, api_token=settings.api_token)
@@ -249,6 +258,8 @@ def build_services(settings: AppSettings) -> Services:
         quality_evaluation=quality_evaluation,
         quality_shadow_repository=quality_shadow_repository,
         quality_shadow=quality_shadow,
+        quality_promotion_repository=quality_promotion_repository,
+        quality_promotion=quality_promotion,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,

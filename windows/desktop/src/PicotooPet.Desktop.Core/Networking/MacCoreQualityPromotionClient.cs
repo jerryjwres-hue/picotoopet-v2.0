@@ -6,8 +6,8 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.Networking;
 
-/// <summary>24.1 Controlled Shadow 客户端；请求面只包含 candidate identity 与闭合 review action。</summary>
-public sealed class MacCoreQualityShadowClient : IAsyncDisposable
+/// <summary>25.1 Promotion 客户端；仅传递不可变身份、exact digest 与闭合决定。</summary>
+public sealed class MacCoreQualityPromotionClient : IAsyncDisposable
 {
     private const int MaxJsonResponseBytes = 2 * 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -18,12 +18,12 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
     private readonly HttpClient _client;
     private readonly bool _ownsClient;
 
-    public MacCoreQualityShadowClient(HttpClient client, string token)
+    public MacCoreQualityPromotionClient(HttpClient client, string token)
         : this(client, token, ownsClient: false)
     {
     }
 
-    private MacCoreQualityShadowClient(HttpClient client, string token, bool ownsClient)
+    private MacCoreQualityPromotionClient(HttpClient client, string token, bool ownsClient)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _ownsClient = ownsClient;
@@ -34,10 +34,10 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         _client.DefaultRequestHeaders.Accept.Clear();
         _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Windows-Shadow/2.3.25.1");
+        _client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Windows-Promotion/2.3.25.1");
     }
 
-    public static MacCoreQualityShadowClient Create(MacCoreClientOptions options)
+    public static MacCoreQualityPromotionClient Create(MacCoreClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         var handler = new SocketsHttpHandler
@@ -53,63 +53,108 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
             BaseAddress = EnsureTrailingSlash(options.BaseUri),
             Timeout = options.RequestTimeout,
         };
-        return new MacCoreQualityShadowClient(client, options.Token, ownsClient: true);
+        return new MacCoreQualityPromotionClient(client, options.Token, ownsClient: true);
     }
 
-    public Task<QualityShadowRunRecord> CreateAsync(
-        QualityShadowRunCreateRequest payload,
+    public Task<QualityPromotionRecord> CreateAsync(
+        QualityPromotionCreateRequest payload,
         CancellationToken cancellationToken = default) =>
-        SendJsonAsync<QualityShadowRunRecord>(
-            HttpMethod.Post,
-            "api/v1/deep-ai/shadow-runs",
-            payload,
-            cancellationToken);
+        SendJsonAsync<QualityPromotionRecord>(HttpMethod.Post, "api/v1/deep-ai/promotions", payload, cancellationToken);
 
-    public Task<QualityShadowRunRecord[]> GetRunsAsync(
-        string? candidateId = null,
+    public Task<QualityPromotionRecord[]> GetPromotionsAsync(
+        string? projectKey = null,
+        string? candidateClass = null,
         CancellationToken cancellationToken = default)
     {
-        var path = string.IsNullOrWhiteSpace(candidateId)
-            ? "api/v1/deep-ai/shadow-runs?limit=200"
-            : $"api/v1/deep-ai/shadow-runs?candidate_id={Escape(candidateId)}&limit=200";
-        return SendJsonAsync<QualityShadowRunRecord[]>(HttpMethod.Get, path, null, cancellationToken);
+        var query = new List<string> { "limit=200" };
+        if (!string.IsNullOrWhiteSpace(projectKey))
+        {
+            query.Add($"project_key={Escape(projectKey)}");
+        }
+        if (!string.IsNullOrWhiteSpace(candidateClass))
+        {
+            query.Add($"candidate_class={Escape(candidateClass)}");
+        }
+        return SendJsonAsync<QualityPromotionRecord[]>(
+            HttpMethod.Get,
+            $"api/v1/deep-ai/promotions?{string.Join("&", query)}",
+            null,
+            cancellationToken);
     }
 
-    public Task<QualityShadowRunRecord> GetRunAsync(
-        string shadowRunId,
+    public Task<QualityPromotionRecord> GetPromotionAsync(
+        string promotionId,
         CancellationToken cancellationToken = default) =>
-        SendJsonAsync<QualityShadowRunRecord>(
+        SendJsonAsync<QualityPromotionRecord>(
             HttpMethod.Get,
-            $"api/v1/deep-ai/shadow-runs/{Escape(shadowRunId)}",
+            $"api/v1/deep-ai/promotions/{Escape(promotionId)}",
             null,
             cancellationToken);
 
-    public Task<QualityShadowRunRecord> ReconcileAsync(
-        string shadowRunId,
+    public Task<QualityPromotionRecord> ReconcileAsync(
+        string promotionId,
         CancellationToken cancellationToken = default) =>
-        SendJsonAsync<QualityShadowRunRecord>(
+        SendJsonAsync<QualityPromotionRecord>(
             HttpMethod.Post,
-            $"api/v1/deep-ai/shadow-runs/{Escape(shadowRunId)}/reconcile",
+            $"api/v1/deep-ai/promotions/{Escape(promotionId)}/reconcile",
             new { },
             cancellationToken);
 
-    public Task<QualityShadowArmMetricRecord[]> GetMetricsAsync(
-        string shadowRunId,
+    public Task<QualityPromotionApprovalRequestRecord> GetActivationRequestAsync(
+        string promotionId,
         CancellationToken cancellationToken = default) =>
-        SendJsonAsync<QualityShadowArmMetricRecord[]>(
+        SendJsonAsync<QualityPromotionApprovalRequestRecord>(
             HttpMethod.Get,
-            $"api/v1/deep-ai/shadow-runs/{Escape(shadowRunId)}/metrics",
+            $"api/v1/deep-ai/promotions/{Escape(promotionId)}/activation-request",
             null,
             cancellationToken);
 
-    public Task<QualityShadowReviewRecord> ReviewAsync(
-        string shadowRunId,
-        QualityShadowReviewRequest payload,
+    public Task<QualityPromotionRecord> DecideActivationAsync(
+        string promotionId,
+        QualityPromotionDecisionRequest payload,
         CancellationToken cancellationToken = default) =>
-        SendJsonAsync<QualityShadowReviewRecord>(
+        SendJsonAsync<QualityPromotionRecord>(
             HttpMethod.Post,
-            $"api/v1/deep-ai/shadow-runs/{Escape(shadowRunId)}/review",
+            $"api/v1/deep-ai/promotions/{Escape(promotionId)}/activation-decision",
             payload,
+            cancellationToken);
+
+    public Task<QualityPromotionApprovalRequestRecord> RequestRollbackAsync(
+        string promotionId,
+        QualityPromotionRollbackRequest payload,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityPromotionApprovalRequestRecord>(
+            HttpMethod.Post,
+            $"api/v1/deep-ai/promotions/{Escape(promotionId)}/rollback-request",
+            payload,
+            cancellationToken);
+
+    public Task<QualityPromotionApprovalRequestRecord> GetRollbackRequestAsync(
+        string promotionId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityPromotionApprovalRequestRecord>(
+            HttpMethod.Get,
+            $"api/v1/deep-ai/promotions/{Escape(promotionId)}/rollback-request",
+            null,
+            cancellationToken);
+
+    public Task<QualityPromotionRecord> DecideRollbackAsync(
+        string promotionId,
+        QualityPromotionDecisionRequest payload,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityPromotionRecord>(
+            HttpMethod.Post,
+            $"api/v1/deep-ai/promotions/{Escape(promotionId)}/rollback-decision",
+            payload,
+            cancellationToken);
+
+    public Task<QualityPromotionHistoryRecord> GetHistoryAsync(
+        string promotionId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityPromotionHistoryRecord>(
+            HttpMethod.Get,
+            $"api/v1/deep-ai/promotions/{Escape(promotionId)}/history",
+            null,
             cancellationToken);
 
     private async Task<T> SendJsonAsync<T>(
@@ -137,7 +182,7 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
         using var bounded = await ReadBoundedAsync(stream, cancellationToken).ConfigureAwait(false);
         var result = await JsonSerializer.DeserializeAsync<T>(bounded, JsonOptions, cancellationToken)
             .ConfigureAwait(false);
-        return result ?? throw new InvalidDataException("Shadow response body was empty.");
+        return result ?? throw new InvalidDataException("Promotion response body was empty.");
     }
 
     private static async Task<MemoryStream> ReadBoundedAsync(
@@ -157,8 +202,8 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
             {
                 bounded.Dispose();
                 throw new ApiException(
-                    "QUALITY_SHADOW_RESPONSE_TOO_LARGE",
-                    "Shadow 响应超过安全上限。",
+                    "QUALITY_PROMOTION_RESPONSE_TOO_LARGE",
+                    "Promotion 响应超过安全上限。",
                     false,
                     null,
                     0);
@@ -171,8 +216,8 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
 
     private static ApiException BuildHttpError(HttpStatusCode statusCode) =>
         new(
-            "QUALITY_SHADOW_HTTP_ERROR",
-            $"Mac Core Shadow 返回 HTTP {(int)statusCode}。",
+            "QUALITY_PROMOTION_HTTP_ERROR",
+            $"Mac Core Promotion 返回 HTTP {(int)statusCode}。",
             statusCode is HttpStatusCode.RequestTimeout
                 or HttpStatusCode.TooManyRequests
                 or HttpStatusCode.BadGateway
@@ -185,7 +230,7 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new ArgumentException("Shadow identity 不能为空。", nameof(value));
+            throw new ArgumentException("Promotion identity 不能为空。", nameof(value));
         }
         return Uri.EscapeDataString(value);
     }
