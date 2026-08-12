@@ -35,7 +35,7 @@ def test_creative_tables_are_retained_through_current_schema(tmp_path: Path) -> 
             "creative_packages",
             "creative_deep_ai_handoffs",
         } <= tables
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 14
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 15
     finally:
         database.close()
 
