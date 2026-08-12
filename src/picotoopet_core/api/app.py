@@ -32,6 +32,7 @@ from .routes import (
     provider_publications,
     provider_reviews,
     provider_sessions,
+    quality_promotion,
     results,
     returns,
     status,
@@ -131,6 +132,8 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
     app.include_router(production.router, prefix=prefix, tags=["production"])
     app.include_router(deep_ai.router, prefix=prefix, tags=["deep-ai"])
+    # 25.1 governance gate       Promotion routes share the Deep-AI namespace but no paid executor.
+    app.include_router(quality_promotion.router, prefix=prefix, tags=["deep-ai", "promotion"])
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
     app.include_router(workers.router, prefix=prefix, tags=["workers"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
