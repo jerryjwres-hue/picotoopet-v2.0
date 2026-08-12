@@ -95,9 +95,9 @@ def test_prepare_requires_existing_needs_deep_ai_fact_and_is_idempotent(tmp_path
         assert repeated.approval_id == first.approval_id
         assert first.status.value == "WaitingApproval"
         assert first.provider_profile_id == "paid.reasoning.v1"
-        assert first.model_id == "trusted-reasoning-model"
+        assert first.model_id == "gpt-5.6-terra"
         assert first.max_calls == 2
-        assert str(first.max_cost_usd) == "3.50"
+        assert str(first.max_cost_usd) == "0.50"
 
         approval = approvals.get(first.approval_id)
         assert approval.approval_type == "deep-ai.execute-v1"
@@ -105,11 +105,11 @@ def test_prepare_requires_existing_needs_deep_ai_fact_and_is_idempotent(tmp_path
         assert approval.scope["sanitized_package_digest"] == first.sanitized_package_digest
         assert approval.scope["provider_profile_id"] == "paid.reasoning.v1"
         assert approval.scope["provider_profile_digest"] == first.provider_profile_digest
-        assert approval.scope["model_id"] == "trusted-reasoning-model"
+        assert approval.scope["model_id"] == "gpt-5.6-terra"
         assert approval.scope["max_input_tokens"] == 12000
         assert approval.scope["max_output_tokens"] == 4000
         assert approval.scope["max_calls"] == 2
-        assert approval.scope["max_cost_usd"] == "3.50"
+        assert approval.scope["max_cost_usd"] == "0.50"
         assert approval.scope["policy_version"] == "deep-ai.escalation.v1"
     finally:
         database.close()
