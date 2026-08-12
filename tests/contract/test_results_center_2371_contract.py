@@ -55,4 +55,4 @@ def test_results_page_is_native_wpf_and_registered_in_shell() -> None:
 
 
 def test_results_center_is_retained_in_current_rollup() -> None:
-    assert read("src/picotoopet_core/product-version.txt").strip() == "2.3.21.1"
+    assert read("src/picotoopet_core/product-version.txt").strip() == "2.3.22.1"
