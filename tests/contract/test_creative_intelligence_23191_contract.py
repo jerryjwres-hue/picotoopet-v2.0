@@ -67,4 +67,4 @@ def test_creative_release_boundary_is_frozen() -> None:
 
 
 def test_creative_intelligence_is_retained_in_current_rollup() -> None:
-    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.21.1"
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.22.1"
