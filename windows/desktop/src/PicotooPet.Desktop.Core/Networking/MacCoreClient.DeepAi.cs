@@ -6,7 +6,7 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.Networking;
 
-/// <summary>2.3.22.1 Deep-AI 用户控制面；只发送 source identity、reconcile 和 bounded feedback。</summary>
+/// <summary>2.3.23.1 Deep-AI / Quality Evaluation 用户控制面；不发送自由执行策略。</summary>
 public sealed class MacCoreDeepAiClient : IAsyncDisposable
 {
     private const int MaxJsonResponseBytes = 2 * 1024 * 1024;
@@ -128,6 +128,110 @@ public sealed class MacCoreDeepAiClient : IAsyncDisposable
             cancellationToken);
     }
 
+    public Task<QualityEvaluationSnapshotRecord> CreateEvaluationSnapshotAsync(
+        QualityEvaluationSnapshotCreateRequest payload,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityEvaluationSnapshotRecord>(
+            HttpMethod.Post,
+            "api/v1/deep-ai/evaluation-snapshots",
+            payload,
+            cancellationToken);
+
+    public Task<QualityEvaluationSnapshotRecord[]> GetEvaluationSnapshotsAsync(
+        string? projectKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = string.IsNullOrWhiteSpace(projectKey)
+            ? "api/v1/deep-ai/evaluation-snapshots?limit=200"
+            : $"api/v1/deep-ai/evaluation-snapshots?project_key={Uri.EscapeDataString(projectKey)}&limit=200";
+        return SendJsonAsync<QualityEvaluationSnapshotRecord[]>(
+            HttpMethod.Get,
+            path,
+            null,
+            cancellationToken);
+    }
+
+    public Task<QualityEvaluationSnapshotRecord> GetEvaluationSnapshotAsync(
+        string snapshotId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityEvaluationSnapshotRecord>(
+            HttpMethod.Get,
+            $"api/v1/deep-ai/evaluation-snapshots/{Escape(snapshotId)}",
+            null,
+            cancellationToken);
+
+    public Task<QualityEvaluationRunRecord> CreateEvaluationAsync(
+        QualityEvaluationRunCreateRequest payload,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityEvaluationRunRecord>(
+            HttpMethod.Post,
+            "api/v1/deep-ai/evaluations",
+            payload,
+            cancellationToken);
+
+    public Task<QualityEvaluationRunRecord[]> GetEvaluationsAsync(
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityEvaluationRunRecord[]>(
+            HttpMethod.Get,
+            "api/v1/deep-ai/evaluations?limit=200",
+            null,
+            cancellationToken);
+
+    public Task<QualityEvaluationRunRecord> GetEvaluationAsync(
+        string evaluationRunId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityEvaluationRunRecord>(
+            HttpMethod.Get,
+            $"api/v1/deep-ai/evaluations/{Escape(evaluationRunId)}",
+            null,
+            cancellationToken);
+
+    public Task<QualityEvaluationRunRecord> ReconcileEvaluationAsync(
+        string evaluationRunId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityEvaluationRunRecord>(
+            HttpMethod.Post,
+            $"api/v1/deep-ai/evaluations/{Escape(evaluationRunId)}/reconcile",
+            new { },
+            cancellationToken);
+
+    public Task<QualityEvaluationMetricRecord[]> GetEvaluationMetricsAsync(
+        string evaluationRunId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityEvaluationMetricRecord[]>(
+            HttpMethod.Get,
+            $"api/v1/deep-ai/evaluations/{Escape(evaluationRunId)}/metrics",
+            null,
+            cancellationToken);
+
+    public Task<QualityImprovementCandidateRecord[]> GetImprovementCandidatesAsync(
+        string evaluationRunId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityImprovementCandidateRecord[]>(
+            HttpMethod.Get,
+            $"api/v1/deep-ai/improvement-candidates?evaluation_run_id={Escape(evaluationRunId)}",
+            null,
+            cancellationToken);
+
+    public Task<QualityImprovementCandidateRecord> GetImprovementCandidateAsync(
+        string candidateId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityImprovementCandidateRecord>(
+            HttpMethod.Get,
+            $"api/v1/deep-ai/improvement-candidates/{Escape(candidateId)}",
+            null,
+            cancellationToken);
+
+    public Task<QualityImprovementCandidateReviewRecord> ReviewImprovementCandidateAsync(
+        string candidateId,
+        QualityImprovementCandidateReviewRequest payload,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<QualityImprovementCandidateReviewRecord>(
+            HttpMethod.Post,
+            $"api/v1/deep-ai/improvement-candidates/{Escape(candidateId)}/review",
+            payload,
+            cancellationToken);
+
     private async Task<T> SendJsonAsync<T>(
         HttpMethod method,
         string relativeUri,
@@ -206,7 +310,7 @@ public sealed class MacCoreDeepAiClient : IAsyncDisposable
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         _client.DefaultRequestHeaders.Accept.Clear();
         _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Windows-DeepAI/2.3.22.1");
+        _client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Windows-DeepAI/2.3.23.1");
     }
 
     private static string Escape(string value)
