@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from picotoopet_core import __version__
 from picotoopet_core.api.middleware import BrokerReturnBodyLimitMiddleware, TraceTimingMiddleware
 from picotoopet_core.config.models import AppSettings
+from picotoopet_core.deep_ai.models import DeepAiEscalationStatus
 from picotoopet_core.services import build_services
 
 from .errors import install_error_handlers
@@ -21,6 +22,7 @@ from .routes import (
     business_automation,
     business_pipeline,
     creative_intelligence,
+    deep_ai,
     events,
     handoffs,
     health,
@@ -68,6 +70,21 @@ def create_app(settings: AppSettings) -> FastAPI:
             except TimeoutError:
                 continue
 
+    async def run_deep_ai_result_scheduler(stop_event: asyncio.Event) -> None:
+        # This scheduler has no provider execution authority. It only finalizes already-paid,
+        # durably committed results that are waiting in the deterministic Validating state.
+        while not stop_event.is_set():
+            try:
+                for job in services.deep_ai_repository.list_jobs(limit=100):
+                    if job.status is DeepAiEscalationStatus.VALIDATING:
+                        services.deep_ai_result_processor.process(job.escalation_job_id)
+            except Exception:
+                logger.exception("deep-ai result reconciliation failed")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=settings.workflow_reconcile_seconds)
+            except TimeoutError:
+                continue
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.services = services
@@ -84,6 +101,10 @@ def create_app(settings: AppSettings) -> FastAPI:
             run_business_pipeline_scheduler(stop_event),
             name="picotoo-business-pipeline-scheduler",
         )
+        deep_ai_result_scheduler_task = asyncio.create_task(
+            run_deep_ai_result_scheduler(stop_event),
+            name="picotoo-deep-ai-result-scheduler",
+        )
         try:
             yield
         finally:
@@ -92,6 +113,7 @@ def create_app(settings: AppSettings) -> FastAPI:
                 dispatcher_task,
                 workflow_scheduler_task,
                 business_pipeline_scheduler_task,
+                deep_ai_result_scheduler_task,
             )
             services.close()
 
@@ -108,6 +130,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(business_pipeline.router, prefix=prefix, tags=["business-pipeline"])
     app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
     app.include_router(production.router, prefix=prefix, tags=["production"])
+    app.include_router(deep_ai.router, prefix=prefix, tags=["deep-ai"])
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
     app.include_router(workers.router, prefix=prefix, tags=["workers"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])

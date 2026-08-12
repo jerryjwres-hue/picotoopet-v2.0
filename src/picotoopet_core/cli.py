@@ -21,6 +21,14 @@ from picotoopet_core.business.local_intelligence import (
 from picotoopet_core.config.loader import load_settings
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.creative.execution import CreativeIntelligenceCoordinator
+from picotoopet_core.deep_ai.execution import DeepAiWorkerExecutionLoop
+from picotoopet_core.deep_ai.policy import DeepAiEscalationPolicy
+from picotoopet_core.deep_ai.provider import (
+    DeepAiProviderRequestReader,
+    DeepAiProviderResultStore,
+    DeepAiWorkerProviderConfig,
+    OpenAiResponsesPaidAiAdapter,
+)
 from picotoopet_core.health.supervisor import HealthSupervisor
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import (
@@ -136,6 +144,9 @@ def _run_worker(
     business_adapter: OpenAiCompatibleLocalIntelligenceAdapter | None = None
     business_coordinator: BusinessLocalIntelligenceCoordinator | None = None
     creative_coordinator: CreativeIntelligenceCoordinator | None = None
+    deep_ai_provider_config = DeepAiWorkerProviderConfig.from_environment(os.environ)
+    deep_ai_provider_adapter: OpenAiResponsesPaidAiAdapter | None = None
+    deep_ai_execution_loop: DeepAiWorkerExecutionLoop | None = None
     business_healthy = False
     last_business_probe = 0.0
 
@@ -213,6 +224,20 @@ def _run_worker(
         business_coordinator = None
         creative_coordinator = None
 
+    if deep_ai_provider_config.execution_enabled:
+        # Paid execution is constructed only inside the Worker process after explicit opt-in + key.
+        # Core `serve`, Windows and package manifests never receive the raw credential.
+        deep_ai_provider_adapter = OpenAiResponsesPaidAiAdapter(deep_ai_provider_config)
+        deep_ai_execution_loop = DeepAiWorkerExecutionLoop(
+            repository=services.deep_ai_repository,
+            approvals=services.deep_ai.approvals,
+            policy=DeepAiEscalationPolicy.default(),
+            config=deep_ai_provider_config,
+            provider=deep_ai_provider_adapter,
+            request_reader=DeepAiProviderRequestReader(settings.paths),
+            result_store=DeepAiProviderResultStore(settings.paths),
+        )
+
     def enqueue_controlled_work() -> None:
         if provider_coordinator is not None:
             provider_coordinator.enqueue_pending()
@@ -226,7 +251,7 @@ def _run_worker(
     def refresh_business_capability(*, force: bool = False) -> bool:
         """Probe one loopback model and atomically expose both closed intelligence capabilities."""
 
-        # creative.intelligence.v1 → creative.content_plan.v1
+        # Retain explicit source marker for creative.intelligence.v1 → creative.content_plan.v1.
         nonlocal business_healthy, last_business_probe
         now = time.monotonic()
         if force or now - last_business_probe >= 15.0:
@@ -274,6 +299,20 @@ def _run_worker(
         )
         return business_healthy
 
+    def publish_paid_ai_capability(*, healthy: bool) -> None:
+        services.capability_router.register(
+            CapabilityRegistration(
+                worker_id=resolved_worker_id,
+                capability=DeepAiWorkerExecutionLoop.CAPABILITY,
+                task_types=[],
+                healthy=healthy,
+                metadata={
+                    "runtime": "mac-worker",
+                    "provider": deep_ai_provider_config.redacted_dict(),
+                },
+            )
+        )
+
     def publish_execution_capability(*, healthy: bool) -> None:
         """只声明当前封闭 handler 注册表能够真实执行的任务类型。"""
 
@@ -290,22 +329,27 @@ def _run_worker(
     try:
         if once:
             refresh_business_capability(force=True)
+            publish_paid_ai_capability(healthy=deep_ai_execution_loop is not None)
             publish_execution_capability(healthy=True)
             enqueue_controlled_work()
+            paid_processed = (
+                deep_ai_execution_loop.run_once() if deep_ai_execution_loop is not None else 0
+            )
             result = runtime.run_once()
             print(
                 json.dumps(
                     {
-                        "processed": result.processed,
-                        "succeeded": result.succeeded,
+                        "processed": bool(paid_processed or result.processed),
+                        "succeeded": bool(paid_processed or result.succeeded),
                         "task_id": result.task_id,
                         "worker_id": resolved_worker_id,
+                        "paid_ai_processed": paid_processed,
                     },
                     ensure_ascii=False,
                     sort_keys=True,
                 )
             )
-            return 0 if result.succeeded else 5
+            return 0 if (paid_processed or result.succeeded) else 5
         if not loop:
             raise AssertionError("Worker 必须选择 --once 或 --loop。")
         stop_event = Event()
@@ -317,8 +361,11 @@ def _run_worker(
         signal.signal(signal.SIGTERM, request_stop)
         while not stop_event.is_set():
             refresh_business_capability()
+            publish_paid_ai_capability(healthy=deep_ai_execution_loop is not None)
             publish_execution_capability(healthy=True)
             enqueue_controlled_work()
+            if deep_ai_execution_loop is not None:
+                deep_ai_execution_loop.run_once()
             runtime.run_once()
             stop_event.wait(settings.worker_poll_seconds)
         return 0
@@ -342,10 +389,13 @@ def _run_worker(
                     metadata={"runtime": "mac-worker"},
                 )
             )
+            publish_paid_ai_capability(healthy=False)
             runtime.handlers.pop(BusinessLocalIntelligenceCoordinator.TASK_TYPE, None)
             runtime.handlers.pop(CreativeIntelligenceCoordinator.TASK_TYPE, None)
             publish_execution_capability(healthy=False)
         finally:
+            if deep_ai_provider_adapter is not None:
+                deep_ai_provider_adapter.close()
             if business_adapter is not None:
                 business_adapter.close()
             services.close()

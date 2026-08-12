@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.21.1",
+      "value": "2.3.22.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -70,8 +70,8 @@
   },
   "architecture": {
     "fact_source": "Mac Core + SQLite Queue/Outbox",
-    "windows_role": "native WPF observation, controlled-command UI, first-party business adapters, bounded business Inbox/Outbox bridge, closed local ComfyUI production executor",
-    "worker_role": "explicitly registered task execution and loopback-only local intelligence",
+    "windows_role": "native WPF observation, controlled-command UI, first-party business adapters, bounded business Inbox/Outbox bridge, closed local ComfyUI production executor, bounded Paid-AI status/approval/usage/feedback control surface without provider secret or execution configuration authority",
+    "worker_role": "explicitly registered task execution, loopback-only local intelligence, and approval-bound trusted paid reasoning only when explicitly enabled; paid execution is disabled by default",
     "historical_analysis_tasks": "unsupported-unleased-unmodified",
     "platform_automation_v1": {
       "workflow_persistence": "Mac Core SQLite",
@@ -199,6 +199,44 @@
       "automatic_paid_ai": false,
       "automatic_cloud_renderer": false,
       "automatic_publish": false
+    },
+    "paid_ai_quality_learning_v1": {
+      "database_schema": 15,
+      "source_state": "NEEDS_DEEP_AI",
+      "durable_authority": "Mac Core SQLite + existing Approval Center",
+      "provider_execution_plane": "Mac Worker only",
+      "provider_profile": "paid.reasoning.v1",
+      "provider_adapter": "openai.responses.v1",
+      "model_id": "gpt-5.6-terra",
+      "default_execution_enabled": false,
+      "max_calls": 2,
+      "max_cost_usd": "0.50",
+      "exact_approval_frozen_envelope": true,
+      "approval_binds_sanitized_digest_profile_model_tokens_calls_usd": true,
+      "reserve_before_submit": true,
+      "ambiguous_transport_state": "NeedsHuman",
+      "deterministic_validation": true,
+      "pass_continues_source": true,
+      "quality_learning": "append-only-facts",
+      "feedback_actions": [
+        "Accepted",
+        "Rejected",
+        "Modified"
+      ],
+      "automatic_policy_mutation": false,
+      "automatic_prompt_mutation": false,
+      "automatic_provider_switch": false,
+      "automatic_model_switch": false,
+      "automatic_budget_raise": false,
+      "provider_tools": false,
+      "browser_authority": false,
+      "shell_authority": false,
+      "git_authority": false,
+      "github_authority": false,
+      "comfyui_authority": false,
+      "automatic_paid_ai": false,
+      "automatic_publish": false,
+      "windows_provider_configuration_authority": false
     },
     "phase10d_c_commit_boundary": {
       "source_state": "adoption_ready",

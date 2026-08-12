@@ -15,6 +15,7 @@ from .migration_011 import MIGRATION_011
 from .migration_012 import MIGRATION_012
 from .migration_013 import MIGRATION_013
 from .migration_014 import MIGRATION_014
+from .migration_015 import MIGRATION_015
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -234,6 +235,17 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (14, datetime.now(UTC).isoformat()),
+                )
+
+            migration_015_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 15"
+            ).fetchone()
+            if migration_015_exists is None:
+                # ── 2.3.22.1 paid-AI escalation + quality-learning facts ────
+                connection.executescript(MIGRATION_015)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (15, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:

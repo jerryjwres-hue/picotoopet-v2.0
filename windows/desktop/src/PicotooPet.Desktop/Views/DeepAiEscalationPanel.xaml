@@ -1,0 +1,70 @@
+<UserControl x:Class="PicotooPet.Desktop.Views.DeepAiEscalationPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Loaded="Panel_Loaded">
+  <Border BorderThickness="1" BorderBrush="#33000000" Padding="14">
+    <StackPanel>
+      <TextBlock Text="Deep-AI 升级 · Paid Reasoning" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Margin="0,5,0,0"
+                 Text="只接收 Mac Core 已持久化的 NEEDS_DEEP_AI 事实；Provider/Profile/Model/Token/Call/USD 上限由 trusted policy 冻结。"
+                 TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,0" FontWeight="SemiBold"
+                 Text="批准不等于自动花钱：默认安装执行未启用；只有 Mac Worker 明确启用受信 Provider 后才可能进入 ProviderReady。"
+                 TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,8" FontWeight="SemiBold"
+                 Text="不会自动提高预算、切换 Provider/Model、调用工具/浏览器/Shell/Git/GitHub/ComfyUI，也不会自动发布。"
+                 TextWrapping="Wrap" />
+
+      <TextBlock Text="{Binding SourceText, Mode=OneWay}" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Margin="0,6,0,8">
+        <Button Content="准备所选业务升级审批" Click="Prepare_Click"
+                IsEnabled="{Binding CanPrepare, Mode=OneWay}" />
+        <Button Content="刷新 Deep-AI 状态" Click="Refresh_Click" />
+        <Button Content="重新对齐审批/状态" Click="Reconcile_Click"
+                IsEnabled="{Binding CanReconcile, Mode=OneWay}" />
+        <Button Content="记录 Accepted" Click="Accepted_Click"
+                IsEnabled="{Binding CanFeedback, Mode=OneWay}" />
+        <Button Content="记录 Rejected" Click="Rejected_Click"
+                IsEnabled="{Binding CanFeedback, Mode=OneWay}" />
+        <Button Content="记录 Modified" Click="Modified_Click"
+                IsEnabled="{Binding CanFeedback, Mode=OneWay}" />
+      </StackPanel>
+
+      <DataGrid Height="165"
+                ItemsSource="{Binding Escalations, Mode=OneWay}"
+                SelectedItem="{Binding SelectedEscalation, Mode=TwoWay}"
+                AutoGenerateColumns="False"
+                IsReadOnly="True"
+                CanUserAddRows="False"
+                SelectionMode="Single">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="状态" Binding="{Binding Status, Mode=OneWay}" Width="120" />
+          <DataGridTextColumn Header="来源" Binding="{Binding SourceKind, Mode=OneWay}" Width="1.5*" />
+          <DataGridTextColumn Header="Source ID" Binding="{Binding SourceId, Mode=OneWay}" Width="1.7*" />
+          <DataGridTextColumn Header="Provider Profile" Binding="{Binding ProviderProfileId, Mode=OneWay}" Width="1.4*" />
+          <DataGridTextColumn Header="Model" Binding="{Binding ModelId, Mode=OneWay}" Width="1.2*" />
+          <DataGridTextColumn Header="预算 USD" Binding="{Binding MaxCostUsd, Mode=OneWay}" Width="95" />
+          <DataGridTextColumn Header="Calls" Binding="{Binding MaxCalls, Mode=OneWay}" Width="70" />
+          <DataGridTextColumn Header="Approval" Binding="{Binding ApprovalId, Mode=OneWay}" Width="1.4*" />
+          <DataGridTextColumn Header="Validation" Binding="{Binding ValidationOutcome, Mode=OneWay}" Width="105" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <Border Margin="0,8,0,0" Padding="10" Background="{StaticResource PanelBrush}">
+        <StackPanel>
+          <TextBlock Text="{Binding ExecutionReadinessText, Mode=OneWay}"
+                     FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Margin="0,3,0,0" Text="{Binding ProviderFactText, Mode=OneWay}" TextWrapping="Wrap" />
+          <TextBlock Margin="0,3,0,0" Text="{Binding BudgetText, Mode=OneWay}" TextWrapping="Wrap" />
+          <TextBlock Margin="0,3,0,0" Text="{Binding UsageText, Mode=OneWay}" TextWrapping="Wrap" />
+          <TextBlock Margin="0,3,0,0" Text="{Binding ApprovalText, Mode=OneWay}" TextWrapping="Wrap" />
+          <TextBlock Margin="0,3,0,0" Text="{Binding ManualHandoffText, Mode=OneWay}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <TextBlock Margin="0,7,0,0"
+                 Text="{Binding StatusMessage, Mode=OneWay}"
+                 TextWrapping="Wrap" />
+    </StackPanel>
+  </Border>
+</UserControl>

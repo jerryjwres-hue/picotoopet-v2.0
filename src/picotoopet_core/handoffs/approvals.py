@@ -37,6 +37,16 @@ class HandoffApprovalService(ApprovalService):
             "pr_title_digest",
             "pr_body_digest",
             "draft",
+            "escalation_job_id",
+            "provider_profile_id",
+            "provider_profile_digest",
+            "model_id",
+            "max_input_tokens",
+            "max_output_tokens",
+            "max_calls",
+            "max_cost_usd",
+            "policy_version",
+            "sanitized_package_digest",
         }
     )
 

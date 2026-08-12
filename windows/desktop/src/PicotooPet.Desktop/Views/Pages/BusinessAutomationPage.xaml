@@ -22,7 +22,7 @@
                  TextWrapping="Wrap" />
       <TextBlock Margin="0,4,0,0"
                  FontWeight="SemiBold"
-                 Text="端到端链路：Work Package → Business Result → Creative Package → Windows 本地 ComfyUI Production → Return Package；各层权限保持分离。"
+                 Text="端到端链路：Work Package → Business Result → Creative Package → Windows 本地 ComfyUI Production → Return Package；NEEDS_DEEP_AI 可进入独立审批的 Paid-AI 升级，但默认执行未启用。"
                  TextWrapping="Wrap" />
     </StackPanel>
 
@@ -92,6 +92,9 @@
       <views:ProductionPanel Margin="0,16,0,0"
                              MaxHeight="520"
                              DataContext="{Binding Production, Mode=OneWay}" />
+      <views:DeepAiEscalationPanel Margin="0,16,0,0"
+                                   MaxHeight="560"
+                                   DataContext="{Binding DeepAi, Mode=OneWay}" />
     </StackPanel>
   </Grid>
 </UserControl>

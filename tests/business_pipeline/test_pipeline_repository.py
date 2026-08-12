@@ -33,7 +33,7 @@ def _models_module():  # type: ignore[no-untyped-def]
 def test_migration_14_creates_pipeline_tables(tmp_path: Path) -> None:
     database = _database(tmp_path)
     try:
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 14
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 15
         tables = {
             row[0]
             for row in database.fetchall(

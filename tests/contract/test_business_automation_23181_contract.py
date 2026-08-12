@@ -116,4 +116,4 @@ def test_windows_business_page_has_no_free_model_prompt_or_command_inputs() -> N
 
 
 def test_business_automation_is_retained_in_current_rollup() -> None:
-    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.21.1"
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.22.1"

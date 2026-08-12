@@ -73,7 +73,10 @@ class CreativeRepository:
         return self.get_job(creative_job_id)
 
     def get_job(self, creative_job_id: str) -> CreativeJobRecord:
-        row = self.database.fetchone("SELECT * FROM creative_jobs WHERE creative_job_id=?", (creative_job_id,))
+        row = self.database.fetchone(
+            "SELECT * FROM creative_jobs WHERE creative_job_id=?",
+            (creative_job_id,),
+        )
         if row is None:
             raise KeyError(creative_job_id)
         return self._job(row)
@@ -105,7 +108,11 @@ class CreativeRepository:
             "finished_at=? WHERE creative_job_id=?",
             (
                 status.value,
-                current_stage.value if current_stage else current.current_stage.value if current.current_stage else None,
+                current_stage.value
+                if current_stage
+                else current.current_stage.value
+                if current.current_stage
+                else None,
                 creative_package_id,
                 deep_ai_handoff_id,
                 failure_code,
@@ -140,11 +147,27 @@ class CreativeRepository:
             "INSERT INTO creative_stage_runs("
             "stage_run_id,creative_job_id,stage_kind,status,input_digest,model_attempts,template_version,created_at,updated_at"
             ") VALUES (?,?,?,?,?,?,?,?,?)",
-            (stage_run_id, creative_job_id, stage_kind.value, "Ready", input_digest, 0, template_version, now, now),
+            (
+                stage_run_id,
+                creative_job_id,
+                stage_kind.value,
+                "Ready",
+                input_digest,
+                0,
+                template_version,
+                now,
+                now,
+            ),
         )
-        return self.get_stage(creative_job_id, stage_kind)
+        stage = self.get_stage(creative_job_id, stage_kind)
+        assert stage is not None
+        return stage
 
-    def get_stage(self, creative_job_id: str, stage_kind: CreativeStageKind) -> CreativeStageRunRecord | None:
+    def get_stage(
+        self,
+        creative_job_id: str,
+        stage_kind: CreativeStageKind,
+    ) -> CreativeStageRunRecord | None:
         row = self.database.fetchone(
             "SELECT * FROM creative_stage_runs WHERE creative_job_id=? AND stage_kind=?",
             (creative_job_id, stage_kind.value),
@@ -183,7 +206,10 @@ class CreativeRepository:
                 stage_run_id,
             ),
         )
-        row = self.database.fetchone("SELECT * FROM creative_stage_runs WHERE stage_run_id=?", (stage_run_id,))
+        row = self.database.fetchone(
+            "SELECT * FROM creative_stage_runs WHERE stage_run_id=?",
+            (stage_run_id,),
+        )
         if row is None:
             raise KeyError(stage_run_id)
         return self._stage(row)
@@ -211,20 +237,27 @@ class CreativeRepository:
         return record
 
     def package_for(self, creative_job_id: str) -> CreativePackageRecord | None:
-        row = self.database.fetchone("SELECT * FROM creative_packages WHERE creative_job_id=?", (creative_job_id,))
-        return None if row is None else CreativePackageRecord(
-            creative_package_id=row["creative_package_id"],
-            creative_job_id=row["creative_job_id"],
-            source_set_digest=row["source_set_digest"],
-            package_digest=row["package_digest"],
-            package_relpath=row["package_relpath"],
-            manifest=json.loads(row["manifest_json"]),
-            quality_outcome=row["quality_outcome"],
-            created_at=row["created_at"],
+        row = self.database.fetchone(
+            "SELECT * FROM creative_packages WHERE creative_job_id=?",
+            (creative_job_id,),
+        )
+        return (
+            None
+            if row is None
+            else CreativePackageRecord(
+                creative_package_id=row["creative_package_id"],
+                creative_job_id=row["creative_job_id"],
+                source_set_digest=row["source_set_digest"],
+                package_digest=row["package_digest"],
+                package_relpath=row["package_relpath"],
+                manifest=json.loads(row["manifest_json"]),
+                quality_outcome=row["quality_outcome"],
+                created_at=row["created_at"],
+            )
         )
 
     def save_handoff(self, record: CreativeDeepAiHandoffRecord) -> CreativeDeepAiHandoffRecord:
-        existing = self.handoff_for(record.creative_job_id)
+        existing = self.handoff_history_for(record.creative_job_id)
         if existing is not None:
             return existing
         self.database.execute(
@@ -247,12 +280,40 @@ class CreativeRepository:
         )
         return record
 
+    def resolve_handoff(self, creative_job_id: str) -> CreativeDeepAiHandoffRecord:
+        existing = self.handoff_history_for(creative_job_id)
+        if existing is None:
+            raise KeyError(creative_job_id)
+        if existing.status != "Resolved":
+            self.database.execute(
+                "UPDATE creative_deep_ai_handoffs SET status='Resolved' WHERE creative_job_id=?",
+                (creative_job_id,),
+            )
+        resolved = self.handoff_history_for(creative_job_id)
+        assert resolved is not None
+        return resolved
+
     def handoff_for(self, creative_job_id: str) -> CreativeDeepAiHandoffRecord | None:
+        """Return only an active unresolved Handoff so a resolved stage can resume."""
+
+        row = self.database.fetchone(
+            "SELECT * FROM creative_deep_ai_handoffs WHERE creative_job_id=? AND status!='Resolved'",
+            (creative_job_id,),
+        )
+        return None if row is None else self._handoff(row)
+
+    def handoff_history_for(self, creative_job_id: str) -> CreativeDeepAiHandoffRecord | None:
+        """Return the immutable historical Handoff, including a resolved one, for provenance."""
+
         row = self.database.fetchone(
             "SELECT * FROM creative_deep_ai_handoffs WHERE creative_job_id=?",
             (creative_job_id,),
         )
-        return None if row is None else CreativeDeepAiHandoffRecord(
+        return None if row is None else self._handoff(row)
+
+    @staticmethod
+    def _handoff(row) -> CreativeDeepAiHandoffRecord:  # type: ignore[no-untyped-def]
+        return CreativeDeepAiHandoffRecord(
             handoff_id=row["handoff_id"],
             creative_job_id=row["creative_job_id"],
             stage_kind=row["stage_kind"],
