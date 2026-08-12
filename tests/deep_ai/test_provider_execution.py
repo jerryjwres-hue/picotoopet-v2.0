@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 from decimal import Decimal
@@ -11,6 +12,10 @@ import pytest
 from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.db.database import Database
 from picotoopet_core.deep_ai.repository import DeepAiRepository
+
+
+REQUEST_BYTES = b'{"schema_version":"1.0","instruction_template_id":"deep-ai.reasoning.v1"}'
+REQUEST_DIGEST = hashlib.sha256(REQUEST_BYTES).hexdigest()
 
 
 def _module(name: str):  # type: ignore[no-untyped-def]
@@ -34,7 +39,7 @@ def _job(repository: DeepAiRepository, *, max_cost: str = "3.50", max_calls: int
         source_digest="1" * 64,
         policy_version="deep-ai.escalation.v1",
         sanitized_package_relpath="runtime/deep-ai/requests/request.json",
-        sanitized_package_digest="2" * 64,
+        sanitized_package_digest=REQUEST_DIGEST,
         sanitizer_version="deep-ai.sanitizer.v1",
         provider_profile_id="paid.reasoning.v1",
         provider_profile_digest="3" * 64,
@@ -119,7 +124,7 @@ def _write_request(tmp_path: Path) -> None:
     paths.ensure()
     target = paths.root / "runtime/deep-ai/requests/request.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text('{"schema_version":"1.0","instruction_template_id":"deep-ai.reasoning.v1"}', encoding="utf-8")
+    target.write_bytes(REQUEST_BYTES)
 
 
 def test_disabled_executor_makes_zero_provider_calls(tmp_path: Path) -> None:
