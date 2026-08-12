@@ -22,7 +22,7 @@
                  TextWrapping="Wrap" />
       <TextBlock Margin="0,4,0,0"
                  FontWeight="SemiBold"
-                 Text="端到端链路：Work Package → Business Result → Creative Package → Windows 本地 ComfyUI Production → Return Package；NEEDS_DEEP_AI 可进入独立审批的 Paid-AI 升级，Quality Learning facts 可进入 23.1 离线质量评估，AcceptedForShadow 候选可进入 24.1 deterministic Shadow 验证。"
+                 Text="端到端链路：Work Package → Business Result → Creative Package → Windows 本地 ComfyUI Production → Return Package；NEEDS_DEEP_AI 可进入独立审批的 Paid-AI 升级，Quality Learning facts 可进入 23.1 离线质量评估，AcceptedForShadow 候选可进入 24.1 deterministic Shadow 验证，Supported + AcceptedForPromotionReview 证据可进入 25.1 受控晋级 / 回滚治理。"
                  TextWrapping="Wrap" />
     </StackPanel>
 
@@ -101,6 +101,9 @@
       <views:QualityShadowPanel Margin="0,16,0,0"
                                 MaxHeight="680"
                                 DataContext="{Binding QualityShadow, Mode=OneWay}" />
+      <views:QualityPromotionPanel Margin="0,16,0,0"
+                                   MaxHeight="760"
+                                   DataContext="{Binding QualityPromotion, Mode=OneWay}" />
     </StackPanel>
   </Grid>
 </UserControl>
