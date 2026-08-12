@@ -156,9 +156,10 @@ public sealed class QualityShadowPanelViewModel : ObservableObject
             var candidateTasks = evaluations
                 .Select(item => session.GetQualityImprovementCandidatesAsync(item.EvaluationRunId, cancellationToken))
                 .ToArray();
-            await Task.WhenAll(candidateTasks).ConfigureAwait(false);
-            Candidates = candidateTasks
-                .SelectMany(task => task.Result)
+            // Async gate                 Await the aggregate once; never synchronously read Task.Result.
+            var candidateGroups = await Task.WhenAll(candidateTasks).ConfigureAwait(false);
+            Candidates = candidateGroups
+                .SelectMany(items => items)
                 .Where(item => item.ProjectKey == ProjectKey && item.Status == "AcceptedForShadow")
                 .OrderByDescending(item => item.UpdatedAt)
                 .ToArray();
