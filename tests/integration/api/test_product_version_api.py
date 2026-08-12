@@ -18,5 +18,6 @@ def test_health_returns_canonical_product_version(tmp_path) -> None:
     with TestClient(create_app(settings)) as client:
         response = client.get("/api/v1/health")
 
+    # Version gate              Mac Core health must expose the frozen 23.1 user version.
     assert response.status_code == 200
-    assert response.json()["version"] == __version__ == "2.3.22.1"
+    assert response.json()["version"] == __version__ == "2.3.23.1"
