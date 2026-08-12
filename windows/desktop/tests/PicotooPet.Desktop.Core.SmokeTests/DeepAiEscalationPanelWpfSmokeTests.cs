@@ -109,10 +109,10 @@ internal static class DeepAiEscalationPanelWpfSmokeTests
             viewModel.BudgetText.Contains("$0.50", StringComparison.Ordinal),
             "Deep-AI 面板必须显示冻结总预算上限。");
         SmokeAssert.True(
-            FindDescendants<TextBox>(panel).Count() == 0,
+            !FindDescendants<TextBox>(panel).Any(),
             "Deep-AI 面板不得提供自由文本执行配置输入。");
         SmokeAssert.True(
-            FindDescendants<ComboBox>(panel).Count() == 0,
+            !FindDescendants<ComboBox>(panel).Any(),
             "Deep-AI 面板不得提供 provider/model 选择器。");
 
         var grid = FindDescendants<DataGrid>(panel).FirstOrDefault();
