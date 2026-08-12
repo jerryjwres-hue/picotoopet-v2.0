@@ -6,7 +6,7 @@ namespace PicotooPet.Desktop.ViewModels;
 /// <summary>25.1 Promotion 治理控制面；只提交 exact approval/rollback 事实，不修改运行策略。</summary>
 public sealed class QualityPromotionPanelViewModel : ObservableObject
 {
-    private static readonly IReadOnlyList<string> FixedRollbackReasons = new[]
+    private readonly IReadOnlyList<string> _fixedRollbackReasons = new[]
     {
         "RegressionObserved",
         "UnexpectedImpact",
@@ -138,14 +138,14 @@ public sealed class QualityPromotionPanelViewModel : ObservableObject
         private set => SetProperty(ref _history, value);
     }
 
-    public IReadOnlyList<string> RollbackReasons => FixedRollbackReasons;
+    public IReadOnlyList<string> RollbackReasons => _fixedRollbackReasons;
 
     public string SelectedRollbackReason
     {
         get => _selectedRollbackReason;
         set
         {
-            if (!FixedRollbackReasons.Contains(value, StringComparer.Ordinal))
+            if (!_fixedRollbackReasons.Contains(value, StringComparer.Ordinal))
             {
                 throw new ArgumentOutOfRangeException(nameof(value), "Rollback reason 必须来自固定枚举。");
             }
