@@ -33,8 +33,14 @@ def _database(tmp_path: Path) -> Database:
     return database
 
 
-def _record_rejected_sample(repository: DeepAiRepository, *, index: int, project_key: str) -> None:
-    source_id = f"promotion-source-{project_key}-{index:03d}"
+def _record_rejected_sample(
+    repository: DeepAiRepository,
+    *,
+    index: int,
+    project_key: str,
+    batch: str,
+) -> None:
+    source_id = f"promotion-source-{project_key}-{batch}-{index:03d}"
     job = repository.prepare_job(
         escalation_job_id=str(uuid4()),
         source_kind="business.local_intelligence",
@@ -54,7 +60,7 @@ def _record_rejected_sample(repository: DeepAiRepository, *, index: int, project
     )
     ledger = DeepAiLearningLedger(repository)
     ledger.record_validation(
-        idempotency_key=f"promotion:validation:{project_key}:{index}:v1",
+        idempotency_key=f"promotion:validation:{project_key}:{batch}:{index}:v1",
         project_key=project_key,
         job=job,
         local_profile="reviews.voice_of_customer.v1",
@@ -68,16 +74,16 @@ def _record_rejected_sample(repository: DeepAiRepository, *, index: int, project
         output_tokens=50,
         cost_usd="0.10",
         paid_validation_outcome="PASS",
-        downstream_ref=f"result-package-{project_key}-{index:03d}",
+        downstream_ref=f"result-package-{project_key}-{batch}-{index:03d}",
     )
     ledger.record_feedback(
-        idempotency_key=f"promotion:feedback:{project_key}:{index}:v1",
+        idempotency_key=f"promotion:feedback:{project_key}:{batch}:{index}:v1",
         project_key=project_key,
         job=job,
         action=DeepAiHumanAction.REJECTED,
         reason_tags=[],
         final_content_digest=uuid4().hex * 2,
-        downstream_ref=f"result-package-{project_key}-{index:03d}",
+        downstream_ref=f"result-package-{project_key}-{batch}-{index:03d}",
     )
 
 
@@ -88,8 +94,14 @@ def _supported_shadow(
     accepted_for_promotion: bool = True,
 ):  # type: ignore[no-untyped-def]
     deep_ai_repository = DeepAiRepository(database)
+    batch = uuid4().hex[:12]
     for index in range(1, 61):
-        _record_rejected_sample(deep_ai_repository, index=index, project_key=project_key)
+        _record_rejected_sample(
+            deep_ai_repository,
+            index=index,
+            project_key=project_key,
+            batch=batch,
+        )
     evaluation_repository = QualityEvaluationRepository(database)
     evaluation = QualityEvaluationService(
         repository=evaluation_repository,
@@ -164,13 +176,13 @@ def test_promotion_create_is_idempotent_versioned_and_has_exact_activation_reque
         second = service.create(shadow_run.shadow_run_id)
         approval = service.get_activation_request(first.promotion_id)
 
-        # Identity gate            One immutable Shadow run maps to one Promotion proposal/version.
+        # Identity gate            One immutable Shadow run maps to exactly one Promotion proposal/version.
         assert first.promotion_id == second.promotion_id
         assert first.version_no == 1
         assert first.status == "AwaitingApproval"
         assert first.promotion_profile_id == "quality.promotion.v1"
         assert len(first.proposal_digest) == 64
-        # Exact approval gate      Activation is pending and bound to a digest the client must echo.
+        # Exact approval gate      Activation stays pending until the caller echoes the frozen request digest.
         assert approval.approval_kind == "PromotionActivation"
         assert approval.status == "Pending"
         assert approval.promotion_id == first.promotion_id
@@ -196,7 +208,7 @@ def test_activation_supersedes_prior_version_and_keeps_exactly_one_active(tmp_pa
         )
         assert activated_a.status == "Active"
 
-        # New evidence in the same project/candidate class must receive the next Core-owned version.
+        # Version gate             A genuinely new immutable Shadow evidence set receives the next Core version.
         eval_b, shadow_repo_b, shadow_b = _supported_shadow(database, project_key="promotion-slot")
         service = _service(database, eval_b, shadow_repo_b)
         second = service.create(shadow_b.shadow_run_id)
