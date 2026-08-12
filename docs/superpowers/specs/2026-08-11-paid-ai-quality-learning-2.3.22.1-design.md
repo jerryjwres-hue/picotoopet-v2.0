@@ -119,6 +119,8 @@ A provider profile is a trusted local configuration object identified by `provid
 
 The source Work Package, local model output, Windows UI, and Core API request must not be allowed to override endpoint, model, temperature, tools, commands, provider URL, or API key.
 
+`provider_profile_id` is resolved by a trusted Escalation Policy mapping owned by the product/administrator, based only on the closed source-stage/profile class. Resolution happens when the Escalation Job is prepared. The resolved provider profile identity and profile digest are frozen into the job and later approval envelope. Windows, the business producer, local/paid model output, and the approval action cannot swap the provider or model. Changing the trusted mapping affects only newly prepared jobs unless an existing job is explicitly cancelled and recreated under a new immutable policy version.
+
 22.1 ships with real-execution policy disabled by default. CI uses fake/local provider adapters and performs no paid network request.
 
 The existing manual Web GPT sanitized Handoff remains an explicit fallback path when no enabled API provider is configured or when the user chooses manual handling.
@@ -151,7 +153,7 @@ The default 2.3.22.1 execution envelope is bounded to:
 
 A repair call is allowed only when the first response is semantically acceptable enough to preserve but fails a deterministic structural/return-schema check. A true semantic failure transitions to `NeedsHuman` or `Rejected` according to policy rather than consuming repeated paid calls.
 
-Before each provider call the Worker must check that the remaining approved call/token/cost envelope can cover the call. If it cannot, no request is sent and the job converges to `NeedsHuman` with a durable budget/preflight reason.
+Before each provider call the Worker computes the bounded request-token estimate and worst-case call cost from the frozen request plus trusted provider pricing metadata. It then verifies that the remaining approved call/token/cost envelope can cover that call. If it cannot, no request is sent and the job converges to `NeedsHuman` with a durable budget/preflight reason.
 
 Observed provider usage and actual/estimated cost are durably returned to Core after every accepted provider response. If a provider does not return an authoritative price, cost is computed from the trusted pricing metadata version and recorded as calculated rather than provider-reported.
 
@@ -180,7 +182,7 @@ Canonical job states:
 4. required Worker secret/config is present;
 5. budget preflight passes.
 
-If execution is disabled or provider configuration is absent, the job must remain non-spending and expose the manual Handoff fallback rather than failing unpredictably.
+If execution is disabled or provider configuration is absent, the job remains non-spending in an approved/non-executing state and exposes the manual Handoff fallback rather than failing unpredictably.
 
 Claim/retry behavior must be restart-safe. A provider response that has already been durably committed must never be paid for or requested again after Worker/Core restart.
 
