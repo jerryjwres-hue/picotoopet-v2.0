@@ -35,7 +35,8 @@ def test_creative_tables_are_retained_through_current_schema(tmp_path: Path) -> 
             "creative_packages",
             "creative_deep_ai_handoffs",
         } <= tables
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 15
+        # Schema retention gate      Creative v1 remains durable through the cumulative schema-16 upgrade.
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 16
     finally:
         database.close()
 
