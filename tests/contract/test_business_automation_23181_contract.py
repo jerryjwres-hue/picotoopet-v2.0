@@ -116,5 +116,5 @@ def test_windows_business_page_has_no_free_model_prompt_or_command_inputs() -> N
 
 
 def test_business_automation_is_retained_in_current_rollup() -> None:
-    # Version retention gate     18.1 behavior must remain present in the cumulative 23.1 product.
-    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.23.1"
+    # Version retention gate     18.1 behavior remains present in the cumulative 24.1 product.
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.24.1"
