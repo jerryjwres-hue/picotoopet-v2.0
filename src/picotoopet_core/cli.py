@@ -251,6 +251,7 @@ def _run_worker(
     def refresh_business_capability(*, force: bool = False) -> bool:
         """Probe one loopback model and atomically expose both closed intelligence capabilities."""
 
+        # Retain explicit source marker for creative.intelligence.v1 → creative.content_plan.v1.
         nonlocal business_healthy, last_business_probe
         now = time.monotonic()
         if force or now - last_business_probe >= 15.0:
