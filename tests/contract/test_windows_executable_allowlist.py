@@ -12,7 +12,7 @@ from scripts.verify_project_goal_integrity import GoalIntegrityError, verify_win
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "release" / "project-goal-invariants.json"
-PRODUCT_VERSION = "2.3.23.1"
+PRODUCT_VERSION = "2.3.24.1"
 PRODUCT_VERSION_BYTES = (PRODUCT_VERSION + "\n").encode("utf-8")
 _APP_BYTES = b"MZ-native-wpf"
 _DIAGNOSTIC_BYTES = b"MZ-diagnostics"
@@ -33,7 +33,7 @@ def _gate_script() -> bytes:
         '        "browser_ui" = $false\r\n'
         '        "local_http_ui" = $false\r\n'
         '        "github_repository" = "jerryjwres-hue/picotoopet-v2.0"\r\n'
-        '        "product_version" = "2.3.23.1"\r\n'
+        '        "product_version" = "2.3.24.1"\r\n'
         '        "native_ci_verified" = $true\r\n'
         '        "user_install_allowed" = $true\r\n'
         '        "github_run_id"\r\n'
@@ -112,7 +112,7 @@ def test_rejects_third_executable_even_when_manifest_claims_native_wpf(tmp_path:
 
 def test_accepts_only_the_two_approved_executables(tmp_path: Path) -> None:
     report = verify_windows_package(_package(tmp_path, extra_executable=False), contract_path=CONTRACT)
-    # Package gate              Synthetic Windows package must carry the frozen 23.1 product identity.
+    # Package gate              Synthetic Windows package must carry the frozen 24.1 product identity.
     assert report["status"] == "pass"
     assert report["product_version"] == PRODUCT_VERSION
     assert report["verified_payload_files"] == 3

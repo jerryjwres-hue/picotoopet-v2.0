@@ -20,7 +20,8 @@ REQUIRED_TABLES = {
     "deep_ai_escalation_jobs", "deep_ai_attempts", "deep_ai_learning_events", "deep_ai_learning_details",
     "quality_evaluation_snapshots", "quality_evaluation_snapshot_members", "quality_evaluation_runs",
     "quality_evaluation_metrics", "quality_improvement_candidates",
-    "quality_improvement_candidate_reviews",
+    "quality_improvement_candidate_reviews", "quality_shadow_runs", "quality_shadow_arm_metrics",
+    "quality_shadow_reviews",
 }
 
 REQUIRED_HANDOFF_COLUMNS = {
@@ -48,8 +49,8 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
     assert REQUIRED_TABLES <= tables
     assert "cloud_policy" in task_columns
     assert REQUIRED_HANDOFF_COLUMNS <= handoff_columns
-    # 23.1 schema gate         Migration history is cumulative and exact through schema 16.
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 16
+    # 24.1 schema gate         Migration history is cumulative and exact through schema 17.
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 17
     database.close()
 
 

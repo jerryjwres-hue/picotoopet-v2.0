@@ -36,6 +36,7 @@ from picotoopet_core.deep_ai.provider import DeepAiProviderResultStore
 from picotoopet_core.deep_ai.repository import DeepAiRepository
 from picotoopet_core.deep_ai.result_processing import DeepAiResultProcessor
 from picotoopet_core.deep_ai.service import CoreDeepAiSourceResolver, DeepAiEscalationService
+from picotoopet_core.deep_ai.shadow import QualityShadowRepository, QualityShadowService
 from picotoopet_core.deep_ai.store import DeepAiSanitizedPackageStore
 from picotoopet_core.deep_ai.validation import DeepAiResultValidator
 from picotoopet_core.events.broker import EventBroker
@@ -94,6 +95,8 @@ class Services:
     deep_ai_result_processor: DeepAiResultProcessor
     quality_evaluation_repository: QualityEvaluationRepository
     quality_evaluation: QualityEvaluationService
+    quality_shadow_repository: QualityShadowRepository
+    quality_shadow: QualityShadowService
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -194,6 +197,11 @@ def build_services(settings: AppSettings) -> Services:
         repository=quality_evaluation_repository,
         deep_ai_repository=deep_ai_repository,
     )
+    quality_shadow_repository = QualityShadowRepository(database)
+    quality_shadow = QualityShadowService(
+        repository=quality_shadow_repository,
+        evaluation_repository=quality_evaluation_repository,
+    )
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
     broker_sessions = BrokerSessionService(database, handoffs, returns, api_token=settings.api_token)
@@ -239,6 +247,8 @@ def build_services(settings: AppSettings) -> Services:
         deep_ai_result_processor=deep_ai_result_processor,
         quality_evaluation_repository=quality_evaluation_repository,
         quality_evaluation=quality_evaluation,
+        quality_shadow_repository=quality_shadow_repository,
+        quality_shadow=quality_shadow,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,

@@ -1,0 +1,86 @@
+<UserControl x:Class="PicotooPet.Desktop.Views.QualityShadowPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Loaded="Panel_Loaded">
+  <Border BorderThickness="1" BorderBrush="#33000000" Padding="14">
+    <StackPanel>
+      <TextBlock Text="影子验证 · Controlled Shadow" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Margin="0,5,0,0"
+                 Text="24.1 只允许 AcceptedForShadow 候选进入 deterministic A/B holdout replay；它验证候选信号能否在独立历史分区复现，不伪造新 Prompt/Model 的因果提升。"
+                 TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,8"
+                 FontWeight="SemiBold"
+                 Text="Shadow 不执行本地 AI、Paid-AI、ComfyUI、Shell、Git/GitHub 或发布；AcceptedForPromotionReview 也只是 durable fact，不会自动 Promotion。"
+                 TextWrapping="Wrap" />
+
+      <TextBlock Text="{Binding ProjectText, Mode=OneWay}" TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,0" Text="{Binding RunText, Mode=OneWay}" TextWrapping="Wrap" />
+
+      <TextBlock Margin="0,8,0,0" Text="AcceptedForShadow Candidates" FontWeight="SemiBold" />
+      <DataGrid Height="150"
+                Margin="0,5,0,0"
+                ItemsSource="{Binding Candidates, Mode=OneWay}"
+                SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
+                AutoGenerateColumns="False"
+                IsReadOnly="True"
+                CanUserAddRows="False"
+                SelectionMode="Single">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Class" Binding="{Binding CandidateClass, Mode=OneWay}" Width="1.4*" />
+          <DataGridTextColumn Header="Status" Binding="{Binding Status, Mode=OneWay}" Width="145" />
+          <DataGridTextColumn Header="Cohort" Binding="{Binding CohortDimension, Mode=OneWay}" Width="1.1*" />
+          <DataGridTextColumn Header="Cohort Key" Binding="{Binding CohortKey, Mode=OneWay}" Width="1.5*" />
+          <DataGridTextColumn Header="Candidate ID" Binding="{Binding CandidateId, Mode=OneWay}" Width="1.8*" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <StackPanel Orientation="Horizontal" Margin="0,7,0,8">
+        <Button Content="运行 Shadow"
+                Click="Create_Click"
+                IsEnabled="{Binding CanCreate, Mode=OneWay}" />
+        <Button Content="Reconcile"
+                Click="Reconcile_Click"
+                IsEnabled="{Binding CanReconcile, Mode=OneWay}" />
+        <Button Content="刷新 Shadow"
+                Click="Refresh_Click" />
+      </StackPanel>
+
+      <TextBlock Text="A/B Arm Metrics" FontWeight="SemiBold" />
+      <DataGrid Height="180"
+                Margin="0,5,0,0"
+                ItemsSource="{Binding Metrics, Mode=OneWay}"
+                AutoGenerateColumns="False"
+                IsReadOnly="True"
+                CanUserAddRows="False">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Arm" Binding="{Binding Arm, Mode=OneWay}" Width="95" />
+          <DataGridTextColumn Header="Metric" Binding="{Binding MetricName, Mode=OneWay}" Width="1.7*" />
+          <DataGridTextColumn Header="Value" Binding="{Binding Value, Mode=OneWay}" Width="90" />
+          <DataGridTextColumn Header="Numerator" Binding="{Binding Numerator, Mode=OneWay}" Width="95" />
+          <DataGridTextColumn Header="Denominator" Binding="{Binding Denominator, Mode=OneWay}" Width="105" />
+          <DataGridTextColumn Header="Availability" Binding="{Binding Availability, Mode=OneWay}" Width="125" />
+          <DataGridTextColumn Header="Arm Digest" Binding="{Binding ArmDigest, Mode=OneWay}" Width="1.8*" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+        <Button Content="标记已审阅"
+                Click="Reviewed_Click"
+                IsEnabled="{Binding CanReview, Mode=OneWay}" />
+        <Button Content="接受进入 Promotion Review"
+                Click="AcceptForPromotionReview_Click"
+                IsEnabled="{Binding CanAcceptForPromotionReview, Mode=OneWay}" />
+        <Button Content="拒绝 Shadow"
+                Click="Reject_Click"
+                IsEnabled="{Binding CanReview, Mode=OneWay}" />
+        <Button Content="取消 Shadow"
+                Click="Cancel_Click"
+                IsEnabled="{Binding CanReview, Mode=OneWay}" />
+      </StackPanel>
+
+      <TextBlock Margin="0,7,0,0"
+                 Text="{Binding StatusMessage, Mode=OneWay}"
+                 TextWrapping="Wrap" />
+    </StackPanel>
+  </Border>
+</UserControl>

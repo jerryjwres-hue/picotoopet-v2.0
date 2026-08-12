@@ -1,4 +1,4 @@
-"""Authenticated, bounded Deep-AI escalation, learning, and offline-evaluation routes."""
+"""Authenticated, bounded Deep-AI escalation, learning, evaluation, and shadow routes."""
 
 from __future__ import annotations
 
@@ -27,6 +27,11 @@ from picotoopet_core.deep_ai.models import (
     DeepAiLearningEvent,
 )
 from picotoopet_core.deep_ai.service import DeepAiReadiness
+from picotoopet_core.deep_ai.shadow import (
+    QualityShadowArmMetric,
+    QualityShadowReview,
+    QualityShadowRun,
+)
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -103,6 +108,32 @@ class QualityImprovementReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action: QualityImprovementReviewAction
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
+class QualityShadowRunRequest(BaseModel):
+    """Closed Shadow request; only the already-reviewed candidate identity is caller supplied."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str = Field(min_length=1, max_length=160)
+
+
+class QualityShadowReconcileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class QualityShadowReviewAction(StrEnum):
+    REVIEWED = "Reviewed"
+    ACCEPTED_FOR_PROMOTION_REVIEW = "AcceptedForPromotionReview"
+    REJECTED = "Rejected"
+    CANCELLED = "Cancelled"
+
+
+class QualityShadowReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: QualityShadowReviewAction
     idempotency_key: str = Field(min_length=1, max_length=256)
 
 
@@ -390,6 +421,92 @@ def review_quality_improvement_candidate(
     return execute_deep_ai(
         lambda: request.app.state.services.quality_evaluation.review_candidate(
             candidate_id,
+            action=payload.action.value,
+            idempotency_key=payload.idempotency_key,
+        )
+    )
+
+
+@router.post(
+    "/deep-ai/shadow-runs",
+    response_model=QualityShadowRun,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_quality_shadow_run(
+    payload: QualityShadowRunRequest,
+    request: Request,
+) -> QualityShadowRun:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_shadow.create(payload.candidate_id)
+    )
+
+
+@router.get("/deep-ai/shadow-runs", response_model=list[QualityShadowRun])
+def list_quality_shadow_runs(
+    request: Request,
+    candidate_id: str | None = Query(default=None, max_length=160),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[QualityShadowRun]:
+    return request.app.state.services.quality_shadow.list_runs(
+        candidate_id=candidate_id,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/deep-ai/shadow-runs/{shadow_run_id}",
+    response_model=QualityShadowRun,
+)
+def get_quality_shadow_run(
+    shadow_run_id: str,
+    request: Request,
+) -> QualityShadowRun:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_shadow.get_run(shadow_run_id)
+    )
+
+
+@router.post(
+    "/deep-ai/shadow-runs/{shadow_run_id}/reconcile",
+    response_model=QualityShadowRun,
+)
+def reconcile_quality_shadow_run(
+    shadow_run_id: str,
+    payload: QualityShadowReconcileRequest,
+    request: Request,
+) -> QualityShadowRun:
+    del payload
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_shadow.reconcile(shadow_run_id)
+    )
+
+
+@router.get(
+    "/deep-ai/shadow-runs/{shadow_run_id}/metrics",
+    response_model=list[QualityShadowArmMetric],
+)
+def list_quality_shadow_metrics(
+    shadow_run_id: str,
+    request: Request,
+) -> list[QualityShadowArmMetric]:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_shadow.list_metrics(shadow_run_id)
+    )
+
+
+@router.post(
+    "/deep-ai/shadow-runs/{shadow_run_id}/review",
+    response_model=QualityShadowReview,
+    status_code=status.HTTP_201_CREATED,
+)
+def review_quality_shadow_run(
+    shadow_run_id: str,
+    payload: QualityShadowReviewRequest,
+    request: Request,
+) -> QualityShadowReview:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_shadow.review(
+            shadow_run_id,
             action=payload.action.value,
             idempotency_key=payload.idempotency_key,
         )
