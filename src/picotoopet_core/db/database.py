@@ -18,6 +18,7 @@ from .migration_014 import MIGRATION_014
 from .migration_015 import MIGRATION_015
 from .migration_016 import MIGRATION_016
 from .migration_017 import MIGRATION_017
+from .migration_018 import MIGRATION_018
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -270,6 +271,17 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (17, datetime.now(UTC).isoformat()),
+                )
+
+            migration_018_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 18"
+            ).fetchone()
+            if migration_018_exists is None:
+                # ── 2.3.25.1 controlled Promotion / rollback facts ──────────
+                connection.executescript(MIGRATION_018)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (18, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
