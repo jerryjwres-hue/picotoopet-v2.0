@@ -48,7 +48,7 @@ def test_paid_execution_reserves_before_provider_submit_and_fails_closed_on_ambi
 def test_result_processing_has_no_paid_provider_execution_authority() -> None:
     processing = read("src/picotoopet_core/deep_ai/result_processing.py")
     assert "DeepAiResultValidator" in processing
-    assert "DeepAiSourceContinuation" in processing
+    assert "DeepAiContinuation" in processing
     assert "DeepAiLearningLedger" in processing
     assert "self.provider.execute(" not in processing
     assert "OpenAI" not in processing
