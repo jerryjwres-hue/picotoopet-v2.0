@@ -87,7 +87,9 @@ class DeepAiRepository:
             error_message=row["error_message"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
-            finished_at=(datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None),
+            finished_at=(
+                datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None
+            ),
         )
 
     @staticmethod
@@ -103,11 +105,17 @@ class DeepAiRepository:
             response_relpath=row["response_relpath"],
             input_tokens=row["input_tokens"],
             output_tokens=row["output_tokens"],
-            actual_cost_usd=(Decimal(row["actual_cost_usd"]) if row["actual_cost_usd"] else None),
+            actual_cost_usd=(
+                Decimal(row["actual_cost_usd"]) if row["actual_cost_usd"] else None
+            ),
             cost_source=row["cost_source"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
-            completed_at=(datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"])
+                if row["completed_at"]
+                else None
+            ),
         )
 
     @staticmethod
@@ -227,6 +235,30 @@ class DeepAiRepository:
         )
         return [self._job_from_row(row) for row in rows]
 
+    def set_job_status(
+        self,
+        escalation_job_id: str,
+        status: DeepAiEscalationStatus,
+        *,
+        failure_code: str | None = None,
+        error_message: str | None = None,
+        finished: bool = False,
+    ) -> DeepAiEscalationRecord:
+        now = self._now()
+        self.database.execute(
+            "UPDATE deep_ai_escalation_jobs SET status=?,failure_code=?,error_message=?,"
+            "updated_at=?,finished_at=? WHERE escalation_job_id=?",
+            (
+                status.value,
+                failure_code,
+                error_message,
+                now,
+                now if finished else None,
+                escalation_job_id,
+            ),
+        )
+        return self.get_job(escalation_job_id)
+
     def bind_approval_once(
         self,
         escalation_job_id: str,
@@ -243,7 +275,11 @@ class DeepAiRepository:
             ).fetchone()
             if row is None:
                 raise KeyError(escalation_job_id)
-            current = (row["approval_id"], row["approval_digest"], row["approval_expires_at"])
+            current = (
+                row["approval_id"],
+                row["approval_digest"],
+                row["approval_expires_at"],
+            )
             requested = (approval_id, approval_digest, expires_text)
             if current[0] is not None:
                 if current != requested:
@@ -288,9 +324,10 @@ class DeepAiRepository:
                 (escalation_job_id, attempt_number),
             ).fetchone()
             if existing is not None:
-                if existing["attempt_id"] == attempt_id and self._money_text(
-                    existing["estimated_cost_usd"]
-                ) == estimated:
+                if (
+                    existing["attempt_id"] == attempt_id
+                    and self._money_text(existing["estimated_cost_usd"]) == estimated
+                ):
                     return self._attempt_from_row(existing)
                 raise ValueError("DEEP_AI_ATTEMPT_ALREADY_RESERVED")
             timestamp = self._now()
@@ -318,6 +355,27 @@ class DeepAiRepository:
         if row is None:
             raise KeyError(attempt_id)
         return self._attempt_from_row(row)
+
+    def list_attempts(self, escalation_job_id: str) -> list[DeepAiAttemptRecord]:
+        rows = self.database.fetchall(
+            "SELECT * FROM deep_ai_attempts WHERE escalation_job_id=? ORDER BY attempt_number ASC",
+            (escalation_job_id,),
+        )
+        return [self._attempt_from_row(row) for row in rows]
+
+    def set_attempt_status(
+        self,
+        attempt_id: str,
+        status: DeepAiAttemptStatus,
+    ) -> DeepAiAttemptRecord:
+        current = self.get_attempt(attempt_id)
+        if current.status is DeepAiAttemptStatus.COMPLETED and status is not current.status:
+            raise ValueError("DEEP_AI_COMPLETED_ATTEMPT_IMMUTABLE")
+        self.database.execute(
+            "UPDATE deep_ai_attempts SET status=?,updated_at=? WHERE attempt_id=?",
+            (status.value, self._now(), attempt_id),
+        )
+        return self.get_attempt(attempt_id)
 
     def bind_attempt_result(
         self,
