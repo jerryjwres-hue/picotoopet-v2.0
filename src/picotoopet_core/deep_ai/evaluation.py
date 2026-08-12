@@ -1136,9 +1136,6 @@ class QualityEvaluationService:
                 )
 
     def evaluate(self, snapshot_id: str) -> QualityEvaluationRun:
-        existing = self.repository.get_run_for_snapshot(snapshot_id)
-        if existing is not None:
-            return existing
         snapshot = self.repository.get_snapshot(snapshot_id)
         rows = self.repository.snapshot_learning_rows(snapshot_id)
         samples = self._samples(rows)
@@ -1151,18 +1148,22 @@ class QualityEvaluationService:
                 "metrics": metric_rows,
             }
         )
-        run = self.repository.create_completed_run(
-            snapshot=snapshot,
-            report_digest=report_digest,
-        )
+        # Recovery gate             Reuse an existing run but always complete deterministic derived facts.
+        run = self.repository.get_run_for_snapshot(snapshot_id)
+        if run is None:
+            run = self.repository.create_completed_run(
+                snapshot=snapshot,
+                report_digest=report_digest,
+            )
         self.repository.replace_metrics(run.evaluation_run_id, metric_rows)
         metrics = self.repository.list_metrics(run.evaluation_run_id)
         self._create_candidates(snapshot=snapshot, run=run, metrics=metrics)
         return run
 
     def reconcile(self, evaluation_run_id: str) -> QualityEvaluationRun:
-        # Reconcile gate             Completed deterministic evaluation never re-executes external work.
-        return self.repository.get_run(evaluation_run_id)
+        run = self.repository.get_run(evaluation_run_id)
+        # Recovery gate             Reconcile replays only deterministic derivation under the same run identity.
+        return self.evaluate(run.snapshot_id)
 
     def get_run(self, evaluation_run_id: str) -> QualityEvaluationRun:
         return self.repository.get_run(evaluation_run_id)
