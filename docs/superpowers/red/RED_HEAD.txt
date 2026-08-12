@@ -1,4 +1,5 @@
 RED contract lineage:
-- tests completed through: 7941ec607fa5d894e41ac92b3c2d2e90b75646a7
-- RED evidence note commit parent: 7941ec607fa5d894e41ac92b3c2d2e90b75646a7
-- branch includes only design/plan/RED tests/evidence at this stage; production GREEN implementation has not started.
+- tests completed through: fc73b880fef78c822e0b8c42d7dea6fa02cce2c1
+- RED evidence note records Mac Core run 31630207406 / job 94226773261
+- RED result: 10 failed, 702 passed; failures were limited to missing schema 17, shadow domain, and shadow API implementation.
+- production GREEN implementation starts only after this recorded RED head.
