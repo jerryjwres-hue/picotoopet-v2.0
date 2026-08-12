@@ -25,10 +25,15 @@ from picotoopet_core.creative.service import CreativeIntelligenceService
 from picotoopet_core.creative.source import CreativeSourceNormalizer
 from picotoopet_core.creative.store import CreativeArtifactStore
 from picotoopet_core.db.database import Database
+from picotoopet_core.deep_ai.continuation import DeepAiSourceContinuation
+from picotoopet_core.deep_ai.learning import DeepAiLearningLedger
 from picotoopet_core.deep_ai.policy import DeepAiEscalationPolicy
+from picotoopet_core.deep_ai.provider import DeepAiProviderResultStore
 from picotoopet_core.deep_ai.repository import DeepAiRepository
+from picotoopet_core.deep_ai.result_processing import DeepAiResultProcessor
 from picotoopet_core.deep_ai.service import CoreDeepAiSourceResolver, DeepAiEscalationService
 from picotoopet_core.deep_ai.store import DeepAiSanitizedPackageStore
+from picotoopet_core.deep_ai.validation import DeepAiResultValidator
 from picotoopet_core.events.broker import EventBroker
 from picotoopet_core.events.dispatcher import OutboxDispatcher
 from picotoopet_core.events.outbox import EventOutbox
@@ -82,6 +87,7 @@ class Services:
     deep_ai_repository: DeepAiRepository
     deep_ai_store: DeepAiSanitizedPackageStore
     deep_ai: DeepAiEscalationService
+    deep_ai_result_processor: DeepAiResultProcessor
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -152,12 +158,30 @@ def build_services(settings: AppSettings) -> Services:
     approvals = HandoffApprovalService(database, queue)
     deep_ai_repository = DeepAiRepository(database)
     deep_ai_store = DeepAiSanitizedPackageStore(settings.paths)
+    deep_ai_source_resolver = CoreDeepAiSourceResolver(
+        business_repository,
+        creative_repository,
+    )
     deep_ai = DeepAiEscalationService(
         repository=deep_ai_repository,
         store=deep_ai_store,
         approvals=approvals,
-        source_resolver=CoreDeepAiSourceResolver(business_repository, creative_repository),
+        source_resolver=deep_ai_source_resolver,
         policy=DeepAiEscalationPolicy.default(),
+    )
+    deep_ai_result_processor = DeepAiResultProcessor(
+        repository=deep_ai_repository,
+        result_store=DeepAiProviderResultStore(settings.paths),
+        source_resolver=deep_ai_source_resolver,
+        validator=DeepAiResultValidator(),
+        continuation=DeepAiSourceContinuation(
+            business_repository=business_repository,
+            business_store=business_store,
+            creative_repository=creative_repository,
+            queue=queue,
+            pipeline_repository=business_pipeline_repository,
+        ),
+        learning=DeepAiLearningLedger(deep_ai_repository),
     )
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
@@ -201,6 +225,7 @@ def build_services(settings: AppSettings) -> Services:
         deep_ai_repository=deep_ai_repository,
         deep_ai_store=deep_ai_store,
         deep_ai=deep_ai,
+        deep_ai_result_processor=deep_ai_result_processor,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,
