@@ -21,7 +21,7 @@ def test_internal_python_distribution_version_remains_compatible() -> None:
     pyproject = read(ROOT / "pyproject.toml")
     assert 'version = "2.3.0.dev2"' in pyproject
     # Version gate              User product version advances independently of the internal wheel version.
-    assert __version__ == "2.3.23.1"
+    assert __version__ == "2.3.24.1"
 
 
 def test_mac_core_builder_is_manifest_driven_and_offline() -> None:
