@@ -33,4 +33,5 @@ def test_worker_builder_packages_canonical_product_version() -> None:
     ):
         assert required in builder
     assert "phase23_worker_product_version" in verifier
-    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.22.1"
+    # Version gate              Worker package reads the same frozen 23.1 product resource as Core.
+    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.23.1"
