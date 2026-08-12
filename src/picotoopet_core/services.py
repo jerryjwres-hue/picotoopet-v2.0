@@ -26,6 +26,10 @@ from picotoopet_core.creative.source import CreativeSourceNormalizer
 from picotoopet_core.creative.store import CreativeArtifactStore
 from picotoopet_core.db.database import Database
 from picotoopet_core.deep_ai.continuation import DeepAiSourceContinuation
+from picotoopet_core.deep_ai.evaluation import (
+    QualityEvaluationRepository,
+    QualityEvaluationService,
+)
 from picotoopet_core.deep_ai.learning import DeepAiLearningLedger
 from picotoopet_core.deep_ai.policy import DeepAiEscalationPolicy
 from picotoopet_core.deep_ai.provider import DeepAiProviderResultStore
@@ -88,6 +92,8 @@ class Services:
     deep_ai_store: DeepAiSanitizedPackageStore
     deep_ai: DeepAiEscalationService
     deep_ai_result_processor: DeepAiResultProcessor
+    quality_evaluation_repository: QualityEvaluationRepository
+    quality_evaluation: QualityEvaluationService
     approvals: ApprovalService
     handoffs: HandoffService
     returns: ReturnValidationService
@@ -183,6 +189,11 @@ def build_services(settings: AppSettings) -> Services:
         ),
         learning=DeepAiLearningLedger(deep_ai_repository),
     )
+    quality_evaluation_repository = QualityEvaluationRepository(database)
+    quality_evaluation = QualityEvaluationService(
+        repository=quality_evaluation_repository,
+        deep_ai_repository=deep_ai_repository,
+    )
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
     broker_sessions = BrokerSessionService(database, handoffs, returns, api_token=settings.api_token)
@@ -226,6 +237,8 @@ def build_services(settings: AppSettings) -> Services:
         deep_ai_store=deep_ai_store,
         deep_ai=deep_ai,
         deep_ai_result_processor=deep_ai_result_processor,
+        quality_evaluation_repository=quality_evaluation_repository,
+        quality_evaluation=quality_evaluation,
         approvals=approvals,
         handoffs=handoffs,
         returns=returns,
