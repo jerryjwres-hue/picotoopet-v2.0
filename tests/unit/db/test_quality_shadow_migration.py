@@ -23,8 +23,9 @@ def test_schema_17_adds_shadow_tables_after_schema_16(tmp_path: Path) -> None:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
         }
-        # 24.1 schema gate         Migration 17 must be registered exactly once.
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 17
+        # Current schema gate      Migration history advances through schema 18.
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 18
+        # 24.1 schema gate         Migration 17 itself remains registered exactly once.
         assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version=17") == 1
         # 23.1 preservation gate   Offline evaluation and candidate facts remain available.
         assert "quality_evaluation_snapshots" in tables
@@ -34,7 +35,7 @@ def test_schema_17_adds_shadow_tables_after_schema_16(tmp_path: Path) -> None:
         assert SHADOW_TABLES <= tables
 
         database.apply_migrations()
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 17
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 18
     finally:
         database.close()
 
@@ -55,7 +56,7 @@ def test_schema_17_shadow_identity_is_unique_and_foreign_keys_stay_enabled(tmp_p
         # Identity gate            One candidate has at most one shadow run; review keys are idempotent.
         assert run_indexes
         assert review_indexes
-        # Referential gate         Schema 17 remains under SQLite foreign-key enforcement.
+        # Referential gate         Schema 17 facts remain under SQLite foreign-key enforcement.
         assert database.scalar("PRAGMA foreign_keys") == 1
     finally:
         database.close()
