@@ -114,6 +114,20 @@ class RuntimePaths:
     def production_packages_dir(self) -> Path:
         return self.production_root / "packages"
 
+    @property
+    def deep_ai_root(self) -> Path:
+        """付费 AI 升级仅使用 Mac Core 自主管理的脱敏包/结果目录。"""
+
+        return self.runtime_dir / "deep-ai"
+
+    @property
+    def deep_ai_requests_dir(self) -> Path:
+        return self.deep_ai_root / "requests"
+
+    @property
+    def deep_ai_results_dir(self) -> Path:
+        return self.deep_ai_root / "results"
+
     def managed_directories(self) -> tuple[Path, ...]:
         """返回安装器和运行时允许创建的全部目录。"""
 
@@ -140,6 +154,9 @@ class RuntimePaths:
             self.creative_handoffs_dir,
             self.production_root,
             self.production_packages_dir,
+            self.deep_ai_root,
+            self.deep_ai_requests_dir,
+            self.deep_ai_results_dir,
         )
 
     def ensure(self) -> None:
