@@ -1,4 +1,4 @@
-"""2.3.22.1 必须继续保留并正式发布 cold-start recovery 修复。"""
+"""2.3.23.1 必须继续保留并正式发布 cold-start recovery 修复。"""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_PRODUCT_VERSION = "2.3.22.1"
-PREVIOUS_PRODUCT_VERSION = "2.3.21.1"
+EXPECTED_PRODUCT_VERSION = "2.3.23.1"
+PREVIOUS_PRODUCT_VERSION = "2.3.22.1"
 
 ACTIVE_VERSION_FILES = (
     ROOT / "contracts/release/project-goal-invariants.json",
@@ -29,6 +29,7 @@ def test_rollup_uses_current_version_on_every_active_version_surface() -> None:
     version_file = ROOT / "src/picotoopet_core/product-version.txt"
     goal = json.loads(read(ROOT / "contracts/release/project-goal-invariants.json"))
 
+    # Version rollup gate       All active release surfaces advance together to 23.1.
     assert read(version_file).strip() == EXPECTED_PRODUCT_VERSION
     assert goal["windows"]["product_version"]["value"] == EXPECTED_PRODUCT_VERSION
     for path in ACTIVE_VERSION_FILES:
