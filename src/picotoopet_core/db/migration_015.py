@@ -80,4 +80,26 @@ CREATE INDEX IF NOT EXISTS idx_deep_ai_learning_project_created
     ON deep_ai_learning_events(project_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_deep_ai_learning_source
     ON deep_ai_learning_events(source_kind, source_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS deep_ai_learning_details (
+    event_id                    TEXT PRIMARY KEY REFERENCES deep_ai_learning_events(event_id) ON DELETE RESTRICT,
+    local_profile               TEXT,
+    local_model_id              TEXT,
+    local_template_version      TEXT,
+    local_attempt_count         INTEGER,
+    quality_reasons_json        TEXT NOT NULL,
+    provider_profile_id         TEXT,
+    provider_model_id           TEXT,
+    sanitized_input_digest      TEXT,
+    paid_output_digest          TEXT,
+    input_tokens                INTEGER,
+    output_tokens               INTEGER,
+    cost_usd                    TEXT,
+    paid_validation_outcome     TEXT,
+    downstream_ref              TEXT,
+    details_digest              TEXT NOT NULL,
+    CHECK(local_attempt_count IS NULL OR local_attempt_count >= 0),
+    CHECK(input_tokens IS NULL OR input_tokens >= 0),
+    CHECK(output_tokens IS NULL OR output_tokens >= 0)
+);
 """
