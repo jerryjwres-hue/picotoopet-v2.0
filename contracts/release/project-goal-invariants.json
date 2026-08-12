@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.24.1",
+      "value": "2.3.25.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -70,8 +70,8 @@
   },
   "architecture": {
     "fact_source": "Mac Core + SQLite Queue/Outbox",
-    "windows_role": "native WPF observation, controlled-command UI, first-party business adapters, bounded business Inbox/Outbox bridge, closed local ComfyUI production executor, bounded Paid-AI status/approval/usage/feedback control surface, deterministic offline quality-evaluation review surface, and bounded controlled-shadow review surface without provider secret or runtime policy-mutation authority",
-    "worker_role": "explicitly registered task execution, loopback-only local intelligence, and approval-bound trusted paid reasoning only when explicitly enabled; paid execution is disabled by default; offline quality evaluation and controlled shadow validation add no Worker model-execution role",
+    "windows_role": "native WPF observation, controlled-command UI, first-party business adapters, bounded business Inbox/Outbox bridge, closed local ComfyUI production executor, bounded Paid-AI status/approval/usage/feedback control surface, deterministic offline quality-evaluation review surface, bounded controlled-shadow review surface, and exact-digest controlled Promotion/rollback governance surface without provider secret or runtime policy-mutation authority",
+    "worker_role": "explicitly registered task execution, loopback-only local intelligence, and approval-bound trusted paid reasoning only when explicitly enabled; paid execution is disabled by default; offline quality evaluation, controlled shadow validation, and Promotion/rollback governance add no Worker model-execution role",
     "historical_analysis_tasks": "unsupported-unleased-unmodified",
     "platform_automation_v1": {
       "workflow_persistence": "Mac Core SQLite",
@@ -312,6 +312,53 @@
       "windows_panel": "existing-business-automation-page",
       "new_top_level_shell_route": false,
       "success_state": "shadow_evidence_ready"
+    },
+    "controlled_promotion_rollback_v1": {
+      "database_schema": 18,
+      "source_state": "Supported+AcceptedForPromotionReview",
+      "promotion_profile": "quality.promotion.v1",
+      "durable_authority": "Mac Core SQLite",
+      "slot_identity": "sha256(project_key+candidate_class+promotion_profile_id)",
+      "version_assignment": "core-monotonic-per-slot",
+      "activation_exact_request_digest": true,
+      "rollback_exact_request_digest": true,
+      "activation_decisions": [
+        "Approved",
+        "Rejected",
+        "Cancelled"
+      ],
+      "rollback_reason_codes": [
+        "RegressionObserved",
+        "UnexpectedImpact",
+        "OperatorDecision"
+      ],
+      "rollback_decisions": [
+        "Approved",
+        "Rejected",
+        "Cancelled"
+      ],
+      "one_active_per_slot": true,
+      "superseded_predecessor_restorable": true,
+      "active_record_consumed_by_runtime": false,
+      "runtime_policy_mutation": false,
+      "automatic_prompt_mutation": false,
+      "automatic_model_switch": false,
+      "automatic_provider_switch": false,
+      "automatic_endpoint_change": false,
+      "automatic_budget_change": false,
+      "local_ai_execution": false,
+      "paid_ai_execution": false,
+      "comfyui_execution": false,
+      "shell_execution": false,
+      "publication_execution": false,
+      "git_execution": false,
+      "github_execution": false,
+      "automatic_merge": false,
+      "automatic_tag": false,
+      "automatic_release": false,
+      "windows_panel": "existing-business-automation-page",
+      "new_top_level_shell_route": false,
+      "success_state": "promotion_governance_ready"
     },
     "phase10d_c_commit_boundary": {
       "source_state": "adoption_ready",
