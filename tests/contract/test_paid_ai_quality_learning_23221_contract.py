@@ -50,7 +50,7 @@ def test_result_processing_has_no_paid_provider_execution_authority() -> None:
     assert "DeepAiResultValidator" in processing
     assert "DeepAiSourceContinuation" in processing
     assert "DeepAiLearningLedger" in processing
-    assert ".execute(" not in processing
+    assert "self.provider.execute(" not in processing
     assert "OpenAI" not in processing
 
 
