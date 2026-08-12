@@ -173,7 +173,8 @@ public sealed class QualityEvaluationPanelViewModel : ObservableObject
             var selectedCandidateId = SelectedCandidate?.CandidateId;
             var snapshots = await session.GetQualityEvaluationSnapshotsAsync(ProjectKey, cancellationToken)
                 .ConfigureAwait(false);
-            Snapshot = snapshots.FirstOrDefault();
+            // Analyzer gate             IReadOnlyList is indexable; avoid LINQ FirstOrDefault (CA1826).
+            Snapshot = snapshots.Count > 0 ? snapshots[0] : null;
             if (Snapshot is null)
             {
                 Run = null;
