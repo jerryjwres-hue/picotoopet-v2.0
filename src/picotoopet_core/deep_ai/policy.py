@@ -52,15 +52,15 @@ class DeepAiEscalationPolicy:
         return cls(
             DeepAiProviderProfile(
                 provider_profile_id="paid.reasoning.v1",
-                provider_adapter_id="paid.reasoning.api.v1",
-                model_id="trusted-reasoning-model",
+                provider_adapter_id="openai.responses.v1",
+                model_id="gpt-5.6-terra",
                 request_format_version="deep-ai.request.v1",
                 response_format_version="deep-ai.response.v1",
-                pricing_version="pricing.placeholder.v1",
+                pricing_version="openai-gpt-5.6-terra-2026-08-11",
                 max_input_tokens=12000,
                 max_output_tokens=4000,
                 max_calls=2,
-                max_cost_usd=Decimal("3.50"),
+                max_cost_usd=Decimal("0.50"),
                 execution_enabled=False,
             )
         )
