@@ -1,0 +1,4 @@
+RED contract lineage:
+- tests completed through: 7941ec607fa5d894e41ac92b3c2d2e90b75646a7
+- RED evidence note commit parent: 7941ec607fa5d894e41ac92b3c2d2e90b75646a7
+- branch includes only design/plan/RED tests/evidence at this stage; production GREEN implementation has not started.
