@@ -19,6 +19,7 @@ from .evaluation import (
     QualityImprovementCandidate,
     _EvaluationSample,
 )
+from .repository import DeepAiRepository
 
 SHADOW_PROFILE_ID = "quality.shadow.v1"
 SPLIT_VERSION = "quality.shadow.split.v1"
@@ -201,7 +202,7 @@ class QualityShadowRepository:
 
         shadow_run_id = str(uuid4())
         created_at = _now().isoformat()
-        # Recovery identity         A unique pending digest permits crash-safe run creation without collisions.
+        # Recovery identity         Pending result identity is unique yet bound to the immutable input.
         pending_report_digest = _digest(
             {
                 "shadow_run_id": shadow_run_id,
@@ -251,19 +252,26 @@ class QualityShadowRepository:
         shadow_run_id: str,
         metrics: list[dict[str, object]],
     ) -> None:
-        # Recovery boundary         Derived schema-17 facts are safe to replace deterministically.
+        # Recovery boundary         Rebuild derived facts with deterministic record identities.
         with self.database.transaction() as connection:
             connection.execute(
                 "DELETE FROM quality_shadow_arm_metrics WHERE shadow_run_id=?",
                 (shadow_run_id,),
             )
             for metric in metrics:
+                metric_id = _digest(
+                    {
+                        "shadow_run_id": shadow_run_id,
+                        "arm": metric["arm"],
+                        "metric_name": metric["metric_name"],
+                    }
+                )
                 connection.execute(
                     "INSERT INTO quality_shadow_arm_metrics("
                     "metric_id,shadow_run_id,arm,metric_name,value_json,numerator,denominator,"
                     "availability,arm_digest) VALUES (?,?,?,?,?,?,?,?,?)",
                     (
-                        str(uuid4()),
+                        metric_id,
                         shadow_run_id,
                         metric["arm"],
                         metric["metric_name"],
@@ -286,6 +294,11 @@ class QualityShadowRepository:
     ) -> QualityShadowRun:
         if verdict not in SHADOW_VERDICTS:
             raise ValueError("QUALITY_SHADOW_VERDICT_FORBIDDEN")
+        current = self.get_run(shadow_run_id)
+        if current.status == "Completed":
+            if current.verdict != verdict or current.report_digest != report_digest:
+                raise ValueError("QUALITY_SHADOW_RESULT_IDENTITY_CHANGED")
+            return current
         completed_at = _now().isoformat()
         self.database.execute(
             "UPDATE quality_shadow_runs SET status='Completed',verdict=?,report_digest=?,"
@@ -315,6 +328,7 @@ class QualityShadowRepository:
         run = self.get_run(shadow_run_id)
         if action == "AcceptedForPromotionReview" and run.verdict != "Supported":
             raise ValueError("QUALITY_SHADOW_PROMOTION_REVIEW_NOT_SUPPORTED")
+
         existing = self.database.fetchone(
             "SELECT * FROM quality_shadow_reviews WHERE idempotency_key=?",
             (idempotency_key,),
@@ -381,6 +395,11 @@ class QualityShadowService:
     ) -> None:
         self.repository = repository
         self.evaluation_repository = evaluation_repository
+        # Metric reuse              Reuse the frozen 23.1 deterministic metric implementation only.
+        self.metric_evaluator = QualityEvaluationService(
+            repository=evaluation_repository,
+            deep_ai_repository=DeepAiRepository(evaluation_repository.database),
+        )
 
     @staticmethod
     def _candidate_sample_matches(
@@ -516,8 +535,7 @@ class QualityShadowService:
                     "sample_keys": sorted(sample.sample_key for sample in arm_samples),
                 }
             )
-            metric_rows = QualityEvaluationService._metric_rows(
-                QualityEvaluationService.__new__(QualityEvaluationService),
+            metric_rows = self.metric_evaluator._metric_rows(
                 arm_samples,
                 cohort_dimension="shadow_arm",
                 cohort_key=arm,
@@ -603,7 +621,7 @@ class QualityShadowService:
 
     def reconcile(self, shadow_run_id: str) -> QualityShadowRun:
         run = self.repository.get_run(shadow_run_id)
-        # Recovery gate             Reconcile never broadens authority; it replays the same accepted candidate.
+        # Recovery gate             Reconcile replays only the same accepted immutable candidate.
         reconciled = self.create(run.candidate_id)
         if reconciled.shadow_run_id != shadow_run_id:
             raise ValueError("QUALITY_SHADOW_RUN_IDENTITY_CHANGED")
