@@ -6,19 +6,22 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_PRODUCT_VERSION = "2.3.22.1"
-EXPECTED_DATABASE_SCHEMA = 15
+CURRENT_PRODUCT_VERSION = "2.3.23.1"
+CURRENT_DATABASE_SCHEMA = 16
+PAID_AI_DATABASE_SCHEMA = 15
 
 
 def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_current_product_and_schema_are_frozen_for_23221() -> None:
-    assert read("src/picotoopet_core/product-version.txt").strip() == EXPECTED_PRODUCT_VERSION
+def test_current_product_and_schema_advance_while_23221_is_retained() -> None:
+    # Rollup gate              22.1 remains frozen at schema 15 inside current 23.1/schema 16.
+    assert read("src/picotoopet_core/product-version.txt").strip() == CURRENT_PRODUCT_VERSION
     database = read("src/picotoopet_core/db/database.py")
     assert "MIGRATION_015" in database
-    assert f"version = {EXPECTED_DATABASE_SCHEMA}" in database
+    assert "MIGRATION_016" in database
+    assert f"version = {CURRENT_DATABASE_SCHEMA}" in database
 
 
 def test_paid_ai_policy_is_source_controlled_bounded_and_disabled_by_default() -> None:
@@ -76,7 +79,7 @@ def test_api_and_windows_surface_are_bounded_without_provider_configuration_auth
 
 def test_release_goal_contract_records_paid_ai_quality_learning_without_rewriting_history() -> None:
     contract = json.loads(read("contracts/release/project-goal-invariants.json"))
-    assert contract["windows"]["product_version"]["value"] == EXPECTED_PRODUCT_VERSION
+    assert contract["windows"]["product_version"]["value"] == CURRENT_PRODUCT_VERSION
 
     architecture = contract["architecture"]
     assert architecture["business_automation_v1"]["database_schema"] == 11
@@ -85,7 +88,7 @@ def test_release_goal_contract_records_paid_ai_quality_learning_without_rewritin
     assert architecture["end_to_end_business_automation_v1"]["database_schema"] == 14
 
     paid = architecture["paid_ai_quality_learning_v1"]
-    assert paid["database_schema"] == EXPECTED_DATABASE_SCHEMA
+    assert paid["database_schema"] == PAID_AI_DATABASE_SCHEMA
     assert paid["source_state"] == "NEEDS_DEEP_AI"
     assert paid["provider_profile"] == "paid.reasoning.v1"
     assert paid["provider_adapter"] == "openai.responses.v1"
