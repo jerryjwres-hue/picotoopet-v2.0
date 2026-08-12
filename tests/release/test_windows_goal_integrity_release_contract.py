@@ -20,16 +20,19 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
         '"ui_framework": "WPF"', '"entry_executable": "Picotoo Pet AI.exe"',
         '"integration_target": "TaskCenter"', '"browser_ui": false', '"local_http_ui": false',
         '"github_repository": "jerryjwres-hue/picotoopet-v2.0"', '"required_native_ci_provenance_fields"',
-        '"product_version"', '"value": "2.3.22.1"',
+        '"product_version"', '"value": "2.3.23.1"',
     )
-    for declaration in required_contract_values: assert declaration in contract
+    # Release gate              Stamping/verifying must bind the frozen 23.1 native-WPF goal.
+    for declaration in required_contract_values:
+        assert declaration in contract
     required_runtime_controls = (
         "PICOTOO_GOAL_INTEGRITY_GATE_V1", "Install-Phase2Prebuilt.ps1", "Verify-Phase2Prebuilt.ps1",
         "native_ci_verified", "user_install_allowed", "github_run_id", "github_run_attempt",
         "github_workflow_ref", "source_head", "build_commit", "forbidden web UI payload", "product_version",
     )
     for declaration in required_runtime_controls:
-        assert declaration in stamper; assert declaration in verifier
+        assert declaration in stamper
+        assert declaration in verifier
     assert 'manifest["native_ci_verified"] = True' in stamper
     assert 'manifest["user_install_allowed"] = True' in stamper
     assert "output_package" in stamper
@@ -40,7 +43,9 @@ def test_windows_release_stamper_declares_native_wpf_goal_fields() -> None:
 
 def test_windows_release_runs_goal_integrity_gate_before_artifact_upload() -> None:
     workflow = _read(ROOT / ".github" / "workflows" / "windows-phase2-release.yml")
-    stamper = "scripts/stamp_windows_goal_integrity.py"; validator = "scripts/verify_project_goal_integrity.py"; upload = "actions/upload-artifact@v7"
+    stamper = "scripts/stamp_windows_goal_integrity.py"
+    validator = "scripts/verify_project_goal_integrity.py"
+    upload = "actions/upload-artifact@v7"
     assert stamper in workflow and validator in workflow
     assert "tests/contract/test_project_goal_integrity.py" in workflow
     assert "tests/contract/test_windows_goal_integrity_stamper.py" in workflow

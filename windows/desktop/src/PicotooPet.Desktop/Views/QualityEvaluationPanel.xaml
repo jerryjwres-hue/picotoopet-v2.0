@@ -1,0 +1,92 @@
+<UserControl x:Class="PicotooPet.Desktop.Views.QualityEvaluationPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Loaded="Panel_Loaded">
+  <Border BorderThickness="1" BorderBrush="#33000000" Padding="14">
+    <StackPanel>
+      <TextBlock Text="质量评估 · Offline Evaluation" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Margin="0,5,0,0"
+                 Text="23.1 只从 Mac Core 已持久化的 Quality Learning facts 建立不可变 Snapshot，并执行 source-controlled deterministic evaluation。"
+                 TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,0"
+                 FontWeight="SemiBold"
+                 Text="不会自动修改 Prompt / Model / Provider / Budget，也不会因为评估产生 Paid-AI、ComfyUI、Shell、Git/GitHub 或发布调用。"
+                 TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,8"
+                 FontWeight="SemiBold"
+                 Text="AcceptedForShadow 仅记录人工审阅事实；2.3.23.1 不执行 Shadow/A-B，也不会应用任何运行策略。"
+                 TextWrapping="Wrap" />
+
+      <TextBlock Text="{Binding ProjectText, Mode=OneWay}" TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,0" Text="{Binding SnapshotText, Mode=OneWay}" TextWrapping="Wrap" />
+      <TextBlock Margin="0,3,0,0" Text="{Binding RunText, Mode=OneWay}" TextWrapping="Wrap" />
+
+      <StackPanel Orientation="Horizontal" Margin="0,7,0,8">
+        <Button Content="创建 Snapshot"
+                Click="CreateSnapshot_Click"
+                IsEnabled="{Binding CanCreate, Mode=OneWay}" />
+        <Button Content="运行离线评估"
+                Click="Evaluate_Click"
+                IsEnabled="{Binding CanEvaluate, Mode=OneWay}" />
+        <Button Content="刷新质量评估"
+                Click="Refresh_Click" />
+      </StackPanel>
+
+      <TextBlock Text="Evaluation Metrics" FontWeight="SemiBold" />
+      <DataGrid Height="180"
+                Margin="0,5,0,0"
+                ItemsSource="{Binding Metrics, Mode=OneWay}"
+                AutoGenerateColumns="False"
+                IsReadOnly="True"
+                CanUserAddRows="False">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Metric" Binding="{Binding MetricName, Mode=OneWay}" Width="1.7*" />
+          <DataGridTextColumn Header="Value" Binding="{Binding Value, Mode=OneWay}" Width="90" />
+          <DataGridTextColumn Header="Numerator" Binding="{Binding Numerator, Mode=OneWay}" Width="95" />
+          <DataGridTextColumn Header="Denominator" Binding="{Binding Denominator, Mode=OneWay}" Width="105" />
+          <DataGridTextColumn Header="Availability" Binding="{Binding Availability, Mode=OneWay}" Width="125" />
+          <DataGridTextColumn Header="Cohort" Binding="{Binding CohortDimension, Mode=OneWay}" Width="1.1*" />
+          <DataGridTextColumn Header="Cohort Key" Binding="{Binding CohortKey, Mode=OneWay}" Width="1.5*" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <TextBlock Margin="0,10,0,0" Text="Improvement Candidates" FontWeight="SemiBold" />
+      <DataGrid Height="180"
+                Margin="0,5,0,0"
+                ItemsSource="{Binding Candidates, Mode=OneWay}"
+                SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
+                AutoGenerateColumns="False"
+                IsReadOnly="True"
+                CanUserAddRows="False"
+                SelectionMode="Single">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Class" Binding="{Binding CandidateClass, Mode=OneWay}" Width="1.4*" />
+          <DataGridTextColumn Header="Status" Binding="{Binding Status, Mode=OneWay}" Width="125" />
+          <DataGridTextColumn Header="Cohort" Binding="{Binding CohortDimension, Mode=OneWay}" Width="1.1*" />
+          <DataGridTextColumn Header="Cohort Key" Binding="{Binding CohortKey, Mode=OneWay}" Width="1.5*" />
+          <DataGridTextColumn Header="Candidate ID" Binding="{Binding CandidateId, Mode=OneWay}" Width="1.8*" />
+          <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedAt, Mode=OneWay}" Width="180" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+        <Button Content="标记已审阅"
+                Click="Reviewed_Click"
+                IsEnabled="{Binding CanReview, Mode=OneWay}" />
+        <Button Content="接受进入 Shadow"
+                Click="AcceptForShadow_Click"
+                IsEnabled="{Binding CanReview, Mode=OneWay}" />
+        <Button Content="拒绝候选"
+                Click="Reject_Click"
+                IsEnabled="{Binding CanReview, Mode=OneWay}" />
+        <Button Content="取消候选"
+                Click="Cancel_Click"
+                IsEnabled="{Binding CanReview, Mode=OneWay}" />
+      </StackPanel>
+
+      <TextBlock Margin="0,7,0,0"
+                 Text="{Binding StatusMessage, Mode=OneWay}"
+                 TextWrapping="Wrap" />
+    </StackPanel>
+  </Border>
+</UserControl>

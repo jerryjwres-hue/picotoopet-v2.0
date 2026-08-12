@@ -54,11 +54,13 @@ internal static class Program
             CreativeIntelligenceWpfSmokeTests.Run();
             ProductionPanelWpfSmokeTests.Run();
             DeepAiEscalationPanelWpfSmokeTests.Run();
+            QualityEvaluationPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
             ComfyWorkflowTemplateSmokeTests.Run();
             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
             await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
             await DeepAiClientSmokeTests.RunAsync().ConfigureAwait(false);
+            await QualityEvaluationClientSmokeTests.RunAsync().ConfigureAwait(false);
             await RetryableOperationSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
             await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);

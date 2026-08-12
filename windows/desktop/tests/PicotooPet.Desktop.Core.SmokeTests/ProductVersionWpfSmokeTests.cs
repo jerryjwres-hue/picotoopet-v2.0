@@ -41,7 +41,7 @@ internal static class ProductVersionWpfSmokeTests
     private static void RunOnStaThread()
     {
         SmokeAssert.True(
-            ProductVersionInfo.Current == "2.3.22.1",
+            ProductVersionInfo.Current == "2.3.23.1",
             "Windows 产品版本资源错误");
 
         using var viewModel = ShellViewModel.CreateForSmokeTest(
@@ -74,11 +74,12 @@ internal static class ProductVersionWpfSmokeTests
         window.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
         window.UpdateLayout();
 
+        // Version gate              User-visible Windows version must match the frozen 23.1 package contract.
         SmokeAssert.True(
-            window.Title == "Picotoo Pet AI 2.3.22.1",
+            window.Title == "Picotoo Pet AI 2.3.23.1",
             "窗口标题产品版本错误");
         SmokeAssert.True(
-            subtitle.Text == "Control Center · v2.3.22.1",
+            subtitle.Text == "Control Center · v2.3.23.1",
             "左上角产品版本错误");
 
         window.Close();

@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Services;
 
-/// <summary>Deep-AI API 只复用当前 Mac Core 配对凭据；Windows 不保存 provider secret/config。</summary>
+/// <summary>Deep-AI / Quality Evaluation API 只复用当前 Mac Core 配对凭据；Windows 不保存 provider secret/config。</summary>
 public sealed partial class ControlCenterSession
 {
     public async Task<IReadOnlyList<DeepAiEscalationRecord>> GetDeepAiEscalationsAsync(
@@ -65,6 +65,79 @@ public sealed partial class ControlCenterSession
     {
         await using var client = CreateDeepAiClient();
         return await client.GetLearningAsync(projectKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<QualityEvaluationSnapshotRecord> CreateQualityEvaluationSnapshotAsync(
+        QualityEvaluationSnapshotCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        await using var client = CreateDeepAiClient();
+        return await client.CreateEvaluationSnapshotAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<QualityEvaluationSnapshotRecord>> GetQualityEvaluationSnapshotsAsync(
+        string? projectKey,
+        CancellationToken cancellationToken)
+    {
+        await using var client = CreateDeepAiClient();
+        return await client.GetEvaluationSnapshotsAsync(projectKey, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<QualityEvaluationRunRecord> CreateQualityEvaluationAsync(
+        QualityEvaluationRunCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        await using var client = CreateDeepAiClient();
+        return await client.CreateEvaluationAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<QualityEvaluationRunRecord>> GetQualityEvaluationsAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var client = CreateDeepAiClient();
+        return await client.GetEvaluationsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<QualityEvaluationRunRecord> ReconcileQualityEvaluationAsync(
+        string evaluationRunId,
+        CancellationToken cancellationToken)
+    {
+        await using var client = CreateDeepAiClient();
+        return await client.ReconcileEvaluationAsync(evaluationRunId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<QualityEvaluationMetricRecord>> GetQualityEvaluationMetricsAsync(
+        string evaluationRunId,
+        CancellationToken cancellationToken)
+    {
+        await using var client = CreateDeepAiClient();
+        return await client.GetEvaluationMetricsAsync(evaluationRunId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<QualityImprovementCandidateRecord>> GetQualityImprovementCandidatesAsync(
+        string evaluationRunId,
+        CancellationToken cancellationToken)
+    {
+        await using var client = CreateDeepAiClient();
+        return await client.GetImprovementCandidatesAsync(evaluationRunId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<QualityImprovementCandidateReviewRecord> ReviewQualityImprovementCandidateAsync(
+        string candidateId,
+        QualityImprovementCandidateReviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        await using var client = CreateDeepAiClient();
+        return await client.ReviewImprovementCandidateAsync(candidateId, request, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private MacCoreDeepAiClient CreateDeepAiClient()

@@ -1,15 +1,25 @@
-"""Authenticated, bounded Deep-AI escalation and learning REST routes."""
+"""Authenticated, bounded Deep-AI escalation, learning, and offline-evaluation routes."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.deep_ai.evaluation import (
+    QualityEvaluationMetric,
+    QualityEvaluationRun,
+    QualityEvaluationScope,
+    QualityEvaluationSnapshot,
+    QualityImprovementCandidate,
+    QualityImprovementCandidateReview,
+)
 from picotoopet_core.deep_ai.learning import DeepAiLearningLedger, DeepAiLearningObservation
 from picotoopet_core.deep_ai.models import (
     DeepAiEscalationRecord,
@@ -56,6 +66,43 @@ class DeepAiFeedbackRequest(BaseModel):
     reason_tags: list[str] = Field(default_factory=list, max_length=20)
     final_content_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     downstream_ref: str | None = Field(default=None, max_length=256)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
+class QualityEvaluationSnapshotRequest(BaseModel):
+    """Closed snapshot scope; user input cannot provide policy, execution, SQL, or formulas."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_key: str = Field(min_length=1, max_length=200)
+    evaluation_profile_id: Literal["quality.offline.v1"] = "quality.offline.v1"
+    stage_profile: str | None = Field(default=None, min_length=1, max_length=200)
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    limit: int = Field(default=10000, ge=1, le=10000)
+
+
+class QualityEvaluationRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: str = Field(min_length=1, max_length=160)
+
+
+class QualityEvaluationReconcileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class QualityImprovementReviewAction(StrEnum):
+    REVIEWED = "Reviewed"
+    ACCEPTED_FOR_SHADOW = "AcceptedForShadow"
+    REJECTED = "Rejected"
+    CANCELLED = "Cancelled"
+
+
+class QualityImprovementReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: QualityImprovementReviewAction
     idempotency_key: str = Field(min_length=1, max_length=256)
 
 
@@ -195,6 +242,160 @@ def list_deep_ai_learning(
     )
 
 
+@router.post(
+    "/deep-ai/evaluation-snapshots",
+    response_model=QualityEvaluationSnapshot,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_quality_evaluation_snapshot(
+    payload: QualityEvaluationSnapshotRequest,
+    request: Request,
+) -> QualityEvaluationSnapshot:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_evaluation.create_snapshot(
+            QualityEvaluationScope(**payload.model_dump())
+        )
+    )
+
+
+@router.get(
+    "/deep-ai/evaluation-snapshots",
+    response_model=list[QualityEvaluationSnapshot],
+)
+def list_quality_evaluation_snapshots(
+    request: Request,
+    project_key: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[QualityEvaluationSnapshot]:
+    return request.app.state.services.quality_evaluation.list_snapshots(
+        project_key=project_key,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/deep-ai/evaluation-snapshots/{snapshot_id}",
+    response_model=QualityEvaluationSnapshot,
+)
+def get_quality_evaluation_snapshot(
+    snapshot_id: str,
+    request: Request,
+) -> QualityEvaluationSnapshot:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_evaluation.get_snapshot(snapshot_id)
+    )
+
+
+@router.post(
+    "/deep-ai/evaluations",
+    response_model=QualityEvaluationRun,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_quality_evaluation(
+    payload: QualityEvaluationRunRequest,
+    request: Request,
+) -> QualityEvaluationRun:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_evaluation.evaluate(payload.snapshot_id)
+    )
+
+
+@router.get("/deep-ai/evaluations", response_model=list[QualityEvaluationRun])
+def list_quality_evaluations(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[QualityEvaluationRun]:
+    return request.app.state.services.quality_evaluation.list_runs(limit=limit)
+
+
+@router.get(
+    "/deep-ai/evaluations/{evaluation_run_id}",
+    response_model=QualityEvaluationRun,
+)
+def get_quality_evaluation(
+    evaluation_run_id: str,
+    request: Request,
+) -> QualityEvaluationRun:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_evaluation.get_run(evaluation_run_id)
+    )
+
+
+@router.post(
+    "/deep-ai/evaluations/{evaluation_run_id}/reconcile",
+    response_model=QualityEvaluationRun,
+)
+def reconcile_quality_evaluation(
+    evaluation_run_id: str,
+    payload: QualityEvaluationReconcileRequest,
+    request: Request,
+) -> QualityEvaluationRun:
+    del payload
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_evaluation.reconcile(evaluation_run_id)
+    )
+
+
+@router.get(
+    "/deep-ai/evaluations/{evaluation_run_id}/metrics",
+    response_model=list[QualityEvaluationMetric],
+)
+def list_quality_evaluation_metrics(
+    evaluation_run_id: str,
+    request: Request,
+) -> list[QualityEvaluationMetric]:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_evaluation.list_metrics(evaluation_run_id)
+    )
+
+
+@router.get(
+    "/deep-ai/improvement-candidates",
+    response_model=list[QualityImprovementCandidate],
+)
+def list_quality_improvement_candidates(
+    request: Request,
+    evaluation_run_id: str | None = Query(default=None, max_length=160),
+    limit: int = Query(default=200, ge=1, le=500),
+) -> list[QualityImprovementCandidate]:
+    return request.app.state.services.quality_evaluation.list_candidates(
+        evaluation_run_id=evaluation_run_id,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/deep-ai/improvement-candidates/{candidate_id}",
+    response_model=QualityImprovementCandidate,
+)
+def get_quality_improvement_candidate(
+    candidate_id: str,
+    request: Request,
+) -> QualityImprovementCandidate:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_evaluation.get_candidate(candidate_id)
+    )
+
+
+@router.post(
+    "/deep-ai/improvement-candidates/{candidate_id}/review",
+    response_model=QualityImprovementCandidateReview,
+    status_code=status.HTTP_201_CREATED,
+)
+def review_quality_improvement_candidate(
+    candidate_id: str,
+    payload: QualityImprovementReviewRequest,
+    request: Request,
+) -> QualityImprovementCandidateReview:
+    return execute_deep_ai(
+        lambda: request.app.state.services.quality_evaluation.review_candidate(
+            candidate_id,
+            action=payload.action.value,
+            idempotency_key=payload.idempotency_key,
+        )
+    )
+
+
 def execute_deep_ai[TResult](operation: Callable[[], TResult]) -> TResult:
     try:
         return operation()
@@ -206,7 +407,12 @@ def execute_deep_ai[TResult](operation: Callable[[], TResult]) -> TResult:
             retryable=False,
         ) from error
     except ValueError as error:
-        code = str(error) if str(error).startswith("DEEP_AI_") else "DEEP_AI_STATE_CONFLICT"
+        raw_code = str(error)
+        code = (
+            raw_code
+            if raw_code.startswith(("DEEP_AI_", "QUALITY_"))
+            else "DEEP_AI_STATE_CONFLICT"
+        )
         raise ApiError(
             status_code=409,
             code=code,
