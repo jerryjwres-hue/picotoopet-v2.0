@@ -1,4 +1,4 @@
-"""2.3.21.1 必须继续保留并正式发布 cold-start recovery 修复。"""
+"""2.3.22.1 必须继续保留并正式发布 cold-start recovery 修复。"""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_PRODUCT_VERSION = "2.3.21.1"
-PREVIOUS_PRODUCT_VERSION = "2.3.20.1"
+EXPECTED_PRODUCT_VERSION = "2.3.22.1"
+PREVIOUS_PRODUCT_VERSION = "2.3.21.1"
 
 ACTIVE_VERSION_FILES = (
     ROOT / "contracts/release/project-goal-invariants.json",
