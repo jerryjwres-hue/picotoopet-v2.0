@@ -16,10 +16,17 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
     };
 
     private readonly HttpClient _client;
+    private readonly bool _ownsClient;
 
-    private MacCoreQualityShadowClient(HttpClient client, string token)
+    public MacCoreQualityShadowClient(HttpClient client, string token)
+        : this(client, token, ownsClient: false)
     {
-        _client = client;
+    }
+
+    private MacCoreQualityShadowClient(HttpClient client, string token, bool ownsClient)
+    {
+        _client = client ?? throw new ArgumentNullException(nameof(client));
+        _ownsClient = ownsClient;
         if (string.IsNullOrWhiteSpace(token))
         {
             throw new ArgumentException("设备令牌不能为空。", nameof(token));
@@ -46,7 +53,7 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
             BaseAddress = EnsureTrailingSlash(options.BaseUri),
             Timeout = options.RequestTimeout,
         };
-        return new MacCoreQualityShadowClient(client, options.Token);
+        return new MacCoreQualityShadowClient(client, options.Token, ownsClient: true);
     }
 
     public Task<QualityShadowRunRecord> CreateAsync(
@@ -188,7 +195,10 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
-        _client.Dispose();
+        if (_ownsClient)
+        {
+            _client.Dispose();
+        }
         return ValueTask.CompletedTask;
     }
 }
