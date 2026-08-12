@@ -34,7 +34,7 @@ public sealed class MacCoreQualityShadowClient : IAsyncDisposable
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         _client.DefaultRequestHeaders.Accept.Clear();
         _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Windows-Shadow/2.3.24.1");
+        _client.DefaultRequestHeaders.UserAgent.ParseAdd("PicotooPet-Windows-Shadow/2.3.25.1");
     }
 
     public static MacCoreQualityShadowClient Create(MacCoreClientOptions options)
