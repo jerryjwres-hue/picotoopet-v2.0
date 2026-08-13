@@ -10,7 +10,7 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>真实 STA WPF 冻结业务自动化页布局、只读事实绑定和固定安全动作。</summary>
+/// <summary>真实 STA WPF 冻结业务自动化页布局、纵向滚动、只读事实绑定和固定安全动作。</summary>
 internal static class BusinessAutomationWpfSmokeTests
 {
     public static void Run()
@@ -77,6 +77,25 @@ internal static class BusinessAutomationWpfSmokeTests
         SmokeAssert.True(viewModel.CanDeliverResult, "Completed Result 应允许固定 Outbox 投递动作");
         SmokeAssert.True(!viewModel.CanCancel, "Completed Work Package 不允许取消");
         SmokeAssert.True(!viewModel.CanExportDeepAiHandoff, "没有 Handoff 的 Work Package 不允许导出");
+
+        var pageScrollViewer = page.FindName("PageScrollViewer") as ScrollViewer;
+        SmokeAssert.True(pageScrollViewer is not null, "Business Automation Page 必须提供页面级纵向 ScrollViewer");
+        SmokeAssert.True(
+            pageScrollViewer!.VerticalScrollBarVisibility == ScrollBarVisibility.Auto,
+            "Business Automation Page 页面级纵向滚动条必须按内容自动显示");
+        SmokeAssert.True(
+            pageScrollViewer.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled,
+            "Business Automation Page 不应依赖横向页面滚动");
+        SmokeAssert.True(
+            pageScrollViewer.ScrollableHeight > 0,
+            "1100x800 真实视口下业务自动化累计面板必须产生可滚动纵向范围");
+
+        var beforeOffset = pageScrollViewer.VerticalOffset;
+        pageScrollViewer.ScrollToVerticalOffset(Math.Min(240, pageScrollViewer.ScrollableHeight));
+        page.UpdateLayout();
+        SmokeAssert.True(
+            pageScrollViewer.VerticalOffset > beforeOffset,
+            "业务自动化页必须能从顶部向下滚动到 Evaluation / Shadow / Promotion 区域");
 
         var dataGrid = FindDescendant<DataGrid>(page);
         SmokeAssert.True(dataGrid is not null, "Business Automation Page 缺少 DataGrid");
