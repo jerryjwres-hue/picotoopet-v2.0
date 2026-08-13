@@ -89,12 +89,12 @@ public partial class App : WpfApplication, IDisposable
         _ = InitializeViewModelAsync(_session, _shellWindow, logger);
     }
 
-    /// <summary>记录逃出页面故障边界的 WPF 异常，不静默吞掉未知进程级故障。</summary>
+    /// <summary>同步固化逃出页面故障边界的 WPF 证据，但仍不吞掉未知进程级故障。</summary>
     private void OnDispatcherUnhandledException(
         object sender,
         DispatcherUnhandledExceptionEventArgs e)
     {
-        _logger?.Error("WPF 未处理异常", e.Exception);
+        _logger?.EmergencyError("WPF 未处理异常", e.Exception);
     }
 
     private static async Task InitializeViewModelAsync(
