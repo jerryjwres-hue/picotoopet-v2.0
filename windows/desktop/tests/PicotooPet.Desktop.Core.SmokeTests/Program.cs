@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.State;
 
@@ -59,6 +60,7 @@ internal static class Program
             QualityPromotionPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
             ComfyWorkflowTemplateSmokeTests.Run();
+            await VerifyEmergencyLoggerAsync().ConfigureAwait(false);
             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
             await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
             await DeepAiClientSmokeTests.RunAsync().ConfigureAwait(false);
@@ -87,6 +89,59 @@ internal static class Program
         {
             Console.Error.WriteLine($"PHASE2_CORE_SMOKE=FAIL | {exception}");
             return 1;
+        }
+    }
+
+    /// <summary>要求 fatal 证据在方法返回前同步落盘，且继续沿用安全脱敏。</summary>
+    private static async Task VerifyEmergencyLoggerAsync()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            $"picotoopet-fatal-log-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var logPath = Path.Combine(root, "desktop.log");
+        var fatalPath = Path.Combine(root, "desktop-fatal.log");
+
+        try
+        {
+            await using var logger = new SafeFileLogger(logPath);
+            logger.EmergencyError(
+                "WPF fatal fixture Bearer abcdefghijklmnopqrstuvwxyz012345",
+                new InvalidOperationException(
+                    "fixture-token-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"));
+
+            Assert(File.Exists(fatalPath), "EmergencyError 返回前必须创建 desktop-fatal.log");
+            var text = File.ReadAllText(fatalPath);
+            Assert(
+                text.Contains("WPF fatal fixture", StringComparison.Ordinal),
+                "fatal 日志缺少稳定事件名称");
+            Assert(
+                text.Contains("InvalidOperationException", StringComparison.Ordinal),
+                "fatal 日志缺少异常类型");
+            Assert(
+                text.Contains("[REDACTED]", StringComparison.Ordinal),
+                "fatal 日志没有沿用安全脱敏规则");
+            Assert(
+                !text.Contains(
+                    "abcdefghijklmnopqrstuvwxyz012345",
+                    StringComparison.Ordinal),
+                "fatal 日志泄漏 Bearer Token");
+            Assert(
+                !text.Contains(
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+                    StringComparison.Ordinal),
+                "fatal 日志泄漏长 Token");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Windows CI 若 writer 正在收尾，不让临时目录清理影响安全合同断言。
+            }
         }
     }
 
