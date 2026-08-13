@@ -3,107 +3,111 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="clr-namespace:PicotooPet.Desktop.Views"
              Loaded="Page_Loaded">
-  <Grid Margin="24">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
+  <ScrollViewer x:Name="PageScrollViewer"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled">
+    <Grid Margin="24">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
 
-    <StackPanel>
-      <TextBlock Text="业务自动化" FontSize="28" FontWeight="SemiBold" />
-      <TextBlock Margin="0,6,0,0"
-                 Text="Windows 业务程序把严格 Work Package 放入固定 Inbox；Mac Core + Mac Worker 用本地智能分析后，把 Result Package 送回固定 Outbox。"
-                 TextWrapping="Wrap" />
-      <TextBlock Margin="0,4,0,0"
-                 FontWeight="SemiBold"
-                 Text="端到端链路：Work Package → Business Result → Creative Package → Windows 本地 ComfyUI Production → Return Package；NEEDS_DEEP_AI 可进入独立审批的 Paid-AI 升级，Quality Learning facts 可进入 23.1 离线质量评估，AcceptedForShadow 候选可进入 24.1 deterministic Shadow 验证，Supported + AcceptedForPromotionReview 证据可进入 25.1 受控晋级 / 回滚治理。"
-                 TextWrapping="Wrap" />
-    </StackPanel>
-
-    <Border Grid.Row="1" Margin="0,16,0,10" Padding="12" Background="{StaticResource PanelBrush}">
       <StackPanel>
-        <TextBlock FontWeight="SemiBold" Text="Mac 本地智能" />
-        <TextBlock Margin="0,4,0,0"
-                   Text="{Binding LocalIntelligenceStatus, Mode=OneWay}"
+        <TextBlock Text="业务自动化" FontSize="28" FontWeight="SemiBold" />
+        <TextBlock Margin="0,6,0,0"
+                   Text="Windows 业务程序把严格 Work Package 放入固定 Inbox；Mac Core + Mac Worker 用本地智能分析后，把 Result Package 送回固定 Outbox。"
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,4,0,0"
-                   Text="能力：local.intelligence.v1 · 任务：business.local_intelligence.v1 · 默认本地模型：gpt-oss:20b"
+                   FontWeight="SemiBold"
+                   Text="端到端链路：Work Package → Business Result → Creative Package → Windows 本地 ComfyUI Production → Return Package；NEEDS_DEEP_AI 可进入独立审批的 Paid-AI 升级，Quality Learning facts 可进入 23.1 离线质量评估，AcceptedForShadow 候选可进入 24.1 deterministic Shadow 验证，Supported + AcceptedForPromotionReview 证据可进入 25.1 受控晋级 / 回滚治理。"
                    TextWrapping="Wrap" />
       </StackPanel>
-    </Border>
 
-    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
-      <Button Content="刷新" Click="Refresh_Click" />
-      <Button Content="提交 Inbox" Click="SubmitInbox_Click" />
-      <Button Content="投递 Result 到 Outbox" Click="DeliverResult_Click" IsEnabled="{Binding CanDeliverResult, Mode=OneWay}" />
-      <Button Content="取消所选" Click="Cancel_Click" IsEnabled="{Binding CanCancel, Mode=OneWay}" />
-      <Button Content="导出 Deep-AI Handoff" Click="ExportHandoff_Click" IsEnabled="{Binding CanExportDeepAiHandoff, Mode=OneWay}" />
-    </StackPanel>
-
-    <DataGrid Grid.Row="3"
-              ItemsSource="{Binding Packages, Mode=OneWay}"
-              SelectedItem="{Binding SelectedPackage, Mode=TwoWay}"
-              AutoGenerateColumns="False"
-              IsReadOnly="True"
-              CanUserAddRows="False"
-              SelectionMode="Single">
-      <DataGrid.Columns>
-        <DataGridTextColumn Header="生产者" Binding="{Binding ProducerId, Mode=OneWay}" Width="1.4*" />
-        <DataGridTextColumn Header="项目" Binding="{Binding ProjectKey, Mode=OneWay}" Width="1.3*" />
-        <DataGridTextColumn Header="分析 Profile" Binding="{Binding AnalysisProfile, Mode=OneWay}" Width="1.8*" />
-        <DataGridTextColumn Header="状态" Binding="{Binding Status, Mode=OneWay}" Width="120" />
-        <DataGridTextColumn Header="Result" Binding="{Binding ResultPackageId, Mode=OneWay}" Width="1.5*" />
-        <DataGridTextColumn Header="Deep-AI" Binding="{Binding DeepAiHandoffId, Mode=OneWay}" Width="1.5*" />
-        <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt, Mode=OneWay}" Width="180" />
-      </DataGrid.Columns>
-    </DataGrid>
-
-    <Border Grid.Row="4" Margin="0,10,0,0" Padding="10" Background="{StaticResource PanelBrush}">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <TextBlock FontWeight="SemiBold" Text="安全状态" />
-        <StackPanel Grid.Column="1" Margin="14,0,0,0">
-          <TextBlock Text="{Binding SelectedPackage.FailureCode, Mode=OneWay}" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding SelectedPackage.ErrorMessage, Mode=OneWay}" TextWrapping="Wrap" />
+      <Border Grid.Row="1" Margin="0,16,0,10" Padding="12" Background="{StaticResource PanelBrush}">
+        <StackPanel>
+          <TextBlock FontWeight="SemiBold" Text="Mac 本地智能" />
+          <TextBlock Margin="0,4,0,0"
+                     Text="{Binding LocalIntelligenceStatus, Mode=OneWay}"
+                     TextWrapping="Wrap" />
+          <TextBlock Margin="0,4,0,0"
+                     Text="能力：local.intelligence.v1 · 任务：business.local_intelligence.v1 · 默认本地模型：gpt-oss:20b"
+                     TextWrapping="Wrap" />
         </StackPanel>
-      </Grid>
-    </Border>
+      </Border>
 
-    <TextBlock Grid.Row="5"
-               Margin="0,10,0,0"
-               Text="{Binding StatusMessage, Mode=OneWay}"
-               TextWrapping="Wrap" />
+      <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
+        <Button Content="刷新" Click="Refresh_Click" />
+        <Button Content="提交 Inbox" Click="SubmitInbox_Click" />
+        <Button Content="投递 Result 到 Outbox" Click="DeliverResult_Click" IsEnabled="{Binding CanDeliverResult, Mode=OneWay}" />
+        <Button Content="取消所选" Click="Cancel_Click" IsEnabled="{Binding CanCancel, Mode=OneWay}" />
+        <Button Content="导出 Deep-AI Handoff" Click="ExportHandoff_Click" IsEnabled="{Binding CanExportDeepAiHandoff, Mode=OneWay}" />
+      </StackPanel>
 
-    <StackPanel Grid.Row="6" Margin="0,18,0,0">
-      <views:BusinessPipelinePanel MaxHeight="560"
-                                   DataContext="{Binding Pipeline, Mode=OneWay}" />
-      <views:CreativeIntelligencePanel Margin="0,16,0,0"
-                                       MaxHeight="540"
-                                       DataContext="{Binding Creative, Mode=OneWay}" />
-      <views:ProductionPanel Margin="0,16,0,0"
-                             MaxHeight="520"
-                             DataContext="{Binding Production, Mode=OneWay}" />
-      <views:DeepAiEscalationPanel Margin="0,16,0,0"
-                                   MaxHeight="560"
-                                   DataContext="{Binding DeepAi, Mode=OneWay}" />
-      <views:QualityEvaluationPanel Margin="0,16,0,0"
-                                    MaxHeight="680"
-                                    DataContext="{Binding QualityEvaluation, Mode=OneWay}" />
-      <views:QualityShadowPanel Margin="0,16,0,0"
-                                MaxHeight="680"
-                                DataContext="{Binding QualityShadow, Mode=OneWay}" />
-      <views:QualityPromotionPanel Margin="0,16,0,0"
-                                   MaxHeight="760"
-                                   DataContext="{Binding QualityPromotion, Mode=OneWay}" />
-    </StackPanel>
-  </Grid>
+      <DataGrid Grid.Row="3"
+                ItemsSource="{Binding Packages, Mode=OneWay}"
+                SelectedItem="{Binding SelectedPackage, Mode=TwoWay}"
+                AutoGenerateColumns="False"
+                IsReadOnly="True"
+                CanUserAddRows="False"
+                SelectionMode="Single">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="生产者" Binding="{Binding ProducerId, Mode=OneWay}" Width="1.4*" />
+          <DataGridTextColumn Header="项目" Binding="{Binding ProjectKey, Mode=OneWay}" Width="1.3*" />
+          <DataGridTextColumn Header="分析 Profile" Binding="{Binding AnalysisProfile, Mode=OneWay}" Width="1.8*" />
+          <DataGridTextColumn Header="状态" Binding="{Binding Status, Mode=OneWay}" Width="120" />
+          <DataGridTextColumn Header="Result" Binding="{Binding ResultPackageId, Mode=OneWay}" Width="1.5*" />
+          <DataGridTextColumn Header="Deep-AI" Binding="{Binding DeepAiHandoffId, Mode=OneWay}" Width="1.5*" />
+          <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt, Mode=OneWay}" Width="180" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <Border Grid.Row="4" Margin="0,10,0,0" Padding="10" Background="{StaticResource PanelBrush}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock FontWeight="SemiBold" Text="安全状态" />
+          <StackPanel Grid.Column="1" Margin="14,0,0,0">
+            <TextBlock Text="{Binding SelectedPackage.FailureCode, Mode=OneWay}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding SelectedPackage.ErrorMessage, Mode=OneWay}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <TextBlock Grid.Row="5"
+                 Margin="0,10,0,0"
+                 Text="{Binding StatusMessage, Mode=OneWay}"
+                 TextWrapping="Wrap" />
+
+      <StackPanel Grid.Row="6" Margin="0,18,0,0">
+        <views:BusinessPipelinePanel MaxHeight="560"
+                                     DataContext="{Binding Pipeline, Mode=OneWay}" />
+        <views:CreativeIntelligencePanel Margin="0,16,0,0"
+                                         MaxHeight="540"
+                                         DataContext="{Binding Creative, Mode=OneWay}" />
+        <views:ProductionPanel Margin="0,16,0,0"
+                               MaxHeight="520"
+                               DataContext="{Binding Production, Mode=OneWay}" />
+        <views:DeepAiEscalationPanel Margin="0,16,0,0"
+                                     MaxHeight="560"
+                                     DataContext="{Binding DeepAi, Mode=OneWay}" />
+        <views:QualityEvaluationPanel Margin="0,16,0,0"
+                                      MaxHeight="680"
+                                      DataContext="{Binding QualityEvaluation, Mode=OneWay}" />
+        <views:QualityShadowPanel Margin="0,16,0,0"
+                                  MaxHeight="680"
+                                  DataContext="{Binding QualityShadow, Mode=OneWay}" />
+        <views:QualityPromotionPanel Margin="0,16,0,0"
+                                     MaxHeight="760"
+                                     DataContext="{Binding QualityPromotion, Mode=OneWay}" />
+      </StackPanel>
+    </Grid>
+  </ScrollViewer>
 </UserControl>
