@@ -4,6 +4,7 @@ using PicotooPet.Desktop.Navigation;
 
 namespace PicotooPet.Desktop.Views;
 
+// 26.1 简单模式使用固定导航映射，并保留既有高级页面入口。
 public partial class ShellWindow
 {
     private void SimpleHome_Click(object sender, RoutedEventArgs e) => ShowSimpleRoute(NavigationRoute.Dashboard);
