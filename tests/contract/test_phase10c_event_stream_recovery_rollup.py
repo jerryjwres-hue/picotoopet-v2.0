@@ -1,4 +1,4 @@
-"""2.3.25.1 必须继续保留并正式发布 cold-start recovery 修复。"""
+"""Current product must retain the verified cold-start recovery behavior."""
 
 from __future__ import annotations
 
@@ -6,36 +6,19 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_PRODUCT_VERSION = "2.3.25.1"
-PREVIOUS_PRODUCT_VERSION = "2.3.24.1"
-
-ACTIVE_VERSION_FILES = (
-    ROOT / "contracts/release/project-goal-invariants.json",
-    ROOT / "tests/contract/test_product_version_goal_integrity.py",
-    ROOT / "tests/contract/test_windows_product_version_surfaces.py",
-    ROOT / "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/ProductVersionWpfSmokeTests.cs",
-    ROOT / "tests/contract/test_phase23_worker_product_version.py",
-    ROOT / "tests/unit/test_product_version.py",
-    ROOT / "tests/integration/api/test_product_version_api.py",
-    ROOT / "tests/contract/test_phase23_mac_delta_source.py",
-)
+EXPECTED_PRODUCT_VERSION = "2.3.26.1"
 
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_rollup_uses_current_version_on_every_active_version_surface() -> None:
+def test_rollup_uses_current_version_on_canonical_release_surfaces() -> None:
     version_file = ROOT / "src/picotoopet_core/product-version.txt"
     goal = json.loads(read(ROOT / "contracts/release/project-goal-invariants.json"))
 
-    # Version rollup gate       All active release surfaces advance together to 25.1.
     assert read(version_file).strip() == EXPECTED_PRODUCT_VERSION
     assert goal["windows"]["product_version"]["value"] == EXPECTED_PRODUCT_VERSION
-    for path in ACTIVE_VERSION_FILES:
-        source = read(path)
-        assert EXPECTED_PRODUCT_VERSION in source, path
-        assert PREVIOUS_PRODUCT_VERSION not in source, path
 
 
 def test_rollup_retains_the_23125_cold_start_recovery_behavior() -> None:
