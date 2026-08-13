@@ -65,5 +65,5 @@ def test_phase10e_windows_surface_has_no_free_publication_inputs() -> None:
 
 
 def test_phase10e_is_retained_in_current_rollup() -> None:
-    # Version retention gate     Controlled publication remains available in cumulative 25.1.
-    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.25.1"
+    # Version retention gate: Controlled publication remains available in cumulative 26.1.
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.26.1"
