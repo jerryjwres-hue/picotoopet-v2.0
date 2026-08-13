@@ -26,12 +26,13 @@ SHELL_CODE = SHELL_XAML.with_suffix(".xaml.cs")
 
 
 def test_app_registers_redacted_global_wpf_exception_logging() -> None:
-    """逃出页面边界的 WPF 异常必须进入现有脱敏日志器。"""
+    """逃出页面边界的 WPF 异常必须同步固化脱敏证据且不能被吞掉。"""
 
     app_code = APP_CODE.read_text(encoding="utf-8")
 
     assert "DispatcherUnhandledException += OnDispatcherUnhandledException;" in app_code
-    assert '_logger?.Error("WPF 未处理异常", e.Exception);' in app_code
+    assert '_logger?.EmergencyError("WPF 未处理异常", e.Exception);' in app_code
+    assert "e.Handled = true" not in app_code
 
 
 def test_shell_uses_a_page_navigation_fault_boundary() -> None:
