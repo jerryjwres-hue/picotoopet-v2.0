@@ -48,6 +48,7 @@ public sealed class TaskCenterPageViewModel : PageViewModel
     private bool _isBusy;
     private DiagnosticResultViewModel? _diagnosticResult;
     private bool _isDiagnosticResultVisible;
+    private bool _isRefreshingVisibleTasks;
     private Task? _observationTask;
 
     /// <summary>创建绑定真实 Session 的任务中心。</summary>
@@ -100,10 +101,18 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         get => _selectedTask;
         set
         {
+            var previousTaskId = _selectedTask?.TaskId;
             if (SetProperty(ref _selectedTask, value))
             {
-                DiagnosticResult = null;
-                IsDiagnosticResultVisible = false;
+                var currentTaskId = value?.TaskId;
+                if (!_isRefreshingVisibleTasks
+                    && !string.Equals(
+                        previousTaskId,
+                        currentTaskId,
+                        StringComparison.Ordinal))
+                {
+                    ClearDiagnosticResult();
+                }
                 RaiseActionProperties();
             }
         }
@@ -415,16 +424,40 @@ public sealed class TaskCenterPageViewModel : PageViewModel
             .ToArray();
         WorkerStatusText = FormatWorkerStatus(worker);
         WorkerReasonText = FormatWorkerReason(worker);
-        ApplyFilter();
-        SelectedTask = ResolveSelection(VisibleTasks, selectedId);
+        ApplyFilter(selectedId);
         RaiseActionProperties();
     }
 
     private void ApplyFilter()
     {
-        var selectedId = SelectedTask?.TaskId;
-        VisibleTasks = AllTasks.Where(MatchesFilter).ToArray();
-        SelectedTask = ResolveSelection(VisibleTasks, selectedId);
+        ApplyFilter(SelectedTask?.TaskId);
+    }
+
+    /// <summary>刷新 WPF ItemsSource 时按 task_id 保留逻辑选择，避免对象替换清空诊断卡。</summary>
+    private void ApplyFilter(string? selectedId)
+    {
+        var diagnosticTaskId = IsDiagnosticResultVisible && DiagnosticResult is not null
+            ? selectedId
+            : null;
+        _isRefreshingVisibleTasks = true;
+        try
+        {
+            VisibleTasks = AllTasks.Where(MatchesFilter).ToArray();
+            SelectedTask = ResolveSelection(VisibleTasks, selectedId);
+        }
+        finally
+        {
+            _isRefreshingVisibleTasks = false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(diagnosticTaskId)
+            && !string.Equals(
+                SelectedTask?.TaskId,
+                diagnosticTaskId,
+                StringComparison.Ordinal))
+        {
+            ClearDiagnosticResult();
+        }
     }
 
     private bool MatchesFilter(TaskRowViewModel task) => SelectedFilter switch
@@ -443,6 +476,13 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         TaskCenterFilter.FailedOrCancelled => task.Status is "Failed" or "Cancelled",
         _ => false,
     };
+
+    /// <summary>仅在逻辑选择真正离开当前诊断任务时清空卡片。</summary>
+    private void ClearDiagnosticResult()
+    {
+        DiagnosticResult = null;
+        IsDiagnosticResultVisible = false;
+    }
 
     private void RaiseActionProperties()
     {
