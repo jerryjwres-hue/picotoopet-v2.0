@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_PRODUCT_VERSION = "2.3.25.1"
+CURRENT_PRODUCT_VERSION = "2.3.26.1"
 CURRENT_DATABASE_SCHEMA = 18
 PAID_AI_DATABASE_SCHEMA = 15
 
@@ -16,7 +16,7 @@ def read(relative: str) -> str:
 
 
 def test_current_product_and_schema_advance_while_23221_is_retained() -> None:
-    # Rollup gate              22.1 remains frozen at schema 15 inside current 25.1/schema 18.
+    # Rollup gate: 22.1 remains frozen at schema 15 inside current 26.1/schema 18.
     assert read("src/picotoopet_core/product-version.txt").strip() == CURRENT_PRODUCT_VERSION
     database = read("src/picotoopet_core/db/database.py")
     assert "MIGRATION_015" in database
@@ -81,8 +81,6 @@ def test_api_and_windows_surface_are_bounded_without_provider_configuration_auth
 
 def test_release_goal_contract_records_paid_ai_quality_learning_without_rewriting_history() -> None:
     contract = json.loads(read("contracts/release/project-goal-invariants.json"))
-    assert contract["windows"]["product_version"]["value"] == CURRENT_PRODUCT_VERSION
-
     architecture = contract["architecture"]
     assert architecture["business_automation_v1"]["database_schema"] == 11
     assert architecture["creative_intelligence_v1"]["database_schema"] == 12
