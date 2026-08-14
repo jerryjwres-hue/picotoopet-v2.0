@@ -6,7 +6,7 @@
     <Grid Margin="28">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="280" />
+        <ColumnDefinition Width="312" />
       </Grid.ColumnDefinitions>
 
       <StackPanel Grid.Column="0" Margin="0,0,24,0">
@@ -94,7 +94,7 @@
       <StackPanel Grid.Column="1" VerticalAlignment="Top">
         <!-- 茅台只读取首页已经存在的计数，并通过事件调用现有入口；不接触任务核心。 -->
         <pet:PetMascotControl x:Name="MaotaiMascot"
-                              Margin="0,0,0,14"
+                              Margin="0,0,0,20"
                               PendingReviewCount="{Binding PendingReviewCount, Mode=OneWay}"
                               InProgressCount="{Binding InProgressCount, Mode=OneWay}"
                               CompletedCount="{Binding CompletedCount, Mode=OneWay}"
