@@ -213,11 +213,14 @@ if expected == "online":
     supported = payload.get("supported_task_types")
     required = {"system.diagnostic_snapshot", "system.noop"}
     allowed = required | {
+        "business.local_intelligence.v1",
+        "creative.content_plan.v1",
         "provider.codex.handoff-v1",
         "provider.adoption.apply-v1",
         "provider.commit.create-v1",
         "provider.publish.pr-create-v1",
     }
+    # 累计能力验证          历史已实现类型可注册，未知类型继续被 closed allowlist 拒绝。
     if not isinstance(supported, list) or not required <= set(supported):
         raise SystemExit(1)
     unexpected = set(supported) - allowed
@@ -303,6 +306,8 @@ if status.get("state") != "online" or status.get("available") is not True:
 supported = status.get("supported_task_types")
 required = {"system.diagnostic_snapshot", "system.noop"}
 allowed = required | {
+    "business.local_intelligence.v1",
+    "creative.content_plan.v1",
     "provider.codex.handoff-v1",
     "provider.adoption.apply-v1",
     "provider.commit.create-v1",
@@ -357,6 +362,8 @@ payload = {
         "system.noop",
     ],
     "worker_optional_registered_task_types": [
+        "business.local_intelligence.v1",
+        "creative.content_plan.v1",
         "provider.codex.handoff-v1",
         "provider.adoption.apply-v1",
         "provider.commit.create-v1",

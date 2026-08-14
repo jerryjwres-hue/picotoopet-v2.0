@@ -17,13 +17,14 @@ def read_core(relative: str) -> str:
 
 def test_cloud_development_route_uses_live_native_phase10a_page() -> None:
     shell = read("ViewModels/ShellViewModel.cs")
+    view_model = read("ViewModels/CloudDevelopmentPageViewModel.cs")
     app = read("App.xaml")
 
     assert "new ControlCenterHandoffGateway(_session)" in shell
     assert "new CloudDevelopmentPageViewModel()" in shell
     assert "CloudDevelopmentPageViewModel" in app
     assert "CloudDevelopmentPage" in app
-    assert "Handoff / Return Contract v1 已冻结；Provider 尚未配置。" in shell
+    assert "Handoff / Return Contract v1 已冻结并通过解释性原生页面公开。" in view_model
     assert "普通连接快照不得清空页面实例" in shell
 
 

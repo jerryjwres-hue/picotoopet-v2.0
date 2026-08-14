@@ -15,9 +15,9 @@ VERSION_FILE = ROOT / "src" / "picotoopet_core" / "product-version.txt"
 
 
 def test_canonical_product_version_is_current() -> None:
-    # Version gate              Core resource, runtime constant, and package export all freeze 25.1.
-    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.25.1"
-    assert PRODUCT_VERSION == "2.3.25.1"
+    # Version gate              Core resource, runtime constant, and package export all freeze 26.1.
+    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.26.1"
+    assert PRODUCT_VERSION == "2.3.26.1"
     assert __version__ == PRODUCT_VERSION
 
 

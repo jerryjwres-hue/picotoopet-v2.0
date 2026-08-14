@@ -31,6 +31,7 @@ internal static class Program
             WorkerStatusSmokeTests.Run();
             StateStoreSmokeTests.Run();
             NavigationSmokeTests.Run();
+            OperatorSimpleModeSmokeTests.Run();
             NavigationFaultBoundarySmokeTests.Run();
             NavigationContentRenderingSmokeTests.Run();
             ShellNavigationReconnectWpfSmokeTests.Run();

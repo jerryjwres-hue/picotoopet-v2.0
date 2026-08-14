@@ -14,9 +14,30 @@
                     Executed="SaveAndConnect_Click" />
   </Window.CommandBindings>
 
+  <Window.Resources>
+    <Style x:Key="SimpleNavButtonStyle" TargetType="Button">
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Padding" Value="14,11" />
+      <Setter Property="Margin" Value="0,3" />
+    </Style>
+    <Style x:Key="AdvancedRouteButtonStyle" TargetType="Button">
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="14,10" />
+      <Setter Property="Margin" Value="0,4" />
+      <Setter Property="Background" Value="#FFF8FAFC" />
+      <Setter Property="BorderBrush" Value="#FFE5E7EB" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+  </Window.Resources>
+
   <Grid Background="White">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="232" />
+      <ColumnDefinition Width="220" />
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
@@ -30,7 +51,7 @@
             Background="#FF111827"
             Padding="14,20">
       <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Margin="8,0,8,20">
+        <StackPanel DockPanel.Dock="Top" Margin="8,0,8,24">
           <TextBlock Text="Picotoo Pet AI"
                      Foreground="White"
                      FontSize="21"
@@ -38,36 +59,34 @@
           <TextBlock Text="{Binding ControlCenterSubtitle, Mode=OneWay}"
                      Margin="0,5,0,0"
                      Foreground="#FF9CA3AF" />
+          <TextBlock Text="简单模式"
+                     Margin="0,5,0,0"
+                     Foreground="#FF60A5FA"
+                     FontSize="11" />
         </StackPanel>
 
-        <ListBox ItemsSource="{Binding NavigationItems}"
-                 SelectedItem="{Binding SelectedNavigationItem, Mode=TwoWay}"
-                 Background="Transparent"
-                 BorderThickness="0"
-                 Foreground="White"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-          <ListBox.ItemContainerStyle>
-            <Style TargetType="ListBoxItem">
-              <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-              <Setter Property="Padding" Value="0" />
-              <Setter Property="Margin" Value="0,2" />
-            </Style>
-          </ListBox.ItemContainerStyle>
-          <ListBox.ItemTemplate>
-            <DataTemplate>
-              <Border Padding="12,10" CornerRadius="8">
-                <StackPanel>
-                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
-                  <TextBlock Text="{Binding AvailabilityMessage}"
-                             Margin="0,3,0,0"
-                             FontSize="10"
-                             Foreground="#FF9CA3AF"
-                             TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-              </Border>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+        <StackPanel>
+          <Button x:Name="SimpleHomeButton"
+                  Content="首页"
+                  Style="{StaticResource SimpleNavButtonStyle}"
+                  Click="SimpleHome_Click" />
+          <Button x:Name="SimpleReviewButton"
+                  Content="待我审核"
+                  Style="{StaticResource SimpleNavButtonStyle}"
+                  Click="SimpleReview_Click" />
+          <Button x:Name="SimpleActiveButton"
+                  Content="进行中"
+                  Style="{StaticResource SimpleNavButtonStyle}"
+                  Click="SimpleActive_Click" />
+          <Button x:Name="SimpleCompletedButton"
+                  Content="已完成"
+                  Style="{StaticResource SimpleNavButtonStyle}"
+                  Click="SimpleCompleted_Click" />
+          <Button x:Name="SimpleAdvancedButton"
+                  Content="高级"
+                  Style="{StaticResource SimpleNavButtonStyle}"
+                  Click="SimpleAdvanced_Click" />
+        </StackPanel>
       </DockPanel>
     </Border>
 
@@ -83,20 +102,20 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel>
-          <TextBlock Text="{Binding CurrentPage.Title}"
+          <TextBlock Text="{Binding CurrentPage.Title, Mode=OneWay}"
                      FontSize="20"
                      FontWeight="SemiBold" />
-          <TextBlock Text="{Binding StatusMessage}"
+          <TextBlock Text="{Binding StatusMessage, Mode=OneWay}"
                      Margin="0,4,0,0"
                      Foreground="#FF6B7280"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
           <Border Background="#FFEFF6FF" CornerRadius="8" Padding="12,7" Margin="0,0,10,0">
-            <TextBlock Text="{Binding ApprovalText}" Foreground="#FF1D4ED8" />
+            <TextBlock Text="{Binding ApprovalText, Mode=OneWay}" Foreground="#FF1D4ED8" />
           </Border>
           <Border Background="#FFECFDF5" CornerRadius="8" Padding="12,7">
-            <TextBlock Text="{Binding ConnectionText}" Foreground="#FF047857" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding ConnectionText, Mode=OneWay}" Foreground="#FF047857" FontWeight="SemiBold" />
           </Border>
         </StackPanel>
       </Grid>
@@ -105,8 +124,54 @@
     <views:NavigationContentHost x:Name="ContentHost"
                                  Grid.Column="1"
                                  Grid.Row="1"
-                                 Content="{Binding CurrentPage}"
+                                 Content="{Binding CurrentPage, Mode=OneWay}"
                                  NavigationFaulted="ContentHost_NavigationFaulted" />
+
+    <Border x:Name="AdvancedHomePanel"
+            Grid.Column="1"
+            Grid.Row="1"
+            Background="White"
+            Visibility="Collapsed"
+            Padding="28">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="920" HorizontalAlignment="Left">
+          <TextBlock Text="高级功能"
+                     FontSize="28"
+                     FontWeight="SemiBold"
+                     Foreground="#FF111827" />
+          <TextBlock Text="日常使用不需要进入这里。工程、治理和诊断功能仍完整保留。"
+                     Margin="0,8,0,22"
+                     Foreground="#FF6B7280" />
+
+          <TextBlock Text="业务与执行" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <WrapPanel Margin="0,0,0,20">
+            <Button Content="项目" Tag="Projects" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <Button Content="任务中心" Tag="TaskCenter" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <Button Content="结果" Tag="Results" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <Button Content="业务自动化" Tag="BusinessAutomation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <Button Content="自动化" Tag="Automation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+          </WrapPanel>
+
+          <TextBlock Text="人工治理" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <WrapPanel Margin="0,0,0,20">
+            <Button Content="审批" Tag="Approvals" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <Button Content="质量 / Shadow / Promotion" Tag="BusinessAutomation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="250" />
+          </WrapPanel>
+
+          <TextBlock Text="系统与运维" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <WrapPanel Margin="0,0,0,20">
+            <Button Content="健康" Tag="Health" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <Button Content="诊断" Tag="Diagnostics" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+          </WrapPanel>
+
+          <TextBlock Text="开发与配置" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <WrapPanel>
+            <Button Content="云端开发" Tag="CloudDevelopment" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <Button Content="设置" Tag="Settings" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+          </WrapPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
 
     <Border Grid.Column="1"
             Grid.Row="2"
@@ -114,7 +179,7 @@
             BorderBrush="#FFE5E7EB"
             BorderThickness="0,1,0,0"
             Padding="14,8">
-      <TextBlock Text="{Binding ConnectionMessage}"
+      <TextBlock Text="{Binding ConnectionMessage, Mode=OneWay}"
                  Foreground="#FF4B5563"
                  TextTrimming="CharacterEllipsis" />
     </Border>

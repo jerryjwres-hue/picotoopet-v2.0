@@ -12,8 +12,8 @@ def read(path: Path) -> str:
 
 
 def test_product_version_and_schema_are_current_while_23211_is_retained() -> None:
-    # Rollup gate              21.1 remains present while current product advances to 25.1/schema 18.
-    assert read(CORE / "product-version.txt").strip() == "2.3.25.1"
+    # Rollup gate: 21.1 remains present while current product advances to 26.1/schema 18.
+    assert read(CORE / "product-version.txt").strip() == "2.3.26.1"
 
     database = read(CORE / "db" / "database.py")
     migration = read(CORE / "db" / "migration_014.py")

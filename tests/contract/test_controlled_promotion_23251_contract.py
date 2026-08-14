@@ -1,4 +1,4 @@
-"""Freeze the cumulative 2.3.25.1 Controlled Promotion / Rollback governance boundary."""
+"""Freeze the cumulative Controlled Promotion / Rollback governance boundary."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_PRODUCT_VERSION = "2.3.25.1"
+CURRENT_PRODUCT_VERSION = "2.3.26.1"
 CURRENT_DATABASE_SCHEMA = 18
 
 
@@ -36,41 +36,23 @@ def test_current_product_schema_and_promotion_surfaces_are_frozen() -> None:
 def test_promotion_api_and_windows_have_no_executable_policy_authority() -> None:
     api = read("src/picotoopet_core/api/routes/quality_promotion.py")
     promotion = read("src/picotoopet_core/deep_ai/promotion.py")
-    contracts = read(
-        "windows/desktop/src/PicotooPet.Desktop.Core/Contracts/QualityPromotionContracts.cs"
-    )
+    contracts = read("windows/desktop/src/PicotooPet.Desktop.Core/Contracts/QualityPromotionContracts.cs")
     panel = read("windows/desktop/src/PicotooPet.Desktop/Views/QualityPromotionPanel.xaml")
-    business_page = read(
-        "windows/desktop/src/PicotooPet.Desktop/Views/Pages/BusinessAutomationPage.xaml"
-    )
-
+    business_page = read("windows/desktop/src/PicotooPet.Desktop/Views/Pages/BusinessAutomationPage.xaml")
     assert 'promotion_profile_id: Literal["quality.promotion.v1"]' in promotion
     assert 'model_config = ConfigDict(extra="forbid")' in api
     assert "shadow_run_id: str" in api
     assert "QualityPromotionPanel" in business_page
     assert "TextBox" not in panel
     assert 'Mode=OneWay' in panel
-    assert "RegressionObserved" in panel or "RollbackReasons" in read(
-        "windows/desktop/src/PicotooPet.Desktop/ViewModels/QualityPromotionPanelViewModel.cs"
-    )
-    for forbidden in (
-        "PromptInput",
-        "ModelInput",
-        "ProviderInput",
-        "EndpointInput",
-        "ApiKeyInput",
-        "BudgetInput",
-        "WorkflowInput",
-        "CommandInput",
-        "PatchInput",
-    ):
+    assert "RegressionObserved" in panel or "RollbackReasons" in read("windows/desktop/src/PicotooPet.Desktop/ViewModels/QualityPromotionPanelViewModel.cs")
+    for forbidden in ("PromptInput", "ModelInput", "ProviderInput", "EndpointInput", "ApiKeyInput", "BudgetInput", "WorkflowInput", "CommandInput", "PatchInput"):
         assert forbidden not in contracts
         assert forbidden not in panel
 
 
 def test_release_goal_preserves_history_and_adds_governance_only_promotion() -> None:
     goal = json.loads(read("contracts/release/project-goal-invariants.json"))
-    assert goal["windows"]["product_version"]["value"] == CURRENT_PRODUCT_VERSION
     architecture = goal["architecture"]
     assert architecture["business_automation_v1"]["database_schema"] == 11
     assert architecture["creative_intelligence_v1"]["database_schema"] == 12
@@ -79,7 +61,6 @@ def test_release_goal_preserves_history_and_adds_governance_only_promotion() -> 
     assert architecture["paid_ai_quality_learning_v1"]["database_schema"] == 15
     assert architecture["offline_quality_evaluation_v1"]["database_schema"] == 16
     assert architecture["controlled_shadow_validation_v1"]["database_schema"] == 17
-
     promotion = architecture["controlled_promotion_rollback_v1"]
     assert promotion["database_schema"] == 18
     assert promotion["promotion_profile"] == "quality.promotion.v1"
@@ -104,23 +85,13 @@ def test_release_goal_preserves_history_and_adds_governance_only_promotion() -> 
     assert promotion["automatic_release"] is False
 
 
-def test_real_wpf_smoke_is_registered_and_no_top_level_route_is_added() -> None:
-    program = read(
-        "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs"
-    )
-    smoke = read(
-        "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/QualityPromotionPanelWpfSmokeTests.cs"
-    )
+def test_real_wpf_smoke_is_registered_and_promotion_stays_in_advanced_business_automation() -> None:
+    program = read("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs")
+    smoke = read("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/QualityPromotionPanelWpfSmokeTests.cs")
     self_test = read("windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs")
-
     assert "QualityPromotionPanelWpfSmokeTests.Run();" in program
-    for required in (
-        "new QualityPromotionPanel",
-        "Measure(new Size(1100, 780))",
-        "Arrange(new Rect(0, 0, 1100, 780))",
-        "UpdateLayout()",
-        "BindingMode.OneWay",
-    ):
+    for required in ("new QualityPromotionPanel", "Measure(new Size(1100, 780))", "Arrange(new Rect(0, 0, 1100, 780))", "UpdateLayout()", "BindingMode.OneWay"):
         assert required in smoke
-    assert "shell.NavigationItems.Count != 11" in self_test
+    assert "shell.NavigationItems.Count != 5" in self_test
+    assert "NavigationRoute.BusinessAutomation" in self_test
     assert "NavigationRoute.Promotion" not in self_test

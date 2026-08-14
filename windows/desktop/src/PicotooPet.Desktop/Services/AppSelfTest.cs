@@ -88,28 +88,27 @@ internal static class AppSelfTest
             }
             checks["product_version_surfaces"] = "pass";
 
-            if (shell.NavigationItems.Count != 11)
+            var expectedSimpleNavigation = new[] { "首页", "待我审核", "进行中", "已完成", "高级" };
+            if (shell.NavigationItems.Count != 5
+                || !shell.NavigationItems.Select(item => item.Title).SequenceEqual(expectedSimpleNavigation)
+                || shell.CurrentRoute != NavigationRoute.OperatorHome)
             {
-                throw new InvalidOperationException("Control Center 一级导航数量自检失败。");
+                throw new InvalidOperationException("26.1 Operator Simple Mode 五入口导航自检失败。");
             }
             if (!shell.NavigationItems.Single(
-                    item => item.Route == NavigationRoute.TaskCenter).IsAvailable)
+                    item => item.Route == NavigationRoute.OperatorHome).IsAvailable
+                || !shell.NavigationItems.Single(
+                    item => item.Route == NavigationRoute.AdvancedHome).IsAvailable)
             {
-                throw new InvalidOperationException("Legacy 2.2 任务中心兼容自检失败。");
+                throw new InvalidOperationException("26.1 首页/高级入口可用性自检失败。");
             }
-            if (!shell.NavigationItems.Single(
-                    item => item.Route == NavigationRoute.CloudDevelopment).IsAvailable)
-            {
-                throw new InvalidOperationException("云端开发 Phase 10A 页面可用性自检失败。");
-            }
-            if (!shell.NavigationItems.Single(
-                    item => item.Route == NavigationRoute.BusinessAutomation).IsAvailable)
-            {
-                throw new InvalidOperationException("业务自动化一级导航可用性自检失败。");
-            }
-            checks["business_automation_navigation"] = "pass";
+            checks["operator_simple_mode_navigation"] = "pass";
 
             shell.Navigate(NavigationRoute.CloudDevelopment);
+            if (shell.SelectedNavigationItem.Route != NavigationRoute.AdvancedHome)
+            {
+                throw new InvalidOperationException("高级子页面未保持“高级”入口选中。");
+            }
             if (shell.CurrentPage is not CloudDevelopmentPageViewModel cloudDevelopment
                 || cloudDevelopment.ContractVersion != "1.0.0"
                 || cloudDevelopment.ProviderConfigured
@@ -122,6 +121,17 @@ internal static class AppSelfTest
             }
             checks["cloud_development_phase10a"] = "pass";
 
+            shell.Navigate(NavigationRoute.BusinessAutomation);
+            if (shell.CurrentPage is not BusinessAutomationPageViewModel
+                || shell.SelectedNavigationItem.Route != NavigationRoute.AdvancedHome)
+            {
+                throw new InvalidOperationException("业务自动化高级路由可达性自检失败。");
+            }
+            checks["business_automation_navigation"] = "pass";
+
+            shell.Navigate(NavigationRoute.CloudDevelopment);
+            cloudDevelopment = shell.CurrentPage as CloudDevelopmentPageViewModel
+                ?? throw new InvalidOperationException("云端开发高级页面重开失败。");
             VerifyCloudDevelopmentContentRendering(cloudDevelopment);
             checks["cloud_development_rendering"]             = "pass";
             checks["cloud_development_phase10b_return_panel"] = "pass";
@@ -142,9 +152,10 @@ internal static class AppSelfTest
             checks["task_center_rendering"] = "pass";
 
             shell.Navigate(NavigationRoute.Settings);
-            if (shell.CurrentPage is not SettingsPageViewModel)
+            if (shell.CurrentPage is not SettingsPageViewModel
+                || shell.SelectedNavigationItem.Route != NavigationRoute.AdvancedHome)
             {
-                throw new InvalidOperationException("Control Center 设置页路由自检失败。");
+                throw new InvalidOperationException("Control Center 设置高级路由自检失败。");
             }
             checks["control_center_shell"] = "pass";
 
@@ -163,6 +174,7 @@ internal static class AppSelfTest
             Console.WriteLine("PHASE23_CONTROL_CENTER_SELF_TEST=PASS");
             Console.WriteLine("PHASE23_TASK_CENTER_SELF_TEST=PASS");
             Console.WriteLine("PHASE23_PRODUCT_VERSION_SELF_TEST=PASS");
+            Console.WriteLine("PHASE26_OPERATOR_SIMPLE_MODE_SELF_TEST=PASS");
             Console.WriteLine("PHASE10A_HANDOFF_SELF_TEST=PASS");
             Console.WriteLine("PHASE10B_RETURN_SELF_TEST=PASS");
             Console.WriteLine("PHASE10B_BROKER_SELF_TEST=PASS");
@@ -183,6 +195,8 @@ internal static class AppSelfTest
                 $"PHASE23_TASK_CENTER_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(
                 $"PHASE23_PRODUCT_VERSION_SELF_TEST=FAIL | {exception.Message}");
+            Console.Error.WriteLine(
+                $"PHASE26_OPERATOR_SIMPLE_MODE_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(
                 $"PHASE10A_HANDOFF_SELF_TEST=FAIL | {exception.Message}");
             Console.Error.WriteLine(

@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-EXPECTED_PRODUCT_VERSION = "2.3.25.1"
+EXPECTED_PRODUCT_VERSION = "2.3.26.1"
 EXPECTED_DATABASE_SCHEMA = 18
 EXPECTED_PROFILE = "production.comfyui.v1"
 EXPECTED_COMFY_ENDPOINT = "http://127.0.0.1:8188"
@@ -67,7 +67,7 @@ def test_production_is_retained_while_current_product_and_schema_advance() -> No
     assert "MIGRATION_016" in database
     assert "MIGRATION_017" in database
     assert "MIGRATION_018" in database
-    # Rollup gate              Production v1 remains in the current schema-18 cumulative product.
+    # Rollup gate: Production v1 remains in the current schema-18 cumulative 26.1 product.
     assert f"version = {EXPECTED_DATABASE_SCHEMA}" in database
 
 
@@ -105,5 +105,6 @@ def test_windows_business_page_hosts_production_without_new_shell_route() -> Non
     self_test = read(ROOT / "windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs")
 
     assert "ProductionPanel" in page
-    assert "shell.NavigationItems.Count != 11" in self_test
+    assert "shell.NavigationItems.Count != 5" in self_test
+    assert "PHASE26_OPERATOR_SIMPLE_MODE_SELF_TEST=PASS" in self_test
     assert "NavigationRoute.Production" not in self_test
