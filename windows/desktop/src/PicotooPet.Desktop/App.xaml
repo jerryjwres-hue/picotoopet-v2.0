@@ -7,6 +7,15 @@
   <Application.Resources>
     <SolidColorBrush x:Key="PanelBrush" Color="#FFF7F8FA" />
 
+    <DataTemplate DataType="{x:Type viewModels:OperatorHomePageViewModel}">
+      <pages:OperatorHomePage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:OperatorReviewPageViewModel}">
+      <pages:OperatorReviewPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type viewModels:OperatorTaskListPageViewModel}">
+      <pages:OperatorTaskListPage />
+    </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:OverviewPageViewModel}">
       <pages:OverviewPage />
     </DataTemplate>
