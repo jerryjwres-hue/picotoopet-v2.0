@@ -22,14 +22,41 @@ def read_core(relative: str) -> str:
 
 
 def test_shell_exists_and_desktop_remains_winexe() -> None:
-    """新 Shell 必须绑定冻结导航和产品版本，同时保持无控制台 WinExe。"""
+    """26.1 默认 Shell 只展示五个简单入口，同时完整保留高级工程路由。"""
 
     shell = read("Views/ShellWindow.xaml")
-    assert "NavigationItems" in shell
-    assert "CurrentPage" in shell
-    assert 'Width="232"' in shell
-    assert 'Title="{Binding WindowTitle, Mode=OneWay}"' in shell
-    assert 'Text="{Binding ControlCenterSubtitle, Mode=OneWay}"' in shell
+    simple_mode = read("Views/ShellWindow.SimpleMode.cs")
+    for required in (
+        'x:Name="SimpleHomeButton"',
+        'Content="首页"',
+        'x:Name="SimpleReviewButton"',
+        'Content="待我审核"',
+        'x:Name="SimpleActiveButton"',
+        'Content="进行中"',
+        'x:Name="SimpleCompletedButton"',
+        'Content="已完成"',
+        'x:Name="SimpleAdvancedButton"',
+        'Content="高级"',
+        'x:Name="AdvancedHomePanel"',
+        'Content="{Binding CurrentPage, Mode=OneWay}"',
+        'Title="{Binding WindowTitle, Mode=OneWay}"',
+        'Text="{Binding ControlCenterSubtitle, Mode=OneWay}"',
+    ):
+        assert required in shell
+    assert 'ItemsSource="{Binding NavigationItems' not in shell
+    for route in (
+        "NavigationRoute.Projects",
+        "NavigationRoute.TaskCenter",
+        "NavigationRoute.Results",
+        "NavigationRoute.Approvals",
+        "NavigationRoute.CloudDevelopment",
+        "NavigationRoute.Automation",
+        "NavigationRoute.BusinessAutomation",
+        "NavigationRoute.Health",
+        "NavigationRoute.Diagnostics",
+        "NavigationRoute.Settings",
+    ):
+        assert route in simple_mode
 
     project = read("PicotooPet.Desktop.csproj")
     assert "<OutputType>WinExe</OutputType>" in project
