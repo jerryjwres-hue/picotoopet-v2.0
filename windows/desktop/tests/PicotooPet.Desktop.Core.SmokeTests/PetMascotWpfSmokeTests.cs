@@ -104,10 +104,22 @@ internal static class PetMascotWpfSmokeTests
         SmokeAssert.True(instance.IsArrangeValid, "茅台控件 Arrange 未完成");
         SmokeAssert.True(instance.ActualWidth > 0, "茅台控件实际宽度无效");
         SmokeAssert.True(instance.ActualHeight > 0, "茅台控件实际高度无效");
+        SmokeAssert.True(
+            instance.MinWidth >= 300 && instance.MinWidth <= 320,
+            "茅台陪伴型组件宽度必须保持在 300–320px");
 
         var mascotImage = instance.FindName("MascotImage") as System.Windows.Controls.Image;
         SmokeAssert.True(mascotImage is not null, "茅台控件缺少真实位图显示区域");
         SmokeAssert.True(mascotImage?.Source is not null, "茅台 PNG 位图资源没有成功加载");
+        SmokeAssert.True(
+            mascotImage?.Width >= 260 && mascotImage?.Width <= 280,
+            "茅台主体视觉尺寸必须保持在 260–280px");
+
+        var calloutBorder = instance.FindName("CalloutBorder") as System.Windows.Controls.Border;
+        SmokeAssert.True(calloutBorder is not null, "茅台控件缺少陪伴型气泡容器");
+        SmokeAssert.True(
+            calloutBorder?.MaxWidth >= 286 && calloutBorder?.MaxWidth <= 304,
+            "茅台气泡宽度必须与陪伴型右栏比例匹配");
 
         var homePage = new OperatorHomePage();
         var hostedMascot = homePage.FindName("MaotaiMascot") as FrameworkElement;
