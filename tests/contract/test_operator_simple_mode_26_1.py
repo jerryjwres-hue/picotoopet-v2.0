@@ -10,6 +10,16 @@ WIZARD = DESKTOP / "ViewModels" / "NewTaskWizardViewModel.cs"
 WIZARD_XAML = DESKTOP / "Views" / "Pages" / "NewTaskWizardWindow.xaml"
 
 
+def assert_simple_nav_button(xaml: str, name: str, title: str) -> None:
+    """允许产品化按钮使用子元素绘制图标，但固定入口名称必须留在同一 Button 内。"""
+
+    marker = f'x:Name="{name}"'
+    start = xaml.index(marker)
+    end = xaml.index("</Button>", start)
+    button = xaml[start:end]
+    assert f'Content="{title}"' in button or f'Text="{title}"' in button
+
+
 def test_version() -> None:
     assert VERSION.read_text(encoding="utf-8").strip() == "2.3.26.1"
 
@@ -24,8 +34,7 @@ def test_simple_sidebar_is_fixed_and_advanced_is_landing_page() -> None:
         "SimpleAdvancedButton": "高级",
     }
     for name, title in expected.items():
-        assert f'x:Name="{name}"' in xaml
-        assert f'Content="{title}"' in xaml
+        assert_simple_nav_button(xaml, name, title)
     assert 'x:Name="AdvancedHomePanel"' in xaml
     assert 'ItemsSource="{Binding NavigationItems}"' not in xaml
 
@@ -85,7 +94,7 @@ def test_new_task_wizard_is_closed_and_future_web_research_is_disabled() -> None
     assert '"尚未接入"' in source
     assert "CreateDiagnosticSnapshotAsync" in source
     assert "NavigationRoute.BusinessAutomation" in source
-    assert "网络搜索 / 爬虫尚未在 26.1 接入" in xaml
+    assert "网络 Search / 爬虫尚未在 26.1 接入" in xaml
     for forbidden in (
         "ApiKey",
         "ProviderKey",
