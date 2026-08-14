@@ -8,8 +8,9 @@ public partial class OperatorWidgetManagerWindow : Window
 {
     public OperatorWidgetManagerWindow(OperatorHomePageViewModel viewModel)
     {
-        InitializeComponent();
         DataContext = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
+        PicotooPet.Desktop.Views.PicoThemeResourceLoader.Attach(this);   // 独立窗口始终先拥有主题，再解析 XAML 资源引用。
+        InitializeComponent();
     }
 
     private void Toggle_Click(object sender, RoutedEventArgs e) =>
