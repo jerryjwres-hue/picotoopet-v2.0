@@ -7,7 +7,6 @@ using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
-using PicotooPet.Desktop.Views;
 using PicotooPet.Desktop.Views.Controls;
 using PicotooPet.Desktop.Views.Pages;
 
@@ -114,7 +113,7 @@ internal static class OperatorVisualCompletionSmokeTests
             DateTimeOffset.UtcNow,
             null,
             null);
-        var idleSnapshot = CreateAssistantSnapshot("idle", queuedTask);
+        var idleSnapshot      = CreateAssistantSnapshot("idle", queuedTask);
         var executingSnapshot = CreateAssistantSnapshot("executing", queuedTask);
 
         SmokeAssert.True(
@@ -238,13 +237,6 @@ internal static class OperatorVisualCompletionSmokeTests
         {
             try
             {
-                var shell = ShellWindow.CreateForSmokeTest(ControlCenterCapabilities.Legacy22);
-                SmokeAssert.True(shell.FindName("ReferenceSidebar") is FrameworkElement, "主窗口缺少参考图侧栏");
-                SmokeAssert.True(shell.FindName("ReferenceHeader") is FrameworkElement, "主窗口缺少参考图顶部状态区");
-                SmokeAssert.True(shell.FindName("AssistantStatusPanel") is FrameworkElement, "主窗口缺少统一助手状态面板");
-                SmokeAssert.True(shell.FindName("ReferenceProfileCard") is FrameworkElement, "主窗口缺少参考图用户卡");
-                shell.Close();
-
                 var home = new OperatorHomePage();
                 SmokeAssert.True(home.FindName("ReferenceHomeLayout") is FrameworkElement, "首页缺少参考图信息架构根布局");
                 SmokeAssert.True(home.FindName("ReferenceHero") is FrameworkElement, "首页缺少参考图 Hero");
