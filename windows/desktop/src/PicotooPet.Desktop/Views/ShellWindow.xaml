@@ -3,119 +3,201 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:pages="clr-namespace:PicotooPet.Desktop.Views.Pages"
         xmlns:views="clr-namespace:PicotooPet.Desktop.Views"
+        xmlns:controls="clr-namespace:PicotooPet.Desktop.Views.Controls"
         Title="{Binding WindowTitle, Mode=OneWay}"
-        Width="1240"
-        Height="780"
-        MinWidth="980"
-        MinHeight="640"
-        WindowStartupLocation="CenterScreen">
+        Width="1380"
+        Height="860"
+        MinWidth="1040"
+        MinHeight="680"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource PicoPageBackgroundBrush}">
   <Window.CommandBindings>
     <CommandBinding Command="{x:Static pages:SettingsPage.SaveAndConnectCommand}"
                     Executed="SaveAndConnect_Click" />
   </Window.CommandBindings>
 
   <Window.Resources>
-    <Style x:Key="SimpleNavButtonStyle" TargetType="Button">
-      <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Style x:Key="SimpleNavButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="#FFE8F0FB" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
       <Setter Property="FontSize" Value="15" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Padding" Value="14,11" />
+      <Setter Property="Padding" Value="13,11" />
       <Setter Property="Margin" Value="0,3" />
+      <Setter Property="MinHeight" Value="45" />
     </Style>
-    <Style x:Key="AdvancedRouteButtonStyle" TargetType="Button">
+    <Style x:Key="SimpleNavSelectedButtonStyle" TargetType="Button" BasedOn="{StaticResource SimpleNavButtonStyle}">
+      <Setter Property="Background" Value="#FF1678FF" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="#FF5EA4FF" />
+    </Style>
+    <Style x:Key="AdvancedRouteButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="Padding" Value="14,10" />
-      <Setter Property="Margin" Value="0,4" />
-      <Setter Property="Background" Value="#FFF8FAFC" />
-      <Setter Property="BorderBrush" Value="#FFE5E7EB" />
+      <Setter Property="Padding" Value="15,13" />
+      <Setter Property="Margin" Value="5" />
+      <Setter Property="Background" Value="White" />
+      <Setter Property="BorderBrush" Value="{StaticResource PicoBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="MinHeight" Value="54" />
     </Style>
   </Window.Resources>
 
-  <Grid Background="White">
+  <Grid Background="{StaticResource PicoPageBackgroundBrush}">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="220" />
+      <ColumnDefinition Width="244" />
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
-      <RowDefinition Height="72" />
+      <RowDefinition Height="76" />
       <RowDefinition Height="*" />
-      <RowDefinition Height="40" />
+      <RowDefinition Height="36" />
     </Grid.RowDefinitions>
 
+    <!-- 左侧永久助手区：导航 + 唯一 AI 情感状态，不与右侧业务组件重复。 -->
     <Border Grid.Column="0"
             Grid.RowSpan="3"
-            Background="#FF111827"
-            Padding="14,20">
-      <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Margin="8,0,8,24">
-          <TextBlock Text="Picotoo Pet AI"
-                     Foreground="White"
-                     FontSize="21"
-                     FontWeight="SemiBold" />
-          <TextBlock Text="{Binding ControlCenterSubtitle, Mode=OneWay}"
-                     Margin="0,5,0,0"
-                     Foreground="#FF9CA3AF" />
-          <TextBlock Text="简单模式"
-                     Margin="0,5,0,0"
-                     Foreground="#FF60A5FA"
-                     FontSize="11" />
+            Background="{StaticResource PicoSidebarBrush}"
+            Padding="15,18,15,16">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="5,1,4,20">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="52" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Width="44" Height="44" CornerRadius="22" Background="#FF1678FF" VerticalAlignment="Top">
+            <TextBlock Text="🐾" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Grid.Column="1" Margin="3,0,0,0">
+            <TextBlock Text="Picotoo Pet AI" Foreground="White" FontSize="20" FontWeight="Bold" />
+            <TextBlock Text="{Binding ControlCenterSubtitle, Mode=OneWay}" Margin="0,3,0,0" Foreground="#FFA9B9D0" FontSize="11" />
+            <TextBlock Text="Simple Mode · 简单模式" Margin="0,3,0,0" Foreground="#FF70B0FF" FontSize="10" />
+          </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="1">
+          <Button x:Name="SimpleHomeButton" Style="{StaticResource SimpleNavSelectedButtonStyle}" Click="SimpleHome_Click">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="34" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="首页" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+          <Button x:Name="SimpleReviewButton" Style="{StaticResource SimpleNavButtonStyle}" Click="SimpleReview_Click">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="34" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="待我审核" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+          <Button x:Name="SimpleActiveButton" Style="{StaticResource SimpleNavButtonStyle}" Click="SimpleActive_Click">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="34" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="进行中" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+          <Button x:Name="SimpleCompletedButton" Style="{StaticResource SimpleNavButtonStyle}" Click="SimpleCompleted_Click">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="34" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="已完成" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+          <Button x:Name="SimpleAdvancedButton" Style="{StaticResource SimpleNavButtonStyle}" Click="SimpleAdvanced_Click">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="34" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="高级" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
         </StackPanel>
 
-        <StackPanel>
-          <Button x:Name="SimpleHomeButton"
-                  Content="首页"
-                  Style="{StaticResource SimpleNavButtonStyle}"
-                  Click="SimpleHome_Click" />
-          <Button x:Name="SimpleReviewButton"
-                  Content="待我审核"
-                  Style="{StaticResource SimpleNavButtonStyle}"
-                  Click="SimpleReview_Click" />
-          <Button x:Name="SimpleActiveButton"
-                  Content="进行中"
-                  Style="{StaticResource SimpleNavButtonStyle}"
-                  Click="SimpleActive_Click" />
-          <Button x:Name="SimpleCompletedButton"
-                  Content="已完成"
-                  Style="{StaticResource SimpleNavButtonStyle}"
-                  Click="SimpleCompleted_Click" />
-          <Button x:Name="SimpleAdvancedButton"
-                  Content="高级"
-                  Style="{StaticResource SimpleNavButtonStyle}"
-                  Click="SimpleAdvanced_Click" />
-        </StackPanel>
-      </DockPanel>
+        <Border Grid.Row="3" Background="#FF0D315F" BorderBrush="#FF214C7C" BorderThickness="1" CornerRadius="17" Padding="12" Margin="1,14,1,0">
+          <StackPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="AI 助手状态" Foreground="#FFDCE9F8" FontSize="12" FontWeight="SemiBold" />
+              <Ellipse Grid.Column="1" Width="8" Height="8" Fill="#FF37D99A" VerticalAlignment="Center" />
+            </Grid>
+            <controls:AlaskanAssistantMascot Height="142" Margin="0,-6,0,-8" />
+            <Border Background="#FF123E72" BorderBrush="#FF2566A8" BorderThickness="1" CornerRadius="11" Padding="10,8">
+              <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                  <Ellipse Width="8" Height="8" Fill="#FF3DE19F" Margin="0,0,7,0" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding AssistantTitle, Mode=OneWay}" Foreground="White" FontWeight="SemiBold" />
+                </StackPanel>
+                <TextBlock Text="{Binding AssistantSubtitle, Mode=OneWay}" Foreground="#FFB7CAE1" FontSize="10" Margin="15,4,0,0" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            <Grid Margin="2,10,2,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                <Ellipse Width="7" Height="7" Fill="#FF38D99B" />
+                <TextBlock Text="工作" Foreground="#FF9FB6D0" FontSize="9" Margin="0,3,0,0" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                <Ellipse Width="7" Height="7" Fill="#FFF0A24D" />
+                <TextBlock Text="休息" Foreground="#FF9FB6D0" FontSize="9" Margin="0,3,0,0" />
+              </StackPanel>
+              <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                <Ellipse Width="7" Height="7" Fill="#FF7F8EA4" />
+                <TextBlock Text="睡觉" Foreground="#FF9FB6D0" FontSize="9" Margin="0,3,0,0" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+      </Grid>
     </Border>
 
+    <!-- 顶部只表达技术链与审批能力，不重复阿拉斯加工作卡。 -->
     <Border Grid.Column="1"
             Grid.Row="0"
-            Background="#FFF9FAFB"
-            BorderBrush="#FFE5E7EB"
+            Background="#FCFFFFFF"
+            BorderBrush="{StaticResource PicoBorderBrush}"
             BorderThickness="0,0,0,1"
-            Padding="22,12">
+            Padding="24,12">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel>
-          <TextBlock Text="{Binding CurrentPage.Title, Mode=OneWay}"
-                     FontSize="20"
-                     FontWeight="SemiBold" />
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="{Binding CurrentPage.Title, Mode=OneWay}" FontSize="22" FontWeight="Bold" />
           <TextBlock Text="{Binding StatusMessage, Mode=OneWay}"
-                     Margin="0,4,0,0"
-                     Foreground="#FF6B7280"
+                     Margin="0,3,0,0"
+                     Foreground="{StaticResource PicoTextMutedBrush}"
+                     FontSize="11"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <Border Background="#FFEFF6FF" CornerRadius="8" Padding="12,7" Margin="0,0,10,0">
-            <TextBlock Text="{Binding ApprovalText, Mode=OneWay}" Foreground="#FF1D4ED8" />
+          <Border Background="{StaticResource PicoPrimarySoftBrush}" BorderBrush="#FFCCE0FF" BorderThickness="1" CornerRadius="10" Padding="11,7" Margin="0,0,8,0">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse Width="7" Height="7" Fill="{StaticResource PicoPrimaryBrush}" Margin="0,0,7,0" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding ApprovalText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="11" FontWeight="SemiBold" />
+            </StackPanel>
           </Border>
-          <Border Background="#FFECFDF5" CornerRadius="8" Padding="12,7">
-            <TextBlock Text="{Binding ConnectionText, Mode=OneWay}" Foreground="#FF047857" FontWeight="SemiBold" />
+          <Border Background="{StaticResource PicoSuccessSoftBrush}" BorderBrush="#FFC6ECDD" BorderThickness="1" CornerRadius="10" Padding="11,7">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse Width="7" Height="7" Fill="{StaticResource PicoSuccessBrush}" Margin="0,0,7,0" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding ConnectionText, StringFormat=Mac Core · {0}, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" FontWeight="SemiBold" />
+            </StackPanel>
           </Border>
         </StackPanel>
       </Grid>
@@ -124,64 +206,119 @@
     <views:NavigationContentHost x:Name="ContentHost"
                                  Grid.Column="1"
                                  Grid.Row="1"
+                                 Background="{StaticResource PicoPageBackgroundBrush}"
                                  Content="{Binding CurrentPage, Mode=OneWay}"
                                  NavigationFaulted="ContentHost_NavigationFaulted" />
 
+    <!-- 高级入口同样产品化；进入具体高级页后继续继承全局主题。 -->
     <Border x:Name="AdvancedHomePanel"
             Grid.Column="1"
             Grid.Row="1"
-            Background="White"
+            Background="{StaticResource PicoPageBackgroundBrush}"
             Visibility="Collapsed"
-            Padding="28">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="920" HorizontalAlignment="Left">
-          <TextBlock Text="高级功能"
-                     FontSize="28"
-                     FontWeight="SemiBold"
-                     Foreground="#FF111827" />
-          <TextBlock Text="日常使用不需要进入这里。工程、治理和诊断功能仍完整保留。"
-                     Margin="0,8,0,22"
-                     Foreground="#FF6B7280" />
+            Padding="24">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel MaxWidth="1080" HorizontalAlignment="Stretch">
+          <Border Style="{StaticResource PicoCardStyle}" Padding="20" Margin="0,0,0,14">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="56" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <Border Width="46" Height="46" CornerRadius="23" Background="{StaticResource PicoPrimarySoftBrush}">
+                <TextBlock Text="⚙" FontSize="22" Foreground="{StaticResource PicoPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1" Margin="4,0,18,0">
+                <TextBlock Text="高级功能" Style="{StaticResource PicoPageTitleStyle}" FontSize="26" />
+                <TextBlock Text="工程、治理、诊断与配置能力完整保留；日常使用仍建议留在简单模式。" Margin="0,5,0,0" Style="{StaticResource PicoMutedTextStyle}" />
+              </StackPanel>
+              <Border Grid.Column="2" Background="#FFFFF6E8" BorderBrush="#FFF3D9A7" BorderThickness="1" CornerRadius="10" Padding="10,6" VerticalAlignment="Center">
+                <TextBlock Text="高级操作" Foreground="#FFA76B12" Style="{StaticResource PicoPillTextStyle}" />
+              </Border>
+            </Grid>
+          </Border>
 
-          <TextBlock Text="业务与执行" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
-          <WrapPanel Margin="0,0,0,20">
-            <Button Content="项目" Tag="Projects" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-            <Button Content="任务中心" Tag="TaskCenter" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-            <Button Content="结果" Tag="Results" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-            <Button Content="业务自动化" Tag="BusinessAutomation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-            <Button Content="自动化" Tag="Automation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-          </WrapPanel>
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-          <TextBlock Text="人工治理" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
-          <WrapPanel Margin="0,0,0,20">
-            <Button Content="审批" Tag="Approvals" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-            <Button Content="质量 / Shadow / Promotion" Tag="BusinessAutomation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="250" />
-          </WrapPanel>
+            <StackPanel Grid.Column="0" Margin="0,0,7,0">
+              <Border Style="{StaticResource PicoCardStyle}" Margin="0,0,0,14">
+                <StackPanel>
+                  <TextBlock Text="业务与执行" Style="{StaticResource PicoSectionTitleStyle}" />
+                  <TextBlock Text="项目、任务、结果和自动化执行入口。" Margin="0,4,0,9" Style="{StaticResource PicoMutedTextStyle}" FontSize="11" />
+                  <WrapPanel>
+                    <Button Content="📁  项目" Tag="Projects" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                    <Button Content="☷  任务中心" Tag="TaskCenter" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                    <Button Content="✓  结果" Tag="Results" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                    <Button Content="▥  业务自动化" Tag="BusinessAutomation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                    <Button Content="↻  自动化" Tag="Automation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
 
-          <TextBlock Text="系统与运维" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
-          <WrapPanel Margin="0,0,0,20">
-            <Button Content="健康" Tag="Health" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-            <Button Content="诊断" Tag="Diagnostics" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-          </WrapPanel>
+              <Border Style="{StaticResource PicoCardStyle}">
+                <StackPanel>
+                  <TextBlock Text="人工治理" Style="{StaticResource PicoSectionTitleStyle}" />
+                  <TextBlock Text="审批与质量治理继续保持显式人工决定。" Margin="0,4,0,9" Style="{StaticResource PicoMutedTextStyle}" FontSize="11" />
+                  <WrapPanel>
+                    <Button Content="🛡  审批" Tag="Approvals" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                    <Button Content="◇  质量 / Shadow / Promotion" Tag="BusinessAutomation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="260" />
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+            </StackPanel>
 
-          <TextBlock Text="开发与配置" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
-          <WrapPanel>
-            <Button Content="云端开发" Tag="CloudDevelopment" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-            <Button Content="设置" Tag="Settings" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-          </WrapPanel>
+            <StackPanel Grid.Column="1" Margin="7,0,0,0">
+              <Border Style="{StaticResource PicoCardStyle}" Margin="0,0,0,14">
+                <StackPanel>
+                  <TextBlock Text="系统与运维" Style="{StaticResource PicoSectionTitleStyle}" />
+                  <TextBlock Text="健康与诊断保持只读事实优先和故障隔离。" Margin="0,4,0,9" Style="{StaticResource PicoMutedTextStyle}" FontSize="11" />
+                  <WrapPanel>
+                    <Button Content="♥  健康" Tag="Health" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                    <Button Content="⌕  诊断" Tag="Diagnostics" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+
+              <Border Style="{StaticResource PicoCardStyle}">
+                <StackPanel>
+                  <TextBlock Text="开发与配置" Style="{StaticResource PicoSectionTitleStyle}" />
+                  <TextBlock Text="Handoff 和本地设置仍受原安全边界约束。" Margin="0,4,0,9" Style="{StaticResource PicoMutedTextStyle}" FontSize="11" />
+                  <WrapPanel>
+                    <Button Content="☁  云端开发" Tag="CloudDevelopment" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                    <Button Content="⚙  设置" Tag="Settings" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="190" />
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Grid>
         </StackPanel>
       </ScrollViewer>
     </Border>
 
     <Border Grid.Column="1"
             Grid.Row="2"
-            Background="#FFF3F4F6"
-            BorderBrush="#FFE5E7EB"
+            Background="#FFF1F5FA"
+            BorderBrush="{StaticResource PicoBorderBrush}"
             BorderThickness="0,1,0,0"
-            Padding="14,8">
-      <TextBlock Text="{Binding ConnectionMessage, Mode=OneWay}"
-                 Foreground="#FF4B5563"
-                 TextTrimming="CharacterEllipsis" />
+            Padding="15,7">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Ellipse Width="7" Height="7" Fill="{StaticResource PicoSuccessBrush}" Margin="0,0,8,0" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding ConnectionMessage, Mode=OneWay}"
+                   Foreground="{StaticResource PicoTextMutedBrush}"
+                   FontSize="10"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center" />
+      </Grid>
     </Border>
   </Grid>
 </Window>
