@@ -1,4 +1,4 @@
-"""Mac Worker package and active runtime product-version contract."""
+"""Mac Worker package and active runtime product-version / capability verifier contract."""
 
 from pathlib import Path
 
@@ -35,3 +35,28 @@ def test_worker_builder_packages_canonical_product_version() -> None:
     assert "phase23_worker_product_version" in verifier
     # Version gate              Worker package reads the same current 26.1 product resource as Core.
     assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.26.1"
+
+
+def test_worker_verifier_accepts_only_the_cumulative_closed_task_allowlist() -> None:
+    """正式 VERIFY 必须接受已实现累计能力，同时继续拒绝任意未知任务类型。"""
+
+    verifier = read(DEPLOY / "VERIFY_MAC_WORKER_SLICE_C.command")
+    library = read(DEPLOY / "worker-lib.sh")
+    combined = "\n".join((verifier, library))
+
+    for required in (
+        '"system.diagnostic_snapshot"',
+        '"system.noop"',
+        '"business.local_intelligence.v1"',
+        '"creative.content_plan.v1"',
+        '"provider.codex.handoff-v1"',
+        '"provider.adoption.apply-v1"',
+        '"provider.commit.create-v1"',
+        '"provider.publish.pr-create-v1"',
+    ):
+        assert required in combined
+
+    # Allowlist gate             系统任务是必需项；累计已实现类型只是允许出现，不能要求严格等于两个 system 类型。
+    assert "required <= set(supported)" in combined or "required.issubset(supported_set)" in combined
+    assert "unexpected Worker task type" in combined
+    assert 'payload.get("supported_task_types") != [' not in verifier
