@@ -181,7 +181,7 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public static OperatorHomePageViewModel CreateForSmokeTest(
         ControlCenterSessionSnapshot snapshot) => new(snapshot);
 
-    private IReadOnlyList<OperatorWidgetCard> BuildWidgetCards()
+    private OperatorWidgetCard[] BuildWidgetCards()
     {
         var descriptors = OperatorWidgetCatalog.CreateDefault()
             .ToDictionary(widget => widget.Id, StringComparer.Ordinal);
