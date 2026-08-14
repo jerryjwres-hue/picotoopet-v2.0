@@ -6,41 +6,42 @@ namespace PicotooPet.Desktop.ViewModels;
 /// <summary>阿拉斯加助手仅表达当前操作体验状态，不产生新的业务事实。</summary>
 public enum OperatorAssistantVisualState
 {
-    Working,          // 在线工作：Core/Worker 在线，并且已有真实活动任务。
-    Resting,          // 在线休息：Core/Worker 在线，但当前没有活动任务。
+    Working,          // 在线工作：Core/Worker 在线，并且 Worker 明确报告正在真实执行。
+    Resting,          // 在线休息：Core/Worker 在线，但当前没有真实执行活动。
     OfflineSleeping,  // 掉线睡眠：Worker 或控制链不可用，明确显示为离线。
 }
 
-/// <summary>把既有 Core/Worker/任务事实收敛成唯一助手视觉状态，避免页面之间状态打架。</summary>
+/// <summary>把既有 Core/Worker 事实收敛成唯一助手视觉状态，避免页面之间状态打架。</summary>
 public static class OperatorAssistantStateResolver
 {
     /// <summary>供确定性测试和 UI 规则复用的最小状态解析函数。</summary>
     public static OperatorAssistantVisualState Resolve(
         bool coreOnline,
         bool workerOnline,
-        bool hasActiveTask)
+        bool hasRealExecution)
     {
         if (!coreOnline || !workerOnline)
         {
             return OperatorAssistantVisualState.OfflineSleeping;
         }
 
-        return hasActiveTask
+        return hasRealExecution
             ? OperatorAssistantVisualState.Working
             : OperatorAssistantVisualState.Resting;
     }
 
-    /// <summary>只读取现有快照；不创建第二份状态源，也不推断虚假的进度。</summary>
+    /// <summary>只读取现有快照；排队/等待任务不能冒充真正的 Worker 或本地模型执行。</summary>
     public static OperatorAssistantVisualState FromSnapshot(ControlCenterSessionSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        var coreOnline   = snapshot.State.Connection.State == ConnectionState.Online;
+        var coreOnline = snapshot.State.Connection.State == ConnectionState.Online;
         var workerOnline = snapshot.State.Worker.Available
             && string.Equals(snapshot.State.Worker.State, "online", StringComparison.OrdinalIgnoreCase);
-        var hasActiveTask = OperatorProjection.FromSnapshot(snapshot).InProgress.Count > 0;
+        var hasRealExecution = workerOnline
+            && string.Equals(snapshot.State.Worker.Reason, "executing", StringComparison.OrdinalIgnoreCase);
 
-        return Resolve(coreOnline, workerOnline, hasActiveTask);
+        return Resolve(coreOnline, workerOnline, hasRealExecution);
     }
 
     /// <summary>返回稳定的绑定键，避免 XAML 依赖本地化文案判断状态。</summary>
@@ -64,8 +65,8 @@ public static class OperatorAssistantStateResolver
     /// <summary>返回与状态一致的辅助说明，不泄露内部工程字段。</summary>
     public static string ToSubtitle(OperatorAssistantVisualState state) => state switch
     {
-        OperatorAssistantVisualState.Working         => "正在陪你处理真实任务",
-        OperatorAssistantVisualState.Resting         => "暂时空闲，放松一下",
+        OperatorAssistantVisualState.Working         => "正在执行真实任务或本地推理",
+        OperatorAssistantVisualState.Resting         => "连接正常，当前没有实际执行",
         OperatorAssistantVisualState.OfflineSleeping => "连接恢复后会再次醒来",
         _                                             => "连接恢复后会再次醒来",
     };
