@@ -138,7 +138,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         CurrentPage  = CreateCurrentPage(route);
     }
 
-    /// <summary>用安全说明页替换故障路由，同时保留其他简单入口。</summary>
+    /// <summary>用安全说明页替换故障路由，同时保留真实高级子页面名和其他简单入口。</summary>
     public void ShowNavigationFailure(NavigationRoute route)
     {
         var item = FindSidebarItemForRoute(NavigationItems, route);
@@ -148,13 +148,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             RaisePropertyChanged(nameof(SelectedNavigationItem));
         }
 
+        var routeTitle = RouteTitle(route);
         CurrentRoute = route;
         CurrentPage = new EmptyStatePageViewModel(
-            $"{item.Title}暂时不可用",
+            $"{routeTitle}暂时不可用",
             "页面加载时发生故障，Control Center 已隔离该页面。",
             "错误摘要已写入本地脱敏日志；你可以切换到其他页面继续使用。",
             "稍后重新打开此页面；无需重启或重新安装。");
-        StatusMessage = $"{item.Title}页面加载失败，其他页面仍可使用。";
+        StatusMessage = $"{routeTitle}页面加载失败，其他页面仍可使用。";
     }
 
     private PageViewModel CreateCurrentPage(NavigationRoute route) =>
@@ -263,6 +264,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         };
         return FindItem(items, sidebarRoute);
     }
+
+    private static string RouteTitle(NavigationRoute route) => route switch
+    {
+        NavigationRoute.OperatorHome => "首页",
+        NavigationRoute.OperatorReview => "待我审核",
+        NavigationRoute.OperatorInProgress => "进行中",
+        NavigationRoute.OperatorCompleted => "已完成",
+        NavigationRoute.AdvancedHome => "高级",
+        NavigationRoute.Dashboard => "总览",
+        NavigationRoute.Projects => "项目",
+        NavigationRoute.TaskCenter => "任务中心",
+        NavigationRoute.Results => "结果",
+        NavigationRoute.Approvals => "审批",
+        NavigationRoute.CloudDevelopment => "云端开发",
+        NavigationRoute.Automation => "自动化",
+        NavigationRoute.BusinessAutomation => "业务自动化",
+        NavigationRoute.Health => "健康",
+        NavigationRoute.Diagnostics => "诊断",
+        NavigationRoute.Settings => "设置",
+        _ => "页面",
+    };
 
     private static PageViewModel CreateStaticPage(
         NavigationRoute route,
@@ -374,7 +396,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             operatorHome.UpdateSnapshot(snapshot);
         }
-        else if (route is NavigationRoute.OperatorInProgress or NavigationRoute.OperatorCompleted
+        else if ((route is NavigationRoute.OperatorInProgress or NavigationRoute.OperatorCompleted)
             && CurrentPage is OperatorTaskListPageViewModel operatorTasks)
         {
             operatorTasks.UpdateSnapshot(snapshot);
