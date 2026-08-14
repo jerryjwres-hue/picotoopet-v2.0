@@ -1,8 +1,13 @@
 namespace PicotooPet.Desktop.Navigation;
 
-/// <summary>Control Center 一级导航路由；业务自动化与软件开发自动化保持独立。</summary>
+/// <summary>Control Center 导航路由；26.1 简单模式与历史高级页面共享同一 Shell。</summary>
 public enum NavigationRoute
 {
+    OperatorHome,
+    OperatorReview,
+    OperatorInProgress,
+    OperatorCompleted,
+    AdvancedHome,
     Dashboard,
     Projects,
     TaskCenter,
