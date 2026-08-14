@@ -105,5 +105,6 @@ def test_windows_business_page_hosts_production_without_new_shell_route() -> Non
     self_test = read(ROOT / "windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs")
 
     assert "ProductionPanel" in page
-    assert "shell.NavigationItems.Count != 11" in self_test
+    assert "shell.NavigationItems.Count != 5" in self_test
+    assert "PHASE26_OPERATOR_SIMPLE_MODE_SELF_TEST=PASS" in self_test
     assert "NavigationRoute.Production" not in self_test
