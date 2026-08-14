@@ -88,7 +88,6 @@
                              FontSize="11"
                              HorizontalAlignment="Right" />
                   <Border Background="{StaticResource PicoSuccessSoftBrush}" CornerRadius="8" Padding="8,4" Margin="0,7,0,0" HorizontalAlignment="Right">
-                    <TextBlock Text="结果可查看" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" FontWeight="SemiBold" />
                     <Border.Style>
                       <Style TargetType="Border">
                         <Setter Property="Visibility" Value="Collapsed" />
@@ -99,6 +98,7 @@
                         </Style.Triggers>
                       </Style>
                     </Border.Style>
+                    <TextBlock Text="结果可查看" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" FontWeight="SemiBold" />
                   </Border>
                 </StackPanel>
               </Grid>
