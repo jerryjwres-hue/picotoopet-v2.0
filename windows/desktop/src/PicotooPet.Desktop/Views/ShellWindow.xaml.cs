@@ -40,6 +40,8 @@ public partial class ShellWindow : Window
             this,
             new ControlCenterProviderReviewGateway(_session));
         DataContext = viewModel;
+        _viewModel.PropertyChanged += OnShellViewModelPropertyChanged;
+        SynchronizeSimpleModeChrome();
     }
 
     /// <summary>请求组合根按安全顺序释放资源并显式退出。</summary>
@@ -76,6 +78,40 @@ public partial class ShellWindow : Window
             Hide();
         }
         base.OnClosing(e);
+    }
+
+    /// <summary>窗口真正销毁时解除 ViewModel 订阅，避免残留视觉监听。</summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _viewModel.PropertyChanged -= OnShellViewModelPropertyChanged;
+        base.OnClosed(e);
+    }
+
+    /// <summary>直接由托盘或其他入口导航时，同步高级遮罩和五入口选中态。</summary>
+    private void OnShellViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!string.Equals(e.PropertyName, nameof(ShellViewModel.CurrentRoute), StringComparison.Ordinal)
+            && !string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedNavigationItem), StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (Dispatcher.CheckAccess())
+        {
+            SynchronizeSimpleModeChrome();
+            return;
+        }
+
+        _ = Dispatcher.InvokeAsync(SynchronizeSimpleModeChrome);
+    }
+
+    private void SynchronizeSimpleModeChrome()
+    {
+        var route = _viewModel.CurrentRoute;
+        AdvancedHomePanel.Visibility = route == PicotooPet.Desktop.Navigation.NavigationRoute.AdvancedHome
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        UpdateSimpleNavSelection(route);
     }
 
     /// <summary>记录被隔离的页面故障，并用安全说明页替换当前路由内容。</summary>
