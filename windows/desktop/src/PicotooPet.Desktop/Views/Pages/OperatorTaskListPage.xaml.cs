@@ -5,6 +5,7 @@ public partial class OperatorTaskListPage : System.Windows.Controls.UserControl
 {
     public OperatorTaskListPage()
     {
+        PicotooPet.Desktop.Views.PicoThemeResourceLoader.Attach(this);   // 独立 WPF smoke 也必须拥有完整产品主题。
         InitializeComponent();
     }
 }
