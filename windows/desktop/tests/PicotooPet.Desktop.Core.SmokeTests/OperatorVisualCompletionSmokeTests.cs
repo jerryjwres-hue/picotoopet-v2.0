@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows;
+using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views.Controls;
 using PicotooPet.Desktop.Views.Pages;
@@ -25,6 +26,7 @@ internal static class OperatorVisualCompletionSmokeTests
         VerifyAssistantStateResolver();
         VerifyClosedWidgetCatalog();
         VerifyLayoutNormalization();
+        VerifyWidgetLayoutStore();
         VerifyProductizedWpfSurfaces();
     }
 
@@ -92,6 +94,48 @@ internal static class OperatorVisualCompletionSmokeTests
         SmokeAssert.True(layout.WidgetIds[1] == "search-insight", "第二个合法用户排序必须被保留");
         SmokeAssert.True(!layout.WidgetIds.Contains("unknown-widget", StringComparer.Ordinal), "未知组件不得进入布局");
         SmokeAssert.True(layout.WidgetIds.Distinct(StringComparer.Ordinal).Count() == layout.WidgetIds.Count, "布局不得含重复组件");
+    }
+
+    private static void VerifyWidgetLayoutStore()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"picotoopet-widget-layout-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var path  = Path.Combine(root, "operator-widgets.json");
+        var store = new OperatorWidgetLayoutStore(path);
+
+        try
+        {
+            var requested = OperatorWidgetLayout.Normalize(
+                new[] { "video-creation", "search-insight" },
+                new[] { "comment-analysis" });
+            SmokeAssert.True(store.TrySave(requested), "工作组件布局必须可以原子保存");
+
+            var loaded = store.LoadOrDefault();
+            SmokeAssert.True(loaded.WidgetIds[0] == "video-creation", "已保存的合法组件顺序必须恢复");
+            SmokeAssert.True(loaded.HiddenWidgetIds.SequenceEqual(new[] { "comment-analysis" }), "已保存显隐偏好必须恢复");
+
+            File.WriteAllText(path, "{not-valid-json");
+            var fallback = store.LoadOrDefault();
+            SmokeAssert.True(
+                fallback.WidgetIds.SequenceEqual(ExpectedWidgetIds),
+                "损坏组件布局必须安全回退固定默认目录");
+            SmokeAssert.True(fallback.HiddenWidgetIds.Count == 0, "损坏组件布局不得残留隐藏状态");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Windows CI 若文件句柄正在收尾，不让临时偏好清理影响产品行为断言。
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // 临时测试目录权限异常不应掩盖组件布局合同本身的结果。
+            }
+        }
     }
 
     private static void VerifyProductizedWpfSurfaces()
