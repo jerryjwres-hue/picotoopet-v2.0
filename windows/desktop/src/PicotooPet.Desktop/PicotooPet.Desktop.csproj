@@ -17,4 +17,8 @@
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <!-- 茅台素材保持为独立 WPF Resource；缺失素材由组件自身静默降级，不影响主程序。 -->
+    <Resource Include="Assets\PetMascot\*.png" />
+  </ItemGroup>
 </Project>
