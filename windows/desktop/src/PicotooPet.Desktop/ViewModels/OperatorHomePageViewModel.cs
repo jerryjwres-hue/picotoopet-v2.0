@@ -185,15 +185,23 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     {
         var descriptors = OperatorWidgetCatalog.CreateDefault()
             .ToDictionary(widget => widget.Id, StringComparer.Ordinal);
-        var inProgressIds = new HashSet<string>(Projection.InProgress.Select(card => card.TaskId), StringComparer.Ordinal);
-        var activeTasks = _snapshot.State.Tasks.Tasks
-            .Where(task => inProgressIds.Contains(task.TaskId))
+        var runningTasks = _snapshot.State.Tasks.Tasks
+            .Where(task => string.Equals(task.Status, "Running", StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        var hasBusinessAnalysis = activeTasks.Any(task =>
+        var queuedTasks = _snapshot.State.Tasks.Tasks
+            .Where(task => string.Equals(task.Status, "Queued", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var hasBusinessAnalysisRunning = runningTasks.Any(task =>
             string.Equals(task.TaskType, "business.local_intelligence.v1", StringComparison.Ordinal));
-        var hasVideoTask = activeTasks.Any(task =>
+        var hasBusinessAnalysisQueued = queuedTasks.Any(task =>
+            string.Equals(task.TaskType, "business.local_intelligence.v1", StringComparison.Ordinal));
+        var hasVideoTaskRunning = runningTasks.Any(task =>
             task.TaskType.Contains("video", StringComparison.OrdinalIgnoreCase));
-        var hasCreativeTask = activeTasks.Any(task =>
+        var hasVideoTaskQueued = queuedTasks.Any(task =>
+            task.TaskType.Contains("video", StringComparison.OrdinalIgnoreCase));
+        var hasCreativeTaskRunning = runningTasks.Any(task =>
+            string.Equals(task.TaskType, "creative.content_plan.v1", StringComparison.Ordinal));
+        var hasCreativeTaskQueued = queuedTasks.Any(task =>
             string.Equals(task.TaskType, "creative.content_plan.v1", StringComparison.Ordinal));
         var hasResult = Projection.Completed.Any(card => card.HasResult);
 
@@ -205,11 +213,14 @@ public sealed class OperatorHomePageViewModel : PageViewModel
                 var state = widgetId switch
                 {
                     "search-insight" => ("尚未接入", "Disabled"),
-                    "comment-analysis" when hasBusinessAnalysis => ("分析中", "Active"),
+                    "comment-analysis" when hasBusinessAnalysisRunning => ("分析中", "Active"),
+                    "comment-analysis" when hasBusinessAnalysisQueued => ("等待执行", "Ready"),
                     "comment-analysis" => ("可用", "Ready"),
-                    "video-creation" when hasVideoTask => ("创作中", "Active"),
+                    "video-creation" when hasVideoTaskRunning => ("创作中", "Active"),
+                    "video-creation" when hasVideoTaskQueued => ("已排队", "Ready"),
                     "video-creation" => ("等待任务", "Ready"),
-                    "content-generation" when hasCreativeTask => ("创作中", "Active"),
+                    "content-generation" when hasCreativeTaskRunning => ("创作中", "Active"),
+                    "content-generation" when hasCreativeTaskQueued => ("等待执行", "Ready"),
                     "content-generation" => ("可用", "Ready"),
                     "result-optimization" when hasResult => ("有新结果", "Success"),
                     "result-optimization" => ("等待结果", "Ready"),
