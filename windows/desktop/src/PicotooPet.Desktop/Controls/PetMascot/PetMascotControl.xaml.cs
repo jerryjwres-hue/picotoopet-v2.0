@@ -5,13 +5,15 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
+using WpfUserControl = System.Windows.Controls.UserControl;
 
 namespace PicotooPet.Desktop.Controls.PetMascot;
 
 /// <summary>
 /// 茅台轻量互动组件：只负责视觉、鼠标互动和气泡事件；任何展示失败都不向宿主业务链路抛出。
 /// </summary>
-public partial class PetMascotControl : UserControl
+public partial class PetMascotControl : WpfUserControl
 {
     private static readonly Duration QuickMotionDuration =
         new(TimeSpan.FromMilliseconds(150));
@@ -142,7 +144,7 @@ public partial class PetMascotControl : UserControl
         StopMotionAnimations();
     }
 
-    private void OnMouseEnter(object sender, MouseEventArgs eventArgs)
+    private void OnMouseEnter(object sender, WpfMouseEventArgs eventArgs)
     {
         TryPresentationOperation(() =>
         {
@@ -152,7 +154,7 @@ public partial class PetMascotControl : UserControl
         });
     }
 
-    private void OnMouseMove(object sender, MouseEventArgs eventArgs)
+    private void OnMouseMove(object sender, WpfMouseEventArgs eventArgs)
     {
         TryPresentationOperation(() =>
         {
@@ -172,7 +174,7 @@ public partial class PetMascotControl : UserControl
         });
     }
 
-    private void OnMouseLeave(object sender, MouseEventArgs eventArgs)
+    private void OnMouseLeave(object sender, WpfMouseEventArgs eventArgs)
     {
         TryPresentationOperation(() =>
         {
