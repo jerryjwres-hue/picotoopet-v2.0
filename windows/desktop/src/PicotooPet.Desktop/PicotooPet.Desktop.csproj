@@ -17,4 +17,8 @@
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <!-- 茅台素材使用 PNG 的 Base64 文本嵌入 WPF Resource，仍是高质量位图，不引入矢量占位图。 -->
+    <Resource Include="Assets\PetMascot\*.png.b64" />
+  </ItemGroup>
 </Project>
