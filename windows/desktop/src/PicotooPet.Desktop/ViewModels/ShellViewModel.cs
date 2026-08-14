@@ -6,7 +6,7 @@ using PicotooPet.Desktop.Versioning;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>把真实会话快照适配为冻结导航、全局状态和当前页面。</summary>
+/// <summary>把真实会话快照适配为 26.1 五入口简单模式、全局状态和高级页面。</summary>
 public sealed class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly ControlCenterSession? _session;
@@ -31,8 +31,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _snapshot   = session.Snapshot;
         _navigationItems = BuildNavigation(_snapshot.State.Capabilities.Features);
-        _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.Dashboard);
-        _currentRoute      = NavigationRoute.Dashboard;
+        _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.OperatorHome);
+        _currentRoute      = NavigationRoute.OperatorHome;
         _currentPage       = CreatePage(_currentRoute, _snapshot);
         _connectionText    = FormatConnection(_snapshot.State.Connection.State);
         _connectionMessage = FormatConnectionMessage(_snapshot);
@@ -45,8 +45,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         ArgumentNullException.ThrowIfNull(capabilities);
         _navigationItems = BuildNavigation(capabilities);
-        _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.Dashboard);
-        _currentRoute      = NavigationRoute.Dashboard;
+        _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.OperatorHome);
+        _currentRoute      = NavigationRoute.OperatorHome;
         _currentPage       = CreateStaticPage(_currentRoute, capabilities);
         _connectionText    = "离线";
         _connectionMessage = "Smoke test 模式未连接 Mac Core。";
@@ -60,14 +60,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Control Center 左上角用户可见版本副标题。</summary>
     public string ControlCenterSubtitle => ProductVersionInfo.ControlCenterSubtitle;
 
-    /// <summary>冻结的一级导航项。</summary>
+    /// <summary>26.1 默认只包含五个简单模式入口。</summary>
     public IReadOnlyList<NavigationItem> NavigationItems
     {
         get => _navigationItems;
         private set => SetProperty(ref _navigationItems, value);
     }
 
-    /// <summary>当前选中的导航项；WPF 重建 ItemsSource 时的瞬时 null 不改变现有页面。</summary>
+    /// <summary>当前简单模式入口；高级子页面仍保持“高级”选中。</summary>
     public NavigationItem SelectedNavigationItem
     {
         get => _selectedNavigationItem;
@@ -75,8 +75,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             if (value is null)
             {
-                // ListBox 在 NavigationItems 替换时会先清空选择，再恢复同路由项。
-                // 该瞬时状态不是用户导航，不应抛出进程级异常或清除当前页面。
                 return;
             }
             if (!SetProperty(ref _selectedNavigationItem, value))
@@ -88,69 +86,62 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>当前选中的路由。</summary>
     public NavigationRoute CurrentRoute
     {
         get => _currentRoute;
         private set => SetProperty(ref _currentRoute, value);
     }
 
-    /// <summary>当前页面；不可用路由仍展示原因、后续步骤和用户动作。</summary>
     public PageViewModel CurrentPage
     {
         get => _currentPage;
         private set => SetProperty(ref _currentPage, value);
     }
 
-    /// <summary>顶部全局连接状态。</summary>
     public string ConnectionText
     {
         get => _connectionText;
         private set => SetProperty(ref _connectionText, value);
     }
 
-    /// <summary>底部连接和错误说明。</summary>
     public string ConnectionMessage
     {
         get => _connectionMessage;
         private set => SetProperty(ref _connectionMessage, value);
     }
 
-    /// <summary>顶部审批能力说明；未接入时不伪造待审批数量。</summary>
     public string ApprovalText
     {
         get => _approvalText;
         private set => SetProperty(ref _approvalText, value);
     }
 
-    /// <summary>当前会话操作说明。</summary>
     public string StatusMessage
     {
         get => _statusMessage;
         private set => SetProperty(ref _statusMessage, value);
     }
 
-    /// <summary>创建不依赖窗口或网络的确定性 Shell 模型。</summary>
     public static ShellViewModel CreateForSmokeTest(
         ControlCenterCapabilities capabilities) => new(capabilities);
 
-    /// <summary>按路由切换页面；导航项可用性只限制动作，不隐藏解释。</summary>
+    /// <summary>切换简单或高级路由；高级子页面不要求出现在五项 NavigationItems 中。</summary>
     public void Navigate(NavigationRoute route)
     {
-        var item = FindItem(NavigationItems, route);
-        if (!ReferenceEquals(SelectedNavigationItem, item))
+        var sidebarItem = FindSidebarItemForRoute(NavigationItems, route);
+        if (!ReferenceEquals(_selectedNavigationItem, sidebarItem))
         {
-            SelectedNavigationItem = item;
-            return;
+            _selectedNavigationItem = sidebarItem;
+            RaisePropertyChanged(nameof(SelectedNavigationItem));
         }
         CurrentRoute = route;
         CurrentPage  = CreateCurrentPage(route);
     }
 
-    /// <summary>用安全说明页替换故障路由，同时保留其他一级导航能力。</summary>
+    /// <summary>用安全说明页替换故障路由，同时保留其他简单入口。</summary>
     public void ShowNavigationFailure(NavigationRoute route)
     {
-        var item = FindItem(NavigationItems, route);
+        var item = FindSidebarItemForRoute(NavigationItems, route);
         if (!ReferenceEquals(_selectedNavigationItem, item))
         {
             _selectedNavigationItem = item;
@@ -175,6 +166,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute route,
         ControlCenterSessionSnapshot snapshot) => route switch
     {
+        NavigationRoute.OperatorHome when _session is not null =>
+            new OperatorHomePageViewModel(_session, snapshot),
+        NavigationRoute.OperatorReview when _session is not null =>
+            new OperatorReviewPageViewModel(_session),
+        NavigationRoute.OperatorInProgress =>
+            new OperatorTaskListPageViewModel("进行中", completed: false, snapshot),
+        NavigationRoute.OperatorCompleted =>
+            new OperatorTaskListPageViewModel("已完成", completed: true, snapshot),
+        NavigationRoute.AdvancedHome => new AdvancedHomePageViewModel(),
         NavigationRoute.Dashboard => new OverviewPageViewModel(
             snapshot,
             FormatConnection(snapshot.State.Connection.State)),
@@ -207,60 +207,30 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         new NavigationItem[]
         {
             Item(
-                NavigationRoute.Dashboard,
-                "总览",
-                capabilities.Dashboard,
-                "当前提供真实连接、Worker 和任务摘要；完整 Dashboard 聚合尚未声明。"),
+                NavigationRoute.OperatorHome,
+                "首页",
+                isAvailable: true,
+                "首页始终可以展示当前本地状态。"),
             Item(
-                NavigationRoute.Projects,
-                "项目",
-                capabilities.Projects,
-                "Mac Core 尚未声明项目目录能力。"),
-            Item(
-                NavigationRoute.TaskCenter,
-                "任务中心",
-                capabilities.DurableQueue,
-                "需要 Mac Core 的耐久任务队列能力。"),
-            Item(
-                NavigationRoute.Results,
-                "结果",
-                capabilities.ResultList,
-                "Mac Core 尚未声明结果列表能力。"),
-            Item(
-                NavigationRoute.Approvals,
-                "审批",
+                NavigationRoute.OperatorReview,
+                "待我审核",
                 capabilities.ApprovalList && capabilities.ApprovalDigest,
                 "Mac Core 尚未同时声明审批列表和摘要决策能力。"),
             Item(
-                NavigationRoute.CloudDevelopment,
-                "云端开发",
+                NavigationRoute.OperatorInProgress,
+                "进行中",
+                capabilities.DurableQueue,
+                "需要 Mac Core 的耐久任务队列能力。"),
+            Item(
+                NavigationRoute.OperatorCompleted,
+                "已完成",
+                capabilities.ResultList || capabilities.DurableQueue,
+                "需要 Mac Core 的任务或结果读取能力。"),
+            Item(
+                NavigationRoute.AdvancedHome,
+                "高级",
                 isAvailable: true,
-                "Handoff / Return Contract v1 已冻结；Provider 尚未配置。"),
-            Item(
-                NavigationRoute.Automation,
-                "自动化",
-                capabilities.WorkflowAutomation,
-                "Mac Core 尚未声明耐久工作流自动化能力。"),
-            Item(
-                NavigationRoute.BusinessAutomation,
-                "业务自动化",
-                isAvailable: true,
-                "需要 2.3.18.1 的 Work Package / Local Intelligence / Result Package 能力。"),
-            Item(
-                NavigationRoute.Health,
-                "健康",
-                capabilities.AutomationHealth,
-                "Mac Core 尚未声明结构化平台健康能力。"),
-            Item(
-                NavigationRoute.Diagnostics,
-                "诊断",
-                capabilities.AutomationDiagnostics,
-                "Mac Core 尚未声明结构化自动化诊断能力。"),
-            Item(
-                NavigationRoute.Settings,
-                "设置",
-                isAvailable: true,
-                "复用现有 Mac 地址与 Credential Manager 配对行为。"),
+                "工程、治理和诊断功能完整保留在高级功能页。"),
         };
 
     private static NavigationItem Item(
@@ -278,10 +248,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute route) =>
         items.Single(item => item.Route == route);
 
+    private static NavigationItem FindSidebarItemForRoute(
+        IReadOnlyList<NavigationItem> items,
+        NavigationRoute route)
+    {
+        var sidebarRoute = route switch
+        {
+            NavigationRoute.OperatorHome => NavigationRoute.OperatorHome,
+            NavigationRoute.OperatorReview => NavigationRoute.OperatorReview,
+            NavigationRoute.OperatorInProgress => NavigationRoute.OperatorInProgress,
+            NavigationRoute.OperatorCompleted => NavigationRoute.OperatorCompleted,
+            NavigationRoute.AdvancedHome => NavigationRoute.AdvancedHome,
+            _ => NavigationRoute.AdvancedHome,
+        };
+        return FindItem(items, sidebarRoute);
+    }
+
     private static PageViewModel CreateStaticPage(
         NavigationRoute route,
         ControlCenterCapabilities capabilities) => route switch
     {
+        NavigationRoute.OperatorHome => OperatorHomePageViewModel.CreateForSmokeTest(
+            CreateSmokeSnapshot(capabilities)),
+        NavigationRoute.OperatorReview => OperatorReviewPageViewModel.CreateForSmokeTest(),
+        NavigationRoute.OperatorInProgress => new OperatorTaskListPageViewModel(
+            "进行中", completed: false, CreateSmokeSnapshot(capabilities)),
+        NavigationRoute.OperatorCompleted => new OperatorTaskListPageViewModel(
+            "已完成", completed: true, CreateSmokeSnapshot(capabilities)),
+        NavigationRoute.AdvancedHome => new AdvancedHomePageViewModel(),
         NavigationRoute.Dashboard => new EmptyStatePageViewModel(
             "总览",
             "当前版本尚未声明完整 Dashboard 能力。",
@@ -327,6 +321,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(route), route, "未知导航路由。"),
     };
 
+    private static ControlCenterSessionSnapshot CreateSmokeSnapshot(
+        ControlCenterCapabilities capabilities)
+    {
+        var capabilitySnapshot = new CapabilitySnapshot(
+            "2.3.0",
+            capabilities,
+            new ContractVersions("unavailable", "unavailable"),
+            "manual_approval_only");
+        var state = new ControlCenterSnapshot(
+            new ConnectionSnapshot(ConnectionState.Offline, null),
+            capabilitySnapshot,
+            WorkerSnapshot.NotDeployed,
+            new TaskStateSnapshot(Array.Empty<TaskRecord>(), 0, false, null));
+        return new ControlCenterSessionSnapshot(
+            DesktopSettings.Default.MacBaseUrl,
+            state,
+            "smoke",
+            "smoke",
+            "Smoke test 模式未连接 Mac Core。");
+    }
+
     private void OnSessionSnapshotChanged(
         object? sender,
         ControlCenterSessionSnapshot snapshot)
@@ -347,14 +362,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _snapshot = snapshot;
         var route = CurrentRoute;
         NavigationItems = BuildNavigation(snapshot.State.Capabilities.Features);
-        _selectedNavigationItem = FindItem(NavigationItems, route);
+        _selectedNavigationItem = FindSidebarItemForRoute(NavigationItems, route);
         RaisePropertyChanged(nameof(SelectedNavigationItem));
         ConnectionText    = FormatConnection(snapshot.State.Connection.State);
         ConnectionMessage = FormatConnectionMessage(snapshot);
         ApprovalText      = FormatApproval(snapshot.State.Capabilities);
         StatusMessage     = snapshot.StatusMessage;
 
-        if (route == NavigationRoute.TaskCenter
+        if (route == NavigationRoute.OperatorHome
+            && CurrentPage is OperatorHomePageViewModel operatorHome)
+        {
+            operatorHome.UpdateSnapshot(snapshot);
+        }
+        else if (route is NavigationRoute.OperatorInProgress or NavigationRoute.OperatorCompleted
+            && CurrentPage is OperatorTaskListPageViewModel operatorTasks)
+        {
+            operatorTasks.UpdateSnapshot(snapshot);
+        }
+        else if (route == NavigationRoute.OperatorReview
+            && CurrentPage is OperatorReviewPageViewModel)
+        {
+            // 审批页自行维护选择、原因和精确摘要决策；普通心跳不能清空页面实例。
+        }
+        else if (route == NavigationRoute.AdvancedHome
+            && CurrentPage is AdvancedHomePageViewModel)
+        {
+            // 高级落地页没有额外可变状态。
+        }
+        else if (route == NavigationRoute.TaskCenter
             && CurrentPage is TaskCenterPageViewModel taskCenter)
         {
             taskCenter.UpdateSnapshot(snapshot);
@@ -411,7 +446,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             ? "审批能力已接入"
             : "审批能力未启用";
 
-    /// <summary>取消会话快照订阅；网络资源由 ControlCenterSession 统一释放。</summary>
     public void Dispose()
     {
         if (_disposed)
