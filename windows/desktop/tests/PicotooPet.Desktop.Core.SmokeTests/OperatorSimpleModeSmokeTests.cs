@@ -16,6 +16,17 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>冻结 26.1 五入口导航、真实任务投影、受控向导和 STA WPF 布局。</summary>
 internal static class OperatorSimpleModeSmokeTests
 {
+    // 固定断言数组复用同一实例，避免测试自身触发 warnings-as-errors 分析器。
+    private static readonly string[] ReviewTaskIds = new[] { "review" };
+    private static readonly string[] InProgressTaskIds = new[] { "running" };
+    private static readonly string[] CompletedTaskIds = new[] { "done" };
+    private static readonly string[] SupportedTaskTypes = new[]
+    {
+        "system.diagnostic_snapshot",
+        "business.local_intelligence.v1",
+        "creative.content_plan.v1",
+    };
+
     public static void Run()
     {
         VerifyNavigation();
@@ -49,9 +60,9 @@ internal static class OperatorSimpleModeSmokeTests
             Task("done", "system.diagnostic_snapshot", "Completed", now.AddMinutes(-2), resultId: "result-1"));
         var projection = OperatorProjection.FromSnapshot(snapshot);
 
-        SmokeAssert.True(projection.PendingReview.Select(item => item.TaskId).SequenceEqual(new[] { "review" }), "审核桶分类错误");
-        SmokeAssert.True(projection.InProgress.Select(item => item.TaskId).SequenceEqual(new[] { "running" }), "进行中分类错误");
-        SmokeAssert.True(projection.Completed.Select(item => item.TaskId).SequenceEqual(new[] { "done" }), "完成桶分类错误");
+        SmokeAssert.True(projection.PendingReview.Select(item => item.TaskId).SequenceEqual(ReviewTaskIds), "审核桶分类错误");
+        SmokeAssert.True(projection.InProgress.Select(item => item.TaskId).SequenceEqual(InProgressTaskIds), "进行中分类错误");
+        SmokeAssert.True(projection.Completed.Select(item => item.TaskId).SequenceEqual(CompletedTaskIds), "完成桶分类错误");
         SmokeAssert.True(projection.CoreStatus == "在线", "Core 简单状态错误");
         SmokeAssert.True(projection.WorkerStatus.Contains("空闲", StringComparison.Ordinal), "Worker 简单状态错误");
 
@@ -155,7 +166,7 @@ internal static class OperatorSimpleModeSmokeTests
                 "online",
                 "idle",
                 "worker-smoke",
-                new[] { "system.diagnostic_snapshot", "business.local_intelligence.v1", "creative.content_plan.v1" },
+                SupportedTaskTypes,
                 DateTimeOffset.UtcNow),
             new TaskStateSnapshot(tasks, 1, false, tasks.LastOrDefault()));
         return new ControlCenterSessionSnapshot(
