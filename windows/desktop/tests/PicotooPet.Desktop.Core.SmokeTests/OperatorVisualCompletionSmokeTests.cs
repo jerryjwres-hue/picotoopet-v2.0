@@ -1,15 +1,19 @@
 using System.Reflection;
 using System.Runtime.ExceptionServices;
+using System.Text.Json;
 using System.Threading;
 using System.Windows;
+using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Views;
 using PicotooPet.Desktop.Views.Controls;
 using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 26.1 Visual Completion 的助手状态、组件白名单和产品化 WPF 表面。</summary>
+/// <summary>冻结 26.1 Visual Completion 的助手状态、组件白名单和参考图 WPF 表面。</summary>
 internal static class OperatorVisualCompletionSmokeTests
 {
     private static readonly string[] ExpectedWidgetIds =
@@ -69,6 +73,7 @@ internal static class OperatorVisualCompletionSmokeTests
     public static void Run()
     {
         VerifyAssistantStateResolver();
+        VerifyQueuedTaskDoesNotFakeWorking();
         VerifyClosedWidgetCatalog();
         VerifyLayoutNormalization();
         VerifyWidgetLayoutStore();
@@ -89,6 +94,62 @@ internal static class OperatorVisualCompletionSmokeTests
             OperatorAssistantStateResolver.Resolve(coreOnline: true, workerOnline: false, hasRealExecution: true)
                 == OperatorAssistantVisualState.OfflineSleeping,
             "Worker 掉线时，阿拉斯加必须进入睡眠状态");
+    }
+
+    private static void VerifyQueuedTaskDoesNotFakeWorking()
+    {
+        var queuedTask = new TaskRecord(
+            "queued-visual-test",
+            null,
+            null,
+            "creative.content_plan.v1",
+            "Queued",
+            100,
+            null,
+            JsonSerializer.SerializeToElement(new { title = "queued" }),
+            0,
+            3,
+            3600,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            null,
+            null);
+        var idleSnapshot = CreateAssistantSnapshot("idle", queuedTask);
+        var executingSnapshot = CreateAssistantSnapshot("executing", queuedTask);
+
+        SmokeAssert.True(
+            OperatorAssistantStateResolver.FromSnapshot(idleSnapshot) == OperatorAssistantVisualState.Resting,
+            "在线空闲时即使存在 Queued 任务也必须显示休息，不能用队列数量伪造工作状态");
+        SmokeAssert.True(
+            OperatorAssistantStateResolver.FromSnapshot(executingSnapshot) == OperatorAssistantVisualState.Working,
+            "只有 Worker 明确 executing 时才显示工作状态");
+    }
+
+    private static ControlCenterSessionSnapshot CreateAssistantSnapshot(string workerReason, TaskRecord task)
+    {
+        var capabilities = new CapabilitySnapshot(
+            "2.3.0",
+            ControlCenterCapabilities.Legacy22,
+            new ContractVersions("unavailable", "unavailable"),
+            "manual_approval_only");
+        var state = new ControlCenterSnapshot(
+            new ConnectionSnapshot(ConnectionState.Online, null),
+            capabilities,
+            new WorkerSnapshot(
+                "2.3.0",
+                Available: true,
+                State: "online",
+                Reason: workerReason,
+                WorkerId: "worker-smoke",
+                SupportedTaskTypes: Array.Empty<string>(),
+                ObservedAt: DateTimeOffset.UtcNow),
+            new TaskStateSnapshot(new[] { task }, 0, false, null));
+        return new ControlCenterSessionSnapshot(
+            "http://127.0.0.1:8000",
+            state,
+            "healthy",
+            "waiting",
+            "connected");
     }
 
     private static void VerifyClosedWidgetCatalog()
@@ -177,15 +238,24 @@ internal static class OperatorVisualCompletionSmokeTests
         {
             try
             {
+                var shell = ShellWindow.CreateForSmokeTest(ControlCenterCapabilities.Legacy22);
+                SmokeAssert.True(shell.FindName("ReferenceSidebar") is FrameworkElement, "主窗口缺少参考图侧栏");
+                SmokeAssert.True(shell.FindName("ReferenceHeader") is FrameworkElement, "主窗口缺少参考图顶部状态区");
+                SmokeAssert.True(shell.FindName("AssistantStatusPanel") is FrameworkElement, "主窗口缺少统一助手状态面板");
+                SmokeAssert.True(shell.FindName("ReferenceProfileCard") is FrameworkElement, "主窗口缺少参考图用户卡");
+                shell.Close();
+
                 var home = new OperatorHomePage();
                 SmokeAssert.True(home.FindName("ReferenceHomeLayout") is FrameworkElement, "首页缺少参考图信息架构根布局");
-                SmokeAssert.True(home.FindName("HeroNewTaskCard") is FrameworkElement, "首页缺少产品化新建任务 Hero");
-                SmokeAssert.True(home.FindName("TaskSummaryBoard") is FrameworkElement, "首页缺少三桶任务摘要区");
-                SmokeAssert.True(home.FindName("SystemStatusCard") is FrameworkElement, "首页缺少右侧系统状态卡");
-                SmokeAssert.True(home.FindName("ResourceMonitorCard") is FrameworkElement, "首页缺少右侧资源监控位");
-                SmokeAssert.True(home.FindName("RecentTasksPanel") is FrameworkElement, "首页缺少最近任务区");
-                SmokeAssert.True(home.FindName("SystemActivityPanel") is FrameworkElement, "首页缺少系统动态区");
-                SmokeAssert.True(home.FindName("WidgetBoard") is FrameworkElement, "首页缺少可扩展工作组件区");
+                SmokeAssert.True(home.FindName("ReferenceHero") is FrameworkElement, "首页缺少参考图 Hero");
+                SmokeAssert.True(home.FindName("ReferenceSystemCard") is FrameworkElement, "首页缺少右侧系统状态卡");
+                SmokeAssert.True(home.FindName("ReferenceReviewCard") is FrameworkElement, "首页缺少待审核卡");
+                SmokeAssert.True(home.FindName("ReferenceActiveCard") is FrameworkElement, "首页缺少进行中卡");
+                SmokeAssert.True(home.FindName("ReferenceCompletedCard") is FrameworkElement, "首页缺少已完成卡");
+                SmokeAssert.True(home.FindName("ReferenceResourceCard") is FrameworkElement, "首页缺少资源监控卡");
+                SmokeAssert.True(home.FindName("ReferenceRecentTasks") is FrameworkElement, "首页缺少最近任务区");
+                SmokeAssert.True(home.FindName("ReferenceSystemLog") is FrameworkElement, "首页缺少系统日志区");
+                SmokeAssert.True(home.FindName("ReferenceWidgetBoard") is FrameworkElement, "首页缺少工作组件区");
 
                 var review = new OperatorReviewPage();
                 SmokeAssert.True(review.FindName("ReviewSurface") is FrameworkElement, "待我审核页缺少产品化表面");
@@ -198,6 +268,7 @@ internal static class OperatorVisualCompletionSmokeTests
                 wizard.Close();
 
                 var mascot = new AlaskanAssistantMascot();
+                SmokeAssert.True(mascot.FindName("AssistantImage") is System.Windows.Controls.Image, "阿拉斯加助手必须使用正式图片资源");
                 mascot.Measure(new Size(260, 300));
                 mascot.Arrange(new Rect(0, 0, 260, 300));
                 mascot.UpdateLayout();
