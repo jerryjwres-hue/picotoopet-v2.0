@@ -5,62 +5,58 @@
              xmlns:pages="clr-namespace:PicotooPet.Desktop.Views.Pages"
              ShutdownMode="OnExplicitShutdown">
   <Application.Resources>
-    <SolidColorBrush x:Key="PanelBrush" Color="#FFF7F8FA" />
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Themes/PicotooTheme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
 
-    <DataTemplate DataType="{x:Type viewModels:OperatorHomePageViewModel}">
-      <pages:OperatorHomePage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:OperatorReviewPageViewModel}">
-      <pages:OperatorReviewPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:OperatorTaskListPageViewModel}">
-      <pages:OperatorTaskListPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:OverviewPageViewModel}">
-      <pages:OverviewPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:ProjectsPageViewModel}">
-      <pages:ProjectsPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:TaskCenterPageViewModel}">
-      <pages:TaskCenterPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:ResultsPageViewModel}">
-      <pages:ResultsPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:ApprovalsPageViewModel}">
-      <pages:ApprovalsPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:CloudDevelopmentPageViewModel}">
-      <pages:CloudDevelopmentPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:AutomationPageViewModel}">
-      <pages:AutomationPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:BusinessAutomationPageViewModel}">
-      <pages:BusinessAutomationPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:HealthPageViewModel}">
-      <pages:HealthPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:DiagnosticsPageViewModel}">
-      <pages:DiagnosticsPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:SettingsPageViewModel}">
-      <pages:SettingsPage />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type viewModels:EmptyStatePageViewModel}">
-      <pages:EmptyStatePage />
-    </DataTemplate>
+      <SolidColorBrush x:Key="PanelBrush" Color="#FFF7F8FA" />
 
-    <Style TargetType="Button">
-      <Setter Property="Padding" Value="14,8" />
-      <Setter Property="Margin" Value="4" />
-      <Setter Property="MinHeight" Value="36" />
-    </Style>
-    <Style TargetType="TextBox">
-      <Setter Property="Padding" Value="8,6" />
-      <Setter Property="Margin" Value="4" />
-    </Style>
+      <DataTemplate DataType="{x:Type viewModels:OperatorHomePageViewModel}">
+        <pages:OperatorHomePage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:OperatorReviewPageViewModel}">
+        <pages:OperatorReviewPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:OperatorTaskListPageViewModel}">
+        <pages:OperatorTaskListPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:OverviewPageViewModel}">
+        <pages:OverviewPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:ProjectsPageViewModel}">
+        <pages:ProjectsPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:TaskCenterPageViewModel}">
+        <pages:TaskCenterPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:ResultsPageViewModel}">
+        <pages:ResultsPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:ApprovalsPageViewModel}">
+        <pages:ApprovalsPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:CloudDevelopmentPageViewModel}">
+        <pages:CloudDevelopmentPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:AutomationPageViewModel}">
+        <pages:AutomationPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:BusinessAutomationPageViewModel}">
+        <pages:BusinessAutomationPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:HealthPageViewModel}">
+        <pages:HealthPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:DiagnosticsPageViewModel}">
+        <pages:DiagnosticsPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:SettingsPageViewModel}">
+        <pages:SettingsPage />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:EmptyStatePageViewModel}">
+        <pages:EmptyStatePage />
+      </DataTemplate>
+    </ResourceDictionary>
   </Application.Resources>
 </Application>
