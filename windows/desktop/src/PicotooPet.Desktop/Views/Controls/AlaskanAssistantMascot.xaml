@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              IsHitTestVisible="False">
   <UserControl.Resources>
-    <Style x:Key="WorkingAccessoryStyle" TargetType="Grid">
+    <Style x:Key="WorkingAccessoryStyle" TargetType="Canvas">
       <Setter Property="Visibility" Value="Collapsed" />
       <Style.Triggers>
         <DataTrigger Binding="{Binding AssistantStateKey, Mode=OneWay}" Value="Working">
@@ -11,7 +11,7 @@
         </DataTrigger>
       </Style.Triggers>
     </Style>
-    <Style x:Key="RestingAccessoryStyle" TargetType="Grid">
+    <Style x:Key="RestingAccessoryStyle" TargetType="Canvas">
       <Setter Property="Visibility" Value="Collapsed" />
       <Style.Triggers>
         <DataTrigger Binding="{Binding AssistantStateKey, Mode=OneWay}" Value="Resting">
@@ -19,7 +19,7 @@
         </DataTrigger>
       </Style.Triggers>
     </Style>
-    <Style x:Key="SleepingAccessoryStyle" TargetType="Grid">
+    <Style x:Key="SleepingAccessoryStyle" TargetType="Canvas">
       <Setter Property="Visibility" Value="Collapsed" />
       <Style.Triggers>
         <DataTrigger Binding="{Binding AssistantStateKey, Mode=OneWay}" Value="OfflineSleeping">
@@ -70,7 +70,7 @@
         <Ellipse Canvas.Left="131" Canvas.Top="178" Width="35" Height="28" Fill="#FFE7C49A" Stroke="#FF293447" StrokeThickness="2" />
 
         <!-- 在线工作：耳机、麦克风和小电脑。 -->
-        <Grid Style="{StaticResource WorkingAccessoryStyle}">
+        <Canvas Width="240" Height="230" Style="{StaticResource WorkingAccessoryStyle}">
           <Path Data="M61,95 C58,49 182,49 179,95" Stroke="#FF2D7FF9" StrokeThickness="8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
           <Border Canvas.Left="51" Canvas.Top="87" Width="18" Height="36" CornerRadius="8" Background="#FF1677FF" />
           <Border Canvas.Left="171" Canvas.Top="87" Width="18" Height="36" CornerRadius="8" Background="#FF1677FF" />
@@ -83,10 +83,10 @@
           </Border>
           <Ellipse Canvas.Left="194" Canvas.Top="43" Width="11" Height="11" Fill="#FF7DE7C4" />
           <Ellipse Canvas.Left="207" Canvas.Top="61" Width="6" Height="6" Fill="#FFFFD76A" />
-        </Grid>
+        </Canvas>
 
         <!-- 在线空闲：泡澡 + 小黄鸭，明确表示“休息”而非掉线。 -->
-        <Grid Style="{StaticResource RestingAccessoryStyle}">
+        <Canvas Width="240" Height="230" Style="{StaticResource RestingAccessoryStyle}">
           <Border Canvas.Left="48" Canvas.Top="174" Width="144" Height="46" CornerRadius="12,12,28,28" Background="#FFD8F3FF" BorderBrush="#FF75C8ED" BorderThickness="3" />
           <Ellipse Canvas.Left="62" Canvas.Top="161" Width="34" Height="23" Fill="White" Opacity="0.92" />
           <Ellipse Canvas.Left="88" Canvas.Top="155" Width="28" Height="26" Fill="White" Opacity="0.9" />
@@ -95,17 +95,17 @@
           <Ellipse Canvas.Left="170" Canvas.Top="144" Width="14" Height="14" Fill="#FFFFD34E" />
           <Path Data="M184,150 L196,154 L184,158 Z" Fill="#FFFF8C42" />
           <Ellipse Canvas.Left="179" Canvas.Top="148" Width="3" Height="3" Fill="#FF1F2937" />
-        </Grid>
+        </Canvas>
 
         <!-- 掉线：枕头和 Zzz，仅用于清晰表达连接已不可用。 -->
-        <Grid Style="{StaticResource SleepingAccessoryStyle}">
+        <Canvas Width="240" Height="230" Style="{StaticResource SleepingAccessoryStyle}">
           <Border Canvas.Left="62" Canvas.Top="180" Width="118" Height="35" CornerRadius="18" Background="#FFE6EAF0" BorderBrush="#FFC7D0DC" BorderThickness="2" />
           <TextBlock Canvas.Left="171" Canvas.Top="48" Text="Z" FontSize="28" FontWeight="Bold" Foreground="#FF8B9AAF" />
           <TextBlock Canvas.Left="195" Canvas.Top="30" Text="z" FontSize="20" FontWeight="Bold" Foreground="#FFA8B4C3" />
           <TextBlock Canvas.Left="211" Canvas.Top="17" Text="z" FontSize="14" FontWeight="Bold" Foreground="#FFC0C8D3" />
           <Path Data="M87,96 C92,101 98,101 103,96" Stroke="#FF333B48" StrokeThickness="3" StrokeStartLineCap="Round" />
           <Path Data="M137,96 C142,101 148,101 153,96" Stroke="#FF333B48" StrokeThickness="3" StrokeStartLineCap="Round" />
-        </Grid>
+        </Canvas>
       </Canvas>
     </Viewbox>
   </Grid>
