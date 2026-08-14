@@ -330,8 +330,11 @@ public partial class PetMascotControl : WpfUserControl
 
     private static BitmapImage LoadEmbeddedRaster(string fileName)
     {
+        var assemblyName = typeof(PetMascotControl).Assembly.GetName().Name
+            ?? throw new InvalidOperationException("无法确定茅台素材所在程序集。");
+        var escapedAssemblyName = Uri.EscapeDataString(assemblyName);
         var resourceUri = new Uri(
-            $"pack://application:,,,/Assets/PetMascot/{fileName}.b64",
+            $"pack://application:,,,/{escapedAssemblyName};component/Assets/PetMascot/{fileName}.b64",
             UriKind.Absolute);
         var resource = System.Windows.Application.GetResourceStream(resourceUri)
             ?? throw new InvalidOperationException($"茅台素材不存在：{fileName}");
