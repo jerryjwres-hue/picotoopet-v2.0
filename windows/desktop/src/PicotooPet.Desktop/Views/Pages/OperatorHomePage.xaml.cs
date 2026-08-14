@@ -43,6 +43,18 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
     private void Completed_Click(object sender, RoutedEventArgs e) =>
         Navigate(NavigationRoute.OperatorCompleted);
 
+    private void Maotai_NewTaskRequested(object? sender, EventArgs e)
+    {
+        // 复用首页现有“新建任务”入口，不新增第二套任务创建逻辑。                         // 轻量接入
+        NewTask_Click(NewTaskButton, new RoutedEventArgs());
+    }
+
+    private void Maotai_ProgressRequested(object? sender, EventArgs e)
+    {
+        // 复用既有“进行中”安全路由，茅台本身不负责导航或任务状态修改。                   // 轻量接入
+        Navigate(NavigationRoute.OperatorInProgress);
+    }
+
     private void Navigate(NavigationRoute route)
     {
         if (Window.GetWindow(this) is PicotooPet.Desktop.Views.ShellWindow shell)
