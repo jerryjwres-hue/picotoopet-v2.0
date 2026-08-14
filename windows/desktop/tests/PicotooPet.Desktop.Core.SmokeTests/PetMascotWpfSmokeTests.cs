@@ -47,7 +47,11 @@ internal static class PetMascotWpfSmokeTests
         var desktopAssembly = typeof(OperatorHomePage).Assembly;
         var controlType = desktopAssembly.GetType(ControlTypeName, throwOnError: false);
 
-        SmokeAssert.True(controlType is not null, "茅台互动宠物控件尚未实现");
+        if (controlType is null)
+        {
+            throw new InvalidOperationException("茅台互动宠物控件尚未实现");
+        }
+
         SmokeAssert.True(
             typeof(FrameworkElement).IsAssignableFrom(controlType),
             "茅台互动宠物控件必须保持原生 WPF FrameworkElement");
@@ -64,7 +68,10 @@ internal static class PetMascotWpfSmokeTests
         SmokeAssert.True(calloutMethod is not null, "茅台控件缺少点击气泡入口");
 
         var instance = Activator.CreateInstance(controlType) as FrameworkElement;
-        SmokeAssert.True(instance is not null, "茅台互动宠物控件无法安全实例化");
+        if (instance is null)
+        {
+            throw new InvalidOperationException("茅台互动宠物控件无法安全实例化");
+        }
 
         instance.Measure(new Size(360, 360));
         instance.Arrange(new Rect(0, 0, 360, 360));
