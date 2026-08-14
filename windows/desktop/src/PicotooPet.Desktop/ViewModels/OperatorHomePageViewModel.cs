@@ -18,12 +18,11 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         OperatorWidgetLayoutStore? widgetLayoutStore = null)
         : base("首页")
     {
-        _session          = session ?? throw new ArgumentNullException(nameof(session));
-        _snapshot         = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
-        _projection       = OperatorProjection.FromSnapshot(snapshot);
-        _widgetLayoutStore = widgetLayoutStore;
-        _widgetLayout     = widgetLayoutStore?.LoadOrDefault()
-            ?? OperatorWidgetLayout.Normalize(requestedWidgetIds: null);
+        _session           = session ?? throw new ArgumentNullException(nameof(session));
+        _snapshot          = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        _projection        = OperatorProjection.FromSnapshot(snapshot);
+        _widgetLayoutStore = widgetLayoutStore ?? OperatorWidgetLayoutStore.CreateForCurrentUser();
+        _widgetLayout      = _widgetLayoutStore.LoadOrDefault();
     }
 
     private OperatorHomePageViewModel(ControlCenterSessionSnapshot snapshot)
