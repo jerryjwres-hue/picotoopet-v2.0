@@ -5,10 +5,10 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled"
                 Background="{StaticResource PicoPageBackgroundBrush}">
-    <Grid x:Name="ReferenceHomeLayout" Margin="20">
+    <Grid x:Name="ReferenceHomeLayout" Margin="20,18,20,20">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="320" />
+        <ColumnDefinition Width="330" />
       </Grid.ColumnDefinitions>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
@@ -16,53 +16,71 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <!-- 左上 Hero：严格按参考图保持为主操作入口，不承载虚假进度。 -->
+      <!-- 左上 Hero：保留旧名称兼容，同时冻结参考图验收锚点。 -->
       <Border x:Name="HeroNewTaskCard"
               Grid.Column="0"
               Grid.Row="0"
               CornerRadius="22"
-              Padding="24,18"
+              Padding="0"
+              ClipToBounds="True"
               Margin="0,0,16,16">
-        <Border.Background>
-          <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#FF2786F6" Offset="0" />
-            <GradientStop Color="#FF3C96F7" Offset="0.55" />
-            <GradientStop Color="#FF73B5F8" Offset="1" />
-          </LinearGradientBrush>
-        </Border.Background>
-        <Grid MinHeight="178">
+        <Grid x:Name="ReferenceHero" MinHeight="190">
+          <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+              <GradientStop Color="#FF2686F7" Offset="0" />
+              <GradientStop Color="#FF378FF5" Offset="0.52" />
+              <GradientStop Color="#FF66AEFA" Offset="1" />
+            </LinearGradientBrush>
+          </Grid.Background>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="225" />
+            <ColumnDefinition Width="265" />
           </Grid.ColumnDefinitions>
 
-          <StackPanel VerticalAlignment="Center" Margin="8,0,8,0">
+          <!-- 参考图同类光轨/星点，不表达任何业务事实。 -->
+          <Canvas Grid.ColumnSpan="2" IsHitTestVisible="False" Opacity="0.55">
+            <Ellipse Canvas.Left="510" Canvas.Top="128" Width="250" Height="54" Stroke="#88FFFFFF" StrokeThickness="3" />
+            <Ellipse Canvas.Left="620" Canvas.Top="40" Width="8" Height="8" Fill="#CCFFFFFF" />
+            <Ellipse Canvas.Left="675" Canvas.Top="75" Width="5" Height="5" Fill="#FFFFD97D" />
+            <TextBlock Canvas.Left="718" Canvas.Top="34" Text="✦" Foreground="#E6FFFFFF" FontSize="17" />
+            <TextBlock Canvas.Left="760" Canvas.Top="91" Text="🐾" Foreground="#BFFFFFFF" FontSize="22" />
+          </Canvas>
+
+          <StackPanel VerticalAlignment="Center" Margin="28,0,10,0">
             <StackPanel Orientation="Horizontal">
-              <Border Width="58" Height="58" CornerRadius="29" Background="#32FFFFFF" Margin="0,0,14,0">
-                <TextBlock Text="+" FontSize="34" FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <Border Width="62" Height="62" CornerRadius="31" Background="#33FFFFFF" Margin="0,0,16,0" BorderBrush="#4DFFFFFF" BorderThickness="1">
+                <TextBlock Text="+" FontSize="36" FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
               </Border>
               <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="新建任务" FontSize="31" FontWeight="Bold" Foreground="White" />
-                <TextBlock Text="开始一次智能任务，让 AI 帮你完成创作与分析。" Margin="0,4,0,0" FontSize="14" Foreground="#EEFFFFFF" />
+                <TextBlock Text="新建任务" FontSize="32" FontWeight="Bold" Foreground="White" />
+                <TextBlock Text="开始一次智能任务，让 AI 帮你完成创作与分析" Margin="0,4,0,0" FontSize="14" Foreground="#F2FFFFFF" />
               </StackPanel>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Margin="72,18,0,0">
+            <StackPanel Orientation="Horizontal" Margin="78,18,0,0">
               <Button x:Name="NewTaskButton"
-                      Content="＋ 新建任务  →"
+                      Content="＋  新建任务   →"
                       Background="White"
                       BorderBrush="White"
                       Foreground="#FF126CD8"
                       Padding="18,10"
+                      MinWidth="148"
                       Click="NewTask_Click" />
               <Border Margin="10,4,0,4" Padding="12,7" CornerRadius="10" Background="#22FFFFFF">
-                <TextBlock Text="Search 尚未接入" Foreground="White" FontSize="12" VerticalAlignment="Center" />
+                <TextBlock Text="Search 尚未接入" Foreground="White" FontSize="11" VerticalAlignment="Center" />
               </Border>
             </StackPanel>
           </StackPanel>
 
-          <Grid Grid.Column="1" Margin="0,-14,-8,-18">
-            <Ellipse Width="188" Height="188" Fill="#16FFFFFF" />
-            <controls:AlaskanAssistantMascot Width="210" Height="202" HorizontalAlignment="Center" VerticalAlignment="Bottom" />
+          <!-- alaskan-hero.png：来自已确认参考稿的阿拉斯加素材，随程序集封装。 -->
+          <Grid Grid.Column="1" Margin="0,-6,-4,-8">
+            <Ellipse Width="215" Height="215" Fill="#13FFFFFF" />
+            <Image Source="{x:Static controls:AssistantArtworkData.Hero}"
+                   Width="240"
+                   Height="190"
+                   Stretch="UniformToFill"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Bottom"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
           </Grid>
         </Grid>
       </Border>
@@ -72,61 +90,58 @@
               Grid.Column="1"
               Grid.Row="0"
               Style="{StaticResource PicoCardStyle}"
-              Padding="16"
+              Padding="15"
               Margin="0,0,0,16">
-        <StackPanel>
-          <Grid Margin="0,0,0,10">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Orientation="Horizontal">
-              <Border Width="32" Height="32" CornerRadius="16" Background="{StaticResource PicoSuccessSoftBrush}" Margin="0,0,9,0">
-                <TextBlock Text="✓" FontSize="17" FontWeight="Bold" Foreground="{StaticResource PicoSuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Grid x:Name="ReferenceSystemCard">
+          <StackPanel>
+            <Grid Margin="0,0,0,8">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+              <StackPanel Orientation="Horizontal">
+                <Border Width="32" Height="32" CornerRadius="16" Background="{StaticResource PicoSuccessSoftBrush}" Margin="0,0,9,0">
+                  <TextBlock Text="✓" FontSize="17" FontWeight="Bold" Foreground="{StaticResource PicoSuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <TextBlock Text="系统状态" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
+              </StackPanel>
+              <Border Grid.Column="1" Background="{StaticResource PicoSuccessSoftBrush}" CornerRadius="9" Padding="8,5" VerticalAlignment="Center">
+                <TextBlock Text="{Binding SystemSummary, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="10" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="92" />
               </Border>
-              <TextBlock Text="系统状态" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
-            </StackPanel>
-            <Border Grid.Column="1" Background="{StaticResource PicoSuccessSoftBrush}" CornerRadius="9" Padding="8,5" VerticalAlignment="Center">
-              <TextBlock Text="{Binding SystemSummary, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="10" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="92" />
+            </Grid>
+
+            <Border BorderBrush="#FFE8EEF6" BorderThickness="0,0,0,1" Padding="4,7">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="⚙" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="16" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Mac Core" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding CoreStatus, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" Margin="0,2,0,0" />
+                </StackPanel>
+                <Ellipse Grid.Column="2" Width="8" Height="8" Fill="{StaticResource PicoSuccessBrush}" VerticalAlignment="Center" />
+              </Grid>
             </Border>
-          </Grid>
-
-          <Border BorderBrush="#FFE8EEF6" BorderThickness="0,0,0,1" Padding="4,7">
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <TextBlock Text="⚙" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="16" VerticalAlignment="Center" />
-              <StackPanel Grid.Column="1">
-                <TextBlock Text="Mac Core" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding CoreStatus, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" Margin="0,2,0,0" />
-              </StackPanel>
-              <Ellipse Grid.Column="2" Width="8" Height="8" Fill="{StaticResource PicoSuccessBrush}" VerticalAlignment="Center" />
-            </Grid>
-          </Border>
-
-          <Border BorderBrush="#FFE8EEF6" BorderThickness="0,0,0,1" Padding="4,7">
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <TextBlock Text="⚙" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="16" VerticalAlignment="Center" />
-              <StackPanel Grid.Column="1">
-                <TextBlock Text="Mac Worker" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding WorkerStatus, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-              <Ellipse Grid.Column="2" Width="8" Height="8" Fill="{StaticResource PicoSuccessBrush}" VerticalAlignment="Center" />
-            </Grid>
-          </Border>
-
-          <Border Padding="4,7">
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <TextBlock Text="⊞" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="17" VerticalAlignment="Center" />
-              <StackPanel Grid.Column="1">
-                <TextBlock Text="Windows" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding WindowsStatus, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" Margin="0,2,0,0" />
-              </StackPanel>
-              <Ellipse Grid.Column="2" Width="8" Height="8" Fill="{StaticResource PicoSuccessBrush}" VerticalAlignment="Center" />
-            </Grid>
-          </Border>
-        </StackPanel>
+            <Border BorderBrush="#FFE8EEF6" BorderThickness="0,0,0,1" Padding="4,7">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="⚙" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="16" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Mac Worker" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding WorkerStatus, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Ellipse Grid.Column="2" Width="8" Height="8" Fill="{StaticResource PicoSuccessBrush}" VerticalAlignment="Center" />
+              </Grid>
+            </Border>
+            <Border Padding="4,7">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="⊞" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="17" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Windows" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding WindowsStatus, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" Margin="0,2,0,0" />
+                </StackPanel>
+                <Ellipse Grid.Column="2" Width="8" Height="8" Fill="{StaticResource PicoSuccessBrush}" VerticalAlignment="Center" />
+              </Grid>
+            </Border>
+          </StackPanel>
+        </Grid>
       </Border>
 
       <!-- 左中三桶任务区：参考图的橙/蓝/绿信息层级。 -->
@@ -137,274 +152,133 @@
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <Border Grid.Column="0" Style="{StaticResource PicoCardStyle}" Margin="0,0,7,0" Background="#FFFFFBF5" BorderBrush="#FFFFD9A8" MinHeight="245">
-          <StackPanel>
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <StackPanel Orientation="Horizontal">
-                <Border Width="34" Height="34" CornerRadius="17" Background="#FFFFEACB" Margin="0,0,9,0">
-                  <TextBlock Text="◷" FontSize="18" Foreground="{StaticResource PicoWarningBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <TextBlock Text="待我审核" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
-              </StackPanel>
-              <Button Grid.Column="1" Content="查看" Padding="10,5" MinHeight="30" FontSize="12" Click="Review_Click" />
-            </Grid>
-            <TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}" FontSize="34" FontWeight="Bold" Margin="0,12,0,0" />
-            <TextBlock Text="需要你确认决定的事项" Style="{StaticResource PicoMutedTextStyle}" Margin="0,1,0,8" />
-            <ItemsControl ItemsSource="{Binding PendingReview, Mode=OneWay}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Background="#A8FFFFFF" CornerRadius="9" Padding="9" Margin="0,3,0,0">
-                    <StackPanel>
-                      <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoWarningBrush}" FontSize="11" Margin="0,2,0,0" />
-                    </StackPanel>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
+        <Border x:Name="ReferenceReviewCard" Grid.Column="0" Style="{StaticResource PicoCardStyle}" Margin="0,0,7,0" Background="#FFFFFBF5" BorderBrush="#FFFFD9A8" MinHeight="250" Padding="14">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <StackPanel>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                  <Border Width="34" Height="34" CornerRadius="17" Background="#FFFFEACB" Margin="0,0,9,0"><TextBlock Text="◷" FontSize="18" Foreground="{StaticResource PicoWarningBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                  <TextBlock Text="待我审核" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
+                </StackPanel>
+                <Border Grid.Column="1" Background="#FFFF8A3D" CornerRadius="9" Padding="7,3" VerticalAlignment="Center"><TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}" Foreground="White" FontSize="10" FontWeight="Bold" /></Border>
+              </Grid>
+              <TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}" FontSize="34" FontWeight="Bold" Margin="0,10,0,0" />
+              <TextBlock Text="需要你确认决定的任务" Style="{StaticResource PicoMutedTextStyle}" Margin="0,1,0,6" />
+              <ItemsControl ItemsSource="{Binding PendingReview, Mode=OneWay}">
+                <ItemsControl.ItemTemplate><DataTemplate><Border Background="#A8FFFFFF" CornerRadius="9" Padding="9" Margin="0,3,0,0"><StackPanel><TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoWarningBrush}" FontSize="11" Margin="0,2,0,0" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <Button Grid.Row="1" Content="查看全部  →" Padding="8,6" Margin="0,8,0,0" MinHeight="31" Foreground="#FFD96D18" Click="Review_Click" />
+          </Grid>
         </Border>
 
-        <Border Grid.Column="1" Style="{StaticResource PicoCardStyle}" Margin="7,0" Background="#FFF5F9FF" BorderBrush="#FFCFE0FF" MinHeight="245">
-          <StackPanel>
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <StackPanel Orientation="Horizontal">
-                <Border Width="34" Height="34" CornerRadius="17" Background="#FFE4EFFF" Margin="0,0,9,0">
-                  <TextBlock Text="▶" FontSize="13" Foreground="{StaticResource PicoPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <TextBlock Text="进行中" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
-              </StackPanel>
-              <Button Grid.Column="1" Content="查看" Padding="10,5" MinHeight="30" FontSize="12" Click="Active_Click" />
-            </Grid>
-            <TextBlock Text="{Binding InProgressCount, Mode=OneWay}" FontSize="34" FontWeight="Bold" Margin="0,12,0,0" />
-            <TextBlock Text="正在执行或等待执行的真实任务" Style="{StaticResource PicoMutedTextStyle}" Margin="0,1,0,8" />
-            <ItemsControl ItemsSource="{Binding InProgress, Mode=OneWay}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Background="#A8FFFFFF" CornerRadius="9" Padding="9" Margin="0,3,0,0">
-                    <StackPanel>
-                      <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                      <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
-                        <Ellipse Width="7" Height="7" Fill="{StaticResource PicoPrimaryBrush}" Margin="0,0,6,0" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding StageText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis" />
-                      </StackPanel>
-                    </StackPanel>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
+        <Border x:Name="ReferenceActiveCard" Grid.Column="1" Style="{StaticResource PicoCardStyle}" Margin="7,0" Background="#FFF5F9FF" BorderBrush="#FFCFE0FF" MinHeight="250" Padding="14">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <StackPanel>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                  <Border Width="34" Height="34" CornerRadius="17" Background="#FFE4EFFF" Margin="0,0,9,0"><TextBlock Text="▶" FontSize="13" Foreground="{StaticResource PicoPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                  <TextBlock Text="进行中" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
+                </StackPanel>
+                <Border Grid.Column="1" Background="#FF2C7FF7" CornerRadius="9" Padding="7,3" VerticalAlignment="Center"><TextBlock Text="{Binding InProgressCount, Mode=OneWay}" Foreground="White" FontSize="10" FontWeight="Bold" /></Border>
+              </Grid>
+              <TextBlock Text="{Binding InProgressCount, Mode=OneWay}" FontSize="34" FontWeight="Bold" Margin="0,10,0,0" />
+              <TextBlock Text="正在执行或等待执行的真实任务" Style="{StaticResource PicoMutedTextStyle}" Margin="0,1,0,6" />
+              <ItemsControl ItemsSource="{Binding InProgress, Mode=OneWay}">
+                <ItemsControl.ItemTemplate><DataTemplate><Border Background="#A8FFFFFF" CornerRadius="9" Padding="9" Margin="0,3,0,0"><StackPanel><TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" /><StackPanel Orientation="Horizontal" Margin="0,3,0,0"><Ellipse Width="7" Height="7" Fill="{StaticResource PicoPrimaryBrush}" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="{Binding StageText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis" /></StackPanel></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <Button Grid.Row="1" Content="查看全部  →" Padding="8,6" Margin="0,8,0,0" MinHeight="31" Foreground="{StaticResource PicoPrimaryBrush}" Click="Active_Click" />
+          </Grid>
         </Border>
 
-        <Border Grid.Column="2" Style="{StaticResource PicoCardStyle}" Margin="7,0,0,0" Background="#FFF3FCF8" BorderBrush="#FFC8EDDD" MinHeight="245">
-          <StackPanel>
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <StackPanel Orientation="Horizontal">
-                <Border Width="34" Height="34" CornerRadius="17" Background="#FFDFF7EC" Margin="0,0,9,0">
-                  <TextBlock Text="✓" FontSize="18" FontWeight="Bold" Foreground="{StaticResource PicoSuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <TextBlock Text="已完成" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
-              </StackPanel>
-              <Button Grid.Column="1" Content="查看" Padding="10,5" MinHeight="30" FontSize="12" Click="Completed_Click" />
-            </Grid>
-            <TextBlock Text="{Binding CompletedCount, Mode=OneWay}" FontSize="34" FontWeight="Bold" Margin="0,12,0,0" />
-            <TextBlock Text="已结束并可以安全查看的任务" Style="{StaticResource PicoMutedTextStyle}" Margin="0,1,0,8" />
-            <ItemsControl ItemsSource="{Binding Completed, Mode=OneWay}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Background="#A8FFFFFF" CornerRadius="9" Padding="9" Margin="0,3,0,0">
-                    <StackPanel>
-                      <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" Margin="0,2,0,0" />
-                    </StackPanel>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
+        <Border x:Name="ReferenceCompletedCard" Grid.Column="2" Style="{StaticResource PicoCardStyle}" Margin="7,0,0,0" Background="#FFF3FCF8" BorderBrush="#FFC8EDDD" MinHeight="250" Padding="14">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <StackPanel>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                  <Border Width="34" Height="34" CornerRadius="17" Background="#FFDFF7EC" Margin="0,0,9,0"><TextBlock Text="✓" FontSize="18" FontWeight="Bold" Foreground="{StaticResource PicoSuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                  <TextBlock Text="已完成" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
+                </StackPanel>
+                <Border Grid.Column="1" Background="#FF20AF76" CornerRadius="9" Padding="7,3" VerticalAlignment="Center"><TextBlock Text="{Binding CompletedCount, Mode=OneWay}" Foreground="White" FontSize="10" FontWeight="Bold" /></Border>
+              </Grid>
+              <TextBlock Text="{Binding CompletedCount, Mode=OneWay}" FontSize="34" FontWeight="Bold" Margin="0,10,0,0" />
+              <TextBlock Text="已结束并可以安全查看的任务" Style="{StaticResource PicoMutedTextStyle}" Margin="0,1,0,6" />
+              <ItemsControl ItemsSource="{Binding Completed, Mode=OneWay}">
+                <ItemsControl.ItemTemplate><DataTemplate><Border Background="#A8FFFFFF" CornerRadius="9" Padding="9" Margin="0,3,0,0"><StackPanel><TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" Margin="0,2,0,0" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <Button Grid.Row="1" Content="查看全部  →" Padding="8,6" Margin="0,8,0,0" MinHeight="31" Foreground="{StaticResource PicoSuccessBrush}" Click="Completed_Click" />
+          </Grid>
         </Border>
       </Grid>
 
       <!-- 右中资源监控位置保持和参考图一致；没有真实遥测就明确不伪造百分比。 -->
-      <Border x:Name="ResourceMonitorCard"
-              Grid.Column="1"
-              Grid.Row="1"
-              Style="{StaticResource PicoCardStyle}"
-              Padding="16"
-              Margin="0,0,0,16">
-        <StackPanel>
-          <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-            <Border Width="32" Height="32" CornerRadius="9" Background="{StaticResource PicoPrimarySoftBrush}" Margin="0,0,9,0">
-              <TextBlock Text="▥" FontSize="17" Foreground="{StaticResource PicoPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
-            <StackPanel>
-              <TextBlock Text="资源监控" Style="{StaticResource PicoSectionTitleStyle}" />
-              <TextBlock Text="资源遥测尚未接入" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" Margin="0,2,0,0" />
+      <Border x:Name="ResourceMonitorCard" Grid.Column="1" Grid.Row="1" Style="{StaticResource PicoCardStyle}" Padding="15" Margin="0,0,0,16">
+        <Grid x:Name="ReferenceResourceCard">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+              <Border Width="32" Height="32" CornerRadius="9" Background="{StaticResource PicoPrimarySoftBrush}" Margin="0,0,9,0"><TextBlock Text="▥" FontSize="17" Foreground="{StaticResource PicoPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+              <StackPanel><TextBlock Text="资源监控" Style="{StaticResource PicoSectionTitleStyle}" /><TextBlock Text="资源遥测尚未接入" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" Margin="0,2,0,0" /></StackPanel>
             </StackPanel>
+            <Grid Margin="2,8"><Grid.ColumnDefinitions><ColumnDefinition Width="62" /><ColumnDefinition Width="*" /><ColumnDefinition Width="54" /></Grid.ColumnDefinitions><TextBlock Text="CPU" VerticalAlignment="Center" /><ProgressBar Grid.Column="1" Height="8" Value="0" Maximum="100" Margin="6,0,8,0" /><TextBlock Grid.Column="2" Text="未接入" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center" /></Grid>
+            <Grid Margin="2,8"><Grid.ColumnDefinitions><ColumnDefinition Width="62" /><ColumnDefinition Width="*" /><ColumnDefinition Width="54" /></Grid.ColumnDefinitions><TextBlock Text="内存" VerticalAlignment="Center" /><ProgressBar Grid.Column="1" Height="8" Value="0" Maximum="100" Margin="6,0,8,0" /><TextBlock Grid.Column="2" Text="未接入" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center" /></Grid>
+            <Grid Margin="2,8"><Grid.ColumnDefinitions><ColumnDefinition Width="62" /><ColumnDefinition Width="*" /><ColumnDefinition Width="54" /></Grid.ColumnDefinitions><TextBlock Text="磁盘" VerticalAlignment="Center" /><ProgressBar Grid.Column="1" Height="8" Value="0" Maximum="100" Margin="6,0,8,0" /><TextBlock Grid.Column="2" Text="未接入" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center" /></Grid>
           </StackPanel>
-
-          <Grid Margin="2,7">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="62" /><ColumnDefinition Width="*" /><ColumnDefinition Width="54" /></Grid.ColumnDefinitions>
-            <TextBlock Text="CPU" VerticalAlignment="Center" />
-            <ProgressBar Grid.Column="1" Height="8" Value="0" Maximum="100" Margin="6,0,8,0" />
-            <TextBlock Grid.Column="2" Text="未接入" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center" />
-          </Grid>
-          <Grid Margin="2,7">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="62" /><ColumnDefinition Width="*" /><ColumnDefinition Width="54" /></Grid.ColumnDefinitions>
-            <TextBlock Text="内存" VerticalAlignment="Center" />
-            <ProgressBar Grid.Column="1" Height="8" Value="0" Maximum="100" Margin="6,0,8,0" />
-            <TextBlock Grid.Column="2" Text="未接入" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center" />
-          </Grid>
-          <Grid Margin="2,7">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="62" /><ColumnDefinition Width="*" /><ColumnDefinition Width="54" /></Grid.ColumnDefinitions>
-            <TextBlock Text="磁盘" VerticalAlignment="Center" />
-            <ProgressBar Grid.Column="1" Height="8" Value="0" Maximum="100" Margin="6,0,8,0" />
-            <TextBlock Grid.Column="2" Text="未接入" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center" />
-          </Grid>
-        </StackPanel>
+        </Grid>
       </Border>
 
-      <!-- 左下：最近任务 + 系统动态，参考图的两层运营信息区。 -->
+      <!-- 左下：最近任务 + 系统日志，保持参考图的运营信息密度。 -->
       <StackPanel Grid.Column="0" Grid.Row="2" Margin="0,0,16,0">
-        <Border x:Name="RecentTasksPanel" Style="{StaticResource PicoCardStyle}" Margin="0,0,0,14" Padding="16">
-          <StackPanel>
-            <Grid Margin="0,0,0,10">
+        <Border x:Name="RecentTasksPanel" Style="{StaticResource PicoCardStyle}" Margin="0,0,0,12" Padding="15">
+          <StackPanel x:Name="ReferenceRecentTasks">
+            <Grid Margin="0,0,0,9">
               <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <StackPanel Orientation="Horizontal">
-                <Border Width="34" Height="34" CornerRadius="9" Background="{StaticResource PicoPrimarySoftBrush}" Margin="0,0,9,0">
-                  <TextBlock Text="☷" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <TextBlock Text="最近任务" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
-              </StackPanel>
-              <TextBlock Grid.Column="1" Text="来自 Mac Core 的耐久事实" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="11" VerticalAlignment="Center" />
+              <StackPanel Orientation="Horizontal"><Border Width="32" Height="32" CornerRadius="9" Background="{StaticResource PicoPrimarySoftBrush}" Margin="0,0,9,0"><TextBlock Text="☷" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Text="最近任务" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" /></StackPanel>
+              <TextBlock Grid.Column="1" Text="来自 Mac Core 的耐久事实" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" VerticalAlignment="Center" />
             </Grid>
-
-            <Grid Background="#FFF7F9FC" Margin="0,0,0,2" Height="28">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="140" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
-              <TextBlock Text="任务" Margin="8,0" VerticalAlignment="Center" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" />
-              <TextBlock Grid.Column="1" Text="状态" VerticalAlignment="Center" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" />
-              <TextBlock Grid.Column="2" Text="更新时间" HorizontalAlignment="Right" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" />
-            </Grid>
-
+            <Grid Background="#FFF7F9FC" Margin="0,0,0,2" Height="27"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="140" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions><TextBlock Text="任务名称" Margin="8,0" VerticalAlignment="Center" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" /><TextBlock Grid.Column="1" Text="状态" VerticalAlignment="Center" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" /><TextBlock Grid.Column="2" Text="更新时间" HorizontalAlignment="Right" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" /></Grid>
             <ItemsControl ItemsSource="{Binding RecentTasks, Mode=OneWay}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border BorderBrush="#FFEDF2F8" BorderThickness="0,0,0,1" Padding="8,8">
-                    <Grid>
-                      <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="140" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
-                      <StackPanel>
-                        <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding StageText, Mode=OneWay}" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
-                      </StackPanel>
-                      <Border Grid.Column="1" Padding="8,4" CornerRadius="9" Background="{StaticResource PicoPrimarySoftBrush}" HorizontalAlignment="Left" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" Style="{StaticResource PicoPillTextStyle}" />
-                      </Border>
-                      <TextBlock Grid.Column="2" Text="{Binding UpdatedAtText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" />
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
+              <ItemsControl.ItemTemplate><DataTemplate><Border BorderBrush="#FFEDF2F8" BorderThickness="0,0,0,1" Padding="8,7"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="140" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" /><TextBlock Text="{Binding StageText, Mode=OneWay}" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" /></StackPanel><Border Grid.Column="1" Padding="8,4" CornerRadius="9" Background="{StaticResource PicoPrimarySoftBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"><TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" Style="{StaticResource PicoPillTextStyle}" /></Border><TextBlock Grid.Column="2" Text="{Binding UpdatedAtText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" /></Grid></Border></DataTemplate></ItemsControl.ItemTemplate>
             </ItemsControl>
           </StackPanel>
         </Border>
 
-        <Border x:Name="SystemActivityPanel" Style="{StaticResource PicoCardStyle}" Padding="16">
-          <StackPanel>
-            <Grid Margin="0,0,0,10">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <StackPanel Orientation="Horizontal">
-                <Border Width="30" Height="30" CornerRadius="8" Background="{StaticResource PicoPrimarySoftBrush}" Margin="0,0,8,0">
-                  <TextBlock Text="▤" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <TextBlock Text="系统动态" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" />
-              </StackPanel>
-              <TextBlock Grid.Column="1" Text="实时状态摘要" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" VerticalAlignment="Center" />
-            </Grid>
+        <Border x:Name="SystemActivityPanel" Style="{StaticResource PicoCardStyle}" Padding="15">
+          <StackPanel x:Name="ReferenceSystemLog">
+            <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel Orientation="Horizontal"><Border Width="30" Height="30" CornerRadius="8" Background="{StaticResource PicoPrimarySoftBrush}" Margin="0,0,8,0"><TextBlock Text="▤" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Text="系统日志" Style="{StaticResource PicoSectionTitleStyle}" VerticalAlignment="Center" /></StackPanel><TextBlock Grid.Column="1" Text="当前状态摘要" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" VerticalAlignment="Center" /></Grid>
             <WrapPanel>
-              <Border Background="#FFF7FAFD" CornerRadius="9" Padding="10,7" Margin="0,0,8,6">
-                <StackPanel Orientation="Horizontal"><Ellipse Width="7" Height="7" Fill="{StaticResource PicoSuccessBrush}" Margin="0,0,7,0" VerticalAlignment="Center" /><TextBlock Text="{Binding CoreStatus, StringFormat=Mac Core · {0}, Mode=OneWay}" FontSize="11" /></StackPanel>
-              </Border>
-              <Border Background="#FFF7FAFD" CornerRadius="9" Padding="10,7" Margin="0,0,8,6">
-                <StackPanel Orientation="Horizontal"><Ellipse Width="7" Height="7" Fill="{StaticResource PicoSuccessBrush}" Margin="0,0,7,0" VerticalAlignment="Center" /><TextBlock Text="{Binding WorkerStatus, StringFormat=Mac Worker · {0}, Mode=OneWay}" FontSize="11" /></StackPanel>
-              </Border>
-              <Border Background="#FFF7FAFD" CornerRadius="9" Padding="10,7" Margin="0,0,8,6">
-                <StackPanel Orientation="Horizontal"><Ellipse Width="7" Height="7" Fill="{StaticResource PicoPrimaryBrush}" Margin="0,0,7,0" VerticalAlignment="Center" /><TextBlock Text="{Binding AssistantTitle, StringFormat=AI 助手 · {0}, Mode=OneWay}" FontSize="11" /></StackPanel>
-              </Border>
+              <Border Background="#FFF7FAFD" CornerRadius="9" Padding="10,7" Margin="0,0,8,6"><StackPanel Orientation="Horizontal"><Ellipse Width="7" Height="7" Fill="{StaticResource PicoSuccessBrush}" Margin="0,0,7,0" VerticalAlignment="Center" /><TextBlock Text="{Binding CoreStatus, StringFormat=Mac Core · {0}, Mode=OneWay}" FontSize="11" /></StackPanel></Border>
+              <Border Background="#FFF7FAFD" CornerRadius="9" Padding="10,7" Margin="0,0,8,6"><StackPanel Orientation="Horizontal"><Ellipse Width="7" Height="7" Fill="{StaticResource PicoSuccessBrush}" Margin="0,0,7,0" VerticalAlignment="Center" /><TextBlock Text="{Binding WorkerStatus, StringFormat=Mac Worker · {0}, Mode=OneWay}" FontSize="11" /></StackPanel></Border>
+              <Border Background="#FFF7FAFD" CornerRadius="9" Padding="10,7" Margin="0,0,8,6"><StackPanel Orientation="Horizontal"><TextBlock Text="●" Foreground="#FFF2A43C" FontSize="10" Margin="0,0,7,0" /><TextBlock Text="{Binding AssistantTitle, StringFormat=AI 助手 · {0}, Mode=OneWay}" FontSize="11" /></StackPanel></Border>
             </WrapPanel>
           </StackPanel>
         </Border>
       </StackPanel>
 
-      <!-- 右下工作组件区：参考图的紧凑双列工作台。 -->
-      <Border x:Name="WidgetBoard"
-              Grid.Column="1"
-              Grid.Row="2"
-              Style="{StaticResource PicoCardStyle}"
-              Padding="14">
-        <StackPanel>
-          <Grid Margin="0,0,0,10">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <StackPanel>
-              <TextBlock Text="工作组件区" Style="{StaticResource PicoSectionTitleStyle}" />
-              <TextBlock Text="固定白名单 · 可显示/隐藏/排序" Margin="0,3,0,0" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="10" />
-            </StackPanel>
-            <Button Grid.Column="1" Content="＋ 自定义" Style="{StaticResource PicoSecondaryButtonStyle}" Padding="9,6" MinHeight="31" FontSize="11" Click="CustomizeWidgets_Click" />
-          </Grid>
-
+      <!-- 右下工作组件区：参考图的紧凑双列工作台；不制造假进度。 -->
+      <Border x:Name="WidgetBoard" Grid.Column="1" Grid.Row="2" Style="{StaticResource PicoCardStyle}" Padding="13">
+        <StackPanel x:Name="ReferenceWidgetBoard">
+          <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="工作组件区" Style="{StaticResource PicoSectionTitleStyle}" /><TextBlock Text="支持扩展 · 可配置接口 · 自定义接入" Margin="0,3,0,0" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="9" /></StackPanel><Button Grid.Column="1" Content="＋ 添加组件" Style="{StaticResource PicoSecondaryButtonStyle}" Padding="8,5" MinHeight="30" FontSize="10" Click="CustomizeWidgets_Click" /></Grid>
           <ItemsControl ItemsSource="{Binding Widgets, Mode=OneWay}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <UniformGrid Columns="2" />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate>
-                <Border CornerRadius="12" Padding="10" Margin="4" BorderThickness="1" MinHeight="104">
-                  <Border.Style>
-                    <Style TargetType="Border">
-                      <Setter Property="Background" Value="#FFF8FBFF" />
-                      <Setter Property="BorderBrush" Value="{StaticResource PicoBorderBrush}" />
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding ToneKey, Mode=OneWay}" Value="Active">
-                          <Setter Property="Background" Value="#FFF0F6FF" />
-                          <Setter Property="BorderBrush" Value="#FFBFD8FF" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding ToneKey, Mode=OneWay}" Value="Success">
-                          <Setter Property="Background" Value="{StaticResource PicoSuccessSoftBrush}" />
-                          <Setter Property="BorderBrush" Value="#FFBFE8D7" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding ToneKey, Mode=OneWay}" Value="Disabled">
-                          <Setter Property="Background" Value="#FFF5F6F8" />
-                          <Setter Property="BorderBrush" Value="#FFE4E7EC" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </Border.Style>
-                  <StackPanel>
-                    <Grid>
-                      <Grid.ColumnDefinitions><ColumnDefinition Width="38" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                      <Border Width="32" Height="32" CornerRadius="9" Background="{StaticResource PicoPrimarySoftBrush}">
-                        <TextBlock Text="{Binding Glyph, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                      </Border>
-                      <TextBlock Grid.Column="1" Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
-                    </Grid>
-                    <TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="10" FontWeight="SemiBold" Margin="0,8,0,0" />
-                    <TextBlock Text="{Binding Description, Mode=OneWay}" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap" MaxHeight="28" />
-                  </StackPanel>
+                <Border CornerRadius="12" Padding="10" Margin="4" BorderThickness="1" MinHeight="98">
+                  <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#FFF8FBFF" /><Setter Property="BorderBrush" Value="{StaticResource PicoBorderBrush}" /><Style.Triggers><DataTrigger Binding="{Binding ToneKey, Mode=OneWay}" Value="Active"><Setter Property="Background" Value="#FFF0F6FF" /><Setter Property="BorderBrush" Value="#FFBFD8FF" /></DataTrigger><DataTrigger Binding="{Binding ToneKey, Mode=OneWay}" Value="Success"><Setter Property="Background" Value="{StaticResource PicoSuccessSoftBrush}" /><Setter Property="BorderBrush" Value="#FFBFE8D7" /></DataTrigger><DataTrigger Binding="{Binding ToneKey, Mode=OneWay}" Value="Disabled"><Setter Property="Background" Value="#FFF5F6F8" /><Setter Property="BorderBrush" Value="#FFE4E7EC" /></DataTrigger></Style.Triggers></Style></Border.Style>
+                  <StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Border Width="32" Height="32" CornerRadius="9" Background="{StaticResource PicoPrimarySoftBrush}"><TextBlock Text="{Binding Glyph, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Grid.Column="1" Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" /></Grid><TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" FontSize="10" FontWeight="SemiBold" Margin="0,7,0,0" /><TextBlock Text="{Binding Description, Mode=OneWay}" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="9" Margin="0,2,0,0" TextWrapping="Wrap" MaxHeight="27" /></StackPanel>
                 </Border>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-
-          <Button Content="＋ 添加 / 管理组件"
-                  Style="{StaticResource PicoSecondaryButtonStyle}"
-                  Margin="4,6,4,0"
-                  Padding="10,8"
-                  Click="CustomizeWidgets_Click" />
-          <TextBlock Text="{Binding WidgetLayoutMessage, Mode=OneWay}" Margin="5,8,5,0" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="9" TextWrapping="Wrap" />
+          <Button Content="＋ 添加 / 管理组件" Style="{StaticResource PicoSecondaryButtonStyle}" Margin="4,5,4,0" Padding="9,7" Click="CustomizeWidgets_Click" />
+          <TextBlock Text="{Binding WidgetLayoutMessage, Mode=OneWay}" Margin="5,7,5,0" Foreground="{StaticResource PicoTextMutedBrush}" FontSize="9" TextWrapping="Wrap" />
         </StackPanel>
       </Border>
     </Grid>
