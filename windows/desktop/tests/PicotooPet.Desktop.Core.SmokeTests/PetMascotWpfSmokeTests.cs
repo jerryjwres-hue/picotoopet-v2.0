@@ -13,9 +13,31 @@ internal static class PetMascotWpfSmokeTests
     private const string ControlTypeName =
         "PicotooPet.Desktop.Controls.PetMascot.PetMascotControl";
 
-    /// <summary>让现有 SmokeTests 入口无需改动即可执行这条新增合同。</summary>
+    /// <summary>不干扰历史绑定 RED 见证；正常 smoke 退出前执行新增合同。</summary>
     [ModuleInitializer]
-    internal static void Initialize() => Run();
+    internal static void Initialize()
+    {
+        if (Environment.GetCommandLineArgs().Contains(
+                "--expect-task-center-legacy-binding-failure",
+                StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        AppDomain.CurrentDomain.ProcessExit += static (_, _) =>
+        {
+            try
+            {
+                Run();
+                Console.WriteLine("MAOTAI_PET_WPF_SMOKE=PASS");
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine($"MAOTAI_PET_WPF_SMOKE=FAIL | {exception}");
+                Environment.ExitCode = 1;
+            }
+        };
+    }
 
     public static void Run()
     {
