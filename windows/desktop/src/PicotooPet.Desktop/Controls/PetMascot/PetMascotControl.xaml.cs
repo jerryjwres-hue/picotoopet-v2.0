@@ -158,9 +158,9 @@ public partial class PetMascotControl : WpfUserControl
     {
         TryPresentationOperation(() =>
         {
-            AnimateDouble(HoverScale, ScaleTransform.ScaleXProperty, 1.03, QuickMotionDuration);
-            AnimateDouble(HoverScale, ScaleTransform.ScaleYProperty, 1.03, QuickMotionDuration);
-            AnimateDouble(HoverRotate, RotateTransform.AngleProperty, 1.6, QuickMotionDuration);
+            AnimateDouble(HoverScale, ScaleTransform.ScaleXProperty, 1.022, QuickMotionDuration);
+            AnimateDouble(HoverScale, ScaleTransform.ScaleYProperty, 1.022, QuickMotionDuration);
+            AnimateDouble(HoverRotate, RotateTransform.AngleProperty, 1.2, QuickMotionDuration);
         });
     }
 
@@ -176,8 +176,8 @@ public partial class PetMascotControl : WpfUserControl
             var position = eventArgs.GetPosition(MascotStage);
             var normalizedX = (position.X / MascotStage.ActualWidth) - 0.5;
             var normalizedY = (position.Y / MascotStage.ActualHeight) - 0.5;
-            var targetX = Math.Clamp(normalizedX * 10.0, -5.0, 5.0);
-            var targetY = Math.Clamp(normalizedY * 5.0, -2.5, 2.5);
+            var targetX = Math.Clamp(normalizedX * 8.0, -4.0, 4.0);
+            var targetY = Math.Clamp(normalizedY * 4.0, -2.0, 2.0);
 
             AnimateDouble(PointerTranslate, TranslateTransform.XProperty, targetX, QuickMotionDuration);
             AnimateDouble(PointerTranslate, TranslateTransform.YProperty, targetY, QuickMotionDuration);
@@ -300,7 +300,7 @@ public partial class PetMascotControl : WpfUserControl
 
             default:
                 SetMascotImageCore("idle.png");
-                StartBreathing(amplitude: -2.2, duration: TimeSpan.FromSeconds(2.1));
+                StartBreathing(amplitude: -1.8, duration: TimeSpan.FromSeconds(2.1));
                 _blinkTimer.Start();
                 break;
         }
@@ -380,7 +380,7 @@ public partial class PetMascotControl : WpfUserControl
             new DoubleAnimation
             {
                 From = 0,
-                To = 0.9,
+                To = 0.7,
                 Duration = new Duration(TimeSpan.FromMilliseconds(130)),
                 AutoReverse = true,
                 EasingFunction = new SineEase
@@ -395,7 +395,7 @@ public partial class PetMascotControl : WpfUserControl
         var pulseX = new DoubleAnimation
         {
             From = 1,
-            To = 1.055,
+            To = 1.04,
             Duration = new Duration(TimeSpan.FromMilliseconds(115)),
             AutoReverse = true,
             EasingFunction = new CubicEase
