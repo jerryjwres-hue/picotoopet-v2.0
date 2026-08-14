@@ -1,0 +1,215 @@
+using System.Reflection;
+using System.Runtime.ExceptionServices;
+using System.Text.Json;
+using System.Threading;
+using System.Windows;
+using System.Windows.Threading;
+using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.State;
+using PicotooPet.Desktop.Navigation;
+using PicotooPet.Desktop.Services;
+using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Views.Pages;
+
+namespace PicotooPet.Desktop.Core.SmokeTests;
+
+/// <summary>冻结 26.1 五入口导航、真实任务投影、受控向导和 STA WPF 布局。</summary>
+internal static class OperatorSimpleModeSmokeTests
+{
+    public static void Run()
+    {
+        VerifyNavigation();
+        VerifyProjectionAndWizard();
+        VerifyWpfLayout();
+    }
+
+    private static void VerifyNavigation()
+    {
+        using var shell = ShellViewModel.CreateForSmokeTest(FullCapabilities());
+        var expected = new[] { "首页", "待我审核", "进行中", "已完成", "高级" };
+        SmokeAssert.True(shell.NavigationItems.Count == expected.Length, "26.1 默认导航必须恰好五项");
+        SmokeAssert.True(
+            shell.NavigationItems.Select(item => item.Title).SequenceEqual(expected),
+            "26.1 默认导航顺序错误");
+        SmokeAssert.True(shell.CurrentRoute == NavigationRoute.OperatorHome, "26.1 必须默认进入首页");
+
+        shell.Navigate(NavigationRoute.BusinessAutomation);
+        SmokeAssert.True(shell.CurrentRoute == NavigationRoute.BusinessAutomation, "高级业务自动化路由必须保留");
+        SmokeAssert.True(shell.SelectedNavigationItem.Route == NavigationRoute.AdvancedHome, "高级子页面必须保持高级入口选中");
+        shell.Navigate(NavigationRoute.Settings);
+        SmokeAssert.True(shell.CurrentRoute == NavigationRoute.Settings, "设置高级路由必须保留");
+    }
+
+    private static void VerifyProjectionAndWizard()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var snapshot = Snapshot(
+            Task("review", "business.local_intelligence.v1", "NeedsHuman", now.AddMinutes(-1)),
+            Task("running", "creative.content_plan.v1", "Running", now),
+            Task("done", "system.diagnostic_snapshot", "Completed", now.AddMinutes(-2), resultId: "result-1"));
+        var projection = OperatorProjection.FromSnapshot(snapshot);
+
+        SmokeAssert.True(projection.PendingReview.Select(item => item.TaskId).SequenceEqual(new[] { "review" }), "审核桶分类错误");
+        SmokeAssert.True(projection.InProgress.Select(item => item.TaskId).SequenceEqual(new[] { "running" }), "进行中分类错误");
+        SmokeAssert.True(projection.Completed.Select(item => item.TaskId).SequenceEqual(new[] { "done" }), "完成桶分类错误");
+        SmokeAssert.True(projection.CoreStatus == "在线", "Core 简单状态错误");
+        SmokeAssert.True(projection.WorkerStatus.Contains("空闲", StringComparison.Ordinal), "Worker 简单状态错误");
+
+        var forbiddenProjectionNames = new[] { "Provider", "Endpoint", "ApiKey", "Model", "Prompt", "Workflow", "Command", "Sql", "Percentage", "Percent" };
+        var projectionProperties = typeof(OperatorProjection).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .Concat(typeof(OperatorTaskCard).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(property => property.Name))
+            .ToArray();
+        foreach (var forbidden in forbiddenProjectionNames)
+        {
+            SmokeAssert.True(!projectionProperties.Any(name => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)), $"OperatorProjection 暴露禁止字段 {forbidden}");
+        }
+
+        var wizard = NewTaskWizardViewModel.CreateForSmokeTest();
+        SmokeAssert.True(wizard.Options.Count == 4, "任务向导必须是有限选项集合");
+        var web = wizard.Options.Single(option => option.Kind == OperatorTaskKind.WebResearch);
+        SmokeAssert.True(!web.IsAvailable && web.AvailabilityText == "尚未接入", "网络调研在 Adapter 接入前必须禁用");
+        SmokeAssert.True(wizard.CanGoNext, "默认真实任务应允许进入第二步");
+        wizard.Next();
+        SmokeAssert.True(wizard.CanGoBack && wizard.CanSubmit, "向导第二步状态错误");
+        wizard.Back();
+        SmokeAssert.True(wizard.Step == 1, "向导返回状态错误");
+
+        var forbiddenWizardNames = new[] { "Provider", "Endpoint", "ApiKey", "Model", "Prompt", "Workflow", "Command", "Sql", "Budget" };
+        var wizardProperties = typeof(NewTaskWizardViewModel).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .ToArray();
+        foreach (var forbidden in forbiddenWizardNames)
+        {
+            SmokeAssert.True(!wizardProperties.Any(name => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)), $"任务向导暴露禁止字段 {forbidden}");
+        }
+    }
+
+    private static void VerifyWpfLayout()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var snapshot = Snapshot(
+                    Task("running", "business.local_intelligence.v1", "Running", DateTimeOffset.UtcNow),
+                    Task("done", "system.diagnostic_snapshot", "Completed", DateTimeOffset.UtcNow.AddMinutes(-1), resultId: "result-1"));
+                var homeViewModel = OperatorHomePageViewModel.CreateForSmokeTest(snapshot);
+                var activeViewModel = new OperatorTaskListPageViewModel("进行中", completed: false, snapshot);
+                var completedViewModel = new OperatorTaskListPageViewModel("已完成", completed: true, snapshot);
+                var reviewViewModel = OperatorReviewPageViewModel.CreateForSmokeTest();
+
+                Layout(new OperatorHomePage { DataContext = homeViewModel });
+                Layout(new OperatorTaskListPage { DataContext = activeViewModel });
+                Layout(new OperatorTaskListPage { DataContext = completedViewModel });
+                Layout(new OperatorReviewPage { DataContext = reviewViewModel });
+
+                var refreshed = Snapshot(
+                    Task("running", "business.local_intelligence.v1", "Running", DateTimeOffset.UtcNow.AddSeconds(10)),
+                    Task("done", "system.diagnostic_snapshot", "Completed", DateTimeOffset.UtcNow.AddSeconds(9), resultId: "result-1"));
+                homeViewModel.UpdateSnapshot(refreshed);
+                activeViewModel.UpdateSnapshot(refreshed);
+                completedViewModel.UpdateSnapshot(refreshed);
+                SmokeAssert.True(activeViewModel.Items.Single().TaskId == "running", "同 task_id 快照刷新后进行中卡片身份丢失");
+                SmokeAssert.True(completedViewModel.Items.Single().TaskId == "done", "同 task_id 快照刷新后完成卡片身份丢失");
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    private static void Layout(FrameworkElement element)
+    {
+        element.Measure(new Size(1100, 800));
+        element.Arrange(new Rect(0, 0, 1100, 800));
+        element.UpdateLayout();
+        element.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+        element.UpdateLayout();
+        SmokeAssert.True(element.IsMeasureValid, $"{element.GetType().Name} Measure 未完成");
+        SmokeAssert.True(element.IsArrangeValid, $"{element.GetType().Name} Arrange 未完成");
+    }
+
+    private static ControlCenterSessionSnapshot Snapshot(params TaskRecord[] tasks)
+    {
+        var capabilities = FullCapabilities();
+        var state = new ControlCenterSnapshot(
+            new ConnectionSnapshot(ConnectionState.Online, null),
+            new CapabilitySnapshot(
+                "2.3.0",
+                capabilities,
+                new ContractVersions("1.0", "1.0", "1.0"),
+                "manual_approval_only"),
+            new WorkerSnapshot(
+                "2.3.0",
+                true,
+                "online",
+                "idle",
+                "worker-smoke",
+                new[] { "system.diagnostic_snapshot", "business.local_intelligence.v1", "creative.content_plan.v1" },
+                DateTimeOffset.UtcNow),
+            new TaskStateSnapshot(tasks, 1, false, tasks.LastOrDefault()));
+        return new ControlCenterSessionSnapshot(
+            "http://127.0.0.1:8765",
+            state,
+            "ok · 2.3.26.1",
+            "REST p95 1 ms",
+            "双机控制链已连接。");
+    }
+
+    private static TaskRecord Task(
+        string id,
+        string type,
+        string status,
+        DateTimeOffset updatedAt,
+        string? resultId = null) => new(
+            id,
+            null,
+            null,
+            type,
+            status,
+            100,
+            null,
+            JsonSerializer.SerializeToElement(new { }),
+            0,
+            3,
+            3600,
+            updatedAt.AddMinutes(-1),
+            updatedAt,
+            null,
+            null,
+            resultId);
+
+    private static ControlCenterCapabilities FullCapabilities() => new(
+        LocalAgent: true,
+        DurableQueue: true,
+        McpHub: true,
+        Dashboard: true,
+        TaskDetail: true,
+        TaskPauseResume: true,
+        ApprovalList: true,
+        ApprovalDigest: true,
+        ResultList: true,
+        ResultPreview: true,
+        HealthDetailed: true,
+        LogsQuery: true,
+        ManualGoal: true,
+        ConnectorContractV1: true,
+        HandoffContractV1: true,
+        WorkerStatus: true,
+        LocalWorker: true,
+        WindowsWorker: false,
+        Projects: true,
+        WorkflowAutomation: true,
+        AutomationHealth: true,
+        AutomationDiagnostics: true);
+}
