@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows;
@@ -11,6 +12,10 @@ internal static class PetMascotWpfSmokeTests
 {
     private const string ControlTypeName =
         "PicotooPet.Desktop.Controls.PetMascot.PetMascotControl";
+
+    /// <summary>让现有 SmokeTests 入口无需改动即可执行这条新增合同。</summary>
+    [ModuleInitializer]
+    internal static void Initialize() => Run();
 
     public static void Run()
     {
