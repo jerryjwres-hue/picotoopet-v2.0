@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -23,8 +24,7 @@ public partial class PetMascotControl : WpfUserControl
     private readonly DispatcherTimer _workingTimer;
     private readonly DispatcherTimer _blinkTimer;
 
-    private bool _workingAlternateFrame;
-    private bool _blinkFrame;
+    private bool _workingBeat;
 
     public static readonly DependencyProperty StateProperty = DependencyProperty.Register(
         nameof(State),
@@ -42,7 +42,7 @@ public partial class PetMascotControl : WpfUserControl
         nameof(InProgressCount),
         typeof(int),
         typeof(PetMascotControl),
-        new PropertyMetadata(0));
+        new PropertyMetadata(0, OnInProgressCountChanged));
 
     public static readonly DependencyProperty CompletedCountProperty = DependencyProperty.Register(
         nameof(CompletedCount),
@@ -95,7 +95,7 @@ public partial class PetMascotControl : WpfUserControl
         set => SetValue(PendingReviewCountProperty, value);
     }
 
-    /// <summary>仅用于选择一句本地提示，不触发任何业务查询。</summary>
+    /// <summary>仅用于选择一句本地提示，并让默认待机状态轻量跟随“是否有任务在跑”。</summary>
     public int InProgressCount
     {
         get => (int)GetValue(InProgressCountProperty);
@@ -124,6 +124,16 @@ public partial class PetMascotControl : WpfUserControl
         DependencyPropertyChangedEventArgs eventArgs)
     {
         if (dependencyObject is PetMascotControl control)
+        {
+            control.ApplyStateSafely();
+        }
+    }
+
+    private static void OnInProgressCountChanged(
+        DependencyObject dependencyObject,
+        DependencyPropertyChangedEventArgs eventArgs)
+    {
+        if (dependencyObject is PetMascotControl control && control.State == PetMascotState.Idle)
         {
             control.ApplyStateSafely();
         }
@@ -225,30 +235,29 @@ public partial class PetMascotControl : WpfUserControl
 
     private void OnWorkingTimerTick(object? sender, EventArgs eventArgs)
     {
-        if (State != PetMascotState.Working)
+        if (ResolveEffectiveState() != PetMascotState.Working)
         {
             _workingTimer.Stop();
             return;
         }
 
-        _workingAlternateFrame = !_workingAlternateFrame;
-        SetMascotImageSafely(_workingAlternateFrame ? "working_b.png" : "working_a.png");
+        _workingBeat = !_workingBeat;
+        AnimateDouble(
+            ClickScale,
+            ScaleTransform.ScaleYProperty,
+            _workingBeat ? 1.012 : 1.0,
+            new Duration(TimeSpan.FromMilliseconds(180)));
     }
 
     private void OnBlinkTimerTick(object? sender, EventArgs eventArgs)
     {
-        if (State != PetMascotState.Idle)
+        if (ResolveEffectiveState() != PetMascotState.Idle)
         {
-            _blinkFrame = false;
-            _blinkTimer.Interval = TimeSpan.FromSeconds(5.2);
+            _blinkTimer.Stop();
             return;
         }
 
-        _blinkFrame = !_blinkFrame;
-        SetMascotImageSafely(_blinkFrame ? "idle_blink.png" : "idle.png");
-        _blinkTimer.Interval = _blinkFrame
-            ? TimeSpan.FromMilliseconds(180)
-            : TimeSpan.FromSeconds(5.2);
+        PlayIdleMicroMotion();
     }
 
     private void ApplyStateSafely() =>
@@ -258,10 +267,9 @@ public partial class PetMascotControl : WpfUserControl
     {
         _workingTimer.Stop();
         _blinkTimer.Stop();
-        _workingAlternateFrame = false;
-        _blinkFrame = false;
+        _workingBeat = false;
 
-        switch (State)
+        switch (ResolveEffectiveState())
         {
             case PetMascotState.Working:
                 SetMascotImageCore("working_a.png");
@@ -286,7 +294,7 @@ public partial class PetMascotControl : WpfUserControl
                 break;
 
             case PetMascotState.Offline:
-                SetMascotImageCore("offline_sleep.png");
+                SetMascotImageCore("idle.png");
                 StartBreathing(amplitude: -1.1, duration: TimeSpan.FromSeconds(2.8));
                 break;
 
@@ -298,21 +306,48 @@ public partial class PetMascotControl : WpfUserControl
         }
     }
 
-    private void SetMascotImageSafely(string fileName) =>
-        TryPresentationOperation(() => SetMascotImageCore(fileName));
+    private PetMascotState ResolveEffectiveState() =>
+        State == PetMascotState.Idle && InProgressCount > 0
+            ? PetMascotState.Working
+            : State;
 
     private void SetMascotImageCore(string fileName)
     {
+        BitmapImage bitmap;
+
+        try
+        {
+            bitmap = LoadEmbeddedRaster(fileName);
+        }
+        catch (Exception) when (!string.Equals(fileName, "idle.png", StringComparison.Ordinal))
+        {
+            bitmap = LoadEmbeddedRaster("idle.png");
+        }
+
+        MascotImage.Source = bitmap;
+        MascotImage.Visibility = Visibility.Visible;
+    }
+
+    private static BitmapImage LoadEmbeddedRaster(string fileName)
+    {
+        var resourceUri = new Uri(
+            $"pack://application:,,,/Assets/PetMascot/{fileName}.b64",
+            UriKind.Absolute);
+        var resource = System.Windows.Application.GetResourceStream(resourceUri)
+            ?? throw new InvalidOperationException($"茅台素材不存在：{fileName}");
+
+        using var reader = new StreamReader(resource.Stream);
+        var encoded = reader.ReadToEnd();
+        var bytes = Convert.FromBase64String(encoded);
+        using var stream = new MemoryStream(bytes, writable: false);
+
         var bitmap = new BitmapImage();
         bitmap.BeginInit();
         bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.UriSource = new Uri(
-            $"pack://application:,,,/Assets/PetMascot/{fileName}",
-            UriKind.Absolute);
+        bitmap.StreamSource = stream;
         bitmap.EndInit();
         bitmap.Freeze();
-        MascotImage.Source = bitmap;
-        MascotImage.Visibility = Visibility.Visible;
+        return bitmap;
     }
 
     private void StartBreathing(double amplitude, TimeSpan duration)
@@ -328,6 +363,23 @@ public partial class PetMascotControl : WpfUserControl
                 Duration = new Duration(duration),
                 AutoReverse = true,
                 RepeatBehavior = RepeatBehavior.Forever,
+                EasingFunction = new SineEase
+                {
+                    EasingMode = EasingMode.EaseInOut,
+                },
+            });
+    }
+
+    private void PlayIdleMicroMotion()
+    {
+        BreathTranslate.BeginAnimation(
+            TranslateTransform.XProperty,
+            new DoubleAnimation
+            {
+                From = 0,
+                To = 0.9,
+                Duration = new Duration(TimeSpan.FromMilliseconds(130)),
+                AutoReverse = true,
                 EasingFunction = new SineEase
                 {
                     EasingMode = EasingMode.EaseInOut,
@@ -359,7 +411,7 @@ public partial class PetMascotControl : WpfUserControl
         TryPresentationOperation(() =>
         {
             CalloutText.Text = PetMascotPromptPolicy.Select(
-                State,
+                ResolveEffectiveState(),
                 PendingReviewCount,
                 InProgressCount,
                 CompletedCount);
@@ -407,7 +459,7 @@ public partial class PetMascotControl : WpfUserControl
         }
         catch (Exception)
         {
-            // 宿主快捷入口异常不能由茅台组件扩大成主程序崩溃。
+            // 宿主快捷入口异常不能由茅台组件扩大成主程序崩溃。                        // 安全边界
         }
     }
 
@@ -421,6 +473,7 @@ public partial class PetMascotControl : WpfUserControl
 
     private void StopMotionAnimations()
     {
+        BreathTranslate.BeginAnimation(TranslateTransform.XProperty, null);
         BreathTranslate.BeginAnimation(TranslateTransform.YProperty, null);
         PointerTranslate.BeginAnimation(TranslateTransform.XProperty, null);
         PointerTranslate.BeginAnimation(TranslateTransform.YProperty, null);
@@ -460,8 +513,8 @@ public partial class PetMascotControl : WpfUserControl
         catch (Exception)
         {
             StopAllTimers();
-            MascotImage.Visibility = Visibility.Collapsed;
-            CalloutBorder.Visibility = Visibility.Collapsed;
+            MascotImage.Visibility = Visibility.Collapsed;                                // 茅台失败只隐藏自身
+            CalloutBorder.Visibility = Visibility.Collapsed;                              // 不把异常扩散给宿主
         }
     }
 }
