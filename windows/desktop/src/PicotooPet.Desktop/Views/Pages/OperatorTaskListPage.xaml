@@ -1,26 +1,105 @@
 <UserControl x:Class="PicotooPet.Desktop.Views.Pages.OperatorTaskListPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="28" MaxWidth="980" HorizontalAlignment="Left">
-      <TextBlock Text="{Binding EmptyMessage, Mode=OneWay}" Foreground="#FF6B7280" Margin="0,0,0,12" />
+  <ScrollViewer VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                Background="{StaticResource PicoPageBackgroundBrush}">
+    <StackPanel x:Name="TaskListSurface" Margin="24" MaxWidth="1080" HorizontalAlignment="Stretch">
+      <Border Style="{StaticResource PicoCardStyle}" Padding="20" Margin="0,0,0,14">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="56" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Width="46" Height="46" CornerRadius="23" Background="{StaticResource PicoPrimarySoftBrush}" VerticalAlignment="Top">
+            <TextBlock Text="☷" FontSize="21" Foreground="{StaticResource PicoPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Grid.Column="1" Margin="4,0,0,0">
+            <TextBlock Text="{Binding Title, Mode=OneWay}" Style="{StaticResource PicoPageTitleStyle}" FontSize="25" />
+            <TextBlock Text="按真实任务状态展示，不制造虚假百分比；刷新时保持同一 task_id 的逻辑上下文。"
+                       Margin="0,5,0,0"
+                       Style="{StaticResource PicoMutedTextStyle}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Style="{StaticResource PicoSoftCardStyle}" Margin="0,0,0,12" Padding="13">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Ellipse Width="9" Height="9" Fill="{StaticResource PicoSuccessBrush}" VerticalAlignment="Center" Margin="2,0,9,0" />
+          <TextBlock Grid.Column="1"
+                     Text="{Binding EmptyMessage, Mode=OneWay, TargetNullValue=''}"
+                     Foreground="{StaticResource PicoTextMutedBrush}"
+                     VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+
       <ItemsControl ItemsSource="{Binding Items, Mode=OneWay}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,10">
+            <Border Style="{StaticResource PicoCardStyle}" Padding="17" Margin="0,0,0,10">
               <Grid>
                 <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="48" />
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel>
-                  <TextBlock Text="{Binding Title, Mode=OneWay}" FontSize="17" FontWeight="SemiBold" />
-                  <TextBlock Text="{Binding StageText, Mode=OneWay}" Margin="0,5,0,0" Foreground="#FF4B5563" />
-                  <TextBlock Text="{Binding ErrorText, Mode=OneWay}" Margin="0,5,0,0" Foreground="#FFB91C1C" TextWrapping="Wrap" />
+                <Border Width="38" Height="38" CornerRadius="11" Background="{StaticResource PicoPrimarySoftBrush}" VerticalAlignment="Top">
+                  <TextBlock Text="🐾" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel Grid.Column="1" Margin="4,0,24,0">
+                  <TextBlock Text="{Binding Title, Mode=OneWay}" FontSize="16" FontWeight="SemiBold" />
+                  <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <Ellipse Width="7" Height="7" Fill="{StaticResource PicoPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock Text="{Binding StageText, Mode=OneWay}" Foreground="{StaticResource PicoTextMutedBrush}" />
+                  </StackPanel>
+                  <Border Background="{StaticResource PicoDangerSoftBrush}"
+                          BorderBrush="#FFFFCDD2"
+                          BorderThickness="1"
+                          CornerRadius="8"
+                          Padding="9,6"
+                          Margin="0,8,0,0">
+                    <Border.Style>
+                      <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding ErrorText, Mode=OneWay}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding ErrorText, Mode=OneWay}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding ErrorText, Mode=OneWay}" Foreground="{StaticResource PicoDangerBrush}" TextWrapping="Wrap" FontSize="12" />
+                  </Border>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Margin="20,0,0,0" HorizontalAlignment="Right">
-                  <TextBlock Text="{Binding StatusText, Mode=OneWay}" FontWeight="SemiBold" HorizontalAlignment="Right" />
-                  <TextBlock Text="{Binding UpdatedAtText, Mode=OneWay}" Margin="0,5,0,0" Foreground="#FF6B7280" FontSize="12" HorizontalAlignment="Right" />
+                <StackPanel Grid.Column="2" HorizontalAlignment="Right">
+                  <Border Background="{StaticResource PicoPrimarySoftBrush}" CornerRadius="10" Padding="10,5" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" Style="{StaticResource PicoPillTextStyle}" />
+                  </Border>
+                  <TextBlock Text="{Binding UpdatedAtText, Mode=OneWay}"
+                             Margin="0,8,0,0"
+                             Foreground="{StaticResource PicoTextMutedBrush}"
+                             FontSize="11"
+                             HorizontalAlignment="Right" />
+                  <Border Background="{StaticResource PicoSuccessSoftBrush}" CornerRadius="8" Padding="8,4" Margin="0,7,0,0" HorizontalAlignment="Right">
+                    <Border.Style>
+                      <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding HasResult, Mode=OneWay}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Border.Style>
+                    <TextBlock Text="结果可查看" Foreground="{StaticResource PicoSuccessBrush}" FontSize="11" FontWeight="SemiBold" />
+                  </Border>
                 </StackPanel>
               </Grid>
             </Border>

@@ -6,7 +6,7 @@ using PicotooPet.Desktop.Versioning;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>把真实会话快照适配为 26.1 五入口简单模式、全局状态和高级页面。</summary>
+/// <summary>把真实会话快照适配为 26.1 五入口简单模式、全局助手状态和高级页面。</summary>
 public sealed class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly ControlCenterSession? _session;
@@ -20,6 +20,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private string _connectionMessage;
     private string _approvalText;
     private string _statusMessage;
+    private string _assistantStateKey;
+    private string _assistantTitle;
+    private string _assistantSubtitle;
     private bool _disposed;
 
     /// <summary>创建绑定真实 Session 的运行时 Shell。</summary>
@@ -38,6 +41,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _connectionMessage = FormatConnectionMessage(_snapshot);
         _approvalText      = FormatApproval(_snapshot.State.Capabilities);
         _statusMessage     = _snapshot.StatusMessage;
+        var assistantState = OperatorAssistantStateResolver.FromSnapshot(_snapshot);
+        _assistantStateKey = OperatorAssistantStateResolver.ToKey(assistantState);
+        _assistantTitle    = OperatorAssistantStateResolver.ToTitle(assistantState);
+        _assistantSubtitle = OperatorAssistantStateResolver.ToSubtitle(assistantState);
         session.SnapshotChanged += OnSessionSnapshotChanged;
     }
 
@@ -52,6 +59,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _connectionMessage = "Smoke test 模式未连接 Mac Core。";
         _approvalText      = capabilities.ApprovalList ? "审批能力可用" : "审批能力未启用";
         _statusMessage     = "确定性导航测试。";
+        _assistantStateKey = "OfflineSleeping";
+        _assistantTitle    = "已掉线";
+        _assistantSubtitle = "连接恢复后会再次醒来";
     }
 
     /// <summary>Windows 主窗口用户可见标题。</summary>
@@ -120,6 +130,25 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         get => _statusMessage;
         private set => SetProperty(ref _statusMessage, value);
+    }
+
+    /// <summary>阿拉斯加视觉绑定键；由同一真实快照解析，不建立第二套状态源。</summary>
+    public string AssistantStateKey
+    {
+        get => _assistantStateKey;
+        private set => SetProperty(ref _assistantStateKey, value);
+    }
+
+    public string AssistantTitle
+    {
+        get => _assistantTitle;
+        private set => SetProperty(ref _assistantTitle, value);
+    }
+
+    public string AssistantSubtitle
+    {
+        get => _assistantSubtitle;
+        private set => SetProperty(ref _assistantSubtitle, value);
     }
 
     public static ShellViewModel CreateForSmokeTest(
@@ -390,6 +419,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         ConnectionMessage = FormatConnectionMessage(snapshot);
         ApprovalText      = FormatApproval(snapshot.State.Capabilities);
         StatusMessage     = snapshot.StatusMessage;
+        ApplyAssistantState(snapshot);
 
         if (route == NavigationRoute.OperatorHome
             && CurrentPage is OperatorHomePageViewModel operatorHome)
@@ -443,6 +473,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             CurrentPage = CreatePage(route, snapshot);
         }
+    }
+
+    private void ApplyAssistantState(ControlCenterSessionSnapshot snapshot)
+    {
+        var state = OperatorAssistantStateResolver.FromSnapshot(snapshot);
+        AssistantStateKey = OperatorAssistantStateResolver.ToKey(state);
+        AssistantTitle    = OperatorAssistantStateResolver.ToTitle(state);
+        AssistantSubtitle = OperatorAssistantStateResolver.ToSubtitle(state);
     }
 
     private static string FormatConnection(ConnectionState state) => state switch

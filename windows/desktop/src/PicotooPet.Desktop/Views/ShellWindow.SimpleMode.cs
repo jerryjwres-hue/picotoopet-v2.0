@@ -22,6 +22,7 @@ public partial class ShellWindow
     {
         _viewModel.Navigate(NavigationRoute.AdvancedHome);
         AdvancedHomePanel.Visibility = Visibility.Visible;
+        UpdateSimpleNavSelection(NavigationRoute.AdvancedHome);
     }
 
     private void AdvancedRoute_Click(object sender, RoutedEventArgs e)
@@ -33,17 +34,17 @@ public partial class ShellWindow
 
         var route = key switch
         {
-            "Projects" => NavigationRoute.Projects,
-            "TaskCenter" => NavigationRoute.TaskCenter,
-            "Results" => NavigationRoute.Results,
-            "Approvals" => NavigationRoute.Approvals,
-            "CloudDevelopment" => NavigationRoute.CloudDevelopment,
-            "Automation" => NavigationRoute.Automation,
+            "Projects"           => NavigationRoute.Projects,
+            "TaskCenter"         => NavigationRoute.TaskCenter,
+            "Results"            => NavigationRoute.Results,
+            "Approvals"          => NavigationRoute.Approvals,
+            "CloudDevelopment"   => NavigationRoute.CloudDevelopment,
+            "Automation"         => NavigationRoute.Automation,
             "BusinessAutomation" => NavigationRoute.BusinessAutomation,
-            "Health" => NavigationRoute.Health,
-            "Diagnostics" => NavigationRoute.Diagnostics,
-            "Settings" => NavigationRoute.Settings,
-            _ => NavigationRoute.AdvancedHome,
+            "Health"             => NavigationRoute.Health,
+            "Diagnostics"        => NavigationRoute.Diagnostics,
+            "Settings"           => NavigationRoute.Settings,
+            _                    => NavigationRoute.AdvancedHome,
         };
         ShowSimpleRoute(route);
     }
@@ -54,5 +55,38 @@ public partial class ShellWindow
     {
         AdvancedHomePanel.Visibility = Visibility.Collapsed;
         _viewModel.Navigate(route);
+        UpdateSimpleNavSelection(route);
+    }
+
+    /// <summary>只改变五个固定导航按钮的样式，不改变路由或权限。</summary>
+    private void UpdateSimpleNavSelection(NavigationRoute route)
+    {
+        if (FindResource("SimpleNavButtonStyle") is not Style normalStyle
+            || FindResource("SimpleNavSelectedButtonStyle") is not Style selectedStyle)
+        {
+            return;
+        }
+
+        var selectedButton = route switch
+        {
+            NavigationRoute.OperatorHome       => SimpleHomeButton,
+            NavigationRoute.OperatorReview     => SimpleReviewButton,
+            NavigationRoute.OperatorInProgress => SimpleActiveButton,
+            NavigationRoute.OperatorCompleted  => SimpleCompletedButton,
+            _                                  => SimpleAdvancedButton,
+        };
+
+        var buttons = new[]
+        {
+            SimpleHomeButton,
+            SimpleReviewButton,
+            SimpleActiveButton,
+            SimpleCompletedButton,
+            SimpleAdvancedButton,
+        };
+        foreach (var button in buttons)
+        {
+            button.Style = ReferenceEquals(button, selectedButton) ? selectedStyle : normalStyle;
+        }
     }
 }

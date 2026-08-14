@@ -1,0 +1,74 @@
+<Window x:Class="PicotooPet.Desktop.Views.Pages.OperatorWidgetManagerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="自定义工作台"
+        Width="620"
+        Height="590"
+        MinWidth="560"
+        MinHeight="500"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource PicoPageBackgroundBrush}">
+  <Grid Margin="24">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <StackPanel Margin="0,0,0,18">
+      <TextBlock Text="自定义工作台" Style="{StaticResource PicoPageTitleStyle}" />
+      <TextBlock Text="只允许固定安全组件的显示与排序；不会加载任意插件、脚本或 Provider。"
+                 Margin="0,7,0,0"
+                 Style="{StaticResource PicoMutedTextStyle}" />
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <ItemsControl ItemsSource="{Binding WidgetOptions, Mode=OneWay}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Style="{StaticResource PicoCardStyle}" Margin="0,0,0,10" Padding="15">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Title, Mode=OneWay}" FontSize="16" FontWeight="SemiBold" />
+                    <Border Margin="9,0,0,0" Padding="8,3" Background="{StaticResource PicoPrimarySoftBrush}" CornerRadius="8">
+                      <TextBlock Text="{Binding AvailabilityText, Mode=OneWay}" Foreground="{StaticResource PicoPrimaryBrush}" Style="{StaticResource PicoPillTextStyle}" />
+                    </Border>
+                    <Border Margin="6,0,0,0" Padding="8,3" Background="{StaticResource PicoSurfaceSoftBrush}" CornerRadius="8">
+                      <TextBlock Text="{Binding VisibilityText, Mode=OneWay}" Foreground="{StaticResource PicoTextMutedBrush}" Style="{StaticResource PicoPillTextStyle}" />
+                    </Border>
+                  </StackPanel>
+                  <TextBlock Text="{Binding Description, Mode=OneWay}" Margin="0,7,10,0" Style="{StaticResource PicoMutedTextStyle}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                  <Button Content="↑" Tag="{Binding Id, Mode=OneWay}" Width="40" Padding="8" ToolTip="上移" Click="MoveUp_Click" />
+                  <Button Content="↓" Tag="{Binding Id, Mode=OneWay}" Width="40" Padding="8" ToolTip="下移" Click="MoveDown_Click" />
+                  <Button Content="{Binding ToggleText, Mode=OneWay}"
+                          Tag="{Binding Id, Mode=OneWay}"
+                          MinWidth="68"
+                          Style="{StaticResource PicoSecondaryButtonStyle}"
+                          Click="Toggle_Click" />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <Grid Grid.Row="2" Margin="0,16,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBlock Text="{Binding WidgetLayoutMessage, Mode=OneWay}"
+                 VerticalAlignment="Center"
+                 Style="{StaticResource PicoMutedTextStyle}" />
+      <Button Grid.Column="1" Content="完成" MinWidth="88" Style="{StaticResource PicoPrimaryButtonStyle}" Click="Close_Click" />
+    </Grid>
+  </Grid>
+</Window>
