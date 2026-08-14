@@ -3,10 +3,12 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
-public partial class NewTaskWizardWindow : Window
+/// <summary>26.1 受限新任务向导窗口；关闭时会取消并释放本窗口拥有的操作令牌。</summary>
+public partial class NewTaskWizardWindow : Window, IDisposable
 {
     private readonly NewTaskWizardViewModel _viewModel;
     private readonly CancellationTokenSource _lifetime = new();
+    private bool _disposed;
 
     public NewTaskWizardWindow(NewTaskWizardViewModel viewModel)
     {
@@ -48,10 +50,23 @@ public partial class NewTaskWizardWindow : Window
         DialogResult = false;
     }
 
-    protected override void OnClosed(EventArgs e)
+    /// <summary>幂等释放窗口拥有的取消令牌源，不改变任务或审批状态。</summary>
+    public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         _lifetime.Cancel();
         _lifetime.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        Dispose();
         base.OnClosed(e);
     }
 }

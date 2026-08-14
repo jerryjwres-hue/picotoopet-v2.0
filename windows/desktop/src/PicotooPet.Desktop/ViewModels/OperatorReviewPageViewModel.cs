@@ -21,7 +21,8 @@ public sealed class OperatorReviewPageViewModel : PageViewModel
 
     public ApprovalsPageViewModel ApprovalCenter { get; }
 
-    public string Explanation =>
+    /// <summary>解释简单模式只集中入口，不改变原审批中心摘要绑定语义。</summary>
+    public string Explanation { get; } =
         "所有批准/拒绝仍由原审批中心按请求摘要执行；简单模式只把入口集中到这里。";
 
     public static OperatorReviewPageViewModel CreateForSmokeTest() => new();

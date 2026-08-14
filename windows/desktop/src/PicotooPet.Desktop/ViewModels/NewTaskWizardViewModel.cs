@@ -180,7 +180,7 @@ public sealed class NewTaskWizardViewModel : ObservableObject
 
     public static NewTaskWizardViewModel CreateForSmokeTest() => new();
 
-    private static IReadOnlyList<OperatorTaskOption> BuildOptions(
+    private static OperatorTaskOption[] BuildOptions(
         ControlCenterSessionSnapshot snapshot)
     {
         var supported = snapshot.State.Worker.SupportedTaskTypes;

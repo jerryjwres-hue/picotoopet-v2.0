@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Controls;
 using PicotooPet.Desktop.Navigation;
 
 namespace PicotooPet.Desktop.Views;
@@ -27,7 +26,7 @@ public partial class ShellWindow
 
     private void AdvancedRoute_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: string key })
+        if (sender is not System.Windows.Controls.Button { Tag: string key })
         {
             return;
         }

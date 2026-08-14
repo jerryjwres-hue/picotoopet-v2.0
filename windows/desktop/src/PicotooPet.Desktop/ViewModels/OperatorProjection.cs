@@ -1,3 +1,4 @@
+using System.Globalization;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Services;
@@ -145,7 +146,9 @@ public sealed record OperatorProjection(
             stageText,
             statusText,
             task.UpdatedAt,
-            task.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
+            task.UpdatedAt.LocalDateTime.ToString(
+                "yyyy-MM-dd HH:mm",
+                CultureInfo.InvariantCulture),
             error,
             !string.IsNullOrWhiteSpace(task.ResultId));
     }
