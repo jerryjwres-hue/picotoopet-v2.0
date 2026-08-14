@@ -18,7 +18,7 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <!-- 茅台素材保持为独立 WPF Resource；缺失素材由组件自身静默降级，不影响主程序。 -->
-    <Resource Include="Assets\PetMascot\*.png" />
+    <!-- 茅台素材使用 PNG 的 Base64 文本嵌入 WPF Resource，仍是高质量位图，不引入矢量占位图。 -->
+    <Resource Include="Assets\PetMascot\*.png.b64" />
   </ItemGroup>
 </Project>
