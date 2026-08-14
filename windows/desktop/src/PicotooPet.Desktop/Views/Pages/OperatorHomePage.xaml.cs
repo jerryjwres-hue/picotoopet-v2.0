@@ -9,6 +9,7 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
 {
     public OperatorHomePage()
     {
+        PicotooPet.Desktop.Views.PicoThemeResourceLoader.Attach(this);   // 独立 WPF smoke 也必须拥有完整产品主题。
         InitializeComponent();
     }
 
