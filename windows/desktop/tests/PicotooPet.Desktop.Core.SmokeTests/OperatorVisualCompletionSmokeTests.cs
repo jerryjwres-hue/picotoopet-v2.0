@@ -78,15 +78,15 @@ internal static class OperatorVisualCompletionSmokeTests
     private static void VerifyAssistantStateResolver()
     {
         SmokeAssert.True(
-            OperatorAssistantStateResolver.Resolve(coreOnline: true, workerOnline: true, hasActiveTask: true)
+            OperatorAssistantStateResolver.Resolve(coreOnline: true, workerOnline: true, hasRealExecution: true)
                 == OperatorAssistantVisualState.Working,
-            "在线且有活动任务时，阿拉斯加必须进入工作状态");
+            "只有真实执行信号存在时，阿拉斯加才可以进入工作状态");
         SmokeAssert.True(
-            OperatorAssistantStateResolver.Resolve(coreOnline: true, workerOnline: true, hasActiveTask: false)
+            OperatorAssistantStateResolver.Resolve(coreOnline: true, workerOnline: true, hasRealExecution: false)
                 == OperatorAssistantVisualState.Resting,
-            "在线空闲时，阿拉斯加必须进入休息状态");
+            "仅连接正常但没有真实执行时，阿拉斯加必须进入休息状态");
         SmokeAssert.True(
-            OperatorAssistantStateResolver.Resolve(coreOnline: true, workerOnline: false, hasActiveTask: true)
+            OperatorAssistantStateResolver.Resolve(coreOnline: true, workerOnline: false, hasRealExecution: true)
                 == OperatorAssistantVisualState.OfflineSleeping,
             "Worker 掉线时，阿拉斯加必须进入睡眠状态");
     }
@@ -178,7 +178,13 @@ internal static class OperatorVisualCompletionSmokeTests
             try
             {
                 var home = new OperatorHomePage();
+                SmokeAssert.True(home.FindName("ReferenceHomeLayout") is FrameworkElement, "首页缺少参考图信息架构根布局");
                 SmokeAssert.True(home.FindName("HeroNewTaskCard") is FrameworkElement, "首页缺少产品化新建任务 Hero");
+                SmokeAssert.True(home.FindName("TaskSummaryBoard") is FrameworkElement, "首页缺少三桶任务摘要区");
+                SmokeAssert.True(home.FindName("SystemStatusCard") is FrameworkElement, "首页缺少右侧系统状态卡");
+                SmokeAssert.True(home.FindName("ResourceMonitorCard") is FrameworkElement, "首页缺少右侧资源监控位");
+                SmokeAssert.True(home.FindName("RecentTasksPanel") is FrameworkElement, "首页缺少最近任务区");
+                SmokeAssert.True(home.FindName("SystemActivityPanel") is FrameworkElement, "首页缺少系统动态区");
                 SmokeAssert.True(home.FindName("WidgetBoard") is FrameworkElement, "首页缺少可扩展工作组件区");
 
                 var review = new OperatorReviewPage();
