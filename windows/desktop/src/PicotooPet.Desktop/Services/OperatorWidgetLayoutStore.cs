@@ -21,6 +21,16 @@ public sealed class OperatorWidgetLayoutStore
         _path = path;
     }
 
+    /// <summary>使用与桌面应用一致的 LocalAppData 根目录创建安全布局存储。</summary>
+    public static OperatorWidgetLayoutStore CreateForCurrentUser()
+    {
+        var dataRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PicotooPetV2",
+            "Desktop");
+        return new OperatorWidgetLayoutStore(Path.Combine(dataRoot, "operator-widgets.json"));
+    }
+
     /// <summary>安全读取布局；损坏、拒绝访问或不兼容内容均回退固定默认目录。</summary>
     public OperatorWidgetLayout LoadOrDefault()
     {
