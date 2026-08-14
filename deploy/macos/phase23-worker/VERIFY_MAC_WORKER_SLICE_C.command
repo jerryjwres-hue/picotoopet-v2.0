@@ -1,5 +1,5 @@
 #!/bin/bash
-# 验证已激活的 Phase 2.3 Slice D Core 与 Worker 合同。
+# 验证已激活的 Phase 2.3 Slice D Core 与 Worker 累计合同。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -55,11 +55,22 @@ import sys
 from pathlib import Path
 
 payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if payload.get("supported_task_types") != [
-    "system.diagnostic_snapshot",
-    "system.noop",
-]:
-    raise SystemExit(f"supported_task_types mismatch: {payload!r}")
+supported = payload.get("supported_task_types")
+required = {"system.diagnostic_snapshot", "system.noop"}
+allowed = required | {
+    "business.local_intelligence.v1",
+    "creative.content_plan.v1",
+    "provider.codex.handoff-v1",
+    "provider.adoption.apply-v1",
+    "provider.commit.create-v1",
+    "provider.publish.pr-create-v1",
+}
+# 累计能力验证          系统任务必须存在；历史已实现的 Business/Creative/Provider 类型允许注册。
+if not isinstance(supported, list) or not required <= set(supported):
+    raise SystemExit(f"Worker 缺少基础冻结类型：{payload!r}")
+unexpected = set(supported) - allowed
+if unexpected:
+    raise SystemExit(f"unexpected Worker task type: {sorted(unexpected)!r}")
 if payload.get("active_task_id") is not None:
     raise SystemExit(f"Worker is not idle: {payload!r}")
 PY
