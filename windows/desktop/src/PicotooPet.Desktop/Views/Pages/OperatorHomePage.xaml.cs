@@ -4,7 +4,7 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
-/// <summary>26.1 简单模式首页；只负责打开受限任务向导并导航到既有安全路由。</summary>
+/// <summary>26.1 简单模式首页；只打开受限向导、固定组件管理器并导航到既有安全路由。</summary>
 public partial class OperatorHomePage : System.Windows.Controls.UserControl
 {
     public OperatorHomePage()
@@ -32,6 +32,20 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
             shell.NavigateFromOperator(route);
         }
         await Task.CompletedTask;
+    }
+
+    private void CustomizeWidgets_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not OperatorHomePageViewModel viewModel)
+        {
+            return;
+        }
+
+        var window = new OperatorWidgetManagerWindow(viewModel)
+        {
+            Owner = Window.GetWindow(this),
+        };
+        window.ShowDialog();
     }
 
     private void Review_Click(object sender, RoutedEventArgs e) =>
