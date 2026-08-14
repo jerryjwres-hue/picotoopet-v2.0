@@ -23,6 +23,7 @@ public partial class ShellWindow : Window
         ControlCenterSession session,
         SafeFileLogger logger)
     {
+        PicoThemeResourceLoader.Attach(this);                             // Shell 独立实例化时也先挂载产品主题，避免 StaticResource 崩溃。
         InitializeComponent();
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         _session   = session ?? throw new ArgumentNullException(nameof(session));
