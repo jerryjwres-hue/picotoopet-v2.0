@@ -104,5 +104,9 @@ internal static class PetMascotWpfSmokeTests
         SmokeAssert.True(instance.IsArrangeValid, "茅台控件 Arrange 未完成");
         SmokeAssert.True(instance.ActualWidth > 0, "茅台控件实际宽度无效");
         SmokeAssert.True(instance.ActualHeight > 0, "茅台控件实际高度无效");
+
+        var homePage = new OperatorHomePage();
+        var hostedMascot = homePage.FindName("MaotaiMascot") as FrameworkElement;
+        SmokeAssert.True(hostedMascot is not null, "首页尚未接入 MaotaiMascot 轻量组件");
     }
 }
