@@ -21,22 +21,31 @@ def read_core(relative: str) -> str:
     return (CORE / relative).read_text(encoding="utf-8")
 
 
+def assert_simple_nav_button(xaml: str, name: str, title: str) -> None:
+    """固定简单入口可使用产品化子元素，但入口标题必须留在同一 Button 内。"""
+
+    marker = f'x:Name="{name}"'
+    start = xaml.index(marker)
+    end = xaml.index("</Button>", start)
+    button = xaml[start:end]
+    assert f'Content="{title}"' in button or f'Text="{title}"' in button
+
+
 def test_shell_exists_and_desktop_remains_winexe() -> None:
     """26.1 默认 Shell 只展示五个简单入口，同时完整保留高级工程路由。"""
 
     shell = read("Views/ShellWindow.xaml")
     simple_mode = read("Views/ShellWindow.SimpleMode.cs")
+    expected_simple_nav = {
+        "SimpleHomeButton": "首页",
+        "SimpleReviewButton": "待我审核",
+        "SimpleActiveButton": "进行中",
+        "SimpleCompletedButton": "已完成",
+        "SimpleAdvancedButton": "高级",
+    }
+    for name, title in expected_simple_nav.items():
+        assert_simple_nav_button(shell, name, title)
     for required in (
-        'x:Name="SimpleHomeButton"',
-        'Content="首页"',
-        'x:Name="SimpleReviewButton"',
-        'Content="待我审核"',
-        'x:Name="SimpleActiveButton"',
-        'Content="进行中"',
-        'x:Name="SimpleCompletedButton"',
-        'Content="已完成"',
-        'x:Name="SimpleAdvancedButton"',
-        'Content="高级"',
         'x:Name="AdvancedHomePanel"',
         'Content="{Binding CurrentPage, Mode=OneWay}"',
         'Title="{Binding WindowTitle, Mode=OneWay}"',
