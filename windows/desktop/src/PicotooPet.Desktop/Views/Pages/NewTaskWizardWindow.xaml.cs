@@ -14,6 +14,7 @@ public partial class NewTaskWizardWindow : Window, IDisposable
     {
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         DataContext = _viewModel;
+        PicotooPet.Desktop.Views.PicoThemeResourceLoader.Attach(this);   // 向导独立打开或 smoke 时都使用同一产品主题。
         InitializeComponent();
     }
 
