@@ -61,17 +61,28 @@ internal static class ApprovalCenterSmokeTests
             !publicNames.Contains("Scope", StringComparer.Ordinal),
             "Windows 审批 DTO 不得暴露任意原始 Scope 正文");
 
-        var shell = ShellViewModel.CreateForSmokeTest(
+        using var shell = ShellViewModel.CreateForSmokeTest(
             ControlCenterCapabilities.Legacy22 with
             {
                 ApprovalList = true,
                 ApprovalDigest = true,
             });
-        var approvalNavigation = shell.NavigationItems.Single(
-            item => item.Route == NavigationRoute.Approvals);
+
+        // 26.1 navigation gate      Approval capability is surfaced by the simple review entry;
+        //                           the legacy approval page remains reachable as an advanced child route.
+        var reviewNavigation = shell.NavigationItems.Single(
+            item => item.Route == NavigationRoute.OperatorReview);
         SmokeAssert.True(
-            approvalNavigation.IsAvailable,
-            "审批列表和摘要能力完整时必须启用审批导航");
+            reviewNavigation.IsAvailable,
+            "审批列表和摘要能力完整时必须启用待我审核入口");
+
+        shell.Navigate(NavigationRoute.Approvals);
+        SmokeAssert.True(
+            shell.CurrentRoute == NavigationRoute.Approvals,
+            "旧审批页面必须仍可通过高级路由访问");
+        SmokeAssert.True(
+            shell.SelectedNavigationItem.Route == NavigationRoute.AdvancedHome,
+            "旧审批页面属于高级子路由，必须保持高级入口选中");
         SmokeAssert.True(
             viewModel.Title == "审批",
             "原生审批 ViewModel 必须提供审批页面");
