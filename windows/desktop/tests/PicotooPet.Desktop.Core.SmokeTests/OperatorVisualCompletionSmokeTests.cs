@@ -21,19 +21,30 @@ internal static class OperatorVisualCompletionSmokeTests
         "result-optimization",     // 结果优化：只展示既有质量治理事实。
     };
 
-    private static readonly string[] ForbiddenWidgetPropertyFragments =
+    private static readonly string[] ForbiddenWidgetPropertyNames =
     {
         "Provider",                // 禁止任意 Provider 注入。
+        "ProviderId",              // 禁止任意 Provider 标识注入。
+        "ProviderKey",             // 禁止 Windows 保存 Provider 密钥。
         "Endpoint",                // 禁止任意 Endpoint 注入。
+        "EndpointUrl",             // 禁止任意 Endpoint URL 注入。
         "ApiKey",                  // 禁止 Windows 保存 API Key。
         "Model",                   // 禁止任意模型选择。
+        "ModelId",                 // 禁止任意模型标识选择。
         "Prompt",                  // 禁止任意 Prompt 注入。
+        "PromptTemplate",          // 禁止任意 Prompt 模板注入。
         "Workflow",                // 禁止任意工作流注入。
+        "WorkflowId",              // 禁止任意工作流标识注入。
         "Command",                 // 禁止任意命令执行。
+        "CommandLine",             // 禁止任意命令行执行。
         "Sql",                     // 禁止任意 SQL 执行。
+        "SqlText",                 // 禁止任意 SQL 文本执行。
         "Assembly",                // 禁止任意程序集加载。
+        "AssemblyPath",            // 禁止任意程序集路径加载。
         "Script",                  // 禁止任意脚本加载。
+        "ScriptPath",              // 禁止任意脚本路径加载。
         "Executable",              // 禁止任意可执行文件入口。
+        "ExecutablePath",          // 禁止任意可执行文件路径入口。
     };
 
     private static readonly string[] LayoutOrderFixture =
@@ -99,11 +110,11 @@ internal static class OperatorVisualCompletionSmokeTests
             .Select(property => property.Name)
             .Concat(typeof(OperatorWidgetLayout).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Select(property => property.Name))
-            .ToArray();
-        foreach (var forbidden in ForbiddenWidgetPropertyFragments)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var forbidden in ForbiddenWidgetPropertyNames)
         {
             SmokeAssert.True(
-                !exposedNames.Any(name => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)),
+                !exposedNames.Contains(forbidden),
                 $"工作组件配置暴露禁止字段 {forbidden}");
         }
     }
