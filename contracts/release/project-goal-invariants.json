@@ -23,7 +23,7 @@
       "github_repository": "jerryjwres-hue/picotoopet-v2.0"
     },
     "product_version": {
-      "value": "2.3.25.1",
+      "value": "2.3.26.1",
       "source_path": "src/picotoopet_core/product-version.txt",
       "payload_path": "product-version.txt"
     },
@@ -400,9 +400,7 @@
       "fact_source",
       "persistence_model",
       "install_verify_rollback_workflow",
-      "acceptance_criteria",
-      "native_platform_gates",
-      "security_privacy_approval_boundaries"
+      "acceptance_criteria"
     ]
   }
 }
