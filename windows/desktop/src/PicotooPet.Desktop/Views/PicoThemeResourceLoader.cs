@@ -6,8 +6,8 @@ namespace PicotooPet.Desktop.Views;
 internal static class PicoThemeResourceLoader
 {
     private static readonly Uri ThemeUri = new(
-        "Themes/PicotooTheme.xaml",
-        UriKind.Relative);                         // 相对应用资源根解析，保持安装包内离线可用。
+        "pack://application:,,,/Picotoo%20Pet%20AI;component/Themes/PicotooTheme.xaml",
+        UriKind.Absolute);                              // 显式定位桌面程序集，避免 smoke 测试把相对 URI 解析到测试程序集。
 
     /// <summary>只在控件本地尚未拥有主题时添加一次；不修改业务状态或全局设置。</summary>
     public static void Attach(FrameworkElement element)
@@ -21,7 +21,7 @@ internal static class PicoThemeResourceLoader
 
         element.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
-            Source = ThemeUri,                     // 本地 BAML 主题，无网络、插件或外部文件依赖。
+            Source = ThemeUri,                           // 本地 BAML 主题，无网络、插件或外部文件依赖。
         });
     }
 }
