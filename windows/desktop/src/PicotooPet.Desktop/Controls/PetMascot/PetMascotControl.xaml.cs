@@ -294,7 +294,7 @@ public partial class PetMascotControl : WpfUserControl
                 break;
 
             case PetMascotState.Offline:
-                SetMascotImageCore("idle.png");
+                SetMascotImageCore("offline_sleep.png");
                 StartBreathing(amplitude: -1.1, duration: TimeSpan.FromSeconds(2.8));
                 break;
 
