@@ -21,6 +21,40 @@ internal static class OperatorVisualCompletionSmokeTests
         "result-optimization",     // 结果优化：只展示既有质量治理事实。
     };
 
+    private static readonly string[] ForbiddenWidgetPropertyFragments =
+    {
+        "Provider",                // 禁止任意 Provider 注入。
+        "Endpoint",                // 禁止任意 Endpoint 注入。
+        "ApiKey",                  // 禁止 Windows 保存 API Key。
+        "Model",                   // 禁止任意模型选择。
+        "Prompt",                  // 禁止任意 Prompt 注入。
+        "Workflow",                // 禁止任意工作流注入。
+        "Command",                 // 禁止任意命令执行。
+        "Sql",                     // 禁止任意 SQL 执行。
+        "Assembly",                // 禁止任意程序集加载。
+        "Script",                  // 禁止任意脚本加载。
+        "Executable",              // 禁止任意可执行文件入口。
+    };
+
+    private static readonly string[] LayoutOrderFixture =
+    {
+        "video-creation",          // 合法 ID：必须保留用户顺序。
+        "unknown-widget",          // 未知 ID：必须 fail closed 丢弃。
+        "video-creation",          // 重复 ID：必须去重。
+        "search-insight",          // 合法但当前不可执行：允许显示占位。
+    };
+
+    private static readonly string[] StoredOrderFixture =
+    {
+        "video-creation",          // 保存时验证合法排序恢复。
+        "search-insight",          // Search 可显示，但仍保持不可执行。
+    };
+
+    private static readonly string[] StoredHiddenFixture =
+    {
+        "comment-analysis",        // 验证固定组件的隐藏偏好可恢复。
+    };
+
     public static void Run()
     {
         VerifyAssistantStateResolver();
@@ -60,18 +94,13 @@ internal static class OperatorVisualCompletionSmokeTests
         SmokeAssert.True(!search.IsAvailable, "Search 在有界外部采集接入前必须保持禁用");
         SmokeAssert.True(search.AvailabilityText == "尚未接入", "Search 禁用状态必须明确显示尚未接入");
 
-        var forbiddenNames = new[]
-        {
-            "Provider", "Endpoint", "ApiKey", "Model", "Prompt", "Workflow",
-            "Command", "Sql", "Assembly", "Script", "Executable",
-        };
         var exposedNames = typeof(OperatorWidgetDescriptor)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Select(property => property.Name)
             .Concat(typeof(OperatorWidgetLayout).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Select(property => property.Name))
             .ToArray();
-        foreach (var forbidden in forbiddenNames)
+        foreach (var forbidden in ForbiddenWidgetPropertyFragments)
         {
             SmokeAssert.True(
                 !exposedNames.Any(name => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)),
@@ -81,13 +110,7 @@ internal static class OperatorVisualCompletionSmokeTests
 
     private static void VerifyLayoutNormalization()
     {
-        var layout = OperatorWidgetLayout.Normalize(new[]
-        {
-            "video-creation",       // 合法 ID：必须保留用户顺序。
-            "unknown-widget",       // 未知 ID：必须 fail closed 丢弃。
-            "video-creation",       // 重复 ID：必须去重。
-            "search-insight",       // 合法但当前不可执行：允许显示占位。
-        });
+        var layout = OperatorWidgetLayout.Normalize(LayoutOrderFixture);
 
         SmokeAssert.True(layout.WidgetIds.Count == ExpectedWidgetIds.Length, "规范化后必须补齐固定目录组件");
         SmokeAssert.True(layout.WidgetIds[0] == "video-creation", "合法用户排序必须被保留");
@@ -105,14 +128,12 @@ internal static class OperatorVisualCompletionSmokeTests
 
         try
         {
-            var requested = OperatorWidgetLayout.Normalize(
-                new[] { "video-creation", "search-insight" },
-                new[] { "comment-analysis" });
+            var requested = OperatorWidgetLayout.Normalize(StoredOrderFixture, StoredHiddenFixture);
             SmokeAssert.True(store.TrySave(requested), "工作组件布局必须可以原子保存");
 
             var loaded = store.LoadOrDefault();
             SmokeAssert.True(loaded.WidgetIds[0] == "video-creation", "已保存的合法组件顺序必须恢复");
-            SmokeAssert.True(loaded.HiddenWidgetIds.SequenceEqual(new[] { "comment-analysis" }), "已保存显隐偏好必须恢复");
+            SmokeAssert.True(loaded.HiddenWidgetIds.SequenceEqual(StoredHiddenFixture), "已保存显隐偏好必须恢复");
 
             File.WriteAllText(path, "{not-valid-json");
             var fallback = store.LoadOrDefault();
