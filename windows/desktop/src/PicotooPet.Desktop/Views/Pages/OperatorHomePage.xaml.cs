@@ -1,11 +1,11 @@
 using System.Windows;
-using System.Windows.Controls;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
-public partial class OperatorHomePage : UserControl
+/// <summary>26.1 简单模式首页；只负责打开受限任务向导并导航到既有安全路由。</summary>
+public partial class OperatorHomePage : System.Windows.Controls.UserControl
 {
     public OperatorHomePage()
     {

@@ -85,12 +85,13 @@ def test_release_goal_preserves_history_and_adds_governance_only_promotion() -> 
     assert promotion["automatic_release"] is False
 
 
-def test_real_wpf_smoke_is_registered_and_no_top_level_route_is_added() -> None:
+def test_real_wpf_smoke_is_registered_and_promotion_stays_in_advanced_business_automation() -> None:
     program = read("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs")
     smoke = read("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/QualityPromotionPanelWpfSmokeTests.cs")
     self_test = read("windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs")
     assert "QualityPromotionPanelWpfSmokeTests.Run();" in program
     for required in ("new QualityPromotionPanel", "Measure(new Size(1100, 780))", "Arrange(new Rect(0, 0, 1100, 780))", "UpdateLayout()", "BindingMode.OneWay"):
         assert required in smoke
-    assert "shell.NavigationItems.Count != 11" in self_test
+    assert "shell.NavigationItems.Count != 5" in self_test
+    assert "NavigationRoute.BusinessAutomation" in self_test
     assert "NavigationRoute.Promotion" not in self_test

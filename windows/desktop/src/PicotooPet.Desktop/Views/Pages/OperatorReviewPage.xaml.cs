@@ -1,8 +1,7 @@
-using System.Windows.Controls;
-
 namespace PicotooPet.Desktop.Views.Pages;
 
-public partial class OperatorReviewPage : UserControl
+/// <summary>26.1 待我审核页面；只展示既有审批事实的简单模式投影。</summary>
+public partial class OperatorReviewPage : System.Windows.Controls.UserControl
 {
     public OperatorReviewPage()
     {
