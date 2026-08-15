@@ -122,7 +122,11 @@ def test_web_crawl_static_routes_to_scrapling_get() -> None:
         ("stealth", "scrapling.stealthy_fetch", 150),
     ],
 )
-def test_web_crawl_browser_modes_are_closed_allowlist(mode: str, selector: str, timeout: int) -> None:
+def test_web_crawl_browser_modes_are_closed_allowlist(
+    mode: str,
+    selector: str,
+    timeout: int,
+) -> None:
     runner = RecordingRunner(CommandResult(returncode=0, stdout="page", stderr=""))
     gateway = GatewayDispatcher(runner=runner)
 
