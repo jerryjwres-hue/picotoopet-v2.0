@@ -12,6 +12,14 @@
   <ItemGroup>
     <ProjectReference Include="..\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
     <Resource Include="Assets\Pet\Husky\V1\*.png" />
+
+    <!-- Maotai v2 art : independent transparent raster parts are copied into the published payload unchanged. -->
+    <Content Include="Assets\Maotai\V2\**\*.png">
+      <Link>ui-assets\maotai\v2\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+
     <Content Include="..\..\..\..\src\picotoopet_core\product-version.txt"
              Link="product-version.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
