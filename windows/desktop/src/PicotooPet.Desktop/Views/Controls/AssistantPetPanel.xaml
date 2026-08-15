@@ -1,111 +1,132 @@
 <UserControl x:Class="PicotooPet.Desktop.Views.Controls.AssistantPetPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             MinWidth="176"
              Focusable="True"
+             Background="Transparent"
+             Loaded="PetSurface_Loaded"
+             Unloaded="PetSurface_Unloaded"
+             IsVisibleChanged="PetSurface_IsVisibleChanged"
              MouseEnter="PetSurface_MouseEnter"
              MouseLeave="PetSurface_MouseLeave"
              MouseMove="PetSurface_MouseMove"
              MouseLeftButtonDown="PetSurface_MouseLeftButtonDown"
              MouseLeftButtonUp="PetSurface_MouseLeftButtonUp"
              MouseDoubleClick="PetSurface_MouseDoubleClick"
-             KeyDown="PetSurface_KeyDown"
-             IsVisibleChanged="PetSurface_IsVisibleChanged"
-             Unloaded="PetSurface_Unloaded">
+             KeyDown="PetSurface_KeyDown">
   <UserControl.Resources>
     <LinearGradientBrush x:Key="PetCardBackground" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#FF0A376B" Offset="0" />
-      <GradientStop Color="#FF06284E" Offset="0.58" />
-      <GradientStop Color="#FF031B37" Offset="1" />
+      <GradientStop Color="#FF082B4C" Offset="0" />
+      <GradientStop Color="#FF07385F" Offset="0.54" />
+      <GradientStop Color="#FF092947" Offset="1" />
     </LinearGradientBrush>
-    <LinearGradientBrush x:Key="PetFur" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Color="#FF303842" Offset="0" />
-      <GradientStop Color="#FF111820" Offset="1" />
-    </LinearGradientBrush>
-    <LinearGradientBrush x:Key="PetCream" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Color="#FFFFF9EF" Offset="0" />
-      <GradientStop Color="#FFF0DCC5" Offset="1" />
-    </LinearGradientBrush>
+
+    <Style x:Key="PetMiniButtonStyle" TargetType="Button">
+      <Setter Property="Background" Value="#183A88C7" />
+      <Setter Property="BorderBrush" Value="#425F9BC8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="#FFCFE9FF" />
+      <Setter Property="Padding" Value="7,4" />
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ButtonBorder"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ButtonBorder" Property="Background" Value="#314D9DE0" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
   </UserControl.Resources>
 
   <Border x:Name="CardBorder"
+          CornerRadius="14"
+          Padding="12"
           Background="{StaticResource PetCardBackground}"
           BorderBrush="#FF176AA9"
-          BorderThickness="1"
-          CornerRadius="16"
-          Padding="12"
-          SnapsToDevicePixels="True">
-    <Border.Effect>
-      <DropShadowEffect BlurRadius="16"
-                        ShadowDepth="2"
-                        Opacity="0.17"
-                        Color="#FF00152A" />
-    </Border.Effect>
+          BorderThickness="1">
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
-        <RowDefinition Height="174" />
+        <RowDefinition Height="170" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <!-- Header       : only mirrors AssistantPetPresentation facts. -->
-      <Grid x:Name="HeaderPanel" Grid.Row="0">
+      <Grid x:Name="HeaderPanel" Grid.Row="0" Margin="0,0,0,3">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel Orientation="Horizontal">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
           <TextBlock Text="AI 助手状态"
                      Foreground="White"
-                     FontSize="14"
+                     FontSize="12"
                      FontWeight="SemiBold" />
           <Border Margin="7,0,0,0"
                   Padding="5,1"
-                  Background="#1FFFFFFF"
-                  CornerRadius="7">
-            <TextBlock Text="LIVE"
-                       Foreground="#FF9FD0FF"
+                  CornerRadius="5"
+                  Background="#253FA7E8">
+            <TextBlock Text="茅台"
+                       Foreground="#FF8ED0FF"
                        FontSize="7.5"
-                       FontWeight="Bold" />
+                       FontWeight="SemiBold" />
           </Border>
         </StackPanel>
-        <Ellipse x:Name="IndicatorDot"
-                 Grid.Column="1"
-                 Width="9"
-                 Height="9"
-                 Margin="8,1,0,0"
-                 VerticalAlignment="Top"
-                 Fill="#FF9CA3AF" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Ellipse x:Name="IndicatorDot"
+                   Width="8"
+                   Height="8"
+                   Fill="#FF8A9AAD"
+                   Margin="0,0,7,0" />
+          <Button x:Name="FloatButton"
+                  Content="↗"
+                  ToolTip="放到桌面"
+                  Style="{StaticResource PetMiniButtonStyle}"
+                  Padding="5,2"
+                  Click="FloatButton_Click" />
+        </StackPanel>
       </Grid>
 
-      <!-- Detail       : bounded copy; no logs, prompts, tokens or error bodies. -->
       <TextBlock x:Name="DetailText"
                  Grid.Row="1"
-                 Margin="0,5,0,0"
-                 Foreground="#FFC7DCF2"
-                 FontSize="10.5"
-                 TextWrapping="Wrap"
-                 Text="正在读取系统状态…" />
+                 Text="正在读取系统状态…"
+                 Foreground="#FF9FC6E5"
+                 FontSize="9.5"
+                 TextTrimming="CharacterEllipsis"
+                 Margin="0,0,0,2" />
 
-      <!-- Pet stage    : the dog is built from independently animated WPF layers. -->
-      <Grid x:Name="PetStage"
-            Grid.Row="2"
-            Margin="0,3,0,0"
-            ClipToBounds="False">
+      <Canvas x:Name="PetStage"
+              Grid.Row="2"
+              Width="184"
+              Height="170"
+              HorizontalAlignment="Center"
+              ClipToBounds="False">
         <Ellipse Width="142"
-                 Height="20"
-                 VerticalAlignment="Bottom"
-                 Margin="0,0,0,5"
-                 Fill="#42000000" />
+                 Height="24"
+                 Canvas.Left="21"
+                 Canvas.Top="137"
+                 Fill="#54030E1B" />
 
         <Canvas x:Name="PetMotionLayer"
-                Width="164"
-                Height="166"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Bottom"
-                RenderTransformOrigin="0.5,0.82">
+                Width="150"
+                Height="150"
+                Canvas.Left="17"
+                Canvas.Top="2"
+                RenderTransformOrigin="0.5,0.64">
           <Canvas.RenderTransform>
             <TransformGroup>
               <ScaleTransform x:Name="PetScale" ScaleX="1" ScaleY="1" />
@@ -114,396 +135,213 @@
             </TransformGroup>
           </Canvas.RenderTransform>
 
-          <!-- Tail         : separate from the torso so idle frames can wag it. -->
-          <Ellipse x:Name="PetTail"
-                   Canvas.Left="119"
-                   Canvas.Top="103"
-                   Width="39"
-                   Height="23"
-                   Fill="{StaticResource PetFur}"
-                   Stroke="#FF050B12"
-                   StrokeThickness="2"
-                   RenderTransformOrigin="0.15,0.5">
-            <Ellipse.RenderTransform>
-              <RotateTransform x:Name="TailRotate" Angle="-28" />
-            </Ellipse.RenderTransform>
-          </Ellipse>
+          <!-- Q-version Maotai raster rig: the visible character is illustrated PNG art, not WPF dog geometry. -->
+          <Grid x:Name="MaotaiRasterLayer" Width="150" Height="150">
+            <Image x:Name="MaotaiBody"
+                   Width="150"
+                   Height="150"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
 
-          <!-- Body         : breathing animation is isolated from head/limb reactions. -->
-          <Ellipse x:Name="PetBody"
-                   Canvas.Left="43"
-                   Canvas.Top="83"
-                   Width="84"
-                   Height="72"
-                   Fill="{StaticResource PetFur}"
-                   Stroke="#FF050B12"
-                   StrokeThickness="2" />
-          <Ellipse Canvas.Left="58"
-                   Canvas.Top="101"
-                   Width="54"
-                   Height="49"
-                   Fill="{StaticResource PetCream}"
-                   Opacity="0.96" />
+            <Image x:Name="MaotaiTail"
+                   Width="150"
+                   Height="150"
+                   Stretch="Uniform"
+                   Opacity="0"
+                   RenderTransformOrigin="0.24,0.62"
+                   RenderOptions.BitmapScalingMode="HighQuality">
+              <Image.Clip>
+                <RectangleGeometry Rect="0,38,58,88" RadiusX="18" RadiusY="18" />
+              </Image.Clip>
+              <Image.RenderTransform>
+                <RotateTransform x:Name="MaotaiTailRotate" Angle="0" />
+              </Image.RenderTransform>
+            </Image>
 
-          <!-- Head         : head, ears, eyes and muzzle each have independent transforms. -->
-          <Canvas x:Name="PetHead"
-                  Canvas.Left="32"
-                  Canvas.Top="21"
-                  Width="103"
-                  Height="94"
-                  RenderTransformOrigin="0.5,0.67">
-            <Canvas.RenderTransform>
-              <TransformGroup>
-                <RotateTransform x:Name="HeadRotate" Angle="0" />
-                <TranslateTransform x:Name="HeadTranslate" X="0" Y="0" />
-              </TransformGroup>
-            </Canvas.RenderTransform>
+            <Image x:Name="MaotaiHead"
+                   Width="150"
+                   Height="150"
+                   Stretch="Uniform"
+                   Opacity="0"
+                   RenderTransformOrigin="0.55,0.47"
+                   RenderOptions.BitmapScalingMode="HighQuality">
+              <Image.Clip>
+                <RectangleGeometry Rect="27,0,116,105" RadiusX="34" RadiusY="34" />
+              </Image.Clip>
+              <Image.RenderTransform>
+                <TransformGroup>
+                  <RotateTransform x:Name="MaotaiHeadRotate" Angle="0" />
+                  <TranslateTransform x:Name="MaotaiHeadTranslate" X="0" Y="0" />
+                </TransformGroup>
+              </Image.RenderTransform>
+            </Image>
 
-            <Path x:Name="LeftEar"
-                  Data="M 17,30 L 24,0 L 44,31 Z"
-                  Fill="#FF202833"
-                  Stroke="#FF050B12"
-                  StrokeThickness="2"
-                  RenderTransformOrigin="0.5,0.9" />
-            <Path Data="M 23,26 L 26,8 L 37,28 Z"
-                  Fill="#FFE1ACA8"
-                  Opacity="0.92" />
-            <Path x:Name="RightEar"
-                  Data="M 61,31 L 81,0 L 88,32 Z"
-                  Fill="#FF202833"
-                  Stroke="#FF050B12"
-                  StrokeThickness="2"
-                  RenderTransformOrigin="0.5,0.9" />
-            <Path Data="M 67,28 L 79,8 L 82,27 Z"
-                  Fill="#FFE1ACA8"
-                  Opacity="0.92" />
+            <Image x:Name="MaotaiLeftPawImage"
+                   Width="150"
+                   Height="150"
+                   Stretch="Uniform"
+                   Opacity="0"
+                   RenderTransformOrigin="0.43,0.76"
+                   RenderOptions.BitmapScalingMode="HighQuality">
+              <Image.Clip>
+                <RectangleGeometry Rect="38,82,54,55" RadiusX="18" RadiusY="18" />
+              </Image.Clip>
+              <Image.RenderTransform>
+                <TransformGroup>
+                  <RotateTransform x:Name="MaotaiLeftPawRotate" Angle="0" />
+                  <TranslateTransform x:Name="MaotaiLeftPawTranslate" X="0" Y="0" />
+                </TransformGroup>
+              </Image.RenderTransform>
+            </Image>
 
-            <Ellipse Canvas.Left="11"
-                     Canvas.Top="20"
-                     Width="82"
-                     Height="70"
-                     Fill="{StaticResource PetFur}"
-                     Stroke="#FF050B12"
-                     StrokeThickness="2" />
-            <Path Data="M 19,40 Q 35,24 48,35 Q 41,55 27,60 Q 20,54 19,40 Z"
-                  Fill="#FFFFF7E9"
-                  Opacity="0.95" />
-            <Path Data="M 85,40 Q 69,24 56,35 Q 63,55 77,60 Q 84,54 85,40 Z"
-                  Fill="#FFFFF7E9"
-                  Opacity="0.95" />
-            <Path Data="M 43,29 Q 52,21 61,29 L 56,52 L 49,52 Z"
-                  Fill="#FF0C1219"
-                  Opacity="0.9" />
+            <Image x:Name="MaotaiRightPawImage"
+                   Width="150"
+                   Height="150"
+                   Stretch="Uniform"
+                   Opacity="0"
+                   RenderTransformOrigin="0.60,0.74"
+                   RenderOptions.BitmapScalingMode="HighQuality">
+              <Image.Clip>
+                <RectangleGeometry Rect="72,80,50,55" RadiusX="18" RadiusY="18" />
+              </Image.Clip>
+              <Image.RenderTransform>
+                <TransformGroup>
+                  <RotateTransform x:Name="MaotaiRightPawRotate" Angle="0" />
+                  <TranslateTransform x:Name="MaotaiRightPawTranslate" X="0" Y="0" />
+                </TransformGroup>
+              </Image.RenderTransform>
+            </Image>
 
-            <!-- Emotion layer: brows and blush can change without replacing the base state. -->
-            <Path x:Name="LeftBrow"
-                  Data="M 29,41 Q 37,36 45,40"
-                  Stroke="#FF4B332B"
-                  StrokeThickness="2.3"
-                  StrokeStartLineCap="Round"
-                  StrokeEndLineCap="Round"
-                  Fill="Transparent"
-                  Opacity="0.52" />
-            <Path x:Name="RightBrow"
-                  Data="M 60,40 Q 68,36 76,41"
-                  Stroke="#FF4B332B"
-                  StrokeThickness="2.3"
-                  StrokeStartLineCap="Round"
-                  StrokeEndLineCap="Round"
-                  Fill="Transparent"
-                  Opacity="0.52" />
+            <!-- Named face surfaces remain image layers for the v1.3 rig contract and future fine-grained exports. -->
+            <Image x:Name="FaceEyes" Width="150" Height="150" Opacity="0" IsHitTestVisible="False" />
+            <Image x:Name="FaceBrows" Width="150" Height="150" Opacity="0" IsHitTestVisible="False" />
+            <Image x:Name="FaceMouth" Width="150" Height="150" Opacity="0" IsHitTestVisible="False" />
+          </Grid>
 
-            <Ellipse x:Name="LeftEye"
-                     Canvas.Left="31"
-                     Canvas.Top="44"
-                     Width="15"
-                     Height="16"
-                     Fill="#FFFFFBF3" />
-            <Ellipse x:Name="RightEye"
-                     Canvas.Left="59"
-                     Canvas.Top="44"
-                     Width="15"
-                     Height="16"
-                     Fill="#FFFFFBF3" />
-            <Ellipse x:Name="LeftPupil"
-                     Canvas.Left="36"
-                     Canvas.Top="48"
-                     Width="7"
-                     Height="9"
-                     Fill="#FF4A2F23" />
-            <Ellipse x:Name="RightPupil"
-                     Canvas.Left="64"
-                     Canvas.Top="48"
-                     Width="7"
-                     Height="9"
-                     Fill="#FF4A2F23" />
-            <Ellipse Canvas.Left="38"
-                     Canvas.Top="49"
-                     Width="2.5"
-                     Height="2.5"
-                     Fill="White" />
-            <Ellipse Canvas.Left="66"
-                     Canvas.Top="49"
-                     Width="2.5"
-                     Height="2.5"
-                     Fill="White" />
-            <Ellipse x:Name="LeftBlush"
-                     Canvas.Left="22"
-                     Canvas.Top="60"
-                     Width="16"
-                     Height="7"
-                     Fill="#FFFF8FA5"
-                     Opacity="0" />
-            <Ellipse x:Name="RightBlush"
-                     Canvas.Left="68"
-                     Canvas.Top="60"
-                     Width="16"
-                     Height="7"
-                     Fill="#FFFF8FA5"
-                     Opacity="0" />
-
-            <Ellipse x:Name="Muzzle"
-                     Canvas.Left="37"
-                     Canvas.Top="58"
-                     Width="34"
-                     Height="26"
-                     Fill="{StaticResource PetCream}" />
-            <Ellipse Canvas.Left="48"
-                     Canvas.Top="60"
-                     Width="13"
-                     Height="9"
-                     Fill="#FF0A0D11" />
-            <Path x:Name="Mouth"
-                  Data="M 48,72 Q 54,79 61,72"
-                  Stroke="#FF5B302A"
-                  StrokeThickness="2"
-                  StrokeStartLineCap="Round"
-                  StrokeEndLineCap="Round"
-                  Fill="Transparent" />
-            <Ellipse x:Name="Tongue"
-                     Canvas.Left="51"
-                     Canvas.Top="74"
-                     Width="8"
-                     Height="7"
-                     Fill="#FFFF8E9E"
-                     Visibility="Visible" />
-
-            <!-- Headphones   : preserve the product mascot identity while the face remains articulated. -->
-            <Path Data="M 18,48 Q 15,18 52,14 Q 89,18 87,49"
-                  Stroke="#FF4F9DFF"
-                  StrokeThickness="6"
-                  StrokeStartLineCap="Round"
-                  StrokeEndLineCap="Round"
-                  Fill="Transparent" />
-            <Border Canvas.Left="8"
-                    Canvas.Top="43"
-                    Width="14"
-                    Height="27"
-                    Background="#FF377FE7"
-                    BorderBrush="#FF8CC4FF"
-                    BorderThickness="1"
-                    CornerRadius="7" />
-            <Border Canvas.Left="83"
-                    Canvas.Top="43"
-                    Width="14"
-                    Height="27"
-                    Background="#FF377FE7"
-                    BorderBrush="#FF8CC4FF"
-                    BorderThickness="1"
-                    CornerRadius="7" />
+          <!-- Compatibility-only vector controls keep v1.2 animation/test contracts alive but are never rendered. -->
+          <Canvas x:Name="LegacyCharacterLayer"
+                  Width="100"
+                  Height="132"
+                  Canvas.Left="25"
+                  Canvas.Top="9"
+                  Opacity="0"
+                  IsHitTestVisible="False">
+            <Canvas x:Name="HeadLayer" Width="100" Height="92" RenderTransformOrigin="0.5,0.55">
+              <Canvas.RenderTransform>
+                <TransformGroup>
+                  <RotateTransform x:Name="HeadRotate" Angle="0" />
+                  <TranslateTransform x:Name="HeadTranslate" X="0" Y="0" />
+                </TransformGroup>
+              </Canvas.RenderTransform>
+              <Path x:Name="LeftEar" Data="M 20,30 L 18,2 L 42,25 Z" Fill="#FF172433" />
+              <Path x:Name="RightEar" Data="M 58,25 L 82,2 L 80,30 Z" Fill="#FF172433" />
+              <Ellipse Width="72" Height="67" Canvas.Left="14" Canvas.Top="22" Fill="#FF1C2A3B" />
+              <Ellipse x:Name="LeftEye" Width="16" Height="18" Canvas.Left="32" Canvas.Top="43" Fill="White" />
+              <Ellipse x:Name="RightEye" Width="16" Height="18" Canvas.Left="56" Canvas.Top="43" Fill="White" />
+              <Ellipse x:Name="LeftPupil" Width="7" Height="8" Canvas.Left="36" Canvas.Top="48" Fill="#FF17202B" />
+              <Ellipse x:Name="RightPupil" Width="7" Height="8" Canvas.Left="64" Canvas.Top="48" Fill="#FF17202B" />
+              <Path x:Name="LeftBrow" Data="M 30,39 Q 38,34 46,39" Stroke="#FF111821" StrokeThickness="2" />
+              <Path x:Name="RightBrow" Data="M 56,39 Q 64,34 72,39" Stroke="#FF111821" StrokeThickness="2" />
+              <Ellipse x:Name="LeftBlush" Width="12" Height="5" Canvas.Left="25" Canvas.Top="64" Fill="#FFFF8EA1" />
+              <Ellipse x:Name="RightBlush" Width="12" Height="5" Canvas.Left="68" Canvas.Top="64" Fill="#FFFF8EA1" />
+              <Ellipse x:Name="Muzzle" Width="39" Height="27" Canvas.Left="34" Canvas.Top="57" Fill="#FFF0F3F5" />
+              <Path x:Name="Mouth" Data="M 44,72 Q 52,79 60,72" Stroke="#FF2A1A18" StrokeThickness="2" Fill="Transparent" />
+              <Ellipse x:Name="Tongue" Width="12" Height="10" Canvas.Left="47" Canvas.Top="71" Fill="#FFFF8EA1" />
+            </Canvas>
+            <Ellipse x:Name="LeftPaw" Width="25" Height="35" Canvas.Left="21" Canvas.Top="87" Fill="#FFEDF1F4" />
+            <Ellipse x:Name="RightPaw" Width="25" Height="35" Canvas.Left="58" Canvas.Top="87" Fill="#FFEDF1F4" />
+            <Path x:Name="LegacyTail" Data="M 82,96 C 112,84 111,115 88,118" Stroke="#FF1B2939" StrokeThickness="14" StrokeStartLineCap="Round" StrokeEndLineCap="Round" RenderTransformOrigin="0.85,0.85">
+              <Path.RenderTransform>
+                <RotateTransform x:Name="TailRotate" Angle="-28" />
+              </Path.RenderTransform>
+            </Path>
+            <Border x:Name="Laptop" Width="61" Height="34" Canvas.Left="23" Canvas.Top="94" Background="#FF718096" CornerRadius="4" />
+            <Border x:Name="BathTub" Width="92" Height="38" Canvas.Left="5" Canvas.Top="92" Background="#FF4A9FF5" CornerRadius="10" Visibility="Collapsed" />
+            <Ellipse x:Name="BathDuck" Width="15" Height="15" Canvas.Left="70" Canvas.Top="87" Fill="#FFFFD83D" RenderTransformOrigin="0.5,0.8">
+              <Ellipse.RenderTransform>
+                <RotateTransform x:Name="BathDuckRotate" Angle="0" />
+              </Ellipse.RenderTransform>
+            </Ellipse>
+            <Ellipse x:Name="BathBubbleOne" Width="10" Height="10" Canvas.Left="13" Canvas.Top="85" Fill="#99FFFFFF" />
+            <Ellipse x:Name="BathBubbleTwo" Width="8" Height="8" Canvas.Left="88" Canvas.Top="81" Fill="#99FFFFFF" />
+            <TextBlock x:Name="SleepZzz" Text="Zzz" Canvas.Left="68" Canvas.Top="35" Foreground="#FF83C9FF" FontWeight="Bold" Visibility="Collapsed" />
+            <TextBlock x:Name="WaitBubble" Text="?" Canvas.Left="86" Canvas.Top="38" Foreground="#FFFFC34D" FontSize="20" FontWeight="Bold" Visibility="Collapsed" />
           </Canvas>
 
-          <!-- Paws         : individual limbs react to clicks and working frames. -->
-          <Ellipse x:Name="LeftPaw"
-                   Canvas.Left="42"
-                   Canvas.Top="128"
-                   Width="35"
-                   Height="25"
-                   Fill="{StaticResource PetCream}"
-                   Stroke="#FFB8A58F"
-                   StrokeThickness="1.5"
-                   RenderTransformOrigin="0.7,0.5" />
-          <Ellipse x:Name="RightPaw"
-                   Canvas.Left="91"
-                   Canvas.Top="128"
-                   Width="35"
-                   Height="25"
-                   Fill="{StaticResource PetCream}"
-                   Stroke="#FFB8A58F"
-                   StrokeThickness="1.5"
-                   RenderTransformOrigin="0.3,0.5" />
-
-          <!-- Working prop : shown only for live working state. -->
-          <Grid x:Name="Laptop"
-                Canvas.Left="58"
-                Canvas.Top="112"
-                Width="79"
-                Height="47"
-                Visibility="Collapsed">
-            <Border Background="#FF75849B"
-                    BorderBrush="#FFB9C6D8"
-                    BorderThickness="1"
-                    CornerRadius="4" />
-            <TextBlock Text="🐾"
-                       FontSize="14"
-                       Foreground="#FFD9E2EF"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center" />
-          </Grid>
-
-          <!-- Rest prop    : shown only while the real worker is online and idle. -->
-          <Grid x:Name="BathTub"
-                Canvas.Left="24"
-                Canvas.Top="119"
-                Width="120"
-                Height="42"
-                Visibility="Collapsed">
-            <Border Margin="0,10,0,0"
-                    Background="#FFA8DDF5"
-                    BorderBrush="#FFDBF5FF"
-                    BorderThickness="2"
-                    CornerRadius="9,9,20,20" />
-            <Ellipse x:Name="BathBubbleOne"
-                     Width="27"
-                     Height="16"
-                     Margin="9,0,0,0"
-                     HorizontalAlignment="Left"
+          <TextBlock x:Name="EmotionGlyph"
+                     Text="✨"
+                     FontSize="17"
+                     Foreground="#FFFFD86B"
+                     HorizontalAlignment="Right"
                      VerticalAlignment="Top"
-                     Fill="White"
-                     Opacity="0.92" />
-            <Ellipse x:Name="BathBubbleTwo"
-                     Width="20"
-                     Height="14"
-                     Margin="31,3,0,0"
-                     HorizontalAlignment="Left"
-                     VerticalAlignment="Top"
-                     Fill="#FFF5FBFF"
-                     Opacity="0.9" />
-            <TextBlock x:Name="BathDuck"
-                       Text="🦆"
-                       FontSize="18"
-                       HorizontalAlignment="Right"
-                       VerticalAlignment="Top"
-                       Margin="0,0,7,0"
-                       RenderTransformOrigin="0.5,0.8">
-              <TextBlock.RenderTransform>
-                <RotateTransform x:Name="BathDuckRotate" Angle="0" />
-              </TextBlock.RenderTransform>
-            </TextBlock>
-          </Grid>
-
-          <TextBlock x:Name="SleepZzz"
-                     Canvas.Left="118"
-                     Canvas.Top="35"
-                     Text="Z z z"
-                     Foreground="#FF9FC9FF"
-                     FontSize="15"
-                     FontWeight="Bold"
-                     Visibility="Collapsed" />
-          <TextBlock x:Name="WaitBubble"
-                     Canvas.Left="120"
-                     Canvas.Top="44"
-                     Text="?"
-                     Foreground="#FFFFC15C"
-                     FontSize="21"
-                     FontWeight="Bold"
-                     Visibility="Collapsed" />
+                     Margin="0,11,5,0"
+                     Opacity="0"
+                     IsHitTestVisible="False" />
         </Canvas>
 
-        <TextBlock x:Name="EmotionGlyph"
-                   Text="✦"
-                   FontSize="17"
-                   FontWeight="Bold"
-                   Foreground="#FFFFD26A"
-                   HorizontalAlignment="Left"
-                   VerticalAlignment="Top"
-                   Margin="9,15,0,0"
-                   Opacity="0" />
-        <TextBlock x:Name="ReactionText"
-                   Text="♥"
-                   FontSize="22"
-                   Foreground="#FFFF9EC8"
-                   HorizontalAlignment="Right"
-                   VerticalAlignment="Top"
-                   Margin="0,8,12,0"
-                   Opacity="0" />
         <Ellipse x:Name="FloatingIndicatorDot"
                  Width="10"
                  Height="10"
-                 HorizontalAlignment="Right"
-                 VerticalAlignment="Top"
-                 Margin="0,8,9,0"
-                 Fill="#FF9CA3AF"
+                 Canvas.Left="158"
+                 Canvas.Top="14"
+                 Fill="#FF8A9AAD"
+                 Stroke="#CFFFFFFF"
+                 StrokeThickness="1.5"
                  Visibility="Collapsed" />
-      </Grid>
+        <TextBlock x:Name="ReactionText"
+                   Text=""
+                   Canvas.Left="22"
+                   Canvas.Top="4"
+                   Width="140"
+                   TextAlignment="Center"
+                   Foreground="White"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Opacity="0"
+                   IsHitTestVisible="False" />
+      </Canvas>
 
-      <!-- Footer       : presentation-only status and a request to reuse the same pet on the desktop. -->
-      <Border x:Name="FooterPanel"
-              Grid.Row="3"
-              Background="#2200A6FF"
-              BorderBrush="#332FA8FF"
-              BorderThickness="1"
-              CornerRadius="9"
-              Padding="8,6">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
+      <Grid x:Name="FooterPanel" Grid.Row="3" Margin="0,2,0,7">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel>
           <TextBlock x:Name="ModeTitleText"
                      Text="状态读取中"
                      Foreground="White"
-                     FontSize="12"
+                     FontSize="11"
                      FontWeight="SemiBold" />
-          <Button x:Name="FloatButton"
-                  Grid.Column="1"
-                  Content="放到桌面 ↗"
-                  Padding="5,1"
-                  Background="Transparent"
-                  BorderThickness="0"
-                  Foreground="#FF93C8F6"
-                  FontSize="9.5"
-                  Cursor="Hand"
-                  Click="FloatButton_Click" />
-        </Grid>
-      </Border>
+          <TextBlock Text="Q版阿拉斯加 · 茅台"
+                     Foreground="#FF75ACD5"
+                     FontSize="8"
+                     Margin="0,1,0,0" />
+        </StackPanel>
+        <TextBlock Grid.Column="1"
+                   Text="放到桌面 ↗"
+                   Foreground="#FF8FC5ED"
+                   FontSize="8.5"
+                   VerticalAlignment="Center"
+                   IsHitTestVisible="False" />
+      </Grid>
 
-      <!-- State strip   : mirrors the three user-facing pet modes from the UI design. -->
-      <UniformGrid x:Name="StateStrip" Grid.Row="4" Columns="3" Margin="0,8,0,0">
-        <Border x:Name="RestingCard"
-                Margin="0,0,3,0"
-                Padding="3,5"
-                Background="#1800D9A3"
-                BorderBrush="#334CDDB2"
-                BorderThickness="1"
-                CornerRadius="7">
+      <UniformGrid x:Name="StateStrip" Grid.Row="4" Columns="3">
+        <Border x:Name="RestingCard" Margin="0,0,3,0" Padding="4" CornerRadius="8" Background="#1018273B" BorderBrush="#334C6078" BorderThickness="1">
           <StackPanel HorizontalAlignment="Center">
-            <TextBlock Text="🛁" HorizontalAlignment="Center" FontSize="14" />
-            <TextBlock Text="休息" Foreground="#FFE7F5FF" FontSize="9" HorizontalAlignment="Center" />
+            <TextBlock Text="☕" FontSize="12" HorizontalAlignment="Center" />
+            <TextBlock Text="休息" Foreground="#FFDDEBFA" FontSize="8" HorizontalAlignment="Center" />
           </StackPanel>
         </Border>
-        <Border x:Name="WorkingCard"
-                Margin="2,0"
-                Padding="3,5"
-                Background="#182F8CFF"
-                BorderBrush="#334F9DFF"
-                BorderThickness="1"
-                CornerRadius="7">
+        <Border x:Name="WorkingCard" Margin="2,0" Padding="4" CornerRadius="8" Background="#1018273B" BorderBrush="#334C6078" BorderThickness="1">
           <StackPanel HorizontalAlignment="Center">
-            <TextBlock Text="💻" HorizontalAlignment="Center" FontSize="14" />
-            <TextBlock Text="工作" Foreground="#FFE7F5FF" FontSize="9" HorizontalAlignment="Center" />
+            <TextBlock Text="⌨" FontSize="12" HorizontalAlignment="Center" />
+            <TextBlock Text="工作" Foreground="#FFDDEBFA" FontSize="8" HorizontalAlignment="Center" />
           </StackPanel>
         </Border>
-        <Border x:Name="OfflineCard"
-                Margin="3,0,0,0"
-                Padding="3,5"
-                Background="#1818273B"
-                BorderBrush="#33576A82"
-                BorderThickness="1"
-                CornerRadius="7">
+        <Border x:Name="OfflineCard" Margin="3,0,0,0" Padding="4" CornerRadius="8" Background="#1018273B" BorderBrush="#334C6078" BorderThickness="1">
           <StackPanel HorizontalAlignment="Center">
-            <TextBlock Text="💤" HorizontalAlignment="Center" FontSize="14" />
-            <TextBlock Text="离线" Foreground="#FFE7F5FF" FontSize="9" HorizontalAlignment="Center" />
+            <TextBlock Text="Zz" FontSize="10" Foreground="#FF9AB7D0" HorizontalAlignment="Center" />
+            <TextBlock Text="离线" Foreground="#FFDDEBFA" FontSize="8" HorizontalAlignment="Center" />
           </StackPanel>
         </Border>
       </UniformGrid>
