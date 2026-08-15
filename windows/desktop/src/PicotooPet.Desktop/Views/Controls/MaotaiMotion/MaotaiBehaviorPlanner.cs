@@ -44,11 +44,8 @@ internal static class MaotaiBehaviorPlanner
         in MaotaiMotionInput input,
         double currentX)
     {
-        if (input.Interaction != MaotaiInteractionKind.None)
-        {
-            return MaotaiMotionState.UserReaction;
-        }
-
+        // Strong state       : real Offline/Error authority always wins over cosmetic interaction.
+        // Interaction        : pat/paw/drag may interrupt only when the real system state allows it.
         if (input.BaseState == MaotaiBaseState.Offline)
         {
             return MaotaiMotionState.Sleep;
@@ -57,6 +54,11 @@ internal static class MaotaiBehaviorPlanner
         if (input.BaseState == MaotaiBaseState.Error)
         {
             return MaotaiMotionState.Look;
+        }
+
+        if (input.Interaction != MaotaiInteractionKind.None)
+        {
+            return MaotaiMotionState.UserReaction;
         }
 
         if (input.WantsJump)
