@@ -7,6 +7,12 @@
     <SolidColorBrush x:Key="HomeMuted" Color="#FF718197" />
     <SolidColorBrush x:Key="HomeBorder" Color="#FFDCE6F2" />
 
+    <DropShadowEffect x:Key="SoftCardShadow"
+                      BlurRadius="14"
+                      ShadowDepth="2"
+                      Opacity="0.09"
+                      Color="#FF63768E" />
+
     <Style x:Key="CardButtonStyle" TargetType="Button">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -30,7 +36,7 @@
                     Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="9"
+                    CornerRadius="10"
                     Padding="{TemplateBinding Padding}">
               <ContentPresenter HorizontalAlignment="Center"
                                 VerticalAlignment="Center" />
@@ -136,27 +142,28 @@
         <ColumnDefinition Width="304" />
       </Grid.ColumnDefinitions>
 
-      <!-- Main column  : hero, real task buckets and recent real task facts. -->
+      <!-- Main column  : hero, truthful status strip, real task buckets and recent task facts. -->
       <StackPanel Grid.Column="0" Margin="0,0,16,0">
         <Border x:Name="HeroCard"
-                Height="176"
-                CornerRadius="17"
-                Margin="0,0,0,14"
-                ClipToBounds="True">
+                Height="180"
+                CornerRadius="18"
+                Margin="0,0,0,12"
+                ClipToBounds="True"
+                Effect="{StaticResource SoftCardShadow}">
           <Border.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-              <GradientStop Color="#FF3AA0FF" Offset="0" />
-              <GradientStop Color="#FF1475F2" Offset="0.54" />
-              <GradientStop Color="#FF2E8FF7" Offset="1" />
+              <GradientStop Color="#FF49B2FF" Offset="0" />
+              <GradientStop Color="#FF1779F4" Offset="0.50" />
+              <GradientStop Color="#FF1769DE" Offset="1" />
             </LinearGradientBrush>
           </Border.Background>
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="232" />
+              <ColumnDefinition Width="238" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel Margin="26,22,0,19" VerticalAlignment="Center">
+            <StackPanel Margin="27,22,0,19" VerticalAlignment="Center">
               <StackPanel Orientation="Horizontal">
                 <Border Width="58"
                         Height="58"
@@ -173,10 +180,24 @@
                              VerticalAlignment="Center" />
                 </Border>
                 <StackPanel VerticalAlignment="Center">
-                  <TextBlock Text="新建任务"
-                             Foreground="White"
-                             FontSize="28"
-                             FontWeight="Bold" />
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="新建任务"
+                               Foreground="White"
+                               FontSize="28"
+                               FontWeight="Bold" />
+                    <Border Margin="9,5,0,0"
+                            Padding="6,2"
+                            Height="20"
+                            Background="#24FFFFFF"
+                            BorderBrush="#44FFFFFF"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                      <TextBlock Text="AI WORKSPACE"
+                                 Foreground="#EEFFFFFF"
+                                 FontSize="7.5"
+                                 FontWeight="SemiBold" />
+                    </Border>
+                  </StackPanel>
                   <TextBlock Text="开始一次智能任务，让 AI 帮你完成创作与分析"
                              Margin="0,4,0,0"
                              Foreground="#E8FFFFFF"
@@ -194,17 +215,17 @@
             </StackPanel>
 
             <Grid Grid.Column="1" ClipToBounds="True">
-              <Ellipse Width="270"
-                       Height="132"
+              <Ellipse Width="282"
+                       Height="138"
                        HorizontalAlignment="Right"
                        VerticalAlignment="Bottom"
-                       Margin="0,0,-52,-46"
+                       Margin="0,0,-54,-47"
                        Fill="#18FFFFFF" />
-              <Ellipse Width="196"
-                       Height="104"
+              <Ellipse Width="206"
+                       Height="110"
                        HorizontalAlignment="Right"
                        VerticalAlignment="Bottom"
-                       Margin="0,0,-20,-25"
+                       Margin="0,0,-19,-25"
                        Stroke="#3AFFFFFF"
                        StrokeThickness="2" />
               <TextBlock Text="✦"
@@ -212,16 +233,109 @@
                          FontSize="24"
                          HorizontalAlignment="Left"
                          VerticalAlignment="Top"
-                         Margin="32,20,0,0" />
+                         Margin="30,18,0,0" />
               <Image Source="/Picotoo Pet AI;component/Assets/Pet/Husky/V1/idle_0.png"
-                     Width="198"
-                     Height="166"
+                     Width="202"
+                     Height="170"
                      HorizontalAlignment="Right"
                      VerticalAlignment="Bottom"
                      Margin="0,0,6,-4"
                      Stretch="Uniform"
                      RenderOptions.BitmapScalingMode="HighQuality" />
             </Grid>
+          </Grid>
+        </Border>
+
+        <!-- Status strip  : summarizes only existing real task/system facts; no new authority is introduced. -->
+        <Border x:Name="HomeGreetingStrip"
+                Margin="0,0,0,12"
+                Padding="13,10"
+                Background="White"
+                BorderBrush="#FFDCE7F2"
+                BorderThickness="1"
+                CornerRadius="13"
+                Effect="{StaticResource SoftCardShadow}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <Border Width="34"
+                      Height="34"
+                      CornerRadius="10"
+                      Background="#FFEDF5FF"
+                      Margin="0,0,10,0">
+                <TextBlock Text="✦"
+                           Foreground="#FF2878DF"
+                           FontSize="17"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+              </Border>
+              <StackPanel VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                  <Ellipse Tag="{Binding SystemIndicator, Mode=OneWay}"
+                           Style="{StaticResource HealthDotStyle}"
+                           Margin="0,0,6,0"
+                           VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding SystemSummary, Mode=OneWay}"
+                             Tag="{Binding SystemIndicator, Mode=OneWay}"
+                             Style="{StaticResource HealthTextStyle}"
+                             FontSize="11"
+                             FontWeight="SemiBold" />
+                </StackPanel>
+                <TextBlock Text="任务、审核与执行状态均来自当前本地会话快照"
+                           Margin="0,3,0,0"
+                           Foreground="{StaticResource HomeMuted}"
+                           FontSize="9" />
+              </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+              <Border Padding="9,5"
+                      Margin="0,0,6,0"
+                      CornerRadius="9"
+                      Background="#FFFFF6EA"
+                      BorderBrush="#FFFFE0B9"
+                      BorderThickness="1">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="待审核 " Foreground="#FF9A6C35" FontSize="9" />
+                  <TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}"
+                             Foreground="#FFE56D12"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </StackPanel>
+              </Border>
+              <Border Padding="9,5"
+                      Margin="0,0,6,0"
+                      CornerRadius="9"
+                      Background="#FFEDF5FF"
+                      BorderBrush="#FFD7E7FA"
+                      BorderThickness="1">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="进行中 " Foreground="#FF547AA7" FontSize="9" />
+                  <TextBlock Text="{Binding InProgressCount, Mode=OneWay}"
+                             Foreground="#FF2875D6"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </StackPanel>
+              </Border>
+              <Border Padding="9,5"
+                      CornerRadius="9"
+                      Background="#FFECF8F1"
+                      BorderBrush="#FFD1EBDD"
+                      BorderThickness="1">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="已完成 " Foreground="#FF5C8A72" FontSize="9" />
+                  <TextBlock Text="{Binding CompletedCount, Mode=OneWay}"
+                             Foreground="#FF18865B"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
           </Grid>
         </Border>
 
@@ -235,10 +349,11 @@
           <Border Grid.Column="0"
                   Margin="0,0,7,0"
                   Padding="14"
-                  CornerRadius="13"
+                  CornerRadius="14"
                   Background="#FFFFFBF6"
                   BorderBrush="#FFFFD9B2"
-                  BorderThickness="1">
+                  BorderThickness="1"
+                  Effect="{StaticResource SoftCardShadow}">
             <StackPanel>
               <Grid>
                 <Grid.ColumnDefinitions>
@@ -290,10 +405,11 @@
           <Border Grid.Column="1"
                   Margin="3,0"
                   Padding="14"
-                  CornerRadius="13"
+                  CornerRadius="14"
                   Background="#FFF7FAFF"
                   BorderBrush="#FFCEE1FB"
-                  BorderThickness="1">
+                  BorderThickness="1"
+                  Effect="{StaticResource SoftCardShadow}">
             <StackPanel>
               <Grid>
                 <Grid.ColumnDefinitions>
@@ -346,10 +462,11 @@
           <Border Grid.Column="2"
                   Margin="7,0,0,0"
                   Padding="14"
-                  CornerRadius="13"
+                  CornerRadius="14"
                   Background="#FFF7FCF9"
                   BorderBrush="#FFCBEAD8"
-                  BorderThickness="1">
+                  BorderThickness="1"
+                  Effect="{StaticResource SoftCardShadow}">
             <StackPanel>
               <Grid>
                 <Grid.ColumnDefinitions>
@@ -401,10 +518,11 @@
 
         <Border x:Name="RecentTasksCard"
                 Padding="14,12"
-                CornerRadius="13"
+                CornerRadius="14"
                 Background="White"
                 BorderBrush="{StaticResource HomeBorder}"
-                BorderThickness="1">
+                BorderThickness="1"
+                Effect="{StaticResource SoftCardShadow}">
           <StackPanel>
             <Grid Margin="0,0,0,8">
               <Grid.ColumnDefinitions>
@@ -486,11 +604,12 @@
       <StackPanel Grid.Column="1">
         <Border x:Name="SystemStatusCard"
                 Padding="14"
-                CornerRadius="13"
+                CornerRadius="14"
                 Background="White"
                 BorderBrush="{StaticResource HomeBorder}"
                 BorderThickness="1"
-                Margin="0,0,0,12">
+                Margin="0,0,0,12"
+                Effect="{StaticResource SoftCardShadow}">
           <StackPanel>
             <Grid Margin="0,0,0,10">
               <Grid.ColumnDefinitions>
@@ -576,11 +695,12 @@
 
         <Border x:Name="ResourceMonitorCard"
                 Padding="14"
-                CornerRadius="13"
+                CornerRadius="14"
                 Background="White"
                 BorderBrush="{StaticResource HomeBorder}"
                 BorderThickness="1"
-                Margin="0,0,0,12">
+                Margin="0,0,0,12"
+                Effect="{StaticResource SoftCardShadow}">
           <StackPanel>
             <TextBlock Text="▥  资源监控"
                        FontSize="14"
@@ -650,10 +770,11 @@
 
         <Border x:Name="WorkComponentsCard"
                 Padding="14"
-                CornerRadius="13"
+                CornerRadius="14"
                 Background="White"
                 BorderBrush="{StaticResource HomeBorder}"
-                BorderThickness="1">
+                BorderThickness="1"
+                Effect="{StaticResource SoftCardShadow}">
           <StackPanel>
             <Grid Margin="0,0,0,8">
               <Grid.ColumnDefinitions>
