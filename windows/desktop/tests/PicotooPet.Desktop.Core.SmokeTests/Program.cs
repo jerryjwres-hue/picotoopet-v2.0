@@ -32,6 +32,7 @@ internal static class Program
             StateStoreSmokeTests.Run();
             NavigationSmokeTests.Run();
             OperatorSimpleModeSmokeTests.Run();
+            MaotaiNaturalMotionV2SmokeTests.Run();
             NavigationFaultBoundarySmokeTests.Run();
             NavigationContentRenderingSmokeTests.Run();
             ShellNavigationReconnectWpfSmokeTests.Run();
