@@ -7,13 +7,16 @@ public sealed class OperatorHomePageViewModel : PageViewModel
 {
     private readonly ControlCenterSession? _session;
     private OperatorProjection _projection;
+    private double? _cpuPercent;
+    private double? _memoryPercent;
+    private double? _diskPercent;
 
     public OperatorHomePageViewModel(
         ControlCenterSession session,
         ControlCenterSessionSnapshot snapshot)
         : base("首页")
     {
-        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _session    = session ?? throw new ArgumentNullException(nameof(session));
         _projection = OperatorProjection.FromSnapshot(snapshot);
     }
 
@@ -57,8 +60,33 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public string WindowsStatus => Projection.WindowsStatus;
     public string SystemSummary => Projection.SystemSummary;
 
+    /// <summary>资源条使用 0 作为不可用时的安全绘制值；可见文本仍明确显示破折号。</summary>
+    public double CpuPercent => _cpuPercent ?? 0d;
+    public double MemoryPercent => _memoryPercent ?? 0d;
+    public double DiskPercent => _diskPercent ?? 0d;
+    public string CpuText => FormatMetric(_cpuPercent);
+    public string MemoryText => FormatMetric(_memoryPercent);
+    public string DiskText => FormatMetric(_diskPercent);
+
     public void UpdateSnapshot(ControlCenterSessionSnapshot snapshot) =>
         Projection = OperatorProjection.FromSnapshot(snapshot);
+
+    /// <summary>接收独立本地只读采样；不会修改 Session、Worker 或任务快照。</summary>
+    public void UpdateResourceSnapshot(WindowsResourceSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        _cpuPercent    = WindowsResourceSnapshot.Normalize(snapshot.CpuPercent);
+        _memoryPercent = WindowsResourceSnapshot.Normalize(snapshot.MemoryPercent);
+        _diskPercent   = WindowsResourceSnapshot.Normalize(snapshot.DiskPercent);
+
+        RaisePropertyChanged(nameof(CpuPercent));
+        RaisePropertyChanged(nameof(MemoryPercent));
+        RaisePropertyChanged(nameof(DiskPercent));
+        RaisePropertyChanged(nameof(CpuText));
+        RaisePropertyChanged(nameof(MemoryText));
+        RaisePropertyChanged(nameof(DiskText));
+    }
 
     public NewTaskWizardViewModel CreateNewTaskWizard() =>
         _session is null
@@ -67,6 +95,11 @@ public sealed class OperatorHomePageViewModel : PageViewModel
 
     public static OperatorHomePageViewModel CreateForSmokeTest(
         ControlCenterSessionSnapshot snapshot) => new(snapshot);
+
+    private static string FormatMetric(double? value) =>
+        value is null
+            ? "—"
+            : $"{Math.Round(value.Value):0}%";
 
     private void RaiseProjectionProperties()
     {
