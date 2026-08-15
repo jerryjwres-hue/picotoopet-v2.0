@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PicotooPet.Desktop.Views.Controls.MaotaiMotion;
@@ -122,6 +123,12 @@ internal static class MaotaiPetAssetLoader
                 return null;
             }
 
+            if (MaotaiAssetManifest.TryGetDescriptor(fileName, out var descriptor) &&
+                !ValidateV2Bitmap(bitmap, descriptor))
+            {
+                return null;
+            }
+
             bitmap.Freeze();
             return bitmap;
         }
@@ -135,6 +142,82 @@ internal static class MaotaiPetAssetLoader
             // Asset failure        : decorative art may disappear, but Shell/Core/Worker/task flows stay alive.
             return null;
         }
+    }
+
+    /// <summary>v2 资产只在初始化时做一次像素合同检查；每帧渲染绝不访问文件或解码图片。</summary>
+    private static bool ValidateV2Bitmap(
+        BitmapSource bitmap,
+        in MaotaiAssetDescriptor descriptor)
+    {
+        var minimumWidth  = (int)Math.Ceiling(descriptor.Width * 2.0);
+        var minimumHeight = (int)Math.Ceiling(descriptor.Height * 2.0);
+        if (bitmap.PixelWidth < minimumWidth || bitmap.PixelHeight < minimumHeight)
+        {
+            return false;
+        }
+
+        // Canonical export        : require explicit 8-bit alpha so an opaque RGB sheet cannot masquerade as a rig part.
+        if (bitmap.Format != PixelFormats.Bgra32 &&
+            bitmap.Format != PixelFormats.Pbgra32)
+        {
+            return false;
+        }
+
+        var converted = bitmap.Format == PixelFormats.Bgra32
+            ? bitmap
+            : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0.0);
+        var row = new byte[converted.PixelWidth * 4];
+        var column = new byte[converted.PixelHeight * 4];
+
+        converted.CopyPixels(
+            new Int32Rect(0, 0, converted.PixelWidth, 1),
+            row,
+            row.Length,
+            0);
+        if (!AllAlphaZero(row))
+        {
+            return false;
+        }
+
+        converted.CopyPixels(
+            new Int32Rect(0, converted.PixelHeight - 1, converted.PixelWidth, 1),
+            row,
+            row.Length,
+            0);
+        if (!AllAlphaZero(row))
+        {
+            return false;
+        }
+
+        converted.CopyPixels(
+            new Int32Rect(0, 0, 1, converted.PixelHeight),
+            column,
+            4,
+            0);
+        if (!AllAlphaZero(column))
+        {
+            return false;
+        }
+
+        converted.CopyPixels(
+            new Int32Rect(converted.PixelWidth - 1, 0, 1, converted.PixelHeight),
+            column,
+            4,
+            0);
+        return AllAlphaZero(column);
+    }
+
+    private static bool AllAlphaZero(byte[] pixels)
+    {
+        for (var index = 3; index < pixels.Length; index += 4)
+        {
+            if (pixels[index] != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static BitmapImage? TryLoadPackResource(Uri fallbackUri)
