@@ -10,7 +10,7 @@
         Height="900"
         MinWidth="1120"
         MinHeight="700"
-        Background="#FFF7FAFF"
+        Background="#FFF4F8FD"
         WindowStartupLocation="CenterScreen">
   <Window.CommandBindings>
     <CommandBinding Command="{x:Static pages:SettingsPage.SaveAndConnectCommand}"
@@ -36,19 +36,26 @@
         <Setter.Value>
           <ControlTemplate TargetType="Button">
             <Border x:Name="NavBorder"
-                    CornerRadius="10"
+                    CornerRadius="11"
                     Background="{TemplateBinding Background}"
                     Padding="{TemplateBinding Padding}">
               <Grid>
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="28" />
+                  <ColumnDefinition Width="30" />
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{TemplateBinding Tag}"
-                           Foreground="#FFCFE5FF"
-                           FontSize="15"
-                           FontWeight="SemiBold"
-                           VerticalAlignment="Center" />
+                <Border Width="25"
+                        Height="25"
+                        CornerRadius="7"
+                        Background="#13FFFFFF"
+                        HorizontalAlignment="Left">
+                  <TextBlock Text="{TemplateBinding Tag}"
+                             Foreground="#FFD8EAFF"
+                             FontSize="14"
+                             FontWeight="SemiBold"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center" />
+                </Border>
                 <ContentPresenter Grid.Column="1"
                                   HorizontalAlignment="Left"
                                   VerticalAlignment="Center" />
@@ -56,7 +63,7 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="NavBorder" Property="Background" Value="#233E8CE8" />
+                <Setter TargetName="NavBorder" Property="Background" Value="#283D8FEF" />
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
                 <Setter TargetName="NavBorder" Property="Background" Value="#553E8CE8" />
@@ -112,25 +119,26 @@
     </Style>
   </Window.Resources>
 
-  <Grid Background="#FFF7FAFF">
+  <Grid Background="#FFF4F8FD">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="238" />
+      <ColumnDefinition Width="244" />
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
-      <RowDefinition Height="76" />
+      <RowDefinition Height="80" />
       <RowDefinition Height="*" />
       <RowDefinition Height="34" />
     </Grid.RowDefinitions>
 
+    <!-- Sidebar        : visual-only shell chrome; exact five user-visible route contents remain frozen. -->
     <Border Grid.Column="0"
             Grid.RowSpan="3"
             Padding="14,16">
       <Border.Background>
         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-          <GradientStop Color="#FF061C35" Offset="0" />
-          <GradientStop Color="#FF06345B" Offset="0.56" />
-          <GradientStop Color="#FF071A31" Offset="1" />
+          <GradientStop Color="#FF04172D" Offset="0" />
+          <GradientStop Color="#FF073C68" Offset="0.52" />
+          <GradientStop Color="#FF06192F" Offset="1" />
         </LinearGradientBrush>
       </Border.Background>
       <DockPanel LastChildFill="True">
@@ -140,7 +148,7 @@
                 Background="#221F6CA5"
                 BorderBrush="#334B93C7"
                 BorderThickness="1"
-                CornerRadius="12">
+                CornerRadius="13">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
@@ -169,26 +177,26 @@
         </Border>
 
         <StackPanel DockPanel.Dock="Top">
-          <Grid Margin="4,2,4,14">
+          <Grid Margin="4,2,4,15">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="44" />
+              <ColumnDefinition Width="46" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <Border Width="40"
-                    Height="40"
-                    CornerRadius="20">
+            <Border Width="42"
+                    Height="42"
+                    CornerRadius="21">
               <Border.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                  <GradientStop Color="#FF36A2FF" Offset="0" />
-                  <GradientStop Color="#FF1262EA" Offset="1" />
+                  <GradientStop Color="#FF43B5FF" Offset="0" />
+                  <GradientStop Color="#FF1666EE" Offset="1" />
                 </LinearGradientBrush>
               </Border.Background>
               <TextBlock Text="🐾"
-                         FontSize="21"
+                         FontSize="22"
                          VerticalAlignment="Center"
                          HorizontalAlignment="Center" />
             </Border>
-            <StackPanel Grid.Column="1" Margin="7,1,0,0">
+            <StackPanel Grid.Column="1" Margin="8,0,0,0">
               <TextBlock Text="Picotoo Pet AI"
                          Foreground="White"
                          FontSize="17"
@@ -197,10 +205,19 @@
                          Margin="0,2,0,0"
                          Foreground="#FF9FC3E4"
                          FontSize="9.5" />
-              <TextBlock Text="Simple Mode · 简单模式"
-                         Margin="0,1,0,0"
-                         Foreground="#FF65AEFF"
-                         FontSize="9" />
+              <Border x:Name="HeaderModePill"
+                      Margin="0,3,0,0"
+                      Padding="6,2"
+                      HorizontalAlignment="Left"
+                      Background="#253BA5FF"
+                      BorderBrush="#465EBBFF"
+                      BorderThickness="1"
+                      CornerRadius="7">
+                <TextBlock Text="SIMPLE MODE · 简单模式"
+                           Foreground="#FF8ECEFF"
+                           FontSize="8"
+                           FontWeight="SemiBold" />
+              </Border>
             </StackPanel>
           </Grid>
 
@@ -232,7 +249,7 @@
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleAdvanced_Click" />
 
-          <Separator Margin="6,10" Opacity="0.18" />
+          <Separator Margin="6,11" Opacity="0.18" />
         </StackPanel>
 
         <ScrollViewer VerticalScrollBarVisibility="Hidden"
@@ -244,27 +261,55 @@
       </DockPanel>
     </Border>
 
+    <!-- Header         : status badges use the same green/orange/gray fact projection as the pet. -->
     <Border Grid.Column="1"
             Grid.Row="0"
             Background="#FFFDFEFF"
-            BorderBrush="#FFE2EAF4"
+            BorderBrush="#FFE1EAF4"
             BorderThickness="0,0,0,1"
             Padding="22,9">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="13"
+                          ShadowDepth="1"
+                          Opacity="0.08"
+                          Color="#FF506176" />
+      </Border.Effect>
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center">
-          <TextBlock Text="{Binding CurrentPage.Title, Mode=OneWay}"
-                     FontSize="23"
-                     FontWeight="Bold"
-                     Foreground="{StaticResource TextPrimary}" />
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{Binding CurrentPage.Title, Mode=OneWay}"
+                       FontSize="23"
+                       FontWeight="Bold"
+                       Foreground="{StaticResource TextPrimary}" />
+            <Border Margin="10,1,0,0"
+                    Padding="7,3"
+                    VerticalAlignment="Center"
+                    Background="#FFEDF5FF"
+                    BorderBrush="#FFD6E7FB"
+                    BorderThickness="1"
+                    CornerRadius="8">
+              <StackPanel Orientation="Horizontal">
+                <Ellipse x:Name="HeaderStatusDot"
+                         Tag="{Binding PetPresentation.Indicator, Mode=OneWay}"
+                         Style="{StaticResource ShellStatusDotStyle}"
+                         Margin="0,0,5,0"
+                         VerticalAlignment="Center" />
+                <TextBlock Text="{Binding PetPresentation.Title, Mode=OneWay}"
+                           Foreground="#FF3976BE"
+                           FontSize="8.5"
+                           FontWeight="SemiBold" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
           <TextBlock Text="{Binding StatusMessage, Mode=OneWay}"
-                     Margin="0,2,0,0"
+                     Margin="0,3,0,0"
                      Foreground="{StaticResource TextMuted}"
                      FontSize="10.5"
-                     MaxWidth="360"
+                     MaxWidth="390"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
 
@@ -373,7 +418,7 @@
 
     <Border Grid.Column="1"
             Grid.Row="1"
-            Background="#FFF7FAFF">
+            Background="#FFF4F8FD">
       <views:NavigationContentHost x:Name="ContentHost"
                                    Content="{Binding CurrentPage, Mode=OneWay}"
                                    NavigationFaulted="ContentHost_NavigationFaulted" />
@@ -382,7 +427,7 @@
     <Border x:Name="AdvancedHomePanel"
             Grid.Column="1"
             Grid.Row="1"
-            Background="#FFF7FAFF"
+            Background="#FFF4F8FD"
             Visibility="Collapsed"
             Padding="28">
       <ScrollViewer VerticalScrollBarVisibility="Auto">
