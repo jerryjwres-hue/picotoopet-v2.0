@@ -9,15 +9,16 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views;
 
-/// <summary>Shell 视图处理窗口生命周期、路由命令、页面故障隔离和 PasswordBox 密文转交。</summary>
+/// <summary>Shell 视图处理窗口生命周期、路由命令、页面故障隔离、桌宠窗口和 PasswordBox 密文转交。</summary>
 public partial class ShellWindow : Window
 {
     private readonly ShellViewModel _viewModel;
     private readonly ControlCenterSession _session;
     private readonly SafeFileLogger _logger;
+    private FloatingPetWindow? _floatingPetWindow;
     private bool _explicitExit;
 
-    /// <summary>绑定 Shell 展示模型、统一连接 Session 和脱敏日志器。</summary>
+    /// <summary>绑定 Shell 展示模型、统一连接 Session、桌宠 UI 和脱敏日志器。</summary>
     public ShellWindow(
         ShellViewModel viewModel,
         ControlCenterSession session,
@@ -40,8 +41,11 @@ public partial class ShellWindow : Window
             this,
             new ControlCenterProviderReviewGateway(_session));
 
-        // DataContext : PetPresentation 和其余 Shell 状态共用同一只读 VM 更新链。
+        // DataContext     : PetPresentation 和其余 Shell 状态共用同一只读 VM 更新链。
         DataContext = viewModel;
+
+        // Floating pet   : presentation-only request; no Session/task/approval command is added.
+        AssistantPet.FloatRequested += OnAssistantPetFloatRequested;
     }
 
     /// <summary>请求组合根按安全顺序释放资源并显式退出。</summary>
@@ -80,6 +84,21 @@ public partial class ShellWindow : Window
         base.OnClosing(e);
     }
 
+    /// <summary>窗口真正销毁时解除 UI 事件，并关闭同进程悬浮桌宠。</summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        AssistantPet.FloatRequested -= OnAssistantPetFloatRequested;
+
+        if (_floatingPetWindow is not null)
+        {
+            _floatingPetWindow.Closed -= FloatingPetWindow_Closed;
+            _floatingPetWindow.Close();
+            _floatingPetWindow = null;
+        }
+
+        base.OnClosed(e);
+    }
+
     /// <summary>记录被隔离的页面故障，并用安全说明页替换当前路由内容。</summary>
     private void ContentHost_NavigationFaulted(
         object sender,
@@ -88,6 +107,39 @@ public partial class ShellWindow : Window
         var failedRoute = _viewModel.CurrentRoute;
         _logger.Error($"页面导航故障已隔离：{failedRoute}", e.Exception);
         _viewModel.ShowNavigationFailure(failedRoute);
+    }
+
+    private void OnAssistantPetFloatRequested(object? sender, EventArgs e)
+    {
+        if (_floatingPetWindow is { IsVisible: true })
+        {
+            _floatingPetWindow.Activate();
+            return;
+        }
+
+        try
+        {
+            var window = new FloatingPetWindow(_viewModel);
+            window.Closed += FloatingPetWindow_Closed;
+            _floatingPetWindow = window;
+            window.Show();
+            window.Activate();
+        }
+        catch (Exception exception)
+        {
+            // Failure isolation : a floating-pet rendering error must not destabilize the main Shell.
+            _logger.Error("悬浮桌宠打开失败，主窗口继续运行。", exception);
+            _floatingPetWindow = null;
+        }
+    }
+
+    private void FloatingPetWindow_Closed(object? sender, EventArgs e)
+    {
+        if (sender is FloatingPetWindow window)
+        {
+            window.Closed -= FloatingPetWindow_Closed;
+        }
+        _floatingPetWindow = null;
     }
 
     private async void SaveAndConnect_Click(
