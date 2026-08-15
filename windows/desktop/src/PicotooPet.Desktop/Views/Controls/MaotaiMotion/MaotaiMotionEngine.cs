@@ -14,7 +14,6 @@ internal sealed class MaotaiMotionEngine
     private const double WalkRunSpeedReference = 76.0;
     private const double GroundWorldY           = 0.0;
 
-    private readonly MaotaiBehaviorPlanner _planner = new();
     private readonly MaotaiAnimationGraph _graph = new(MaotaiMotionState.Idle);
     private readonly MaotaiLocomotionController _locomotion;
 
@@ -40,8 +39,8 @@ internal sealed class MaotaiMotionEngine
 
     public MaotaiMotionEngine(int seed, double initialX)
     {
-        _locomotion       = new MaotaiLocomotionController(initialX);
-        _idlePhaseOffset  = ((seed & 1023) / 1024.0) * Math.PI * 2.0;
+        _locomotion      = new MaotaiLocomotionController(initialX);
+        _idlePhaseOffset = ((seed & 1023) / 1024.0) * Math.PI * 2.0;
     }
 
     public MaotaiMotionState ActiveState => _graph.ActiveState;
@@ -58,7 +57,7 @@ internal sealed class MaotaiMotionEngine
             : 0.0;
         _elapsedSeconds += dt;
 
-        var desiredState = _planner.Plan(input, _locomotion.PositionX);
+        var desiredState = MaotaiBehaviorPlanner.Plan(input, _locomotion.PositionX);
         var movementTarget = input.BaseState == MaotaiBaseState.Working
             ? input.WorkAnchorX
             : input.TargetX;
@@ -146,9 +145,9 @@ internal sealed class MaotaiMotionEngine
         var bodyBob = grounded
             ? Math.Sin(gaitAngle * 2.0) * (0.55 + (speedRatio * 1.45))
             : 0.0;
-        var breathing = Math.Sin((_elapsedSeconds * 2.1) + _idlePhaseOffset) * 0.32;
+        var breathing  = Math.Sin((_elapsedSeconds * 2.1) + _idlePhaseOffset) * 0.32;
         var bodyWorldY = -44.0 + _locomotion.VerticalOffset + bodyBob + breathing;
-        var bodyTilt = -facingSign * speedRatio * 5.4;
+        var bodyTilt   = -facingSign * speedRatio * 5.4;
 
         var bodyScaleX = 1.0;
         var bodyScaleY = 1.0;
@@ -236,7 +235,7 @@ internal sealed class MaotaiMotionEngine
             MaotaiInteractionKind.Pat       => MaotaiMouthState.Tongue,
             MaotaiInteractionKind.Paw       => MaotaiMouthState.Tongue,
             MaotaiInteractionKind.Celebrate => MaotaiMouthState.Tongue,
-            _ when input.BaseState == MaotaiBaseState.Error => MaotaiMouthState.Annoyed,
+            _ when input.BaseState == MaotaiBaseState.Error   => MaotaiMouthState.Annoyed,
             _ when input.BaseState == MaotaiBaseState.Offline => MaotaiMouthState.Tired,
             _ => MaotaiMouthState.Smile,
         };
@@ -376,8 +375,8 @@ internal sealed class MaotaiMotionEngine
         int facingSign,
         bool frontLeg)
     {
-        var pawLocalX = pawWorldX - _locomotion.PositionX;
-        var pawLocalY = pawWorldY - bodyWorldY;
+        var pawLocalX   = pawWorldX - _locomotion.PositionX;
+        var pawLocalY   = pawWorldY - bodyWorldY;
         var upperLength = frontLeg ? 27.0 : 25.0;
         var lowerLength = frontLeg ? 26.0 : 25.0;
         var bendSign    = frontLeg ? facingSign : -facingSign;
