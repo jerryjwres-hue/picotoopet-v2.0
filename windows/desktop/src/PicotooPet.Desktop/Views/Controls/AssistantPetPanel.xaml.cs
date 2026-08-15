@@ -1,6 +1,4 @@
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
@@ -9,7 +7,7 @@ using PicotooPet.Desktop.ViewModels;
 namespace PicotooPet.Desktop.Views.Controls;
 
 /// <summary>原生 WPF 桌宠视图；只消费只读 Presentation，不持有 Session 或业务写入能力。</summary>
-public partial class AssistantPetPanel : UserControl
+public partial class AssistantPetPanel : System.Windows.Controls.UserControl
 {
     // Presentation : mirrors existing Core/Worker/task facts through a dependency property.
     public static readonly DependencyProperty PresentationProperty = DependencyProperty.Register(
@@ -178,16 +176,16 @@ public partial class AssistantPetPanel : UserControl
         PetTranslate.BeginAnimation(TranslateTransform.XProperty, shake);
     }
 
-    private void PetSurface_MouseEnter(object sender, MouseEventArgs e)
+    private void PetSurface_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
         CardBorder.BorderBrush = BrushFrom("#FF2F9BFF");
-        Cursor = Cursors.Hand;
+        Cursor = System.Windows.Input.Cursors.Hand;
     }
 
-    private void PetSurface_MouseLeave(object sender, MouseEventArgs e)
+    private void PetSurface_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
         CardBorder.BorderBrush = BrushFrom("#FF135D96");
-        Cursor = Cursors.Arrow;
+        Cursor = System.Windows.Input.Cursors.Arrow;
 
         PetRotate.BeginAnimation(RotateTransform.AngleProperty, null);
         PetTranslate.BeginAnimation(TranslateTransform.XProperty, null);
@@ -195,7 +193,7 @@ public partial class AssistantPetPanel : UserControl
         PetTranslate.X = 0;
     }
 
-    private void PetSurface_MouseMove(object sender, MouseEventArgs e)
+    private void PetSurface_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         var position = e.GetPosition(PetStage);
         if (PetStage.ActualWidth <= 0 || PetStage.ActualHeight <= 0)
@@ -210,16 +208,16 @@ public partial class AssistantPetPanel : UserControl
         PetTranslate.Y = normalizedY * 1.5;
     }
 
-    private void PetSurface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void PetSurface_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         Focus();
         AnimateFriendlyReaction();
         e.Handled = true;
     }
 
-    private void PetSurface_KeyDown(object sender, KeyEventArgs e)
+    private void PetSurface_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key is Key.Space or Key.Enter)
+        if (e.Key is System.Windows.Input.Key.Space or System.Windows.Input.Key.Enter)
         {
             AnimateFriendlyReaction();
             e.Handled = true;
