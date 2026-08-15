@@ -101,7 +101,7 @@ internal static class MaotaiPetAssetLoader
         var geometry = new RectangleGeometry(new Rect(0, 0, 1, 1));
         geometry.Freeze();
 
-        var drawing = new GeometryDrawing(Brushes.Transparent, null, geometry);
+        var drawing = new GeometryDrawing(System.Windows.Media.Brushes.Transparent, null, geometry);
         drawing.Freeze();
 
         var image = new DrawingImage(drawing);
