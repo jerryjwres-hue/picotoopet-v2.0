@@ -4,6 +4,7 @@
         xmlns:controls="clr-namespace:PicotooPet.Desktop.Views.Controls"
         xmlns:pages="clr-namespace:PicotooPet.Desktop.Views.Pages"
         xmlns:views="clr-namespace:PicotooPet.Desktop.Views"
+        xmlns:viewModels="clr-namespace:PicotooPet.Desktop.ViewModels"
         Title="{Binding WindowTitle, Mode=OneWay}"
         Width="1440"
         Height="900"
@@ -28,7 +29,7 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="FontSize" Value="14" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Padding" Value="14,11" />
+      <Setter Property="Padding" Value="13,10" />
       <Setter Property="Margin" Value="0,2" />
       <Setter Property="Cursor" Value="Hand" />
       <Setter Property="Template">
@@ -38,8 +39,20 @@
                     CornerRadius="10"
                     Background="{TemplateBinding Background}"
                     Padding="{TemplateBinding Padding}">
-              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                VerticalAlignment="Center" />
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="28" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{TemplateBinding Tag}"
+                           Foreground="#FFCFE5FF"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+                <ContentPresenter Grid.Column="1"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Center" />
+              </Grid>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
@@ -63,15 +76,49 @@
       <Setter Property="BorderBrush" Value="#FFDCE6F2" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
+
+    <Style x:Key="ShellStatusDotStyle" TargetType="Ellipse">
+      <Setter Property="Width" Value="8" />
+      <Setter Property="Height" Value="8" />
+      <Setter Property="Fill" Value="#FF8A9AAD" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Green}">
+          <Setter Property="Fill" Value="#FF19A968" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Orange}">
+          <Setter Property="Fill" Value="#FFFF8A00" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="ShellStatusBadgeStyle" TargetType="Border">
+      <Setter Property="Background" Value="#FFF1F4F7" />
+      <Setter Property="BorderBrush" Value="#FFDCE4EB" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Green}">
+          <Setter Property="Background" Value="#FFEAF8F1" />
+          <Setter Property="BorderBrush" Value="#FFC9EBD9" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Orange}">
+          <Setter Property="Background" Value="#FFFFF3E6" />
+          <Setter Property="BorderBrush" Value="#FFFFD7AD" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
   </Window.Resources>
 
   <Grid Background="#FFF7FAFF">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="228" />
+      <ColumnDefinition Width="238" />
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
-      <RowDefinition Height="72" />
+      <RowDefinition Height="76" />
       <RowDefinition Height="*" />
       <RowDefinition Height="34" />
     </Grid.RowDefinitions>
@@ -157,26 +204,31 @@
             </StackPanel>
           </Grid>
 
-          <!-- Simple Mode contract: keep exact user-visible entry text while styling via the shared template. -->
+          <!-- Simple Mode contract : exact Content stays frozen; Tag supplies the decorative icon. -->
           <Button x:Name="SimpleHomeButton"
                   Content="首页"
+                  Tag="⌂"
                   Background="#FF1D78F0"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleHome_Click" />
           <Button x:Name="SimpleReviewButton"
                   Content="待我审核"
+                  Tag="▣"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleReview_Click" />
           <Button x:Name="SimpleActiveButton"
                   Content="进行中"
+                  Tag="▶"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleActive_Click" />
           <Button x:Name="SimpleCompletedButton"
                   Content="已完成"
+                  Tag="✓"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleCompleted_Click" />
           <Button x:Name="SimpleAdvancedButton"
                   Content="高级"
+                  Tag="♛"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleAdvanced_Click" />
 
@@ -197,7 +249,7 @@
             Background="#FFFDFEFF"
             BorderBrush="#FFE2EAF4"
             BorderThickness="0,0,0,1"
-            Padding="22,10">
+            Padding="22,9">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -211,35 +263,108 @@
           <TextBlock Text="{Binding StatusMessage, Mode=OneWay}"
                      Margin="0,2,0,0"
                      Foreground="{StaticResource TextMuted}"
-                     FontSize="11"
+                     FontSize="10.5"
+                     MaxWidth="360"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
 
         <StackPanel Grid.Column="1"
                     Orientation="Horizontal"
                     VerticalAlignment="Center">
-          <Border Background="#FFE8F8EF"
-                  BorderBrush="#FFC8EED8"
-                  BorderThickness="1"
+          <Border Tag="{Binding PetPresentation.Indicator, Mode=OneWay}"
+                  Style="{StaticResource ShellStatusBadgeStyle}"
                   CornerRadius="12"
-                  Padding="12,7"
-                  Margin="0,0,9,0">
+                  Padding="10,7"
+                  Margin="0,0,7,0">
             <StackPanel Orientation="Horizontal">
-              <Ellipse Width="8" Height="8" Fill="#FF18A86B" Margin="0,0,7,0" />
-              <TextBlock Text="{Binding ConnectionText, Mode=OneWay}"
-                         Foreground="#FF178354"
-                         FontSize="11"
-                         FontWeight="SemiBold" />
+              <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}"
+                       Style="{StaticResource ShellStatusDotStyle}"
+                       Margin="0,0,6,0"
+                       VerticalAlignment="Center" />
+              <StackPanel>
+                <TextBlock Text="系统状态"
+                           FontSize="8.5"
+                           Foreground="#FF6C7F93" />
+                <TextBlock Text="{Binding PetPresentation.Title, Mode=OneWay}"
+                           FontSize="9.5"
+                           FontWeight="SemiBold"
+                           Foreground="#FF2D5D50" />
+              </StackPanel>
             </StackPanel>
           </Border>
+
+          <Border Background="#FFFAFCFF"
+                  BorderBrush="#FFE0E8F2"
+                  BorderThickness="1"
+                  CornerRadius="12"
+                  Padding="10,7"
+                  Margin="0,0,7,0">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}"
+                       Style="{StaticResource ShellStatusDotStyle}"
+                       Margin="0,0,6,0"
+                       VerticalAlignment="Center" />
+              <StackPanel>
+                <TextBlock Text="Mac Core" FontSize="8.5" Foreground="#FF6C7F93" />
+                <TextBlock Text="{Binding ConnectionText, Mode=OneWay}"
+                           FontSize="9.5"
+                           FontWeight="SemiBold"
+                           Foreground="#FF2C3F55" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+
+          <Border Background="#FFFAFCFF"
+                  BorderBrush="#FFE0E8F2"
+                  BorderThickness="1"
+                  CornerRadius="12"
+                  Padding="10,7"
+                  Margin="0,0,7,0">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}"
+                       Style="{StaticResource ShellStatusDotStyle}"
+                       Margin="0,0,6,0"
+                       VerticalAlignment="Center" />
+              <StackPanel>
+                <TextBlock Text="Mac Worker" FontSize="8.5" Foreground="#FF6C7F93" />
+                <TextBlock Text="{Binding PetPresentation.Title, Mode=OneWay}"
+                           FontSize="9.5"
+                           FontWeight="SemiBold"
+                           Foreground="#FF2C3F55" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+
+          <Border Background="#FFFAFCFF"
+                  BorderBrush="#FFE0E8F2"
+                  BorderThickness="1"
+                  CornerRadius="12"
+                  Padding="10,7"
+                  Margin="0,0,7,0">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse Width="8"
+                       Height="8"
+                       Fill="#FF19A968"
+                       Margin="0,0,6,0"
+                       VerticalAlignment="Center" />
+              <StackPanel>
+                <TextBlock Text="Windows" FontSize="8.5" Foreground="#FF6C7F93" />
+                <TextBlock Text="正常"
+                           FontSize="9.5"
+                           FontWeight="SemiBold"
+                           Foreground="#FF16825A" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+
           <Border Background="#FFEEF5FF"
                   BorderBrush="#FFD7E7FB"
                   BorderThickness="1"
                   CornerRadius="12"
-                  Padding="12,7">
+                  Padding="10,8">
             <TextBlock Text="{Binding ApprovalText, Mode=OneWay}"
                        Foreground="#FF236CCB"
-                       FontSize="11"
+                       FontSize="9.5"
                        FontWeight="SemiBold" />
           </Border>
         </StackPanel>
@@ -307,7 +432,10 @@
             BorderThickness="0,1,0,0"
             Padding="14,7">
       <StackPanel Orientation="Horizontal">
-        <Ellipse Width="7" Height="7" Fill="#FF19A968" VerticalAlignment="Center" Margin="0,0,8,0" />
+        <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}"
+                 Style="{StaticResource ShellStatusDotStyle}"
+                 VerticalAlignment="Center"
+                 Margin="0,0,8,0" />
         <TextBlock Text="{Binding ConnectionMessage, Mode=OneWay}"
                    Foreground="#FF64758B"
                    FontSize="10.5"
