@@ -16,13 +16,13 @@ internal static class MaotaiJumpDynamicsSmokeTests
         var engine = Activator.CreateInstance(engineType, 89, 70.0)
             ?? throw new InvalidOperationException("无法创建 Jump Motion Engine");
 
-        var sawPrep        = false;
-        var sawAir         = false;
-        var sawLand        = false;
-        var minimumPrepY   = 1.0;
-        var minimumAirY    = 0.0;
-        var minimumLandY   = 1.0;
-        var maximumLandX   = 1.0;
+        var sawPrep      = false;
+        var sawAir       = false;
+        var sawLand      = false;
+        var minimumPrepY = 1.0;
+        var minimumAirY  = 0.0;
+        var minimumLandY = 1.0;
+        var maximumLandX = 1.0;
 
         for (var frame = 0; frame < 360; frame++)
         {
@@ -82,8 +82,8 @@ internal static class MaotaiJumpDynamicsSmokeTests
             20.0,
             140.0,
             70.0,
-            wantsJump,
             false,
+            wantsJump,
             108.0)
             ?? throw new InvalidOperationException("无法创建 Jump MaotaiMotionInput");
     }
