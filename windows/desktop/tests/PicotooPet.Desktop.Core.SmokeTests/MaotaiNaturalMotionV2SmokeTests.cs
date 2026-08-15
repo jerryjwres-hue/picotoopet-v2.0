@@ -341,7 +341,10 @@ internal static class MaotaiNaturalMotionV2SmokeTests
             "v2 XAML 缺少独立 head 图层");
         Assert(xaml.Contains("x:Name=\"MaotaiV2FrontLeftPaw\"", StringComparison.Ordinal),
             "v2 XAML 缺少独立 paw 图层");
-        Assert(loader.Contains("\"maotai\",\n        \"v2\"", StringComparison.Ordinal),
+        Assert(
+            loader.Contains("V2AssetRoot", StringComparison.Ordinal) &&
+            loader.Contains("\"maotai\"", StringComparison.Ordinal) &&
+            loader.Contains("\"v2\"", StringComparison.Ordinal),
             "v2 资产必须从固定应用 UI 目录 maotai/v2 加载");
         Assert(
             code.Contains("CompositionTarget.Rendering", StringComparison.Ordinal),
