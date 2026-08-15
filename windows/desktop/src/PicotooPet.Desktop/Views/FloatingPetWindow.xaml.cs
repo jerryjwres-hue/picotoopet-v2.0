@@ -7,8 +7,19 @@ namespace PicotooPet.Desktop.Views;
 /// <summary>同进程透明桌宠窗口；只复用 Shell 的只读 PetPresentation。</summary>
 public partial class FloatingPetWindow : Window
 {
+    private const double EdgeSnapThreshold = 24d;
+
+    // Size presets     : bounded layout presets avoid arbitrary resizing and keep hit targets usable.
+    private static readonly (double Width, double Height, string Label)[] SizePresets =
+    {
+        (214d, 220d, "100%"),
+        (248d, 255d, "115%"),
+        (282d, 290d, "130%"),
+    };
+
     private bool _positionInitialized;
     private bool _clampingPosition;
+    private int _sizePresetIndex;
 
     /// <summary>创建透明桌宠窗口；不会创建第二个 Session 或业务控制器。</summary>
     public FloatingPetWindow(ShellViewModel viewModel)
@@ -28,6 +39,7 @@ public partial class FloatingPetWindow : Window
         }
 
         UpdatePinLabel();
+        UpdateSizeLabel();
         ClampToVirtualDesktop();
     }
 
@@ -49,11 +61,18 @@ public partial class FloatingPetWindow : Window
         try
         {
             DragMove();
+            SnapToNearestEdge();
         }
         catch (InvalidOperationException)
         {
-            // Drag boundary : a lost mouse button cancels only the window move.
+            // Drag boundary   : a lost mouse button cancels only the window move.
         }
+        e.Handled = true;
+    }
+
+    private void SizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        CyclePetSize();
         e.Handled = true;
     }
 
@@ -70,8 +89,72 @@ public partial class FloatingPetWindow : Window
         e.Handled = true;
     }
 
+    /// <summary>依次切换经过验收的固定尺寸，并在缩放后重新限制到虚拟桌面内。</summary>
+    private void CyclePetSize()
+    {
+        _sizePresetIndex = (_sizePresetIndex + 1) % SizePresets.Length;
+        var preset = SizePresets[_sizePresetIndex];
+
+        Width  = preset.Width;
+        Height = preset.Height;
+        MinWidth  = preset.Width;
+        MinHeight = preset.Height;
+
+        UpdateSizeLabel();
+        ClampToVirtualDesktop();
+    }
+
+    /// <summary>拖动结束时只在接近虚拟桌面边缘时吸附，避免强制改变用户选择的位置。</summary>
+    private void SnapToNearestEdge()
+    {
+        if (ActualWidth <= 0 || ActualHeight <= 0)
+        {
+            return;
+        }
+
+        var minLeft = SystemParameters.VirtualScreenLeft;
+        var minTop  = SystemParameters.VirtualScreenTop;
+        var maxLeft = minLeft + Math.Max(0, SystemParameters.VirtualScreenWidth - ActualWidth);
+        var maxTop  = minTop + Math.Max(0, SystemParameters.VirtualScreenHeight - ActualHeight);
+
+        var distanceLeft   = Math.Abs(Left - minLeft);
+        var distanceRight  = Math.Abs(maxLeft - Left);
+        var distanceTop    = Math.Abs(Top - minTop);
+        var distanceBottom = Math.Abs(maxTop - Top);
+        var nearest = Math.Min(
+            Math.Min(distanceLeft, distanceRight),
+            Math.Min(distanceTop, distanceBottom));
+
+        if (nearest > EdgeSnapThreshold)
+        {
+            return;
+        }
+
+        if (nearest == distanceLeft)
+        {
+            Left = minLeft;
+        }
+        else if (nearest == distanceRight)
+        {
+            Left = maxLeft;
+        }
+        else if (nearest == distanceTop)
+        {
+            Top = minTop;
+        }
+        else
+        {
+            Top = maxTop;
+        }
+
+        ClampToVirtualDesktop();
+    }
+
     private void UpdatePinLabel() =>
         PinButton.Content = Topmost ? "取消置顶" : "置顶";
+
+    private void UpdateSizeLabel() =>
+        SizeButton.Content = SizePresets[_sizePresetIndex].Label;
 
     private void ClampToVirtualDesktop()
     {
