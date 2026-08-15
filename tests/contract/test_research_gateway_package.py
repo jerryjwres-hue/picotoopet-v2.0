@@ -32,12 +32,24 @@ def test_gateway_has_independent_version_and_excludes_xiaoyuzhou() -> None:
     assert "picotoopet_core" not in installer
 
 
-def test_installer_exposes_ci_fixture_mode_without_external_dependency_install() -> None:
+def test_installer_only_binds_existing_research_toolchain() -> None:
     installer = (
         ROOT / "deploy" / "macos" / "research_gateway" / "INSTALL_RESEARCH_GATEWAY.command"
     ).read_text(encoding="utf-8")
 
-    assert "PICOTOOPET_RESEARCH_SKIP_EXTERNAL_INSTALL" in installer
-    assert "pipx" in installer
-    assert "@jackwener/opencli" in installer
-    assert "agent-reach" in installer
+    forbidden_mutations = [
+        "brew install",
+        "pipx install",
+        "pipx upgrade",
+        "npm install",
+        "agent-reach install",
+    ]
+    for mutation in forbidden_mutations:
+        assert mutation not in installer
+
+    for binary in ["agent-reach", "opencli", "mcporter", "gh", "yt-dlp"]:
+        assert f"command -v {binary}" in installer
+
+    assert "scrapling-mcp-local" in installer
+    assert ".codex/mcp-servers/thunderbit" in installer
+    assert "不会安装、升级或覆盖" in installer
