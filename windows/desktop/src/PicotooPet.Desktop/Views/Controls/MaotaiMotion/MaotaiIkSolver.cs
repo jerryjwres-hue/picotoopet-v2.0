@@ -24,7 +24,12 @@ internal static class MaotaiIkSolver
         double targetY,
         int bendSign)
     {
-        if (!AllFinite(rootX, rootY, upperLength, lowerLength, targetX, targetY) ||
+        if (!double.IsFinite(rootX) ||
+            !double.IsFinite(rootY) ||
+            !double.IsFinite(upperLength) ||
+            !double.IsFinite(lowerLength) ||
+            !double.IsFinite(targetX) ||
+            !double.IsFinite(targetY) ||
             upperLength <= 0 ||
             lowerLength <= 0)
         {
@@ -42,8 +47,8 @@ internal static class MaotaiIkSolver
             distance = 1.0;
         }
 
-        var minimumReach   = Math.Abs(upperLength - lowerLength) + Epsilon;
-        var maximumReach   = upperLength + lowerLength - Epsilon;
+        var minimumReach    = Math.Abs(upperLength - lowerLength) + Epsilon;
+        var maximumReach    = upperLength + lowerLength - Epsilon;
         var clampedDistance = Math.Clamp(distance, minimumReach, maximumReach);
         var directionX      = dx / distance;
         var directionY      = dy / distance;
@@ -55,10 +60,10 @@ internal static class MaotaiIkSolver
             (lowerLength * lowerLength) +
             (clampedDistance * clampedDistance)) /
             (2.0 * clampedDistance);
-        var heightSquared = Math.Max(
+        var heightSquared  = Math.Max(
             0.0,
             (upperLength * upperLength) - (along * along));
-        var height        = Math.Sqrt(heightSquared);
+        var height         = Math.Sqrt(heightSquared);
         var normalizedBend = bendSign >= 0 ? 1.0 : -1.0;
 
         var baseX  = rootX + (directionX * along);
@@ -82,19 +87,6 @@ internal static class MaotaiIkSolver
             endX,
             endY,
             endError);
-    }
-
-    private static bool AllFinite(params double[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!double.IsFinite(value))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static double RadiansToDegrees(double radians) =>
