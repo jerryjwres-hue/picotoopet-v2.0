@@ -6,7 +6,18 @@ internal readonly record struct MaotaiLegPose(
     MaotaiBonePose Lower,
     MaotaiBonePose Paw,
     double PawWorldX,
-    double PawWorldY);
+    double PawWorldY,
+    bool IsSupport);
+
+/// <summary>单只脚掌的支撑相锁定状态；只保存数值，不产生帧级分配。</summary>
+internal struct MaotaiFootLockState
+{
+    public bool WasSupport;
+
+    public double AnchorWorldX;
+
+    public double AnchorWorldY;
+}
 
 /// <summary>连续时间茅台运动核心；只消费表现输入并产出确定性 PoseFrame。</summary>
 internal sealed class MaotaiMotionEngine
@@ -28,14 +39,18 @@ internal sealed class MaotaiMotionEngine
 
     private readonly double _idlePhaseOffset;
 
+    private MaotaiFootLockState _frontLeftLock;
+    private MaotaiFootLockState _frontRightLock;
+    private MaotaiFootLockState _hindLeftLock;
+    private MaotaiFootLockState _hindRightLock;
+
     private MaotaiMotionState _lastDesiredState = MaotaiMotionState.Idle;
+    private MaotaiMotionState _poseState         = MaotaiMotionState.Idle;
     private bool _jumpSequenceActive;
     private double _landingHoldSeconds;
     private double _elapsedSeconds;
-
-    private bool _frontLeftWasSupport;
-    private double _frontLeftAnchorWorldX;
-    private double _frontLeftAnchorWorldY;
+    private double _stateElapsedSeconds;
+    private double _typingPhaseRadians;
 
     public MaotaiMotionEngine(int seed, double initialX)
     {
@@ -97,6 +112,7 @@ internal sealed class MaotaiMotionEngine
             }
         }
 
+        UpdateStateClock(dt);
         return BuildPose(input, dt);
     }
 
@@ -129,6 +145,18 @@ internal sealed class MaotaiMotionEngine
         _lastDesiredState = desiredState;
     }
 
+    private void UpdateStateClock(double dt)
+    {
+        if (_graph.ActiveState != _poseState)
+        {
+            _poseState           = _graph.ActiveState;
+            _stateElapsedSeconds = 0.0;
+            return;
+        }
+
+        _stateElapsedSeconds += dt;
+    }
+
     private MaotaiPoseFrame BuildPose(
         in MaotaiMotionInput input,
         double dt)
@@ -141,26 +169,32 @@ internal sealed class MaotaiMotionEngine
         var gaitAngle  = gaitPhase * Math.PI * 2.0;
         var grounded   = _locomotion.IsGrounded;
         var facingSign = _locomotion.FacingSign;
+        var blend      = SmoothStep(_graph.TransitionProgress);
 
-        var bodyBob = grounded
+        var bodyBob = grounded && speedRatio > 0.02
             ? Math.Sin(gaitAngle * 2.0) * (0.55 + (speedRatio * 1.45))
             : 0.0;
         var breathing  = Math.Sin((_elapsedSeconds * 2.1) + _idlePhaseOffset) * 0.32;
         var bodyWorldY = -44.0 + _locomotion.VerticalOffset + bodyBob + breathing;
         var bodyTilt   = -facingSign * speedRatio * 5.4;
-
         var bodyScaleX = 1.0;
         var bodyScaleY = 1.0;
-        if (_graph.ActiveState == MaotaiMotionState.JumpPrep)
-        {
-            bodyScaleX = 1.045;
-            bodyScaleY = 0.925;
-        }
-        else if (_graph.ActiveState == MaotaiMotionState.Land)
-        {
-            bodyScaleX = 1.055;
-            bodyScaleY = 0.935;
-        }
+        var headOffsetY = 0.0;
+        var headBiasDeg = 0.0;
+        var earDrop      = 0.0;
+        var earTension   = 0.0;
+
+        ApplyActionPose(
+            ref bodyWorldY,
+            ref bodyTilt,
+            ref bodyScaleX,
+            ref bodyScaleY,
+            ref headOffsetY,
+            ref headBiasDeg,
+            ref earDrop,
+            ref earTension,
+            blend,
+            facingSign);
 
         var pointerX = input.PointerInside
             ? Math.Clamp(input.PointerX, -1.0, 1.0)
@@ -173,12 +207,14 @@ internal sealed class MaotaiMotionEngine
             : Math.Sin((_elapsedSeconds * 0.82) + _idlePhaseOffset) * 1.15;
 
         _headX.Step((pointerX * 2.0) + (idleLook * 0.18), dt);
-        _headY.Step(pointerY * 1.25, dt);
-        _headRotate.Step((pointerX * 7.0) + idleLook - (bodyTilt * 0.22), dt);
+        _headY.Step((pointerY * 1.25) + headOffsetY, dt);
+        _headRotate.Step(
+            (pointerX * 7.0) + idleLook - (bodyTilt * 0.22) + headBiasDeg,
+            dt);
 
         var earGait = Math.Sin(gaitAngle + 0.45) * (0.8 + (speedRatio * 2.3));
-        _leftEar.Step((_headRotate.Value * 0.32) + earGait, dt);
-        _rightEar.Step((_headRotate.Value * 0.28) - (earGait * 0.82), dt);
+        _leftEar.Step((_headRotate.Value * 0.32) + earGait - earTension, dt);
+        _rightEar.Step((_headRotate.Value * 0.28) - (earGait * 0.82) + earTension, dt);
 
         var tailEnergy = input.BaseState switch
         {
@@ -189,48 +225,70 @@ internal sealed class MaotaiMotionEngine
         };
         var tailTarget = Math.Sin((gaitAngle * 1.2) + (_elapsedSeconds * 1.35)) *
             (4.0 + (tailEnergy * 10.0));
+        if (_graph.ActiveState == MaotaiMotionState.WorkTired ||
+            _graph.ActiveState == MaotaiMotionState.Yawn)
+        {
+            tailTarget *= 0.42;
+        }
+        else if (_graph.ActiveState == MaotaiMotionState.WorkAnnoyed)
+        {
+            tailTarget *= 1.35;
+        }
+
         _tailBase.Step(tailTarget, dt);
         _tailMid.Step((_tailBase.Value * 1.08) - (_locomotion.VelocityX * 0.025), dt);
         _tailTip.Step((_tailMid.Value * 1.12) - (_locomotion.VelocityX * 0.018), dt);
 
-        var frontLeft = BuildFrontLeftLeg(
+        var frontLeft = BuildLockedLeg(
+            ref _frontLeftLock,
             gaitPhase,
             speedRatio,
             bodyWorldY,
             facingSign,
-            grounded);
-        var frontRight = BuildFreeLeg(
+            grounded,
+            shoulderLocalX: 17.5,
+            shoulderLocalY: 9.5,
+            frontLeg: true);
+        var frontRight = BuildLockedLeg(
+            ref _frontRightLock,
             Wrap01(gaitPhase + 0.50),
             speedRatio,
             bodyWorldY,
             facingSign,
+            grounded,
             shoulderLocalX: 15.5,
             shoulderLocalY: 10.0,
             frontLeg: true);
-        var hindLeft = BuildFreeLeg(
+        var hindLeft = BuildLockedLeg(
+            ref _hindLeftLock,
             Wrap01(gaitPhase + 0.50),
             speedRatio,
             bodyWorldY,
             facingSign,
+            grounded,
             shoulderLocalX: -15.0,
             shoulderLocalY: 12.0,
             frontLeg: false);
-        var hindRight = BuildFreeLeg(
+        var hindRight = BuildLockedLeg(
+            ref _hindRightLock,
             gaitPhase,
             speedRatio,
             bodyWorldY,
             facingSign,
+            grounded,
             shoulderLocalX: -17.0,
             shoulderLocalY: 12.0,
             frontLeg: false);
 
-        if (_graph.ActiveState == MaotaiMotionState.WorkTyping)
+        if (IsWorkingPawState(_graph.ActiveState))
         {
-            // Keyboard cadence     : continuous cosine presses avoid discrete up/down frame switching.
-            // Paw phase            : right paw is exactly half a cycle behind the left for natural alternation.
-            var typingAngle = _elapsedSeconds * Math.PI * 2.0 * 3.1;
-            var leftPress   = (1.0 - Math.Cos(typingAngle)) * 1.65;
-            var rightPress  = (1.0 - Math.Cos(typingAngle + Math.PI)) * 1.65;
+            var cadenceHz = GetTypingCadenceHz(_graph.ActiveState, blend);
+            var amplitude = GetTypingAmplitude(_graph.ActiveState, blend);
+            _typingPhaseRadians = WrapRadians(
+                _typingPhaseRadians + (dt * Math.PI * 2.0 * cadenceHz));
+
+            var leftPress  = (1.0 - Math.Cos(_typingPhaseRadians)) * amplitude;
+            var rightPress = (1.0 - Math.Cos(_typingPhaseRadians + Math.PI)) * amplitude;
 
             frontLeft = BuildWorkPaw(
                 shoulderLocalX: 17.5,
@@ -250,8 +308,6 @@ internal sealed class MaotaiMotionEngine
                 facingSign);
         }
 
-        // Strong state face  : Offline/Error remain authoritative even if stale interaction input exists.
-        // Work expression    : active animation state drives facial layers without swapping the whole-character PNG.
         var eyeState = input.BaseState switch
         {
             MaotaiBaseState.Offline => MaotaiEyeState.Closed,
@@ -290,39 +346,176 @@ internal sealed class MaotaiMotionEngine
 
         return new MaotaiPoseFrame
         {
-            Root                   = new MaotaiBonePose(_locomotion.PositionX, 0.0, 0.0),
-            Body                   = new MaotaiBonePose(0.0, bodyWorldY, bodyTilt, bodyScaleX, bodyScaleY),
-            Chest                  = new MaotaiBonePose(facingSign * 2.0, -4.0, bodyTilt * 0.22),
-            Head                   = new MaotaiBonePose(_headX.Value, -29.0 + _headY.Value, _headRotate.Value),
-            LeftEar                = new MaotaiBonePose(-11.0, -20.0, _leftEar.Value),
-            RightEar               = new MaotaiBonePose(11.0, -20.0, _rightEar.Value),
-            LeftPupil              = new MaotaiBonePose(-6.0 + pupilX, -2.0 + pupilY, 0.0),
-            RightPupil             = new MaotaiBonePose(6.0 + pupilX, -2.0 + pupilY, 0.0),
-            FrontLeftUpper         = frontLeft.Upper,
-            FrontLeftLower         = frontLeft.Lower,
-            FrontLeftPaw           = frontLeft.Paw,
-            FrontRightUpper        = frontRight.Upper,
-            FrontRightLower        = frontRight.Lower,
-            FrontRightPaw          = frontRight.Paw,
-            HindLeftUpper          = hindLeft.Upper,
-            HindLeftLower          = hindLeft.Lower,
-            HindLeftPaw            = hindLeft.Paw,
-            HindRightUpper         = hindRight.Upper,
-            HindRightLower         = hindRight.Lower,
-            HindRightPaw           = hindRight.Paw,
-            TailBase               = new MaotaiBonePose(-20.0 * facingSign, -10.0, _tailBase.Value),
-            TailMid                = new MaotaiBonePose(-11.0 * facingSign, -8.0, _tailMid.Value),
-            TailTip                = new MaotaiBonePose(-10.0 * facingSign, -7.0, _tailTip.Value),
-            EyeState               = eyeState,
-            MouthState             = mouthState,
-            MotionState            = _graph.ActiveState,
-            FacingSign             = facingSign,
-            FrontLeftSupport       = _frontLeftWasSupport,
-            FrontLeftPawWorldX     = frontLeft.PawWorldX,
-            FrontLeftPawWorldY     = frontLeft.PawWorldY,
-            StageX                 = _locomotion.PositionX,
-            StageYOffset           = _locomotion.VerticalOffset,
+            Root                    = new MaotaiBonePose(_locomotion.PositionX, 0.0, 0.0),
+            Body                    = new MaotaiBonePose(0.0, bodyWorldY, bodyTilt, bodyScaleX, bodyScaleY),
+            Chest                   = new MaotaiBonePose(facingSign * 2.0, -4.0, bodyTilt * 0.22),
+            Head                    = new MaotaiBonePose(_headX.Value, -29.0 + _headY.Value, _headRotate.Value),
+            LeftEar                 = new MaotaiBonePose(-11.0, -20.0 + earDrop, _leftEar.Value),
+            RightEar                = new MaotaiBonePose(11.0, -20.0 + earDrop, _rightEar.Value),
+            LeftPupil               = new MaotaiBonePose(-6.0 + pupilX, -2.0 + pupilY, 0.0),
+            RightPupil              = new MaotaiBonePose(6.0 + pupilX, -2.0 + pupilY, 0.0),
+            FrontLeftUpper          = frontLeft.Upper,
+            FrontLeftLower          = frontLeft.Lower,
+            FrontLeftPaw            = frontLeft.Paw,
+            FrontRightUpper         = frontRight.Upper,
+            FrontRightLower         = frontRight.Lower,
+            FrontRightPaw           = frontRight.Paw,
+            HindLeftUpper           = hindLeft.Upper,
+            HindLeftLower           = hindLeft.Lower,
+            HindLeftPaw             = hindLeft.Paw,
+            HindRightUpper          = hindRight.Upper,
+            HindRightLower          = hindRight.Lower,
+            HindRightPaw            = hindRight.Paw,
+            TailBase                = new MaotaiBonePose(-20.0 * facingSign, -10.0, _tailBase.Value),
+            TailMid                 = new MaotaiBonePose(-11.0 * facingSign, -8.0, _tailMid.Value),
+            TailTip                 = new MaotaiBonePose(-10.0 * facingSign, -7.0, _tailTip.Value),
+            EyeState                = eyeState,
+            MouthState              = mouthState,
+            MotionState             = _graph.ActiveState,
+            FacingSign              = facingSign,
+            FrontLeftSupport        = frontLeft.IsSupport,
+            FrontLeftPawWorldX      = frontLeft.PawWorldX,
+            FrontLeftPawWorldY      = frontLeft.PawWorldY,
+            FrontRightSupport       = frontRight.IsSupport,
+            FrontRightPawWorldX     = frontRight.PawWorldX,
+            FrontRightPawWorldY     = frontRight.PawWorldY,
+            HindLeftSupport         = hindLeft.IsSupport,
+            HindLeftPawWorldX       = hindLeft.PawWorldX,
+            HindLeftPawWorldY       = hindLeft.PawWorldY,
+            HindRightSupport        = hindRight.IsSupport,
+            HindRightPawWorldX      = hindRight.PawWorldX,
+            HindRightPawWorldY      = hindRight.PawWorldY,
+            StageX                  = _locomotion.PositionX,
+            StageYOffset            = _locomotion.VerticalOffset,
         };
+    }
+
+    private void ApplyActionPose(
+        ref double bodyWorldY,
+        ref double bodyTilt,
+        ref double bodyScaleX,
+        ref double bodyScaleY,
+        ref double headOffsetY,
+        ref double headBiasDeg,
+        ref double earDrop,
+        ref double earTension,
+        double blend,
+        int facingSign)
+    {
+        switch (_graph.ActiveState)
+        {
+            case MaotaiMotionState.JumpPrep:
+                bodyWorldY += 3.2 * blend;
+                bodyScaleX += 0.055 * blend;
+                bodyScaleY -= 0.085 * blend;
+                headOffsetY += 1.0 * blend;
+                break;
+
+            case MaotaiMotionState.JumpAir:
+                bodyScaleX -= 0.018;
+                bodyScaleY += 0.025;
+                headOffsetY -= 0.7;
+                earDrop     += 1.0;
+                break;
+
+            case MaotaiMotionState.Land:
+            {
+                var compression = Math.Exp(-Math.Max(0.0, _stateElapsedSeconds) * 9.0);
+                bodyWorldY += 2.8 * compression;
+                bodyScaleX += 0.060 * compression;
+                bodyScaleY -= 0.075 * compression;
+                headOffsetY += 1.4 * compression;
+                earDrop     += 1.2 * compression;
+                break;
+            }
+
+            case MaotaiMotionState.Sit:
+                bodyWorldY += 7.0 * blend;
+                bodyScaleY -= 0.055 * blend;
+                headOffsetY -= 1.0 * blend;
+                break;
+
+            case MaotaiMotionState.LieDown:
+                bodyWorldY += 13.0 * blend;
+                bodyScaleX += 0.070 * blend;
+                bodyScaleY -= 0.130 * blend;
+                headOffsetY += 3.0 * blend;
+                break;
+
+            case MaotaiMotionState.Sleep:
+                bodyWorldY += 15.0;
+                bodyScaleX += 0.090;
+                bodyScaleY -= 0.150;
+                headOffsetY += 5.0;
+                headBiasDeg += 4.0 * facingSign;
+                earDrop     += 3.0;
+                break;
+
+            case MaotaiMotionState.Wake:
+                bodyWorldY += 12.0 * (1.0 - (0.55 * blend));
+                bodyScaleX += 0.060 * (1.0 - blend);
+                bodyScaleY -= 0.100 * (1.0 - blend);
+                headOffsetY += 3.0 * (1.0 - blend);
+                break;
+
+            case MaotaiMotionState.GetUp:
+                bodyWorldY += 7.0 * (1.0 - blend);
+                bodyScaleY -= 0.055 * (1.0 - blend);
+                break;
+
+            case MaotaiMotionState.WorkSettle:
+            case MaotaiMotionState.WorkTyping:
+                bodyWorldY += 2.0 * blend;
+                bodyScaleY -= 0.015 * blend;
+                break;
+
+            case MaotaiMotionState.WorkTired:
+                bodyWorldY += 2.6 * blend;
+                bodyScaleX += 0.018 * blend;
+                bodyScaleY -= 0.045 * blend;
+                headOffsetY += 4.2 * blend;
+                headBiasDeg += 3.0 * facingSign * blend;
+                earDrop     += 3.2 * blend;
+                earTension   = 2.0 * blend;
+                break;
+
+            case MaotaiMotionState.Yawn:
+            {
+                // Yawn envelope       : inhale/extend -> open peak -> settle, all on the same raster skeleton.
+                var phase    = Math.Clamp(_stateElapsedSeconds / 1.05, 0.0, 1.0);
+                var envelope = Math.Sin(phase * Math.PI);
+                bodyWorldY -= 1.6 * envelope;
+                bodyScaleX -= 0.025 * envelope;
+                bodyScaleY += 0.070 * envelope;
+                headOffsetY -= 2.4 * envelope;
+                headBiasDeg -= 4.0 * facingSign * envelope;
+                earDrop     += 2.0 + (1.4 * envelope);
+                break;
+            }
+
+            case MaotaiMotionState.WorkAnnoyed:
+                bodyWorldY += 1.0 * blend;
+                bodyScaleX -= 0.020 * blend;
+                bodyScaleY += 0.022 * blend;
+                bodyTilt   -= 3.8 * facingSign * blend;
+                headOffsetY -= 0.8 * blend;
+                headBiasDeg -= 2.8 * facingSign * blend;
+                earDrop     -= 0.8 * blend;
+                earTension   = 4.5 * blend;
+                break;
+
+            case MaotaiMotionState.Recover:
+            {
+                // Recovery spring-like blend : start with residual tension, decay continuously to work baseline.
+                var residual = 1.0 - blend;
+                bodyTilt    -= 3.2 * facingSign * residual;
+                bodyScaleX  -= 0.016 * residual;
+                bodyScaleY  += 0.018 * residual;
+                headBiasDeg -= 2.2 * facingSign * residual;
+                earTension   = 3.4 * residual;
+                break;
+            }
+        }
     }
 
     private MaotaiLegPose BuildWorkPaw(
@@ -347,53 +540,68 @@ internal sealed class MaotaiMotionEngine
             pawWorldY,
             bodyWorldY,
             facingSign,
-            frontLeg: true);
+            frontLeg: true,
+            isSupport: false);
     }
 
-    private MaotaiLegPose BuildFrontLeftLeg(
-        double gaitPhase,
+    private MaotaiLegPose BuildLockedLeg(
+        ref MaotaiFootLockState lockState,
+        double phase,
         double speedRatio,
         double bodyWorldY,
         int facingSign,
-        bool grounded)
+        bool grounded,
+        double shoulderLocalX,
+        double shoulderLocalY,
+        bool frontLeg)
     {
-        var shoulderLocalX = 17.5 * facingSign;
-        var shoulderLocalY = 9.5;
-        var stride         = 12.0 + (speedRatio * 13.0);
-        var moving         = Math.Abs(_locomotion.VelocityX) > 2.0;
-        var support        = grounded && moving && gaitPhase < 0.56;
+        shoulderLocalX *= facingSign;
+        var moving      = Math.Abs(_locomotion.VelocityX) > 2.0;
+        var support     = grounded && moving && phase < 0.56;
+        var stride      = (frontLeg ? 12.0 : 10.0) +
+            (speedRatio * (frontLeg ? 13.0 : 11.0));
 
         double pawWorldX;
         double pawWorldY;
 
         if (support)
         {
-            if (!_frontLeftWasSupport)
+            if (!lockState.WasSupport)
             {
-                _frontLeftAnchorWorldX = _locomotion.PositionX +
+                lockState.AnchorWorldX = _locomotion.PositionX +
                     shoulderLocalX +
                     (facingSign * stride * 0.34);
-                _frontLeftAnchorWorldY = GroundWorldY;
+                lockState.AnchorWorldY = GroundWorldY;
             }
 
-            pawWorldX = _frontLeftAnchorWorldX;
-            pawWorldY = _frontLeftAnchorWorldY;
+            pawWorldX = lockState.AnchorWorldX;
+            pawWorldY = lockState.AnchorWorldY;
+        }
+        else if (!grounded)
+        {
+            // Air tuck             : paws follow the body while airborne; no stale ground anchor survives the jump.
+            pawWorldX = _locomotion.PositionX + shoulderLocalX + (facingSign * (frontLeg ? 5.0 : -3.0));
+            pawWorldY = bodyWorldY + (frontLeg ? 33.0 : 35.0);
+        }
+        else if (!moving)
+        {
+            pawWorldX = _locomotion.PositionX + shoulderLocalX + (facingSign * (frontLeg ? 3.0 : -2.0));
+            pawWorldY = GroundWorldY;
         }
         else
         {
-            var swingPhase = gaitPhase < 0.56
+            var swingPhase = phase < 0.56
                 ? 0.0
-                : (gaitPhase - 0.56) / 0.44;
+                : (phase - 0.56) / 0.44;
             var swingAngle = swingPhase * Math.PI;
             pawWorldX = _locomotion.PositionX +
                 shoulderLocalX +
                 (facingSign * ((swingPhase * 2.0) - 1.0) * stride * 0.58);
-            pawWorldY = grounded
-                ? GroundWorldY - (Math.Sin(swingAngle) * (5.0 + (speedRatio * 6.5)))
-                : bodyWorldY + 39.0;
+            pawWorldY = GroundWorldY -
+                (Math.Sin(swingAngle) * (4.5 + (speedRatio * (frontLeg ? 6.5 : 5.5))));
         }
 
-        _frontLeftWasSupport = support;
+        lockState.WasSupport = support;
         return SolveLeg(
             shoulderLocalX,
             shoulderLocalY,
@@ -401,39 +609,8 @@ internal sealed class MaotaiMotionEngine
             pawWorldY,
             bodyWorldY,
             facingSign,
-            frontLeg: true);
-    }
-
-    private MaotaiLegPose BuildFreeLeg(
-        double phase,
-        double speedRatio,
-        double bodyWorldY,
-        int facingSign,
-        double shoulderLocalX,
-        double shoulderLocalY,
-        bool frontLeg)
-    {
-        shoulderLocalX *= facingSign;
-        var stride      = (frontLeg ? 11.0 : 9.0) + (speedRatio * (frontLeg ? 12.0 : 10.0));
-        var phaseAngle  = phase * Math.PI * 2.0;
-        var pawWorldX   = _locomotion.PositionX +
-            shoulderLocalX +
-            (Math.Cos(phaseAngle) * stride * 0.44 * facingSign);
-        var lift = _locomotion.IsGrounded
-            ? Math.Max(0.0, Math.Sin(phaseAngle)) * (4.0 + (speedRatio * 5.0))
-            : 5.0;
-        var pawWorldY = _locomotion.IsGrounded
-            ? GroundWorldY - lift
-            : bodyWorldY + (frontLeg ? 38.0 : 40.0);
-
-        return SolveLeg(
-            shoulderLocalX,
-            shoulderLocalY,
-            pawWorldX,
-            pawWorldY,
-            bodyWorldY,
-            facingSign,
-            frontLeg);
+            frontLeg,
+            support);
     }
 
     private MaotaiLegPose SolveLeg(
@@ -443,7 +620,8 @@ internal sealed class MaotaiMotionEngine
         double pawWorldY,
         double bodyWorldY,
         int facingSign,
-        bool frontLeg)
+        bool frontLeg,
+        bool isSupport)
     {
         var pawLocalX   = pawWorldX - _locomotion.PositionX;
         var pawLocalY   = pawWorldY - bodyWorldY;
@@ -464,7 +642,50 @@ internal sealed class MaotaiMotionEngine
             new MaotaiBonePose(solution.JointX, solution.JointY, solution.LowerAngleDeg),
             new MaotaiBonePose(pawLocalX, pawLocalY, -solution.LowerAngleDeg * 0.08),
             pawWorldX,
-            pawWorldY);
+            pawWorldY,
+            isSupport);
+    }
+
+    private static bool IsWorkingPawState(MaotaiMotionState state) =>
+        state is MaotaiMotionState.WorkTyping or
+            MaotaiMotionState.WorkTired or
+            MaotaiMotionState.WorkAnnoyed or
+            MaotaiMotionState.Recover;
+
+    private static double GetTypingCadenceHz(MaotaiMotionState state, double blend) =>
+        state switch
+        {
+            MaotaiMotionState.WorkTired   => Lerp(3.1, 1.55, blend),
+            MaotaiMotionState.WorkAnnoyed => Lerp(3.1, 4.40, blend),
+            MaotaiMotionState.Recover     => Lerp(4.40, 3.1, blend),
+            _                             => 3.1,
+        };
+
+    private static double GetTypingAmplitude(MaotaiMotionState state, double blend) =>
+        state switch
+        {
+            MaotaiMotionState.WorkTired   => Lerp(1.65, 1.15, blend),
+            MaotaiMotionState.WorkAnnoyed => Lerp(1.65, 2.25, blend),
+            MaotaiMotionState.Recover     => Lerp(2.25, 1.65, blend),
+            _                             => 1.65,
+        };
+
+    private static double SmoothStep(double value)
+    {
+        var t = Math.Clamp(value, 0.0, 1.0);
+        return t * t * (3.0 - (2.0 * t));
+    }
+
+    private static double Lerp(double from, double to, double t) =>
+        from + ((to - from) * Math.Clamp(t, 0.0, 1.0));
+
+    private static double WrapRadians(double value)
+    {
+        var period = Math.PI * 2.0;
+        value %= period;
+        return value < 0.0
+            ? value + period
+            : value;
     }
 
     private static double Wrap01(double value)
