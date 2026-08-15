@@ -224,6 +224,32 @@ internal sealed class MaotaiMotionEngine
             shoulderLocalY: 12.0,
             frontLeg: false);
 
+        if (_graph.ActiveState == MaotaiMotionState.WorkTyping)
+        {
+            // Keyboard cadence     : continuous cosine presses avoid discrete up/down frame switching.
+            // Paw phase            : right paw is exactly half a cycle behind the left for natural alternation.
+            var typingAngle = _elapsedSeconds * Math.PI * 2.0 * 3.1;
+            var leftPress   = (1.0 - Math.Cos(typingAngle)) * 1.65;
+            var rightPress  = (1.0 - Math.Cos(typingAngle + Math.PI)) * 1.65;
+
+            frontLeft = BuildWorkPaw(
+                shoulderLocalX: 17.5,
+                shoulderLocalY: 9.5,
+                keyboardLocalX: 12.0,
+                keyboardLocalY: 39.0,
+                pressOffset: leftPress,
+                bodyWorldY,
+                facingSign);
+            frontRight = BuildWorkPaw(
+                shoulderLocalX: 15.5,
+                shoulderLocalY: 10.0,
+                keyboardLocalX: 21.0,
+                keyboardLocalY: 39.5,
+                pressOffset: rightPress,
+                bodyWorldY,
+                facingSign);
+        }
+
         var eyeState = input.BaseState switch
         {
             MaotaiBaseState.Offline => MaotaiEyeState.Closed,
@@ -278,6 +304,31 @@ internal sealed class MaotaiMotionEngine
             StageX                 = _locomotion.PositionX,
             StageYOffset           = _locomotion.VerticalOffset,
         };
+    }
+
+    private MaotaiLegPose BuildWorkPaw(
+        double shoulderLocalX,
+        double shoulderLocalY,
+        double keyboardLocalX,
+        double keyboardLocalY,
+        double pressOffset,
+        double bodyWorldY,
+        int facingSign)
+    {
+        shoulderLocalX *= facingSign;
+        keyboardLocalX *= facingSign;
+
+        var pawWorldX = _locomotion.PositionX + keyboardLocalX;
+        var pawWorldY = bodyWorldY + keyboardLocalY + pressOffset;
+
+        return SolveLeg(
+            shoulderLocalX,
+            shoulderLocalY,
+            pawWorldX,
+            pawWorldY,
+            bodyWorldY,
+            facingSign,
+            frontLeg: true);
     }
 
     private MaotaiLegPose BuildFrontLeftLeg(
