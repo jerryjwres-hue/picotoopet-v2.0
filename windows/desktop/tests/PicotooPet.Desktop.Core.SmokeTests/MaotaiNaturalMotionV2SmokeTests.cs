@@ -3,13 +3,15 @@ using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结茅台 v2 的无撕裂、连续渲染与自然运动数学合同。</summary>
+/// <summary>冻结茅台 v2 的无撕裂、连续渲染与自然运动合同。</summary>
 internal static class MaotaiNaturalMotionV2SmokeTests
 {
-    /// <summary>先验证数学核心，再验证当前可见渲染路径。</summary>
+    /// <summary>先验证纯数学和状态图，再验证当前可见渲染路径。</summary>
     public static void Run()
     {
         VerifyMotionMathContracts();
+        VerifyAnimationGraphContracts();
+        VerifyLocomotionContracts();
         VerifyVisibleRigContracts();
     }
 
@@ -61,6 +63,75 @@ internal static class MaotaiNaturalMotionV2SmokeTests
         Assert(errorProperty is not null, "IK 解缺少 EndError");
         var endError = (double)errorProperty!.GetValue(solution)!;
         Assert(double.IsFinite(endError) && endError < 0.01, "可达 IK 末端误差过大");
+    }
+
+    private static void VerifyAnimationGraphContracts()
+    {
+        var assembly = typeof(AssistantPetPanel).Assembly;
+        var stateType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState");
+        var graphType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiAnimationGraph");
+        Assert(stateType is not null, "v2 缺少 MaotaiMotionState");
+        Assert(graphType is not null, "v2 缺少 MaotaiAnimationGraph");
+
+        var idle     = Enum.Parse(stateType!, "Idle");
+        var jumpAir  = Enum.Parse(stateType, "JumpAir");
+        var jumpPrep = "JumpPrep";
+        var graph    = Activator.CreateInstance(graphType!, idle);
+        Assert(graph is not null, "无法创建 MaotaiAnimationGraph");
+
+        var request = graphType!.GetMethod("Request", BindingFlags.Instance | BindingFlags.Public);
+        var active  = graphType.GetProperty("ActiveState", BindingFlags.Instance | BindingFlags.Public);
+        var target  = graphType.GetProperty("TargetState", BindingFlags.Instance | BindingFlags.Public);
+        Assert(request is not null && active is not null && target is not null, "AnimationGraph API 不完整");
+
+        request!.Invoke(graph, [jumpAir]);
+        Assert(
+            string.Equals(active!.GetValue(graph)?.ToString(), jumpPrep, StringComparison.Ordinal),
+            "Jump 必须先进入 JumpPrep 蓄力，禁止 Idle -> JumpAir 瞬切");
+
+        var run      = Enum.Parse(stateType, "Run");
+        var sleep    = Enum.Parse(stateType, "Sleep");
+        var runGraph = Activator.CreateInstance(graphType, run);
+        Assert(runGraph is not null, "无法创建 Run AnimationGraph");
+        request.Invoke(runGraph, [sleep]);
+        Assert(
+            !string.Equals(target!.GetValue(runGraph)?.ToString(), "Sleep", StringComparison.Ordinal),
+            "Run 禁止瞬间硬切 Sleep；必须先减速并经过坐/趴过渡");
+    }
+
+    private static void VerifyLocomotionContracts()
+    {
+        var assembly = typeof(AssistantPetPanel).Assembly;
+        var type = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiLocomotionController");
+        Assert(type is not null, "v2 缺少 MaotaiLocomotionController");
+
+        var controller = Activator.CreateInstance(type!, 50.0);
+        Assert(controller is not null, "无法创建 MaotaiLocomotionController");
+        var update = type!.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public);
+        var position = type.GetProperty("PositionX", BindingFlags.Instance | BindingFlags.Public);
+        var velocity = type.GetProperty("VelocityX", BindingFlags.Instance | BindingFlags.Public);
+        var gait = type.GetProperty("GaitPhase", BindingFlags.Instance | BindingFlags.Public);
+        Assert(update is not null && position is not null && velocity is not null && gait is not null,
+            "Locomotion API 不完整");
+
+        for (var frame = 0; frame < 600; frame++)
+        {
+            var targetX = frame < 300 ? 130.0 : 30.0;
+            update!.Invoke(
+                controller,
+                [1.0 / 60.0, targetX, frame < 180, frame == 360, 20.0, 140.0]);
+
+            var x = (double)position!.GetValue(controller!)!;
+            var v = (double)velocity!.GetValue(controller)!;
+            var p = (double)gait!.GetValue(controller)!;
+            Assert(double.IsFinite(x) && double.IsFinite(v) && double.IsFinite(p),
+                "Locomotion 600 帧模拟出现 NaN/Infinity");
+            Assert(x >= 20.0 - 0.01 && x <= 140.0 + 0.01,
+                "Locomotion 越过舞台边界");
+        }
     }
 
     private static void VerifyVisibleRigContracts()
