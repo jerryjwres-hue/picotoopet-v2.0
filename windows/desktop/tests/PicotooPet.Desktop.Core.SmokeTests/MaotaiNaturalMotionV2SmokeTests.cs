@@ -6,13 +6,14 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>冻结茅台 v2 的无撕裂、连续渲染与自然运动合同。</summary>
 internal static class MaotaiNaturalMotionV2SmokeTests
 {
-    /// <summary>先验证纯数学、状态图与 Motion Engine，再验证当前可见渲染路径。</summary>
+    /// <summary>先验证纯数学、状态图、Motion Engine 与独立资产骨架，再验证可见渲染路径。</summary>
     public static void Run()
     {
         VerifyMotionMathContracts();
         VerifyAnimationGraphContracts();
         VerifyLocomotionContracts();
         VerifyMotionEngineContracts();
+        VerifyRasterSkeletonContracts();
         VerifyVisibleRigContracts();
     }
 
@@ -174,10 +175,10 @@ internal static class MaotaiNaturalMotionV2SmokeTests
             BindingFlags.Instance | BindingFlags.Public);
         Assert(update is not null, "MaotaiMotionEngine 缺少 Update");
 
-        var supportRun       = false;
-        var supportStartX    = 0.0;
-        var supportStartY    = 0.0;
-        var maxSupportDrift  = 0.0;
+        var supportRun      = false;
+        var supportStartX   = 0.0;
+        var supportStartY   = 0.0;
+        var maxSupportDrift = 0.0;
 
         for (var frame = 0; frame < 360; frame++)
         {
@@ -240,6 +241,64 @@ internal static class MaotaiNaturalMotionV2SmokeTests
         Assert(maxSupportDrift < 0.75, "Walk 支撑相脚掌世界漂移过大，会产生滑步感");
     }
 
+    private static void VerifyRasterSkeletonContracts()
+    {
+        var assembly = typeof(AssistantPetPanel).Assembly;
+        var manifestType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiAssetManifest");
+        var rendererType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiRasterRenderer");
+        Assert(manifestType is not null, "v2 缺少 MaotaiAssetManifest 独立部件白名单");
+        Assert(rendererType is not null, "v2 缺少 MaotaiRasterRenderer");
+
+        var isKnown = manifestType!.GetMethod(
+            "IsKnownAsset",
+            BindingFlags.Static | BindingFlags.Public);
+        Assert(isKnown is not null, "MaotaiAssetManifest 缺少 IsKnownAsset");
+
+        string[] requiredAssets =
+        [
+            "torso_neutral.png",
+            "head.png",
+            "ear_left.png",
+            "ear_right.png",
+            "eye_left_open.png",
+            "eye_right_open.png",
+            "pupil_left.png",
+            "pupil_right.png",
+            "mouth_smile.png",
+            "front_left_upper.png",
+            "front_left_lower.png",
+            "front_left_paw.png",
+            "front_right_upper.png",
+            "front_right_lower.png",
+            "front_right_paw.png",
+            "hind_left_upper.png",
+            "hind_left_lower.png",
+            "hind_left_paw.png",
+            "hind_right_upper.png",
+            "hind_right_lower.png",
+            "hind_right_paw.png",
+            "tail_base.png",
+            "tail_mid.png",
+            "tail_tip.png",
+            "headphone_band.png",
+            "headphone_left.png",
+            "headphone_right.png",
+            "laptop.png",
+            "drink.png",
+            "shadow.png",
+        ];
+
+        foreach (var asset in requiredAssets)
+        {
+            Assert((bool)isKnown!.Invoke(null, [asset])!, $"v2 白名单缺少独立资产 {asset}");
+        }
+
+        Assert(!(bool)isKnown!.Invoke(null, ["../head.png"])!, "v2 资产白名单不得接受 .. 路径");
+        Assert(!(bool)isKnown.Invoke(null, ["head/evil.png"])!, "v2 资产白名单不得接受路径分隔符");
+    }
+
     private static void VerifyVisibleRigContracts()
     {
         var root = FindRepositoryRoot();
@@ -261,10 +320,29 @@ internal static class MaotaiNaturalMotionV2SmokeTests
             "Views",
             "Controls",
             "AssistantPetPanel.Maotai.cs"));
+        var loader = File.ReadAllText(Path.Combine(
+            root,
+            "windows",
+            "desktop",
+            "src",
+            "PicotooPet.Desktop",
+            "Views",
+            "Controls",
+            "MaotaiPetAssetLoader.cs"));
 
         Assert(
             !xaml.Contains("<Image.Clip>", StringComparison.Ordinal),
             "v2 可见茅台禁止从完整角色图 Clip 裁出头/爪/尾；该结构会产生撕裂和重影");
+        Assert(xaml.Contains("x:Name=\"MaotaiV2Root\"", StringComparison.Ordinal),
+            "v2 XAML 缺少独立 Raster Skeleton 根层");
+        Assert(xaml.Contains("x:Name=\"MaotaiV2Torso\"", StringComparison.Ordinal),
+            "v2 XAML 缺少独立 torso 图层");
+        Assert(xaml.Contains("x:Name=\"MaotaiV2Head\"", StringComparison.Ordinal),
+            "v2 XAML 缺少独立 head 图层");
+        Assert(xaml.Contains("x:Name=\"MaotaiV2FrontLeftPaw\"", StringComparison.Ordinal),
+            "v2 XAML 缺少独立 paw 图层");
+        Assert(loader.Contains("\"maotai\",\n        \"v2\"", StringComparison.Ordinal),
+            "v2 资产必须从固定应用 UI 目录 maotai/v2 加载");
         Assert(
             code.Contains("CompositionTarget.Rendering", StringComparison.Ordinal),
             "v2 必须由 CompositionTarget.Rendering 连续推进姿态");
