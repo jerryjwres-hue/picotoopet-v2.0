@@ -67,7 +67,7 @@ internal static class MaotaiNaturalMotionV2SmokeTests
 
     private static void VerifyAnimationGraphContracts()
     {
-        var assembly = typeof(AssistantPetPanel).Assembly;
+        var assembly  = typeof(AssistantPetPanel).Assembly;
         var stateType = assembly.GetType(
             "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState");
         var graphType = assembly.GetType(
@@ -75,25 +75,32 @@ internal static class MaotaiNaturalMotionV2SmokeTests
         Assert(stateType is not null, "v2 缺少 MaotaiMotionState");
         Assert(graphType is not null, "v2 缺少 MaotaiAnimationGraph");
 
-        var idle     = Enum.Parse(stateType!, "Idle");
-        var jumpAir  = Enum.Parse(stateType, "JumpAir");
-        var jumpPrep = "JumpPrep";
-        var graph    = Activator.CreateInstance(graphType!, idle);
+        var resolvedStateType = stateType!;
+        var resolvedGraphType = graphType!;
+        var idle               = Enum.Parse(resolvedStateType, "Idle");
+        var jumpAir            = Enum.Parse(resolvedStateType, "JumpAir");
+        var graph              = Activator.CreateInstance(resolvedGraphType, idle);
         Assert(graph is not null, "无法创建 MaotaiAnimationGraph");
 
-        var request = graphType!.GetMethod("Request", BindingFlags.Instance | BindingFlags.Public);
-        var active  = graphType.GetProperty("ActiveState", BindingFlags.Instance | BindingFlags.Public);
-        var target  = graphType.GetProperty("TargetState", BindingFlags.Instance | BindingFlags.Public);
+        var request = resolvedGraphType.GetMethod(
+            "Request",
+            BindingFlags.Instance | BindingFlags.Public);
+        var active = resolvedGraphType.GetProperty(
+            "ActiveState",
+            BindingFlags.Instance | BindingFlags.Public);
+        var target = resolvedGraphType.GetProperty(
+            "TargetState",
+            BindingFlags.Instance | BindingFlags.Public);
         Assert(request is not null && active is not null && target is not null, "AnimationGraph API 不完整");
 
         request!.Invoke(graph, [jumpAir]);
         Assert(
-            string.Equals(active!.GetValue(graph)?.ToString(), jumpPrep, StringComparison.Ordinal),
+            string.Equals(active!.GetValue(graph)?.ToString(), "JumpPrep", StringComparison.Ordinal),
             "Jump 必须先进入 JumpPrep 蓄力，禁止 Idle -> JumpAir 瞬切");
 
-        var run      = Enum.Parse(stateType, "Run");
-        var sleep    = Enum.Parse(stateType, "Sleep");
-        var runGraph = Activator.CreateInstance(graphType, run);
+        var run      = Enum.Parse(resolvedStateType, "Run");
+        var sleep    = Enum.Parse(resolvedStateType, "Sleep");
+        var runGraph = Activator.CreateInstance(resolvedGraphType, run);
         Assert(runGraph is not null, "无法创建 Run AnimationGraph");
         request.Invoke(runGraph, [sleep]);
         Assert(
