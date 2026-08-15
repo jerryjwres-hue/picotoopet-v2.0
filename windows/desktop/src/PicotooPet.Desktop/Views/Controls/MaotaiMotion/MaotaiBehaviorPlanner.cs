@@ -35,10 +35,10 @@ internal readonly record struct MaotaiMotionInput(
     bool WantsJump,
     double WorkAnchorX);
 
-/// <summary>只决定高层动作目标，不直接操作 WPF 图层或业务状态。</summary>
-internal sealed class MaotaiBehaviorPlanner
+/// <summary>纯函数式高层动作规划；不持有状态、不操作 WPF 图层或业务状态。</summary>
+internal static class MaotaiBehaviorPlanner
 {
-    public MaotaiMotionState Plan(
+    public static MaotaiMotionState Plan(
         in MaotaiMotionInput input,
         double currentX)
     {
