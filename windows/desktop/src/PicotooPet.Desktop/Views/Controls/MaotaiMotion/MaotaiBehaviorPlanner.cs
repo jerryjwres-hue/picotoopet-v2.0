@@ -38,6 +38,8 @@ internal readonly record struct MaotaiMotionInput(
 /// <summary>纯函数式高层动作规划；不持有状态、不操作 WPF 图层或业务状态。</summary>
 internal static class MaotaiBehaviorPlanner
 {
+    private const double WorkArrivalTolerance = 3.0;
+
     public static MaotaiMotionState Plan(
         in MaotaiMotionInput input,
         double currentX)
@@ -64,7 +66,12 @@ internal static class MaotaiBehaviorPlanner
 
         if (input.BaseState == MaotaiBaseState.Working)
         {
-            return MaotaiMotionState.WorkTyping;
+            // Work approach     : physically reach the laptop before the graph may settle into typing.
+            // Work settle       : AnimationGraph inserts WorkSettle after arrival, giving locomotion time to brake.
+            var workDistance = Math.Abs(input.WorkAnchorX - currentX);
+            return workDistance > WorkArrivalTolerance
+                ? MaotaiMotionState.WorkApproach
+                : MaotaiMotionState.WorkTyping;
         }
 
         if (input.BaseState == MaotaiBaseState.Waiting)
