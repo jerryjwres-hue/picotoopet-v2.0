@@ -20,6 +20,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private string _connectionMessage;
     private string _approvalText;
     private string _statusMessage;
+    private AssistantPetPresentation _petPresentation;
     private bool _disposed;
 
     /// <summary>创建绑定真实 Session 的运行时 Shell。</summary>
@@ -38,12 +39,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _connectionMessage = FormatConnectionMessage(_snapshot);
         _approvalText      = FormatApproval(_snapshot.State.Capabilities);
         _statusMessage     = _snapshot.StatusMessage;
+        _petPresentation   = AssistantPetPresentation.FromSnapshot(_snapshot);
         session.SnapshotChanged += OnSessionSnapshotChanged;
     }
 
     private ShellViewModel(ControlCenterCapabilities capabilities)
     {
         ArgumentNullException.ThrowIfNull(capabilities);
+        var smokeSnapshot = CreateSmokeSnapshot(capabilities);
         _navigationItems = BuildNavigation(capabilities);
         _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.OperatorHome);
         _currentRoute      = NavigationRoute.OperatorHome;
@@ -52,6 +55,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _connectionMessage = "Smoke test 模式未连接 Mac Core。";
         _approvalText      = capabilities.ApprovalList ? "审批能力可用" : "审批能力未启用";
         _statusMessage     = "确定性导航测试。";
+        _petPresentation   = AssistantPetPresentation.FromSnapshot(smokeSnapshot);
     }
 
     /// <summary>Windows 主窗口用户可见标题。</summary>
@@ -120,6 +124,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         get => _statusMessage;
         private set => SetProperty(ref _statusMessage, value);
+    }
+
+    /// <summary>桌宠只读展示；每次真实 Session 快照更新时同步刷新。</summary>
+    public AssistantPetPresentation PetPresentation
+    {
+        get => _petPresentation;
+        private set => SetProperty(ref _petPresentation, value);
     }
 
     public static ShellViewModel CreateForSmokeTest(
@@ -390,6 +401,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         ConnectionMessage = FormatConnectionMessage(snapshot);
         ApprovalText      = FormatApproval(snapshot.State.Capabilities);
         StatusMessage     = snapshot.StatusMessage;
+        PetPresentation   = AssistantPetPresentation.FromSnapshot(snapshot);
 
         if (route == NavigationRoute.OperatorHome
             && CurrentPage is OperatorHomePageViewModel operatorHome)
