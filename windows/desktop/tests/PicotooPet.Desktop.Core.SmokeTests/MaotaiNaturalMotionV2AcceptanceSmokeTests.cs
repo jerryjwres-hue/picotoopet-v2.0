@@ -15,6 +15,7 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
         VerifyNaturalWorkPosture();
         VerifyTenMinuteEquivalentSoak();
         VerifyReleaseBundlesV2Assets();
+        VerifyFloatingPetReusesMotionEngine();
     }
 
     private static void VerifyIndependentAssetGate()
@@ -24,11 +25,25 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
             "TryGetDescriptor",
             BindingFlags.Public | BindingFlags.Static)
             ?? throw new InvalidOperationException("v2 资产 manifest 缺少 TryGetDescriptor 元数据 Gate");
+        var root      = FindRepositoryRoot();
+        var assetRoot = Path.Combine(
+            root,
+            "windows",
+            "desktop",
+            "src",
+            "PicotooPet.Desktop",
+            "Assets",
+            "Maotai",
+            "V2");
 
         string[] requiredAssets =
         [
             "torso_neutral.png", "torso_crouch.png", "torso_stretch.png", "chest_fur.png",
             "head.png", "muzzle.png", "ear_left.png", "ear_right.png",
+            "eye_left_open.png", "eye_right_open.png", "eye_left_half.png", "eye_right_half.png",
+            "eye_left_closed.png", "eye_right_closed.png", "pupil_left.png", "pupil_right.png",
+            "brow_left.png", "brow_right.png",
+            "mouth_smile.png", "mouth_tired.png", "mouth_annoyed.png", "mouth_yawn.png", "mouth_tongue.png",
             "front_left_upper.png", "front_left_lower.png", "front_left_paw.png",
             "front_right_upper.png", "front_right_lower.png", "front_right_paw.png",
             "hind_left_upper.png", "hind_left_lower.png", "hind_left_paw.png",
@@ -54,8 +69,50 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
             Assert(pivotX >= 0.0 && pivotX <= width && pivotY >= 0.0 && pivotY <= height,
                 $"v2 资产 Pivot 越界：{fileName}");
             Assert(overlap >= 12.0, $"v2 关节隐藏重叠区不足 12px：{fileName}");
+
+            var pngPath = Path.Combine(assetRoot, fileName);
+            Assert(File.Exists(pngPath), $"v2 正式独立透明资产尚未交付：{fileName}");
+            VerifyTransparentPng(pngPath, fileName);
         }
+
+        var actualPngs = Directory.Exists(assetRoot)
+            ? Directory.GetFiles(assetRoot, "*.png", SearchOption.TopDirectoryOnly)
+            : [];
+        Assert(actualPngs.Length == requiredAssets.Length,
+            "v2 正式资产目录必须只包含 manifest 规定的独立 PNG，禁止额外整图状态素材");
     }
+
+    private static void VerifyTransparentPng(string path, string fileName)
+    {
+        var header = new byte[33];
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Assert(stream.Length > header.Length, $"v2 PNG 文件过小或损坏：{fileName}");
+        Assert(stream.Read(header, 0, header.Length) == header.Length, $"v2 PNG 头读取失败：{fileName}");
+
+        byte[] signature = [137, 80, 78, 71, 13, 10, 26, 10];
+        for (var index = 0; index < signature.Length; index++)
+        {
+            Assert(header[index] == signature[index], $"v2 资产不是有效 PNG：{fileName}");
+        }
+
+        Assert(header[12] == (byte)'I' &&
+               header[13] == (byte)'H' &&
+               header[14] == (byte)'D' &&
+               header[15] == (byte)'R',
+            $"v2 PNG 缺少 IHDR：{fileName}");
+
+        var pixelWidth  = ReadBigEndianUInt32(header, 16);
+        var pixelHeight = ReadBigEndianUInt32(header, 20);
+        var colorType   = header[25];
+        Assert(pixelWidth >= 12 && pixelHeight >= 12, $"v2 PNG 像素尺寸过小：{fileName}");
+        Assert(colorType is 4 or 6, $"v2 PNG 必须自带 alpha 通道，禁止扁平背景图：{fileName}");
+    }
+
+    private static uint ReadBigEndianUInt32(byte[] buffer, int offset) =>
+        ((uint)buffer[offset] << 24) |
+        ((uint)buffer[offset + 1] << 16) |
+        ((uint)buffer[offset + 2] << 8) |
+        buffer[offset + 3];
 
     private static void VerifyAllFeetExposeLockTelemetry()
     {
@@ -81,14 +138,14 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
         var engine     = Activator.CreateInstance(engineType, 53, 108.0)
             ?? throw new InvalidOperationException("无法创建工作姿态 Motion Engine");
 
-        var typingHeadY    = double.NaN;
-        var tiredHeadY     = double.NaN;
-        var yawnBodyScaleY = double.NaN;
-        var annoyedTilt    = double.NaN;
-        var tiredPawTravel = 0.0;
-        var annoyedPawTravel = 0.0;
-        var previousTiredPawY = double.NaN;
-        var previousAnnoyedPawY = double.NaN;
+        var typingHeadY          = double.NaN;
+        var tiredHeadY           = double.NaN;
+        var yawnBodyScaleY       = double.NaN;
+        var annoyedTilt          = double.NaN;
+        var tiredPawTravel       = 0.0;
+        var annoyedPawTravel     = 0.0;
+        var previousTiredPawY    = double.NaN;
+        var previousAnnoyedPawY  = double.NaN;
 
         for (var frame = 0; frame < 1800; frame++)
         {
@@ -179,14 +236,37 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
 
     private static void VerifyReleaseBundlesV2Assets()
     {
-        var root = FindRepositoryRoot();
-        var path = Path.Combine(root, "windows", "desktop", "scripts", "Build-Phase2WindowsRelease.ps1");
-        var code = File.ReadAllText(path);
+        var root    = FindRepositoryRoot();
+        var project = Path.Combine(
+            root,
+            "windows",
+            "desktop",
+            "src",
+            "PicotooPet.Desktop",
+            "PicotooPet.Desktop.csproj");
+        var code = File.ReadAllText(project);
 
-        Assert(code.Contains("assets\\maotai\\v2", StringComparison.Ordinal),
-            "Windows release builder 尚未复制正式 maotai/v2 资产");
+        Assert(code.Contains("Assets\\Maotai\\V2\\**\\*.png", StringComparison.Ordinal),
+            "Windows publish 尚未声明正式 maotai/v2 独立 PNG 源");
         Assert(code.Contains("ui-assets\\maotai\\v2", StringComparison.Ordinal),
-            "Windows release payload 尚未携带 maotai/v2 独立透明资产");
+            "Windows publish 尚未把 maotai/v2 映射到 installer payload 固定目录");
+        Assert(code.Contains("<CopyToPublishDirectory>Always</CopyToPublishDirectory>", StringComparison.Ordinal),
+            "Windows publish 必须强制携带 maotai/v2 正式资产");
+    }
+
+    private static void VerifyFloatingPetReusesMotionEngine()
+    {
+        var root      = FindRepositoryRoot();
+        var xamlPath  = Path.Combine(root, "windows", "desktop", "src", "PicotooPet.Desktop", "Views", "FloatingPetWindow.xaml");
+        var codePath  = Path.Combine(root, "windows", "desktop", "src", "PicotooPet.Desktop", "Views", "FloatingPetWindow.xaml.cs");
+        var xaml      = File.ReadAllText(xamlPath);
+        var code      = File.ReadAllText(codePath);
+
+        Assert(xaml.Contains("<controls:AssistantPetPanel", StringComparison.Ordinal),
+            "Floating Pet 必须直接复用 AssistantPetPanel 的同一 Motion Engine 模型");
+        Assert(!code.Contains("new MaotaiMotionEngine", StringComparison.Ordinal) &&
+               !code.Contains("DispatcherTimer", StringComparison.Ordinal),
+            "FloatingPetWindow 禁止复制第二套茅台状态机或低频动作计时器");
     }
 
     private static object CreateInput(string baseState, double targetX, double workAnchorX)
