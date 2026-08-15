@@ -33,6 +33,7 @@ internal static class Program
             NavigationSmokeTests.Run();
             OperatorSimpleModeSmokeTests.Run();
             MaotaiNaturalMotionV2SmokeTests.Run();
+            MaotaiRenderLoopPerformanceSmokeTests.Run();
             MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();
             MaotaiNaturalExpressionV2SmokeTests.Run();
             NavigationFaultBoundarySmokeTests.Run();
@@ -103,7 +104,7 @@ internal static class Program
             Path.GetTempPath(),
             $"picotoopet-fatal-log-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
-        var logPath = Path.Combine(root, "desktop.log");
+        var logPath   = Path.Combine(root, "desktop.log");
         var fatalPath = Path.Combine(root, "desktop-fatal.log");
 
         try
