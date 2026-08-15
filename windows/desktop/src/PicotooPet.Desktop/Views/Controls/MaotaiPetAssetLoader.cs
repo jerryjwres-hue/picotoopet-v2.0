@@ -30,13 +30,18 @@ internal static class MaotaiPetAssetLoader
 
     private static readonly ImageSource TransparentFallback = CreateTransparentFallback();
 
-    /// <summary>v1 兼容入口；本地整图不存在/损坏时安全回退到程序集资源。</summary>
+    /// <summary>v1 兼容入口；只接受历史五个固定文件名。</summary>
     public static ImageSource LoadOrFallback(
         string fileName,
         Uri fallbackUri)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         ArgumentNullException.ThrowIfNull(fallbackUri);
+
+        if (!IsKnownV1Asset(fileName))
+        {
+            return TransparentFallback;
+        }
 
         var cacheKey = $"v1|{fileName}|{fallbackUri}";
         return Cache.GetOrAdd(
@@ -61,7 +66,7 @@ internal static class MaotaiPetAssetLoader
             _ => TryLoadLocal(V2AssetRoot, fileName) ?? TransparentFallback);
     }
 
-    /// <summary>只检查固定白名单文件是否可成功解码，用于启用 v2 可见 Rig 前的完整性门槛。</summary>
+    /// <summary>复用 v2 缓存判断部件是否可用；初始化完整性检查不会重复解码同一 PNG。</summary>
     public static bool HasUsableV2Part(string fileName)
     {
         if (!MaotaiAssetManifest.IsKnownAsset(fileName))
@@ -69,7 +74,9 @@ internal static class MaotaiPetAssetLoader
             return false;
         }
 
-        return TryLoadLocal(V2AssetRoot, fileName) is not null;
+        return !ReferenceEquals(
+            LoadV2Part(fileName),
+            TransparentFallback);
     }
 
     private static BitmapImage? TryLoadLocal(
@@ -146,7 +153,7 @@ internal static class MaotaiPetAssetLoader
         return image;
     }
 
-    private static bool IsKnownAsset(string fileName) => fileName is
+    private static bool IsKnownV1Asset(string fileName) => fileName is
         "working.png"
         or "working_tired.png"
         or "working_annoyed.png"
