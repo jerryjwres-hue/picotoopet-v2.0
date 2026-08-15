@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using PicotooPet.Desktop.Views.Controls;
 
@@ -116,7 +117,9 @@ internal static class MaotaiTorsoVariantBlendSmokeTests
             propertyName,
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException($"缺少属性 {propertyName}");
-        return Convert.ToDouble(property.GetValue(value));
+        return Convert.ToDouble(
+            property.GetValue(value),
+            CultureInfo.InvariantCulture);
     }
 
     private static string FindRepositoryRoot()
