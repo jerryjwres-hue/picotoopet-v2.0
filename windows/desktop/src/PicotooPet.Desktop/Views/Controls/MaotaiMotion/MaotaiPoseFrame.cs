@@ -81,6 +81,11 @@ internal readonly record struct MaotaiPoseFrame
 
     public MaotaiMotionState MotionState { get; init; }
 
+    // Expression envelope   : continuous values let overlays blend instead of snapping discrete face images.
+    public double YawnProgress { get; init; }
+
+    public double MouthOpenAmount { get; init; }
+
     public int FacingSign { get; init; }
 
     // Foot lock telemetry   : value types only; deterministic smoke tests can verify all four support contacts.
