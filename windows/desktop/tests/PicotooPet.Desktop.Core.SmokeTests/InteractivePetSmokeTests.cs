@@ -8,7 +8,7 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结桌宠事实投影优先级；测试先于生产实现进入分支。</summary>
+/// <summary>冻结桌宠事实投影、状态灯和原生 WPF 交互组件合同。</summary>
 internal static class InteractivePetSmokeTests
 {
     private static readonly string[] SupportedTaskTypes = new[]
@@ -42,35 +42,40 @@ internal static class InteractivePetSmokeTests
             BindingFlags.Public | BindingFlags.Static);
         SmokeAssert.True(fromSnapshot is not null, "桌宠事实投影必须公开 FromSnapshot");
 
-        VerifyMode(
+        VerifyModeAndIndicator(
             fromSnapshot!,
             Snapshot(ConnectionState.Faulted, workerAvailable: true, workerReason: "idle"),
-            "Error");
-        VerifyMode(
+            "Error",
+            "Orange");
+        VerifyModeAndIndicator(
             fromSnapshot!,
             Snapshot(ConnectionState.Offline, workerAvailable: true, workerReason: "idle"),
-            "Offline");
-        VerifyMode(
+            "Offline",
+            "Gray");
+        VerifyModeAndIndicator(
             fromSnapshot!,
             Snapshot(
                 ConnectionState.Online,
                 workerAvailable: true,
                 workerReason: "executing",
                 Task("running", "Running")),
-            "Working");
-        VerifyMode(
+            "Working",
+            "Green");
+        VerifyModeAndIndicator(
             fromSnapshot!,
             Snapshot(
                 ConnectionState.Online,
                 workerAvailable: true,
                 workerReason: "idle",
                 Task("review", "NeedsHuman")),
-            "Waiting");
-        VerifyMode(
+            "Waiting",
+            "Orange");
+        VerifyModeAndIndicator(
             fromSnapshot!,
             Snapshot(ConnectionState.Online, workerAvailable: true, workerReason: "idle"),
-            "Resting");
-        VerifyMode(
+            "Resting",
+            "Green");
+        VerifyModeAndIndicator(
             fromSnapshot!,
             Snapshot(
                 ConnectionState.Online,
@@ -78,20 +83,74 @@ internal static class InteractivePetSmokeTests
                 workerReason: "executing",
                 Task("running", "Running"),
                 Task("review", "NeedsHuman")),
-            "Working");
+            "Working",
+            "Green");
+
+        VerifyShellContract();
+        VerifyNativePetControlContract(presentationType);
     }
 
-    private static void VerifyMode(
+    private static void VerifyModeAndIndicator(
         MethodInfo fromSnapshot,
         ControlCenterSessionSnapshot snapshot,
-        string expected)
+        string expectedMode,
+        string expectedIndicator)
     {
         var presentation = fromSnapshot.Invoke(null, new object[] { snapshot });
         SmokeAssert.True(presentation is not null, "桌宠事实投影不能返回 null");
         var mode = presentation!.GetType().GetProperty("Mode")?.GetValue(presentation)?.ToString();
+        var indicator = presentation.GetType().GetProperty("Indicator")?.GetValue(presentation)?.ToString();
         SmokeAssert.True(
-            string.Equals(mode, expected, StringComparison.Ordinal),
-            $"桌宠状态错误：期望 {expected}，实际 {mode ?? "<null>"}");
+            string.Equals(mode, expectedMode, StringComparison.Ordinal),
+            $"桌宠状态错误：期望 {expectedMode}，实际 {mode ?? "<null>"}");
+        SmokeAssert.True(
+            string.Equals(indicator, expectedIndicator, StringComparison.Ordinal),
+            $"桌宠状态灯错误：期望 {expectedIndicator}，实际 {indicator ?? "<null>"}");
+    }
+
+    private static void VerifyShellContract()
+    {
+        var property = typeof(ShellViewModel).GetProperty(
+            "AssistantPet",
+            BindingFlags.Public | BindingFlags.Instance);
+        SmokeAssert.True(property is not null, "ShellViewModel 必须暴露只读 AssistantPet 供侧栏绑定");
+        SmokeAssert.True(
+            property!.PropertyType.Name == "AssistantPetPresentation",
+            "ShellViewModel.AssistantPet 必须保持纯展示投影类型");
+        SmokeAssert.True(!property.CanWrite, "桌宠展示属性不得允许 UI 写回业务事实");
+
+        using var shell = ShellViewModel.CreateForSmokeTest(ControlCenterCapabilities.Legacy22);
+        var presentation = property.GetValue(shell);
+        SmokeAssert.True(presentation is not null, "Smoke Shell 必须提供离线桌宠状态");
+        var mode = presentation!.GetType().GetProperty("Mode")?.GetValue(presentation)?.ToString();
+        SmokeAssert.True(mode == "Offline", "Smoke Shell 的桌宠必须反映离线事实");
+    }
+
+    private static void VerifyNativePetControlContract(Type presentationType)
+    {
+        var controlType = typeof(ShellViewModel).Assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.AssistantPetPanel");
+        SmokeAssert.True(controlType is not null, "必须在现有 WPF 程序内提供 AssistantPetPanel 原生控件");
+
+        var presentationProperty = controlType!.GetProperty(
+            "Presentation",
+            BindingFlags.Public | BindingFlags.Instance);
+        SmokeAssert.True(presentationProperty is not null, "AssistantPetPanel 必须公开 Presentation 依赖属性");
+        SmokeAssert.True(
+            presentationProperty!.PropertyType == presentationType,
+            "AssistantPetPanel 只能消费 AssistantPetPresentation，不得直接依赖 Session/Worker 服务");
+
+        var forbidden = new[] { "Approve", "Reject", "CreateTask", "CancelTask", "Save", "Connect" };
+        var publicDeclaredMethods = controlType
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Select(method => method.Name)
+            .ToArray();
+        foreach (var name in forbidden)
+        {
+            SmokeAssert.True(
+                !publicDeclaredMethods.Any(method => method.Contains(name, StringComparison.OrdinalIgnoreCase)),
+                $"桌宠 UI 不得暴露业务写入方法 {name}");
+        }
     }
 
     private static ControlCenterSessionSnapshot Snapshot(
