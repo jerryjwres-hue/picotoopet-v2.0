@@ -17,14 +17,14 @@ internal sealed class MaotaiMotionEngine
     private readonly MaotaiAnimationGraph _graph = new(MaotaiMotionState.Idle);
     private readonly MaotaiLocomotionController _locomotion;
 
-    private readonly MaotaiSpring _headX       = new(0.0, 0.0, 5.2, 0.88);
-    private readonly MaotaiSpring _headY       = new(0.0, 0.0, 5.0, 0.90);
-    private readonly MaotaiSpring _headRotate  = new(0.0, 0.0, 4.8, 0.86);
-    private readonly MaotaiSpring _leftEar     = new(0.0, 0.0, 4.0, 0.78);
-    private readonly MaotaiSpring _rightEar    = new(0.0, 0.0, 4.2, 0.80);
-    private readonly MaotaiSpring _tailBase    = new(0.0, 0.0, 4.6, 0.72);
-    private readonly MaotaiSpring _tailMid     = new(0.0, 0.0, 3.8, 0.70);
-    private readonly MaotaiSpring _tailTip     = new(0.0, 0.0, 3.2, 0.68);
+    private readonly MaotaiSpring _headX      = new(0.0, 0.0, 5.2, 0.88);
+    private readonly MaotaiSpring _headY      = new(0.0, 0.0, 5.0, 0.90);
+    private readonly MaotaiSpring _headRotate = new(0.0, 0.0, 4.8, 0.86);
+    private readonly MaotaiSpring _leftEar    = new(0.0, 0.0, 4.0, 0.78);
+    private readonly MaotaiSpring _rightEar   = new(0.0, 0.0, 4.2, 0.80);
+    private readonly MaotaiSpring _tailBase   = new(0.0, 0.0, 4.6, 0.72);
+    private readonly MaotaiSpring _tailMid    = new(0.0, 0.0, 3.8, 0.70);
+    private readonly MaotaiSpring _tailTip    = new(0.0, 0.0, 3.2, 0.68);
 
     private readonly double _idlePhaseOffset;
 
@@ -250,20 +250,39 @@ internal sealed class MaotaiMotionEngine
                 facingSign);
         }
 
+        // Strong state face  : Offline/Error remain authoritative even if stale interaction input exists.
+        // Work expression    : active animation state drives facial layers without swapping the whole-character PNG.
         var eyeState = input.BaseState switch
         {
             MaotaiBaseState.Offline => MaotaiEyeState.Closed,
             MaotaiBaseState.Error   => MaotaiEyeState.Half,
-            _                       => MaotaiEyeState.Open,
+            _ => _graph.ActiveState switch
+            {
+                MaotaiMotionState.WorkTired   => MaotaiEyeState.Half,
+                MaotaiMotionState.Yawn        => MaotaiEyeState.Closed,
+                MaotaiMotionState.WorkAnnoyed => MaotaiEyeState.Half,
+                MaotaiMotionState.Recover     => MaotaiEyeState.Open,
+                _                             => MaotaiEyeState.Open,
+            },
         };
-        var mouthState = input.Interaction switch
+        var mouthState = input.BaseState switch
         {
-            MaotaiInteractionKind.Pat       => MaotaiMouthState.Tongue,
-            MaotaiInteractionKind.Paw       => MaotaiMouthState.Tongue,
-            MaotaiInteractionKind.Celebrate => MaotaiMouthState.Tongue,
-            _ when input.BaseState == MaotaiBaseState.Error   => MaotaiMouthState.Annoyed,
-            _ when input.BaseState == MaotaiBaseState.Offline => MaotaiMouthState.Tired,
-            _ => MaotaiMouthState.Smile,
+            MaotaiBaseState.Error   => MaotaiMouthState.Annoyed,
+            MaotaiBaseState.Offline => MaotaiMouthState.Tired,
+            _ => input.Interaction switch
+            {
+                MaotaiInteractionKind.Pat       => MaotaiMouthState.Tongue,
+                MaotaiInteractionKind.Paw       => MaotaiMouthState.Tongue,
+                MaotaiInteractionKind.Celebrate => MaotaiMouthState.Tongue,
+                _ => _graph.ActiveState switch
+                {
+                    MaotaiMotionState.WorkTired   => MaotaiMouthState.Tired,
+                    MaotaiMotionState.Yawn        => MaotaiMouthState.Yawn,
+                    MaotaiMotionState.WorkAnnoyed => MaotaiMouthState.Annoyed,
+                    MaotaiMotionState.Recover     => MaotaiMouthState.Smile,
+                    _                             => MaotaiMouthState.Smile,
+                },
+            },
         };
 
         var pupilX = pointerX * 1.9;
