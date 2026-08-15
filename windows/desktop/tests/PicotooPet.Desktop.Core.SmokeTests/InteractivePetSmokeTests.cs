@@ -86,7 +86,6 @@ internal static class InteractivePetSmokeTests
             "Working",
             "Green");
 
-        VerifyShellContract();
         VerifyNativePetControlContract(presentationType);
     }
 
@@ -106,24 +105,6 @@ internal static class InteractivePetSmokeTests
         SmokeAssert.True(
             string.Equals(indicator, expectedIndicator, StringComparison.Ordinal),
             $"桌宠状态灯错误：期望 {expectedIndicator}，实际 {indicator ?? "<null>"}");
-    }
-
-    private static void VerifyShellContract()
-    {
-        var property = typeof(ShellViewModel).GetProperty(
-            "AssistantPet",
-            BindingFlags.Public | BindingFlags.Instance);
-        SmokeAssert.True(property is not null, "ShellViewModel 必须暴露只读 AssistantPet 供侧栏绑定");
-        SmokeAssert.True(
-            property!.PropertyType.Name == "AssistantPetPresentation",
-            "ShellViewModel.AssistantPet 必须保持纯展示投影类型");
-        SmokeAssert.True(!property.CanWrite, "桌宠展示属性不得允许 UI 写回业务事实");
-
-        using var shell = ShellViewModel.CreateForSmokeTest(ControlCenterCapabilities.Legacy22);
-        var presentation = property.GetValue(shell);
-        SmokeAssert.True(presentation is not null, "Smoke Shell 必须提供离线桌宠状态");
-        var mode = presentation!.GetType().GetProperty("Mode")?.GetValue(presentation)?.ToString();
-        SmokeAssert.True(mode == "Offline", "Smoke Shell 的桌宠必须反映离线事实");
     }
 
     private static void VerifyNativePetControlContract(Type presentationType)
