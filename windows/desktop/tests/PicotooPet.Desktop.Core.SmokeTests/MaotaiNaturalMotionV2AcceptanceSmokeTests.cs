@@ -10,12 +10,14 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
 
     public static void Run()
     {
-        VerifyIndependentAssetGate();
         VerifyAllFeetExposeLockTelemetry();
+        VerifyAllFourFeetLockDuringSupport();
+        VerifyTurnAnticipationPreventsInstantMirror();
         VerifyNaturalWorkPosture();
         VerifyTenMinuteEquivalentSoak();
         VerifyReleaseBundlesV2Assets();
         VerifyFloatingPetReusesMotionEngine();
+        VerifyIndependentAssetGate();
     }
 
     private static void VerifyIndependentAssetGate()
@@ -59,11 +61,11 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
             Assert((bool)tryGet.Invoke(null, arguments)!, $"v2 资产缺少布局元数据：{fileName}");
             var descriptor = arguments[1]
                 ?? throw new InvalidOperationException($"v2 资产描述为空：{fileName}");
-            var width      = ReadDouble(descriptor, "Width");
-            var height     = ReadDouble(descriptor, "Height");
-            var pivotX     = ReadDouble(descriptor, "PivotX");
-            var pivotY     = ReadDouble(descriptor, "PivotY");
-            var overlap    = ReadDouble(descriptor, "JointOverlapPixels");
+            var width   = ReadDouble(descriptor, "Width");
+            var height  = ReadDouble(descriptor, "Height");
+            var pivotX  = ReadDouble(descriptor, "PivotX");
+            var pivotY  = ReadDouble(descriptor, "PivotY");
+            var overlap = ReadDouble(descriptor, "JointOverlapPixels");
 
             Assert(width > 0.0 && height > 0.0, $"v2 资产逻辑尺寸非法：{fileName}");
             Assert(pivotX >= 0.0 && pivotX <= width && pivotY >= 0.0 && pivotY <= height,
@@ -131,6 +133,108 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
         }
     }
 
+    private static void VerifyAllFourFeetLockDuringSupport()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 47, 38.0)
+            ?? throw new InvalidOperationException("无法创建四足锁脚 Motion Engine");
+
+        string[] supportProperties =
+        [
+            "FrontLeftSupport",
+            "FrontRightSupport",
+            "HindLeftSupport",
+            "HindRightSupport",
+        ];
+        string[] worldXProperties =
+        [
+            "FrontLeftPawWorldX",
+            "FrontRightPawWorldX",
+            "HindLeftPawWorldX",
+            "HindRightPawWorldX",
+        ];
+        var previousWorldX = new[] { double.NaN, double.NaN, double.NaN, double.NaN };
+        var previousSupport = new bool[4];
+        var observedSupport = new bool[4];
+        var maximumDrift    = new double[4];
+
+        for (var frame = 0; frame < 900; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Resting", 132.0, 108.0)])
+                ?? throw new InvalidOperationException("四足锁脚测试没有输出 Pose");
+
+            for (var foot = 0; foot < supportProperties.Length; foot++)
+            {
+                var support = ReadBool(pose, supportProperties[foot]);
+                if (!support)
+                {
+                    previousSupport[foot] = false;
+                    previousWorldX[foot]  = double.NaN;
+                    continue;
+                }
+
+                observedSupport[foot] = true;
+                var worldX = ReadDouble(pose, worldXProperties[foot]);
+                Assert(double.IsFinite(worldX), $"第 {foot + 1} 只脚支撑相世界坐标非有限值");
+                if (previousSupport[foot])
+                {
+                    maximumDrift[foot] = Math.Max(
+                        maximumDrift[foot],
+                        Math.Abs(worldX - previousWorldX[foot]));
+                }
+
+                previousSupport[foot] = true;
+                previousWorldX[foot]  = worldX;
+            }
+        }
+
+        for (var foot = 0; foot < observedSupport.Length; foot++)
+        {
+            Assert(observedSupport[foot], $"第 {foot + 1} 只脚从未进入支撑相");
+            Assert(maximumDrift[foot] < 0.75, $"第 {foot + 1} 只脚支撑相世界漂移过大：{maximumDrift[foot]:F3}");
+        }
+    }
+
+    private static void VerifyTurnAnticipationPreventsInstantMirror()
+    {
+        var controllerType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiLocomotionController");
+        var update         = controllerType.GetMethod("Update", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("Locomotion 缺少 Update");
+        var controller     = Activator.CreateInstance(controllerType, 70.0)
+            ?? throw new InvalidOperationException("无法创建 Locomotion Controller");
+
+        for (var frame = 0; frame < 20; frame++)
+        {
+            update.Invoke(controller, [1.0 / 60.0, 138.0, true, false, 20.0, 140.0]);
+        }
+
+        var beforeReverseVelocity = ReadDouble(controller, "VelocityX");
+        Assert(beforeReverseVelocity > 20.0, "反向预备测试没有建立向右惯性");
+
+        update.Invoke(controller, [1.0 / 60.0, 22.0, true, false, 20.0, 140.0]);
+        var velocityAfterReverse = ReadDouble(controller, "VelocityX");
+        var facingAfterReverse   = ReadInt(controller, "FacingSign");
+        var anticipation         = ReadDouble(controller, "TurnAnticipation");
+
+        Assert(velocityAfterReverse > 5.0, "反向第一帧不应瞬间消除全部惯性");
+        Assert(facingAfterReverse == 1, "身体仍向右滑动时禁止整套 Raster Skeleton 瞬间镜像");
+        Assert(anticipation < -0.01, "反向请求必须先产生左转 anticipation 张力");
+
+        var flipped = false;
+        for (var frame = 0; frame < 90; frame++)
+        {
+            update.Invoke(controller, [1.0 / 60.0, 22.0, true, false, 20.0, 140.0]);
+            if (ReadInt(controller, "FacingSign") == -1)
+            {
+                flipped = true;
+                break;
+            }
+        }
+
+        Assert(flipped, "减速进入低速区后必须完成方向翻转");
+    }
+
     private static void VerifyNaturalWorkPosture()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
@@ -138,14 +242,14 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
         var engine     = Activator.CreateInstance(engineType, 53, 108.0)
             ?? throw new InvalidOperationException("无法创建工作姿态 Motion Engine");
 
-        var typingHeadY          = double.NaN;
-        var tiredHeadY           = double.NaN;
-        var yawnBodyScaleY       = double.NaN;
-        var annoyedTilt          = double.NaN;
-        var tiredPawTravel       = 0.0;
-        var annoyedPawTravel     = 0.0;
-        var previousTiredPawY    = double.NaN;
-        var previousAnnoyedPawY  = double.NaN;
+        var typingHeadY         = double.NaN;
+        var tiredHeadY          = double.NaN;
+        var yawnBodyScaleY      = double.NaN;
+        var annoyedTilt         = double.NaN;
+        var tiredPawTravel      = 0.0;
+        var annoyedPawTravel    = 0.0;
+        var previousTiredPawY   = double.NaN;
+        var previousAnnoyedPawY = double.NaN;
 
         for (var frame = 0; frame < 1800; frame++)
         {
@@ -204,8 +308,8 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
         var update     = RequireMethod(engineType, "Update");
         var engine     = Activator.CreateInstance(engineType, 71, 70.0)
             ?? throw new InvalidOperationException("无法创建 soak Motion Engine");
-        var previousX  = 70.0;
-        var maxStep    = 0.0;
+        var previousX = 70.0;
+        var maxStep   = 0.0;
 
         for (var frame = 0; frame < 36_000; frame++)
         {
@@ -256,11 +360,11 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
 
     private static void VerifyFloatingPetReusesMotionEngine()
     {
-        var root      = FindRepositoryRoot();
-        var xamlPath  = Path.Combine(root, "windows", "desktop", "src", "PicotooPet.Desktop", "Views", "FloatingPetWindow.xaml");
-        var codePath  = Path.Combine(root, "windows", "desktop", "src", "PicotooPet.Desktop", "Views", "FloatingPetWindow.xaml.cs");
-        var xaml      = File.ReadAllText(xamlPath);
-        var code      = File.ReadAllText(codePath);
+        var root     = FindRepositoryRoot();
+        var xamlPath = Path.Combine(root, "windows", "desktop", "src", "PicotooPet.Desktop", "Views", "FloatingPetWindow.xaml");
+        var codePath = Path.Combine(root, "windows", "desktop", "src", "PicotooPet.Desktop", "Views", "FloatingPetWindow.xaml.cs");
+        var xaml     = File.ReadAllText(xamlPath);
+        var code     = File.ReadAllText(codePath);
 
         Assert(xaml.Contains("<controls:AssistantPetPanel", StringComparison.Ordinal),
             "Floating Pet 必须直接复用 AssistantPetPanel 的同一 Motion Engine 模型");
@@ -312,6 +416,14 @@ internal static class MaotaiNaturalMotionV2AcceptanceSmokeTests
 
     private static double ReadDouble(object value, string propertyName) =>
         (double)(RequireProperty(value.GetType(), propertyName).GetValue(value)
+            ?? throw new InvalidOperationException($"{propertyName} 为空"));
+
+    private static bool ReadBool(object value, string propertyName) =>
+        (bool)(RequireProperty(value.GetType(), propertyName).GetValue(value)
+            ?? throw new InvalidOperationException($"{propertyName} 为空"));
+
+    private static int ReadInt(object value, string propertyName) =>
+        (int)(RequireProperty(value.GetType(), propertyName).GetValue(value)
             ?? throw new InvalidOperationException($"{propertyName} 为空"));
 
     private static string ReadString(object value, string propertyName) =>
