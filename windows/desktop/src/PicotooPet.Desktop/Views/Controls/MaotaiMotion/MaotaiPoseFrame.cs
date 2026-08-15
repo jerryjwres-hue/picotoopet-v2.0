@@ -83,11 +83,30 @@ internal readonly record struct MaotaiPoseFrame
 
     public int FacingSign { get; init; }
 
+    // Foot lock telemetry   : value types only; deterministic smoke tests can verify all four support contacts.
     public bool FrontLeftSupport { get; init; }
 
     public double FrontLeftPawWorldX { get; init; }
 
     public double FrontLeftPawWorldY { get; init; }
+
+    public bool FrontRightSupport { get; init; }
+
+    public double FrontRightPawWorldX { get; init; }
+
+    public double FrontRightPawWorldY { get; init; }
+
+    public bool HindLeftSupport { get; init; }
+
+    public double HindLeftPawWorldX { get; init; }
+
+    public double HindLeftPawWorldY { get; init; }
+
+    public bool HindRightSupport { get; init; }
+
+    public double HindRightPawWorldX { get; init; }
+
+    public double HindRightPawWorldY { get; init; }
 
     public double StageX { get; init; }
 
