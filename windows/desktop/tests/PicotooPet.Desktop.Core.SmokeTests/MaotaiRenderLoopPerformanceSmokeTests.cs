@@ -25,10 +25,6 @@ internal static class MaotaiRenderLoopPerformanceSmokeTests
                 "CompositionTarget.Rendering -= MaotaiCompositionTarget_Rendering;",
                 StringComparison.Ordinal),
             "茅台 v2 隐藏/卸载后必须退订 Rendering");
-        Assert(source.Contains(
-                "Math.Clamp(\n            now - _maotaiLastSeconds,\n            0.0,\n            MaotaiMaximumDeltaSeconds)",
-                StringComparison.Ordinal),
-            "渲染入口必须继续保留 deltaTime clamp");
 
         const string handlerStart = "private void MaotaiCompositionTarget_Rendering";
         const string handlerEnd   = "private void EnsureMaotaiV2Initialized";
@@ -37,6 +33,11 @@ internal static class MaotaiRenderLoopPerformanceSmokeTests
         Assert(start >= 0 && end > start, "无法定位茅台 v2 Rendering 高频路径");
 
         var renderLoop = source[start..end];
+        Assert(renderLoop.Contains("Math.Clamp(", StringComparison.Ordinal) &&
+               renderLoop.Contains("now - _maotaiLastSeconds", StringComparison.Ordinal) &&
+               renderLoop.Contains("MaotaiMaximumDeltaSeconds", StringComparison.Ordinal),
+            "渲染入口必须继续保留 deltaTime clamp");
+
         string[] forbiddenTokens =
         [
             "File.",
