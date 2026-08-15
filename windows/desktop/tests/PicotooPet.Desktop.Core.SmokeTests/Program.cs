@@ -35,6 +35,7 @@ internal static class Program
             MaotaiNaturalMotionV2SmokeTests.Run();
             MaotaiRenderLoopPerformanceSmokeTests.Run();
             MaotaiJumpDynamicsSmokeTests.Run();
+            MaotaiYawnTransitionSmokeTests.Run();
             MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();
             MaotaiAssetPixelValidationSmokeTests.Run();
             MaotaiNaturalExpressionV2SmokeTests.Run();
