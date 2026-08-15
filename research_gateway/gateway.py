@@ -8,10 +8,10 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Callable
+from pathlib import Path
 from urllib.parse import urlparse
-
 
 READ_CAPABILITIES = {
     "research.search",
@@ -217,8 +217,6 @@ def health_snapshot() -> dict[str, object]:
 
 
 def _read_version() -> str:
-    from pathlib import Path
-
     return (Path(__file__).with_name("VERSION")).read_text(encoding="utf-8").strip()
 
 
