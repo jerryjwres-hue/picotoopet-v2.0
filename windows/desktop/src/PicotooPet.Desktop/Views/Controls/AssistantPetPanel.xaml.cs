@@ -1,8 +1,6 @@
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using PicotooPet.Desktop.ViewModels;
 
@@ -18,31 +16,49 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         typeof(AssistantPetPanel),
         new FrameworkPropertyMetadata(null, OnPresentationChanged));
 
-    // Frame sets    : local compiled resources only; no network fetch and no provider dependency.
-    private static readonly IReadOnlyDictionary<string, string[]> FrameSets =
-        new Dictionary<string, string[]>(StringComparer.Ordinal)
-        {
-            ["idle"]    = new[] { "idle_0", "idle_1" },
-            ["working"] = new[] { "working_0", "working_1", "working_2" },
-            ["resting"] = new[] { "resting_0", "resting_1", "resting_2" },
-            ["offline"] = new[] { "offline_0", "offline_1" },
-        };
-
+    // Frame timer   : advances independent body-part poses; it never loads remote/sprite content.
     private readonly DispatcherTimer _frameTimer;
+
+    // Part transforms: each named WPF shape owns its own motion, so the pet is articulated.
+    private readonly RotateTransform _leftEarRotate  = new();
+    private readonly RotateTransform _rightEarRotate = new();
+    private readonly RotateTransform _leftPawRotate  = new();
+    private readonly RotateTransform _rightPawRotate = new();
+    private readonly ScaleTransform _leftEyeScale    = new(1, 1);
+    private readonly ScaleTransform _rightEyeScale   = new(1, 1);
+    private readonly ScaleTransform _leftPupilScale  = new(1, 1);
+    private readonly ScaleTransform _rightPupilScale = new(1, 1);
+
+    private AssistantPetMode _activeMode = AssistantPetMode.Resting;
     private AssistantPetMode? _lastMode;
-    private string _activeAssetKey = "idle";
     private int _frameIndex;
     private bool _isLoaded;
+    private bool _pointerInside;
     private bool _pointerCaptured;
     private bool _isDragging;
-    private Point _pointerDown;
+    private System.Windows.Point _pointerDown;
 
     public AssistantPetPanel()
     {
         InitializeComponent();
+
+        // Transform setup: XAML owns geometry; code only drives bounded presentation motion.
+        LeftEar.RenderTransform   = _leftEarRotate;
+        RightEar.RenderTransform  = _rightEarRotate;
+        LeftPaw.RenderTransform   = _leftPawRotate;
+        RightPaw.RenderTransform  = _rightPawRotate;
+        LeftEye.RenderTransform   = _leftEyeScale;
+        RightEye.RenderTransform  = _rightEyeScale;
+        LeftPupil.RenderTransform = _leftPupilScale;
+        RightPupil.RenderTransform = _rightPupilScale;
+        LeftEye.RenderTransformOrigin   = new System.Windows.Point(0.5, 0.5);
+        RightEye.RenderTransformOrigin  = new System.Windows.Point(0.5, 0.5);
+        LeftPupil.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+        RightPupil.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+
         _frameTimer = new DispatcherTimer(DispatcherPriority.Render)
         {
-            Interval = TimeSpan.FromMilliseconds(760),
+            Interval = TimeSpan.FromMilliseconds(720),
         };
         _frameTimer.Tick += FrameTimer_Tick;
         Loaded += PetSurface_Loaded;
@@ -69,8 +85,8 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
     {
         _isLoaded = true;
         ApplyPresentation(Presentation);
-        StartBreathing(Presentation?.Mode ?? AssistantPetMode.Resting);
-        ConfigureFrameTimer(Presentation?.Mode ?? AssistantPetMode.Resting);
+        StartBreathing(_activeMode);
+        ConfigureFrameTimer(_activeMode);
     }
 
     private void ApplyPresentation(AssistantPetPresentation? presentation)
@@ -80,9 +96,7 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
             ModeTitleText.Text = "状态读取中";
             DetailText.Text = "正在读取系统状态…";
             IndicatorDot.Fill = BrushFrom("#FF8A9AAD");
-            _activeAssetKey = "idle";
-            _frameIndex = 0;
-            TrySetPetFrame();
+            ApplyModeVisuals(AssistantPetMode.Offline);
             return;
         }
 
@@ -95,41 +109,101 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
             _                            => BrushFrom("#FF8A9AAD"),
         };
 
-        _activeAssetKey = NormalizeAssetKey(presentation.AssetKey);
+        _activeMode = presentation.Mode;
         _frameIndex = 0;
-        TrySetPetFrame();
+        ApplyModeVisuals(_activeMode);
 
         if (_isLoaded)
         {
-            if (_lastMode != presentation.Mode)
+            if (_lastMode != _activeMode)
             {
-                AnimateStateTransition(presentation.Mode);
+                AnimateStateTransition(_activeMode);
             }
-            StartBreathing(presentation.Mode);
-            ConfigureFrameTimer(presentation.Mode);
+            StartBreathing(_activeMode);
+            ConfigureFrameTimer(_activeMode);
         }
 
-        _lastMode = presentation.Mode;
+        _lastMode = _activeMode;
     }
 
-    private static string NormalizeAssetKey(string assetKey) => assetKey switch
+    private void ApplyModeVisuals(AssistantPetMode mode)
     {
-        "working" => "working",
-        "resting" => "resting",
-        "offline" => "offline",
-        _          => "idle",
-    };
+        // Props         : exactly one state prop is active; task truth is never changed here.
+        Laptop.Visibility  = mode == AssistantPetMode.Working
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        BathTub.Visibility = mode == AssistantPetMode.Resting
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SleepZzz.Visibility = mode == AssistantPetMode.Offline
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        WaitBubble.Visibility = mode is AssistantPetMode.Waiting or AssistantPetMode.Error
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        WaitBubble.Text = mode == AssistantPetMode.Error ? "!" : "?";
+
+        // Face          : offline sleeps; all other modes keep expressive open eyes.
+        SetEyesClosed(mode == AssistantPetMode.Offline);
+        Tongue.Visibility = mode == AssistantPetMode.Offline
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        // Base pose     : reset prior frame pose before applying the new state.
+        HeadRotate.Angle = mode switch
+        {
+            AssistantPetMode.Waiting => -4,
+            AssistantPetMode.Offline => 4,
+            AssistantPetMode.Error   => -3,
+            _                        => 0,
+        };
+        HeadTranslate.X = 0;
+        HeadTranslate.Y = mode == AssistantPetMode.Offline ? 4 : 0;
+        _leftEarRotate.Angle = mode == AssistantPetMode.Error ? -8 : 0;
+        _rightEarRotate.Angle = mode == AssistantPetMode.Error ? 8 : 0;
+        _leftPawRotate.Angle = 0;
+        _rightPawRotate.Angle = 0;
+        TailRotate.Angle = mode == AssistantPetMode.Offline ? -38 : -28;
+
+        // State cards   : small strip mirrors the large pet state and uses the same status semantics.
+        ApplyStateCard(
+            RestingCard,
+            mode == AssistantPetMode.Resting,
+            "#2A19C37D",
+            "#FF19C37D");
+        ApplyStateCard(
+            WorkingCard,
+            mode == AssistantPetMode.Working,
+            "#2A2F8CFF",
+            "#FF4F9DFF");
+        ApplyStateCard(
+            OfflineCard,
+            mode == AssistantPetMode.Offline,
+            "#2A718096",
+            "#FF8A9AAD");
+    }
+
+    private static void ApplyStateCard(
+        System.Windows.Controls.Border card,
+        bool active,
+        string activeBackground,
+        string activeBorder)
+    {
+        card.Background = BrushFrom(active ? activeBackground : "#1018273B");
+        card.BorderBrush = BrushFrom(active ? activeBorder : "#334C6078");
+        card.BorderThickness = new Thickness(active ? 1.6 : 1.0);
+    }
 
     private void ConfigureFrameTimer(AssistantPetMode mode)
     {
         _frameTimer.Stop();
         _frameTimer.Interval = mode switch
         {
-            AssistantPetMode.Working => TimeSpan.FromMilliseconds(330),
-            AssistantPetMode.Offline => TimeSpan.FromMilliseconds(1250),
-            AssistantPetMode.Error   => TimeSpan.FromMilliseconds(560),
-            AssistantPetMode.Waiting => TimeSpan.FromMilliseconds(820),
-            _                        => TimeSpan.FromMilliseconds(720),
+            AssistantPetMode.Working => TimeSpan.FromMilliseconds(310),
+            AssistantPetMode.Offline => TimeSpan.FromMilliseconds(950),
+            AssistantPetMode.Error   => TimeSpan.FromMilliseconds(440),
+            AssistantPetMode.Waiting => TimeSpan.FromMilliseconds(620),
+            _                        => TimeSpan.FromMilliseconds(560),
         };
 
         if (_isLoaded)
@@ -140,47 +214,143 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
 
     private void FrameTimer_Tick(object? sender, EventArgs e)
     {
-        if (!FrameSets.TryGetValue(_activeAssetKey, out var frames) || frames.Length == 0)
+        _frameIndex++;
+        switch (_activeMode)
+        {
+            case AssistantPetMode.Working:
+                AdvanceWorkingPose();
+                break;
+            case AssistantPetMode.Resting:
+                AdvanceRestingPose();
+                break;
+            case AssistantPetMode.Waiting:
+                AdvanceWaitingPose();
+                break;
+            case AssistantPetMode.Offline:
+                AdvanceSleepingPose();
+                break;
+            case AssistantPetMode.Error:
+                AdvanceErrorPose();
+                break;
+        }
+    }
+
+    private void AdvanceWorkingPose()
+    {
+        var alternate = _frameIndex % 2 == 0;
+        _leftPawRotate.Angle  = alternate ? -7 : 3;
+        _rightPawRotate.Angle = alternate ? 5 : -6;
+        TailRotate.Angle = alternate ? -20 : -37;
+
+        if (!_pointerInside && !_pointerCaptured)
+        {
+            HeadRotate.Angle = alternate ? -1.4 : 1.2;
+        }
+        if (_frameIndex % 7 == 0)
+        {
+            Blink();
+        }
+    }
+
+    private void AdvanceRestingPose()
+    {
+        var phase = _frameIndex % 4;
+        TailRotate.Angle = phase switch
+        {
+            0 => -17,
+            1 => -29,
+            2 => -41,
+            _ => -27,
+        };
+        _leftEarRotate.Angle  = phase == 1 ? -5 : 0;
+        _rightEarRotate.Angle = phase == 3 ? 5 : 0;
+
+        if (!_pointerInside && !_pointerCaptured)
+        {
+            HeadRotate.Angle = phase is 0 or 3 ? -1.5 : 1.2;
+        }
+        if (_frameIndex % 6 == 0)
+        {
+            Blink();
+        }
+    }
+
+    private void AdvanceWaitingPose()
+    {
+        var alternate = _frameIndex % 2 == 0;
+        if (!_pointerInside && !_pointerCaptured)
+        {
+            HeadRotate.Angle = alternate ? -6 : 5;
+        }
+        _leftEarRotate.Angle  = alternate ? -4 : 1;
+        _rightEarRotate.Angle = alternate ? 1 : 4;
+        WaitBubble.Opacity = alternate ? 1.0 : 0.62;
+        TailRotate.Angle = alternate ? -23 : -34;
+
+        if (_frameIndex % 5 == 0)
+        {
+            Blink();
+        }
+    }
+
+    private void AdvanceSleepingPose()
+    {
+        SetEyesClosed(true);
+        var alternate = _frameIndex % 2 == 0;
+        HeadTranslate.Y = alternate ? 3.0 : 5.0;
+        PetScale.ScaleY = alternate ? 1.0 : 1.012;
+        SleepZzz.Opacity = alternate ? 0.58 : 1.0;
+        System.Windows.Controls.Canvas.SetTop(SleepZzz, alternate ? 35 : 31);
+    }
+
+    private void AdvanceErrorPose()
+    {
+        var alternate = _frameIndex % 2 == 0;
+        _leftEarRotate.Angle  = alternate ? -11 : -6;
+        _rightEarRotate.Angle = alternate ? 11 : 6;
+        WaitBubble.Opacity = alternate ? 1.0 : 0.55;
+        if (!_pointerCaptured)
+        {
+            PetTranslate.X = alternate ? -2.5 : 2.5;
+        }
+        if (_frameIndex % 4 == 0)
+        {
+            Blink();
+        }
+    }
+
+    private void Blink()
+    {
+        if (_activeMode == AssistantPetMode.Offline)
         {
             return;
         }
 
-        _frameIndex = (_frameIndex + 1) % frames.Length;
-        TrySetPetFrame();
+        var animation = new DoubleAnimationUsingKeyFrames
+        {
+            Duration = TimeSpan.FromMilliseconds(170),
+        };
+        animation.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromPercent(0.00)));
+        animation.KeyFrames.Add(new LinearDoubleKeyFrame(0.10, KeyTime.FromPercent(0.45)));
+        animation.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromPercent(1.00)));
+        _leftEyeScale.BeginAnimation(ScaleTransform.ScaleYProperty, animation);
+        _rightEyeScale.BeginAnimation(ScaleTransform.ScaleYProperty, animation.Clone());
+        _leftPupilScale.BeginAnimation(ScaleTransform.ScaleYProperty, animation.Clone());
+        _rightPupilScale.BeginAnimation(ScaleTransform.ScaleYProperty, animation.Clone());
     }
 
-    private void TrySetPetFrame()
+    private void SetEyesClosed(bool closed)
     {
-        if (!FrameSets.TryGetValue(_activeAssetKey, out var frames) || frames.Length == 0)
-        {
-            ShowFallbackPet();
-            return;
-        }
+        _leftEyeScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        _rightEyeScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        _leftPupilScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        _rightPupilScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
 
-        var safeIndex = Math.Clamp(_frameIndex, 0, frames.Length - 1);
-        var frameName = frames[safeIndex];
-
-        try
-        {
-            var uri = new Uri(
-                $"/Picotoo Pet AI;component/Assets/Pet/Husky/V1/{frameName}.png",
-                UriKind.Relative);
-            PetImage.Source = new BitmapImage(uri);
-            PetImage.Visibility = Visibility.Visible;
-            FallbackPet.Visibility = Visibility.Collapsed;
-        }
-        catch (Exception)
-        {
-            // Missing/corrupt decorative resources degrade to a safe glyph instead of crashing the app.
-            ShowFallbackPet();
-        }
-    }
-
-    private void ShowFallbackPet()
-    {
-        PetImage.Source = null;
-        PetImage.Visibility = Visibility.Collapsed;
-        FallbackPet.Visibility = Visibility.Visible;
+        var scale = closed ? 0.10 : 1.0;
+        _leftEyeScale.ScaleY = scale;
+        _rightEyeScale.ScaleY = scale;
+        _leftPupilScale.ScaleY = scale;
+        _rightPupilScale.ScaleY = scale;
     }
 
     private void StartBreathing(AssistantPetMode mode)
@@ -189,17 +359,17 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
 
         var amplitude = mode switch
         {
-            AssistantPetMode.Working => 1.012,
-            AssistantPetMode.Offline => 1.026,
-            AssistantPetMode.Error   => 1.008,
-            _                        => 1.020,
+            AssistantPetMode.Working => 1.010,
+            AssistantPetMode.Offline => 1.020,
+            AssistantPetMode.Error   => 1.006,
+            _                        => 1.016,
         };
         var duration = mode switch
         {
-            AssistantPetMode.Working => 1.15,
-            AssistantPetMode.Offline => 2.10,
-            AssistantPetMode.Error   => 0.85,
-            _                        => 1.55,
+            AssistantPetMode.Working => 1.10,
+            AssistantPetMode.Offline => 2.05,
+            AssistantPetMode.Error   => 0.80,
+            _                        => 1.45,
         };
 
         var breathing = new DoubleAnimation
@@ -246,25 +416,27 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         PetTranslate.BeginAnimation(TranslateTransform.XProperty, shake);
     }
 
-    private void PetSurface_MouseEnter(object sender, MouseEventArgs e)
+    private void PetSurface_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        _pointerInside = true;
         CardBorder.BorderBrush = BrushFrom("#FF2F9BFF");
-        Cursor = Cursors.Hand;
+        Cursor = System.Windows.Input.Cursors.Hand;
     }
 
-    private void PetSurface_MouseLeave(object sender, MouseEventArgs e)
+    private void PetSurface_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        _pointerInside = false;
         if (_pointerCaptured)
         {
             return;
         }
 
-        CardBorder.BorderBrush = BrushFrom("#FF135D96");
-        Cursor = Cursors.Arrow;
+        CardBorder.BorderBrush = BrushFrom("#FF155E98");
+        Cursor = System.Windows.Input.Cursors.Arrow;
         ResetPointerPose(animated: true);
     }
 
-    private void PetSurface_MouseMove(object sender, MouseEventArgs e)
+    private void PetSurface_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         var position = e.GetPosition(PetStage);
         if (PetStage.ActualWidth <= 0 || PetStage.ActualHeight <= 0)
@@ -272,33 +444,40 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
             return;
         }
 
-        if (_pointerCaptured && e.LeftButton == MouseButtonState.Pressed)
+        if (_pointerCaptured && e.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
         {
             var delta = position - _pointerDown;
             if (!_isDragging && Math.Abs(delta.X) + Math.Abs(delta.Y) >= 5)
             {
                 _isDragging = true;
                 ReactionText.Text = "别把我拎太远～";
-                ShowReactionBubble(620);
+                ShowReaction(650);
             }
 
             if (_isDragging)
             {
-                PetTranslate.X = Math.Clamp(delta.X, -18, 18);
-                PetTranslate.Y = Math.Clamp(delta.Y, -11, 9);
+                PetTranslate.X = Math.Clamp(delta.X, -19, 19);
+                PetTranslate.Y = Math.Clamp(delta.Y, -12, 9);
                 PetRotate.Angle = Math.Clamp(delta.X * 0.35, -7, 7);
                 return;
             }
         }
 
+        // Pointer follow : only eyes/head track the pointer; the body remains anchored like a pet.
         var normalizedX = Math.Clamp((position.X / PetStage.ActualWidth * 2) - 1, -1, 1);
         var normalizedY = Math.Clamp((position.Y / PetStage.ActualHeight * 2) - 1, -1, 1);
-        PetRotate.Angle = normalizedX * 4.0;
-        PetTranslate.X = normalizedX * 3.0;
-        PetTranslate.Y = normalizedY * 1.5;
+        HeadRotate.Angle = normalizedX * 4.5;
+        HeadTranslate.X = normalizedX * 1.6;
+        HeadTranslate.Y = normalizedY * 1.1;
+        System.Windows.Controls.Canvas.SetLeft(LeftPupil, 36 + (normalizedX * 1.8));
+        System.Windows.Controls.Canvas.SetTop(LeftPupil, 48 + (normalizedY * 1.1));
+        System.Windows.Controls.Canvas.SetLeft(RightPupil, 64 + (normalizedX * 1.8));
+        System.Windows.Controls.Canvas.SetTop(RightPupil, 48 + (normalizedY * 1.1));
     }
 
-    private void PetSurface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void PetSurface_MouseLeftButtonDown(
+        object sender,
+        System.Windows.Input.MouseButtonEventArgs e)
     {
         Focus();
         _pointerDown = e.GetPosition(PetStage);
@@ -307,7 +486,9 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         e.Handled = true;
     }
 
-    private void PetSurface_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private void PetSurface_MouseLeftButtonUp(
+        object sender,
+        System.Windows.Input.MouseButtonEventArgs e)
     {
         var releasePosition = e.GetPosition(PetStage);
         var wasDragging = _isDragging;
@@ -316,6 +497,7 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         if (wasDragging)
         {
             ResetPointerPose(animated: true);
+            e.Handled = true;
             return;
         }
 
@@ -323,66 +505,84 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         e.Handled = true;
     }
 
-    private void PetSurface_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private void PetSurface_MouseDoubleClick(
+        object sender,
+        System.Windows.Input.MouseButtonEventArgs e)
     {
         ReactionText.Text = "好耶！✨";
-        ShowReactionBubble(980);
+        ShowReaction(980);
         AnimateCelebration();
         e.Handled = true;
     }
 
-    private void PetSurface_KeyDown(object sender, KeyEventArgs e)
+    private void PetSurface_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key is Key.Space or Key.Enter)
+        if (e.Key is System.Windows.Input.Key.Space or System.Windows.Input.Key.Enter)
         {
-            AnimateFriendlyReaction(new Point(PetStage.ActualWidth / 2, PetStage.ActualHeight / 2));
+            AnimateFriendlyReaction(
+                new System.Windows.Point(PetStage.ActualWidth / 2, PetStage.ActualHeight / 2));
             e.Handled = true;
         }
     }
 
-    private void AnimateFriendlyReaction(Point position)
+    private void AnimateFriendlyReaction(System.Windows.Point position)
     {
         var upperHalf = position.Y <= Math.Max(1, PetStage.ActualHeight) * 0.58;
         ReactionText.Text = upperHalf ? "摸摸头～ ✨" : "击掌！🐾";
-        ShowReactionBubble(820);
+        ShowReaction(820);
 
-        var bounce = new DoubleAnimationUsingKeyFrames
+        if (upperHalf)
+        {
+            AnimateHeadPat();
+        }
+        else
+        {
+            AnimatePawWave();
+        }
+    }
+
+    private void AnimateHeadPat()
+    {
+        var nod = new DoubleAnimationUsingKeyFrames
         {
             Duration = TimeSpan.FromMilliseconds(430),
         };
-        bounce.KeyFrames.Add(new SplineDoubleKeyFrame(
-            PetTranslate.Y,
-            KeyTime.FromPercent(0.00)));
-        bounce.KeyFrames.Add(new SplineDoubleKeyFrame(
-            -9,
-            KeyTime.FromPercent(0.35),
-            new KeySpline(0.2, 0.8, 0.2, 1.0)));
-        bounce.KeyFrames.Add(new SplineDoubleKeyFrame(
-            0,
-            KeyTime.FromPercent(1.00),
-            new KeySpline(0.2, 0.8, 0.2, 1.0)));
-        PetTranslate.BeginAnimation(TranslateTransform.YProperty, bounce);
+        nod.KeyFrames.Add(new SplineDoubleKeyFrame(HeadRotate.Angle, KeyTime.FromPercent(0.00)));
+        nod.KeyFrames.Add(new SplineDoubleKeyFrame(-7, KeyTime.FromPercent(0.32)));
+        nod.KeyFrames.Add(new SplineDoubleKeyFrame(5, KeyTime.FromPercent(0.62)));
+        nod.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(1.00)));
+        HeadRotate.BeginAnimation(RotateTransform.AngleProperty, nod);
 
-        // An interaction also advances the sprite immediately, so the pet visibly changes pose.
-        if (FrameSets.TryGetValue(_activeAssetKey, out var frames) && frames.Length > 1)
+        _leftEarRotate.BeginAnimation(
+            RotateTransform.AngleProperty,
+            new DoubleAnimation(-8, 3, TimeSpan.FromMilliseconds(280))
+            {
+                AutoReverse = true,
+            });
+        _rightEarRotate.BeginAnimation(
+            RotateTransform.AngleProperty,
+            new DoubleAnimation(8, -3, TimeSpan.FromMilliseconds(280))
+            {
+                AutoReverse = true,
+            });
+    }
+
+    private void AnimatePawWave()
+    {
+        var wave = new DoubleAnimationUsingKeyFrames
         {
-            _frameIndex = (_frameIndex + 1) % frames.Length;
-            TrySetPetFrame();
-        }
+            Duration = TimeSpan.FromMilliseconds(560),
+        };
+        wave.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(0.00)));
+        wave.KeyFrames.Add(new SplineDoubleKeyFrame(-28, KeyTime.FromPercent(0.28)));
+        wave.KeyFrames.Add(new SplineDoubleKeyFrame(16, KeyTime.FromPercent(0.52)));
+        wave.KeyFrames.Add(new SplineDoubleKeyFrame(-18, KeyTime.FromPercent(0.72)));
+        wave.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(1.00)));
+        _rightPawRotate.BeginAnimation(RotateTransform.AngleProperty, wave);
     }
 
     private void AnimateCelebration()
     {
-        var spin = new DoubleAnimationUsingKeyFrames
-        {
-            Duration = TimeSpan.FromMilliseconds(620),
-        };
-        spin.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(0.00)));
-        spin.KeyFrames.Add(new SplineDoubleKeyFrame(-8, KeyTime.FromPercent(0.22)));
-        spin.KeyFrames.Add(new SplineDoubleKeyFrame(9, KeyTime.FromPercent(0.48)));
-        spin.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(1.00)));
-        PetRotate.BeginAnimation(RotateTransform.AngleProperty, spin);
-
         var jump = new DoubleAnimationUsingKeyFrames
         {
             Duration = TimeSpan.FromMilliseconds(620),
@@ -391,9 +591,18 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         jump.KeyFrames.Add(new SplineDoubleKeyFrame(-12, KeyTime.FromPercent(0.38)));
         jump.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(1.00)));
         PetTranslate.BeginAnimation(TranslateTransform.YProperty, jump);
+
+        TailRotate.BeginAnimation(
+            RotateTransform.AngleProperty,
+            new DoubleAnimation(-48, -12, TimeSpan.FromMilliseconds(150))
+            {
+                AutoReverse    = true,
+                RepeatBehavior = new RepeatBehavior(2.0),
+            });
+        AnimatePawWave();
     }
 
-    private void ShowReactionBubble(int durationMilliseconds)
+    private void ShowReaction(int durationMilliseconds)
     {
         var reaction = new DoubleAnimationUsingKeyFrames
         {
@@ -403,7 +612,7 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         reaction.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromPercent(0.14)));
         reaction.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromPercent(0.62)));
         reaction.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromPercent(1.00)));
-        ReactionBubble.BeginAnimation(OpacityProperty, reaction);
+        ReactionText.BeginAnimation(OpacityProperty, reaction);
     }
 
     private void ReleasePointerCapture()
@@ -421,35 +630,51 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         PetRotate.BeginAnimation(RotateTransform.AngleProperty, null);
         PetTranslate.BeginAnimation(TranslateTransform.XProperty, null);
         PetTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+        HeadRotate.BeginAnimation(RotateTransform.AngleProperty, null);
+        HeadTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+        HeadTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+
+        System.Windows.Controls.Canvas.SetLeft(LeftPupil, 36);
+        System.Windows.Controls.Canvas.SetTop(LeftPupil, 48);
+        System.Windows.Controls.Canvas.SetLeft(RightPupil, 64);
+        System.Windows.Controls.Canvas.SetTop(RightPupil, 48);
 
         if (!animated)
         {
             PetRotate.Angle = 0;
             PetTranslate.X = 0;
             PetTranslate.Y = 0;
+            HeadRotate.Angle = 0;
+            HeadTranslate.X = 0;
+            HeadTranslate.Y = 0;
             return;
         }
 
         var duration = TimeSpan.FromMilliseconds(180);
         PetRotate.BeginAnimation(
             RotateTransform.AngleProperty,
-            new DoubleAnimation(PetRotate.Angle, 0, duration)
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-            });
+            EaseTo(PetRotate.Angle, 0, duration));
         PetTranslate.BeginAnimation(
             TranslateTransform.XProperty,
-            new DoubleAnimation(PetTranslate.X, 0, duration)
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-            });
+            EaseTo(PetTranslate.X, 0, duration));
         PetTranslate.BeginAnimation(
             TranslateTransform.YProperty,
-            new DoubleAnimation(PetTranslate.Y, 0, duration)
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-            });
+            EaseTo(PetTranslate.Y, 0, duration));
+        HeadRotate.BeginAnimation(
+            RotateTransform.AngleProperty,
+            EaseTo(HeadRotate.Angle, 0, duration));
+        HeadTranslate.BeginAnimation(
+            TranslateTransform.XProperty,
+            EaseTo(HeadTranslate.X, 0, duration));
+        HeadTranslate.BeginAnimation(
+            TranslateTransform.YProperty,
+            EaseTo(HeadTranslate.Y, 0, duration));
     }
+
+    private static DoubleAnimation EaseTo(double from, double to, TimeSpan duration) => new(from, to, duration)
+    {
+        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+    };
 
     private void PetSurface_Unloaded(object sender, RoutedEventArgs e)
     {
@@ -460,7 +685,8 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         PetRotate.BeginAnimation(RotateTransform.AngleProperty, null);
         PetTranslate.BeginAnimation(TranslateTransform.XProperty, null);
         PetTranslate.BeginAnimation(TranslateTransform.YProperty, null);
-        ReactionBubble.BeginAnimation(OpacityProperty, null);
+        HeadRotate.BeginAnimation(RotateTransform.AngleProperty, null);
+        ReactionText.BeginAnimation(OpacityProperty, null);
     }
 
     private static SolidColorBrush BrushFrom(string hex)
