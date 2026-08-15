@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import re
 import shutil
@@ -16,6 +17,8 @@ from urllib.parse import urlparse
 READ_CAPABILITIES = {
     "research.search",
     "research.web.read",
+    "research.web.crawl",
+    "research.web.extract",
     "research.social.search",
     "research.video.search",
     "research.video.transcript",
@@ -28,6 +31,12 @@ _SOCIAL_PLATFORMS = {"twitter", "reddit", "xiaohongshu", "facebook", "instagram"
 _GITHUB_KINDS = {"repos", "code", "issues", "prs"}
 _REQUIRED_TOOLS = ("agent-reach", "opencli", "mcporter", "gh", "yt-dlp", "bili", "curl")
 _LINKEDIN_USERNAME = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
+_WEB_OUTPUTS = {"markdown", "html", "text"}
+_WEB_CRAWL_MODES = {
+    "static": ("scrapling.get", 90),
+    "dynamic": ("scrapling.fetch", 120),
+    "stealth": ("scrapling.stealthy_fetch", 150),
+}
 
 
 class PolicyError(RuntimeError):
@@ -76,6 +85,8 @@ class GatewayDispatcher:
         builders = {
             "research.search": self._build_search,
             "research.web.read": self._build_web_read,
+            "research.web.crawl": self._build_web_crawl,
+            "research.web.extract": self._build_web_extract,
             "research.social.search": self._build_social_search,
             "research.video.search": self._build_video_search,
             "research.video.transcript": self._build_video_transcript,
@@ -106,6 +117,31 @@ class GatewayDispatcher:
             raise ValueError(f"limit must be an integer between 1 and {maximum}")
         return value
 
+    @staticmethod
+    def _external_http_url(params: dict[str, object], key: str = "url") -> str:
+        url = GatewayDispatcher._required_text(params, key)
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("url must be an absolute http(s) URL")
+
+        hostname = parsed.hostname.lower().rstrip(".")
+        if hostname == "localhost" or hostname.endswith(".localhost"):
+            raise ValueError("url must target an external host")
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            address = None
+        if address is not None and (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_multicast
+            or address.is_reserved
+            or address.is_unspecified
+        ):
+            raise ValueError("url must target an external host")
+        return url
+
     def _build_search(self, params: dict[str, object]) -> tuple[list[str], int]:
         self._validate_keys(params, {"query", "limit"})
         query = self._required_text(params, "query")
@@ -119,11 +155,85 @@ class GatewayDispatcher:
 
     def _build_web_read(self, params: dict[str, object]) -> tuple[list[str], int]:
         self._validate_keys(params, {"url"})
-        url = self._required_text(params, "url")
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("url must be an absolute http(s) URL")
+        url = self._external_http_url(params)
         return ["curl", "-fsSL", "--max-time", "60", f"https://r.jina.ai/{url}"], 70
+
+    def _build_web_crawl(self, params: dict[str, object]) -> tuple[list[str], int]:
+        self._validate_keys(params, {"url", "mode"})
+        url = self._external_http_url(params)
+        mode_value = params.get("mode", "static")
+        if not isinstance(mode_value, str):
+            raise ValueError("mode must be a string")
+        mode = mode_value.strip().lower()
+        route = _WEB_CRAWL_MODES.get(mode)
+        if route is None:
+            raise ValueError(f"unsupported crawl mode: {mode}")
+        selector, timeout_seconds = route
+        return [
+            "mcporter",
+            "call",
+            selector,
+            f"url={url}",
+            "extraction_type=markdown",
+            "main_content_only=true",
+        ], timeout_seconds
+
+    def _build_web_extract(self, params: dict[str, object]) -> tuple[list[str], int]:
+        self._validate_keys(
+            params,
+            {"url", "css_selector", "output", "schema", "allow_paid_backend"},
+        )
+        url = self._external_http_url(params)
+        schema = params.get("schema")
+        if schema is not None:
+            if not isinstance(schema, dict) or not schema:
+                raise ValueError("schema must be a non-empty object")
+            allow_paid = params.get("allow_paid_backend", False)
+            if not isinstance(allow_paid, bool):
+                raise ValueError("allow_paid_backend must be a boolean")
+            if not allow_paid:
+                raise PolicyError(
+                    "Thunderbit structured extraction consumes credits; "
+                    "set allow_paid_backend=true only after explicit approval"
+                )
+            if "css_selector" in params or "output" in params:
+                raise ValueError("schema extraction cannot be combined with css_selector or output")
+            schema_json = json.dumps(schema, separators=(",", ":"), sort_keys=True)
+            if len(schema_json) > 20_000:
+                raise ValueError("schema is too large")
+            return [
+                "mcporter",
+                "call",
+                "thunderbit.thunderbit_extract",
+                f"url={url}",
+                f"schema={schema_json}",
+            ], 150
+
+        if "allow_paid_backend" in params:
+            raise ValueError("allow_paid_backend is only valid with schema extraction")
+        output_value = params.get("output", "markdown")
+        if not isinstance(output_value, str):
+            raise ValueError("output must be a string")
+        output = output_value.strip().lower()
+        if output not in _WEB_OUTPUTS:
+            raise ValueError(f"unsupported output: {output}")
+
+        argv = [
+            "mcporter",
+            "call",
+            "scrapling.get",
+            f"url={url}",
+            f"extraction_type={output}",
+            "main_content_only=true",
+        ]
+        css_selector = params.get("css_selector")
+        if css_selector is not None:
+            if not isinstance(css_selector, str) or not css_selector.strip():
+                raise ValueError("css_selector must be a non-empty string")
+            if len(css_selector) > 500:
+                raise ValueError("css_selector is too long")
+            argv.append(f"css_selector={css_selector.strip()}")
+        return argv, 90
 
     def _build_social_search(self, params: dict[str, object]) -> tuple[list[str], int]:
         self._validate_keys(params, {"platform", "query", "limit"})
@@ -153,10 +263,7 @@ class GatewayDispatcher:
 
     def _build_video_transcript(self, params: dict[str, object]) -> tuple[list[str], int]:
         self._validate_keys(params, {"url", "languages"})
-        url = self._required_text(params, "url")
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("url must be an absolute http(s) URL")
+        url = self._external_http_url(params)
         languages = params.get("languages", "en.*,zh.*")
         if not isinstance(languages, str) or not languages.strip():
             raise ValueError("languages must be a non-empty string")
