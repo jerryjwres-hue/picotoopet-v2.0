@@ -186,8 +186,7 @@ internal sealed class MaotaiRasterRenderer
         ApplyBone(_visuals.TailMid, frame.TailMid);
         ApplyBone(_visuals.TailTip, frame.TailTip);
 
-        ApplyEyeState(frame.EyeState);
-        ApplyMouthState(frame.MouthState);
+        ApplyFace(frame);
     }
 
     private static void ApplyBone(
@@ -200,12 +199,47 @@ internal sealed class MaotaiRasterRenderer
             pose.ScaleX,
             pose.ScaleY);
 
+    private void ApplyFace(in MaotaiPoseFrame frame)
+    {
+        if (frame.MotionState == MaotaiMotionState.Yawn)
+        {
+            // Yawn cross-fade       : tired/half -> closed+yawn -> open/smile, driven only by engine pose values.
+            var progress = Math.Clamp(frame.YawnProgress, 0.0, 1.0);
+            var opening  = Math.Clamp(frame.MouthOpenAmount, 0.0, 1.0);
+            var baseFace = 1.0 - opening;
+            var tired    = baseFace * (1.0 - progress);
+            var smile    = baseFace * progress;
+
+            ApplyEyeOpacities(
+                open: smile,
+                half: tired,
+                closed: opening);
+            ApplyMouthOpacities(
+                smile: smile,
+                tired: tired,
+                annoyed: 0.0,
+                yawn: opening,
+                tongue: 0.0);
+            return;
+        }
+
+        ApplyEyeState(frame.EyeState);
+        ApplyMouthState(frame.MouthState);
+    }
+
     private void ApplyEyeState(MaotaiEyeState state)
     {
         var open   = state == MaotaiEyeState.Open ? 1.0 : 0.0;
         var half   = state == MaotaiEyeState.Half ? 1.0 : 0.0;
         var closed = state == MaotaiEyeState.Closed ? 1.0 : 0.0;
+        ApplyEyeOpacities(open, half, closed);
+    }
 
+    private void ApplyEyeOpacities(
+        double open,
+        double half,
+        double closed)
+    {
         _visuals.EyeLeftOpen.Opacity    = open;
         _visuals.EyeRightOpen.Opacity   = open;
         _visuals.EyeLeftHalf.Opacity    = half;
@@ -216,10 +250,25 @@ internal sealed class MaotaiRasterRenderer
 
     private void ApplyMouthState(MaotaiMouthState state)
     {
-        _visuals.MouthSmile.Opacity   = state == MaotaiMouthState.Smile ? 1.0 : 0.0;
-        _visuals.MouthTired.Opacity   = state == MaotaiMouthState.Tired ? 1.0 : 0.0;
-        _visuals.MouthAnnoyed.Opacity = state == MaotaiMouthState.Annoyed ? 1.0 : 0.0;
-        _visuals.MouthYawn.Opacity    = state == MaotaiMouthState.Yawn ? 1.0 : 0.0;
-        _visuals.MouthTongue.Opacity  = state == MaotaiMouthState.Tongue ? 1.0 : 0.0;
+        ApplyMouthOpacities(
+            smile: state == MaotaiMouthState.Smile ? 1.0 : 0.0,
+            tired: state == MaotaiMouthState.Tired ? 1.0 : 0.0,
+            annoyed: state == MaotaiMouthState.Annoyed ? 1.0 : 0.0,
+            yawn: state == MaotaiMouthState.Yawn ? 1.0 : 0.0,
+            tongue: state == MaotaiMouthState.Tongue ? 1.0 : 0.0);
+    }
+
+    private void ApplyMouthOpacities(
+        double smile,
+        double tired,
+        double annoyed,
+        double yawn,
+        double tongue)
+    {
+        _visuals.MouthSmile.Opacity   = smile;
+        _visuals.MouthTired.Opacity   = tired;
+        _visuals.MouthAnnoyed.Opacity = annoyed;
+        _visuals.MouthYawn.Opacity    = yawn;
+        _visuals.MouthTongue.Opacity  = tongue;
     }
 }
