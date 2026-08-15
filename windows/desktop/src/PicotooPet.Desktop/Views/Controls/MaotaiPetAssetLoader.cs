@@ -1,11 +1,12 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
 namespace PicotooPet.Desktop.Views.Controls;
 
-/// <summary>只读取固定应用目录中的茅台 Q 版 PNG；失败时回退到已打包资源。</summary>
+/// <summary>只读取固定应用目录中的茅台 Q 版 PNG；失败时回退到已打包资源，再失败则安全透明降级。</summary>
 internal static class MaotaiPetAssetLoader
 {
     private static readonly ConcurrentDictionary<string, ImageSource> Cache = new(StringComparer.OrdinalIgnoreCase);
@@ -18,7 +19,7 @@ internal static class MaotaiPetAssetLoader
         "maotai",
         "v1");
 
-    /// <summary>加载已知 PNG；本地覆盖不存在/损坏时安全回退到程序集资源。</summary>
+    /// <summary>加载已知 PNG；本地覆盖不存在/损坏时回退程序集资源，资源也无效时返回透明安全图像。</summary>
     public static ImageSource LoadOrFallback(
         string fileName,
         Uri fallbackUri)
@@ -29,7 +30,7 @@ internal static class MaotaiPetAssetLoader
         var cacheKey = $"{fileName}|{fallbackUri}";
         return Cache.GetOrAdd(
             cacheKey,
-            _ => TryLoadLocal(fileName) ?? LoadPackResource(fallbackUri));
+            _ => TryLoadLocal(fileName) ?? LoadPackResourceOrTransparent(fallbackUri));
     }
 
     private static BitmapImage? TryLoadLocal(string fileName)
@@ -62,6 +63,7 @@ internal static class MaotaiPetAssetLoader
         }
         catch (Exception exception) when (
             exception is IOException
+            or FileFormatException
             or UnauthorizedAccessException
             or NotSupportedException
             or ArgumentException)
@@ -71,15 +73,40 @@ internal static class MaotaiPetAssetLoader
         }
     }
 
-    private static BitmapImage LoadPackResource(Uri fallbackUri)
+    private static ImageSource LoadPackResourceOrTransparent(Uri fallbackUri)
     {
-        var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.UriSource   = fallbackUri;
-        bitmap.EndInit();
-        bitmap.Freeze();
-        return bitmap;
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource   = fallbackUri;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or FileFormatException
+            or NotSupportedException
+            or ArgumentException)
+        {
+            // Pack fallback    : legacy bundled art may be absent/invalid; keep the application renderable.
+            return CreateTransparentFallback();
+        }
+    }
+
+    private static DrawingImage CreateTransparentFallback()
+    {
+        var geometry = new RectangleGeometry(new Rect(0, 0, 1, 1));
+        geometry.Freeze();
+
+        var drawing = new GeometryDrawing(Brushes.Transparent, null, geometry);
+        drawing.Freeze();
+
+        var image = new DrawingImage(drawing);
+        image.Freeze();
+        return image;
     }
 
     private static bool IsKnownAsset(string fileName) => fileName is
