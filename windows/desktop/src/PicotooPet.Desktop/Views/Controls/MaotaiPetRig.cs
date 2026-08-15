@@ -1,33 +1,40 @@
 namespace PicotooPet.Desktop.Views.Controls;
 
-/// <summary>茅台 Q 版桌宠的本地 WPF 资源目录；只描述展示资源，不持有业务状态。</summary>
+/// <summary>茅台 Q 版桌宠的固定视觉资源键；只描述展示资源，不持有业务状态。</summary>
 public static class MaotaiPetRig
 {
-    private const string Root = "/Picotoo Pet AI;component/Assets/Pet/Maotai/V1";
+    // Local override   : installer acceptance packs may place high-detail Q-version PNGs here.
+    public static string WorkingFile        => "working.png";
+    public static string WorkingTiredFile   => "working_tired.png";
+    public static string WorkingAnnoyedFile => "working_annoyed.png";
+    public static string RestingFile        => "resting.png";
+    public static string OfflineFile        => "offline.png";
 
-    // Rig layers       : same-canvas transparent images used for independent transforms.
-    public static string Body         => $"{Root}/rig/body.png";
-    public static string Head         => $"{Root}/rig/head.png";
-    public static string Tail         => $"{Root}/rig/tail.png";
-    public static string LeftPaw      => $"{Root}/rig/paw_left.png";
-    public static string RightPaw     => $"{Root}/rig/paw_right.png";
-    public static string Laptop       => $"{Root}/rig/laptop.png";
-    public static string Drink        => $"{Root}/rig/drink.png";
+    // Rig layers       : live work mode reuses one raster canvas and clips independent regions.
+    public static string Body         => WorkingFile;
+    public static string Head         => WorkingFile;
+    public static string Tail         => WorkingFile;
+    public static string LeftPaw      => WorkingFile;
+    public static string RightPaw     => WorkingFile;
+    public static string Laptop       => WorkingFile;
+    public static string Drink        => WorkingFile;
 
-    // Face overlays    : optional fine-grained expression surfaces for later rig refinements.
-    public static string EyesOpen     => $"{Root}/face/eyes_open.png";
-    public static string EyesHalf     => $"{Root}/face/eyes_half.png";
-    public static string EyesClosed   => $"{Root}/face/eyes_closed.png";
-    public static string BrowsFocused => $"{Root}/face/brows_focused.png";
-    public static string BrowsAnnoyed => $"{Root}/face/brows_annoyed.png";
-    public static string MouthHappy   => $"{Root}/face/mouth_happy.png";
-    public static string MouthTired   => $"{Root}/face/mouth_tired.png";
-    public static string MouthAnnoyed => $"{Root}/face/mouth_annoyed.png";
+    // Expression keys  : whole-head/raster swaps remain presentation-only and keep real mode unchanged.
+    public static string EyesOpen     => WorkingFile;
+    public static string EyesHalf     => WorkingTiredFile;
+    public static string EyesClosed   => OfflineFile;
+    public static string BrowsFocused => WorkingFile;
+    public static string BrowsAnnoyed => WorkingAnnoyedFile;
+    public static string MouthHappy   => WorkingFile;
+    public static string MouthTired   => WorkingTiredFile;
+    public static string MouthAnnoyed => WorkingAnnoyedFile;
 
-    // State posters    : used only for scene transitions/fallbacks and decorative thumbnails.
-    public static string WorkingPoster        => $"{Root}/posters/working.png";
-    public static string WorkingTiredPoster   => $"{Root}/posters/working_tired.png";
-    public static string WorkingAnnoyedPoster => $"{Root}/posters/working_annoyed.png";
-    public static string RestingPoster        => $"{Root}/posters/resting.png";
-    public static string OfflinePoster        => $"{Root}/posters/offline.png";
+    // Fallbacks        : bundled resources keep CI/installations functional if optional Q assets are absent.
+    public static Uri WorkingFallback => Pack("working_0.png");
+    public static Uri RestingFallback => Pack("resting_0.png");
+    public static Uri OfflineFallback => Pack("offline_0.png");
+
+    private static Uri Pack(string fileName) => new(
+        $"pack://application:,,,/Picotoo Pet AI;component/Assets/Pet/Husky/V1/{fileName}",
+        UriKind.Absolute);
 }
