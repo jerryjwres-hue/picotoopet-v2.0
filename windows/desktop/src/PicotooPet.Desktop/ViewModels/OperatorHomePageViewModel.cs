@@ -1,3 +1,4 @@
+using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
@@ -7,6 +8,9 @@ public sealed class OperatorHomePageViewModel : PageViewModel
 {
     private readonly ControlCenterSession? _session;
     private OperatorProjection _projection;
+    private AssistantPetIndicator _coreIndicator;
+    private AssistantPetIndicator _workerIndicator;
+    private AssistantPetIndicator _windowsIndicator;
     private double? _cpuPercent;
     private double? _memoryPercent;
     private double? _diskPercent;
@@ -18,12 +22,14 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     {
         _session    = session ?? throw new ArgumentNullException(nameof(session));
         _projection = OperatorProjection.FromSnapshot(snapshot);
+        ApplyHealthIndicators(snapshot);
     }
 
     private OperatorHomePageViewModel(ControlCenterSessionSnapshot snapshot)
         : base("首页")
     {
         _projection = OperatorProjection.FromSnapshot(snapshot);
+        ApplyHealthIndicators(snapshot);
     }
 
     public OperatorProjection Projection
@@ -59,6 +65,15 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public string WorkerStatus => Projection.WorkerStatus;
     public string WindowsStatus => Projection.WindowsStatus;
     public string SystemSummary => Projection.SystemSummary;
+    public AssistantPetIndicator CoreIndicator => _coreIndicator;
+    public AssistantPetIndicator WorkerIndicator => _workerIndicator;
+    public AssistantPetIndicator WindowsIndicator => _windowsIndicator;
+    public AssistantPetIndicator SystemIndicator =>
+        _coreIndicator == AssistantPetIndicator.Orange || _workerIndicator == AssistantPetIndicator.Orange
+            ? AssistantPetIndicator.Orange
+            : _coreIndicator == AssistantPetIndicator.Gray || _workerIndicator == AssistantPetIndicator.Gray
+                ? AssistantPetIndicator.Gray
+                : AssistantPetIndicator.Green;
 
     /// <summary>资源条使用 0 作为不可用时的安全绘制值；可见文本仍明确显示破折号。</summary>
     public double CpuPercent => _cpuPercent ?? 0d;
@@ -68,8 +83,12 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public string MemoryText => FormatMetric(_memoryPercent);
     public string DiskText => FormatMetric(_diskPercent);
 
-    public void UpdateSnapshot(ControlCenterSessionSnapshot snapshot) =>
+    public void UpdateSnapshot(ControlCenterSessionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
         Projection = OperatorProjection.FromSnapshot(snapshot);
+        ApplyHealthIndicators(snapshot);
+    }
 
     /// <summary>接收独立本地只读采样；不会修改 Session、Worker 或任务快照。</summary>
     public void UpdateResourceSnapshot(WindowsResourceSnapshot snapshot)
@@ -95,6 +114,37 @@ public sealed class OperatorHomePageViewModel : PageViewModel
 
     public static OperatorHomePageViewModel CreateForSmokeTest(
         ControlCenterSessionSnapshot snapshot) => new(snapshot);
+
+    private void ApplyHealthIndicators(ControlCenterSessionSnapshot snapshot)
+    {
+        var connectionState = snapshot.State.Connection.State;
+        _coreIndicator = connectionState switch
+        {
+            ConnectionState.Online => AssistantPetIndicator.Green,
+            ConnectionState.Offline => AssistantPetIndicator.Gray,
+            ConnectionState.AuthenticationFailed or ConnectionState.Faulted => AssistantPetIndicator.Orange,
+            _ => AssistantPetIndicator.Orange,
+        };
+
+        var worker = snapshot.State.Worker;
+        _workerIndicator = connectionState == ConnectionState.Offline
+            ? AssistantPetIndicator.Gray
+            : worker.Available
+                ? string.Equals(worker.Reason, "degraded", StringComparison.OrdinalIgnoreCase)
+                    ? AssistantPetIndicator.Orange
+                    : AssistantPetIndicator.Green
+                : string.Equals(worker.Reason, "degraded", StringComparison.OrdinalIgnoreCase)
+                    ? AssistantPetIndicator.Orange
+                    : AssistantPetIndicator.Gray;
+
+        // Windows UI 本身正在运行才会生成该 ViewModel，因此本地壳状态为绿色事实。
+        _windowsIndicator = AssistantPetIndicator.Green;
+
+        RaisePropertyChanged(nameof(CoreIndicator));
+        RaisePropertyChanged(nameof(WorkerIndicator));
+        RaisePropertyChanged(nameof(WindowsIndicator));
+        RaisePropertyChanged(nameof(SystemIndicator));
+    }
 
     private static string FormatMetric(double? value) =>
         value is null
