@@ -25,12 +25,26 @@ internal enum MaotaiMotionState
     UserReaction,
 }
 
+/// <summary>工作状态内部的自然循环阶段；只影响表现，不改变真实 Working 状态。</summary>
+internal enum MaotaiWorkCyclePhase
+{
+    AwaitTyping,
+    TypingBeforeTired,
+    Tired,
+    Yawn,
+    TypingBeforeAnnoyed,
+    Annoyed,
+    Recover,
+}
+
 /// <summary>把高层动作请求路由为合法的连续过渡，禁止危险 Pose 瞬切。</summary>
 internal sealed class MaotaiAnimationGraph
 {
     private MaotaiMotionState _requestedState;
     private double _transitionElapsedSeconds;
     private double _transitionDurationSeconds;
+    private MaotaiWorkCyclePhase _workCyclePhase = MaotaiWorkCyclePhase.AwaitTyping;
+    private double _workPhaseElapsedSeconds;
 
     public MaotaiAnimationGraph(MaotaiMotionState initialState)
     {
@@ -54,6 +68,11 @@ internal sealed class MaotaiAnimationGraph
     /// <summary>请求最终动作；图只进入当前合法的下一跳，不允许跨越必要过渡。</summary>
     public void Request(MaotaiMotionState target)
     {
+        if (target != MaotaiMotionState.WorkTyping)
+        {
+            ResetWorkCycle();
+        }
+
         _requestedState = target;
         if (target == ActiveState && !IsTransitioning)
         {
@@ -92,6 +111,15 @@ internal sealed class MaotaiAnimationGraph
             }
         }
 
+        // Work cycle          : while the latest real request remains WorkTyping, internal mood nodes
+        //                       may advance without replacing the base request or switching whole images.
+        if (_requestedState == MaotaiMotionState.WorkTyping &&
+            IsWorkFamilyState(ActiveState))
+        {
+            UpdateWorkCycle(dt);
+            return;
+        }
+
         if (ActiveState == _requestedState)
         {
             TargetState = ActiveState;
@@ -104,6 +132,143 @@ internal sealed class MaotaiAnimationGraph
 
     /// <summary>用户交互结束后改写最终请求，不回放过时的历史业务状态。</summary>
     public void ResumeWith(MaotaiMotionState latestBaseState) => Request(latestBaseState);
+
+    private void UpdateWorkCycle(double dt)
+    {
+        switch (_workCyclePhase)
+        {
+            case MaotaiWorkCyclePhase.AwaitTyping:
+                if (ActiveState == MaotaiMotionState.WorkTyping)
+                {
+                    _workCyclePhase        = MaotaiWorkCyclePhase.TypingBeforeTired;
+                    _workPhaseElapsedSeconds = 0.0;
+                }
+                else
+                {
+                    ContinueTowardWorkTyping();
+                }
+                break;
+
+            case MaotaiWorkCyclePhase.TypingBeforeTired:
+                if (ActiveState != MaotaiMotionState.WorkTyping)
+                {
+                    ContinueTowardWorkTyping();
+                    break;
+                }
+
+                _workPhaseElapsedSeconds += dt;
+                if (_workPhaseElapsedSeconds >= 3.0)
+                {
+                    // Fatigue onset       : slow into tired before opening the mouth for a yawn.
+                    _workCyclePhase          = MaotaiWorkCyclePhase.Tired;
+                    _workPhaseElapsedSeconds = 0.0;
+                    BeginHop(MaotaiMotionState.WorkTired);
+                }
+                break;
+
+            case MaotaiWorkCyclePhase.Tired:
+                if (ActiveState != MaotaiMotionState.WorkTired)
+                {
+                    break;
+                }
+
+                _workPhaseElapsedSeconds += dt;
+                if (_workPhaseElapsedSeconds >= 0.70)
+                {
+                    // Yawn handoff        : preserve one continuous pose graph instead of swapping artwork.
+                    _workCyclePhase          = MaotaiWorkCyclePhase.Yawn;
+                    _workPhaseElapsedSeconds = 0.0;
+                    BeginHop(MaotaiMotionState.Yawn);
+                }
+                break;
+
+            case MaotaiWorkCyclePhase.Yawn:
+                if (ActiveState != MaotaiMotionState.Yawn)
+                {
+                    break;
+                }
+
+                _workPhaseElapsedSeconds += dt;
+                if (_workPhaseElapsedSeconds >= 0.85)
+                {
+                    _workCyclePhase          = MaotaiWorkCyclePhase.TypingBeforeAnnoyed;
+                    _workPhaseElapsedSeconds = 0.0;
+                    BeginHop(MaotaiMotionState.WorkTyping);
+                }
+                break;
+
+            case MaotaiWorkCyclePhase.TypingBeforeAnnoyed:
+                if (ActiveState != MaotaiMotionState.WorkTyping)
+                {
+                    break;
+                }
+
+                _workPhaseElapsedSeconds += dt;
+                if (_workPhaseElapsedSeconds >= 3.5)
+                {
+                    // Annoyed burst        : brief tension spike, then an explicit recovery transition.
+                    _workCyclePhase          = MaotaiWorkCyclePhase.Annoyed;
+                    _workPhaseElapsedSeconds = 0.0;
+                    BeginHop(MaotaiMotionState.WorkAnnoyed);
+                }
+                break;
+
+            case MaotaiWorkCyclePhase.Annoyed:
+                if (ActiveState != MaotaiMotionState.WorkAnnoyed)
+                {
+                    break;
+                }
+
+                _workPhaseElapsedSeconds += dt;
+                if (_workPhaseElapsedSeconds >= 0.70)
+                {
+                    _workCyclePhase          = MaotaiWorkCyclePhase.Recover;
+                    _workPhaseElapsedSeconds = 0.0;
+                    BeginHop(MaotaiMotionState.Recover);
+                }
+                break;
+
+            case MaotaiWorkCyclePhase.Recover:
+                if (ActiveState != MaotaiMotionState.Recover)
+                {
+                    break;
+                }
+
+                _workPhaseElapsedSeconds += dt;
+                if (_workPhaseElapsedSeconds >= 0.80)
+                {
+                    _workCyclePhase          = MaotaiWorkCyclePhase.TypingBeforeTired;
+                    _workPhaseElapsedSeconds = 0.0;
+                    BeginHop(MaotaiMotionState.WorkTyping);
+                }
+                break;
+        }
+    }
+
+    private void ContinueTowardWorkTyping()
+    {
+        if (IsTransitioning || ActiveState == MaotaiMotionState.WorkTyping)
+        {
+            return;
+        }
+
+        BeginHop(ResolveNextHop(ActiveState, MaotaiMotionState.WorkTyping));
+    }
+
+    private void ResetWorkCycle()
+    {
+        _workCyclePhase          = MaotaiWorkCyclePhase.AwaitTyping;
+        _workPhaseElapsedSeconds = 0.0;
+    }
+
+    private static bool IsWorkFamilyState(MaotaiMotionState state) =>
+        state is MaotaiMotionState.WorkApproach or
+            MaotaiMotionState.WorkSettle or
+            MaotaiMotionState.WorkTyping or
+            MaotaiMotionState.WorkTired or
+            MaotaiMotionState.Yawn or
+            MaotaiMotionState.WorkAnnoyed or
+            MaotaiMotionState.Recover;
 
     private void BeginHop(MaotaiMotionState next)
     {
@@ -184,7 +349,7 @@ internal sealed class MaotaiAnimationGraph
                 MaotaiMotionState.Idle         => MaotaiMotionState.WorkApproach,
                 MaotaiMotionState.WorkApproach => MaotaiMotionState.WorkSettle,
                 MaotaiMotionState.WorkSettle   => MaotaiMotionState.WorkTyping,
-                MaotaiMotionState.WorkTired    => MaotaiMotionState.Recover,
+                MaotaiMotionState.WorkTired    => MaotaiMotionState.Yawn,
                 MaotaiMotionState.WorkAnnoyed  => MaotaiMotionState.Recover,
                 MaotaiMotionState.Yawn         => MaotaiMotionState.WorkTyping,
                 MaotaiMotionState.Recover      => MaotaiMotionState.WorkTyping,
@@ -258,6 +423,10 @@ internal sealed class MaotaiAnimationGraph
             MaotaiMotionState.WorkApproach => 0.18,
             MaotaiMotionState.WorkSettle   => 0.28,
             MaotaiMotionState.WorkTyping   => 0.20,
+            MaotaiMotionState.WorkTired    => 0.28,
+            MaotaiMotionState.Yawn         => 0.30,
+            MaotaiMotionState.WorkAnnoyed  => 0.22,
+            MaotaiMotionState.Recover      => 0.28,
             MaotaiMotionState.UserReaction => 0.12,
             _                              => 0.16,
         };
