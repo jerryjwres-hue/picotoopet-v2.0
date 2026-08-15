@@ -1,10 +1,11 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 v1.2 行为调度、表情层与整体 Simple Mode 视觉升级合同。</summary>
+/// <summary>冻结 v1.2 行为调度、表情层、悬浮交互与整体 Simple Mode 视觉升级合同。</summary>
 internal static class InteractivePetV12SmokeTests
 {
     /// <summary>在常规 WPF smoke 前验证 v1.2 展示层存在，并继续保持业务只读边界。</summary>
@@ -19,7 +20,9 @@ internal static class InteractivePetV12SmokeTests
         }
 
         VerifyBehaviorControllerContract();
+        VerifyBehaviorSequenceContract();
         VerifyEmotionLayerContract();
+        VerifyFloatingInteractionContract();
         VerifyVisualPolishContract();
     }
 
@@ -102,6 +105,25 @@ internal static class InteractivePetV12SmokeTests
         }
     }
 
+    private static void VerifyBehaviorSequenceContract()
+    {
+        var controller = new PetBehaviorController(seed: 17);
+        var actions = Enumerable.Range(0, 72)
+            .Select(_ => controller.Next(AssistantPetMode.Resting, allowMicroAction: true).Action)
+            .Where(action => action != PetMicroAction.None)
+            .ToArray();
+
+        SmokeAssert.True(actions.Length >= 4, "v1.2 休息状态应在有界冷却后产生随机微动作");
+        SmokeAssert.True(
+            actions.Distinct().Count() >= 3,
+            "v1.2 微动作序列不能长期退化为同一机械循环");
+
+        var suppressed = controller.Next(AssistantPetMode.Resting, allowMicroAction: false);
+        SmokeAssert.True(
+            suppressed.Action == PetMicroAction.None,
+            "指针/拖拽交互期间随机微动作必须让位给用户交互");
+    }
+
     private static void VerifyEmotionLayerContract()
     {
         var panelType = typeof(ShellViewModel).Assembly.GetType(
@@ -123,6 +145,29 @@ internal static class InteractivePetV12SmokeTests
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) is not null,
                 $"v1.2 表情层缺少 {fieldName}");
         }
+    }
+
+    private static void VerifyFloatingInteractionContract()
+    {
+        var floatingType = typeof(ShellViewModel).Assembly.GetType(
+            "PicotooPet.Desktop.Views.FloatingPetWindow");
+        SmokeAssert.True(floatingType is not null, "FloatingPetWindow 不存在");
+
+        SmokeAssert.True(
+            floatingType!.GetField(
+                "SizeButton",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) is not null,
+            "v1.2 悬浮桌宠必须提供有界尺寸切换入口");
+        SmokeAssert.True(
+            floatingType.GetMethod(
+                "SnapToNearestEdge",
+                BindingFlags.NonPublic | BindingFlags.Instance) is not null,
+            "v1.2 悬浮桌宠必须在拖动后支持屏幕边缘吸附");
+        SmokeAssert.True(
+            floatingType.GetMethod(
+                "CyclePetSize",
+                BindingFlags.NonPublic | BindingFlags.Instance) is not null,
+            "v1.2 悬浮桌宠必须使用有界预设尺寸而非任意缩放");
     }
 
     private static void VerifyVisualPolishContract()
