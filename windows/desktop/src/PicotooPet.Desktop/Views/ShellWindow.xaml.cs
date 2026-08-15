@@ -9,7 +9,7 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views;
 
-/// <summary>Shell 视图处理窗口生命周期、路由命令、页面故障隔离和 PasswordBox 密文转交。</summary>
+/// <summary>Shell 视图处理窗口生命周期、路由命令、页面故障隔离、桌宠只读投影和 PasswordBox 密文转交。</summary>
 public partial class ShellWindow : Window
 {
     private readonly ShellViewModel _viewModel;
@@ -17,7 +17,7 @@ public partial class ShellWindow : Window
     private readonly SafeFileLogger _logger;
     private bool _explicitExit;
 
-    /// <summary>绑定 Shell 展示模型、统一连接 Session 和脱敏日志器。</summary>
+    /// <summary>绑定 Shell 展示模型、统一连接 Session、桌宠只读适配和脱敏日志器。</summary>
     public ShellWindow(
         ShellViewModel viewModel,
         ControlCenterSession session,
@@ -40,6 +40,10 @@ public partial class ShellWindow : Window
             this,
             new ControlCenterProviderReviewGateway(_session));
         DataContext = viewModel;
+
+        // 桌宠仅订阅既有快照事件；不向 Session 注册命令、审批或持久化入口。
+        ApplyAssistantPetSnapshot(_session.Snapshot);
+        _session.SnapshotChanged += OnAssistantPetSnapshotChanged;
     }
 
     /// <summary>请求组合根按安全顺序释放资源并显式退出。</summary>
@@ -78,6 +82,13 @@ public partial class ShellWindow : Window
         base.OnClosing(e);
     }
 
+    /// <summary>窗口真正销毁时解除桌宠只读订阅，避免残留 Dispatcher 引用。</summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _session.SnapshotChanged -= OnAssistantPetSnapshotChanged;
+        base.OnClosed(e);
+    }
+
     /// <summary>记录被隔离的页面故障，并用安全说明页替换当前路由内容。</summary>
     private void ContentHost_NavigationFaulted(
         object sender,
@@ -86,6 +97,28 @@ public partial class ShellWindow : Window
         var failedRoute = _viewModel.CurrentRoute;
         _logger.Error($"页面导航故障已隔离：{failedRoute}", e.Exception);
         _viewModel.ShowNavigationFailure(failedRoute);
+    }
+
+    /// <summary>把后台 Session 快照安全切回 WPF Dispatcher，再刷新桌宠展示。</summary>
+    private void OnAssistantPetSnapshotChanged(
+        object? sender,
+        ControlCenterSessionSnapshot snapshot)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            ApplyAssistantPetSnapshot(snapshot);
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(
+            () => ApplyAssistantPetSnapshot(snapshot));
+    }
+
+    /// <summary>唯一桌宠适配点；只读映射现有事实，不改变 ShellViewModel 或业务结构。</summary>
+    private void ApplyAssistantPetSnapshot(ControlCenterSessionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        AssistantPet.Presentation = AssistantPetPresentation.FromSnapshot(snapshot);
     }
 
     private async void SaveAndConnect_Click(
