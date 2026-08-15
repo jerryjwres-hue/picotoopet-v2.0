@@ -1,107 +1,861 @@
 <UserControl x:Class="PicotooPet.Desktop.Views.Pages.OperatorHomePage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <Grid Margin="28">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="clr-namespace:PicotooPet.Desktop.ViewModels">
+  <UserControl.Resources>
+    <SolidColorBrush x:Key="HomeText" Color="#FF142033" />
+    <SolidColorBrush x:Key="HomeMuted" Color="#FF718197" />
+    <SolidColorBrush x:Key="HomeBorder" Color="#FFDCE6F2" />
+
+    <DropShadowEffect x:Key="SoftCardShadow"
+                      BlurRadius="14"
+                      ShadowDepth="2"
+                      Opacity="0.09"
+                      Color="#FF63768E" />
+
+    <Style x:Key="CardButtonStyle" TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <Style x:Key="WhiteActionButtonStyle" TargetType="Button">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="Foreground" Value="#FF175FC2" />
+      <Setter Property="BorderBrush" Value="#B8FFFFFF" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ActionBorder"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="10"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ActionBorder" Property="Background" Value="#FFF3F8FF" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="ActionBorder" Property="Opacity" Value="0.86" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="HealthDotStyle" TargetType="Ellipse">
+      <Setter Property="Width" Value="7" />
+      <Setter Property="Height" Value="7" />
+      <Setter Property="Fill" Value="#FF8A9AAD" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Green}">
+          <Setter Property="Fill" Value="#FF19A968" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Orange}">
+          <Setter Property="Fill" Value="#FFFF8A00" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Gray}">
+          <Setter Property="Fill" Value="#FF8A9AAD" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="HealthTextStyle" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#FF718197" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Green}">
+          <Setter Property="Foreground" Value="#FF16825A" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Orange}">
+          <Setter Property="Foreground" Value="#FFE36B12" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Gray}">
+          <Setter Property="Foreground" Value="#FF8795A7" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="HealthBadgeStyle" TargetType="Border">
+      <Setter Property="Background" Value="#FFF1F4F7" />
+      <Setter Property="BorderBrush" Value="#FFDCE4EB" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Green}">
+          <Setter Property="Background" Value="#FFE8F8EF" />
+          <Setter Property="BorderBrush" Value="#FFC8EED8" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}"
+                     Value="{x:Static viewModels:AssistantPetIndicator.Orange}">
+          <Setter Property="Background" Value="#FFFFF3E5" />
+          <Setter Property="BorderBrush" Value="#FFFFD6A8" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="ResourceProgressStyle" TargetType="ProgressBar">
+      <Setter Property="Height" Value="8" />
+      <Setter Property="Minimum" Value="0" />
+      <Setter Property="Maximum" Value="100" />
+      <Setter Property="Background" Value="#FFE7EDF4" />
+      <Setter Property="Foreground" Value="#FF19A968" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ProgressBar">
+            <Grid SnapsToDevicePixels="True">
+              <Border x:Name="PART_Track"
+                      Background="{TemplateBinding Background}"
+                      CornerRadius="4" />
+              <Border x:Name="PART_Indicator"
+                      HorizontalAlignment="Left"
+                      Background="{TemplateBinding Foreground}"
+                      CornerRadius="4" />
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled">
+    <Grid Margin="20,16,20,22">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="280" />
+        <ColumnDefinition Width="304" />
       </Grid.ColumnDefinitions>
 
-      <StackPanel Grid.Column="0" Margin="0,0,24,0">
-        <Grid Margin="0,0,0,24">
+      <!-- Main column  : hero, truthful status strip, real task buckets and recent task facts. -->
+      <StackPanel Grid.Column="0" Margin="0,0,16,0">
+        <Border x:Name="HeroCard"
+                Height="180"
+                CornerRadius="18"
+                Margin="0,0,0,12"
+                ClipToBounds="True"
+                Effect="{StaticResource SoftCardShadow}">
+          <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+              <GradientStop Color="#FF49B2FF" Offset="0" />
+              <GradientStop Color="#FF1779F4" Offset="0.50" />
+              <GradientStop Color="#FF1769DE" Offset="1" />
+            </LinearGradientBrush>
+          </Border.Background>
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="238" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Margin="27,22,0,19" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal">
+                <Border Width="58"
+                        Height="58"
+                        CornerRadius="29"
+                        Background="#38FFFFFF"
+                        BorderBrush="#88FFFFFF"
+                        BorderThickness="1"
+                        Margin="0,0,14,0">
+                  <TextBlock Text="+"
+                             Foreground="White"
+                             FontSize="36"
+                             FontWeight="Light"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center" />
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="新建任务"
+                               Foreground="White"
+                               FontSize="28"
+                               FontWeight="Bold" />
+                    <Border Margin="9,5,0,0"
+                            Padding="6,2"
+                            Height="20"
+                            Background="#24FFFFFF"
+                            BorderBrush="#44FFFFFF"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                      <TextBlock Text="AI WORKSPACE"
+                                 Foreground="#EEFFFFFF"
+                                 FontSize="7.5"
+                                 FontWeight="SemiBold" />
+                    </Border>
+                  </StackPanel>
+                  <TextBlock Text="开始一次智能任务，让 AI 帮你完成创作与分析"
+                             Margin="0,4,0,0"
+                             Foreground="#E8FFFFFF"
+                             FontSize="11" />
+                </StackPanel>
+              </StackPanel>
+
+              <Button x:Name="NewTaskButton"
+                      Content="＋  新建任务   →"
+                      Margin="0,13,0,0"
+                      Width="154"
+                      HorizontalAlignment="Left"
+                      Style="{StaticResource WhiteActionButtonStyle}"
+                      Click="NewTask_Click" />
+            </StackPanel>
+
+            <Grid Grid.Column="1" ClipToBounds="True">
+              <Ellipse Width="282"
+                       Height="138"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"
+                       Margin="0,0,-54,-47"
+                       Fill="#18FFFFFF" />
+              <Ellipse Width="206"
+                       Height="110"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"
+                       Margin="0,0,-19,-25"
+                       Stroke="#3AFFFFFF"
+                       StrokeThickness="2" />
+              <TextBlock Text="✦"
+                         Foreground="#D9FFFFFF"
+                         FontSize="24"
+                         HorizontalAlignment="Left"
+                         VerticalAlignment="Top"
+                         Margin="30,18,0,0" />
+              <Image Source="/Picotoo Pet AI;component/Assets/Pet/Husky/V1/idle_0.png"
+                     Width="202"
+                     Height="170"
+                     HorizontalAlignment="Right"
+                     VerticalAlignment="Bottom"
+                     Margin="0,0,6,-4"
+                     Stretch="Uniform"
+                     RenderOptions.BitmapScalingMode="HighQuality" />
+            </Grid>
+          </Grid>
+        </Border>
+
+        <!-- Status strip  : summarizes only existing real task/system facts; no new authority is introduced. -->
+        <Border x:Name="HomeGreetingStrip"
+                Margin="0,0,0,12"
+                Padding="13,10"
+                Background="White"
+                BorderBrush="#FFDCE7F2"
+                BorderThickness="1"
+                CornerRadius="13"
+                Effect="{StaticResource SoftCardShadow}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <Border Width="34"
+                      Height="34"
+                      CornerRadius="10"
+                      Background="#FFEDF5FF"
+                      Margin="0,0,10,0">
+                <TextBlock Text="✦"
+                           Foreground="#FF2878DF"
+                           FontSize="17"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+              </Border>
+              <StackPanel VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                  <Ellipse Tag="{Binding SystemIndicator, Mode=OneWay}"
+                           Style="{StaticResource HealthDotStyle}"
+                           Margin="0,0,6,0"
+                           VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding SystemSummary, Mode=OneWay}"
+                             Tag="{Binding SystemIndicator, Mode=OneWay}"
+                             Style="{StaticResource HealthTextStyle}"
+                             FontSize="11"
+                             FontWeight="SemiBold" />
+                </StackPanel>
+                <TextBlock Text="任务、审核与执行状态均来自当前本地会话快照"
+                           Margin="0,3,0,0"
+                           Foreground="{StaticResource HomeMuted}"
+                           FontSize="9" />
+              </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+              <Border Padding="9,5"
+                      Margin="0,0,6,0"
+                      CornerRadius="9"
+                      Background="#FFFFF6EA"
+                      BorderBrush="#FFFFE0B9"
+                      BorderThickness="1">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="待审核 " Foreground="#FF9A6C35" FontSize="9" />
+                  <TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}"
+                             Foreground="#FFE56D12"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </StackPanel>
+              </Border>
+              <Border Padding="9,5"
+                      Margin="0,0,6,0"
+                      CornerRadius="9"
+                      Background="#FFEDF5FF"
+                      BorderBrush="#FFD7E7FA"
+                      BorderThickness="1">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="进行中 " Foreground="#FF547AA7" FontSize="9" />
+                  <TextBlock Text="{Binding InProgressCount, Mode=OneWay}"
+                             Foreground="#FF2875D6"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </StackPanel>
+              </Border>
+              <Border Padding="9,5"
+                      CornerRadius="9"
+                      Background="#FFECF8F1"
+                      BorderBrush="#FFD1EBDD"
+                      BorderThickness="1">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="已完成 " Foreground="#FF5C8A72" FontSize="9" />
+                  <TextBlock Text="{Binding CompletedCount, Mode=OneWay}"
+                             Foreground="#FF18865B"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Grid x:Name="TaskOverviewCard" Margin="0,0,0,14">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <StackPanel>
-            <TextBlock Text="今天要做什么？" FontSize="30" FontWeight="SemiBold" Foreground="#FF111827" />
-            <TextBlock Text="任务、审核、进度和结果都从这里开始。" Margin="0,7,0,0" Foreground="#FF6B7280" />
-          </StackPanel>
-          <Button Grid.Column="1"
-                  x:Name="NewTaskButton"
-                  Content="+ 新建任务"
-                  FontSize="16"
-                  FontWeight="SemiBold"
-                  Padding="20,11"
-                  Click="NewTask_Click" />
-        </Grid>
-
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
 
-          <Border Grid.Column="0" Margin="0,0,10,0" Padding="18" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="12">
+          <Border Grid.Column="0"
+                  Margin="0,0,7,0"
+                  Padding="14"
+                  CornerRadius="14"
+                  Background="#FFFFFBF6"
+                  BorderBrush="#FFFFD9B2"
+                  BorderThickness="1"
+                  Effect="{StaticResource SoftCardShadow}">
             <StackPanel>
-              <Button Content="待我审核" HorizontalContentAlignment="Left" FontSize="17" FontWeight="SemiBold" Click="Review_Click" />
-              <TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}" FontSize="30" FontWeight="Bold" Margin="4,8,0,4" />
-              <TextBlock Text="需要你明确决定的事项" Foreground="#FF6B7280" Margin="4,0,0,8" />
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button Content="◷  待我审核"
+                        FontSize="14"
+                        FontWeight="SemiBold"
+                        Foreground="#FF2A2F39"
+                        Style="{StaticResource CardButtonStyle}"
+                        Click="Review_Click" />
+                <Border Grid.Column="1" Background="#FFFF7A1A" CornerRadius="10" Padding="7,2">
+                  <TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}"
+                             Foreground="White"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </Border>
+              </Grid>
+              <TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}"
+                         Margin="0,10,0,0"
+                         FontSize="28"
+                         FontWeight="Bold"
+                         Foreground="#FF182234" />
+              <TextBlock Text="需要你确认的任务"
+                         Margin="0,1,0,8"
+                         Foreground="#FF9A7A5F"
+                         FontSize="10" />
               <ItemsControl ItemsSource="{Binding PendingReview, Mode=OneWay}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <StackPanel Margin="4,6">
-                      <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" />
-                      <TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="#FF92400E" FontSize="12" />
-                    </StackPanel>
+                    <Border Padding="7,5" Margin="0,2" CornerRadius="7" Background="#B8FFFFFF">
+                      <StackPanel>
+                        <TextBlock Text="{Binding Title, Mode=OneWay}"
+                                   FontSize="10.5"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding StatusText, Mode=OneWay}"
+                                   Foreground="#FFE36B12"
+                                   FontSize="9" />
+                      </StackPanel>
+                    </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </StackPanel>
           </Border>
 
-          <Border Grid.Column="1" Margin="5,0" Padding="18" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="12">
+          <Border Grid.Column="1"
+                  Margin="3,0"
+                  Padding="14"
+                  CornerRadius="14"
+                  Background="#FFF7FAFF"
+                  BorderBrush="#FFCEE1FB"
+                  BorderThickness="1"
+                  Effect="{StaticResource SoftCardShadow}">
             <StackPanel>
-              <Button Content="进行中" HorizontalContentAlignment="Left" FontSize="17" FontWeight="SemiBold" Click="Active_Click" />
-              <TextBlock Text="{Binding InProgressCount, Mode=OneWay}" FontSize="30" FontWeight="Bold" Margin="4,8,0,4" />
-              <TextBlock Text="系统现在正在处理的任务" Foreground="#FF6B7280" Margin="4,0,0,8" />
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button Content="▶  进行中"
+                        FontSize="14"
+                        FontWeight="SemiBold"
+                        Foreground="#FF2A2F39"
+                        Style="{StaticResource CardButtonStyle}"
+                        Click="Active_Click" />
+                <Border Grid.Column="1" Background="#FF2279EA" CornerRadius="10" Padding="7,2">
+                  <TextBlock Text="{Binding InProgressCount, Mode=OneWay}"
+                             Foreground="White"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </Border>
+              </Grid>
+              <TextBlock Text="{Binding InProgressCount, Mode=OneWay}"
+                         Margin="0,10,0,0"
+                         FontSize="28"
+                         FontWeight="Bold"
+                         Foreground="#FF182234" />
+              <TextBlock Text="系统正在处理的任务"
+                         Margin="0,1,0,8"
+                         Foreground="#FF6682A6"
+                         FontSize="10" />
               <ItemsControl ItemsSource="{Binding InProgress, Mode=OneWay}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <StackPanel Margin="4,6">
-                      <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" />
-                      <TextBlock Text="{Binding StageText, Mode=OneWay}" Foreground="#FF1D4ED8" FontSize="12" />
-                    </StackPanel>
+                    <Border Padding="7,5" Margin="0,2" CornerRadius="7" Background="White">
+                      <StackPanel>
+                        <TextBlock Text="{Binding Title, Mode=OneWay}"
+                                   FontSize="10.5"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding StageText, Mode=OneWay}"
+                                   Foreground="#FF2776D8"
+                                   FontSize="9"
+                                   TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </StackPanel>
           </Border>
 
-          <Border Grid.Column="2" Margin="10,0,0,0" Padding="18" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="12">
+          <Border Grid.Column="2"
+                  Margin="7,0,0,0"
+                  Padding="14"
+                  CornerRadius="14"
+                  Background="#FFF7FCF9"
+                  BorderBrush="#FFCBEAD8"
+                  BorderThickness="1"
+                  Effect="{StaticResource SoftCardShadow}">
             <StackPanel>
-              <Button Content="已完成" HorizontalContentAlignment="Left" FontSize="17" FontWeight="SemiBold" Click="Completed_Click" />
-              <TextBlock Text="{Binding CompletedCount, Mode=OneWay}" FontSize="30" FontWeight="Bold" Margin="4,8,0,4" />
-              <TextBlock Text="已结束并可查看的任务" Foreground="#FF6B7280" Margin="4,0,0,8" />
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button Content="●  已完成"
+                        FontSize="14"
+                        FontWeight="SemiBold"
+                        Foreground="#FF2A2F39"
+                        Style="{StaticResource CardButtonStyle}"
+                        Click="Completed_Click" />
+                <Border Grid.Column="1" Background="#FF17A568" CornerRadius="10" Padding="7,2">
+                  <TextBlock Text="{Binding CompletedCount, Mode=OneWay}"
+                             Foreground="White"
+                             FontSize="10"
+                             FontWeight="Bold" />
+                </Border>
+              </Grid>
+              <TextBlock Text="{Binding CompletedCount, Mode=OneWay}"
+                         Margin="0,10,0,0"
+                         FontSize="28"
+                         FontWeight="Bold"
+                         Foreground="#FF182234" />
+              <TextBlock Text="已结束并可查看的任务"
+                         Margin="0,1,0,8"
+                         Foreground="#FF5F8E78"
+                         FontSize="10" />
               <ItemsControl ItemsSource="{Binding Completed, Mode=OneWay}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <StackPanel Margin="4,6">
-                      <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" />
-                      <TextBlock Text="{Binding StatusText, Mode=OneWay}" Foreground="#FF047857" FontSize="12" />
-                    </StackPanel>
+                    <Border Padding="7,5" Margin="0,2" CornerRadius="7" Background="White">
+                      <StackPanel>
+                        <TextBlock Text="{Binding Title, Mode=OneWay}"
+                                   FontSize="10.5"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding StatusText, Mode=OneWay}"
+                                   Foreground="#FF16825A"
+                                   FontSize="9" />
+                      </StackPanel>
+                    </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </StackPanel>
           </Border>
         </Grid>
+
+        <Border x:Name="RecentTasksCard"
+                Padding="14,12"
+                CornerRadius="14"
+                Background="White"
+                BorderBrush="{StaticResource HomeBorder}"
+                BorderThickness="1"
+                Effect="{StaticResource SoftCardShadow}">
+          <StackPanel>
+            <Grid Margin="0,0,0,8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="▤"
+                           Foreground="#FF2478E6"
+                           FontSize="15"
+                           Margin="0,0,7,0" />
+                <TextBlock Text="最近任务"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource HomeText}" />
+              </StackPanel>
+              <TextBlock Grid.Column="1"
+                         Text="真实任务事实"
+                         Foreground="{StaticResource HomeMuted}"
+                         FontSize="9.5" />
+            </Grid>
+
+            <Border Background="#FFF7F9FC" CornerRadius="7" Padding="8,6" Margin="0,0,0,3">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="1.45*" />
+                  <ColumnDefinition Width="0.65*" />
+                  <ColumnDefinition Width="1.05*" />
+                  <ColumnDefinition Width="0.8*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="任务名称" FontSize="9" Foreground="#FF718197" />
+                <TextBlock Grid.Column="1" Text="状态" FontSize="9" Foreground="#FF718197" />
+                <TextBlock Grid.Column="2" Text="阶段" FontSize="9" Foreground="#FF718197" />
+                <TextBlock Grid.Column="3" Text="更新时间" FontSize="9" Foreground="#FF718197" />
+              </Grid>
+            </Border>
+
+            <ItemsControl ItemsSource="{Binding RecentTasks, Mode=OneWay}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border BorderBrush="#FFF0F3F7" BorderThickness="0,0,0,1" Padding="8,7">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.45*" />
+                        <ColumnDefinition Width="0.65*" />
+                        <ColumnDefinition Width="1.05*" />
+                        <ColumnDefinition Width="0.8*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Text="{Binding Title, Mode=OneWay}"
+                                 FontSize="10.5"
+                                 FontWeight="SemiBold"
+                                 Foreground="#FF283548"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding StatusText, Mode=OneWay}"
+                                 FontSize="9.5"
+                                 Foreground="#FF2872D0"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="2"
+                                 Text="{Binding StageText, Mode=OneWay}"
+                                 FontSize="9.5"
+                                 Foreground="#FF64758B"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="3"
+                                 Text="{Binding UpdatedAtText, Mode=OneWay}"
+                                 FontSize="9"
+                                 Foreground="#FF7C899A"
+                                 TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
       </StackPanel>
 
-      <Border Grid.Column="1" Padding="18" Background="#FFF8FAFC" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="12" VerticalAlignment="Top">
-        <StackPanel>
-          <TextBlock Text="系统状态" FontSize="18" FontWeight="SemiBold" />
-          <TextBlock Text="{Binding SystemSummary, Mode=OneWay}" Margin="0,7,0,16" Foreground="#FF6B7280" TextWrapping="Wrap" />
-          <TextBlock Text="Mac Core" FontWeight="SemiBold" />
-          <TextBlock Text="{Binding CoreStatus, Mode=OneWay}" Margin="0,3,0,12" Foreground="#FF047857" />
-          <TextBlock Text="Mac Worker" FontWeight="SemiBold" />
-          <TextBlock Text="{Binding WorkerStatus, Mode=OneWay}" Margin="0,3,0,12" Foreground="#FF047857" TextWrapping="Wrap" />
-          <TextBlock Text="Windows" FontWeight="SemiBold" />
-          <TextBlock Text="{Binding WindowsStatus, Mode=OneWay}" Margin="0,3,0,0" Foreground="#FF047857" />
-        </StackPanel>
-      </Border>
+      <!-- Right column : real system facts, truthful local telemetry and bounded work-entry cards. -->
+      <StackPanel Grid.Column="1">
+        <Border x:Name="SystemStatusCard"
+                Padding="14"
+                CornerRadius="14"
+                Background="White"
+                BorderBrush="{StaticResource HomeBorder}"
+                BorderThickness="1"
+                Margin="0,0,0,12"
+                Effect="{StaticResource SoftCardShadow}">
+          <StackPanel>
+            <Grid Margin="0,0,0,10">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="🛡  系统状态"
+                         FontSize="14"
+                         FontWeight="SemiBold"
+                         Foreground="{StaticResource HomeText}" />
+              <Border Grid.Column="1"
+                      Tag="{Binding SystemIndicator, Mode=OneWay}"
+                      Style="{StaticResource HealthBadgeStyle}"
+                      CornerRadius="9"
+                      Padding="7,3">
+                <TextBlock Text="{Binding SystemSummary, Mode=OneWay}"
+                           Tag="{Binding SystemIndicator, Mode=OneWay}"
+                           Style="{StaticResource HealthTextStyle}"
+                           FontSize="8.5"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="108" />
+              </Border>
+            </Grid>
+
+            <Grid Margin="0,5">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="⚙  Mac Core" FontSize="10.5" FontWeight="SemiBold" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Ellipse Tag="{Binding CoreIndicator, Mode=OneWay}"
+                         Style="{StaticResource HealthDotStyle}"
+                         Margin="0,0,6,0"
+                         VerticalAlignment="Center" />
+                <TextBlock Text="{Binding CoreStatus, Mode=OneWay}"
+                           Tag="{Binding CoreIndicator, Mode=OneWay}"
+                           Style="{StaticResource HealthTextStyle}"
+                           FontSize="9.5" />
+              </StackPanel>
+            </Grid>
+            <Separator Opacity="0.35" />
+            <Grid Margin="0,6">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="⚙  Mac Worker" FontSize="10.5" FontWeight="SemiBold" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Ellipse Tag="{Binding WorkerIndicator, Mode=OneWay}"
+                         Style="{StaticResource HealthDotStyle}"
+                         Margin="0,0,6,0"
+                         VerticalAlignment="Center" />
+                <TextBlock Text="{Binding WorkerStatus, Mode=OneWay}"
+                           Tag="{Binding WorkerIndicator, Mode=OneWay}"
+                           Style="{StaticResource HealthTextStyle}"
+                           FontSize="9.5"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="116" />
+              </StackPanel>
+            </Grid>
+            <Separator Opacity="0.35" />
+            <Grid Margin="0,6,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="▣  Windows" FontSize="10.5" FontWeight="SemiBold" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Ellipse Tag="{Binding WindowsIndicator, Mode=OneWay}"
+                         Style="{StaticResource HealthDotStyle}"
+                         Margin="0,0,6,0"
+                         VerticalAlignment="Center" />
+                <TextBlock Text="{Binding WindowsStatus, Mode=OneWay}"
+                           Tag="{Binding WindowsIndicator, Mode=OneWay}"
+                           Style="{StaticResource HealthTextStyle}"
+                           FontSize="9.5" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="ResourceMonitorCard"
+                Padding="14"
+                CornerRadius="14"
+                Background="White"
+                BorderBrush="{StaticResource HomeBorder}"
+                BorderThickness="1"
+                Margin="0,0,0,12"
+                Effect="{StaticResource SoftCardShadow}">
+          <StackPanel>
+            <TextBlock Text="▥  资源监控"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource HomeText}" />
+            <TextBlock Text="Windows 本地只读采样 · 约 2 秒刷新"
+                       Margin="0,5,0,10"
+                       FontSize="9.5"
+                       Foreground="{StaticResource HomeMuted}" />
+
+            <Grid Margin="0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="48" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="38" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="CPU" FontSize="10" VerticalAlignment="Center" />
+              <ProgressBar Grid.Column="1"
+                           Margin="5,0"
+                           Value="{Binding CpuPercent, Mode=OneWay}"
+                           Style="{StaticResource ResourceProgressStyle}" />
+              <TextBlock Grid.Column="2"
+                         Text="{Binding CpuText, Mode=OneWay}"
+                         HorizontalAlignment="Right"
+                         VerticalAlignment="Center"
+                         FontSize="9.5"
+                         Foreground="#FF5F6F83" />
+            </Grid>
+            <Grid Margin="0,5">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="48" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="38" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="内存" FontSize="10" VerticalAlignment="Center" />
+              <ProgressBar Grid.Column="1"
+                           Margin="5,0"
+                           Value="{Binding MemoryPercent, Mode=OneWay}"
+                           Style="{StaticResource ResourceProgressStyle}" />
+              <TextBlock Grid.Column="2"
+                         Text="{Binding MemoryText, Mode=OneWay}"
+                         HorizontalAlignment="Right"
+                         VerticalAlignment="Center"
+                         FontSize="9.5"
+                         Foreground="#FF5F6F83" />
+            </Grid>
+            <Grid Margin="0,5,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="48" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="38" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="磁盘" FontSize="10" VerticalAlignment="Center" />
+              <ProgressBar Grid.Column="1"
+                           Margin="5,0"
+                           Value="{Binding DiskPercent, Mode=OneWay}"
+                           Style="{StaticResource ResourceProgressStyle}" />
+              <TextBlock Grid.Column="2"
+                         Text="{Binding DiskText, Mode=OneWay}"
+                         HorizontalAlignment="Right"
+                         VerticalAlignment="Center"
+                         FontSize="9.5"
+                         Foreground="#FF5F6F83" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="WorkComponentsCard"
+                Padding="14"
+                CornerRadius="14"
+                Background="White"
+                BorderBrush="{StaticResource HomeBorder}"
+                BorderThickness="1"
+                Effect="{StaticResource SoftCardShadow}">
+          <StackPanel>
+            <Grid Margin="0,0,0,8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <StackPanel>
+                <TextBlock Text="▦  工作组件区"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource HomeText}" />
+                <TextBlock Text="复用现有能力与高级入口"
+                           Margin="0,3,0,0"
+                           Foreground="{StaticResource HomeMuted}"
+                           FontSize="9.5" />
+              </StackPanel>
+              <Border Grid.Column="1"
+                      Padding="7,3"
+                      CornerRadius="8"
+                      BorderBrush="#FFD9E7F7"
+                      BorderThickness="1"
+                      Background="#FFF5F9FF">
+                <TextBlock Text="本地优先"
+                           Foreground="#FF4D79A9"
+                           FontSize="8.5" />
+              </Border>
+            </Grid>
+
+            <UniformGrid Columns="2" Rows="2">
+              <Border Margin="0,0,4,4"
+                      Padding="10"
+                      CornerRadius="9"
+                      Background="#FFF4F8FF"
+                      BorderBrush="#FFD9E8FB"
+                      BorderThickness="1">
+                <StackPanel>
+                  <TextBlock Text="⌕" FontSize="19" Foreground="#FF2676DF" />
+                  <TextBlock Text="项目 / 调研" FontSize="9.5" FontWeight="SemiBold" />
+                  <TextBlock Text="高级入口" Margin="0,2,0,0" FontSize="8" Foreground="#FF7890AD" />
+                </StackPanel>
+              </Border>
+              <Border Margin="4,0,0,4"
+                      Padding="10"
+                      CornerRadius="9"
+                      Background="#FFF4FBF7"
+                      BorderBrush="#FFD7EFE1"
+                      BorderThickness="1">
+                <StackPanel>
+                  <TextBlock Text="▥" FontSize="19" Foreground="#FF1B9A61" />
+                  <TextBlock Text="业务分析" FontSize="9.5" FontWeight="SemiBold" />
+                  <TextBlock Text="现有能力" Margin="0,2,0,0" FontSize="8" Foreground="#FF789985" />
+                </StackPanel>
+              </Border>
+              <Border Margin="0,4,4,0"
+                      Padding="10"
+                      CornerRadius="9"
+                      Background="#FFFAF6FF"
+                      BorderBrush="#FFE9DDF8"
+                      BorderThickness="1">
+                <StackPanel>
+                  <TextBlock Text="▶" FontSize="17" Foreground="#FF7753D8" />
+                  <TextBlock Text="自动化" FontSize="9.5" FontWeight="SemiBold" />
+                  <TextBlock Text="高级入口" Margin="0,2,0,0" FontSize="8" Foreground="#FF8F7AAA" />
+                </StackPanel>
+              </Border>
+              <Border Margin="4,4,0,0"
+                      Padding="10"
+                      CornerRadius="9"
+                      Background="#FFFFF8F2"
+                      BorderBrush="#FFFFE3CB"
+                      BorderThickness="1">
+                <StackPanel>
+                  <TextBlock Text="✓" FontSize="19" Foreground="#FFF27A22" />
+                  <TextBlock Text="结果 / 审核" FontSize="9.5" FontWeight="SemiBold" />
+                  <TextBlock Text="人工治理" Margin="0,2,0,0" FontSize="8" Foreground="#FFAD865F" />
+                </StackPanel>
+              </Border>
+            </UniformGrid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
     </Grid>
   </ScrollViewer>
 </UserControl>

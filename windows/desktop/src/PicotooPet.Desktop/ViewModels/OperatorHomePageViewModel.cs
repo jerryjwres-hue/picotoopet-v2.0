@@ -1,3 +1,4 @@
+using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
@@ -7,20 +8,28 @@ public sealed class OperatorHomePageViewModel : PageViewModel
 {
     private readonly ControlCenterSession? _session;
     private OperatorProjection _projection;
+    private AssistantPetIndicator _coreIndicator;
+    private AssistantPetIndicator _workerIndicator;
+    private AssistantPetIndicator _windowsIndicator;
+    private double? _cpuPercent;
+    private double? _memoryPercent;
+    private double? _diskPercent;
 
     public OperatorHomePageViewModel(
         ControlCenterSession session,
         ControlCenterSessionSnapshot snapshot)
         : base("首页")
     {
-        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _session    = session ?? throw new ArgumentNullException(nameof(session));
         _projection = OperatorProjection.FromSnapshot(snapshot);
+        ApplyHealthIndicators(snapshot);
     }
 
     private OperatorHomePageViewModel(ControlCenterSessionSnapshot snapshot)
         : base("首页")
     {
         _projection = OperatorProjection.FromSnapshot(snapshot);
+        ApplyHealthIndicators(snapshot);
     }
 
     public OperatorProjection Projection
@@ -38,6 +47,17 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public IReadOnlyList<OperatorTaskCard> PendingReview => Projection.PendingReview.Take(4).ToArray();
     public IReadOnlyList<OperatorTaskCard> InProgress => Projection.InProgress.Take(4).ToArray();
     public IReadOnlyList<OperatorTaskCard> Completed => Projection.Completed.Take(4).ToArray();
+
+    /// <summary>最近任务只合并现有事实桶，不新增任务副本或第二套状态。</summary>
+    public IReadOnlyList<OperatorTaskCard> RecentTasks =>
+        Projection.PendingReview
+            .Concat(Projection.InProgress)
+            .Concat(Projection.Completed)
+            .OrderByDescending(item => item.UpdatedAt)
+            .ThenBy(item => item.TaskId, StringComparer.Ordinal)
+            .Take(6)
+            .ToArray();
+
     public int PendingReviewCount => Projection.PendingReview.Count;
     public int InProgressCount => Projection.InProgress.Count;
     public int CompletedCount => Projection.Completed.Count;
@@ -45,9 +65,47 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public string WorkerStatus => Projection.WorkerStatus;
     public string WindowsStatus => Projection.WindowsStatus;
     public string SystemSummary => Projection.SystemSummary;
+    public AssistantPetIndicator CoreIndicator => _coreIndicator;
+    public AssistantPetIndicator WorkerIndicator => _workerIndicator;
+    public AssistantPetIndicator WindowsIndicator => _windowsIndicator;
+    public AssistantPetIndicator SystemIndicator =>
+        _coreIndicator == AssistantPetIndicator.Orange || _workerIndicator == AssistantPetIndicator.Orange
+            ? AssistantPetIndicator.Orange
+            : _coreIndicator == AssistantPetIndicator.Gray || _workerIndicator == AssistantPetIndicator.Gray
+                ? AssistantPetIndicator.Gray
+                : AssistantPetIndicator.Green;
 
-    public void UpdateSnapshot(ControlCenterSessionSnapshot snapshot) =>
+    /// <summary>资源条使用 0 作为不可用时的安全绘制值；可见文本仍明确显示破折号。</summary>
+    public double CpuPercent => _cpuPercent ?? 0d;
+    public double MemoryPercent => _memoryPercent ?? 0d;
+    public double DiskPercent => _diskPercent ?? 0d;
+    public string CpuText => FormatMetric(_cpuPercent);
+    public string MemoryText => FormatMetric(_memoryPercent);
+    public string DiskText => FormatMetric(_diskPercent);
+
+    public void UpdateSnapshot(ControlCenterSessionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
         Projection = OperatorProjection.FromSnapshot(snapshot);
+        ApplyHealthIndicators(snapshot);
+    }
+
+    /// <summary>接收独立本地只读采样；不会修改 Session、Worker 或任务快照。</summary>
+    public void UpdateResourceSnapshot(WindowsResourceSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        _cpuPercent    = WindowsResourceSnapshot.Normalize(snapshot.CpuPercent);
+        _memoryPercent = WindowsResourceSnapshot.Normalize(snapshot.MemoryPercent);
+        _diskPercent   = WindowsResourceSnapshot.Normalize(snapshot.DiskPercent);
+
+        RaisePropertyChanged(nameof(CpuPercent));
+        RaisePropertyChanged(nameof(MemoryPercent));
+        RaisePropertyChanged(nameof(DiskPercent));
+        RaisePropertyChanged(nameof(CpuText));
+        RaisePropertyChanged(nameof(MemoryText));
+        RaisePropertyChanged(nameof(DiskText));
+    }
 
     public NewTaskWizardViewModel CreateNewTaskWizard() =>
         _session is null
@@ -57,11 +115,48 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public static OperatorHomePageViewModel CreateForSmokeTest(
         ControlCenterSessionSnapshot snapshot) => new(snapshot);
 
+    private void ApplyHealthIndicators(ControlCenterSessionSnapshot snapshot)
+    {
+        var connectionState = snapshot.State.Connection.State;
+        _coreIndicator = connectionState switch
+        {
+            ConnectionState.Online => AssistantPetIndicator.Green,
+            ConnectionState.Offline => AssistantPetIndicator.Gray,
+            ConnectionState.AuthenticationFailed or ConnectionState.Faulted => AssistantPetIndicator.Orange,
+            _ => AssistantPetIndicator.Orange,
+        };
+
+        var worker = snapshot.State.Worker;
+        _workerIndicator = connectionState == ConnectionState.Offline
+            ? AssistantPetIndicator.Gray
+            : worker.Available
+                ? string.Equals(worker.Reason, "degraded", StringComparison.OrdinalIgnoreCase)
+                    ? AssistantPetIndicator.Orange
+                    : AssistantPetIndicator.Green
+                : string.Equals(worker.Reason, "degraded", StringComparison.OrdinalIgnoreCase)
+                    ? AssistantPetIndicator.Orange
+                    : AssistantPetIndicator.Gray;
+
+        // Windows UI 本身正在运行才会生成该 ViewModel，因此本地壳状态为绿色事实。
+        _windowsIndicator = AssistantPetIndicator.Green;
+
+        RaisePropertyChanged(nameof(CoreIndicator));
+        RaisePropertyChanged(nameof(WorkerIndicator));
+        RaisePropertyChanged(nameof(WindowsIndicator));
+        RaisePropertyChanged(nameof(SystemIndicator));
+    }
+
+    private static string FormatMetric(double? value) =>
+        value is null
+            ? "—"
+            : $"{Math.Round(value.Value):0}%";
+
     private void RaiseProjectionProperties()
     {
         RaisePropertyChanged(nameof(PendingReview));
         RaisePropertyChanged(nameof(InProgress));
         RaisePropertyChanged(nameof(Completed));
+        RaisePropertyChanged(nameof(RecentTasks));
         RaisePropertyChanged(nameof(PendingReviewCount));
         RaisePropertyChanged(nameof(InProgressCount));
         RaisePropertyChanged(nameof(CompletedCount));
