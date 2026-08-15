@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Reflection;
+using System.Resources;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
@@ -8,7 +10,7 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结桌宠事实投影、状态灯和原生 WPF 交互组件合同。</summary>
+/// <summary>冻结桌宠事实投影、状态灯、多帧交互和简单模式视觉接入合同。</summary>
 internal static class InteractivePetSmokeTests
 {
     private static readonly string[] SupportedTaskTypes = new[]
@@ -16,6 +18,20 @@ internal static class InteractivePetSmokeTests
         "system.diagnostic_snapshot",
         "business.local_intelligence.v1",
         "creative.content_plan.v1",
+    };
+
+    private static readonly string[] RequiredPetResources = new[]
+    {
+        "assets/pet/husky/v1/idle_0.png",
+        "assets/pet/husky/v1/idle_1.png",
+        "assets/pet/husky/v1/working_0.png",
+        "assets/pet/husky/v1/working_1.png",
+        "assets/pet/husky/v1/working_2.png",
+        "assets/pet/husky/v1/resting_0.png",
+        "assets/pet/husky/v1/resting_1.png",
+        "assets/pet/husky/v1/resting_2.png",
+        "assets/pet/husky/v1/offline_0.png",
+        "assets/pet/husky/v1/offline_1.png",
     };
 
     /// <summary>在常规 smoke Main 之前执行；旧 Task Center 专项 RED 模式保持隔离。</summary>
@@ -86,7 +102,10 @@ internal static class InteractivePetSmokeTests
             "Working",
             "Green");
 
+        VerifyShellPresentationContract(presentationType);
         VerifyNativePetControlContract(presentationType);
+        VerifySimpleModeVisualContract();
+        VerifyPetResources();
     }
 
     private static void VerifyModeAndIndicator(
@@ -107,6 +126,40 @@ internal static class InteractivePetSmokeTests
             $"桌宠状态灯错误：期望 {expectedIndicator}，实际 {indicator ?? "<null>"}");
     }
 
+    private static void VerifyShellPresentationContract(Type presentationType)
+    {
+        var property = typeof(ShellViewModel).GetProperty(
+            "PetPresentation",
+            BindingFlags.Public | BindingFlags.Instance);
+        SmokeAssert.True(property is not null, "Shell 必须公开全局 PetPresentation 供现有 WPF 视图绑定");
+        SmokeAssert.True(
+            property!.PropertyType == presentationType,
+            "Shell PetPresentation 类型必须保持只读桌宠投影");
+
+        using var shell = ShellViewModel.CreateForSmokeTest(ControlCenterCapabilities.Legacy22);
+        var initial = property.GetValue(shell);
+        var initialMode = initial?.GetType().GetProperty("Mode")?.GetValue(initial)?.ToString();
+        SmokeAssert.True(initialMode == "Offline", "Smoke Shell 默认离线时桌宠必须同步显示 Offline");
+
+        var applySnapshot = typeof(ShellViewModel).GetMethod(
+            "ApplySnapshot",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        SmokeAssert.True(applySnapshot is not null, "Shell 必须沿既有 ApplySnapshot 流刷新桌宠状态");
+        applySnapshot!.Invoke(
+            shell,
+            new object[]
+            {
+                Snapshot(
+                    ConnectionState.Online,
+                    workerAvailable: true,
+                    workerReason: "executing",
+                    Task("running-shell", "Running")),
+            });
+        var refreshed = property.GetValue(shell);
+        var refreshedMode = refreshed?.GetType().GetProperty("Mode")?.GetValue(refreshed)?.ToString();
+        SmokeAssert.True(refreshedMode == "Working", "Shell 接收新快照后必须同步刷新桌宠为 Working");
+    }
+
     private static void VerifyNativePetControlContract(Type presentationType)
     {
         var controlType = typeof(ShellViewModel).Assembly.GetType(
@@ -121,6 +174,14 @@ internal static class InteractivePetSmokeTests
             presentationProperty!.PropertyType == presentationType,
             "AssistantPetPanel 只能消费 AssistantPetPresentation，不得直接依赖 Session/Worker 服务");
 
+        var timerField = controlType.GetField(
+            "_frameTimer",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        SmokeAssert.True(timerField is not null, "桌宠必须使用本地多帧定时器，而不是只移动一张静态图");
+        SmokeAssert.True(
+            timerField!.FieldType.FullName == "System.Windows.Threading.DispatcherTimer",
+            "桌宠多帧驱动必须留在原生 WPF Dispatcher 内");
+
         var forbidden = new[] { "Approve", "Reject", "CreateTask", "CancelTask", "Save", "Connect" };
         var publicDeclaredMethods = controlType
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
@@ -131,6 +192,47 @@ internal static class InteractivePetSmokeTests
             SmokeAssert.True(
                 !publicDeclaredMethods.Any(method => method.Contains(name, StringComparison.OrdinalIgnoreCase)),
                 $"桌宠 UI 不得暴露业务写入方法 {name}");
+        }
+    }
+
+    private static void VerifySimpleModeVisualContract()
+    {
+        var shellType = typeof(PicotooPet.Desktop.Views.ShellWindow);
+        var petField = shellType.GetField(
+            "AssistantPet",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        SmokeAssert.True(petField is not null, "现有 Shell 左侧栏必须直接承载 AssistantPet，不得另起第二程序");
+
+        var homeType = typeof(PicotooPet.Desktop.Views.Pages.OperatorHomePage);
+        foreach (var fieldName in new[] { "HeroCard", "SystemStatusCard", "TaskOverviewCard", "RecentTasksCard" })
+        {
+            var field = homeType.GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            SmokeAssert.True(field is not null, $"简单模式首页缺少设计稿核心区域 {fieldName}");
+        }
+    }
+
+    private static void VerifyPetResources()
+    {
+        var assembly = typeof(ShellViewModel).Assembly;
+        var resourceName = assembly
+            .GetManifestResourceNames()
+            .SingleOrDefault(name => name.EndsWith(".g.resources", StringComparison.OrdinalIgnoreCase));
+        SmokeAssert.True(resourceName is not null, "WPF 程序缺少编译资源容器");
+
+        using var stream = assembly.GetManifestResourceStream(resourceName!);
+        SmokeAssert.True(stream is not null, "无法读取 WPF 编译资源容器");
+        using var reader = new ResourceReader(stream!);
+        var keys = reader
+            .Cast<DictionaryEntry>()
+            .Select(entry => entry.Key?.ToString()?.ToLowerInvariant())
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var resource in RequiredPetResources)
+        {
+            SmokeAssert.True(keys.Contains(resource), $"桌宠多帧资源缺失：{resource}");
         }
     }
 
