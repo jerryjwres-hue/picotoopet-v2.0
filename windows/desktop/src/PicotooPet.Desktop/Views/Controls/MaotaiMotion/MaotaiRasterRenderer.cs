@@ -1,6 +1,6 @@
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
+using WpfImage = System.Windows.Controls.Image;
 
 namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 
@@ -35,8 +35,8 @@ internal sealed class MaotaiRasterPart
         double scaleX = 1.0,
         double scaleY = 1.0)
     {
-        Translate.X = x;
-        Translate.Y = y;
+        Translate.X  = x;
+        Translate.Y  = y;
         Rotate.Angle = rotationDeg;
 
         if (Scale is not null)
@@ -96,27 +96,27 @@ internal sealed class MaotaiRasterVisuals
 
     public required MaotaiRasterPart TailTip { get; init; }
 
-    public required Image EyeLeftOpen { get; init; }
+    public required WpfImage EyeLeftOpen { get; init; }
 
-    public required Image EyeRightOpen { get; init; }
+    public required WpfImage EyeRightOpen { get; init; }
 
-    public required Image EyeLeftHalf { get; init; }
+    public required WpfImage EyeLeftHalf { get; init; }
 
-    public required Image EyeRightHalf { get; init; }
+    public required WpfImage EyeRightHalf { get; init; }
 
-    public required Image EyeLeftClosed { get; init; }
+    public required WpfImage EyeLeftClosed { get; init; }
 
-    public required Image EyeRightClosed { get; init; }
+    public required WpfImage EyeRightClosed { get; init; }
 
-    public required Image MouthSmile { get; init; }
+    public required WpfImage MouthSmile { get; init; }
 
-    public required Image MouthTired { get; init; }
+    public required WpfImage MouthTired { get; init; }
 
-    public required Image MouthAnnoyed { get; init; }
+    public required WpfImage MouthAnnoyed { get; init; }
 
-    public required Image MouthYawn { get; init; }
+    public required WpfImage MouthYawn { get; init; }
 
-    public required Image MouthTongue { get; init; }
+    public required WpfImage MouthTongue { get; init; }
 }
 
 /// <summary>把纯数据 PoseFrame 应用到独立 PNG 骨骼；不包含状态机、IO 或业务逻辑。</summary>
@@ -132,8 +132,8 @@ internal sealed class MaotaiRasterRenderer
     /// <summary>每显示帧调用；层级 Transform 与 Motion Engine 的 Body->Head/Leg/Tail 坐标一致。</summary>
     public void Apply(in MaotaiPoseFrame frame)
     {
-        _visuals.RootTranslate.X = frame.StageX;
-        _visuals.RootTranslate.Y = 0.0;
+        _visuals.RootTranslate.X     = frame.StageX;
+        _visuals.RootTranslate.Y     = 0.0;
         _visuals.FacingScale.ScaleX = frame.FacingSign >= 0 ? 1.0 : -1.0;
 
         _visuals.Body.Apply(
