@@ -6,12 +6,13 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>冻结茅台 v2 的无撕裂、连续渲染与自然运动合同。</summary>
 internal static class MaotaiNaturalMotionV2SmokeTests
 {
-    /// <summary>先验证纯数学和状态图，再验证当前可见渲染路径。</summary>
+    /// <summary>先验证纯数学、状态图与 Motion Engine，再验证当前可见渲染路径。</summary>
     public static void Run()
     {
         VerifyMotionMathContracts();
         VerifyAnimationGraphContracts();
         VerifyLocomotionContracts();
+        VerifyMotionEngineContracts();
         VerifyVisibleRigContracts();
     }
 
@@ -117,10 +118,10 @@ internal static class MaotaiNaturalMotionV2SmokeTests
 
         var controller = Activator.CreateInstance(type!, 50.0);
         Assert(controller is not null, "无法创建 MaotaiLocomotionController");
-        var update = type!.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public);
+        var update   = type!.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public);
         var position = type.GetProperty("PositionX", BindingFlags.Instance | BindingFlags.Public);
         var velocity = type.GetProperty("VelocityX", BindingFlags.Instance | BindingFlags.Public);
-        var gait = type.GetProperty("GaitPhase", BindingFlags.Instance | BindingFlags.Public);
+        var gait     = type.GetProperty("GaitPhase", BindingFlags.Instance | BindingFlags.Public);
         Assert(update is not null && position is not null && velocity is not null && gait is not null,
             "Locomotion API 不完整");
 
@@ -139,6 +140,104 @@ internal static class MaotaiNaturalMotionV2SmokeTests
             Assert(x >= 20.0 - 0.01 && x <= 140.0 + 0.01,
                 "Locomotion 越过舞台边界");
         }
+    }
+
+    private static void VerifyMotionEngineContracts()
+    {
+        var assembly = typeof(AssistantPetPanel).Assembly;
+        var baseStateType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
+        var interactionType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
+        var inputType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionInput");
+        var engineType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+
+        Assert(baseStateType is not null, "v2 缺少 MaotaiBaseState 表现状态输入");
+        Assert(interactionType is not null, "v2 缺少 MaotaiInteractionKind");
+        Assert(inputType is not null, "v2 缺少 MaotaiMotionInput");
+        Assert(engineType is not null, "v2 缺少 MaotaiMotionEngine");
+
+        var resolvedBaseStateType   = baseStateType!;
+        var resolvedInteractionType = interactionType!;
+        var resolvedInputType       = inputType!;
+        var resolvedEngineType      = engineType!;
+        var resting                 = Enum.Parse(resolvedBaseStateType, "Resting");
+        var none                    = Enum.Parse(resolvedInteractionType, "None");
+        var firstEngine             = Activator.CreateInstance(resolvedEngineType, 17, 50.0);
+        var secondEngine            = Activator.CreateInstance(resolvedEngineType, 17, 50.0);
+        Assert(firstEngine is not null && secondEngine is not null, "无法创建确定性 Motion Engine");
+
+        var update = resolvedEngineType.GetMethod(
+            "Update",
+            BindingFlags.Instance | BindingFlags.Public);
+        Assert(update is not null, "MaotaiMotionEngine 缺少 Update");
+
+        var supportRun       = false;
+        var supportStartX    = 0.0;
+        var supportStartY    = 0.0;
+        var maxSupportDrift  = 0.0;
+
+        for (var frame = 0; frame < 360; frame++)
+        {
+            var targetX   = frame < 180 ? 128.0 : 32.0;
+            var wantsRun  = frame is >= 75 and < 145;
+            var wantsJump = frame == 215;
+            var pointerX  = Math.Sin(frame * 0.045);
+            var pointerY  = Math.Cos(frame * 0.033) * 0.55;
+            var input = Activator.CreateInstance(
+                resolvedInputType,
+                resting,
+                pointerX,
+                pointerY,
+                frame % 120 < 90,
+                none,
+                20.0,
+                140.0,
+                targetX,
+                wantsRun,
+                wantsJump,
+                108.0);
+            Assert(input is not null, "无法创建 MaotaiMotionInput");
+
+            var firstFrame  = update!.Invoke(firstEngine, [1.0 / 60.0, input]);
+            var secondFrame = update.Invoke(secondEngine, [1.0 / 60.0, input]);
+            Assert(firstFrame is not null && secondFrame is not null, "Motion Engine 没有输出 PoseFrame");
+            Assert(firstFrame!.Equals(secondFrame), "相同 seed + 输入序列必须产生完全确定的 Pose");
+
+            AssertPoseFinite(firstFrame, "Root");
+            AssertPoseFinite(firstFrame, "Head");
+            AssertPoseFinite(firstFrame, "TailTip");
+            AssertPoseFinite(firstFrame, "FrontLeftPaw");
+
+            var support = ReadBool(firstFrame, "FrontLeftSupport");
+            var pawX    = ReadDouble(firstFrame, "FrontLeftPawWorldX");
+            var pawY    = ReadDouble(firstFrame, "FrontLeftPawWorldY");
+            Assert(double.IsFinite(pawX) && double.IsFinite(pawY), "前左脚掌世界坐标不是有限值");
+
+            if (support)
+            {
+                if (!supportRun)
+                {
+                    supportRun    = true;
+                    supportStartX = pawX;
+                    supportStartY = pawY;
+                }
+                else
+                {
+                    var dx = pawX - supportStartX;
+                    var dy = pawY - supportStartY;
+                    maxSupportDrift = Math.Max(maxSupportDrift, Math.Sqrt((dx * dx) + (dy * dy)));
+                }
+            }
+            else
+            {
+                supportRun = false;
+            }
+        }
+
+        Assert(maxSupportDrift < 0.75, "Walk 支撑相脚掌世界漂移过大，会产生滑步感");
     }
 
     private static void VerifyVisibleRigContracts()
@@ -172,6 +271,29 @@ internal static class MaotaiNaturalMotionV2SmokeTests
         Assert(
             !code.Contains("Interval = TimeSpan.FromMilliseconds(220)", StringComparison.Ordinal),
             "v2 禁止 220ms DispatcherTimer 作为运动主时钟");
+    }
+
+    private static void AssertPoseFinite(object frame, string propertyName)
+    {
+        var pose = frame.GetType().GetProperty(propertyName)?.GetValue(frame);
+        Assert(pose is not null, $"PoseFrame 缺少 {propertyName}");
+        Assert(double.IsFinite(ReadDouble(pose!, "X")), $"{propertyName}.X 非有限值");
+        Assert(double.IsFinite(ReadDouble(pose!, "Y")), $"{propertyName}.Y 非有限值");
+        Assert(double.IsFinite(ReadDouble(pose!, "RotationDeg")), $"{propertyName}.RotationDeg 非有限值");
+    }
+
+    private static double ReadDouble(object value, string propertyName)
+    {
+        var property = value.GetType().GetProperty(propertyName);
+        Assert(property is not null, $"缺少 double 属性 {propertyName}");
+        return (double)property!.GetValue(value)!;
+    }
+
+    private static bool ReadBool(object value, string propertyName)
+    {
+        var property = value.GetType().GetProperty(propertyName);
+        Assert(property is not null, $"缺少 bool 属性 {propertyName}");
+        return (bool)property!.GetValue(value)!;
     }
 
     private static string FindRepositoryRoot()
