@@ -11,7 +11,6 @@ from research_gateway.gateway import (
     PolicyError,
 )
 
-
 EXPECTED_READ_CAPABILITIES = {
     "research.search",
     "research.web.read",
