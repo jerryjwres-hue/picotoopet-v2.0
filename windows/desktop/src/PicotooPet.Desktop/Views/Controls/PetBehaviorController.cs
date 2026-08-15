@@ -39,6 +39,7 @@ public sealed record PetBehaviorFrame(
 public sealed class PetBehaviorController
 {
     private readonly Random _random;
+    private readonly Queue<PetMicroAction> _recentActions = new();
     private AssistantPetMode? _lastMode;
     private int _ticksUntilAction;
 
@@ -60,6 +61,7 @@ public sealed class PetBehaviorController
         {
             _lastMode         = mode;
             _ticksUntilAction = InitialCooldown(mode);
+            _recentActions.Clear();
         }
 
         var baseEmotion = BaseEmotion(mode);
@@ -75,6 +77,7 @@ public sealed class PetBehaviorController
         }
 
         var action = PickAction(mode);
+        RememberAction(action);
         _ticksUntilAction = NextCooldown(mode);
         return FrameFor(action, baseEmotion);
     }
@@ -87,7 +90,22 @@ public sealed class PetBehaviorController
             AssistantPetMode.Waiting => WaitingActions,
             _                        => RestingActions,
         };
-        return choices[_random.Next(choices.Length)];
+        var available = choices
+            .Where(action => !_recentActions.Contains(action))
+            .ToArray();
+        var candidates = available.Length > 0
+            ? available
+            : choices;
+        return candidates[_random.Next(candidates.Length)];
+    }
+
+    private void RememberAction(PetMicroAction action)
+    {
+        _recentActions.Enqueue(action);
+        while (_recentActions.Count > 2)
+        {
+            _recentActions.Dequeue();
+        }
     }
 
     private int NextCooldown(AssistantPetMode mode) => mode switch
