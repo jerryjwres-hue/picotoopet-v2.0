@@ -86,16 +86,11 @@
                              Foreground="#FF5F7188"
                              FontSize="10.5"
                              TextWrapping="Wrap" />
-                  <Border Margin="0,7,0,0"
-                          Padding="8,5"
-                          CornerRadius="7"
-                          Background="#FFFFF3F3"
-                          Visibility="{Binding ErrorText, Converter={x:Static BooleanBoxes.BoxedFalse}}">
-                    <TextBlock Text="{Binding ErrorText, Mode=OneWay}"
-                               Foreground="#FFB42318"
-                               FontSize="9.5"
-                               TextWrapping="Wrap" />
-                  </Border>
+                  <TextBlock Text="{Binding ErrorText, Mode=OneWay}"
+                             Margin="0,5,0,0"
+                             Foreground="#FFB42318"
+                             FontSize="9.5"
+                             TextWrapping="Wrap" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="2"
