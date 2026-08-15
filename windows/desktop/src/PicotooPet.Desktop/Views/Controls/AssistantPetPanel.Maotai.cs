@@ -199,7 +199,7 @@ public partial class AssistantPetPanel
         MaotaiV2Root.Opacity = 1.0;
     }
 
-    private bool HasCompleteMaotaiV2Rig()
+    private static bool HasCompleteMaotaiV2Rig()
     {
         foreach (var fileName in MaotaiRequiredRigAssets)
         {
@@ -383,9 +383,9 @@ public partial class AssistantPetPanel
             return;
         }
 
-        var position       = e.GetPosition(PetStage);
-        _maotaiPointerX    = Math.Clamp((position.X / PetStage.ActualWidth * 2.0) - 1.0, -1.0, 1.0);
-        _maotaiPointerY    = Math.Clamp((position.Y / PetStage.ActualHeight * 2.0) - 1.0, -1.0, 1.0);
+        var position         = e.GetPosition(PetStage);
+        _maotaiPointerX      = Math.Clamp((position.X / PetStage.ActualWidth * 2.0) - 1.0, -1.0, 1.0);
+        _maotaiPointerY      = Math.Clamp((position.Y / PetStage.ActualHeight * 2.0) - 1.0, -1.0, 1.0);
         _maotaiPointerInside = true;
     }
 
