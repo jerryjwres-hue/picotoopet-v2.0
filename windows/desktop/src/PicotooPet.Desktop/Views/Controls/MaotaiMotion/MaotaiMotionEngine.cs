@@ -24,6 +24,7 @@ internal sealed class MaotaiMotionEngine
 {
     private const double WalkRunSpeedReference = 76.0;
     private const double GroundWorldY           = 0.0;
+    private const double YawnEnvelopeSeconds    = 1.05;
 
     private readonly MaotaiAnimationGraph _graph = new(MaotaiMotionState.Idle);
     private readonly MaotaiLocomotionController _locomotion;
@@ -165,24 +166,28 @@ internal sealed class MaotaiMotionEngine
             Math.Abs(_locomotion.VelocityX) / WalkRunSpeedReference,
             0.0,
             1.0);
-        var gaitPhase  = _locomotion.GaitPhase;
-        var gaitAngle  = gaitPhase * Math.PI * 2.0;
-        var grounded   = _locomotion.IsGrounded;
-        var facingSign = _locomotion.FacingSign;
-        var blend      = SmoothStep(_graph.TransitionProgress);
+        var gaitPhase       = _locomotion.GaitPhase;
+        var gaitAngle       = gaitPhase * Math.PI * 2.0;
+        var grounded        = _locomotion.IsGrounded;
+        var facingSign      = _locomotion.FacingSign;
+        var blend           = SmoothStep(_graph.TransitionProgress);
+        var yawnProgress    = GetYawnProgress();
+        var mouthOpenAmount = _graph.ActiveState == MaotaiMotionState.Yawn
+            ? Math.Sin(yawnProgress * Math.PI)
+            : 0.0;
 
         var bodyBob = grounded && speedRatio > 0.02
             ? Math.Sin(gaitAngle * 2.0) * (0.55 + (speedRatio * 1.45))
             : 0.0;
-        var breathing  = Math.Sin((_elapsedSeconds * 2.1) + _idlePhaseOffset) * 0.32;
-        var bodyWorldY = -44.0 + _locomotion.VerticalOffset + bodyBob + breathing;
-        var bodyTilt   = -facingSign * speedRatio * 5.4;
-        var bodyScaleX = 1.0;
-        var bodyScaleY = 1.0;
+        var breathing   = Math.Sin((_elapsedSeconds * 2.1) + _idlePhaseOffset) * 0.32;
+        var bodyWorldY  = -44.0 + _locomotion.VerticalOffset + bodyBob + breathing;
+        var bodyTilt    = -facingSign * speedRatio * 5.4;
+        var bodyScaleX  = 1.0;
+        var bodyScaleY  = 1.0;
         var headOffsetY = 0.0;
         var headBiasDeg = 0.0;
-        var earDrop      = 0.0;
-        var earTension   = 0.0;
+        var earDrop     = 0.0;
+        var earTension  = 0.0;
 
         ApplyActionPose(
             ref bodyWorldY,
@@ -284,6 +289,19 @@ internal sealed class MaotaiMotionEngine
         {
             var cadenceHz = GetTypingCadenceHz(_graph.ActiveState, blend);
             var amplitude = GetTypingAmplitude(_graph.ActiveState, blend);
+            if (_graph.ActiveState == MaotaiMotionState.Yawn)
+            {
+                cadenceHz = Lerp(1.55, 0.40, mouthOpenAmount);
+                amplitude = Lerp(1.15, 0.55, mouthOpenAmount);
+            }
+            else if (_graph.ActiveState == MaotaiMotionState.WorkTyping &&
+                     _graph.PreviousState == MaotaiMotionState.Yawn &&
+                     _graph.IsTransitioning)
+            {
+                cadenceHz = Lerp(1.55, 3.10, blend);
+                amplitude = Lerp(1.15, 1.65, blend);
+            }
+
             _typingPhaseRadians = WrapRadians(
                 _typingPhaseRadians + (dt * Math.PI * 2.0 * cadenceHz));
 
@@ -372,6 +390,8 @@ internal sealed class MaotaiMotionEngine
             EyeState                = eyeState,
             MouthState              = mouthState,
             MotionState             = _graph.ActiveState,
+            YawnProgress            = yawnProgress,
+            MouthOpenAmount         = mouthOpenAmount,
             FacingSign              = facingSign,
             FrontLeftSupport        = frontLeft.IsSupport,
             FrontLeftPawWorldX      = frontLeft.PawWorldX,
@@ -481,15 +501,18 @@ internal sealed class MaotaiMotionEngine
 
             case MaotaiMotionState.Yawn:
             {
-                // Yawn envelope       : inhale/extend -> open peak -> settle, all on the same raster skeleton.
-                var phase    = Math.Clamp(_stateElapsedSeconds / 1.05, 0.0, 1.0);
-                var envelope = Math.Sin(phase * Math.PI);
-                bodyWorldY -= 1.6 * envelope;
-                bodyScaleX -= 0.025 * envelope;
-                bodyScaleY += 0.070 * envelope;
-                headOffsetY -= 2.4 * envelope;
-                headBiasDeg -= 4.0 * facingSign * envelope;
-                earDrop     += 2.0 + (1.4 * envelope);
+                // Yawn envelope       : inherit the tired pose, inhale/extend to peak, then return to typing baseline.
+                var phase         = GetYawnProgress();
+                var envelope      = Math.Sin(phase * Math.PI);
+                var tiredResidual = (1.0 - phase) * (1.0 - phase);
+                bodyWorldY += (2.6 * tiredResidual) - (1.6 * envelope);
+                bodyScaleX += (0.018 * tiredResidual) - (0.025 * envelope);
+                bodyScaleY += (-0.045 * tiredResidual) + (0.070 * envelope);
+                headOffsetY += (4.2 * tiredResidual) - (2.4 * envelope);
+                headBiasDeg += (3.0 * facingSign * tiredResidual) -
+                    (4.0 * facingSign * envelope);
+                earDrop += (3.2 * tiredResidual) + (1.4 * envelope);
+                earTension = 2.0 * tiredResidual;
                 break;
             }
 
@@ -506,17 +529,25 @@ internal sealed class MaotaiMotionEngine
 
             case MaotaiMotionState.Recover:
             {
-                // Recovery spring-like blend : start with residual tension, decay continuously to work baseline.
+                // Recovery continuity : begin exactly at the annoyed terminal pose, then decay every parameter together.
                 var residual = 1.0 - blend;
-                bodyTilt    -= 3.2 * facingSign * residual;
-                bodyScaleX  -= 0.016 * residual;
-                bodyScaleY  += 0.018 * residual;
-                headBiasDeg -= 2.2 * facingSign * residual;
-                earTension   = 3.4 * residual;
+                bodyWorldY  += 1.0 * residual;
+                bodyTilt    -= 3.8 * facingSign * residual;
+                bodyScaleX  -= 0.020 * residual;
+                bodyScaleY  += 0.022 * residual;
+                headOffsetY -= 0.8 * residual;
+                headBiasDeg -= 2.8 * facingSign * residual;
+                earDrop     -= 0.8 * residual;
+                earTension   = 4.5 * residual;
                 break;
             }
         }
     }
+
+    private double GetYawnProgress() =>
+        _graph.ActiveState == MaotaiMotionState.Yawn
+            ? Math.Clamp(_stateElapsedSeconds / YawnEnvelopeSeconds, 0.0, 1.0)
+            : 0.0;
 
     private MaotaiLegPose BuildWorkPaw(
         double shoulderLocalX,
@@ -556,9 +587,9 @@ internal sealed class MaotaiMotionEngine
         bool frontLeg)
     {
         shoulderLocalX *= facingSign;
-        var moving      = Math.Abs(_locomotion.VelocityX) > 2.0;
-        var support     = grounded && moving && phase < 0.56;
-        var stride      = (frontLeg ? 12.0 : 10.0) +
+        var moving  = Math.Abs(_locomotion.VelocityX) > 2.0;
+        var support = grounded && moving && phase < 0.56;
+        var stride  = (frontLeg ? 12.0 : 10.0) +
             (speedRatio * (frontLeg ? 13.0 : 11.0));
 
         double pawWorldX;
@@ -649,6 +680,7 @@ internal sealed class MaotaiMotionEngine
     private static bool IsWorkingPawState(MaotaiMotionState state) =>
         state is MaotaiMotionState.WorkTyping or
             MaotaiMotionState.WorkTired or
+            MaotaiMotionState.Yawn or
             MaotaiMotionState.WorkAnnoyed or
             MaotaiMotionState.Recover;
 
