@@ -3,6 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Focusable="True"
              Background="Transparent"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
              Loaded="PetSurface_Loaded"
              Unloaded="PetSurface_Unloaded"
              IsVisibleChanged="PetSurface_IsVisibleChanged"
@@ -114,7 +116,8 @@
               Width="184"
               Height="170"
               HorizontalAlignment="Center"
-              ClipToBounds="False">
+              ClipToBounds="False"
+              SnapsToDevicePixels="True">
         <Ellipse Width="142"
                  Height="24"
                  Canvas.Left="21"
@@ -126,7 +129,8 @@
                 Height="150"
                 Canvas.Left="17"
                 Canvas.Top="2"
-                RenderTransformOrigin="0.5,0.64">
+                RenderTransformOrigin="0.5,0.64"
+                ClipToBounds="False">
           <Canvas.RenderTransform>
             <TransformGroup>
               <ScaleTransform x:Name="PetScale" ScaleX="1" ScaleY="1" />
@@ -135,39 +139,455 @@
             </TransformGroup>
           </Canvas.RenderTransform>
 
-          <!-- Q-version Maotai raster rig: the visible character is illustrated PNG art, not WPF dog geometry. -->
-          <Grid x:Name="MaotaiRasterLayer" Width="150" Height="150">
-            <Image x:Name="MaotaiBody"
-                   Width="150"
-                   Height="150"
-                   Stretch="Uniform"
-                   RenderOptions.BitmapScalingMode="HighQuality" />
+          <!-- v2 props stay in stage coordinates so the dog can approach them instead of teleporting with them. -->
+          <Image x:Name="MaotaiV2Laptop"
+                 Width="62"
+                 Height="48"
+                 Canvas.Left="88"
+                 Canvas.Top="92"
+                 Stretch="Uniform"
+                 Opacity="0"
+                 IsHitTestVisible="False"
+                 RenderOptions.BitmapScalingMode="HighQuality" />
+          <Image x:Name="MaotaiV2Drink"
+                 Width="31"
+                 Height="45"
+                 Canvas.Left="10"
+                 Canvas.Top="96"
+                 Stretch="Uniform"
+                 Opacity="0"
+                 IsHitTestVisible="False"
+                 RenderOptions.BitmapScalingMode="HighQuality" />
 
-            <Image x:Name="MaotaiTail"
-                   Width="150"
-                   Height="150"
+          <!-- Visible v2 character: every moving surface is a genuinely independent transparent PNG. -->
+          <Canvas x:Name="MaotaiV2Root"
+                  Width="1"
+                  Height="1"
+                  Canvas.Left="0"
+                  Canvas.Top="132"
+                  ClipToBounds="False"
+                  IsHitTestVisible="False">
+            <Canvas.RenderTransform>
+              <TransformGroup>
+                <ScaleTransform x:Name="MaotaiV2FacingScale" ScaleX="1" ScaleY="1" />
+                <TranslateTransform x:Name="MaotaiV2RootTranslate" X="50" Y="0" />
+              </TransformGroup>
+            </Canvas.RenderTransform>
+
+            <Image x:Name="MaotaiV2Shadow"
+                   Width="78"
+                   Height="16"
+                   Canvas.Left="-39"
+                   Canvas.Top="-5"
                    Stretch="Uniform"
                    Opacity="0"
-                   RenderTransformOrigin="0.24,0.62"
-                   RenderOptions.BitmapScalingMode="HighQuality">
-              <Image.Clip>
-                <RectangleGeometry Rect="0,38,58,88" RadiusX="18" RadiusY="18" />
-              </Image.Clip>
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+
+            <Canvas x:Name="MaotaiV2BodyBone"
+                    Width="1"
+                    Height="1"
+                    ClipToBounds="False">
+              <Canvas.RenderTransform>
+                <TransformGroup>
+                  <ScaleTransform x:Name="MaotaiV2BodyScale" ScaleX="1" ScaleY="1" />
+                  <RotateTransform x:Name="MaotaiV2BodyRotate" Angle="0" />
+                  <TranslateTransform x:Name="MaotaiV2BodyTranslate" X="0" Y="-44" />
+                </TransformGroup>
+              </Canvas.RenderTransform>
+
+              <!-- Tail and hind legs render behind the torso; overlap is supplied by the exported art itself. -->
+              <Image x:Name="MaotaiV2TailTip"
+                     Width="38"
+                     Height="28"
+                     Canvas.Left="-7"
+                     Canvas.Top="-15"
+                     RenderTransformOrigin="0.18,0.54"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2TailTipRotate" />
+                    <TranslateTransform x:Name="MaotaiV2TailTipTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2TailMid"
+                     Width="40"
+                     Height="30"
+                     Canvas.Left="-7"
+                     Canvas.Top="-16"
+                     RenderTransformOrigin="0.18,0.54"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2TailMidRotate" />
+                    <TranslateTransform x:Name="MaotaiV2TailMidTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2TailBase"
+                     Width="42"
+                     Height="32"
+                     Canvas.Left="-8"
+                     Canvas.Top="-17"
+                     RenderTransformOrigin="0.18,0.54"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2TailBaseRotate" />
+                    <TranslateTransform x:Name="MaotaiV2TailBaseTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+
+              <Image x:Name="MaotaiV2HindLeftUpper"
+                     Width="25"
+                     Height="36"
+                     Canvas.Left="-12.5"
+                     Canvas.Top="-5.5"
+                     RenderTransformOrigin="0.5,0.15"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2HindLeftUpperRotate" />
+                    <TranslateTransform x:Name="MaotaiV2HindLeftUpperTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2HindLeftLower"
+                     Width="24"
+                     Height="34"
+                     Canvas.Left="-12"
+                     Canvas.Top="-5"
+                     RenderTransformOrigin="0.5,0.15"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2HindLeftLowerRotate" />
+                    <TranslateTransform x:Name="MaotaiV2HindLeftLowerTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2HindLeftPaw"
+                     Width="29"
+                     Height="22"
+                     Canvas.Left="-14.5"
+                     Canvas.Top="-11"
+                     RenderTransformOrigin="0.5,0.5"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2HindLeftPawRotate" />
+                    <TranslateTransform x:Name="MaotaiV2HindLeftPawTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2HindRightUpper"
+                     Width="25"
+                     Height="36"
+                     Canvas.Left="-12.5"
+                     Canvas.Top="-5.5"
+                     RenderTransformOrigin="0.5,0.15"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2HindRightUpperRotate" />
+                    <TranslateTransform x:Name="MaotaiV2HindRightUpperTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2HindRightLower"
+                     Width="24"
+                     Height="34"
+                     Canvas.Left="-12"
+                     Canvas.Top="-5"
+                     RenderTransformOrigin="0.5,0.15"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2HindRightLowerRotate" />
+                    <TranslateTransform x:Name="MaotaiV2HindRightLowerTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2HindRightPaw"
+                     Width="29"
+                     Height="22"
+                     Canvas.Left="-14.5"
+                     Canvas.Top="-11"
+                     RenderTransformOrigin="0.5,0.5"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2HindRightPawRotate" />
+                    <TranslateTransform x:Name="MaotaiV2HindRightPawTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+
+              <Image x:Name="MaotaiV2Torso"
+                     Width="78"
+                     Height="66"
+                     Canvas.Left="-39"
+                     Canvas.Top="-36"
+                     RenderTransformOrigin="0.5,0.55"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality" />
+              <Image x:Name="MaotaiV2ChestFur"
+                     Width="48"
+                     Height="44"
+                     Canvas.Left="-24"
+                     Canvas.Top="-29"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality" />
+
+              <!-- Front legs are above the torso so keyboard contact is readable without duplicated body pixels. -->
+              <Image x:Name="MaotaiV2FrontLeftUpper"
+                     Width="25"
+                     Height="37"
+                     Canvas.Left="-12.5"
+                     Canvas.Top="-5.5"
+                     RenderTransformOrigin="0.5,0.15"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2FrontLeftUpperRotate" />
+                    <TranslateTransform x:Name="MaotaiV2FrontLeftUpperTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2FrontLeftLower"
+                     Width="24"
+                     Height="35"
+                     Canvas.Left="-12"
+                     Canvas.Top="-5"
+                     RenderTransformOrigin="0.5,0.15"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2FrontLeftLowerRotate" />
+                    <TranslateTransform x:Name="MaotaiV2FrontLeftLowerTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2FrontLeftPaw"
+                     Width="30"
+                     Height="23"
+                     Canvas.Left="-15"
+                     Canvas.Top="-11.5"
+                     RenderTransformOrigin="0.5,0.5"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2FrontLeftPawRotate" />
+                    <TranslateTransform x:Name="MaotaiV2FrontLeftPawTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2FrontRightUpper"
+                     Width="25"
+                     Height="37"
+                     Canvas.Left="-12.5"
+                     Canvas.Top="-5.5"
+                     RenderTransformOrigin="0.5,0.15"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2FrontRightUpperRotate" />
+                    <TranslateTransform x:Name="MaotaiV2FrontRightUpperTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2FrontRightLower"
+                     Width="24"
+                     Height="35"
+                     Canvas.Left="-12"
+                     Canvas.Top="-5"
+                     RenderTransformOrigin="0.5,0.15"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2FrontRightLowerRotate" />
+                    <TranslateTransform x:Name="MaotaiV2FrontRightLowerTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+              <Image x:Name="MaotaiV2FrontRightPaw"
+                     Width="30"
+                     Height="23"
+                     Canvas.Left="-15"
+                     Canvas.Top="-11.5"
+                     RenderTransformOrigin="0.5,0.5"
+                     Stretch="Uniform"
+                     Opacity="0"
+                     RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.RenderTransform>
+                  <TransformGroup>
+                    <RotateTransform x:Name="MaotaiV2FrontRightPawRotate" />
+                    <TranslateTransform x:Name="MaotaiV2FrontRightPawTranslate" />
+                  </TransformGroup>
+                </Image.RenderTransform>
+              </Image>
+
+              <!-- Head is a nested bone; all facial layers inherit head movement before local eye/ear motion. -->
+              <Canvas x:Name="MaotaiV2HeadBone"
+                      Width="1"
+                      Height="1"
+                      ClipToBounds="False">
+                <Canvas.RenderTransform>
+                  <TransformGroup>
+                    <ScaleTransform x:Name="MaotaiV2HeadScale" ScaleX="1" ScaleY="1" />
+                    <RotateTransform x:Name="MaotaiV2HeadRotate" />
+                    <TranslateTransform x:Name="MaotaiV2HeadTranslate" X="0" Y="-29" />
+                  </TransformGroup>
+                </Canvas.RenderTransform>
+
+                <Image x:Name="MaotaiV2EarLeft"
+                       Width="28"
+                       Height="36"
+                       Canvas.Left="-14"
+                       Canvas.Top="-32.5"
+                       RenderTransformOrigin="0.5,0.9"
+                       Stretch="Uniform"
+                       Opacity="0"
+                       RenderOptions.BitmapScalingMode="HighQuality">
+                  <Image.RenderTransform>
+                    <TransformGroup>
+                      <RotateTransform x:Name="MaotaiV2EarLeftRotate" />
+                      <TranslateTransform x:Name="MaotaiV2EarLeftTranslate" />
+                    </TransformGroup>
+                  </Image.RenderTransform>
+                </Image>
+                <Image x:Name="MaotaiV2EarRight"
+                       Width="28"
+                       Height="36"
+                       Canvas.Left="-14"
+                       Canvas.Top="-32.5"
+                       RenderTransformOrigin="0.5,0.9"
+                       Stretch="Uniform"
+                       Opacity="0"
+                       RenderOptions.BitmapScalingMode="HighQuality">
+                  <Image.RenderTransform>
+                    <TransformGroup>
+                      <RotateTransform x:Name="MaotaiV2EarRightRotate" />
+                      <TranslateTransform x:Name="MaotaiV2EarRightTranslate" />
+                    </TransformGroup>
+                  </Image.RenderTransform>
+                </Image>
+
+                <Image x:Name="MaotaiV2HeadphoneBand"
+                       Width="78"
+                       Height="48"
+                       Canvas.Left="-39"
+                       Canvas.Top="-40"
+                       Stretch="Uniform"
+                       Opacity="0"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2Head"
+                       Width="84"
+                       Height="74"
+                       Canvas.Left="-42"
+                       Canvas.Top="-43"
+                       Stretch="Uniform"
+                       Opacity="0"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+
+                <Image x:Name="MaotaiV2EyeLeftOpen" Width="22" Height="19" Canvas.Left="-23" Canvas.Top="-9" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2EyeRightOpen" Width="22" Height="19" Canvas.Left="1" Canvas.Top="-9" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2EyeLeftHalf" Width="22" Height="19" Canvas.Left="-23" Canvas.Top="-9" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2EyeRightHalf" Width="22" Height="19" Canvas.Left="1" Canvas.Top="-9" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2EyeLeftClosed" Width="22" Height="19" Canvas.Left="-23" Canvas.Top="-9" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2EyeRightClosed" Width="22" Height="19" Canvas.Left="1" Canvas.Top="-9" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+
+                <Image x:Name="MaotaiV2PupilLeft"
+                       Width="10"
+                       Height="10"
+                       Canvas.Left="-5"
+                       Canvas.Top="-5"
+                       RenderTransformOrigin="0.5,0.5"
+                       Stretch="Uniform"
+                       Opacity="0"
+                       RenderOptions.BitmapScalingMode="HighQuality">
+                  <Image.RenderTransform>
+                    <TransformGroup>
+                      <RotateTransform x:Name="MaotaiV2PupilLeftRotate" />
+                      <TranslateTransform x:Name="MaotaiV2PupilLeftTranslate" />
+                    </TransformGroup>
+                  </Image.RenderTransform>
+                </Image>
+                <Image x:Name="MaotaiV2PupilRight"
+                       Width="10"
+                       Height="10"
+                       Canvas.Left="-5"
+                       Canvas.Top="-5"
+                       RenderTransformOrigin="0.5,0.5"
+                       Stretch="Uniform"
+                       Opacity="0"
+                       RenderOptions.BitmapScalingMode="HighQuality">
+                  <Image.RenderTransform>
+                    <TransformGroup>
+                      <RotateTransform x:Name="MaotaiV2PupilRightRotate" />
+                      <TranslateTransform x:Name="MaotaiV2PupilRightTranslate" />
+                    </TransformGroup>
+                  </Image.RenderTransform>
+                </Image>
+
+                <Image x:Name="MaotaiV2BrowLeft" Width="24" Height="12" Canvas.Left="-24" Canvas.Top="-17" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2BrowRight" Width="24" Height="12" Canvas.Left="0" Canvas.Top="-17" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2Muzzle" Width="42" Height="28" Canvas.Left="-21" Canvas.Top="4" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2MouthSmile" Width="36" Height="24" Canvas.Left="-18" Canvas.Top="12" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2MouthTired" Width="36" Height="24" Canvas.Left="-18" Canvas.Top="12" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2MouthAnnoyed" Width="36" Height="24" Canvas.Left="-18" Canvas.Top="12" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2MouthYawn" Width="36" Height="24" Canvas.Left="-18" Canvas.Top="12" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2MouthTongue" Width="36" Height="24" Canvas.Left="-18" Canvas.Top="12" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2HeadphoneLeft" Width="25" Height="34" Canvas.Left="-43" Canvas.Top="-13" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="MaotaiV2HeadphoneRight" Width="25" Height="34" Canvas.Left="18" Canvas.Top="-13" Stretch="Uniform" Opacity="0" RenderOptions.BitmapScalingMode="HighQuality" />
+              </Canvas>
+            </Canvas>
+          </Canvas>
+
+          <!-- v1.3 names remain as a collapsed compile/test compatibility surface; they are never user-visible. -->
+          <Grid x:Name="MaotaiRasterLayer"
+                Width="150"
+                Height="150"
+                Visibility="Collapsed"
+                IsHitTestVisible="False">
+            <Image x:Name="MaotaiBody" Width="150" Height="150" Stretch="Uniform" Opacity="0" />
+            <Image x:Name="MaotaiTail" Width="150" Height="150" Stretch="Uniform" Opacity="0" RenderTransformOrigin="0.24,0.62">
               <Image.RenderTransform>
                 <RotateTransform x:Name="MaotaiTailRotate" Angle="0" />
               </Image.RenderTransform>
             </Image>
-
-            <Image x:Name="MaotaiHead"
-                   Width="150"
-                   Height="150"
-                   Stretch="Uniform"
-                   Opacity="0"
-                   RenderTransformOrigin="0.55,0.47"
-                   RenderOptions.BitmapScalingMode="HighQuality">
-              <Image.Clip>
-                <RectangleGeometry Rect="27,0,116,105" RadiusX="34" RadiusY="34" />
-              </Image.Clip>
+            <Image x:Name="MaotaiHead" Width="150" Height="150" Stretch="Uniform" Opacity="0" RenderTransformOrigin="0.55,0.47">
               <Image.RenderTransform>
                 <TransformGroup>
                   <RotateTransform x:Name="MaotaiHeadRotate" Angle="0" />
@@ -175,17 +595,7 @@
                 </TransformGroup>
               </Image.RenderTransform>
             </Image>
-
-            <Image x:Name="MaotaiLeftPawImage"
-                   Width="150"
-                   Height="150"
-                   Stretch="Uniform"
-                   Opacity="0"
-                   RenderTransformOrigin="0.43,0.76"
-                   RenderOptions.BitmapScalingMode="HighQuality">
-              <Image.Clip>
-                <RectangleGeometry Rect="38,82,54,55" RadiusX="18" RadiusY="18" />
-              </Image.Clip>
+            <Image x:Name="MaotaiLeftPawImage" Width="150" Height="150" Stretch="Uniform" Opacity="0" RenderTransformOrigin="0.43,0.76">
               <Image.RenderTransform>
                 <TransformGroup>
                   <RotateTransform x:Name="MaotaiLeftPawRotate" Angle="0" />
@@ -193,17 +603,7 @@
                 </TransformGroup>
               </Image.RenderTransform>
             </Image>
-
-            <Image x:Name="MaotaiRightPawImage"
-                   Width="150"
-                   Height="150"
-                   Stretch="Uniform"
-                   Opacity="0"
-                   RenderTransformOrigin="0.60,0.74"
-                   RenderOptions.BitmapScalingMode="HighQuality">
-              <Image.Clip>
-                <RectangleGeometry Rect="72,80,50,55" RadiusX="18" RadiusY="18" />
-              </Image.Clip>
+            <Image x:Name="MaotaiRightPawImage" Width="150" Height="150" Stretch="Uniform" Opacity="0" RenderTransformOrigin="0.60,0.74">
               <Image.RenderTransform>
                 <TransformGroup>
                   <RotateTransform x:Name="MaotaiRightPawRotate" Angle="0" />
@@ -211,14 +611,12 @@
                 </TransformGroup>
               </Image.RenderTransform>
             </Image>
-
-            <!-- Named face surfaces remain image layers for the v1.3 rig contract and future fine-grained exports. -->
             <Image x:Name="FaceEyes" Width="150" Height="150" Opacity="0" IsHitTestVisible="False" />
             <Image x:Name="FaceBrows" Width="150" Height="150" Opacity="0" IsHitTestVisible="False" />
             <Image x:Name="FaceMouth" Width="150" Height="150" Opacity="0" IsHitTestVisible="False" />
           </Grid>
 
-          <!-- Compatibility-only vector controls keep v1.2 animation/test contracts alive but are never rendered. -->
+          <!-- Compatibility-only vector controls keep v1.2 behavior/test contracts alive but are never rendered. -->
           <Canvas x:Name="LegacyCharacterLayer"
                   Width="100"
                   Height="132"

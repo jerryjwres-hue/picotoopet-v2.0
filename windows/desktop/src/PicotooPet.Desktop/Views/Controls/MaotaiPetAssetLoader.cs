@@ -1,17 +1,18 @@
 using System.Collections.Concurrent;
 using System.IO;
-using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 
 namespace PicotooPet.Desktop.Views.Controls;
 
-/// <summary>只读取固定应用目录中的茅台 Q 版 PNG；失败时回退到已打包资源，再失败则安全透明降级。</summary>
+/// <summary>只读取固定应用 UI 目录中的茅台素材；任何解码失败都必须局部降级。</summary>
 internal static class MaotaiPetAssetLoader
 {
-    private static readonly ConcurrentDictionary<string, ImageSource> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, ImageSource> Cache =
+        new(StringComparer.OrdinalIgnoreCase);
 
-    // Asset root       : fixed application-owned UI directory; no arbitrary user-file enumeration occurs.
+    // v1 root          : retained only while the Draft branch still compiles the compatibility renderer.
     private static readonly string AssetRoot = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "PicotooPet",
@@ -19,7 +20,17 @@ internal static class MaotaiPetAssetLoader
         "maotai",
         "v1");
 
-    /// <summary>加载已知 PNG；本地覆盖不存在/损坏时回退程序集资源，资源也无效时返回透明安全图像。</summary>
+    // v2 root          : fixed app-owned directory; no arbitrary user-file enumeration is ever performed.
+    private static readonly string V2AssetRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "PicotooPet",
+        "ui-assets",
+        "maotai",
+        "v2");
+
+    private static readonly ImageSource TransparentFallback = CreateTransparentFallback();
+
+    /// <summary>v1 兼容入口；本地整图不存在/损坏时安全回退到程序集资源。</summary>
     public static ImageSource LoadOrFallback(
         string fileName,
         Uri fallbackUri)
@@ -27,20 +38,45 @@ internal static class MaotaiPetAssetLoader
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         ArgumentNullException.ThrowIfNull(fallbackUri);
 
-        var cacheKey = $"{fileName}|{fallbackUri}";
+        var cacheKey = $"v1|{fileName}|{fallbackUri}";
         return Cache.GetOrAdd(
             cacheKey,
-            _ => TryLoadLocal(fileName) ?? LoadPackResourceOrTransparent(fallbackUri));
+            _ => TryLoadLocal(AssetRoot, fileName) ??
+                TryLoadPackResource(fallbackUri) ??
+                TransparentFallback);
     }
 
-    private static BitmapImage? TryLoadLocal(string fileName)
+    /// <summary>加载 v2 真正独立的透明部件；不在白名单或损坏时返回透明安全图。</summary>
+    public static ImageSource LoadV2Part(string fileName)
     {
-        if (!IsKnownAsset(fileName))
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        if (!MaotaiAssetManifest.IsKnownAsset(fileName))
         {
-            return null;
+            return TransparentFallback;
         }
 
-        var fullPath = Path.Combine(AssetRoot, fileName);
+        var cacheKey = $"v2|{fileName}";
+        return Cache.GetOrAdd(
+            cacheKey,
+            _ => TryLoadLocal(V2AssetRoot, fileName) ?? TransparentFallback);
+    }
+
+    /// <summary>只检查固定白名单文件是否可成功解码，用于启用 v2 可见 Rig 前的完整性门槛。</summary>
+    public static bool HasUsableV2Part(string fileName)
+    {
+        if (!MaotaiAssetManifest.IsKnownAsset(fileName))
+        {
+            return false;
+        }
+
+        return TryLoadLocal(V2AssetRoot, fileName) is not null;
+    }
+
+    private static BitmapImage? TryLoadLocal(
+        string root,
+        string fileName)
+    {
+        var fullPath = Path.Combine(root, fileName);
         try
         {
             if (!File.Exists(fullPath))
@@ -63,17 +99,17 @@ internal static class MaotaiPetAssetLoader
         }
         catch (Exception exception) when (
             exception is IOException
-            or FileFormatException
             or UnauthorizedAccessException
             or NotSupportedException
-            or ArgumentException)
+            or ArgumentException
+            or FileFormatException)
         {
-            // Asset failure    : decorative art must never take down Shell/Core/Worker/task flows.
+            // Asset failure    : decorative art can disappear, but it must never take down Shell/Core/Worker/task flows.
             return null;
         }
     }
 
-    private static ImageSource LoadPackResourceOrTransparent(Uri fallbackUri)
+    private static BitmapImage? TryLoadPackResource(Uri fallbackUri)
     {
         try
         {
@@ -87,21 +123,22 @@ internal static class MaotaiPetAssetLoader
         }
         catch (Exception exception) when (
             exception is IOException
-            or FileFormatException
+            or UnauthorizedAccessException
             or NotSupportedException
-            or ArgumentException)
+            or ArgumentException
+            or FileFormatException)
         {
-            // Pack fallback    : legacy bundled art may be absent/invalid; keep the application renderable.
-            return CreateTransparentFallback();
+            // Pack failure     : historical placeholder resources may be malformed; degrade instead of crashing Shell.
+            return null;
         }
     }
 
-    private static DrawingImage CreateTransparentFallback()
+    private static ImageSource CreateTransparentFallback()
     {
-        var geometry = new RectangleGeometry(new Rect(0, 0, 1, 1));
-        geometry.Freeze();
-
-        var drawing = new GeometryDrawing(System.Windows.Media.Brushes.Transparent, null, geometry);
+        var drawing = new GeometryDrawing(
+            System.Windows.Media.Brushes.Transparent,
+            null,
+            Geometry.Empty);
         drawing.Freeze();
 
         var image = new DrawingImage(drawing);
