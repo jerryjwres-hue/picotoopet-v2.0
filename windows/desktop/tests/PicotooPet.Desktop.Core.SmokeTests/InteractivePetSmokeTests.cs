@@ -102,7 +102,7 @@ internal static class InteractivePetSmokeTests
             "Working",
             "Green");
 
-        VerifyShellPresentationContract(presentationType);
+        VerifyShellIsolationContract();
         VerifyNativePetControlContract(presentationType);
         VerifySimpleModeVisualContract();
         VerifyPetResources();
@@ -126,38 +126,25 @@ internal static class InteractivePetSmokeTests
             $"桌宠状态灯错误：期望 {expectedIndicator}，实际 {indicator ?? "<null>"}");
     }
 
-    private static void VerifyShellPresentationContract(Type presentationType)
+    private static void VerifyShellIsolationContract()
     {
-        var property = typeof(ShellViewModel).GetProperty(
+        var shellType = typeof(PicotooPet.Desktop.Views.ShellWindow);
+        var applyMethod = shellType.GetMethod(
+            "ApplyAssistantPetSnapshot",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        SmokeAssert.True(applyMethod is not null, "现有 WPF Shell 必须提供隔离的桌宠快照适配器");
+        SmokeAssert.True(
+            applyMethod!.ReturnType == typeof(void)
+            && applyMethod.GetParameters() is [{ ParameterType: var parameterType }]
+            && parameterType == typeof(ControlCenterSessionSnapshot),
+            "桌宠适配器必须只消费 ControlCenterSessionSnapshot 且不返回业务命令");
+
+        var shellViewModelProperty = typeof(ShellViewModel).GetProperty(
             "PetPresentation",
             BindingFlags.Public | BindingFlags.Instance);
-        SmokeAssert.True(property is not null, "Shell 必须公开全局 PetPresentation 供现有 WPF 视图绑定");
         SmokeAssert.True(
-            property!.PropertyType == presentationType,
-            "Shell PetPresentation 类型必须保持只读桌宠投影");
-
-        using var shell = ShellViewModel.CreateForSmokeTest(ControlCenterCapabilities.Legacy22);
-        var initial = property.GetValue(shell);
-        var initialMode = initial?.GetType().GetProperty("Mode")?.GetValue(initial)?.ToString();
-        SmokeAssert.True(initialMode == "Offline", "Smoke Shell 默认离线时桌宠必须同步显示 Offline");
-
-        var applySnapshot = typeof(ShellViewModel).GetMethod(
-            "ApplySnapshot",
-            BindingFlags.NonPublic | BindingFlags.Instance);
-        SmokeAssert.True(applySnapshot is not null, "Shell 必须沿既有 ApplySnapshot 流刷新桌宠状态");
-        applySnapshot!.Invoke(
-            shell,
-            new object[]
-            {
-                Snapshot(
-                    ConnectionState.Online,
-                    workerAvailable: true,
-                    workerReason: "executing",
-                    Task("running-shell", "Running")),
-            });
-        var refreshed = property.GetValue(shell);
-        var refreshedMode = refreshed?.GetType().GetProperty("Mode")?.GetValue(refreshed)?.ToString();
-        SmokeAssert.True(refreshedMode == "Working", "Shell 接收新快照后必须同步刷新桌宠为 Working");
+            shellViewModelProperty is null,
+            "桌宠不应把视觉状态写入 ShellViewModel，避免侵入现有导航与业务结构");
     }
 
     private static void VerifyNativePetControlContract(Type presentationType)
