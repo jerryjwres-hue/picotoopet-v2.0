@@ -157,25 +157,26 @@
             </StackPanel>
           </Grid>
 
+          <!-- Simple Mode contract: keep exact user-visible entry text while styling via the shared template. -->
           <Button x:Name="SimpleHomeButton"
-                  Content="🏠   首页"
+                  Content="首页"
                   Background="#FF1D78F0"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleHome_Click" />
           <Button x:Name="SimpleReviewButton"
-                  Content="▣    待我审核"
+                  Content="待我审核"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleReview_Click" />
           <Button x:Name="SimpleActiveButton"
-                  Content="▶    进行中"
+                  Content="进行中"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleActive_Click" />
           <Button x:Name="SimpleCompletedButton"
-                  Content="✓    已完成"
+                  Content="已完成"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleCompleted_Click" />
           <Button x:Name="SimpleAdvancedButton"
-                  Content="♛    高级"
+                  Content="高级"
                   Style="{StaticResource SimpleNavButtonStyle}"
                   Click="SimpleAdvanced_Click" />
 
