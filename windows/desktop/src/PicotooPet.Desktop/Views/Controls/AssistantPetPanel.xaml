@@ -1,0 +1,134 @@
+<UserControl x:Class="PicotooPet.Desktop.Views.Controls.AssistantPetPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinWidth="176"
+             Focusable="True"
+             MouseEnter="PetSurface_MouseEnter"
+             MouseLeave="PetSurface_MouseLeave"
+             MouseMove="PetSurface_MouseMove"
+             MouseLeftButtonDown="PetSurface_MouseLeftButtonDown"
+             KeyDown="PetSurface_KeyDown"
+             Unloaded="PetSurface_Unloaded">
+  <UserControl.Resources>
+    <LinearGradientBrush x:Key="PetCardBackground" StartPoint="0,0" EndPoint="1,1">
+      <GradientStop Color="#FF062C58" Offset="0" />
+      <GradientStop Color="#FF031D3D" Offset="1" />
+    </LinearGradientBrush>
+  </UserControl.Resources>
+
+  <Border x:Name="CardBorder"
+          Background="{StaticResource PetCardBackground}"
+          BorderBrush="#FF135D96"
+          BorderThickness="1"
+          CornerRadius="12"
+          Padding="12"
+          SnapsToDevicePixels="True">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="150" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <!-- Header       : only mirrors AssistantPetPresentation facts. -->
+      <Grid Grid.Row="0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="AI 助手状态"
+                   Foreground="White"
+                   FontSize="14"
+                   FontWeight="SemiBold" />
+        <Ellipse x:Name="IndicatorDot"
+                 Grid.Column="1"
+                 Width="9"
+                 Height="9"
+                 Margin="8,1,0,0"
+                 VerticalAlignment="Top"
+                 Fill="#FF9CA3AF" />
+      </Grid>
+
+      <!-- Detail       : bounded copy; no logs, prompts, tokens or error bodies. -->
+      <TextBlock x:Name="DetailText"
+                 Grid.Row="1"
+                 Margin="0,5,0,0"
+                 Foreground="#FFC7DCF2"
+                 FontSize="11"
+                 TextWrapping="Wrap"
+                 Text="正在读取系统状态…" />
+
+      <!-- Pet stage    : layered transforms make the mascot react independently. -->
+      <Grid x:Name="PetStage"
+            Grid.Row="2"
+            Margin="0,5,0,0"
+            ClipToBounds="False">
+        <Ellipse Width="124"
+                 Height="18"
+                 VerticalAlignment="Bottom"
+                 Margin="0,0,0,8"
+                 Fill="#44000000" />
+
+        <Grid x:Name="PetMotionLayer"
+              Width="146"
+              Height="146"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Bottom"
+              RenderTransformOrigin="0.5,0.82">
+          <Grid.RenderTransform>
+            <TransformGroup>
+              <ScaleTransform x:Name="PetScale" ScaleX="1" ScaleY="1" />
+              <RotateTransform x:Name="PetRotate" Angle="0" />
+              <TranslateTransform x:Name="PetTranslate" X="0" Y="0" />
+            </TransformGroup>
+          </Grid.RenderTransform>
+
+          <Image x:Name="PetImage"
+                 Stretch="Uniform"
+                 RenderOptions.BitmapScalingMode="HighQuality" />
+
+          <TextBlock x:Name="FallbackPet"
+                     Text="🐾"
+                     FontSize="72"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     Visibility="Collapsed" />
+        </Grid>
+
+        <TextBlock x:Name="ReactionText"
+                   Text="♥"
+                   FontSize="22"
+                   Foreground="#FFFF9EC8"
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Top"
+                   Margin="0,12,18,0"
+                   Opacity="0" />
+      </Grid>
+
+      <!-- Footer       : the title is presentation-only and never acts as a command. -->
+      <Border Grid.Row="3"
+              Background="#2200A6FF"
+              BorderBrush="#332FA8FF"
+              BorderThickness="1"
+              CornerRadius="8"
+              Padding="8,6">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="ModeTitleText"
+                     Text="状态读取中"
+                     Foreground="White"
+                     FontSize="12"
+                     FontWeight="SemiBold" />
+          <TextBlock Grid.Column="1"
+                     Text="点击互动"
+                     Foreground="#FF86BFF0"
+                     FontSize="10" />
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</UserControl>
