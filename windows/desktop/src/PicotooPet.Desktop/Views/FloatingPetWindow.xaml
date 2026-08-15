@@ -32,10 +32,16 @@
             VerticalAlignment="Top"
             Margin="0,4,5,0"
             Padding="4,3"
-            Background="#C92A3442"
-            BorderBrush="#664A5C72"
+            Background="#D02A3442"
+            BorderBrush="#704A5C72"
             BorderThickness="1"
-            CornerRadius="10">
+            CornerRadius="11">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="10"
+                          ShadowDepth="1"
+                          Opacity="0.18"
+                          Color="#FF07111C" />
+      </Border.Effect>
       <StackPanel Orientation="Horizontal">
         <Border Padding="5,1"
                 Background="Transparent"
@@ -45,8 +51,19 @@
                      Foreground="#FFE8F3FF"
                      FontSize="11"
                      FontWeight="Bold"
-                     ToolTip="拖动桌宠" />
+                     ToolTip="拖动桌宠；松开后可吸附屏幕边缘" />
         </Border>
+        <Button x:Name="SizeButton"
+                Content="100%"
+                Margin="2,0,0,0"
+                Padding="5,1"
+                Background="Transparent"
+                BorderThickness="0"
+                Foreground="#FF9FD0FF"
+                FontSize="9"
+                Cursor="Hand"
+                ToolTip="切换桌宠尺寸"
+                Click="SizeButton_Click" />
         <Button x:Name="PinButton"
                 Content="置顶"
                 Margin="2,0,0,0"
