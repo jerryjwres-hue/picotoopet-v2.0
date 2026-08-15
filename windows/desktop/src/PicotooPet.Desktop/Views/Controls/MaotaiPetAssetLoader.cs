@@ -6,13 +6,13 @@ using PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 
 namespace PicotooPet.Desktop.Views.Controls;
 
-/// <summary>只读取固定应用 UI 目录中的茅台素材；任何解码失败都必须局部降级。</summary>
+/// <summary>只读取固定应用 UI 目录或安装包内置目录中的茅台素材；任何解码失败都必须局部降级。</summary>
 internal static class MaotaiPetAssetLoader
 {
     private static readonly ConcurrentDictionary<string, ImageSource> Cache =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // v1 root          : retained only while the Draft branch still compiles the compatibility renderer.
+    // v1 root              : retained only while the Draft branch still compiles the compatibility renderer.
     private static readonly string AssetRoot = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "PicotooPet",
@@ -20,10 +20,17 @@ internal static class MaotaiPetAssetLoader
         "maotai",
         "v1");
 
-    // v2 root          : fixed app-owned directory; no arbitrary user-file enumeration is ever performed.
+    // v2 override root      : fixed app-owned directory; never enumerate arbitrary user folders.
     private static readonly string V2AssetRoot = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "PicotooPet",
+        "ui-assets",
+        "maotai",
+        "v2");
+
+    // v2 packaged root      : release payload carries the same whitelist so a fresh install needs no manual art copy.
+    private static readonly string PackagedV2AssetRoot = Path.Combine(
+        AppContext.BaseDirectory,
         "ui-assets",
         "maotai",
         "v2");
@@ -51,7 +58,7 @@ internal static class MaotaiPetAssetLoader
                 TransparentFallback);
     }
 
-    /// <summary>加载 v2 真正独立的透明部件；不在白名单或损坏时返回透明安全图。</summary>
+    /// <summary>加载 v2 真正独立的透明部件；优先固定本地覆盖，其次 installer 内置资产，最后透明降级。</summary>
     public static ImageSource LoadV2Part(string fileName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
@@ -63,7 +70,9 @@ internal static class MaotaiPetAssetLoader
         var cacheKey = $"v2|{fileName}";
         return Cache.GetOrAdd(
             cacheKey,
-            _ => TryLoadLocal(V2AssetRoot, fileName) ?? TransparentFallback);
+            _ => TryLoadLocal(V2AssetRoot, fileName) ??
+                TryLoadLocal(PackagedV2AssetRoot, fileName) ??
+                TransparentFallback);
     }
 
     /// <summary>复用 v2 缓存判断部件是否可用；初始化完整性检查不会重复解码同一 PNG。</summary>
@@ -83,6 +92,12 @@ internal static class MaotaiPetAssetLoader
         string root,
         string fileName)
     {
+        if (!MaotaiAssetManifest.IsKnownAsset(fileName) &&
+            !IsKnownV1Asset(fileName))
+        {
+            return null;
+        }
+
         var fullPath = Path.Combine(root, fileName);
         try
         {
@@ -101,6 +116,12 @@ internal static class MaotaiPetAssetLoader
             bitmap.CacheOption  = BitmapCacheOption.OnLoad;
             bitmap.StreamSource = stream;
             bitmap.EndInit();
+
+            if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
+            {
+                return null;
+            }
+
             bitmap.Freeze();
             return bitmap;
         }
@@ -111,7 +132,7 @@ internal static class MaotaiPetAssetLoader
             or ArgumentException
             or FileFormatException)
         {
-            // Asset failure    : decorative art can disappear, but it must never take down Shell/Core/Worker/task flows.
+            // Asset failure        : decorative art may disappear, but Shell/Core/Worker/task flows stay alive.
             return null;
         }
     }
@@ -135,7 +156,7 @@ internal static class MaotaiPetAssetLoader
             or ArgumentException
             or FileFormatException)
         {
-            // Pack failure     : historical placeholder resources may be malformed; degrade instead of crashing Shell.
+            // Pack failure         : historical placeholder resources may be malformed; degrade instead of crashing Shell.
             return null;
         }
     }
