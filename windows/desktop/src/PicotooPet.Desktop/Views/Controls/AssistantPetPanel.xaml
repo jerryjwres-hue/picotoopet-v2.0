@@ -14,26 +14,33 @@
              Unloaded="PetSurface_Unloaded">
   <UserControl.Resources>
     <LinearGradientBrush x:Key="PetCardBackground" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#FF082E5C" Offset="0" />
-      <GradientStop Color="#FF031C3B" Offset="1" />
+      <GradientStop Color="#FF0A376B" Offset="0" />
+      <GradientStop Color="#FF06284E" Offset="0.58" />
+      <GradientStop Color="#FF031B37" Offset="1" />
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="PetFur" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Color="#FF2B313B" Offset="0" />
+      <GradientStop Color="#FF303842" Offset="0" />
       <GradientStop Color="#FF111820" Offset="1" />
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="PetCream" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Color="#FFFFF7E9" Offset="0" />
-      <GradientStop Color="#FFEEDBC3" Offset="1" />
+      <GradientStop Color="#FFFFF9EF" Offset="0" />
+      <GradientStop Color="#FFF0DCC5" Offset="1" />
     </LinearGradientBrush>
   </UserControl.Resources>
 
   <Border x:Name="CardBorder"
           Background="{StaticResource PetCardBackground}"
-          BorderBrush="#FF155E98"
+          BorderBrush="#FF176AA9"
           BorderThickness="1"
-          CornerRadius="14"
+          CornerRadius="16"
           Padding="12"
           SnapsToDevicePixels="True">
+    <Border.Effect>
+      <DropShadowEffect BlurRadius="16"
+                        ShadowDepth="2"
+                        Opacity="0.17"
+                        Color="#FF00152A" />
+    </Border.Effect>
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
@@ -49,10 +56,21 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <TextBlock Text="AI 助手状态"
-                   Foreground="White"
-                   FontSize="14"
-                   FontWeight="SemiBold" />
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Text="AI 助手状态"
+                     Foreground="White"
+                     FontSize="14"
+                     FontWeight="SemiBold" />
+          <Border Margin="7,0,0,0"
+                  Padding="5,1"
+                  Background="#1FFFFFFF"
+                  CornerRadius="7">
+            <TextBlock Text="LIVE"
+                       Foreground="#FF9FD0FF"
+                       FontSize="7.5"
+                       FontWeight="Bold" />
+          </Border>
+        </StackPanel>
         <Ellipse x:Name="IndicatorDot"
                  Grid.Column="1"
                  Width="9"
@@ -76,11 +94,11 @@
             Grid.Row="2"
             Margin="0,3,0,0"
             ClipToBounds="False">
-        <Ellipse Width="134"
-                 Height="18"
+        <Ellipse Width="142"
+                 Height="20"
                  VerticalAlignment="Bottom"
-                 Margin="0,0,0,7"
-                 Fill="#49000000" />
+                 Margin="0,0,0,5"
+                 Fill="#42000000" />
 
         <Canvas x:Name="PetMotionLayer"
                 Width="164"
@@ -148,7 +166,7 @@
                   StrokeThickness="2"
                   RenderTransformOrigin="0.5,0.9" />
             <Path Data="M 23,26 L 26,8 L 37,28 Z"
-                  Fill="#FFD8A8A2"
+                  Fill="#FFE1ACA8"
                   Opacity="0.92" />
             <Path x:Name="RightEar"
                   Data="M 61,31 L 81,0 L 88,32 Z"
@@ -157,7 +175,7 @@
                   StrokeThickness="2"
                   RenderTransformOrigin="0.5,0.9" />
             <Path Data="M 67,28 L 79,8 L 82,27 Z"
-                  Fill="#FFD8A8A2"
+                  Fill="#FFE1ACA8"
                   Opacity="0.92" />
 
             <Ellipse Canvas.Left="11"
@@ -176,6 +194,24 @@
             <Path Data="M 43,29 Q 52,21 61,29 L 56,52 L 49,52 Z"
                   Fill="#FF0C1219"
                   Opacity="0.9" />
+
+            <!-- Emotion layer: brows and blush can change without replacing the base state. -->
+            <Path x:Name="LeftBrow"
+                  Data="M 29,41 Q 37,36 45,40"
+                  Stroke="#FF4B332B"
+                  StrokeThickness="2.3"
+                  StrokeStartLineCap="Round"
+                  StrokeEndLineCap="Round"
+                  Fill="Transparent"
+                  Opacity="0.52" />
+            <Path x:Name="RightBrow"
+                  Data="M 60,40 Q 68,36 76,41"
+                  Stroke="#FF4B332B"
+                  StrokeThickness="2.3"
+                  StrokeStartLineCap="Round"
+                  StrokeEndLineCap="Round"
+                  Fill="Transparent"
+                  Opacity="0.52" />
 
             <Ellipse x:Name="LeftEye"
                      Canvas.Left="31"
@@ -211,6 +247,20 @@
                      Width="2.5"
                      Height="2.5"
                      Fill="White" />
+            <Ellipse x:Name="LeftBlush"
+                     Canvas.Left="22"
+                     Canvas.Top="60"
+                     Width="16"
+                     Height="7"
+                     Fill="#FFFF8FA5"
+                     Opacity="0" />
+            <Ellipse x:Name="RightBlush"
+                     Canvas.Left="68"
+                     Canvas.Top="60"
+                     Width="16"
+                     Height="7"
+                     Fill="#FFFF8FA5"
+                     Opacity="0" />
 
             <Ellipse x:Name="Muzzle"
                      Canvas.Left="37"
@@ -360,6 +410,15 @@
                      Visibility="Collapsed" />
         </Canvas>
 
+        <TextBlock x:Name="EmotionGlyph"
+                   Text="✦"
+                   FontSize="17"
+                   FontWeight="Bold"
+                   Foreground="#FFFFD26A"
+                   HorizontalAlignment="Left"
+                   VerticalAlignment="Top"
+                   Margin="9,15,0,0"
+                   Opacity="0" />
         <TextBlock x:Name="ReactionText"
                    Text="♥"
                    FontSize="22"
@@ -384,7 +443,7 @@
               Background="#2200A6FF"
               BorderBrush="#332FA8FF"
               BorderThickness="1"
-              CornerRadius="8"
+              CornerRadius="9"
               Padding="8,6">
         <Grid>
           <Grid.ColumnDefinitions>
@@ -402,7 +461,7 @@
                   Padding="5,1"
                   Background="Transparent"
                   BorderThickness="0"
-                  Foreground="#FF86BFF0"
+                  Foreground="#FF93C8F6"
                   FontSize="9.5"
                   Cursor="Hand"
                   Click="FloatButton_Click" />
