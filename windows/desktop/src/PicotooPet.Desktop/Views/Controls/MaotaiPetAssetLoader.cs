@@ -133,7 +133,7 @@ internal static class MaotaiPetAssetLoader
         }
     }
 
-    private static ImageSource CreateTransparentFallback()
+    private static DrawingImage CreateTransparentFallback()
     {
         var drawing = new GeometryDrawing(
             System.Windows.Media.Brushes.Transparent,
