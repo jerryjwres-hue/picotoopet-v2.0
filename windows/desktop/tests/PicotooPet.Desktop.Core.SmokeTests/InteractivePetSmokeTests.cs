@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.State;
@@ -16,6 +17,19 @@ internal static class InteractivePetSmokeTests
         "business.local_intelligence.v1",
         "creative.content_plan.v1",
     };
+
+    /// <summary>在常规 smoke Main 之前执行；旧 Task Center 专项 RED 模式保持隔离。</summary>
+    [ModuleInitializer]
+    public static void Initialize()
+    {
+        if (Environment.GetCommandLineArgs().Contains(
+                "--expect-task-center-legacy-binding-failure",
+                StringComparer.Ordinal))
+        {
+            return;
+        }
+        Run();
+    }
 
     public static void Run()
     {
