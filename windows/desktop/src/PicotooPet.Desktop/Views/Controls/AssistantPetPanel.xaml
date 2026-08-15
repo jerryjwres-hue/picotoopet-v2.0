@@ -8,7 +8,9 @@
              MouseMove="PetSurface_MouseMove"
              MouseLeftButtonDown="PetSurface_MouseLeftButtonDown"
              MouseLeftButtonUp="PetSurface_MouseLeftButtonUp"
+             MouseDoubleClick="PetSurface_MouseDoubleClick"
              KeyDown="PetSurface_KeyDown"
+             IsVisibleChanged="PetSurface_IsVisibleChanged"
              Unloaded="PetSurface_Unloaded">
   <UserControl.Resources>
     <LinearGradientBrush x:Key="PetCardBackground" StartPoint="0,0" EndPoint="1,1">
@@ -42,7 +44,7 @@
       </Grid.RowDefinitions>
 
       <!-- Header       : only mirrors AssistantPetPresentation facts. -->
-      <Grid Grid.Row="0">
+      <Grid x:Name="HeaderPanel" Grid.Row="0">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
@@ -236,7 +238,7 @@
                      Fill="#FFFF8E9E"
                      Visibility="Visible" />
 
-            <!-- Blue headphones preserve the product mascot identity. -->
+            <!-- Headphones   : preserve the product mascot identity while the face remains articulated. -->
             <Path Data="M 18,48 Q 15,18 52,14 Q 89,18 87,49"
                   Stroke="#FF4F9DFF"
                   StrokeThickness="6"
@@ -311,25 +313,33 @@
                     BorderBrush="#FFDBF5FF"
                     BorderThickness="2"
                     CornerRadius="9,9,20,20" />
-            <Ellipse Width="27"
+            <Ellipse x:Name="BathBubbleOne"
+                     Width="27"
                      Height="16"
                      Margin="9,0,0,0"
                      HorizontalAlignment="Left"
                      VerticalAlignment="Top"
                      Fill="White"
                      Opacity="0.92" />
-            <Ellipse Width="20"
+            <Ellipse x:Name="BathBubbleTwo"
+                     Width="20"
                      Height="14"
                      Margin="31,3,0,0"
                      HorizontalAlignment="Left"
                      VerticalAlignment="Top"
                      Fill="#FFF5FBFF"
                      Opacity="0.9" />
-            <TextBlock Text="🦆"
+            <TextBlock x:Name="BathDuck"
+                       Text="🦆"
                        FontSize="18"
                        HorizontalAlignment="Right"
                        VerticalAlignment="Top"
-                       Margin="0,0,7,0" />
+                       Margin="0,0,7,0"
+                       RenderTransformOrigin="0.5,0.8">
+              <TextBlock.RenderTransform>
+                <RotateTransform x:Name="BathDuckRotate" Angle="0" />
+              </TextBlock.RenderTransform>
+            </TextBlock>
           </Grid>
 
           <TextBlock x:Name="SleepZzz"
@@ -358,10 +368,19 @@
                    VerticalAlignment="Top"
                    Margin="0,8,12,0"
                    Opacity="0" />
+        <Ellipse x:Name="FloatingIndicatorDot"
+                 Width="10"
+                 Height="10"
+                 HorizontalAlignment="Right"
+                 VerticalAlignment="Top"
+                 Margin="0,8,9,0"
+                 Fill="#FF9CA3AF"
+                 Visibility="Collapsed" />
       </Grid>
 
-      <!-- Footer       : presentation-only status, never a business command. -->
-      <Border Grid.Row="3"
+      <!-- Footer       : presentation-only status and a request to reuse the same pet on the desktop. -->
+      <Border x:Name="FooterPanel"
+              Grid.Row="3"
               Background="#2200A6FF"
               BorderBrush="#332FA8FF"
               BorderThickness="1"
@@ -377,15 +396,21 @@
                      Foreground="White"
                      FontSize="12"
                      FontWeight="SemiBold" />
-          <TextBlock Grid.Column="1"
-                     Text="拖拽 · 点击"
-                     Foreground="#FF86BFF0"
-                     FontSize="9.5" />
+          <Button x:Name="FloatButton"
+                  Grid.Column="1"
+                  Content="放到桌面 ↗"
+                  Padding="5,1"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Foreground="#FF86BFF0"
+                  FontSize="9.5"
+                  Cursor="Hand"
+                  Click="FloatButton_Click" />
         </Grid>
       </Border>
 
       <!-- State strip   : mirrors the three user-facing pet modes from the UI design. -->
-      <UniformGrid Grid.Row="4" Columns="3" Margin="0,8,0,0">
+      <UniformGrid x:Name="StateStrip" Grid.Row="4" Columns="3" Margin="0,8,0,0">
         <Border x:Name="RestingCard"
                 Margin="0,0,3,0"
                 Padding="3,5"
