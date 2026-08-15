@@ -38,6 +38,17 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public IReadOnlyList<OperatorTaskCard> PendingReview => Projection.PendingReview.Take(4).ToArray();
     public IReadOnlyList<OperatorTaskCard> InProgress => Projection.InProgress.Take(4).ToArray();
     public IReadOnlyList<OperatorTaskCard> Completed => Projection.Completed.Take(4).ToArray();
+
+    /// <summary>最近任务只合并现有事实桶，不新增任务副本或第二套状态。</summary>
+    public IReadOnlyList<OperatorTaskCard> RecentTasks =>
+        Projection.PendingReview
+            .Concat(Projection.InProgress)
+            .Concat(Projection.Completed)
+            .OrderByDescending(item => item.UpdatedAt)
+            .ThenBy(item => item.TaskId, StringComparer.Ordinal)
+            .Take(6)
+            .ToArray();
+
     public int PendingReviewCount => Projection.PendingReview.Count;
     public int InProgressCount => Projection.InProgress.Count;
     public int CompletedCount => Projection.Completed.Count;
@@ -62,6 +73,7 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         RaisePropertyChanged(nameof(PendingReview));
         RaisePropertyChanged(nameof(InProgress));
         RaisePropertyChanged(nameof(Completed));
+        RaisePropertyChanged(nameof(RecentTasks));
         RaisePropertyChanged(nameof(PendingReviewCount));
         RaisePropertyChanged(nameof(InProgressCount));
         RaisePropertyChanged(nameof(CompletedCount));
