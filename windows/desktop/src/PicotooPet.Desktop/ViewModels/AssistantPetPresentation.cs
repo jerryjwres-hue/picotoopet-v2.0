@@ -13,9 +13,18 @@ public enum AssistantPetMode
     Error,
 }
 
+/// <summary>桌宠状态灯只承担识别用途；绿=正常，橙=需关注，灰=离线。</summary>
+public enum AssistantPetIndicator
+{
+    Green,
+    Orange,
+    Gray,
+}
+
 /// <summary>把既有会话事实投影成桌宠可见状态，不建立第二套持久化。</summary>
 public sealed record AssistantPetPresentation(
     AssistantPetMode Mode,
+    AssistantPetIndicator Indicator,
     string Title,
     string Detail,
     string AssetKey)
@@ -49,6 +58,7 @@ public sealed record AssistantPetPresentation(
         {
             return new AssistantPetPresentation(
                 AssistantPetMode.Error,
+                AssistantPetIndicator.Orange,
                 "需要关注",
                 "连接异常，请查看系统状态",
                 "idle");
@@ -59,6 +69,7 @@ public sealed record AssistantPetPresentation(
         {
             return new AssistantPetPresentation(
                 AssistantPetMode.Offline,
+                AssistantPetIndicator.Gray,
                 "已离线",
                 "当前执行能力不可用",
                 "offline");
@@ -78,6 +89,7 @@ public sealed record AssistantPetPresentation(
                 : $"正在处理 {activeCount} 个任务";
             return new AssistantPetPresentation(
                 AssistantPetMode.Working,
+                AssistantPetIndicator.Green,
                 "工作中",
                 detail,
                 "working");
@@ -87,6 +99,7 @@ public sealed record AssistantPetPresentation(
         {
             return new AssistantPetPresentation(
                 AssistantPetMode.Waiting,
+                AssistantPetIndicator.Orange,
                 "等你确认",
                 $"有 {reviewCount} 个任务待你审核",
                 "idle");
@@ -94,6 +107,7 @@ public sealed record AssistantPetPresentation(
 
         return new AssistantPetPresentation(
             AssistantPetMode.Resting,
+            AssistantPetIndicator.Green,
             "休息中",
             "在线 · 当前空闲",
             "resting");
