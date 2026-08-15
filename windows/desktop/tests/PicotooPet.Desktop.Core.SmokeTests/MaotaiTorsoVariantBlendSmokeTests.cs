@@ -63,23 +63,30 @@ internal static class MaotaiTorsoVariantBlendSmokeTests
 
     private static void VerifyRasterSurfaceWiring()
     {
-        var root     = FindRepositoryRoot();
-        var xaml     = File.ReadAllText(Path.Combine(
-            root, "windows", "desktop", "src", "PicotooPet.Desktop",
-            "Views", "Controls", "AssistantPetPanel.xaml"));
-        var panel    = File.ReadAllText(Path.Combine(
+        var root        = FindRepositoryRoot();
+        var panel       = File.ReadAllText(Path.Combine(
             root, "windows", "desktop", "src", "PicotooPet.Desktop",
             "Views", "Controls", "AssistantPetPanel.Maotai.cs"));
-        var renderer = File.ReadAllText(Path.Combine(
+        var torsoLayers = File.ReadAllText(Path.Combine(
+            root, "windows", "desktop", "src", "PicotooPet.Desktop",
+            "Views", "Controls", "AssistantPetPanel.MaotaiTorso.cs"));
+        var renderer    = File.ReadAllText(Path.Combine(
             root, "windows", "desktop", "src", "PicotooPet.Desktop",
             "Views", "Controls", "MaotaiMotion", "MaotaiRasterRenderer.cs"));
 
-        Assert(xaml.Contains("x:Name=\"MaotaiV2TorsoNeutral\"", StringComparison.Ordinal),
-            "v2 XAML 缺少 torso_neutral 独立 surface");
-        Assert(xaml.Contains("x:Name=\"MaotaiV2TorsoCrouch\"", StringComparison.Ordinal),
-            "v2 XAML 缺少 torso_crouch 独立 surface");
-        Assert(xaml.Contains("x:Name=\"MaotaiV2TorsoStretch\"", StringComparison.Ordinal),
-            "v2 XAML 缺少 torso_stretch 独立 surface");
+        Assert(torsoLayers.Contains(
+                "private WpfImage MaotaiV2TorsoNeutral => MaotaiV2Torso;",
+                StringComparison.Ordinal),
+            "v2 neutral torso 必须继续使用现有独立 neutral surface");
+        Assert(torsoLayers.Contains(
+                "private readonly WpfImage MaotaiV2TorsoCrouch",
+                StringComparison.Ordinal) &&
+               torsoLayers.Contains(
+                "private readonly WpfImage MaotaiV2TorsoStretch",
+                StringComparison.Ordinal),
+            "v2 必须拥有彼此独立的 crouch/stretch raster surface");
+        Assert(torsoLayers.Contains("Children.Insert", StringComparison.Ordinal),
+            "crouch/stretch surface 必须实际进入 BodyBone 可见树，禁止只加载不渲染");
         Assert(panel.Contains("MaotaiAssetManifest.TorsoCrouch", StringComparison.Ordinal) &&
                panel.Contains("MaotaiAssetManifest.TorsoStretch", StringComparison.Ordinal),
             "loader/required-rig 必须真正消费 crouch/stretch 资产");

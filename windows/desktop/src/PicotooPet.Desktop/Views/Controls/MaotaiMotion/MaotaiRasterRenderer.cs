@@ -56,6 +56,12 @@ internal sealed class MaotaiRasterVisuals
 
     public required MaotaiRasterPart Body { get; init; }
 
+    public required WpfImage TorsoNeutral { get; init; }
+
+    public required WpfImage TorsoCrouch { get; init; }
+
+    public required WpfImage TorsoStretch { get; init; }
+
     public required MaotaiRasterPart Head { get; init; }
 
     public required MaotaiRasterPart LeftEar { get; init; }
@@ -142,6 +148,13 @@ internal sealed class MaotaiRasterRenderer
             frame.Body.RotationDeg,
             frame.Body.ScaleX,
             frame.Body.ScaleY);
+
+        // Torso silhouette : blend independent neutral/crouch/stretch art from the same continuous body pose.
+        var torsoBlend = MaotaiTorsoVariantBlend.FromScaleY(frame.Body.ScaleY);
+        _visuals.TorsoNeutral.Opacity = torsoBlend.Neutral;
+        _visuals.TorsoCrouch.Opacity  = torsoBlend.Crouch;
+        _visuals.TorsoStretch.Opacity = torsoBlend.Stretch;
+
         _visuals.Head.Apply(
             frame.Head.X,
             frame.Head.Y,

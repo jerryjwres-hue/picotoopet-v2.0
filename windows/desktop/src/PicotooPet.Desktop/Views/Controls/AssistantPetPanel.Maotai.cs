@@ -18,6 +18,8 @@ public partial class AssistantPetPanel
     private static readonly string[] MaotaiRequiredRigAssets =
     [
         MaotaiAssetManifest.TorsoNeutral,
+        MaotaiAssetManifest.TorsoCrouch,
+        MaotaiAssetManifest.TorsoStretch,
         MaotaiAssetManifest.ChestFur,
         MaotaiAssetManifest.Head,
         MaotaiAssetManifest.EarLeft,
@@ -176,6 +178,7 @@ public partial class AssistantPetPanel
         }
 
         _maotaiRigInitialized = true;
+        EnsureMaotaiV2TorsoVariantLayers();
         LoadMaotaiV2Sources();
 
         _maotaiRigReady = HasCompleteMaotaiV2Rig();
@@ -214,7 +217,9 @@ public partial class AssistantPetPanel
 
     private void LoadMaotaiV2Sources()
     {
-        MaotaiV2Torso.Source            = MaotaiPetAssetLoader.LoadV2Part(MaotaiAssetManifest.TorsoNeutral);
+        MaotaiV2TorsoNeutral.Source     = MaotaiPetAssetLoader.LoadV2Part(MaotaiAssetManifest.TorsoNeutral);
+        MaotaiV2TorsoCrouch.Source      = MaotaiPetAssetLoader.LoadV2Part(MaotaiAssetManifest.TorsoCrouch);
+        MaotaiV2TorsoStretch.Source     = MaotaiPetAssetLoader.LoadV2Part(MaotaiAssetManifest.TorsoStretch);
         MaotaiV2ChestFur.Source         = MaotaiPetAssetLoader.LoadV2Part(MaotaiAssetManifest.ChestFur);
         MaotaiV2Head.Source             = MaotaiPetAssetLoader.LoadV2Part(MaotaiAssetManifest.Head);
         MaotaiV2EarLeft.Source          = MaotaiPetAssetLoader.LoadV2Part(MaotaiAssetManifest.EarLeft);
@@ -260,7 +265,9 @@ public partial class AssistantPetPanel
 
     private void ConfigureMaotaiV2LayerVisibility()
     {
-        MaotaiV2Torso.Opacity           = 1.0;
+        MaotaiV2TorsoNeutral.Opacity    = 1.0;
+        MaotaiV2TorsoCrouch.Opacity     = 0.0;
+        MaotaiV2TorsoStretch.Opacity    = 0.0;
         MaotaiV2ChestFur.Opacity        = 1.0;
         MaotaiV2Head.Opacity            = 1.0;
         MaotaiV2EarLeft.Opacity         = 1.0;
@@ -296,6 +303,9 @@ public partial class AssistantPetPanel
         RootTranslate       = MaotaiV2RootTranslate,
         FacingScale         = MaotaiV2FacingScale,
         Body                = new MaotaiRasterPart(MaotaiV2BodyBone, MaotaiV2BodyTranslate, MaotaiV2BodyRotate, MaotaiV2BodyScale),
+        TorsoNeutral        = MaotaiV2TorsoNeutral,
+        TorsoCrouch         = MaotaiV2TorsoCrouch,
+        TorsoStretch        = MaotaiV2TorsoStretch,
         Head                = new MaotaiRasterPart(MaotaiV2HeadBone, MaotaiV2HeadTranslate, MaotaiV2HeadRotate, MaotaiV2HeadScale),
         LeftEar             = new MaotaiRasterPart(MaotaiV2EarLeft, MaotaiV2EarLeftTranslate, MaotaiV2EarLeftRotate),
         RightEar            = new MaotaiRasterPart(MaotaiV2EarRight, MaotaiV2EarRightTranslate, MaotaiV2EarRightRotate),
