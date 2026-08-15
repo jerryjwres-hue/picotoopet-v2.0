@@ -7,11 +7,13 @@
              MouseLeave="PetSurface_MouseLeave"
              MouseMove="PetSurface_MouseMove"
              MouseLeftButtonDown="PetSurface_MouseLeftButtonDown"
+             MouseLeftButtonUp="PetSurface_MouseLeftButtonUp"
+             MouseDoubleClick="PetSurface_MouseDoubleClick"
              KeyDown="PetSurface_KeyDown"
              Unloaded="PetSurface_Unloaded">
   <UserControl.Resources>
     <LinearGradientBrush x:Key="PetCardBackground" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#FF062C58" Offset="0" />
+      <GradientStop Color="#FF07365F" Offset="0" />
       <GradientStop Color="#FF031D3D" Offset="1" />
     </LinearGradientBrush>
   </UserControl.Resources>
@@ -20,15 +22,16 @@
           Background="{StaticResource PetCardBackground}"
           BorderBrush="#FF135D96"
           BorderThickness="1"
-          CornerRadius="12"
-          Padding="12"
+          CornerRadius="13"
+          Padding="11"
           SnapsToDevicePixels="True">
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
-        <RowDefinition Height="150" />
+        <RowDefinition Height="154" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="76" />
       </Grid.RowDefinitions>
 
       <!-- Header       : only mirrors AssistantPetPresentation facts. -->
@@ -39,40 +42,41 @@
         </Grid.ColumnDefinitions>
         <TextBlock Text="AI 助手状态"
                    Foreground="White"
-                   FontSize="14"
+                   FontSize="13.5"
                    FontWeight="SemiBold" />
         <Ellipse x:Name="IndicatorDot"
                  Grid.Column="1"
                  Width="9"
                  Height="9"
-                 Margin="8,1,0,0"
+                 Margin="8,2,1,0"
                  VerticalAlignment="Top"
-                 Fill="#FF9CA3AF" />
+                 Fill="#FF8A9AAD" />
       </Grid>
 
       <!-- Detail       : bounded copy; no logs, prompts, tokens or error bodies. -->
       <TextBlock x:Name="DetailText"
                  Grid.Row="1"
-                 Margin="0,5,0,0"
+                 Margin="0,4,0,0"
                  Foreground="#FFC7DCF2"
-                 FontSize="11"
+                 FontSize="10.5"
                  TextWrapping="Wrap"
+                 MaxHeight="31"
                  Text="正在读取系统状态…" />
 
-      <!-- Pet stage    : layered transforms make the mascot react independently. -->
+      <!-- Pet stage    : sprite frames + transforms + pointer input form one local pet runtime. -->
       <Grid x:Name="PetStage"
             Grid.Row="2"
-            Margin="0,5,0,0"
+            Margin="0,3,0,0"
             ClipToBounds="False">
-        <Ellipse Width="124"
-                 Height="18"
+        <Ellipse Width="126"
+                 Height="20"
                  VerticalAlignment="Bottom"
                  Margin="0,0,0,8"
-                 Fill="#44000000" />
+                 Fill="#4D000000" />
 
         <Grid x:Name="PetMotionLayer"
-              Width="146"
-              Height="146"
+              Width="150"
+              Height="150"
               HorizontalAlignment="Center"
               VerticalAlignment="Bottom"
               RenderTransformOrigin="0.5,0.82">
@@ -96,14 +100,21 @@
                      Visibility="Collapsed" />
         </Grid>
 
-        <TextBlock x:Name="ReactionText"
-                   Text="♥"
-                   FontSize="22"
-                   Foreground="#FFFF9EC8"
-                   HorizontalAlignment="Right"
-                   VerticalAlignment="Top"
-                   Margin="0,12,18,0"
-                   Opacity="0" />
+        <Border x:Name="ReactionBubble"
+                Background="#F4FFFFFF"
+                CornerRadius="9"
+                Padding="7,4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,7,8,0"
+                Opacity="0"
+                IsHitTestVisible="False">
+          <TextBlock x:Name="ReactionText"
+                     Text="汪～"
+                     FontSize="10.5"
+                     Foreground="#FF173A61"
+                     FontWeight="SemiBold" />
+        </Border>
       </Grid>
 
       <!-- Footer       : the title is presentation-only and never acts as a command. -->
@@ -112,7 +123,8 @@
               BorderBrush="#332FA8FF"
               BorderThickness="1"
               CornerRadius="8"
-              Padding="8,6">
+              Padding="8,5"
+              Margin="0,1,0,6">
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -121,14 +133,86 @@
           <TextBlock x:Name="ModeTitleText"
                      Text="状态读取中"
                      Foreground="White"
-                     FontSize="12"
+                     FontSize="11.5"
                      FontWeight="SemiBold" />
           <TextBlock Grid.Column="1"
-                     Text="点击互动"
+                     Text="点击 · 拖动"
                      Foreground="#FF86BFF0"
-                     FontSize="10" />
+                     FontSize="9.5" />
         </Grid>
       </Border>
+
+      <!-- Preview      : static state legend only; it never changes system state. -->
+      <Grid Grid.Row="4">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0"
+                Margin="0,0,3,0"
+                Padding="3"
+                CornerRadius="8"
+                Background="#260C4A71"
+                BorderBrush="#3563A8D3"
+                BorderThickness="1">
+          <StackPanel HorizontalAlignment="Center">
+            <Image Source="/Picotoo Pet AI;component/Assets/Pet/Husky/V1/resting_0.png"
+                   Width="42"
+                   Height="42"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+            <TextBlock Text="休息"
+                       Foreground="#FFD8E9F7"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="1"
+                Margin="2,0"
+                Padding="3"
+                CornerRadius="8"
+                Background="#260C4A71"
+                BorderBrush="#3563A8D3"
+                BorderThickness="1">
+          <StackPanel HorizontalAlignment="Center">
+            <Image Source="/Picotoo Pet AI;component/Assets/Pet/Husky/V1/working_0.png"
+                   Width="42"
+                   Height="42"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+            <TextBlock Text="工作"
+                       Foreground="#FFD8E9F7"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="2"
+                Margin="3,0,0,0"
+                Padding="3"
+                CornerRadius="8"
+                Background="#260C4A71"
+                BorderBrush="#3563A8D3"
+                BorderThickness="1">
+          <StackPanel HorizontalAlignment="Center">
+            <Image Source="/Picotoo Pet AI;component/Assets/Pet/Husky/V1/offline_0.png"
+                   Width="42"
+                   Height="42"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+            <TextBlock Text="离线"
+                       Foreground="#FFD8E9F7"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+      </Grid>
     </Grid>
   </Border>
 </UserControl>
