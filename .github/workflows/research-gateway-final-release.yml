@@ -1,0 +1,108 @@
+name: Research Gateway 2.3.27.1 Final Release
+
+on:
+  push:
+    branches:
+      - feature/research-gateway-2.3.27.1-final
+    paths:
+      - ".github/workflows/research-gateway-final-release.yml"
+      - "research_gateway/**"
+      - "deploy/macos/research_gateway/**"
+      - "scripts/mac/research_gateway/**"
+      - "tests/unit/research_gateway/**"
+      - "tests/contract/test_research_gateway_package.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify:
+    name: Native macOS Research Gateway arm64
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - name: Check out final integration source
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          # CI 依赖：只安装仓库测试依赖；不会安装用户 Mac 上的 Research 外部工具。
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest==9.1.1 pytest-asyncio==1.4.0 ruff==0.16.1
+
+      - name: Verify native architecture
+        shell: bash
+        run: |
+          sw_vers
+          uname -m
+          python --version
+          test "$(uname -m)" = "arm64"
+
+      - name: Run Research Gateway contracts
+        shell: bash
+        run: |
+          PYTHONPATH=.:src python -m pytest -q \
+            tests/unit/research_gateway \
+            tests/contract/test_research_gateway_package.py
+
+      - name: Lint Research Gateway Python
+        shell: bash
+        run: |
+          ruff check research_gateway tests/unit/research_gateway tests/contract/test_research_gateway_package.py
+
+      - name: Verify repository governance and Python compilation
+        shell: bash
+        run: |
+          if [[ -f scripts/verify_alignment.py ]]; then
+            python scripts/verify_alignment.py --ci
+          else
+            echo "ALIGNMENT_VERIFIER=NOT_PRESENT_PREEXISTING_GOVERNANCE_DRIFT"
+          fi
+          python -m compileall -q scripts research_gateway
+
+      - name: Run full Python regression
+        shell: bash
+        run: PYTHONPATH=.:src python -m pytest -q
+
+      - name: Validate Research Gateway shell syntax
+        shell: bash
+        run: |
+          for script in deploy/macos/research_gateway/*.command scripts/mac/research_gateway/*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Build Research Gateway package
+        shell: bash
+        run: |
+          bash scripts/mac/research_gateway/Build-ResearchGatewayPackage.sh \
+            --output-root artifacts/research-gateway
+
+      - name: Verify package and fixture install
+        shell: bash
+        run: |
+          bash scripts/mac/research_gateway/Test-ResearchGatewayPackage.sh \
+            artifacts/research-gateway
+
+      - name: Upload Research Gateway install package
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-ResearchGateway-2.3.27.1-arm64-final-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            artifacts/research-gateway/*.tar.gz
+            artifacts/research-gateway/*.sha256.txt
+            artifacts/research-gateway/research-gateway-build-report.json
+            artifacts/research-gateway/fixture-evidence/*.txt
