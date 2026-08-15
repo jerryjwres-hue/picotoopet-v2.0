@@ -32,7 +32,7 @@ internal static class MaotaiPetAssetLoader
             _ => TryLoadLocal(fileName) ?? LoadPackResource(fallbackUri));
     }
 
-    private static ImageSource? TryLoadLocal(string fileName)
+    private static BitmapImage? TryLoadLocal(string fileName)
     {
         if (!IsKnownAsset(fileName))
         {
@@ -71,7 +71,7 @@ internal static class MaotaiPetAssetLoader
         }
     }
 
-    private static ImageSource LoadPackResource(Uri fallbackUri)
+    private static BitmapImage LoadPackResource(Uri fallbackUri)
     {
         var bitmap = new BitmapImage();
         bitmap.BeginInit();
