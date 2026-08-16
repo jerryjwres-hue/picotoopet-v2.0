@@ -78,7 +78,7 @@ def test_research_search_payload_is_strict_and_bounded(tmp_path: Path) -> None:
     assert [response.status_code for response in responses] == [422, 422, 422, 422, 422]
 
 
-def test_research_result_uses_existing_result_store_with_fixed_type(tmp_path: Path) -> None:
+def test_research_result_uses_separate_fixed_contract(tmp_path: Path) -> None:
     client, headers = make_client(tmp_path)
     with client:
         created = client.post(
@@ -109,17 +109,40 @@ def test_research_result_uses_existing_result_store_with_fixed_type(tmp_path: Pa
             stored_result=stored,
             schema_version="1.0",
         )
-        response = client.get(
+        research_response = client.get(
+            f"/api/v1/tasks/{created['task_id']}/research-result",
+            headers=headers,
+        )
+        legacy_response = client.get(
             f"/api/v1/tasks/{created['task_id']}/result",
             headers=headers,
         )
 
     assert completed.result_id is not None
-    assert response.status_code == 200
-    assert response.json() == {
+    assert research_response.status_code == 200
+    assert research_response.json() == {
         "schema_version": "1.0",
         "capability": "research.search",
         "query": "OpenAI",
         "limit": 3,
         "output": "result-a\nresult-b",
     }
+    # 向后兼容：旧 /result 继续只属于固定诊断结果合同，不能被 Research 扩宽。
+    assert legacy_response.status_code == 404
+
+
+def test_openapi_keeps_diagnostic_result_schema_and_adds_research_schema(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    document = client.app.openapi()
+
+    diagnostic_schema = document["paths"]["/api/v1/tasks/{task_id}/result"]["get"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]
+    research_schema = document["paths"][
+        "/api/v1/tasks/{task_id}/research-result"
+    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+
+    assert diagnostic_schema == {
+        "$ref": "#/components/schemas/DiagnosticSnapshotResult"
+    }
+    assert research_schema == {"$ref": "#/components/schemas/ResearchSearchResult"}
