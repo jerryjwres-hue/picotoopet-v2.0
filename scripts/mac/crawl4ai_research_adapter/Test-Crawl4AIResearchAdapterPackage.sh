@@ -66,11 +66,13 @@ done
 fixture_home="$fixture_root/home"
 gateway_root="$fixture_home/Library/Application Support/PicotooPet/ResearchGateway"
 gateway_runtime="$gateway_root/runtime"
+gateway_module_dir="$gateway_runtime/research_gateway"
 adapter_root="$fixture_home/.local/share/picotoopet/research/crawl4ai"
 worker_root="$fixture_home/Library/Application Support/PicotooPetV2"
 scrapling_marker="$fixture_home/.local/bin/scrapling-mcp-local"
 mkdir -p \
   "$gateway_runtime" \
+  "$gateway_module_dir" \
   "$gateway_root/bin" \
   "$adapter_root/state" \
   "$adapter_root/runtime" \
@@ -81,7 +83,7 @@ mkdir -p \
 
 printf 'ORIGINAL_GATEWAY\n' > "$adapter_root/state/gateway.py.pre-crawl4ai"
 printf 'PATCHED_GATEWAY\n' > "$gateway_runtime/gateway.py"
-cp "$package_root/payload/crawler_adapter.py" "$gateway_runtime/crawler_adapter.py"
+cp "$package_root/payload/crawler_adapter.py" "$gateway_module_dir/crawler_adapter.py"
 printf '2.3.27.1\n' > "$gateway_runtime/VERSION"
 printf 'worker-preserve\n' > "$worker_root/fixture-worker-marker.txt"
 printf '#!/bin/bash\nexit 0\n' > "$scrapling_marker"
@@ -104,6 +106,7 @@ PICOTOOPET_RESEARCH_INSTALL_ROOT="$gateway_root" \
   "$package_root/ROLLBACK_CRAWL4AI_RESEARCH_ADAPTER.command"
 
 grep -q '^ORIGINAL_GATEWAY$' "$gateway_runtime/gateway.py"
+test ! -e "$gateway_module_dir/crawler_adapter.py"
 test ! -e "$adapter_root/bin/picotoopet-crawl4ai-provider"
 test -f "$worker_root/fixture-worker-marker.txt"
 test -x "$scrapling_marker"
