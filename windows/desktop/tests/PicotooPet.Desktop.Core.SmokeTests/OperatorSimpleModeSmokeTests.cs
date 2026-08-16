@@ -13,7 +13,7 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 26.1 五入口导航、真实任务投影、受控向导和 STA WPF 布局。</summary>
+/// <summary>冻结 2.3.27.1 五入口导航、真实任务投影、受控 Research 向导和 STA WPF 布局。</summary>
 internal static class OperatorSimpleModeSmokeTests
 {
     // 固定断言数组复用同一实例，避免测试自身触发 warnings-as-errors 分析器。
@@ -25,6 +25,7 @@ internal static class OperatorSimpleModeSmokeTests
         "system.diagnostic_snapshot",
         "business.local_intelligence.v1",
         "creative.content_plan.v1",
+        "research.search",
     };
 
     public static void Run()
@@ -38,11 +39,11 @@ internal static class OperatorSimpleModeSmokeTests
     {
         using var shell = ShellViewModel.CreateForSmokeTest(FullCapabilities());
         var expected = new[] { "首页", "待我审核", "进行中", "已完成", "高级" };
-        SmokeAssert.True(shell.NavigationItems.Count == expected.Length, "26.1 默认导航必须恰好五项");
+        SmokeAssert.True(shell.NavigationItems.Count == expected.Length, "2.3.27.1 默认导航必须恰好五项");
         SmokeAssert.True(
             shell.NavigationItems.Select(item => item.Title).SequenceEqual(expected),
-            "26.1 默认导航顺序错误");
-        SmokeAssert.True(shell.CurrentRoute == NavigationRoute.OperatorHome, "26.1 必须默认进入首页");
+            "2.3.27.1 默认导航顺序错误");
+        SmokeAssert.True(shell.CurrentRoute == NavigationRoute.OperatorHome, "2.3.27.1 必须默认进入首页");
 
         shell.Navigate(NavigationRoute.BusinessAutomation);
         SmokeAssert.True(shell.CurrentRoute == NavigationRoute.BusinessAutomation, "高级业务自动化路由必须保留");
@@ -79,7 +80,7 @@ internal static class OperatorSimpleModeSmokeTests
         var wizard = NewTaskWizardViewModel.CreateForSmokeTest();
         SmokeAssert.True(wizard.Options.Count == 4, "任务向导必须是有限选项集合");
         var web = wizard.Options.Single(option => option.Kind == OperatorTaskKind.WebResearch);
-        SmokeAssert.True(!web.IsAvailable && web.AvailabilityText == "尚未接入", "网络调研在 Adapter 接入前必须禁用");
+        SmokeAssert.True(web.IsAvailable && web.AvailabilityText == "可用", "Research Adapter 接入后网络调研必须可用");
         SmokeAssert.True(wizard.CanGoNext, "默认真实任务应允许进入第二步");
         wizard.Next();
         SmokeAssert.True(wizard.CanGoBack && wizard.CanSubmit, "向导第二步状态错误");
@@ -172,7 +173,7 @@ internal static class OperatorSimpleModeSmokeTests
         return new ControlCenterSessionSnapshot(
             "http://127.0.0.1:8765",
             state,
-            "ok · 2.3.26.1",
+            "ok · 2.3.27.1",
             "REST p95 1 ms",
             "双机控制链已连接。");
     }
