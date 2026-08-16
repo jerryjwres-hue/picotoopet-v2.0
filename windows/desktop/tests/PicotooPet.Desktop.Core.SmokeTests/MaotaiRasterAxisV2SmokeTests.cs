@@ -31,6 +31,7 @@ internal static class MaotaiRasterAxisV2SmokeTests
             "典型前腿 IK 133° 应落到约 43° 的可视角，而不是侧飞 133°");
 
         MaotaiRasterFaceLayoutV2SmokeTests.Run();
+        MaotaiRasterBodyLayoutV2SmokeTests.Run();
     }
 
     private static double Invoke(MethodInfo method, double value)
