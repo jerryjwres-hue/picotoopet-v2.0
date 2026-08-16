@@ -29,7 +29,8 @@ from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
 manifest = json.loads((root / "release-manifest.json").read_text(encoding="utf-8"))
-assert manifest["product_version"] == "2.3.27.1"
+assert manifest["release_version"] == "2.3.27.1"
+assert manifest["product_version"] == "2.3.26.1"
 assert manifest["architecture"] == "arm64"
 assert manifest["gateway_included"] is True
 assert manifest["core_worker_update_included"] is True
