@@ -7,6 +7,35 @@
   <Application.Resources>
     <SolidColorBrush x:Key="PanelBrush" Color="#FFF7F8FA" />
 
+    <!-- Whole-app typography scale: Caption 12 / Small 13 / Body 14 / Strong 15 / Section 18 / Page 26 DIP. -->
+    <Style x:Key="CaptionText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style x:Key="SecondaryText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style x:Key="BodyText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style x:Key="EmphasizedBodyText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style x:Key="SectionHeadingText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style x:Key="PageHeadingText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="26" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+
     <DataTemplate DataType="{x:Type viewModels:OperatorHomePageViewModel}">
       <pages:OperatorHomePage />
     </DataTemplate>
@@ -53,14 +82,40 @@
       <pages:EmptyStatePage />
     </DataTemplate>
 
+    <Style TargetType="TextBlock">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
     <Style TargetType="Button">
       <Setter Property="Padding" Value="14,8" />
       <Setter Property="Margin" Value="4" />
-      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
     </Style>
     <Style TargetType="TextBox">
-      <Setter Property="Padding" Value="8,6" />
+      <Setter Property="Padding" Value="9,7" />
       <Setter Property="Margin" Value="4" />
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style TargetType="CheckBox">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style TargetType="RadioButton">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+    <Style TargetType="Label">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
     </Style>
   </Application.Resources>
 </Application>
