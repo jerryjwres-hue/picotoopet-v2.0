@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Navigation;
 
 namespace PicotooPet.Desktop.Views;
 
-// 26.1 简单模式使用固定五入口，并保留既有高级页面入口。
+// 简单模式使用六入口，并保留既有高级页面入口。
 public partial class ShellWindow
 {
     private void SimpleHome_Click(object sender, RoutedEventArgs e) =>
@@ -17,6 +17,9 @@ public partial class ShellWindow
 
     private void SimpleCompleted_Click(object sender, RoutedEventArgs e) =>
         ShowSimpleRoute(NavigationRoute.OperatorCompleted);
+
+    private void SimpleDeleted_Click(object sender, RoutedEventArgs e) =>
+        ShowSimpleRoute(NavigationRoute.OperatorDeleted);
 
     private void SimpleAdvanced_Click(object sender, RoutedEventArgs e)
     {
