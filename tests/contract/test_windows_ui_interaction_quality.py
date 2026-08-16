@@ -113,6 +113,38 @@ def test_task_center_rows_and_results_open_shared_task_detail() -> None:
     assert "当前只开放诊断结果正文预览" not in results_vm
 
 
+def test_task_center_and_results_explain_action_availability() -> None:
+    task_xaml = _read(PAGES / "TaskCenterPage.xaml")
+    task_vm = _read(DESKTOP / "ViewModels" / "TaskCenterPageViewModel.cs")
+    results_xaml = _read(PAGES / "ResultsPage.xaml")
+    results_vm = _read(DESKTOP / "ViewModels" / "ResultsPageViewModel.cs")
+
+    for binding in (
+        'IsEnabled="{Binding CanOpenSelectedTaskDetail, Mode=OneWay}"',
+        'ToolTip="{Binding TaskDetailActionReason, Mode=OneWay}"',
+        'ToolTip="{Binding CancelActionReason, Mode=OneWay}"',
+        'ToolTip="{Binding RetryActionReason, Mode=OneWay}"',
+        'ToolTip="{Binding DiagnosticResultActionReason, Mode=OneWay}"',
+    ):
+        assert binding in task_xaml
+
+    for member in (
+        "public bool CanOpenSelectedTaskDetail",
+        "public string TaskDetailActionReason",
+        "public string CancelActionReason",
+        "public string RetryActionReason",
+        "public string DiagnosticResultActionReason",
+        "请先选择一个任务。",
+    ):
+        assert member in task_vm
+
+    assert 'IsEnabled="{Binding CanOpenSelectedTaskDetail, Mode=OneWay}"' in results_xaml
+    assert 'ToolTip="{Binding TaskDetailActionReason, Mode=OneWay}"' in results_xaml
+    assert "public bool CanOpenSelectedTaskDetail" in results_vm
+    assert "public string TaskDetailActionReason" in results_vm
+    assert "请先选择一个结果。" in results_vm
+
+
 def test_operator_task_actions_expose_real_enabled_and_busy_states() -> None:
     xaml = _read(PAGES / "OperatorTaskListPage.xaml")
     view_model = _read(DESKTOP / "ViewModels" / "OperatorTaskListPageViewModel.cs")
