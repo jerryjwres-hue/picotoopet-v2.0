@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Threading;
 using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
@@ -9,7 +10,7 @@ internal static class MaotaiAutonomousFloatingV2SmokeTests
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
     private static readonly Type PanelType = typeof(AssistantPetPanel);
 
-    public static void Run()
+    public static void Run() => RunOnSta(() =>
     {
         var failures = new List<string>();
         RunCheck(failures, VerifyFloatingModeExpandsRealMotionStage);
@@ -23,7 +24,7 @@ internal static class MaotaiAutonomousFloatingV2SmokeTests
                 "Maotai autonomous/floating v2 smoke failed:\n - " +
                 string.Join("\n - ", failures));
         }
-    }
+    });
 
     private static void VerifyFloatingModeExpandsRealMotionStage()
     {
@@ -253,6 +254,32 @@ internal static class MaotaiAutonomousFloatingV2SmokeTests
                 wantsJump,
                 70.0,
             ]) ?? throw new InvalidOperationException("无法创建 MaotaiMotionInput");
+    }
+
+    private static void RunOnSta(Action action)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null)
+        {
+            throw new InvalidOperationException(
+                "Maotai autonomous/floating v2 STA smoke failed.",
+                failure);
+        }
     }
 
     private static void SetEnumField(object target, string fieldName, string value)
