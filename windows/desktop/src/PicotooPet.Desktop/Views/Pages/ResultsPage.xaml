@@ -125,8 +125,22 @@
           </ScrollViewer>
 
           <StackPanel Grid.Row="2">
-            <Button Width="150" HorizontalAlignment="Left" Margin="0,0,0,8" Click="OpenSelectedTaskDetail_Click" Content="打开任务详情 / 结果" />
-            <Button Width="170" HorizontalAlignment="Left" Margin="0,0,0,8" Click="LoadPreview_Click" IsEnabled="{Binding CanLoadSelectedPreview, Mode=OneWay}" Content="加载安全预览（诊断）" ToolTip="{Binding PreviewActionReason, Mode=OneWay}" />
+            <Button Width="150"
+                    HorizontalAlignment="Left"
+                    Margin="0,0,0,8"
+                    Click="OpenSelectedTaskDetail_Click"
+                    IsEnabled="{Binding CanOpenSelectedTaskDetail, Mode=OneWay}"
+                    ToolTip="{Binding TaskDetailActionReason, Mode=OneWay}"
+                    ToolTipService.ShowOnDisabled="True"
+                    Content="打开任务详情 / 结果" />
+            <Button Width="170"
+                    HorizontalAlignment="Left"
+                    Margin="0,0,0,8"
+                    Click="LoadPreview_Click"
+                    IsEnabled="{Binding CanLoadSelectedPreview, Mode=OneWay}"
+                    Content="加载安全预览（诊断）"
+                    ToolTip="{Binding PreviewActionReason, Mode=OneWay}"
+                    ToolTipService.ShowOnDisabled="True" />
           </StackPanel>
         </Grid>
       </Border>
