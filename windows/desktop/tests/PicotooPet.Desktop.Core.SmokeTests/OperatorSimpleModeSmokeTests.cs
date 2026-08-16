@@ -13,13 +13,13 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 2.3.27.1 五入口导航、真实任务投影、受控 Research 向导和 STA WPF 布局。</summary>
+/// <summary>冻结 2.3.27.1 六入口导航、任务可恢复隐藏投影、受控 Research 向导和 STA WPF 布局。</summary>
 internal static class OperatorSimpleModeSmokeTests
 {
-    // 固定断言数组复用同一实例，避免测试自身触发 warnings-as-errors 分析器。
     private static readonly string[] ReviewTaskIds = new[] { "review" };
     private static readonly string[] InProgressTaskIds = new[] { "running" };
     private static readonly string[] CompletedTaskIds = new[] { "done" };
+    private static readonly string[] DeletedTaskIds = new[] { "deleted" };
     private static readonly string[] SupportedTaskTypes = new[]
     {
         "system.diagnostic_snapshot",
@@ -38,13 +38,15 @@ internal static class OperatorSimpleModeSmokeTests
     private static void VerifyNavigation()
     {
         using var shell = ShellViewModel.CreateForSmokeTest(FullCapabilities());
-        var expected = new[] { "首页", "待我审核", "进行中", "已完成", "高级" };
-        SmokeAssert.True(shell.NavigationItems.Count == expected.Length, "2.3.27.1 默认导航必须恰好五项");
+        var expected = new[] { "首页", "待我审核", "进行中", "已完成", "已删除", "高级" };
+        SmokeAssert.True(shell.NavigationItems.Count == expected.Length, "2.3.27.1 默认导航必须恰好六项");
         SmokeAssert.True(
             shell.NavigationItems.Select(item => item.Title).SequenceEqual(expected),
             "2.3.27.1 默认导航顺序错误");
         SmokeAssert.True(shell.CurrentRoute == NavigationRoute.OperatorHome, "2.3.27.1 必须默认进入首页");
 
+        shell.Navigate(NavigationRoute.OperatorDeleted);
+        SmokeAssert.True(shell.CurrentRoute == NavigationRoute.OperatorDeleted, "已删除简单路由必须保留");
         shell.Navigate(NavigationRoute.BusinessAutomation);
         SmokeAssert.True(shell.CurrentRoute == NavigationRoute.BusinessAutomation, "高级业务自动化路由必须保留");
         SmokeAssert.True(shell.SelectedNavigationItem.Route == NavigationRoute.AdvancedHome, "高级子页面必须保持高级入口选中");
@@ -58,12 +60,15 @@ internal static class OperatorSimpleModeSmokeTests
         var snapshot = Snapshot(
             Task("review", "business.local_intelligence.v1", "NeedsHuman", now.AddMinutes(-1)),
             Task("running", "creative.content_plan.v1", "Running", now),
-            Task("done", "system.diagnostic_snapshot", "Completed", now.AddMinutes(-2), resultId: "result-1"));
+            Task("done", "system.diagnostic_snapshot", "Completed", now.AddMinutes(-2), resultId: "result-1"),
+            Task("deleted", "research.search", "Completed", now.AddMinutes(-3), resultId: "result-2", isHidden: true));
         var projection = OperatorProjection.FromSnapshot(snapshot);
 
         SmokeAssert.True(projection.PendingReview.Select(item => item.TaskId).SequenceEqual(ReviewTaskIds), "审核桶分类错误");
         SmokeAssert.True(projection.InProgress.Select(item => item.TaskId).SequenceEqual(InProgressTaskIds), "进行中分类错误");
         SmokeAssert.True(projection.Completed.Select(item => item.TaskId).SequenceEqual(CompletedTaskIds), "完成桶分类错误");
+        SmokeAssert.True(projection.Deleted.Select(item => item.TaskId).SequenceEqual(DeletedTaskIds), "已删除桶分类错误");
+        SmokeAssert.True(!projection.Completed.Any(item => item.TaskId == "deleted"), "隐藏任务不得继续出现在已完成");
         SmokeAssert.True(projection.CoreStatus == "在线", "Core 简单状态错误");
         SmokeAssert.True(projection.WorkerStatus.Contains("空闲", StringComparison.Ordinal), "Worker 简单状态错误");
 
@@ -106,7 +111,8 @@ internal static class OperatorSimpleModeSmokeTests
             {
                 var snapshot = Snapshot(
                     Task("running", "business.local_intelligence.v1", "Running", DateTimeOffset.UtcNow),
-                    Task("done", "system.diagnostic_snapshot", "Completed", DateTimeOffset.UtcNow.AddMinutes(-1), resultId: "result-1"));
+                    Task("done", "system.diagnostic_snapshot", "Completed", DateTimeOffset.UtcNow.AddMinutes(-1), resultId: "result-1"),
+                    Task("deleted", "research.search", "Completed", DateTimeOffset.UtcNow.AddMinutes(-2), resultId: "result-2", isHidden: true));
                 var homeViewModel = OperatorHomePageViewModel.CreateForSmokeTest(snapshot);
                 var activeViewModel = new OperatorTaskListPageViewModel("进行中", completed: false, snapshot);
                 var completedViewModel = new OperatorTaskListPageViewModel("已完成", completed: true, snapshot);
@@ -183,7 +189,8 @@ internal static class OperatorSimpleModeSmokeTests
         string type,
         string status,
         DateTimeOffset updatedAt,
-        string? resultId = null) => new(
+        string? resultId = null,
+        bool isHidden = false) => new(
             id,
             null,
             null,
@@ -191,7 +198,7 @@ internal static class OperatorSimpleModeSmokeTests
             status,
             100,
             null,
-            JsonSerializer.SerializeToElement(new { }),
+            JsonSerializer.SerializeToElement(type == "research.search" ? new { query = "测试查询" } : new { }),
             0,
             3,
             3600,
@@ -199,7 +206,8 @@ internal static class OperatorSimpleModeSmokeTests
             updatedAt,
             null,
             null,
-            resultId);
+            resultId,
+            isHidden);
 
     private static ControlCenterCapabilities FullCapabilities() => new(
         LocalAgent: true,
