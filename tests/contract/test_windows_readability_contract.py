@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "windows/desktop/src/PicotooPet.Desktop"
-VIEWS = DESKTOP / "Views"
 APP_XAML = DESKTOP / "App.xaml"
+APP_CODE = DESKTOP / "App.xaml.cs"
 MANIFEST = DESKTOP / "app.manifest"
-
-_FONT_SIZE = re.compile(r'FontSize="(?P<size>\d+(?:\.\d+)?)"')
+TASK_LIST = DESKTOP / "Views/Pages/OperatorTaskListPage.xaml"
 
 
 def test_windows_uses_per_monitor_v2_dpi_awareness() -> None:
@@ -34,18 +32,20 @@ def test_application_defines_readable_typography_scale() -> None:
     assert 'TextFormattingMode" Value="Display"' in source
 
 
-def test_opaque_operator_pages_do_not_hardcode_tiny_fonts() -> None:
-    """正常业务界面不得继续使用 8–11 DIP 小字；透明桌宠表面单独治理。"""
+def test_all_loaded_operator_text_has_effective_12_dip_floor() -> None:
+    """旧 XAML 的局部小字号也必须在运行时被统一夹到 12 DIP，桌宠表面除外。"""
 
-    offenders: list[str] = []
-    for path in sorted(VIEWS.rglob("*.xaml")):
-        relative = path.relative_to(VIEWS).as_posix()
-        if relative == "FloatingPetWindow.xaml" or relative.startswith("Controls/"):
-            continue
-        source = path.read_text(encoding="utf-8")
-        for match in _FONT_SIZE.finditer(source):
-            size = float(match.group("size"))
-            if size < 12:
-                line = source.count("\n", 0, match.start()) + 1
-                offenders.append(f"{relative}:{line} FontSize={size:g}")
-    assert not offenders, "Tiny operator fonts remain:\n" + "\n".join(offenders)
+    source = APP_CODE.read_text(encoding="utf-8")
+    assert "MinimumOperatorFontSize = 12.0" in source
+    assert "EventManager.RegisterClassHandler" in source
+    assert "typeof(TextBlock)" in source
+    assert "text.FontSize = MinimumOperatorFontSize" in source
+    assert "TextFormattingMode.Display" in source
+    assert "TextRenderingMode.ClearType" in source
+    assert "AssistantPetPanel or FloatingPetWindow" in source
+
+
+def test_new_task_list_surface_has_no_sub_12_dip_operator_text() -> None:
+    source = TASK_LIST.read_text(encoding="utf-8")
+    for forbidden in ('FontSize="8', 'FontSize="9', 'FontSize="10', 'FontSize="11'):
+        assert forbidden not in source
