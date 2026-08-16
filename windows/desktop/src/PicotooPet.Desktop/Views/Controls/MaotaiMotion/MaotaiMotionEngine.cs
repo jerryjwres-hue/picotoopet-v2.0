@@ -29,6 +29,7 @@ internal sealed class MaotaiMotionEngine
     private const double FrontLegLowerLength    = 18.0;
     private const double HindLegUpperLength     = 19.0;
     private const double HindLegLowerLength     = 18.0;
+    private const double StandingRelaxSpeedRatio = 0.18;
 
     private readonly MaotaiAnimationGraph _graph = new(MaotaiMotionState.Idle);
     private readonly MaotaiLocomotionController _locomotion;
@@ -516,7 +517,6 @@ internal sealed class MaotaiMotionEngine
 
             case MaotaiMotionState.Yawn:
             {
-                // Yawn envelope       : inherit the tired pose, inhale/extend to peak, then return to typing baseline.
                 var phase         = GetYawnProgress();
                 var envelope      = Math.Sin(phase * Math.PI);
                 var tiredResidual = (1.0 - phase) * (1.0 - phase);
@@ -544,7 +544,6 @@ internal sealed class MaotaiMotionEngine
 
             case MaotaiMotionState.Recover:
             {
-                // Recovery continuity : begin exactly at the annoyed terminal pose, then decay every parameter together.
                 var residual = 1.0 - blend;
                 bodyWorldY  += 1.0 * residual;
                 bodyTilt    -= 3.8 * facingSign * residual;
@@ -625,7 +624,6 @@ internal sealed class MaotaiMotionEngine
         }
         else if (!grounded)
         {
-            // Air tuck             : paws follow the body while airborne; no stale ground anchor survives the jump.
             pawWorldX = _locomotion.PositionX + shoulderLocalX + (facingSign * (frontLeg ? 5.0 : -3.0));
             pawWorldY = bodyWorldY + (frontLeg ? 33.0 : 35.0);
         }
@@ -648,7 +646,7 @@ internal sealed class MaotaiMotionEngine
         }
 
         lockState.WasSupport = support;
-        return SolveLeg(
+        var solved = SolveLeg(
             shoulderLocalX,
             shoulderLocalY,
             pawWorldX,
@@ -657,6 +655,11 @@ internal sealed class MaotaiMotionEngine
             facingSign,
             frontLeg,
             support);
+
+        var standingRelax = grounded
+            ? 1.0 - SmoothStep(speedRatio / StandingRelaxSpeedRatio)
+            : 0.0;
+        return RelaxLegTowardStanding(solved, standingRelax);
     }
 
     private MaotaiLegPose SolveLeg(
@@ -690,6 +693,35 @@ internal sealed class MaotaiMotionEngine
             pawWorldX,
             pawWorldY,
             isSupport);
+    }
+
+    private static MaotaiLegPose RelaxLegTowardStanding(
+        in MaotaiLegPose leg,
+        double amount)
+    {
+        var t = Math.Clamp(amount, 0.0, 1.0);
+        if (t <= 0.0)
+        {
+            return leg;
+        }
+
+        var shoulderX = leg.Upper.X;
+        var shoulderY = leg.Upper.Y;
+        var pawX      = leg.Paw.X;
+        var pawY      = leg.Paw.Y;
+        var straightJointX = Lerp(shoulderX, pawX, 0.515);
+        var straightJointY = Lerp(shoulderY, pawY, 0.515);
+        var jointX = Lerp(leg.Lower.X, straightJointX, t);
+        var jointY = Lerp(leg.Lower.Y, straightJointY, t);
+        var upperAngle = Math.Atan2(jointY - shoulderY, jointX - shoulderX) * (180.0 / Math.PI);
+        var lowerAngle = Math.Atan2(pawY - jointY, pawX - jointX) * (180.0 / Math.PI);
+
+        return leg with
+        {
+            Upper = leg.Upper with { RotationDeg = upperAngle },
+            Lower = leg.Lower with { X = jointX, Y = jointY, RotationDeg = lowerAngle },
+            Paw   = leg.Paw with { RotationDeg = -lowerAngle * 0.08 },
+        };
     }
 
     private static bool IsWorkingPawState(MaotaiMotionState state) =>
