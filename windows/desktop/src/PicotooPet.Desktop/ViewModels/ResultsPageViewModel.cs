@@ -197,6 +197,12 @@ public sealed class ResultsPageViewModel : PageViewModel
         private set => SetProperty(ref _statusMessage, value);
     }
 
+    public bool CanOpenSelectedTaskDetail => SelectedResult is not null;
+
+    public string TaskDetailActionReason => SelectedResult is null
+        ? "请先选择一个结果。"
+        : "打开统一任务详情，并按该任务类型已批准的固定结果合同读取可用正文。";
+
     public bool CanLoadSelectedPreview =>
         !IsBusy && SelectedResult?.CanPreview == true;
 
@@ -295,6 +301,8 @@ public sealed class ResultsPageViewModel : PageViewModel
 
     private void RaiseActionProperties()
     {
+        RaisePropertyChanged(nameof(CanOpenSelectedTaskDetail));
+        RaisePropertyChanged(nameof(TaskDetailActionReason));
         RaisePropertyChanged(nameof(CanLoadSelectedPreview));
         RaisePropertyChanged(nameof(PreviewActionReason));
     }
