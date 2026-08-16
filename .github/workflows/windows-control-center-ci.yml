@@ -125,7 +125,7 @@ jobs:
         run: |
           .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
 
-      - name: Run isolated Control Center UI interaction smoke
+      - name: Run isolated Control Center UI interaction smoke including ShellNavigationReconnectWpfSmokeTests
         shell: powershell
         run: |
           dotnet run `
