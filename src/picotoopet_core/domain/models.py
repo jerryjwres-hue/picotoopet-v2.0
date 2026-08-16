@@ -57,3 +57,5 @@ class TaskRecord(BaseModel):
     updated_at: datetime
     error_code: str | None = None
     error_message: str | None = None
+    # 用户“删除”只是可恢复的列表可见性，不改变冻结执行状态，也不删除结果。
+    is_hidden: bool = False
