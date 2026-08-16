@@ -23,11 +23,11 @@ _DIAGNOSTIC_DEDUPE_KEY = "system-diagnostic:active"
 _RESEARCH_TASK_TYPE = "research.search"
 _DIAGNOSTIC_RESULT_BYTES = 64 * 1024
 _RESEARCH_RESULT_BYTES = 64 * 1024
-_RESERVED_TASK_TYPES = {_DIAGNOSTIC_TASK_TYPE, _RESEARCH_TASK_TYPE}
+_CONTROLLED_TASK_TYPES = {_DIAGNOSTIC_TASK_TYPE, _RESEARCH_TASK_TYPE}
 
 
 def _required_idempotency_key(value: str | None) -> str:
-    """冻结固定任务端点共用的幂等键校验。"""
+    """冻结受限任务共用的幂等键校验。"""
 
     stable_key = value.strip() if value else ""
     if not stable_key or len(stable_key) > 200:
@@ -40,22 +40,52 @@ def _required_idempotency_key(value: str | None) -> str:
     return stable_key
 
 
+def _frozen_research_task(
+    payload: TaskCreate,
+    idempotency_key: str | None,
+) -> TaskCreate:
+    """把 Windows 通用任务请求收窄为固定 research.search 执行合同。"""
+
+    stable_key = _required_idempotency_key(idempotency_key)
+    try:
+        research = ResearchSearchRequest.model_validate(payload.payload)
+    except ValidationError as error:
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="Research 搜索参数无效。",
+            retryable=False,
+        ) from error
+    return TaskCreate(
+        task_type=_RESEARCH_TASK_TYPE,
+        payload=research.model_dump(mode="json"),
+        priority=60,
+        resource_tag="research-gateway",
+        idempotency_key=stable_key,
+        max_attempts=2,
+        timeout_seconds=120,
+        cloud_policy=CloudPolicy.LOCAL_ONLY,
+    )
+
+
 @router.post("/tasks", response_model=TaskRecord, status_code=status.HTTP_201_CREATED)
 def create_task(
     payload: TaskCreate,
     request: Request,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> TaskRecord:
-    """创建通用任务；固定系统/Research 类型只能使用各自受限端点。"""
+    """创建通用任务；诊断保留固定端点，Research 在服务端被严格冻结。"""
 
-    if payload.task_type in _RESERVED_TASK_TYPES:
+    if payload.task_type == _DIAGNOSTIC_TASK_TYPE:
         raise ApiError(
             status_code=422,
             code="RESERVED_TASK_TYPE",
-            message="该受限任务类型必须使用固定端点创建。",
+            message="系统诊断快照必须使用固定诊断端点创建。",
             retryable=False,
         )
-    if idempotency_key:
+    if payload.task_type == _RESEARCH_TASK_TYPE:
+        payload = _frozen_research_task(payload, idempotency_key)
+    elif idempotency_key:
         payload = payload.model_copy(update={"idempotency_key": idempotency_key})
     return request.app.state.services.queue.create(
         payload,
@@ -102,7 +132,7 @@ def create_research_search(
     request: Request,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> TaskRecord:
-    """创建只读网络搜索任务；执行仍只发生在 Mac Worker 的独立 Gateway 进程。"""
+    """固定端点同样保留，供未来非 Windows 客户端安全创建只读搜索。"""
 
     stable_key = _required_idempotency_key(idempotency_key)
     return request.app.state.services.queue.create(
@@ -133,7 +163,7 @@ def cancel_task(task_id: str, request: Request) -> TaskRecord:
 
     queue = request.app.state.services.queue
     task = queue.get(task_id)
-    if task.task_type in _RESERVED_TASK_TYPES:
+    if task.task_type in _CONTROLLED_TASK_TYPES:
         if not isinstance(queue, DiagnosticQueueRepository):
             raise ApiError(
                 status_code=503,
@@ -189,7 +219,7 @@ def get_task_result(
 
     services = request.app.state.services
     task = services.queue.get(task_id)
-    if task.task_type not in _RESERVED_TASK_TYPES:
+    if task.task_type not in _CONTROLLED_TASK_TYPES:
         raise KeyError(f"任务没有开放固定结果合同：{task_id}")
     if task.status is not TaskStatus.COMPLETED or task.result_id is None:
         raise InvalidTransitionError("任务结果尚未可用。")
