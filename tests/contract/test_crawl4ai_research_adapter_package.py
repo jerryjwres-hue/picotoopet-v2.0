@@ -62,7 +62,8 @@ def test_verify_runs_real_timeout_404_network_and_content_limit_fixtures() -> No
 
     assert "https://httpbin.org/status/404" in verifier
     assert "https://httpbin.org/delay/5" in verifier
-    assert '"timeout" \\\' in verifier
+    assert '"timeout"' in verifier
+    assert "--timeout-seconds 1" in verifier
     assert "https://picotoopet-crawl4ai.invalid/" in verifier
     assert "https://www.rfc-editor.org/rfc/rfc9110.html" in verifier
 
