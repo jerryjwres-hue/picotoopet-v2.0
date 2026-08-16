@@ -10,7 +10,9 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
 
-    public static void Run()
+    public static void Run() => WpfStaSmokeRunner.Run(RunCore);
+
+    private static void RunCore()
     {
         var type = DesktopAssembly.GetType(
             "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiRasterBodyLayout")
