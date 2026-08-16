@@ -9,7 +9,7 @@ namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 /// </summary>
 internal static class MaotaiRasterBodyLayout
 {
-    public static void Configure(Panel bodyPanel)
+    public static void Configure(System.Windows.Controls.Panel bodyPanel)
     {
         ArgumentNullException.ThrowIfNull(bodyPanel);
 
@@ -23,32 +23,32 @@ internal static class MaotaiRasterBodyLayout
             switch (element.Name)
             {
                 case "MaotaiV2Shadow":
-                    Panel.SetZIndex(element, 0);
+                    System.Windows.Controls.Panel.SetZIndex(element, 0);
                     break;
 
                 case "MaotaiV2TailBase":
                 case "MaotaiV2TailMid":
                 case "MaotaiV2TailTip":
-                    Panel.SetZIndex(element, 6);
+                    System.Windows.Controls.Panel.SetZIndex(element, 6);
                     break;
 
                 case "MaotaiV2HindLeftUpper":
                 case "MaotaiV2HindLeftLower":
                 case "MaotaiV2HindRightUpper":
                 case "MaotaiV2HindRightLower":
-                    Panel.SetZIndex(element, 10);
+                    System.Windows.Controls.Panel.SetZIndex(element, 10);
                     break;
 
                 case "MaotaiV2HindLeftPaw":
                 case "MaotaiV2HindRightPaw":
-                    Panel.SetZIndex(element, 12);
+                    System.Windows.Controls.Panel.SetZIndex(element, 12);
                     break;
 
                 case "MaotaiV2FrontLeftUpper":
                 case "MaotaiV2FrontLeftLower":
                 case "MaotaiV2FrontRightUpper":
                 case "MaotaiV2FrontRightLower":
-                    Panel.SetZIndex(element, 16);
+                    System.Windows.Controls.Panel.SetZIndex(element, 16);
                     break;
 
                 case "MaotaiV2TorsoNeutral":
@@ -69,11 +69,11 @@ internal static class MaotaiRasterBodyLayout
 
                 case "MaotaiV2FrontLeftPaw":
                 case "MaotaiV2FrontRightPaw":
-                    Panel.SetZIndex(element, 30);
+                    System.Windows.Controls.Panel.SetZIndex(element, 30);
                     break;
 
                 case "MaotaiV2HeadBone":
-                    Panel.SetZIndex(element, 40);
+                    System.Windows.Controls.Panel.SetZIndex(element, 40);
                     break;
             }
         }
@@ -91,6 +91,6 @@ internal static class MaotaiRasterBodyLayout
         element.Height = height;
         Canvas.SetLeft(element, left);
         Canvas.SetTop(element, top);
-        Panel.SetZIndex(element, zIndex);
+        System.Windows.Controls.Panel.SetZIndex(element, zIndex);
     }
 }
