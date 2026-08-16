@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import importlib.metadata
 import ipaddress
 import json
 import os
 import socket
+from importlib import metadata
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -198,10 +198,10 @@ async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
         return _error_payload("non_public_redirect")
 
     markdown = _markdown_text(getattr(result, "markdown", ""))
-    metadata = getattr(result, "metadata", {})
+    metadata_payload = getattr(result, "metadata", {})
     title = ""
-    if isinstance(metadata, dict):
-        title = str(metadata.get("title", "")).strip()
+    if isinstance(metadata_payload, dict):
+        title = str(metadata_payload.get("title", "")).strip()
     success = bool(getattr(result, "success", False))
     error_message = str(getattr(result, "error_message", "") or "")
     challenge_text = f"{title}\n{markdown[:4096]}\n{error_message}".lower()
@@ -215,7 +215,11 @@ async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
         return _error_payload("robots_or_access_denied")
     if not success:
         lower_error = error_message.lower()
-        code = "network_failed" if any(marker in lower_error for marker in _TRANSIENT_MARKERS) else "crawl_failed"
+        code = (
+            "network_failed"
+            if any(marker in lower_error for marker in _TRANSIENT_MARKERS)
+            else "crawl_failed"
+        )
         return _error_payload(code)
     if not markdown:
         return _error_payload("empty_content")
@@ -240,7 +244,7 @@ async def _run_with_retries(args: argparse.Namespace) -> dict[str, object]:
     for attempt in range(attempts):
         try:
             last = await _crawl_once(args)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             last = _error_payload("timeout")
         except (OSError, RuntimeError, ValueError) as exc:
             code = str(exc) if str(exc) in {"redirect_limit_exceeded"} else "network_failed"
@@ -271,7 +275,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.version:
-        print(importlib.metadata.version("crawl4ai"))
+        print(metadata.version("crawl4ai"))
         return 0
     if not args.url:
         print(json.dumps(_error_payload("url_required"), sort_keys=True))
