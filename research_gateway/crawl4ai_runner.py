@@ -18,6 +18,7 @@ _CAPTCHA_MARKERS = (
     "cloudflare challenge",
     "turnstile",
 )
+_NOT_FOUND_MARKERS = ("404", "not found")
 _TIMEOUT_MARKERS = ("timeout", "timed out")
 _NETWORK_MARKERS = ("net::err_", "connection", "network")
 
@@ -85,6 +86,9 @@ def _classify_provider_failure(error_message: str) -> str:
     """Classify only the bounded read failure categories exposed to Research Gateway."""
 
     lowered = error_message.lower()
+    # Crawl4AI 0.9.x 的异常包装路径可能丢失 status_code；只在失败 error_message 中恢复明确 404。
+    if "404" in lowered or "not found" in lowered:
+        return "not_found"
     if any(marker in lowered for marker in _TIMEOUT_MARKERS):
         return "timeout"
     if any(marker in lowered for marker in _NETWORK_MARKERS):
