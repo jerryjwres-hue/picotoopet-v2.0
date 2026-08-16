@@ -53,10 +53,10 @@
     <DockPanel Margin="0,0,0,14">
       <StackPanel DockPanel.Dock="Left">
         <TextBlock Text="任务结果" FontSize="22" FontWeight="Bold" />
-        <TextBlock Text="普通任务、Research 和诊断结果都从任务详情统一打开；诊断仍保留额外安全卡片。" Margin="0,4,24,0" FontSize="13" Foreground="#FF64758B" />
+        <TextBlock Text="普通任务、Research 和诊断结果都从任务详情统一打开；诊断仍保留额外安全卡片。" Margin="0,4,24,0" FontSize="14" Foreground="#FF64758B" />
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-        <TextBlock Text="筛选" Margin="0,0,8,0" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" />
+        <TextBlock Text="筛选" Margin="0,0,8,0" VerticalAlignment="Center" FontSize="14" FontWeight="SemiBold" />
         <ComboBox Width="180" ItemsSource="{Binding FilterOptions, Mode=OneWay}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SelectedFilter, Mode=TwoWay}" />
       </StackPanel>
     </DockPanel>
@@ -79,11 +79,11 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="0.65*" /><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <StackPanel>
                   <TextBlock Text="{Binding DisplayType, Mode=OneWay}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{Binding TaskId, Mode=OneWay}" Margin="0,3,0,0" FontSize="12" Foreground="#FF718197" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding TaskId, Mode=OneWay}" Margin="0,3,0,0" FontSize="14" Foreground="#FF718197" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-                <TextBlock Grid.Column="1" Text="{Binding DisplayStatus, Mode=OneWay}" FontSize="13" Foreground="#FF2478E6" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="2" Text="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" FontSize="12" Foreground="#FF64758B" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="3" Text="查看结果 ›" FontSize="13" FontWeight="SemiBold" Foreground="#FF2478E6" VerticalAlignment="Center" Margin="10,0,0,0" />
+                <TextBlock Grid.Column="1" Text="{Binding DisplayStatus, Mode=OneWay}" FontSize="14" Foreground="#FF2478E6" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" FontSize="14" Foreground="#FF64758B" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="查看结果 ›" FontSize="14" FontWeight="SemiBold" Foreground="#FF2478E6" VerticalAlignment="Center" Margin="10,0,0,0" />
               </Grid>
             </Button>
           </DataTemplate>
@@ -95,7 +95,7 @@
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
           <StackPanel>
             <TextBlock Text="所选结果" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="点击左侧任意结果会直接打开任务详情。" Margin="0,4,0,0" FontSize="12" Foreground="#FF64758B" />
+            <TextBlock Text="点击左侧任意结果会直接打开任务详情。" Margin="0,4,0,0" FontSize="14" Foreground="#FF64758B" />
           </StackPanel>
 
           <ScrollViewer Grid.Row="1" Margin="0,16,0,16">
@@ -104,7 +104,7 @@
                 <TextBlock FontWeight="SemiBold" Text="结果类型" /><TextBlock Margin="0,3,0,10" Text="{Binding DisplayType, Mode=OneWay}" TextWrapping="Wrap" />
                 <TextBlock FontWeight="SemiBold" Text="任务 ID" /><TextBlock Margin="0,3,0,10" Text="{Binding TaskId, Mode=OneWay}" TextWrapping="Wrap" />
                 <TextBlock FontWeight="SemiBold" Text="结果 ID" /><TextBlock Margin="0,3,0,10" Text="{Binding ResultId, Mode=OneWay}" TextWrapping="Wrap" />
-                <TextBlock FontWeight="SemiBold" Text="诊断预览说明" /><TextBlock Margin="0,3,0,0" Text="{Binding PreviewUnavailableReason, Mode=OneWay}" FontSize="12" Foreground="#FF64758B" TextWrapping="Wrap" />
+                <TextBlock FontWeight="SemiBold" Text="诊断预览说明" /><TextBlock Margin="0,3,0,0" Text="{Binding PreviewUnavailableReason, Mode=OneWay}" FontSize="14" Foreground="#FF64758B" TextWrapping="Wrap" />
               </StackPanel>
 
               <Border Margin="0,18,0,0" Padding="12" Background="#FFF8FBFF" BorderBrush="#FFD5E3F2" BorderThickness="1" CornerRadius="9"
@@ -147,7 +147,7 @@
     </Grid>
 
     <Border Grid.Row="2" Margin="0,12,0,0" Padding="12,9" Background="#FFF7FAFD" BorderBrush="#FFE0E8F2" BorderThickness="1" CornerRadius="9">
-      <TextBlock Foreground="#FF475569" FontSize="13" Text="{Binding StatusMessage, Mode=OneWay}" TextWrapping="Wrap" />
+      <TextBlock Foreground="#FF475569" FontSize="14" Text="{Binding StatusMessage, Mode=OneWay}" TextWrapping="Wrap" />
     </Border>
   </Grid>
 </UserControl>
