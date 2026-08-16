@@ -112,7 +112,7 @@ run_success_fixture "javascript-quotes" "https://quotes.toscrape.com/js/" "true"
 run_failure_fixture \
   "not-found" \
   "not_found" \
-  --url "https://httpbin.org/status/404" \
+  --url "https://www.rfc-editor.org/rfc/rfc999999.html" \
   --timeout-seconds 30 \
   --max-content-bytes 262144 \
   --redirect-limit 5 \
