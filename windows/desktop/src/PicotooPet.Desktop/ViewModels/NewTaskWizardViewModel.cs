@@ -1,3 +1,4 @@
+using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 
@@ -21,7 +22,7 @@ public sealed record OperatorTaskOption(
     string AvailabilityText,
     NavigationRoute? HandoffRoute = null);
 
-/// <summary>受控新任务向导；只执行固定诊断端点或把用户带到现有受控业务页面。</summary>
+/// <summary>受控新任务向导；只执行固定安全任务或进入现有受控业务页面。</summary>
 public sealed class NewTaskWizardViewModel : ObservableObject
 {
     private readonly ControlCenterSession? _session;
@@ -47,7 +48,7 @@ public sealed class NewTaskWizardViewModel : ObservableObject
             new(OperatorTaskKind.SystemDiagnostic, "系统诊断", "检查 Core、Worker 和队列状态。", true, "可用"),
             new(OperatorTaskKind.BusinessAnalysis, "业务数据分析", "进入现有业务自动化页选择数据源。", true, "可用", NavigationRoute.BusinessAutomation),
             new(OperatorTaskKind.ContentPlan, "内容方案", "进入现有业务自动化页，从已分析资料继续内容方案。", true, "可用", NavigationRoute.BusinessAutomation),
-            new(OperatorTaskKind.WebResearch, "网络调研", "等待 26.x Research/Crawler Adapter 接入。", false, "尚未接入"),
+            new(OperatorTaskKind.WebResearch, "网络调研", "通过 Mac Research Gateway 执行只读网络搜索。", true, "可用"),
         };
         _selectedOption = Options[0];
     }
@@ -115,7 +116,11 @@ public sealed class NewTaskWizardViewModel : ObservableObject
 
     public bool CanGoBack => !IsBusy && Step > 1;
     public bool CanGoNext => !IsBusy && Step == 1 && SelectedOption?.IsAvailable == true;
-    public bool CanSubmit => !IsBusy && Step == 2 && SelectedOption?.IsAvailable == true;
+    public bool CanSubmit =>
+        !IsBusy
+        && Step == 2
+        && SelectedOption?.IsAvailable == true
+        && (SelectedOption.Kind != OperatorTaskKind.WebResearch || !string.IsNullOrWhiteSpace(Objective));
     public string SubmitText => SelectedOption?.HandoffRoute is null ? "开始任务" : "继续到受控页面";
     public NavigationRoute? RequestedRoute { get; private set; }
     public string? CreatedTaskId { get; private set; }
@@ -127,9 +132,14 @@ public sealed class NewTaskWizardViewModel : ObservableObject
             return;
         }
         Step = 2;
-        StatusMessage = SelectedOption?.Kind == OperatorTaskKind.SystemDiagnostic
-            ? "系统诊断不需要额外参数；确认后会创建固定诊断任务。"
-            : "可以写一句你的目标；下一步仍会进入现有受控业务页面选择真实数据。";
+        StatusMessage = SelectedOption?.Kind switch
+        {
+            OperatorTaskKind.SystemDiagnostic =>
+                "系统诊断不需要额外参数；确认后会创建固定诊断任务。",
+            OperatorTaskKind.WebResearch =>
+                "输入要调研的关键词或问题；本版本只执行只读搜索，不会发帖、回复、点赞或关注。",
+            _ => "可以写一句你的目标；下一步仍会进入现有受控业务页面选择真实数据。",
+        };
     }
 
     public void Back()
@@ -156,21 +166,48 @@ public sealed class NewTaskWizardViewModel : ObservableObject
             return true;
         }
 
-        if (SelectedOption.Kind != OperatorTaskKind.SystemDiagnostic || _session is null)
+        if (_session is null)
         {
-            StatusMessage = "当前选项还没有安全的直接执行映射。";
+            StatusMessage = "当前没有可用的 Mac Core 会话。";
             return false;
         }
 
         IsBusy = true;
         try
         {
-            var task = await _session.CreateDiagnosticSnapshotAsync(
-                $"operator-diagnostic-{Guid.NewGuid():N}",
-                cancellationToken);
-            CreatedTaskId = task.TaskId;
-            StatusMessage = "诊断任务已创建，可在“进行中”查看状态。";
-            return true;
+            if (SelectedOption.Kind == OperatorTaskKind.SystemDiagnostic)
+            {
+                var task = await _session.CreateDiagnosticSnapshotAsync(
+                    $"operator-diagnostic-{Guid.NewGuid():N}",
+                    cancellationToken);
+                CreatedTaskId = task.TaskId;
+                StatusMessage = "诊断任务已创建，可在“进行中”查看状态。";
+                return true;
+            }
+
+            if (SelectedOption.Kind == OperatorTaskKind.WebResearch)
+            {
+                // Windows 只提交固定 research.search 抽象任务；真正工具调用只发生在 Mac Worker。
+                var request = new TaskCreateRequest(
+                    "research.search",
+                    new Dictionary<string, object?>
+                    {
+                        ["query"] = Objective.Trim(),
+                        ["limit"] = 5,
+                    },
+                    Priority: 60,
+                    ResourceTag: "research-gateway",
+                    MaxAttempts: 2,
+                    TimeoutSeconds: 120,
+                    CloudPolicy: "local_only");
+                var task = await _session.CreateTaskAsync(request, cancellationToken);
+                CreatedTaskId = task.TaskId;
+                StatusMessage = "网络调研任务已创建，Mac Research Gateway 正在只读执行。";
+                return true;
+            }
+
+            StatusMessage = "当前选项还没有安全的直接执行映射。";
+            return false;
         }
         finally
         {
@@ -192,6 +229,9 @@ public sealed class NewTaskWizardViewModel : ObservableObject
             StringComparer.Ordinal);
         var creative = supported.Contains(
             "creative.content_plan.v1",
+            StringComparer.Ordinal);
+        var research = supported.Contains(
+            "research.search",
             StringComparer.Ordinal);
 
         return new OperatorTaskOption[]
@@ -219,9 +259,9 @@ public sealed class NewTaskWizardViewModel : ObservableObject
             new(
                 OperatorTaskKind.WebResearch,
                 "网络调研",
-                "等待 Research/Crawler Adapter 接入后在这里开放。",
-                false,
-                "尚未接入"),
+                "通过 Mac Research Gateway 执行只读网络搜索；结果仍进入现有任务/结果体系。",
+                research,
+                research ? "可用" : "Mac Research Gateway 尚未连接到 Worker"),
         };
     }
 
