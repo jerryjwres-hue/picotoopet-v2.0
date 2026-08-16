@@ -20,6 +20,41 @@ internal sealed class MaotaiRasterPart
         Scale     = scale;
     }
 
+    /// <summary>
+    /// 为没有预声明 Transform 的独立光栅层一次性建立 TransformGroup；Pivot 直接来自 manifest，
+    /// 避免 Chest 这类真正独立部件在运行时退化成硬编码中心点。
+    /// </summary>
+    public MaotaiRasterPart(
+        FrameworkElement element,
+        string assetFileName)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        if (!MaotaiAssetManifest.TryGetDescriptor(assetFileName, out var descriptor) ||
+            descriptor.Width <= 0.0 ||
+            descriptor.Height <= 0.0)
+        {
+            throw new InvalidOperationException($"Maotai v2 asset descriptor missing: {assetFileName}");
+        }
+
+        var scale     = new ScaleTransform();
+        var rotate    = new RotateTransform();
+        var translate = new TranslateTransform();
+        var group     = new TransformGroup();
+        group.Children.Add(scale);
+        group.Children.Add(rotate);
+        group.Children.Add(translate);
+
+        element.RenderTransformOrigin = new Point(
+            descriptor.PivotX / descriptor.Width,
+            descriptor.PivotY / descriptor.Height);
+        element.RenderTransform = group;
+
+        Element   = element;
+        Translate = translate;
+        Rotate    = rotate;
+        Scale     = scale;
+    }
+
     public FrameworkElement Element { get; }
 
     public TranslateTransform Translate { get; }
@@ -62,6 +97,8 @@ internal sealed class MaotaiRasterVisuals
     public required WpfImage TorsoCrouch { get; init; }
 
     public required WpfImage TorsoStretch { get; init; }
+
+    public required MaotaiRasterPart Chest { get; init; }
 
     public required MaotaiRasterPart Head { get; init; }
 
@@ -124,6 +161,10 @@ internal sealed class MaotaiRasterVisuals
     public required WpfImage MouthYawn { get; init; }
 
     public required WpfImage MouthTongue { get; init; }
+
+    public required WpfImage Laptop { get; init; }
+
+    public required WpfImage Drink { get; init; }
 }
 
 /// <summary>把纯数据 PoseFrame 应用到独立 PNG 骨骼；不包含状态机、IO 或业务逻辑。</summary>
@@ -146,7 +187,7 @@ internal sealed class MaotaiRasterRenderer
         MaotaiRasterFaceLayout.Configure(headPanel);
     }
 
-    /// <summary>每显示帧调用；层级 Transform 与 Motion Engine 的 Body->Head/Leg/Tail 坐标一致。</summary>
+    /// <summary>每显示帧调用；层级 Transform 与 Motion Engine 的 Body->Chest/Head/Leg/Tail 坐标一致。</summary>
     public void Apply(in MaotaiPoseFrame frame)
     {
         _visuals.RootTranslate.X     = frame.StageX;
@@ -165,6 +206,8 @@ internal sealed class MaotaiRasterRenderer
         _visuals.TorsoNeutral.Opacity = torsoBlend.Neutral;
         _visuals.TorsoCrouch.Opacity  = torsoBlend.Crouch;
         _visuals.TorsoStretch.Opacity = torsoBlend.Stretch;
+
+        ApplyBone(_visuals.Chest, frame.Chest);
 
         _visuals.Head.Apply(
             frame.Head.X,
@@ -210,6 +253,7 @@ internal sealed class MaotaiRasterRenderer
         ApplyBone(_visuals.TailMid, frame.TailMid);
         ApplyBone(_visuals.TailTip, frame.TailTip);
 
+        ApplyWorkProps(frame.MotionState);
         ApplyFace(frame);
     }
 
@@ -232,6 +276,21 @@ internal sealed class MaotaiRasterRenderer
             pose.RotationDeg,
             pose.ScaleX,
             pose.ScaleY);
+
+    private void ApplyWorkProps(MaotaiMotionState state)
+    {
+        var visible = state is
+            MaotaiMotionState.WorkApproach or
+            MaotaiMotionState.WorkSettle or
+            MaotaiMotionState.WorkTyping or
+            MaotaiMotionState.WorkTired or
+            MaotaiMotionState.Yawn or
+            MaotaiMotionState.WorkAnnoyed or
+            MaotaiMotionState.Recover;
+        var opacity = visible ? 1.0 : 0.0;
+        _visuals.Laptop.Opacity = opacity;
+        _visuals.Drink.Opacity  = opacity;
+    }
 
     private void ApplyFace(in MaotaiPoseFrame frame)
     {

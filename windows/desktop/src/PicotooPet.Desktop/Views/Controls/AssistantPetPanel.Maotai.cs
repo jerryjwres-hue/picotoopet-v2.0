@@ -58,6 +58,8 @@ public partial class AssistantPetPanel
         MaotaiAssetManifest.HeadphoneBand,
         MaotaiAssetManifest.HeadphoneLeft,
         MaotaiAssetManifest.HeadphoneRight,
+        MaotaiAssetManifest.Laptop,
+        MaotaiAssetManifest.Drink,
         MaotaiAssetManifest.Shadow,
     ];
 
@@ -309,6 +311,7 @@ public partial class AssistantPetPanel
         TorsoNeutral        = MaotaiV2TorsoNeutral,
         TorsoCrouch         = MaotaiV2TorsoCrouch,
         TorsoStretch        = MaotaiV2TorsoStretch,
+        Chest               = new MaotaiRasterPart(MaotaiV2ChestFur, MaotaiAssetManifest.ChestFur),
         Head                = new MaotaiRasterPart(MaotaiV2HeadBone, MaotaiV2HeadTranslate, MaotaiV2HeadRotate, MaotaiV2HeadScale),
         LeftEar             = new MaotaiRasterPart(MaotaiV2EarLeft, MaotaiV2EarLeftTranslate, MaotaiV2EarLeftRotate),
         RightEar            = new MaotaiRasterPart(MaotaiV2EarRight, MaotaiV2EarRightTranslate, MaotaiV2EarRightRotate),
@@ -340,6 +343,8 @@ public partial class AssistantPetPanel
         MouthAnnoyed        = MaotaiV2MouthAnnoyed,
         MouthYawn           = MaotaiV2MouthYawn,
         MouthTongue         = MaotaiV2MouthTongue,
+        Laptop              = MaotaiV2Laptop,
+        Drink               = MaotaiV2Drink,
     };
 
     /// <summary>帧输入只读取本控件已缓存状态；严禁在 Render Loop 访问磁盘/网络/Core API。</summary>
