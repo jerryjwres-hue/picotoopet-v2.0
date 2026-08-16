@@ -48,6 +48,10 @@ def test_task_center_rows_and_results_open_shared_task_detail() -> None:
     results_code = _read(PAGES / "ResultsPage.xaml.cs")
     results_vm = _read(DESKTOP / "ViewModels" / "ResultsPageViewModel.cs")
 
+    # Task Center 不能只靠右侧按钮“形式上能打开详情”；任务行本身必须有真实入口。
+    assert 'MouseDoubleClick="TaskList_DoubleClick"' in task_xaml
+    assert "TaskList_DoubleClick" in task_code
+    assert "OpenSelectedTaskDetail" in task_code
     assert 'Click="OpenTaskDetail_Click"' in task_xaml
     assert "TaskDetailWindow" in task_code
     assert "TaskDetailViewModel" in task_code
@@ -133,14 +137,33 @@ def test_whole_app_readability_and_dpi_floor_remain_enabled() -> None:
     assert "PerMonitorV2" in project
 
 
-def test_ui_behavior_harness_only_defers_pet_asset_smoke_when_no_real_png_exists() -> None:
-    harness = _read(ROOT / "windows" / "desktop" / "scripts" / "Prepare-WindowsUiBehaviorHarness.ps1")
+def test_windows_ci_and_release_never_suppress_maotai_asset_gates() -> None:
+    ui_harness = ROOT / "windows" / "desktop" / "scripts" / "Prepare-WindowsUiBehaviorHarness.ps1"
     workflow = _read(ROOT / ".github" / "workflows" / "windows-control-center-ci.yml")
+    release_harness = _read(
+        ROOT / "windows" / "desktop" / "scripts" / "Prepare-ResearchWindowsReleaseHarness.ps1"
+    )
 
-    assert "$beforePngs.Count -eq 0" in harness
-    assert "MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();" in harness
-    assert "MaotaiAssetPixelValidationSmokeTests.Run();" in harness
-    assert "不得新增或删除茅台 v2 PNG" in harness
-    assert "Build-Phase2WindowsRelease.ps1" not in harness
-    assert "GITHUB_WORKFLOW_REF" not in harness
-    assert "Prepare-WindowsUiBehaviorHarness.ps1" in workflow
+    # CI/Release 不得通过修改 Smoke 入口来“延后”茅台验收；真实资产不完整就应明确失败。
+    assert not ui_harness.exists()
+    assert "Prepare-WindowsUiBehaviorHarness.ps1" not in workflow
+    assert "MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();" not in release_harness
+    assert "MaotaiAssetPixelValidationSmokeTests.Run();" not in release_harness
+    assert "DEFERRED_UNTIL_REAL_PNG_DELIVERY" not in release_harness
+    assert "$program.Replace(" not in release_harness
+    assert "RESEARCH_RELEASE_MAOTAI_V2_ASSET_GATE=BLOCKED_MISSING_REAL_ASSETS" in release_harness
+
+
+def test_research_install_readme_describes_the_real_execution_boundary() -> None:
+    readme = _read(ROOT / "windows" / "desktop" / "release" / "README_INSTALL_CN.txt")
+
+    for required in (
+        "research.search",
+        "Mac Worker",
+        "Research Gateway",
+        "只读",
+        "查看详情 / 结果",
+    ):
+        assert required in readme
+    assert "Windows 不直接调用外部研究工具" in readme
+    assert "不执行点赞、关注、评论、发帖或其他账号写操作" in readme
