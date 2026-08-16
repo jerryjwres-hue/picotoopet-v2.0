@@ -100,6 +100,14 @@ def test_browser_error_classifier_recovers_404_when_status_code_is_missing() -> 
     assert crawl4ai_runner._classify_provider_failure("404 Not Found") == "not_found"
 
 
+def test_effective_status_prefers_provider_then_main_navigation_observation() -> None:
+    # Provider 有有效状态时优先使用；仅缺失时才读取受控 Playwright 主导航状态。
+    assert crawl4ai_runner._effective_status_code(200, 404) == 200
+    assert crawl4ai_runner._effective_status_code(None, 404) == 404
+    assert crawl4ai_runner._effective_status_code("404", 404) == 404
+    assert crawl4ai_runner._effective_status_code(None, None) is None
+
+
 @pytest.mark.parametrize(
     "url",
     [
