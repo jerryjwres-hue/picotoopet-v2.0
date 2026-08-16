@@ -159,7 +159,8 @@ async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
         response: object | None = None,
         **_: object,
     ) -> object:
-        # 主导航状态由受控 Playwright response 只读记录，补足 Crawl4AI 0.9.x 可能缺失的 status_code。
+        # 主导航状态由受控 Playwright response 只读记录。
+        # 仅用于补足 Crawl4AI 0.9.x 可能缺失的 status_code。
         nonlocal observed_status
         response_status = getattr(response, "status", None) if response is not None else None
         if isinstance(response_status, int):
