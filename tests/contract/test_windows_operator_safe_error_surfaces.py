@@ -16,7 +16,7 @@ def test_simple_task_list_never_renders_raw_exception_messages() -> None:
     assert "exception.Message" not in code
     assert "exception.Message" not in view_model
     assert "任务详情暂时无法安全显示" in code
-    assert "详细信息已写入脱敏日志" in code
+    assert "任务本身没有被修改" in code
     assert "操作没有完成；任务状态仍由 Mac Core 保存" in view_model
 
 
