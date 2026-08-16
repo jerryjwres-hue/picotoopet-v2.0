@@ -87,7 +87,10 @@ public partial class AssistantPetPanel
         MouseMove         += MaotaiPet_MouseMove;
         MouseLeave        += MaotaiPet_MouseLeave;
         MouseLeftButtonUp += MaotaiPet_MouseLeftButtonUp;
-        MouseDoubleClick  += MaotaiPet_MouseDoubleClick;
+        AddHandler(
+            System.Windows.Controls.Control.MouseDoubleClickEvent,
+            new System.Windows.Input.MouseButtonEventHandler(MaotaiPet_MouseDoubleClick),
+            handledEventsToo: true);
     }
 
     private void MaotaiPet_Loaded(object sender, RoutedEventArgs e)
