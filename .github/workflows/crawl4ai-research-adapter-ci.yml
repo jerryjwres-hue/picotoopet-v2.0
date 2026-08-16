@@ -1,6 +1,16 @@
 name: Crawl4AI Research Adapter 2.3.27.1
 
 on:
+  push:
+    branches:
+      - feature/crawl4ai-research-adapter-2.3.27.1
+    paths:
+      - ".github/workflows/crawl4ai-research-adapter-ci.yml"
+      - "research_gateway/**"
+      - "deploy/macos/crawl4ai_research_adapter/**"
+      - "scripts/mac/crawl4ai_research_adapter/**"
+      - "tests/unit/research_gateway/test_crawler_adapter.py"
+      - "tests/contract/test_crawl4ai_research_adapter_package.py"
   pull_request:
     branches:
       - feature/research-gateway-2.3.27.1-final
