@@ -33,14 +33,15 @@ retry limit:           1
 默认 adapter 根目录：
 ~/.local/share/picotoopet/research/crawl4ai
 
-首次安装在该目录创建私有 Python venv，并固定安装 Crawl4AI 0.9.2。
+本包要求现有 PicotooPet Research runtime 使用 Python 3.12 或 3.13；安装器只检测版本，不安装、不升级系统 Python。
+首次安装在 adapter 根目录创建私有 Python venv，并固定安装 Crawl4AI 0.9.2。
 Playwright Chromium 也安装到 adapter 私有 PLAYWRIGHT_BROWSERS_PATH，不使用系统 Chrome profile。
 
 如果 adapter 私有 venv 已存在且 Crawl4AI 属于批准的 0.9.x，安装器只绑定并保留它，不自动 upgrade/downgrade。
 如果检测到不兼容或未知残缺环境，安装器会受控失败，不覆盖它。
 
 安装器只检测现有：
-- python3
+- python3（必须 3.12-3.13）
 - Docker（仅记录是否存在，本方案默认不依赖 Docker）
 - Crawl4AI adapter 私有环境
 - Scrapling / scrapling-mcp-local
@@ -56,7 +57,7 @@ INSTALL_CRAWL4AI_RESEARCH_ADAPTER.command
   安装/重复安装兼容 adapter，并记录 install-state.json 与安装日志。
 
 VERIFY_CRAWL4AI_RESEARCH_ADAPTER.command
-  默认执行真实静态页、JS 页、Markdown/metadata、404、网络失败、正文大小限制验证，并写 verification evidence。
+  默认执行真实静态页、JS 页、Markdown/metadata、HTTP 404、真实延迟 timeout、DNS 网络失败、正文大小限制验证，并写 verification evidence。
 
 ROLLBACK_CRAWL4AI_RESEARCH_ADAPTER.command
   恢复 gateway.py.pre-crawl4ai，只删除 adapter 自己拥有的 wrapper/runtime/data；只有首次由本包创建的 venv/Chromium 才会删除。
@@ -97,4 +98,5 @@ This project uses Crawl4AI (https://github.com/unclecode/crawl4ai) for web data 
 PicotooPet Research Gateway baseline: 2.3.27.1
 Crawl4AI adapter: 2.3.27.1-crawl4ai.1
 Fresh isolated Crawl4AI pin: 0.9.2
+Compatible Python: 3.12-3.13
 Target: macOS arm64
