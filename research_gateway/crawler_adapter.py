@@ -7,13 +7,13 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlparse
 
 
-class CrawlerProvider(str, Enum):
+class CrawlerProvider(StrEnum):
     """Closed provider identifiers; arbitrary provider names are intentionally unsupported."""
 
     CRAWL4AI = "crawl4ai"
@@ -272,10 +272,18 @@ class Crawl4AIProcessProvider:
                 provider=self.provider,
             ) from exc
         if not isinstance(payload, dict) or payload.get("ok") is not True:
+            error_code = (
+                str(payload.get("error", "crawl_failed"))
+                if isinstance(payload, dict)
+                else "crawl_failed"
+            )
+            captcha = (
+                bool(payload.get("captcha", False)) if isinstance(payload, dict) else False
+            )
             raise CrawlerProviderError(
-                str(payload.get("error", "crawl_failed")) if isinstance(payload, dict) else "crawl_failed",
+                error_code,
                 provider=self.provider,
-                captcha=bool(payload.get("captcha", False)) if isinstance(payload, dict) else False,
+                captcha=captcha,
             )
         return CrawlerDocument(
             title=str(payload.get("title", "")).strip(),
