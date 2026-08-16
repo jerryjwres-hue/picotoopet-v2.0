@@ -16,9 +16,9 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
 
     private void TaskList_DoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not ListView listView
+        if (sender is not System.Windows.Controls.ListView listView
             || e.OriginalSource is not DependencyObject source
-            || ItemsControl.ContainerFromElement(listView, source) is not ListViewItem row)
+            || ItemsControl.ContainerFromElement(listView, source) is not System.Windows.Controls.ListViewItem row)
         {
             return;
         }
