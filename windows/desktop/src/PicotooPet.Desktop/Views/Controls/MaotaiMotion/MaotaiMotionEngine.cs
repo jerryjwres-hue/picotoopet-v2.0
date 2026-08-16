@@ -363,8 +363,15 @@ internal sealed class MaotaiMotionEngine
             },
         };
 
-        var pupilX = pointerX * 1.9;
-        var pupilY = pointerY * 1.1;
+        var gaze = MaotaiAutonomousGaze.Resolve(
+            input.PointerInside,
+            input.PointerX,
+            input.PointerY,
+            allowAutonomous: input.BaseState == MaotaiBaseState.Resting,
+            _elapsedSeconds,
+            _idlePhaseOffset);
+        var pupilX = gaze.X;
+        var pupilY = gaze.Y;
 
         return new MaotaiPoseFrame
         {
