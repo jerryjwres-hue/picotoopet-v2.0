@@ -32,6 +32,31 @@ def test_simple_sidebar_uses_navigation_items_as_single_source_of_truth() -> Non
     assert "InsertDeletedNavigationButton" not in code
 
 
+def test_shell_preserves_approved_dark_brand_without_reintroducing_duplicate_nav() -> None:
+    shell = _read(VIEWS / "ShellWindow.xaml")
+
+    # 交互架构可以升级为单一 NavigationItems，但不得把批准过的品牌侧栏做成无品牌白壳。
+    for required in (
+        '#FF04172D',
+        '#FF073C68',
+        '#FF06192F',
+        'SIMPLE MODE · 简单模式',
+        'Picotoo Pet AI',
+        '本地优先 · 安全控制',
+        '🐾',
+        'x:Name="HeaderStatusDot"',
+        '<controls:AssistantPetPanel x:Name="AssistantPet"',
+        'ItemsSource="{Binding NavigationItems, Mode=OneWay}"',
+        'SelectedItem="{Binding SelectedNavigationItem, Mode=TwoWay',
+    ):
+        assert required in shell
+
+    assert shell.count("<GradientStop") >= 5
+    assert 'Background="White"\n            BorderBrush="#FFDDE6F0"' not in shell
+    for title in ("首页", "待我审核", "进行中", "已完成", "已删除", "高级"):
+        assert f'Content="{title}"' not in shell
+
+
 def test_home_recent_tasks_are_real_detail_actions() -> None:
     xaml = _read(PAGES / "OperatorHomePage.xaml")
     code = _read(PAGES / "OperatorHomePage.xaml.cs")
