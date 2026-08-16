@@ -113,7 +113,7 @@ public sealed class TaskLifecycleClient : IAsyncDisposable
     }
 
     private static Uri EnsureTrailingSlash(Uri value) =>
-        value.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
+        value.AbsoluteUri.EndsWith('/')
             ? value
             : new Uri(value.AbsoluteUri + "/", UriKind.Absolute);
 
