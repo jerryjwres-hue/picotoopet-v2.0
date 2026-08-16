@@ -16,7 +16,7 @@ internal static class MaotaiRasterFaceLayout
     private const double PupilHorizontalCorrection = 5.0;
     private const double PupilVerticalCorrection = -5.0;
 
-    public static void Configure(Panel headPanel)
+    public static void Configure(System.Windows.Controls.Panel headPanel)
     {
         ArgumentNullException.ThrowIfNull(headPanel);
 
@@ -32,20 +32,20 @@ internal static class MaotaiRasterFaceLayout
                 case "MaotaiV2EarLeft":
                 case "MaotaiV2EarRight":
                     Canvas.SetTop(element, EarTop);
-                    Panel.SetZIndex(element, 2);
+                    System.Windows.Controls.Panel.SetZIndex(element, 2);
                     break;
 
                 case "MaotaiV2HeadphoneBand":
-                    Panel.SetZIndex(element, 4);
+                    System.Windows.Controls.Panel.SetZIndex(element, 4);
                     break;
 
                 case "MaotaiV2Head":
-                    Panel.SetZIndex(element, 8);
+                    System.Windows.Controls.Panel.SetZIndex(element, 8);
                     break;
 
                 case "MaotaiV2Muzzle":
                     Canvas.SetTop(element, MuzzleTop);
-                    Panel.SetZIndex(element, 10);
+                    System.Windows.Controls.Panel.SetZIndex(element, 10);
                     break;
 
                 case "MaotaiV2EyeLeftOpen":
@@ -55,17 +55,17 @@ internal static class MaotaiRasterFaceLayout
                 case "MaotaiV2EyeLeftClosed":
                 case "MaotaiV2EyeRightClosed":
                     Canvas.SetTop(element, EyeTop);
-                    Panel.SetZIndex(element, 20);
+                    System.Windows.Controls.Panel.SetZIndex(element, 20);
                     break;
 
                 case "MaotaiV2PupilLeft":
                 case "MaotaiV2PupilRight":
-                    Panel.SetZIndex(element, 22);
+                    System.Windows.Controls.Panel.SetZIndex(element, 22);
                     break;
 
                 case "MaotaiV2BrowLeft":
                 case "MaotaiV2BrowRight":
-                    Panel.SetZIndex(element, 24);
+                    System.Windows.Controls.Panel.SetZIndex(element, 24);
                     break;
 
                 case "MaotaiV2MouthSmile":
@@ -74,12 +74,12 @@ internal static class MaotaiRasterFaceLayout
                 case "MaotaiV2MouthYawn":
                 case "MaotaiV2MouthTongue":
                     Canvas.SetTop(element, MouthTop);
-                    Panel.SetZIndex(element, 30);
+                    System.Windows.Controls.Panel.SetZIndex(element, 30);
                     break;
 
                 case "MaotaiV2HeadphoneLeft":
                 case "MaotaiV2HeadphoneRight":
-                    Panel.SetZIndex(element, 40);
+                    System.Windows.Controls.Panel.SetZIndex(element, 40);
                     break;
             }
         }
