@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+DESKTOP = ROOT / "windows" / "desktop" / "src" / "PicotooPet.Desktop"
+VIEWS = DESKTOP / "Views"
+PAGES = VIEWS / "Pages"
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8-sig")
+
+
+def _button_open_tags(source: str) -> list[str]:
+    return re.findall(r"<Button\b[^>]*>", source, flags=re.IGNORECASE | re.DOTALL)
+
+
+def test_simple_sidebar_uses_navigation_items_as_single_source_of_truth() -> None:
+    shell = _read(VIEWS / "ShellWindow.xaml")
+    code = _read(VIEWS / "ShellWindow.xaml.cs")
+
+    assert 'ItemsSource="{Binding NavigationItems' in shell
+    assert 'Content="首页"' not in shell
+    assert 'Content="待我审核"' not in shell
+    assert 'Content="进行中"' not in shell
+    assert 'Content="已完成"' not in shell
+    assert 'Content="已删除"' not in shell
+    assert 'Content="高级"' not in shell
+    assert "InsertDeletedNavigationButton" not in code
+
+
+def test_home_recent_tasks_are_real_detail_actions() -> None:
+    xaml = _read(PAGES / "OperatorHomePage.xaml")
+    code = _read(PAGES / "OperatorHomePage.xaml.cs")
+
+    assert 'ItemsSource="{Binding RecentTasks' in xaml
+    assert 'Click="RecentTask_Click"' in xaml
+    assert "TaskDetailWindow" in code
+    assert "TaskDetailViewModel" in code
+
+
+def test_task_center_rows_and_results_open_shared_task_detail() -> None:
+    task_xaml = _read(PAGES / "TaskCenterPage.xaml")
+    task_code = _read(PAGES / "TaskCenterPage.xaml.cs")
+    results_code = _read(PAGES / "ResultsPage.xaml.cs")
+    results_vm = _read(DESKTOP / "ViewModels" / "ResultsPageViewModel.cs")
+
+    assert 'Click="OpenTaskDetail_Click"' in task_xaml
+    assert "TaskDetailWindow" in task_code
+    assert "TaskDetailViewModel" in task_code
+    assert "TaskDetailWindow" in results_code
+    assert "TaskDetailViewModel" in results_code
+    assert "当前只开放诊断结果正文预览" not in results_vm
+
+
+def test_visible_wpf_buttons_have_an_action_or_builtin_dialog_behavior() -> None:
+    excluded = {
+        "AssistantPetPanel.xaml",
+        "FloatingPetWindow.xaml",
+    }
+    dead: list[str] = []
+    for path in sorted(VIEWS.rglob("*.xaml")):
+        if path.name in excluded:
+            continue
+        source = _read(path)
+        for index, tag in enumerate(_button_open_tags(source), start=1):
+            actionable = any(
+                token in tag
+                for token in (
+                    " Click=",
+                    " Command=",
+                    " IsCancel=\"True\"",
+                    " DialogResult=",
+                    " IsHitTestVisible=\"False\"",
+                )
+            )
+            if not actionable:
+                dead.append(f"{path.relative_to(ROOT)} button#{index}: {' '.join(tag.split())[:180]}")
+
+    assert not dead, "Buttons that look actionable but have no action:\n" + "\n".join(dead)
+
+
+def test_hand_cursor_is_reserved_for_actionable_surfaces() -> None:
+    excluded = {
+        "AssistantPetPanel.xaml",
+        "FloatingPetWindow.xaml",
+    }
+    dead: list[str] = []
+    pattern = re.compile(r"<(?P<kind>Border|Grid|TextBlock|StackPanel)\b(?P<tag>[^>]*)>", re.I | re.S)
+    for path in sorted(VIEWS.rglob("*.xaml")):
+        if path.name in excluded:
+            continue
+        source = _read(path)
+        for match in pattern.finditer(source):
+            tag = match.group("tag")
+            if 'Cursor="Hand"' not in tag:
+                continue
+            if any(
+                event in tag
+                for event in (
+                    "MouseLeftButtonDown=",
+                    "MouseLeftButtonUp=",
+                    "MouseUp=",
+                    "PreviewMouseLeftButtonDown=",
+                )
+            ):
+                continue
+            dead.append(
+                f"{path.relative_to(ROOT)} {match.group('kind')}: {' '.join(tag.split())[:180]}"
+            )
+
+    assert not dead, "Non-actionable surfaces advertise a hand cursor:\n" + "\n".join(dead)
+
+
+def test_whole_app_readability_and_dpi_floor_remain_enabled() -> None:
+    app = _read(DESKTOP / "App.xaml.cs")
+    resources = _read(DESKTOP / "App.xaml")
+    project = _read(DESKTOP / "PicotooPet.Desktop.csproj")
+
+    assert "MinimumOperatorFontSize = 12.0" in app
+    assert "IsPetSurface" in app
+    assert '<Setter Property="FontSize" Value="14" />' in resources
+    assert '<Setter Property="MinHeight" Value="38" />' in resources
+    assert "PerMonitorV2" in project
