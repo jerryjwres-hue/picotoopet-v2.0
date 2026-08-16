@@ -6,7 +6,7 @@ TASK_ROUTES = ROOT / "src/picotoopet_core/api/routes/tasks.py"
 TASK_MODELS = ROOT / "src/picotoopet_core/domain/models.py"
 WINDOWS_TASKS = (
     ROOT
-    / "windows/desktop/src/PicotooPet.Desktop/Services/ControlCenterSession.Tasks.cs"
+    / "windows/desktop/src/PicotooPet.Desktop/Services/ControlCenterSession.TaskVisibility.cs"
 )
 
 
@@ -29,3 +29,4 @@ def test_windows_session_uses_core_visibility_actions() -> None:
     source = WINDOWS_TASKS.read_text(encoding="utf-8")
     assert "HideTasksAsync" in source
     assert "RestoreTasksAsync" in source
+    assert "GetResearchResultAsync" in source
