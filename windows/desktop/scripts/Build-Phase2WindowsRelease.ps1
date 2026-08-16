@@ -334,6 +334,9 @@ $workflowRefAllowed = (
             [System.StringComparison]::OrdinalIgnoreCase) -or
         $env:GITHUB_WORKFLOW_REF.StartsWith(
             "jerryjwres-hue/picotoopet-v2.0/.github/workflows/windows-phase2-release.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/research-windows-final-release.yml@",
             [System.StringComparison]::OrdinalIgnoreCase)
     )
 )
