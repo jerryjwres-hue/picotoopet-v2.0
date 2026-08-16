@@ -39,7 +39,7 @@ public partial class AssistantPetPanel
             Name                  = name,
             Width                 = 78.0,
             Height                = 66.0,
-            RenderTransformOrigin = new Point(0.5, 0.55),
+            RenderTransformOrigin = new System.Windows.Point(0.5, 0.55),
             Stretch               = Stretch.Uniform,
             Opacity               = 0.0,
             IsHitTestVisible      = false,
