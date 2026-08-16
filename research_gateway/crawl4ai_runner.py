@@ -11,7 +11,6 @@ import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
-
 _CAPTCHA_MARKERS = (
     "captcha",
     "verify you are human",
