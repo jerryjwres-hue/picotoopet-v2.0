@@ -110,10 +110,26 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check pytest pytest-asyncio PyYAML
 
-      - name: Run Windows release analyzer and goal-integrity contracts
+      - name: Run Windows release analyzer goal-integrity and interaction contracts
         shell: powershell
         run: |
-          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/release/test_windows_native_install_permission.py tests/release/test_windows_native_ci_provenance.py tests/release/test_self_hosted_native_runner_fallback.py tests/contract/test_component_impact_detection.py tests/contract/test_preserving_project_goals_skill.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
+          python -m pytest `
+            tests/release/test_windows_prebuilt_delivery.py `
+            tests/release/test_windows_analyzer_regressions.py `
+            tests/release/test_windows_goal_integrity_release_contract.py `
+            tests/release/test_windows_native_install_permission.py `
+            tests/release/test_windows_native_ci_provenance.py `
+            tests/release/test_self_hosted_native_runner_fallback.py `
+            tests/contract/test_component_impact_detection.py `
+            tests/contract/test_preserving_project_goals_skill.py `
+            tests/contract/test_project_goal_integrity.py `
+            tests/contract/test_windows_goal_integrity_stamper.py `
+            tests/contract/test_operator_simple_mode_26_1.py `
+            tests/contract/test_phase23_windows_source.py `
+            tests/contract/test_windows_ui_interaction_quality.py `
+            tests/contract/test_windows_operator_safe_error_surfaces.py `
+            tests/contract/test_windows_ui_information_preservation.py `
+            -q
 
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
