@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 using WpfImage = System.Windows.Controls.Image;
+using WpfPanel = System.Windows.Controls.Panel;
 
 namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 
@@ -133,6 +134,12 @@ internal sealed class MaotaiRasterRenderer
     public MaotaiRasterRenderer(MaotaiRasterVisuals visuals)
     {
         _visuals = visuals ?? throw new ArgumentNullException(nameof(visuals));
+
+        // Face binding is asset-specific, so calibrate the existing WPF layers once here rather than
+        // leaking pixel offsets into the pure Motion Engine or reallocating anything per display frame.
+        var headPanel = _visuals.EyeLeftOpen.Parent as WpfPanel
+            ?? throw new InvalidOperationException("Maotai v2 face layers are not attached to the head panel.");
+        MaotaiRasterFaceLayout.Configure(headPanel);
     }
 
     /// <summary>每显示帧调用；层级 Transform 与 Motion Engine 的 Body->Head/Leg/Tail 坐标一致。</summary>
@@ -175,12 +182,12 @@ internal sealed class MaotaiRasterRenderer
             frame.RightEar.ScaleX,
             frame.RightEar.ScaleY);
         _visuals.LeftPupil.Apply(
-            frame.LeftPupil.X,
-            frame.LeftPupil.Y,
+            MaotaiRasterFaceLayout.CalibratePupilX(frame.LeftPupil.X, isLeft: true),
+            MaotaiRasterFaceLayout.CalibratePupilY(frame.LeftPupil.Y),
             frame.LeftPupil.RotationDeg);
         _visuals.RightPupil.Apply(
-            frame.RightPupil.X,
-            frame.RightPupil.Y,
+            MaotaiRasterFaceLayout.CalibratePupilX(frame.RightPupil.X, isLeft: false),
+            MaotaiRasterFaceLayout.CalibratePupilY(frame.RightPupil.Y),
             frame.RightPupil.RotationDeg);
 
         ApplyLegBone(_visuals.FrontLeftUpper, frame.FrontLeftUpper);
