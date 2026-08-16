@@ -85,7 +85,8 @@ def test_release_jobs_keep_success_and_diagnostic_artifacts_separate() -> None:
 
     windows_workflow = read(ROOT / ".github" / "workflows" / "windows-phase2-release.yml")
     assert "upload-artifact" in windows_workflow
-    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" in windows_workflow
+    assert "Test-Phase2WindowsRelease.ps1" in windows_workflow
+    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" not in windows_workflow
 
 
 def test_user_installers_never_build_source() -> None:
