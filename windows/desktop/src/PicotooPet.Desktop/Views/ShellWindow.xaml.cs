@@ -157,9 +157,10 @@ public partial class ShellWindow : Window
         }
         catch (Exception exception)
         {
+            _logger.Error("连接 Mac Core 失败", exception);
             MessageBox.Show(
                 this,
-                exception.Message,
+                "连接没有完成。请检查 Mac 地址和设备令牌后重试；详细信息已写入本地脱敏日志。",
                 "连接失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
