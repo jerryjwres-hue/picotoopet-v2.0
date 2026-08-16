@@ -212,7 +212,7 @@ def test_dashboard_exposes_worker_state_without_fake_availability() -> None:
 
 
 def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> None:
-    """WPF 行为门不重复打包；正式 Release 独占盖章和安装生命周期。"""
+    """WPF 行为门不重复打包；正式 Release 独占盖章和原始安装生命周期测试。"""
 
     control = (
         ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
@@ -248,10 +248,11 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         "Build-Phase2WindowsRelease.ps1",
         "stamp_windows_goal_integrity.py",
         "verify_project_goal_integrity.py",
-        "Invoke-Phase2WindowsReleaseLifecycleGate.ps1",
+        "Test-Phase2WindowsRelease.ps1",
         "PicotooPet-Phase23-CloudContract-Windows-Prebuilt",
     ):
         assert required in release
+    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" not in release
 
 
 def test_package_verifies_task_center_and_worker_fallback() -> None:
