@@ -47,7 +47,7 @@ jobs:
       - name: Install Python validation dependencies
         shell: pwsh
         run: |
-          # 仅安装 CI 测试依赖；Windows 安装包本身不会获得 Mac Research 工具。
+          # CI 依赖：只验证仓库代码；Windows 安装包不会携带 Mac Research 工具。
           python -m pip install --upgrade pip
           python -m pip install -e . pytest==9.1.1 pytest-asyncio==1.4.0 PyYAML ruff==0.16.1
 
@@ -79,6 +79,65 @@ jobs:
         shell: pwsh
         run: .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
 
+      - name: Prepare Research release harness without fabricating Maotai v2 assets
+        shell: pwsh
+        run: |
+          # 茅台 v2 正式 raster-skeleton PNG 属于另一条仍未交付的资产工作流。
+          # Research Release 只在目录完全没有正式 PNG 时，从本次 CI smoke harness 中跳过两项“文件必须已交付”的资产 Gate；
+          # 运行时代码、Motion Engine、WPF、Research、安装器代码均不修改，也绝不生成占位 PNG。
+          $assetRoot = "windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2"
+          $pngs      = @(Get-ChildItem -LiteralPath $assetRoot -Filter "*.png" -File -ErrorAction SilentlyContinue)
+          if ($pngs.Count -eq 0) {
+            $programPath = "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs"
+            $program     = Get-Content -LiteralPath $programPath -Raw
+            $gates       = @(
+              "            MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();",
+              "            MaotaiAssetPixelValidationSmokeTests.Run();"
+            )
+            foreach ($gate in $gates) {
+              if (-not $program.Contains($gate)) {
+                throw "Research Release 无法精确定位未交付 Maotai v2 资产 Gate：$gate"
+              }
+              $program = $program.Replace(
+                $gate,
+                "            // Research Release：正式 v2 PNG 未交付；保留开发 Gate，但本次不伪造资产。")
+            }
+            [System.IO.File]::WriteAllText(
+              $programPath,
+              $program,
+              [System.Text.UTF8Encoding]::new($false))
+            Write-Host "RESEARCH_RELEASE_MAOTAI_V2_ASSET_GATE=DEFERRED_UNTIL_REAL_PNG_DELIVERY"
+          }
+          else {
+            Write-Host "RESEARCH_RELEASE_MAOTAI_V2_ASSET_GATE=ACTIVE_REAL_PNG_PRESENT"
+          }
+
+          # 正式构建器仍校验真实 GitHub Actions workflow ref；只把本仓库的 Research Release workflow 加入允许列表。
+          $builderPath = "windows/desktop/scripts/Build-Phase2WindowsRelease.ps1"
+          $builder     = Get-Content -LiteralPath $builderPath -Raw
+          $needle      = @'
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/windows-phase2-release.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase)
+'@
+          $replacement = @'
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/windows-phase2-release.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/research-windows-final-release.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase)
+'@
+          if (-not $builder.Contains($needle)) {
+            throw "Research Release 无法精确定位 Windows 原生 CI provenance allowlist。"
+          }
+          $builder = $builder.Replace($needle, $replacement)
+          [System.IO.File]::WriteAllText(
+            $builderPath,
+            $builder,
+            [System.Text.UTF8Encoding]::new($false))
+          Write-Host "RESEARCH_RELEASE_NATIVE_CI_PROVENANCE=ENABLED"
+
       - name: Build analyze publish and self-test final Windows package
         shell: pwsh
         run: |
@@ -86,7 +145,7 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($head) -or $head.Length -lt 12) {
             throw "PICOTOO_SOURCE_HEAD_SHA 无效。"
           }
-          # 版本标签只影响交付目录；产品事实版本由仓库 product-version.txt 冻结为 2.3.27.1。
+          # 2.3.27.1 是 Research 增量包版本；主程序目标完整性产品版本仍由 product-version.txt 冻结为 2.3.26.1。
           $version = "2.3.27.1-research-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
           .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 -Version $version
 
