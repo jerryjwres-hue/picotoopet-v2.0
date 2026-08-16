@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -28,6 +29,7 @@ public partial class ShellWindow : Window
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         _session   = session ?? throw new ArgumentNullException(nameof(session));
         _logger    = logger ?? throw new ArgumentNullException(nameof(logger));
+        InsertDeletedNavigationButton();
         ReturnGatewayContext.SetGateway(
             this,
             new ControlCenterReturnGateway(_session));
@@ -46,6 +48,25 @@ public partial class ShellWindow : Window
 
         // Floating pet   : presentation-only request; no Session/task/approval command is added.
         AssistantPet.FloatRequested += OnAssistantPetFloatRequested;
+    }
+
+    /// <summary>在现有硬编码简单导航中插入第六项“已删除”，保持原视觉样式和顺序。</summary>
+    private void InsertDeletedNavigationButton()
+    {
+        if (SimpleCompletedButton.Parent is not Panel panel)
+        {
+            throw new InvalidOperationException("简单导航容器不可用。");
+        }
+        var button = new Button
+        {
+            Content = "已删除",
+            Tag = "↶",
+            Style = (Style)FindResource("SimpleNavButtonStyle"),
+        };
+        AutomationProperties.SetName(button, "已删除");
+        button.Click += SimpleDeleted_Click;
+        var completedIndex = panel.Children.IndexOf(SimpleCompletedButton);
+        panel.Children.Insert(completedIndex + 1, button);
     }
 
     /// <summary>请求组合根按安全顺序释放资源并显式退出。</summary>
