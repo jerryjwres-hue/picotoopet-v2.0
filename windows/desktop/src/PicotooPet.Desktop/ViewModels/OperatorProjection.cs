@@ -5,7 +5,7 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>简单模式只读任务卡；所有字段都来自既有耐久任务事实。</summary>
+/// <summary>简单模式任务卡；所有字段都来自既有耐久任务事实。</summary>
 public sealed record OperatorTaskCard(
     string TaskId,
     string Title,
@@ -14,13 +14,15 @@ public sealed record OperatorTaskCard(
     DateTimeOffset UpdatedAt,
     string UpdatedAtText,
     string? ErrorText,
-    bool HasResult);
+    bool HasResult,
+    bool IsHidden);
 
-/// <summary>把既有 Core/Worker/任务快照投影为普通用户可读的五入口状态，不建立第二套持久化。</summary>
+/// <summary>把 Core/Worker/任务快照投影为普通用户可读状态，不建立第二套持久化。</summary>
 public sealed record OperatorProjection(
     IReadOnlyList<OperatorTaskCard> PendingReview,
     IReadOnlyList<OperatorTaskCard> InProgress,
     IReadOnlyList<OperatorTaskCard> Completed,
+    IReadOnlyList<OperatorTaskCard> Deleted,
     string CoreStatus,
     string WorkerStatus,
     string WindowsStatus,
@@ -41,6 +43,7 @@ public sealed record OperatorProjection(
         "Failed",
         "Cancelled",
         "Rejected",
+        "Archived",
     };
 
     /// <summary>从一次会话快照确定性生成简单模式投影。</summary>
@@ -48,21 +51,26 @@ public sealed record OperatorProjection(
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
+        var tasksById = snapshot.State.Tasks.Tasks.ToDictionary(
+            task => task.TaskId,
+            StringComparer.Ordinal);
         var cards = snapshot.State.Tasks.Tasks
             .OrderByDescending(task => task.UpdatedAt)
             .ThenBy(task => task.TaskId, StringComparer.Ordinal)
             .Select(ToCard)
             .ToArray();
 
-        var pendingReview = cards
-            .Where(card => IsReviewStatus(GetSourceStatus(snapshot, card.TaskId)))
+        var deleted = cards.Where(card => card.IsHidden).ToArray();
+        var visible = cards.Where(card => !card.IsHidden).ToArray();
+        var pendingReview = visible
+            .Where(card => IsReviewStatus(tasksById[card.TaskId].Status))
             .ToArray();
-        var completed = cards
-            .Where(card => TerminalStatuses.Contains(GetSourceStatus(snapshot, card.TaskId)))
+        var completed = visible
+            .Where(card => TerminalStatuses.Contains(tasksById[card.TaskId].Status))
             .ToArray();
-        var inProgress = cards
-            .Where(card => !IsReviewStatus(GetSourceStatus(snapshot, card.TaskId))
-                           && !TerminalStatuses.Contains(GetSourceStatus(snapshot, card.TaskId)))
+        var inProgress = visible
+            .Where(card => !IsReviewStatus(tasksById[card.TaskId].Status)
+                           && !TerminalStatuses.Contains(tasksById[card.TaskId].Status))
             .ToArray();
 
         var coreStatus = snapshot.State.Connection.State switch
@@ -88,16 +96,12 @@ public sealed record OperatorProjection(
             pendingReview,
             inProgress,
             completed,
+            deleted,
             coreStatus,
             workerStatus,
             "正常",
             summary);
     }
-
-    private static string GetSourceStatus(
-        ControlCenterSessionSnapshot snapshot,
-        string taskId) =>
-        snapshot.State.Tasks.Tasks.First(task => task.TaskId == taskId).Status;
 
     private static bool IsReviewStatus(string status) => ReviewStatuses.Contains(status);
 
@@ -109,6 +113,7 @@ public sealed record OperatorProjection(
             "system.noop" => "系统任务",
             "business.local_intelligence.v1" => "业务数据分析",
             "creative.content_plan.v1" => "内容方案",
+            "research.search" => "网络调研",
             _ => "任务",
         };
         var statusText = task.Status switch
@@ -118,6 +123,7 @@ public sealed record OperatorProjection(
             "Completed" => "已完成",
             "Failed" => "失败",
             "Cancelled" => "已取消",
+            "Archived" => "已归档",
             "Rejected" => "已拒绝",
             "NeedsHuman" => "等待人工审核",
             "NeedsDeepAI" => "等待深度 AI 授权",
@@ -128,9 +134,10 @@ public sealed record OperatorProjection(
         {
             "Queued" => "已进入任务队列",
             "Running" => "正在由执行器处理",
-            "Completed" => "处理完成",
-            "Failed" => "执行失败，需要查看详情",
+            "Completed" => task.ResultId is null ? "处理完成" : "处理完成 · 可查看结果",
+            "Failed" => "执行失败，可查看详情",
             "Cancelled" => "任务已停止",
+            "Archived" => "历史任务已归档",
             "Rejected" => "任务已终止",
             "NeedsHuman" => "需要你的决定",
             "NeedsDeepAI" => "需要你的付费 AI 授权",
@@ -150,7 +157,8 @@ public sealed record OperatorProjection(
                 "yyyy-MM-dd HH:mm",
                 CultureInfo.InvariantCulture),
             error,
-            !string.IsNullOrWhiteSpace(task.ResultId));
+            !string.IsNullOrWhiteSpace(task.ResultId),
+            task.IsHidden);
     }
 
     private static string FriendlyWorkerReason(string reason) => reason switch
