@@ -209,41 +209,63 @@ def retry_task(task_id: str, request: Request) -> TaskRecord:
 
 @router.get(
     "/tasks/{task_id}/result",
-    response_model=DiagnosticSnapshotResult | ResearchSearchResult,
+    response_model=DiagnosticSnapshotResult,
 )
-def get_task_result(
-    task_id: str,
-    request: Request,
-) -> DiagnosticSnapshotResult | ResearchSearchResult:
-    """读取已完成受限任务的固定结果合同，不提供任意 ResultStore 浏览接口。"""
+def get_task_result(task_id: str, request: Request) -> DiagnosticSnapshotResult:
+    """保持 2.3.26.1 固定诊断结果合同；不得被新能力扩宽。"""
 
     services = request.app.state.services
     task = services.queue.get(task_id)
-    if task.task_type not in _CONTROLLED_TASK_TYPES:
-        raise KeyError(f"任务没有开放固定结果合同：{task_id}")
+    if task.task_type != _DIAGNOSTIC_TASK_TYPE:
+        raise KeyError(f"任务没有诊断结果合同：{task_id}")
     if task.status is not TaskStatus.COMPLETED or task.result_id is None:
         raise InvalidTransitionError("任务结果尚未可用。")
 
     try:
         metadata = services.result_records.get(task.result_id)
-        if metadata.task_id != task_id or metadata.result_type != task.task_type:
+        if metadata.task_id != task_id or metadata.result_type != _DIAGNOSTIC_TASK_TYPE:
             raise ValueError("结果元数据关联不一致。")
-        max_bytes = (
-            _DIAGNOSTIC_RESULT_BYTES
-            if task.task_type == _DIAGNOSTIC_TASK_TYPE
-            else _RESEARCH_RESULT_BYTES
-        )
         document = services.results.read_json(
             metadata.object_hash,
-            max_bytes=max_bytes,
+            max_bytes=_DIAGNOSTIC_RESULT_BYTES,
         )
-        if task.task_type == _DIAGNOSTIC_TASK_TYPE:
-            return DiagnosticSnapshotResult.model_validate(document)
-        return ResearchSearchResult.model_validate(document)
+        return DiagnosticSnapshotResult.model_validate(document)
     except (KeyError, OSError, ValueError, ValidationError) as error:
         raise ApiError(
             status_code=500,
             code="RESULT_INTEGRITY_ERROR",
             message="任务结果完整性校验失败。",
+            retryable=False,
+        ) from error
+
+
+@router.get(
+    "/tasks/{task_id}/research-result",
+    response_model=ResearchSearchResult,
+)
+def get_research_task_result(task_id: str, request: Request) -> ResearchSearchResult:
+    """读取 research.search 的独立固定结果合同，不改变旧诊断 OpenAPI。"""
+
+    services = request.app.state.services
+    task = services.queue.get(task_id)
+    if task.task_type != _RESEARCH_TASK_TYPE:
+        raise KeyError(f"任务没有 Research 结果合同：{task_id}")
+    if task.status is not TaskStatus.COMPLETED or task.result_id is None:
+        raise InvalidTransitionError("Research 任务结果尚未可用。")
+
+    try:
+        metadata = services.result_records.get(task.result_id)
+        if metadata.task_id != task_id or metadata.result_type != _RESEARCH_TASK_TYPE:
+            raise ValueError("Research 结果元数据关联不一致。")
+        document = services.results.read_json(
+            metadata.object_hash,
+            max_bytes=_RESEARCH_RESULT_BYTES,
+        )
+        return ResearchSearchResult.model_validate(document)
+    except (KeyError, OSError, ValueError, ValidationError) as error:
+        raise ApiError(
+            status_code=500,
+            code="RESULT_INTEGRITY_ERROR",
+            message="Research 任务结果完整性校验失败。",
             retryable=False,
         ) from error
