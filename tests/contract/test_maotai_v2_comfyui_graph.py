@@ -100,6 +100,15 @@ def _bindings(runner, workflow: dict[str, object]) -> dict[str, object]:
     return runner.build_bindings_from_workflow(workflow)
 
 
+def _object_info(workflow: dict[str, object]) -> dict[str, object]:
+    """模拟 `/object_info` 已注册 node class 集合；值内容与本合同无关。"""
+    return {
+        node["class_type"]: {}
+        for node in workflow.values()
+        if isinstance(node, dict) and isinstance(node.get("class_type"), str)
+    }
+
+
 def test_upstream_traversal_recognizes_comfyui_api_link_shape() -> None:
     runner   = _load_runner("run_maotai_v2_graph_upstream")
     workflow = _workflow()
@@ -211,4 +220,72 @@ def test_run_art_plan_validates_graph_before_any_comfyui_network_side_effect(
             workflow_path,
             None,
             incoming,
+        )
+
+
+def test_node_type_preflight_accepts_only_workflow_classes_registered_by_comfyui() -> None:
+    runner      = _load_runner("run_maotai_v2_node_types")
+    workflow    = _workflow()
+    object_info = _object_info(workflow)
+
+    runner.validate_comfyui_workflow_node_types(object_info, workflow)
+
+    del object_info["ReferenceConditionerFixture"]
+    with pytest.raises(ValueError, match="ReferenceConditionerFixture|registered|node class"):
+        runner.validate_comfyui_workflow_node_types(object_info, workflow)
+
+
+def test_run_art_plan_checks_node_types_before_reference_upload_or_prompt_queue(
+    tmp_path: Path,
+) -> None:
+    runner      = _load_runner("run_maotai_v2_node_type_order")
+    workflow    = _workflow()
+    object_info = _object_info(workflow)
+    del object_info["ReferenceConditionerFixture"]
+
+    plan_path     = tmp_path / "plan.json"
+    workflow_path = tmp_path / "workflow.json"
+    incoming      = tmp_path / "incoming"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "source_of_truth": "windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/MaotaiAssetManifest.cs",
+                "jobs": [
+                    {
+                        "target_file": "torso_neutral.png",
+                        "seed_family": "torso",
+                        "primary_reference": "03_working_happy.png",
+                        "positive_prompt": "fixture",
+                        "negative_prompt": "fixture",
+                        "output": {"width_px": 368, "height_px": 312},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    workflow_path.write_text(json.dumps(workflow), encoding="utf-8")
+
+    class NodeTypePreflightClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def object_info(self) -> dict[str, object]:
+            return object_info
+
+        def upload_input_image(self, *args, **kwargs) -> str:
+            raise AssertionError("reference upload must not start before node type preflight")
+
+        def queue_prompt(self, *args, **kwargs) -> str:
+            raise AssertionError("prompt queue must not start before node type preflight")
+
+    runner.ComfyUiLocalClient = NodeTypePreflightClient
+
+    with pytest.raises(ValueError, match="ReferenceConditionerFixture|registered|node class"):
+        runner.run_art_plan(
+            plan_path,
+            workflow_path,
+            None,
+            incoming,
+            reference_root=tmp_path / "missing-references",
         )
