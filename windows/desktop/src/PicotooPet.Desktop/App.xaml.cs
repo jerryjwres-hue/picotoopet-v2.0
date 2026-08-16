@@ -1,5 +1,7 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
@@ -8,6 +10,7 @@ using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views;
+using PicotooPet.Desktop.Views.Controls;
 using WpfApplication = System.Windows.Application;
 using WpfMessageBox = System.Windows.MessageBox;
 
@@ -16,6 +19,8 @@ namespace PicotooPet.Desktop;
 /// <summary>桌面应用组合根；不使用隐藏的全局 Service Locator。</summary>
 public partial class App : WpfApplication, IDisposable
 {
+    private const double MinimumOperatorFontSize = 12.0;
+
     private Mutex? _singleInstanceMutex;
     private ControlCenterSession? _session;
     private ShellViewModel? _shellViewModel;
@@ -24,10 +29,12 @@ public partial class App : WpfApplication, IDisposable
     private SafeFileLogger? _logger;
     private bool _ownsSingleInstance;
     private bool _runtimeDisposing;
+    private bool _readabilityHandlerRegistered;
 
     /// <summary>只创建常规桌面组合根；Broker 子模式已在 Program 中提前分流。</summary>
     protected override void OnStartup(StartupEventArgs e)
     {
+        RegisterReadabilityFloor();
         if (e.Args.Any(argument =>
                 string.Equals(argument, "--self-test", StringComparison.OrdinalIgnoreCase)))
         {
@@ -87,6 +94,50 @@ public partial class App : WpfApplication, IDisposable
         MainWindow = _shellWindow;
         _shellWindow.Show();
         _ = InitializeViewModelAsync(_session, _shellWindow, logger);
+    }
+
+    /// <summary>
+    /// 旧页面存在 8–11 DIP 的局部硬编码。统一在控件加载时把正常操作界面夹到 12 DIP，
+    /// 同时排除 AssistantPetPanel 与透明 FloatingPetWindow，避免改变桌宠视觉比例。
+    /// </summary>
+    private void RegisterReadabilityFloor()
+    {
+        if (_readabilityHandlerRegistered)
+        {
+            return;
+        }
+        _readabilityHandlerRegistered = true;
+        EventManager.RegisterClassHandler(
+            typeof(TextBlock),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnOperatorTextLoaded));
+    }
+
+    private static void OnOperatorTextLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not TextBlock text
+            || text.FontSize >= MinimumOperatorFontSize
+            || IsPetSurface(text))
+        {
+            return;
+        }
+        text.FontSize = MinimumOperatorFontSize;
+        TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
+        TextOptions.SetTextRenderingMode(text, TextRenderingMode.ClearType);
+    }
+
+    private static bool IsPetSurface(DependencyObject element)
+    {
+        DependencyObject? current = element;
+        while (current is not null)
+        {
+            if (current is AssistantPetPanel or FloatingPetWindow)
+            {
+                return true;
+            }
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return false;
     }
 
     /// <summary>同步固化逃出页面故障边界的 WPF 证据，但仍不吞掉未知进程级故障。</summary>
