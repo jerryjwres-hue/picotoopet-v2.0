@@ -87,10 +87,10 @@ public partial class OperatorTaskListPage : System.Windows.Controls.UserControl
             };
             detail.ShowDialog();
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             System.Windows.MessageBox.Show(
-                exception.Message,
+                "任务详情暂时无法安全显示。任务本身没有被修改，请刷新列表后重试。",
                 "任务详情暂时不可用",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Information);
