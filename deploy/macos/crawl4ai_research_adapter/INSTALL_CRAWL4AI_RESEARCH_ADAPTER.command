@@ -83,12 +83,12 @@ echo "Scrapling detected: $scrapling_detected"
 echo "ResearchGateway: $gateway_runtime"
 echo "Mac Worker detected: $worker_detected"
 
-# Python 版本门禁：复用现有 Python，但不修改它；Crawl4AI 安装只进入 adapter 私有 venv。
+# Python 版本门禁：与 PicotooPet Research runtime 对齐；只检测 3.12/3.13，不安装或升级 Python。
 "$python_bin" - <<'PY'
 import sys
-if not ((3, 10) <= sys.version_info[:2] < (3, 14)):
+if not ((3, 12) <= sys.version_info[:2] < (3, 14)):
     raise SystemExit(
-        f"需要 Python 3.10-3.13；当前为 {sys.version_info.major}.{sys.version_info.minor}"
+        f"需要 Python 3.12-3.13；当前为 {sys.version_info.major}.{sys.version_info.minor}"
     )
 PY
 
