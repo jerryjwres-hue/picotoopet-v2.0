@@ -15,8 +15,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from research_gateway.crawler_adapter import (
-    CrawlRequest,
     CrawlerProviderError,
+    CrawlRequest,
     build_installed_crawler_adapter,
     extract_public_urls,
     render_search_envelope,
