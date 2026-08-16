@@ -99,6 +99,36 @@
           </Grid>
         </Border>
 
+        <Border x:Name="HomeGreetingStrip"
+                Margin="0,0,0,16"
+                Padding="13,10"
+                Background="White"
+                BorderBrush="{StaticResource HomeBorder}"
+                BorderThickness="1"
+                CornerRadius="12">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <Ellipse Tag="{Binding SystemIndicator, Mode=OneWay}" Style="{StaticResource HealthDotStyle}" Margin="0,0,8,0" VerticalAlignment="Center" />
+              <StackPanel>
+                <TextBlock Text="{Binding SystemSummary, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource HomeText}" TextWrapping="Wrap" />
+                <TextBlock Text="任务、审核与执行状态来自当前会话快照" Margin="0,2,0,0" FontSize="12" Foreground="{StaticResource HomeMuted}" />
+              </StackPanel>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+              <Border Padding="9,5" Margin="0,0,6,0" CornerRadius="9" Background="#FFFFF6EA" BorderBrush="#FFFFE0B9" BorderThickness="1">
+                <TextBlock FontSize="12" Foreground="#FF9A6C35"><Run Text="待审核 " /><Run Text="{Binding PendingReviewCount, Mode=OneWay}" FontWeight="Bold" Foreground="#FFE56D12" /></TextBlock>
+              </Border>
+              <Border Padding="9,5" Margin="0,0,6,0" CornerRadius="9" Background="#FFEDF5FF" BorderBrush="#FFD7E7FA" BorderThickness="1">
+                <TextBlock FontSize="12" Foreground="#FF547AA7"><Run Text="进行中 " /><Run Text="{Binding InProgressCount, Mode=OneWay}" FontWeight="Bold" Foreground="#FF2875D6" /></TextBlock>
+              </Border>
+              <Border Padding="9,5" CornerRadius="9" Background="#FFECF8F1" BorderBrush="#FFD1EBDD" BorderThickness="1">
+                <TextBlock FontSize="12" Foreground="#FF5C8A72"><Run Text="已完成 " /><Run Text="{Binding CompletedCount, Mode=OneWay}" FontWeight="Bold" Foreground="#FF18865B" /></TextBlock>
+              </Border>
+            </StackPanel>
+          </Grid>
+        </Border>
+
         <Grid x:Name="TaskOverviewCard" Margin="0,0,0,16">
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
           <Button Grid.Column="0" Style="{StaticResource TaskBucketButtonStyle}" Click="Review_Click">
