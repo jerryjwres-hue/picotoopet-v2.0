@@ -69,6 +69,13 @@
                 <TextBlock FontWeight="SemiBold" Text="任务 ID" /><TextBlock Margin="0,3,0,10" Text="{Binding TaskId, Mode=OneWay}" TextWrapping="Wrap" />
                 <TextBlock FontWeight="SemiBold" Text="任务类型" /><TextBlock Margin="0,3,0,10" Text="{Binding TaskType, Mode=OneWay}" TextWrapping="Wrap" />
                 <TextBlock FontWeight="SemiBold" Text="用户状态" /><TextBlock Margin="0,3,0,10" Text="{Binding DisplayStatus, Mode=OneWay}" />
+                <TextBlock FontWeight="SemiBold" Text="优先级 / 超时" />
+                <TextBlock Margin="0,3,0,10">
+                  <Run Text="{Binding Priority, Mode=OneWay}" />
+                  <Run Text=" / " />
+                  <Run Text="{Binding TimeoutSeconds, Mode=OneWay}" />
+                  <Run Text=" 秒" />
+                </TextBlock>
                 <TextBlock FontWeight="SemiBold" Text="更新时间" /><TextBlock Margin="0,3,0,10" Text="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss zzz}}" />
                 <TextBlock FontWeight="SemiBold" Text="错误" /><TextBlock Margin="0,3,0,0" Text="{Binding Error, Mode=OneWay}" TextWrapping="Wrap" />
               </StackPanel>

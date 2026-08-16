@@ -135,8 +135,8 @@ public partial class ShellWindow : Window
             return;
         }
 
-        var tokenPasswordBox = FindNamedChild<PasswordBox>(ContentHost, "TokenPasswordBox");
-        if (tokenPasswordBox is null)
+        var TokenPasswordBox = FindNamedChild<PasswordBox>(ContentHost, "TokenPasswordBox");
+        if (TokenPasswordBox is null)
         {
             MessageBox.Show(
                 this,
@@ -151,9 +151,9 @@ public partial class ShellWindow : Window
         {
             await _session.SaveAndConnectAsync(
                 settings.MacBaseUrl,
-                tokenPasswordBox.Password,
+                TokenPasswordBox.Password,
                 CancellationToken.None);
-            tokenPasswordBox.Clear();
+            TokenPasswordBox.Clear();
         }
         catch (Exception exception)
         {

@@ -8,10 +8,24 @@
              mc:Ignorable="d">
   <UserControl.Resources>
     <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
-    <Style x:Key="ResultRowButtonStyle" TargetType="Button">
+    <Style x:Key="ResultListItemStyle" TargetType="ListBoxItem">
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="Margin" Value="0,0,0,7" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <ContentPresenter />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ResultRowButtonStyle" TargetType="Button">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="0" />
       <Setter Property="Background" Value="White" />
       <Setter Property="BorderBrush" Value="#FFDDE7F2" />
       <Setter Property="BorderThickness" Value="1" />
@@ -50,26 +64,31 @@
     <Grid Grid.Row="1">
       <Grid.ColumnDefinitions><ColumnDefinition Width="1.7*" MinWidth="480" /><ColumnDefinition Width="18" /><ColumnDefinition Width="*" MinWidth="310" /></Grid.ColumnDefinitions>
 
-      <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-        <ItemsControl ItemsSource="{Binding VisibleResults, Mode=OneWay}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Button Style="{StaticResource ResultRowButtonStyle}" Click="OpenTaskDetail_Click">
-                <Grid>
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="0.65*" /><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                  <StackPanel>
-                    <TextBlock Text="{Binding DisplayType, Mode=OneWay}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding TaskId, Mode=OneWay}" Margin="0,3,0,0" FontSize="12" Foreground="#FF718197" TextTrimming="CharacterEllipsis" />
-                  </StackPanel>
-                  <TextBlock Grid.Column="1" Text="{Binding DisplayStatus, Mode=OneWay}" FontSize="13" Foreground="#FF2478E6" VerticalAlignment="Center" />
-                  <TextBlock Grid.Column="2" Text="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" FontSize="12" Foreground="#FF64758B" VerticalAlignment="Center" />
-                  <TextBlock Grid.Column="3" Text="查看结果 ›" FontSize="13" FontWeight="SemiBold" Foreground="#FF2478E6" VerticalAlignment="Center" Margin="10,0,0,0" />
-                </Grid>
-              </Button>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
+      <ListBox Grid.Column="0"
+               ItemsSource="{Binding VisibleResults, Mode=OneWay}"
+               SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
+               ItemContainerStyle="{StaticResource ResultListItemStyle}"
+               BorderThickness="0"
+               Background="Transparent"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ScrollViewer.VerticalScrollBarVisibility="Auto">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Button Style="{StaticResource ResultRowButtonStyle}" Click="OpenTaskDetail_Click">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="0.65*" /><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="{Binding DisplayType, Mode=OneWay}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding TaskId, Mode=OneWay}" Margin="0,3,0,0" FontSize="12" Foreground="#FF718197" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding DisplayStatus, Mode=OneWay}" FontSize="13" Foreground="#FF2478E6" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" FontSize="12" Foreground="#FF64758B" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="查看结果 ›" FontSize="13" FontWeight="SemiBold" Foreground="#FF2478E6" VerticalAlignment="Center" Margin="10,0,0,0" />
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
 
       <Border Grid.Column="2" Padding="18" Background="White" BorderBrush="#FFDDE7F2" BorderThickness="1" CornerRadius="12">
         <Grid>
