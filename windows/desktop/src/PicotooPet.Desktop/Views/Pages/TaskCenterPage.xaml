@@ -121,8 +121,8 @@
                   <Run Text=" 秒" />
                 </TextBlock>
 
-                <TextBlock FontWeight="SemiBold" Text="错误" />
-                <TextBlock Margin="0,3,0,0" Text="{Binding Error, Mode=OneWay}" TextWrapping="Wrap" />
+                <TextBlock FontWeight="SemiBold" Text="错误摘要" />
+                <TextBlock Margin="0,3,0,0" Text="{Binding SafeErrorSummary, Mode=OneWay}" TextWrapping="Wrap" />
               </StackPanel>
 
               <Border Margin="0,18,0,0"
