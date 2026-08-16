@@ -44,7 +44,7 @@ internal sealed class MaotaiRasterPart
         group.Children.Add(rotate);
         group.Children.Add(translate);
 
-        element.RenderTransformOrigin = new Point(
+        element.RenderTransformOrigin = new System.Windows.Point(
             descriptor.PivotX / descriptor.Width,
             descriptor.PivotY / descriptor.Height);
         element.RenderTransform = group;
