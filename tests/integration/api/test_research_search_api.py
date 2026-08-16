@@ -21,33 +21,35 @@ def make_client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
     return TestClient(create_app(settings)), {"Authorization": f"Bearer {token}"}
 
 
-def test_research_search_requires_fixed_endpoint_and_idempotency(tmp_path: Path) -> None:
+def test_windows_generic_research_request_is_strictly_frozen(tmp_path: Path) -> None:
     client, headers = make_client(tmp_path)
     with client:
-        # 通用任务入口不得绕过固定 Research 参数合同。
-        generic = client.post(
+        # Windows 复用现有 tasks.create，但服务端覆盖所有执行参数，不能扩大权限。
+        created = client.post(
+            "/api/v1/tasks",
+            headers={**headers, "Idempotency-Key": "research-openai-001"},
+            json={
+                "task_type": "research.search",
+                "payload": {"query": "OpenAI", "limit": 5},
+                "priority": 999,
+                "resource_tag": "arbitrary",
+                "max_attempts": 20,
+                "timeout_seconds": 86400,
+                "cloud_policy": "cloud_manual",
+            },
+        )
+        missing_key = client.post(
             "/api/v1/tasks",
             headers=headers,
             json={"task_type": "research.search", "payload": {"query": "OpenAI"}},
         )
-        missing_key = client.post(
-            "/api/v1/tasks/research-search",
-            headers=headers,
-            json={"query": "OpenAI", "limit": 5},
-        )
-        created = client.post(
-            "/api/v1/tasks/research-search",
-            headers={**headers, "Idempotency-Key": "research-openai-001"},
-            json={"query": "OpenAI", "limit": 5},
-        )
 
-    assert generic.status_code == 422
-    assert generic.json()["error"]["code"] == "RESERVED_TASK_TYPE"
     assert missing_key.status_code == 422
     assert created.status_code == 201
     body = created.json()
     assert body["task_type"] == "research.search"
     assert body["payload"] == {"schema_version": "1.0", "query": "OpenAI", "limit": 5}
+    assert body["priority"] == 60
     assert body["resource_tag"] == "research-gateway"
     assert body["max_attempts"] == 2
     assert body["timeout_seconds"] == 120
@@ -66,9 +68,9 @@ def test_research_search_payload_is_strict_and_bounded(tmp_path: Path) -> None:
     with client:
         responses = [
             client.post(
-                "/api/v1/tasks/research-search",
+                "/api/v1/tasks",
                 headers={**headers, "Idempotency-Key": f"research-invalid-{index}"},
-                json=payload,
+                json={"task_type": "research.search", "payload": payload},
             )
             for index, payload in enumerate(invalid)
         ]
