@@ -6,7 +6,7 @@ using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 V2 的运行时所有权：旧低频调度器/呼吸/错误抖动不得再修改 V2 父级 Transform，旧 XAML 交互入口必须进入 V2。</summary>
+/// <summary>冻结 V2 的运行时所有权：旧低频调度器/呼吸/错误抖动不得再修改 V2 父级 Transform，真实 RoutedEvent 必须进入 V2。</summary>
 internal static class MaotaiRuntimeOwnershipV2SmokeTests
 {
     private static readonly Type PanelType = typeof(AssistantPetPanel);
@@ -86,12 +86,13 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
             RoutedEvent = System.Windows.Controls.Control.MouseDoubleClickEvent,
         };
 
-        Invoke(panel, "PetSurface_MouseDoubleClick", panel, args);
+        // Raise the actual control event so XAML handlers and partial-class handlers compete exactly as in the UI.
+        panel.RaiseEvent(args);
 
         Assert(GetValue<bool>(panel, "_maotaiJumpRequested"),
-            "V2 active 时 XAML 双击入口没有请求 Motion Engine jump；旧 handler 把事件吃掉后真实 UI 无法触发跳跃");
+            "V2 active 时真实 MouseDoubleClick RoutedEvent 没有请求 Motion Engine jump；旧 XAML handler 把事件吃掉后桌面 UI 无法触发跳跃");
         Assert(string.Equals(GetValue<object>(panel, "_maotaiInteraction").ToString(), "Celebrate", StringComparison.Ordinal),
-            "V2 active 时 XAML 双击入口没有写入 Celebrate interaction");
+            "V2 active 时真实 MouseDoubleClick RoutedEvent 没有写入 Celebrate interaction");
     }
 
     private static void RunOnSta(Action action)
