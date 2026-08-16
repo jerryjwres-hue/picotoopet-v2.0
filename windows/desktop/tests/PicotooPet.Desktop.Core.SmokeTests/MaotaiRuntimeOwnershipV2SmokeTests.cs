@@ -1,11 +1,12 @@
 using System.Reflection;
 using System.Threading;
+using System.Windows.Input;
 using System.Windows.Media;
 using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 V2 的运行时所有权：旧低频调度器/呼吸/错误抖动不得再修改 V2 父级 Transform。</summary>
+/// <summary>冻结 V2 的运行时所有权：旧低频调度器/呼吸/错误抖动不得再修改 V2 父级 Transform，旧 XAML 交互入口必须进入 V2。</summary>
 internal static class MaotaiRuntimeOwnershipV2SmokeTests
 {
     private static readonly Type PanelType = typeof(AssistantPetPanel);
@@ -15,6 +16,7 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
         VerifyLegacyFrameTickCannotMoveV2Parent();
         VerifyLegacyBreathingCannotScaleV2Parent();
         VerifyLegacyErrorShakeCannotAnimateV2Parent();
+        VerifyDoubleClickRoutesIntoV2MotionEngine();
     });
 
     private static void VerifyLegacyFrameTickCannotMoveV2Parent()
@@ -72,6 +74,26 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
             "V2 active 时错误状态位移必须由 Motion Engine 决定，而不是旧父级 shake");
     }
 
+    private static void VerifyDoubleClickRoutesIntoV2MotionEngine()
+    {
+        var panel = new AssistantPetPanel();
+        SetField(panel, "_maotaiRigReady", true);
+        SetField(panel, "_maotaiJumpRequested", false);
+        SetEnumField(panel, "_maotaiInteraction", "None");
+
+        var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+        {
+            RoutedEvent = Mouse.MouseDoubleClickEvent,
+        };
+
+        Invoke(panel, "PetSurface_MouseDoubleClick", panel, args);
+
+        Assert(GetValue<bool>(panel, "_maotaiJumpRequested"),
+            "V2 active 时 XAML 双击入口没有请求 Motion Engine jump；旧 handler 把事件吃掉后真实 UI 无法触发跳跃");
+        Assert(string.Equals(GetValue<object>(panel, "_maotaiInteraction").ToString(), "Celebrate", StringComparison.Ordinal),
+            "V2 active 时 XAML 双击入口没有写入 Celebrate interaction");
+    }
+
     private static void RunOnSta(Action action)
     {
         Exception? failure = null;
@@ -110,6 +132,14 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
 
     private static void SetField(object target, string fieldName, object value) =>
         RequireField(fieldName).SetValue(target, value);
+
+    private static T GetValue<T>(object target, string fieldName)
+    {
+        var value = RequireField(fieldName).GetValue(target);
+        return value is T typed
+            ? typed
+            : throw new InvalidOperationException($"{fieldName} 不是 {typeof(T).Name}");
+    }
 
     private static T GetField<T>(object target, string fieldName) where T : class =>
         RequireField(fieldName).GetValue(target) as T
