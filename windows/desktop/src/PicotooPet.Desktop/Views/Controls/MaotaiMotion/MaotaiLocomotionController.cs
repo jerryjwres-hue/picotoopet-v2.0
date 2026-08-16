@@ -9,11 +9,16 @@ internal sealed class MaotaiLocomotionController
     private const double RunAcceleration       = 230.0;
     private const double Deceleration          = 260.0;
     private const double StopDistance          = 1.25;
+    private const double StopInPlaceCommandDistance = 0.10;
+    private const double StopInPlaceReleaseDistance = 2.0;
     private const double GaitCyclesPerUnit     = 0.018;
     private const double JumpVelocity          = -146.0;
     private const double Gravity               = 430.0;
     private const double FacingFlipSpeed       = 5.0;
     private const double TurnAnticipationRate  = 5.5;
+
+    private bool _stopInPlaceLatched;
+    private double _stopCommandTarget;
 
     public MaotaiLocomotionController(double initialPositionX)
     {
@@ -79,8 +84,26 @@ internal sealed class MaotaiLocomotionController
         }
 
         targetX = Math.Clamp(targetX, minX, maxX);
-        var distance       = targetX - PositionX;
-        var direction      = Math.Sign(distance);
+        var distance = targetX - PositionX;
+
+        // Stop-in-place command : a posture transition captures the exact current X while momentum still exists.
+        // Latch that command so braking may coast naturally past the capture point without reversing back under
+        // a Sit/LieDown pose. A materially new target releases the latch and resumes ordinary locomotion.
+        if (_stopInPlaceLatched &&
+            Math.Abs(targetX - _stopCommandTarget) > StopInPlaceReleaseDistance)
+        {
+            _stopInPlaceLatched = false;
+        }
+
+        if (!_stopInPlaceLatched &&
+            Math.Abs(distance) <= StopInPlaceCommandDistance &&
+            Math.Abs(VelocityX) > 0.01)
+        {
+            _stopInPlaceLatched = true;
+            _stopCommandTarget = targetX;
+        }
+
+        var direction      = _stopInPlaceLatched ? 0 : Math.Sign(distance);
         var velocitySign   = Math.Sign(VelocityX);
         var reversing      = direction != 0 && velocitySign != 0 && direction != velocitySign;
         var turnTarget     = reversing ? direction : 0.0;
@@ -97,7 +120,7 @@ internal sealed class MaotaiLocomotionController
             FacingSign = direction;
         }
 
-        var desiredSpeed = Math.Abs(distance) <= StopDistance
+        var desiredSpeed = _stopInPlaceLatched || Math.Abs(distance) <= StopDistance
             ? 0.0
             : direction * (wantsRun ? RunSpeed : WalkSpeed);
         var acceleration = Math.Abs(desiredSpeed) < Math.Abs(VelocityX) || reversing
@@ -107,8 +130,9 @@ internal sealed class MaotaiLocomotionController
         VelocityX = MoveTowards(VelocityX, desiredSpeed, acceleration * dt);
         var nextX = PositionX + (VelocityX * dt);
 
-        if ((distance > 0 && nextX > targetX) ||
-            (distance < 0 && nextX < targetX))
+        if (!_stopInPlaceLatched &&
+            ((distance > 0 && nextX > targetX) ||
+             (distance < 0 && nextX < targetX)))
         {
             nextX     = targetX;
             VelocityX = 0.0;
@@ -127,6 +151,7 @@ internal sealed class MaotaiLocomotionController
 
         if (wantsJump && IsGrounded)
         {
+            _stopInPlaceLatched = false;
             IsGrounded       = false;
             VerticalVelocity = JumpVelocity;
         }
@@ -161,6 +186,7 @@ internal sealed class MaotaiLocomotionController
             (minX, maxX) = (maxX, minX);
         }
 
+        _stopInPlaceLatched = false;
         PositionX        = Math.Clamp(PositionX, minX, maxX);
         VelocityX        = 0.0;
         TurnAnticipation = 0.0;
@@ -169,6 +195,8 @@ internal sealed class MaotaiLocomotionController
     /// <summary>状态重挂载时重置动力学，避免旧窗口速度泄漏到新舞台。</summary>
     public void Reset(double positionX)
     {
+        _stopInPlaceLatched = false;
+        _stopCommandTarget  = 0.0;
         PositionX        = double.IsFinite(positionX) ? positionX : 0.0;
         VelocityX        = 0.0;
         GaitPhase        = 0.0;

@@ -324,6 +324,38 @@ internal sealed class MaotaiAnimationGraph
             };
         }
 
+        if (requested == MaotaiMotionState.Sit)
+        {
+            return current switch
+            {
+                MaotaiMotionState.Run      => MaotaiMotionState.Walk,
+                MaotaiMotionState.Walk     => MaotaiMotionState.Idle,
+                MaotaiMotionState.Idle     => MaotaiMotionState.Sit,
+                MaotaiMotionState.Sit      => MaotaiMotionState.Sit,
+                MaotaiMotionState.Sleep    => MaotaiMotionState.Wake,
+                MaotaiMotionState.Wake     => MaotaiMotionState.GetUp,
+                MaotaiMotionState.LieDown  => MaotaiMotionState.GetUp,
+                MaotaiMotionState.GetUp    => MaotaiMotionState.Idle,
+                _                          => ReturnTowardIdle(current),
+            };
+        }
+
+        if (requested == MaotaiMotionState.LieDown)
+        {
+            return current switch
+            {
+                MaotaiMotionState.Run      => MaotaiMotionState.Walk,
+                MaotaiMotionState.Walk     => MaotaiMotionState.Idle,
+                MaotaiMotionState.Idle     => MaotaiMotionState.Sit,
+                MaotaiMotionState.Sit      => MaotaiMotionState.LieDown,
+                MaotaiMotionState.LieDown  => MaotaiMotionState.LieDown,
+                MaotaiMotionState.Sleep    => MaotaiMotionState.Wake,
+                MaotaiMotionState.Wake     => MaotaiMotionState.GetUp,
+                MaotaiMotionState.GetUp    => MaotaiMotionState.Idle,
+                _                          => ReturnTowardIdle(current),
+            };
+        }
+
         if (requested == MaotaiMotionState.Run)
         {
             return current switch
