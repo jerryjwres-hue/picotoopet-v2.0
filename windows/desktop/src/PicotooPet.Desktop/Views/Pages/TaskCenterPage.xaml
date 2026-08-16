@@ -35,7 +35,8 @@
                 Click="CreateDiagnostic_Click"
                 IsEnabled="{Binding CanCreateDiagnostic, Mode=OneWay}"
                 Content="创建系统诊断快照"
-                ToolTip="{Binding DiagnosticCreateReason, Mode=OneWay}" />
+                ToolTip="{Binding DiagnosticCreateReason, Mode=OneWay}"
+                ToolTipService.ShowOnDisabled="True" />
       </Grid>
     </Border>
 
@@ -159,10 +160,34 @@
           </ScrollViewer>
 
           <WrapPanel Grid.Row="2">
-            <Button Width="112" Margin="0,0,8,8" Click="OpenTaskDetail_Click" Content="查看详情 / 结果" />
-            <Button Width="92" Margin="0,0,8,8" Click="Cancel_Click" IsEnabled="{Binding CanCancelSelected, Mode=OneWay}" Content="取消任务" />
-            <Button Width="112" Margin="0,0,8,8" Click="Retry_Click" IsEnabled="{Binding CanRetrySelected, Mode=OneWay}" Content="创建重试任务" />
-            <Button Width="120" Margin="0,0,0,8" Click="ViewDiagnosticResult_Click" IsEnabled="{Binding CanViewDiagnosticResult, Mode=OneWay}" Content="诊断安全卡片" />
+            <Button Width="112"
+                    Margin="0,0,8,8"
+                    Click="OpenTaskDetail_Click"
+                    IsEnabled="{Binding CanOpenSelectedTaskDetail, Mode=OneWay}"
+                    ToolTip="{Binding TaskDetailActionReason, Mode=OneWay}"
+                    ToolTipService.ShowOnDisabled="True"
+                    Content="查看详情 / 结果" />
+            <Button Width="92"
+                    Margin="0,0,8,8"
+                    Click="Cancel_Click"
+                    IsEnabled="{Binding CanCancelSelected, Mode=OneWay}"
+                    ToolTip="{Binding CancelActionReason, Mode=OneWay}"
+                    ToolTipService.ShowOnDisabled="True"
+                    Content="取消任务" />
+            <Button Width="112"
+                    Margin="0,0,8,8"
+                    Click="Retry_Click"
+                    IsEnabled="{Binding CanRetrySelected, Mode=OneWay}"
+                    ToolTip="{Binding RetryActionReason, Mode=OneWay}"
+                    ToolTipService.ShowOnDisabled="True"
+                    Content="创建重试任务" />
+            <Button Width="120"
+                    Margin="0,0,0,8"
+                    Click="ViewDiagnosticResult_Click"
+                    IsEnabled="{Binding CanViewDiagnosticResult, Mode=OneWay}"
+                    ToolTip="{Binding DiagnosticResultActionReason, Mode=OneWay}"
+                    ToolTipService.ShowOnDisabled="True"
+                    Content="诊断安全卡片" />
           </WrapPanel>
         </Grid>
       </Border>
