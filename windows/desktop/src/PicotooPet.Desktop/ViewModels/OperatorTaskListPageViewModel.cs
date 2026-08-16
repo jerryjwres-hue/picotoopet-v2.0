@@ -98,11 +98,22 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
     public string SingleActionText => IsDeletedMode ? "恢复" : "删除";
     public int SelectedCount => Items.Count(item => item.IsSelected);
     public bool HasSelection => SelectedCount > 0;
+    public bool HasItems => Items.Count > 0;
+    public bool CanSelectAll => HasItems && !IsBusy && SelectedCount < Items.Count;
+    public bool CanClearSelection => HasSelection && !IsBusy;
+    public bool CanApplySelection => HasSelection && !IsBusy;
+    public bool CanApplyAnyAction => !IsBusy;
 
     public bool IsBusy
     {
         get => _isBusy;
-        private set => SetProperty(ref _isBusy, value);
+        private set
+        {
+            if (SetProperty(ref _isBusy, value))
+            {
+                RaiseActionProperties();
+            }
+        }
     }
 
     public void UpdateSnapshot(ControlCenterSessionSnapshot snapshot)
@@ -144,6 +155,12 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
 
     public void SelectAllVisible(bool selected)
     {
+        if (IsBusy)
+        {
+            ActionMessage = "当前操作仍在处理中，请稍候。";
+            return;
+        }
+
         foreach (var item in Items)
         {
             item.IsSelected = selected;
@@ -190,7 +207,20 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
             ActionMessage = "当前页面没有连接 Mac Core。";
             return;
         }
+        if (IsBusy)
+        {
+            ActionMessage = "当前操作仍在处理中，请稍候。";
+            return;
+        }
+
         IsBusy = true;
+        ActionMessage = IsDeletedMode
+            ? taskIds.Count == 1
+                ? "正在恢复任务……"
+                : $"正在恢复 {taskIds.Count} 个任务……"
+            : taskIds.Count == 1
+                ? "正在安全删除任务……"
+                : $"正在安全删除 {taskIds.Count} 个任务……";
         try
         {
             var response = IsDeletedMode
@@ -227,5 +257,17 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
     {
         RaisePropertyChanged(nameof(SelectedCount));
         RaisePropertyChanged(nameof(HasSelection));
+        RaisePropertyChanged(nameof(HasItems));
+        RaisePropertyChanged(nameof(CanSelectAll));
+        RaisePropertyChanged(nameof(CanClearSelection));
+        RaisePropertyChanged(nameof(CanApplySelection));
+    }
+
+    private void RaiseActionProperties()
+    {
+        RaisePropertyChanged(nameof(CanSelectAll));
+        RaisePropertyChanged(nameof(CanClearSelection));
+        RaisePropertyChanged(nameof(CanApplySelection));
+        RaisePropertyChanged(nameof(CanApplyAnyAction));
     }
 }
