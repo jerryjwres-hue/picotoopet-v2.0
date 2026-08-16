@@ -72,7 +72,11 @@ class ResearchGatewayExecutor:
         process: ProcessRunner = _run_process,
     ) -> None:
         configured = os.environ.get("PICOTOOPET_RESEARCH_GATEWAY", "").strip()
-        self.executable = Path(configured).expanduser() if configured else executable or _DEFAULT_GATEWAY
+        self.executable = (
+            Path(configured).expanduser()
+            if configured
+            else executable or _DEFAULT_GATEWAY
+        )
         self._process = process
 
     def search(self, *, query: str, limit: int, timeout_seconds: int) -> ResearchSearchResult:
