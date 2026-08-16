@@ -19,6 +19,7 @@ worker_plist="$HOME/Library/LaunchAgents/com.picotoopet.worker.plist"
 backup_gateway="$state_dir/gateway.py.pre-crawl4ai"
 install_state="$state_dir/install-state.json"
 created_venv=false
+created_venv_this_run=false
 patched_gateway=false
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -90,6 +91,25 @@ if not ((3, 10) <= sys.version_info[:2] < (3, 14)):
     )
 PY
 
+# 重复安装继承首次安装的 venv 所有权；不能把 true 覆盖成 false 而破坏 rollback。
+if [[ -f "$install_state" ]]; then
+  previous_created="$($python_bin - "$install_state" <<'PY'
+import json
+import sys
+from pathlib import Path
+try:
+    payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    print("false")
+else:
+    print("true" if payload.get("created_venv") is True else "false")
+PY
+)"
+  if [[ "$previous_created" == "true" ]]; then
+    created_venv=true
+  fi
+fi
+
 cleanup_failed_install() {
   local code=$?
   trap - ERR
@@ -97,7 +117,7 @@ cleanup_failed_install() {
     install -m 0644 "$backup_gateway" "$gateway_runtime/gateway.py" || true
     rm -f "$gateway_runtime/crawler_adapter.py" || true
   fi
-  if [[ "$created_venv" == "true" ]]; then
+  if [[ "$created_venv_this_run" == "true" ]]; then
     rm -rf "$venv_dir" "$browser_dir"
   fi
   echo "安装失败，已撤回本次 Crawl4AI adapter 变更；Scrapling、ResearchGateway 目录和 Mac Worker 未删除。" >&2
@@ -109,6 +129,7 @@ trap cleanup_failed_install ERR
 if [[ ! -e "$venv_dir" ]]; then
   "$python_bin" -m venv "$venv_dir"
   created_venv=true
+  created_venv_this_run=true
   export PLAYWRIGHT_BROWSERS_PATH="$browser_dir"
   "$venv_dir/bin/python" -m pip install "crawl4ai==0.9.2"
   "$venv_dir/bin/python" -m playwright install chromium
@@ -133,10 +154,14 @@ fi
 
 # 浏览器依赖必须位于 adapter 私有目录；绝不调用系统 Chrome，也不读取 Chrome profile/cookies。
 export PLAYWRIGHT_BROWSERS_PATH="$browser_dir"
-if [[ "$created_venv" != "true" && ! -d "$browser_dir" ]]; then
-  echo "已有 adapter venv 缺少私有 Playwright Chromium：$browser_dir" >&2
-  echo "为避免修改未知旧环境，安装中止；请使用 ROLLBACK 后重新安装。" >&2
-  exit 1
+if [[ ! -d "$browser_dir" ]]; then
+  if [[ "$created_venv" == "true" ]]; then
+    "$venv_dir/bin/python" -m playwright install chromium
+  else
+    echo "外部提供的 adapter venv 缺少私有 Playwright Chromium：$browser_dir" >&2
+    echo "为避免修改未知旧环境，安装中止。" >&2
+    exit 1
+  fi
 fi
 
 # 首次接线只备份原始 Gateway；重复安装保留同一份 pre-Crawl4AI 基线以支持真正 rollback。
