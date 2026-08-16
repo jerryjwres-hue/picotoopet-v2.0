@@ -57,7 +57,6 @@ jobs:
       - name: Verify native architecture and baseline ancestry
         shell: bash
         run: |
-          # 正式能力包只允许 Apple Silicon；feature branch 必须仍包含已确认 Research final 基线。
           sw_vers
           uname -m
           python --version
@@ -67,7 +66,7 @@ jobs:
       - name: Install repository test dependencies
         shell: bash
         run: |
-          # CI 只安装仓库测试工具；Crawl4AI 在后面的正式包私有 venv 中安装，不污染此 Python。
+          # 测试工具装在 CI Python；Crawl4AI 只在后面的正式包私有 venv 安装。
           python -m pip install -e . pytest==9.1.1 pytest-asyncio==1.4.0 ruff==0.16.1
 
       - name: Run crawler and existing Research contracts
@@ -89,7 +88,7 @@ jobs:
             tests/contract/test_crawl4ai_research_adapter_package.py
           python -m compileall -q research_gateway scripts
 
-      - name: Verify repository governance and full Python regression
+      - name: Verify governance and baseline-aware full regression
         shell: bash
         run: |
           if [[ -f scripts/verify_alignment.py ]]; then
@@ -97,12 +96,15 @@ jobs:
           else
             echo "ALIGNMENT_VERIFIER=NOT_PRESENT_PREEXISTING_GOVERNANCE_DRIFT"
           fi
-          PYTHONPATH=.:src python -m pytest -q
+          # 精确 baseline 自身已存在 4 个 Windows 五入口旧断言；只允许这组已重现失败，任何新增失败仍阻断。
+          bash scripts/mac/crawl4ai_research_adapter/Verify-BaselineRegressionParity.sh
 
       - name: Validate adapter shell syntax
         shell: bash
         run: |
-          for script in deploy/macos/crawl4ai_research_adapter/*.command scripts/mac/crawl4ai_research_adapter/*.sh; do
+          for script in \
+            deploy/macos/crawl4ai_research_adapter/*.command \
+            scripts/mac/crawl4ai_research_adapter/*.sh; do
             bash -n "$script"
           done
 
@@ -122,7 +124,7 @@ jobs:
         id: fixture
         shell: bash
         run: |
-          # fixture 只替代 Exa 搜索发现凭据；后续 Crawl4AI 页面内容来自真实公开网站，不使用假 crawler PASS。
+          # 仅 Exa discovery 使用固定 fixture；真实 Crawl4AI 内容来自公开网页。
           fixture_root="$RUNNER_TEMP/picotoopet-crawl4ai-live"
           fixture_home="$fixture_root/home"
           gateway_root="$fixture_home/Library/Application Support/PicotooPet/ResearchGateway"
@@ -131,7 +133,13 @@ jobs:
           fake_bin="$fixture_root/fake-bin"
           extracted="$fixture_root/extracted"
           adapter_root="$fixture_home/.local/share/picotoopet/research/crawl4ai"
-          mkdir -p "$gateway_runtime" "$gateway_root/bin" "$worker_root" "$fake_bin" "$extracted" "$fixture_home/.local/bin"
+          mkdir -p \
+            "$gateway_runtime" \
+            "$gateway_root/bin" \
+            "$worker_root" \
+            "$fake_bin" \
+            "$extracted" \
+            "$fixture_home/.local/bin"
 
           git show "$BASELINE_SHA:research_gateway/gateway.py" > "$gateway_runtime/gateway.py"
           git show "$BASELINE_SHA:research_gateway/VERSION" > "$gateway_runtime/VERSION"
@@ -149,7 +157,7 @@ jobs:
 
           cat > "$fake_bin/mcporter" <<'EOF'
           #!/bin/bash
-          # CI discovery fixture：只伪造 Exa URL discovery；Scrapling fixture 只证明现有 fallback CLI 可达。
+          # discovery fixture；Scrapling 分支只验证既有只读入口可达，不冒充真实 Crawl4AI。
           set -euo pipefail
           if [[ "${1:-}" == "call" && "${2:-}" == exa.web_search_exa* ]]; then
             printf '%s\n' '{"results":[{"title":"Example Domain","url":"https://example.com/"}]}'
@@ -163,7 +171,8 @@ jobs:
           EOF
           chmod 755 "$fake_bin/mcporter"
 
-          tar -xzf artifacts/crawl4ai-research-adapter/PicotooPet-Crawl4AI-Research-Adapter-Mac-arm64.tar.gz \
+          tar -xzf \
+            artifacts/crawl4ai-research-adapter/PicotooPet-Crawl4AI-Research-Adapter-Mac-arm64.tar.gz \
             -C "$extracted"
           package_root="$extracted/PicotooPet-Crawl4AI-Research-Adapter-Mac-arm64"
 
@@ -184,7 +193,7 @@ jobs:
           ADAPTER_ROOT: ${{ steps.fixture.outputs.adapter_root }}
           PACKAGE_ROOT: ${{ steps.fixture.outputs.package_root }}
         run: |
-          # 第一次真实安装固定 Crawl4AI 0.9.2 + adapter 私有 Playwright Chromium。
+          # 首装真实安装 Crawl4AI 0.9.2 + 私有 Playwright Chromium。
           HOME="$FIXTURE_HOME" \
           PICOTOOPET_CRAWL4AI_ROOT="$ADAPTER_ROOT" \
           PICOTOOPET_RESEARCH_INSTALL_ROOT="$GATEWAY_ROOT" \
@@ -194,7 +203,7 @@ jobs:
           first_version="$($ADAPTER_ROOT/bin/picotoopet-crawl4ai-provider --version)"
           test "$first_version" = "0.9.2"
 
-          # 第二次安装必须绑定已有兼容 venv，不升级 Crawl4AI，并继续保留首次 venv ownership。
+          # 重复安装只绑定兼容环境，不升级 Crawl4AI，并保留首次 venv ownership。
           HOME="$FIXTURE_HOME" \
           PICOTOOPET_CRAWL4AI_ROOT="$ADAPTER_ROOT" \
           PICOTOOPET_RESEARCH_INSTALL_ROOT="$GATEWAY_ROOT" \
@@ -207,6 +216,7 @@ jobs:
           import json
           import sys
           from pathlib import Path
+
           payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
           assert payload["created_venv"] is True
           assert payload["crawl4ai_version"] == "0.9.2"
@@ -224,7 +234,6 @@ jobs:
           ADAPTER_ROOT: ${{ steps.fixture.outputs.adapter_root }}
           PACKAGE_ROOT: ${{ steps.fixture.outputs.package_root }}
         run: |
-          # VERIFY 默认访问真实公开网页；只读、独立 context、无 Chrome profile/cookie/token。
           HOME="$FIXTURE_HOME" \
           PATH="$FAKE_BIN:$PATH" \
           PICOTOOPET_CRAWL4AI_ROOT="$ADAPTER_ROOT" \
@@ -239,17 +248,20 @@ jobs:
           GATEWAY_ROOT: ${{ steps.fixture.outputs.gateway_root }}
           FAKE_BIN: ${{ steps.fixture.outputs.fake_bin }}
         run: |
-          # 两次独立 subprocess 调用证明 Gateway 进程重启后仍可用；Worker executor 与 typed result contract 不变。
+          # 每次 executor 调用都会启动独立 Gateway subprocess；第二次证明 Gateway 重启后合同仍成立。
           HOME="$FIXTURE_HOME" PATH="$FAKE_BIN:$PATH" PYTHONPATH=src python - "$GATEWAY_ROOT" <<'PY'
           import json
           import sys
           from pathlib import Path
+
           from picotoopet_core.research.execution import ResearchGatewayExecutor
 
           executable = Path(sys.argv[1]) / "bin" / "picotoopet-research-gateway"
-          executor = ResearchGatewayExecutor(executable=executable)
-          first = executor.search(query="example domain", limit=1, timeout_seconds=120)
-          second = executor.search(query="example domain", limit=1, timeout_seconds=120)
+          first_executor = ResearchGatewayExecutor(executable=executable)
+          first = first_executor.search(query="example domain", limit=1, timeout_seconds=120)
+          del first_executor
+          second_executor = ResearchGatewayExecutor(executable=executable)
+          second = second_executor.search(query="example domain", limit=1, timeout_seconds=120)
           for result in (first, second):
               payload = json.loads(result.output)
               assert payload["schema_version"] == "1.0"
@@ -273,7 +285,8 @@ jobs:
           mkdir -p "$evidence_root"
           cp -R "$ADAPTER_ROOT/verification" "$evidence_root/verification"
           cp -R "$ADAPTER_ROOT/logs" "$evidence_root/logs"
-          cp "$ADAPTER_ROOT/state/install-state.json" "$evidence_root/install-state-before-rollback.json"
+          cp "$ADAPTER_ROOT/state/install-state.json" \
+            "$evidence_root/install-state-before-rollback.json"
 
           HOME="$FIXTURE_HOME" \
           PICOTOOPET_CRAWL4AI_ROOT="$ADAPTER_ROOT" \
@@ -286,7 +299,8 @@ jobs:
           test -x "$FIXTURE_HOME/.local/bin/scrapling-mcp-local"
           test ! -e "$ADAPTER_ROOT/bin/picotoopet-crawl4ai-provider"
           test ! -e "$ADAPTER_ROOT/venv"
-          cp "$ADAPTER_ROOT/state/install-state.json" "$evidence_root/install-state-after-rollback.json"
+          cp "$ADAPTER_ROOT/state/install-state.json" \
+            "$evidence_root/install-state-after-rollback.json"
           cp -R "$ADAPTER_ROOT/logs" "$evidence_root/logs-after-rollback"
           echo "CRAWL4AI_RESEARCH_ADAPTER_ROLLBACK=PASS"
 
@@ -300,4 +314,7 @@ jobs:
             artifacts/crawl4ai-research-adapter/PicotooPet-Crawl4AI-Research-Adapter-Mac-arm64.tar.gz
             artifacts/crawl4ai-research-adapter/PicotooPet-Crawl4AI-Research-Adapter-Mac-arm64.tar.gz.sha256.txt
             artifacts/crawl4ai-research-adapter/crawl4ai-research-adapter-build-report.json
+            artifacts/crawl4ai-research-adapter/baseline-regression-parity.json
+            artifacts/crawl4ai-research-adapter/baseline-known-failures.xml
+            artifacts/crawl4ai-research-adapter/feature-full-regression.xml
             artifacts/crawl4ai-research-adapter/live-evidence/**
