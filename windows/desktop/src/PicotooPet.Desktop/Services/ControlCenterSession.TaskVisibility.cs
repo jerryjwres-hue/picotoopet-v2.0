@@ -146,7 +146,7 @@ public sealed partial class ControlCenterSession
             MacCoreClientOptions.CreateDefault(baseUri, token!));
     }
 
-    private static IReadOnlyList<string> ValidateTaskIds(IReadOnlyList<string> taskIds)
+    private static string[] ValidateTaskIds(IReadOnlyList<string> taskIds)
     {
         ArgumentNullException.ThrowIfNull(taskIds);
         if (taskIds.Count is < 1 or > 100)

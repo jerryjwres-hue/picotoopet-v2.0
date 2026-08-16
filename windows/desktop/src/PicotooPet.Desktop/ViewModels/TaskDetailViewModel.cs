@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Services;
@@ -26,8 +27,12 @@ public sealed class TaskDetailViewModel : ObservableObject
     public string Title => FriendlyTaskTitle(_task.TaskType);
     public string TaskType => _task.TaskType;
     public string StatusText => FriendlyStatus(_task.Status);
-    public string CreatedAtText => _task.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
-    public string UpdatedAtText => _task.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
+    public string CreatedAtText => _task.CreatedAt.LocalDateTime.ToString(
+        "yyyy-MM-dd HH:mm:ss",
+        CultureInfo.InvariantCulture);
+    public string UpdatedAtText => _task.UpdatedAt.LocalDateTime.ToString(
+        "yyyy-MM-dd HH:mm:ss",
+        CultureInfo.InvariantCulture);
     public string AttemptText => $"{_task.AttemptCount}/{_task.MaxAttempts}";
     public string GoalText => SafeGoalSummary(_task.Payload);
     public string ErrorText => string.IsNullOrWhiteSpace(_task.ErrorMessage)
@@ -126,9 +131,12 @@ public sealed class TaskDetailViewModel : ObservableObject
 
     private static string FormatDiagnostic(DiagnosticSnapshotResult result)
     {
+        var generatedAt = result.GeneratedAt.LocalDateTime.ToString(
+            "yyyy-MM-dd HH:mm:ss",
+            CultureInfo.InvariantCulture);
         var lines = new List<string>
         {
-            $"生成时间：{result.GeneratedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}",
+            $"生成时间：{generatedAt}",
             $"Core：{result.Core?.HealthState ?? "未返回"}",
             $"Worker：{result.Worker?.State ?? "未返回"}",
         };

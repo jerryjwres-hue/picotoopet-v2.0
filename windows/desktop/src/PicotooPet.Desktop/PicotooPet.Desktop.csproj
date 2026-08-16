@@ -7,6 +7,7 @@
     <RootNamespace>PicotooPet.Desktop</RootNamespace>
     <AssemblyName>Picotoo Pet AI</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <StartupObject>PicotooPet.Desktop.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>

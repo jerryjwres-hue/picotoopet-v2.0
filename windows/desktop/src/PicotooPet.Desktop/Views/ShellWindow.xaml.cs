@@ -53,11 +53,11 @@ public partial class ShellWindow : Window
     /// <summary>在现有硬编码简单导航中插入第六项“已删除”，保持原视觉样式和顺序。</summary>
     private void InsertDeletedNavigationButton()
     {
-        if (SimpleCompletedButton.Parent is not Panel panel)
+        if (SimpleCompletedButton.Parent is not System.Windows.Controls.Panel panel)
         {
             throw new InvalidOperationException("简单导航容器不可用。");
         }
-        var button = new Button
+        var button = new System.Windows.Controls.Button
         {
             Content = "已删除",
             Tag = "↶",
