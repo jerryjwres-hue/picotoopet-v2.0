@@ -81,7 +81,20 @@ if github_cli_executable:
     if candidate.is_absolute() and candidate.is_file() and os.access(candidate, os.X_OK):
         preserved_environment["PICOTOO_GITHUB_CLI_EXECUTABLE"] = str(candidate)
 
+# LaunchAgent 不继承交互 shell PATH；显式绑定已部署的用户级、Homebrew 和系统工具目录。
+research_worker_path = os.pathsep.join(
+    [
+        str(Path.home() / ".local" / "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ]
+)
 environment = {
+    "PATH": research_worker_path,
     "PICOTOO_RUNTIME_ROOT": str(runtime_root),
     "PICOTOO_WORKER_POLL_SECONDS": "2",
     "PICOTOO_WORKER_LEASE_SECONDS": "60",
