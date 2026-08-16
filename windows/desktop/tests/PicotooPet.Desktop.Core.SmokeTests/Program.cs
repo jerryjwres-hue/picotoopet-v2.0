@@ -41,6 +41,7 @@ internal static class Program
             MaotaiNaturalExpressionV2SmokeTests.Run();
             MaotaiLifeMicroMotionV2SmokeTests.Run();
             MaotaiRasterAxisV2SmokeTests.Run();
+            MaotaiNeutralLegGeometryV2SmokeTests.Run();
             MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();
             MaotaiAssetPixelValidationSmokeTests.Run();
             NavigationFaultBoundarySmokeTests.Run();
@@ -121,28 +122,13 @@ internal static class Program
                 "WPF fatal fixture Bearer abcdefghijklmnopqrstuvwxyz012345",
                 new InvalidOperationException(
                     "fixture-token-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"));
-
             Assert(File.Exists(fatalPath), "EmergencyError 返回前必须创建 desktop-fatal.log");
             var text = File.ReadAllText(fatalPath);
-            Assert(
-                text.Contains("WPF fatal fixture", StringComparison.Ordinal),
-                "fatal 日志缺少稳定事件名称");
-            Assert(
-                text.Contains("InvalidOperationException", StringComparison.Ordinal),
-                "fatal 日志缺少异常类型");
-            Assert(
-                text.Contains("[REDACTED]", StringComparison.Ordinal),
-                "fatal 日志没有沿用安全脱敏规则");
-            Assert(
-                !text.Contains(
-                    "abcdefghijklmnopqrstuvwxyz012345",
-                    StringComparison.Ordinal),
-                "fatal 日志泄漏 Bearer Token");
-            Assert(
-                !text.Contains(
-                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-                    StringComparison.Ordinal),
-                "fatal 日志泄漏长 Token");
+            Assert(text.Contains("WPF fatal fixture", StringComparison.Ordinal), "fatal 日志缺少稳定事件名称");
+            Assert(text.Contains("InvalidOperationException", StringComparison.Ordinal), "fatal 日志缺少异常类型");
+            Assert(text.Contains("[REDACTED]", StringComparison.Ordinal), "fatal 日志没有沿用安全脱敏规则");
+            Assert(!text.Contains("abcdefghijklmnopqrstuvwxyz012345", StringComparison.Ordinal), "fatal 日志泄漏 Bearer Token");
+            Assert(!text.Contains("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", StringComparison.Ordinal), "fatal 日志泄漏长 Token");
         }
         finally
         {
@@ -173,10 +159,7 @@ internal static class Program
 
     private static void VerifyReconnectBounds()
     {
-        var policy = new ReconnectPolicy(
-            TimeSpan.FromMilliseconds(200),
-            TimeSpan.FromSeconds(5),
-            jitterMilliseconds: 0);
+        var policy = new ReconnectPolicy(TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(5), jitterMilliseconds: 0);
         Assert(policy.GetDelay(0) == TimeSpan.FromMilliseconds(200), "首轮重连超时");
         Assert(policy.GetDelay(8) == TimeSpan.FromSeconds(5), "重连上限错误");
     }
@@ -203,14 +186,7 @@ internal static class Program
             error_message = (string?)null,
             result_id = (string?)null,
         });
-        var first = new EventEnvelope(
-            "2.2.0",
-            1,
-            "event-1",
-            "task.updated",
-            null,
-            DateTimeOffset.UtcNow,
-            payload);
+        var first = new EventEnvelope("2.2.0", 1, "event-1", "task.updated", null, DateTimeOffset.UtcNow, payload);
         Assert(store.Apply(first), "首个事件未应用");
         Assert(!store.Apply(first), "重复事件未去重");
         Assert(store.Snapshot.Tasks.Count == 1, "任务状态数量错误");
