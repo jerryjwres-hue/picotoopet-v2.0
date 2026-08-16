@@ -50,12 +50,12 @@
             <TextBlock Text="{Binding EmptyMessage, Mode=OneWay}"
                        Margin="0,4,0,0"
                        Foreground="{StaticResource TaskMuted}"
-                       FontSize="13"
+                       FontSize="14"
                        TextWrapping="Wrap" />
             <TextBlock Text="{Binding ActionMessage, Mode=OneWay}"
                        Margin="0,4,0,0"
                        Foreground="#FF426489"
-                       FontSize="13"
+                       FontSize="14"
                        TextWrapping="Wrap" />
           </StackPanel>
           <StackPanel Grid.Column="2"
@@ -69,7 +69,7 @@
                     Height="38"
                     Margin="0,0,8,0"
                     Padding="12,0"
-                    FontSize="13" />
+                    FontSize="14" />
             <Button Content="取消选择"
                     Click="ClearSelection_Click"
                     IsEnabled="{Binding CanClearSelection, Mode=OneWay}"
@@ -78,7 +78,7 @@
                     Height="38"
                     Margin="0,0,8,0"
                     Padding="12,0"
-                    FontSize="13" />
+                    FontSize="14" />
             <Button Content="{Binding BulkActionText}"
                     Click="BulkAction_Click"
                     IsEnabled="{Binding CanApplySelection, Mode=OneWay}"
@@ -86,7 +86,7 @@
                     MinWidth="92"
                     Height="38"
                     Padding="12,0"
-                    FontSize="13"
+                    FontSize="14"
                     FontWeight="SemiBold" />
           </StackPanel>
         </Grid>
@@ -147,17 +147,17 @@
                     <TextBlock Text="{Binding StageText, Mode=OneWay}"
                                Margin="0,5,0,0"
                                Foreground="#FF53677F"
-                               FontSize="13"
+                               FontSize="14"
                                TextWrapping="Wrap" />
                     <TextBlock Text="{Binding ErrorText, Mode=OneWay}"
                                Margin="0,6,0,0"
                                Foreground="#FFB42318"
-                               FontSize="13"
+                               FontSize="14"
                                TextWrapping="Wrap" />
                     <TextBlock Text="点击查看任务详情和结果"
                                Margin="0,6,0,0"
                                Foreground="#FF2677E8"
-                               FontSize="12" />
+                               FontSize="14" />
                   </StackPanel>
                 </Button>
 
@@ -172,13 +172,13 @@
                           HorizontalAlignment="Right">
                     <TextBlock Text="{Binding StatusText, Mode=OneWay}"
                                Foreground="#FF276FCB"
-                               FontSize="12"
+                               FontSize="14"
                                FontWeight="SemiBold" />
                   </Border>
                   <TextBlock Text="{Binding UpdatedAtText, Mode=OneWay}"
                              Margin="0,8,0,0"
                              Foreground="{StaticResource TaskMuted}"
-                             FontSize="12"
+                             FontSize="14"
                              HorizontalAlignment="Right" />
                   <Button Content="{Binding DataContext.SingleActionText, RelativeSource={RelativeSource AncestorType=UserControl}}"
                           Click="SingleAction_Click"
@@ -188,7 +188,7 @@
                           Height="34"
                           Margin="0,10,0,0"
                           Padding="12,0"
-                          FontSize="12"
+                          FontSize="14"
                           HorizontalAlignment="Right" />
                 </StackPanel>
               </Grid>
