@@ -42,7 +42,7 @@ public sealed class ResultRowViewModel
             && task.Status is "Completed" or "Archived";
         PreviewUnavailableReason = CanPreview
             ? "可额外通过固定诊断合同加载安全预览；完整结果也可在任务详情查看。"
-            : "完整结果请通过任务详情查看；额外的“安全预览”只用于系统诊断。";
+            : "当前结果类型尚不支持额外的“安全预览”；完整结果请通过任务详情查看，不会回退到任意内容浏览。";
     }
 
     public string TaskId { get; }
@@ -91,7 +91,7 @@ public sealed class ResultsPageViewModel : PageViewModel
     private DiagnosticResultViewModel? _diagnosticPreview;
     private bool _isPreviewVisible;
     private bool _isBusy;
-    private string _statusMessage = "结果列表来自 Mac Core；点击结果可打开任务详情和已有正文。";
+    private string _statusMessage = "结果列表来自 Mac Core 已完成任务快照。";
 
     /// <summary>创建绑定真实 Session 的结果中心。</summary>
     public ResultsPageViewModel(
@@ -269,7 +269,7 @@ public sealed class ResultsPageViewModel : PageViewModel
         SelectedResult = ResolveSelection(VisibleResults, selectedResultId);
         StatusMessage = AllResults.Count == 0
             ? "Mac Core 当前没有可显示的任务结果。"
-            : $"已加载 {AllResults.Count} 个结果；点击任意结果查看任务详情和正文。";
+            : $"已加载 {AllResults.Count} 个安全结果元数据。";
     }
 
     private void ApplyFilter()
