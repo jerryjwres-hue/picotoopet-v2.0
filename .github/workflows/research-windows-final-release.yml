@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - feature/research-gateway-2.3.27.1-final
-      - feature/windows-ui-interaction-polish-2.3.27.1
     paths:
       - ".github/workflows/research-windows-final-release.yml"
       - "src/**"
