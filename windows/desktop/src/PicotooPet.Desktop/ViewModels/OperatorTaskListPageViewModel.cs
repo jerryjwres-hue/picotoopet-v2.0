@@ -203,9 +203,11 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
                     : $"已将 {response.Outcomes.Count} 个任务移入已删除。"
                 : $"已处理 {response.Outcomes.Count} 个任务，其中 {failed} 个仍需等待或重试。";
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            ActionMessage = exception.Message;
+            ActionMessage = IsDeletedMode
+                ? "恢复操作没有完成；任务状态仍由 Mac Core 保存。"
+                : "删除操作没有完成；任务状态仍由 Mac Core 保存。";
         }
         finally
         {
