@@ -1,5 +1,5 @@
 #!/bin/bash
-# 验证已激活的 Phase 2.3 Slice D Core 与 Worker 累计合同。
+# 验证已激活的 Phase 2.3 Slice D Core、Worker 与累计可选能力。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -64,8 +64,9 @@ allowed = required | {
     "provider.adoption.apply-v1",
     "provider.commit.create-v1",
     "provider.publish.pr-create-v1",
+    "research.search",
 }
-# 累计能力验证          系统任务必须存在；历史已实现的 Business/Creative/Provider 类型允许注册。
+# 累计能力验证：基础系统类型必须存在，已健康注册的受控能力允许出现。
 if not isinstance(supported, list) or not required <= set(supported):
     raise SystemExit(f"Worker 缺少基础冻结类型：{payload!r}")
 unexpected = set(supported) - allowed
