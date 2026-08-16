@@ -19,6 +19,7 @@ from .migration_015 import MIGRATION_015
 from .migration_016 import MIGRATION_016
 from .migration_017 import MIGRATION_017
 from .migration_018 import MIGRATION_018
+from .migration_019 import MIGRATION_019
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -282,6 +283,17 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (18, datetime.now(UTC).isoformat()),
+                )
+
+            migration_019_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 19"
+            ).fetchone()
+            if migration_019_exists is None:
+                # ── 2.3.27.1 reversible user task visibility ─────────────────
+                connection.executescript(MIGRATION_019)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (19, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
