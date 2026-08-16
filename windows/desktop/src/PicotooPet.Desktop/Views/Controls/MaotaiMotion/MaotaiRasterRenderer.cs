@@ -183,17 +183,17 @@ internal sealed class MaotaiRasterRenderer
             frame.RightPupil.Y,
             frame.RightPupil.RotationDeg);
 
-        ApplyBone(_visuals.FrontLeftUpper, frame.FrontLeftUpper);
-        ApplyBone(_visuals.FrontLeftLower, frame.FrontLeftLower);
+        ApplyLegBone(_visuals.FrontLeftUpper, frame.FrontLeftUpper);
+        ApplyLegBone(_visuals.FrontLeftLower, frame.FrontLeftLower);
         ApplyBone(_visuals.FrontLeftPaw, frame.FrontLeftPaw);
-        ApplyBone(_visuals.FrontRightUpper, frame.FrontRightUpper);
-        ApplyBone(_visuals.FrontRightLower, frame.FrontRightLower);
+        ApplyLegBone(_visuals.FrontRightUpper, frame.FrontRightUpper);
+        ApplyLegBone(_visuals.FrontRightLower, frame.FrontRightLower);
         ApplyBone(_visuals.FrontRightPaw, frame.FrontRightPaw);
-        ApplyBone(_visuals.HindLeftUpper, frame.HindLeftUpper);
-        ApplyBone(_visuals.HindLeftLower, frame.HindLeftLower);
+        ApplyLegBone(_visuals.HindLeftUpper, frame.HindLeftUpper);
+        ApplyLegBone(_visuals.HindLeftLower, frame.HindLeftLower);
         ApplyBone(_visuals.HindLeftPaw, frame.HindLeftPaw);
-        ApplyBone(_visuals.HindRightUpper, frame.HindRightUpper);
-        ApplyBone(_visuals.HindRightLower, frame.HindRightLower);
+        ApplyLegBone(_visuals.HindRightUpper, frame.HindRightUpper);
+        ApplyLegBone(_visuals.HindRightLower, frame.HindRightLower);
         ApplyBone(_visuals.HindRightPaw, frame.HindRightPaw);
         ApplyBone(_visuals.TailBase, frame.TailBase);
         ApplyBone(_visuals.TailMid, frame.TailMid);
@@ -201,6 +201,16 @@ internal sealed class MaotaiRasterRenderer
 
         ApplyFace(frame);
     }
+
+    private static void ApplyLegBone(
+        MaotaiRasterPart part,
+        in MaotaiBonePose pose) =>
+        part.Apply(
+            pose.X,
+            pose.Y,
+            MaotaiRasterAxis.LegRotationFromIkDegrees(pose.RotationDeg),
+            pose.ScaleX,
+            pose.ScaleY);
 
     private static void ApplyBone(
         MaotaiRasterPart part,
