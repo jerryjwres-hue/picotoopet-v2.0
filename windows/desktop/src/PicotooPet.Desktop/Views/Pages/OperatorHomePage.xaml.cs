@@ -3,10 +3,11 @@ using System.Windows.Threading;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Views;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
-/// <summary>26.1 简单模式首页；只负责受限任务向导、既有安全路由和本地只读资源采样。</summary>
+/// <summary>简单模式首页；任务入口只调用既有安全路由或统一 TaskDetail。</summary>
 public partial class OperatorHomePage : System.Windows.Controls.UserControl
 {
     private readonly WindowsResourceSampler _resourceSampler;
@@ -15,15 +16,13 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
     public OperatorHomePage()
     {
         InitializeComponent();
-
         _resourceSampler = new WindowsResourceSampler();
         _resourceTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromSeconds(2),
         };
         _resourceTimer.Tick += ResourceTimer_Tick;
-
-        Loaded   += OperatorHomePage_Loaded;
+        Loaded += OperatorHomePage_Loaded;
         Unloaded += OperatorHomePage_Unloaded;
     }
 
@@ -33,11 +32,9 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         _resourceTimer.Start();
     }
 
-    private void OperatorHomePage_Unloaded(object sender, RoutedEventArgs e) =>
-        _resourceTimer.Stop();
+    private void OperatorHomePage_Unloaded(object sender, RoutedEventArgs e) => _resourceTimer.Stop();
 
-    private void ResourceTimer_Tick(object? sender, EventArgs e) =>
-        SampleResources();
+    private void ResourceTimer_Tick(object? sender, EventArgs e) => SampleResources();
 
     private void SampleResources()
     {
@@ -45,16 +42,13 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         {
             return;
         }
-
         try
         {
             viewModel.UpdateResourceSnapshot(_resourceSampler.Sample());
         }
         catch (Exception)
         {
-            // Sampling isolation : telemetry failure is UI-only and must not escape into navigation/task flow.
-            viewModel.UpdateResourceSnapshot(
-                new WindowsResourceSnapshot(null, null, null, DateTimeOffset.UtcNow));
+            viewModel.UpdateResourceSnapshot(new WindowsResourceSnapshot(null, null, null, DateTimeOffset.UtcNow));
         }
     }
 
@@ -73,25 +67,48 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         var result = window.ShowDialog();
         if (result == true
             && wizardViewModel.RequestedRoute is NavigationRoute route
-            && Window.GetWindow(this) is PicotooPet.Desktop.Views.ShellWindow shell)
+            && Window.GetWindow(this) is ShellWindow shell)
         {
             shell.NavigateFromOperator(route);
         }
         await Task.CompletedTask;
     }
 
-    private void Review_Click(object sender, RoutedEventArgs e) =>
-        Navigate(NavigationRoute.OperatorReview);
+    private void RecentTask_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: OperatorTaskCard task })
+        {
+            return;
+        }
 
-    private void Active_Click(object sender, RoutedEventArgs e) =>
-        Navigate(NavigationRoute.OperatorInProgress);
+        try
+        {
+            var gateway = TaskDetailGatewayContext.GetGateway(this)
+                ?? throw new InvalidOperationException("任务详情服务尚未就绪。");
+            TaskDetailViewModel detailViewModel = gateway.Create(task.TaskId);
+            new TaskDetailWindow(detailViewModel)
+            {
+                Owner = Window.GetWindow(this),
+            }.Show();
+        }
+        catch (Exception)
+        {
+            MessageBox.Show(
+                Window.GetWindow(this),
+                "任务详情暂时无法打开。任务本身没有被修改，请刷新列表后重试。",
+                "无法打开任务",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+    }
 
-    private void Completed_Click(object sender, RoutedEventArgs e) =>
-        Navigate(NavigationRoute.OperatorCompleted);
+    private void Review_Click(object sender, RoutedEventArgs e) => Navigate(NavigationRoute.OperatorReview);
+    private void Active_Click(object sender, RoutedEventArgs e) => Navigate(NavigationRoute.OperatorInProgress);
+    private void Completed_Click(object sender, RoutedEventArgs e) => Navigate(NavigationRoute.OperatorCompleted);
 
     private void Navigate(NavigationRoute route)
     {
-        if (Window.GetWindow(this) is PicotooPet.Desktop.Views.ShellWindow shell)
+        if (Window.GetWindow(this) is ShellWindow shell)
         {
             shell.NavigateFromOperator(route);
         }

@@ -76,8 +76,8 @@ def test_published_self_test_reports_exact_product_version_surfaces() -> None:
 def test_published_self_test_tracks_business_automation_navigation() -> None:
     self_test = read(DESKTOP, "Services/AppSelfTest.cs")
 
-    # Navigation gate           26.1 exposes five operator entries by default.
-    #                           Business Automation remains reachable from Advanced Home.
-    assert "shell.NavigationItems.Count != 5" in self_test
+    # Navigation gate: current simple mode exposes six operator entries by default.
+    # Business Automation remains reachable from Advanced Home.
+    assert "shell.NavigationItems.Count != 6" in self_test
     assert "NavigationRoute.AdvancedHome" in self_test
     assert "NavigationRoute.BusinessAutomation" in self_test

@@ -76,7 +76,7 @@ def test_api_and_windows_surface_are_bounded_without_provider_configuration_auth
     assert "ComboBox" not in panel
     for forbidden in ("Endpoint", "ApiKey", "ProviderKey", "Prompt", "Temperature"):
         assert forbidden not in view_model
-    assert "shell.NavigationItems.Count != 5" in shell_self_test
+    assert "shell.NavigationItems.Count != 6" in shell_self_test
     assert "PHASE26_OPERATOR_SIMPLE_MODE_SELF_TEST=PASS" in shell_self_test
 
 

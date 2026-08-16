@@ -92,6 +92,6 @@ def test_real_wpf_smoke_is_registered_and_promotion_stays_in_advanced_business_a
     assert "QualityPromotionPanelWpfSmokeTests.Run();" in program
     for required in ("new QualityPromotionPanel", "Measure(new Size(1100, 780))", "Arrange(new Rect(0, 0, 1100, 780))", "UpdateLayout()", "BindingMode.OneWay"):
         assert required in smoke
-    assert "shell.NavigationItems.Count != 5" in self_test
+    assert "shell.NavigationItems.Count != 6" in self_test
     assert "NavigationRoute.BusinessAutomation" in self_test
     assert "NavigationRoute.Promotion" not in self_test

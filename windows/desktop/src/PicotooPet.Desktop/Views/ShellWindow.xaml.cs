@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -29,58 +28,26 @@ public partial class ShellWindow : Window
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         _session   = session ?? throw new ArgumentNullException(nameof(session));
         _logger    = logger ?? throw new ArgumentNullException(nameof(logger));
-        InsertDeletedNavigationButton();
-        ReturnGatewayContext.SetGateway(
-            this,
-            new ControlCenterReturnGateway(_session));
-        BrokerGatewayContext.SetGateway(
-            this,
-            new ControlCenterBrokerGateway(_session));
-        ProviderGatewayContext.SetGateway(
-            this,
-            new ControlCenterProviderGateway(_session));
-        ProviderReviewGatewayContext.SetGateway(
-            this,
-            new ControlCenterProviderReviewGateway(_session));
 
-        // DataContext     : PetPresentation 和其余 Shell 状态共用同一只读 VM 更新链。
+        ReturnGatewayContext.SetGateway(this, new ControlCenterReturnGateway(_session));
+        BrokerGatewayContext.SetGateway(this, new ControlCenterBrokerGateway(_session));
+        ProviderGatewayContext.SetGateway(this, new ControlCenterProviderGateway(_session));
+        ProviderReviewGatewayContext.SetGateway(this, new ControlCenterProviderReviewGateway(_session));
+        TaskDetailGatewayContext.SetGateway(this, new ControlCenterTaskDetailGateway(_session));
+
         DataContext = viewModel;
 
-        // Floating pet   : presentation-only request; no Session/task/approval command is added.
+        // 茅台表面仍由独立组件负责；Shell 只保留既有浮窗请求边界。
         AssistantPet.FloatRequested += OnAssistantPetFloatRequested;
-    }
-
-    /// <summary>在现有硬编码简单导航中插入第六项“已删除”，保持原视觉样式和顺序。</summary>
-    private void InsertDeletedNavigationButton()
-    {
-        if (SimpleCompletedButton.Parent is not System.Windows.Controls.Panel panel)
-        {
-            throw new InvalidOperationException("简单导航容器不可用。");
-        }
-        var button = new System.Windows.Controls.Button
-        {
-            Content = "已删除",
-            Tag = "↶",
-            Style = (Style)FindResource("SimpleNavButtonStyle"),
-        };
-        AutomationProperties.SetName(button, "已删除");
-        button.Click += SimpleDeleted_Click;
-        var completedIndex = panel.Children.IndexOf(SimpleCompletedButton);
-        panel.Children.Insert(completedIndex + 1, button);
     }
 
     /// <summary>请求组合根按安全顺序释放资源并显式退出。</summary>
     public event EventHandler? ExitRequested;
 
-    /// <summary>由托盘命令请求显式退出；窗口本身不直接释放共享资源。</summary>
-    public void RequestExplicitExit() =>
-        ExitRequested?.Invoke(this, EventArgs.Empty);
+    public void RequestExplicitExit() => ExitRequested?.Invoke(this, EventArgs.Empty);
 
-    /// <summary>允许 WPF 在资源释放后真正关闭窗口。</summary>
-    public void AllowExplicitClose() =>
-        _explicitExit = true;
+    public void AllowExplicitClose() => _explicitExit = true;
 
-    /// <summary>从托盘恢复、置前并激活主窗口。</summary>
     public void ShowFromTray()
     {
         if (!IsVisible)
@@ -94,7 +61,6 @@ public partial class ShellWindow : Window
         Activate();
     }
 
-    /// <summary>普通关闭只隐藏到托盘；显式退出才允许窗口销毁。</summary>
     protected override void OnClosing(CancelEventArgs e)
     {
         if (!_explicitExit)
@@ -105,7 +71,6 @@ public partial class ShellWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>窗口真正销毁时解除 UI 事件，并关闭同进程悬浮桌宠。</summary>
     protected override void OnClosed(EventArgs e)
     {
         AssistantPet.FloatRequested -= OnAssistantPetFloatRequested;
@@ -120,7 +85,6 @@ public partial class ShellWindow : Window
         base.OnClosed(e);
     }
 
-    /// <summary>记录被隔离的页面故障，并用安全说明页替换当前路由内容。</summary>
     private void ContentHost_NavigationFaulted(
         object sender,
         NavigationFaultEventArgs e)
@@ -148,7 +112,6 @@ public partial class ShellWindow : Window
         }
         catch (Exception exception)
         {
-            // Failure isolation : a floating-pet rendering error must not destabilize the main Shell.
             _logger.Error("悬浮桌宠打开失败，主窗口继续运行。", exception);
             _floatingPetWindow = null;
         }
@@ -172,10 +135,8 @@ public partial class ShellWindow : Window
             return;
         }
 
-        var TokenPasswordBox = FindNamedChild<PasswordBox>(
-            ContentHost,
-            "TokenPasswordBox");
-        if (TokenPasswordBox is null)
+        var tokenPasswordBox = FindNamedChild<PasswordBox>(ContentHost, "TokenPasswordBox");
+        if (tokenPasswordBox is null)
         {
             MessageBox.Show(
                 this,
@@ -190,9 +151,9 @@ public partial class ShellWindow : Window
         {
             await _session.SaveAndConnectAsync(
                 settings.MacBaseUrl,
-                TokenPasswordBox.Password,
+                tokenPasswordBox.Password,
                 CancellationToken.None);
-            TokenPasswordBox.Clear();
+            tokenPasswordBox.Clear();
         }
         catch (Exception exception)
         {
@@ -209,9 +170,7 @@ public partial class ShellWindow : Window
         }
     }
 
-    private static T? FindNamedChild<T>(
-        DependencyObject parent,
-        string name)
+    private static T? FindNamedChild<T>(DependencyObject parent, string name)
         where T : FrameworkElement
     {
         var childCount = VisualTreeHelper.GetChildrenCount(parent);
