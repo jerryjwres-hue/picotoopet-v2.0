@@ -47,17 +47,23 @@
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TextBlock Text="状态" FontSize="13" Foreground="#FF6A7A90" />
-        <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="14" FontWeight="SemiBold" />
-        <TextBlock Grid.Row="1" Text="创建时间" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
-        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CreatedAtText}" Margin="0,10,0,0" FontSize="14" />
-        <TextBlock Grid.Row="2" Text="更新时间" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
-        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding UpdatedAtText}" Margin="0,10,0,0" FontSize="14" />
-        <TextBlock Grid.Row="3" Text="执行次数" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
-        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding AttemptText}" Margin="0,10,0,0" FontSize="14" />
-        <TextBlock Grid.Row="4" Text="任务目标" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
-        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding GoalText}" Margin="0,10,0,0" FontSize="14" TextWrapping="Wrap" />
+        <TextBlock Text="任务 ID" FontSize="13" Foreground="#FF6A7A90" />
+        <TextBlock Grid.Column="1" Text="{Binding TaskId}" FontSize="14" TextWrapping="Wrap" />
+        <TextBlock Grid.Row="1" Text="状态" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
+        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding StatusText}" Margin="0,10,0,0" FontSize="14" FontWeight="SemiBold" />
+        <TextBlock Grid.Row="2" Text="状态说明" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
+        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SafeStatusSummaryText}" Margin="0,10,0,0" FontSize="14" Foreground="#FF43546A" TextWrapping="Wrap" />
+        <TextBlock Grid.Row="3" Text="创建时间" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
+        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding CreatedAtText}" Margin="0,10,0,0" FontSize="14" />
+        <TextBlock Grid.Row="4" Text="更新时间" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
+        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding UpdatedAtText}" Margin="0,10,0,0" FontSize="14" />
+        <TextBlock Grid.Row="5" Text="执行次数" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
+        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding AttemptText}" Margin="0,10,0,0" FontSize="14" />
+        <TextBlock Grid.Row="6" Text="任务目标" Margin="0,10,0,0" FontSize="13" Foreground="#FF6A7A90" />
+        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding GoalText}" Margin="0,10,0,0" FontSize="14" TextWrapping="Wrap" />
       </Grid>
     </Border>
 
