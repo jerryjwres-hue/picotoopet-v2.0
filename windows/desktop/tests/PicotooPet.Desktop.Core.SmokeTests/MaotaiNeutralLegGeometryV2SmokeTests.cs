@@ -4,7 +4,7 @@ using PicotooPet.Desktop.Views.Controls;
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
 /// <summary>
-/// 冻结茅台静止站姿的腿部可读性：独立上下腿可以轻微折膝，但不能穿过身体中线形成 X 型交叉。
+/// 冻结茅台静止站姿的腿部可读性：站立时接近自然直腿，移动后才允许 IK 明显折膝。
 /// 骨长代表两个关节 Pivot 之间的有效距离，不等于整张带 overlap 的 PNG 高度。
 /// </summary>
 internal static class MaotaiNeutralLegGeometryV2SmokeTests
@@ -29,16 +29,27 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
             throw new InvalidOperationException("中性站姿没有输出 PoseFrame");
         }
 
-        VerifyLeg(pose, "FrontLeftUpper", "FrontLeftLower", front: true);
-        VerifyLeg(pose, "FrontRightUpper", "FrontRightLower", front: true);
-        VerifyLeg(pose, "HindLeftUpper", "HindLeftLower", front: false);
-        VerifyLeg(pose, "HindRightUpper", "HindRightLower", front: false);
+        VerifyLeg(pose, "FrontLeftUpper", "FrontLeftLower", "FrontLeftPaw", front: true);
+        VerifyLeg(pose, "FrontRightUpper", "FrontRightLower", "FrontRightPaw", front: true);
+        VerifyLeg(pose, "HindLeftUpper", "HindLeftLower", "HindLeftPaw", front: false);
+        VerifyLeg(pose, "HindRightUpper", "HindRightLower", "HindRightPaw", front: false);
     }
 
-    private static void VerifyLeg(object pose, string upperName, string lowerName, bool front)
+    private static void VerifyLeg(
+        object pose,
+        string upperName,
+        string lowerName,
+        string pawName,
+        bool front)
     {
         var upperX = ReadPoseDouble(pose, upperName, "X");
+        var upperY = ReadPoseDouble(pose, upperName, "Y");
         var jointX = ReadPoseDouble(pose, lowerName, "X");
+        var jointY = ReadPoseDouble(pose, lowerName, "Y");
+        var pawX   = ReadPoseDouble(pose, pawName, "X");
+        var pawY   = ReadPoseDouble(pose, pawName, "Y");
+        var upperAngle = ReadPoseDouble(pose, upperName, "RotationDeg");
+        var lowerAngle = ReadPoseDouble(pose, lowerName, "RotationDeg");
 
         if (front)
         {
@@ -51,8 +62,41 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
                 $"{upperName} 的膝关节穿过身体中线，静止时会形成 X 型后腿");
         }
 
-        Assert(Math.Abs(jointX - upperX) <= 12.0,
-            $"{upperName} 静止折膝横向位移过大，会显得像手臂张开而不是自然站立");
+        var segmentDx = pawX - upperX;
+        var segmentDy = pawY - upperY;
+        var segmentLengthSquared = (segmentDx * segmentDx) + (segmentDy * segmentDy);
+        Assert(segmentLengthSquared > 0.000001,
+            $"{upperName} 静止肩脚距离无效");
+
+        var jointProgress = (((jointX - upperX) * segmentDx) + ((jointY - upperY) * segmentDy)) /
+            segmentLengthSquared;
+        var projectedX = upperX + (segmentDx * jointProgress);
+        var projectedY = upperY + (segmentDy * jointProgress);
+        var lineDistance = Math.Sqrt(
+            ((jointX - projectedX) * (jointX - projectedX)) +
+            ((jointY - projectedY) * (jointY - projectedY)));
+
+        Assert(jointProgress >= 0.38 && jointProgress <= 0.62,
+            $"{upperName} 静止膝关节不在肩脚中段，腿会显得比例异常");
+        Assert(lineDistance <= 1.5,
+            $"{upperName} 静止膝关节偏离肩脚连线过大，仍会形成机械 Z 字腿");
+        Assert(Math.Abs(NormalizeAngle(lowerAngle - upperAngle)) <= 8.0,
+            $"{upperName} 静止上下腿夹角过大，不像自然站立");
+    }
+
+    private static double NormalizeAngle(double angle)
+    {
+        angle %= 360.0;
+        if (angle > 180.0)
+        {
+            angle -= 360.0;
+        }
+        else if (angle < -180.0)
+        {
+            angle += 360.0;
+        }
+
+        return angle;
     }
 
     private static object CreateRestingInput()
