@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.diagnostics.models import (
@@ -14,6 +14,7 @@ from picotoopet_core.domain.enums import CloudPolicy, TaskStatus
 from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.queue.state_machine import InvalidTransitionError
+from picotoopet_core.queue.task_visibility import TaskVisibilityRepository
 from picotoopet_core.research.models import ResearchSearchRequest, ResearchSearchResult
 from picotoopet_core.security.auth import require_auth
 
@@ -24,6 +25,30 @@ _RESEARCH_TASK_TYPE = "research.search"
 _DIAGNOSTIC_RESULT_BYTES = 64 * 1024
 _RESEARCH_RESULT_BYTES = 64 * 1024
 _CONTROLLED_TASK_TYPES = {_DIAGNOSTIC_TASK_TYPE, _RESEARCH_TASK_TYPE}
+_TERMINAL_STATUSES = {
+    TaskStatus.COMPLETED,
+    TaskStatus.FAILED,
+    TaskStatus.CANCELLED,
+    TaskStatus.ARCHIVED,
+}
+
+
+class TaskIdBatchRequest(BaseModel):
+    """有界显式任务 ID 列表；不接受服务端通配选择。"""
+
+    task_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class TaskVisibilityOutcome(BaseModel):
+    task_id: str
+    success: bool
+    pending_cancel: bool = False
+    task: TaskRecord | None = None
+    message: str | None = None
+
+
+class TaskVisibilityBatchResponse(BaseModel):
+    outcomes: list[TaskVisibilityOutcome]
 
 
 def _required_idempotency_key(value: str | None) -> str:
@@ -65,6 +90,93 @@ def _frozen_research_task(
         max_attempts=2,
         timeout_seconds=120,
         cloud_policy=CloudPolicy.LOCAL_ONLY,
+    )
+
+
+def _visibility(request: Request) -> TaskVisibilityRepository:
+    return TaskVisibilityRepository(request.app.state.services.database)
+
+
+def _decorate_task(request: Request, task: TaskRecord) -> TaskRecord:
+    return _visibility(request).decorate(task)
+
+
+def _validate_batch_ids(task_ids: list[str]) -> list[str]:
+    cleaned = [task_id.strip() for task_id in task_ids]
+    if any(not task_id or len(task_id) > 200 for task_id in cleaned):
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="任务 ID 不能为空且长度不得超过 200。",
+            retryable=False,
+        )
+    if len(set(cleaned)) != len(cleaned):
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="批量任务 ID 不得重复。",
+            retryable=False,
+        )
+    return cleaned
+
+
+def _hide_task(task_id: str, request: Request) -> TaskVisibilityOutcome:
+    """终态直接隐藏；活动任务先请求取消，终态后再次调用即可隐藏。"""
+
+    services = request.app.state.services
+    queue = services.queue
+    task = queue.get(task_id)
+    if task.status not in _TERMINAL_STATUSES:
+        if task.task_type in _CONTROLLED_TASK_TYPES:
+            if not isinstance(queue, DiagnosticQueueRepository):
+                raise ApiError(
+                    status_code=503,
+                    code="WORKER_NOT_AVAILABLE",
+                    message="受限任务运行时尚未启用。",
+                    retryable=True,
+                )
+            task = queue.request_cancel(
+                task_id,
+                trace_id=request.state.trace_id,
+            )
+        else:
+            task = queue.transition(
+                task_id,
+                TaskStatus.CANCELLED,
+                reason="user_safe_delete",
+                trace_id=request.state.trace_id,
+            )
+
+    visibility = _visibility(request)
+    if task.status in _TERMINAL_STATUSES:
+        visibility.set_hidden(task_id, hidden=True)
+        hidden_task = visibility.decorate(queue.get(task_id))
+        return TaskVisibilityOutcome(
+            task_id=task_id,
+            success=True,
+            task=hidden_task,
+            message="任务已移入已删除，可随时恢复。",
+        )
+
+    return TaskVisibilityOutcome(
+        task_id=task_id,
+        success=True,
+        pending_cancel=True,
+        task=visibility.decorate(task),
+        message="取消请求已提交；任务进入终态后可安全移入已删除。",
+    )
+
+
+def _restore_task(task_id: str, request: Request) -> TaskVisibilityOutcome:
+    services = request.app.state.services
+    task = services.queue.get(task_id)
+    visibility = _visibility(request)
+    visibility.set_hidden(task_id, hidden=False)
+    return TaskVisibilityOutcome(
+        task_id=task_id,
+        success=True,
+        task=visibility.decorate(task),
+        message="任务已恢复到普通任务历史。",
     )
 
 
@@ -150,11 +262,69 @@ def create_research_search(
     )
 
 
+@router.post("/tasks/{task_id}/hide", response_model=TaskVisibilityOutcome)
+def hide_task(task_id: str, request: Request) -> TaskVisibilityOutcome:
+    """安全删除：只设置可恢复隐藏事实；活动任务必须先进入取消流程。"""
+
+    return _hide_task(task_id, request)
+
+
+@router.post("/tasks/{task_id}/restore", response_model=TaskVisibilityOutcome)
+def restore_task(task_id: str, request: Request) -> TaskVisibilityOutcome:
+    """恢复用户隐藏任务，执行状态和结果保持原样。"""
+
+    return _restore_task(task_id, request)
+
+
+@router.post("/tasks/batch-hide", response_model=TaskVisibilityBatchResponse)
+def batch_hide_tasks(
+    payload: TaskIdBatchRequest,
+    request: Request,
+) -> TaskVisibilityBatchResponse:
+    """对显式选择的任务逐个执行安全删除，并保留部分失败信息。"""
+
+    outcomes: list[TaskVisibilityOutcome] = []
+    for task_id in _validate_batch_ids(payload.task_ids):
+        try:
+            outcomes.append(_hide_task(task_id, request))
+        except (ApiError, KeyError, InvalidTransitionError) as error:
+            outcomes.append(
+                TaskVisibilityOutcome(
+                    task_id=task_id,
+                    success=False,
+                    message=str(error),
+                )
+            )
+    return TaskVisibilityBatchResponse(outcomes=outcomes)
+
+
+@router.post("/tasks/batch-restore", response_model=TaskVisibilityBatchResponse)
+def batch_restore_tasks(
+    payload: TaskIdBatchRequest,
+    request: Request,
+) -> TaskVisibilityBatchResponse:
+    """恢复显式选择的隐藏任务；任何失败都不会影响其他任务。"""
+
+    outcomes: list[TaskVisibilityOutcome] = []
+    for task_id in _validate_batch_ids(payload.task_ids):
+        try:
+            outcomes.append(_restore_task(task_id, request))
+        except (ApiError, KeyError, InvalidTransitionError) as error:
+            outcomes.append(
+                TaskVisibilityOutcome(
+                    task_id=task_id,
+                    success=False,
+                    message=str(error),
+                )
+            )
+    return TaskVisibilityBatchResponse(outcomes=outcomes)
+
+
 @router.get("/tasks/{task_id}", response_model=TaskRecord)
 def get_task(task_id: str, request: Request) -> TaskRecord:
-    """读取任务。"""
+    """读取任务并附加用户可见性事实。"""
 
-    return request.app.state.services.queue.get(task_id)
+    return _decorate_task(request, request.app.state.services.queue.get(task_id))
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=TaskRecord)
@@ -171,16 +341,18 @@ def cancel_task(task_id: str, request: Request) -> TaskRecord:
                 message="受限任务运行时尚未启用。",
                 retryable=True,
             )
-        return queue.request_cancel(
+        task = queue.request_cancel(
             task_id,
             trace_id=request.state.trace_id,
         )
-    return queue.transition(
-        task_id,
-        TaskStatus.CANCELLED,
-        reason="api_cancel",
-        trace_id=request.state.trace_id,
-    )
+    else:
+        task = queue.transition(
+            task_id,
+            TaskStatus.CANCELLED,
+            reason="api_cancel",
+            trace_id=request.state.trace_id,
+        )
+    return _decorate_task(request, task)
 
 
 @router.get("/tasks", response_model=list[TaskRecord])
@@ -189,12 +361,13 @@ def list_tasks(
     exclude_resource_tag: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=500, ge=1, le=2000),
 ) -> list[TaskRecord]:
-    """返回有界任务快照；桌面可排除高样本诊断任务以降低传输和内存开销。"""
+    """返回有界任务快照，并附加可恢复的用户可见性事实。"""
 
-    return request.app.state.services.queue.list(
+    tasks = request.app.state.services.queue.list(
         exclude_resource_tag=exclude_resource_tag,
         limit=limit,
     )
+    return _visibility(request).decorate_many(tasks)
 
 
 @router.post("/tasks/{task_id}/retry", response_model=TaskRecord)
