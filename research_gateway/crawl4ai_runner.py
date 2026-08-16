@@ -8,7 +8,6 @@ import ipaddress
 import json
 import os
 import socket
-from importlib import metadata
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -275,6 +274,9 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.version:
+        # 延迟导入仅用于版本查询，避免顶层 import 排序歧义；不触发 Crawl4AI 浏览器初始化。
+        from importlib import metadata
+
         print(metadata.version("crawl4ai"))
         return 0
     if not args.url:
