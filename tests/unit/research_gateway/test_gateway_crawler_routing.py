@@ -6,11 +6,11 @@ import json
 from dataclasses import dataclass
 
 from research_gateway.crawler_adapter import (
-    CrawlLimits,
-    CrawlRequest,
     CrawlerDocument,
     CrawlerProvider,
     CrawlerProviderError,
+    CrawlLimits,
+    CrawlRequest,
 )
 from research_gateway.gateway import CommandResult, GatewayDispatcher
 
