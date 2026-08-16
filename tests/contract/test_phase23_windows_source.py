@@ -212,7 +212,7 @@ def test_dashboard_exposes_worker_state_without_fake_availability() -> None:
 
 
 def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> None:
-    """WPF 行为门不重复打包；正式 Release 独占盖章和原始安装生命周期测试。"""
+    """WPF 行为门不重复打包；正式 Release 独占完整 Gate、盖章和原始安装生命周期测试。"""
 
     control = (
         ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
@@ -220,6 +220,14 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
     release = (
         ROOT / ".github" / "workflows" / "windows-phase2-release.yml"
     ).read_text(encoding="utf-8")
+    smoke_program = (
+        ROOT
+        / "windows"
+        / "desktop"
+        / "tests"
+        / "PicotooPet.Desktop.Core.SmokeTests"
+        / "Program.cs"
+    ).read_text(encoding="utf-8-sig")
 
     for required in (
         "Detect Windows impact",
@@ -231,11 +239,21 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         "pytest",
         "dotnet build",
         "PicotooPet.Desktop.Core.SmokeTests",
-        "ShellNavigationReconnectWpfSmokeTests",
+        "--ui-interaction-only",
         "PHASE23_TASK_CENTER_SELF_TEST=PASS",
         "upload-artifact",
     ):
         assert required in control
+    for required in (
+        "ShellNavigationReconnectWpfSmokeTests.Run();",
+        "TaskCenterSmokeTests.Run();",
+        "ResultsCenterSmokeTests.Run();",
+        "ApprovalCenterSmokeTests.Run();",
+        "TaskCenterWpfLayoutSmokeTests.Run();",
+        "ResultsPageWpfLayoutSmokeTests.Run();",
+        "ApprovalsPageWpfLayoutSmokeTests.Run();",
+    ):
+        assert required in smoke_program
     for forbidden in (
         "Build-Phase2WindowsRelease.ps1",
         "stamp_windows_goal_integrity.py",
@@ -252,6 +270,7 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         "PicotooPet-Phase23-CloudContract-Windows-Prebuilt",
     ):
         assert required in release
+    assert "--ui-interaction-only" not in release
     assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" not in release
 
 
