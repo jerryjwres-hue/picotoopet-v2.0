@@ -326,7 +326,7 @@ internal sealed class MaotaiMotionEngine
                 facingSign);
         }
 
-        var eyeState = input.BaseState switch
+        var baseEyeState = input.BaseState switch
         {
             MaotaiBaseState.Offline => MaotaiEyeState.Closed,
             MaotaiBaseState.Error   => MaotaiEyeState.Half,
@@ -339,6 +339,10 @@ internal sealed class MaotaiMotionEngine
                 _                             => MaotaiEyeState.Open,
             },
         };
+        var eyeState = MaotaiNaturalBlink.Resolve(
+            baseEyeState,
+            _elapsedSeconds,
+            _idlePhaseOffset);
         var mouthState = input.BaseState switch
         {
             MaotaiBaseState.Error   => MaotaiMouthState.Annoyed,
