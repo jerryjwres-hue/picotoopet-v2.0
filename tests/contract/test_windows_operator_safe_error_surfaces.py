@@ -25,6 +25,8 @@ def test_simple_completed_task_detail_reuses_fixed_result_view_model() -> None:
     detail = read("ViewModels/TaskDetailViewModel.cs")
 
     assert "new TaskDetailViewModel(_session, task)" in view_model
-    assert 'TaskType == "research.search"' in detail
+    assert 'ResearchTaskType = "research.search"' in detail
+    assert "case ResearchTaskType:" in detail
     assert "GetResearchResultAsync" in detail
     assert "ResearchResult" in detail
+    assert "当前类型尚未配置安全正文预览" in detail
