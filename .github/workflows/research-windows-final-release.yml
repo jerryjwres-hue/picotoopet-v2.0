@@ -1,0 +1,138 @@
+name: Research Gateway 2.3.27.1 Windows Final Release
+
+on:
+  push:
+    branches:
+      - feature/research-gateway-2.3.27.1-final
+    paths:
+      - ".github/workflows/research-windows-final-release.yml"
+      - "src/**"
+      - "tests/**"
+      - "windows/desktop/**"
+      - "scripts/stamp_windows_goal_integrity.py"
+      - "scripts/verify_project_goal_integrity.py"
+      - "contracts/release/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-windows-final-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-release:
+    name: Native Windows WPF build and installer lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 55
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+      PICOTOO_SOURCE_HEAD_SHA: ${{ github.sha }}
+      PICOTOO_SOURCE_REF: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out final integration source
+        uses: actions/checkout@v6
+
+      - name: Install Python for Core and release contracts
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python validation dependencies
+        shell: pwsh
+        run: |
+          # 仅安装 CI 测试依赖；Windows 安装包本身不会获得 Mac Research 工具。
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest==9.1.1 pytest-asyncio==1.4.0 PyYAML ruff==0.16.1
+
+      - name: Run Research Core contracts
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = ".;src"
+          python -m pytest -q tests/integration/api/test_research_search_api.py tests/unit/worker/test_research_gateway_execution.py tests/unit/research_gateway/test_gateway.py
+          ruff check src/picotoopet_core/research src/picotoopet_core/api/routes/tasks.py src/picotoopet_core/worker/handlers.py tests/integration/api/test_research_search_api.py tests/unit/worker/test_research_gateway_execution.py
+
+      - name: Run Windows release governance contracts
+        shell: pwsh
+        run: |
+          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/release/test_windows_native_install_permission.py tests/release/test_windows_native_ci_provenance.py tests/release/test_self_hosted_native_runner_fallback.py tests/contract/test_component_impact_detection.py tests/contract/test_preserving_project_goals_skill.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
+
+      - name: Install exact .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Build and test WPF solution
+        shell: pwsh
+        run: |
+          dotnet --info
+          dotnet restore windows/desktop/PicotooPet.Desktop.sln
+          dotnet test windows/desktop/PicotooPet.Desktop.sln --configuration Release --no-restore
+
+      - name: Reproduce protected Task Center binding regression
+        shell: pwsh
+        run: .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
+
+      - name: Build analyze publish and self-test final Windows package
+        shell: pwsh
+        run: |
+          $head = $env:PICOTOO_SOURCE_HEAD_SHA
+          if ([string]::IsNullOrWhiteSpace($head) -or $head.Length -lt 12) {
+            throw "PICOTOO_SOURCE_HEAD_SHA 无效。"
+          }
+          # 版本标签只影响交付目录；产品事实版本由仓库 product-version.txt 冻结为 2.3.27.1。
+          $version = "2.3.27.1-research-$env:GITHUB_RUN_NUMBER-$($head.Substring(0, 12))"
+          .\windows\desktop\scripts\Build-Phase2WindowsRelease.ps1 -Version $version
+
+      - name: Stamp approved native WPF invariants
+        shell: pwsh
+        run: |
+          $releaseRoot = (Resolve-Path "windows/desktop/artifacts/release").Path
+          $packages = @(Get-ChildItem -LiteralPath $releaseRoot -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
+          if ($packages.Count -ne 1) {
+            throw "GOAL_INTEGRITY_VIOLATION: 原生 Windows ZIP 数量必须为 1，实际为 $($packages.Count)。"
+          }
+          $stampRoot = Join-Path $env:RUNNER_TEMP "picotoopet-windows-stamped"
+          if (Test-Path -LiteralPath $stampRoot) { Remove-Item -LiteralPath $stampRoot -Recurse -Force }
+          python scripts/stamp_windows_goal_integrity.py $packages[0].FullName --output-root $stampRoot --source-head $env:PICOTOO_SOURCE_HEAD_SHA --source-ref $env:PICOTOO_SOURCE_REF
+          if ($LASTEXITCODE -ne 0) { throw "GOAL_INTEGRITY_VIOLATION: 无法加盖原生 WPF 目标合同。" }
+          $replaceNames = @($packages[0].Name, "$($packages[0].Name).sha256.txt", "windows-build-report.json", "project-goal-integrity-report.json")
+          foreach ($name in $replaceNames) {
+            $existing = Join-Path $releaseRoot $name
+            if (Test-Path -LiteralPath $existing) { Remove-Item -LiteralPath $existing -Force }
+          }
+          foreach ($file in Get-ChildItem -LiteralPath $stampRoot -File) {
+            Copy-Item -LiteralPath $file.FullName -Destination $releaseRoot -Force
+          }
+
+      - name: Verify packaged installer goal contract
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath windows/desktop/artifacts/release -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
+          if ($packages.Count -ne 1) { throw "GOAL_INTEGRITY_VIOLATION: Windows 安装包数量必须为 1。" }
+          python scripts/verify_project_goal_integrity.py $packages[0].FullName --report windows/desktop/artifacts/release/goal-integrity-report.json
+          if ($LASTEXITCODE -ne 0) { throw "GOAL_INTEGRITY_VIOLATION: 实际 ZIP 改变了批准的 WPF 产品目标。" }
+
+      - name: Verify install upgrade recovery and rollback lifecycle
+        shell: pwsh
+        run: .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
+
+      - name: Upload final Windows installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-ResearchGateway-2.3.27.1-Windows-Prebuilt-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
+            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip.sha256.txt
+            windows/desktop/artifacts/release/windows-build-report.json
+            windows/desktop/artifacts/release/project-goal-integrity-report.json
+            windows/desktop/artifacts/release/goal-integrity-report.json
+            windows/desktop/artifacts/release/fixture-evidence/**
