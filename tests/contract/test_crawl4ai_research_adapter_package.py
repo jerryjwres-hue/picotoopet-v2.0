@@ -37,6 +37,9 @@ def test_installer_is_arm64_isolated_and_never_upgrades_shared_toolchain() -> No
     assert "crawl4ai==0.9.2" in installer
     assert "PLAYWRIGHT_BROWSERS_PATH" in installer
     assert "python -m venv" in installer or '"$python_bin" -m venv' in installer
+    # 与现有 PicotooPet runtime requires-python >=3.12,<3.14 对齐，只检测、不升级系统 Python。
+    assert "(3, 12) <= sys.version_info[:2] < (3, 14)" in installer
+    assert "Python 3.12-3.13" in installer
 
     forbidden = [
         "sudo ",
@@ -50,6 +53,18 @@ def test_installer_is_arm64_isolated_and_never_upgrades_shared_toolchain() -> No
     ]
     for mutation in forbidden:
         assert mutation not in installer.lower()
+
+
+def test_verify_runs_real_timeout_404_network_and_content_limit_fixtures() -> None:
+    verifier = (PACKAGE_DIR / "VERIFY_CRAWL4AI_RESEARCH_ADAPTER.command").read_text(
+        encoding="utf-8"
+    )
+
+    assert "https://httpbin.org/status/404" in verifier
+    assert "https://httpbin.org/delay/5" in verifier
+    assert '"timeout" \\\' in verifier
+    assert "https://picotoopet-crawl4ai.invalid/" in verifier
+    assert "https://www.rfc-editor.org/rfc/rfc9110.html" in verifier
 
 
 def test_installer_only_detects_existing_scrapling_gateway_and_worker() -> None:
