@@ -125,7 +125,7 @@ jobs:
 
       - name: Verify install upgrade recovery and rollback lifecycle
         shell: pwsh
-        run: .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
+        run: .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1
 
       - name: Upload final Windows installer
         uses: actions/upload-artifact@v7
