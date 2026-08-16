@@ -125,6 +125,11 @@ jobs:
         run: |
           .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
 
+      - name: Prepare UI behavior harness for separately delivered Maotai assets
+        shell: pwsh
+        run: |
+          .\windows\desktop\scripts\Prepare-WindowsUiBehaviorHarness.ps1
+
       - name: Run ShellNavigationReconnectWpfSmokeTests and approval Results diagnostic WPF smoke
         shell: powershell
         run: |
