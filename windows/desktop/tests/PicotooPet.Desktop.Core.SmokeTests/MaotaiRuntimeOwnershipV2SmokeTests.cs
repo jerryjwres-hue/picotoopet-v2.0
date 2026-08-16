@@ -1,12 +1,13 @@
 using System.Reflection;
 using System.Threading;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 V2 的运行时所有权：旧低频调度器/呼吸/错误抖动不得再修改 V2 父级 Transform，真实 RoutedEvent 必须进入 V2。</summary>
+/// <summary>冻结 V2 的运行时所有权：旧低频调度器/呼吸/错误抖动不得再修改 V2 父级 Transform，真实 RoutedEvent 和 Rig 输出必须进入 V2。</summary>
 internal static class MaotaiRuntimeOwnershipV2SmokeTests
 {
     private static readonly Type PanelType = typeof(AssistantPetPanel);
@@ -17,6 +18,9 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
         VerifyLegacyBreathingCannotScaleV2Parent();
         VerifyLegacyErrorShakeCannotAnimateV2Parent();
         VerifyDoubleClickRoutesIntoV2MotionEngine();
+        VerifyRuntimeRigRequiresWorkProps();
+        VerifyChestPoseReachesVisibleLayer();
+        VerifyWorkingPropsReachVisibleLayers();
     });
 
     private static void VerifyLegacyFrameTickCannotMoveV2Parent()
@@ -83,7 +87,7 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
 
         var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
         {
-            RoutedEvent = System.Windows.Controls.Control.MouseDoubleClickEvent,
+            RoutedEvent = Control.MouseDoubleClickEvent,
         };
 
         // Raise the actual control event so XAML handlers and partial-class handlers compete exactly as in the UI.
@@ -94,6 +98,136 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
         Assert(string.Equals(GetValue<object>(panel, "_maotaiInteraction").ToString(), "Celebrate", StringComparison.Ordinal),
             "V2 active 时真实 MouseDoubleClick RoutedEvent 没有写入 Celebrate interaction");
     }
+
+    private static void VerifyRuntimeRigRequiresWorkProps()
+    {
+        var field = PanelType.GetField(
+            "MaotaiRequiredRigAssets",
+            BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("AssistantPetPanel 缺少 V2 runtime required-rig 集合");
+        var required = field.GetValue(null) as string[]
+            ?? throw new InvalidOperationException("V2 runtime required-rig 集合类型异常");
+
+        Assert(Array.IndexOf(required, "laptop.png") >= 0,
+            "V2 runtime ready 判定漏掉 laptop.png，会允许空中打字的假完整 Rig 启动");
+        Assert(Array.IndexOf(required, "drink.png") >= 0,
+            "V2 runtime ready 判定漏掉 drink.png，manifest 与真实运行时完整性不一致");
+    }
+
+    private static void VerifyChestPoseReachesVisibleLayer()
+    {
+        var harness = CreateRendererHarness();
+        var pose = CreatePose(
+            harness.RendererType.Assembly,
+            motionState: "Idle",
+            chestX: 4.25,
+            chestY: -7.50,
+            chestRotation: 8.50);
+
+        harness.Apply.Invoke(harness.Renderer, [pose]);
+
+        var chestProperty = harness.Visuals.GetType().GetProperty(
+            "Chest",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("MaotaiRasterVisuals 没有 Chest 可动绑定；PoseFrame.Chest 当前没有上屏路径");
+        var chestPart = chestProperty.GetValue(harness.Visuals)
+            ?? throw new InvalidOperationException("MaotaiRasterVisuals.Chest 为空");
+        var translate = ReadPartTransform<TranslateTransform>(chestPart, "Translate");
+        var rotate = ReadPartTransform<RotateTransform>(chestPart, "Rotate");
+
+        AssertNear(4.25, translate.X,
+            "PoseFrame.Chest.X 没有实际进入胸毛可见图层");
+        AssertNear(-7.50, translate.Y,
+            "PoseFrame.Chest.Y 没有实际进入胸毛可见图层");
+        AssertNear(8.50, rotate.Angle,
+            "PoseFrame.Chest.RotationDeg 没有实际进入胸毛可见图层");
+    }
+
+    private static void VerifyWorkingPropsReachVisibleLayers()
+    {
+        var harness = CreateRendererHarness();
+        var laptop = GetField<Image>(harness.Panel, "MaotaiV2Laptop");
+        var drink = GetField<Image>(harness.Panel, "MaotaiV2Drink");
+
+        var workPose = CreatePose(harness.RendererType.Assembly, "WorkTyping", 0.0, -4.0, 0.0);
+        harness.Apply.Invoke(harness.Renderer, [workPose]);
+        Assert(laptop.Opacity >= 0.99,
+            "WorkTyping 已经驱动双爪键盘 IK，但真实 laptop 图层仍不可见，形成空中打字");
+        Assert(drink.Opacity >= 0.99,
+            "Working 道具 drink 已加载但没有进入真实 Renderer 可见链");
+
+        var idlePose = CreatePose(harness.RendererType.Assembly, "Idle", 0.0, -4.0, 0.0);
+        harness.Apply.Invoke(harness.Renderer, [idlePose]);
+        Assert(laptop.Opacity <= 0.01 && drink.Opacity <= 0.01,
+            "退出工作状态后 laptop/drink 必须由同一 Renderer 隐藏，不能留下陈旧工作场景");
+    }
+
+    private static RendererHarness CreateRendererHarness()
+    {
+        var panel = new AssistantPetPanel();
+        var buildVisuals = PanelType.GetMethod(
+            "BuildMaotaiRasterVisuals",
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("AssistantPetPanel 缺少 BuildMaotaiRasterVisuals");
+        var visuals = buildVisuals.Invoke(panel, null)
+            ?? throw new InvalidOperationException("BuildMaotaiRasterVisuals 没有返回可见层集合");
+        var rendererType = PanelType.Assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiRasterRenderer",
+            throwOnError: true)!;
+        var renderer = Activator.CreateInstance(rendererType, visuals)
+            ?? throw new InvalidOperationException("无法创建 MaotaiRasterRenderer");
+        var apply = rendererType.GetMethod(
+            "Apply",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("MaotaiRasterRenderer 缺少 Apply");
+
+        return new RendererHarness(panel, visuals, rendererType, renderer, apply);
+    }
+
+    private static object CreatePose(
+        Assembly assembly,
+        string motionState,
+        double chestX,
+        double chestY,
+        double chestRotation)
+    {
+        var poseType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiPoseFrame",
+            throwOnError: true)!;
+        var boneType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBonePose",
+            throwOnError: true)!;
+        var motionStateType = assembly.GetType(
+            "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState",
+            throwOnError: true)!;
+        var pose = Activator.CreateInstance(poseType)
+            ?? throw new InvalidOperationException("无法创建 MaotaiPoseFrame");
+        var chest = Activator.CreateInstance(
+            boneType,
+            [chestX, chestY, chestRotation, 1.0, 1.0])
+            ?? throw new InvalidOperationException("无法创建 Chest MaotaiBonePose");
+
+        RequireProperty(poseType, "Chest").SetValue(pose, chest);
+        RequireProperty(poseType, "MotionState").SetValue(
+            pose,
+            Enum.Parse(motionStateType, motionState));
+        RequireProperty(poseType, "FacingSign").SetValue(pose, 1);
+        return pose;
+    }
+
+    private static T ReadPartTransform<T>(object part, string propertyName) where T : class
+    {
+        var property = part.GetType().GetProperty(
+            propertyName,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"MaotaiRasterPart 缺少 {propertyName}");
+        return property.GetValue(part) as T
+            ?? throw new InvalidOperationException($"MaotaiRasterPart.{propertyName} 不是 {typeof(T).Name}");
+    }
+
+    private static PropertyInfo RequireProperty(Type type, string propertyName) =>
+        type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException($"{type.Name} 缺少属性 {propertyName}");
 
     private static void RunOnSta(Action action)
     {
@@ -172,4 +306,11 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
             throw new InvalidOperationException(message);
         }
     }
+
+    private readonly record struct RendererHarness(
+        AssistantPetPanel Panel,
+        object Visuals,
+        Type RendererType,
+        object Renderer,
+        MethodInfo Apply);
 }
