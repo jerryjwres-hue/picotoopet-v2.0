@@ -145,6 +145,27 @@ internal sealed class MaotaiLocomotionController
         }
     }
 
+    /// <summary>
+    /// 用户拖动窗口时冻结内部水平动力学；只保留当前骨骼/跳跃数值，不让旧惯性在鼠标下继续滑走。
+    /// </summary>
+    public void Hold(double minX, double maxX)
+    {
+        LandedThisFrame = false;
+        if (!double.IsFinite(minX) || !double.IsFinite(maxX))
+        {
+            return;
+        }
+
+        if (minX > maxX)
+        {
+            (minX, maxX) = (maxX, minX);
+        }
+
+        PositionX        = Math.Clamp(PositionX, minX, maxX);
+        VelocityX        = 0.0;
+        TurnAnticipation = 0.0;
+    }
+
     /// <summary>状态重挂载时重置动力学，避免旧窗口速度泄漏到新舞台。</summary>
     public void Reset(double positionX)
     {

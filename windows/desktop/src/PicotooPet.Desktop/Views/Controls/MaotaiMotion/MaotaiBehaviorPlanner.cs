@@ -33,7 +33,11 @@ internal readonly record struct MaotaiMotionInput(
     double TargetX,
     bool WantsRun,
     bool WantsJump,
-    double WorkAnchorX);
+    double WorkAnchorX)
+{
+    /// <summary>仅 Resting 自主调度可填；强状态和用户交互仍由 Planner 优先覆盖。</summary>
+    public MaotaiMotionState? AutonomousState { get; init; }
+}
 
 /// <summary>纯函数式高层动作规划；不持有状态、不操作 WPF 图层或业务状态。</summary>
 internal static class MaotaiBehaviorPlanner
@@ -79,6 +83,12 @@ internal static class MaotaiBehaviorPlanner
         if (input.BaseState == MaotaiBaseState.Waiting)
         {
             return MaotaiMotionState.Look;
+        }
+
+        if (input.BaseState == MaotaiBaseState.Resting &&
+            input.AutonomousState is { } autonomousState)
+        {
+            return autonomousState;
         }
 
         var distance = Math.Abs(input.TargetX - currentX);

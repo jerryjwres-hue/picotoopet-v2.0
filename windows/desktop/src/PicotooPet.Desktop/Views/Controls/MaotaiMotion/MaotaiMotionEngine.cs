@@ -92,13 +92,20 @@ internal sealed class MaotaiMotionEngine
         var wantsRun = _graph.ActiveState == MaotaiMotionState.Run ||
             (desiredState == MaotaiMotionState.Run && !_jumpSequenceActive);
 
-        _locomotion.Update(
-            dt,
-            movementTarget,
-            wantsRun,
-            executeJump,
-            input.StageMinX,
-            input.StageMaxX);
+        if (input.Interaction == MaotaiInteractionKind.Drag)
+        {
+            _locomotion.Hold(input.StageMinX, input.StageMaxX);
+        }
+        else
+        {
+            _locomotion.Update(
+                dt,
+                movementTarget,
+                wantsRun,
+                executeJump,
+                input.StageMinX,
+                input.StageMaxX);
+        }
 
         if (_locomotion.LandedThisFrame)
         {
