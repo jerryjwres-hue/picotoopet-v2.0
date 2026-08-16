@@ -14,6 +14,7 @@ browser_dir="$adapter_root/ms-playwright"
 data_dir="$adapter_root/data"
 gateway_root="${PICOTOOPET_RESEARCH_INSTALL_ROOT:-$HOME/Library/Application Support/PicotooPet/ResearchGateway}"
 gateway_runtime="$gateway_root/runtime"
+gateway_module_dir="$gateway_runtime/research_gateway"
 backup_gateway="$state_dir/gateway.py.pre-crawl4ai"
 install_state="$state_dir/install-state.json"
 
@@ -55,14 +56,16 @@ fi
 # 恢复安装前 Gateway 源文件；Gateway 本体、VERSION、bin wrapper 与其它 Research 工具全部保留。
 install -m 0644 "$backup_gateway" "$gateway_runtime/gateway.py"
 
-# 仅当当前 crawler_adapter.py 仍等于本包 payload 时删除，避免覆盖后来的人为修改。
-if [[ -f "$gateway_runtime/crawler_adapter.py" && -f "$payload_dir/crawler_adapter.py" ]]; then
-  installed_hash="$(shasum -a 256 "$gateway_runtime/crawler_adapter.py" | awk '{print tolower($1)}')"
+# 仅当当前固定 package 子模块仍等于本包 payload 时删除，避免覆盖后来的人为修改。
+installed_module="$gateway_module_dir/crawler_adapter.py"
+if [[ -f "$installed_module" && -f "$payload_dir/crawler_adapter.py" ]]; then
+  installed_hash="$(shasum -a 256 "$installed_module" | awk '{print tolower($1)}')"
   package_hash="$(shasum -a 256 "$payload_dir/crawler_adapter.py" | awk '{print tolower($1)}')"
   if [[ "$installed_hash" == "$package_hash" ]]; then
-    rm -f "$gateway_runtime/crawler_adapter.py"
+    rm -f "$installed_module"
+    rmdir "$gateway_module_dir" 2>/dev/null || true
   else
-    echo "检测到 crawler_adapter.py 已被后来修改；为避免破坏新代码，文件保留。"
+    echo "检测到 research_gateway/crawler_adapter.py 已被后来修改；为避免破坏新代码，文件保留。"
   fi
 fi
 
