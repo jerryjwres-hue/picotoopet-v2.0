@@ -18,13 +18,8 @@ _CAPTCHA_MARKERS = (
     "cloudflare challenge",
     "turnstile",
 )
-_TRANSIENT_MARKERS = (
-    "timeout",
-    "timed out",
-    "net::err_",
-    "connection",
-    "network",
-)
+_TIMEOUT_MARKERS = ("timeout", "timed out")
+_NETWORK_MARKERS = ("net::err_", "connection", "network")
 
 
 def _validate_public_url(url: str) -> str:
@@ -84,6 +79,17 @@ def _error_payload(code: str, *, captcha: bool = False) -> dict[str, object]:
     """Return a deliberately small error envelope without provider stderr or secrets."""
 
     return {"ok": False, "error": code, "captcha": captcha}
+
+
+def _classify_provider_failure(error_message: str) -> str:
+    """Classify only the bounded read failure categories exposed to Research Gateway."""
+
+    lowered = error_message.lower()
+    if any(marker in lowered for marker in _TIMEOUT_MARKERS):
+        return "timeout"
+    if any(marker in lowered for marker in _NETWORK_MARKERS):
+        return "network_failed"
+    return "crawl_failed"
 
 
 async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
@@ -212,13 +218,7 @@ async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
     if status_code == 403 and not success:
         return _error_payload("robots_or_access_denied")
     if not success:
-        lower_error = error_message.lower()
-        code = (
-            "network_failed"
-            if any(marker in lower_error for marker in _TRANSIENT_MARKERS)
-            else "crawl_failed"
-        )
-        return _error_payload(code)
+        return _error_payload(_classify_provider_failure(error_message))
     if not markdown:
         return _error_payload("empty_content")
     if len(markdown.encode("utf-8")) > args.max_content_bytes:
