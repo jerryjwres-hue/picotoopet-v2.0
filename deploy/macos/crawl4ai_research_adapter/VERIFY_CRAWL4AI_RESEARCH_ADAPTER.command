@@ -58,11 +58,11 @@ run_success_fixture() {
     args+=(--javascript)
   fi
   "$provider" "${args[@]}" > "$output"
-  python3 - "$output" "$url" <<'PY'
+  python3 - "$output" <<'PY'
 import json
 import sys
-from urllib.parse import urlparse
 from pathlib import Path
+from urllib.parse import urlparse
 
 payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 if payload.get("ok") is not True:
@@ -108,12 +108,20 @@ PY
 run_success_fixture "static-example" "https://example.com/" "false"
 run_success_fixture "javascript-quotes" "https://quotes.toscrape.com/js/" "true"
 
-# 真实受控失败：404、DNS 网络失败与超大正文；不允许无限重试或深度爬站。
+# 真实受控失败：HTTP 404、真实延迟超时、DNS 网络失败与超大正文。
 run_failure_fixture \
   "not-found" \
   "not_found" \
-  --url "https://httpstat.us/404" \
+  --url "https://httpbin.org/status/404" \
   --timeout-seconds 30 \
+  --max-content-bytes 262144 \
+  --redirect-limit 5 \
+  --retry-limit 0
+run_failure_fixture \
+  "timeout" \
+  "timeout" \
+  --url "https://httpbin.org/delay/5" \
+  --timeout-seconds 1 \
   --max-content-bytes 262144 \
   --redirect-limit 5 \
   --retry-limit 0
@@ -166,6 +174,7 @@ summary = {
     "javascript_page": "pass",
     "markdown_and_metadata": "pass",
     "not_found": "pass",
+    "timeout": "pass",
     "network_failure": "pass",
     "content_limit": "pass",
     "scrapling_reachability": sys.argv[3],
