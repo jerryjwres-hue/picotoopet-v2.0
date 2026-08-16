@@ -135,8 +135,12 @@ internal sealed class MaotaiRasterRenderer
     {
         _visuals = visuals ?? throw new ArgumentNullException(nameof(visuals));
 
-        // Face binding is asset-specific, so calibrate the existing WPF layers once here rather than
+        // Body/face binding is asset-specific, so calibrate existing WPF layers once here rather than
         // leaking pixel offsets into the pure Motion Engine or reallocating anything per display frame.
+        var bodyPanel = _visuals.TorsoNeutral.Parent as WpfPanel
+            ?? throw new InvalidOperationException("Maotai v2 torso layers are not attached to the body panel.");
+        MaotaiRasterBodyLayout.Configure(bodyPanel);
+
         var headPanel = _visuals.EyeLeftOpen.Parent as WpfPanel
             ?? throw new InvalidOperationException("Maotai v2 face layers are not attached to the head panel.");
         MaotaiRasterFaceLayout.Configure(headPanel);
@@ -233,7 +237,6 @@ internal sealed class MaotaiRasterRenderer
     {
         if (frame.MotionState == MaotaiMotionState.Yawn)
         {
-            // Yawn cross-fade       : tired/half -> closed+yawn -> open/smile, driven only by engine pose values.
             var progress = Math.Clamp(frame.YawnProgress, 0.0, 1.0);
             var opening  = Math.Clamp(frame.MouthOpenAmount, 0.0, 1.0);
             var baseFace = 1.0 - opening;
