@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
@@ -22,6 +24,9 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
             Interval = TimeSpan.FromSeconds(2),
         };
         _resourceTimer.Tick += ResourceTimer_Tick;
+        RecentTasksCard.PreviewMouseLeftButtonUp += RecentTasksCard_PreviewMouseLeftButtonUp;
+        RecentTasksCard.PreviewMouseMove += RecentTasksCard_PreviewMouseMove;
+        RecentTasksCard.MouseLeave += RecentTasksCard_MouseLeave;
         Loaded += OperatorHomePage_Loaded;
         Unloaded += OperatorHomePage_Unloaded;
     }
@@ -74,13 +79,63 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         await Task.CompletedTask;
     }
 
-    private void RecentTask_Click(object sender, RoutedEventArgs e)
+    private void RecentTasksCard_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not System.Windows.Controls.Button { DataContext: OperatorTaskCard task })
+        var task = FindRecentTaskCard(e.OriginalSource as DependencyObject);
+        if (task is null)
         {
             return;
         }
 
+        e.Handled = true;
+        OpenRecentTask(task);
+    }
+
+    private void RecentTasksCard_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        RecentTasksCard.Cursor = FindRecentTaskCard(e.OriginalSource as DependencyObject) is null
+            ? Cursors.Arrow
+            : Cursors.Hand;
+    }
+
+    private void RecentTasksCard_MouseLeave(object sender, MouseEventArgs e)
+    {
+        RecentTasksCard.Cursor = Cursors.Arrow;
+    }
+
+    private OperatorTaskCard? FindRecentTaskCard(DependencyObject? source)
+    {
+        var current = source;
+        while (current is not null && !ReferenceEquals(current, RecentTasksCard))
+        {
+            if (current is FrameworkElement { DataContext: OperatorTaskCard task })
+            {
+                return task;
+            }
+
+            current = GetParent(current);
+        }
+
+        return null;
+    }
+
+    private static DependencyObject? GetParent(DependencyObject current)
+    {
+        if (current is FrameworkContentElement contentElement)
+        {
+            return contentElement.Parent;
+        }
+
+        if (current is Visual)
+        {
+            return VisualTreeHelper.GetParent(current);
+        }
+
+        return LogicalTreeHelper.GetParent(current);
+    }
+
+    private void OpenRecentTask(OperatorTaskCard task)
+    {
         try
         {
             var gateway = TaskDetailGatewayContext.GetGateway(this)
