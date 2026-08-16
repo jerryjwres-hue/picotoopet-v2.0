@@ -42,8 +42,9 @@ _OPTIONAL_AUTO_TITLES = (
     "MAOTAI_REFERENCE",
     "MAOTAI_RMBG",
 )
-_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
-_PNG_SIGNATURE  = b"\x89PNG\r\n\x1a\n"
+_LOOPBACK_HOSTS              = {"127.0.0.1", "localhost", "::1"}
+_PNG_SIGNATURE               = b"\x89PNG\r\n\x1a\n"
+_DEFAULT_REFERENCE_SUBFOLDER = "maotai-v2-references"
 
 
 def normalize_server_url(server_url: str) -> str:
@@ -74,7 +75,7 @@ def load_bindings(path: Path | str) -> dict[str, Any]:
 def build_bindings_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
     """按固定 MAOTAI_* 节点标题自动绑定 API workflow，避免用户手工查询 ComfyUI node ID。"""
     title_index: dict[str, str] = {}
-    watched_titles = set(_REQUIRED_AUTO_TITLES) | set(_OPTIONAL_AUTO_TITLES)
+    watched_titles              = set(_REQUIRED_AUTO_TITLES) | set(_OPTIONAL_AUTO_TITLES)
 
     for node_id, node in workflow.items():
         if not isinstance(node_id, str) or not isinstance(node, dict):
@@ -95,8 +96,8 @@ def build_bindings_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
             "missing required ComfyUI auto-bind title(s): " + ", ".join(missing_titles)
         )
 
-    sampler_id = title_index["MAOTAI_SAMPLER"]
-    canvas_id  = title_index["MAOTAI_CANVAS"]
+    sampler_id  = title_index["MAOTAI_SAMPLER"]
+    canvas_id   = title_index["MAOTAI_CANVAS"]
     positive_id = title_index["MAOTAI_POSITIVE"]
     negative_id = title_index["MAOTAI_NEGATIVE"]
     save_id     = title_index["MAOTAI_SAVE"]
@@ -140,6 +141,123 @@ def build_bindings_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
     return bindings
 
 
+def build_multipart_image_upload(
+    image_path: Path | str,
+    *,
+    subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
+    boundary: str | None = None,
+) -> tuple[bytes, str]:
+    """按 ComfyUI `/upload/image` 的标准字段构造 multipart；不依赖第三方 HTTP 包。"""
+    path       = Path(image_path)
+    folder     = _normalize_reference_subfolder(subfolder)
+    file_name  = _validate_reference_png(path)
+    boundary   = boundary or f"PicotooPetMaotai{uuid.uuid4().hex}"
+    boundary_b = _validate_multipart_boundary(boundary)
+    payload    = path.read_bytes()
+
+    body = bytearray()
+
+    def add_text(name: str, value: str) -> None:
+        body.extend(b"--" + boundary_b + b"\r\n")
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("ascii"))
+        body.extend(value.encode("utf-8"))
+        body.extend(b"\r\n")
+
+    body.extend(b"--" + boundary_b + b"\r\n")
+    body.extend(
+        (
+            'Content-Disposition: form-data; name="image"; '
+            f'filename="{file_name}"\r\n'
+        ).encode("ascii")
+    )
+    body.extend(b"Content-Type: image/png\r\n\r\n")
+    body.extend(payload)
+    body.extend(b"\r\n")
+    add_text("overwrite", "true")
+    add_text("type", "input")
+    add_text("subfolder", folder)
+    body.extend(b"--" + boundary_b + b"--\r\n")
+
+    return bytes(body), f"multipart/form-data; boundary={boundary}"
+
+
+def normalize_uploaded_input_name(
+    payload: dict[str, Any],
+    *,
+    expected_name: str,
+    expected_subfolder: str,
+) -> str:
+    """严格核对 ComfyUI 上传响应，防止把 output/temp 或意外目录当成 LoadImage 输入。"""
+    if not isinstance(payload, dict):
+        raise ValueError("ComfyUI upload response must be an object")
+
+    actual_name      = payload.get("name")
+    actual_subfolder = payload.get("subfolder")
+    actual_type      = payload.get("type")
+    if actual_name != expected_name:
+        raise ValueError(
+            f"ComfyUI upload name mismatch: expected {expected_name}, got {actual_name!r}"
+        )
+    if actual_subfolder != expected_subfolder:
+        raise ValueError(
+            "ComfyUI upload subfolder mismatch: "
+            f"expected {expected_subfolder}, got {actual_subfolder!r}"
+        )
+    if actual_type != "input":
+        raise ValueError(f"ComfyUI upload type must be input, got {actual_type!r}")
+
+    return f"{expected_subfolder}/{expected_name}" if expected_subfolder else expected_name
+
+
+def prepare_reference_uploads(
+    plan: dict[str, Any],
+    reference_root: Path | str,
+    client: Any,
+    *,
+    subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
+) -> dict[str, str]:
+    """先完整 preflight 所有 job 的主参考图，再逐张上传；缺一张时保证零上传副作用。"""
+    root       = Path(reference_root)
+    folder     = _normalize_reference_subfolder(subfolder)
+    jobs       = plan.get("jobs")
+    references: list[str] = []
+    seen: set[str]        = set()
+
+    if not isinstance(jobs, list) or not jobs:
+        raise ValueError("art plan must contain non-empty jobs before reference upload")
+    if not root.is_dir():
+        raise ValueError(f"reference directory missing: {root}")
+
+    for job in jobs:
+        if not isinstance(job, dict):
+            raise ValueError("each art job must be an object before reference upload")
+        reference = job.get("primary_reference")
+        if not isinstance(reference, str) or not reference:
+            raise ValueError("art job primary_reference is missing")
+        if Path(reference).name != reference or "/" in reference or "\\" in reference:
+            raise ValueError(f"primary_reference must be a basename: {reference!r}")
+        if reference not in seen:
+            references.append(reference)
+            seen.add(reference)
+
+    # Preflight first       : validate every required reference before the first HTTP side effect.
+    reference_paths: dict[str, Path] = {}
+    for reference in references:
+        path = root / reference
+        if not path.is_file():
+            raise ValueError(f"required Maotai reference is missing: {reference}")
+        _validate_reference_png(path)
+        reference_paths[reference] = path
+
+    uploaded: dict[str, str] = {}
+    for reference in references:
+        uploaded[reference] = client.upload_input_image(
+            reference_paths[reference],
+            subfolder=folder,
+        )
+    return uploaded
+
+
 def apply_job_to_workflow(
     workflow: dict[str, Any],
     bindings: dict[str, Any],
@@ -147,6 +265,7 @@ def apply_job_to_workflow(
     *,
     seed: int,
     filename_prefix: str,
+    reference_inputs: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """深拷贝 API workflow 并只改显式绑定字段；模板对象本身保持不变。"""
     _validate_required_bindings(bindings)
@@ -173,7 +292,14 @@ def apply_job_to_workflow(
         reference_name = job.get("primary_reference")
         if not isinstance(reference_name, str) or not reference_name:
             raise ValueError("reference_image binding requires job.primary_reference")
-        _set_binding(rendered, reference_binding, reference_name, "reference_image")
+        reference_value = reference_name
+        if reference_inputs is not None:
+            reference_value = reference_inputs.get(reference_name, "")
+            if not reference_value:
+                raise ValueError(
+                    f"uploaded reference mapping is missing: {reference_name}"
+                )
+        _set_binding(rendered, reference_binding, reference_value, "reference_image")
 
     rmbg_binding = bindings.get("rmbg")
     if rmbg_binding is not None:
@@ -235,6 +361,28 @@ class ComfyUiLocalClient:
         if not isinstance(payload, dict):
             raise ValueError("ComfyUI /object_info did not return an object")
         return payload
+
+    def upload_input_image(
+        self,
+        image_path: Path | str,
+        *,
+        subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
+    ) -> str:
+        """上传本地参考 PNG 到 ComfyUI input；响应必须与请求的 name/subfolder/type 精确一致。"""
+        path                  = Path(image_path)
+        folder                = _normalize_reference_subfolder(subfolder)
+        expected_name         = _validate_reference_png(path)
+        body, content_type    = build_multipart_image_upload(path, subfolder=folder)
+        response              = self._request_multipart_json(
+            "/upload/image",
+            body,
+            content_type,
+        )
+        return normalize_uploaded_input_name(
+            response,
+            expected_name=expected_name,
+            expected_subfolder=folder,
+        )
 
     def queue_prompt(self, workflow: dict[str, Any]) -> str:
         payload = self._request_json(
@@ -302,6 +450,30 @@ class ComfyUiLocalClient:
         ) as response:
             return json.loads(response.read().decode("utf-8"))
 
+    def _request_multipart_json(
+        self,
+        path: str,
+        body: bytes,
+        content_type: str,
+    ) -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"{self.server_url}{path}",
+            data=body,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": content_type,
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(  # noqa: S310 - URL is restricted to loopback above.
+            request,
+            timeout=self.request_timeout_seconds,
+        ) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("ComfyUI multipart response must be an object")
+        return payload
+
     def _request_bytes(self, method: str, path: str) -> bytes:
         request = urllib.request.Request(
             f"{self.server_url}{path}",
@@ -324,6 +496,8 @@ def run_art_plan(
     server_url: str = "http://127.0.0.1:8188",
     base_seed: int = 230815,
     prompt_timeout_seconds: float = 900.0,
+    reference_root: Path | str | None = None,
+    reference_subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
     stage: bool = False,
     destination_root: Path | str | None = None,
 ) -> dict[str, Any]:
@@ -351,6 +525,15 @@ def run_art_plan(
     client = ComfyUiLocalClient(server_url)
     _verify_optional_rmbg(client.object_info(), workflow, bindings)
 
+    reference_inputs: dict[str, str] | None = None
+    if "reference_image" in bindings and reference_root is not None:
+        reference_inputs = prepare_reference_uploads(
+            plan,
+            reference_root,
+            client,
+            subfolder=reference_subfolder,
+        )
+
     generated: list[str] = []
     for job in jobs:
         if not isinstance(job, dict):
@@ -372,6 +555,7 @@ def run_art_plan(
             job,
             seed=seed,
             filename_prefix=prefix,
+            reference_inputs=reference_inputs,
         )
         prompt_id = client.queue_prompt(rendered)
         history   = client.wait_for_history(
@@ -403,6 +587,50 @@ def run_art_plan(
         "asset_count": report.asset_count,
         "staged": stage,
     }
+
+
+def _validate_reference_png(path: Path) -> str:
+    if not path.is_file():
+        raise ValueError(f"reference PNG is missing: {path}")
+    file_name = path.name
+    if not file_name.lower().endswith(".png"):
+        raise ValueError(f"reference image must be a PNG: {file_name}")
+    if any(character in file_name for character in ('"', "\r", "\n")):
+        raise ValueError(f"reference PNG filename is unsafe: {file_name!r}")
+    with path.open("rb") as stream:
+        if stream.read(len(_PNG_SIGNATURE)) != _PNG_SIGNATURE:
+            raise ValueError(f"reference image is not a valid PNG payload: {file_name}")
+    return file_name
+
+
+def _normalize_reference_subfolder(subfolder: str) -> str:
+    value = str(subfolder).strip().replace("\\", "/")
+    if not value:
+        return ""
+    if value.startswith("/") or ":" in value:
+        raise ValueError(f"reference subfolder must be relative: {subfolder!r}")
+
+    segments = value.split("/")
+    if any(
+        not segment
+        or segment in {".", ".."}
+        or any(character in segment for character in ('"', "\r", "\n"))
+        for segment in segments
+    ):
+        raise ValueError(f"reference subfolder is unsafe: {subfolder!r}")
+    return "/".join(segments)
+
+
+def _validate_multipart_boundary(boundary: str) -> bytes:
+    if not boundary or len(boundary) > 70:
+        raise ValueError("multipart boundary length is invalid")
+    try:
+        encoded = boundary.encode("ascii")
+    except UnicodeEncodeError as error:
+        raise ValueError("multipart boundary must be ASCII") from error
+    if any(byte in encoded for byte in b"\r\n\""):
+        raise ValueError("multipart boundary contains unsafe characters")
+    return encoded
 
 
 def _require_node_input(
@@ -546,6 +774,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional explicit binding JSON; omitted means MAOTAI_* title auto-binding.",
     )
     parser.add_argument("--incoming", type=Path, required=True)
+    parser.add_argument(
+        "--reference-dir",
+        type=Path,
+        default=None,
+        help="Optional local directory whose required references are uploaded to ComfyUI input.",
+    )
+    parser.add_argument(
+        "--reference-subfolder",
+        default=_DEFAULT_REFERENCE_SUBFOLDER,
+        help="ComfyUI input subfolder used for uploaded Maotai references.",
+    )
     parser.add_argument("--server", default="http://127.0.0.1:8188")
     parser.add_argument("--base-seed", type=int, default=230815)
     parser.add_argument("--prompt-timeout", type=float, default=900.0)
@@ -564,6 +803,8 @@ def main(argv: list[str] | None = None) -> int:
         server_url=args.server,
         base_seed=args.base_seed,
         prompt_timeout_seconds=args.prompt_timeout,
+        reference_root=args.reference_dir,
+        reference_subfolder=args.reference_subfolder,
         stage=args.stage,
         destination_root=args.destination,
     )
