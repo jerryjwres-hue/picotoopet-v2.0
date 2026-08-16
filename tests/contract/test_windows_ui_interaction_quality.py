@@ -113,6 +113,31 @@ def test_task_center_rows_and_results_open_shared_task_detail() -> None:
     assert "当前只开放诊断结果正文预览" not in results_vm
 
 
+def test_operator_task_actions_expose_real_enabled_and_busy_states() -> None:
+    xaml = _read(PAGES / "OperatorTaskListPage.xaml")
+    view_model = _read(DESKTOP / "ViewModels" / "OperatorTaskListPageViewModel.cs")
+
+    for binding in (
+        'IsEnabled="{Binding CanSelectAll, Mode=OneWay}"',
+        'IsEnabled="{Binding CanClearSelection, Mode=OneWay}"',
+        'IsEnabled="{Binding CanApplySelection, Mode=OneWay}"',
+        'IsEnabled="{Binding DataContext.CanApplyAnyAction, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"',
+    ):
+        assert binding in xaml
+
+    for member in (
+        "public bool HasItems",
+        "public bool CanSelectAll",
+        "public bool CanClearSelection",
+        "public bool CanApplySelection",
+        "public bool CanApplyAnyAction",
+        "当前操作仍在处理中，请稍候。",
+        "正在安全删除",
+        "正在恢复",
+    ):
+        assert member in view_model
+
+
 def test_visible_wpf_buttons_have_an_action_or_builtin_dialog_behavior() -> None:
     excluded = {
         "AssistantPetPanel.xaml",
