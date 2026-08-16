@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -15,7 +16,7 @@ def test_task_center_never_binds_raw_core_error_message() -> None:
     assert 'Text="{Binding Error, Mode=OneWay}"' not in xaml
     assert "public string SafeErrorSummary" in view_model
     assert "task.ErrorMessage" not in view_model
-    assert "public string? Error" not in view_model
+    assert re.search(r"public\s+string\?\s+Error\s*\{", view_model) is None
 
 
 def test_task_center_safe_error_summary_uses_status_and_error_code() -> None:
