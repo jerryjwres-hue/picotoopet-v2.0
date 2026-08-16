@@ -11,6 +11,7 @@ WIZARD_XAML = DESKTOP / "Views" / "Pages" / "NewTaskWizardWindow.xaml"
 
 
 def test_version() -> None:
+    # 产品身份仍保持已批准的 2.3.26.1；Research 2.3.27.1 是增量能力包版本。
     assert VERSION.read_text(encoding="utf-8").strip() == "2.3.26.1"
 
 
@@ -74,7 +75,7 @@ def test_projection_is_read_only_and_has_no_fake_progress_or_execution_authority
         assert forbidden not in source
 
 
-def test_new_task_wizard_is_closed_and_future_web_research_is_disabled() -> None:
+def test_new_task_wizard_keeps_26_1_boundaries_and_exposes_read_only_research() -> None:
     source = WIZARD.read_text(encoding="utf-8")
     xaml = WIZARD_XAML.read_text(encoding="utf-8")
     assert "enum OperatorTaskKind" in source
@@ -82,10 +83,11 @@ def test_new_task_wizard_is_closed_and_future_web_research_is_disabled() -> None
     assert "BusinessAnalysis" in source
     assert "ContentPlan" in source
     assert "WebResearch" in source
-    assert '"尚未接入"' in source
+    assert "research.search" in source
     assert "CreateDiagnosticSnapshotAsync" in source
     assert "NavigationRoute.BusinessAutomation" in source
-    assert "网络搜索 / 爬虫尚未在 26.1 接入" in xaml
+    assert "Research 2.3.27.1 已接入只读网络搜索" in xaml
+    assert "网络搜索 / 爬虫尚未在 26.1 接入" not in xaml
     for forbidden in (
         "ApiKey",
         "ProviderKey",
