@@ -42,6 +42,30 @@ def test_home_recent_tasks_are_real_detail_actions() -> None:
     assert "TaskDetailViewModel" in code
 
 
+def test_operator_home_preserves_approved_rich_product_structure() -> None:
+    xaml = _read(PAGES / "OperatorHomePage.xaml")
+
+    # 交互修复不能通过删掉既有首页产品内容来降低验收难度。
+    for required in (
+        'x:Name="HeroCard"',
+        'x:Name="HomeGreetingStrip"',
+        'x:Name="TaskOverviewCard"',
+        'x:Name="RecentTasksCard"',
+        'x:Name="SystemStatusCard"',
+        'x:Name="ResourceMonitorCard"',
+        'x:Name="WorkComponentsCard"',
+        'Source="/Picotoo Pet AI;component/Assets/Pet/Husky/V1/idle_0.png"',
+        '<LinearGradientBrush StartPoint="0,0" EndPoint="1,1">',
+        'Text="工作组件区"',
+        'Text="资源监控"',
+    ):
+        assert required in xaml
+
+    assert xaml.count("<GradientStop") >= 3
+    assert xaml.count("Effect=\"{StaticResource SoftCardShadow}\"") >= 5
+    assert len(xaml.splitlines()) >= 650
+
+
 def test_task_center_rows_and_results_open_shared_task_detail() -> None:
     task_xaml = _read(PAGES / "TaskCenterPage.xaml")
     task_code = _read(PAGES / "TaskCenterPage.xaml.cs")
