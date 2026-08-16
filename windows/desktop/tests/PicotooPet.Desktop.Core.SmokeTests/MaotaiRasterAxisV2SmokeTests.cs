@@ -29,6 +29,8 @@ internal static class MaotaiRasterAxisV2SmokeTests
             "IK 向左 180° 必须把竖直腿 PNG 转为 90°");
         AssertNear(43.0, Invoke(method, 133.0),
             "典型前腿 IK 133° 应落到约 43° 的可视角，而不是侧飞 133°");
+
+        MaotaiRasterFaceLayoutV2SmokeTests.Run();
     }
 
     private static double Invoke(MethodInfo method, double value)
