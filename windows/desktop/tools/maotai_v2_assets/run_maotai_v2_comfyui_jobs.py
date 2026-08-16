@@ -145,6 +145,107 @@ def build_bindings_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
     return bindings
 
 
+def workflow_upstream_node_ids(
+    workflow: dict[str, Any],
+    node_id: str,
+) -> set[str]:
+    """沿 ComfyUI API link `[upstream_node_id, output_index]` 收集最终节点的全部上游。"""
+    if not isinstance(workflow, dict):
+        raise ValueError("ComfyUI workflow must be an object")
+    if node_id not in workflow or not isinstance(workflow.get(node_id), dict):
+        raise ValueError(f"ComfyUI workflow node is missing: {node_id}")
+
+    upstream: set[str] = set()
+    visited: set[str]  = {node_id}
+    pending: list[str] = [node_id]
+
+    while pending:
+        current_id = pending.pop()
+        current    = workflow.get(current_id)
+        if not isinstance(current, dict):
+            raise ValueError(f"ComfyUI workflow node is invalid: {current_id}")
+        inputs = current.get("inputs")
+        if inputs is None:
+            continue
+        if not isinstance(inputs, dict):
+            raise ValueError(f"ComfyUI workflow node inputs are invalid: {current_id}")
+
+        for input_value in inputs.values():
+            linked_id = _workflow_link_node_id(input_value)
+            if linked_id is None:
+                continue
+            if linked_id not in workflow or not isinstance(workflow.get(linked_id), dict):
+                raise ValueError(
+                    f"dangling ComfyUI workflow link: {current_id} -> {linked_id}"
+                )
+            if linked_id in visited:
+                continue
+
+            visited.add(linked_id)
+            upstream.add(linked_id)
+            pending.append(linked_id)
+
+    upstream.discard(node_id)
+    return upstream
+
+
+def validate_maotai_workflow_graph(
+    workflow: dict[str, Any],
+    bindings: dict[str, Any],
+) -> None:
+    """确认命名生产节点真实参与最终 SaveImage 上游链，拒绝摆设节点和旁路 alpha。"""
+    _validate_required_bindings(bindings)
+
+    save_binding = bindings["filename_prefix"]
+    save_id      = save_binding.get("node")
+    if not isinstance(save_id, str):
+        raise ValueError("MAOTAI_SAVE binding requires a node string")
+
+    upstream = workflow_upstream_node_ids(workflow, save_id)
+    required_roles = (
+        ("positive", "MAOTAI_POSITIVE"),
+        ("negative", "MAOTAI_NEGATIVE"),
+        ("width", "MAOTAI_CANVAS"),
+        ("height", "MAOTAI_CANVAS"),
+        ("seed", "MAOTAI_SAMPLER"),
+    )
+
+    for binding_name, title in required_roles:
+        binding = bindings[binding_name]
+        node_id = binding.get("node")
+        if not isinstance(node_id, str) or node_id not in upstream:
+            raise ValueError(
+                f"{title} ({binding_name}) must be upstream of MAOTAI_SAVE"
+            )
+
+    reference = bindings.get("reference_image")
+    if reference is not None:
+        if not isinstance(reference, dict) or not isinstance(reference.get("node"), str):
+            raise ValueError("MAOTAI_REFERENCE binding requires a node string")
+        if reference["node"] not in upstream:
+            raise ValueError("MAOTAI_REFERENCE must be upstream of MAOTAI_SAVE")
+
+    rmbg = bindings.get("rmbg")
+    if rmbg is not None:
+        if not isinstance(rmbg, dict) or not isinstance(rmbg.get("node"), str):
+            raise ValueError("MAOTAI_RMBG binding requires a node string")
+        if rmbg["node"] not in upstream:
+            raise ValueError("MAOTAI_RMBG must be upstream of MAOTAI_SAVE")
+
+
+def _workflow_link_node_id(value: Any) -> str | None:
+    """只把 ComfyUI API 的二元 link 识别为依赖，普通列表参数不参与图遍历。"""
+    if (
+        isinstance(value, list)
+        and len(value) == 2
+        and isinstance(value[0], str)
+        and isinstance(value[1], int)
+        and not isinstance(value[1], bool)
+    ):
+        return value[0]
+    return None
+
+
 def build_multipart_image_upload(
     image_path: Path | str,
     *,
@@ -571,6 +672,9 @@ def run_art_plan(
     jobs     = plan.get("jobs")
     if not isinstance(jobs, list) or not jobs:
         raise ValueError("art plan must contain non-empty jobs")
+
+    # Graph preflight        : reject disconnected reference/RMBG/generation nodes before filesystem or HTTP side effects.
+    validate_maotai_workflow_graph(workflow, bindings)
 
     incoming.mkdir(parents=True, exist_ok=True)
     existing_pngs = sorted(path.name for path in incoming.glob("*.png"))
