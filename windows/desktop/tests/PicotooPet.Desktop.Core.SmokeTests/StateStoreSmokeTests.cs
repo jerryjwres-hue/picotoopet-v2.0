@@ -13,6 +13,7 @@ internal static class StateStoreSmokeTests
         VerifyConnectionStore();
         VerifyCapabilityStore();
         VerifyTaskSequenceGap();
+        VerifyHiddenSurvivesExecutionEvent();
     }
 
     private static void VerifyConnectionStore()
@@ -62,6 +63,40 @@ internal static class StateStoreSmokeTests
         SmokeAssert.True(
             taskStore.Snapshot.Tasks.Count == 1,
             "跳跃事件不得污染任务快照");
+    }
+
+    private static void VerifyHiddenSurvivesExecutionEvent()
+    {
+        var timestamp = DateTimeOffset.UtcNow;
+        var store = new TaskStateStore();
+        store.ReplaceTasks(new[]
+        {
+            new TaskRecord(
+                "task-1",
+                null,
+                null,
+                "analysis",
+                "Cancelled",
+                100,
+                null,
+                JsonSerializer.SerializeToElement(new { }),
+                0,
+                3,
+                3600,
+                timestamp,
+                timestamp,
+                null,
+                null,
+                null,
+                true),
+        });
+
+        SmokeAssert.True(
+            store.Apply(CreateEvent(sequence: 1)) == SequenceApplyResult.Applied,
+            "隐藏任务的连续执行事件未应用");
+        SmokeAssert.True(
+            store.Snapshot.Tasks.Single().IsHidden,
+            "队列执行事件不得冲掉 REST 已确认的已删除状态");
     }
 
     private static EventEnvelope CreateEvent(long sequence)
