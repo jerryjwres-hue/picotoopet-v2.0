@@ -144,9 +144,7 @@ public sealed record OperatorProjection(
             "AwaitingApproval" => "等待你的审核",
             _ => "状态已更新",
         };
-        var error = string.IsNullOrWhiteSpace(task.ErrorMessage)
-            ? null
-            : task.ErrorMessage;
+        var error = FormatSafeErrorSummary(task.Status, task.ErrorCode);
         return new OperatorTaskCard(
             task.TaskId,
             title,
@@ -159,6 +157,20 @@ public sealed record OperatorProjection(
             error,
             !string.IsNullOrWhiteSpace(task.ResultId),
             task.IsHidden);
+    }
+
+    private static string? FormatSafeErrorSummary(string status, string? errorCode)
+    {
+        if (status == "Failed")
+        {
+            return string.IsNullOrWhiteSpace(errorCode)
+                ? "任务执行失败；详细信息已记录，可打开详情查看状态或创建重试任务。"
+                : $"任务执行失败（错误码：{errorCode}）；详细信息已记录，可打开详情查看状态或创建重试任务。";
+        }
+
+        return status == "Cancelled"
+            ? "任务已安全取消。"
+            : null;
     }
 
     private static string FriendlyWorkerReason(string reason) => reason switch
