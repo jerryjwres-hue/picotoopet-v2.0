@@ -1,0 +1,154 @@
+name: Research 2.3.27.1 Mac Final Integrated Release
+
+on:
+  push:
+    branches:
+      - feature/research-gateway-2.3.27.1-final
+    paths:
+      - ".github/workflows/research-mac-final-integration-release.yml"
+      - "src/**"
+      - "research_gateway/**"
+      - "tests/**"
+      - "deploy/macos/research_gateway/**"
+      - "deploy/macos/research_integration/**"
+      - "deploy/macos/phase23-worker/**"
+      - "deploy/macos/phase23/lib.sh"
+      - "scripts/mac/research_gateway/**"
+      - "scripts/mac/research_integration/**"
+      - "scripts/mac/phase23-worker/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-mac-final-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-verify-package:
+    name: Native Apple Silicon integrated Research delivery
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PICOTOOPET_CODEX_EXECUTABLE: "${{ github.workspace }}/tests/fixtures/codex/fake_codex_jsonl.py"
+
+    steps:
+      - name: Check out final integration source
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install validation dependencies
+        shell: bash
+        run: |
+          # CI 仅安装仓库构建/测试依赖；最终用户包不会安装外部 Research 工具。
+          python -m pip install --upgrade pip
+          python -m pip install -e . \
+            pytest==9.1.1 \
+            pytest-asyncio==1.4.0 \
+            pytest-cov==7.1.0 \
+            ruff==0.16.1 \
+            jsonschema==4.26.0
+          chmod +x "$PICOTOOPET_CODEX_EXECUTABLE"
+
+      - name: Verify native Apple Silicon environment
+        shell: bash
+        run: |
+          sw_vers
+          uname -m
+          python --version
+          test "$(uname -m)" = "arm64"
+          test "$(python -c 'import platform; print(platform.machine())')" = "arm64"
+
+      - name: Run Research and Worker contracts
+        shell: bash
+        run: |
+          PYTHONPATH=.:src python -m pytest -q \
+            tests/unit/research_gateway \
+            tests/unit/worker/test_research_gateway_execution.py \
+            tests/integration/api/test_research_search_api.py \
+            tests/contract/test_research_gateway_package.py \
+            tests/contract/test_worker_runtime_source.py \
+            tests/contract/test_phase23_worker_delivery.py \
+            tests/contract/test_phase23_worker_status_contract.py \
+            tests/contract/test_phase23_diagnostic_contract.py \
+            tests/integration/api/test_diagnostic_snapshot_api.py \
+            tests/unit/worker/test_worker_runtime_foundation.py
+
+      - name: Run full Python regression
+        shell: bash
+        run: PYTHONPATH=.:src python -m pytest -q
+
+      - name: Lint Research integration
+        shell: bash
+        run: |
+          ruff check \
+            research_gateway \
+            src/picotoopet_core/research \
+            src/picotoopet_core/api/routes/tasks.py \
+            src/picotoopet_core/worker/handlers.py \
+            tests/unit/research_gateway \
+            tests/unit/worker/test_research_gateway_execution.py \
+            tests/integration/api/test_research_search_api.py \
+            tests/contract/test_research_gateway_package.py
+
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          for script in \
+            deploy/macos/research_gateway/*.command \
+            deploy/macos/research_integration/*.command \
+            deploy/macos/phase23-worker/*.command \
+            deploy/macos/phase23-worker/*.sh \
+            deploy/macos/phase23/lib.sh \
+            scripts/mac/research_gateway/*.sh \
+            scripts/mac/research_integration/*.sh \
+            scripts/mac/phase23-worker/*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Build and fixture-test Core Worker component
+        shell: bash
+        run: |
+          output="artifacts/mac-worker-research-final"
+          mkdir -p "$output"
+          bash scripts/mac/phase23-worker/Build-MacWorkerSliceC.sh \
+            --output-root "$output" \
+            --version-label "2.3.27.1-research-${{ github.run_number }}-${{ github.sha }}"
+          bash scripts/mac/phase23-worker/Test-MacWorkerSliceC.sh "$output"
+          bash scripts/mac/phase23-worker/Test-MacWorkerSliceCFixture.sh "$output"
+
+      - name: Build and fixture-test isolated Gateway component
+        shell: bash
+        run: |
+          output="artifacts/research-gateway-final-component"
+          mkdir -p "$output"
+          bash scripts/mac/research_gateway/Build-ResearchGatewayPackage.sh --output-root "$output"
+          bash scripts/mac/research_gateway/Test-ResearchGatewayPackage.sh "$output"
+
+      - name: Build final integrated Mac installer
+        shell: bash
+        run: |
+          bash scripts/mac/research_integration/Build-ResearchIntegratedPackage.sh \
+            --output-root artifacts/research-integration-final
+          bash scripts/mac/research_integration/Test-ResearchIntegratedPackage.sh \
+            artifacts/research-integration-final
+
+      - name: Upload integrated Mac installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-Research-2.3.27.1-Mac-arm64-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            artifacts/research-integration-final/PicotooPet-Research-2.3.27.1-Mac-arm64.tar.gz
+            artifacts/research-integration-final/PicotooPet-Research-2.3.27.1-Mac-arm64.tar.gz.sha256.txt
+            artifacts/research-integration-final/research-integrated-build-report.json
