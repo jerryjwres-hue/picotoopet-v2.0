@@ -131,3 +131,16 @@ def test_whole_app_readability_and_dpi_floor_remain_enabled() -> None:
     assert '<Setter Property="FontSize" Value="14" />' in resources
     assert '<Setter Property="MinHeight" Value="38" />' in resources
     assert "PerMonitorV2" in project
+
+
+def test_ui_behavior_harness_only_defers_pet_asset_smoke_when_no_real_png_exists() -> None:
+    harness = _read(ROOT / "windows" / "desktop" / "scripts" / "Prepare-WindowsUiBehaviorHarness.ps1")
+    workflow = _read(ROOT / ".github" / "workflows" / "windows-control-center-ci.yml")
+
+    assert "$beforePngs.Count -eq 0" in harness
+    assert "MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();" in harness
+    assert "MaotaiAssetPixelValidationSmokeTests.Run();" in harness
+    assert "不得新增或删除茅台 v2 PNG" in harness
+    assert "Build-Phase2WindowsRelease.ps1" not in harness
+    assert "GITHUB_WORKFLOW_REF" not in harness
+    assert "Prepare-WindowsUiBehaviorHarness.ps1" in workflow
