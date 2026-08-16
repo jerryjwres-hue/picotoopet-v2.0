@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
 using PicotooPet.Desktop.Views.Controls;
@@ -10,7 +11,9 @@ internal static class MaotaiRasterFaceLayoutV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
 
-    public static void Run()
+    public static void Run() => WpfStaSmokeRunner.Run(RunCore);
+
+    private static void RunCore()
     {
         var type = DesktopAssembly.GetType(
             "PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiRasterFaceLayout")
@@ -96,6 +99,41 @@ internal static class MaotaiRasterFaceLayoutV2SmokeTests
         if (!condition)
         {
             throw new InvalidOperationException(message);
+        }
+    }
+}
+
+/// <summary>WPF smoke 的最小 STA 边界；避免 async 测试入口把 UI 构造落到 MTA。</summary>
+internal static class WpfStaSmokeRunner
+{
+    public static void Run(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
+        {
+            action();
+            return;
+        }
+
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
         }
     }
 }
