@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import inspect
 
 import pytest
@@ -23,7 +22,9 @@ def _args(*, retry_limit: int = 1) -> argparse.Namespace:
 
 
 @pytest.mark.asyncio
-async def test_transient_network_failure_retries_only_to_explicit_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_transient_network_failure_retries_only_to_explicit_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = 0
 
     async def fake_crawl_once(_: argparse.Namespace) -> dict[str, object]:
@@ -61,10 +62,10 @@ async def test_timeout_is_bounded_by_retry_limit(monkeypatch: pytest.MonkeyPatch
     calls = 0
 
     async def fake_crawl_once(_: argparse.Namespace) -> dict[str, object]:
-        # asyncio timeout 被归一化为受控 timeout，不允许无限循环。
+        # Timeout 被归一化为受控 timeout，不允许无限循环。
         nonlocal calls
         calls += 1
-        raise asyncio.TimeoutError
+        raise TimeoutError
 
     monkeypatch.setattr(crawl4ai_runner, "_crawl_once", fake_crawl_once)
     result = await crawl4ai_runner._run_with_retries(_args(retry_limit=1))
@@ -90,8 +91,8 @@ def test_runner_rejects_non_public_or_credential_destinations(url: str) -> None:
 def test_runner_source_disables_persistent_profile_downloads_and_stealth() -> None:
     source = inspect.getsource(crawl4ai_runner)
 
-    assert 'use_persistent_context=False' in source
-    assert 'accept_downloads=False' in source
+    assert "use_persistent_context=False" in source
+    assert "accept_downloads=False" in source
     assert "UndetectedAdapter" not in source
     assert "magic=True" not in source
     assert "storage_state=" not in source
