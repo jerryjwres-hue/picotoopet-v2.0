@@ -15,9 +15,12 @@ TASK_LIST = DESKTOP / "Views/Pages/OperatorTaskListPage.xaml"
 def test_windows_uses_per_monitor_v2_dpi_awareness() -> None:
     project = PROJECT.read_text(encoding="utf-8")
     manifest = MANIFEST.read_text(encoding="utf-8")
+    assert "<ApplicationManifest>app.manifest</ApplicationManifest>" in project
     assert "<ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>" in project
-    assert "<dpiAware" not in manifest
-    assert "<dpiAwareness" not in manifest
+    assert "http://schemas.microsoft.com/SMI/2005/WindowsSettings" in manifest
+    assert "http://schemas.microsoft.com/SMI/2016/WindowsSettings" in manifest
+    assert ">true/pm</dpiAware>" in manifest
+    assert ">PerMonitorV2</dpiAwareness>" in manifest
 
 
 def test_application_defines_readable_typography_scale() -> None:
