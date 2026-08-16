@@ -31,6 +31,17 @@ _REQUIRED_BINDINGS = (
     "seed",
     "filename_prefix",
 )
+_REQUIRED_AUTO_TITLES = (
+    "MAOTAI_SAMPLER",
+    "MAOTAI_CANVAS",
+    "MAOTAI_POSITIVE",
+    "MAOTAI_NEGATIVE",
+    "MAOTAI_SAVE",
+)
+_OPTIONAL_AUTO_TITLES = (
+    "MAOTAI_REFERENCE",
+    "MAOTAI_RMBG",
+)
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _PNG_SIGNATURE  = b"\x89PNG\r\n\x1a\n"
 
@@ -52,12 +63,81 @@ def normalize_server_url(server_url: str) -> str:
 
 
 def load_bindings(path: Path | str) -> dict[str, Any]:
-    """读取显式 node/input 绑定；不猜节点 ID，也不注入隐藏默认绑定。"""
+    """读取显式 node/input 绑定；显式文件用于兼容旧工作流或非标准节点标题。"""
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("ComfyUI bindings JSON must be an object")
     _validate_required_bindings(payload)
     return payload
+
+
+def build_bindings_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
+    """按固定 MAOTAI_* 节点标题自动绑定 API workflow，避免用户手工查询 ComfyUI node ID。"""
+    title_index: dict[str, str] = {}
+    watched_titles = set(_REQUIRED_AUTO_TITLES) | set(_OPTIONAL_AUTO_TITLES)
+
+    for node_id, node in workflow.items():
+        if not isinstance(node_id, str) or not isinstance(node, dict):
+            continue
+        metadata = node.get("_meta")
+        if not isinstance(metadata, dict):
+            continue
+        title = metadata.get("title")
+        if not isinstance(title, str) or title not in watched_titles:
+            continue
+        if title in title_index:
+            raise ValueError(f"duplicate ComfyUI auto-bind title: {title}")
+        title_index[title] = node_id
+
+    missing_titles = [title for title in _REQUIRED_AUTO_TITLES if title not in title_index]
+    if missing_titles:
+        raise ValueError(
+            "missing required ComfyUI auto-bind title(s): " + ", ".join(missing_titles)
+        )
+
+    sampler_id = title_index["MAOTAI_SAMPLER"]
+    canvas_id  = title_index["MAOTAI_CANVAS"]
+    positive_id = title_index["MAOTAI_POSITIVE"]
+    negative_id = title_index["MAOTAI_NEGATIVE"]
+    save_id     = title_index["MAOTAI_SAVE"]
+
+    _require_node_input(workflow, sampler_id, "seed", "MAOTAI_SAMPLER")
+    _require_node_input(workflow, canvas_id, "width", "MAOTAI_CANVAS")
+    _require_node_input(workflow, canvas_id, "height", "MAOTAI_CANVAS")
+    _require_node_input(workflow, positive_id, "text", "MAOTAI_POSITIVE")
+    _require_node_input(workflow, negative_id, "text", "MAOTAI_NEGATIVE")
+    _require_node_input(workflow, save_id, "filename_prefix", "MAOTAI_SAVE")
+
+    bindings: dict[str, Any] = {
+        "positive": {"node": positive_id, "input": "text"},
+        "negative": {"node": negative_id, "input": "text"},
+        "width": {"node": canvas_id, "input": "width"},
+        "height": {"node": canvas_id, "input": "height"},
+        "seed": {"node": sampler_id, "input": "seed"},
+        "filename_prefix": {"node": save_id, "input": "filename_prefix"},
+    }
+
+    reference_id = title_index.get("MAOTAI_REFERENCE")
+    if reference_id is not None:
+        _require_node_input(workflow, reference_id, "image", "MAOTAI_REFERENCE")
+        bindings["reference_image"] = {"node": reference_id, "input": "image"}
+
+    rmbg_id = title_index.get("MAOTAI_RMBG")
+    if rmbg_id is not None:
+        rmbg_node = workflow.get(rmbg_id)
+        if not isinstance(rmbg_node, dict) or rmbg_node.get("class_type") != "BiRefNetRMBG":
+            raise ValueError("MAOTAI_RMBG must target a BiRefNetRMBG node")
+        _require_node_input(workflow, rmbg_id, "background", "MAOTAI_RMBG")
+        _require_node_input(workflow, rmbg_id, "model", "MAOTAI_RMBG")
+        bindings["rmbg"] = {
+            "node": rmbg_id,
+            "background_input": "background",
+            "model_input": "model",
+            "model": "Lucida",
+        }
+
+    _validate_required_bindings(bindings)
+    return bindings
 
 
 def apply_job_to_workflow(
@@ -146,9 +226,9 @@ class ComfyUiLocalClient:
     """最小本地 ComfyUI API client；只访问 normalize_server_url 允许的 loopback。"""
 
     def __init__(self, server_url: str, *, request_timeout_seconds: float = 30.0) -> None:
-        self.server_url             = normalize_server_url(server_url)
+        self.server_url              = normalize_server_url(server_url)
         self.request_timeout_seconds = max(1.0, float(request_timeout_seconds))
-        self.client_id              = uuid.uuid4().hex
+        self.client_id               = uuid.uuid4().hex
 
     def object_info(self) -> dict[str, Any]:
         payload = self._request_json("GET", "/object_info")
@@ -238,7 +318,7 @@ class ComfyUiLocalClient:
 def run_art_plan(
     plan_path: Path | str,
     workflow_path: Path | str,
-    bindings_path: Path | str,
+    bindings_path: Path | str | None,
     incoming_root: Path | str,
     *,
     server_url: str = "http://127.0.0.1:8188",
@@ -248,11 +328,15 @@ def run_art_plan(
     destination_root: Path | str | None = None,
 ) -> dict[str, Any]:
     """串行生成完整 manifest 集合；全部输出验证通过前绝不触碰正式 V2 目录。"""
-    plan       = _load_json_object(plan_path, "art plan")
-    workflow   = _load_json_object(workflow_path, "ComfyUI workflow")
-    bindings   = load_bindings(bindings_path)
-    incoming   = Path(incoming_root)
-    jobs       = plan.get("jobs")
+    plan     = _load_json_object(plan_path, "art plan")
+    workflow = _load_json_object(workflow_path, "ComfyUI workflow")
+    bindings = (
+        load_bindings(bindings_path)
+        if bindings_path is not None
+        else build_bindings_from_workflow(workflow)
+    )
+    incoming = Path(incoming_root)
+    jobs     = plan.get("jobs")
     if not isinstance(jobs, list) or not jobs:
         raise ValueError("art plan must contain non-empty jobs")
 
@@ -319,6 +403,20 @@ def run_art_plan(
         "asset_count": report.asset_count,
         "staged": stage,
     }
+
+
+def _require_node_input(
+    workflow: dict[str, Any],
+    node_id: str,
+    input_name: str,
+    title: str,
+) -> None:
+    node = workflow.get(node_id)
+    if not isinstance(node, dict):
+        raise ValueError(f"{title} auto-bind node is missing: {node_id}")
+    inputs = node.get("inputs")
+    if not isinstance(inputs, dict) or input_name not in inputs:
+        raise ValueError(f"{title} auto-bind node is missing required input: {input_name}")
 
 
 def _validate_required_bindings(bindings: dict[str, Any]) -> None:
@@ -441,7 +539,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--workflow", type=Path, required=True)
-    parser.add_argument("--bindings", type=Path, required=True)
+    parser.add_argument(
+        "--bindings",
+        type=Path,
+        default=None,
+        help="Optional explicit binding JSON; omitted means MAOTAI_* title auto-binding.",
+    )
     parser.add_argument("--incoming", type=Path, required=True)
     parser.add_argument("--server", default="http://127.0.0.1:8188")
     parser.add_argument("--base-seed", type=int, default=230815)
