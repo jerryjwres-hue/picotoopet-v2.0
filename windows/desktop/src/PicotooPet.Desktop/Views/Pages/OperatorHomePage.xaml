@@ -88,7 +88,7 @@
       </Grid.ColumnDefinitions>
 
       <StackPanel Grid.Column="0">
-        <Border Padding="20" CornerRadius="16" Background="#FFEEF6FF" BorderBrush="#FFD3E6FC" BorderThickness="1" Margin="0,0,0,16">
+        <Border x:Name="HeroCard" Padding="20" CornerRadius="16" Background="#FFEEF6FF" BorderBrush="#FFD3E6FC" BorderThickness="1" Margin="0,0,0,16">
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <StackPanel>
@@ -99,7 +99,7 @@
           </Grid>
         </Border>
 
-        <Grid Margin="0,0,0,16">
+        <Grid x:Name="TaskOverviewCard" Margin="0,0,0,16">
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
           <Button Grid.Column="0" Style="{StaticResource TaskBucketButtonStyle}" Click="Review_Click">
             <StackPanel><TextBlock Text="待我审核" FontSize="14" FontWeight="SemiBold" Foreground="#FF9A5D17" /><TextBlock Text="{Binding PendingReviewCount, Mode=OneWay}" Margin="0,8,0,2" FontSize="30" FontWeight="Bold" Foreground="#FFE56D12" /><TextBlock Text="需要你确认的任务" FontSize="12" Foreground="#FF8B735C" /></StackPanel>
@@ -112,7 +112,7 @@
           </Button>
         </Grid>
 
-        <Border Padding="16" CornerRadius="14" Background="White" BorderBrush="{StaticResource HomeBorder}" BorderThickness="1">
+        <Border x:Name="RecentTasksCard" Padding="16" CornerRadius="14" Background="White" BorderBrush="{StaticResource HomeBorder}" BorderThickness="1">
           <StackPanel>
             <Grid Margin="0,0,0,12">
               <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -141,7 +141,7 @@
       </StackPanel>
 
       <StackPanel Grid.Column="2">
-        <Border Padding="16" CornerRadius="14" Background="White" BorderBrush="{StaticResource HomeBorder}" BorderThickness="1" Margin="0,0,0,14">
+        <Border x:Name="SystemStatusCard" Padding="16" CornerRadius="14" Background="White" BorderBrush="{StaticResource HomeBorder}" BorderThickness="1" Margin="0,0,0,14">
           <StackPanel>
             <TextBlock Text="系统状态" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource HomeText}" Margin="0,0,0,12" />
             <Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Mac Core" FontSize="14" FontWeight="SemiBold" /><StackPanel Grid.Column="1" Orientation="Horizontal"><Ellipse Tag="{Binding CoreIndicator, Mode=OneWay}" Style="{StaticResource HealthDotStyle}" Margin="0,0,7,0" VerticalAlignment="Center" /><TextBlock Text="{Binding CoreStatus, Mode=OneWay}" FontSize="13" Foreground="{StaticResource HomeMuted}" /></StackPanel></Grid>
