@@ -87,13 +87,23 @@ def _classify_provider_failure(error_message: str) -> str:
 
     lowered = error_message.lower()
     # Crawl4AI 0.9.x 的异常包装路径可能丢失 status_code；只在失败 error_message 中恢复明确 404。
-    if "404" in lowered or "not found" in lowered:
+    if any(marker in lowered for marker in _NOT_FOUND_MARKERS):
         return "not_found"
     if any(marker in lowered for marker in _TIMEOUT_MARKERS):
         return "timeout"
     if any(marker in lowered for marker in _NETWORK_MARKERS):
         return "network_failed"
     return "crawl_failed"
+
+
+def _effective_status_code(result_status: object, observed_status: int | None) -> int | None:
+    """Prefer Crawl4AI status, falling back to the main Playwright navigation response."""
+
+    if isinstance(result_status, int) and 100 <= result_status <= 599:
+        return result_status
+    if isinstance(observed_status, int) and 100 <= observed_status <= 599:
+        return observed_status
+    return None
 
 
 async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
@@ -116,6 +126,7 @@ async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
     )
     strategy = AsyncPlaywrightCrawlerStrategy(browser_config=browser_config)
     host_cache: dict[str, bool] = {requested_host: True}
+    observed_status: int | None = None
 
     async def guard_route(route: object, request: object) -> None:
         # Egress gate：页面内子请求与 HTTP redirect 都不能访问本机、私网或元数据地址。
@@ -148,6 +159,12 @@ async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
         response: object | None = None,
         **_: object,
     ) -> object:
+        # 主导航状态由受控 Playwright response 只读记录，补足 Crawl4AI 0.9.x 可能缺失的 status_code。
+        nonlocal observed_status
+        response_status = getattr(response, "status", None) if response is not None else None
+        if isinstance(response_status, int):
+            observed_status = response_status
+
         # Redirect gate：显式追溯 Playwright redirect chain，超过上限立即受控失败。
         redirect_count = 0
         current = getattr(response, "request", None) if response is not None else None
@@ -195,7 +212,7 @@ async def _crawl_once(args: argparse.Namespace) -> dict[str, object]:
             timeout=args.timeout_seconds + 5,
         )
 
-    status_code = getattr(result, "status_code", None)
+    status_code = _effective_status_code(getattr(result, "status_code", None), observed_status)
     redirected_url = str(getattr(result, "redirected_url", "") or requested_url)
     try:
         _validate_public_url(redirected_url)
