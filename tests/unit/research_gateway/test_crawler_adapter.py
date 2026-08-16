@@ -8,12 +8,12 @@ import pytest
 
 from research_gateway.crawler_adapter import (
     CRAWLER_PROVIDER_ALLOWLIST,
-    CrawlLimits,
-    CrawlRequest,
     CrawlerAdapter,
     CrawlerDocument,
     CrawlerProvider,
     CrawlerProviderError,
+    CrawlLimits,
+    CrawlRequest,
     validate_public_http_url,
 )
 
