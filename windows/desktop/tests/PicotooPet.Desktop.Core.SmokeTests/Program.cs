@@ -45,6 +45,7 @@ internal static class Program
             MaotaiNeutralLegGeometryV2SmokeTests.Run();
             MaotaiRuntimeOwnershipV2SmokeTests.Run();
             MaotaiAutonomousFloatingV2SmokeTests.Run();
+            MaotaiFloatingDragLifecycleV2SmokeTests.Run();
             MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();
             MaotaiAssetPixelValidationSmokeTests.Run();
             NavigationFaultBoundarySmokeTests.Run();
