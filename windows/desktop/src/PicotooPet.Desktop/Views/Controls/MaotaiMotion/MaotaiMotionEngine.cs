@@ -25,6 +25,10 @@ internal sealed class MaotaiMotionEngine
     private const double WalkRunSpeedReference = 76.0;
     private const double GroundWorldY           = 0.0;
     private const double YawnEnvelopeSeconds    = 1.05;
+    private const double FrontLegUpperLength    = 19.0;
+    private const double FrontLegLowerLength    = 18.0;
+    private const double HindLegUpperLength     = 19.0;
+    private const double HindLegLowerLength     = 18.0;
 
     private readonly MaotaiAnimationGraph _graph = new(MaotaiMotionState.Idle);
     private readonly MaotaiLocomotionController _locomotion;
@@ -667,9 +671,9 @@ internal sealed class MaotaiMotionEngine
     {
         var pawLocalX   = pawWorldX - _locomotion.PositionX;
         var pawLocalY   = pawWorldY - bodyWorldY;
-        var upperLength = frontLeg ? 27.0 : 25.0;
-        var lowerLength = frontLeg ? 26.0 : 25.0;
-        var bendSign    = frontLeg ? facingSign : -facingSign;
+        var upperLength = frontLeg ? FrontLegUpperLength : HindLegUpperLength;
+        var lowerLength = frontLeg ? FrontLegLowerLength : HindLegLowerLength;
+        var bendSign    = frontLeg ? -facingSign : facingSign;
         var solution = MaotaiIkSolver.SolveTwoBone(
             shoulderLocalX,
             shoulderLocalY,
