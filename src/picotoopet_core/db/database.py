@@ -19,7 +19,6 @@ from .migration_015 import MIGRATION_015
 from .migration_016 import MIGRATION_016
 from .migration_017 import MIGRATION_017
 from .migration_018 import MIGRATION_018
-from .migration_019 import MIGRATION_019
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -30,6 +29,7 @@ from .schema import (
     MIGRATION_007,
     MIGRATION_008,
 )
+from .task_visibility_schema import TASK_VISIBILITY_SCHEMA
 
 
 class Database:
@@ -285,16 +285,8 @@ class Database:
                     (18, datetime.now(UTC).isoformat()),
                 )
 
-            migration_019_exists = connection.execute(
-                "SELECT 1 FROM schema_migrations WHERE version = 19"
-            ).fetchone()
-            if migration_019_exists is None:
-                # ── 2.3.27.1 reversible user task visibility ─────────────────
-                connection.executescript(MIGRATION_019)
-                connection.execute(
-                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                    (19, datetime.now(UTC).isoformat()),
-                )
+            # 2.3.27.1 的“已删除/恢复”只是操作员列表元数据；保持累计 Core Schema 18。
+            connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
         """执行单条 SQL。"""
