@@ -131,6 +131,56 @@ def test_research_result_uses_separate_fixed_contract(tmp_path: Path) -> None:
     assert legacy_response.status_code == 404
 
 
+def test_research_cancel_preserves_existing_worker_owned_terminal_state(
+    tmp_path: Path,
+) -> None:
+    client, headers = make_client(tmp_path)
+    with client:
+        # Queued Research 任务沿用现有 request_cancel，必须立即进入 Cancelled。
+        queued = client.post(
+            "/api/v1/tasks/research-search",
+            headers={**headers, "Idempotency-Key": "research-cancel-queued"},
+            json={"query": "queued cancellation", "limit": 1},
+        ).json()
+        queued_cancel = client.post(
+            f"/api/v1/tasks/{queued['task_id']}/cancel",
+            headers=headers,
+        )
+
+        # Running Research 任务只记录取消意图，最终 Cancelled 仍由持有租约的 Worker 提交。
+        running = client.post(
+            "/api/v1/tasks/research-search",
+            headers={**headers, "Idempotency-Key": "research-cancel-running"},
+            json={"query": "running cancellation", "limit": 1},
+        ).json()
+        services = client.app.state.services
+        leased = services.queue.lease_next(
+            "worker-cancel",
+            supported_task_types=("research.search",),
+        )
+        assert leased is not None
+        assert leased.task_id == running["task_id"]
+        running_cancel = client.post(
+            f"/api/v1/tasks/{running['task_id']}/cancel",
+            headers=headers,
+        )
+        cancel_requested = services.queue.is_cancel_requested(
+            running["task_id"],
+            worker_id="worker-cancel",
+        )
+        cancelled = services.queue.cancel_leased(
+            running["task_id"],
+            worker_id="worker-cancel",
+        )
+
+    assert queued_cancel.status_code == 200
+    assert queued_cancel.json()["status"] == "Cancelled"
+    assert running_cancel.status_code == 200
+    assert running_cancel.json()["status"] == "Running"
+    assert cancel_requested is True
+    assert cancelled.status.value == "Cancelled"
+
+
 def test_openapi_keeps_diagnostic_result_schema_and_adds_research_schema(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
     document = client.app.openapi()
