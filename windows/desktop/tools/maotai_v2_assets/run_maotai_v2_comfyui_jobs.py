@@ -5,11 +5,13 @@ import copy
 import hashlib
 import json
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
 import uuid
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -45,6 +47,8 @@ _OPTIONAL_AUTO_TITLES = (
 _LOOPBACK_HOSTS              = {"127.0.0.1", "localhost", "::1"}
 _PNG_SIGNATURE               = b"\x89PNG\r\n\x1a\n"
 _DEFAULT_REFERENCE_SUBFOLDER = "maotai-v2-references"
+_DEFAULT_MAX_REFERENCE_BYTES = 32 * 1024 * 1024
+_MAX_ZIP_COMPRESSION_RATIO   = 200.0
 
 
 def normalize_server_url(server_url: str) -> str:
@@ -219,26 +223,10 @@ def prepare_reference_uploads(
     """先完整 preflight 所有 job 的主参考图，再逐张上传；缺一张时保证零上传副作用。"""
     root       = Path(reference_root)
     folder     = _normalize_reference_subfolder(subfolder)
-    jobs       = plan.get("jobs")
-    references: list[str] = []
-    seen: set[str]        = set()
+    references = _required_primary_references(plan)
 
-    if not isinstance(jobs, list) or not jobs:
-        raise ValueError("art plan must contain non-empty jobs before reference upload")
     if not root.is_dir():
         raise ValueError(f"reference directory missing: {root}")
-
-    for job in jobs:
-        if not isinstance(job, dict):
-            raise ValueError("each art job must be an object before reference upload")
-        reference = job.get("primary_reference")
-        if not isinstance(reference, str) or not reference:
-            raise ValueError("art job primary_reference is missing")
-        if Path(reference).name != reference or "/" in reference or "\\" in reference:
-            raise ValueError(f"primary_reference must be a basename: {reference!r}")
-        if reference not in seen:
-            references.append(reference)
-            seen.add(reference)
 
     # Preflight first       : validate every required reference before the first HTTP side effect.
     reference_paths: dict[str, Path] = {}
@@ -256,6 +244,72 @@ def prepare_reference_uploads(
             subfolder=folder,
         )
     return uploaded
+
+
+def materialize_reference_zip(
+    plan: dict[str, Any],
+    zip_path: Path | str,
+    destination_root: Path | str,
+    *,
+    max_reference_bytes: int = _DEFAULT_MAX_REFERENCE_BYTES,
+) -> Path:
+    """只物化 plan 需要的参考 PNG；先全量预检，再按安全 basename 写入临时目录。"""
+    archive_path = Path(zip_path)
+    destination  = Path(destination_root)
+    references   = _required_primary_references(plan)
+
+    if max_reference_bytes < len(_PNG_SIGNATURE):
+        raise ValueError("reference size limit is too small for a PNG")
+    if not archive_path.is_file():
+        raise ValueError(f"reference ZIP is missing: {archive_path}")
+
+    try:
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            matches: dict[str, zipfile.ZipInfo] = {}
+
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                member = _validate_zip_member_path(info.filename)
+                basename = member.name
+                if basename not in references:
+                    continue
+                if basename in matches:
+                    raise ValueError(
+                        f"duplicate required reference basename in archive: {basename}"
+                    )
+                _validate_zip_reference_info(
+                    info,
+                    basename,
+                    max_reference_bytes=max_reference_bytes,
+                )
+                matches[basename] = info
+
+            missing = [reference for reference in references if reference not in matches]
+            if missing:
+                raise ValueError(
+                    "required Maotai reference missing from ZIP: " + ", ".join(missing)
+                )
+
+            # Read and validate all payloads before creating/writing the destination directory.
+            payloads: dict[str, bytes] = {}
+            for reference in references:
+                info    = matches[reference]
+                payload = archive.read(info)
+                if len(payload) > max_reference_bytes:
+                    raise ValueError(
+                        f"reference size exceeds limit after decompression: {reference}"
+                    )
+                if not payload.startswith(_PNG_SIGNATURE):
+                    raise ValueError(f"reference is not a PNG payload: {reference}")
+                payloads[reference] = payload
+    except zipfile.BadZipFile as error:
+        raise ValueError(f"invalid Maotai reference ZIP: {archive_path}") from error
+
+    destination.mkdir(parents=True, exist_ok=True)
+    for reference in references:
+        (destination / reference).write_bytes(payloads[reference])
+    return destination
 
 
 def apply_job_to_workflow(
@@ -369,11 +423,11 @@ class ComfyUiLocalClient:
         subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
     ) -> str:
         """上传本地参考 PNG 到 ComfyUI input；响应必须与请求的 name/subfolder/type 精确一致。"""
-        path                  = Path(image_path)
-        folder                = _normalize_reference_subfolder(subfolder)
-        expected_name         = _validate_reference_png(path)
-        body, content_type    = build_multipart_image_upload(path, subfolder=folder)
-        response              = self._request_multipart_json(
+        path               = Path(image_path)
+        folder             = _normalize_reference_subfolder(subfolder)
+        expected_name      = _validate_reference_png(path)
+        body, content_type = build_multipart_image_upload(path, subfolder=folder)
+        response           = self._request_multipart_json(
             "/upload/image",
             body,
             content_type,
@@ -497,11 +551,15 @@ def run_art_plan(
     base_seed: int = 230815,
     prompt_timeout_seconds: float = 900.0,
     reference_root: Path | str | None = None,
+    reference_zip: Path | str | None = None,
     reference_subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
     stage: bool = False,
     destination_root: Path | str | None = None,
 ) -> dict[str, Any]:
     """串行生成完整 manifest 集合；全部输出验证通过前绝不触碰正式 V2 目录。"""
+    if reference_root is not None and reference_zip is not None:
+        raise ValueError("reference directory and reference ZIP are mutually exclusive")
+
     plan     = _load_json_object(plan_path, "art plan")
     workflow = _load_json_object(workflow_path, "ComfyUI workflow")
     bindings = (
@@ -524,15 +582,14 @@ def run_art_plan(
 
     client = ComfyUiLocalClient(server_url)
     _verify_optional_rmbg(client.object_info(), workflow, bindings)
-
-    reference_inputs: dict[str, str] | None = None
-    if "reference_image" in bindings and reference_root is not None:
-        reference_inputs = prepare_reference_uploads(
-            plan,
-            reference_root,
-            client,
-            subfolder=reference_subfolder,
-        )
+    reference_inputs = _prepare_reference_inputs(
+        plan,
+        bindings,
+        client,
+        reference_root=reference_root,
+        reference_zip=reference_zip,
+        reference_subfolder=reference_subfolder,
+    )
 
     generated: list[str] = []
     for job in jobs:
@@ -587,6 +644,96 @@ def run_art_plan(
         "asset_count": report.asset_count,
         "staged": stage,
     }
+
+
+def _prepare_reference_inputs(
+    plan: dict[str, Any],
+    bindings: dict[str, Any],
+    client: ComfyUiLocalClient,
+    *,
+    reference_root: Path | str | None,
+    reference_zip: Path | str | None,
+    reference_subfolder: str,
+) -> dict[str, str] | None:
+    """把目录或 handoff ZIP 统一收敛到已上传的 ComfyUI LoadImage 值。"""
+    if "reference_image" not in bindings:
+        return None
+    if reference_root is not None:
+        return prepare_reference_uploads(
+            plan,
+            reference_root,
+            client,
+            subfolder=reference_subfolder,
+        )
+    if reference_zip is None:
+        return None
+
+    with tempfile.TemporaryDirectory(prefix="picotoopet-maotai-v2-refs-") as temporary:
+        materialized = materialize_reference_zip(
+            plan,
+            reference_zip,
+            Path(temporary),
+        )
+        return prepare_reference_uploads(
+            plan,
+            materialized,
+            client,
+            subfolder=reference_subfolder,
+        )
+
+
+def _required_primary_references(plan: dict[str, Any]) -> list[str]:
+    jobs = plan.get("jobs")
+    if not isinstance(jobs, list) or not jobs:
+        raise ValueError("art plan must contain non-empty jobs before reference processing")
+
+    references: list[str] = []
+    seen: set[str]        = set()
+    for job in jobs:
+        if not isinstance(job, dict):
+            raise ValueError("each art job must be an object before reference processing")
+        reference = job.get("primary_reference")
+        if not isinstance(reference, str) or not reference:
+            raise ValueError("art job primary_reference is missing")
+        if Path(reference).name != reference or "/" in reference or "\\" in reference:
+            raise ValueError(f"primary_reference must be a basename: {reference!r}")
+        if reference not in seen:
+            references.append(reference)
+            seen.add(reference)
+    return references
+
+
+def _validate_zip_member_path(member_name: str) -> PurePosixPath:
+    normalized = member_name.replace("\\", "/")
+    path       = PurePosixPath(normalized)
+    if (
+        not normalized
+        or normalized.startswith("/")
+        or ":" in path.parts[0]
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise ValueError(f"unsafe archive path: {member_name!r}")
+    return path
+
+
+def _validate_zip_reference_info(
+    info: zipfile.ZipInfo,
+    reference: str,
+    *,
+    max_reference_bytes: int,
+) -> None:
+    if info.flag_bits & 0x1:
+        raise ValueError(f"encrypted reference archive entry is not allowed: {reference}")
+    if info.file_size > max_reference_bytes:
+        raise ValueError(
+            f"reference size exceeds limit: {reference} ({info.file_size} bytes)"
+        )
+    if info.compress_size > 0 and info.file_size > 0:
+        ratio = info.file_size / info.compress_size
+        if ratio > _MAX_ZIP_COMPRESSION_RATIO:
+            raise ValueError(
+                f"reference compression ratio exceeds safety limit: {reference}"
+            )
 
 
 def _validate_reference_png(path: Path) -> str:
@@ -774,11 +921,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional explicit binding JSON; omitted means MAOTAI_* title auto-binding.",
     )
     parser.add_argument("--incoming", type=Path, required=True)
-    parser.add_argument(
+
+    reference_source = parser.add_mutually_exclusive_group()
+    reference_source.add_argument(
         "--reference-dir",
         type=Path,
         default=None,
-        help="Optional local directory whose required references are uploaded to ComfyUI input.",
+        help="Local directory whose required references are uploaded to ComfyUI input.",
+    )
+    reference_source.add_argument(
+        "--reference-zip",
+        type=Path,
+        default=None,
+        help="Handoff ZIP; only required reference PNGs are safely materialized and uploaded.",
     )
     parser.add_argument(
         "--reference-subfolder",
@@ -804,6 +959,7 @@ def main(argv: list[str] | None = None) -> int:
         base_seed=args.base_seed,
         prompt_timeout_seconds=args.prompt_timeout,
         reference_root=args.reference_dir,
+        reference_zip=args.reference_zip,
         reference_subfolder=args.reference_subfolder,
         stage=args.stage,
         destination_root=args.destination,
