@@ -199,7 +199,7 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
     }
 
     private async Task ApplyActionAsync(
-        IReadOnlyList<string> taskIds,
+        string[] taskIds,
         CancellationToken cancellationToken)
     {
         if (_session is null)
@@ -215,12 +215,12 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
 
         IsBusy = true;
         ActionMessage = IsDeletedMode
-            ? taskIds.Count == 1
+            ? taskIds.Length == 1
                 ? "正在恢复任务……"
-                : $"正在恢复 {taskIds.Count} 个任务……"
-            : taskIds.Count == 1
+                : $"正在恢复 {taskIds.Length} 个任务……"
+            : taskIds.Length == 1
                 ? "正在安全删除任务……"
-                : $"正在安全删除 {taskIds.Count} 个任务……";
+                : $"正在安全删除 {taskIds.Length} 个任务……";
         try
         {
             var response = IsDeletedMode
