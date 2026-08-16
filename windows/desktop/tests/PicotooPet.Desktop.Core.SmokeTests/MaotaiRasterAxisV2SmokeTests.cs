@@ -31,8 +31,13 @@ internal static class MaotaiRasterAxisV2SmokeTests
             "典型前腿 IK 133° 应落到约 43° 的可视角，而不是侧飞 133°");
     }
 
-    private static double Invoke(MethodInfo method, double value) =>
-        Convert.ToDouble(method.Invoke(null, [value]));
+    private static double Invoke(MethodInfo method, double value)
+    {
+        var result = method.Invoke(null, [value]);
+        return result is double angle
+            ? angle
+            : throw new InvalidOperationException("LegRotationFromIkDegrees 必须返回 double");
+    }
 
     private static void AssertNear(double expected, double actual, string message)
     {
