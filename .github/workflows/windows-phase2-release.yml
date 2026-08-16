@@ -194,7 +194,7 @@ jobs:
       - name: Verify packaged install upgrade recovery and rollback lifecycle on Windows PowerShell 5.1
         shell: pwsh
         run: |
-          .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
+          .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1
 
       - name: Upload the single formal Windows installer and lifecycle evidence
         uses: actions/upload-artifact@v7
