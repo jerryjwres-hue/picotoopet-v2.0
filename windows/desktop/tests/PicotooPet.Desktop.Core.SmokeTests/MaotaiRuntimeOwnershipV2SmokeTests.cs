@@ -83,7 +83,7 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
 
         var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
         {
-            RoutedEvent = Mouse.MouseDoubleClickEvent,
+            RoutedEvent = System.Windows.Controls.Control.MouseDoubleClickEvent,
         };
 
         Invoke(panel, "PetSurface_MouseDoubleClick", panel, args);
