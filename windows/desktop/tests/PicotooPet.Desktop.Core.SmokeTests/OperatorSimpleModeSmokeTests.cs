@@ -190,7 +190,12 @@ internal static class OperatorSimpleModeSmokeTests
         string status,
         DateTimeOffset updatedAt,
         string? resultId = null,
-        bool isHidden = false) => new(
+        bool isHidden = false)
+    {
+        var payload = type == "research.search"
+            ? JsonSerializer.SerializeToElement(new { query = "测试查询" })
+            : JsonSerializer.SerializeToElement(new { });
+        return new TaskRecord(
             id,
             null,
             null,
@@ -198,7 +203,7 @@ internal static class OperatorSimpleModeSmokeTests
             status,
             100,
             null,
-            JsonSerializer.SerializeToElement(type == "research.search" ? new { query = "测试查询" } : new { }),
+            payload,
             0,
             3,
             3600,
@@ -208,6 +213,7 @@ internal static class OperatorSimpleModeSmokeTests
             null,
             resultId,
             isHidden);
+    }
 
     private static ControlCenterCapabilities FullCapabilities() => new(
         LocalAgent: true,
