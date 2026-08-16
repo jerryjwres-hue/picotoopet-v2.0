@@ -88,12 +88,20 @@ internal static class AppSelfTest
             }
             checks["product_version_surfaces"] = "pass";
 
-            var expectedSimpleNavigation = new[] { "首页", "待我审核", "进行中", "已完成", "高级" };
-            if (shell.NavigationItems.Count != 5
+            var expectedSimpleNavigation = new[]
+            {
+                "首页",
+                "待我审核",
+                "进行中",
+                "已完成",
+                "已删除",
+                "高级",
+            };
+            if (shell.NavigationItems.Count != 6
                 || !shell.NavigationItems.Select(item => item.Title).SequenceEqual(expectedSimpleNavigation)
                 || shell.CurrentRoute != NavigationRoute.OperatorHome)
             {
-                throw new InvalidOperationException("26.1 Operator Simple Mode 五入口导航自检失败。");
+                throw new InvalidOperationException("2.3.27.1 Operator Simple Mode 六入口导航自检失败。");
             }
             if (!shell.NavigationItems.Single(
                     item => item.Route == NavigationRoute.OperatorHome).IsAvailable
