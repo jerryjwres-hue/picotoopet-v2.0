@@ -24,6 +24,13 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--ui-interaction-only", StringComparer.Ordinal))
+            {
+                await RunUiInteractionOnlyAsync().ConfigureAwait(false);
+                Console.WriteLine("PHASE23_UI_INTERACTION_SMOKE=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
@@ -99,6 +106,41 @@ internal static class Program
             Console.Error.WriteLine($"PHASE2_CORE_SMOKE=FAIL | {exception}");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// 只验证 Windows Control Center/UI 的真实交互合同。
+    /// 正式 Release 不使用此入口，仍运行完整 Smoke（包括茅台 V2 资产门禁）。
+    /// </summary>
+    private static async Task RunUiInteractionOnlyAsync()
+    {
+        NavigationSmokeTests.Run();
+        OperatorSimpleModeSmokeTests.Run();
+        NavigationFaultBoundarySmokeTests.Run();
+        NavigationContentRenderingSmokeTests.Run();
+        ShellNavigationReconnectWpfSmokeTests.Run();
+        TaskCenterSmokeTests.Run();
+        ResultsCenterSmokeTests.Run();
+        ApprovalCenterSmokeTests.Run();
+        DiagnosticTaskActionStateSmokeTests.Run();
+        DiagnosticResultContractSmokeTests.Run();
+        ProductVersionWpfSmokeTests.Run();
+        TaskCenterWpfLayoutSmokeTests.Run();
+        ResultsPageWpfLayoutSmokeTests.Run();
+        ApprovalsPageWpfLayoutSmokeTests.Run();
+        CloudDevelopmentPageWpfLayoutSmokeTests.Run();
+        ProviderReviewPanelWpfLayoutSmokeTests.Run();
+        PlatformFoundationPagesWpfLayoutSmokeTests.Run();
+        BusinessAutomationWpfSmokeTests.Run();
+        BusinessPipelinePanelWpfSmokeTests.Run();
+        CreativeIntelligenceWpfSmokeTests.Run();
+        ProductionPanelWpfSmokeTests.Run();
+        DeepAiEscalationPanelWpfSmokeTests.Run();
+        QualityEvaluationPanelWpfSmokeTests.Run();
+        QualityShadowPanelWpfSmokeTests.Run();
+        QualityPromotionPanelWpfSmokeTests.Run();
+        await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
+        await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
     }
 
     /// <summary>要求 fatal 证据在方法返回前同步落盘，且继续沿用安全脱敏。</summary>
