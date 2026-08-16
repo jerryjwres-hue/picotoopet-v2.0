@@ -27,6 +27,8 @@
     <SolidColorBrush x:Key="BrandBlue" Color="#FF2478E6" />
     <SolidColorBrush x:Key="TextPrimary" Color="#FF1D2B3E" />
     <SolidColorBrush x:Key="TextMuted" Color="#FF64758B" />
+    <SolidColorBrush x:Key="SidebarText" Color="#FFF2F7FD" />
+    <SolidColorBrush x:Key="SidebarMuted" Color="#FF96B8D6" />
 
     <Style x:Key="SimpleNavigationItemStyle" TargetType="ListBoxItem">
       <Setter Property="IsEnabled" Value="{Binding IsAvailable, Mode=OneWay}" />
@@ -42,37 +44,42 @@
         <Setter.Value>
           <ControlTemplate TargetType="ListBoxItem">
             <Border x:Name="NavBorder"
-                    Padding="14,10"
+                    Padding="13,10"
                     CornerRadius="11"
                     Background="Transparent"
                     BorderBrush="Transparent"
                     BorderThickness="1">
               <Grid>
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="8" />
+                  <ColumnDefinition Width="10" />
                   <ColumnDefinition Width="10" />
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Ellipse x:Name="NavDot" Width="6" Height="6" VerticalAlignment="Center" Fill="#FF9AABBE" />
+                <Ellipse x:Name="NavDot"
+                         Width="6"
+                         Height="6"
+                         VerticalAlignment="Center"
+                         Fill="#FF7898B5" />
                 <ContentPresenter Grid.Column="2" VerticalAlignment="Center" />
               </Grid>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="NavBorder" Property="Background" Value="#FFF0F6FF" />
-                <Setter TargetName="NavBorder" Property="BorderBrush" Value="#FFD5E6FC" />
+                <Setter TargetName="NavBorder" Property="Background" Value="#283D8FEF" />
+                <Setter TargetName="NavBorder" Property="BorderBrush" Value="#335CA8E7" />
+                <Setter TargetName="NavDot" Property="Fill" Value="#FFB8DCFA" />
               </Trigger>
               <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="NavBorder" Property="Background" Value="#FFE8F2FF" />
-                <Setter TargetName="NavBorder" Property="BorderBrush" Value="#FFC6DCF8" />
-                <Setter TargetName="NavDot" Property="Fill" Value="{StaticResource BrandBlue}" />
+                <Setter TargetName="NavBorder" Property="Background" Value="#553E8CE8" />
+                <Setter TargetName="NavBorder" Property="BorderBrush" Value="#666BB8F0" />
+                <Setter TargetName="NavDot" Property="Fill" Value="#FF78C4FF" />
               </Trigger>
               <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                <Setter TargetName="NavBorder" Property="BorderBrush" Value="#FF2478E6" />
+                <Setter TargetName="NavBorder" Property="BorderBrush" Value="#FF65B8F3" />
                 <Setter TargetName="NavBorder" Property="BorderThickness" Value="2" />
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
-                <Setter TargetName="NavBorder" Property="Opacity" Value="0.48" />
+                <Setter TargetName="NavBorder" Property="Opacity" Value="0.42" />
                 <Setter Property="Cursor" Value="Arrow" />
               </Trigger>
             </ControlTemplate.Triggers>
@@ -85,7 +92,7 @@
       <TextBlock Text="{Binding Title, Mode=OneWay}"
                  FontSize="15"
                  FontWeight="SemiBold"
-                 Foreground="{StaticResource TextPrimary}" />
+                 Foreground="{StaticResource SidebarText}" />
     </DataTemplate>
 
     <Style x:Key="AdvancedRouteButtonStyle" TargetType="Button">
@@ -147,23 +154,68 @@
       <RowDefinition Height="42" />
     </Grid.RowDefinitions>
 
-    <!-- Simple navigation has exactly one data source: ShellViewModel.NavigationItems. -->
-    <Border Grid.RowSpan="3" Grid.Column="0" Background="White" BorderBrush="#FFE1EAF4" BorderThickness="0,0,1,0">
-      <Grid Margin="18,20,18,16">
+    <!-- One NavigationItems source, rendered inside the approved dark Picotoo brand rail. -->
+    <Border Grid.RowSpan="3" Grid.Column="0" Padding="14,16">
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+          <GradientStop Color="#FF04172D" Offset="0" />
+          <GradientStop Color="#FF073C68" Offset="0.52" />
+          <GradientStop Color="#FF06192F" Offset="1" />
+        </LinearGradientBrush>
+      </Border.Background>
+      <Grid>
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel>
-          <TextBlock Text="Picotoo Pet AI" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" />
-          <TextBlock Text="{Binding ControlCenterSubtitle, Mode=OneWay}" Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource TextMuted}" />
-        </StackPanel>
+        <Grid Margin="4,2,4,14">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="46" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Width="42" Height="42" CornerRadius="21">
+            <Border.Background>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FF43B5FF" Offset="0" />
+                <GradientStop Color="#FF2478E6" Offset="1" />
+              </LinearGradientBrush>
+            </Border.Background>
+            <TextBlock Text="🐾"
+                       FontSize="19"
+                       Foreground="White"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="Picotoo Pet AI"
+                       Foreground="White"
+                       FontSize="17"
+                       FontWeight="Bold" />
+            <TextBlock Text="{Binding ControlCenterSubtitle, Mode=OneWay}"
+                       Margin="0,2,0,0"
+                       Foreground="{StaticResource SidebarMuted}"
+                       FontSize="10.5"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Grid>
 
-        <Border x:Name="HeaderModePill" Grid.Row="1" Margin="0,18,0,14" Padding="10,6" HorizontalAlignment="Left" CornerRadius="10" Background="#FFEAF3FF" BorderBrush="#FFD1E4FB" BorderThickness="1">
-          <TextBlock Text="简易模式" FontSize="12" FontWeight="SemiBold" Foreground="#FF2B6FBE" />
+        <Border x:Name="HeaderModePill"
+                Grid.Row="1"
+                Margin="4,0,4,12"
+                Padding="10,6"
+                HorizontalAlignment="Left"
+                CornerRadius="10"
+                Background="#1F70B6E8"
+                BorderBrush="#335CA8E7"
+                BorderThickness="1">
+          <TextBlock Text="SIMPLE MODE · 简单模式"
+                     FontSize="11.5"
+                     FontWeight="SemiBold"
+                     Foreground="#FFD8ECFC" />
         </Border>
 
         <ListBox x:Name="SimpleNavigationList"
@@ -178,22 +230,63 @@
                  ScrollViewer.VerticalScrollBarVisibility="Auto" />
 
         <!-- Maotai remains a dedicated integration surface. This pass does not replace its animation internals. -->
-        <ScrollViewer Grid.Row="3" Margin="0,12,0,0" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Grid.Row="3"
+                      Margin="0,10,0,0"
+                      VerticalScrollBarVisibility="Hidden"
+                      HorizontalScrollBarVisibility="Disabled">
           <controls:AssistantPetPanel x:Name="AssistantPet"
                                       Presentation="{Binding PetPresentation, Mode=OneWay}" />
         </ScrollViewer>
+
+        <Border Grid.Row="4"
+                Margin="0,12,0,0"
+                Padding="12,10"
+                Background="#221F6CA5"
+                BorderBrush="#334B93C7"
+                BorderThickness="1"
+                CornerRadius="13">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Width="34" Height="34" CornerRadius="17" Background="#FFEAF4FF">
+              <TextBlock Text="🐾"
+                         FontSize="17"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
+              <TextBlock Text="Picotoo Pet AI"
+                         Foreground="White"
+                         FontSize="12"
+                         FontWeight="SemiBold" />
+              <TextBlock Text="本地优先 · 安全控制"
+                         Margin="0,2,0,0"
+                         Foreground="#FF8FB7D8"
+                         FontSize="9.5" />
+            </StackPanel>
+          </Grid>
+        </Border>
       </Grid>
     </Border>
 
     <Border Grid.Column="1" Grid.Row="0" Background="White" BorderBrush="#FFE2EAF4" BorderThickness="0,0,0,1" Padding="24,14">
       <Grid>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="{Binding CurrentPage.Title, Mode=OneWay}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" />
             <Border Margin="10,2,0,0" Padding="8,3" CornerRadius="8" Background="#FFF1F6FC">
               <StackPanel Orientation="Horizontal">
-                <Ellipse x:Name="HeaderStatusDot" Tag="{Binding PetPresentation.Indicator, Mode=OneWay}" Style="{StaticResource ShellStatusDotStyle}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                <Ellipse x:Name="HeaderStatusDot"
+                         Tag="{Binding PetPresentation.Indicator, Mode=OneWay}"
+                         Style="{StaticResource ShellStatusDotStyle}"
+                         Margin="0,0,6,0"
+                         VerticalAlignment="Center" />
                 <TextBlock Text="{Binding PetPresentation.Title, Mode=OneWay}" FontSize="12" FontWeight="SemiBold" Foreground="#FF3976BE" />
               </StackPanel>
             </Border>
@@ -205,19 +298,28 @@
           <Border Tag="{Binding PetPresentation.Indicator, Mode=OneWay}" Style="{StaticResource ShellStatusBadgeStyle}" CornerRadius="11" Padding="10,7" Margin="0,0,8,0">
             <StackPanel Orientation="Horizontal">
               <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}" Style="{StaticResource ShellStatusDotStyle}" Margin="0,0,7,0" VerticalAlignment="Center" />
-              <StackPanel><TextBlock Text="系统" FontSize="12" Foreground="#FF6C7F93" /><TextBlock Text="{Binding PetPresentation.Title, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#FF2D5D50" /></StackPanel>
+              <StackPanel>
+                <TextBlock Text="系统" FontSize="12" Foreground="#FF6C7F93" />
+                <TextBlock Text="{Binding PetPresentation.Title, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#FF2D5D50" />
+              </StackPanel>
             </StackPanel>
           </Border>
           <Border Tag="{Binding PetPresentation.Indicator, Mode=OneWay}" Style="{StaticResource ShellStatusBadgeStyle}" CornerRadius="11" Padding="10,7" Margin="0,0,8,0">
             <StackPanel Orientation="Horizontal">
               <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}" Style="{StaticResource ShellStatusDotStyle}" Margin="0,0,7,0" VerticalAlignment="Center" />
-              <StackPanel><TextBlock Text="Mac Core" FontSize="12" Foreground="#FF6C7F93" /><TextBlock Text="{Binding ConnectionText, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#FF2C3F55" /></StackPanel>
+              <StackPanel>
+                <TextBlock Text="Mac Core" FontSize="12" Foreground="#FF6C7F93" />
+                <TextBlock Text="{Binding ConnectionText, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#FF2C3F55" />
+              </StackPanel>
             </StackPanel>
           </Border>
           <Border Style="{StaticResource ShellStatusBadgeStyle}" CornerRadius="11" Padding="10,7" Margin="0,0,8,0">
             <StackPanel Orientation="Horizontal">
               <Ellipse Width="8" Height="8" Fill="#FF19A968" Margin="0,0,7,0" VerticalAlignment="Center" />
-              <StackPanel><TextBlock Text="Windows" FontSize="12" Foreground="#FF6C7F93" /><TextBlock Text="正常" FontSize="13" FontWeight="SemiBold" Foreground="#FF16825A" /></StackPanel>
+              <StackPanel>
+                <TextBlock Text="Windows" FontSize="12" Foreground="#FF6C7F93" />
+                <TextBlock Text="正常" FontSize="13" FontWeight="SemiBold" Foreground="#FF16825A" />
+              </StackPanel>
             </StackPanel>
           </Border>
           <Border Background="#FFEEF5FF" BorderBrush="#FFD7E7FB" BorderThickness="1" CornerRadius="11" Padding="10,8">
@@ -228,7 +330,9 @@
     </Border>
 
     <Border Grid.Column="1" Grid.Row="1" Background="#FFF4F8FD">
-      <views:NavigationContentHost x:Name="ContentHost" Content="{Binding CurrentPage, Mode=OneWay}" NavigationFaulted="ContentHost_NavigationFaulted" />
+      <views:NavigationContentHost x:Name="ContentHost"
+                                   Content="{Binding CurrentPage, Mode=OneWay}"
+                                   NavigationFaulted="ContentHost_NavigationFaulted" />
     </Border>
 
     <Border x:Name="AdvancedHomePanel" Grid.Column="1" Grid.Row="1" Background="#FFF4F8FD" Padding="28">
@@ -236,7 +340,9 @@
         <Style TargetType="Border">
           <Setter Property="Visibility" Value="Collapsed" />
           <Style.Triggers>
-            <DataTrigger Binding="{Binding CurrentRoute, Mode=OneWay}" Value="{x:Static navigation:NavigationRoute.AdvancedHome}"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            <DataTrigger Binding="{Binding CurrentRoute, Mode=OneWay}" Value="{x:Static navigation:NavigationRoute.AdvancedHome}">
+              <Setter Property="Visibility" Value="Visible" />
+            </DataTrigger>
           </Style.Triggers>
         </Style>
       </Border.Style>
@@ -273,8 +379,14 @@
 
     <Border Grid.Column="1" Grid.Row="2" Background="#FFFBFDFF" BorderBrush="#FFE2EAF4" BorderThickness="0,1,0,0" Padding="18,9">
       <StackPanel Orientation="Horizontal">
-        <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}" Style="{StaticResource ShellStatusDotStyle}" VerticalAlignment="Center" Margin="0,0,8,0" />
-        <TextBlock Text="{Binding ConnectionMessage, Mode=OneWay}" Foreground="#FF64758B" FontSize="13" TextTrimming="CharacterEllipsis" />
+        <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}"
+                 Style="{StaticResource ShellStatusDotStyle}"
+                 VerticalAlignment="Center"
+                 Margin="0,0,8,0" />
+        <TextBlock Text="{Binding ConnectionMessage, Mode=OneWay}"
+                   Foreground="#FF64758B"
+                   FontSize="13"
+                   TextTrimming="CharacterEllipsis" />
       </StackPanel>
     </Border>
   </Grid>
