@@ -61,7 +61,32 @@ public sealed record TaskRecord(
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
     [property: JsonPropertyName("error_code")] string? ErrorCode,
     [property: JsonPropertyName("error_message")] string? ErrorMessage,
-    [property: JsonPropertyName("result_id")] string? ResultId = null);
+    [property: JsonPropertyName("result_id")] string? ResultId = null,
+    [property: JsonPropertyName("is_hidden")] bool IsHidden = false);
+
+/// <summary>批量隐藏/恢复只发送用户明确选择的任务 ID。</summary>
+public sealed record TaskIdBatchRequest(
+    [property: JsonPropertyName("task_ids")] IReadOnlyList<string> TaskIds);
+
+/// <summary>Mac Core 对一次可恢复任务操作给出的权威结果。</summary>
+public sealed record TaskVisibilityOutcome(
+    [property: JsonPropertyName("task_id")] string TaskId,
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("pending_cancel")] bool PendingCancel,
+    [property: JsonPropertyName("task")] TaskRecord? Task,
+    [property: JsonPropertyName("message")] string? Message);
+
+/// <summary>批量任务可见性操作逐项返回，不因单个失败吞掉其他结果。</summary>
+public sealed record TaskVisibilityBatchResponse(
+    [property: JsonPropertyName("outcomes")] IReadOnlyList<TaskVisibilityOutcome> Outcomes);
+
+/// <summary>Research 2.3.27.1 固定只读搜索结果。</summary>
+public sealed record ResearchSearchResult(
+    [property: JsonPropertyName("schema_version")] string SchemaVersion,
+    [property: JsonPropertyName("capability")] string Capability,
+    [property: JsonPropertyName("query")] string Query,
+    [property: JsonPropertyName("limit")] int Limit,
+    [property: JsonPropertyName("output")] string Output);
 
 /// <summary>审批中心读取的安全记录，不包含令牌、令牌哈希或原始任意路径。</summary>
 public sealed record ApprovalRecord(
