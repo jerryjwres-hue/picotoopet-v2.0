@@ -179,14 +179,19 @@ internal static class Program
             priority = 100,
             resource_tag = (string?)null,
             payload = new { },
-            error = (string?)null,
-            created_at = "2025-01-01T00:00:00Z",
-            updated_at = "2025-01-01T00:00:00Z",
+            attempt_count = 0,
+            max_attempts = 3,
+            timeout_seconds = 3600,
+            created_at = DateTimeOffset.UtcNow,
+            updated_at = DateTimeOffset.UtcNow,
+            error_code = (string?)null,
+            error_message = (string?)null,
+            result_id = (string?)null,
         });
-        var envelope = new StateEventEnvelope("task.changed", 1, payload);
-        Assert(store.Apply(envelope), "首次状态事件必须应用");
-        Assert(!store.Apply(envelope), "重复状态事件必须去重");
-        Assert(store.Tasks.ContainsKey("task-1"), "任务状态没有写入 store");
+        var first = new EventEnvelope("2.2.0", 1, "event-1", "task.updated", null, DateTimeOffset.UtcNow, payload);
+        Assert(store.Apply(first), "首个事件未应用");
+        Assert(!store.Apply(first), "重复事件未去重");
+        Assert(store.Snapshot.Tasks.Count == 1, "任务状态数量错误");
     }
 
     private static void Assert(bool condition, string message)
