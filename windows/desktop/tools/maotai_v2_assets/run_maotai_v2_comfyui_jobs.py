@@ -233,6 +233,32 @@ def validate_maotai_workflow_graph(
             raise ValueError("MAOTAI_RMBG must be upstream of MAOTAI_SAVE")
 
 
+def validate_comfyui_workflow_node_types(
+    object_info: dict[str, Any],
+    workflow: dict[str, Any],
+) -> None:
+    """在上传参考图前确认 workflow 的每种 node class 已由当前本机 ComfyUI 注册。"""
+    if not isinstance(object_info, dict):
+        raise ValueError("ComfyUI /object_info must be an object")
+    if not isinstance(workflow, dict):
+        raise ValueError("ComfyUI workflow must be an object")
+
+    missing: list[str] = []
+    for node_id, node in workflow.items():
+        if not isinstance(node_id, str) or not isinstance(node, dict):
+            raise ValueError(f"ComfyUI workflow node is invalid: {node_id!r}")
+        class_type = node.get("class_type")
+        if not isinstance(class_type, str) or not class_type:
+            raise ValueError(f"ComfyUI workflow node class_type is invalid: {node_id}")
+        if class_type not in object_info:
+            missing.append(f"{node_id}:{class_type}")
+
+    if missing:
+        raise ValueError(
+            "ComfyUI workflow node class is not registered: " + ", ".join(missing)
+        )
+
+
 def _workflow_link_node_id(value: Any) -> str | None:
     """只把 ComfyUI API 的二元 link 识别为依赖，普通列表参数不参与图遍历。"""
     if (
@@ -955,6 +981,9 @@ def _verify_optional_rmbg(
     workflow: dict[str, Any],
     bindings: dict[str, Any],
 ) -> None:
+    # Node availability     : reject any workflow class missing from this local ComfyUI before reference upload.
+    validate_comfyui_workflow_node_types(object_info, workflow)
+
     rmbg = bindings.get("rmbg")
     if rmbg is None:
         return
