@@ -5,6 +5,8 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
 output_root="$repo_root/artifacts/research-integration"
+release_version="2.3.27.1"
+expected_product_version="2.3.26.1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,8 +22,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 product_version="$(tr -d '\r\n' < "$repo_root/src/picotoopet_core/product-version.txt")"
-if [[ "$product_version" != "2.3.27.1" ]]; then
-  echo "组合包只允许产品版本 2.3.27.1：$product_version" >&2
+if [[ "$product_version" != "$expected_product_version" ]]; then
+  echo "Research $release_version 必须叠加在产品基线 $expected_product_version：$product_version" >&2
   exit 1
 fi
 if [[ "$(uname -m)" != "arm64" ]]; then
@@ -47,7 +49,7 @@ bash "$repo_root/scripts/mac/research_gateway/Build-ResearchGatewayPackage.sh" \
   --output-root "$gateway_output"
 bash "$repo_root/scripts/mac/phase23-worker/Build-MacWorkerSliceC.sh" \
   --output-root "$worker_output" \
-  --version-label "2.3.27.1-research-$short_commit"
+  --version-label "$release_version-research-$short_commit"
 
 gateway_tar="$(find "$gateway_output" -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
 worker_tar="$(find "$worker_output" -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
@@ -68,7 +70,7 @@ if [[ -z "$gateway_source" || -z "$worker_source" ]]; then
   exit 1
 fi
 
-package_name="PicotooPet-Research-2.3.27.1-Mac-arm64"
+package_name="PicotooPet-Research-$release_version-Mac-arm64"
 package_root="$work_root/$package_name"
 mkdir -p "$package_root/gateway" "$package_root/worker"
 cp -R "$gateway_source/." "$package_root/gateway/"
@@ -83,8 +85,8 @@ for file in \
 done
 chmod 755 "$package_root"/*.command
 
-# 外层 Manifest 对全部内嵌文件再次做哈希，形成组合包自身的完整性证据。
-python3 - "$package_root" "$commit" <<'PY'
+# 外层 Manifest 同时记录产品基线与 Research 能力版本，并对全部内嵌文件做哈希。
+python3 - "$package_root" "$commit" "$release_version" "$product_version" <<'PY'
 import hashlib
 import json
 import sys
@@ -107,7 +109,8 @@ for path in sorted(item for item in root.rglob("*") if item.is_file()):
 manifest = {
     "schema_version": "1.0",
     "release_type": "picotoopet-research-integrated-update",
-    "product_version": "2.3.27.1",
+    "release_version": sys.argv[3],
+    "product_version": sys.argv[4],
     "target": "macos",
     "architecture": "arm64",
     "commit": sys.argv[2],
@@ -133,14 +136,15 @@ tar -czf "$tarball" -C "$work_root" "$package_name"
 sha256="$(shasum -a 256 "$tarball" | awk '{print tolower($1)}')"
 printf '%s  %s\n' "$sha256" "$(basename "$tarball")" > "$tarball.sha256.txt"
 
-python3 - "$output_root/research-integrated-build-report.json" "$commit" "$tarball" "$sha256" <<'PY'
+python3 - "$output_root/research-integrated-build-report.json" "$commit" "$tarball" "$sha256" "$release_version" "$product_version" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 report = {
     "status": "pass",
-    "product_version": "2.3.27.1",
+    "release_version": sys.argv[5],
+    "product_version": sys.argv[6],
     "architecture": "arm64",
     "commit": sys.argv[2],
     "package": str(Path(sys.argv[3]).resolve()),
@@ -157,5 +161,7 @@ Path(sys.argv[1]).write_text(
 PY
 
 echo "PICOTOOPET_RESEARCH_INTEGRATED_BUILD=PASS"
+echo "RELEASE_VERSION=$release_version"
+echo "PRODUCT_VERSION=$product_version"
 echo "PACKAGE=$tarball"
 echo "SHA256=$sha256"
