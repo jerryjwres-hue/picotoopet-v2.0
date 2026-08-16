@@ -63,6 +63,8 @@
                       VerticalAlignment="Center">
             <Button Content="全选当前页"
                     Click="SelectAll_Click"
+                    IsEnabled="{Binding CanSelectAll, Mode=OneWay}"
+                    ToolTip="选择当前列表中尚未选中的任务"
                     MinWidth="104"
                     Height="38"
                     Margin="0,0,8,0"
@@ -70,6 +72,8 @@
                     FontSize="13" />
             <Button Content="取消选择"
                     Click="ClearSelection_Click"
+                    IsEnabled="{Binding CanClearSelection, Mode=OneWay}"
+                    ToolTip="清除当前列表的任务选择"
                     MinWidth="92"
                     Height="38"
                     Margin="0,0,8,0"
@@ -77,6 +81,8 @@
                     FontSize="13" />
             <Button Content="{Binding BulkActionText}"
                     Click="BulkAction_Click"
+                    IsEnabled="{Binding CanApplySelection, Mode=OneWay}"
+                    ToolTip="只对已选择任务执行当前操作"
                     MinWidth="92"
                     Height="38"
                     Padding="12,0"
@@ -105,6 +111,7 @@
                 </Grid.ColumnDefinitions>
 
                 <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          IsEnabled="{Binding DataContext.CanApplyAnyAction, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
                           Width="22"
                           Height="22"
                           VerticalAlignment="Center"
@@ -175,6 +182,8 @@
                              HorizontalAlignment="Right" />
                   <Button Content="{Binding DataContext.SingleActionText, RelativeSource={RelativeSource AncestorType=UserControl}}"
                           Click="SingleAction_Click"
+                          IsEnabled="{Binding DataContext.CanApplyAnyAction, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
+                          ToolTip="任务会安全移入已删除，或从已删除恢复"
                           MinWidth="76"
                           Height="34"
                           Margin="0,10,0,0"
