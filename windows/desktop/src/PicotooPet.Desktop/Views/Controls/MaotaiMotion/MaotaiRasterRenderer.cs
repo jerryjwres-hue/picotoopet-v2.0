@@ -279,6 +279,10 @@ internal sealed class MaotaiRasterRenderer
         _visuals.EyeRightHalf.Opacity   = half;
         _visuals.EyeLeftClosed.Opacity  = closed;
         _visuals.EyeRightClosed.Opacity = closed;
+
+        var pupilOpacity = MaotaiEyeLayerOpacity.PupilFromOpenWeight(open);
+        _visuals.LeftPupil.Element.Opacity  = pupilOpacity;
+        _visuals.RightPupil.Element.Opacity = pupilOpacity;
     }
 
     private void ApplyMouthState(MaotaiMouthState state)
