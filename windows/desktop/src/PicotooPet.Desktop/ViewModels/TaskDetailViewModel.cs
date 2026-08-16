@@ -71,16 +71,17 @@ public sealed class TaskDetailViewModel : ObservableObject
             switch (_task.TaskType)
             {
                 case ResearchTaskType:
+                    // 保留 Window Loaded 捕获的 WPF 同步上下文，结果属性始终在 UI 线程更新。
                     var research = await _session.GetResearchResultAsync(
                         _task.TaskId,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken);
                     ResultTitle = $"网络调研结果 · {research.Query}";
                     ResultText = research.Output;
                     break;
                 case DiagnosticTaskType:
                     var diagnostic = await _session.GetDiagnosticResultAsync(
                         _task.TaskId,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken);
                     ResultTitle = "系统诊断结果";
                     ResultText = FormatDiagnostic(diagnostic);
                     break;
