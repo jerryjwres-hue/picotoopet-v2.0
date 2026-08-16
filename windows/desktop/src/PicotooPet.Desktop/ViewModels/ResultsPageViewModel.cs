@@ -16,7 +16,7 @@ public sealed record ResultsFilterOption(
     ResultsFilter Value,
     string Label);
 
-/// <summary>单个可见结果的安全元数据；不包含对象路径、正文或任意 manifest。</summary>
+/// <summary>单个可见结果的安全元数据；正文通过统一任务详情按既有 Core 合同读取。</summary>
 public sealed class ResultRowViewModel
 {
     private const string DiagnosticTaskType = "system.diagnostic_snapshot";
@@ -41,8 +41,8 @@ public sealed class ResultRowViewModel
         CanPreview = task.TaskType == DiagnosticTaskType
             && task.Status is "Completed" or "Archived";
         PreviewUnavailableReason = CanPreview
-            ? "通过固定诊断合同加载安全预览。"
-            : "当前结果类型尚不支持安全预览；不会回退到任意内容浏览。";
+            ? "可额外通过固定诊断合同加载安全预览；完整结果也可在任务详情查看。"
+            : "完整结果请通过任务详情查看；额外的“安全预览”只用于系统诊断。";
     }
 
     public string TaskId { get; }
@@ -71,7 +71,7 @@ public sealed class ResultRowViewModel
     }
 }
 
-/// <summary>展示真实结果列表并只允许固定合同的安全预览。</summary>
+/// <summary>展示真实结果列表；通用结果走任务详情，诊断另提供固定合同安全预览。</summary>
 public sealed class ResultsPageViewModel : PageViewModel
 {
     private static readonly IReadOnlyList<ResultsFilterOption> DefaultFilters =
@@ -91,7 +91,7 @@ public sealed class ResultsPageViewModel : PageViewModel
     private DiagnosticResultViewModel? _diagnosticPreview;
     private bool _isPreviewVisible;
     private bool _isBusy;
-    private string _statusMessage = "结果列表来自 Mac Core 已完成任务快照。";
+    private string _statusMessage = "结果列表来自 Mac Core；点击结果可打开任务详情和已有正文。";
 
     /// <summary>创建绑定真实 Session 的结果中心。</summary>
     public ResultsPageViewModel(
@@ -269,7 +269,7 @@ public sealed class ResultsPageViewModel : PageViewModel
         SelectedResult = ResolveSelection(VisibleResults, selectedResultId);
         StatusMessage = AllResults.Count == 0
             ? "Mac Core 当前没有可显示的任务结果。"
-            : $"已加载 {AllResults.Count} 个安全结果元数据。";
+            : $"已加载 {AllResults.Count} 个结果；点击任意结果查看任务详情和正文。";
     }
 
     private void ApplyFilter()
