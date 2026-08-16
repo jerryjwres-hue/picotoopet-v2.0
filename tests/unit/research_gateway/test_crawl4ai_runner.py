@@ -89,6 +89,17 @@ def test_browser_error_classifier_keeps_timeout_distinct_from_network_failure() 
     assert crawl4ai_runner._classify_provider_failure("unexpected scraper error") == "crawl_failed"
 
 
+def test_browser_error_classifier_recovers_404_when_status_code_is_missing() -> None:
+    # Crawl4AI 0.9.x 某些失败路径不填 status_code；只在失败 error_message 中恢复明确 HTTP 404。
+    assert (
+        crawl4ai_runner._classify_provider_failure(
+            "Unexpected error in _crawl_web: HTTP status code 404: Not Found"
+        )
+        == "not_found"
+    )
+    assert crawl4ai_runner._classify_provider_failure("404 Not Found") == "not_found"
+
+
 @pytest.mark.parametrize(
     "url",
     [
