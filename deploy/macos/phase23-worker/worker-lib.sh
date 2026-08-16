@@ -219,8 +219,9 @@ if expected == "online":
         "provider.adoption.apply-v1",
         "provider.commit.create-v1",
         "provider.publish.pr-create-v1",
+        "research.search",
     }
-    # 累计能力验证          历史已实现类型可注册，未知类型继续被 closed allowlist 拒绝。
+    # 累计能力验证：历史已实现与健康的 Research 类型可注册，未知类型继续被拒绝。
     if not isinstance(supported, list) or not required <= set(supported):
         raise SystemExit(1)
     unexpected = set(supported) - allowed
@@ -270,6 +271,7 @@ if features.get("worker_status") is not True or features.get("local_worker") is 
 paths = get("/openapi.json").get("paths", {})
 required = {
     "/api/v1/tasks/system-diagnostic-snapshot",
+    "/api/v1/tasks/research-search",
     "/api/v1/tasks/{task_id}/result",
     "/api/v1/provider-commit-candidates/{commit_candidate_id}/publication/prepare",
     "/api/v1/provider-publication-candidates",
@@ -277,7 +279,7 @@ required = {
 }
 missing = sorted(required - set(paths))
 if missing:
-    raise SystemExit(f"Slice D/Phase 10E paths missing: {missing!r}")
+    raise SystemExit(f"Slice D/Research paths missing: {missing!r}")
 status = get("/api/v1/workers/status", authenticated=True)
 if status.get("state") not in {
     "not_deployed", "starting", "online", "degraded", "offline"
@@ -312,6 +314,7 @@ allowed = required | {
     "provider.adoption.apply-v1",
     "provider.commit.create-v1",
     "provider.publish.pr-create-v1",
+    "research.search",
 }
 if not isinstance(supported, list) or not required <= set(supported):
     raise SystemExit(f"Worker 缺少基础冻结类型：{status!r}")
@@ -368,6 +371,7 @@ payload = {
         "provider.adoption.apply-v1",
         "provider.commit.create-v1",
         "provider.publish.pr-create-v1",
+        "research.search",
     ],
     "diagnostic_hard_timeout_seconds": 30,
     "diagnostic_termination_grace_seconds": 5,
