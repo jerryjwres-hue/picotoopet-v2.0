@@ -41,6 +41,8 @@
       <ListView Grid.Column="0"
                 ItemsSource="{Binding VisibleTasks, Mode=OneWay}"
                 SelectedItem="{Binding SelectedTask, Mode=TwoWay}"
+                MouseDoubleClick="TaskList_DoubleClick"
+                ToolTip="双击任务行可打开统一任务详情和可用结果。"
                 ScrollViewer.CanContentScroll="True"
                 VirtualizingPanel.IsVirtualizing="True"
                 VirtualizingPanel.VirtualizationMode="Recycling">
