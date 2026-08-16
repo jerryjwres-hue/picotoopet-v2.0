@@ -160,14 +160,44 @@ public sealed class TaskCenterPageViewModel : PageViewModel
         private set => SetProperty(ref _isDiagnosticResultVisible, value);
     }
 
+    public bool CanOpenSelectedTaskDetail => SelectedTask is not null;
+
+    public string TaskDetailActionReason => SelectedTask is null
+        ? "请先选择一个任务。"
+        : "打开统一任务详情，并按任务类型读取已批准的固定结果合同。";
+
     public bool CanCancelSelected =>
         !IsBusy && SelectedTask?.CanCancel == true;
+
+    public string CancelActionReason => SelectedTask switch
+    {
+        null => "请先选择一个任务。",
+        _ when IsBusy => "正在处理另一项任务操作，请稍候。",
+        { CanCancel: false } => "当前任务状态不允许取消。",
+        _ => "向 Mac Core 提交安全取消请求；运行中的 Worker 会按受控流程停止。",
+    };
 
     public bool CanRetrySelected =>
         !IsBusy && SelectedTask?.CanRetry == true;
 
+    public string RetryActionReason => SelectedTask switch
+    {
+        null => "请先选择一个任务。",
+        _ when IsBusy => "正在处理另一项任务操作，请稍候。",
+        { CanRetry: false } => "只有失败或已取消的任务可以创建重试任务。",
+        _ => "创建新的重试子任务，不会重新打开或改写原任务。",
+    };
+
     public bool CanViewDiagnosticResult =>
         !IsBusy && SelectedTask?.CanViewDiagnosticResult == true;
+
+    public string DiagnosticResultActionReason => SelectedTask switch
+    {
+        null => "请先选择一个任务。",
+        _ when IsBusy => "正在处理另一项任务操作，请稍候。",
+        { CanViewDiagnosticResult: false } => "当前任务没有可读取的系统诊断安全卡片。",
+        _ => "只读取固定诊断合同，不显示路径、日志正文、Token 或网络信息。",
+    };
 
     public bool CanCreateDiagnostic =>
         !IsBusy
@@ -486,9 +516,14 @@ public sealed class TaskCenterPageViewModel : PageViewModel
 
     private void RaiseActionProperties()
     {
+        RaisePropertyChanged(nameof(CanOpenSelectedTaskDetail));
+        RaisePropertyChanged(nameof(TaskDetailActionReason));
         RaisePropertyChanged(nameof(CanCancelSelected));
+        RaisePropertyChanged(nameof(CancelActionReason));
         RaisePropertyChanged(nameof(CanRetrySelected));
+        RaisePropertyChanged(nameof(RetryActionReason));
         RaisePropertyChanged(nameof(CanViewDiagnosticResult));
+        RaisePropertyChanged(nameof(DiagnosticResultActionReason));
         RaisePropertyChanged(nameof(CanCreateDiagnostic));
         RaisePropertyChanged(nameof(DiagnosticCreateReason));
     }
