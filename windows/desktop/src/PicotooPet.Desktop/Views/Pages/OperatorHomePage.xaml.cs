@@ -94,13 +94,13 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
     private void RecentTasksCard_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         RecentTasksCard.Cursor = FindRecentTaskCard(e.OriginalSource as DependencyObject) is null
-            ? Cursors.Arrow
-            : Cursors.Hand;
+            ? System.Windows.Input.Cursors.Arrow
+            : System.Windows.Input.Cursors.Hand;
     }
 
     private void RecentTasksCard_MouseLeave(object sender, MouseEventArgs e)
     {
-        RecentTasksCard.Cursor = Cursors.Arrow;
+        RecentTasksCard.Cursor = System.Windows.Input.Cursors.Arrow;
     }
 
     private OperatorTaskCard? FindRecentTaskCard(DependencyObject? source)
