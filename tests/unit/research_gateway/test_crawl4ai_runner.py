@@ -74,6 +74,21 @@ async def test_timeout_is_bounded_by_retry_limit(monkeypatch: pytest.MonkeyPatch
     assert calls == 2
 
 
+def test_browser_error_classifier_keeps_timeout_distinct_from_network_failure() -> None:
+    # 真实 Playwright page timeout 必须保持为 timeout，不能混成普通 network_failed。
+    assert (
+        crawl4ai_runner._classify_provider_failure(
+            "Page.goto: Timeout 1000ms exceeded while navigating"
+        )
+        == "timeout"
+    )
+    assert (
+        crawl4ai_runner._classify_provider_failure("net::ERR_CONNECTION_RESET")
+        == "network_failed"
+    )
+    assert crawl4ai_runner._classify_provider_failure("unexpected scraper error") == "crawl_failed"
+
+
 @pytest.mark.parametrize(
     "url",
     [
