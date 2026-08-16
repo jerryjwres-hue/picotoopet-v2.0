@@ -42,7 +42,8 @@ def test_windows_ci_builds_slice_d_on_native_runner() -> None:
     assert "actions/setup-dotnet@v6" in uses
     assert "actions/upload-artifact@v7" in uses
     run_text = "\n".join(step.get("run", "") for step in steps)
-    assert "pytest tests/release/test_windows_prebuilt_delivery.py" in run_text
+    assert "python -m pytest" in run_text
+    assert "tests/release/test_windows_prebuilt_delivery.py" in run_text
     assert "Test-TaskCenterLegacyBindingRegression.ps1" in run_text
     assert "Build-Phase2WindowsRelease.ps1 -Version $version" in run_text
     assert "2.3.0-slice-d-cloud-contract" in run_text
