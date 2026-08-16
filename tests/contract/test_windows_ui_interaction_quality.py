@@ -37,7 +37,11 @@ def test_home_recent_tasks_are_real_detail_actions() -> None:
     code = _read(PAGES / "OperatorHomePage.xaml.cs")
 
     assert 'ItemsSource="{Binding RecentTasks' in xaml
-    assert 'Click="RecentTask_Click"' in xaml
+    assert 'x:Name="RecentTasksCard"' in xaml
+    assert "RecentTasksCard.PreviewMouseLeftButtonUp +=" in code
+    assert "RecentTasksCard_PreviewMouseLeftButtonUp" in code
+    assert "FindRecentTaskCard" in code
+    assert "OpenRecentTask" in code
     assert "TaskDetailWindow" in code
     assert "TaskDetailViewModel" in code
 
