@@ -75,7 +75,7 @@ public sealed class TaskStateStore
         SnapshotChanged?.Invoke(this, snapshot);
     }
 
-    /// <summary>归并一个 REST 返回任务。</summary>
+    /// <summary>归并一个 REST 返回任务；REST 响应可权威改变可恢复隐藏状态。</summary>
     public void UpsertTask(TaskRecord task)
     {
         ArgumentNullException.ThrowIfNull(task);
@@ -89,7 +89,7 @@ public sealed class TaskStateStore
         SnapshotChanged?.Invoke(this, snapshot);
     }
 
-    /// <summary>只应用与最后序号连续的事件；重复和跳跃均保持原状态。</summary>
+    /// <summary>只应用连续执行事件；队列事件不得覆盖 REST 已确认的用户隐藏状态。</summary>
     public SequenceApplyResult Apply(
         EventEnvelope envelope,
         Predicate<TaskRecord>? includeTask = null)
@@ -112,11 +112,14 @@ public sealed class TaskStateStore
                 && task is not null
                 && (includeTask is null || includeTask(task)))
             {
+                if (_tasks.TryGetValue(task.TaskId, out var existing) && existing.IsHidden)
+                {
+                    task = task with { IsHidden = true };
+                }
                 _tasks[task.TaskId] = task;
                 changedTask = task;
             }
 
-            // 即使事件不含任务，也确认连续序号，避免重连时重复补发。
             _lastSequence = envelope.Sequence;
             snapshot = CreateSnapshot(taskReset: false, changedTask);
         }
