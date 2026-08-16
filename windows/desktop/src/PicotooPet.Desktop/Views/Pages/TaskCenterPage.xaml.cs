@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views;
 
@@ -12,7 +14,25 @@ public partial class TaskCenterPage : System.Windows.Controls.UserControl
         InitializeComponent();
     }
 
+    private void TaskList_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListView listView
+            || e.OriginalSource is not DependencyObject source
+            || ItemsControl.ContainerFromElement(listView, source) is not ListViewItem row)
+        {
+            return;
+        }
+
+        listView.SelectedItem = row.DataContext;
+        OpenSelectedTaskDetail();
+    }
+
     private void OpenTaskDetail_Click(object sender, RoutedEventArgs e)
+    {
+        OpenSelectedTaskDetail();
+    }
+
+    private void OpenSelectedTaskDetail()
     {
         if (DataContext is not TaskCenterPageViewModel { SelectedTask: { } task })
         {
