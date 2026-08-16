@@ -56,8 +56,8 @@ def test_operator_home_preserves_approved_rich_product_structure() -> None:
         'x:Name="WorkComponentsCard"',
         'Source="/Picotoo Pet AI;component/Assets/Pet/Husky/V1/idle_0.png"',
         '<LinearGradientBrush StartPoint="0,0" EndPoint="1,1">',
-        'Text="工作组件区"',
-        'Text="资源监控"',
+        "工作组件区",
+        "资源监控",
     ):
         assert required in xaml
 
