@@ -4,24 +4,27 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 26.1 五入口简单导航，同时证明历史高级页面仍可达。</summary>
+/// <summary>冻结六入口简单导航，同时证明历史高级页面仍可达。</summary>
 internal static class NavigationSmokeTests
 {
     public static void Run()
     {
         using var shell = ShellViewModel.CreateForSmokeTest(ControlCenterCapabilities.Legacy22);
 
-        var expected = new[] { "首页", "待我审核", "进行中", "已完成", "高级" };
-        SmokeAssert.True(shell.NavigationItems.Count == expected.Length, "26.1 简单导航数量错误");
+        var expected = new[] { "首页", "待我审核", "进行中", "已完成", "已删除", "高级" };
+        SmokeAssert.True(shell.NavigationItems.Count == expected.Length, "简单导航数量错误");
         SmokeAssert.True(
             shell.NavigationItems.Select(item => item.Title).SequenceEqual(expected),
-            "26.1 简单导航顺序错误");
+            "简单导航顺序错误");
         SmokeAssert.True(
             shell.NavigationItems.Single(item => item.Route == NavigationRoute.OperatorHome).IsAvailable,
             "首页必须始终可打开");
         SmokeAssert.True(
             shell.NavigationItems.Single(item => item.Route == NavigationRoute.AdvancedHome).IsAvailable,
             "高级功能首页必须可打开");
+
+        shell.Navigate(NavigationRoute.OperatorDeleted);
+        SmokeAssert.True(shell.CurrentRoute == NavigationRoute.OperatorDeleted, "已删除简单页面必须可到达");
 
         shell.Navigate(NavigationRoute.CloudDevelopment);
         var page = shell.CurrentPage as CloudDevelopmentPageViewModel;
