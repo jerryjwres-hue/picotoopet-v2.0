@@ -89,7 +89,13 @@ def test_hand_cursor_is_reserved_for_actionable_surfaces() -> None:
         "FloatingPetWindow.xaml",
     }
     dead: list[str] = []
-    pattern = re.compile(r"<(?P<kind>Border|Grid|TextBlock|StackPanel)\b(?P<tag>[^>]*)>", re.I | re.S)
+    # Image/Canvas are included because decorative artwork must never advertise a
+    # clickable hand cursor unless a real event is wired. Pet surfaces are excluded
+    # because Maotai's interaction implementation is integrated independently.
+    pattern = re.compile(
+        r"<(?P<kind>Border|Grid|TextBlock|StackPanel|Image|Canvas)\b(?P<tag>[^>]*)>",
+        re.I | re.S,
+    )
     for path in sorted(VIEWS.rglob("*.xaml")):
         if path.name in excluded:
             continue
