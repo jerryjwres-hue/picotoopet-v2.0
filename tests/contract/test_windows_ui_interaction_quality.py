@@ -154,6 +154,19 @@ def test_windows_ci_and_release_never_suppress_maotai_asset_gates() -> None:
     assert "RESEARCH_RELEASE_MAOTAI_V2_ASSET_GATE=BLOCKED_MISSING_REAL_ASSETS" in release_harness
 
 
+def test_research_release_provenance_is_declared_not_runtime_patched() -> None:
+    builder = _read(ROOT / "windows" / "desktop" / "scripts" / "Build-Phase2WindowsRelease.ps1")
+    release_harness = _read(
+        ROOT / "windows" / "desktop" / "scripts" / "Prepare-ResearchWindowsReleaseHarness.ps1"
+    )
+
+    assert ".github/workflows/research-windows-final-release.yml@" in builder
+    assert "Build-Phase2WindowsRelease.ps1" not in release_harness
+    assert "GITHUB_WORKFLOW_REF" not in release_harness
+    assert "$build =" not in release_harness
+    assert "$build.Replace(" not in release_harness
+
+
 def test_research_install_readme_describes_the_real_execution_boundary() -> None:
     readme = _read(ROOT / "windows" / "desktop" / "release" / "README_INSTALL_CN.txt")
 
