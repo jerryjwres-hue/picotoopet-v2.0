@@ -104,7 +104,7 @@ jobs:
           }
           $stampRoot = Join-Path $env:RUNNER_TEMP "picotoopet-windows-stamped"
           if (Test-Path -LiteralPath $stampRoot) { Remove-Item -LiteralPath $stampRoot -Recurse -Force }
-          python scripts/stamp_windows_goal_integrity.py $packages[0].FullName --output-root $stampRoot --source-head $env:PICOTOO_SOURCE_HEAD_SHA --source-ref $env:PICOTOO_SOURCE_REF
+          python scripts/stamp_windows_goal_integrity.py $packages[0].FullName --output-root $stampRoot --source-head $env:PICOTOO_SOURCE_HEAD_SHA --source-ref $env:PICOTOO_SOURCE_REF --contract contracts/release/project-goal-invariants-research-2.3.27.1.json
           if ($LASTEXITCODE -ne 0) { throw "GOAL_INTEGRITY_VIOLATION: 无法加盖原生 WPF 目标合同。" }
           $replaceNames = @($packages[0].Name, "$($packages[0].Name).sha256.txt", "windows-build-report.json", "project-goal-integrity-report.json")
           foreach ($name in $replaceNames) {
@@ -120,7 +120,7 @@ jobs:
         run: |
           $packages = @(Get-ChildItem -LiteralPath windows/desktop/artifacts/release -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
           if ($packages.Count -ne 1) { throw "GOAL_INTEGRITY_VIOLATION: Windows 安装包数量必须为 1。" }
-          python scripts/verify_project_goal_integrity.py $packages[0].FullName --report windows/desktop/artifacts/release/goal-integrity-report.json
+          python scripts/verify_project_goal_integrity.py $packages[0].FullName --contract contracts/release/project-goal-invariants-research-2.3.27.1.json --report windows/desktop/artifacts/release/goal-integrity-report.json
           if ($LASTEXITCODE -ne 0) { throw "GOAL_INTEGRITY_VIOLATION: 实际 ZIP 改变了批准的 WPF 产品目标。" }
 
       - name: Verify install upgrade recovery and rollback lifecycle
