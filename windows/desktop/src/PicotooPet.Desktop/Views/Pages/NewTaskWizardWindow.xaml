@@ -58,7 +58,7 @@
     </Grid>
 
     <TextBlock Grid.Row="2"
-               Text="网络搜索 / 爬虫尚未在 26.1 接入；不会显示成可执行任务。"
+               Text="Research 2.3.27.1 已接入只读网络搜索；发帖、回复、点赞、关注等写操作仍不可用。"
                Margin="0,14,0,8"
                Foreground="#FF6B7280" />
 
