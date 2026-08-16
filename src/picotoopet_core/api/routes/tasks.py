@@ -234,7 +234,7 @@ def get_task_result(task_id: str, request: Request) -> DiagnosticSnapshotResult:
         raise ApiError(
             status_code=500,
             code="RESULT_INTEGRITY_ERROR",
-            message="任务结果完整性校验失败。",
+            message="诊断结果完整性校验失败。",
             retryable=False,
         ) from error
 
