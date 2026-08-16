@@ -9,6 +9,7 @@ namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 /// </summary>
 internal static class MaotaiRasterFaceLayout
 {
+    private const double EarTop = -20.5;
     private const double EyeTop = -16.0;
     private const double MuzzleTop = -13.0;
     private const double MouthTop = -2.0;
@@ -28,6 +29,20 @@ internal static class MaotaiRasterFaceLayout
 
             switch (element.Name)
             {
+                case "MaotaiV2EarLeft":
+                case "MaotaiV2EarRight":
+                    Canvas.SetTop(element, EarTop);
+                    Panel.SetZIndex(element, 2);
+                    break;
+
+                case "MaotaiV2HeadphoneBand":
+                    Panel.SetZIndex(element, 4);
+                    break;
+
+                case "MaotaiV2Head":
+                    Panel.SetZIndex(element, 8);
+                    break;
+
                 case "MaotaiV2Muzzle":
                     Canvas.SetTop(element, MuzzleTop);
                     Panel.SetZIndex(element, 10);
