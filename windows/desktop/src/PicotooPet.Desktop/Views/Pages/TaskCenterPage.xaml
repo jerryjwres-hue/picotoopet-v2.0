@@ -26,7 +26,7 @@
         </Grid.ColumnDefinitions>
         <StackPanel>
           <TextBlock Text="{Binding WorkerStatusText, Mode=OneWay}" FontSize="18" FontWeight="SemiBold" Foreground="#FF8A4A16" />
-          <TextBlock Text="{Binding WorkerReasonText, Mode=OneWay}" Margin="0,5,20,0" FontSize="13" Foreground="#FF795538" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding WorkerReasonText, Mode=OneWay}" Margin="0,5,20,0" FontSize="14" Foreground="#FF795538" TextWrapping="Wrap" />
         </StackPanel>
         <Button Grid.Column="1"
                 Width="170"
@@ -47,7 +47,7 @@
                 DisplayMemberPath="Label"
                 SelectedValuePath="Value"
                 SelectedValue="{Binding SelectedFilter, Mode=TwoWay}" />
-      <TextBlock Margin="16,0,0,0" VerticalAlignment="Center" FontSize="13" Foreground="#FF64758B" Text="{Binding VisibleTasks.Count, Mode=OneWay, StringFormat=当前 {0} 项}" />
+      <TextBlock Margin="16,0,0,0" VerticalAlignment="Center" FontSize="14" Foreground="#FF64758B" Text="{Binding VisibleTasks.Count, Mode=OneWay, StringFormat=当前 {0} 项}" />
     </DockPanel>
 
     <Grid Grid.Row="2">
@@ -87,7 +87,7 @@
             <TextBlock Text="任务详情" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="保留完整任务元数据；所有任务都可打开统一详情，有结果时会从 Mac Core 固定结果接口加载。"
                        Margin="0,4,0,0"
-                       FontSize="12"
+                       FontSize="14"
                        Foreground="#FF64758B"
                        TextWrapping="Wrap" />
           </StackPanel>
@@ -194,7 +194,7 @@
     </Grid>
 
     <Border Grid.Row="3" Margin="0,12,0,0" Padding="12,9" Background="#FFF7FAFD" BorderBrush="#FFE0E8F2" BorderThickness="1" CornerRadius="9">
-      <TextBlock Foreground="#FF475569" FontSize="13" Text="{Binding StatusMessage, Mode=OneWay}" TextWrapping="Wrap" />
+      <TextBlock Foreground="#FF475569" FontSize="14" Text="{Binding StatusMessage, Mode=OneWay}" TextWrapping="Wrap" />
     </Border>
   </Grid>
 </UserControl>
