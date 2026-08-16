@@ -14,6 +14,7 @@ browser_dir="$adapter_root/ms-playwright"
 data_dir="$adapter_root/data"
 gateway_root="${PICOTOOPET_RESEARCH_INSTALL_ROOT:-$HOME/Library/Application Support/PicotooPet/ResearchGateway}"
 gateway_runtime="$gateway_root/runtime"
+gateway_module_dir="$gateway_runtime/research_gateway"
 worker_runtime="${PICOTOO_RUNTIME_ROOT_OVERRIDE:-$HOME/Library/Application Support/PicotooPetV2}"
 worker_plist="$HOME/Library/LaunchAgents/com.picotoopet.worker.plist"
 backup_gateway="$state_dir/gateway.py.pre-crawl4ai"
@@ -115,7 +116,8 @@ cleanup_failed_install() {
   trap - ERR
   if [[ "$patched_gateway" == "true" && -f "$backup_gateway" ]]; then
     install -m 0644 "$backup_gateway" "$gateway_runtime/gateway.py" || true
-    rm -f "$gateway_runtime/crawler_adapter.py" || true
+    rm -f "$gateway_module_dir/crawler_adapter.py" || true
+    rmdir "$gateway_module_dir" 2>/dev/null || true
   fi
   if [[ "$created_venv_this_run" == "true" ]]; then
     rm -rf "$venv_dir" "$browser_dir"
@@ -169,7 +171,9 @@ if [[ ! -f "$backup_gateway" ]]; then
   install -m 0644 "$gateway_runtime/gateway.py" "$backup_gateway"
 fi
 install -m 0644 "$payload_dir/gateway.py" "$gateway_runtime/gateway.py"
-install -m 0644 "$payload_dir/crawler_adapter.py" "$gateway_runtime/crawler_adapter.py"
+# 正式 Gateway 是 flat runtime/gateway.py；创建固定同目录 package 子目录满足 research_gateway.crawler_adapter 导入。
+mkdir -p "$gateway_module_dir"
+install -m 0644 "$payload_dir/crawler_adapter.py" "$gateway_module_dir/crawler_adapter.py"
 patched_gateway=true
 
 install -m 0644 "$payload_dir/crawl4ai_runner.py" "$runtime_dir/crawl4ai_runner.py"
