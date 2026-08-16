@@ -6,7 +6,7 @@ using PicotooPet.Desktop.Versioning;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>把真实会话快照适配为 26.1 五入口简单模式、全局状态和高级页面。</summary>
+/// <summary>把真实会话快照适配为六入口简单模式、全局状态和高级页面。</summary>
 public sealed class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly ControlCenterSession? _session;
@@ -64,7 +64,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Control Center 左上角用户可见版本副标题。</summary>
     public string ControlCenterSubtitle => ProductVersionInfo.ControlCenterSubtitle;
 
-    /// <summary>26.1 默认只包含五个简单模式入口。</summary>
+    /// <summary>简单模式包含首页、审核、进行中、已完成、已删除和高级。</summary>
     public IReadOnlyList<NavigationItem> NavigationItems
     {
         get => _navigationItems;
@@ -136,7 +136,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public static ShellViewModel CreateForSmokeTest(
         ControlCenterCapabilities capabilities) => new(capabilities);
 
-    /// <summary>切换简单或高级路由；高级子页面不要求出现在五项 NavigationItems 中。</summary>
+    /// <summary>切换简单或高级路由；高级子页面不要求出现在 NavigationItems 中。</summary>
     public void Navigate(NavigationRoute route)
     {
         var sidebarItem = FindSidebarItemForRoute(NavigationItems, route);
@@ -182,10 +182,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             new OperatorHomePageViewModel(_session, snapshot),
         NavigationRoute.OperatorReview when _session is not null =>
             new OperatorReviewPageViewModel(_session),
-        NavigationRoute.OperatorInProgress =>
-            new OperatorTaskListPageViewModel("进行中", completed: false, snapshot),
-        NavigationRoute.OperatorCompleted =>
-            new OperatorTaskListPageViewModel("已完成", completed: true, snapshot),
+        NavigationRoute.OperatorInProgress when _session is not null =>
+            new OperatorTaskListPageViewModel(
+                "进行中", OperatorTaskListMode.InProgress, _session, snapshot),
+        NavigationRoute.OperatorCompleted when _session is not null =>
+            new OperatorTaskListPageViewModel(
+                "已完成", OperatorTaskListMode.Completed, _session, snapshot),
+        NavigationRoute.OperatorDeleted when _session is not null =>
+            new OperatorTaskListPageViewModel(
+                "已删除", OperatorTaskListMode.Deleted, _session, snapshot),
         NavigationRoute.AdvancedHome => new AdvancedHomePageViewModel(),
         NavigationRoute.Dashboard => new OverviewPageViewModel(
             snapshot,
@@ -239,6 +244,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 capabilities.ResultList || capabilities.DurableQueue,
                 "需要 Mac Core 的任务或结果读取能力。"),
             Item(
+                NavigationRoute.OperatorDeleted,
+                "已删除",
+                capabilities.DurableQueue,
+                "需要 Mac Core 的耐久任务历史能力。"),
+            Item(
                 NavigationRoute.AdvancedHome,
                 "高级",
                 isAvailable: true,
@@ -270,6 +280,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             NavigationRoute.OperatorReview => NavigationRoute.OperatorReview,
             NavigationRoute.OperatorInProgress => NavigationRoute.OperatorInProgress,
             NavigationRoute.OperatorCompleted => NavigationRoute.OperatorCompleted,
+            NavigationRoute.OperatorDeleted => NavigationRoute.OperatorDeleted,
             NavigationRoute.AdvancedHome => NavigationRoute.AdvancedHome,
             _ => NavigationRoute.AdvancedHome,
         };
@@ -282,6 +293,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.OperatorReview => "待我审核",
         NavigationRoute.OperatorInProgress => "进行中",
         NavigationRoute.OperatorCompleted => "已完成",
+        NavigationRoute.OperatorDeleted => "已删除",
         NavigationRoute.AdvancedHome => "高级",
         NavigationRoute.Dashboard => "总览",
         NavigationRoute.Projects => "项目",
@@ -308,6 +320,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             "进行中", completed: false, CreateSmokeSnapshot(capabilities)),
         NavigationRoute.OperatorCompleted => new OperatorTaskListPageViewModel(
             "已完成", completed: true, CreateSmokeSnapshot(capabilities)),
+        NavigationRoute.OperatorDeleted => new EmptyStatePageViewModel(
+            "已删除",
+            "Smoke test 模式没有连接 Mac Core。",
+            "运行时这里显示可恢复的安全删除任务。",
+            "连接真实 Mac Core 后可批量恢复。"),
         NavigationRoute.AdvancedHome => new AdvancedHomePageViewModel(),
         NavigationRoute.Dashboard => new EmptyStatePageViewModel(
             "总览",
@@ -408,7 +425,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             operatorHome.UpdateSnapshot(snapshot);
         }
-        else if ((route is NavigationRoute.OperatorInProgress or NavigationRoute.OperatorCompleted)
+        else if ((route is NavigationRoute.OperatorInProgress
+                         or NavigationRoute.OperatorCompleted
+                         or NavigationRoute.OperatorDeleted)
             && CurrentPage is OperatorTaskListPageViewModel operatorTasks)
         {
             operatorTasks.UpdateSnapshot(snapshot);
