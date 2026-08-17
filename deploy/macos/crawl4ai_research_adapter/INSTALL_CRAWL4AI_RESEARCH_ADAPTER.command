@@ -36,12 +36,96 @@ for file in gateway.py crawler_adapter.py crawl4ai_runner.py VERSION CRAWL4AI_AD
   fi
 done
 
+is_compatible_python() {
+  local candidate="$1"
+  [[ -x "$candidate" ]] || return 1
+  "$candidate" - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if (3, 12) <= sys.version_info[:2] < (3, 14) else 1)
+PY
+}
+
+select_compatible_python() {
+  # macOS 自带 /usr/bin/python3 可能仍是 3.9；必须验证版本，而不是拿 PATH 中第一个 python3。
+  local requested="${PICOTOOPET_PYTHON_BIN:-}"
+  local resolved=""
+  local candidate=""
+  local seen="|"
+  local candidates=()
+
+  if [[ -n "$requested" ]]; then
+    resolved="$(command -v "$requested" 2>/dev/null || true)"
+    if [[ -z "$resolved" && -x "$requested" ]]; then
+      resolved="$requested"
+    fi
+    if [[ -n "$resolved" ]]; then
+      candidates+=("$resolved")
+    fi
+  fi
+
+  # 重复安装时优先复用 adapter 自己已经验证过的私有 venv，不依赖共享 Python 顺序。
+  if [[ -x "$venv_dir/bin/python" ]]; then
+    candidates+=("$venv_dir/bin/python")
+  fi
+
+  for name in python3.13 python3.12; do
+    resolved="$(command -v "$name" 2>/dev/null || true)"
+    if [[ -n "$resolved" ]]; then
+      candidates+=("$resolved")
+    fi
+  done
+
+  # Apple Silicon Homebrew、Intel/Homebrew 兼容路径与 python.org Framework 常见安装位置。
+  candidates+=(
+    "/opt/homebrew/bin/python3.13"
+    "/opt/homebrew/bin/python3.12"
+    "/opt/homebrew/opt/python@3.13/bin/python3.13"
+    "/opt/homebrew/opt/python@3.12/bin/python3.12"
+    "/usr/local/bin/python3.13"
+    "/usr/local/bin/python3.12"
+    "/usr/local/opt/python@3.13/bin/python3.13"
+    "/usr/local/opt/python@3.12/bin/python3.12"
+    "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+    "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
+  )
+
+  # 最后才尝试通用 python3；它必须通过同一版本门禁，系统 3.9 不会被误选。
+  legacy_python3_path="$(command -v python3 2>/dev/null || true)"
+  if [[ -n "$legacy_python3_path" ]]; then
+    candidates+=("$legacy_python3_path")
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    [[ -n "$candidate" ]] || continue
+    case "$seen" in
+      *"|$candidate|"*) continue ;;
+    esac
+    seen="${seen}${candidate}|"
+    if is_compatible_python "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # 前置检测：只读取现状，不升级 Python、Docker、Scrapling、Research Gateway 或 Mac Worker。
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "缺少 python3；本包不会替你安装或升级系统 Python。" >&2
+if ! python_bin="$(select_compatible_python)"; then
+  current_python="$(command -v python3 2>/dev/null || true)"
+  current_version="unknown"
+  if [[ -n "$current_python" ]]; then
+    current_version="$($current_python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || printf 'unknown')"
+  fi
+  echo "未找到兼容 Python 3.12-3.13。" >&2
+  if [[ -n "$current_python" ]]; then
+    echo "当前 PATH 的 python3：$current_python（$current_version）" >&2
+  fi
+  echo "已检查 python3.13、python3.12、Homebrew 与 python.org Framework 常见路径。" >&2
+  echo "如已安装在其它位置，可设置 PICOTOOPET_PYTHON_BIN=/完整路径/python3 后重试。" >&2
+  echo "本包不会替你安装、升级或覆盖系统 Python。" >&2
   exit 1
 fi
-python_bin="$(command -v python3)"
+python_version="$($python_bin -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
 docker_path="$(command -v docker 2>/dev/null || true)"
 scrapling_path="$(command -v scrapling-mcp-local 2>/dev/null || true)"
 if [[ -z "$scrapling_path" && -x "$HOME/.local/bin/scrapling-mcp-local" ]]; then
@@ -77,7 +161,7 @@ log_file="$logs_dir/install-$(date -u +%Y%m%dT%H%M%SZ).log"
 exec > >(tee -a "$log_file") 2>&1
 
 echo "PicotooPet Crawl4AI Research Adapter 安装开始"
-echo "Python: $python_bin"
+echo "Python: $python_bin ($python_version)"
 echo "Docker detected: $docker_detected"
 echo "Scrapling detected: $scrapling_detected"
 echo "ResearchGateway: $gateway_runtime"
@@ -193,14 +277,14 @@ EOF
 chmod 755 "$bin_dir/picotoopet-crawl4ai-provider"
 
 # 安装状态只记录版本/路径/布尔检测结果，不记录 cookie、密码、token 或浏览器登录信息。
-python3 - "$install_state" "$crawl4ai_version" "$created_venv" "$scrapling_detected" "$worker_detected" "$docker_detected" "$log_file" <<'PY'
+"$python_bin" - "$install_state" "$crawl4ai_version" "$created_venv" "$scrapling_detected" "$worker_detected" "$docker_detected" "$log_file" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 state = {
     "schema_version": "1.0",
-    "adapter_version": "2.3.27.1-crawl4ai.1",
+    "adapter_version": "2.3.27.1-crawl4ai.2",
     "crawl4ai_version": sys.argv[2],
     "created_venv": sys.argv[3].lower() == "true",
     "scrapling_detected": sys.argv[4] == "1",
