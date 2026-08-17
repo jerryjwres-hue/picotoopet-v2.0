@@ -35,12 +35,26 @@
         <TextBlock Text="来源" />
         <TextBox Text="{Binding NewSourceApp, UpdateSourceTrigger=PropertyChanged}" />
       </StackPanel>
-      <Button Grid.Column="3" Margin="12,20,0,0" Content="创建项目" Click="Create_Click" />
+      <Button Grid.Column="3"
+              Margin="12,20,0,0"
+              Content="创建项目"
+              Click="Create_Click"
+              IsEnabled="{Binding CanCreate, Mode=OneWay}"
+              ToolTip="{Binding CreateActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
     </Grid>
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
-      <Button Content="刷新" Click="Refresh_Click" />
-      <Button Content="归档所选" Click="Archive_Click" IsEnabled="{Binding CanArchive}" />
+      <Button Content="刷新"
+              Click="Refresh_Click"
+              IsEnabled="{Binding CanRefresh, Mode=OneWay}"
+              ToolTip="{Binding RefreshActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
+      <Button Content="归档所选"
+              Click="Archive_Click"
+              IsEnabled="{Binding CanArchive, Mode=OneWay}"
+              ToolTip="{Binding ArchiveActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
     </StackPanel>
 
     <DataGrid Grid.Row="3"
