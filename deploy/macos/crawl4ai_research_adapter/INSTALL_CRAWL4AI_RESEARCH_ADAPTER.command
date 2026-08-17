@@ -50,6 +50,7 @@ select_compatible_python() {
   local requested="${PICOTOOPET_PYTHON_BIN:-}"
   local resolved=""
   local candidate=""
+  local legacy_python3_path=""
   local seen="|"
   local candidates=()
 
