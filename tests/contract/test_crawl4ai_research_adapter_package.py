@@ -55,6 +55,25 @@ def test_installer_is_arm64_isolated_and_never_upgrades_shared_toolchain() -> No
         assert mutation not in installer.lower()
 
 
+def test_installer_selects_a_compatible_python_instead_of_first_python3() -> None:
+    installer = (PACKAGE_DIR / "INSTALL_CRAWL4AI_RESEARCH_ADAPTER.command").read_text(
+        encoding="utf-8"
+    )
+
+    # 实机回归：macOS /usr/bin/python3 可能是 3.9，不能因为它先出现在 PATH 就直接失败。
+    assert "select_compatible_python" in installer
+    assert "python3.13" in installer
+    assert "python3.12" in installer
+    assert "/opt/homebrew/bin/python3.13" in installer
+    assert "/opt/homebrew/bin/python3.12" in installer
+    assert "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3" in installer
+    assert "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3" in installer
+    assert 'python_bin="$(command -v python3)"' not in installer
+    # 安装状态写入也必须继续使用已验证解释器，不能悄悄回退到系统 python3。
+    assert '"$python_bin" - "$install_state"' in installer
+    assert 'python3 - "$install_state"' not in installer
+
+
 def test_verify_runs_real_timeout_404_network_and_content_limit_fixtures() -> None:
     verifier = (PACKAGE_DIR / "VERIFY_CRAWL4AI_RESEARCH_ADAPTER.command").read_text(
         encoding="utf-8"
