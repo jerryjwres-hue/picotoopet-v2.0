@@ -42,11 +42,31 @@
       </Border>
 
       <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
-        <Button Content="刷新" Click="Refresh_Click" />
-        <Button Content="提交 Inbox" Click="SubmitInbox_Click" />
-        <Button Content="投递 Result 到 Outbox" Click="DeliverResult_Click" IsEnabled="{Binding CanDeliverResult, Mode=OneWay}" />
-        <Button Content="取消所选" Click="Cancel_Click" IsEnabled="{Binding CanCancel, Mode=OneWay}" />
-        <Button Content="导出 Deep-AI Handoff" Click="ExportHandoff_Click" IsEnabled="{Binding CanExportDeepAiHandoff, Mode=OneWay}" />
+        <Button Content="刷新"
+                Click="Refresh_Click"
+                IsEnabled="{Binding CanRefresh, Mode=OneWay}"
+                ToolTip="{Binding RefreshActionReason, Mode=OneWay}"
+                ToolTipService.ShowOnDisabled="True" />
+        <Button Content="提交 Inbox"
+                Click="SubmitInbox_Click"
+                IsEnabled="{Binding CanSubmitInbox, Mode=OneWay}"
+                ToolTip="{Binding SubmitInboxActionReason, Mode=OneWay}"
+                ToolTipService.ShowOnDisabled="True" />
+        <Button Content="投递 Result 到 Outbox"
+                Click="DeliverResult_Click"
+                IsEnabled="{Binding CanDeliverResult, Mode=OneWay}"
+                ToolTip="{Binding DeliverResultActionReason, Mode=OneWay}"
+                ToolTipService.ShowOnDisabled="True" />
+        <Button Content="取消所选"
+                Click="Cancel_Click"
+                IsEnabled="{Binding CanCancel, Mode=OneWay}"
+                ToolTip="{Binding CancelActionReason, Mode=OneWay}"
+                ToolTipService.ShowOnDisabled="True" />
+        <Button Content="导出 Deep-AI Handoff"
+                Click="ExportHandoff_Click"
+                IsEnabled="{Binding CanExportDeepAiHandoff, Mode=OneWay}"
+                ToolTip="{Binding ExportHandoffActionReason, Mode=OneWay}"
+                ToolTipService.ShowOnDisabled="True" />
       </StackPanel>
 
       <DataGrid Grid.Row="3"
