@@ -33,7 +33,12 @@ retry limit:           1
 默认 adapter 根目录：
 ~/.local/share/picotoopet/research/crawl4ai
 
-本包要求现有 PicotooPet Research runtime 使用 Python 3.12 或 3.13；安装器只检测版本，不安装、不升级系统 Python。
+本包要求可用 Python 3.12 或 3.13；安装器只检测版本，不安装、不升级系统 Python。
+macOS 自带 /usr/bin/python3 可能仍是 Python 3.9，因此安装器不会直接采用 PATH 中第一个 python3，而会验证候选解释器版本。
+默认候选顺序包括：显式 PICOTOOPET_PYTHON_BIN、已有 adapter 私有 venv、python3.13、python3.12、Apple Silicon Homebrew 常见路径、python.org Framework 常见路径，最后才验证通用 python3。
+如果通用 python3 是 3.9，但机器上已经有兼容的 Homebrew/python.org Python 3.12/3.13，安装器会自动选择兼容解释器，不要求修改系统 Python。
+如果兼容 Python 安装在其它路径，可设置 PICOTOOPET_PYTHON_BIN=/完整路径/python3 后重新运行安装器。
+
 首次安装在 adapter 根目录创建私有 Python venv，并固定安装 Crawl4AI 0.9.2。
 Playwright Chromium 也安装到 adapter 私有 PLAYWRIGHT_BROWSERS_PATH，不使用系统 Chrome profile。
 
@@ -41,7 +46,7 @@ Playwright Chromium 也安装到 adapter 私有 PLAYWRIGHT_BROWSERS_PATH，不�
 如果检测到不兼容或未知残缺环境，安装器会受控失败，不覆盖它。
 
 安装器只检测现有：
-- python3（必须 3.12-3.13）
+- Python 3.12-3.13（验证候选解释器，不修改系统 python3）
 - Docker（仅记录是否存在，本方案默认不依赖 Docker）
 - Crawl4AI adapter 私有环境
 - Scrapling / scrapling-mcp-local
@@ -96,7 +101,7 @@ This project uses Crawl4AI (https://github.com/unclecode/crawl4ai) for web data 
 版本
 ----
 PicotooPet Research Gateway baseline: 2.3.27.1
-Crawl4AI adapter: 2.3.27.1-crawl4ai.1
+Crawl4AI adapter: 2.3.27.1-crawl4ai.2
 Fresh isolated Crawl4AI pin: 0.9.2
 Compatible Python: 3.12-3.13
 Target: macOS arm64
