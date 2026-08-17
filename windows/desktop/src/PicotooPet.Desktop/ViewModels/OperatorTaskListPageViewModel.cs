@@ -203,7 +203,7 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
                 .Select(card => card.CategoryText)
                 .Where(category => !string.IsNullOrWhiteSpace(category))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(category => category, StringComparer.CurrentCulture))
+                .OrderBy(category => category, StringComparer.OrdinalIgnoreCase))
             .ToArray();
         if (!Categories.Contains(SelectedCategory, StringComparer.OrdinalIgnoreCase))
         {
@@ -314,12 +314,12 @@ public sealed class OperatorTaskListPageViewModel : PageViewModel
     {
         var keyword = Keyword.Trim();
         return keyword.Length == 0
-            || card.SearchText.Contains(keyword, StringComparison.CurrentCultureIgnoreCase);
+            || card.SearchText.Contains(keyword, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool MatchesCategory(OperatorTaskCard card) =>
         string.Equals(SelectedCategory, AllCategories, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(card.CategoryText, SelectedCategory, StringComparison.CurrentCultureIgnoreCase);
+        || string.Equals(card.CategoryText, SelectedCategory, StringComparison.OrdinalIgnoreCase);
 
     private bool MatchesDateRange(OperatorTaskCard card)
     {
