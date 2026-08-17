@@ -127,10 +127,24 @@ def test_missing_python_diagnostic_has_bash32_safe_variable_boundaries() -> None
         encoding="utf-8"
     )
 
-    # macOS 自带 Bash 3.2 + set -u：变量紧贴全角括号可能被错误扩展为未绑定变量。
-    assert 'echo "当前 PATH 的 python3：${current_python}（${current_version}）" >&2' in installer
+    # macOS 自带 Bash 3.2 + set -u：变量紧贴全角括号必须使用显式 ${...} 边界。
+    safe_line = 'echo "当前 PATH 的 python3：${current_python}（${current_version}）" >&2'
+    assert safe_line in installer
     assert '$current_python（' not in installer
     assert '$current_version）' not in installer
+
+    # 在目标机器使用的 /bin/bash 上真实执行该诊断表达式；macOS CI 因此会覆盖 Bash 3.2。
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            "-uc",
+            f'current_python=/usr/bin/python3; current_version=3.9; {safe_line}',
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "当前 PATH 的 python3：/usr/bin/python3（3.9）" in completed.stderr
 
 
 def test_verify_runs_real_timeout_404_network_and_content_limit_fixtures() -> None:
