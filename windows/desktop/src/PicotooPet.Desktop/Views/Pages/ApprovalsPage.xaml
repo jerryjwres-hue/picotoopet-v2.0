@@ -30,6 +30,9 @@
       <Button Grid.Column="4"
               Width="92"
               Content="刷新审批"
+              IsEnabled="{Binding CanRefresh, Mode=OneWay}"
+              ToolTip="{Binding RefreshActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True"
               Click="Refresh_Click" />
     </Grid>
 
@@ -137,10 +140,14 @@
               <Button Grid.Column="0"
                       Content="批准"
                       IsEnabled="{Binding CanApprove, Mode=OneWay}"
+                      ToolTip="{Binding ApproveActionReason, Mode=OneWay}"
+                      ToolTipService.ShowOnDisabled="True"
                       Click="Approve_Click" />
               <Button Grid.Column="2"
                       Content="拒绝"
                       IsEnabled="{Binding CanReject, Mode=OneWay}"
+                      ToolTip="{Binding RejectActionReason, Mode=OneWay}"
+                      ToolTipService.ShowOnDisabled="True"
                       Click="Reject_Click" />
             </Grid>
             <TextBlock Text="页面不接收或显示一次性明文令牌、Token、原始路径和任意请求正文。"
