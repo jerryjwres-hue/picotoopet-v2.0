@@ -122,6 +122,17 @@ def test_python_selector_skips_incompatible_generic_python(
     assert completed.stdout.strip() == str(versioned)
 
 
+def test_missing_python_diagnostic_has_bash32_safe_variable_boundaries() -> None:
+    installer = (PACKAGE_DIR / "INSTALL_CRAWL4AI_RESEARCH_ADAPTER.command").read_text(
+        encoding="utf-8"
+    )
+
+    # macOS 自带 Bash 3.2 + set -u：变量紧贴全角括号可能被错误扩展为未绑定变量。
+    assert 'echo "当前 PATH 的 python3：${current_python}（${current_version}）" >&2' in installer
+    assert '$current_python（' not in installer
+    assert '$current_version）' not in installer
+
+
 def test_verify_runs_real_timeout_404_network_and_content_limit_fixtures() -> None:
     verifier = (PACKAGE_DIR / "VERIFY_CRAWL4AI_RESEARCH_ADAPTER.command").read_text(
         encoding="utf-8"
