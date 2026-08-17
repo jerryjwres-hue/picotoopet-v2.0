@@ -87,19 +87,21 @@ def test_operator_home_work_components_are_real_navigation_actions() -> None:
     xaml = _read(PAGES / "OperatorHomePage.xaml")
     code = _read(PAGES / "OperatorHomePage.xaml.cs")
 
+    # 保留已批准的四张视觉卡片，但运行时必须把整张卡绑定成鼠标/键盘真实入口。
     for required in (
-        'x:Name="ProjectsResearchButton"',
-        'Click="ProjectsResearch_Click"',
-        'x:Name="BusinessAnalysisButton"',
-        'Click="BusinessAnalysis_Click"',
-        'x:Name="AutomationEntryButton"',
-        'Click="AutomationEntry_Click"',
-        'x:Name="ResultsReviewButton"',
-        'Click="ResultsReview_Click"',
+        'x:Name="WorkComponentsCard"',
+        "项目 / 调研",
+        "业务分析",
+        "自动化",
+        "结果 / 审核",
     ):
         assert required in xaml
 
     for required in (
+        "WorkComponentsCard.Loaded += WorkComponentsCard_Loaded",
+        "ConfigureWorkComponent",
+        "PreviewMouseLeftButtonUp",
+        "PreviewKeyDown",
         "ProjectsResearch_Click",
         "Navigate(NavigationRoute.Projects)",
         "BusinessAnalysis_Click",
