@@ -63,16 +63,52 @@ public sealed class AutomationPageViewModel : PageViewModel
         }
     }
 
+    // 操作可用性 --------------------------------------------------------------
+    public bool CanRefresh => !IsBusy;
+    public bool CanCreateSafeWorkflow => !IsBusy;
     public bool CanPause => !IsBusy && SelectedWorkflow?.Status is "Ready" or "Running" or "NeedsAttention";
     public bool CanResume => !IsBusy && SelectedWorkflow?.Status == "Paused";
     public bool CanCancel => !IsBusy && SelectedWorkflow?.Status is not null and not "Completed" and not "Cancelled" and not "Failed";
     public bool CanReconcile => !IsBusy && SelectedWorkflow?.Status is not null and not "Paused" and not "Completed" and not "Cancelled" and not "Failed";
+
+    public string RefreshActionReason => IsBusy
+        ? "工作流操作正在处理中，请稍候。"
+        : "重新加载工作流列表。";
+
+    public string CreateActionReason => IsBusy
+        ? "工作流操作正在处理中，请稍候。"
+        : "创建固定的本地诊断测试工作流，不允许自定义 task_type 或 shell 命令。";
+
+    public string ReconcileActionReason => BuildWorkflowActionReason(
+        CanReconcile,
+        "推进所选工作流并刷新状态。",
+        "当前工作流状态不需要或不允许推进。");
+
+    public string PauseActionReason => BuildWorkflowActionReason(
+        CanPause,
+        "暂停所选工作流。",
+        "只有准备中、运行中或需要注意的工作流可以暂停。");
+
+    public string ResumeActionReason => BuildWorkflowActionReason(
+        CanResume,
+        "恢复所选工作流。",
+        "只有已暂停的工作流可以恢复。");
+
+    public string CancelActionReason => BuildWorkflowActionReason(
+        CanCancel,
+        "取消所选工作流。",
+        "已完成、已取消或已失败的工作流不能再次取消。");
 
     public static AutomationPageViewModel CreateForSmokeTest(IReadOnlyList<WorkflowRecord> workflows) =>
         new(workflows);
 
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var session = RequireSession();
         IsBusy = true;
         try
@@ -91,6 +127,11 @@ public sealed class AutomationPageViewModel : PageViewModel
     /// <summary>创建固定安全测试流，不允许用户输入 task_type 或 shell 命令。</summary>
     public async Task CreateSafeDiagnosticWorkflowAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var session = RequireSession();
         IsBusy = true;
         try
@@ -146,6 +187,11 @@ public sealed class AutomationPageViewModel : PageViewModel
 
     private async Task RunSelectedActionAsync(string action, CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var selected = SelectedWorkflow ?? throw new InvalidOperationException("请先选择工作流。");
         var session = RequireSession();
         IsBusy = true;
@@ -177,12 +223,33 @@ public sealed class AutomationPageViewModel : PageViewModel
             ?? (Workflows.Count > 0 ? Workflows[0] : null);
     }
 
+    private string BuildWorkflowActionReason(bool canRun, string readyText, string unavailableText)
+    {
+        if (IsBusy)
+        {
+            return "工作流操作正在处理中，请稍候。";
+        }
+        if (SelectedWorkflow is null)
+        {
+            return "请先选择一个工作流。";
+        }
+        return canRun ? readyText : unavailableText;
+    }
+
     private void RaiseActions()
     {
+        RaisePropertyChanged(nameof(CanRefresh));
+        RaisePropertyChanged(nameof(CanCreateSafeWorkflow));
         RaisePropertyChanged(nameof(CanPause));
         RaisePropertyChanged(nameof(CanResume));
         RaisePropertyChanged(nameof(CanCancel));
         RaisePropertyChanged(nameof(CanReconcile));
+        RaisePropertyChanged(nameof(RefreshActionReason));
+        RaisePropertyChanged(nameof(CreateActionReason));
+        RaisePropertyChanged(nameof(ReconcileActionReason));
+        RaisePropertyChanged(nameof(PauseActionReason));
+        RaisePropertyChanged(nameof(ResumeActionReason));
+        RaisePropertyChanged(nameof(CancelActionReason));
     }
 
     private ControlCenterSession RequireSession() =>
