@@ -31,7 +31,7 @@ if [[ "$gateway_version" != "2.3.27.1" ]]; then
   echo "Research Gateway 基线版本不匹配：$gateway_version" >&2
   exit 1
 fi
-if [[ "$adapter_version" != "2.3.27.1-crawl4ai.1" ]]; then
+if [[ "$adapter_version" != "2.3.27.1-crawl4ai.2" ]]; then
   echo "Crawl4AI adapter 版本不匹配：$adapter_version" >&2
   exit 1
 fi
