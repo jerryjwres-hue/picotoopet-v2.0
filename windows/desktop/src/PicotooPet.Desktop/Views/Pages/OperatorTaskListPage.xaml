@@ -123,7 +123,7 @@
             <StackPanel Grid.Column="0" Margin="0,0,10,0">
               <TextBlock Text="关键词"
                          Margin="2,0,0,5"
-                         FontSize="12"
+                         FontSize="14"
                          Foreground="{StaticResource TaskMuted}" />
               <TextBox x:Name="KeywordSearchBox"
                        Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
@@ -137,7 +137,7 @@
             <StackPanel Grid.Column="1" Margin="0,0,10,0">
               <TextBlock Text="分类"
                          Margin="2,0,0,5"
-                         FontSize="12"
+                         FontSize="14"
                          Foreground="{StaticResource TaskMuted}" />
               <ComboBox ItemsSource="{Binding Categories, Mode=OneWay}"
                         SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
@@ -149,7 +149,7 @@
             <StackPanel Grid.Column="2" Margin="0,0,10,0">
               <TextBlock Text="开始日期"
                          Margin="2,0,0,5"
-                         FontSize="12"
+                         FontSize="14"
                          Foreground="{StaticResource TaskMuted}" />
               <DatePicker SelectedDate="{Binding StartDate, Mode=TwoWay}"
                           Height="38"
@@ -159,7 +159,7 @@
             <StackPanel Grid.Column="3" Margin="0,0,10,0">
               <TextBlock Text="结束日期"
                          Margin="2,0,0,5"
-                         FontSize="12"
+                         FontSize="14"
                          Foreground="{StaticResource TaskMuted}" />
               <DatePicker SelectedDate="{Binding EndDate, Mode=TwoWay}"
                           Height="38"
@@ -245,7 +245,7 @@
                               BorderBrush="#FFE1E8F0"
                               BorderThickness="1">
                         <TextBlock Text="{Binding CategoryText, Mode=OneWay}"
-                                   FontSize="11"
+                                   FontSize="14"
                                    Foreground="#FF5C7087" />
                       </Border>
                     </StackPanel>
