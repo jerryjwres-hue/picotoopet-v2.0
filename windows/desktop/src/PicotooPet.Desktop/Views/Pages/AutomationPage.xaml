@@ -17,12 +17,36 @@
     </StackPanel>
 
     <WrapPanel Grid.Row="1" Margin="0,16,0,10">
-      <Button Content="刷新" Click="Refresh_Click" />
-      <Button Content="创建本地诊断测试流" Click="CreateSafeWorkflow_Click" />
-      <Button Content="推进所选" Click="Reconcile_Click" IsEnabled="{Binding CanReconcile}" />
-      <Button Content="暂停" Click="Pause_Click" IsEnabled="{Binding CanPause}" />
-      <Button Content="恢复" Click="Resume_Click" IsEnabled="{Binding CanResume}" />
-      <Button Content="取消" Click="Cancel_Click" IsEnabled="{Binding CanCancel}" />
+      <Button Content="刷新"
+              Click="Refresh_Click"
+              IsEnabled="{Binding CanRefresh, Mode=OneWay}"
+              ToolTip="{Binding RefreshActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
+      <Button Content="创建本地诊断测试流"
+              Click="CreateSafeWorkflow_Click"
+              IsEnabled="{Binding CanCreateSafeWorkflow, Mode=OneWay}"
+              ToolTip="{Binding CreateActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
+      <Button Content="推进所选"
+              Click="Reconcile_Click"
+              IsEnabled="{Binding CanReconcile, Mode=OneWay}"
+              ToolTip="{Binding ReconcileActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
+      <Button Content="暂停"
+              Click="Pause_Click"
+              IsEnabled="{Binding CanPause, Mode=OneWay}"
+              ToolTip="{Binding PauseActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
+      <Button Content="恢复"
+              Click="Resume_Click"
+              IsEnabled="{Binding CanResume, Mode=OneWay}"
+              ToolTip="{Binding ResumeActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
+      <Button Content="取消"
+              Click="Cancel_Click"
+              IsEnabled="{Binding CanCancel, Mode=OneWay}"
+              ToolTip="{Binding CancelActionReason, Mode=OneWay}"
+              ToolTipService.ShowOnDisabled="True" />
     </WrapPanel>
 
     <DataGrid Grid.Row="2"
