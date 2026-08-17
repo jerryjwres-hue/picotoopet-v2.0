@@ -38,6 +38,7 @@ macOS 自带 /usr/bin/python3 可能仍是 Python 3.9，因此安装器不会直
 默认候选顺序包括：显式 PICOTOOPET_PYTHON_BIN、已有 adapter 私有 venv、python3.13、python3.12、Apple Silicon Homebrew 常见路径、python.org Framework 常见路径，最后才验证通用 python3。
 如果通用 python3 是 3.9，但机器上已经有兼容的 Homebrew/python.org Python 3.12/3.13，安装器会自动选择兼容解释器，不要求修改系统 Python。
 如果兼容 Python 安装在其它路径，可设置 PICOTOOPET_PYTHON_BIN=/完整路径/python3 后重新运行安装器。
+如果机器只有旧 Python，安装器会打印当前 python3 路径与版本并受控退出；crawl4ai.3 修复了 macOS Bash 3.2 在该诊断分支上的变量边界问题。
 
 首次安装在 adapter 根目录创建私有 Python venv，并固定安装 Crawl4AI 0.9.2。
 Playwright Chromium 也安装到 adapter 私有 PLAYWRIGHT_BROWSERS_PATH，不使用系统 Chrome profile。
@@ -101,7 +102,7 @@ This project uses Crawl4AI (https://github.com/unclecode/crawl4ai) for web data 
 版本
 ----
 PicotooPet Research Gateway baseline: 2.3.27.1
-Crawl4AI adapter: 2.3.27.1-crawl4ai.2
+Crawl4AI adapter: 2.3.27.1-crawl4ai.3
 Fresh isolated Crawl4AI pin: 0.9.2
 Compatible Python: 3.12-3.13
 Target: macOS arm64
