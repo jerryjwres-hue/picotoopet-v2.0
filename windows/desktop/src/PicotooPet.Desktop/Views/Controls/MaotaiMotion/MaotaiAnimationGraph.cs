@@ -407,7 +407,14 @@ internal sealed class MaotaiAnimationGraph
 
         if (requested == MaotaiMotionState.UserReaction)
         {
-            return MaotaiMotionState.UserReaction;
+            return current switch
+            {
+                MaotaiMotionState.Sleep   => MaotaiMotionState.Wake,
+                MaotaiMotionState.Wake    => MaotaiMotionState.GetUp,
+                MaotaiMotionState.LieDown => MaotaiMotionState.GetUp,
+                MaotaiMotionState.GetUp   => MaotaiMotionState.UserReaction,
+                _                         => MaotaiMotionState.UserReaction,
+            };
         }
 
         return requested;
