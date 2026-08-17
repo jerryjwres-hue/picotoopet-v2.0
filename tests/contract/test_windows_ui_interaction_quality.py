@@ -164,7 +164,8 @@ def test_operator_task_actions_expose_real_enabled_and_busy_states() -> None:
         "public bool CanApplySelection",
         "public bool CanApplyAnyAction",
         "当前操作仍在处理中，请稍候。",
-        "正在安全删除",
+        "正在取消",
+        "正在移到已删除",
         "正在恢复",
     ):
         assert member in view_model
