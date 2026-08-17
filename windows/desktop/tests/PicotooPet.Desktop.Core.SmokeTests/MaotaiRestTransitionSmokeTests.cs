@@ -19,9 +19,10 @@ internal static class MaotaiRestTransitionSmokeTests
         var active = graphType.GetProperty("ActiveState", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new InvalidOperationException("AnimationGraph 缺少 ActiveState");
 
-        var idle  = Enum.Parse(stateType, "Idle");
-        var sleep = Enum.Parse(stateType, "Sleep");
-        var graph = Activator.CreateInstance(graphType, idle)
+        var idle         = Enum.Parse(stateType, "Idle");
+        var sleep        = Enum.Parse(stateType, "Sleep");
+        var userReaction = Enum.Parse(stateType, "UserReaction");
+        var graph        = Activator.CreateInstance(graphType, idle)
             ?? throw new InvalidOperationException("无法创建休息 AnimationGraph");
 
         request.Invoke(graph, [sleep]);
@@ -47,6 +48,20 @@ internal static class MaotaiRestTransitionSmokeTests
             wakeChain,
             ["Wake", "GetUp", "Idle"],
             "Sleep -> Idle 必须经过 Wake / GetUp，禁止瞬间起身");
+
+        var interactionGraph = Activator.CreateInstance(graphType, sleep)
+            ?? throw new InvalidOperationException("无法创建睡眠交互 AnimationGraph");
+        request.Invoke(interactionGraph, [userReaction]);
+        var interactionWakeChain = CaptureUntil(
+            interactionGraph,
+            update,
+            active,
+            terminalState: "UserReaction",
+            maxFrames: 300);
+        AssertSequence(
+            interactionWakeChain,
+            ["Wake", "GetUp", "UserReaction"],
+            "睡着时被摸/点击必须先 Wake -> GetUp，再进入 UserReaction，禁止 Sleep 硬切互动姿态");
     }
 
     private static List<string> CaptureUntil(
