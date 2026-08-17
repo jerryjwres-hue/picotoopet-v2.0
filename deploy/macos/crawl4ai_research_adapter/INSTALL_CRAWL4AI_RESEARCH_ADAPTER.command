@@ -119,7 +119,7 @@ if ! python_bin="$(select_compatible_python)"; then
   fi
   echo "未找到兼容 Python 3.12-3.13。" >&2
   if [[ -n "$current_python" ]]; then
-    echo "当前 PATH 的 python3：$current_python（$current_version）" >&2
+    echo "当前 PATH 的 python3：${current_python}（${current_version}）" >&2
   fi
   echo "已检查 python3.13、python3.12、Homebrew 与 python.org Framework 常见路径。" >&2
   echo "如已安装在其它位置，可设置 PICOTOOPET_PYTHON_BIN=/完整路径/python3 后重试。" >&2
@@ -285,7 +285,7 @@ from pathlib import Path
 
 state = {
     "schema_version": "1.0",
-    "adapter_version": "2.3.27.1-crawl4ai.2",
+    "adapter_version": "2.3.27.1-crawl4ai.3",
     "crawl4ai_version": sys.argv[2],
     "created_venv": sys.argv[3].lower() == "true",
     "scrapling_detected": sys.argv[4] == "1",
