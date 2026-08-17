@@ -179,7 +179,7 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         }
     }
 
-    private void WorkComponent_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void WorkComponent_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key is not (Key.Enter or Key.Space)
             || sender is not FrameworkElement element
