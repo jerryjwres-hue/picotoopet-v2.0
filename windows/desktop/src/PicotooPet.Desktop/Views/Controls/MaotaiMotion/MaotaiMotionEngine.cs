@@ -344,6 +344,7 @@ internal sealed class MaotaiMotionEngine
             MaotaiBaseState.Error   => MaotaiEyeState.Half,
             _ => _graph.ActiveState switch
             {
+                MaotaiMotionState.Sleep       => MaotaiEyeState.Closed,
                 MaotaiMotionState.WorkTired   => MaotaiEyeState.Half,
                 MaotaiMotionState.Yawn        => MaotaiEyeState.Closed,
                 MaotaiMotionState.WorkAnnoyed => MaotaiEyeState.Half,
