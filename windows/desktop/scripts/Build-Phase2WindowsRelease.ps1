@@ -4,7 +4,9 @@ param(
     [string]$OutputRoot = "",
     [string]$Version = "",
     [string]$VersionLabel = "",
-    [string]$ProductVersion = ""
+    [string]$ProductVersion = "",
+    [ValidateSet("Full", "UiPreview")]
+    [string]$ValidationScope = "Full"
 )
 
 Set-StrictMode -Version Latest
@@ -239,9 +241,16 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "build", $solution, "--configuration", "Release", "--no-restore", "--nologo",
     "-p:ContinuousIntegrationBuild=true"
 ) | Out-Null
-Invoke-NativeCommand -FilePath $dotnet -Arguments @(
+
+# Smoke scope -----------------------------------------------------------------
+$smokeArguments = @(
     "run", "--project", $smokeProject, "--configuration", "Release", "--no-build"
-) | Out-Null
+)
+if ($ValidationScope -eq "UiPreview") {
+    $smokeArguments += @("--", "--ui-interaction-only")
+}
+Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments | Out-Null
+
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $appProject, "--runtime", "win-x64", "--nologo",
     "-p:PublishReadyToRun=true"
@@ -326,6 +335,22 @@ $sourceRef = if ([string]::IsNullOrWhiteSpace($env:PICOTOO_SOURCE_REF)) {
 else {
     $env:PICOTOO_SOURCE_REF
 }
+
+# Validation metadata ---------------------------------------------------------
+$validationScopeText = if ($ValidationScope -eq "UiPreview") {
+    "windows-ui-preview"
+}
+else {
+    "full-release"
+}
+$fullRelease = $ValidationScope -eq "Full"
+$signatureNote = if ($fullRelease) {
+    "原生 Windows CI 内部验收包；公开发布前仍需代码签名。"
+}
+else {
+    "Windows UI 验收安装包；已通过 UI-only 原生 Smoke 与安装生命周期，不是最终整合正式包。"
+}
+
 $workflowRefAllowed = (
     -not [string]::IsNullOrWhiteSpace($env:GITHUB_WORKFLOW_REF) -and
     (
@@ -337,6 +362,9 @@ $workflowRefAllowed = (
             [System.StringComparison]::OrdinalIgnoreCase) -or
         $env:GITHUB_WORKFLOW_REF.StartsWith(
             "jerryjwres-hue/picotoopet-v2.0/.github/workflows/research-windows-final-release.yml@",
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        $env:GITHUB_WORKFLOW_REF.StartsWith(
+            "jerryjwres-hue/picotoopet-v2.0/.github/workflows/windows-ui-preview-release.yml@",
             [System.StringComparison]::OrdinalIgnoreCase)
     )
 )
@@ -362,6 +390,8 @@ $manifest = [ordered]@{
     product_version      = $ProductVersion
     target               = "win-x64"
     sdk_version          = $sdkVersion
+    validation_scope      = $validationScopeText
+    full_release         = $fullRelease
     built_at             = (Get-Date).ToUniversalTime().ToString("o")
     commit               = $buildCommit
     build_commit         = $buildCommit
@@ -375,7 +405,7 @@ $manifest = [ordered]@{
     user_install_allowed = $nativeCiVerified
     signature            = [ordered]@{
         status = "unsigned-ci"
-        note   = "原生 Windows CI 内部验收包；公开发布前仍需代码签名。"
+        note   = $signatureNote
     }
     files                = $files
 }
@@ -413,6 +443,8 @@ $report = [ordered]@{
     sdk_version          = $sdkVersion
     runner               = [Environment]::OSVersion.VersionString
     target               = "win-x64"
+    validation_scope      = $validationScopeText
+    full_release         = $fullRelease
     package              = $zipPath
     package_sha256       = $zipSha
     file_count           = $files.Count
@@ -430,5 +462,6 @@ $report = [ordered]@{
 Write-Json -Value $report -Path $reportPath
 Write-Host "PHASE2_WINDOWS_RELEASE_BUILD=PASS"
 Write-Host "PRODUCT_VERSION=$ProductVersion"
+Write-Host "VALIDATION_SCOPE=$ValidationScope"
 Write-Host "PACKAGE=$zipPath"
 Write-Host "SHA256=$zipSha"
