@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -72,6 +74,52 @@ def test_installer_selects_a_compatible_python_instead_of_first_python3() -> Non
     # 安装状态写入也必须继续使用已验证解释器，不能悄悄回退到系统 python3。
     assert '"$python_bin" - "$install_state"' in installer
     assert 'python3 - "$install_state"' not in installer
+
+
+def test_python_selector_skips_incompatible_generic_python(
+    tmp_path: Path,
+) -> None:
+    installer = (PACKAGE_DIR / "INSTALL_CRAWL4AI_RESEARCH_ADAPTER.command").read_text(
+        encoding="utf-8"
+    )
+    start = installer.index("is_compatible_python() {")
+    end = installer.index("\n# 前置检测：", start)
+    selector_functions = installer[start:end]
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    generic = fake_bin / "python3"
+    versioned = fake_bin / "python3.12"
+    # generic 模拟 macOS 自带旧 Python：任何兼容性探测都失败。
+    generic.write_text("#!/bin/bash\nexit 99\n", encoding="utf-8")
+    # versioned 模拟已安装的兼容 Python：兼容性探测成功。
+    versioned.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+    generic.chmod(0o755)
+    versioned.chmod(0o755)
+
+    harness = tmp_path / "selector.sh"
+    harness.write_text(
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        f"venv_dir={tmp_path / 'missing-venv'}\n"
+        f"{selector_functions}\n"
+        "select_compatible_python\n",
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = str(fake_bin)
+    env["PICOTOOPET_PYTHON_BIN"] = str(generic)
+    completed = subprocess.run(
+        ["/bin/bash", str(harness)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.stdout.strip() == str(versioned)
 
 
 def test_verify_runs_real_timeout_404_network_and_content_limit_fixtures() -> None:
