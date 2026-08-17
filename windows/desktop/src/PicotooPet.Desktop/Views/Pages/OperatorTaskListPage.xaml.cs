@@ -87,7 +87,7 @@ public partial class OperatorTaskListPage : System.Windows.Controls.UserControl
     }
 
     /// <summary>不同任务桶使用不同语义；进行中只取消，不伪装成删除。</summary>
-    private bool ConfirmAction(
+    private static bool ConfirmAction(
         OperatorTaskListPageViewModel viewModel,
         int count,
         string? taskTitle)
