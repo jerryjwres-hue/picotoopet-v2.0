@@ -1,3 +1,4 @@
+using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using WpfImage = System.Windows.Controls.Image;
@@ -14,6 +15,9 @@ internal sealed class MaotaiRasterPart
         RotateTransform rotate,
         ScaleTransform? scale = null)
     {
+        ArgumentNullException.ThrowIfNull(element);
+        ApplyManifestPivotFromElementName(element);
+
         Element   = element;
         Translate = translate;
         Rotate    = rotate;
@@ -28,13 +32,7 @@ internal sealed class MaotaiRasterPart
         FrameworkElement element,
         string assetFileName)
     {
-        ArgumentNullException.ThrowIfNull(element);
-        if (!MaotaiAssetManifest.TryGetDescriptor(assetFileName, out var descriptor) ||
-            descriptor.Width <= 0.0 ||
-            descriptor.Height <= 0.0)
-        {
-            throw new InvalidOperationException($"Maotai v2 asset descriptor missing: {assetFileName}");
-        }
+        ApplyManifestPivot(element, assetFileName);
 
         var scale     = new ScaleTransform();
         var rotate    = new RotateTransform();
@@ -44,15 +42,62 @@ internal sealed class MaotaiRasterPart
         group.Children.Add(rotate);
         group.Children.Add(translate);
 
-        element.RenderTransformOrigin = new System.Windows.Point(
-            descriptor.PivotX / descriptor.Width,
-            descriptor.PivotY / descriptor.Height);
         element.RenderTransform = group;
 
         Element   = element;
         Translate = translate;
         Rotate    = rotate;
         Scale     = scale;
+    }
+
+    private static void ApplyManifestPivotFromElementName(FrameworkElement element)
+    {
+        if (element is not WpfImage)
+        {
+            return;
+        }
+
+        const string prefix = "MaotaiV2";
+        var elementName = element.Name;
+        if (string.IsNullOrWhiteSpace(elementName) ||
+            !elementName.StartsWith(prefix, StringComparison.Ordinal) ||
+            elementName.Length <= prefix.Length)
+        {
+            return;
+        }
+
+        var logicalName = elementName.AsSpan(prefix.Length);
+        var builder = new StringBuilder(logicalName.Length + 8);
+        for (var index = 0; index < logicalName.Length; index++)
+        {
+            var value = logicalName[index];
+            if (index > 0 && char.IsUpper(value))
+            {
+                builder.Append('_');
+            }
+
+            builder.Append(char.ToLowerInvariant(value));
+        }
+
+        builder.Append(".png");
+        ApplyManifestPivot(element, builder.ToString());
+    }
+
+    private static void ApplyManifestPivot(
+        FrameworkElement element,
+        string assetFileName)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        if (!MaotaiAssetManifest.TryGetDescriptor(assetFileName, out var descriptor) ||
+            descriptor.Width <= 0.0 ||
+            descriptor.Height <= 0.0)
+        {
+            throw new InvalidOperationException($"Maotai v2 asset descriptor missing: {assetFileName}");
+        }
+
+        element.RenderTransformOrigin = new System.Windows.Point(
+            descriptor.PivotX / descriptor.Width,
+            descriptor.PivotY / descriptor.Height);
     }
 
     public FrameworkElement Element { get; }
