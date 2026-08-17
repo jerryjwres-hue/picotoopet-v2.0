@@ -25,14 +25,18 @@ def test_ui_preview_builder_is_explicit_and_full_release_remains_default() -> No
         '[string]$ValidationScope = "Full"',
         '$ValidationScope -eq "UiPreview"',
         '"--ui-interaction-only"',
-        'validation_scope = "windows-ui-preview"',
-        'full_release = $false',
+        '$validationScopeText = if ($ValidationScope -eq "UiPreview") {',
+        '"windows-ui-preview"',
+        '$fullRelease = $ValidationScope -eq "Full"',
+        'validation_scope      = $validationScopeText',
+        'full_release         = $fullRelease',
         'windows-ui-preview-release.yml',
     ):
         assert required in builder
 
-    # 正式构建仍必须默认走完整 Smoke；Preview 只能显式选择。
-    assert 'dotnet run $smokeProject --configuration Release --no-build' in builder
+    # 正式构建仍必须默认走完整 Smoke；Preview 只在显式选择时追加 UI-only 参数。
+    assert '"run", "--project", $smokeProject, "--configuration", "Release", "--no-build"' in builder
+    assert '$smokeArguments += @("--", "--ui-interaction-only")' in builder
 
 
 def test_formal_release_workflows_never_request_ui_preview_scope() -> None:
