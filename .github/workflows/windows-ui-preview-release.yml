@@ -67,7 +67,7 @@ jobs:
       - name: Install exact .NET SDK from global.json
         uses: actions/setup-dotnet@v6
         with:
-          global-json-file: global.json
+          global-json-file: windows/desktop/global.json
 
       - name: Build WPF and run UI-only native smoke
         shell: pwsh
