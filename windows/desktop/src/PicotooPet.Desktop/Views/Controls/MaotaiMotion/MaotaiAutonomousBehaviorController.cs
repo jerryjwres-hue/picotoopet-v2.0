@@ -8,6 +8,7 @@ internal enum MaotaiAutonomousBehavior
     Run,
     Sit,
     LieDown,
+    Sleep,
 }
 
 /// <summary>自主调度器输出的纯值意图；真正的骨骼运动仍由同一个 Motion Engine 生成。</summary>
@@ -89,6 +90,7 @@ internal sealed class MaotaiAutonomousBehaviorController
         {
             MaotaiAutonomousBehavior.Sit     => MaotaiMotionState.Sit,
             MaotaiAutonomousBehavior.LieDown => MaotaiMotionState.LieDown,
+            MaotaiAutonomousBehavior.Sleep   => MaotaiMotionState.Sleep,
             _                                => (MaotaiMotionState?)null,
         };
 
@@ -144,6 +146,12 @@ internal sealed class MaotaiAutonomousBehaviorController
                 _remainingSeconds = Lerp(2.0, 4.2, NextUnit());
                 break;
 
+            case MaotaiAutonomousBehavior.Sleep:
+                // Nap stays short enough that pointer/click/system state can regain control without a stale long hold.
+                _targetX = currentX;
+                _remainingSeconds = Lerp(2.8, 4.6, NextUnit());
+                break;
+
             default:
                 _targetX = currentX;
                 _remainingSeconds = Lerp(1.0, 2.2, NextUnit());
@@ -157,16 +165,18 @@ internal sealed class MaotaiAutonomousBehaviorController
         if (floatingMode)
         {
             if (roll < 18.0) return MaotaiAutonomousBehavior.Idle;
-            if (roll < 53.0) return MaotaiAutonomousBehavior.Wander;
-            if (roll < 73.0) return MaotaiAutonomousBehavior.Run;
-            if (roll < 87.0) return MaotaiAutonomousBehavior.Sit;
-            return MaotaiAutonomousBehavior.LieDown;
+            if (roll < 51.0) return MaotaiAutonomousBehavior.Wander;
+            if (roll < 71.0) return MaotaiAutonomousBehavior.Run;
+            if (roll < 84.0) return MaotaiAutonomousBehavior.Sit;
+            if (roll < 93.0) return MaotaiAutonomousBehavior.LieDown;
+            return MaotaiAutonomousBehavior.Sleep;
         }
 
         if (roll < 25.0) return MaotaiAutonomousBehavior.Idle;
-        if (roll < 65.0) return MaotaiAutonomousBehavior.Wander;
-        if (roll < 85.0) return MaotaiAutonomousBehavior.Sit;
-        return MaotaiAutonomousBehavior.LieDown;
+        if (roll < 63.0) return MaotaiAutonomousBehavior.Wander;
+        if (roll < 83.0) return MaotaiAutonomousBehavior.Sit;
+        if (roll < 95.0) return MaotaiAutonomousBehavior.LieDown;
+        return MaotaiAutonomousBehavior.Sleep;
     }
 
     private static MaotaiAutonomousBehavior NextDifferentBehavior(
@@ -186,6 +196,8 @@ internal sealed class MaotaiAutonomousBehaviorController
                 : MaotaiAutonomousBehavior.Sit,
             MaotaiAutonomousBehavior.Run     => MaotaiAutonomousBehavior.Sit,
             MaotaiAutonomousBehavior.Sit     => MaotaiAutonomousBehavior.LieDown,
+            MaotaiAutonomousBehavior.LieDown => MaotaiAutonomousBehavior.Sleep,
+            MaotaiAutonomousBehavior.Sleep   => MaotaiAutonomousBehavior.Idle,
             _                                => MaotaiAutonomousBehavior.Idle,
         };
     }
