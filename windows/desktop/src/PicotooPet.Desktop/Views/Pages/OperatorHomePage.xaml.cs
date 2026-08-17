@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -14,6 +15,7 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
 {
     private readonly WindowsResourceSampler _resourceSampler;
     private readonly DispatcherTimer _resourceTimer;
+    private readonly Dictionary<FrameworkElement, Action> _workComponentActions = new();
 
     public OperatorHomePage()
     {
@@ -27,6 +29,7 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         RecentTasksCard.PreviewMouseLeftButtonUp += RecentTasksCard_PreviewMouseLeftButtonUp;
         RecentTasksCard.PreviewMouseMove += RecentTasksCard_PreviewMouseMove;
         RecentTasksCard.MouseLeave += RecentTasksCard_MouseLeave;
+        WorkComponentsCard.Loaded += WorkComponentsCard_Loaded;
         Loaded += OperatorHomePage_Loaded;
         Unloaded += OperatorHomePage_Unloaded;
     }
@@ -94,13 +97,13 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
     private void RecentTasksCard_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         RecentTasksCard.Cursor = FindRecentTaskCard(e.OriginalSource as DependencyObject) is null
-            ? System.Windows.Input.Cursors.Arrow
-            : System.Windows.Input.Cursors.Hand;
+            ? Cursors.Arrow
+            : Cursors.Hand;
     }
 
     private void RecentTasksCard_MouseLeave(object sender, MouseEventArgs e)
     {
-        RecentTasksCard.Cursor = System.Windows.Input.Cursors.Arrow;
+        RecentTasksCard.Cursor = Cursors.Arrow;
     }
 
     private OperatorTaskCard? FindRecentTaskCard(DependencyObject? source)
@@ -118,6 +121,118 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
 
         return null;
     }
+
+    /// <summary>保持现有卡片视觉，只把四张工作组件卡接入既有 Shell 路由。</summary>
+    private void WorkComponentsCard_Loaded(object sender, RoutedEventArgs e)
+    {
+        var componentGrid = FindVisualDescendant<UniformGrid>(WorkComponentsCard);
+        if (componentGrid is null || componentGrid.Children.Count < 4)
+        {
+            return;
+        }
+
+        ConfigureWorkComponent(
+            componentGrid.Children[0] as FrameworkElement,
+            ProjectsResearch_Click,
+            "打开项目 / 调研入口");
+        ConfigureWorkComponent(
+            componentGrid.Children[1] as FrameworkElement,
+            BusinessAnalysis_Click,
+            "打开业务分析入口");
+        ConfigureWorkComponent(
+            componentGrid.Children[2] as FrameworkElement,
+            AutomationEntry_Click,
+            "打开自动化入口");
+        ConfigureWorkComponent(
+            componentGrid.Children[3] as FrameworkElement,
+            ResultsReview_Click,
+            "打开结果 / 审核入口");
+    }
+
+    private void ConfigureWorkComponent(
+        FrameworkElement? element,
+        Action action,
+        string toolTip)
+    {
+        if (element is null || _workComponentActions.ContainsKey(element))
+        {
+            return;
+        }
+
+        _workComponentActions[element] = action;
+        element.Cursor = Cursors.Hand;
+        element.Focusable = true;
+        element.ToolTip = toolTip;
+        element.PreviewMouseLeftButtonUp += WorkComponent_PreviewMouseLeftButtonUp;
+        element.PreviewKeyDown += WorkComponent_PreviewKeyDown;
+        element.MouseEnter += WorkComponent_MouseEnter;
+        element.MouseLeave += WorkComponent_MouseLeave;
+    }
+
+    private void WorkComponent_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element
+            && _workComponentActions.TryGetValue(element, out var action))
+        {
+            e.Handled = true;
+            action();
+        }
+    }
+
+    private void WorkComponent_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space)
+            || sender is not FrameworkElement element
+            || !_workComponentActions.TryGetValue(element, out var action))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        action();
+    }
+
+    private static void WorkComponent_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement element)
+        {
+            element.Opacity = 0.90;
+        }
+    }
+
+    private static void WorkComponent_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement element)
+        {
+            element.Opacity = 1.0;
+        }
+    }
+
+    private static T? FindVisualDescendant<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            var nested = FindVisualDescendant<T>(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
+    private void ProjectsResearch_Click() => Navigate(NavigationRoute.Projects);
+    private void BusinessAnalysis_Click() => Navigate(NavigationRoute.BusinessAutomation);
+    private void AutomationEntry_Click() => Navigate(NavigationRoute.Automation);
+    private void ResultsReview_Click() => Navigate(NavigationRoute.Results);
 
     private static DependencyObject? GetParent(DependencyObject current)
     {
