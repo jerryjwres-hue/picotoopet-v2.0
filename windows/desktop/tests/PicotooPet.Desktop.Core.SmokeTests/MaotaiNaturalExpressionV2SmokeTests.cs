@@ -3,12 +3,19 @@ using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结茅台 v2 工作情绪必须落到真实 Pose，而不是只切换状态名称。</summary>
+/// <summary>冻结茅台 v2 工作情绪与休息表情必须落到真实 Pose，而不是只切换状态名称。</summary>
 internal static class MaotaiNaturalExpressionV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
 
     public static void Run()
+    {
+        VerifyWorkingExpressions();
+        VerifyAutonomousSleepExpression();
+    }
+
+    /// <summary>工作情绪必须驱动真实眼睛和嘴型图层。</summary>
+    private static void VerifyWorkingExpressions()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
         var update     = RequireMethod(engineType, "Update");
@@ -57,6 +64,35 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             "Recover 必须平滑回到睁眼 + 微笑基准表情");
     }
 
+    /// <summary>自主小睡必须真正闭眼，不能只进入 Sleep 状态后继续使用普通睁眼/眨眼基准。</summary>
+    private static void VerifyAutonomousSleepExpression()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 59, 108.0)
+            ?? throw new InvalidOperationException("无法创建自主睡眠表情 Motion Engine");
+
+        var sawSleep = false;
+        for (var frame = 0; frame < 360; frame++)
+        {
+            var input = CreateAutonomousSleepInput();
+            var pose = update.Invoke(engine, [1.0 / 60.0, input])
+                ?? throw new InvalidOperationException("自主睡眠表情测试没有输出 Pose");
+            var motion = ReadString(pose, "MotionState");
+            if (motion != "Sleep")
+            {
+                continue;
+            }
+
+            sawSleep = true;
+            var eye = ReadString(pose, "EyeState");
+            Assert(eye == "Closed",
+                $"Resting 自主 Sleep 必须稳定闭眼；当前 EyeState={eye}");
+        }
+
+        Assert(sawSleep, "自主睡眠表情测试未在 360 帧内进入 Sleep");
+    }
+
     private static object CreateWorkingInput()
     {
         var baseType        = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
@@ -77,6 +113,34 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             false,
             108.0)
             ?? throw new InvalidOperationException("无法创建 Working MotionInput");
+    }
+
+    private static object CreateAutonomousSleepInput()
+    {
+        var baseType        = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
+        var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
+        var motionStateType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState");
+        var inputType       = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionInput");
+
+        var input = Activator.CreateInstance(
+            inputType,
+            Enum.Parse(baseType, "Resting"),
+            0.0,
+            -0.1,
+            false,
+            Enum.Parse(interactionType, "None"),
+            20.0,
+            140.0,
+            108.0,
+            false,
+            false,
+            108.0)
+            ?? throw new InvalidOperationException("无法创建 Resting MotionInput");
+
+        RequireProperty(inputType, "AutonomousState").SetValue(
+            input,
+            Enum.Parse(motionStateType, "Sleep"));
+        return input;
     }
 
     private static Type RequireType(string fullName) =>
