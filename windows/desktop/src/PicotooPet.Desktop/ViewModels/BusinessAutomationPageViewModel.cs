@@ -100,6 +100,10 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         }
     }
 
+    // 操作可用性 --------------------------------------------------------------
+    public bool CanRefresh => !IsBusy;
+    public bool CanSubmitInbox => !IsBusy;
+
     public bool CanCancel => !IsBusy && SelectedPackage?.Status is
         "Receiving" or "Validating" or "Ready" or "Preprocessing" or "LocalInference" or "QualityCheck";
 
@@ -111,6 +115,29 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
         !IsBusy
         && SelectedPackage is { Status: "Completed", ResultPackageId: not null };
 
+    public string RefreshActionReason => IsBusy
+        ? "业务操作正在处理中，请稍候。"
+        : "刷新业务包和各业务自动化面板。";
+
+    public string SubmitInboxActionReason => IsBusy
+        ? "业务操作正在处理中，请稍候。"
+        : "处理固定 Inbox 中等待校验的 Work Package。";
+
+    public string DeliverResultActionReason => BuildSelectedActionReason(
+        CanDeliverResult,
+        "把所选已完成 Result Package 幂等投递到固定 Outbox。",
+        "只有已完成且存在 Result Package 的业务包可以投递。" );
+
+    public string CancelActionReason => BuildSelectedActionReason(
+        CanCancel,
+        "取消所选业务包；不会删除原业务程序文件。",
+        "当前业务包状态不允许取消。" );
+
+    public string ExportHandoffActionReason => BuildSelectedActionReason(
+        CanExportDeepAiHandoff,
+        "把所选脱敏 Deep-AI Handoff 导出到固定 Outbox；不会调用付费 AI。",
+        "只有 NeedsDeepAI 且已有 Handoff 的业务包可以导出。" );
+
     public static BusinessAutomationPageViewModel CreateForSmokeTest(
         IReadOnlyList<BusinessWorkPackageRecord> packages,
         string localIntelligenceStatus = "local.intelligence.v1 · healthy") =>
@@ -119,6 +146,11 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
     /// <summary>刷新固定 Inbox/Outbox 与完整 Business → Creative → Production → Deep-AI → Evaluation → Shadow → Promotion 控制面。</summary>
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var session = RequireSession();
         var bridge = RequireBridge();
         IsBusy = true;
@@ -153,6 +185,11 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
 
     public async Task SubmitInboxAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var session = RequireSession();
         var bridge = RequireBridge();
         IsBusy = true;
@@ -176,6 +213,11 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
 
     public async Task DeliverResultsAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var session = RequireSession();
         var bridge = RequireBridge();
         IsBusy = true;
@@ -199,6 +241,11 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
 
     public async Task CancelSelectedAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var selected = SelectedPackage ?? throw new InvalidOperationException("请先选择业务包。");
         var session = RequireSession();
         IsBusy = true;
@@ -224,6 +271,11 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
 
     public async Task ExportSelectedDeepAiHandoffAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var selected = SelectedPackage ?? throw new InvalidOperationException("请先选择业务包。");
         var bridge = RequireBridge();
         IsBusy = true;
@@ -261,11 +313,31 @@ public sealed class BusinessAutomationPageViewModel : PageViewModel
                 : $"local.intelligence.v1 · unavailable · {local.WorkerId}";
     }
 
+    private string BuildSelectedActionReason(bool canRun, string readyText, string unavailableText)
+    {
+        if (IsBusy)
+        {
+            return "业务操作正在处理中，请稍候。";
+        }
+        if (SelectedPackage is null)
+        {
+            return "请先选择业务包。";
+        }
+        return canRun ? readyText : unavailableText;
+    }
+
     private void RaiseActions()
     {
+        RaisePropertyChanged(nameof(CanRefresh));
+        RaisePropertyChanged(nameof(CanSubmitInbox));
         RaisePropertyChanged(nameof(CanCancel));
         RaisePropertyChanged(nameof(CanExportDeepAiHandoff));
         RaisePropertyChanged(nameof(CanDeliverResult));
+        RaisePropertyChanged(nameof(RefreshActionReason));
+        RaisePropertyChanged(nameof(SubmitInboxActionReason));
+        RaisePropertyChanged(nameof(DeliverResultActionReason));
+        RaisePropertyChanged(nameof(CancelActionReason));
+        RaisePropertyChanged(nameof(ExportHandoffActionReason));
     }
 
     private ControlCenterSession RequireSession() =>
