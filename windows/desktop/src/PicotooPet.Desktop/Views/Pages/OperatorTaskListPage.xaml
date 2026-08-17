@@ -19,7 +19,7 @@
                 MaxWidth="1180"
                 HorizontalAlignment="Stretch">
       <Border Padding="18,16"
-              Margin="0,0,0,14"
+              Margin="0,0,0,12"
               CornerRadius="14"
               Background="White"
               BorderBrush="#FFDCE6F2"
@@ -64,7 +64,7 @@
             <Button Content="全选当前页"
                     Click="SelectAll_Click"
                     IsEnabled="{Binding CanSelectAll, Mode=OneWay}"
-                    ToolTip="选择当前列表中尚未选中的任务"
+                    ToolTip="选择当前筛选结果中尚未选中的任务"
                     MinWidth="104"
                     Height="38"
                     Margin="0,0,8,0"
@@ -73,7 +73,7 @@
             <Button Content="取消选择"
                     Click="ClearSelection_Click"
                     IsEnabled="{Binding CanClearSelection, Mode=OneWay}"
-                    ToolTip="清除当前列表的任务选择"
+                    ToolTip="清除当前筛选结果的任务选择"
                     MinWidth="92"
                     Height="38"
                     Margin="0,0,8,0"
@@ -82,13 +82,106 @@
             <Button Content="{Binding BulkActionText}"
                     Click="BulkAction_Click"
                     IsEnabled="{Binding CanApplySelection, Mode=OneWay}"
-                    ToolTip="只对已选择任务执行当前操作"
-                    MinWidth="92"
+                    ToolTip="{Binding ActionToolTip, Mode=OneWay}"
+                    MinWidth="104"
                     Height="38"
                     Padding="12,0"
                     FontSize="14"
                     FontWeight="SemiBold" />
           </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- 三种任务列表共用同一筛选面板；筛选只作用于当前 Mac Core 快照。 -->
+      <Border Padding="16,14"
+              Margin="0,0,0,14"
+              CornerRadius="14"
+              Background="#FFFAFCFF"
+              BorderBrush="#FFDCE6F2"
+              BorderThickness="1"
+              Effect="{StaticResource TaskCardShadow}">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <TextBlock Text="搜索与筛选"
+                     FontSize="14"
+                     FontWeight="SemiBold"
+                     Foreground="{StaticResource TaskText}" />
+
+          <Grid Grid.Row="1" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="2.3*" MinWidth="210" />
+              <ColumnDefinition Width="1.15*" MinWidth="130" />
+              <ColumnDefinition Width="1.05*" MinWidth="135" />
+              <ColumnDefinition Width="1.05*" MinWidth="135" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Margin="0,0,10,0">
+              <TextBlock Text="关键词"
+                         Margin="2,0,0,5"
+                         FontSize="12"
+                         Foreground="{StaticResource TaskMuted}" />
+              <TextBox x:Name="KeywordSearchBox"
+                       Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
+                       KeyDown="KeywordSearchBox_KeyDown"
+                       Height="38"
+                       Padding="10,7"
+                       VerticalContentAlignment="Center"
+                       ToolTip="搜索任务标题、任务 ID、类型、目标或安全来源摘要" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Margin="0,0,10,0">
+              <TextBlock Text="分类"
+                         Margin="2,0,0,5"
+                         FontSize="12"
+                         Foreground="{StaticResource TaskMuted}" />
+              <ComboBox ItemsSource="{Binding Categories, Mode=OneWay}"
+                        SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
+                        Height="38"
+                        Padding="8,5"
+                        VerticalContentAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Margin="0,0,10,0">
+              <TextBlock Text="开始日期"
+                         Margin="2,0,0,5"
+                         FontSize="12"
+                         Foreground="{StaticResource TaskMuted}" />
+              <DatePicker SelectedDate="{Binding StartDate, Mode=TwoWay}"
+                          Height="38"
+                          VerticalContentAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="3" Margin="0,0,10,0">
+              <TextBlock Text="结束日期"
+                         Margin="2,0,0,5"
+                         FontSize="12"
+                         Foreground="{StaticResource TaskMuted}" />
+              <DatePicker SelectedDate="{Binding EndDate, Mode=TwoWay}"
+                          Height="38"
+                          VerticalContentAlignment="Center" />
+            </StackPanel>
+
+            <Button Grid.Column="4"
+                    Content="筛选"
+                    Click="ApplyFilters_Click"
+                    Width="78"
+                    Height="38"
+                    Margin="0,22,8,0"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Top" />
+            <Button Grid.Column="5"
+                    Content="清空筛选"
+                    Click="ClearFilters_Click"
+                    Width="92"
+                    Height="38"
+                    Margin="0,22,0,0"
+                    VerticalAlignment="Top" />
+          </Grid>
         </Grid>
       </Border>
 
@@ -139,11 +232,23 @@
                         HorizontalContentAlignment="Stretch"
                         Cursor="Hand">
                   <StackPanel>
-                    <TextBlock Text="{Binding Title, Mode=OneWay}"
-                               FontSize="15"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource TaskText}"
-                               TextTrimming="CharacterEllipsis" />
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="{Binding Title, Mode=OneWay}"
+                                 FontSize="15"
+                                 FontWeight="SemiBold"
+                                 Foreground="{StaticResource TaskText}"
+                                 TextTrimming="CharacterEllipsis" />
+                      <Border Margin="8,0,0,0"
+                              Padding="7,2"
+                              CornerRadius="7"
+                              Background="#FFF3F6FA"
+                              BorderBrush="#FFE1E8F0"
+                              BorderThickness="1">
+                        <TextBlock Text="{Binding CategoryText, Mode=OneWay}"
+                                   FontSize="11"
+                                   Foreground="#FF5C7087" />
+                      </Border>
+                    </StackPanel>
                     <TextBlock Text="{Binding StageText, Mode=OneWay}"
                                Margin="0,5,0,0"
                                Foreground="#FF53677F"
@@ -183,8 +288,8 @@
                   <Button Content="{Binding DataContext.SingleActionText, RelativeSource={RelativeSource AncestorType=UserControl}}"
                           Click="SingleAction_Click"
                           IsEnabled="{Binding DataContext.CanApplyAnyAction, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                          ToolTip="任务会安全移入已删除，或从已删除恢复"
-                          MinWidth="76"
+                          ToolTip="{Binding DataContext.ActionToolTip, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
+                          MinWidth="86"
                           Height="34"
                           Margin="0,10,0,0"
                           Padding="12,0"
