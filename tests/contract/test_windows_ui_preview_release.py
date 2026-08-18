@@ -66,3 +66,20 @@ def test_ui_preview_workflow_builds_installable_lifecycle_verified_artifact() ->
     # Preview 只能作为验收包，不能伪装正式发布或跳过生命周期验证。
     assert "windows-phase2-release.yml" not in workflow
     assert "research-windows-final-release.yml" not in workflow
+
+
+def test_ui_preview_publishes_auditable_run_provenance_to_source_commit() -> None:
+    workflow = _read(PREVIEW)
+
+    # 让源码 commit 可直接追溯到对应 Preview run；这里只写 GitHub commit status，
+    # 不改变产品状态、任务数据或正式发布门槛。
+    for required in (
+        "statuses: write",
+        "actions/github-script@v8",
+        "github.rest.repos.createCommitStatus",
+        "windows-ui-preview-release",
+        "context.runId",
+        "context.sha",
+        "if: always()",
+    ):
+        assert required in workflow
