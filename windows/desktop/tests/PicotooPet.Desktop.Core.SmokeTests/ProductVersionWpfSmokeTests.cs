@@ -74,13 +74,13 @@ internal static class ProductVersionWpfSmokeTests
         window.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
         window.UpdateLayout();
 
-        // Version gate              User-visible Windows version must match the 26.1 package contract.
+        // Product identity gate     Keep the existing four-part package version while adopting PicotooPet AI.
         SmokeAssert.True(
-            window.Title == "Picotoo Pet AI 2.3.26.1",
+            window.Title == "PicotooPet AI 2.3.26.1",
             "窗口标题产品版本错误");
         SmokeAssert.True(
-            subtitle.Text == "Control Center · v2.3.26.1",
-            "左上角产品版本错误");
+            subtitle.Text == "superpower v1.0 · Control Center · v2.3.26.1",
+            "左上角产品身份/版本错误");
 
         window.Close();
     }

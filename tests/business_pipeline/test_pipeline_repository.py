@@ -33,8 +33,8 @@ def _models_module():  # type: ignore[no-untyped-def]
 def test_migration_14_creates_pipeline_tables(tmp_path: Path) -> None:
     database = _database(tmp_path)
     try:
-        # Schema retention gate      21.1 pipeline facts must remain present after schema 18.
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 18
+        # Schema retention gate      21.1 pipeline facts remain present after schema 19.
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 19
         tables = {
             row[0]
             for row in database.fetchall(

@@ -190,11 +190,25 @@ if result.get("schema_version") != "1.0":
 if not result.get("checks"):
     raise SystemExit(f"diagnostic checks missing: {result!r}")
 worker = result.get("worker") or {}
-if worker.get("supported_task_types") != [
-    "system.diagnostic_snapshot",
-    "system.noop",
-]:
-    raise SystemExit(f"diagnostic Worker card mismatch: {worker!r}")
+supported = worker.get("supported_task_types")
+required = {"system.diagnostic_snapshot", "system.noop"}
+allowed = required | {
+    "autonomous.local_analysis.v1",
+    "autonomous.discovery.v1",
+    "autonomous.storage_maintenance.v1",
+    "business.local_intelligence.v1",
+    "creative.content_plan.v1",
+    "provider.codex.handoff-v1",
+    "provider.adoption.apply-v1",
+    "provider.commit.create-v1",
+    "provider.publish.pr-create-v1",
+    "research.search",
+}
+if not isinstance(supported, list) or not required <= set(supported):
+    raise SystemExit(f"diagnostic Worker card missing required types: {worker!r}")
+unexpected = set(supported) - allowed
+if unexpected:
+    raise SystemExit(f"diagnostic Worker card has unexpected types: {sorted(unexpected)!r}")
 Path(result_path).write_bytes(result_bytes)
 PY
 

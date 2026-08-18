@@ -128,6 +128,42 @@ class RuntimePaths:
     def deep_ai_results_dir(self) -> Path:
         return self.deep_ai_root / "results"
 
+    @property
+    def autonomous_root(self) -> Path:
+        """7x24 自治系统唯一允许主动整理/清理的数据根。"""
+
+        return self.runtime_dir / "autonomous"
+
+    @property
+    def autonomous_staging_dir(self) -> Path:
+        """已接管、可按生命周期处理的中间数据；不接受 Protected 原件。"""
+
+        return self.autonomous_root / "staging"
+
+    @property
+    def autonomous_disposable_dir(self) -> Path:
+        """明确标记为可清理的临时数据子目录。"""
+
+        return self.autonomous_staging_dir / "disposable"
+
+    @property
+    def autonomous_archive_dir(self) -> Path:
+        """完成分析后验证过的压缩归档。"""
+
+        return self.autonomous_root / "archive"
+
+    @property
+    def autonomous_handoffs_dir(self) -> Path:
+        """给网页 GPT / 后续生产链的确定性交接包。"""
+
+        return self.autonomous_root / "handoffs"
+
+    @property
+    def autonomous_state_dir(self) -> Path:
+        """自治系统自身可重建的状态/统计文件。"""
+
+        return self.autonomous_root / "state"
+
     def managed_directories(self) -> tuple[Path, ...]:
         """返回安装器和运行时允许创建的全部目录。"""
 
@@ -157,6 +193,12 @@ class RuntimePaths:
             self.deep_ai_root,
             self.deep_ai_requests_dir,
             self.deep_ai_results_dir,
+            self.autonomous_root,
+            self.autonomous_staging_dir,
+            self.autonomous_disposable_dir,
+            self.autonomous_archive_dir,
+            self.autonomous_handoffs_dir,
+            self.autonomous_state_dir,
         )
 
     def ensure(self) -> None:

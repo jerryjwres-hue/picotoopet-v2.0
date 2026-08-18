@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Services;
+using PicotooPet.Desktop.Versioning;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views;
@@ -36,6 +37,8 @@ public partial class ShellWindow : Window
         TaskDetailGatewayContext.SetGateway(this, new ControlCenterTaskDetailGateway(_session));
 
         DataContext = viewModel;
+        // 保留既有 XAML / 导航 / 茅台宿主，仅把历史品牌文案统一成当前产品名。
+        ApplyProductIdentity(this);
 
         // 茅台表面仍由独立组件负责；Shell 只保留既有浮窗请求边界。
         AssistantPet.FloatRequested += OnAssistantPetFloatRequested;
@@ -168,6 +171,22 @@ public partial class ShellWindow : Window
         finally
         {
             e.Handled = true;
+        }
+    }
+
+    /// <summary>只替换历史硬编码品牌 TextBlock；不重建或重排现有可视树。</summary>
+    private static void ApplyProductIdentity(DependencyObject parent)
+    {
+        var childCount = VisualTreeHelper.GetChildrenCount(parent);
+        for (var index = 0; index < childCount; index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is TextBlock textBlock
+                && string.Equals(textBlock.Text, "Picotoo Pet AI", StringComparison.Ordinal))
+            {
+                textBlock.Text = ProductVersionInfo.ProductName;
+            }
+            ApplyProductIdentity(child);
         }
     }
 
