@@ -17,6 +17,7 @@ from picotoopet_core.domain.enums import TaskStatus
 
 from .models import GoalCreate, GoalOrigin, GoalRecord, GoalStatus, PriorityClass
 from .repository import AutonomousGoalRepository
+from .storage_worker import StorageMaintenanceCoordinator
 
 # P3 autonomous discovery requires a real search/crawler-backed capability.
 # A healthy local language model alone is only an analysis worker and cannot
@@ -142,13 +143,48 @@ class AutonomousOperationsManager:
     def _create_maintenance(self, now: datetime) -> AutonomousTickResult:
         bucket = now.strftime("%Y-%m-%d")
         key = f"autonomous:maintenance-health:{bucket}"
+        storage = self.workflows.capabilities.select(
+            StorageMaintenanceCoordinator.CAPABILITY,
+            task_type=StorageMaintenanceCoordinator.TASK_TYPE,
+            now=now,
+        )
+        objective = "执行低优先级 Mac Core/Worker/Queue 健康检查"
+        constraints: dict[str, object] = {"read_only": True}
+        steps = [
+            WorkflowStepCreate(
+                step_key="diagnostic-snapshot",
+                task_type="system.diagnostic_snapshot",
+                payload={},
+                max_attempts=2,
+                timeout_seconds=120,
+            )
+        ]
+        if storage is not None:
+            objective = "执行低优先级健康检查并整理 PicotooPet 自主管理的临时数据"
+            constraints = {
+                "managed_runtime_only": True,
+                "protected_originals": "preserve",
+                "external_write": False,
+            }
+            steps.append(
+                WorkflowStepCreate(
+                    step_key="storage-maintenance",
+                    task_type=StorageMaintenanceCoordinator.TASK_TYPE,
+                    required_capability=StorageMaintenanceCoordinator.CAPABILITY,
+                    depends_on=["diagnostic-snapshot"],
+                    payload={"grace_hours": 24, "max_compactions": 20},
+                    max_attempts=2,
+                    timeout_seconds=300,
+                )
+            )
+
         goal = self.goals.create(
             GoalCreate(
                 origin=GoalOrigin.SYSTEM,
                 intent_type="system.maintenance_health",
                 priority_class=PriorityClass.P4,
-                objective="执行低优先级 Mac Core/Worker/Queue 健康检查",
-                constraints={"read_only": True},
+                objective=objective,
+                constraints=constraints,
                 budget_class="deterministic",
                 idempotency_key=key,
             )
@@ -159,15 +195,7 @@ class AutonomousOperationsManager:
                 priority=PriorityClass.P4.queue_priority,
                 max_concurrency=1,
                 idempotency_key=key,
-                steps=[
-                    WorkflowStepCreate(
-                        step_key="diagnostic-snapshot",
-                        task_type="system.diagnostic_snapshot",
-                        payload={},
-                        max_attempts=2,
-                        timeout_seconds=120,
-                    )
-                ],
+                steps=steps,
             )
         )
         goal = self.goals.bind_workflow(goal.goal_id, workflow.workflow_id)
