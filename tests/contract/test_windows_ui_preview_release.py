@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "windows" / "desktop"
 BUILDER = DESKTOP / "scripts" / "Build-Phase2WindowsRelease.ps1"
+VERIFIER = DESKTOP / "release" / "Verify-Phase2Prebuilt.ps1"
 PREVIEW = ROOT / ".github" / "workflows" / "windows-ui-preview-release.yml"
 FORMAL = ROOT / ".github" / "workflows" / "windows-phase2-release.yml"
 RESEARCH_FORMAL = ROOT / ".github" / "workflows" / "research-windows-final-release.yml"
@@ -87,6 +88,18 @@ def test_release_builder_uses_published_version_surface_self_test_contract() -> 
     assert '[string]$selfTest.product_version -ne $ProductVersion' in builder
     assert '[string]$selfTest.window_title -ne "Picotoo Pet AI $ProductVersion"' not in builder
     assert '[string]$selfTest.control_center_subtitle -ne "Control Center · v$ProductVersion"' not in builder
+
+
+def test_installed_verifier_uses_published_version_surface_self_test_contract() -> None:
+    verifier = _read(VERIFIER)
+
+    # 安装后的 OfflinePackageOnly 验证同样不能复制 Shell 文案。它必须严格比较
+    # 安装指针/Manifest/product-version.txt 与 EXE 报告的产品版本，并依赖 EXE
+    # 自己的 product_version_surfaces 检查验证窗口标题和 Control Center 副标题。
+    assert '[string]$selfTest.checks.product_version_surfaces -ne "pass"' in verifier
+    assert '[string]$selfTest.product_version -ne $productVersion' in verifier
+    assert '[string]$selfTest.window_title -ne "Picotoo Pet AI $productVersion"' not in verifier
+    assert '[string]$selfTest.control_center_subtitle -ne "Control Center · v$productVersion"' not in verifier
 
 
 def test_ui_preview_publishes_auditable_run_provenance_to_source_commit() -> None:
