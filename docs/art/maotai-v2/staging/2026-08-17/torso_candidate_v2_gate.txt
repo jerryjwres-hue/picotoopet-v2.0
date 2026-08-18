@@ -3,8 +3,8 @@ status: PROMOTED_TO_FORMAL_TORSO_NEUTRAL
 pixel_size: 184x156
 logical_contract: 92x78 @2x
 alpha_border: all four outer borders alpha=0
-visible_bbox_alpha_gt_0: x=33..156, y=10..144
 source: independent torso-only generation; NOT cropped from full character
 edit: hollow neck/limb sockets replaced with continuous fluffy overlap roots using only texture sampled from the same torso-only source
-png_sha256: 5c76347d2d1a43f19d4d21b4d1b414a334b6558f5a8899e6a40c82ad71fbbbd5
+transport_note: GitHub binary was re-encoded as a compact RGBA PNG after CI caught a malformed long-Base64 transfer; replacement blob was verified to begin with PNG byte 0x89 before branch update.
+png_sha256_local: 4e807ca617533859853f40f8452b4112a31cd907188ba18c93b22ab0056e586b
 visual_note: connection roots intentionally act as hidden fur overlap; limb/head layers cover them in assembled rig.
