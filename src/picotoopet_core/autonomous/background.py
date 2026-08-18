@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.models import CapabilityRegistration
+from picotoopet_core.research.execution import ResearchGatewayExecutor
 from picotoopet_core.worker.handlers import WorkerHandler
 
 from .discovery import ContentDiscoveryCoordinator
@@ -49,24 +51,48 @@ class AutonomousBackgroundCoordinator:
         worker_id: str,
         local_intelligence_handler: WorkerHandler,
         content_discovery_handler: WorkerHandler | None = None,
+        research_probe: Callable[[], bool] | None = None,
         model_id: str,
         clock: Callable[[], datetime] | None = None,
+        monotonic: Callable[[], float] | None = None,
+        research_probe_interval_seconds: float = 15.0,
     ) -> None:
         if not worker_id.strip():
             raise ValueError("worker_id must not be empty")
         if not model_id.strip():
             raise ValueError("model_id must not be empty")
+        if research_probe_interval_seconds <= 0:
+            raise ValueError("research_probe_interval_seconds must be positive")
         self.manager = manager
         self.capability_router = capability_router
         self.runtime = runtime
         self.worker_id = worker_id
         self.local_intelligence_handler = local_intelligence_handler
-        self.content_discovery_handler = content_discovery_handler
         self.model_id = model_id
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._monotonic = monotonic or time.monotonic
+        self._research_probe_interval_seconds = research_probe_interval_seconds
+        self._research_last_probe = float("-inf")
+        self._research_healthy_cached = False
+
+        # Reuse the exact local adapter already injected by the existing Worker CLI.
+        # This avoids creating a second gpt-oss agent/model client solely for discovery.
+        handler_owner = getattr(local_intelligence_handler, "__self__", None)
+        if content_discovery_handler is None and isinstance(
+            handler_owner, LocalIntelligenceCoordinator
+        ):
+            search_executor = ResearchGatewayExecutor()
+            content_discovery_handler = ContentDiscoveryCoordinator(
+                search=search_executor,
+                local=handler_owner.adapter,
+            ).handler
+            if research_probe is None:
+                research_probe = search_executor.search_ready
+        self.content_discovery_handler = content_discovery_handler
+        self._research_probe = research_probe
 
     def refresh_local_intelligence(self, *, healthy: bool) -> None:
-        """Expose exactly one bounded local-model task only while the model is healthy."""
+        """Expose bounded local analysis and derive discovery only when tools are healthy too."""
 
         if healthy:
             self.runtime.handlers[LocalIntelligenceCoordinator.TASK_TYPE] = (
@@ -90,6 +116,13 @@ class AutonomousBackgroundCoordinator:
                 },
                 heartbeat_at=self._now(),
             )
+        )
+        # Tool-first gate: local model health is insufficient. A cached fixed
+        # Research Gateway readiness probe must also pass before P3 can exist.
+        research_healthy = self._refresh_research_health() if healthy else False
+        self.refresh_content_discovery(
+            local_healthy=healthy,
+            research_healthy=research_healthy,
         )
 
     def refresh_content_discovery(self, *, local_healthy: bool, research_healthy: bool) -> None:
@@ -145,6 +178,19 @@ class AutonomousBackgroundCoordinator:
             ),
             workflow_id=getattr(result, "workflow_id", None),
         )
+
+    def _refresh_research_health(self) -> bool:
+        if self._research_probe is None or self.content_discovery_handler is None:
+            return False
+        now = self._monotonic()
+        if now - self._research_last_probe < self._research_probe_interval_seconds:
+            return self._research_healthy_cached
+        self._research_last_probe = now
+        try:
+            self._research_healthy_cached = bool(self._research_probe())
+        except Exception:
+            self._research_healthy_cached = False
+        return self._research_healthy_cached
 
     def _now(self) -> datetime:
         value = self._clock()
