@@ -514,7 +514,6 @@ internal sealed class MaotaiMotionEngine
 
             case MaotaiMotionState.GetUp:
                 bodyWorldY += 5.4 * (1.0 - blend);
-                bodyScaleY -= 0.055 * (1.0 - blend);
                 break;
 
             case MaotaiMotionState.WorkSettle:
