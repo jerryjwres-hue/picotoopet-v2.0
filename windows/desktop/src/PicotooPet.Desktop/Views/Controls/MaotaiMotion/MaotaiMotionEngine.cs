@@ -213,13 +213,16 @@ internal sealed class MaotaiMotionEngine
             blend,
             facingSign);
 
-        var pointerX = input.PointerInside
+        // Sleep hover          : ordinary pointer presence must not steer the sleeping head; real interactions still wake through the graph.
+        var tracksPointer = input.PointerInside &&
+            _graph.ActiveState != MaotaiMotionState.Sleep;
+        var pointerX = tracksPointer
             ? Math.Clamp(input.PointerX, -1.0, 1.0)
             : 0.0;
-        var pointerY = input.PointerInside
+        var pointerY = tracksPointer
             ? Math.Clamp(input.PointerY, -1.0, 1.0)
             : 0.0;
-        var idleLook = input.PointerInside
+        var idleLook = tracksPointer
             ? 0.0
             : Math.Sin((_elapsedSeconds * 0.82) + _idlePhaseOffset) * 1.15;
 
@@ -466,7 +469,6 @@ internal sealed class MaotaiMotionEngine
                 bodyScaleX -= 0.018;
                 bodyScaleY += 0.025;
                 headOffsetY -= 0.7;
-                earDrop     += 1.0;
                 break;
 
             case MaotaiMotionState.Land:
