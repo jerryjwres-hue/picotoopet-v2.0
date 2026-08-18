@@ -15,7 +15,9 @@ def test_existing_worker_loop_hosts_autonomous_background_coordinator() -> None:
     assert "LocalIntelligenceCoordinator" in source
     assert "build_ollama_local_intelligence_adapter" in source
     assert "autonomous_background = AutonomousBackgroundCoordinator(" in source
-    assert "autonomous_background.refresh_local_intelligence(healthy=business_healthy)" in source
+    # Reuse the existing loopback-model health probe; do not invent a second Ollama health system.
+    assert "local_healthy = refresh_business_capability" in source
+    assert "autonomous_background.refresh_local_intelligence(healthy=local_healthy)" in source
     assert "autonomous_background.tick_safely()" in source
 
     # The existing Worker still owns actual queue execution and the autonomous layer never starts a second loop.
