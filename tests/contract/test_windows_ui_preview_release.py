@@ -68,6 +68,15 @@ def test_ui_preview_workflow_builds_installable_lifecycle_verified_artifact() ->
     assert "research-windows-final-release.yml" not in workflow
 
 
+def test_goal_center_delivery_branch_is_covered_by_installable_ui_preview() -> None:
+    workflow = _read(PREVIEW)
+
+    # Goal Center 改动必须在自己的交付分支上自动构建可安装 Preview；
+    # 不能依赖旧 UI polish 分支，也不能改用 Full release 绕过 Natural Motion 资产门。
+    assert "feature/autonomous-intelligence-e2e-goal-center-2.3.27.1" in workflow
+    assert "-ValidationScope UiPreview" in workflow
+
+
 def test_ui_preview_publishes_auditable_run_provenance_to_source_commit() -> None:
     workflow = _read(PREVIEW)
 
