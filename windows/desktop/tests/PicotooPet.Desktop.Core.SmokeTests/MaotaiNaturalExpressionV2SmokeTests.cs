@@ -12,6 +12,7 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
     {
         VerifyWorkingExpressions();
         VerifyAutonomousSleepExpression();
+        VerifyWakeExpression();
     }
 
     /// <summary>工作情绪必须驱动真实眼睛和嘴型图层。</summary>
@@ -75,7 +76,7 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
         var sawSleep = false;
         for (var frame = 0; frame < 360; frame++)
         {
-            var input = CreateAutonomousSleepInput();
+            var input = CreateRestingInput(autonomousState: "Sleep");
             var pose = update.Invoke(engine, [1.0 / 60.0, input])
                 ?? throw new InvalidOperationException("自主睡眠表情测试没有输出 Pose");
             var motion = ReadString(pose, "MotionState");
@@ -94,6 +95,57 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
         }
 
         Assert(sawSleep, "自主睡眠表情测试未在 360 帧内进入 Sleep");
+    }
+
+    /// <summary>从睡眠被用户唤醒时先半睁眼，再在起身阶段恢复正常睁眼。</summary>
+    private static void VerifyWakeExpression()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 61, 108.0)
+            ?? throw new InvalidOperationException("无法创建唤醒表情 Motion Engine");
+
+        var reachedSleep = false;
+        for (var frame = 0; frame < 360; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(autonomousState: "Sleep")])
+                ?? throw new InvalidOperationException("唤醒前睡眠测试没有输出 Pose");
+            if (ReadString(pose, "MotionState") == "Sleep")
+            {
+                reachedSleep = true;
+                break;
+            }
+        }
+        Assert(reachedSleep, "唤醒表情测试未先进入 Sleep");
+
+        var sawWake      = false;
+        var sawGetUpOpen = false;
+        for (var frame = 0; frame < 180; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(interaction: "Pat")])
+                ?? throw new InvalidOperationException("唤醒表情测试没有输出 Pose");
+            var motion = ReadString(pose, "MotionState");
+            var eye    = ReadString(pose, "EyeState");
+
+            if (motion == "Wake")
+            {
+                sawWake = true;
+                Assert(eye == "Half",
+                    $"Sleep -> Wake 必须先半睁眼，不能瞬间完全睁开；当前 EyeState={eye}");
+            }
+            else if (motion == "GetUp" && eye == "Open")
+            {
+                sawGetUpOpen = true;
+            }
+
+            if (motion == "UserReaction")
+            {
+                break;
+            }
+        }
+
+        Assert(sawWake, "睡眠交互未经过 Wake 表情阶段");
+        Assert(sawGetUpOpen, "Wake 后的 GetUp 阶段必须恢复至少一帧正常睁眼");
     }
 
     private static object CreateWorkingInput()
@@ -118,11 +170,12 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             ?? throw new InvalidOperationException("无法创建 Working MotionInput");
     }
 
-    private static object CreateAutonomousSleepInput()
+    private static object CreateRestingInput(
+        string interaction = "None",
+        string? autonomousState = null)
     {
         var baseType        = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
         var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
-        var motionStateType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState");
         var inputType       = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionInput");
 
         var input = Activator.CreateInstance(
@@ -131,7 +184,7 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             0.0,
             -0.1,
             false,
-            Enum.Parse(interactionType, "None"),
+            Enum.Parse(interactionType, interaction),
             20.0,
             140.0,
             108.0,
@@ -140,9 +193,14 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             108.0)
             ?? throw new InvalidOperationException("无法创建 Resting MotionInput");
 
-        RequireProperty(inputType, "AutonomousState").SetValue(
-            input,
-            Enum.Parse(motionStateType, "Sleep"));
+        if (autonomousState is not null)
+        {
+            var motionStateType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState");
+            RequireProperty(inputType, "AutonomousState").SetValue(
+                input,
+                Enum.Parse(motionStateType, autonomousState));
+        }
+
         return input;
     }
 
