@@ -13,6 +13,7 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
         VerifyWorkingExpressions();
         VerifyAutonomousSleepExpression();
         VerifyWakeExpression();
+        VerifySleepingPatCompletesAfterPulseExpires();
     }
 
     /// <summary>工作情绪必须驱动真实眼睛和嘴型图层。</summary>
@@ -154,6 +155,57 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
 
         Assert(sawWake, "睡眠交互未经过 Wake 表情阶段");
         Assert(sawGetUpOpen, "Wake 后的 GetUp 阶段必须恢复至少一帧正常睁眼");
+    }
+
+    /// <summary>真实单击 Pat 只有约 0.55 秒；一旦睡眠中的交互已被接受，起身链不能因原始输入过期而丢掉最终反应。</summary>
+    private static void VerifySleepingPatCompletesAfterPulseExpires()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 67, 108.0)
+            ?? throw new InvalidOperationException("无法创建睡眠 Pat 脉冲 Motion Engine");
+
+        var reachedSleep = false;
+        for (var frame = 0; frame < 360; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(autonomousState: "Sleep")])
+                ?? throw new InvalidOperationException("Pat 脉冲测试的睡眠阶段没有输出 Pose");
+            if (ReadString(pose, "MotionState") == "Sleep")
+            {
+                reachedSleep = true;
+                break;
+            }
+        }
+        Assert(reachedSleep, "Pat 脉冲测试未先进入 Sleep");
+
+        // UI click pulse      : AssistantPetPanel keeps Pat/Paw alive for 0.55 s, i.e. 33 frames at 60 Hz.
+        for (var frame = 0; frame < 33; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(interaction: "Pat")])
+                ?? throw new InvalidOperationException("Pat 脉冲阶段没有输出 Pose");
+            Assert(ReadString(pose, "MotionState") != "UserReaction",
+                "0.55 秒 Pat 脉冲必须先完成 Wake/GetUp，测试夹具不能在原始输入过期前提前进入 UserReaction");
+        }
+
+        var sawDeferredReaction = false;
+        var sawDeferredTongue   = false;
+        for (var frame = 0; frame < 90; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput()])
+                ?? throw new InvalidOperationException("Pat 脉冲过期后的起身阶段没有输出 Pose");
+            if (ReadString(pose, "MotionState") != "UserReaction")
+            {
+                continue;
+            }
+
+            sawDeferredReaction = true;
+            sawDeferredTongue  |= ReadString(pose, "MouthState") == "Tongue";
+        }
+
+        Assert(sawDeferredReaction,
+            "睡眠中已接受的 0.55 秒 Pat 不能在 Wake/GetUp 途中因输入过期而丢失 UserReaction");
+        Assert(sawDeferredTongue,
+            "延迟到起身完成后的 UserReaction 必须保留原 Pat 的 Tongue 可见反馈");
     }
 
     private static object CreateWorkingInput()
