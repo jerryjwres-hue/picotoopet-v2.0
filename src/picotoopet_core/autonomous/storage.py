@@ -98,6 +98,16 @@ class StorageLifecycleManager:
         self._require_mutation_target(manifest_path)
         self.archive_root.mkdir(parents=True, exist_ok=True)
 
+        existing = self._reuse_existing_archive(
+            source=resolved_source,
+            source_sha256=source_sha256,
+            original_size=original_size,
+            archive_path=archive_path,
+            manifest_path=manifest_path,
+        )
+        if existing is not None:
+            return existing
+
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{artifact_key}.", suffix=".partial.gz", dir=self.archive_root
         )
@@ -190,6 +200,58 @@ class StorageLifecycleManager:
             bytes_before=bytes_reclaimed,
             bytes_after=0,
             bytes_reclaimed=bytes_reclaimed,
+        )
+
+    def _reuse_existing_archive(
+        self,
+        *,
+        source: Path,
+        source_sha256: str,
+        original_size: int,
+        archive_path: Path,
+        manifest_path: Path,
+    ) -> StorageLifecycleReport | None:
+        """Reuse an identical verified archive or reject any conflicting key."""
+
+        if not archive_path.exists() and not manifest_path.exists():
+            return None
+        if (
+            archive_path.is_symlink()
+            or manifest_path.is_symlink()
+            or not archive_path.is_file()
+            or not manifest_path.is_file()
+        ):
+            raise StorageBoundaryError("archive key already exists with invalid managed files")
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise StorageBoundaryError("archive key already exists with invalid manifest") from error
+
+        if manifest.get("source_sha256") != source_sha256:
+            raise StorageBoundaryError("archive key already exists for different content")
+        if manifest.get("verified") is not True:
+            raise StorageBoundaryError("archive key already exists without verified manifest")
+        expected_archive_sha = manifest.get("archive_sha256")
+        if not isinstance(expected_archive_sha, str) or self._sha256_file(archive_path) != expected_archive_sha:
+            raise StorageBoundaryError("archive key already exists with invalid archive hash")
+        try:
+            with gzip.open(archive_path, "rb") as handle:
+                restored = handle.read()
+        except OSError as error:
+            raise StorageBoundaryError("archive key already exists with unreadable archive") from error
+        if len(restored) != original_size or hashlib.sha256(restored).hexdigest() != source_sha256:
+            raise StorageBoundaryError("archive key already exists with mismatched archive content")
+
+        compressed_size = archive_path.stat().st_size
+        source.unlink()
+        return StorageLifecycleReport(
+            files_compacted=0,
+            files_deleted=1,
+            bytes_before=original_size,
+            bytes_after=compressed_size,
+            bytes_reclaimed=max(0, original_size - compressed_size),
+            archive_path=archive_path,
+            manifest_path=manifest_path,
         )
 
     def _require_under_autonomous_root(self, path: Path) -> None:
