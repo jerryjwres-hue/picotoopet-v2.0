@@ -8,6 +8,7 @@ using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views;
+using WpfCursors = System.Windows.Input.Cursors;
 using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
 using WpfUserControl = System.Windows.Controls.UserControl;
 
@@ -134,13 +135,13 @@ public partial class OperatorHomePage : WpfUserControl
     private void RecentTasksCard_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         RecentTasksCard.Cursor = FindRecentTaskCard(e.OriginalSource as DependencyObject) is null
-            ? Cursors.Arrow
-            : Cursors.Hand;
+            ? WpfCursors.Arrow
+            : WpfCursors.Hand;
     }
 
     private void RecentTasksCard_MouseLeave(object sender, MouseEventArgs e)
     {
-        RecentTasksCard.Cursor = Cursors.Arrow;
+        RecentTasksCard.Cursor = WpfCursors.Arrow;
     }
 
     private OperatorTaskCard? FindRecentTaskCard(DependencyObject? source)
@@ -197,7 +198,7 @@ public partial class OperatorHomePage : WpfUserControl
         }
 
         _workComponentActions[element] = action;
-        element.Cursor = Cursors.Hand;
+        element.Cursor = WpfCursors.Hand;
         element.Focusable = true;
         element.ToolTip = toolTip;
         element.PreviewMouseLeftButtonUp += WorkComponent_PreviewMouseLeftButtonUp;
