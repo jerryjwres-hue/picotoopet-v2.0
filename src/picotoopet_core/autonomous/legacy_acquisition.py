@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import ipaddress
 import math
 import re
+from enum import StrEnum
+from urllib.parse import urlsplit
+
+from pydantic import BaseModel, ConfigDict
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _MAX_QUERY_CHARS = 240
@@ -14,6 +19,39 @@ _QUERY_INTENTS = (
     "comparison purchase intent recent",
     "recent discussions",
 )
+_BROWSER_SESSION_DOMAINS = (
+    "amazon.com",
+    "amazon.ca",
+    "amazon.co.uk",
+    "amazon.de",
+    "amazon.fr",
+    "amazon.it",
+    "amazon.es",
+    "amazon.co.jp",
+    "amazon.com.au",
+    "tiktok.com",
+    "tiktokshop.com",
+)
+
+
+class SourcePolicyMode(StrEnum):
+    """Internal acquisition safety mode; this is not a legal/compliance determination."""
+
+    GREEN = "GREEN"
+    YELLOW = "YELLOW"
+    RED = "RED"
+
+
+class SourcePolicyDecision(BaseModel):
+    """Deterministic acquisition decision for a single source URL."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    domain: str
+    mode: SourcePolicyMode
+    browser_session_required: bool
+    autonomous_fetch_allowed: bool
+    reason: str
 
 
 def adaptive_interval_minutes(*, base_minutes: int, change_rate: float, failure_count: int) -> int:
@@ -61,6 +99,74 @@ def build_discovery_queries(objective: str, *, max_queries: int = 4) -> tuple[st
         if len(queries) >= limit:
             break
     return tuple(queries)
+
+
+def classify_source_url(
+    url: str,
+    *,
+    robots_allowed: bool | None = None,
+) -> SourcePolicyDecision:
+    """Classify a URL conservatively before any autonomous network acquisition."""
+
+    value = str(url or "").strip()
+    parsed = urlsplit(value)
+    domain = (parsed.hostname or "").casefold().rstrip(".")
+    if parsed.scheme.casefold() not in {"http", "https"} or not domain:
+        return _source_decision(domain, SourcePolicyMode.RED, False, False, "non-public URL scheme or host")
+    if parsed.username is not None or parsed.password is not None:
+        return _source_decision(domain, SourcePolicyMode.RED, False, False, "credential-bearing URL")
+    if _is_non_public_host(domain):
+        return _source_decision(domain, SourcePolicyMode.RED, False, False, "non-public network host")
+    if _requires_browser_session(domain):
+        return _source_decision(
+            domain,
+            SourcePolicyMode.YELLOW,
+            True,
+            False,
+            "source requires the read-only browser capability path",
+        )
+    if robots_allowed is False:
+        return _source_decision(domain, SourcePolicyMode.RED, False, False, "robots policy disallows autonomous fetch")
+    if robots_allowed is True:
+        return _source_decision(domain, SourcePolicyMode.GREEN, False, True, "public source explicitly allows autonomous fetch")
+    return _source_decision(
+        domain,
+        SourcePolicyMode.YELLOW,
+        False,
+        False,
+        "public source is unverified; explicit source-policy evidence is required",
+    )
+
+
+def _source_decision(
+    domain: str,
+    mode: SourcePolicyMode,
+    browser_session_required: bool,
+    autonomous_fetch_allowed: bool,
+    reason: str,
+) -> SourcePolicyDecision:
+    return SourcePolicyDecision(
+        domain=domain,
+        mode=mode,
+        browser_session_required=browser_session_required,
+        autonomous_fetch_allowed=autonomous_fetch_allowed,
+        reason=reason,
+    )
+
+
+def _is_non_public_host(domain: str) -> bool:
+    if domain == "localhost" or domain.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(domain)
+    except ValueError:
+        return False
+    return not address.is_global
+
+
+def _requires_browser_session(domain: str) -> bool:
+    bare = domain.removeprefix("www.")
+    return any(bare == item or bare.endswith(f".{item}") for item in _BROWSER_SESSION_DOMAINS)
 
 
 def _normalize_objective(objective: str) -> str:
