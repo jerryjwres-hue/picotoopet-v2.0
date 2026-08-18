@@ -12,6 +12,7 @@ from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.models import CapabilityRegistration
 from picotoopet_core.worker.handlers import WorkerHandler
 
+from .discovery import ContentDiscoveryCoordinator
 from .local_intelligence import LocalIntelligenceCoordinator
 
 
@@ -47,6 +48,7 @@ class AutonomousBackgroundCoordinator:
         runtime: _WorkerRuntime,
         worker_id: str,
         local_intelligence_handler: WorkerHandler,
+        content_discovery_handler: WorkerHandler | None = None,
         model_id: str,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -59,6 +61,7 @@ class AutonomousBackgroundCoordinator:
         self.runtime = runtime
         self.worker_id = worker_id
         self.local_intelligence_handler = local_intelligence_handler
+        self.content_discovery_handler = content_discovery_handler
         self.model_id = model_id
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -84,6 +87,39 @@ class AutonomousBackgroundCoordinator:
                     "transport": "loopback-openai-compatible",
                     "model": self.model_id,
                     "role": "bounded-local-analysis",
+                },
+                heartbeat_at=self._now(),
+            )
+        )
+
+    def refresh_content_discovery(self, *, local_healthy: bool, research_healthy: bool) -> None:
+        """Expose P3 discovery only when both evidence tools and local screening are healthy."""
+
+        healthy = bool(
+            local_healthy
+            and research_healthy
+            and self.content_discovery_handler is not None
+        )
+        if healthy:
+            assert self.content_discovery_handler is not None
+            self.runtime.handlers[ContentDiscoveryCoordinator.TASK_TYPE] = (
+                self.content_discovery_handler
+            )
+            task_types = [ContentDiscoveryCoordinator.TASK_TYPE]
+        else:
+            self.runtime.handlers.pop(ContentDiscoveryCoordinator.TASK_TYPE, None)
+            task_types = []
+        self.capability_router.register(
+            CapabilityRegistration(
+                worker_id=self.worker_id,
+                capability=ContentDiscoveryCoordinator.CAPABILITY,
+                task_types=task_types,
+                healthy=healthy,
+                metadata={
+                    "runtime": "mac-worker",
+                    "pipeline": "research-gateway-then-local-scout",
+                    "model": self.model_id,
+                    "read_only": True,
                 },
                 heartbeat_at=self._now(),
             )
