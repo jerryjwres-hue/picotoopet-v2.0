@@ -85,9 +85,10 @@ from pathlib import Path
 
 state = {
     "schema_version": "1.0",
-    "adapter_version": "2.3.27.1-crawl4ai.1",
+    "adapter_version": "2.3.27.1-crawl4ai.4",
     "status": "rolled_back",
     "created_venv": sys.argv[2].lower() == "true",
+    "gateway_private_python_bootstrap": False,
     "read_only": True,
     "chrome_profile_access": False,
     "rollback_log": sys.argv[3],
@@ -98,9 +99,15 @@ Path(sys.argv[1]).write_text(
 )
 PY
 
-# 恢复后只验证既有 Gateway 能启动；不会触发 Scrapling 安装、账号登录或浏览器状态修改。
+# 恢复的是 pre-Crawl4AI 状态；若它原本因系统 Python 过旧而不健康，不应阻断真正的回滚。
 if [[ -x "$gateway_root/bin/picotoopet-research-gateway" ]]; then
-  "$gateway_root/bin/picotoopet-research-gateway" --health >/dev/null
+  set +e
+  "$gateway_root/bin/picotoopet-research-gateway" --health >/dev/null 2>&1
+  gateway_health_code=$?
+  set -e
+  if [[ "$gateway_health_code" -ne 0 ]]; then
+    echo "提示：恢复后的既有 Research Gateway health 未通过；pre-Crawl4AI 状态已保留，不阻断回滚。"
+  fi
 fi
 
 printf '\nCrawl4AI Research Adapter 已回滚。\n'
