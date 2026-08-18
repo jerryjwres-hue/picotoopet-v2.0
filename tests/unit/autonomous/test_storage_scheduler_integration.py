@@ -12,6 +12,7 @@ from picotoopet_core.autonomous.background import AutonomousBackgroundCoordinato
 from picotoopet_core.autonomous.manager import AutonomousOperationsManager
 from picotoopet_core.autonomous.repository import AutonomousGoalRepository
 from picotoopet_core.autonomous.storage_worker import StorageMaintenanceCoordinator
+from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.db.database import Database
 from picotoopet_core.queue.repository import QueueRepository
 from picotoopet_core.worker.handlers import HandlerResult
@@ -60,6 +61,27 @@ def _manager_stack(tmp_path: Path):  # type: ignore[no-untyped-def]
         clock=lambda: NOW,
     )
     return database, workflows, manager
+
+
+def _canonical_manager_stack(tmp_path: Path):  # type: ignore[no-untyped-def]
+    paths = RuntimePaths.from_root(tmp_path / "runtime")
+    paths.ensure()
+    database = Database(paths.database_file)
+    database.open()
+    database.apply_migrations()
+    automation = AutomationRepository(database)
+    workflows = WorkflowService(
+        database,
+        queue=QueueRepository(database),
+        repository=automation,
+    )
+    manager = AutonomousOperationsManager(
+        database=database,
+        goals=AutonomousGoalRepository(database),
+        workflows=workflows,
+        clock=lambda: NOW,
+    )
+    return paths, database, workflows, manager
 
 
 def test_p4_workflow_adds_storage_after_diagnostics_only_when_capability_is_live(
@@ -125,4 +147,54 @@ def test_background_coordinator_registers_injected_storage_handler_before_tick(
     )
     assert registration is not None
     assert registration.metadata["managed_root_only"] is True
+    database.close()
+
+
+def test_background_autobinds_storage_only_from_canonical_picotoopet_runtime(
+    tmp_path: Path,
+) -> None:
+    paths, database, workflows, manager = _canonical_manager_stack(tmp_path)
+    runtime = FakeRuntime()
+    coordinator = AutonomousBackgroundCoordinator(
+        manager=manager,
+        capability_router=workflows.capabilities,
+        runtime=runtime,
+        worker_id="mac-worker-canonical-storage",
+        local_intelligence_handler=_handler,
+        model_id="gpt-oss:20b",
+        clock=lambda: NOW,
+    )
+
+    result = coordinator.tick_safely()
+    workflow = workflows.get_workflow(result.workflow_id or "")
+
+    assert StorageMaintenanceCoordinator.TASK_TYPE in runtime.handlers
+    assert [step.step_key for step in workflow.steps] == [
+        "diagnostic-snapshot",
+        "storage-maintenance",
+    ]
+    assert paths.autonomous_root.is_relative_to(paths.root)
+    database.close()
+
+
+def test_background_does_not_autobind_storage_from_arbitrary_database_path(
+    tmp_path: Path,
+) -> None:
+    database, workflows, manager = _manager_stack(tmp_path)
+    runtime = FakeRuntime()
+    coordinator = AutonomousBackgroundCoordinator(
+        manager=manager,
+        capability_router=workflows.capabilities,
+        runtime=runtime,
+        worker_id="mac-worker-noncanonical-storage",
+        local_intelligence_handler=_handler,
+        model_id="gpt-oss:20b",
+        clock=lambda: NOW,
+    )
+
+    result = coordinator.tick_safely()
+    workflow = workflows.get_workflow(result.workflow_id or "")
+
+    assert StorageMaintenanceCoordinator.TASK_TYPE not in runtime.handlers
+    assert [step.step_key for step in workflow.steps] == ["diagnostic-snapshot"]
     database.close()
