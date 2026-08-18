@@ -14,6 +14,7 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
         VerifyAutonomousSleepExpression();
         VerifyWakeExpression();
         VerifySleepingPatCompletesAfterPulseExpires();
+        VerifyOfflineCancelsDeferredSleepingPat();
     }
 
     /// <summary>工作情绪必须驱动真实眼睛和嘴型图层。</summary>
@@ -208,6 +209,46 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             "延迟到起身完成后的 UserReaction 必须保留原 Pat 的 Tongue 可见反馈");
     }
 
+    /// <summary>Offline/Error 属于强状态；一旦出现，必须丢弃尚未完成的睡眠互动，恢复后也不能补播旧反应。</summary>
+    private static void VerifyOfflineCancelsDeferredSleepingPat()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 71, 108.0)
+            ?? throw new InvalidOperationException("无法创建 Offline 取消互动 Motion Engine");
+
+        var reachedSleep = false;
+        for (var frame = 0; frame < 360; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(autonomousState: "Sleep")])
+                ?? throw new InvalidOperationException("Offline 取消测试的睡眠阶段没有输出 Pose");
+            if (ReadString(pose, "MotionState") == "Sleep")
+            {
+                reachedSleep = true;
+                break;
+            }
+        }
+        Assert(reachedSleep, "Offline 取消互动测试未先进入 Sleep");
+
+        var acceptedPose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(interaction: "Pat")])
+            ?? throw new InvalidOperationException("Offline 取消测试没有接受 Pat");
+        Assert(ReadString(acceptedPose, "MotionState") != "UserReaction",
+            "睡眠 Pat 首帧必须先走 Wake/GetUp，不能让测试夹具直接进入 UserReaction");
+
+        // Strong state         : one Offline frame is enough to revoke any cosmetic deferred click feedback.
+        update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(baseState: "Offline")]);
+
+        for (var frame = 0; frame < 120; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput()])
+                ?? throw new InvalidOperationException("Offline 恢复后的测试没有输出 Pose");
+            Assert(ReadString(pose, "MotionState") != "UserReaction",
+                "Offline 已取消的睡眠 Pat 在恢复后不能补播旧 UserReaction");
+            Assert(ReadString(pose, "MouthState") != "Tongue",
+                "Offline 已取消的睡眠 Pat 在恢复后不能泄漏旧 Tongue 表情");
+        }
+    }
+
     private static object CreateWorkingInput()
     {
         var baseType        = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
@@ -232,7 +273,8 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
 
     private static object CreateRestingInput(
         string interaction = "None",
-        string? autonomousState = null)
+        string? autonomousState = null,
+        string baseState = "Resting")
     {
         var baseType        = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
         var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
@@ -240,7 +282,7 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
 
         var input = Activator.CreateInstance(
             inputType,
-            Enum.Parse(baseType, "Resting"),
+            Enum.Parse(baseType, baseState),
             0.0,
             -0.1,
             false,
