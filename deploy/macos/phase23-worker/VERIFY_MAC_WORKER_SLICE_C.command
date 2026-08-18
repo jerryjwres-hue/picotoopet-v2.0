@@ -58,6 +58,9 @@ payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 supported = payload.get("supported_task_types")
 required = {"system.diagnostic_snapshot", "system.noop"}
 allowed = required | {
+    "autonomous.local_analysis.v1",
+    "autonomous.discovery.v1",
+    "autonomous.storage_maintenance.v1",
     "business.local_intelligence.v1",
     "creative.content_plan.v1",
     "provider.codex.handoff-v1",
@@ -66,7 +69,8 @@ allowed = required | {
     "provider.publish.pr-create-v1",
     "research.search",
 }
-# 累计能力验证：基础系统类型必须存在，已健康注册的受控能力允许出现。
+# 累计能力验证：基础系统类型必须存在，只有明确列出的健康受控能力允许出现。
+# 禁止 autonomous.* 或其它通配，避免安装验证器意外放宽 Worker 执行边界。
 if not isinstance(supported, list) or not required <= set(supported):
     raise SystemExit(f"Worker 缺少基础冻结类型：{payload!r}")
 unexpected = set(supported) - allowed
