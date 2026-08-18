@@ -62,7 +62,112 @@ internal static class MaotaiRestTransitionSmokeTests
             interactionWakeChain,
             ["Wake", "GetUp", "UserReaction"],
             "睡着时被摸/点击必须先 Wake -> GetUp，再进入 UserReaction，禁止 Sleep 硬切互动姿态");
+
+        VerifyWakeGetUpPoseContinuity();
     }
+
+    /// <summary>状态链合法还不够；Wake 最后一帧切到 GetUp 第一帧时身体高度也必须连续。</summary>
+    private static void VerifyWakeGetUpPoseContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update = engineType.GetMethod("Update", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("MotionEngine 缺少 Update");
+        var engine = Activator.CreateInstance(engineType, 509, 72.0)
+            ?? throw new InvalidOperationException("无法创建醒来连续性 Motion Engine");
+
+        object? previousPose = null;
+        var stableSleepFrames = 0;
+        for (var frame = 0; frame < 420; frame++)
+        {
+            previousPose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput("Sleep")])
+                ?? throw new InvalidOperationException("睡眠预热没有输出 Pose");
+            if (ReadString(previousPose, "MotionState") == "Sleep")
+            {
+                stableSleepFrames++;
+                if (stableSleepFrames >= 30)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                stableSleepFrames = 0;
+            }
+        }
+
+        Assert(stableSleepFrames >= 30, "醒来连续性测试未能稳定进入 Sleep");
+
+        var previousState = ReadString(previousPose!, "MotionState");
+        var sawBoundary = false;
+        var wakeBodyY = 0.0;
+        var getUpBodyY = 0.0;
+        var boundaryDelta = double.PositiveInfinity;
+
+        for (var frame = 0; frame < 300; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(null)])
+                ?? throw new InvalidOperationException("醒来连续性测试没有输出 Pose");
+            var state = ReadString(pose, "MotionState");
+
+            if (previousState == "Wake" && state == "GetUp")
+            {
+                wakeBodyY = ReadBodyY(previousPose!);
+                getUpBodyY = ReadBodyY(pose);
+                boundaryDelta = Math.Abs(getUpBodyY - wakeBodyY);
+                sawBoundary = true;
+                break;
+            }
+
+            previousPose = pose;
+            previousState = state;
+        }
+
+        Assert(sawBoundary, "醒来连续性测试未观察到 Wake -> GetUp 边界");
+        Assert(boundaryDelta < 0.75,
+            $"Wake -> GetUp 身体高度不能出现可见跳帧；delta={boundaryDelta:F3}, wakeY={wakeBodyY:F3}, getUpY={getUpBodyY:F3}");
+    }
+
+    private static object CreateRestingInput(string? autonomousState)
+    {
+        var baseType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
+        var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
+        var inputType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionInput");
+        var input = Activator.CreateInstance(
+            inputType,
+            Enum.Parse(baseType, "Resting"),
+            0.0,
+            0.0,
+            false,
+            Enum.Parse(interactionType, "None"),
+            20.0,
+            140.0,
+            72.0,
+            false,
+            false,
+            108.0)
+            ?? throw new InvalidOperationException("无法创建 Resting MotionInput");
+
+        if (autonomousState is not null)
+        {
+            var motionStateType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState");
+            RequireProperty(inputType, "AutonomousState").SetValue(
+                input,
+                Enum.Parse(motionStateType, autonomousState));
+        }
+
+        return input;
+    }
+
+    private static double ReadBodyY(object pose)
+    {
+        var body = RequireProperty(pose.GetType(), "Body").GetValue(pose)
+            ?? throw new InvalidOperationException("Pose.Body 为空");
+        return (double)(RequireProperty(body.GetType(), "Y").GetValue(body)
+            ?? throw new InvalidOperationException("Pose.Body.Y 为空"));
+    }
+
+    private static string ReadString(object value, string propertyName) =>
+        RequireProperty(value.GetType(), propertyName).GetValue(value)?.ToString() ?? string.Empty;
 
     private static List<string> CaptureUntil(
         object graph,
@@ -116,7 +221,19 @@ internal static class MaotaiRestTransitionSmokeTests
         }
     }
 
+    private static PropertyInfo RequireProperty(Type type, string name) =>
+        type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance) ??
+        throw new InvalidOperationException($"{type.Name} 缺少属性 {name}");
+
     private static Type RequireType(string fullName) =>
         DesktopAssembly.GetType(fullName) ??
         throw new InvalidOperationException($"缺少类型 {fullName}");
+
+    private static void Assert(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
 }
