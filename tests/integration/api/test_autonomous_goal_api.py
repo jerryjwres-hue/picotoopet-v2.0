@@ -59,6 +59,24 @@ def test_goal_center_exposes_bounded_templates_and_authenticated_human_goals(
         }
         assert goal["budget_class"] == "local-first"
         assert goal["idempotency_key"] == "human:goal-center-e2e-1"
+        assert goal["workflow_id"]
+
+        workflow = client.app.state.services.workflows.get_workflow(goal["workflow_id"])
+        assert workflow.idempotency_key == f"human-goal-workflow:{goal['goal_id']}"
+        assert [step.step_key for step in workflow.steps] == [
+            "research-evidence",
+            "evidence-synthesis",
+            "web-gpt-handoff",
+        ]
+        assert [step.task_type for step in workflow.steps] == [
+            "autonomous.discovery.v1",
+            "autonomous.goal_synthesis.v1",
+            "autonomous.goal_handoff.v1",
+        ]
+        # No fake execution: test app has no live discovery/model capability, so Core leaves
+        # the first step Ready instead of materializing an impossible task.
+        assert workflow.steps[0].status.value == "Ready"
+        assert workflow.steps[0].task_id is None
 
         replay = client.post(
             "/api/v1/autonomous/goals",
@@ -71,6 +89,7 @@ def test_goal_center_exposes_bounded_templates_and_authenticated_human_goals(
         )
         assert replay.status_code == 201
         assert replay.json()["goal_id"] == goal["goal_id"]
+        assert replay.json()["workflow_id"] == goal["workflow_id"]
 
         listed = client.get("/api/v1/autonomous/goals", headers=headers)
         assert listed.status_code == 200
