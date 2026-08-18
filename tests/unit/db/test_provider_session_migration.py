@@ -44,8 +44,8 @@ def test_migration_six_creates_provider_fact_tables_idempotently(tmp_path: Path)
     session_columns = {row["name"] for row in database.fetchall("PRAGMA table_info(provider_sessions)")}
     assert REQUIRED_CONFIRMATION_COLUMNS <= confirmation_columns
     assert REQUIRED_PROVIDER_SESSION_COLUMNS <= session_columns
-    # Schema retention gate      Migration 6 remains exactly once inside cumulative schema 18.
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 18
+    # Schema retention gate      Migration 6 remains exactly once inside cumulative schema 19.
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 19
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 6") == 1
     database.close()
 
@@ -71,5 +71,5 @@ def test_migration_six_preserves_existing_handoff_return_and_broker_rows(tmp_pat
     assert database.scalar("SELECT COUNT(*) FROM returns") == 1
     assert database.scalar("SELECT COUNT(*) FROM broker_sessions") == 1
     assert database.scalar("SELECT COUNT(*) FROM provider_sessions") == 0
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 18
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 19
     database.close()
