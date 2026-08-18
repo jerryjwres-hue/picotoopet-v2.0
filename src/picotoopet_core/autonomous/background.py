@@ -14,6 +14,7 @@ from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.models import CapabilityRegistration
 from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.research.execution import ResearchGatewayExecutor
+from picotoopet_core.results.repository import ResultRepository
 from picotoopet_core.worker.handlers import WorkerHandler
 
 from .discovery import ContentDiscoveryCoordinator
@@ -99,6 +100,18 @@ class AutonomousBackgroundCoordinator:
                 research_probe = search_executor.search_ready
         self.content_discovery_handler = content_discovery_handler
         self._research_probe = research_probe
+
+        # Production CLI already gives this coordinator the canonical Manager, runtime and
+        # bound local coordinator. Derive the two closed Goal stages from those trusted
+        # objects so no second Worker/composition root is introduced.
+        if isinstance(handler_owner, LocalIntelligenceCoordinator) and (
+            self.goal_synthesis_handler is None or self.goal_handoff_handler is None
+        ):
+            synthesis, handoff = self._goal_handlers_from_managed_runtime(handler_owner)
+            if self.goal_synthesis_handler is None:
+                self.goal_synthesis_handler = synthesis
+            if self.goal_handoff_handler is None:
+                self.goal_handoff_handler = handoff
 
         # Storage maintenance is allowed to auto-bind only from the canonical
         # PicotooPet runtime layout that owns this same Mac Core database.
@@ -281,6 +294,50 @@ class AutonomousBackgroundCoordinator:
             ),
             workflow_id=getattr(result, "workflow_id", None),
         )
+
+    def _goal_handlers_from_managed_runtime(
+        self,
+        local: LocalIntelligenceCoordinator,
+    ) -> tuple[WorkerHandler | None, WorkerHandler | None]:
+        """Derive Goal handlers only from the same canonical Core database/runtime."""
+
+        database = getattr(self.manager, "database", None)
+        goals = getattr(self.manager, "goals", None)
+        workflows = getattr(self.manager, "workflows", None)
+        result_store = getattr(self.runtime, "result_store", None)
+        database_path = getattr(database, "path", None)
+        if (
+            not isinstance(database_path, Path)
+            or goals is None
+            or workflows is None
+            or result_store is None
+        ):
+            return None, None
+        resolved_database = database_path.expanduser().resolve()
+        if resolved_database.name != "core.db" or resolved_database.parent.name != "database":
+            return None, None
+        paths = RuntimePaths.from_root(resolved_database.parent.parent)
+        if paths.database_file != resolved_database:
+            return None, None
+        try:
+            result_records = ResultRepository(database)
+            synthesis = GoalSynthesisCoordinator(
+                goals=goals,
+                workflows=workflows,
+                result_records=result_records,
+                result_store=result_store,
+                local=local.adapter,
+            )
+            handoff = GoalHandoffCoordinator(
+                paths=paths,
+                goals=goals,
+                workflows=workflows,
+                result_records=result_records,
+                result_store=result_store,
+            )
+        except (OSError, TypeError, ValueError):
+            return None, None
+        return synthesis.handler, handoff.handler
 
     def _storage_handler_from_manager_database(self) -> WorkerHandler | None:
         """Derive a managed runtime only from `<runtime>/database/core.db`."""
