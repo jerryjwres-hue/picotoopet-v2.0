@@ -39,6 +39,22 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v6
 
+      # Publish the run id immediately so this source commit is traceable while
+      # the installer lifecycle is still running; the final step overwrites it.
+      - name: Publish Preview run start provenance
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'pending',
+              context: 'windows-ui-preview-release',
+              description: `Windows UI Preview run ${context.runId} started`,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
       # Python contracts --------------------------------------------------------
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
