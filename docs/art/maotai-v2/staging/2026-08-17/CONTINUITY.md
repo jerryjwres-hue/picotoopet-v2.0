@@ -7,9 +7,9 @@ This directory is **non-runtime staging only**. Nothing here is loaded by the de
 - Repository: `jerryjwres-hue/picotoopet-v2.0`
 - Development branch: `feature/maotai-natural-motion-v2`
 - Draft PR: `#36`
-- Branch head when this staging snapshot was prepared: `b225c497038589abc65324aa6eceb82cc847ce84`
 - Runtime/software gates are green up to the formal raster asset gate.
 - Current hard blocker remains: `torso_neutral.png` is not yet present in the formal V2 asset directory.
+- Durable art staging snapshot commit: `937c152af585267d6309b62247dc1e8285d05c3a`.
 
 ## Formal `torso_neutral.png` contract
 
@@ -50,6 +50,15 @@ These are reduced-size continuity previews committed only so a future conversati
 - useful for: broader rig visual vocabulary, fur consistency, paw/ear/tail segmentation ideas
 - status: **REFERENCE ONLY**
 - not valid for formal V2 assets because it is an atlas/full-character composition and contains extra non-manifest props
+
+## Rejected editing path
+
+A Canva Magic Layers working design was created from `torso_candidate_v1` and tested with a non-uniform resize to the manifest aspect ratio. The edit was **cancelled** and must not be retried as the main solution.
+
+- Canva working design: `DAHSm6Tmcyc`
+- test: resize single detected image layer to the 92:78 torso aspect ratio and center it
+- outcome: proportion improved, but hollow limb-root/socket geometry remained because Magic Layers exposed only one image fill and could not genuinely repaint the fur connections
+- decision: do not promote or commit this stretched edit; regenerate/repaint a true torso-only source instead
 
 ## Exact next action
 
