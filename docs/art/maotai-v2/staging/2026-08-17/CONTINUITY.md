@@ -9,7 +9,7 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 - Draft PR: `#36` — keep Draft, do not merge/Ready.
 - Software/motion gates are green up to the formal raster asset gate.
 - Continuity rule: every useful art candidate is committed here before runtime promotion so a new chat can resume without regenerating prior work.
-- Neutral torso promotion commit prepared: `1499fdd42d2e14a828c818f4b3d2e80e46697bf4`.
+- Neutral torso binary promotion commit: `ad34a7cce205913b72fa4f0c1f2f5c6c737c79b8`.
 
 ## `torso_neutral.png` — promoted
 
@@ -34,7 +34,7 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 
 ## Exact next action
 
-1. Move branch to the prepared promotion commit if not already there.
+1. Ensure branch head includes `ad34a7cce205913b72fa4f0c1f2f5c6c737c79b8` (or a descendant) before any further work.
 2. Run Windows/Prebuilt on the promoted `torso_neutral.png`.
 3. Confirm the formal asset gate advances past `torso_neutral.png`; the next missing manifest asset becomes the new hard blocker.
 4. Produce that next asset as a true independent transparent part using the same charcoal-gray/white high-quality chibi 3D-CG Maotai visual language.
