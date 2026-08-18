@@ -12,6 +12,7 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 - Windows Prebuilt #2353 proved `torso_neutral.png` valid.
 - Windows Prebuilt #2362 proved `torso_crouch.png` valid with 0 build warnings and 0 build errors.
 - Windows Prebuilt #2372 proved `torso_stretch.png` valid with 0 build warnings and 0 build errors, then stopped only because `chest_fur.png` was absent.
+- Windows Prebuilt #2378 proved `chest_fur.png` valid with 0 build warnings and 0 build errors, then stopped only because `head.png` was absent.
 
 ## `torso_neutral.png` — CI-confirmed
 
@@ -44,7 +45,7 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 - promotion commit: `56229745b813751cd4640348f5bee838d5209065`
 - CI evidence: Prebuilt #2372 advanced the hard blocker to `chest_fur.png`.
 
-## `chest_fur.png` — promoted candidate, pending CI
+## `chest_fur.png` — CI-confirmed
 
 - logical contract: `62 x 52`
 - pivot: `(31, 18)`
@@ -55,10 +56,19 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 - visual role: independent central white chest/ruff overlay attached to the Chest bone; no head, legs, paws, tail, props, text or complete-character pixels
 - source: reconstructed only from the central white chest/ruff region of the already-valid independent torso-only source; never cropped from a full-character render
 - transport policy: 8 representative RGB levels with binary alpha to fit the connector safe binary-transfer size; geometry and manifest alignment stay unchanged
-- local SHA-256: `c40f9b95e3d0e23288d89ed80f944af9bd7a943e7600d87e30dea1c9266875d0`
 - Git blob SHA verified locally and remotely: `63f8d0ed08f69c9687b5b75865e4e1303100579f`
-- staging copy: `chest_fur_candidate.png`
-- formal runtime path: `windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/chest_fur.png`
+- promotion commit: `b43d5bfacc72178bd9e7a474fa6aa597329a4487`
+- CI evidence: Prebuilt #2378 passed chest and advanced the hard blocker to `head.png`.
+
+## `head.png` — current production target
+
+- logical contract: `98 x 84`
+- pivot: `(49, 48)`
+- joint overlap: `18 px` logical
+- required runtime pixels: at least `196 x 168`, RGBA
+- role: independent head shell / forehead / cheek-fur base only; do not bake in separate ears, pupils, expression mouths or props.
+- existing independent ear/eye/pupil/mouth layers remain separate and must continue to drive expression and animation.
+- Canva rig reference design `DAHSZ9UjHCw` contains native head/face source assets (`MAHSZ73u7SM` 230x209 and `MAHSZ3uLUf0` 248x323), but they are reference/source only; they include face/ear features and must not be copied directly as the final runtime `head.png`.
 
 ## Rejected paths preserved to prevent repetition
 
@@ -67,11 +77,12 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 - atlas/reference boards are reference only; never crop atlas/full-character renders into runtime parts.
 - generation ids `89bf9df4-8313-41cc-bfb4-615e7a5b8e60`, `b926d3f5-3039-40ea-88eb-bc23b9f46616`, `ca81c0bd-bcab-45fd-b254-0b8632d0e6e6`, `c6e98715-95a5-4346-959d-c007c2b53159`: rejected because the generator drifted to atlas/concept-board/full-character output instead of a valid independent part.
 - long-Base64 orphan blobs are never attached when GitHub returned blob SHA does not exactly match the locally computed Git blob SHA. Chest orphan blob `6747ed2e80a12a2b86843e9d0fb09b33544589a0` is rejected.
+- `head_candidate_v1.png`: rejected before GitHub mutation — torso-only texture was deformed into a head-like silhouette, but the result still read visually as a distorted torso and retained a socket-like artifact. Do not promote or reuse it as formal `head.png`.
 
 ## Exact next action
 
-1. Fast-forward the branch with the verified `chest_fur.png` promotion commit.
-2. Run Windows/Prebuilt and verify the formal raster gate passes chest.
-3. Read the next missing manifest asset from CI and produce that independent asset with the same Maotai visual language; manifest order indicates `head.png` should follow chest.
-4. Continue in manifest order, staging every meaningful accepted/rejected candidate before runtime promotion.
-5. Do not weaken the asset gate, do not introduce full-character state frames, and keep PR #36 Draft until the full formal rig and real-Windows visual acceptance are complete.
+1. Produce a true independent `head.png` at the frozen `98 x 84` logical / `196 x 168` @2x contract with transparent safe borders and 18 px logical neck overlap.
+2. Validate RGBA decode, transparent edges, nonempty alpha bbox, no crop, dimensions, and pivot-compatible composition before any branch mutation.
+3. Verify Git blob SHA locally vs remotely before attaching the PNG; never attach a truncated binary blob.
+4. Promote staging + formal runtime copy in one fast-forward commit, then let Windows/Prebuilt expose the next missing manifest asset.
+5. Continue in manifest order and keep PR #36 Draft until the full formal rig and real-Windows visual acceptance are complete.
