@@ -17,7 +17,8 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 def _service(request: Request) -> HumanGoalService:
-    return HumanGoalService(request.app.state.services.autonomous_goals)
+    services = request.app.state.services
+    return HumanGoalService(services.autonomous_goals, services.workflows)
 
 
 @router.get("/autonomous/goals/templates", response_model=list[GoalTemplate])
