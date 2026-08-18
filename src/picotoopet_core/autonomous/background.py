@@ -5,17 +5,20 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
 from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.models import CapabilityRegistration
+from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.research.execution import ResearchGatewayExecutor
 from picotoopet_core.worker.handlers import WorkerHandler
 
 from .discovery import ContentDiscoveryCoordinator
 from .local_intelligence import LocalIntelligenceCoordinator
+from .storage_worker import StorageMaintenanceCoordinator
 
 
 class _AutonomousManager(Protocol):
@@ -52,6 +55,7 @@ class AutonomousBackgroundCoordinator:
         local_intelligence_handler: WorkerHandler,
         content_discovery_handler: WorkerHandler | None = None,
         research_probe: Callable[[], bool] | None = None,
+        storage_maintenance_handler: WorkerHandler | None = None,
         model_id: str,
         clock: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] | None = None,
@@ -90,6 +94,12 @@ class AutonomousBackgroundCoordinator:
                 research_probe = search_executor.search_ready
         self.content_discovery_handler = content_discovery_handler
         self._research_probe = research_probe
+
+        # Storage maintenance is allowed to auto-bind only from the canonical
+        # PicotooPet runtime layout that owns this same Mac Core database.
+        if storage_maintenance_handler is None:
+            storage_maintenance_handler = self._storage_handler_from_manager_database()
+        self.storage_maintenance_handler = storage_maintenance_handler
 
     def refresh_local_intelligence(self, *, healthy: bool) -> None:
         """Expose bounded local analysis and derive discovery only when tools are healthy too."""
@@ -158,10 +168,43 @@ class AutonomousBackgroundCoordinator:
             )
         )
 
+    def refresh_storage_maintenance(self, *, healthy: bool = True) -> None:
+        """Expose only the bounded PicotooPet-managed storage maintenance task."""
+
+        enabled = bool(healthy and self.storage_maintenance_handler is not None)
+        if enabled:
+            assert self.storage_maintenance_handler is not None
+            self.runtime.handlers[StorageMaintenanceCoordinator.TASK_TYPE] = (
+                self.storage_maintenance_handler
+            )
+            task_types = [StorageMaintenanceCoordinator.TASK_TYPE]
+        else:
+            self.runtime.handlers.pop(StorageMaintenanceCoordinator.TASK_TYPE, None)
+            task_types = []
+        self.capability_router.register(
+            CapabilityRegistration(
+                worker_id=self.worker_id,
+                capability=StorageMaintenanceCoordinator.CAPABILITY,
+                task_types=task_types,
+                healthy=enabled,
+                metadata={
+                    "runtime": "mac-worker",
+                    "managed_root_only": True,
+                    "protected_originals": "excluded",
+                    "role": "bounded-storage-maintenance",
+                },
+                heartbeat_at=self._now(),
+            )
+        )
+
     def tick_safely(self) -> AutonomousBackgroundTick:
         """Isolate any autonomous orchestration error from the Worker lifetime."""
 
         try:
+            # Register the real handler before Manager scheduling so P4 never
+            # materializes a storage task that this Worker cannot execute.
+            if self.storage_maintenance_handler is not None:
+                self.refresh_storage_maintenance(healthy=True)
             result = self.manager.tick()
         except Exception:
             return AutonomousBackgroundTick(
@@ -178,6 +221,24 @@ class AutonomousBackgroundCoordinator:
             ),
             workflow_id=getattr(result, "workflow_id", None),
         )
+
+    def _storage_handler_from_manager_database(self) -> WorkerHandler | None:
+        """Derive a managed runtime only from `<runtime>/database/core.db`."""
+
+        database = getattr(self.manager, "database", None)
+        database_path = getattr(database, "path", None)
+        if not isinstance(database_path, Path):
+            return None
+        resolved_database = database_path.expanduser().resolve()
+        if resolved_database.name != "core.db" or resolved_database.parent.name != "database":
+            return None
+        paths = RuntimePaths.from_root(resolved_database.parent.parent)
+        if paths.database_file != resolved_database:
+            return None
+        try:
+            return StorageMaintenanceCoordinator(paths).handler
+        except OSError:
+            return None
 
     def _refresh_research_health(self) -> bool:
         if self._research_probe is None or self.content_discovery_handler is None:
