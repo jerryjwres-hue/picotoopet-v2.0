@@ -115,6 +115,28 @@ if [[ "$wheel_count" != "1" ]]; then
   echo "项目 wheel 与 package_version 不一致。" >&2
   exit 1
 fi
+project_wheel="$(find "$wheelhouse" -maxdepth 1 -type f \
+  -name "picotoopet_core-${package_version//-/_}-*.whl" -print | head -n 1)"
+python3 - "$project_wheel" <<'PY'
+import sys
+import zipfile
+
+required = {
+    "picotoopet_core/api/routes/autonomous_goals.py",
+    "picotoopet_core/api/routes/autonomous_intake.py",
+    "picotoopet_core/autonomous/human_pipeline.py",
+    "picotoopet_core/autonomous/legacy_import.py",
+    "picotoopet_core/autonomous/browser_broker.py",
+    "picotoopet_core/autonomous/goal_handoff_access.py",
+    "picotoopet_core/autonomous/prompts/web_gpt_master_v1.txt",
+}
+with zipfile.ZipFile(sys.argv[1], "r") as wheel:
+    names = set(wheel.namelist())
+missing = sorted(required - names)
+if missing:
+    raise SystemExit(f"Goal Center Mac Core wheel content missing: {missing!r}")
+PY
+echo "PHASE23_MAC_CORE_GOAL_CENTER_CONTENT=PASS"
 
 for script in \
   INSTALL_MAC_CORE_SLICE_B.command \
