@@ -23,6 +23,7 @@ _TRACKING_QUERY_KEYS = {
     "ref_src",
 }
 _WHITESPACE_RE = re.compile(r"\s+")
+_TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
 _SCORE_WEIGHTS = {
     "trend_velocity": 20.0,
     "audience_resonance": 20.0,
@@ -64,6 +65,17 @@ class RadarCandidate(BaseModel):
     title: str
     excerpt: str
     platform: str | None = None
+    evidence_ids: list[str]
+
+
+class RadarCluster(BaseModel):
+    """Stable model-free topic cluster used to reduce duplicate research work."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    cluster_id: str
+    candidate_ids: list[str]
+    representative_text: str
     evidence_ids: list[str]
 
 
@@ -223,6 +235,79 @@ def normalize_candidates(inputs: list[RadarCandidateInput]) -> list[RadarCandida
     return sorted(normalized, key=lambda item: (item.canonical_url, item.candidate_id))
 
 
+def cluster_candidates(
+    candidates: list[RadarCandidate],
+    *,
+    similarity_threshold: float = 0.45,
+) -> list[RadarCluster]:
+    """Cluster bounded normalized candidates with deterministic token Jaccard similarity."""
+
+    threshold = float(similarity_threshold)
+    if not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+        raise ValueError("similarity_threshold must be a finite value between 0 and 1")
+    if len(candidates) > 500:
+        raise ValueError("too many radar candidates")
+    if not candidates:
+        return []
+
+    ordered = sorted(candidates, key=lambda item: item.candidate_id)
+    parents = list(range(len(ordered)))
+    token_sets = [_candidate_tokens(candidate) for candidate in ordered]
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root == right_root:
+            return
+        if left_root < right_root:
+            parents[right_root] = left_root
+        else:
+            parents[left_root] = right_root
+
+    for left in range(len(ordered)):
+        for right in range(left + 1, len(ordered)):
+            union_size = len(token_sets[left] | token_sets[right])
+            if union_size == 0:
+                similarity = 0.0
+            else:
+                similarity = len(token_sets[left] & token_sets[right]) / union_size
+            if similarity >= threshold:
+                union(left, right)
+
+    groups: dict[int, list[RadarCandidate]] = defaultdict(list)
+    for index, candidate in enumerate(ordered):
+        groups[find(index)].append(candidate)
+
+    clusters: list[RadarCluster] = []
+    for members in groups.values():
+        stable_members = sorted(members, key=lambda item: item.candidate_id)
+        candidate_ids = [item.candidate_id for item in stable_members]
+        evidence_ids = sorted(
+            {
+                evidence_id
+                for item in stable_members
+                for evidence_id in item.evidence_ids
+            }
+        )
+        representative = stable_members[0]
+        clusters.append(
+            RadarCluster(
+                cluster_id=_cluster_id(candidate_ids),
+                candidate_ids=candidate_ids,
+                representative_text=f"{representative.title} — {representative.excerpt}",
+                evidence_ids=evidence_ids,
+            )
+        )
+
+    return sorted(clusters, key=lambda item: item.cluster_id)
+
+
 def _canonical_public_url(value: str) -> tuple[str, str]:
     parsed = urlsplit(value.strip())
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
@@ -263,6 +348,16 @@ def _content_key(title: str, excerpt: str) -> str:
     return f"{_display_text(title).casefold()}\n{_display_text(excerpt).casefold()}"
 
 
+def _candidate_tokens(candidate: RadarCandidate) -> set[str]:
+    text = f"{candidate.title} {candidate.excerpt}".casefold()
+    return {token for token in _TOKEN_RE.findall(text) if len(token) >= 2}
+
+
 def _candidate_id(canonical_url: str, content_key: str) -> str:
     digest = hashlib.sha256(f"{canonical_url}\n{content_key}".encode("utf-8")).hexdigest()[:20]
     return f"radar-{digest}"
+
+
+def _cluster_id(candidate_ids: list[str]) -> str:
+    digest = hashlib.sha256("\n".join(candidate_ids).encode("utf-8")).hexdigest()[:20]
+    return f"cluster-{digest}"
