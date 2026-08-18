@@ -24,11 +24,9 @@ class FakeSearch:
     def search(self, *, query: str, limit: int, timeout_seconds: int) -> ResearchSearchResult:
         self.calls.append(query)
         return ResearchSearchResult(
-            schema_version="1.0",
             query=query,
+            limit=limit,
             output="Public search mentions durability and fragment concerns.",
-            provider="fixture",
-            duration_ms=8,
         )
 
 
