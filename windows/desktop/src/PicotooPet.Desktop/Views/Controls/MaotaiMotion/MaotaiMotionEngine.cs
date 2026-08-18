@@ -469,6 +469,7 @@ internal sealed class MaotaiMotionEngine
                 bodyScaleX -= 0.018;
                 bodyScaleY += 0.025;
                 headOffsetY -= 0.7;
+                earDrop     += 1.0;
                 break;
 
             case MaotaiMotionState.Land:
