@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -88,3 +88,33 @@ class GoalRecord(BaseModel):
     idempotency_key: str
     created_at: datetime
     updated_at: datetime
+
+
+HumanGoalType = Literal[
+    "product.research",
+    "consumer.pain_points",
+    "business.opportunity",
+    "video.creative",
+    "product.research_to_video",
+]
+HumanGoalDepth = Literal["quick", "standard", "deep"]
+
+
+class HumanGoalCreate(BaseModel):
+    """Bounded user-facing Goal request; callers cannot set trust or scheduler fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    goal_type: HumanGoalType
+    objective: str = Field(min_length=1, max_length=4000)
+    depth: HumanGoalDepth = "standard"
+
+
+class GoalTemplate(BaseModel):
+    """One fixed suggestion shown by the Windows Goal Center."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    goal_type: HumanGoalType
+    title: str = Field(min_length=1, max_length=120)
+    example: str = Field(min_length=1, max_length=500)
