@@ -52,6 +52,7 @@ internal sealed class MaotaiMotionEngine
 
     private MaotaiMotionState _lastDesiredState = MaotaiMotionState.Idle;
     private MaotaiMotionState _poseState         = MaotaiMotionState.Idle;
+    private MaotaiInteractionKind _deferredInteraction = MaotaiInteractionKind.None;
     private bool _jumpSequenceActive;
     private double _landingHoldSeconds;
     private double _elapsedSeconds;
@@ -78,6 +79,7 @@ internal sealed class MaotaiMotionEngine
             : 0.0;
         _elapsedSeconds += dt;
 
+        input = ResolveDeferredInteraction(input);
         var desiredState = MaotaiBehaviorPlanner.Plan(input, _locomotion.PositionX);
         var movementTarget = input.BaseState == MaotaiBaseState.Working
             ? input.WorkAnchorX
@@ -126,8 +128,64 @@ internal sealed class MaotaiMotionEngine
         }
 
         UpdateStateClock(dt);
-        return BuildPose(input, dt);
+        var frame = BuildPose(input, dt);
+        CompleteDeferredInteractionIfReady();
+        return frame;
     }
+
+    /// <summary>保留已接受的一次性互动，直到必须的 Wake/GetUp 姿态链完成。</summary>
+    private MaotaiMotionInput ResolveDeferredInteraction(MaotaiMotionInput input)
+    {
+        // Strong state         : real Offline/Error authority always cancels cosmetic deferred feedback.
+        if (input.BaseState is MaotaiBaseState.Offline or MaotaiBaseState.Error)
+        {
+            _deferredInteraction = MaotaiInteractionKind.None;
+            return input;
+        }
+
+        // Direct interaction   : Drag/PointerObserve must follow the latest raw input instead of a stale click latch.
+        if (input.Interaction != MaotaiInteractionKind.None &&
+            !IsDeferredReactionInteraction(input.Interaction))
+        {
+            _deferredInteraction = MaotaiInteractionKind.None;
+            return input;
+        }
+
+        // Accepted click       : keep Pat/Paw/Celebrate alive only when a mandatory rest-transition delays UserReaction.
+        if (IsDeferredReactionInteraction(input.Interaction) &&
+            (_deferredInteraction != MaotaiInteractionKind.None ||
+             RequiresDeferredUserReaction(_graph.ActiveState)))
+        {
+            _deferredInteraction = input.Interaction;
+        }
+
+        return _deferredInteraction != MaotaiInteractionKind.None &&
+               input.Interaction == MaotaiInteractionKind.None
+            ? input with { Interaction = _deferredInteraction }
+            : input;
+    }
+
+    /// <summary>只在完整 UserReaction 过渡可见后释放一次性交互，让最新基础状态自然接管。</summary>
+    private void CompleteDeferredInteractionIfReady()
+    {
+        if (_deferredInteraction != MaotaiInteractionKind.None &&
+            _graph.ActiveState == MaotaiMotionState.UserReaction &&
+            !_graph.IsTransitioning)
+        {
+            _deferredInteraction = MaotaiInteractionKind.None;
+        }
+    }
+
+    private static bool IsDeferredReactionInteraction(MaotaiInteractionKind interaction) =>
+        interaction is MaotaiInteractionKind.Pat or
+            MaotaiInteractionKind.Paw or
+            MaotaiInteractionKind.Celebrate;
+
+    private static bool RequiresDeferredUserReaction(MaotaiMotionState state) =>
+        state is MaotaiMotionState.Sleep or
+            MaotaiMotionState.Wake or
+            MaotaiMotionState.LieDown or
+            MaotaiMotionState.GetUp;
 
     private void UpdateAnimationIntent(
         MaotaiMotionInput input,
