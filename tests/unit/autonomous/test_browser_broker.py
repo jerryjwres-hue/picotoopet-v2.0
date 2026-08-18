@@ -128,16 +128,18 @@ def test_rejects_payloads_larger_than_480_kib() -> None:
 
 def test_visible_signals_are_bounded_without_inventing_missing_values() -> None:
     packet = _packet()
-    packet["page"] = {
-        "title": "Public page",
-        "visible_signals": [
-            {"source_id": f"s-{index}", "text": ("visible text " * 1000)}
-            for index in range(80)
+    signals = [
+        {"source_id": "s-0", "text": "x" * 6_000},
+        *[
+            {"source_id": f"s-{index}", "text": "short public signal"}
+            for index in range(1, 80)
         ],
-    }
+    ]
+    packet["page"] = {"title": "Public page", "visible_signals": signals}
     evidence = validate_browser_capture(packet)
 
     assert len(evidence.public_signals) == 50
+    assert len(evidence.public_signals[0]["text"]) == 5000
     assert all(len(item["text"]) <= 5000 for item in evidence.public_signals)
     assert "rating" not in evidence.public_signals[0]
 
