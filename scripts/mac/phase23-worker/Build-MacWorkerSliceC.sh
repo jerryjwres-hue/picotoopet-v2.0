@@ -152,6 +152,12 @@ manifest = {
         "system.diagnostic_snapshot",
         "system.noop",
     ],
+    "autonomous_slice_c_included": True,
+    "autonomous_capabilities": [
+        "content.discovery",
+        "browser.capture.contract",
+        "objective.query.planning",
+    ],
     "diagnostic_hard_timeout_seconds": 30,
     "diagnostic_termination_grace_seconds": 5,
     "source_build_on_user_mac": False,
@@ -198,6 +204,12 @@ report = {
     "worker_supported_task_types": [
         "system.diagnostic_snapshot",
         "system.noop",
+    ],
+    "autonomous_slice_c_included": True,
+    "autonomous_capabilities": [
+        "content.discovery",
+        "browser.capture.contract",
+        "objective.query.planning",
     ],
     "diagnostic_hard_timeout_seconds": 30,
     "diagnostic_termination_grace_seconds": 5,
