@@ -102,6 +102,9 @@ internal static class MaotaiRestTransitionSmokeTests
         var sleepBodyY = 0.0;
         var wakeStartBodyY = 0.0;
         var sleepWakeBodyYDelta = double.PositiveInfinity;
+        var sleepScaleX = 0.0;
+        var wakeStartScaleX = 0.0;
+        var sleepWakeScaleXDelta = double.PositiveInfinity;
         var sleepScaleY = 0.0;
         var wakeStartScaleY = 0.0;
         var sleepWakeScaleYDelta = double.PositiveInfinity;
@@ -124,6 +127,9 @@ internal static class MaotaiRestTransitionSmokeTests
                 sleepBodyY = ReadBodyValue(previousPose!, "Y");
                 wakeStartBodyY = ReadBodyValue(pose, "Y");
                 sleepWakeBodyYDelta = Math.Abs(wakeStartBodyY - sleepBodyY);
+                sleepScaleX = ReadBodyValue(previousPose!, "ScaleX");
+                wakeStartScaleX = ReadBodyValue(pose, "ScaleX");
+                sleepWakeScaleXDelta = Math.Abs(wakeStartScaleX - sleepScaleX);
                 sleepScaleY = ReadBodyValue(previousPose!, "ScaleY");
                 wakeStartScaleY = ReadBodyValue(pose, "ScaleY");
                 sleepWakeScaleYDelta = Math.Abs(wakeStartScaleY - sleepScaleY);
@@ -149,6 +155,8 @@ internal static class MaotaiRestTransitionSmokeTests
         Assert(sawSleepWakeBoundary, "醒来连续性测试未观察到 Sleep -> Wake 边界");
         Assert(sleepWakeBodyYDelta < 0.75,
             $"Sleep -> Wake 身体高度不能出现可见跳帧；delta={sleepWakeBodyYDelta:F3}, sleepY={sleepBodyY:F3}, wakeY={wakeStartBodyY:F3}");
+        Assert(sleepWakeScaleXDelta < 0.012,
+            $"Sleep -> Wake 身体横向缩放不能突然收窄；delta={sleepWakeScaleXDelta:F4}, sleepScaleX={sleepScaleX:F4}, wakeScaleX={wakeStartScaleX:F4}");
         Assert(sleepWakeScaleYDelta < 0.012,
             $"Sleep -> Wake 身体纵向缩放不能突然拉长；delta={sleepWakeScaleYDelta:F4}, sleepScaleY={sleepScaleY:F4}, wakeScaleY={wakeStartScaleY:F4}");
         Assert(sawWakeGetUpBoundary, "醒来连续性测试未观察到 Wake -> GetUp 边界");
