@@ -29,6 +29,8 @@ internal enum MaotaiMouthState
 /// <summary>Motion Engine 输出给渲染器的一帧纯值类型数据；帧循环无需创建集合。</summary>
 internal readonly record struct MaotaiPoseFrame
 {
+    private readonly MaotaiMouthState _mouthState;
+
     public MaotaiBonePose Root { get; init; }
 
     public MaotaiBonePose Body { get; init; }
@@ -77,7 +79,14 @@ internal readonly record struct MaotaiPoseFrame
 
     public MaotaiEyeState EyeState { get; init; }
 
-    public MaotaiMouthState MouthState { get; init; }
+    public MaotaiMouthState MouthState
+    {
+        get => _mouthState == MaotaiMouthState.Tongue &&
+               MotionState != MaotaiMotionState.UserReaction
+            ? MaotaiMouthState.Smile
+            : _mouthState;
+        init => _mouthState = value;
+    }
 
     public MaotaiMotionState MotionState { get; init; }
 
