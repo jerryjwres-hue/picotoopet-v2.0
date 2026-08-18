@@ -90,6 +90,41 @@ def test_request_is_read_only_and_bounded() -> None:
         )
 
 
+def test_default_query_plan_is_derived_from_the_current_objective() -> None:
+    search = FakeSearch()
+    local = FakeLocal()
+    coordinator = ContentDiscoveryCoordinator(search=search, local=local)
+    objective = "研究大型犬耐咬玩具的消费者痛点与短视频创意"
+
+    coordinator.handler(
+        _task({"objective": objective, "read_only": True, "max_candidates": 20})
+    )
+
+    queries = [query for query, _limit, _timeout in search.calls]
+    assert len(queries) == 4
+    assert len(set(queries)) == 4
+    assert all(objective in query for query in queries)
+
+
+def test_explicit_seed_queries_remain_a_frozen_override() -> None:
+    search = FakeSearch()
+    local = FakeLocal()
+    coordinator = ContentDiscoveryCoordinator(
+        search=search,
+        local=local,
+        seed_queries=("fixture query one", "fixture query two"),
+    )
+
+    coordinator.handler(
+        _task({"objective": "this objective must not replace fixture queries", "read_only": True})
+    )
+
+    assert [query for query, _limit, _timeout in search.calls] == [
+        "fixture query one",
+        "fixture query two",
+    ]
+
+
 def test_coordinator_searches_before_one_local_scout_pass() -> None:
     search = FakeSearch()
     local = FakeLocal()
@@ -128,9 +163,9 @@ def test_coordinator_searches_before_one_local_scout_pass() -> None:
 def test_partial_search_failure_is_recorded_but_does_not_invent_missing_evidence() -> None:
     search = FakeSearch()
     local = FakeLocal()
-    coordinator = ContentDiscoveryCoordinator(search=search, local=local)
-    failed_query = coordinator.seed_queries[1]
-    search.fail_queries.add(failed_query)
+    seed_queries = ("seed-1", "seed-2", "seed-3", "seed-4")
+    coordinator = ContentDiscoveryCoordinator(search=search, local=local, seed_queries=seed_queries)
+    search.fail_queries.add(seed_queries[1])
 
     result = coordinator.handler(
         _task({"objective": "发现主题", "read_only": True, "max_candidates": 10})
@@ -144,9 +179,9 @@ def test_partial_search_failure_is_recorded_but_does_not_invent_missing_evidence
 
 def test_all_searches_failed_never_calls_local_model() -> None:
     local = FakeLocal()
-    probe = ContentDiscoveryCoordinator(search=FakeSearch(), local=local)
-    search = FakeSearch(fail_queries=set(probe.seed_queries))
-    coordinator = ContentDiscoveryCoordinator(search=search, local=local)
+    seed_queries = ("seed-1", "seed-2", "seed-3", "seed-4")
+    search = FakeSearch(fail_queries=set(seed_queries))
+    coordinator = ContentDiscoveryCoordinator(search=search, local=local, seed_queries=seed_queries)
 
     with pytest.raises(ContentDiscoveryError, match="all discovery searches failed"):
         coordinator.handler(
