@@ -17,6 +17,7 @@ from picotoopet_core.research.execution import ResearchGatewayExecutor
 from picotoopet_core.worker.handlers import WorkerHandler
 
 from .discovery import ContentDiscoveryCoordinator
+from .human_pipeline import GoalHandoffCoordinator, GoalSynthesisCoordinator
 from .local_intelligence import LocalIntelligenceCoordinator
 from .storage_worker import StorageMaintenanceCoordinator
 
@@ -56,6 +57,8 @@ class AutonomousBackgroundCoordinator:
         content_discovery_handler: WorkerHandler | None = None,
         research_probe: Callable[[], bool] | None = None,
         storage_maintenance_handler: WorkerHandler | None = None,
+        goal_synthesis_handler: WorkerHandler | None = None,
+        goal_handoff_handler: WorkerHandler | None = None,
         model_id: str,
         clock: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] | None = None,
@@ -72,6 +75,8 @@ class AutonomousBackgroundCoordinator:
         self.runtime = runtime
         self.worker_id = worker_id
         self.local_intelligence_handler = local_intelligence_handler
+        self.goal_synthesis_handler = goal_synthesis_handler
+        self.goal_handoff_handler = goal_handoff_handler
         self.model_id = model_id
         self._clock = clock or (lambda: datetime.now(UTC))
         self._monotonic = monotonic or time.monotonic
@@ -102,7 +107,7 @@ class AutonomousBackgroundCoordinator:
         self.storage_maintenance_handler = storage_maintenance_handler
 
     def refresh_local_intelligence(self, *, healthy: bool) -> None:
-        """Expose bounded local analysis and derive discovery only when tools are healthy too."""
+        """Expose bounded local analysis and derive only capabilities backed by real handlers."""
 
         if healthy:
             self.runtime.handlers[LocalIntelligenceCoordinator.TASK_TYPE] = (
@@ -127,12 +132,67 @@ class AutonomousBackgroundCoordinator:
                 heartbeat_at=self._now(),
             )
         )
+
+        # Human Goal stages share this Worker. Synthesis follows model health, while the
+        # deterministic ZIP handoff remains available during a temporary model outage.
+        self.refresh_human_goal_pipeline(local_healthy=healthy)
+
         # Tool-first gate: local model health is insufficient. A cached fixed
         # Research Gateway readiness probe must also pass before P3 can exist.
         research_healthy = self._refresh_research_health() if healthy else False
         self.refresh_content_discovery(
             local_healthy=healthy,
             research_healthy=research_healthy,
+        )
+
+    def refresh_human_goal_pipeline(self, *, local_healthy: bool) -> None:
+        """Expose only the two closed human-Goal stages backed by injected fixed handlers."""
+
+        synthesis_healthy = bool(local_healthy and self.goal_synthesis_handler is not None)
+        if synthesis_healthy:
+            assert self.goal_synthesis_handler is not None
+            self.runtime.handlers[GoalSynthesisCoordinator.TASK_TYPE] = self.goal_synthesis_handler
+            synthesis_task_types = [GoalSynthesisCoordinator.TASK_TYPE]
+        else:
+            self.runtime.handlers.pop(GoalSynthesisCoordinator.TASK_TYPE, None)
+            synthesis_task_types = []
+        self.capability_router.register(
+            CapabilityRegistration(
+                worker_id=self.worker_id,
+                capability=GoalSynthesisCoordinator.CAPABILITY,
+                task_types=synthesis_task_types,
+                healthy=synthesis_healthy,
+                metadata={
+                    "runtime": "mac-worker",
+                    "transport": "loopback-openai-compatible",
+                    "model": self.model_id,
+                    "role": "evidence-grounded-goal-synthesis",
+                },
+                heartbeat_at=self._now(),
+            )
+        )
+
+        handoff_healthy = self.goal_handoff_handler is not None
+        if handoff_healthy:
+            assert self.goal_handoff_handler is not None
+            self.runtime.handlers[GoalHandoffCoordinator.TASK_TYPE] = self.goal_handoff_handler
+            handoff_task_types = [GoalHandoffCoordinator.TASK_TYPE]
+        else:
+            self.runtime.handlers.pop(GoalHandoffCoordinator.TASK_TYPE, None)
+            handoff_task_types = []
+        self.capability_router.register(
+            CapabilityRegistration(
+                worker_id=self.worker_id,
+                capability=GoalHandoffCoordinator.CAPABILITY,
+                task_types=handoff_task_types,
+                healthy=handoff_healthy,
+                metadata={
+                    "runtime": "mac-worker",
+                    "execution": "deterministic-local-packaging",
+                    "external_ai_upload_requires_user_action": True,
+                },
+                heartbeat_at=self._now(),
+            )
         )
 
     def refresh_content_discovery(self, *, local_healthy: bool, research_healthy: bool) -> None:
