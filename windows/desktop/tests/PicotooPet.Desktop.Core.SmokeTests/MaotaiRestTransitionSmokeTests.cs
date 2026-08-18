@@ -66,7 +66,7 @@ internal static class MaotaiRestTransitionSmokeTests
         VerifyWakeGetUpPoseContinuity();
     }
 
-    /// <summary>状态链合法还不够；Wake 最后一帧切到 GetUp 第一帧时身体高度也必须连续。</summary>
+    /// <summary>状态链合法还不够；Wake 最后一帧切到 GetUp 第一帧时身体高度与纵向缩放都必须连续。</summary>
     private static void VerifyWakeGetUpPoseContinuity()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
@@ -101,7 +101,10 @@ internal static class MaotaiRestTransitionSmokeTests
         var sawBoundary = false;
         var wakeBodyY = 0.0;
         var getUpBodyY = 0.0;
-        var boundaryDelta = double.PositiveInfinity;
+        var bodyYDelta = double.PositiveInfinity;
+        var wakeScaleY = 0.0;
+        var getUpScaleY = 0.0;
+        var scaleYDelta = double.PositiveInfinity;
 
         for (var frame = 0; frame < 300; frame++)
         {
@@ -111,9 +114,12 @@ internal static class MaotaiRestTransitionSmokeTests
 
             if (previousState == "Wake" && state == "GetUp")
             {
-                wakeBodyY = ReadBodyY(previousPose!);
-                getUpBodyY = ReadBodyY(pose);
-                boundaryDelta = Math.Abs(getUpBodyY - wakeBodyY);
+                wakeBodyY = ReadBodyValue(previousPose!, "Y");
+                getUpBodyY = ReadBodyValue(pose, "Y");
+                bodyYDelta = Math.Abs(getUpBodyY - wakeBodyY);
+                wakeScaleY = ReadBodyValue(previousPose!, "ScaleY");
+                getUpScaleY = ReadBodyValue(pose, "ScaleY");
+                scaleYDelta = Math.Abs(getUpScaleY - wakeScaleY);
                 sawBoundary = true;
                 break;
             }
@@ -123,8 +129,10 @@ internal static class MaotaiRestTransitionSmokeTests
         }
 
         Assert(sawBoundary, "醒来连续性测试未观察到 Wake -> GetUp 边界");
-        Assert(boundaryDelta < 0.75,
-            $"Wake -> GetUp 身体高度不能出现可见跳帧；delta={boundaryDelta:F3}, wakeY={wakeBodyY:F3}, getUpY={getUpBodyY:F3}");
+        Assert(bodyYDelta < 0.75,
+            $"Wake -> GetUp 身体高度不能出现可见跳帧；delta={bodyYDelta:F3}, wakeY={wakeBodyY:F3}, getUpY={getUpBodyY:F3}");
+        Assert(scaleYDelta < 0.012,
+            $"Wake -> GetUp 身体纵向缩放不能突然压缩；delta={scaleYDelta:F4}, wakeScaleY={wakeScaleY:F4}, getUpScaleY={getUpScaleY:F4}");
     }
 
     private static object CreateRestingInput(string? autonomousState)
@@ -158,12 +166,12 @@ internal static class MaotaiRestTransitionSmokeTests
         return input;
     }
 
-    private static double ReadBodyY(object pose)
+    private static double ReadBodyValue(object pose, string propertyName)
     {
         var body = RequireProperty(pose.GetType(), "Body").GetValue(pose)
             ?? throw new InvalidOperationException("Pose.Body 为空");
-        return (double)(RequireProperty(body.GetType(), "Y").GetValue(body)
-            ?? throw new InvalidOperationException("Pose.Body.Y 为空"));
+        return (double)(RequireProperty(body.GetType(), propertyName).GetValue(body)
+            ?? throw new InvalidOperationException($"Pose.Body.{propertyName} 为空"));
     }
 
     private static string ReadString(object value, string propertyName) =>
