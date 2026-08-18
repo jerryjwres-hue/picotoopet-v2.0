@@ -97,6 +97,15 @@ if [[ "$(read_manifest "$package_root" worker_supported_task_types)" != '["syste
   echo "清单 Worker 类型不符合冻结合同。" >&2
   exit 1
 fi
+autonomous_included="$(read_manifest "$package_root" autonomous_slice_c_included)"
+if [[ "$autonomous_included" != "True" && "$autonomous_included" != "true" ]]; then
+  echo "清单未声明 Autonomous Intelligence Slice C。" >&2
+  exit 1
+fi
+if [[ "$(read_manifest "$package_root" autonomous_capabilities)" != '["content.discovery", "browser.capture.contract", "objective.query.planning"]' ]]; then
+  echo "清单 Autonomous Intelligence 能力不符合冻结合同。" >&2
+  exit 1
+fi
 if [[ "$(read_manifest "$package_root" diagnostic_hard_timeout_seconds)" != "30" ]]; then
   echo "清单诊断硬超时不是 30 秒。" >&2
   exit 1
@@ -130,6 +139,24 @@ if [[ "$wheel_count" != "1" ]]; then
   echo "项目 wheel 与 package_version 不一致。" >&2
   exit 1
 fi
+project_wheel="$(find "$wheelhouse" -maxdepth 1 -type f \
+  -name "picotoopet_core-${package_version//-/_}-*.whl" -print | head -n 1)"
+python3 - "$project_wheel" <<'PY'
+import sys
+import zipfile
+
+required = {
+    "picotoopet_core/autonomous/legacy_acquisition.py",
+    "picotoopet_core/autonomous/browser_broker.py",
+    "picotoopet_core/autonomous/discovery.py",
+    "picotoopet_core/autonomous/prompts/web_gpt_master_v1.txt",
+}
+with zipfile.ZipFile(sys.argv[1], "r") as wheel:
+    names = set(wheel.namelist())
+missing = sorted(required - names)
+if missing:
+    raise SystemExit(f"autonomous Slice C wheel content missing: {missing!r}")
+PY
 
 for script in \
   INSTALL_MAC_WORKER_SLICE_C.command \
@@ -177,6 +204,7 @@ for forbidden in \
   fi
 done
 
+echo "PHASE23_MAC_WORKER_AUTONOMOUS_SLICE_C=PASS"
 echo "PHASE23_MAC_WORKER_PACKAGE_TEST=PASS"
 echo "PHASE23_MAC_WORKER_SLICE_D_PACKAGE_TEST=PASS"
 echo "PRODUCT_VERSION=$product_version"
