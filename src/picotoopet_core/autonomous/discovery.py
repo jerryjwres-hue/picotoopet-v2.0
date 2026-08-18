@@ -1,8 +1,10 @@
-"""Tool-first autonomous discovery: Research Gateway evidence, then one local Scout pass."""
+"""Tool-first autonomous discovery: canonical evidence + Research Gateway + local Scout."""
 
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -62,12 +64,49 @@ class _SearchExecutor(Protocol):
         """Run one existing bounded Research Gateway search."""
 
 
+class _ConnectedProduct(Protocol):
+    product_key: str
+    title: str
+
+
+class _ConnectedEvidence(Protocol):
+    evidence_id: str
+    product_key: str
+    evidence_type: str
+    source: str
+    platform: str
+    source_url: str
+    text_value: str
+    numeric_value: float | None
+    trust_level: str
+    confidence: float
+    captured_at: str
+    origin: str
+
+
+class _ConnectedEvidenceReader(Protocol):
+    """Read-only view over Mac Core canonical evidence; never exposes database writes to the model."""
+
+    def list_products(self, *, limit: int = 200) -> list[_ConnectedProduct]: ...
+
+    def list_evidence(
+        self,
+        *,
+        product_key: str | None = None,
+        limit: int = 500,
+    ) -> list[_ConnectedEvidence]: ...
+
+
 _MAX_TOOL_EXCERPT_CHARS = 5_000
 _MAX_RADAR_EXCERPT_CHARS = 4_000
+_MAX_CONNECTED_PRODUCTS = 1_000
+_MAX_CONNECTED_EVIDENCE = 16
+_MAX_CONNECTED_TEXT_CHARS = 600
+_SUBJECT_WHITESPACE = re.compile(r"\s+")
 
 
 class ContentDiscoveryCoordinator:
-    """Gather objective-specific tool evidence before one local Scout classification pass."""
+    """Gather existing canonical evidence and objective-specific tool evidence before Scout."""
 
     TASK_TYPE = "autonomous.discovery.v1"
     CAPABILITY = "content.discovery"
@@ -78,6 +117,7 @@ class ContentDiscoveryCoordinator:
         search: _SearchExecutor,
         local: LocalIntelligenceAdapter,
         seed_queries: tuple[str, ...] | None = None,
+        connected_evidence: _ConnectedEvidenceReader | None = None,
     ) -> None:
         normalized: tuple[str, ...] | None = None
         if seed_queries is not None:
@@ -90,12 +130,13 @@ class ContentDiscoveryCoordinator:
                 raise ValueError("seed_queries must be unique")
         self.search = search
         self.local = local
+        self.connected_evidence = connected_evidence
         # Explicit seeds remain available only as a deterministic fixture/manual override.
         # Production-default discovery derives the bounded search plan from each objective.
         self.seed_queries = normalized
 
     def handler(self, task: TaskRecord) -> HandlerResult:
-        """Execute bounded objective-derived searches, Radar cleanup, then one Scout analysis."""
+        """Use uniquely matched Core evidence, bounded searches, Radar cleanup, then one Scout pass."""
 
         if task.task_type != self.TASK_TYPE:
             raise ContentDiscoveryError("unsupported autonomous discovery task type")
@@ -104,6 +145,8 @@ class ContentDiscoveryCoordinator:
         except ValidationError as error:
             raise ContentDiscoveryError("invalid autonomous discovery request") from error
 
+        connected = self._connected_evidence_for_objective(request.objective)
+        connected_ids = [item["evidence_id"] for item in connected]
         queries = self._queries_for_objective(request.objective)
         per_query_limit = max(
             1,
@@ -139,7 +182,9 @@ class ContentDiscoveryCoordinator:
                 )
             )
 
-        if not successful:
+        # Existing canonical evidence is a real source. Research Gateway outage must not erase
+        # already imported/browser-captured evidence, but an evidence-empty run still fails closed.
+        if not successful and not connected:
             raise ContentDiscoveryError("all discovery searches failed")
 
         radar_candidates = normalize_candidates(radar_inputs)[: request.max_candidates]
@@ -155,7 +200,8 @@ class ContentDiscoveryCoordinator:
             }
             for candidate in radar_candidates
         ]
-        evidence_ids = [item["evidence_id"] for item in successful]
+        search_ids = [item["evidence_id"] for item in successful]
+        evidence_ids = connected_ids + search_ids
         initial_round = ResearchRound(
             round_number=0,
             evidence_ids=evidence_ids,
@@ -167,16 +213,20 @@ class ContentDiscoveryCoordinator:
         )
         stop_decision = evaluate_research_stop([initial_round])
 
-        scout_text = (
-            _render_radar_scout_input(
+        if radar_candidates:
+            search_text = _render_radar_scout_input(
                 objective=request.objective,
                 candidates=radar_candidates,
             )
-            if radar_candidates
-            else _render_scout_input(
+        else:
+            search_text = _render_scout_input(
                 objective=request.objective,
                 search_evidence=successful,
             )
+        scout_text = _render_combined_scout_input(
+            objective=request.objective,
+            connected_evidence=connected,
+            search_text=search_text,
         )
         try:
             raw_analysis = self.local.analyze(
@@ -195,6 +245,8 @@ class ContentDiscoveryCoordinator:
         document = {
             "schema_version": "1.0",
             "objective": request.objective,
+            "connected_evidence_count": len(connected),
+            "connected_evidence": connected,
             "search_count": len(successful),
             "failed_search_count": failed_count,
             "search_evidence": successful,
@@ -219,6 +271,7 @@ class ContentDiscoveryCoordinator:
             summary={
                 "task_type": self.TASK_TYPE,
                 "capability": self.CAPABILITY,
+                "connected_evidence_count": len(connected),
                 "search_count": len(successful),
                 "failed_search_count": failed_count,
                 "candidate_count": len(radar_candidates),
@@ -236,6 +289,58 @@ class ContentDiscoveryCoordinator:
         if self.seed_queries is not None:
             return self.seed_queries
         return build_discovery_queries(objective)
+
+    def _connected_evidence_for_objective(self, objective: str) -> list[dict[str, object]]:
+        """Use existing evidence only when deterministic text matching identifies one product."""
+
+        if self.connected_evidence is None:
+            return []
+        normalized_objective = _normalize_subject(objective)
+        matches: dict[str, _ConnectedProduct] = {}
+        for product in self.connected_evidence.list_products(limit=_MAX_CONNECTED_PRODUCTS):
+            normalized_key = _normalize_subject(product.product_key)
+            normalized_title = _normalize_subject(product.title)
+            key_match = bool(normalized_key and normalized_key in normalized_objective)
+            title_match = bool(
+                len(normalized_title) >= 4 and normalized_title in normalized_objective
+            )
+            if key_match or title_match:
+                matches[product.product_key] = product
+        if len(matches) != 1:
+            # Ambiguous product context is never resolved by fuzzy/model guessing; normal
+            # read-only research can still run without contaminating evidence across products.
+            return []
+
+        product_key = next(iter(matches))
+        selected: list[dict[str, object]] = []
+        seen_ids: set[str] = set()
+        for record in self.connected_evidence.list_evidence(
+            product_key=product_key,
+            limit=_MAX_CONNECTED_EVIDENCE,
+        ):
+            if record.evidence_id in seen_ids:
+                continue
+            text_excerpt = _truncate_text(record.text_value.strip(), _MAX_CONNECTED_TEXT_CHARS)
+            if not text_excerpt and record.numeric_value is None:
+                continue
+            seen_ids.add(record.evidence_id)
+            selected.append(
+                {
+                    "evidence_id": record.evidence_id,
+                    "product_key": record.product_key,
+                    "evidence_type": record.evidence_type,
+                    "source": record.source,
+                    "platform": record.platform,
+                    "source_url": record.source_url,
+                    "text_excerpt": text_excerpt,
+                    "numeric_value": record.numeric_value,
+                    "trust_level": record.trust_level,
+                    "confidence": record.confidence,
+                    "captured_at": record.captured_at,
+                    "origin": record.origin,
+                }
+            )
+        return selected
 
 
 def _extract_typed_radar_inputs(*, evidence_id: str, output: str) -> list[RadarCandidateInput]:
@@ -310,7 +415,7 @@ def _render_radar_scout_input(*, objective: str, candidates: list[RadarCandidate
                 f"Excerpt: {candidate.excerpt}",
             ]
         )
-    return _truncate_text("\n".join(lines), 23_000)
+    return _truncate_text("\n".join(lines), 12_000)
 
 
 def _render_scout_input(*, objective: str, search_evidence: list[dict[str, str]]) -> str:
@@ -329,9 +434,47 @@ def _render_scout_input(*, objective: str, search_evidence: list[dict[str, str]]
                 item["output_excerpt"],
             ]
         )
-    rendered = "\n".join(lines)
-    # LocalAnalysisRequest enforces 24k chars. Keep deterministic headroom for role instructions.
-    return _truncate_text(rendered, 23_000)
+    return _truncate_text("\n".join(lines), 12_000)
+
+
+def _render_combined_scout_input(
+    *,
+    objective: str,
+    connected_evidence: list[dict[str, object]],
+    search_text: str,
+) -> str:
+    lines = [
+        "Goal objective:",
+        objective,
+        "",
+        "Use only the evidence below. Connected evidence is an existing Mac Core fact, not model output.",
+        "Do not invent values, sources, metrics, or facts that are not explicitly present.",
+    ]
+    if connected_evidence:
+        lines.extend(["", "Connected canonical evidence (read-only; already in Mac Core):"])
+        for item in connected_evidence:
+            lines.extend(
+                [
+                    "",
+                    f"Evidence ID: {item['evidence_id']}",
+                    f"Product: {item['product_key']}",
+                    f"Source: {item['source']} / {item['platform']}",
+                    f"Trust: {item['trust_level']}",
+                    f"Confidence: {item['confidence']}",
+                    f"Captured: {item['captured_at']}",
+                    f"Text: {item['text_excerpt']}",
+                    f"Numeric: {item['numeric_value']}",
+                ]
+            )
+    if search_text.strip():
+        lines.extend(["", "Read-only Research Gateway evidence:", search_text])
+    # LocalAnalysisRequest enforces 24k chars. Leave deterministic headroom for role instructions.
+    return _truncate_text("\n".join(lines), 23_000)
+
+
+def _normalize_subject(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).casefold().strip()
+    return _SUBJECT_WHITESPACE.sub(" ", normalized)
 
 
 def _truncate_text(value: str, maximum_chars: int) -> str:
