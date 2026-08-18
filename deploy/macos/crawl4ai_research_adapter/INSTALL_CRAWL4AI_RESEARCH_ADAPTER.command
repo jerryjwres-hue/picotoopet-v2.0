@@ -225,6 +225,12 @@ elif [[ ! -x "$venv_dir/bin/python" ]]; then
   exit 1
 fi
 
+# Gateway 的早期 bootstrap 固定跳转到这个解释器，因此私有 venv 本身也必须满足项目 Python 门禁。
+if ! is_compatible_python "$venv_dir/bin/python"; then
+  echo "adapter 私有 venv Python 版本不兼容；必须为 3.12-3.13：$venv_dir/bin/python" >&2
+  exit 1
+fi
+
 crawl4ai_version="$($venv_dir/bin/python - <<'PY'
 import importlib.metadata
 try:
