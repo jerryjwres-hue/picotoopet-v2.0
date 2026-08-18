@@ -18,8 +18,11 @@ from picotoopet_core.domain.enums import TaskStatus
 from .models import GoalCreate, GoalOrigin, GoalRecord, GoalStatus, PriorityClass
 from .repository import AutonomousGoalRepository
 
-_DISCOVERY_CAPABILITY = "local.text.analysis"
-_DISCOVERY_TASK_TYPE = "autonomous.local_analysis.v1"
+# P3 autonomous discovery requires a real search/crawler-backed capability.
+# A healthy local language model alone is only an analysis worker and cannot
+# manufacture discovery evidence or trends from an empty context.
+_DISCOVERY_CAPABILITY = "content.discovery"
+_DISCOVERY_TASK_TYPE = "autonomous.discovery.v1"
 _ACTIVE_TASK_STATUSES = (
     TaskStatus.CREATED,
     TaskStatus.VALIDATING,
@@ -100,7 +103,7 @@ class AutonomousOperationsManager:
                 priority_class=PriorityClass.P3,
                 objective=objective,
                 constraints={"read_only": True, "bounded_round": True},
-                budget_class="local-first",
+                budget_class="tool-first-local-analysis",
                 idempotency_key=key,
             )
         )
@@ -112,13 +115,13 @@ class AutonomousOperationsManager:
                 idempotency_key=key,
                 steps=[
                     WorkflowStepCreate(
-                        step_key="local-scout",
+                        step_key="content-discovery",
                         task_type=_DISCOVERY_TASK_TYPE,
                         required_capability=_DISCOVERY_CAPABILITY,
                         payload={
-                            "role": "scout",
-                            "text": objective,
-                            "evidence_ids": [],
+                            "objective": objective,
+                            "read_only": True,
+                            "max_candidates": 50,
                         },
                         max_attempts=2,
                         timeout_seconds=900,
