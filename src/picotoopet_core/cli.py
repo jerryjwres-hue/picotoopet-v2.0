@@ -13,6 +13,11 @@ from threading import Event
 
 from picotoopet_core.api.app import create_app
 from picotoopet_core.automation.models import CapabilityRegistration
+from picotoopet_core.autonomous.background import AutonomousBackgroundCoordinator
+from picotoopet_core.autonomous.local_intelligence import (
+    LocalIntelligenceCoordinator,
+    build_ollama_local_intelligence_adapter,
+)
 from picotoopet_core.business.execution import BusinessLocalIntelligenceCoordinator
 from picotoopet_core.business.local_intelligence import (
     LocalIntelligenceConfig,
@@ -224,6 +229,22 @@ def _run_worker(
         business_coordinator = None
         creative_coordinator = None
 
+    # 自治本地分析复用同一个 gpt-oss:20b / loopback 服务，但使用独立固定结构化合同。
+    autonomous_local_coordinator = LocalIntelligenceCoordinator(
+        build_ollama_local_intelligence_adapter(
+            model_name=settings.local_intelligence_model,
+            base_url=settings.local_intelligence_base_url.rstrip("/"),
+        )
+    )
+    autonomous_background = AutonomousBackgroundCoordinator(
+        manager=services.autonomous_manager,
+        capability_router=services.capability_router,
+        runtime=runtime,
+        worker_id=resolved_worker_id,
+        local_intelligence_handler=autonomous_local_coordinator.handler,
+        model_id=settings.local_intelligence_model,
+    )
+
     if deep_ai_provider_config.execution_enabled:
         # Paid execution is constructed only inside the Worker process after explicit opt-in + key.
         # Core `serve`, Windows and package manifests never receive the raw credential.
@@ -328,7 +349,8 @@ def _run_worker(
 
     try:
         if once:
-            refresh_business_capability(force=True)
+            local_healthy = refresh_business_capability(force=True)
+            autonomous_background.refresh_local_intelligence(healthy=local_healthy)
             publish_paid_ai_capability(healthy=deep_ai_execution_loop is not None)
             publish_execution_capability(healthy=True)
             enqueue_controlled_work()
@@ -360,17 +382,21 @@ def _run_worker(
         signal.signal(signal.SIGINT, request_stop)
         signal.signal(signal.SIGTERM, request_stop)
         while not stop_event.is_set():
-            refresh_business_capability()
+            local_healthy = refresh_business_capability()
+            autonomous_background.refresh_local_intelligence(healthy=local_healthy)
             publish_paid_ai_capability(healthy=deep_ai_execution_loop is not None)
             publish_execution_capability(healthy=True)
             enqueue_controlled_work()
             if deep_ai_execution_loop is not None:
                 deep_ai_execution_loop.run_once()
+            # 自治层只负责创建/推进现有 Workflow；失败被隔离，不得终止 7x24 Worker。
+            autonomous_background.tick_safely()
             runtime.run_once()
             stop_event.wait(settings.worker_poll_seconds)
         return 0
     finally:
         try:
+            autonomous_background.refresh_local_intelligence(healthy=False)
             services.capability_router.register(
                 CapabilityRegistration(
                     worker_id=resolved_worker_id,
@@ -392,6 +418,7 @@ def _run_worker(
             publish_paid_ai_capability(healthy=False)
             runtime.handlers.pop(BusinessLocalIntelligenceCoordinator.TASK_TYPE, None)
             runtime.handlers.pop(CreativeIntelligenceCoordinator.TASK_TYPE, None)
+            runtime.handlers.pop(LocalIntelligenceCoordinator.TASK_TYPE, None)
             publish_execution_capability(healthy=False)
         finally:
             if deep_ai_provider_adapter is not None:
