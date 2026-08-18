@@ -31,7 +31,7 @@ if [[ "$gateway_version" != "2.3.27.1" ]]; then
   echo "Research Gateway 基线版本不匹配：$gateway_version" >&2
   exit 1
 fi
-if [[ "$adapter_version" != "2.3.27.1-crawl4ai.3" ]]; then
+if [[ "$adapter_version" != "2.3.27.1-crawl4ai.4" ]]; then
   echo "Crawl4AI adapter 版本不匹配：$adapter_version" >&2
   exit 1
 fi
@@ -100,6 +100,7 @@ manifest = {
         "concurrency": 2,
         "retry_limit": 1,
     },
+    "gateway_private_python_bootstrap": True,
     "read_only": True,
     "account_write_capabilities": False,
     "captcha_bypass": False,
@@ -136,6 +137,7 @@ report = {
     "commit": sys.argv[3],
     "package": str(Path(sys.argv[4]).resolve()),
     "sha256": sys.argv[5],
+    "gateway_private_python_bootstrap": True,
     "read_only": True,
     "windows_payload_included": False,
     "scrapling_bundled": False,
