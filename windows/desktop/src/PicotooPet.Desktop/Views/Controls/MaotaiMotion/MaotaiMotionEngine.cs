@@ -242,8 +242,13 @@ internal sealed class MaotaiMotionEngine
         };
         var tailTarget = Math.Sin((gaitAngle * 1.2) + (_elapsedSeconds * 1.35)) *
             (4.0 + (tailEnergy * 10.0));
-        if (_graph.ActiveState == MaotaiMotionState.WorkTired ||
-            _graph.ActiveState == MaotaiMotionState.Yawn)
+        if (_graph.ActiveState == MaotaiMotionState.Sleep)
+        {
+            // Sleep tail          : keep a faint living sway without carrying awake Resting wag energy into sleep.
+            tailTarget *= 0.22;
+        }
+        else if (_graph.ActiveState == MaotaiMotionState.WorkTired ||
+                 _graph.ActiveState == MaotaiMotionState.Yawn)
         {
             tailTarget *= 0.42;
         }
