@@ -372,6 +372,7 @@ internal sealed class MaotaiMotionEngine
                 MaotaiInteractionKind.Celebrate => MaotaiMouthState.Tongue,
                 _ => _graph.ActiveState switch
                 {
+                    MaotaiMotionState.Sleep       => MaotaiMouthState.Tired,
                     MaotaiMotionState.WorkTired   => MaotaiMouthState.Tired,
                     MaotaiMotionState.Yawn        => MaotaiMouthState.Yawn,
                     MaotaiMotionState.WorkAnnoyed => MaotaiMouthState.Annoyed,
