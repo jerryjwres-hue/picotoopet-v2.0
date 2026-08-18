@@ -11,6 +11,8 @@ from picotoopet_core.automation.quality import QualityGate
 from picotoopet_core.automation.repository import AutomationRepository
 from picotoopet_core.automation.scheduler import WorkflowScheduler
 from picotoopet_core.automation.service import WorkflowService
+from picotoopet_core.autonomous.manager import AutonomousOperationsManager
+from picotoopet_core.autonomous.repository import AutonomousGoalRepository
 from picotoopet_core.broker.service import BrokerSessionService
 from picotoopet_core.business.repository import BusinessRepository
 from picotoopet_core.business.service import BusinessAutomationService
@@ -73,6 +75,8 @@ class Services:
     queue: QueueRepository
     workflows: WorkflowService
     workflow_scheduler: WorkflowScheduler
+    autonomous_goals: AutonomousGoalRepository
+    autonomous_manager: AutonomousOperationsManager
     automation_repository: AutomationRepository
     capability_router: CapabilityRouter
     quality_gate: QualityGate
@@ -136,6 +140,12 @@ def build_services(settings: AppSettings) -> Services:
     automation_repository = AutomationRepository(database)
     workflows = WorkflowService(database, queue=queue, repository=automation_repository)
     workflow_scheduler = WorkflowScheduler(workflows)
+    autonomous_goals = AutonomousGoalRepository(database)
+    autonomous_manager = AutonomousOperationsManager(
+        database=database,
+        goals=autonomous_goals,
+        workflows=workflows,
+    )
     capability_router = workflows.capabilities
     quality_gate = QualityGate(automation_repository)
     business_repository = BusinessRepository(database)
@@ -233,6 +243,8 @@ def build_services(settings: AppSettings) -> Services:
         queue=queue,
         workflows=workflows,
         workflow_scheduler=workflow_scheduler,
+        autonomous_goals=autonomous_goals,
+        autonomous_manager=autonomous_manager,
         automation_repository=automation_repository,
         capability_router=capability_router,
         quality_gate=quality_gate,
