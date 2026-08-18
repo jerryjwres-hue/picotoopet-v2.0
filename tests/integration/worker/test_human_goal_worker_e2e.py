@@ -34,12 +34,23 @@ from picotoopet_core.worker.runtime import WorkerRuntime
 from picotoopet_core.worker.state import WorkerStateStore
 
 
+_CONNECTED_TEXT = "Strong toy, but the handle is too small for my malamute."
+
+
 class DeterministicLocal:
     """No network/model dependency; returns the same evidence-linked synthesis contract."""
 
     def analyze(self, request):  # type: ignore[no-untyped-def]
         assert request.role is LocalAnalysisRole.ANALYST
-        assert request.evidence_ids == ["search-e2e-1", "search-e2e-2"]
+        assert request.evidence_ids == [
+            "legacy41-e2e-1",
+            "search-e2e-1",
+            "search-e2e-2",
+        ]
+        # Connected evidence must reach the second-stage analyst as bounded evidence text,
+        # not disappear after the Scout/discovery stage.
+        assert _CONNECTED_TEXT in request.text
+        assert "Trust: B" in request.text
         return LocalAnalysisResult(
             role=LocalAnalysisRole.ANALYST,
             summary="耐久性和尺寸预期是主要购买决策点。",
@@ -56,11 +67,32 @@ def _discovery_handler(task: TaskRecord) -> HandlerResult:
     document = {
         "schema_version": "1.0",
         "objective": task.payload["objective"],
-        "summary": "公开证据集中在耐久性、尺寸和碎裂风险。",
+        "summary": "公开证据和旧 4.1 评论都集中在耐久性、尺寸和碎裂风险。",
         "confidence": 0.8,
         "findings": ["耐久性主题", "尺寸与碎裂主题"],
         "recommended_actions": ["继续以大型犬真实使用场景验证"],
-        "evidence_ids": ["search-e2e-1", "search-e2e-2"],
+        "evidence_ids": [
+            "legacy41-e2e-1",
+            "search-e2e-1",
+            "search-e2e-2",
+        ],
+        "connected_evidence_count": 1,
+        "connected_evidence": [
+            {
+                "evidence_id": "legacy41-e2e-1",
+                "product_key": "legacy41:p-e2e",
+                "evidence_type": "consumer_review",
+                "source": "amazon",
+                "platform": "amazon",
+                "source_url": "https://www.amazon.com/dp/B0TESTE2E",
+                "text_excerpt": _CONNECTED_TEXT,
+                "numeric_value": None,
+                "trust_level": "B",
+                "confidence": 0.91,
+                "captured_at": "2026-08-17T12:00:00+00:00",
+                "origin": "maotai41_import",
+            }
+        ],
         "search_evidence": [
             {
                 "evidence_id": "search-e2e-1",
@@ -82,7 +114,7 @@ def _discovery_handler(task: TaskRecord) -> HandlerResult:
         },
     }
     return HandlerResult(
-        summary={"task_type": task.task_type, "evidence_count": 2},
+        summary={"task_type": task.task_type, "evidence_count": 3},
         result_document=document,
         result_type="autonomous.discovery.v1",
         schema_version="1.0",
@@ -205,7 +237,10 @@ def test_human_video_goal_runs_all_three_worker_stages_and_exposes_verified_hand
         names = set(archive.namelist())
         assert "WEB_GPT_MASTER_PROMPT.txt" in names
         assert "HANDOFF_MANIFEST.json" in names
-        assert "消费者关注尺寸是否适合大型犬" in archive.read("04_EVIDENCE.md").decode("utf-8")
+        evidence_markdown = archive.read("04_EVIDENCE.md").decode("utf-8")
+        assert "消费者关注尺寸是否适合大型犬" in evidence_markdown
+        assert _CONNECTED_TEXT in evidence_markdown
+        assert "legacy41-e2e-1" in evidence_markdown
 
     prompt = access.fixed_prompt(goal.goal_id)
     # Match the versioned production prompt's real fact-discipline contract instead of
