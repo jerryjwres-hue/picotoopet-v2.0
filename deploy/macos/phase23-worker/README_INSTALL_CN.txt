@@ -1,20 +1,34 @@
-Picotoo Pet V2 — Phase 2.3 Slice D Mac Worker 安装说明
+Picotoo Pet V2 — Phase 2.3 Slice D / Autonomous Intelligence Slice C Mac Worker 安装说明
 
 适用设备：Apple Silicon M4 / arm64
 前置条件：Mac Core 已安装且可通过健康检查；建议先安装同批次 Slice D Core 包。
 
 本包会：
 1. 校验发布清单、文件大小、SHA-256、架构和唯一项目 wheel；
-2. 使用包内 wheelhouse 离线安装同批次 Core + Worker Runtime；
-3. 在临时端口验证候选 Core、Worker 状态 API 和诊断固定端点；
-4. 备份现有 Worker LaunchAgent 定义和 current 指针；
-5. 原子切换 current；
-6. 写入当前用户的 com.picotoopet.worker LaunchAgent；
-7. 启动 Worker，并验证固定支持类型和空闲状态。
+2. 直接打开项目 wheel，验证自主情报模块和固定 Web GPT Prompt 确实随包交付；
+3. 使用包内 wheelhouse 离线安装同批次 Core + Worker Runtime；
+4. 在临时端口验证候选 Core、Worker 状态 API 和诊断固定端点；
+5. 备份现有 Worker LaunchAgent 定义和 current 指针；
+6. 原子切换 current；
+7. 写入当前用户的 com.picotoopet.worker LaunchAgent；
+8. 启动 Worker，并验证固定支持类型和空闲状态。
 
-Worker 固定支持：
+Autonomous Intelligence Slice C 新增：
+- Content Discovery 会自动按当前任务目标生成研究查询，不再只使用固定通用关键词；
+- 迁移 Maotai OS 4.1 的确定性信息增益、采集节奏和来源策略算法，但不迁移旧 UI 或旧数据库事实源；
+- 提供只读 Browser Broker 公开页面采集合同；它只接受经过安全校验的公开页面证据，不读取 Cookie、密码、Token、浏览器存储或支付信息；
+- 固定 Web GPT Prompt 会随 Python wheel 一起交付，用于后续人工把交接包提交给网页 ChatGPT；程序不会登录或控制网页 ChatGPT；
+- 日常使用不需要打开旧 4.1 UI；
+- 旧 4.1 数据库不是事实源，Mac Core 仍是任务、结果和审计的唯一事实源。
+
+Worker 固定支持的基础任务：
 - system.noop
 - system.diagnostic_snapshot
+
+自主情报能力清单：
+- content.discovery
+- objective.query.planning
+- browser.capture.contract（能力合同，不是任意浏览器控制任务）
 
 系统诊断任务：
 - 只读取 Core/Worker/Queue 的非敏感公开状态；
@@ -30,7 +44,9 @@ Worker 固定支持：
 - 修改防火墙或系统 LaunchDaemon；
 - 删除数据库、Token、日志、结果或旧版本；
 - 在用户电脑编译源码或联网解析依赖；
-- 动态加载任意任务处理器。
+- 动态加载任意任务处理器；
+- 把旧 Maotai OS 4.1 SQLite 启动为第二套在线事实源；
+- 自动登录网页 ChatGPT、Amazon、TikTok 或其它需要账号的平台。
 
 安装：双击 INSTALL_MAC_WORKER_SLICE_C.command
 验证：安装 PASS 后双击 VERIFY_MAC_WORKER_SLICE_C.command
