@@ -229,7 +229,7 @@ jobs:
 
           cmp "$GATEWAY_ROOT/bin/picotoopet-research-gateway" "$FIXTURE_ROOT/baseline-gateway-wrapper"
           grep -q 'exec "/usr/bin/python3"' "$GATEWAY_ROOT/bin/picotoopet-research-gateway"
-          "$GATEWAY_ROOT/bin/picotoopet-research-gateway" --health \
+          HOME="$FIXTURE_HOME" "$GATEWAY_ROOT/bin/picotoopet-research-gateway" --health \
             > "$FIXTURE_ROOT/post-install-gateway-health.json"
 
           first_version="$($ADAPTER_ROOT/bin/picotoopet-crawl4ai-provider --version)"
