@@ -66,7 +66,7 @@ internal static class MaotaiRestTransitionSmokeTests
         VerifyWakeGetUpPoseContinuity();
     }
 
-    /// <summary>状态链合法还不够；Sleep/Wake/GetUp 的真实相邻帧也不能出现身体或头部跳变。</summary>
+    /// <summary>状态链合法还不够；Sleep/Wake/GetUp 的真实相邻帧也不能出现身体、头部或耳朵跳变。</summary>
     private static void VerifyWakeGetUpPoseContinuity()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
@@ -111,6 +111,9 @@ internal static class MaotaiRestTransitionSmokeTests
         var sleepHeadY = 0.0;
         var wakeStartHeadY = 0.0;
         var sleepWakeHeadYDelta = double.PositiveInfinity;
+        var sleepLeftEarY = 0.0;
+        var wakeStartLeftEarY = 0.0;
+        var sleepWakeLeftEarYDelta = double.PositiveInfinity;
         var sawWakeGetUpBoundary = false;
         var wakeBodyY = 0.0;
         var getUpBodyY = 0.0;
@@ -139,6 +142,9 @@ internal static class MaotaiRestTransitionSmokeTests
                 sleepHeadY = ReadBoneValue(previousPose!, "Head", "Y");
                 wakeStartHeadY = ReadBoneValue(pose, "Head", "Y");
                 sleepWakeHeadYDelta = Math.Abs(wakeStartHeadY - sleepHeadY);
+                sleepLeftEarY = ReadBoneValue(previousPose!, "LeftEar", "Y");
+                wakeStartLeftEarY = ReadBoneValue(pose, "LeftEar", "Y");
+                sleepWakeLeftEarYDelta = Math.Abs(wakeStartLeftEarY - sleepLeftEarY);
                 sawSleepWakeBoundary = true;
             }
 
@@ -167,6 +173,8 @@ internal static class MaotaiRestTransitionSmokeTests
             $"Sleep -> Wake 身体纵向缩放不能突然拉长；delta={sleepWakeScaleYDelta:F4}, sleepScaleY={sleepScaleY:F4}, wakeScaleY={wakeStartScaleY:F4}");
         Assert(sleepWakeHeadYDelta < 0.45,
             $"Sleep -> Wake 头部高度必须由 spring 平滑承接；delta={sleepWakeHeadYDelta:F3}, sleepHeadY={sleepHeadY:F3}, wakeHeadY={wakeStartHeadY:F3}");
+        Assert(sleepWakeLeftEarYDelta < 0.75,
+            $"Sleep -> Wake 耳朵高度不能瞬间弹起；delta={sleepWakeLeftEarYDelta:F3}, sleepEarY={sleepLeftEarY:F3}, wakeEarY={wakeStartLeftEarY:F3}");
         Assert(sawWakeGetUpBoundary, "醒来连续性测试未观察到 Wake -> GetUp 边界");
         Assert(bodyYDelta < 0.75,
             $"Wake -> GetUp 身体高度不能出现可见跳帧；delta={bodyYDelta:F3}, wakeY={wakeBodyY:F3}, getUpY={getUpBodyY:F3}");
