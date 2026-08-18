@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import math
 import re
 from collections import defaultdict
+from enum import StrEnum
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -21,6 +23,15 @@ _TRACKING_QUERY_KEYS = {
     "ref_src",
 }
 _WHITESPACE_RE = re.compile(r"\s+")
+_SCORE_WEIGHTS = {
+    "trend_velocity": 20.0,
+    "audience_resonance": 20.0,
+    "novelty": 15.0,
+    "business_relevance": 15.0,
+    "evidence_quality": 10.0,
+    "cross_platform": 10.0,
+    "actionability": 10.0,
+}
 
 
 class RadarCandidateInput(BaseModel):
@@ -54,6 +65,79 @@ class RadarCandidate(BaseModel):
     excerpt: str
     platform: str | None = None
     evidence_ids: list[str]
+
+
+class RadarDecision(StrEnum):
+    """Bounded routing decision derived only from the deterministic 0-100 score."""
+
+    DEEP_RESEARCH = "deep_research"
+    SHALLOW_VALIDATION = "shallow_validation"
+    RETAIN_SIGNAL = "retain_signal"
+
+
+class RadarScoreSignals(BaseModel):
+    """Normalized 0-1 evidence signals; None explicitly means the evidence is missing."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    trend_velocity: float | None = None
+    audience_resonance: float | None = None
+    novelty: float | None = None
+    business_relevance: float | None = None
+    evidence_quality: float | None = None
+    cross_platform: float | None = None
+    actionability: float | None = None
+
+    @field_validator("*")
+    @classmethod
+    def _bounded_signal(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        normalized = float(value)
+        if not math.isfinite(normalized) or not 0.0 <= normalized <= 1.0:
+            raise ValueError("radar score signals must be finite values between 0 and 1")
+        return normalized
+
+
+class RadarScore(BaseModel):
+    """Auditable score with per-dimension points and weighted evidence coverage."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    component_points: dict[str, float]
+    total: float = Field(ge=0.0, le=100.0)
+    coverage: float = Field(ge=0.0, le=1.0)
+    decision: RadarDecision
+
+
+def score_candidate(signals: RadarScoreSignals) -> RadarScore:
+    """Apply the frozen weights; missing evidence receives zero points, never imputation."""
+
+    raw = signals.model_dump()
+    component_points: dict[str, float] = {}
+    covered_weight = 0.0
+    for name, weight in _SCORE_WEIGHTS.items():
+        signal = raw[name]
+        if signal is None:
+            component_points[name] = 0.0
+            continue
+        covered_weight += weight
+        component_points[name] = round(float(signal) * weight, 2)
+
+    total = round(sum(component_points.values()), 2)
+    coverage = round(covered_weight / 100.0, 2)
+    if total >= 85.0:
+        decision = RadarDecision.DEEP_RESEARCH
+    elif total >= 70.0:
+        decision = RadarDecision.SHALLOW_VALIDATION
+    else:
+        decision = RadarDecision.RETAIN_SIGNAL
+    return RadarScore(
+        component_points=component_points,
+        total=total,
+        coverage=coverage,
+        decision=decision,
+    )
 
 
 def normalize_candidates(inputs: list[RadarCandidateInput]) -> list[RadarCandidate]:
