@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -11,12 +12,21 @@ from picotoopet_core.research.execution import ResearchGatewayExecutionError
 from picotoopet_core.research.models import ResearchSearchResult
 from picotoopet_core.worker.handlers import HandlerResult
 
+from .content_radar import (
+    RadarCandidate,
+    RadarCandidateInput,
+    RadarScoreSignals,
+    cluster_candidates,
+    normalize_candidates,
+    score_candidate,
+)
 from .local_intelligence import (
     LocalAnalysisRequest,
     LocalAnalysisResult,
     LocalAnalysisRole,
     LocalIntelligenceAdapter,
 )
+from .research_stop import ResearchRound, evaluate_research_stop
 
 
 class ContentDiscoveryError(RuntimeError):
@@ -58,6 +68,7 @@ _DEFAULT_SEED_QUERIES = (
     "ecommerce creator content trends audience engagement recent",
 )
 _MAX_TOOL_EXCERPT_CHARS = 5_000
+_MAX_RADAR_EXCERPT_CHARS = 4_000
 
 
 class ContentDiscoveryCoordinator:
@@ -85,7 +96,7 @@ class ContentDiscoveryCoordinator:
         self.seed_queries = normalized
 
     def handler(self, task: TaskRecord) -> HandlerResult:
-        """Execute fixed searches, then one Scout analysis over only those search results."""
+        """Execute fixed searches, deterministic Radar cleanup, then one Scout analysis."""
 
         if task.task_type != self.TASK_TYPE:
             raise ContentDiscoveryError("unsupported autonomous discovery task type")
@@ -101,6 +112,7 @@ class ContentDiscoveryCoordinator:
         per_query_timeout = min(max(int(task.timeout_seconds / len(self.seed_queries)), 30), 120)
 
         successful: list[dict[str, str]] = []
+        radar_inputs: list[RadarCandidateInput] = []
         failed_count = 0
         for index, query in enumerate(self.seed_queries, start=1):
             evidence_id = f"search-{index:02d}"
@@ -120,20 +132,58 @@ class ContentDiscoveryCoordinator:
                     "output_excerpt": _truncate_text(result.output, _MAX_TOOL_EXCERPT_CHARS),
                 }
             )
+            radar_inputs.extend(
+                _extract_typed_radar_inputs(
+                    evidence_id=evidence_id,
+                    output=result.output,
+                )
+            )
 
         if not successful:
             raise ContentDiscoveryError("all discovery searches failed")
 
-        scout_text = _render_scout_input(
-            objective=request.objective,
-            search_evidence=successful,
+        radar_candidates = normalize_candidates(radar_inputs)[: request.max_candidates]
+        radar_clusters = cluster_candidates(radar_candidates)
+        # Current crawler envelopes provide content/provenance but no trustworthy
+        # velocity, resonance, business or actionability metrics. Therefore every
+        # missing scoring dimension remains None/zero instead of being inferred
+        # from prose or from the Scout's free-form findings.
+        radar_scores = [
+            {
+                "candidate_id": candidate.candidate_id,
+                "score": score_candidate(RadarScoreSignals()).model_dump(mode="json"),
+            }
+            for candidate in radar_candidates
+        ]
+        evidence_ids = [item["evidence_id"] for item in successful]
+        initial_round = ResearchRound(
+            round_number=0,
+            evidence_ids=evidence_ids,
+            cluster_ids=[cluster.cluster_id for cluster in radar_clusters],
+            # Initial collection is measured against an empty evidence set; all
+            # accepted evidence is new at round zero. Later rounds must measure
+            # marginal gain and are constrained by research_stop.py.
+            information_gain_ratio=1.0,
+        )
+        stop_decision = evaluate_research_stop([initial_round])
+
+        scout_text = (
+            _render_radar_scout_input(
+                objective=request.objective,
+                candidates=radar_candidates,
+            )
+            if radar_candidates
+            else _render_scout_input(
+                objective=request.objective,
+                search_evidence=successful,
+            )
         )
         try:
             raw_analysis = self.local.analyze(
                 LocalAnalysisRequest(
                     role=LocalAnalysisRole.SCOUT,
                     text=scout_text,
-                    evidence_ids=[item["evidence_id"] for item in successful],
+                    evidence_ids=evidence_ids,
                 )
             )
             analysis = LocalAnalysisResult.model_validate(raw_analysis)
@@ -148,6 +198,17 @@ class ContentDiscoveryCoordinator:
             "search_count": len(successful),
             "failed_search_count": failed_count,
             "search_evidence": successful,
+            "content_radar": {
+                "candidate_count": len(radar_candidates),
+                "cluster_count": len(radar_clusters),
+                "candidates": [
+                    candidate.model_dump(mode="json") for candidate in radar_candidates
+                ],
+                "clusters": [cluster.model_dump(mode="json") for cluster in radar_clusters],
+                "scores": radar_scores,
+                "research_rounds": [initial_round.model_dump(mode="json")],
+                "research_stop": stop_decision.model_dump(mode="json"),
+            },
             "summary": analysis.summary,
             "confidence": analysis.confidence,
             "findings": analysis.findings,
@@ -160,12 +221,89 @@ class ContentDiscoveryCoordinator:
                 "capability": self.CAPABILITY,
                 "search_count": len(successful),
                 "failed_search_count": failed_count,
+                "candidate_count": len(radar_candidates),
+                "cluster_count": len(radar_clusters),
                 "confidence": analysis.confidence,
             },
             result_document=document,
             result_type=self.TASK_TYPE,
             schema_version="1.0",
         )
+
+
+def _extract_typed_radar_inputs(*, evidence_id: str, output: str) -> list[RadarCandidateInput]:
+    """Read only known typed document envelopes; legacy/plain output yields no fake candidate."""
+
+    try:
+        payload = json.loads(output)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    documents = payload.get("documents")
+    if not isinstance(documents, list):
+        return []
+
+    accepted: list[RadarCandidateInput] = []
+    for document in documents[:50]:
+        if not isinstance(document, dict):
+            continue
+        url = document.get("url")
+        if not isinstance(url, str) or not url.strip():
+            continue
+        title_value = document.get("title")
+        source_value = document.get("source")
+        title = (
+            title_value.strip()
+            if isinstance(title_value, str) and title_value.strip()
+            else source_value.strip()
+            if isinstance(source_value, str) and source_value.strip()
+            else "Untitled evidence"
+        )
+        markdown = document.get("markdown")
+        excerpt = (
+            _truncate_text(markdown.strip(), _MAX_RADAR_EXCERPT_CHARS)
+            if isinstance(markdown, str) and markdown.strip()
+            else title
+        )
+        provider = document.get("provider")
+        platform = provider.strip() if isinstance(provider, str) and provider.strip() else None
+        try:
+            candidate = RadarCandidateInput(
+                evidence_id=evidence_id,
+                url=url,
+                title=_truncate_text(title, 500),
+                excerpt=excerpt,
+                platform=platform,
+            )
+            # Validate the public URL through the canonical Radar path per item,
+            # so one malformed/private document cannot poison the whole batch.
+            normalize_candidates([candidate])
+        except (ValidationError, ValueError):
+            continue
+        accepted.append(candidate)
+    return accepted
+
+
+def _render_radar_scout_input(*, objective: str, candidates: list[RadarCandidate]) -> str:
+    lines = [
+        "Goal objective:",
+        objective,
+        "",
+        "The following candidates were normalized and exactly deduplicated by deterministic code.",
+        "Classify themes only from these candidates. Do not invent engagement metrics or scores.",
+    ]
+    for candidate in candidates:
+        lines.extend(
+            [
+                "",
+                f"Search evidence {', '.join(candidate.evidence_ids)}",
+                f"URL: {candidate.canonical_url}",
+                f"Title: {candidate.title}",
+                f"Excerpt: {candidate.excerpt}",
+            ]
+        )
+    return _truncate_text("\n".join(lines), 23_000)
 
 
 def _render_scout_input(*, objective: str, search_evidence: list[dict[str, str]]) -> str:
