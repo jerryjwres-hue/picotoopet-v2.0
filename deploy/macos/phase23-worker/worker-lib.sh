@@ -226,6 +226,9 @@ if expected == "online":
     supported = payload.get("supported_task_types")
     required = {"system.diagnostic_snapshot", "system.noop"}
     allowed = required | {
+        "autonomous.local_analysis.v1",
+        "autonomous.discovery.v1",
+        "autonomous.storage_maintenance.v1",
         "business.local_intelligence.v1",
         "creative.content_plan.v1",
         "provider.codex.handoff-v1",
@@ -234,7 +237,7 @@ if expected == "online":
         "provider.publish.pr-create-v1",
         "research.search",
     }
-    # 累计能力验证：历史已实现与健康的 Research 类型可注册，未知类型继续被拒绝。
+    # 累计能力验证：只接受项目明确注册的 task type；未知类型继续被拒绝，禁止通配 autonomous.*。
     if not isinstance(supported, list) or not required <= set(supported):
         raise SystemExit(1)
     unexpected = set(supported) - allowed
@@ -246,7 +249,7 @@ PY
     fi
     sleep 0.25
   done
-  echo "Worker 状态未进入 $expected：$path" >&2
+  echo "Worker 状态未进入 ${expected}：${path}" >&2
   return 1
 }
 
@@ -321,6 +324,9 @@ if status.get("state") != "online" or status.get("available") is not True:
 supported = status.get("supported_task_types")
 required = {"system.diagnostic_snapshot", "system.noop"}
 allowed = required | {
+    "autonomous.local_analysis.v1",
+    "autonomous.discovery.v1",
+    "autonomous.storage_maintenance.v1",
     "business.local_intelligence.v1",
     "creative.content_plan.v1",
     "provider.codex.handoff-v1",
@@ -378,6 +384,9 @@ payload = {
         "system.noop",
     ],
     "worker_optional_registered_task_types": [
+        "autonomous.local_analysis.v1",
+        "autonomous.discovery.v1",
+        "autonomous.storage_maintenance.v1",
         "business.local_intelligence.v1",
         "creative.content_plan.v1",
         "provider.codex.handoff-v1",
