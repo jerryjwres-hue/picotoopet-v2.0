@@ -66,7 +66,7 @@ internal static class MaotaiRestTransitionSmokeTests
         VerifyWakeGetUpPoseContinuity();
     }
 
-    /// <summary>状态链合法还不够；Wake 最后一帧切到 GetUp 第一帧时身体高度与纵向缩放都必须连续。</summary>
+    /// <summary>状态链合法还不够；Sleep/Wake/GetUp 的真实相邻帧也不能出现身体跳变。</summary>
     private static void VerifyWakeGetUpPoseContinuity()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
@@ -98,7 +98,11 @@ internal static class MaotaiRestTransitionSmokeTests
         Assert(stableSleepFrames >= 30, "醒来连续性测试未能稳定进入 Sleep");
 
         var previousState = ReadString(previousPose!, "MotionState");
-        var sawBoundary = false;
+        var sawSleepWakeBoundary = false;
+        var sleepBodyY = 0.0;
+        var wakeStartBodyY = 0.0;
+        var sleepWakeBodyYDelta = double.PositiveInfinity;
+        var sawWakeGetUpBoundary = false;
         var wakeBodyY = 0.0;
         var getUpBodyY = 0.0;
         var bodyYDelta = double.PositiveInfinity;
@@ -112,6 +116,14 @@ internal static class MaotaiRestTransitionSmokeTests
                 ?? throw new InvalidOperationException("醒来连续性测试没有输出 Pose");
             var state = ReadString(pose, "MotionState");
 
+            if (previousState == "Sleep" && state == "Wake")
+            {
+                sleepBodyY = ReadBodyValue(previousPose!, "Y");
+                wakeStartBodyY = ReadBodyValue(pose, "Y");
+                sleepWakeBodyYDelta = Math.Abs(wakeStartBodyY - sleepBodyY);
+                sawSleepWakeBoundary = true;
+            }
+
             if (previousState == "Wake" && state == "GetUp")
             {
                 wakeBodyY = ReadBodyValue(previousPose!, "Y");
@@ -120,7 +132,7 @@ internal static class MaotaiRestTransitionSmokeTests
                 wakeScaleY = ReadBodyValue(previousPose!, "ScaleY");
                 getUpScaleY = ReadBodyValue(pose, "ScaleY");
                 scaleYDelta = Math.Abs(getUpScaleY - wakeScaleY);
-                sawBoundary = true;
+                sawWakeGetUpBoundary = true;
                 break;
             }
 
@@ -128,7 +140,10 @@ internal static class MaotaiRestTransitionSmokeTests
             previousState = state;
         }
 
-        Assert(sawBoundary, "醒来连续性测试未观察到 Wake -> GetUp 边界");
+        Assert(sawSleepWakeBoundary, "醒来连续性测试未观察到 Sleep -> Wake 边界");
+        Assert(sleepWakeBodyYDelta < 0.75,
+            $"Sleep -> Wake 身体高度不能出现可见跳帧；delta={sleepWakeBodyYDelta:F3}, sleepY={sleepBodyY:F3}, wakeY={wakeStartBodyY:F3}");
+        Assert(sawWakeGetUpBoundary, "醒来连续性测试未观察到 Wake -> GetUp 边界");
         Assert(bodyYDelta < 0.75,
             $"Wake -> GetUp 身体高度不能出现可见跳帧；delta={bodyYDelta:F3}, wakeY={wakeBodyY:F3}, getUpY={getUpBodyY:F3}");
         Assert(scaleYDelta < 0.012,
