@@ -122,6 +122,16 @@ def test_python_selector_skips_incompatible_generic_python(
     assert completed.stdout.strip() == str(versioned)
 
 
+def test_installer_requires_private_venv_python_312_or_313() -> None:
+    installer = (PACKAGE_DIR / "INSTALL_CRAWL4AI_RESEARCH_ADAPTER.command").read_text(
+        encoding="utf-8"
+    )
+
+    # Gateway bootstrap 固定跳转到该 venv，因此它自身必须满足同一个 3.12/3.13 门禁。
+    assert 'if ! is_compatible_python "$venv_dir/bin/python"; then' in installer
+    assert "adapter 私有 venv Python 版本不兼容" in installer
+
+
 def test_missing_python_diagnostic_has_bash32_safe_variable_boundaries() -> None:
     installer = (PACKAGE_DIR / "INSTALL_CRAWL4AI_RESEARCH_ADAPTER.command").read_text(
         encoding="utf-8"
