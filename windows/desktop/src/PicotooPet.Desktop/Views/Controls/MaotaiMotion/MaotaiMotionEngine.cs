@@ -507,7 +507,7 @@ internal sealed class MaotaiMotionEngine
 
             case MaotaiMotionState.Wake:
                 bodyWorldY += Lerp(15.0, 5.4, blend);
-                bodyScaleX += 0.060 * (1.0 - blend);
+                bodyScaleX += 0.090 * (1.0 - blend);
                 bodyScaleY -= 0.150 * (1.0 - blend);
                 headOffsetY += 3.0 * (1.0 - blend);
                 break;
