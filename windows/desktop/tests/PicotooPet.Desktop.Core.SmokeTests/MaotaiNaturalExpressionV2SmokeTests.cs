@@ -97,7 +97,7 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
         Assert(sawSleep, "自主睡眠表情测试未在 360 帧内进入 Sleep");
     }
 
-    /// <summary>从睡眠被用户唤醒时先半睁眼，再在起身阶段恢复正常睁眼。</summary>
+    /// <summary>从睡眠被用户唤醒时先半睁眼，再在起身阶段恢复正常睁眼；互动嘴型只能在起身完成后出现。</summary>
     private static void VerifyWakeExpression()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
@@ -126,16 +126,24 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
                 ?? throw new InvalidOperationException("唤醒表情测试没有输出 Pose");
             var motion = ReadString(pose, "MotionState");
             var eye    = ReadString(pose, "EyeState");
+            var mouth  = ReadString(pose, "MouthState");
 
             if (motion == "Wake")
             {
                 sawWake = true;
                 Assert(eye == "Half",
                     $"Sleep -> Wake 必须先半睁眼，不能瞬间完全睁开；当前 EyeState={eye}");
+                Assert(mouth != "Tongue",
+                    $"Sleep -> Wake 仍在醒来阶段，互动 Tongue 不能提前出现；当前 MouthState={mouth}");
             }
-            else if (motion == "GetUp" && eye == "Open")
+            else if (motion == "GetUp")
             {
-                sawGetUpOpen = true;
+                Assert(mouth != "Tongue",
+                    $"Wake -> GetUp 仍在起身阶段，互动 Tongue 不能提前出现；当前 MouthState={mouth}");
+                if (eye == "Open")
+                {
+                    sawGetUpOpen = true;
+                }
             }
 
             if (motion == "UserReaction")
