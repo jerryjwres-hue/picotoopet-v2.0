@@ -77,6 +77,17 @@ def test_goal_center_delivery_branch_is_covered_by_installable_ui_preview() -> N
     assert "-ValidationScope UiPreview" in workflow
 
 
+def test_release_builder_uses_published_version_surface_self_test_contract() -> None:
+    builder = _read(BUILDER)
+
+    # 发布 EXE 已在 AppSelfTest 内把 Shell 文案与 ProductVersionInfo 做同源比较。
+    # 外层打包器继续严格比较产品版本和窗口标题，但不再复制一份可能过期的副标题常量。
+    assert '[string]$selfTest.checks.product_version_surfaces -ne "pass"' in builder
+    assert '[string]$selfTest.product_version -ne $ProductVersion' in builder
+    assert '[string]$selfTest.window_title -ne "Picotoo Pet AI $ProductVersion"' in builder
+    assert '[string]$selfTest.control_center_subtitle -ne "Control Center · v$ProductVersion"' not in builder
+
+
 def test_ui_preview_publishes_auditable_run_provenance_to_source_commit() -> None:
     workflow = _read(PREVIEW)
 
