@@ -78,6 +78,7 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 - generation ids `89bf9df4-8313-41cc-bfb4-615e7a5b8e60`, `b926d3f5-3039-40ea-88eb-bc23b9f46616`, `ca81c0bd-bcab-45fd-b254-0b8632d0e6e6`, `c6e98715-95a5-4346-959d-c007c2b53159`: rejected because the generator drifted to atlas/concept-board/full-character output instead of a valid independent part.
 - long-Base64 orphan blobs are never attached when GitHub returned blob SHA does not exactly match the locally computed Git blob SHA. Chest orphan blob `6747ed2e80a12a2b86843e9d0fb09b33544589a0` is rejected.
 - `head_candidate_v1.png`: rejected before GitHub mutation — torso-only texture was deformed into a head-like silhouette, but the result still read visually as a distorted torso and retained a socket-like artifact. Do not promote or reuse it as formal `head.png`.
+- image generation id `17741133-9c6a-4434-8413-59dde9964f8f`: rejected — generator drifted into a full promotional concept sheet / complete-character collage instead of a single head-only asset. Do not reuse it for runtime art.
 
 ## Exact next action
 
