@@ -20,6 +20,7 @@ from .migration_016 import MIGRATION_016
 from .migration_017 import MIGRATION_017
 from .migration_018 import MIGRATION_018
 from .migration_019 import MIGRATION_019
+from .migration_020 import MIGRATION_020
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -297,7 +298,18 @@ class Database:
                     (19, datetime.now(UTC).isoformat()),
                 )
 
-            # 2.3.27.1 的“已删除/恢复”仍是操作员列表元数据；自治目标把累计 Core Schema 推进到 19。
+            migration_020_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 20"
+            ).fetchone()
+            if migration_020_exists is None:
+                # Connected-program evidence is copied into Core-owned canonical facts; legacy DBs stay read-only.
+                connection.executescript(MIGRATION_020)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (20, datetime.now(UTC).isoformat()),
+                )
+
+            # 2.3.27.1 删除/恢复仍是操作员列表元数据；连接证据把累计 Core Schema 推进到 20。
             connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
