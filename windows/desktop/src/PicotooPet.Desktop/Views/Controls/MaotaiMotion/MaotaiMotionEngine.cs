@@ -513,7 +513,7 @@ internal sealed class MaotaiMotionEngine
                 break;
 
             case MaotaiMotionState.GetUp:
-                bodyWorldY += 7.0 * (1.0 - blend);
+                bodyWorldY += 5.4 * (1.0 - blend);
                 bodyScaleY -= 0.055 * (1.0 - blend);
                 break;
 
