@@ -17,6 +17,7 @@ from picotoopet_core.research.execution import ResearchGatewayExecutor
 from picotoopet_core.results.repository import ResultRepository
 from picotoopet_core.worker.handlers import WorkerHandler
 
+from .connected_evidence import ConnectedEvidenceRepository
 from .discovery import ContentDiscoveryCoordinator
 from .human_pipeline import GoalHandoffCoordinator, GoalSynthesisCoordinator
 from .local_intelligence import LocalIntelligenceCoordinator
@@ -95,6 +96,9 @@ class AutonomousBackgroundCoordinator:
             content_discovery_handler = ContentDiscoveryCoordinator(
                 search=search_executor,
                 local=handler_owner.adapter,
+                # Read the exact same Mac Core SQLite connection already owned by the
+                # autonomous Manager. The model receives only bounded evidence records.
+                connected_evidence=self._connected_evidence_from_manager_database(),
             ).handler
             if research_probe is None:
                 research_probe = search_executor.search_ready
@@ -233,7 +237,7 @@ class AutonomousBackgroundCoordinator:
                 healthy=healthy,
                 metadata={
                     "runtime": "mac-worker",
-                    "pipeline": "research-gateway-then-local-scout",
+                    "pipeline": "canonical-evidence-then-research-gateway-then-local-scout",
                     "model": self.model_id,
                     "read_only": True,
                 },
@@ -338,6 +342,24 @@ class AutonomousBackgroundCoordinator:
         except (OSError, TypeError, ValueError):
             return None, None
         return synthesis.handler, handoff.handler
+
+    def _connected_evidence_from_manager_database(self) -> ConnectedEvidenceRepository | None:
+        """Return a read-only repository facade over the exact canonical Manager database."""
+
+        database = getattr(self.manager, "database", None)
+        database_path = getattr(database, "path", None)
+        if not isinstance(database_path, Path):
+            return None
+        resolved_database = database_path.expanduser().resolve()
+        if resolved_database.name != "core.db" or resolved_database.parent.name != "database":
+            return None
+        paths = RuntimePaths.from_root(resolved_database.parent.parent)
+        if paths.database_file != resolved_database:
+            return None
+        try:
+            return ConnectedEvidenceRepository(database)
+        except (TypeError, ValueError):
+            return None
 
     def _storage_handler_from_manager_database(self) -> WorkerHandler | None:
         """Derive a managed runtime only from `<runtime>/database/core.db`."""
