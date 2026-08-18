@@ -6,6 +6,9 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from picotoopet_core.automation.service import WorkflowService
+
+from .human_pipeline import HumanGoalWorkflowPlanner
 from .models import GoalCreate, GoalOrigin, GoalRecord, PriorityClass
 from .repository import AutonomousGoalRepository
 
@@ -84,10 +87,17 @@ _TEMPLATES = (
 
 
 class HumanGoalService:
-    """Translate product-facing goals into durable, replay-safe Mac Core Goal facts."""
+    """Translate product-facing Goals into durable Mac Core Goal + Workflow facts."""
 
-    def __init__(self, repository: AutonomousGoalRepository) -> None:
+    def __init__(
+        self,
+        repository: AutonomousGoalRepository,
+        workflows: WorkflowService | None = None,
+        planner: HumanGoalWorkflowPlanner | None = None,
+    ) -> None:
         self.repository = repository
+        self.workflows = workflows
+        self.planner = planner or HumanGoalWorkflowPlanner()
 
     @staticmethod
     def templates() -> list[GoalTemplate]:
@@ -97,7 +107,7 @@ class HumanGoalService:
         key = idempotency_key.strip()
         if not key:
             raise ValueError("idempotency_key must not be empty")
-        return self.repository.create(
+        goal = self.repository.create(
             GoalCreate(
                 origin=GoalOrigin.HUMAN,
                 intent_type=request.goal_type.value,
@@ -112,6 +122,15 @@ class HumanGoalService:
                 idempotency_key=f"human:{key}",
             )
         )
+        if self.workflows is None:
+            return goal
+        if goal.workflow_id is None:
+            workflow = self.workflows.create_workflow(self.planner.plan(goal))
+            goal = self.repository.bind_workflow(goal.goal_id, workflow.workflow_id)
+        # Reconcile is safe here: it only materializes a task when a real capability is
+        # registered. Otherwise the first step remains Ready and waits truthfully.
+        self.workflows.reconcile(goal.workflow_id)
+        return self.repository.get(goal.goal_id)
 
     def list(self, *, limit: int = 200) -> list[GoalRecord]:
         return [
