@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结待机生命感：眨眼与视线必须来自 Motion Engine，不能靠整图状态帧。</summary>
+/// <summary>冻结待机生命感：眨眼、视线与睡眠微动必须来自 Motion Engine，不能靠整图状态帧。</summary>
 internal static class MaotaiLifeMicroMotionV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
@@ -14,6 +14,7 @@ internal static class MaotaiLifeMicroMotionV2SmokeTests
         VerifyOfflineEyesStayClosed();
         VerifyIdleGazeWanders();
         VerifyPointerOverridesAutonomousGaze();
+        VerifySleepTailSettles();
     }
 
     private static void VerifyIdleBlinking()
@@ -116,17 +117,76 @@ internal static class MaotaiLifeMicroMotionV2SmokeTests
             "鼠标进入后必须覆盖自主视线，瞳孔应明确跟向用户指针");
     }
 
+    /// <summary>睡眠保留轻微生命感，但尾巴不能继续沿用清醒 Resting 的高幅度摆动。</summary>
+    private static void VerifySleepTailSettles()
+    {
+        var engineType  = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update      = RequireMethod(engineType, "Update");
+        var idleEngine  = Activator.CreateInstance(engineType, 307, 72.0)
+            ?? throw new InvalidOperationException("无法创建 Idle 尾巴基准 Motion Engine");
+        var sleepEngine = Activator.CreateInstance(engineType, 307, 72.0)
+            ?? throw new InvalidOperationException("无法创建 Sleep 尾巴 Motion Engine");
+
+        var idleEnergy  = 0.0;
+        var sleepEnergy = 0.0;
+        var samples     = 0;
+        var sawSleep    = false;
+
+        for (var frame = 0; frame < 720; frame++)
+        {
+            var idlePose = update.Invoke(idleEngine, [1.0 / 60.0, CreateInput("Resting")])
+                ?? throw new InvalidOperationException("Idle 尾巴测试没有输出 Pose");
+            var sleepPose = update.Invoke(
+                sleepEngine,
+                [1.0 / 60.0, CreateInput("Resting", autonomousState: "Sleep")])
+                ?? throw new InvalidOperationException("Sleep 尾巴测试没有输出 Pose");
+
+            if (ReadString(sleepPose, "MotionState") != "Sleep")
+            {
+                continue;
+            }
+
+            sawSleep = true;
+            if (frame < 300)
+            {
+                // 先让 Sleep 路由完成并给尾巴 spring 足够时间消散清醒状态的残余动量。
+                continue;
+            }
+
+            var idleTail = RequireProperty(idlePose.GetType(), "TailBase").GetValue(idlePose)
+                ?? throw new InvalidOperationException("Idle TailBase 为空");
+            var sleepTail = RequireProperty(sleepPose.GetType(), "TailBase").GetValue(sleepPose)
+                ?? throw new InvalidOperationException("Sleep TailBase 为空");
+            var idleRotation  = ReadDouble(idleTail, "RotationDeg");
+            var sleepRotation = ReadDouble(sleepTail, "RotationDeg");
+            idleEnergy  += idleRotation * idleRotation;
+            sleepEnergy += sleepRotation * sleepRotation;
+            samples++;
+        }
+
+        Assert(sawSleep, "睡眠尾巴测试未进入 Sleep");
+        Assert(samples >= 240, "睡眠尾巴测试缺少足够的稳定态采样窗口");
+
+        var idleRms  = Math.Sqrt(idleEnergy / samples);
+        var sleepRms = Math.Sqrt(sleepEnergy / samples);
+        Assert(sleepRms > 0.05,
+            "睡眠尾巴不能完全冻结；应保留非常轻微的生命感微动");
+        Assert(sleepRms < idleRms * 0.45,
+            $"Sleep 尾巴 RMS 必须显著低于清醒 Idle；idle={idleRms:F3}, sleep={sleepRms:F3}");
+    }
+
     private static object CreateInput(
         string baseState,
         double pointerX = 0.0,
         double pointerY = 0.0,
-        bool pointerInside = false)
+        bool pointerInside = false,
+        string? autonomousState = null)
     {
         var baseType        = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
         var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
         var inputType       = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionInput");
 
-        return Activator.CreateInstance(
+        var input = Activator.CreateInstance(
             inputType,
             Enum.Parse(baseType, baseState),
             pointerX,
@@ -140,6 +200,16 @@ internal static class MaotaiLifeMicroMotionV2SmokeTests
             false,
             108.0)
             ?? throw new InvalidOperationException($"无法创建 {baseState} MotionInput");
+
+        if (autonomousState is not null)
+        {
+            var motionStateType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState");
+            RequireProperty(inputType, "AutonomousState").SetValue(
+                input,
+                Enum.Parse(motionStateType, autonomousState));
+        }
+
+        return input;
     }
 
     private static Type RequireType(string fullName) =>
