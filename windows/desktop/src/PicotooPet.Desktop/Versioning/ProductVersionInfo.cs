@@ -26,8 +26,8 @@ public static class ProductVersionInfo
     /// <summary>Windows 主窗口标题。</summary>
     public static string WindowTitle => $"{ProductName} {Current}";
 
-    /// <summary>Control Center 左上角副标题。</summary>
-    public static string ControlCenterSubtitle => $"Control Center · v{Current}";
+    /// <summary>Control Center 左上角小字：能力层标识 + 现有控制中心版本。</summary>
+    public static string ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center · v{Current}";
 
     /// <summary>规范化并验证四段式数字版本。</summary>
     public static string Parse(string raw)
