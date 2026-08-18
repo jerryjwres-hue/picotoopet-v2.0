@@ -1,10 +1,10 @@
-candidate: torso_patch_target_v3.png
-status: READY_FOR_FORMAL_PROMOTION_REVIEW
+candidate: torso_candidate_v2.png
+status: PROMOTED_TO_FORMAL_TORSO_NEUTRAL
 pixel_size: 184x156
 logical_contract: 92x78 @2x
 alpha_border: all four outer borders alpha=0
 visible_bbox_alpha_gt_0: x=33..156, y=10..144
 source: independent torso-only generation; NOT cropped from full character
 edit: hollow neck/limb sockets replaced with continuous fluffy overlap roots using only texture sampled from the same torso-only source
-sha256: b345e9868cd2591accc63090ed013e52941d40a93b1de58d0d31145f09252b73
-visual_note: four connection roots intentionally read as hidden fur overlap stubs; upper/lower limb layers cover them in assembled rig.
+png_sha256: 5c76347d2d1a43f19d4d21b4d1b414a334b6558f5a8899e6a40c82ad71fbbbd5
+visual_note: connection roots intentionally act as hidden fur overlap; limb/head layers cover them in assembled rig.
