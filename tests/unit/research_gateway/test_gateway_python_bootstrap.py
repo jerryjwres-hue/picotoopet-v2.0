@@ -7,7 +7,6 @@ from pathlib import Path
 
 from research_gateway import gateway
 
-
 ROOT = Path(__file__).resolve().parents[3]
 GATEWAY_SOURCE = ROOT / "research_gateway" / "gateway.py"
 
