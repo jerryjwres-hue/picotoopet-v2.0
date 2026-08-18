@@ -1,0 +1,13 @@
+candidate: torso_stretch_candidate.png
+status: PROMOTED_TO_FORMAL_TORSO_STRETCH_PENDING_CI
+pixel_size: 180x172
+logical_contract: 90x86 @2x
+pivot_contract: 45,45
+joint_overlap_logical: 20
+alpha_border: all four outer borders alpha=0
+visible_bbox_alpha_gt_0: x=35..149, y=5..164
+source: affine deformation of the already-valid independent torso-only neutral asset; NOT cropped from a full character
+pose_edit: stretch variant narrows and lengthens the torso around the manifest pivot while preserving Maotai coat pattern and hidden fur overlap roots
+transport_edit: RGB palette was reduced to 7 representative colors and alpha thresholded only to keep the PNG under the GitHub connector safe binary-transfer size; image remains RGBA and geometry/pivot are unchanged
+png_sha256_local: 9d3cc6a0c5a52976f9b1308c2788684b4b054e612d47409536cf57e15aff1d7d
+git_blob_sha_local_and_remote: a796f6ca7d81c6f187befc0b67458a408ea4f442
