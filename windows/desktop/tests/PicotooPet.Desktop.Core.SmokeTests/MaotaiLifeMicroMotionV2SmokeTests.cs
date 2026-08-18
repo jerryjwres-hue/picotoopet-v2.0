@@ -14,6 +14,7 @@ internal static class MaotaiLifeMicroMotionV2SmokeTests
         VerifyOfflineEyesStayClosed();
         VerifyIdleGazeWanders();
         VerifyPointerOverridesAutonomousGaze();
+        VerifySleepIgnoresPointerHover();
         VerifySleepTailSettles();
     }
 
@@ -115,6 +116,68 @@ internal static class MaotaiLifeMicroMotionV2SmokeTests
             ?? throw new InvalidOperationException("LeftPupil 为空");
         Assert(ReadDouble(pupil, "X") > -4.5 && ReadDouble(pupil, "Y") < -2.6,
             "鼠标进入后必须覆盖自主视线，瞳孔应明确跟向用户指针");
+    }
+
+    /// <summary>鼠标只悬停不能惊动睡眠姿态；真正点击/摸头仍由交互链负责唤醒。</summary>
+    private static void VerifySleepIgnoresPointerHover()
+    {
+        var engineType    = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update        = RequireMethod(engineType, "Update");
+        var baselineEngine = Activator.CreateInstance(engineType, 401, 72.0)
+            ?? throw new InvalidOperationException("无法创建 Sleep 基准 Motion Engine");
+        var hoverEngine = Activator.CreateInstance(engineType, 401, 72.0)
+            ?? throw new InvalidOperationException("无法创建 Sleep hover Motion Engine");
+
+        for (var frame = 0; frame < 360; frame++)
+        {
+            _ = update.Invoke(
+                baselineEngine,
+                [1.0 / 60.0, CreateInput("Resting", autonomousState: "Sleep")]);
+            _ = update.Invoke(
+                hoverEngine,
+                [1.0 / 60.0, CreateInput("Resting", autonomousState: "Sleep")]);
+        }
+
+        object? baselinePose = null;
+        object? hoverPose = null;
+        for (var frame = 0; frame < 120; frame++)
+        {
+            baselinePose = update.Invoke(
+                baselineEngine,
+                [1.0 / 60.0, CreateInput("Resting", autonomousState: "Sleep")]);
+            hoverPose = update.Invoke(
+                hoverEngine,
+                [1.0 / 60.0, CreateInput(
+                    "Resting",
+                    pointerX: 1.0,
+                    pointerY: -1.0,
+                    pointerInside: true,
+                    autonomousState: "Sleep")]);
+        }
+
+        var baseline = baselinePose ?? throw new InvalidOperationException("Sleep 基准没有输出 Pose");
+        var hovered  = hoverPose ?? throw new InvalidOperationException("Sleep hover 没有输出 Pose");
+        Assert(ReadString(baseline, "MotionState") == "Sleep" && ReadString(hovered, "MotionState") == "Sleep",
+            "Sleep hover 测试必须在两条引擎路径都稳定进入 Sleep 后比较");
+
+        var baselineHead = RequireProperty(baseline.GetType(), "Head").GetValue(baseline)
+            ?? throw new InvalidOperationException("Sleep 基准 Head 为空");
+        var hoveredHead = RequireProperty(hovered.GetType(), "Head").GetValue(hovered)
+            ?? throw new InvalidOperationException("Sleep hover Head 为空");
+        var baselineEar = RequireProperty(baseline.GetType(), "LeftEar").GetValue(baseline)
+            ?? throw new InvalidOperationException("Sleep 基准 LeftEar 为空");
+        var hoveredEar = RequireProperty(hovered.GetType(), "LeftEar").GetValue(hovered)
+            ?? throw new InvalidOperationException("Sleep hover LeftEar 为空");
+
+        var headXDelta = Math.Abs(ReadDouble(hoveredHead, "X") - ReadDouble(baselineHead, "X"));
+        var headYDelta = Math.Abs(ReadDouble(hoveredHead, "Y") - ReadDouble(baselineHead, "Y"));
+        var headRotationDelta = Math.Abs(
+            ReadDouble(hoveredHead, "RotationDeg") - ReadDouble(baselineHead, "RotationDeg"));
+        var earRotationDelta = Math.Abs(
+            ReadDouble(hoveredEar, "RotationDeg") - ReadDouble(baselineEar, "RotationDeg"));
+
+        Assert(headXDelta < 0.20 && headYDelta < 0.20 && headRotationDelta < 0.60 && earRotationDelta < 0.60,
+            $"Sleep 时普通 hover 不应驱动头耳追踪；headX={headXDelta:F3}, headY={headYDelta:F3}, headRot={headRotationDelta:F3}, earRot={earRotationDelta:F3}");
     }
 
     /// <summary>睡眠保留轻微生命感，但尾巴不能继续沿用清醒 Resting 的高幅度摆动。</summary>
