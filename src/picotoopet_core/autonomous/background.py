@@ -237,7 +237,8 @@ class AutonomousBackgroundCoordinator:
                 healthy=healthy,
                 metadata={
                     "runtime": "mac-worker",
-                    "pipeline": "canonical-evidence-then-research-gateway-then-local-scout",
+                    "pipeline": "research-gateway-then-local-scout",
+                    "canonical_connected_evidence": True,
                     "model": self.model_id,
                     "read_only": True,
                 },
