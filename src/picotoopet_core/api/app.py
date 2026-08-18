@@ -18,6 +18,7 @@ from .errors import install_error_handlers
 from .routes import (
     approvals,
     automation,
+    autonomous_goals,
     broker_sessions,
     business_automation,
     business_pipeline,
@@ -127,6 +128,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(health.router, prefix=prefix, tags=["health"])
     app.include_router(projects.router, prefix=prefix, tags=["projects"])
     app.include_router(automation.router, prefix=prefix, tags=["automation"])
+    app.include_router(autonomous_goals.router, prefix=prefix, tags=["autonomous-goals"])
     app.include_router(business_automation.router, prefix=prefix, tags=["business-automation"])
     app.include_router(business_pipeline.router, prefix=prefix, tags=["business-pipeline"])
     app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
