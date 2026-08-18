@@ -67,6 +67,18 @@
         </Setter.Value>
       </Setter>
     </Style>
+
+    <Style x:Key="GoalHandoffButtonStyle" TargetType="Button">
+      <Setter Property="Visibility" Value="Collapsed" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="FontSize" Value="8" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding HandoffReady}" Value="True">
+          <Setter Property="Visibility" Value="Visible" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
   </UserControl.Resources>
 
   <Border CornerRadius="18" ClipToBounds="True">
@@ -203,38 +215,12 @@
                        Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,0,0,6" />
             <StackPanel Orientation="Horizontal">
               <Button Content="复制 GPT 提示词"
-                      Padding="8,5"
                       Margin="0,0,5,0"
-                      FontSize="8"
-                      Cursor="Hand"
-                      Click="CopyPrompt_Click">
-                <Button.Style>
-                  <Style TargetType="Button">
-                    <Setter Property="Visibility" Value="Collapsed" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding HandoffReady}" Value="True">
-                        <Setter Property="Visibility" Value="Visible" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </Button.Style>
-              </Button>
+                      Style="{StaticResource GoalHandoffButtonStyle}"
+                      Click="CopyPrompt_Click" />
               <Button Content="保存交接 ZIP"
-                      Padding="8,5"
-                      FontSize="8"
-                      Cursor="Hand"
-                      Click="SaveHandoff_Click">
-                <Button.Style>
-                  <Style TargetType="Button">
-                    <Setter Property="Visibility" Value="Collapsed" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding HandoffReady}" Value="True">
-                        <Setter Property="Visibility" Value="Visible" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </Button.Style>
-              </Button>
+                      Style="{StaticResource GoalHandoffButtonStyle}"
+                      Click="SaveHandoff_Click" />
             </StackPanel>
           </StackPanel>
         </Grid>
