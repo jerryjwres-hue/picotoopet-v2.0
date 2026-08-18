@@ -42,6 +42,20 @@ macOS 自带 /usr/bin/python3 可能仍是 Python 3.9，因此安装器不会直
 
 首次安装在 adapter 根目录创建私有 Python venv，并固定安装 Crawl4AI 0.9.2。
 Playwright Chromium 也安装到 adapter 私有 PLAYWRIGHT_BROWSERS_PATH，不使用系统 Chrome profile。
+adapter 私有 venv 的 Python 自身也必须是 3.12 或 3.13；不兼容的旧 venv 会被拒绝，不会被自动覆盖。
+
+Research Gateway 旧系统 Python 兼容
+----------------------------------
+现有 Research Gateway 2.3.27.1 的 bin wrapper 可能仍然执行系统 python3；在部分 macOS 上它会解析到 /usr/bin/python3 3.9。
+本包不会改写这个既有 wrapper，也不会修改全局 PATH。
+
+crawl4ai.4 的 adapter 版 gateway.py 会在导入 dataclass slots、StrEnum 等 Python 3.12 runtime 代码之前检查当前解释器：
+- 当前已经是 Python 3.12/3.13：直接继续，不 re-exec。
+- 当前过旧：只允许跳转到固定 adapter 私有 venv/bin/python。
+- 私有解释器缺失或不兼容：受控失败，不搜索任意命令，不修改系统 Python。
+
+因此 Mac Worker 仍调用原有固定 Research Gateway wrapper；wrapper、Worker 架构和公共 research.search 合同都不改变。
+ROLLBACK 恢复 pre-Crawl4AI gateway.py 后，如果原有 Gateway 本来就因系统 Python 过旧而不健康，只记录提示，不会把“恢复原状”误判成 rollback 失败。
 
 如果 adapter 私有 venv 已存在且 Crawl4AI 属于批准的 0.9.x，安装器只绑定并保留它，不自动 upgrade/downgrade。
 如果检测到不兼容或未知残缺环境，安装器会受控失败，不覆盖它。
@@ -102,7 +116,7 @@ This project uses Crawl4AI (https://github.com/unclecode/crawl4ai) for web data 
 版本
 ----
 PicotooPet Research Gateway baseline: 2.3.27.1
-Crawl4AI adapter: 2.3.27.1-crawl4ai.3
+Crawl4AI adapter: 2.3.27.1-crawl4ai.4
 Fresh isolated Crawl4AI pin: 0.9.2
 Compatible Python: 3.12-3.13
 Target: macOS arm64
