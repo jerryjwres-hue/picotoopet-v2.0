@@ -510,6 +510,7 @@ internal sealed class MaotaiMotionEngine
                 bodyScaleX += 0.090 * (1.0 - blend);
                 bodyScaleY -= 0.150 * (1.0 - blend);
                 headOffsetY += 3.0 * (1.0 - blend);
+                earDrop     += 3.0 * (1.0 - blend);
                 break;
 
             case MaotaiMotionState.GetUp:
