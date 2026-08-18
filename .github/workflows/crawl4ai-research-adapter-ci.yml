@@ -148,12 +148,31 @@ jobs:
           printf '#!/bin/bash\nexit 0\n' > "$fixture_home/.local/bin/scrapling-mcp-local"
           chmod 755 "$fixture_home/.local/bin/scrapling-mcp-local"
 
+          # 真实复现用户机器：Research Gateway 2.3.27.1 wrapper 固定调用系统 /usr/bin/python3，
+          # 而该 macOS runner 的系统 Python 必须低于项目要求的 3.12；setup-python 仅供安装器使用。
+          /usr/bin/python3 - <<'PY'
+          import sys
+          if sys.version_info[:2] >= (3, 12):
+              raise SystemExit(f"legacy wrapper fixture drifted: {sys.version}")
+          print(f"LEGACY_GATEWAY_PYTHON={sys.version_info.major}.{sys.version_info.minor}")
+          PY
+
           cat > "$gateway_root/bin/picotoopet-research-gateway" <<EOF
           #!/bin/bash
           set -euo pipefail
-          exec "$(command -v python3)" "$gateway_runtime/gateway.py" "\$@"
+          exec "/usr/bin/python3" "$gateway_runtime/gateway.py" "\$@"
           EOF
           chmod 755 "$gateway_root/bin/picotoopet-research-gateway"
+          cp "$gateway_root/bin/picotoopet-research-gateway" "$fixture_root/baseline-gateway-wrapper"
+
+          # pre-Crawl4AI 基线应复现真实缺陷：dataclass slots / 新 runtime 不能在旧系统 Python 下启动。
+          set +e
+          HOME="$fixture_home" "$gateway_root/bin/picotoopet-research-gateway" --health \
+            > "$fixture_root/pre-install-gateway-health.out" \
+            2> "$fixture_root/pre-install-gateway-health.err"
+          pre_gateway_code=$?
+          set -e
+          test "$pre_gateway_code" -ne 0
 
           cat > "$fake_bin/mcporter" <<'EOF'
           #!/bin/bash
@@ -188,23 +207,37 @@ jobs:
         shell: bash
         env:
           FIXTURE_HOME: ${{ steps.fixture.outputs.fixture_home }}
+          FIXTURE_ROOT: ${{ steps.fixture.outputs.fixture_root }}
           GATEWAY_ROOT: ${{ steps.fixture.outputs.gateway_root }}
           WORKER_ROOT: ${{ steps.fixture.outputs.worker_root }}
           ADAPTER_ROOT: ${{ steps.fixture.outputs.adapter_root }}
           PACKAGE_ROOT: ${{ steps.fixture.outputs.package_root }}
         run: |
-          # 首装真实安装 Crawl4AI 0.9.2 + 私有 Playwright Chromium。
+          compatible_python="$(command -v python3)"
+          "$compatible_python" - <<'PY'
+          import sys
+          assert (3, 12) <= sys.version_info[:2] < (3, 14)
+          PY
+
+          # 首装真实安装 Crawl4AI 0.9.2 + 私有 Playwright Chromium；旧 Gateway wrapper 保持不变。
           HOME="$FIXTURE_HOME" \
+          PICOTOOPET_PYTHON_BIN="$compatible_python" \
           PICOTOOPET_CRAWL4AI_ROOT="$ADAPTER_ROOT" \
           PICOTOOPET_RESEARCH_INSTALL_ROOT="$GATEWAY_ROOT" \
           PICOTOO_RUNTIME_ROOT_OVERRIDE="$WORKER_ROOT" \
             "$PACKAGE_ROOT/INSTALL_CRAWL4AI_RESEARCH_ADAPTER.command"
+
+          cmp "$GATEWAY_ROOT/bin/picotoopet-research-gateway" "$FIXTURE_ROOT/baseline-gateway-wrapper"
+          grep -q 'exec "/usr/bin/python3"' "$GATEWAY_ROOT/bin/picotoopet-research-gateway"
+          "$GATEWAY_ROOT/bin/picotoopet-research-gateway" --health \
+            > "$FIXTURE_ROOT/post-install-gateway-health.json"
 
           first_version="$($ADAPTER_ROOT/bin/picotoopet-crawl4ai-provider --version)"
           test "$first_version" = "0.9.2"
 
           # 重复安装只绑定兼容环境，不升级 Crawl4AI，并保留首次 venv ownership。
           HOME="$FIXTURE_HOME" \
+          PICOTOOPET_PYTHON_BIN="$compatible_python" \
           PICOTOOPET_CRAWL4AI_ROOT="$ADAPTER_ROOT" \
           PICOTOOPET_RESEARCH_INSTALL_ROOT="$GATEWAY_ROOT" \
           PICOTOO_RUNTIME_ROOT_OVERRIDE="$WORKER_ROOT" \
@@ -218,8 +251,10 @@ jobs:
           from pathlib import Path
 
           payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert payload["adapter_version"] == "2.3.27.1-crawl4ai.4"
           assert payload["created_venv"] is True
           assert payload["crawl4ai_version"] == "0.9.2"
+          assert payload["gateway_private_python_bootstrap"] is True
           assert payload["read_only"] is True
           assert payload["chrome_profile_access"] is False
           PY
@@ -248,7 +283,7 @@ jobs:
           GATEWAY_ROOT: ${{ steps.fixture.outputs.gateway_root }}
           FAKE_BIN: ${{ steps.fixture.outputs.fake_bin }}
         run: |
-          # 每次 executor 调用都会启动独立 Gateway subprocess；第二次证明 Gateway 重启后合同仍成立。
+          # Worker 使用固定 wrapper；wrapper 仍启动旧系统 Python，adapter Gateway 必须自行切到私有 Python。
           HOME="$FIXTURE_HOME" PATH="$FAKE_BIN:$PATH" PYTHONPATH=src python - "$GATEWAY_ROOT" <<'PY'
           import json
           import sys
@@ -268,7 +303,7 @@ jobs:
               assert payload["documents"][0]["provider"] == "crawl4ai"
               assert payload["documents"][0]["url"].startswith("https://example.com")
               assert payload["documents"][0]["markdown"].strip()
-          print("WORKER_GATEWAY_CRAWL4AI_RESTART_CONTRACT=PASS")
+          print("WORKER_GATEWAY_LEGACY_PYTHON_BOOTSTRAP=PASS")
           PY
 
       - name: Capture live evidence and rollback
@@ -287,6 +322,10 @@ jobs:
           cp -R "$ADAPTER_ROOT/logs" "$evidence_root/logs"
           cp "$ADAPTER_ROOT/state/install-state.json" \
             "$evidence_root/install-state-before-rollback.json"
+          cp "$FIXTURE_ROOT/pre-install-gateway-health.err" \
+            "$evidence_root/pre-install-legacy-gateway-error.txt"
+          cp "$FIXTURE_ROOT/post-install-gateway-health.json" \
+            "$evidence_root/post-install-gateway-health.json"
 
           HOME="$FIXTURE_HOME" \
           PICOTOOPET_CRAWL4AI_ROOT="$ADAPTER_ROOT" \
@@ -295,10 +334,20 @@ jobs:
             "$PACKAGE_ROOT/ROLLBACK_CRAWL4AI_RESEARCH_ADAPTER.command"
 
           cmp "$GATEWAY_ROOT/runtime/gateway.py" "$FIXTURE_ROOT/baseline-gateway.py"
+          cmp "$GATEWAY_ROOT/bin/picotoopet-research-gateway" "$FIXTURE_ROOT/baseline-gateway-wrapper"
           test -f "$WORKER_ROOT/fixture-worker-marker.txt"
           test -x "$FIXTURE_HOME/.local/bin/scrapling-mcp-local"
           test ! -e "$ADAPTER_ROOT/bin/picotoopet-crawl4ai-provider"
           test ! -e "$ADAPTER_ROOT/venv"
+
+          # 回滚后重新暴露 pre-Crawl4AI 的旧 Python 缺陷是预期恢复原状，不应让 rollback 自身失败。
+          set +e
+          HOME="$FIXTURE_HOME" "$GATEWAY_ROOT/bin/picotoopet-research-gateway" --health \
+            > /dev/null 2>&1
+          restored_gateway_code=$?
+          set -e
+          test "$restored_gateway_code" -ne 0
+
           cp "$ADAPTER_ROOT/state/install-state.json" \
             "$evidence_root/install-state-after-rollback.json"
           cp -R "$ADAPTER_ROOT/logs" "$evidence_root/logs-after-rollback"
