@@ -285,12 +285,13 @@ from pathlib import Path
 
 state = {
     "schema_version": "1.0",
-    "adapter_version": "2.3.27.1-crawl4ai.3",
+    "adapter_version": "2.3.27.1-crawl4ai.4",
     "crawl4ai_version": sys.argv[2],
     "created_venv": sys.argv[3].lower() == "true",
     "scrapling_detected": sys.argv[4] == "1",
     "mac_worker_detected": sys.argv[5] == "1",
     "docker_detected": sys.argv[6] == "1",
+    "gateway_private_python_bootstrap": True,
     "read_only": True,
     "chrome_profile_access": False,
     "captcha_bypass": False,
@@ -302,7 +303,7 @@ Path(sys.argv[1]).write_text(
 )
 PY
 
-# 最终健康检查：Gateway 可启动、provider 版本可读；不触发账号登录或写操作。
+# 最终健康检查：现有 wrapper 即使解析到旧系统 Python，也会由 adapter Gateway 早期切换到私有兼容 Python。
 "$gateway_root/bin/picotoopet-research-gateway" --health >/dev/null
 "$bin_dir/picotoopet-crawl4ai-provider" --version >/dev/null
 
