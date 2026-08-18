@@ -40,6 +40,41 @@ def test_slice_d_builder_is_arm64_offline_and_manifest_driven() -> None:
     assert "x86_64" not in builder
 
 
+def test_slice_c_autonomous_runtime_is_explicitly_verified_inside_project_wheel() -> None:
+    """交付包不能只带一个 wheel；必须验证自主情报模块和固定 Web GPT Prompt 真正在 wheel 内。"""
+
+    builder = read(BUILD / "Build-MacWorkerSliceC.sh")
+    verifier = read(BUILD / "Test-MacWorkerSliceC.sh")
+    readme = read(DEPLOY / "README_INSTALL_CN.txt")
+    for required in (
+        '"autonomous_slice_c_included": True',
+        '"content.discovery"',
+        '"browser.capture.contract"',
+        '"objective.query.planning"',
+    ):
+        assert required in builder
+
+    for required in (
+        "zipfile",
+        "picotoopet_core/autonomous/legacy_acquisition.py",
+        "picotoopet_core/autonomous/browser_broker.py",
+        "picotoopet_core/autonomous/discovery.py",
+        "picotoopet_core/autonomous/prompts/web_gpt_master_v1.txt",
+        "autonomous_slice_c_included",
+        "autonomous_capabilities",
+        "PHASE23_MAC_WORKER_AUTONOMOUS_SLICE_C=PASS",
+    ):
+        assert required in verifier
+
+    for required in (
+        "自动按当前任务目标生成研究查询",
+        "只读 Browser Broker",
+        "不需要打开旧 4.1 UI",
+        "旧 4.1 数据库不是事实源",
+    ):
+        assert required in readme
+
+
 def test_slice_d_installer_is_transactional_and_manifest_driven() -> None:
     """安装器必须先验证候选，再切换、启用 Worker，并能恢复组合。"""
 
