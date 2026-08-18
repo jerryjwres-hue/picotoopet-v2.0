@@ -102,9 +102,9 @@ def test_fresh_discovery_capability_prefers_p3_over_maintenance(tmp_path: Path) 
     database, _queue, automation, workflows, goals, manager = _stack(tmp_path)
     workflows.capabilities.register(
         CapabilityRegistration(
-            worker_id="mac-local-intelligence",
-            capability="local.text.analysis",
-            task_types=["autonomous.local_analysis.v1"],
+            worker_id="mac-content-discovery",
+            capability="content.discovery",
+            task_types=["autonomous.discovery.v1"],
             healthy=True,
             heartbeat_at=NOW,
         )
@@ -118,9 +118,9 @@ def test_fresh_discovery_capability_prefers_p3_over_maintenance(tmp_path: Path) 
     assert goal.priority_class is PriorityClass.P3
     assert workflow.priority == PriorityClass.P3.queue_priority
     assert workflow.max_concurrency == 1
-    assert workflow.steps[0].task_type == "autonomous.local_analysis.v1"
-    assert workflow.steps[0].required_capability == "local.text.analysis"
-    assert automation.list_capabilities()[0].worker_id == "mac-local-intelligence"
+    assert workflow.steps[0].task_type == "autonomous.discovery.v1"
+    assert workflow.steps[0].required_capability == "content.discovery"
+    assert automation.list_capabilities()[0].worker_id == "mac-content-discovery"
     database.close()
 
 
@@ -128,9 +128,9 @@ def test_stale_discovery_capability_falls_back_to_p4(tmp_path: Path) -> None:
     database, _queue, _automation, workflows, goals, manager = _stack(tmp_path)
     workflows.capabilities.register(
         CapabilityRegistration(
-            worker_id="stale-local-intelligence",
-            capability="local.text.analysis",
-            task_types=["autonomous.local_analysis.v1"],
+            worker_id="stale-content-discovery",
+            capability="content.discovery",
+            task_types=["autonomous.discovery.v1"],
             healthy=True,
             heartbeat_at=NOW - timedelta(minutes=3),
         )
