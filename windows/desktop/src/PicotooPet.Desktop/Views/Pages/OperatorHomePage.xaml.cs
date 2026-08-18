@@ -8,11 +8,13 @@ using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views;
+using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
+using WpfUserControl = System.Windows.Controls.UserControl;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
 /// <summary>简单模式首页；主入口为 Goal Center，任务入口仍只调用既有安全路由。</summary>
-public partial class OperatorHomePage : UserControl
+public partial class OperatorHomePage : WpfUserControl
 {
     private readonly WindowsResourceSampler _resourceSampler;
     private readonly DispatcherTimer _resourceTimer;
@@ -214,7 +216,7 @@ public partial class OperatorHomePage : UserControl
         }
     }
 
-    private void WorkComponent_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void WorkComponent_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
         if (e.Key is not (Key.Enter or Key.Space)
             || sender is not FrameworkElement element
