@@ -16,6 +16,7 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     ];
 
     private readonly ControlCenterSession? _session;
+    private readonly IReadOnlyList<GoalDepthOption> _goalDepthOptions = DepthOptions;
     private OperatorProjection _projection;
     private AssistantPetIndicator _coreIndicator;
     private AssistantPetIndicator _workerIndicator;
@@ -107,7 +108,7 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         private set => SetProperty(ref _goalTemplates, value);
     }
 
-    public IReadOnlyList<GoalDepthOption> GoalDepthOptions => DepthOptions;
+    public IReadOnlyList<GoalDepthOption> GoalDepthOptions => _goalDepthOptions;
 
     public GoalDepthOption SelectedGoalDepth
     {
