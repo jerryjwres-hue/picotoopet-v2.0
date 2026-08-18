@@ -208,6 +208,9 @@ def test_human_video_goal_runs_all_three_worker_stages_and_exposes_verified_hand
         assert "消费者关注尺寸是否适合大型犬" in archive.read("04_EVIDENCE.md").decode("utf-8")
 
     prompt = access.fixed_prompt(goal.goal_id)
-    assert "禁止杜撰" in prompt
+    # Match the versioned production prompt's real fact-discipline contract instead of
+    # requiring one arbitrary synonym such as “禁止杜撰”.
+    assert "不要伪造来源、评论" in prompt
+    assert "所有事实性结论必须能够回溯到交接包中的 evidence_id / source_id" in prompt
     assert "AI 视频" in prompt
     database.close()
