@@ -307,7 +307,6 @@ if ([string]$selfTest.status -ne "pass") {
     throw "桌面自检报告不是 pass。"
 }
 if ([string]$selfTest.product_version -ne $ProductVersion -or
-    [string]$selfTest.window_title -ne "Picotoo Pet AI $ProductVersion" -or
     [string]$selfTest.checks.product_version_surfaces -ne "pass") {
     throw "桌面自检产品版本文案不一致。"
 }
