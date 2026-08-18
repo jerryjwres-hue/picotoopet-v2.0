@@ -125,12 +125,14 @@ jobs:
         run: |
           .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
 
-      - name: Run ShellNavigationReconnectWpfSmokeTests and approval Results diagnostic WPF smoke
+      - name: Run isolated Control Center UI interaction smoke including ShellNavigationReconnectWpfSmokeTests
         shell: powershell
         run: |
           dotnet run `
             --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
-            --configuration Release
+            --configuration Release `
+            -- `
+            --ui-interaction-only
 
       - name: Build WPF solution with warnings as errors
         shell: powershell

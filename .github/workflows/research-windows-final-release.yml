@@ -58,10 +58,26 @@ jobs:
           python -m pytest -q tests/integration/api/test_research_search_api.py tests/unit/worker/test_research_gateway_execution.py tests/unit/research_gateway/test_gateway.py
           ruff check src/picotoopet_core/research src/picotoopet_core/api/routes/tasks.py src/picotoopet_core/worker/handlers.py tests/integration/api/test_research_search_api.py tests/unit/worker/test_research_gateway_execution.py
 
-      - name: Run Windows release governance contracts
+      - name: Run Windows release governance and audited interaction contracts
         shell: pwsh
         run: |
-          python -m pytest tests/release/test_windows_prebuilt_delivery.py tests/release/test_windows_analyzer_regressions.py tests/release/test_windows_goal_integrity_release_contract.py tests/release/test_windows_native_install_permission.py tests/release/test_windows_native_ci_provenance.py tests/release/test_self_hosted_native_runner_fallback.py tests/contract/test_component_impact_detection.py tests/contract/test_preserving_project_goals_skill.py tests/contract/test_project_goal_integrity.py tests/contract/test_windows_goal_integrity_stamper.py -q
+          python -m pytest `
+            tests/release/test_windows_prebuilt_delivery.py `
+            tests/release/test_windows_analyzer_regressions.py `
+            tests/release/test_windows_goal_integrity_release_contract.py `
+            tests/release/test_windows_native_install_permission.py `
+            tests/release/test_windows_native_ci_provenance.py `
+            tests/release/test_self_hosted_native_runner_fallback.py `
+            tests/contract/test_component_impact_detection.py `
+            tests/contract/test_preserving_project_goals_skill.py `
+            tests/contract/test_project_goal_integrity.py `
+            tests/contract/test_windows_goal_integrity_stamper.py `
+            tests/contract/test_operator_simple_mode_26_1.py `
+            tests/contract/test_phase23_windows_source.py `
+            tests/contract/test_windows_ui_interaction_quality.py `
+            tests/contract/test_windows_operator_safe_error_surfaces.py `
+            tests/contract/test_windows_ui_information_preservation.py `
+            -q
 
       - name: Install exact .NET SDK
         uses: actions/setup-dotnet@v6
@@ -125,7 +141,7 @@ jobs:
 
       - name: Verify install upgrade recovery and rollback lifecycle
         shell: pwsh
-        run: .\windows\desktop\scripts\Invoke-Phase2WindowsReleaseLifecycleGate.ps1
+        run: .\windows\desktop\scripts\Test-Phase2WindowsRelease.ps1
 
       - name: Upload final Windows installer
         uses: actions/upload-artifact@v7

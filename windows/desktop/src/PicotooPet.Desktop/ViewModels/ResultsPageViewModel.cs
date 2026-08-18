@@ -16,7 +16,7 @@ public sealed record ResultsFilterOption(
     ResultsFilter Value,
     string Label);
 
-/// <summary>单个可见结果的安全元数据；不包含对象路径、正文或任意 manifest。</summary>
+/// <summary>单个可见结果的安全元数据；正文通过统一任务详情按既有 Core 合同读取。</summary>
 public sealed class ResultRowViewModel
 {
     private const string DiagnosticTaskType = "system.diagnostic_snapshot";
@@ -41,8 +41,8 @@ public sealed class ResultRowViewModel
         CanPreview = task.TaskType == DiagnosticTaskType
             && task.Status is "Completed" or "Archived";
         PreviewUnavailableReason = CanPreview
-            ? "通过固定诊断合同加载安全预览。"
-            : "当前结果类型尚不支持安全预览；不会回退到任意内容浏览。";
+            ? "可额外通过固定诊断合同加载安全预览；完整结果也可在任务详情查看。"
+            : "当前结果类型尚不支持额外的“安全预览”；完整结果请通过任务详情查看，不会回退到任意内容浏览。";
     }
 
     public string TaskId { get; }
@@ -71,7 +71,7 @@ public sealed class ResultRowViewModel
     }
 }
 
-/// <summary>展示真实结果列表并只允许固定合同的安全预览。</summary>
+/// <summary>展示真实结果列表；通用结果走任务详情，诊断另提供固定合同安全预览。</summary>
 public sealed class ResultsPageViewModel : PageViewModel
 {
     private static readonly IReadOnlyList<ResultsFilterOption> DefaultFilters =
@@ -197,6 +197,12 @@ public sealed class ResultsPageViewModel : PageViewModel
         private set => SetProperty(ref _statusMessage, value);
     }
 
+    public bool CanOpenSelectedTaskDetail => SelectedResult is not null;
+
+    public string TaskDetailActionReason => SelectedResult is null
+        ? "请先选择一个结果。"
+        : "打开统一任务详情，并按该任务类型已批准的固定结果合同读取可用正文。";
+
     public bool CanLoadSelectedPreview =>
         !IsBusy && SelectedResult?.CanPreview == true;
 
@@ -295,6 +301,8 @@ public sealed class ResultsPageViewModel : PageViewModel
 
     private void RaiseActionProperties()
     {
+        RaisePropertyChanged(nameof(CanOpenSelectedTaskDetail));
+        RaisePropertyChanged(nameof(TaskDetailActionReason));
         RaisePropertyChanged(nameof(CanLoadSelectedPreview));
         RaisePropertyChanged(nameof(PreviewActionReason));
     }

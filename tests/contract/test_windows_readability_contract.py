@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "windows/desktop/src/PicotooPet.Desktop"
 APP_XAML = DESKTOP / "App.xaml"
 APP_CODE = DESKTOP / "App.xaml.cs"
+PROGRAM = DESKTOP / "Program.cs"
 PROJECT = DESKTOP / "PicotooPet.Desktop.csproj"
 MANIFEST = DESKTOP / "app.manifest"
 TASK_LIST = DESKTOP / "Views/Pages/OperatorTaskListPage.xaml"
@@ -15,9 +16,14 @@ TASK_LIST = DESKTOP / "Views/Pages/OperatorTaskListPage.xaml"
 def test_windows_uses_per_monitor_v2_dpi_awareness() -> None:
     project = PROJECT.read_text(encoding="utf-8")
     manifest = MANIFEST.read_text(encoding="utf-8")
+    program = PROGRAM.read_text(encoding="utf-8")
+    assert "<ApplicationManifest>app.manifest</ApplicationManifest>" in project
     assert "<ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>" in project
     assert "<dpiAware" not in manifest
     assert "<dpiAwareness" not in manifest
+    call = "System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);"
+    assert call in program
+    assert program.index(call) < program.index("var application = new App();")
 
 
 def test_application_defines_readable_typography_scale() -> None:

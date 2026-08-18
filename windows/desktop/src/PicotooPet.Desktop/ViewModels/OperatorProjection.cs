@@ -1,16 +1,21 @@
 using System.Globalization;
+using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>简单模式任务卡；所有字段都来自既有耐久任务事实。</summary>
+/// <summary>简单模式任务卡；所有字段都来自既有耐久任务事实或安全摘要。</summary>
 public sealed record OperatorTaskCard(
     string TaskId,
     string Title,
+    string TaskType,
+    string CategoryText,
+    string SearchText,
     string StageText,
     string StatusText,
+    DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     string UpdatedAtText,
     string? ErrorText,
@@ -107,15 +112,8 @@ public sealed record OperatorProjection(
 
     private static OperatorTaskCard ToCard(TaskRecord task)
     {
-        var title = task.TaskType switch
-        {
-            "system.diagnostic_snapshot" => "系统诊断",
-            "system.noop" => "系统任务",
-            "business.local_intelligence.v1" => "业务数据分析",
-            "creative.content_plan.v1" => "内容方案",
-            "research.search" => "网络调研",
-            _ => "任务",
-        };
+        var title = FriendlyTaskTitle(task.TaskType);
+        var category = FriendlyCategory(task.TaskType);
         var statusText = task.Status switch
         {
             "Queued" => "等待执行",
@@ -144,14 +142,17 @@ public sealed record OperatorProjection(
             "AwaitingApproval" => "等待你的审核",
             _ => "状态已更新",
         };
-        var error = string.IsNullOrWhiteSpace(task.ErrorMessage)
-            ? null
-            : task.ErrorMessage;
+        var error = FormatSafeErrorSummary(task.Status, task.ErrorCode);
+        var searchText = BuildSafeSearchText(task, title, category);
         return new OperatorTaskCard(
             task.TaskId,
             title,
+            task.TaskType,
+            category,
+            searchText,
             stageText,
             statusText,
+            task.CreatedAt,
             task.UpdatedAt,
             task.UpdatedAt.LocalDateTime.ToString(
                 "yyyy-MM-dd HH:mm",
@@ -159,6 +160,73 @@ public sealed record OperatorProjection(
             error,
             !string.IsNullOrWhiteSpace(task.ResultId),
             task.IsHidden);
+    }
+
+    /// <summary>只索引普通用户已经能看到的任务元数据；绝不展开任意文件或原始载荷。</summary>
+    private static string BuildSafeSearchText(TaskRecord task, string title, string category)
+    {
+        var parts = new List<string>
+        {
+            task.TaskId,
+            task.TaskType,
+            title,
+            category,
+        };
+        if (!string.IsNullOrWhiteSpace(task.ProjectId))
+        {
+            parts.Add(task.ProjectId);
+        }
+        if (!string.IsNullOrWhiteSpace(task.ResourceTag))
+        {
+            parts.Add(task.ResourceTag);
+        }
+        if (task.Payload.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in new[] { "query", "goal", "objective", "title", "prompt", "url", "source" })
+            {
+                if (task.Payload.TryGetProperty(name, out var value)
+                    && value.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(value.GetString()))
+                {
+                    parts.Add(value.GetString()!);
+                }
+            }
+        }
+        return string.Join(" ", parts.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static string FriendlyTaskTitle(string taskType) => taskType switch
+    {
+        "system.diagnostic_snapshot" => "系统诊断",
+        "system.noop" => "系统任务",
+        "business.local_intelligence.v1" => "业务数据分析",
+        "creative.content_plan.v1" => "内容方案",
+        "research.search" => "网络调研",
+        _ => "任务",
+    };
+
+    private static string FriendlyCategory(string taskType) => taskType switch
+    {
+        "research.search" => "网络调研",
+        "system.diagnostic_snapshot" => "系统诊断",
+        "system.noop" => "系统任务",
+        "business.local_intelligence.v1" => "业务分析",
+        "creative.content_plan.v1" => "内容创作",
+        _ => "其他",
+    };
+
+    private static string? FormatSafeErrorSummary(string status, string? errorCode)
+    {
+        if (status == "Failed")
+        {
+            return string.IsNullOrWhiteSpace(errorCode)
+                ? "任务执行失败；详细信息已记录，可打开详情查看状态或创建重试任务。"
+                : $"任务执行失败（错误码：{errorCode}）；详细信息已记录，可打开详情查看状态或创建重试任务。";
+        }
+
+        return status == "Cancelled"
+            ? "任务已安全取消。"
+            : null;
     }
 
     private static string FriendlyWorkerReason(string reason) => reason switch

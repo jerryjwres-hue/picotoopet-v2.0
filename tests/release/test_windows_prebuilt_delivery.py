@@ -42,11 +42,26 @@ def test_windows_ci_builds_slice_d_on_native_runner() -> None:
     assert "actions/setup-dotnet@v6" in uses
     assert "actions/upload-artifact@v7" in uses
     run_text = "\n".join(step.get("run", "") for step in steps)
-    assert "pytest tests/release/test_windows_prebuilt_delivery.py" in run_text
+    assert "python -m pytest" in run_text
+    assert "tests/release/test_windows_prebuilt_delivery.py" in run_text
     assert "Test-TaskCenterLegacyBindingRegression.ps1" in run_text
     assert "Build-Phase2WindowsRelease.ps1 -Version $version" in run_text
     assert "2.3.0-slice-d-cloud-contract" in run_text
-    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" in run_text
+    assert "Test-Phase2WindowsRelease.ps1" in run_text
+    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" not in run_text
+
+
+def test_lifecycle_gate_executes_source_test_without_runtime_rewriting() -> None:
+    wrapper = DESKTOP / "scripts" / "Invoke-Phase2WindowsReleaseLifecycleGate.ps1"
+    lifecycle = read(DESKTOP / "scripts" / "Test-Phase2WindowsRelease.ps1")
+    research_workflow = read(ROOT / ".github" / "workflows" / "research-windows-final-release.yml")
+
+    assert not wrapper.exists()
+    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" not in research_workflow
+    assert "Test-Phase2WindowsRelease.ps1" in research_workflow
+    assert "product-version.txt" in lifecycle
+    assert "$expectedProductVersion" in lifecycle
+    assert 'redirected-OneDrive\\User\\OneDrive\\Desktop' in lifecycle
 
 
 def test_user_installer_only_installs_prebuilt_payload() -> None:

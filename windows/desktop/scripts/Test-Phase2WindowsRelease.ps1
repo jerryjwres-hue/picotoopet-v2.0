@@ -572,6 +572,18 @@ function Invoke-LifecycleFixture {
 }
 
 $desktopRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $desktopRoot)
+$canonicalProductVersionFile = Join-Path $repoRoot "src\picotoopet_core\product-version.txt"
+if (-not (Test-Path -LiteralPath $canonicalProductVersionFile -PathType Leaf)) {
+    throw "缺少唯一产品版本源：$canonicalProductVersionFile"
+}
+$expectedProductVersion = [System.IO.File]::ReadAllText(
+    $canonicalProductVersionFile,
+    [System.Text.UTF8Encoding]::new($false, $true)).Trim()
+if ($expectedProductVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$') {
+    throw "唯一产品版本源不是四段数字：$expectedProductVersion"
+}
+
 if ([string]::IsNullOrWhiteSpace($ReleaseRoot)) {
     $ReleaseRoot = Join-Path $desktopRoot "artifacts\release"
 }
@@ -613,8 +625,8 @@ try {
     if ([string]$manifest.target -ne "win-x64") {
         throw "发布目标不是 win-x64。"
     }
-    if ([string]$manifest.product_version -ne "2.3.6.1") {
-        throw "正式包 product_version 不是 2.3.6.1。"
+    if ([string]$manifest.product_version -ne $expectedProductVersion) {
+        throw "正式包 product_version 不是 $expectedProductVersion。"
     }
     if ($zip.Name -notlike "*-$($manifest.product_version)-*") {
         throw "正式 ZIP 名称没有产品版本。"
@@ -687,12 +699,12 @@ try {
     }
     $selfTest = Read-JsonUtf8 -Path $selfTestPath
     if ([string]$selfTest.status -ne "pass" -or
-        [string]$selfTest.product_version -ne "2.3.6.1") {
-        throw "桌面自检报告产品版本不是 pass/2.3.6.1。"
+        [string]$selfTest.product_version -ne $expectedProductVersion) {
+        throw "桌面自检报告产品版本不是 pass/$expectedProductVersion。"
     }
 
     $normalDesktop = Join-Path $fixtureRoot "normal\User\Desktop"
-    $redirectedDesktop = Join-Path $fixtureRoot "redirected-OneDrive\User\OneDrive\桌面"
+    $redirectedDesktop = Join-Path $fixtureRoot "redirected-OneDrive\User\OneDrive\Desktop"
     Invoke-LifecycleFixture `
         -Name "normal" `
         -DesktopDirectory $normalDesktop `

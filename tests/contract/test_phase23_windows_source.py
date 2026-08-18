@@ -22,28 +22,24 @@ def read_core(relative: str) -> str:
 
 
 def test_shell_exists_and_desktop_remains_winexe() -> None:
-    """26.1 默认 Shell 只展示五个简单入口，同时完整保留高级工程路由。"""
+    """当前 Shell 使用单一数据源展示六个简单入口，同时完整保留高级工程路由。"""
 
     shell = read("Views/ShellWindow.xaml")
+    shell_vm = read("ViewModels/ShellViewModel.cs")
     simple_mode = read("Views/ShellWindow.SimpleMode.cs")
     for required in (
-        'x:Name="SimpleHomeButton"',
-        'Content="首页"',
-        'x:Name="SimpleReviewButton"',
-        'Content="待我审核"',
-        'x:Name="SimpleActiveButton"',
-        'Content="进行中"',
-        'x:Name="SimpleCompletedButton"',
-        'Content="已完成"',
-        'x:Name="SimpleAdvancedButton"',
-        'Content="高级"',
+        'ItemsSource="{Binding NavigationItems, Mode=OneWay}"',
+        'SelectedItem="{Binding SelectedNavigationItem, Mode=TwoWay',
         'x:Name="AdvancedHomePanel"',
         'Content="{Binding CurrentPage, Mode=OneWay}"',
         'Title="{Binding WindowTitle, Mode=OneWay}"',
         'Text="{Binding ControlCenterSubtitle, Mode=OneWay}"',
     ):
         assert required in shell
-    assert 'ItemsSource="{Binding NavigationItems' not in shell
+    for title in ("首页", "待我审核", "进行中", "已完成", "已删除", "高级"):
+        assert f'Content="{title}"' not in shell
+        assert f'"{title}"' in shell_vm
+    assert "NavigationRoute.OperatorDeleted" in shell_vm
     for route in (
         "NavigationRoute.Projects",
         "NavigationRoute.TaskCenter",
@@ -216,7 +212,7 @@ def test_dashboard_exposes_worker_state_without_fake_availability() -> None:
 
 
 def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> None:
-    """WPF 行为门不重复打包；正式 Release 独占盖章和安装生命周期。"""
+    """WPF 行为门不重复打包；正式 Release 独占完整 Gate、盖章和原始安装生命周期测试。"""
 
     control = (
         ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
@@ -224,6 +220,14 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
     release = (
         ROOT / ".github" / "workflows" / "windows-phase2-release.yml"
     ).read_text(encoding="utf-8")
+    smoke_program = (
+        ROOT
+        / "windows"
+        / "desktop"
+        / "tests"
+        / "PicotooPet.Desktop.Core.SmokeTests"
+        / "Program.cs"
+    ).read_text(encoding="utf-8-sig")
 
     for required in (
         "Detect Windows impact",
@@ -235,11 +239,21 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         "pytest",
         "dotnet build",
         "PicotooPet.Desktop.Core.SmokeTests",
-        "ShellNavigationReconnectWpfSmokeTests",
+        "--ui-interaction-only",
         "PHASE23_TASK_CENTER_SELF_TEST=PASS",
         "upload-artifact",
     ):
         assert required in control
+    for required in (
+        "ShellNavigationReconnectWpfSmokeTests.Run();",
+        "TaskCenterSmokeTests.Run();",
+        "ResultsCenterSmokeTests.Run();",
+        "ApprovalCenterSmokeTests.Run();",
+        "TaskCenterWpfLayoutSmokeTests.Run();",
+        "ResultsPageWpfLayoutSmokeTests.Run();",
+        "ApprovalsPageWpfLayoutSmokeTests.Run();",
+    ):
+        assert required in smoke_program
     for forbidden in (
         "Build-Phase2WindowsRelease.ps1",
         "stamp_windows_goal_integrity.py",
@@ -252,10 +266,12 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         "Build-Phase2WindowsRelease.ps1",
         "stamp_windows_goal_integrity.py",
         "verify_project_goal_integrity.py",
-        "Invoke-Phase2WindowsReleaseLifecycleGate.ps1",
+        "Test-Phase2WindowsRelease.ps1",
         "PicotooPet-Phase23-CloudContract-Windows-Prebuilt",
     ):
         assert required in release
+    assert "--ui-interaction-only" not in release
+    assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" not in release
 
 
 def test_package_verifies_task_center_and_worker_fallback() -> None:

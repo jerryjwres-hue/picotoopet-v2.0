@@ -16,7 +16,14 @@
       <TextBlock Margin="0,6,0,0" Text="显示数据库、任务、工作流和 Worker 类型能力的结构化健康事实。" TextWrapping="Wrap" />
     </StackPanel>
 
-    <Button Grid.Row="1" HorizontalAlignment="Left" Margin="0,14,0,10" Content="刷新健康快照" Click="Refresh_Click" />
+    <Button Grid.Row="1"
+            HorizontalAlignment="Left"
+            Margin="0,14,0,10"
+            Content="刷新健康快照"
+            Click="Refresh_Click"
+            IsEnabled="{Binding CanRefresh, Mode=OneWay}"
+            ToolTip="{Binding RefreshActionReason, Mode=OneWay}"
+            ToolTipService.ShowOnDisabled="True" />
 
     <Grid Grid.Row="2" Margin="0,0,0,12">
       <Grid.ColumnDefinitions>

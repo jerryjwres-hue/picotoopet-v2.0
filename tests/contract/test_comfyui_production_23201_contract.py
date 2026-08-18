@@ -73,19 +73,16 @@ def test_production_is_retained_while_current_product_and_schema_advance() -> No
 
 def test_closed_production_runtime_is_present() -> None:
     missing = [str(path.relative_to(ROOT)) for path in PRODUCTION_FILES if not path.is_file()]
-
     assert missing == []
 
 
 def test_windows_closed_comfy_executor_surface_is_present() -> None:
     missing = [str(path.relative_to(ROOT)) for path in WINDOWS_PRODUCTION_FILES if not path.is_file()]
-
     assert missing == []
 
 
 def test_production_profile_and_workflows_are_fixed_in_source() -> None:
     profile_source = read(ROOT / "src/picotoopet_core/production/profile.py")
-
     assert EXPECTED_PROFILE in profile_source
     assert EXPECTED_COMFY_ENDPOINT in profile_source
     for workflow_id in EXPECTED_WORKFLOW_IDS:
@@ -94,7 +91,6 @@ def test_production_profile_and_workflows_are_fixed_in_source() -> None:
 
 def test_create_contract_does_not_accept_renderer_authority() -> None:
     models_source = read(ROOT / "src/picotoopet_core/production/models.py")
-
     assert "class ProductionJobCreateRequest" in models_source
     for field_name in FORBIDDEN_PRODUCER_FIELDS:
         assert f"{field_name}:" not in models_source
@@ -105,6 +101,6 @@ def test_windows_business_page_hosts_production_without_new_shell_route() -> Non
     self_test = read(ROOT / "windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs")
 
     assert "ProductionPanel" in page
-    assert "shell.NavigationItems.Count != 5" in self_test
+    assert "shell.NavigationItems.Count != 6" in self_test
     assert "PHASE26_OPERATOR_SIMPLE_MODE_SELF_TEST=PASS" in self_test
     assert "NavigationRoute.Production" not in self_test

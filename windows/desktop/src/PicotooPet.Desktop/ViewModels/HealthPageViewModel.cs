@@ -52,14 +52,33 @@ public sealed class HealthPageViewModel : PageViewModel
     public bool IsBusy
     {
         get => _isBusy;
-        private set => SetProperty(ref _isBusy, value);
+        private set
+        {
+            if (SetProperty(ref _isBusy, value))
+            {
+                RaisePropertyChanged(nameof(CanRefresh));
+                RaisePropertyChanged(nameof(RefreshActionReason));
+            }
+        }
     }
+
+    // 操作可用性 --------------------------------------------------------------
+    public bool CanRefresh => !IsBusy;
+
+    public string RefreshActionReason => IsBusy
+        ? "健康快照正在刷新，请稍候。"
+        : "重新读取数据库、任务、工作流和 Worker capability 的结构化健康事实。";
 
     public static HealthPageViewModel CreateForSmokeTest(AutomationHealthResponse snapshot) =>
         new(snapshot);
 
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var session = _session ?? throw new InvalidOperationException("Smoke test 模式不能访问网络。");
         IsBusy = true;
         try

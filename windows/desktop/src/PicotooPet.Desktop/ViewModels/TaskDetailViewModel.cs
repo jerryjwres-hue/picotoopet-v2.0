@@ -27,6 +27,7 @@ public sealed class TaskDetailViewModel : ObservableObject
     public string Title => FriendlyTaskTitle(_task.TaskType);
     public string TaskType => _task.TaskType;
     public string StatusText => FriendlyStatus(_task.Status);
+    public string SafeStatusSummaryText => SafeStatusSummary(_task);
     public string CreatedAtText => _task.CreatedAt.LocalDateTime.ToString(
         "yyyy-MM-dd HH:mm:ss",
         CultureInfo.InvariantCulture);
@@ -35,9 +36,6 @@ public sealed class TaskDetailViewModel : ObservableObject
         CultureInfo.InvariantCulture);
     public string AttemptText => $"{_task.AttemptCount}/{_task.MaxAttempts}";
     public string GoalText => SafeGoalSummary(_task.Payload);
-    public string ErrorText => string.IsNullOrWhiteSpace(_task.ErrorMessage)
-        ? "无"
-        : _task.ErrorMessage;
     public bool HasResult => !string.IsNullOrWhiteSpace(_task.ResultId);
 
     public string ResultTitle
@@ -127,6 +125,27 @@ public sealed class TaskDetailViewModel : ObservableObject
             }
         }
         return "任务参数已保存；此页面不展开任意原始载荷。";
+    }
+
+    private static string SafeStatusSummary(TaskRecord task)
+    {
+        if (task.Status == "Failed")
+        {
+            return string.IsNullOrWhiteSpace(task.ErrorCode)
+                ? "任务执行失败。详细信息已记录，可从任务中心创建重试任务。"
+                : $"任务执行失败（错误码：{task.ErrorCode}）。详细信息已记录，可从任务中心创建重试任务。";
+        }
+
+        return task.Status switch
+        {
+            "Cancelled" => "任务已安全取消，不会继续执行。",
+            "Archived" => "任务已归档，可在“已删除”中恢复。",
+            "Completed" when !string.IsNullOrWhiteSpace(task.ResultId) => "任务已完成，可在下方查看结果。",
+            "Completed" => "任务已完成，但当前没有关联可显示结果。",
+            "Running" => "任务正在处理，结果生成后会显示在下方。",
+            "Queued" => "任务正在等待执行，结果尚未生成。",
+            _ => "任务状态由 Mac Core 管理。",
+        };
     }
 
     private static string FormatDiagnostic(DiagnosticSnapshotResult result)

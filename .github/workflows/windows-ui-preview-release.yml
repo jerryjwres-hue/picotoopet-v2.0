@@ -1,0 +1,157 @@
+name: Windows UI Preview Release
+
+on:
+  push:
+    branches:
+      - feature/windows-ui-interaction-polish-2.3.27.1
+    paths:
+      - ".github/workflows/windows-ui-preview-release.yml"
+      - ".github/workflows/windows-control-center-ci.yml"
+      - "tests/contract/**"
+      - "tests/security/**"
+      - "windows/desktop/**"
+      - "src/picotoopet_core/product-version.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-ui-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  windows-ui-preview:
+    name: Build and lifecycle-test Windows UI Preview
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+      PICOTOO_SOURCE_HEAD_SHA: ${{ github.sha }}
+      PICOTOO_SOURCE_REF: ${{ github.ref_name }}
+
+    steps:
+      # Source -----------------------------------------------------------------
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      # Publish the run id immediately so this source commit is traceable while
+      # the installer lifecycle is still running; the final step overwrites it.
+      - name: Publish Preview run start provenance
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'pending',
+              context: 'windows-ui-preview-release',
+              description: `Windows UI Preview run ${context.runId} started`,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      # Python contracts --------------------------------------------------------
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install locked Python test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . `
+            pytest==9.1.1 `
+            pytest-asyncio==1.4.0 `
+            pytest-cov==7.1.0 `
+            ruff==0.16.1 `
+            jsonschema==4.26.0 `
+            PyYAML
+
+      - name: Run Windows UI contracts
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = ".;src"
+          python -m pytest -q tests/contract tests/security
+
+      # Native Windows UI -------------------------------------------------------
+      - name: Install exact .NET SDK from global.json
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Build WPF and run UI-only native smoke
+        shell: pwsh
+        run: |
+          dotnet restore windows/desktop/PicotooPet.Desktop.sln --nologo
+          dotnet build windows/desktop/PicotooPet.Desktop.sln --configuration Release --no-restore --nologo -p:ContinuousIntegrationBuild=true -warnaserror
+          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj --configuration Release --no-build -- --ui-interaction-only
+
+      # Preview package ---------------------------------------------------------
+      - name: Build installable Windows UI Preview
+        shell: pwsh
+        run: |
+          $shortSha = "${{ github.sha }}".Substring(0, 12)
+          $version  = "2.3.27.1-ui-preview-${{ github.run_number }}-$shortSha"
+          & windows/desktop/scripts/Build-Phase2WindowsRelease.ps1 `
+            -Version $version `
+            -ValidationScope UiPreview
+
+      - name: Verify install upgrade recovery rollback lifecycle
+        shell: pwsh
+        run: |
+          & windows/desktop/scripts/Test-Phase2WindowsRelease.ps1 `
+            -ReleaseRoot windows/desktop/artifacts/release
+
+      - name: Create outer artifact SHA-256
+        shell: pwsh
+        run: |
+          $root = "windows/desktop/artifacts/release"
+          $zips = @(Get-ChildItem -LiteralPath $root -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
+          if ($zips.Count -ne 1) {
+            throw "Expected exactly one Windows UI Preview ZIP, found $($zips.Count)."
+          }
+          $zip  = $zips[0]
+          $hash = (Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText(
+            (Join-Path $root "artifact-sha256.txt"),
+            "$hash  $($zip.Name)`n",
+            [System.Text.UTF8Encoding]::new($false))
+
+      - name: Upload Windows UI Preview evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-Windows-UI-Preview-2.3.27.1-${{ github.run_number }}
+          path: |
+            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
+            windows/desktop/artifacts/release/*.sha256.txt
+            windows/desktop/artifacts/release/artifact-sha256.txt
+            windows/desktop/artifacts/release/windows-build-report.json
+            windows/desktop/artifacts/release/fixture-evidence/**
+          if-no-files-found: error
+          retention-days: 14
+
+      # Provenance --------------------------------------------------------------
+      - name: Publish Preview run provenance to source commit
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          PREVIEW_JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.PREVIEW_JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              context: 'windows-ui-preview-release',
+              description: `Windows UI Preview run ${context.runId} ${state}`,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });

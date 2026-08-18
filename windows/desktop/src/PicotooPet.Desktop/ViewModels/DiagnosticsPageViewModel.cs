@@ -44,14 +44,33 @@ public sealed class DiagnosticsPageViewModel : PageViewModel
     public bool IsBusy
     {
         get => _isBusy;
-        private set => SetProperty(ref _isBusy, value);
+        private set
+        {
+            if (SetProperty(ref _isBusy, value))
+            {
+                RaisePropertyChanged(nameof(CanRefresh));
+                RaisePropertyChanged(nameof(RefreshActionReason));
+            }
+        }
     }
+
+    // 操作可用性 --------------------------------------------------------------
+    public bool CanRefresh => !IsBusy;
+
+    public string RefreshActionReason => IsBusy
+        ? "诊断事实正在刷新，请稍候。"
+        : "重新读取结构化诊断事实；不会读取日志正文、Token 或用户文件。";
 
     public static DiagnosticsPageViewModel CreateForSmokeTest(
         IReadOnlyList<AutomationDiagnosticFact> facts) => new(facts);
 
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var session = _session ?? throw new InvalidOperationException("Smoke test 模式不能访问网络。");
         IsBusy = true;
         try

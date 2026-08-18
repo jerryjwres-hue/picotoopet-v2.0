@@ -180,8 +180,17 @@ public sealed class ApprovalsPageViewModel : PageViewModel
         private set => SetProperty(ref _isLoaded, value);
     }
 
+    // 操作可用性 --------------------------------------------------------------
+    public bool CanRefresh => !IsBusy;
     public bool CanApprove => CanDecide;
     public bool CanReject => CanDecide;
+
+    public string RefreshActionReason => IsBusy
+        ? "审批列表正在更新，请稍候。"
+        : "从 Mac Core 刷新审批列表。";
+
+    public string ApproveActionReason => BuildDecisionActionReason("批准");
+    public string RejectActionReason => BuildDecisionActionReason("拒绝");
 
     private bool CanDecide =>
         !IsBusy
@@ -306,6 +315,27 @@ public sealed class ApprovalsPageViewModel : PageViewModel
         _ => true,
     };
 
+    private string BuildDecisionActionReason(string actionLabel)
+    {
+        if (IsBusy)
+        {
+            return "审批操作正在处理中，请稍候。";
+        }
+        if (SelectedApproval is null)
+        {
+            return "请先选择一项审批。";
+        }
+        if (!SelectedApproval.IsPending)
+        {
+            return "该审批已处理、已过期或不再可决策。";
+        }
+        if (string.IsNullOrWhiteSpace(DecisionReason))
+        {
+            return "请填写本次决策原因。";
+        }
+        return $"提交{actionLabel}决策，并绑定当前请求摘要。";
+    }
+
     private static ApprovalRowViewModel? FirstOrNull(
         IReadOnlyList<ApprovalRowViewModel> items) =>
         items.Count == 0 ? null : items[0];
@@ -329,7 +359,11 @@ public sealed class ApprovalsPageViewModel : PageViewModel
 
     private void RaiseActionProperties()
     {
+        RaisePropertyChanged(nameof(CanRefresh));
         RaisePropertyChanged(nameof(CanApprove));
         RaisePropertyChanged(nameof(CanReject));
+        RaisePropertyChanged(nameof(RefreshActionReason));
+        RaisePropertyChanged(nameof(ApproveActionReason));
+        RaisePropertyChanged(nameof(RejectActionReason));
     }
 }

@@ -162,7 +162,7 @@ public partial class App : WpfApplication, IDisposable
             logger.Error("Control Center 初始化失败", exception);
             await owner.Dispatcher.InvokeAsync(() => WpfMessageBox.Show(
                 owner,
-                $"初始化失败：{exception.Message}\n\n你仍可在设置页重新配对；详细日志位于本地应用数据目录。",
+                "初始化没有完成。你仍可在设置页重新配对；详细信息已写入本地脱敏日志。",
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning));
@@ -190,9 +190,10 @@ public partial class App : WpfApplication, IDisposable
         }
         catch (Exception exception)
         {
+            _logger?.Error("退出时释放资源失败", exception);
             WpfMessageBox.Show(
                 _shellWindow,
-                $"退出时释放资源失败：{exception.Message}",
+                "退出时有资源未能正常释放。程序仍会安全退出；详细信息已写入本地脱敏日志。",
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);

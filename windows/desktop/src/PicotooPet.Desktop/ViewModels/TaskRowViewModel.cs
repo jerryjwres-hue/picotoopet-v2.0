@@ -13,7 +13,7 @@ public sealed class TaskRowViewModel : ObservableObject
     private string _displayStatus;
     private DateTimeOffset _createdAt;
     private DateTimeOffset _updatedAt;
-    private string? _error;
+    private string _safeErrorSummary;
     private string? _errorCode;
     private string _attemptText;
     private bool _isWaitingForWorker;
@@ -32,7 +32,7 @@ public sealed class TaskRowViewModel : ObservableObject
         _displayStatus  = FormatStatus(task.Status, worker);
         _createdAt      = task.CreatedAt;
         _updatedAt      = task.UpdatedAt;
-        _error          = task.ErrorMessage;
+        _safeErrorSummary = FormatSafeErrorSummary(task.Status, task.ErrorCode);
         _errorCode      = task.ErrorCode;
         _attemptText    = FormatAttempt(task);
         _isWaitingForWorker = IsWaiting(task.Status, worker);
@@ -78,10 +78,11 @@ public sealed class TaskRowViewModel : ObservableObject
         private set => SetProperty(ref _updatedAt, value);
     }
 
-    public string? Error
+    /// <summary>只展示稳定状态和错误码，不把 Core 原始错误正文带入界面。</summary>
+    public string SafeErrorSummary
     {
-        get => _error;
-        private set => SetProperty(ref _error, value);
+        get => _safeErrorSummary;
+        private set => SetProperty(ref _safeErrorSummary, value);
     }
 
     public string? ErrorCode
@@ -173,7 +174,7 @@ public sealed class TaskRowViewModel : ObservableObject
         DisplayStatus      = FormatStatus(task.Status, worker);
         CreatedAt          = task.CreatedAt;
         UpdatedAt          = task.UpdatedAt;
-        Error              = task.ErrorMessage;
+        SafeErrorSummary   = FormatSafeErrorSummary(task.Status, task.ErrorCode);
         ErrorCode          = task.ErrorCode;
         AttemptText        = FormatAttempt(task);
         IsWaitingForWorker = IsWaiting(task.Status, worker);
@@ -214,6 +215,20 @@ public sealed class TaskRowViewModel : ObservableObject
 
     private static string FormatAttempt(TaskRecord task) =>
         $"{task.AttemptCount}/{task.MaxAttempts}";
+
+    private static string FormatSafeErrorSummary(string status, string? errorCode)
+    {
+        if (status == "Failed")
+        {
+            return string.IsNullOrWhiteSpace(errorCode)
+                ? "任务执行失败；详细信息已记录，可创建重试任务。"
+                : $"任务执行失败（错误码：{errorCode}）；详细信息已记录，可创建重试任务。";
+        }
+
+        return status == "Cancelled"
+            ? "任务已取消。"
+            : "无";
+    }
 
     private static string FormatStatus(string status, WorkerSnapshot worker) => status switch
     {

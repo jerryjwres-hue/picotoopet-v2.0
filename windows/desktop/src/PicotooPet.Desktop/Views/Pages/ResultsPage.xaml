@@ -6,169 +6,148 @@
              d:DesignHeight="760"
              d:DesignWidth="1040"
              mc:Ignorable="d">
-    <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
-    </UserControl.Resources>
-
-    <Grid Margin="24">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <DockPanel Margin="0,0,0,12">
-            <TextBlock DockPanel.Dock="Left"
-                       Margin="0,0,12,0"
-                       VerticalAlignment="Center"
-                       Text="筛选" />
-            <ComboBox Width="180"
-                      ItemsSource="{Binding FilterOptions, Mode=OneWay}"
-                      DisplayMemberPath="Label"
-                      SelectedValuePath="Value"
-                      SelectedValue="{Binding SelectedFilter, Mode=TwoWay}" />
-            <TextBlock Margin="18,0,0,0"
-                       VerticalAlignment="Center"
-                       Foreground="#64748B"
-                       Text="{Binding VisibleResults.Count, Mode=OneWay, StringFormat=当前 {0} 项}" />
-        </DockPanel>
-
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" MinWidth="500" />
-                <ColumnDefinition Width="18" />
-                <ColumnDefinition Width="*" MinWidth="310" />
-            </Grid.ColumnDefinitions>
-
-            <ListView Grid.Column="0"
-                      ItemsSource="{Binding VisibleResults, Mode=OneWay}"
-                      SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
-                      ScrollViewer.CanContentScroll="True"
-                      VirtualizingPanel.IsVirtualizing="True"
-                      VirtualizingPanel.VirtualizationMode="Recycling">
-                <ListView.View>
-                    <GridView AllowsColumnReorder="False">
-                        <GridViewColumn Header="结果类型"
-                                        Width="150"
-                                        DisplayMemberBinding="{Binding DisplayType, Mode=OneWay}" />
-                        <GridViewColumn Header="状态"
-                                        Width="90"
-                                        DisplayMemberBinding="{Binding DisplayStatus, Mode=OneWay}" />
-                        <GridViewColumn Header="完成时间"
-                                        Width="170"
-                                        DisplayMemberBinding="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" />
-                        <GridViewColumn Header="任务 ID"
-                                        Width="240"
-                                        DisplayMemberBinding="{Binding TaskId, Mode=OneWay}" />
-                        <GridViewColumn Header="结果 ID"
-                                        Width="240"
-                                        DisplayMemberBinding="{Binding ResultId, Mode=OneWay}" />
-                    </GridView>
-                </ListView.View>
-            </ListView>
-
-            <Border Grid.Column="2"
-                    Padding="18"
-                    Background="#F8FAFC"
-                    BorderBrush="#E2E8F0"
-                    BorderThickness="1"
-                    CornerRadius="10">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Text="安全结果预览"
-                               FontSize="20"
-                               FontWeight="SemiBold" />
-
-                    <ScrollViewer Grid.Row="1" Margin="0,16,0,16">
-                        <StackPanel>
-                            <StackPanel DataContext="{Binding SelectedResult, Mode=OneWay}">
-                                <TextBlock FontWeight="SemiBold" Text="结果类型" />
-                                <TextBlock Margin="0,3,0,12"
-                                           Text="{Binding DisplayType, Mode=OneWay}"
-                                           TextWrapping="Wrap" />
-                                <TextBlock FontWeight="SemiBold" Text="任务 ID" />
-                                <TextBlock Margin="0,3,0,12"
-                                           Text="{Binding TaskId, Mode=OneWay}"
-                                           TextWrapping="Wrap" />
-                                <TextBlock FontWeight="SemiBold" Text="结果 ID" />
-                                <TextBlock Margin="0,3,0,12"
-                                           Text="{Binding ResultId, Mode=OneWay}"
-                                           TextWrapping="Wrap" />
-                                <TextBlock FontWeight="SemiBold" Text="预览边界" />
-                                <TextBlock Margin="0,3,0,0"
-                                           Text="{Binding PreviewUnavailableReason, Mode=OneWay}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-
-                            <Border Margin="0,18,0,0"
-                                    Padding="12"
-                                    Background="White"
-                                    BorderBrush="#CBD5E1"
-                                    BorderThickness="1"
-                                    CornerRadius="8"
-                                    DataContext="{Binding DataContext.DiagnosticPreview, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                                    Visibility="{Binding DataContext.IsPreviewVisible, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <StackPanel>
-                                    <TextBlock Text="系统诊断结果"
-                                               FontSize="17"
-                                               FontWeight="SemiBold" />
-                                    <TextBlock Margin="0,6,0,12"
-                                               Foreground="#475569"
-                                               Text="{Binding StatusText, Mode=OneWay}"
-                                               TextWrapping="Wrap" />
-                                    <TextBlock FontWeight="SemiBold" Text="生成时间" />
-                                    <TextBlock Margin="0,3,0,10"
-                                               Text="{Binding GeneratedAtText, Mode=OneWay}"
-                                               TextWrapping="Wrap" />
-                                    <TextBlock FontWeight="SemiBold" Text="Core" />
-                                    <TextBlock Margin="0,3,0,10"
-                                               Text="{Binding CoreText, Mode=OneWay}"
-                                               TextWrapping="Wrap" />
-                                    <TextBlock FontWeight="SemiBold" Text="Worker" />
-                                    <TextBlock Margin="0,3,0,10"
-                                               Text="{Binding WorkerText, Mode=OneWay}"
-                                               TextWrapping="Wrap" />
-                                    <TextBlock FontWeight="SemiBold" Text="Queue" />
-                                    <TextBlock Margin="0,3,0,10"
-                                               Text="{Binding QueueText, Mode=OneWay}"
-                                               TextWrapping="Wrap" />
-                                    <TextBlock FontWeight="SemiBold" Text="Checks" />
-                                    <TextBlock Margin="0,3,0,10"
-                                               Text="{Binding ChecksText, Mode=OneWay}"
-                                               TextWrapping="Wrap" />
-                                    <TextBlock FontWeight="SemiBold" Text="Warnings" />
-                                    <TextBlock Margin="0,3,0,0"
-                                               Text="{Binding WarningsText, Mode=OneWay}"
-                                               TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <StackPanel Grid.Row="2">
-                        <Button Width="132"
-                                HorizontalAlignment="Left"
-                                Margin="0,0,0,8"
-                                Click="LoadPreview_Click"
-                                IsEnabled="{Binding CanLoadSelectedPreview, Mode=OneWay}"
-                                Content="加载安全预览" />
-                        <TextBlock Foreground="#475569"
-                                   Text="{Binding PreviewActionReason, Mode=OneWay}"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                </Grid>
+  <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    <Style x:Key="ResultListItemStyle" TargetType="ListBoxItem">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0,0,0,7" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <ContentPresenter />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ResultRowButtonStyle" TargetType="Button">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="White" />
+      <Setter Property="BorderBrush" Value="#FFDDE7F2" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ResultBorder" Padding="14,11" CornerRadius="10" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+              <ContentPresenter HorizontalAlignment="Stretch" />
             </Border>
-        </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ResultBorder" Property="Background" Value="#FFF3F8FF" /><Setter TargetName="ResultBorder" Property="BorderBrush" Value="#FFBAD5F7" /></Trigger>
+              <Trigger Property="IsPressed" Value="True"><Setter TargetName="ResultBorder" Property="Background" Value="#FFE8F2FF" /></Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ResultBorder" Property="BorderBrush" Value="#FF2478E6" /><Setter TargetName="ResultBorder" Property="BorderThickness" Value="2" /></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
 
-        <TextBlock Grid.Row="2"
-                   Margin="0,12,0,0"
-                   Foreground="#475569"
-                   Text="{Binding StatusMessage, Mode=OneWay}"
-                   TextWrapping="Wrap" />
+  <Grid Margin="24">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+
+    <DockPanel Margin="0,0,0,14">
+      <StackPanel DockPanel.Dock="Left">
+        <TextBlock Text="任务结果" FontSize="22" FontWeight="Bold" />
+        <TextBlock Text="普通任务、Research 和诊断结果都从任务详情统一打开；诊断仍保留额外安全卡片。" Margin="0,4,24,0" FontSize="14" Foreground="#FF64758B" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <TextBlock Text="筛选" Margin="0,0,8,0" VerticalAlignment="Center" FontSize="14" FontWeight="SemiBold" />
+        <ComboBox Width="180" ItemsSource="{Binding FilterOptions, Mode=OneWay}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SelectedFilter, Mode=TwoWay}" />
+      </StackPanel>
+    </DockPanel>
+
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="1.7*" MinWidth="480" /><ColumnDefinition Width="18" /><ColumnDefinition Width="*" MinWidth="310" /></Grid.ColumnDefinitions>
+
+      <ListBox Grid.Column="0"
+               ItemsSource="{Binding VisibleResults, Mode=OneWay}"
+               SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
+               ItemContainerStyle="{StaticResource ResultListItemStyle}"
+               BorderThickness="0"
+               Background="Transparent"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ScrollViewer.VerticalScrollBarVisibility="Auto">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Button Style="{StaticResource ResultRowButtonStyle}" Click="OpenTaskDetail_Click">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="0.65*" /><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="{Binding DisplayType, Mode=OneWay}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding TaskId, Mode=OneWay}" Margin="0,3,0,0" FontSize="14" Foreground="#FF718197" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding DisplayStatus, Mode=OneWay}" FontSize="14" Foreground="#FF2478E6" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" FontSize="14" Foreground="#FF64758B" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="查看结果 ›" FontSize="14" FontWeight="SemiBold" Foreground="#FF2478E6" VerticalAlignment="Center" Margin="10,0,0,0" />
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <Border Grid.Column="2" Padding="18" Background="White" BorderBrush="#FFDDE7F2" BorderThickness="1" CornerRadius="12">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+          <StackPanel>
+            <TextBlock Text="所选结果" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="点击左侧任意结果会直接打开任务详情。" Margin="0,4,0,0" FontSize="14" Foreground="#FF64758B" />
+          </StackPanel>
+
+          <ScrollViewer Grid.Row="1" Margin="0,16,0,16">
+            <StackPanel>
+              <StackPanel DataContext="{Binding SelectedResult, Mode=OneWay}">
+                <TextBlock FontWeight="SemiBold" Text="结果类型" /><TextBlock Margin="0,3,0,10" Text="{Binding DisplayType, Mode=OneWay}" TextWrapping="Wrap" />
+                <TextBlock FontWeight="SemiBold" Text="任务 ID" /><TextBlock Margin="0,3,0,10" Text="{Binding TaskId, Mode=OneWay}" TextWrapping="Wrap" />
+                <TextBlock FontWeight="SemiBold" Text="结果 ID" /><TextBlock Margin="0,3,0,10" Text="{Binding ResultId, Mode=OneWay}" TextWrapping="Wrap" />
+                <TextBlock FontWeight="SemiBold" Text="诊断预览说明" /><TextBlock Margin="0,3,0,0" Text="{Binding PreviewUnavailableReason, Mode=OneWay}" FontSize="14" Foreground="#FF64758B" TextWrapping="Wrap" />
+              </StackPanel>
+
+              <Border Margin="0,18,0,0" Padding="12" Background="#FFF8FBFF" BorderBrush="#FFD5E3F2" BorderThickness="1" CornerRadius="9"
+                      DataContext="{Binding DataContext.DiagnosticPreview, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
+                      Visibility="{Binding DataContext.IsPreviewVisible, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel>
+                  <TextBlock Text="系统诊断安全卡片" FontSize="17" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding StatusText, Mode=OneWay}" Margin="0,5,0,10" Foreground="#FF475569" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding GeneratedAtText, Mode=OneWay}" Margin="0,2" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding CoreText, Mode=OneWay}" Margin="0,2" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding WorkerText, Mode=OneWay}" Margin="0,2" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding QueueText, Mode=OneWay}" Margin="0,2" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding ChecksText, Mode=OneWay}" Margin="0,2" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding WarningsText, Mode=OneWay}" Margin="0,2" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <StackPanel Grid.Row="2">
+            <Button Width="150"
+                    HorizontalAlignment="Left"
+                    Margin="0,0,0,8"
+                    Click="OpenSelectedTaskDetail_Click"
+                    IsEnabled="{Binding CanOpenSelectedTaskDetail, Mode=OneWay}"
+                    ToolTip="{Binding TaskDetailActionReason, Mode=OneWay}"
+                    ToolTipService.ShowOnDisabled="True"
+                    Content="打开任务详情 / 结果" />
+            <Button Width="170"
+                    HorizontalAlignment="Left"
+                    Margin="0,0,0,8"
+                    Click="LoadPreview_Click"
+                    IsEnabled="{Binding CanLoadSelectedPreview, Mode=OneWay}"
+                    Content="加载安全预览（诊断）"
+                    ToolTip="{Binding PreviewActionReason, Mode=OneWay}"
+                    ToolTipService.ShowOnDisabled="True" />
+          </StackPanel>
+        </Grid>
+      </Border>
     </Grid>
+
+    <Border Grid.Row="2" Margin="0,12,0,0" Padding="12,9" Background="#FFF7FAFD" BorderBrush="#FFE0E8F2" BorderThickness="1" CornerRadius="9">
+      <TextBlock Foreground="#FF475569" FontSize="14" Text="{Binding StatusMessage, Mode=OneWay}" TextWrapping="Wrap" />
+    </Border>
+  </Grid>
 </UserControl>

@@ -72,16 +72,19 @@ def test_native_lifecycle_fixture_covers_version_replacement_and_exact_restore()
         assert required in lifecycle
 
 
-def test_ci_lifecycle_wrapper_uses_canonical_version_for_formal_package_only() -> None:
-    wrapper = read(SCRIPTS / "Invoke-Phase2WindowsReleaseLifecycleGate.ps1")
+def test_source_lifecycle_gate_uses_canonical_version_for_formal_package_only() -> None:
+    lifecycle = read(SCRIPTS / "Test-Phase2WindowsRelease.ps1")
+    wrapper = SCRIPTS / "Invoke-Phase2WindowsReleaseLifecycleGate.ps1"
 
+    assert not wrapper.exists()
     for required in (
         "product-version.txt",
         "expectedProductVersion",
-        "formalManifestAssertion",
-        "formalSelfTestAssertion",
         "正式包 product_version",
         "桌面自检报告产品版本",
     ):
-        assert required in wrapper
-    assert "Set-PackageProductVersion" not in wrapper
+        assert required in lifecycle
+    # 合成升级/回滚夹具仍可改 fixture 的产品版本；正式包断言必须直接读取唯一版本源。
+    assert "Set-PackageProductVersion" in lifecycle
+    assert "formalManifestAssertion" not in lifecycle
+    assert "formalSelfTestAssertion" not in lifecycle

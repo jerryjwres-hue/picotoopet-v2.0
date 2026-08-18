@@ -39,7 +39,7 @@ public sealed class ProjectsPageViewModel : PageViewModel
         {
             if (SetProperty(ref _selectedProject, value))
             {
-                RaisePropertyChanged(nameof(CanArchive));
+                RaiseActionProperties();
             }
         }
     }
@@ -47,19 +47,37 @@ public sealed class ProjectsPageViewModel : PageViewModel
     public string NewTitle
     {
         get => _newTitle;
-        set => SetProperty(ref _newTitle, value);
+        set
+        {
+            if (SetProperty(ref _newTitle, value))
+            {
+                RaiseActionProperties();
+            }
+        }
     }
 
     public string NewProjectType
     {
         get => _newProjectType;
-        set => SetProperty(ref _newProjectType, value);
+        set
+        {
+            if (SetProperty(ref _newProjectType, value))
+            {
+                RaiseActionProperties();
+            }
+        }
     }
 
     public string NewSourceApp
     {
         get => _newSourceApp;
-        set => SetProperty(ref _newSourceApp, value);
+        set
+        {
+            if (SetProperty(ref _newSourceApp, value))
+            {
+                RaiseActionProperties();
+            }
+        }
     }
 
     public string StatusMessage
@@ -75,18 +93,71 @@ public sealed class ProjectsPageViewModel : PageViewModel
         {
             if (SetProperty(ref _isBusy, value))
             {
-                RaisePropertyChanged(nameof(CanArchive));
+                RaiseActionProperties();
             }
         }
     }
 
+    // 操作可用性 --------------------------------------------------------------
+    public bool CanCreate =>
+        !IsBusy
+        && !string.IsNullOrWhiteSpace(NewTitle)
+        && !string.IsNullOrWhiteSpace(NewProjectType)
+        && !string.IsNullOrWhiteSpace(NewSourceApp);
+
+    public bool CanRefresh => !IsBusy;
     public bool CanArchive => !IsBusy && SelectedProject is { Status: not "Archived" };
+
+    public string CreateActionReason
+    {
+        get
+        {
+            if (IsBusy)
+            {
+                return "项目操作正在处理中，请稍候。";
+            }
+            if (!CanCreate)
+            {
+                return "项目标题、类型和来源不能为空。";
+            }
+            return "创建项目并刷新项目列表。";
+        }
+    }
+
+    public string RefreshActionReason => IsBusy
+        ? "项目操作正在处理中，请稍候。"
+        : "重新加载项目列表。";
+
+    public string ArchiveActionReason
+    {
+        get
+        {
+            if (IsBusy)
+            {
+                return "项目操作正在处理中，请稍候。";
+            }
+            if (SelectedProject is null)
+            {
+                return "请先选择项目。";
+            }
+            if (string.Equals(SelectedProject.Status, "Archived", StringComparison.Ordinal))
+            {
+                return "该项目已经归档。";
+            }
+            return "归档当前项目；项目元数据仍保留在 Mac Core。";
+        }
+    }
 
     public static ProjectsPageViewModel CreateForSmokeTest(IReadOnlyList<ProjectRecord> projects) =>
         new(projects);
 
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var session = RequireSession();
         IsBusy = true;
         try
@@ -104,12 +175,15 @@ public sealed class ProjectsPageViewModel : PageViewModel
 
     public async Task CreateAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(NewTitle)
-            || string.IsNullOrWhiteSpace(NewProjectType)
-            || string.IsNullOrWhiteSpace(NewSourceApp))
+        if (!CanCreate)
         {
+            if (IsBusy)
+            {
+                return;
+            }
             throw new InvalidOperationException("项目标题、类型和来源不能为空。");
         }
+
         var session = RequireSession();
         IsBusy = true;
         try
@@ -132,6 +206,11 @@ public sealed class ProjectsPageViewModel : PageViewModel
 
     public async Task ArchiveSelectedAsync(CancellationToken cancellationToken)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         var selected = SelectedProject ?? throw new InvalidOperationException("请先选择项目。");
         var session = RequireSession();
         IsBusy = true;
@@ -151,6 +230,16 @@ public sealed class ProjectsPageViewModel : PageViewModel
     private async Task RefreshCoreAsync(ControlCenterSession session, CancellationToken cancellationToken)
     {
         Projects = await session.GetProjectsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private void RaiseActionProperties()
+    {
+        RaisePropertyChanged(nameof(CanCreate));
+        RaisePropertyChanged(nameof(CanRefresh));
+        RaisePropertyChanged(nameof(CanArchive));
+        RaisePropertyChanged(nameof(CreateActionReason));
+        RaisePropertyChanged(nameof(RefreshActionReason));
+        RaisePropertyChanged(nameof(ArchiveActionReason));
     }
 
     private ControlCenterSession RequireSession() =>

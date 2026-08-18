@@ -4,6 +4,7 @@ ROOT = Path(__file__).resolve().parents[2]
 VERSION = ROOT / "src" / "picotoopet_core" / "product-version.txt"
 DESKTOP = ROOT / "windows" / "desktop" / "src" / "PicotooPet.Desktop"
 SHELL = DESKTOP / "Views" / "ShellWindow.xaml"
+SHELL_VM = DESKTOP / "ViewModels" / "ShellViewModel.cs"
 ROUTES = DESKTOP / "Navigation" / "NavigationRoute.cs"
 PROJECTION = DESKTOP / "ViewModels" / "OperatorProjection.cs"
 WIZARD = DESKTOP / "ViewModels" / "NewTaskWizardViewModel.cs"
@@ -15,20 +16,19 @@ def test_version() -> None:
     assert VERSION.read_text(encoding="utf-8").strip() == "2.3.26.1"
 
 
-def test_simple_sidebar_is_fixed_and_advanced_is_landing_page() -> None:
+def test_simple_sidebar_is_data_driven_six_entry_and_advanced_is_landing_page() -> None:
     xaml = SHELL.read_text(encoding="utf-8")
-    expected = {
-        "SimpleHomeButton": "首页",
-        "SimpleReviewButton": "待我审核",
-        "SimpleActiveButton": "进行中",
-        "SimpleCompletedButton": "已完成",
-        "SimpleAdvancedButton": "高级",
-    }
-    for name, title in expected.items():
-        assert f'x:Name="{name}"' in xaml
-        assert f'Content="{title}"' in xaml
+    shell_vm = SHELL_VM.read_text(encoding="utf-8")
+
+    assert 'ItemsSource="{Binding NavigationItems, Mode=OneWay}"' in xaml
+    assert 'SelectedItem="{Binding SelectedNavigationItem, Mode=TwoWay' in xaml
     assert 'x:Name="AdvancedHomePanel"' in xaml
-    assert 'ItemsSource="{Binding NavigationItems}"' not in xaml
+    # 单一数据源：具体导航文案只由 ShellViewModel.BuildNavigation 定义，XAML 不再复制一套按钮。
+    for title in ("首页", "待我审核", "进行中", "已完成", "已删除", "高级"):
+        assert f'Content="{title}"' not in xaml
+        assert f'"{title}"' in shell_vm
+    assert "NavigationRoute.OperatorDeleted" in shell_vm
+    assert "InsertDeletedNavigationButton" not in xaml
 
 
 def test_operator_routes_are_additive_and_keep_every_advanced_route() -> None:
@@ -38,6 +38,7 @@ def test_operator_routes_are_additive_and_keep_every_advanced_route() -> None:
         "OperatorReview",
         "OperatorInProgress",
         "OperatorCompleted",
+        "OperatorDeleted",
         "AdvancedHome",
         "Dashboard",
         "Projects",
