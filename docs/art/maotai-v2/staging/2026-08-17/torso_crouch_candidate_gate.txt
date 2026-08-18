@@ -1,0 +1,12 @@
+candidate: torso_crouch_candidate.png
+status: PROMOTED_TO_FORMAL_TORSO_CROUCH_PENDING_CI
+pixel_size: 192x144
+logical_contract: 96x72 @2x
+pivot_contract: 48,39
+joint_overlap_logical: 20
+alpha_border: all four outer borders alpha=0
+visible_bbox_alpha_gt_0: x=36..160, y=9..133
+source: derived only from the already-valid independent torso-only neutral asset; NOT cropped from a full character
+pose_edit: crouch variant widens and lowers the torso while preserving Maotai coat language and hidden fur overlap roots
+png_sha256_local: 8e7fb4d59186e0ffdcf183721f34fdfba93dd1f2d5cc57c5fbe8b3c9fbffd18
+transport_check: GitHub blob aee53156ab98977dfc0c5ac95a102379f2bab79c starts with binary PNG byte 0x89 (connector UTF-8 decode fails at byte 0), matching expected PNG signature behavior.
