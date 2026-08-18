@@ -4,11 +4,12 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.ViewModels;
+using WpfUserControl = System.Windows.Controls.UserControl;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
 /// <summary>原生 Goal Center 交互层；不持有令牌，不自行创建 Workflow/Task。</summary>
-public partial class GoalCenterPanel : UserControl
+public partial class GoalCenterPanel : WpfUserControl
 {
     private readonly DispatcherTimer _refreshTimer;
     private bool _refreshing;
@@ -60,7 +61,7 @@ public partial class GoalCenterPanel : UserControl
     private void GoalTemplate_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is OperatorHomePageViewModel viewModel
-            && sender is Button { DataContext: GoalTemplateRecord template })
+            && sender is System.Windows.Controls.Button { DataContext: GoalTemplateRecord template })
         {
             viewModel.SelectGoalTemplate(template);
             GoalObjectiveTextBox.Focus();
