@@ -1,9 +1,10 @@
-using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.ViewModels;
+using WpfClipboard = System.Windows.Clipboard;
+using WpfSaveFileDialog = Microsoft.Win32.SaveFileDialog;
 using WpfUserControl = System.Windows.Controls.UserControl;
 
 namespace PicotooPet.Desktop.Views.Pages;
@@ -89,7 +90,7 @@ public partial class GoalCenterPanel : WpfUserControl
         try
         {
             var prompt = await viewModel.GetCurrentHandoffPromptAsync().ConfigureAwait(true);
-            Clipboard.SetText(prompt);
+            WpfClipboard.SetText(prompt);
             MessageBox.Show(
                 Window.GetWindow(this),
                 "固定 Web GPT 提示词已复制。把交接 ZIP 和这段提示词一起手动发送给网页 ChatGPT。",
@@ -123,7 +124,7 @@ public partial class GoalCenterPanel : WpfUserControl
             suggestedName = "PicotooPet-Web-GPT-Handoff.zip";
         }
 
-        var dialog = new SaveFileDialog
+        var dialog = new WpfSaveFileDialog
         {
             Title = "保存 Web GPT 交接包",
             FileName = suggestedName,
