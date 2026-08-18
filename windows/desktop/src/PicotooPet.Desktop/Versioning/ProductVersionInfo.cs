@@ -9,6 +9,12 @@ public static class ProductVersionInfo
     /// <summary>发布输出中唯一版本资源的固定文件名。</summary>
     public const string FileName = "product-version.txt";
 
+    /// <summary>统一的用户可见产品名；不改变既有 EXE/安装生命周期。</summary>
+    public const string ProductName = "PicotooPet AI";
+
+    /// <summary>当前自主能力层的小字产品标识。</summary>
+    public const string SuperpowerLabel = "superpower v1.0";
+
     private static readonly Regex ProductVersionPattern = new(
         "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
@@ -18,7 +24,7 @@ public static class ProductVersionInfo
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, FileName)));
 
     /// <summary>Windows 主窗口标题。</summary>
-    public static string WindowTitle => $"Picotoo Pet AI {Current}";
+    public static string WindowTitle => $"{ProductName} {Current}";
 
     /// <summary>Control Center 左上角副标题。</summary>
     public static string ControlCenterSubtitle => $"Control Center · v{Current}";
