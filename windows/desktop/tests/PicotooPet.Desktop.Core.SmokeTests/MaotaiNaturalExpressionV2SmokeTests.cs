@@ -64,7 +64,7 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             "Recover 必须平滑回到睁眼 + 微笑基准表情");
     }
 
-    /// <summary>自主小睡必须真正闭眼，不能只进入 Sleep 状态后继续使用普通睁眼/眨眼基准。</summary>
+    /// <summary>自主小睡必须真正闭眼并使用放松嘴型，不能继续沿用普通待机微笑。</summary>
     private static void VerifyAutonomousSleepExpression()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
@@ -85,9 +85,12 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             }
 
             sawSleep = true;
-            var eye = ReadString(pose, "EyeState");
+            var eye   = ReadString(pose, "EyeState");
+            var mouth = ReadString(pose, "MouthState");
             Assert(eye == "Closed",
                 $"Resting 自主 Sleep 必须稳定闭眼；当前 EyeState={eye}");
+            Assert(mouth == "Tired",
+                $"Resting 自主 Sleep 必须使用放松疲惫嘴型，不能保持待机微笑；当前 MouthState={mouth}");
         }
 
         Assert(sawSleep, "自主睡眠表情测试未在 360 帧内进入 Sleep");
