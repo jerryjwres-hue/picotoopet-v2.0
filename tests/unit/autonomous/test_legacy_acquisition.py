@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from picotoopet_core.autonomous.legacy_acquisition import (
+    SourcePolicyMode,
     adaptive_interval_minutes,
     build_discovery_queries,
+    classify_source_url,
     information_gain_score,
 )
 
@@ -57,3 +59,58 @@ def test_discovery_queries_trim_and_bound_long_objectives_without_blank_queries(
 def test_discovery_query_count_is_clamped_to_small_safe_range() -> None:
     assert len(build_discovery_queries("宠物内容趋势", max_queries=1)) == 1
     assert len(build_discovery_queries("宠物内容趋势", max_queries=99)) == 4
+
+
+def test_unknown_public_source_defaults_to_yellow_not_silent_green() -> None:
+    decision = classify_source_url("https://example.com/public/article")
+
+    assert decision.domain == "example.com"
+    assert decision.mode is SourcePolicyMode.YELLOW
+    assert decision.browser_session_required is False
+    assert decision.autonomous_fetch_allowed is False
+
+
+def test_explicit_robots_allow_can_promote_ordinary_public_source_to_green() -> None:
+    decision = classify_source_url(
+        "https://docs.example.com/article",
+        robots_allowed=True,
+    )
+
+    assert decision.mode is SourcePolicyMode.GREEN
+    assert decision.autonomous_fetch_allowed is True
+    assert decision.browser_session_required is False
+
+
+def test_explicit_robots_disallow_blocks_autonomous_fetch() -> None:
+    decision = classify_source_url(
+        "https://docs.example.com/article",
+        robots_allowed=False,
+    )
+
+    assert decision.mode is SourcePolicyMode.RED
+    assert decision.autonomous_fetch_allowed is False
+
+
+def test_browser_session_domains_remain_yellow_even_when_public() -> None:
+    for url in (
+        "https://www.amazon.com/dp/B0ABCDEFGHI",
+        "https://www.tiktok.com/@creator/video/123",
+        "https://shop.tiktok.com/view/product/123",
+    ):
+        decision = classify_source_url(url, robots_allowed=True)
+        assert decision.mode is SourcePolicyMode.YELLOW
+        assert decision.browser_session_required is True
+        assert decision.autonomous_fetch_allowed is False
+
+
+def test_non_public_or_credential_sources_are_red() -> None:
+    for url in (
+        "file:///tmp/private.txt",
+        "http://localhost:8080/page",
+        "http://127.0.0.1/page",
+        "http://10.0.0.8/page",
+        "https://user:password@example.com/page",
+    ):
+        decision = classify_source_url(url)
+        assert decision.mode is SourcePolicyMode.RED
+        assert decision.autonomous_fetch_allowed is False
