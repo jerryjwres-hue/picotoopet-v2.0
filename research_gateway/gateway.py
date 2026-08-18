@@ -5,16 +5,57 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from research_gateway.crawler_adapter import (
+
+def _adapter_bootstrap_python(*, version_info=None, environ=None, home=None):
+    """Resolve only the fixed adapter-private Python when this interpreter is unsupported."""
+
+    current = tuple((version_info if version_info is not None else sys.version_info)[:2])
+    if (3, 12) <= current < (3, 14):
+        return None
+
+    environment = os.environ if environ is None else environ
+    home_path = Path.home() if home is None else Path(home)
+    configured_root = str(environment.get("PICOTOOPET_CRAWL4AI_ROOT", "")).strip()
+    adapter_root = (
+        Path(configured_root).expanduser()
+        if configured_root
+        else home_path / ".local" / "share" / "picotoopet" / "research" / "crawl4ai"
+    )
+    candidate = adapter_root / "venv" / "bin" / "python"
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return candidate
+    return None
+
+
+def _bootstrap_adapter_python() -> None:
+    """Re-exec the adapter-patched Gateway before Python-3.12-only runtime code executes."""
+
+    current = sys.version_info[:2]
+    if (3, 12) <= current < (3, 14):
+        return
+    candidate = _adapter_bootstrap_python()
+    if candidate is None:
+        raise RuntimeError(
+            "Research Gateway requires Python 3.12-3.13 and the Crawl4AI private runtime is missing"
+        )
+    script = Path(__file__).resolve()
+    os.execv(str(candidate), [str(candidate), str(script), *sys.argv[1:]])
+
+
+_bootstrap_adapter_python()
+
+from dataclasses import asdict, dataclass  # noqa: E402
+
+from research_gateway.crawler_adapter import (  # noqa: E402
     CrawlerProviderError,
     CrawlRequest,
     build_installed_crawler_adapter,
