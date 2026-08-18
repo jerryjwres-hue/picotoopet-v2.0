@@ -27,10 +27,10 @@ class RecordingProcess:
         return self.result
 
 
-def _task() -> TaskRecord:
+def _task(task_id: str = "task-research-001") -> TaskRecord:
     return TaskRecord.model_validate(
         {
-            "task_id": "task-research-001",
+            "task_id": task_id,
             "task_type": "research.search",
             "status": "Running",
             "priority": 60,
@@ -109,6 +109,39 @@ def test_coordinator_returns_existing_result_store_document(tmp_path: Path) -> N
         "limit": 5,
         "output": "search-output",
     }
+
+
+def test_coordinator_recreation_after_worker_restart_keeps_gateway_contract(
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "picotoopet-research-gateway"
+    executable.write_text("fixture", encoding="utf-8")
+    executable.chmod(0o755)
+    process = RecordingProcess(
+        GatewayProcessResult(
+            returncode=0,
+            stdout=json.dumps({"returncode": 0, "stdout": "search-output", "stderr": ""}),
+            stderr="",
+        )
+    )
+
+    # Worker restart 模拟：销毁第一套 coordinator/executor，再用同一固定 Gateway 入口创建新实例。
+    first_worker = ResearchSearchCoordinator(
+        ResearchGatewayExecutor(executable=executable, process=process)
+    )
+    first = first_worker.handler(_task("task-before-worker-restart"))
+    del first_worker
+    second_worker = ResearchSearchCoordinator(
+        ResearchGatewayExecutor(executable=executable, process=process)
+    )
+    second = second_worker.handler(_task("task-after-worker-restart"))
+
+    assert first.result_type == "research.search"
+    assert second.result_type == "research.search"
+    assert first.result_document == second.result_document
+    assert len(process.calls) == 2
+    assert all(call[0][1] == "--capability" for call in process.calls)
+    assert all(call[0][2] == "research.search" for call in process.calls)
 
 
 def test_executor_rejects_gateway_failure_without_exposing_stderr(tmp_path: Path) -> None:

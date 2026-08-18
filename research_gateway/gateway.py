@@ -5,14 +5,63 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlparse
+
+
+def _adapter_bootstrap_python(*, version_info=None, environ=None, home=None):
+    """Resolve only the fixed adapter-private Python when this interpreter is unsupported."""
+
+    current = tuple((version_info if version_info is not None else sys.version_info)[:2])
+    if (3, 12) <= current < (3, 14):
+        return None
+
+    environment = os.environ if environ is None else environ
+    home_path = Path.home() if home is None else Path(home)
+    configured_root = str(environment.get("PICOTOOPET_CRAWL4AI_ROOT", "")).strip()
+    adapter_root = (
+        Path(configured_root).expanduser()
+        if configured_root
+        else home_path / ".local" / "share" / "picotoopet" / "research" / "crawl4ai"
+    )
+    candidate = adapter_root / "venv" / "bin" / "python"
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return candidate
+    return None
+
+
+def _bootstrap_adapter_python() -> None:
+    """Re-exec the adapter-patched Gateway before Python-3.12-only runtime code executes."""
+
+    current = sys.version_info[:2]
+    if (3, 12) <= current < (3, 14):
+        return
+    candidate = _adapter_bootstrap_python()
+    if candidate is None:
+        raise RuntimeError(
+            "Research Gateway requires Python 3.12-3.13 and the Crawl4AI private runtime is missing"
+        )
+    script = Path(__file__).resolve()
+    os.execv(str(candidate), [str(candidate), str(script), *sys.argv[1:]])
+
+
+_bootstrap_adapter_python()
+
+from dataclasses import asdict, dataclass  # noqa: E402
+
+from research_gateway.crawler_adapter import (  # noqa: E402
+    CrawlerProviderError,
+    CrawlRequest,
+    build_installed_crawler_adapter,
+    extract_public_urls,
+    render_search_envelope,
+)
 
 READ_CAPABILITIES = {
     "research.search",
@@ -37,6 +86,7 @@ _WEB_CRAWL_MODES = {
     "dynamic": ("scrapling.fetch", 120),
     "stealth": ("scrapling.stealthy_fetch", 150),
 }
+_AUTO_CRAWLER = object()
 
 
 class PolicyError(RuntimeError):
@@ -75,15 +125,29 @@ def run_subprocess(argv: list[str], timeout_seconds: int) -> CommandResult:
 class GatewayDispatcher:
     """Translate abstract research capabilities into concrete read-only tool argv vectors."""
 
-    def __init__(self, *, runner: Runner = run_subprocess) -> None:
+    def __init__(
+        self,
+        *,
+        runner: Runner = run_subprocess,
+        crawler_adapter: object = _AUTO_CRAWLER,
+    ) -> None:
         self._runner = runner
+        # 自动绑定只认项目固定安装路径；显式 None 用于兼容/回滚与单元测试。
+        self._crawler_adapter = (
+            build_installed_crawler_adapter(runner=runner)
+            if crawler_adapter is _AUTO_CRAWLER
+            else crawler_adapter
+        )
 
     def dispatch(self, capability: str, params: dict[str, object]) -> CommandResult:
         if capability not in READ_CAPABILITIES:
             raise PolicyError(f"Research Gateway 2.3.27.1 is read-only: {capability}")
 
+        # research.search 保持唯一上层能力名；crawler provider 仅在 Gateway 内部可见。
+        if capability == "research.search":
+            return self._dispatch_search(params)
+
         builders = {
-            "research.search": self._build_search,
             "research.web.read": self._build_web_read,
             "research.web.crawl": self._build_web_crawl,
             "research.web.extract": self._build_web_extract,
@@ -96,6 +160,43 @@ class GatewayDispatcher:
         }
         argv, timeout_seconds = builders[capability](params)
         return self._runner(argv, timeout_seconds)
+
+    def _dispatch_search(self, params: dict[str, object]) -> CommandResult:
+        """Run existing search discovery, then optionally enrich bounded result URLs."""
+
+        argv, timeout_seconds = self._build_search(params)
+        search_result = self._runner(argv, timeout_seconds)
+        if search_result.returncode != 0 or self._crawler_adapter is None:
+            return search_result
+
+        query = self._required_text(params, "query")
+        limits = getattr(self._crawler_adapter, "limits", None)
+        maximum_pages = getattr(limits, "max_pages", 1)
+        urls = extract_public_urls(search_result.stdout, maximum=maximum_pages)
+        if not urls:
+            return search_result
+
+        documents = []
+        failures = 0
+        for url in urls:
+            try:
+                # 默认单页读取深度为 0；CrawlerAdapter 内部决定 Crawl4AI → Scrapling fallback。
+                documents.append(self._crawler_adapter.crawl(CrawlRequest(url=url)))
+            except CrawlerProviderError:
+                failures += 1
+
+        if not documents and failures:
+            # 对上层只暴露稳定错误，不泄露 provider stderr、cookie、token 或浏览器状态。
+            return CommandResult(returncode=69, stdout="", stderr="crawler providers failed")
+        if not documents:
+            return search_result
+
+        enriched = render_search_envelope(
+            query=query,
+            search_output=search_result.stdout,
+            documents=documents,
+        )
+        return CommandResult(returncode=0, stdout=enriched, stderr="")
 
     @staticmethod
     def _validate_keys(params: dict[str, object], allowed: set[str]) -> None:
