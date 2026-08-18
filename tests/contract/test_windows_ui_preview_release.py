@@ -71,8 +71,8 @@ def test_ui_preview_workflow_builds_installable_lifecycle_verified_artifact() ->
 def test_ui_preview_publishes_auditable_run_provenance_to_source_commit() -> None:
     workflow = _read(PREVIEW)
 
-    # 让源码 commit 可直接追溯到对应 Preview run；这里只写 GitHub commit status，
-    # 不改变产品状态、任务数据或正式发布门槛。
+    # 一启动先发布 pending + run ID，结束再覆盖为 success/failure；
+    # 这样源码 commit 在整个验收周期都能追溯到唯一 Preview run。
     for required in (
         "statuses: write",
         "actions/github-script@v8",
@@ -80,6 +80,8 @@ def test_ui_preview_publishes_auditable_run_provenance_to_source_commit() -> Non
         "windows-ui-preview-release",
         "context.runId",
         "context.sha",
+        "state: 'pending'",
+        "Preview run ${context.runId} started",
         "if: always()",
     ):
         assert required in workflow
