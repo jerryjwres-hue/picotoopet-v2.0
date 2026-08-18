@@ -6,10 +6,11 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from picotoopet_core.automation.models import WorkflowStatus
 from picotoopet_core.automation.service import WorkflowService
 
 from .human_pipeline import HumanGoalWorkflowPlanner
-from .models import GoalCreate, GoalOrigin, GoalRecord, PriorityClass
+from .models import GoalCreate, GoalOrigin, GoalRecord, GoalStatus, PriorityClass
 from .repository import AutonomousGoalRepository
 
 
@@ -86,6 +87,18 @@ _TEMPLATES = (
 )
 
 
+_WORKFLOW_GOAL_STATUS = {
+    WorkflowStatus.DRAFT: GoalStatus.READY,
+    WorkflowStatus.READY: GoalStatus.READY,
+    WorkflowStatus.RUNNING: GoalStatus.RUNNING,
+    WorkflowStatus.PAUSED: GoalStatus.PAUSED,
+    WorkflowStatus.NEEDS_ATTENTION: GoalStatus.DEFERRED,
+    WorkflowStatus.COMPLETED: GoalStatus.COMPLETED,
+    WorkflowStatus.FAILED: GoalStatus.FAILED,
+    WorkflowStatus.CANCELLED: GoalStatus.CANCELLED,
+}
+
+
 class HumanGoalService:
     """Translate product-facing Goals into durable Mac Core Goal + Workflow facts."""
 
@@ -127,14 +140,14 @@ class HumanGoalService:
         if goal.workflow_id is None:
             workflow = self.workflows.create_workflow(self.planner.plan(goal))
             goal = self.repository.bind_workflow(goal.goal_id, workflow.workflow_id)
-        # Reconcile is safe here: it only materializes a task when a real capability is
-        # registered. Otherwise the first step remains Ready and waits truthfully.
+        # Reconcile only materializes a task when a real capability is registered.
+        # Otherwise the first step remains Ready and the Goal truthfully keeps waiting.
         self.workflows.reconcile(goal.workflow_id)
-        return self.repository.get(goal.goal_id)
+        return self._project_workflow_status(self.repository.get(goal.goal_id))
 
     def list(self, *, limit: int = 200) -> list[GoalRecord]:
         return [
-            goal
+            self._project_workflow_status(goal)
             for goal in self.repository.list(limit=limit)
             if goal.origin is GoalOrigin.HUMAN
         ]
@@ -143,4 +156,21 @@ class HumanGoalService:
         goal = self.repository.get(goal_id)
         if goal.origin is not GoalOrigin.HUMAN:
             raise KeyError(f"human goal not found: {goal_id}")
-        return goal
+        return self._project_workflow_status(goal)
+
+    def _project_workflow_status(self, goal: GoalRecord) -> GoalRecord:
+        """Persist the canonical Workflow lifecycle onto the user-facing Goal fact."""
+
+        if self.workflows is None or goal.workflow_id is None:
+            return goal
+        try:
+            workflow = self.workflows.get_workflow(goal.workflow_id)
+        except KeyError:
+            # Missing workflow is an integrity/recovery problem. A read must not fabricate
+            # a Failed state, so keep the last durable Goal fact visible to diagnostics.
+            return goal
+
+        target = _WORKFLOW_GOAL_STATUS.get(workflow.status)
+        if target is None or target is goal.status:
+            return goal
+        return self.repository.update_status(goal.goal_id, target)
