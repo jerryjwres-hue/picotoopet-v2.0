@@ -20,6 +20,7 @@ from .content_radar import (
     normalize_candidates,
     score_candidate,
 )
+from .legacy_acquisition import build_discovery_queries
 from .local_intelligence import (
     LocalAnalysisRequest,
     LocalAnalysisResult,
@@ -61,18 +62,12 @@ class _SearchExecutor(Protocol):
         """Run one existing bounded Research Gateway search."""
 
 
-_DEFAULT_SEED_QUERIES = (
-    "pet content trends high engagement short video recent",
-    "pet product consumer pain points trending reviews recent",
-    "AI video creative formats trending short form recent",
-    "ecommerce creator content trends audience engagement recent",
-)
 _MAX_TOOL_EXCERPT_CHARS = 5_000
 _MAX_RADAR_EXCERPT_CHARS = 4_000
 
 
 class ContentDiscoveryCoordinator:
-    """Gather a small tool evidence batch before asking the local model to classify it."""
+    """Gather objective-specific tool evidence before one local Scout classification pass."""
 
     TASK_TYPE = "autonomous.discovery.v1"
     CAPABILITY = "content.discovery"
@@ -82,21 +77,25 @@ class ContentDiscoveryCoordinator:
         *,
         search: _SearchExecutor,
         local: LocalIntelligenceAdapter,
-        seed_queries: tuple[str, ...] = _DEFAULT_SEED_QUERIES,
+        seed_queries: tuple[str, ...] | None = None,
     ) -> None:
-        if not seed_queries or len(seed_queries) > 8:
-            raise ValueError("seed_queries must contain 1-8 bounded queries")
-        normalized = tuple(query.strip() for query in seed_queries)
-        if any(not query or len(query) > 240 for query in normalized):
-            raise ValueError("each discovery query must be 1-240 characters")
-        if len(set(normalized)) != len(normalized):
-            raise ValueError("seed_queries must be unique")
+        normalized: tuple[str, ...] | None = None
+        if seed_queries is not None:
+            if not seed_queries or len(seed_queries) > 8:
+                raise ValueError("seed_queries must contain 1-8 bounded queries")
+            normalized = tuple(query.strip() for query in seed_queries)
+            if any(not query or len(query) > 240 for query in normalized):
+                raise ValueError("each discovery query must be 1-240 characters")
+            if len(set(normalized)) != len(normalized):
+                raise ValueError("seed_queries must be unique")
         self.search = search
         self.local = local
+        # Explicit seeds remain available only as a deterministic fixture/manual override.
+        # Production-default discovery derives the bounded search plan from each objective.
         self.seed_queries = normalized
 
     def handler(self, task: TaskRecord) -> HandlerResult:
-        """Execute fixed searches, deterministic Radar cleanup, then one Scout analysis."""
+        """Execute bounded objective-derived searches, Radar cleanup, then one Scout analysis."""
 
         if task.task_type != self.TASK_TYPE:
             raise ContentDiscoveryError("unsupported autonomous discovery task type")
@@ -105,16 +104,17 @@ class ContentDiscoveryCoordinator:
         except ValidationError as error:
             raise ContentDiscoveryError("invalid autonomous discovery request") from error
 
+        queries = self._queries_for_objective(request.objective)
         per_query_limit = max(
             1,
-            min(5, (request.max_candidates + len(self.seed_queries) - 1) // len(self.seed_queries)),
+            min(5, (request.max_candidates + len(queries) - 1) // len(queries)),
         )
-        per_query_timeout = min(max(int(task.timeout_seconds / len(self.seed_queries)), 30), 120)
+        per_query_timeout = min(max(int(task.timeout_seconds / len(queries)), 30), 120)
 
         successful: list[dict[str, str]] = []
         radar_inputs: list[RadarCandidateInput] = []
         failed_count = 0
-        for index, query in enumerate(self.seed_queries, start=1):
+        for index, query in enumerate(queries, start=1):
             evidence_id = f"search-{index:02d}"
             try:
                 result = self.search.search(
@@ -229,6 +229,13 @@ class ContentDiscoveryCoordinator:
             result_type=self.TASK_TYPE,
             schema_version="1.0",
         )
+
+    def _queries_for_objective(self, objective: str) -> tuple[str, ...]:
+        """Choose explicit fixture seeds or the deterministic legacy-derived objective plan."""
+
+        if self.seed_queries is not None:
+            return self.seed_queries
+        return build_discovery_queries(objective)
 
 
 def _extract_typed_radar_inputs(*, evidence_id: str, output: str) -> list[RadarCandidateInput]:
