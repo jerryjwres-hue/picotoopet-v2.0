@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
@@ -52,6 +53,11 @@ internal static class MaotaiRasterFaceLayoutV2SmokeTests
         head.Children.Add(cup);
 
         configure.Invoke(null, [head]);
+
+        var visualScale = head.LayoutTransform as ScaleTransform
+            ?? throw new InvalidOperationException("head 必须有独立的静态视觉缩放，不能改 Motion Engine 的动态 HeadScale");
+        AssertNear(0.90, visualScale.ScaleX, "head 静态视觉宽度比例错误");
+        AssertNear(0.90, visualScale.ScaleY, "head 静态视觉高度比例错误");
 
         AssertNear(-20.5, Canvas.GetTop(ear), "耳根没有压入 head 毛发轮廓");
         AssertNear(-13.0, Canvas.GetTop(muzzle), "muzzle 垂直校准错误");
