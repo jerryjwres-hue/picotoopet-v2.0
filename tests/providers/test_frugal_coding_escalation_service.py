@@ -180,26 +180,71 @@ def test_provider_history_counts_only_terminal_local_validation_outcomes(tmp_pat
             "claude_code": ProviderReadinessStatus.READY,
         },
     )
+    now = "2026-08-19T00:00:00+00:00"
+    expires = "2026-08-20T00:00:00+00:00"
 
-    database.execute(
-        "INSERT INTO provider_sessions (session_id, handoff_id, provider, status, request_digest, "
-        "package_digest, budget_json, idempotency_key, created_at, updated_at, preview_json) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            "11111111-1111-1111-1111-111111111111",
-            "history-handoff-1",
-            "codex",
-            "ready_for_review",
-            "a" * 64,
-            "b" * 64,
-            "{}",
-            "history-session-1",
-            "2026-08-19T00:00:00+00:00",
-            "2026-08-19T00:00:00+00:00",
-            "{}",
-        ),
-    )
     for index, status in enumerate(("adoption_ready", "validation_failed", "queued"), start=1):
+        handoff_id = f"history-handoff-{index}"
+        session_id = f"11111111-1111-1111-1111-11111111111{index}"
+        return_id = f"return-history-{index}"
+        request_digest = f"{index}" * 64
+        package_digest = f"{index + 3}" * 64
+        manifest_digest = f"{index + 6}" * 64
+
+        database.execute(
+            "INSERT INTO handoffs (handoff_id, template_id, title, objective_summary, status, "
+            "request_digest, package_digest, manifest_json, preview_json, approval_id, "
+            "prepare_idempotency_key, approval_idempotency_key, created_at, updated_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, '{}', '{}', NULL, ?, NULL, ?, ?, ?)",
+            (
+                handoff_id,
+                "picotoopet-repo-maintenance-codex-v1",
+                f"history {index}",
+                "bounded provider history fixture",
+                "approved",
+                request_digest,
+                package_digest,
+                f"history-prepare-{index}",
+                now,
+                now,
+                expires,
+            ),
+        )
+        database.execute(
+            "INSERT INTO returns (return_id, handoff_id, status, provider, request_digest, "
+            "package_digest, manifest_digest, changed_file_count, event_count, "
+            "validation_checks_json, preview_json, quarantine_code, idempotency_key, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, '[]', '{}', NULL, ?, ?, ?)",
+            (
+                return_id,
+                handoff_id,
+                "contract_validated",
+                "codex",
+                request_digest,
+                package_digest,
+                manifest_digest,
+                f"history-return-{index}",
+                now,
+                now,
+            ),
+        )
+        database.execute(
+            "INSERT INTO provider_sessions (session_id, handoff_id, provider, status, request_digest, "
+            "package_digest, budget_json, return_id, idempotency_key, created_at, updated_at, "
+            "preview_json) VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, '{}')",
+            (
+                session_id,
+                handoff_id,
+                "codex",
+                "ready_for_review",
+                request_digest,
+                package_digest,
+                return_id,
+                f"history-session-{index}",
+                now,
+                now,
+            ),
+        )
         database.execute(
             "INSERT INTO provider_adoption_candidates (candidate_id, session_id, return_id, status, "
             "base_commit, change_set_digest, changed_file_count, validation_json, failure_code, "
@@ -207,14 +252,14 @@ def test_provider_history_counts_only_terminal_local_validation_outcomes(tmp_pat
             "VALUES (?, ?, ?, ?, ?, ?, 1, '[]', NULL, ?, ?, ?, NULL, '{}')",
             (
                 f"00000000-0000-0000-0000-00000000000{index}",
-                "11111111-1111-1111-1111-111111111111",
-                f"return-history-{index}",
+                session_id,
+                return_id,
                 status,
                 "c" * 40,
                 f"{index}" * 64,
                 f"history-candidate-{index}",
-                "2026-08-19T00:00:00+00:00",
-                "2026-08-19T00:00:00+00:00",
+                now,
+                now,
             ),
         )
 
