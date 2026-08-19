@@ -56,7 +56,7 @@ from picotoopet_core.projects.repository import ProjectRepository
 from picotoopet_core.providers.artifact_store import ProviderReturnArtifactStore
 from picotoopet_core.providers.commit_service import ProviderCommitService
 from picotoopet_core.providers.publication_service import ProviderPublicationService
-from picotoopet_core.providers.readiness import CodexReadinessProbe
+from picotoopet_core.providers.readiness import ProviderReadinessProjection
 from picotoopet_core.providers.review_service import ProviderReviewService
 from picotoopet_core.providers.service import ProviderSessionService
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
@@ -224,8 +224,12 @@ def build_services(settings: AppSettings) -> Services:
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
     broker_sessions = BrokerSessionService(database, handoffs, returns, api_token=settings.api_token)
-    readiness = CodexReadinessProbe(settings.codex_executable)
-    provider_sessions = ProviderSessionService(database, handoffs, readiness=readiness.status)
+    provider_readiness = ProviderReadinessProjection(capability_router)
+    provider_sessions = ProviderSessionService(
+        database,
+        handoffs,
+        readiness_by_provider=provider_readiness.status,
+    )
     provider_artifacts = ProviderReturnArtifactStore(settings.paths.provider_returns_dir)
     provider_reviews = ProviderReviewService(database, provider_artifacts)
     provider_commits = ProviderCommitService(database, approvals)
