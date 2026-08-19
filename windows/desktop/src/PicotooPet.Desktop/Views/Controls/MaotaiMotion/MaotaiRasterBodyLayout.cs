@@ -33,22 +33,28 @@ internal static class MaotaiRasterBodyLayout
                     break;
 
                 case "MaotaiV2HindLeftUpper":
-                case "MaotaiV2HindLeftLower":
                 case "MaotaiV2HindRightUpper":
+                    ConfigurePivotedImage(element, 26.0, 42.0, 0.50, 0.15, 10);
+                    break;
+
+                case "MaotaiV2HindLeftLower":
                 case "MaotaiV2HindRightLower":
-                    System.Windows.Controls.Panel.SetZIndex(element, 10);
+                    ConfigurePivotedImage(element, 25.0, 39.0, 0.50, 0.15, 10);
                     break;
 
                 case "MaotaiV2HindLeftPaw":
                 case "MaotaiV2HindRightPaw":
-                    System.Windows.Controls.Panel.SetZIndex(element, 12);
+                    ConfigurePivotedImage(element, 26.0, 20.0, 0.50, 0.50, 12);
                     break;
 
                 case "MaotaiV2FrontLeftUpper":
-                case "MaotaiV2FrontLeftLower":
                 case "MaotaiV2FrontRightUpper":
+                    ConfigurePivotedImage(element, 26.0, 43.0, 0.50, 0.15, 16);
+                    break;
+
+                case "MaotaiV2FrontLeftLower":
                 case "MaotaiV2FrontRightLower":
-                    System.Windows.Controls.Panel.SetZIndex(element, 16);
+                    ConfigurePivotedImage(element, 25.0, 40.0, 0.50, 0.15, 16);
                     break;
 
                 case "MaotaiV2TorsoNeutral":
@@ -69,7 +75,7 @@ internal static class MaotaiRasterBodyLayout
 
                 case "MaotaiV2FrontLeftPaw":
                 case "MaotaiV2FrontRightPaw":
-                    System.Windows.Controls.Panel.SetZIndex(element, 30);
+                    ConfigurePivotedImage(element, 27.0, 20.0, 0.50, 0.50, 30);
                     break;
 
                 case "MaotaiV2HeadBone":
@@ -77,6 +83,22 @@ internal static class MaotaiRasterBodyLayout
                     break;
             }
         }
+    }
+
+    private static void ConfigurePivotedImage(
+        FrameworkElement element,
+        double width,
+        double height,
+        double pivotX,
+        double pivotY,
+        int zIndex)
+    {
+        element.Width = width;
+        element.Height = height;
+        element.RenderTransformOrigin = new Point(pivotX, pivotY);
+        Canvas.SetLeft(element, -(width * pivotX));
+        Canvas.SetTop(element, -(height * pivotY));
+        System.Windows.Controls.Panel.SetZIndex(element, zIndex);
     }
 
     private static void ConfigureImage(
