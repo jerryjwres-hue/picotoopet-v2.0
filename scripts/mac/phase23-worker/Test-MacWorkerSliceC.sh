@@ -115,6 +115,10 @@ if [[ "$(read_manifest "$package_root" goal_center_live_verifier)" != "VERIFY_GO
   echo "清单 Goal Center 实机验收入口不正确。" >&2
   exit 1
 fi
+if [[ "$(read_manifest "$package_root" coding_provider_live_verifier)" != "VERIFY_CODING_PROVIDERS.command" ]]; then
+  echo "清单 Coding Provider 实机验收入口不正确。" >&2
+  exit 1
+fi
 if [[ "$(read_manifest "$package_root" goal_center_runtime_task_types)" != '["autonomous.discovery.v1", "autonomous.goal_synthesis.v1", "autonomous.goal_handoff.v1"]' ]]; then
   echo "清单 Goal Center 动态任务类型不符合冻结链路。" >&2
   exit 1
@@ -169,6 +173,12 @@ required = {
     "picotoopet_core/autonomous/browser_broker.py",
     "picotoopet_core/autonomous/goal_handoff_access.py",
     "picotoopet_core/autonomous/prompts/web_gpt_master_v1.txt",
+    "picotoopet_core/api/routes/frugal_escalation.py",
+    "picotoopet_core/deep_ai/frugal.py",
+    "picotoopet_core/deep_ai/frugal_repository.py",
+    "picotoopet_core/providers/frugal_service.py",
+    "picotoopet_core/worker/codex_adapter.py",
+    "picotoopet_core/worker/claude_code_adapter.py",
 }
 with zipfile.ZipFile(sys.argv[1], "r") as wheel:
     names = set(wheel.namelist())
@@ -182,6 +192,7 @@ for script in \
   INSTALL_MAC_WORKER_SLICE_C.command \
   VERIFY_MAC_WORKER_SLICE_C.command \
   VERIFY_GOAL_CENTER_E2E.command \
+  VERIFY_CODING_PROVIDERS.command \
   ROLLBACK_MAC_WORKER_SLICE_C.command \
   lib.sh \
   worker-lib.sh; do
@@ -212,6 +223,27 @@ fi
 
 echo "PHASE23_MAC_WORKER_GOAL_CENTER_LIVE_VERIFIER=PASS"
 
+coding_verifier="$package_root/VERIFY_CODING_PROVIDERS.command"
+for marker in \
+  "/api/v1/providers/codex/status" \
+  "/api/v1/providers/claude-code/status" \
+  "CODEX_READINESS=" \
+  "CLAUDE_CODE_READINESS=" \
+  "AUTHENTICATION_USER_ACTION_REQUIRED=true" \
+  "CODING_PROVIDER_PROBE_NETWORK_TRIGGERED=false" \
+  "CODING_PROVIDER_EXECUTION_TRIGGERED=false"; do
+  if ! grep -Fq "$marker" "$coding_verifier"; then
+    echo "Coding Provider 实机验收器缺少冻结标记：$marker" >&2
+    exit 1
+  fi
+done
+if grep -Fq "PICOTOO_FIXTURE_MODE" "$coding_verifier"; then
+  echo "Coding Provider 实机验收器不得降级到 fixture 模式。" >&2
+  exit 1
+fi
+
+echo "PHASE23_MAC_WORKER_CODING_PROVIDER_VERIFIER=PASS"
+
 installer="$package_root/INSTALL_MAC_WORKER_SLICE_C.command"
 if grep -Fq 'picotoopet-core==2.3.0.dev' "$installer"; then
   echo "安装器仍包含硬编码项目版本。" >&2
@@ -234,6 +266,7 @@ combined="$(cat \
   "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" \
   "$package_root/VERIFY_MAC_WORKER_SLICE_C.command" \
   "$package_root/VERIFY_GOAL_CENTER_E2E.command" \
+  "$package_root/VERIFY_CODING_PROVIDERS.command" \
   "$package_root/ROLLBACK_MAC_WORKER_SLICE_C.command" \
   "$package_root/worker-lib.sh")"
 for forbidden in \
