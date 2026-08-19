@@ -2,10 +2,12 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Services;
 
-/// <summary>Windows 只保留 Provider 状态、人工额度确认、会话读取与紧急取消。</summary>
+/// <summary>Windows 只保留固定 Provider 状态、人工额度确认、会话读取与紧急取消。</summary>
 public interface IProviderSessionGateway
 {
     Task<ProviderStatusRecord> GetStatusAsync(CancellationToken cancellationToken);
+
+    Task<ProviderStatusRecord> GetClaudeCodeStatusAsync(CancellationToken cancellationToken);
 
     Task<HandoffRecord[]> GetHandoffsAsync(CancellationToken cancellationToken);
 
@@ -35,6 +37,9 @@ public sealed class ControlCenterProviderGateway : IProviderSessionGateway
 
     public Task<ProviderStatusRecord> GetStatusAsync(CancellationToken cancellationToken) =>
         _session.GetProviderStatusAsync(cancellationToken);
+
+    public Task<ProviderStatusRecord> GetClaudeCodeStatusAsync(CancellationToken cancellationToken) =>
+        _session.GetClaudeCodeProviderStatusAsync(cancellationToken);
 
     public Task<HandoffRecord[]> GetHandoffsAsync(CancellationToken cancellationToken) =>
         _session.GetHandoffsAsync(cancellationToken);

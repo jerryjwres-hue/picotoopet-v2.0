@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Services;
 
-/// <summary>把 Provider 状态、人工额度确认、会话读取与紧急取消接入安全配对会话。</summary>
+/// <summary>把固定 Provider 状态、人工额度确认、会话读取与紧急取消接入安全配对会话。</summary>
 public sealed partial class ControlCenterSession
 {
     public async Task<ProviderStatusRecord> GetProviderStatusAsync(
@@ -12,6 +12,14 @@ public sealed partial class ControlCenterSession
         ThrowIfDisposed();
         await using var client = CreateProviderClient();
         return await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ProviderStatusRecord> GetClaudeCodeProviderStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await using var client = CreateProviderClient();
+        return await client.GetClaudeCodeStatusAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ProviderSessionRecord[]> GetProviderSessionsAsync(

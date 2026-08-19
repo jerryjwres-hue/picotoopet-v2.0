@@ -4,7 +4,7 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>人工额度确认、Core 创建的 Codex Session 进度与紧急取消的原生模型。</summary>
+/// <summary>人工额度确认、Core 创建的 Coding Session 进度与紧急取消的原生模型。</summary>
 public sealed class ProviderSessionViewModel : ObservableObject
 {
     private static readonly IReadOnlyList<string> UsageChoices = Array.AsReadOnly(
@@ -25,6 +25,7 @@ public sealed class ProviderSessionViewModel : ObservableObject
 
     private readonly IProviderSessionGateway? _gateway;
     private ProviderStatusRecord _providerStatus;
+    private ProviderStatusRecord _claudeCodeStatus;
     private IReadOnlyList<HandoffRecord> _eligibleHandoffs;
     private HandoffRecord? _selectedHandoff;
     private ProviderUsageConfirmationRecord? _latestConfirmation;
@@ -55,8 +56,15 @@ public sealed class ProviderSessionViewModel : ObservableObject
             UsageMachineReadable: false,
             "mac-worker",
             "Mac Worker 尚未报告 Codex CLI 就绪状态。");
+        _claudeCodeStatus = new ProviderStatusRecord(
+            "claude_code",
+            "unavailable",
+            RealExecutionDefault: false,
+            UsageMachineReadable: false,
+            "mac-worker",
+            "Mac Worker 尚未报告 Claude Code CLI 就绪状态。");
         _eligibleHandoffs = Array.Empty<HandoffRecord>();
-        _recentSessions   = Array.Empty<ProviderSessionRecord>();
+        _recentSessions = Array.Empty<ProviderSessionRecord>();
         _statusMessage =
             "外部 Coding Session 由 Mac Core Frugal 仲裁器推进；Windows 只确认额度、查看状态和紧急取消。";
 
@@ -84,12 +92,19 @@ public sealed class ProviderSessionViewModel : ObservableObject
                 UsageMachineReadable: false,
                 "mac-worker",
                 "Smoke：Mac Worker Codex CLI 已就绪。");
-            EligibleHandoffs      = [handoff];
-            SelectedHandoff       = handoff;
-            RecentSessions        = [session];
+            ClaudeCodeStatus = new ProviderStatusRecord(
+                "claude_code",
+                "ready",
+                RealExecutionDefault: false,
+                UsageMachineReadable: false,
+                "mac-worker",
+                "Smoke：Mac Worker Claude Code CLI 已就绪。");
+            EligibleHandoffs = [handoff];
+            SelectedHandoff = handoff;
+            RecentSessions = [session];
             SelectedRecentSession = session;
-            SelectedSession       = session;
-            SelectedUsageStatus   = "confirmed_available";
+            SelectedSession = session;
+            SelectedUsageStatus = "confirmed_available";
         }
     }
 
@@ -108,8 +123,21 @@ public sealed class ProviderSessionViewModel : ObservableObject
         }
     }
 
+    public ProviderStatusRecord ClaudeCodeStatus
+    {
+        get => _claudeCodeStatus;
+        private set
+        {
+            if (SetProperty(ref _claudeCodeStatus, value))
+            {
+                RaisePropertyChanged(nameof(ProviderReadySummary));
+                RaiseActionProperties();
+            }
+        }
+    }
+
     public string ProviderReadySummary =>
-        $"Codex：{ProviderStatus.Readiness} · 执行主机：{ProviderStatus.ExecutionHost} · "
+        $"Codex：{ProviderStatus.Readiness} · Claude Code：{ClaudeCodeStatus.Readiness} · "
         + "Usage 仅人工确认，不抓取余额。";
 
     public IReadOnlyList<HandoffRecord> EligibleHandoffs
@@ -214,7 +242,8 @@ public sealed class ProviderSessionViewModel : ObservableObject
 
     public string SessionProgressSummary => SelectedSession is null
         ? "尚无 Mac Core 创建的 Coding Session。"
-        : $"{SelectedSession.Status} · turns {SelectedSession.TurnsUsed}/{SelectedSession.Budget.MaxTurns} · "
+        : $"{SelectedSession.Provider} · {SelectedSession.Status} · "
+          + $"turns {SelectedSession.TurnsUsed}/{SelectedSession.Budget.MaxTurns} · "
           + $"{SelectedSession.ElapsedSeconds}/{SelectedSession.Budget.TimeoutSeconds} 秒 · "
           + $"变更文件 {SelectedSession.ChangedFileCount}/{SelectedSession.Budget.MaxChangedFiles}";
 
@@ -245,13 +274,15 @@ public sealed class ProviderSessionViewModel : ObservableObject
     public bool CanConfirmUsage =>
         !IsBusy
         && _gateway is not null
-        && SelectedHandoff is { Status: "approved", Provider: "codex" }
+        && SelectedHandoff is { Status: "approved" } handoff
+        && IsSupportedCodingProvider(handoff.Provider)
         && UsageChoices.Contains(SelectedUsageStatus, StringComparer.Ordinal);
 
     public bool CanCancelSession =>
         !IsBusy
         && _gateway is not null
         && SelectedSession is not null
+        && IsSupportedCodingProvider(SelectedSession.Provider)
         && !TerminalStatuses.Contains(SelectedSession.Status);
 
     public AsyncRelayCommand RefreshCommand { get; }
@@ -266,7 +297,7 @@ public sealed class ProviderSessionViewModel : ObservableObject
         {
             return;
         }
-        await RefreshCoreAsync("正在读取 Codex Provider 与 Session 安全事实……", cancellationToken)
+        await RefreshCoreAsync("正在读取 Coding Provider 与 Session 安全事实……", cancellationToken)
             .ConfigureAwait(true);
     }
 
@@ -276,7 +307,7 @@ public sealed class ProviderSessionViewModel : ObservableObject
         {
             return;
         }
-        await RefreshCoreAsync("正在刷新 Codex Provider 与 Session 状态……", cancellationToken)
+        await RefreshCoreAsync("正在刷新 Coding Provider 与 Session 状态……", cancellationToken)
             .ConfigureAwait(true);
     }
 
@@ -285,7 +316,7 @@ public sealed class ProviderSessionViewModel : ObservableObject
         var gateway = _gateway
             ?? throw new InvalidOperationException("Smoke test 模式不能提交额度确认。");
         var handoff = SelectedHandoff
-            ?? throw new InvalidOperationException("请先选择 approved Codex Handoff。");
+            ?? throw new InvalidOperationException("请先选择 Mac Core 已绑定的 approved Coding Handoff。");
         if (!CanConfirmUsage)
         {
             throw new InvalidOperationException("当前状态不能提交额度确认。");
@@ -295,7 +326,8 @@ public sealed class ProviderSessionViewModel : ObservableObject
         StatusMessage = "正在记录人工额度确认；不会读取 Usage 页面或账户余额……";
         try
         {
-            var idempotencyKey = $"windows-codex-usage-{handoff.HandoffId}-{Guid.NewGuid():N}";
+            var idempotencyKey =
+                $"windows-coding-usage-{handoff.Provider}-{handoff.HandoffId}-{Guid.NewGuid():N}";
             LatestConfirmation = await gateway.ConfirmUsageAsync(
                 handoff.HandoffId,
                 SelectedUsageStatus,
@@ -326,7 +358,8 @@ public sealed class ProviderSessionViewModel : ObservableObject
         StatusMessage = "正在请求取消；Mac Worker 将终止完整进程组并强制清理 Session worktree……";
         try
         {
-            var idempotencyKey = $"windows-codex-cancel-{session.SessionId}-{Guid.NewGuid():N}";
+            var idempotencyKey =
+                $"windows-coding-cancel-{session.Provider}-{session.SessionId}-{Guid.NewGuid():N}";
             var cancelled = await gateway.CancelSessionAsync(
                 session.SessionId,
                 idempotencyKey,
@@ -347,15 +380,22 @@ public sealed class ProviderSessionViewModel : ObservableObject
         StatusMessage = busyMessage;
         try
         {
-            var statusTask   = gateway.GetStatusAsync(cancellationToken);
+            var codexStatusTask = gateway.GetStatusAsync(cancellationToken);
+            var claudeCodeStatusTask = gateway.GetClaudeCodeStatusAsync(cancellationToken);
             var handoffsTask = gateway.GetHandoffsAsync(cancellationToken);
             var sessionsTask = gateway.GetSessionsAsync(cancellationToken);
-            await Task.WhenAll(statusTask, handoffsTask, sessionsTask).ConfigureAwait(true);
-            ProviderStatus = await statusTask.ConfigureAwait(true);
+            await Task.WhenAll(
+                codexStatusTask,
+                claudeCodeStatusTask,
+                handoffsTask,
+                sessionsTask).ConfigureAwait(true);
+            ProviderStatus = await codexStatusTask.ConfigureAwait(true);
+            ClaudeCodeStatus = await claudeCodeStatusTask.ConfigureAwait(true);
             ApplyHandoffs(await handoffsTask.ConfigureAwait(true));
             ApplySessions(await sessionsTask.ConfigureAwait(true));
             StatusMessage =
-                $"Provider={ProviderStatus.Readiness}；approved Codex Handoff {EligibleHandoffs.Count} 条；Session {RecentSessions.Count} 条。";
+                $"Codex={ProviderStatus.Readiness}；Claude Code={ClaudeCodeStatus.Readiness}；"
+                + $"approved Coding Handoff {EligibleHandoffs.Count} 条；Session {RecentSessions.Count} 条。";
         }
         catch (Exception exception) when (IsBoundedOperationalError(exception))
         {
@@ -372,7 +412,7 @@ public sealed class ProviderSessionViewModel : ObservableObject
         var selectedId = SelectedHandoff?.HandoffId;
         var eligible = records
             .Where(item =>
-                string.Equals(item.Provider, "codex", StringComparison.Ordinal)
+                IsSupportedCodingProvider(item.Provider)
                 && string.Equals(item.Status, "approved", StringComparison.Ordinal))
             .OrderByDescending(item => item.UpdatedAt)
             .Take(100)
@@ -387,7 +427,7 @@ public sealed class ProviderSessionViewModel : ObservableObject
     {
         var selectedId = SelectedSession?.SessionId;
         var ordered = records
-            .Where(item => string.Equals(item.Provider, "codex", StringComparison.Ordinal))
+            .Where(item => IsSupportedCodingProvider(item.Provider))
             .OrderByDescending(item => item.UpdatedAt)
             .Take(100)
             .ToArray();
@@ -408,9 +448,9 @@ public sealed class ProviderSessionViewModel : ObservableObject
             .Append(record)
             .OrderByDescending(item => item.UpdatedAt)
             .ToArray();
-        RecentSessions        = records;
+        RecentSessions = records;
         SelectedRecentSession = record;
-        SelectedSession       = record;
+        SelectedSession = record;
     }
 
     private void RaiseActionProperties()
@@ -426,6 +466,10 @@ public sealed class ProviderSessionViewModel : ObservableObject
     {
         StatusMessage = FormatError("Provider 操作失败；已有安全投影已保留。", exception);
     }
+
+    private static bool IsSupportedCodingProvider(string provider) =>
+        string.Equals(provider, "codex", StringComparison.Ordinal)
+        || string.Equals(provider, "claude_code", StringComparison.Ordinal);
 
     private static bool IsBoundedOperationalError(Exception exception) =>
         exception is ApiException or InvalidOperationException or IOException;

@@ -6,7 +6,7 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.Networking;
 
-/// <summary>Windows 只访问 Provider 状态、额度确认、会话读取与紧急取消；Session 创建权归 Mac Core。</summary>
+/// <summary>Windows 只访问固定 Provider 状态、额度确认、会话读取与紧急取消；Session 创建权归 Mac Core。</summary>
 public sealed class MacCoreProviderClient : IAsyncDisposable
 {
     private const int MaxProviderResponseBytes = 128 * 1024;
@@ -27,11 +27,7 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
     {
     }
 
-    private MacCoreProviderClient(
-        HttpClient httpClient,
-        Uri baseUri,
-        string token,
-        bool ownsClient)
+    private MacCoreProviderClient(HttpClient httpClient, Uri baseUri, string token, bool ownsClient)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _baseUri = EnsureTrailingSlash(baseUri ?? throw new ArgumentNullException(nameof(baseUri)));
@@ -41,16 +37,15 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
         _ownsClient = ownsClient;
     }
 
-    /// <summary>创建具有固定连接池与超时的长期 Provider 客户端。</summary>
     public static MacCoreProviderClient Create(Uri baseUri, string token)
     {
         var handler = new SocketsHttpHandler
         {
-            PooledConnectionLifetime    = TimeSpan.FromMinutes(5),
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-            ConnectTimeout              = TimeSpan.FromSeconds(5),
-            MaxConnectionsPerServer     = 4,
-            AutomaticDecompression      = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            ConnectTimeout = TimeSpan.FromSeconds(5),
+            MaxConnectionsPerServer = 4,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
         };
         var client = new HttpClient(handler, disposeHandler: true)
         {
@@ -59,8 +54,7 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
         return new MacCoreProviderClient(client, baseUri, token, ownsClient: true);
     }
 
-    public Task<ProviderStatusRecord> GetStatusAsync(
-        CancellationToken cancellationToken = default) =>
+    public Task<ProviderStatusRecord> GetStatusAsync(CancellationToken cancellationToken = default) =>
         SendAsync<ProviderStatusRecord>(
             HttpMethod.Get,
             "api/v1/providers/codex/status",
@@ -68,8 +62,16 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
             idempotencyKey: null,
             cancellationToken);
 
-    public Task<ProviderSessionRecord[]> GetSessionsAsync(
+    public Task<ProviderStatusRecord> GetClaudeCodeStatusAsync(
         CancellationToken cancellationToken = default) =>
+        SendAsync<ProviderStatusRecord>(
+            HttpMethod.Get,
+            "api/v1/providers/claude-code/status",
+            payload: null,
+            idempotencyKey: null,
+            cancellationToken);
+
+    public Task<ProviderSessionRecord[]> GetSessionsAsync(CancellationToken cancellationToken = default) =>
         SendAsync<ProviderSessionRecord[]>(
             HttpMethod.Get,
             "api/v1/provider-sessions?limit=100",
@@ -148,15 +150,12 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken).ConfigureAwait(false);
-            var responseTrace = response.Headers.TryGetValues(
-                    "X-Picotoo-Trace-Id",
-                    out var traceValues)
+            var responseTrace = response.Headers.TryGetValues("X-Picotoo-Trace-Id", out var traceValues)
                 ? traceValues.FirstOrDefault() ?? traceId
                 : traceId;
             if (!response.IsSuccessStatusCode)
             {
-                var detail = await ReadErrorAsync(response.Content, cancellationToken)
-                    .ConfigureAwait(false);
+                var detail = await ReadErrorAsync(response.Content, cancellationToken).ConfigureAwait(false);
                 throw new ApiException(
                     detail?.Code ?? "HTTP_ERROR",
                     detail?.Message ?? $"Mac Core 返回 HTTP {(int)response.StatusCode}。",
@@ -165,10 +164,8 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
                     (int)response.StatusCode);
             }
 
-            var data = await ReadBoundedAsync(
-                response.Content,
-                MaxProviderResponseBytes,
-                cancellationToken).ConfigureAwait(false);
+            var data = await ReadBoundedAsync(response.Content, MaxProviderResponseBytes, cancellationToken)
+                .ConfigureAwait(false);
             try
             {
                 return JsonSerializer.Deserialize<T>(data, JsonOptions)
@@ -236,15 +233,13 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
             throw new ProviderResponseTooLargeException();
         }
 
-        await using var stream = await content.ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var buffer = new MemoryStream(capacity: Math.Min(maxBytes, 16 * 1024));
         var block = new byte[8 * 1024];
         var total = 0;
         while (true)
         {
-            var read = await stream.ReadAsync(block.AsMemory(), cancellationToken)
-                .ConfigureAwait(false);
+            var read = await stream.ReadAsync(block.AsMemory(), cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
                 return buffer.ToArray();
@@ -254,8 +249,7 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
             {
                 throw new ProviderResponseTooLargeException();
             }
-            await buffer.WriteAsync(block.AsMemory(0, read), cancellationToken)
-                .ConfigureAwait(false);
+            await buffer.WriteAsync(block.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -296,9 +290,7 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
         {
             throw new ArgumentException("Mac Core 地址必须是绝对 URI。", nameof(uri));
         }
-        return uri.AbsoluteUri.EndsWith('/')
-            ? uri
-            : new Uri(uri.AbsoluteUri + "/", UriKind.Absolute);
+        return uri.AbsoluteUri.EndsWith('/') ? uri : new Uri(uri.AbsoluteUri + "/", UriKind.Absolute);
     }
 
     public ValueTask DisposeAsync()
