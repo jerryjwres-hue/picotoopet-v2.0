@@ -18,13 +18,15 @@ def _module():  # type: ignore[no-untyped-def]
 
 
 class FakeRunner:
-    def __init__(self, result: BoundedProcessResult) -> None:
-        self.result = result
+    def __init__(self, *results: BoundedProcessResult) -> None:
+        self.results = list(results)
         self.calls: list[dict[str, object]] = []
 
     def run(self, **kwargs):  # type: ignore[no-untyped-def]
         self.calls.append(kwargs)
-        return self.result
+        if not self.results:
+            raise AssertionError("unexpected extra provider subprocess call")
+        return self.results.pop(0)
 
 
 def _success_payload() -> str:
@@ -41,6 +43,30 @@ def _success_payload() -> str:
             "permission_denials": [],
             "result": "raw answer must not be persisted in safe summary",
         }
+    )
+
+
+def _policy_compatible_help() -> str:
+    return " ".join(
+        (
+            "--safe-mode",
+            "--output-format",
+            "--max-turns",
+            "--no-session-persistence",
+            "--permission-mode",
+            "--tools",
+            "--disallowedTools",
+            "--version",
+        )
+    )
+
+
+def _result(*, return_code: int, stdout: str) -> BoundedProcessResult:
+    return BoundedProcessResult(
+        return_code=return_code,
+        stdout=stdout,
+        stderr="",
+        elapsed_seconds=0,
     )
 
 
@@ -129,30 +155,38 @@ def test_result_parser_rejects_non_result_or_over_budget_turns() -> None:
         )
 
 
-def test_readiness_uses_auth_status_only_and_never_reads_credentials(tmp_path: Path) -> None:
+def test_readiness_checks_policy_flags_then_auth_without_reading_credentials(tmp_path: Path) -> None:
     module = _module()
     executable = tmp_path / "claude"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     runner = FakeRunner(
-        BoundedProcessResult(
-            return_code=0,
-            stdout=json.dumps({"loggedIn": True}),
-            stderr="",
-            elapsed_seconds=0,
-        )
+        _result(return_code=0, stdout=_policy_compatible_help()),
+        _result(return_code=0, stdout=json.dumps({"loggedIn": True})),
     )
     adapter = module.ClaudeCodeAdapter(executable=executable, runner=runner)
 
     readiness = adapter.probe_readiness(cwd=cwd)
 
     assert readiness == "ready"
+    assert len(runner.calls) == 2
+    assert runner.calls[0]["argv"] == [str(executable), "--help"]
+    assert runner.calls[1]["argv"] == [str(executable), "auth", "status"]
+    assert all(call["stdin_text"] == "" for call in runner.calls)
+    assert all(call["timeout_seconds"] <= 15 for call in runner.calls)
+
+
+def test_readiness_policy_blocks_old_cli_before_authentication(tmp_path: Path) -> None:
+    module = _module()
+    executable = tmp_path / "claude"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    runner = FakeRunner(_result(return_code=0, stdout="--output-format --max-turns"))
+    adapter = module.ClaudeCodeAdapter(executable=executable, runner=runner)
+
+    assert adapter.probe_readiness(cwd=tmp_path) == "policy_blocked"
     assert len(runner.calls) == 1
-    argv = runner.calls[0]["argv"]
-    assert argv == [str(executable), "auth", "status"]
-    assert runner.calls[0]["stdin_text"] == ""
-    assert runner.calls[0]["timeout_seconds"] <= 15
+    assert runner.calls[0]["argv"] == [str(executable), "--help"]
 
 
 def test_readiness_distinguishes_not_authenticated_and_unavailable(tmp_path: Path) -> None:
@@ -163,12 +197,8 @@ def test_readiness_distinguishes_not_authenticated_and_unavailable(tmp_path: Pat
     executable = tmp_path / "claude"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     runner = FakeRunner(
-        BoundedProcessResult(
-            return_code=1,
-            stdout=json.dumps({"loggedIn": False}),
-            stderr="",
-            elapsed_seconds=0,
-        )
+        _result(return_code=0, stdout=_policy_compatible_help()),
+        _result(return_code=1, stdout=json.dumps({"loggedIn": False})),
     )
     adapter = module.ClaudeCodeAdapter(executable=executable, runner=runner)
     assert adapter.probe_readiness(cwd=tmp_path) == "not_authenticated"
