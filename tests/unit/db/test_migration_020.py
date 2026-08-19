@@ -10,7 +10,7 @@ def test_migration_020_adds_canonical_connected_evidence_tables(tmp_path: Path) 
     database.open()
     database.apply_migrations()
     try:
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 20
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 21
         tables = {
             row["name"]
             for row in database.fetchall(
