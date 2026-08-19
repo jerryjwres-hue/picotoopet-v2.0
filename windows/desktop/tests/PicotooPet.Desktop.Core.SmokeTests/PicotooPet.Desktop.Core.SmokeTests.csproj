@@ -4,6 +4,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>PicotooPet.Desktop.Core.SmokeTests</RootNamespace>
+    <StartupObject>PicotooPet.Desktop.Core.SmokeTests.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
