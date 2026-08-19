@@ -46,7 +46,7 @@ class CapturingLocal:
         )
 
 
-def _task() -> TaskRecord:
+def _task(*, payload: dict[str, object] | None = None) -> TaskRecord:
     now = datetime.now(UTC)
     return TaskRecord(
         task_id="connected-discovery-task",
@@ -54,7 +54,8 @@ def _task() -> TaskRecord:
         status=TaskStatus.RUNNING,
         priority=100,
         resource_tag="workflow:connected-evidence",
-        payload={
+        payload=payload
+        or {
             "objective": "研究 Large Dog Chew Toy X9 的消费者痛点并生成内容方向",
             "read_only": True,
             "max_candidates": 12,
@@ -64,6 +65,36 @@ def _task() -> TaskRecord:
         timeout_seconds=420,
         created_at=now,
         updated_at=now,
+    )
+
+
+def _put_review(
+    repository: ConnectedEvidenceRepository,
+    *,
+    product_key: str,
+    evidence_id: str,
+    text: str,
+    raw_hash: str,
+) -> None:
+    # ── Test evidence stays fully canonical so selection assertions exercise production paths. ──
+    repository.put_evidence(
+        evidence_id=evidence_id,
+        product_key=product_key,
+        evidence_type="consumer_review",
+        source="amazon",
+        platform="amazon",
+        source_url="https://www.amazon.com/dp/B0TESTX9",
+        source_entity_id=evidence_id,
+        text_value=text,
+        raw_hash=raw_hash,
+        trust_level="B",
+        confidence=0.91,
+        captured_at="2026-08-17T12:00:00+00:00",
+        origin="maotai41_import",
+        external_ref_type="maotai41.consumer_signal",
+        external_ref_id=evidence_id,
+        idempotency_key=f"legacy41:test:{evidence_id}",
+        provenance={"machine_analysis_imported": False},
     )
 
 
@@ -83,24 +114,12 @@ def test_unique_product_match_injects_existing_connected_evidence_before_web_sea
         external_ref_type="maotai41.product",
         external_ref_id="p-1",
     )
-    repository.put_evidence(
-        evidence_id="legacy41-e-1",
+    _put_review(
+        repository,
         product_key="legacy41:p-1",
-        evidence_type="consumer_review",
-        source="amazon",
-        platform="amazon",
-        source_url="https://www.amazon.com/dp/B0TESTX9",
-        source_entity_id="review-1",
-        text_value="Strong toy, but the handle is too small for my malamute.",
+        evidence_id="legacy41-e-1",
+        text="Strong toy, but the handle is too small for my malamute.",
         raw_hash="a" * 64,
-        trust_level="B",
-        confidence=0.91,
-        captured_at="2026-08-17T12:00:00+00:00",
-        origin="maotai41_import",
-        external_ref_type="maotai41.consumer_signal",
-        external_ref_id="review-1",
-        idempotency_key="legacy41:test:review-1",
-        provenance={"machine_analysis_imported": False},
     )
 
     search = FakeSearch()
@@ -127,4 +146,63 @@ def test_unique_product_match_injects_existing_connected_evidence_before_web_sea
     assert result.result_document["connected_evidence"][0]["evidence_id"] == "legacy41-e-1"
     assert result.result_document["connected_evidence"][0]["origin"] == "maotai41_import"
     assert result.result_document["evidence_ids"] == ["legacy41-e-1", "search-01"]
+    database.close()
+
+
+def test_connected_product_keys_override_ambiguous_title_matching(tmp_path: Path) -> None:
+    database = Database(tmp_path / "core.db")
+    database.open()
+    database.apply_migrations()
+    repository = ConnectedEvidenceRepository(database)
+
+    # ── Two products deliberately share one title; only the Core-selected key may enter analysis. ──
+    for product_key, external_id in (("legacy41:p-1", "p-1"), ("legacy41:p-2", "p-2")):
+        repository.upsert_product(
+            product_key=product_key,
+            title="Large Dog Chew Toy X9",
+            brand="Maotai Test",
+            category="dog toy",
+            origin="maotai41_import",
+            external_ref_type="maotai41.product",
+            external_ref_id=external_id,
+        )
+    _put_review(
+        repository,
+        product_key="legacy41:p-1",
+        evidence_id="legacy41-e-1",
+        text="Selected product evidence.",
+        raw_hash="a" * 64,
+    )
+    _put_review(
+        repository,
+        product_key="legacy41:p-2",
+        evidence_id="legacy41-e-2",
+        text="Other product evidence must stay out.",
+        raw_hash="b" * 64,
+    )
+
+    search = FakeSearch()
+    local = CapturingLocal()
+    coordinator = ContentDiscoveryCoordinator(
+        search=search,
+        local=local,
+        seed_queries=("large dog chew toy x9 complaints",),
+        connected_evidence=repository,
+    )
+    result = coordinator.handler(
+        _task(
+            payload={
+                "objective": "自动分析新接入的公开证据并形成视频交接包",
+                "read_only": True,
+                "max_candidates": 12,
+                "connected_product_keys": ["legacy41:p-1"],
+            }
+        )
+    )
+
+    assert result.result_document is not None
+    assert result.result_document["connected_evidence_count"] == 1
+    assert result.result_document["evidence_ids"] == ["legacy41-e-1", "search-01"]
+    assert "Selected product evidence." in local.requests[0].text
+    assert "Other product evidence must stay out." not in local.requests[0].text
     database.close()
