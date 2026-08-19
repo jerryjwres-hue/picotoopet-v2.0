@@ -5,7 +5,7 @@ Picotoo Pet V2 — Phase 2.3 Slice D / Goal Center E2E Mac Worker 安装说明
 
 本包会：
 1. 校验发布清单、文件大小、SHA-256、架构和唯一项目 wheel；
-2. 直接打开项目 wheel，验证自主情报模块和固定 Web GPT Prompt 确实随包交付；
+2. 直接打开项目 wheel，验证自主情报模块、Connected Intake Autopilot 和固定 Web GPT Prompt 确实随包交付；
 3. 使用包内 wheelhouse 离线安装同批次 Core + Worker Runtime；
 4. 在临时端口验证候选 Core、Worker 状态 API 和诊断固定端点；
 5. 备份现有 Worker LaunchAgent 定义和 current 指针；
@@ -20,6 +20,9 @@ Goal Center / Autonomous Intelligence 能力：
 - Mac Worker 在真实依赖健康时动态注册 autonomous.discovery.v1、autonomous.goal_synthesis.v1、autonomous.goal_handoff.v1；
 - autonomous.discovery.v1 只有在 Research Gateway readiness 与本地 Scout 同时健康时才会注册；
 - Content Discovery 会自动按当前任务目标生成研究查询，不再只使用固定通用关键词；
+- Browser Bridge 或 Maotai OS 4.1 成功接入新的规范化证据后，Mac Core 会自动创建一个 P2、产品可见、只读的 research-to-video Goal；不需要用户再手工创建第二个分析任务；
+- 自动 Goal 仍复用 discovery → local synthesis → handoff 三段冻结链路，只把 Mac Core 已确认的 canonical product keys 作为精确证据作用域；外部程序不能指定 task type、provider、prompt、shell 或账号写操作；
+- 同一 intake event 通过确定性幂等键只产生一个 Goal；重复提交不会重复排队；
 - 迁移 Maotai OS 4.1 的确定性信息增益、采集节奏和来源策略算法，但不迁移旧 UI 或旧数据库事实源；
 - 提供只读 Browser Broker 公开页面采集合同；它只接受经过安全校验的公开页面证据，不读取 Cookie、密码、Token、浏览器存储或支付信息；
 - 固定 Web GPT Prompt 会随 Python wheel 一起交付，用于后续人工把交接包提交给网页 ChatGPT；程序不会登录或控制网页 ChatGPT；
@@ -58,7 +61,8 @@ Worker 固定支持的基础任务：
 - 在用户电脑编译源码或联网解析依赖；
 - 动态加载任意任务处理器；
 - 把旧 Maotai OS 4.1 SQLite 启动为第二套在线事实源；
-- 自动登录网页 ChatGPT、Amazon、TikTok 或其它需要账号的平台。
+- 自动登录网页 ChatGPT、Amazon、TikTok 或其它需要账号的平台；
+- 自动点赞、关注、评论、发帖、私信、收藏、下单或修改账户资料。
 
 安装：双击 INSTALL_MAC_WORKER_SLICE_C.command
 基础验证：安装 PASS 后双击 VERIFY_MAC_WORKER_SLICE_C.command
