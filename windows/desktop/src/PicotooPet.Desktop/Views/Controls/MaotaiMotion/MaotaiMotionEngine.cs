@@ -748,14 +748,14 @@ internal sealed class MaotaiMotionEngine
 
         if (grounded && moving)
         {
-            // Front-view lane     : preserve a center gap so wide furry silhouettes never cross into an X shape.
-            // Foot-lock priority  : keep the world lock until it reaches the lane edge, then clamp only the visual paw lane.
-            var laneSign      = Math.Sign(shoulderLocalX);
-            var laneClearance = frontLeg ? 7.0 : 6.0;
-            var pawLocalX     = pawWorldX - _locomotion.PositionX;
-            pawLocalX = laneSign < 0.0
-                ? Math.Min(pawLocalX, -laneClearance)
-                : Math.Max(pawLocalX, laneClearance);
+            // Front-view lane    : lateral travel belongs to the root; paws only make a compact trot around their own shoulder.
+            // Seam prevention    : this keeps each stretched furry leg near vertical, preventing center-crossing X silhouettes.
+            var laneRadius = frontLeg ? 4.5 : 4.0;
+            var pawLocalX  = pawWorldX - _locomotion.PositionX;
+            pawLocalX = Math.Clamp(
+                pawLocalX,
+                shoulderLocalX - laneRadius,
+                shoulderLocalX + laneRadius);
             pawWorldX = _locomotion.PositionX + pawLocalX;
         }
 
