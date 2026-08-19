@@ -1,6 +1,6 @@
 # Maotai v2 art staging continuity
 
-This directory is non-runtime staging only. Runtime assets live under `windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2` and must stay manifest-only.
+This directory is the non-runtime continuity/staging record for the Maotai v2 raster rig. Runtime assets live under `windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2` and remain manifest-only.
 
 ## Source of truth
 
@@ -8,81 +8,92 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 - Branch: `feature/maotai-natural-motion-v2`
 - Draft PR: `#36` — keep Draft; do not merge or mark Ready.
 - `MaotaiAssetManifest.cs` is authoritative for file names, logical dimensions, pivots and overlap values.
-- Every useful art candidate/checkpoint must be committed to staging before runtime promotion so a new chat can resume without regenerating work.
-- Formal PNGs are promoted only after RGBA/alpha/border/dimension checks and exact Git blob SHA verification.
+- Every useful candidate/checkpoint is kept in GitHub before runtime promotion so a new chat can resume without regenerating prior work.
+- Complete-character preview/state images are never used as runtime cut sources. Modular independently rendered part cells may be used as production sources after isolation and validation.
 
-## CI-confirmed formal assets added in this art pass
+## Formal raster status — 44/44 present and Windows gate green
 
-- `torso_neutral.png`: logical `92 x 78`, pivot `(46,41)`, overlap `20`; Prebuilt #2353 passed it.
-- `torso_crouch.png`: logical `96 x 72`, pivot `(48,39)`, overlap `20`; Prebuilt #2362 passed it.
-- `torso_stretch.png`: logical `90 x 86`, pivot `(45,45)`, overlap `20`; Prebuilt #2372 passed it.
-- `chest_fur.png`: logical `62 x 52`, pivot `(31,18)`, overlap `16`; Prebuilt #2378 passed it.
+The 44-file formal Maotai v2 raster set is now complete in:
 
-Current formal raster blocker after those CI runs: `head.png`.
+`windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2`
 
-## 2026-08-18 batch checkpoint — restart safe
+Earlier CI-confirmed assets from this pass:
 
-A generated **modular asset board** contained independently rendered cells for 16 of the 17 remaining files. Only those independent cells were used; complete-character preview poses and sprite examples were explicitly excluded.
+- `torso_neutral.png`: Prebuilt #2353
+- `torso_crouch.png`: Prebuilt #2362
+- `torso_stretch.png`: Prebuilt #2372
+- `chest_fur.png`: Prebuilt #2378
 
-The following 16 candidates are now preserved in GitHub as a compact reversible checkpoint:
+The remaining 17 missing files were promoted together in commit:
 
-- `muzzle.png`
+- `2b84f3d2e764e58bee594166eb109c044685434f`
+
+Those 17 are:
+
+- `head.png`, `muzzle.png`
 - `front_left_upper.png`, `front_left_lower.png`, `front_right_upper.png`, `front_right_lower.png`
 - `hind_left_upper.png`, `hind_left_lower.png`, `hind_right_upper.png`, `hind_right_lower.png`
 - `tail_base.png`, `tail_mid.png`, `tail_tip.png`
 - `headphone_band.png`, `headphone_left.png`, `headphone_right.png`
 - `laptop.png`
 
-Checkpoint files:
+A subsequent one-shot normalization pass rewrote the formal PNG streams cleanly and enforced the exact 2px inner transparent margin used by `MaotaiAssetPixelValidationSmokeTests` across all 44 assets. The resulting asset commit is:
+
+- `5560c114b5af65e70b15d92bd25151668732a6d6`
+
+The temporary promotion/normalization workflows were removed after use; they are not part of the final runtime architecture.
+
+## Windows verification — current authoritative evidence
+
+Commit `cea3b23077c752216177f0c9c2563862c3e5dc3f` (temporary normalization workflow removed) produced the current full validation evidence:
+
+- Windows Control Center Slice D CI #2481: **success**
+  - 325 contract/security checks passed
+  - WPF build passed with warnings-as-errors
+  - published `--self-test` passed
+  - this means the full 44-file raster asset gate passed: PNG decode, >=2x density, alpha, nonempty visible bbox, 2px safety margin, manifest/publish mapping, plus existing motion/behavior smoke tests
+- Phase 2.3 Slice D Windows Prebuilt Release #2474: **success**
+  - 49 release contract checks passed
+  - formal WPF build + self-test passed
+  - delivery invariants passed
+  - installer goal contract passed
+  - Windows PowerShell 5.1 install / upgrade / recovery / rollback lifecycle passed
+  - formal installer artifact upload passed
+
+Therefore the project is no longer blocked on missing/corrupt raster assets or the Windows installer lifecycle.
+
+## Restart-safe art checkpoints
+
+The candidate data that produced the batch is still preserved in GitHub:
 
 - `docs/art/maotai-v2/staging/2026-08-18/batch1_missing16.mtr.b85`
 - `docs/art/maotai-v2/staging/2026-08-18/restore_batch1_missing16.py`
-- checkpoint commit: `3d542cb6e4ac1ecace9be2127f81291f787caead`
-- decoder commit: `a6024306064ce36cd5fbfb9912591510fcd281ce`
+- `docs/art/maotai-v2/staging/2026-08-18/batch1_missing17.mtr.b85`
+- `docs/art/maotai-v2/staging/2026-08-18/restore_batch1_missing17.py`
 
-The MTR1 checkpoint stores logical-resolution RGBA/palette/index data and is designed only to prevent regeneration after a chat restart. Restored candidates still need @2x manifest sizing, pivot/overlap placement, RGBA outer-border validation and formal runtime promotion.
+The 17-file checkpoint includes the independent `head.png` candidate at its frozen `156 x 140` @2x contract. The other batch pieces can be restored from the same pack without regenerating art after a chat restart.
 
-Batch processing decisions already made:
+## Important production decisions already made
 
-- limb source cells contain paw-like ends; formal upper/lower segments must remove those ends because the four paw PNGs already exist independently.
-- tail cells are mirrored horizontally before formal promotion so their root sits on the right-side pivot specified by the manifest.
-- headset-only source is allowed to produce band/left/right pieces because it is not a complete-character render.
-- modular independent-part cells may be used as production sources; complete-character preview/state images remain forbidden as cut sources.
-
-## Remaining formal PNGs
-
-17 files were missing before the checkpoint. The 16 above now have restart-safe candidate data, but are not yet all promoted to runtime. `head.png` remains the only asset that still needs a satisfactory independent visual master before the whole batch can be promoted and CI-walked.
-
-Existing ears, eyes, pupils, brows, five mouth states, all four paws, drink and shadow remain separate and should not be redrawn unless final visual assembly proves a mismatch.
-
-## `head.png` — current production target
-
-Authoritative manifest contract:
-
-- logical size: `78 x 70`
-- pivot: `(39,42)`
-- joint overlap: `20 px` logical
-- minimum @2x runtime size: `156 x 140` RGBA
-- role: independent head shell / forehead / cheek-fur / neck-overlap base only
-- do not bake in separate ears, pupils, brows, expression mouths, props, headphones or complete-character pixels
-
-Reference/source notes:
-
-- Canva rig reference `DAHSZ9UjHCw` includes native head/face assets `MAHSZ73u7SM` (230x209) and `MAHSZ3uLUf0` (248x323).
-- They are head-only references/sources, not final runtime assets; features that already have independent layers must not be baked into final `head.png`.
+- `head.png` authoritative manifest contract is logical `78 x 70`, pivot `(39,42)`, overlap `20`, minimum @2x `156 x 140`.
+- upper/lower limb pieces do not include the already-separate paw sprites in the formal rig.
+- tail source pieces were horizontally aligned so the root side matches the manifest's right-side tail pivots.
+- headset source is headset-only, then split to band/left/right; no complete-character cutting.
+- existing ears, eyes, pupils, brows, five mouth states, four paws, drink and shadow remain separate layers.
+- early long-Base64 manual PNG uploads are not used as the preferred transport path because they proved vulnerable to truncated streams; GitHub-side checkpoint restoration + clean PNG rewrite is the proven path.
 
 ## Rejected paths — do not repeat
 
 - `torso_candidate_v1_preview.png`: rejected for tall/narrow proportions, edge issue and hollow socket geometry.
-- Canva Magic Layers single-layer torso resize: rejected because it could not repaint socket geometry.
-- complete-character renders are reference only; never crop them into runtime parts.
-- `head_candidate_v1.png`: rejected; torso texture deformed into a head silhouette still read as a distorted torso.
-- image generation repeatedly drifted to promotional/asset boards when asked for one isolated part. Do not spend repeated turns retrying that same free-generation path; use head-only source reconstruction/editing instead.
-- never attach a GitHub PNG blob unless GitHub's returned blob SHA exactly matches the locally computed Git blob SHA.
+- Canva single-layer torso resize: rejected because it could not repaint socket geometry.
+- `head_candidate_v1.png`: rejected because a torso texture deformed into a head still read as a distorted torso.
+- repeated free image-generation attempts that drift into promotional/asset boards should not be repeated as the primary path for isolated runtime parts.
+- do not crop complete-character preview/state renders into runtime parts.
 
-## Exact next action
+## Exact next action — visual acceptance, not more missing-file work
 
-1. Finish a satisfactory independent `head.png` at `78 x 70` logical / `156 x 140` @2x.
-2. Restore the batch checkpoint and promote the head + 16 candidates in grouped fast-forward commits.
-3. Run the formal pixel/manifest gate and Windows/Prebuilt; fix only assets that the gate or visual assembly actually rejects.
-4. Keep PR #36 Draft until the full formal rig and real-Windows visual acceptance are complete.
+1. Do **not** restart raster production or repeat the 44-file gate; it is green.
+2. Produce a real Windows-rendered visual snapshot/capture of the assembled Maotai v2 component for at least `Idle`, `Work`, `Sleep`, and one locomotion state (`Walk`/`Run`).
+3. Judge assembled visual quality: head/ear/eye/muzzle alignment, limb overlap, tail chain, headset/laptop placement, silhouette, fur continuity and state-to-state pose readability.
+4. If a visual defect is found, adjust only the offending asset/transform and rerun the existing Windows gates.
+5. Keep PR #36 Draft until real-Windows visual acceptance is complete.
