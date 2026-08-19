@@ -152,7 +152,7 @@ class BoundedProcessRunner:
 
     @staticmethod
     def _safe_environment() -> dict[str, str]:
-        """只继承 Codex 本机登录和基础运行所需的固定环境名。"""
+        """只继承本机登录所需环境，并强制关闭 Provider CLI 自动更新。"""
 
         allowed = ("HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "SHELL")
         environment = {
@@ -161,6 +161,7 @@ class BoundedProcessRunner:
             if (value := os.environ.get(key)) is not None
         }
         environment["NO_COLOR"] = "1"
+        environment["DISABLE_AUTOUPDATER"] = "1"
         return environment
 
     @classmethod
