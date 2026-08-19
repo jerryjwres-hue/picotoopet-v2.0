@@ -1,4 +1,4 @@
-# one-shot visual evidence attempt 3: bounded + instrumented
+# one-shot visual evidence attempt 4: dedicated STA startup object
 name: Maotai v2 Visual Snapshot Once
 
 on:
@@ -45,8 +45,9 @@ jobs:
           dotnet run `
             --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
             --configuration Release `
+            -p:StartupObject=PicotooPet.Desktop.Core.SmokeTests.MaotaiVisualSnapshotProgram `
             -- `
-            --maotai-visual-snapshot $out
+            $out
           if ($LASTEXITCODE -ne 0) { throw "Maotai visual snapshot process failed with exit code $LASTEXITCODE" }
           foreach ($name in @('maotai-idle.png','maotai-work.png','maotai-sleep.png','maotai-run.png','maotai-visual-snapshot.json')) {
             $path = Join-Path $out $name
