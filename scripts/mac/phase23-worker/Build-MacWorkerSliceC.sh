@@ -97,6 +97,7 @@ for file in \
   INSTALL_MAC_WORKER_SLICE_C.command \
   VERIFY_MAC_WORKER_SLICE_C.command \
   VERIFY_GOAL_CENTER_E2E.command \
+  VERIFY_CODING_PROVIDERS.command \
   ROLLBACK_MAC_WORKER_SLICE_C.command \
   worker-lib.sh \
   README_INSTALL_CN.txt; do
@@ -107,6 +108,7 @@ chmod 755 \
   "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" \
   "$package_root/VERIFY_MAC_WORKER_SLICE_C.command" \
   "$package_root/VERIFY_GOAL_CENTER_E2E.command" \
+  "$package_root/VERIFY_CODING_PROVIDERS.command" \
   "$package_root/ROLLBACK_MAC_WORKER_SLICE_C.command" \
   "$package_root/lib.sh" \
   "$package_root/worker-lib.sh"
@@ -162,6 +164,11 @@ manifest = {
     ],
     "goal_center_e2e_included": True,
     "goal_center_live_verifier": "VERIFY_GOAL_CENTER_E2E.command",
+    "coding_provider_live_verifier": "VERIFY_CODING_PROVIDERS.command",
+    "coding_provider_status_routes": [
+        "/api/v1/providers/codex/status",
+        "/api/v1/providers/claude-code/status",
+    ],
     "goal_center_runtime_task_types": [
         "autonomous.discovery.v1",
         "autonomous.goal_synthesis.v1",
@@ -222,6 +229,11 @@ report = {
     ],
     "goal_center_e2e_included": True,
     "goal_center_live_verifier": "VERIFY_GOAL_CENTER_E2E.command",
+    "coding_provider_live_verifier": "VERIFY_CODING_PROVIDERS.command",
+    "coding_provider_status_routes": [
+        "/api/v1/providers/codex/status",
+        "/api/v1/providers/claude-code/status",
+    ],
     "goal_center_runtime_task_types": [
         "autonomous.discovery.v1",
         "autonomous.goal_synthesis.v1",
