@@ -96,6 +96,7 @@ internal static class MaotaiVisualSnapshotSmokeTests
 
         Log($"{label}:renderer-apply");
         apply.Invoke(renderer, [frame]);
+        VerifyWorkAccessoryVisibility(panel, label, expectedVisible: baseState == "Working");
         Layout(panel);
 
         var fileName = $"maotai-{label}.png";
@@ -106,6 +107,29 @@ internal static class MaotaiVisualSnapshotSmokeTests
 
         var state = ReadProperty(frame, "State")?.ToString() ?? "Unknown";
         return new SnapshotEvidence(label, state, fileName, 260, 240);
+    }
+
+    private static void VerifyWorkAccessoryVisibility(
+        AssistantPetPanel panel,
+        string label,
+        bool expectedVisible)
+    {
+        var expected = expectedVisible ? 1.0 : 0.0;
+        foreach (var name in new[]
+                 {
+                     "MaotaiV2HeadphoneBand",
+                     "MaotaiV2HeadphoneLeft",
+                     "MaotaiV2HeadphoneRight",
+                 })
+        {
+            var element = panel.FindName(name) as FrameworkElement
+                ?? throw new InvalidOperationException($"Maotai visual snapshot 缺少 {name}");
+            if (Math.Abs(element.Opacity - expected) > 0.000001)
+            {
+                throw new InvalidOperationException(
+                    $"Maotai visual snapshot '{label}' 的 {name} 显隐错误；expected={expected:F1}, actual={element.Opacity:F1}");
+            }
+        }
     }
 
     private static object CreateInput(string baseState, double targetX, bool wantsRun)
