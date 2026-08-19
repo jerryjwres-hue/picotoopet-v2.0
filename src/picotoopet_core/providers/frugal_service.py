@@ -206,6 +206,34 @@ class CodingEscalationService:
             )
         return self._plan_for_session(decision, handoff_id, session)
 
+    def reconcile_pending(self, *, limit: int = 20) -> list[CodingEscalationPlan]:
+        """Boundedly advance only Goals whose latest decision still authorizes one provider."""
+
+        safe_limit = max(1, min(int(limit), 100))
+        rows = self.database.fetchall(
+            """
+            SELECT decision.goal_id
+            FROM deep_ai_frugal_decisions AS decision
+            WHERE decision.chosen_provider IN ('codex', 'claude_code')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM deep_ai_frugal_decisions AS newer
+                  WHERE newer.goal_id = decision.goal_id
+                    AND (
+                        newer.created_at > decision.created_at
+                        OR (
+                            newer.created_at = decision.created_at
+                            AND newer.decision_id > decision.decision_id
+                        )
+                    )
+              )
+            ORDER BY decision.created_at DESC, decision.decision_id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+        return [self.reconcile(str(row["goal_id"])) for row in rows]
+
     def provider_history(self, provider: ProviderName) -> ProviderHistorySnapshot:
         """Count only completed local adoption-validation outcomes, never provider self-reports."""
 
