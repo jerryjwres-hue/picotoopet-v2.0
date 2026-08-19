@@ -25,12 +25,14 @@ internal static class MaotaiVisualSnapshotSmokeTests
         Directory.CreateDirectory(root);
         Log("run:start");
 
+        // Sampling contract   : each label must freeze the advertised live state, not a later stopped frame.
+        // Offline needs longer : Sleep traverses Sit -> LieDown -> Sleep, so give the real graph six seconds.
         var snapshots = new[]
         {
             Capture(root, "idle",  "Resting", 72.0, wantsRun: false, frames: 12),
             Capture(root, "work",  "Working", 70.0, wantsRun: false, frames: 150),
-            Capture(root, "sleep", "Offline", 72.0, wantsRun: false, frames: 150),
-            Capture(root, "run",   "Resting", 138.0, wantsRun: true, frames: 90),
+            Capture(root, "sleep", "Offline", 72.0, wantsRun: false, frames: 360),
+            Capture(root, "run",   "Resting", 138.0, wantsRun: true, frames: 30),
         };
 
         Log("json:write");
@@ -95,6 +97,9 @@ internal static class MaotaiVisualSnapshotSmokeTests
             throw new InvalidOperationException($"Maotai visual snapshot '{label}' 没有生成 PoseFrame");
         }
 
+        var motionState = ReadProperty(frame, "MotionState")?.ToString() ?? "Unknown";
+        VerifyExpectedMotionState(label, motionState);
+
         Log($"{label}:renderer-apply");
         apply.Invoke(renderer, [frame]);
         VerifyWorkAccessoryVisibility(panel, label, expectedVisible: baseState == "Working");
@@ -111,8 +116,24 @@ internal static class MaotaiVisualSnapshotSmokeTests
         SaveVisual(panel, path);
         Log($"{label}:saved");
 
-        var state = ReadProperty(frame, "State")?.ToString() ?? "Unknown";
-        return new SnapshotEvidence(label, state, fileName, 260, 240);
+        return new SnapshotEvidence(label, motionState, fileName, 260, 240);
+    }
+
+    private static void VerifyExpectedMotionState(string label, string motionState)
+    {
+        var valid = label switch
+        {
+            "idle"  => motionState is "Idle" or "Look",
+            "work"  => motionState is "WorkSettle" or "WorkTyping" or "WorkTired" or "Yawn" or "WorkAnnoyed" or "Recover",
+            "sleep" => motionState == "Sleep",
+            "run"   => motionState == "Run",
+            _       => false,
+        };
+        if (!valid)
+        {
+            throw new InvalidOperationException(
+                $"Maotai visual snapshot '{label}' 捕获了错误动作状态；actual={motionState}");
+        }
     }
 
     private static void VerifyWorkAccessoryVisibility(
