@@ -1,0 +1,98 @@
+name: Maotai v2 Art Margin Normalize Once
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/maotai-v2-art-margin-normalize-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/maotai-natural-motion-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/maotai-natural-motion-v2
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Normalize two-pixel transparent safety margin for all formal assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+
+          root = Path('windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2')
+          required = [
+              'torso_neutral.png','torso_crouch.png','torso_stretch.png','chest_fur.png',
+              'head.png','muzzle.png','ear_left.png','ear_right.png',
+              'eye_left_open.png','eye_right_open.png','eye_left_half.png','eye_right_half.png',
+              'eye_left_closed.png','eye_right_closed.png','pupil_left.png','pupil_right.png',
+              'brow_left.png','brow_right.png',
+              'mouth_smile.png','mouth_tired.png','mouth_annoyed.png','mouth_yawn.png','mouth_tongue.png',
+              'front_left_upper.png','front_left_lower.png','front_left_paw.png',
+              'front_right_upper.png','front_right_lower.png','front_right_paw.png',
+              'hind_left_upper.png','hind_left_lower.png','hind_left_paw.png',
+              'hind_right_upper.png','hind_right_lower.png','hind_right_paw.png',
+              'tail_base.png','tail_mid.png','tail_tip.png',
+              'headphone_band.png','headphone_left.png','headphone_right.png',
+              'laptop.png','drink.png','shadow.png',
+          ]
+          if len(required) != 44:
+              raise SystemExit(f'expected 44 manifest assets, got {len(required)}')
+
+          for name in required:
+              path = root / name
+              if not path.exists():
+                  raise SystemExit(f'missing formal asset: {name}')
+              img = Image.open(path).convert('RGBA')
+              w, h = img.size
+              if w < 5 or h < 5:
+                  raise SystemExit(f'{name}: canvas too small for 2px safety margin')
+              alpha = img.getchannel('A')
+              draw = ImageDraw.Draw(alpha)
+              draw.rectangle((0, 0, w-1, 1), fill=0)
+              draw.rectangle((0, h-2, w-1, h-1), fill=0)
+              draw.rectangle((0, 0, 1, h-1), fill=0)
+              draw.rectangle((w-2, 0, w-1, h-1), fill=0)
+              if alpha.getbbox() is None:
+                  raise SystemExit(f'{name}: safety-margin normalization removed all visible pixels')
+              img.putalpha(alpha)
+              img.save(path, 'PNG', optimize=True, compress_level=9)
+
+              bbox = img.getchannel('A').getbbox()
+              if bbox is None:
+                  raise SystemExit(f'{name}: empty alpha after save')
+              left, top, right_exclusive, bottom_exclusive = bbox
+              max_x = right_exclusive - 1
+              max_y = bottom_exclusive - 1
+              if not (left >= 2 and top >= 2 and max_x <= w - 3 and max_y <= h - 3):
+                  raise SystemExit(f'{name}: still violates 2px safety margin: bbox={bbox} size={img.size}')
+              print(f'PASS {name}: size={img.size} bbox={bbox}')
+          PY
+
+      - name: Commit normalized assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/*.png
+          if git diff --cached --quiet; then
+            echo 'All assets already satisfy normalization without byte changes.'
+            exit 0
+          fi
+          git commit -m 'art: normalize Maotai v2 two-pixel alpha safety margins'
+          git push origin HEAD:feature/maotai-natural-motion-v2
