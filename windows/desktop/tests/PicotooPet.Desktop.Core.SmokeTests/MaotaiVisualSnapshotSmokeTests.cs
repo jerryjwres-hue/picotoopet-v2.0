@@ -12,6 +12,10 @@ internal static class MaotaiVisualSnapshotSmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
     private static readonly Type PanelType = typeof(AssistantPetPanel);
+    private static readonly JsonSerializerOptions SnapshotJsonOptions = new()
+    {
+        WriteIndented = true,
+    };
 
     public static void Run(string outputDirectory)
     {
@@ -29,9 +33,7 @@ internal static class MaotaiVisualSnapshotSmokeTests
 
         File.WriteAllText(
             Path.Combine(root, "maotai-visual-snapshot.json"),
-            JsonSerializer.Serialize(
-                snapshots,
-                new JsonSerializerOptions { WriteIndented = true }));
+            JsonSerializer.Serialize(snapshots, SnapshotJsonOptions));
     }
 
     private static SnapshotEvidence Capture(
