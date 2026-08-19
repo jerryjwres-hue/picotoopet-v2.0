@@ -4,7 +4,7 @@ using PicotooPet.Desktop.Views.Controls;
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
 /// <summary>
-/// 冻结茅台静止站姿的腿部可读性：站立时接近自然直腿，移动后才允许 IK 明显折膝。
+/// 冻结茅台静止站姿的腿部可读性：左右腿必须分居身体中线两侧，静止时接近自然直腿。
 /// 骨长代表两个关节 Pivot 之间的有效距离，不等于整张带 overlap 的 PNG 高度。
 /// </summary>
 internal static class MaotaiNeutralLegGeometryV2SmokeTests
@@ -29,10 +29,12 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
             throw new InvalidOperationException("中性站姿没有输出 PoseFrame");
         }
 
-        VerifyLeg(pose, "FrontLeftUpper", "FrontLeftLower", "FrontLeftPaw", front: true);
-        VerifyLeg(pose, "FrontRightUpper", "FrontRightLower", "FrontRightPaw", front: true);
-        VerifyLeg(pose, "HindLeftUpper", "HindLeftLower", "HindLeftPaw", front: false);
-        VerifyLeg(pose, "HindRightUpper", "HindRightLower", "HindRightPaw", front: false);
+        // Canonical art is front-facing: left/right asset pairs must straddle the body center.
+        // Grouping both front legs on +X and both hind legs on -X makes the rear pair read like detached side arms.
+        VerifyLeg(pose, "FrontLeftUpper",  "FrontLeftLower",  "FrontLeftPaw",  expectedSideSign: -1);
+        VerifyLeg(pose, "FrontRightUpper", "FrontRightLower", "FrontRightPaw", expectedSideSign: 1);
+        VerifyLeg(pose, "HindLeftUpper",   "HindLeftLower",   "HindLeftPaw",   expectedSideSign: -1);
+        VerifyLeg(pose, "HindRightUpper",  "HindRightLower",  "HindRightPaw",  expectedSideSign: 1);
     }
 
     private static void VerifyLeg(
@@ -40,30 +42,28 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
         string upperName,
         string lowerName,
         string pawName,
-        bool front)
+        int expectedSideSign)
     {
-        var upperX = ReadPoseDouble(pose, upperName, "X");
-        var upperY = ReadPoseDouble(pose, upperName, "Y");
-        var jointX = ReadPoseDouble(pose, lowerName, "X");
-        var jointY = ReadPoseDouble(pose, lowerName, "Y");
-        var pawX   = ReadPoseDouble(pose, pawName, "X");
-        var pawY   = ReadPoseDouble(pose, pawName, "Y");
+        var upperX     = ReadPoseDouble(pose, upperName, "X");
+        var upperY     = ReadPoseDouble(pose, upperName, "Y");
+        var jointX     = ReadPoseDouble(pose, lowerName, "X");
+        var jointY     = ReadPoseDouble(pose, lowerName, "Y");
+        var pawX       = ReadPoseDouble(pose, pawName, "X");
+        var pawY       = ReadPoseDouble(pose, pawName, "Y");
         var upperAngle = ReadPoseDouble(pose, upperName, "RotationDeg");
         var lowerAngle = ReadPoseDouble(pose, lowerName, "RotationDeg");
 
-        if (front)
-        {
-            Assert(upperX > 0.0 && jointX > 0.0,
-                $"{upperName} 的膝关节穿过身体中线，静止时会形成 X 型前腿");
-        }
-        else
-        {
-            Assert(upperX < 0.0 && jointX < 0.0,
-                $"{upperName} 的膝关节穿过身体中线，静止时会形成 X 型后腿");
-        }
+        Assert(expectedSideSign is -1 or 1,
+            $"{upperName} 的 expectedSideSign 非法");
+        Assert((upperX * expectedSideSign) >= 8.0,
+            $"{upperName} 根部没有位于正确的左右半身；x={upperX:F2}");
+        Assert((jointX * expectedSideSign) > 0.0,
+            $"{upperName} 的膝关节穿过身体中线，静止时会形成交叉腿");
+        Assert((pawX * expectedSideSign) > 0.0,
+            $"{upperName} 的脚掌穿过身体中线，静止时会形成交叉站姿");
 
-        var segmentDx = pawX - upperX;
-        var segmentDy = pawY - upperY;
+        var segmentDx            = pawX - upperX;
+        var segmentDy            = pawY - upperY;
         var segmentLengthSquared = (segmentDx * segmentDx) + (segmentDy * segmentDy);
         Assert(segmentLengthSquared > 0.000001,
             $"{upperName} 静止肩脚距离无效");
