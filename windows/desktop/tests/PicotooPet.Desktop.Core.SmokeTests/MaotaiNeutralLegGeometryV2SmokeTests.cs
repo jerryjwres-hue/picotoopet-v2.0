@@ -58,7 +58,7 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
         {
             var pose = update.Invoke(engine, [1.0 / 60.0, input])
                 ?? throw new InvalidOperationException("跑步姿态没有输出 PoseFrame");
-            if (!string.Equals(ReadProperty(pose.GetType(), "MotionState").GetValue(pose)?.ToString(), "Run", StringComparison.Ordinal))
+            if (!string.Equals(RequireProperty(pose.GetType(), "MotionState").GetValue(pose)?.ToString(), "Run", StringComparison.Ordinal))
             {
                 continue;
             }
