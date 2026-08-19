@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PicotooPet.Desktop.Views.Controls;
@@ -97,6 +98,10 @@ internal static class MaotaiVisualSnapshotSmokeTests
         Log($"{label}:renderer-apply");
         apply.Invoke(renderer, [frame]);
         VerifyWorkAccessoryVisibility(panel, label, expectedVisible: baseState == "Working");
+        if (baseState == "Working")
+        {
+            VerifyWorkPropLayout(panel);
+        }
         Layout(panel);
 
         var fileName = $"maotai-{label}.png";
@@ -129,6 +134,18 @@ internal static class MaotaiVisualSnapshotSmokeTests
                 throw new InvalidOperationException(
                     $"Maotai visual snapshot '{label}' 的 {name} 显隐错误；expected={expected:F1}, actual={element.Opacity:F1}");
             }
+        }
+    }
+
+    private static void VerifyWorkPropLayout(AssistantPetPanel panel)
+    {
+        var laptop = panel.FindName("MaotaiV2Laptop") as FrameworkElement
+            ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MaotaiV2Laptop");
+        var laptopLeft = Canvas.GetLeft(laptop);
+        if (!double.IsFinite(laptopLeft) || Math.Abs(laptopLeft - 68.0) > 0.000001)
+        {
+            throw new InvalidOperationException(
+                $"Maotai work laptop 必须对齐双爪键盘区；expected left=68.0, actual={laptopLeft:F1}");
         }
     }
 
