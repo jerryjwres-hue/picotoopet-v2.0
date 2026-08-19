@@ -54,18 +54,25 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
         AssertNear(-52.0, Canvas.GetLeft(torso), "neutral torso X 锚点错误");
         AssertNear(-41.0, Canvas.GetTop(torso), "neutral torso Y 锚点错误");
 
-        // 显示框可按组合效果微调，但关节 Pivot 必须继续沿用 manifest 的毛发 overlap 锚点。
-        AssertImageBox(frontUpper, 26.0, 43.0, 17.0 / 34.0, 12.0 / 46.0, "front upper");
-        AssertImageBox(frontLower, 25.0, 40.0, 16.0 / 32.0, 12.0 / 44.0, "front lower");
-        AssertImageBox(frontPaw,   27.0, 20.0, 19.0 / 38.0, 12.0 / 28.0, "front paw");
-        AssertImageBox(hindUpper,  26.0, 42.0, 19.0 / 38.0, 12.0 / 44.0, "hind upper");
-        AssertImageBox(hindLower,  25.0, 39.0, 18.0 / 36.0, 12.0 / 42.0, "hind lower");
-        AssertImageBox(hindPaw,    26.0, 20.0, 21.0 / 42.0, 13.0 / 30.0, "hind paw");
+        // 组合截图表明旧显示框把独立毛发部件横向压窄了 20%–40%，关节处像被切断。
+        // 新 footprint 接近 manifest 逻辑尺寸，但 Pivot 仍必须沿用 manifest 的毛发 overlap 锚点。
+        AssertImageBox(frontUpper, 31.0, 45.0, 17.0 / 34.0, 12.0 / 46.0, "front upper");
+        AssertImageBox(frontLower, 30.0, 42.0, 16.0 / 32.0, 12.0 / 44.0, "front lower");
+        AssertImageBox(frontPaw,   34.0, 24.0, 19.0 / 38.0, 12.0 / 28.0, "front paw");
+        AssertImageBox(hindUpper,  33.0, 43.0, 19.0 / 38.0, 12.0 / 44.0, "hind upper");
+        AssertImageBox(hindLower,  32.0, 41.0, 18.0 / 36.0, 12.0 / 42.0, "hind lower");
+        AssertImageBox(hindPaw,    36.0, 26.0, 21.0 / 42.0, 13.0 / 30.0, "hind paw");
 
         Assert(Panel.GetZIndex(hindUpper) < Panel.GetZIndex(torso),
             "hind upper 必须藏在 torso 后，避免髋部接缝外露");
+        Assert(Panel.GetZIndex(hindLower) > Panel.GetZIndex(hindUpper),
+            "hind lower 必须覆盖 upper 的膝部 overlap，不能依赖 XAML 子项顺序");
+        Assert(Panel.GetZIndex(hindPaw) > Panel.GetZIndex(hindLower),
+            "hind paw 必须覆盖 lower 的踝部 overlap，避免睡眠/站立时出现断脚");
         Assert(Panel.GetZIndex(frontUpper) < Panel.GetZIndex(torso),
             "front upper 必须藏在 torso 后，不能像机械手臂贴在胸口");
+        Assert(Panel.GetZIndex(frontLower) > Panel.GetZIndex(frontUpper),
+            "front lower 必须覆盖 upper 的肘部 overlap，避免上下臂出现水平断口");
         Assert(Panel.GetZIndex(frontLower) < Panel.GetZIndex(torso),
             "front lower 的上端必须允许被 torso 遮住");
         Assert(Panel.GetZIndex(frontPaw) > Panel.GetZIndex(torso),
