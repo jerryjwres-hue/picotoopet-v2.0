@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
 from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict
@@ -19,7 +21,13 @@ from picotoopet_core.deep_ai.frugal_repository import FrugalDecisionRepository
 from picotoopet_core.handoffs.models import HandoffPrepareRequest, HandoffStatus
 from picotoopet_core.handoffs.service import HandoffService
 
-from .models import ProviderName
+from .models import (
+    ProviderName,
+    ProviderSessionRecord,
+    ProviderSessionStatus,
+    ProviderUsageConfirmationRecord,
+    ProviderUsageStatus,
+)
 from .service import ProviderSessionService
 
 PlanStage = Literal[
@@ -27,6 +35,9 @@ PlanStage = Literal[
     "manual_review",
     "awaiting_handoff_approval",
     "awaiting_usage_confirmation",
+    "provider_session_waiting",
+    "provider_session_active",
+    "provider_ready_for_review",
 ]
 
 
@@ -38,6 +49,7 @@ class CodingEscalationPlan(BaseModel):
     decision: ProviderEscalationDecision
     stage: PlanStage
     handoff_id: str | None = None
+    session_id: str | None = None
 
 
 class CodingEscalationService:
@@ -54,6 +66,14 @@ class CodingEscalationService:
             "policy_blocked",
             "validation_failed",
             "failed",
+        }
+    )
+    _ACTIVE_SESSION_STATES = frozenset(
+        {
+            ProviderSessionStatus.STAGING,
+            ProviderSessionStatus.RUNNING,
+            ProviderSessionStatus.RETURNING,
+            ProviderSessionStatus.VALIDATING,
         }
     )
 
@@ -119,23 +139,72 @@ class CodingEscalationService:
                 handoff.handoff_id,
                 idempotency_key=self._approval_key(decision.decision_digest),
             )
+        return self._plan_for_handoff(decision, handoff.handoff_id)
+
+    def reconcile(self, goal_id: str) -> CodingEscalationPlan:
+        """Advance one chosen provider only after existing approval and Usage gates are satisfied."""
+
+        decision = self.decisions.latest_for_goal(goal_id).decision
+        if decision.action == "local_only":
+            return CodingEscalationPlan(decision=decision, stage="local_only")
+        if decision.action != "external_provider" or decision.chosen_provider == "none":
+            return CodingEscalationPlan(decision=decision, stage="manual_review")
+
+        handoff_row = self.database.fetchone(
+            "SELECT handoff_id FROM handoffs WHERE prepare_idempotency_key = ?",
+            (self._handoff_key(decision.decision_digest),),
+        )
+        if handoff_row is None:
+            return CodingEscalationPlan(decision=decision, stage="manual_review")
+        handoff_id = str(handoff_row["handoff_id"])
+        handoff = self.handoffs.get(handoff_id)
+        if handoff.status is HandoffStatus.PREPARED:
+            handoff = self.handoffs.submit_for_approval(
+                handoff_id,
+                idempotency_key=self._approval_key(decision.decision_digest),
+            )
         if handoff.status is HandoffStatus.WAITING_APPROVAL:
             return CodingEscalationPlan(
                 decision=decision,
                 stage="awaiting_handoff_approval",
-                handoff_id=handoff.handoff_id,
+                handoff_id=handoff_id,
             )
-        if handoff.status is HandoffStatus.APPROVED:
+        if handoff.status is not HandoffStatus.APPROVED:
+            return CodingEscalationPlan(
+                decision=decision,
+                stage="manual_review",
+                handoff_id=handoff_id,
+            )
+
+        provider = cast(ProviderName, decision.chosen_provider)
+        existing = self._session_for_handoff(handoff_id, provider)
+        if existing is not None:
+            return self._plan_for_session(decision, handoff_id, existing)
+
+        confirmation = self._latest_usage_confirmation(handoff_id, provider)
+        if (
+            confirmation is None
+            or confirmation.status is not ProviderUsageStatus.CONFIRMED_AVAILABLE
+            or confirmation.expires_at <= datetime.now(UTC)
+        ):
             return CodingEscalationPlan(
                 decision=decision,
                 stage="awaiting_usage_confirmation",
-                handoff_id=handoff.handoff_id,
+                handoff_id=handoff_id,
             )
-        return CodingEscalationPlan(
-            decision=decision,
-            stage="manual_review",
-            handoff_id=handoff.handoff_id,
-        )
+
+        session_key = self._session_key(decision.decision_digest)
+        if provider == "codex":
+            session = self.provider_sessions.create_codex_session(
+                handoff_id,
+                idempotency_key=session_key,
+            )
+        else:
+            session = self.provider_sessions.create_claude_code_session(
+                handoff_id,
+                idempotency_key=session_key,
+            )
+        return self._plan_for_session(decision, handoff_id, session)
 
     def provider_history(self, provider: ProviderName) -> ProviderHistorySnapshot:
         """Count only completed local adoption-validation outcomes, never provider self-reports."""
@@ -174,6 +243,78 @@ class CodingEscalationService:
             cost_penalty=0.10,
             latency_penalty=0.10,
             permission_risk=0.10,
+        )
+
+    def _plan_for_handoff(
+        self,
+        decision: ProviderEscalationDecision,
+        handoff_id: str,
+    ) -> CodingEscalationPlan:
+        handoff = self.handoffs.get(handoff_id)
+        if handoff.status is HandoffStatus.WAITING_APPROVAL:
+            stage: PlanStage = "awaiting_handoff_approval"
+        elif handoff.status is HandoffStatus.APPROVED:
+            stage = "awaiting_usage_confirmation"
+        else:
+            stage = "manual_review"
+        return CodingEscalationPlan(
+            decision=decision,
+            stage=stage,
+            handoff_id=handoff_id,
+        )
+
+    def _session_for_handoff(
+        self,
+        handoff_id: str,
+        provider: ProviderName,
+    ) -> ProviderSessionRecord | None:
+        row = self.database.fetchone(
+            "SELECT preview_json FROM provider_sessions WHERE handoff_id = ? AND provider = ? "
+            "ORDER BY created_at, session_id LIMIT 1",
+            (handoff_id, provider),
+        )
+        if row is None:
+            return None
+        return ProviderSessionRecord.model_validate(json.loads(row["preview_json"]))
+
+    def _latest_usage_confirmation(
+        self,
+        handoff_id: str,
+        provider: ProviderName,
+    ) -> ProviderUsageConfirmationRecord | None:
+        handoff = self.handoffs.get(handoff_id)
+        row = self.database.fetchone(
+            """
+            SELECT preview_json FROM provider_usage_confirmations
+            WHERE handoff_id = ? AND provider = ? AND request_digest = ?
+              AND package_digest = ?
+            ORDER BY confirmed_at DESC LIMIT 1
+            """,
+            (handoff_id, provider, handoff.request_digest, handoff.package_digest),
+        )
+        if row is None:
+            return None
+        return ProviderUsageConfirmationRecord.model_validate(json.loads(row["preview_json"]))
+
+    def _plan_for_session(
+        self,
+        decision: ProviderEscalationDecision,
+        handoff_id: str,
+        session: ProviderSessionRecord,
+    ) -> CodingEscalationPlan:
+        if session.status is ProviderSessionStatus.WAITING_PROVIDER_READY:
+            stage: PlanStage = "provider_session_waiting"
+        elif session.status in self._ACTIVE_SESSION_STATES:
+            stage = "provider_session_active"
+        elif session.status is ProviderSessionStatus.READY_FOR_REVIEW:
+            stage = "provider_ready_for_review"
+        else:
+            stage = "manual_review"
+        return CodingEscalationPlan(
+            decision=decision,
+            stage=stage,
+            handoff_id=handoff_id,
+            session_id=session.session_id,
         )
 
     def _goal_execution_state(
@@ -235,3 +376,7 @@ class CodingEscalationService:
     @staticmethod
     def _approval_key(decision_digest: str) -> str:
         return f"frugal-approval:{decision_digest}"
+
+    @staticmethod
+    def _session_key(decision_digest: str) -> str:
+        return f"frugal-session:{decision_digest}"
