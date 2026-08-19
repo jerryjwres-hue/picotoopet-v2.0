@@ -20,36 +20,41 @@ def _client(tmp_path: Path) -> tuple[TestClient, dict[str, str], RuntimePaths]:
     return TestClient(create_app(settings)), {"Authorization": f"Bearer {TOKEN}"}, paths
 
 
+def _create_legacy_schema(connection: sqlite3.Connection) -> None:
+    # ── Shared fixture schema mirrors the supported Maotai OS 4.1 compatibility tables. ──
+    connection.executescript(
+        """
+        CREATE TABLE canonical_products (
+            product_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            brand TEXT DEFAULT '',
+            category TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE consumer_signals (
+            signal_id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL,
+            source_product_key TEXT,
+            source TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            source_signal_id TEXT DEFAULT '',
+            rating REAL,
+            original_text TEXT NOT NULL,
+            signal_date TEXT DEFAULT '',
+            source_url TEXT DEFAULT '',
+            signal_hash TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            imported_at TEXT NOT NULL
+        );
+        """
+    )
+
+
 def _legacy_db(path: Path) -> bytes:
     connection = sqlite3.connect(path)
     try:
-        connection.executescript(
-            """
-            CREATE TABLE canonical_products (
-                product_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                brand TEXT DEFAULT '',
-                category TEXT DEFAULT '',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE consumer_signals (
-                signal_id TEXT PRIMARY KEY,
-                product_id TEXT NOT NULL,
-                source_product_key TEXT,
-                source TEXT NOT NULL,
-                signal_type TEXT NOT NULL,
-                source_signal_id TEXT DEFAULT '',
-                rating REAL,
-                original_text TEXT NOT NULL,
-                signal_date TEXT DEFAULT '',
-                source_url TEXT DEFAULT '',
-                signal_hash TEXT NOT NULL,
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                imported_at TEXT NOT NULL
-            );
-            """
-        )
+        _create_legacy_schema(connection)
         connection.execute(
             "INSERT INTO canonical_products VALUES (?, ?, '', '', ?, ?)",
             ("p1", "Large Dog Chew Toy", "2026-08-01", "2026-08-01"),
@@ -70,6 +75,44 @@ def _legacy_db(path: Path) -> bytes:
                 "2026-08-01",
             ),
         )
+        connection.commit()
+    finally:
+        connection.close()
+    return path.read_bytes()
+
+
+def _legacy_db_many(path: Path, *, product_count: int) -> bytes:
+    connection = sqlite3.connect(path)
+    try:
+        _create_legacy_schema(connection)
+        for index in range(1, product_count + 1):
+            product_id = f"p{index:02d}"
+            signal_id = f"s{index:02d}"
+            connection.execute(
+                "INSERT INTO canonical_products VALUES (?, ?, '', '', ?, ?)",
+                (
+                    product_id,
+                    f"Large Dog Product {index:02d}",
+                    "2026-08-01",
+                    "2026-08-01",
+                ),
+            )
+            connection.execute(
+                "INSERT INTO consumer_signals VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)",
+                (
+                    signal_id,
+                    product_id,
+                    "amazon",
+                    "review",
+                    f"review-{index:02d}",
+                    4.0,
+                    f"Consumer evidence for product {index:02d}.",
+                    "2026-07-20",
+                    f"https://www.amazon.com/dp/B0TEST{index:05d}",
+                    f"legacy-hash-{index:02d}",
+                    "2026-08-01",
+                ),
+            )
         connection.commit()
     finally:
         connection.close()
@@ -215,3 +258,58 @@ def test_legacy_41_database_upload_is_streamed_into_managed_staging_and_imported
 
         imports_root = paths.autonomous_staging_dir / "legacy-4.1-imports"
         assert not imports_root.exists() or not list(imports_root.iterdir())
+
+
+def test_large_legacy_import_batches_every_product_into_bounded_auto_goals(tmp_path: Path) -> None:
+    client, headers, _paths = _client(tmp_path)
+    source = tmp_path / "legacy-many.db"
+    payload = _legacy_db_many(source, product_count=9)
+
+    with client:
+        response = client.post(
+            "/api/v1/autonomous/legacy-4.1/import",
+            headers={
+                **headers,
+                "Content-Type": "application/octet-stream",
+                "X-Picotoo-Source-Name": "Maotai-4.1-many.db",
+            },
+            content=payload,
+        )
+        assert response.status_code == 201
+        assert response.json()["products_imported"] == 9
+        assert response.json()["evidence_imported"] == 9
+
+        auto_goals = _visible_auto_goals(client, headers)
+        assert len(auto_goals) == 2
+        batches = [goal["constraints"]["connected_product_keys"] for goal in auto_goals]
+        assert all(1 <= len(batch) <= 8 for batch in batches)
+        assert sorted(key for batch in batches for key in batch) == [
+            f"legacy41:p{index:02d}" for index in range(1, 10)
+        ]
+        assert all(goal["priority_class"] == "P2" for goal in auto_goals)
+        assert all(goal["constraints"]["auto_trigger_source"] == "maotai41_import" for goal in auto_goals)
+
+        # ── Every batch must still use the frozen three-stage pipeline. ──
+        for goal in auto_goals:
+            workflow = client.app.state.services.workflows.get_workflow(str(goal["workflow_id"]))
+            assert [step.task_type for step in workflow.steps] == [
+                "autonomous.discovery.v1",
+                "autonomous.goal_synthesis.v1",
+                "autonomous.goal_handoff.v1",
+            ]
+            assert workflow.steps[0].payload["connected_product_keys"] == goal["constraints"][
+                "connected_product_keys"
+            ]
+
+        replay = client.post(
+            "/api/v1/autonomous/legacy-4.1/import",
+            headers={
+                **headers,
+                "Content-Type": "application/octet-stream",
+                "X-Picotoo-Source-Name": "Maotai-4.1-many.db",
+            },
+            content=payload,
+        )
+        assert replay.status_code == 201
+        # ── Replaying the same backup must keep the exact same two Goals. ──
+        assert len(_visible_auto_goals(client, headers)) == 2
