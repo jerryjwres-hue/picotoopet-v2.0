@@ -269,6 +269,7 @@ def _run_worker(
 
     def enqueue_controlled_work() -> None:
         if provider_coordinator is not None:
+            services.coding_escalation.reconcile_pending(limit=20)
             provider_coordinator.enqueue_pending()
         if adoption_coordinator is not None:
             adoption_coordinator.enqueue_pending()
