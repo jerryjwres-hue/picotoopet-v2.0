@@ -22,14 +22,15 @@ internal struct MaotaiFootLockState
 /// <summary>连续时间茅台运动核心；只消费表现输入并产出确定性 PoseFrame。</summary>
 internal sealed class MaotaiMotionEngine
 {
-    private const double WalkRunSpeedReference = 76.0;
-    private const double GroundWorldY           = 0.0;
-    private const double YawnEnvelopeSeconds    = 1.05;
-    private const double FrontLegUpperLength    = 19.0;
-    private const double FrontLegLowerLength    = 18.0;
-    private const double HindLegUpperLength     = 19.0;
-    private const double HindLegLowerLength     = 18.0;
+    private const double WalkRunSpeedReference  = 76.0;
+    private const double GroundWorldY            = 0.0;
+    private const double YawnEnvelopeSeconds     = 1.05;
+    private const double FrontLegUpperLength     = 19.0;
+    private const double FrontLegLowerLength     = 18.0;
+    private const double HindLegUpperLength      = 19.0;
+    private const double HindLegLowerLength      = 18.0;
     private const double StandingRelaxSpeedRatio = 0.18;
+    private const double SupportPhase            = 0.45;
 
     private readonly MaotaiAnimationGraph _graph = new(MaotaiMotionState.Idle);
     private readonly MaotaiLocomotionController _locomotion;
@@ -694,7 +695,7 @@ internal sealed class MaotaiMotionEngine
     {
         shoulderLocalX *= facingSign;
         var moving  = Math.Abs(_locomotion.VelocityX) > 2.0;
-        var support = grounded && moving && phase < 0.56;
+        var support = grounded && moving && phase < SupportPhase;
         var stride  = (frontLeg ? 12.0 : 10.0) +
             (speedRatio * (frontLeg ? 13.0 : 11.0));
 
@@ -735,9 +736,9 @@ internal sealed class MaotaiMotionEngine
         }
         else
         {
-            var swingPhase = phase < 0.56
+            var swingPhase = phase < SupportPhase
                 ? 0.0
-                : (phase - 0.56) / 0.44;
+                : (phase - SupportPhase) / (1.0 - SupportPhase);
             var swingAngle = swingPhase * Math.PI;
             pawWorldX = _locomotion.PositionX +
                 shoulderLocalX +
@@ -746,10 +747,10 @@ internal sealed class MaotaiMotionEngine
                 (Math.Sin(swingAngle) * (4.5 + (speedRatio * (frontLeg ? 6.5 : 5.5))));
         }
 
-        if (grounded && moving)
+        if (grounded && moving && !support)
         {
-            // Front-view lane    : lateral travel belongs to the root; paws only make a compact trot around their own shoulder.
-            // Seam prevention    : this keeps each stretched furry leg near vertical, preventing center-crossing X silhouettes.
+            // Swing-only lane    : planted paws keep their exact world anchor; only airborne paws receive cosmetic lateral limits.
+            // Seam prevention    : this preserves foot-lock while keeping the visible swing silhouette away from center-crossing X shapes.
             var laneRadius = frontLeg ? 4.5 : 4.0;
             var pawLocalX  = pawWorldX - _locomotion.PositionX;
             pawLocalX = Math.Clamp(
