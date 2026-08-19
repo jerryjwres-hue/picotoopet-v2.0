@@ -122,16 +122,17 @@ internal static class MaotaiRasterBodyLayout
                         17);
                     break;
 
+                // Plush torso      : slightly larger body coverage hides shoulder/hip seams while preserving the same body pivot.
                 case "MaotaiV2TorsoNeutral":
-                    ConfigureImage(element, 104.0, 82.0, -52.0, -41.0, 20);
+                    ConfigureImage(element, 112.0, 90.0, -56.0, -45.0, 20);
                     break;
 
                 case "MaotaiV2TorsoCrouch":
-                    ConfigureImage(element, 108.0, 76.0, -54.0, -38.0, 20);
+                    ConfigureImage(element, 116.0, 84.0, -58.0, -42.0, 20);
                     break;
 
                 case "MaotaiV2TorsoStretch":
-                    ConfigureImage(element, 100.0, 88.0, -50.0, -44.0, 20);
+                    ConfigureImage(element, 108.0, 96.0, -54.0, -48.0, 20);
                     break;
 
                 case "MaotaiV2ChestFur":
