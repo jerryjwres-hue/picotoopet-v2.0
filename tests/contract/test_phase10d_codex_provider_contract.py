@@ -1,4 +1,4 @@
-"""Phase 10D-A Codex Provider 静态安全合同。"""
+"""Phase 10D-A bounded coding Provider static safety contract."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def test_phase10d_core_has_separate_provider_domain_and_additive_migration() -> 
     app = _read("src/picotoopet_core/api/app.py")
 
     assert "class ProviderSessionStatus" in models
-    assert 'Literal["codex"]' in models
+    assert 'Literal["codex", "claude_code"]' in models
     assert 'extra="forbid"' in models
     assert "class ProviderSessionService" in service
     assert "MIGRATION_006" in schema
