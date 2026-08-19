@@ -43,7 +43,13 @@ internal static class MaotaiVisualSnapshotModuleInitializer
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        thread.Join();
+
+        if (!thread.Join(TimeSpan.FromSeconds(45)))
+        {
+            Console.Error.WriteLine("MAOTAI_VISUAL_SNAPSHOT=TIMEOUT | STA renderer exceeded 45 seconds");
+            Environment.Exit(3);
+            return;
+        }
 
         if (failure is not null)
         {
