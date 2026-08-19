@@ -390,7 +390,7 @@ internal sealed class MaotaiMotionEngine
             frontLeft = BuildWorkPaw(
                 shoulderLocalX: -17.5,
                 shoulderLocalY: 9.5,
-                keyboardLocalX: 12.0,
+                keyboardLocalX: -12.0,
                 keyboardLocalY: 39.0,
                 pressOffset: leftPress,
                 bodyWorldY,
@@ -398,7 +398,7 @@ internal sealed class MaotaiMotionEngine
             frontRight = BuildWorkPaw(
                 shoulderLocalX: 15.5,
                 shoulderLocalY: 10.0,
-                keyboardLocalX: 21.0,
+                keyboardLocalX: 12.0,
                 keyboardLocalY: 39.5,
                 pressOffset: rightPress,
                 bodyWorldY,
