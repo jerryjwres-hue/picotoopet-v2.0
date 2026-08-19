@@ -93,7 +93,7 @@ class ProviderExecutionCoordinator:
         sessions: ProviderSessionService,
         repository: Path,
         worktree_root: Path,
-        codex_executable: Path,
+        codex_executable: Path | None,
         claude_code_executable: Path | None = None,
         worker_id: str,
         artifact_store: ProviderReturnArtifactStore,
@@ -103,9 +103,20 @@ class ProviderExecutionCoordinator:
         self.repository = repository
         self.worktree_root = worktree_root
         self.codex_executable = codex_executable
-        self.claude_code_executable = claude_code_executable or Path("/opt/homebrew/bin/claude")
+        self.claude_code_executable = claude_code_executable
         self.worker_id = worker_id
         self.artifact_store = artifact_store
+
+    @property
+    def configured_task_types(self) -> tuple[str, ...]:
+        """Expose only task types backed by explicitly configured provider executables."""
+
+        task_types: list[str] = []
+        if self.codex_executable is not None:
+            task_types.append(self.CODEX_TASK_TYPE)
+        if self.claude_code_executable is not None:
+            task_types.append(self.CLAUDE_CODE_TASK_TYPE)
+        return tuple(task_types)
 
     @classmethod
     def task_type_for(cls, provider: ProviderName) -> str:
@@ -116,8 +127,11 @@ class ProviderExecutionCoordinator:
         raise ValueError("Unknown coding provider.")
 
     def enqueue_pending(self) -> None:
-        """Idempotently create one fixed Worker task for every waiting provider Session."""
+        """Idempotently create tasks only for providers explicitly configured on this Worker."""
 
+        configured = frozenset(self.configured_task_types)
+        if not configured:
+            return
         rows = self.sessions.database.fetchall(
             "SELECT preview_json FROM provider_sessions WHERE status = ? "
             "ORDER BY created_at LIMIT 20",
@@ -125,6 +139,9 @@ class ProviderExecutionCoordinator:
         )
         for row in rows:
             session = ProviderSessionRecord.model_validate(json.loads(row["preview_json"]))
+            task_type = self.task_type_for(session.provider)
+            if task_type not in configured:
+                continue
             handoff = self.sessions.handoffs.get(session.handoff_id)
             if handoff.provider != session.provider:
                 self._fail(
@@ -144,7 +161,7 @@ class ProviderExecutionCoordinator:
             )
             self.queue.create(
                 TaskCreate(
-                    task_type=self.task_type_for(session.provider),
+                    task_type=task_type,
                     payload=payload.model_dump(mode="json"),
                     priority=40,
                     resource_tag="provider",
@@ -166,6 +183,7 @@ class ProviderExecutionCoordinator:
             payload.provider != current.provider
             or handoff.provider != current.provider
             or task.task_type != expected_task_type
+            or expected_task_type not in self.configured_task_types
         ):
             self._fail(
                 payload.session_id,
@@ -275,6 +293,8 @@ class ProviderExecutionCoordinator:
         cancel_event: Event,
     ) -> _ProviderRunSummary:
         if provider == "codex":
+            if self.codex_executable is None:
+                raise CodexAdapterError("Codex executable is not configured.")
             run = CodexAdapter(self.codex_executable).run(
                 prompt=prompt,
                 worktree=worktree,
@@ -286,6 +306,8 @@ class ProviderExecutionCoordinator:
                 provider_usage_unknown=run.provider_usage_unknown,
                 events=run.events,
             )
+        if self.claude_code_executable is None:
+            raise ClaudeCodeAdapterError("Claude Code executable is not configured.")
         run = ClaudeCodeAdapter(self.claude_code_executable).run(
             prompt=prompt,
             worktree=worktree,
