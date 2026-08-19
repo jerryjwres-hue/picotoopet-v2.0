@@ -18,10 +18,22 @@ internal sealed class MaotaiRasterPart
         ArgumentNullException.ThrowIfNull(element);
         ApplyManifestPivotFromElementName(element);
 
+        var effectiveScale = scale;
+        if (effectiveScale is null)
+        {
+            // Transform ownership : add one cached ScaleTransform at initialization; render frames only mutate values.
+            effectiveScale = new ScaleTransform();
+            var group       = new TransformGroup();
+            group.Children.Add(effectiveScale);
+            group.Children.Add(rotate);
+            group.Children.Add(translate);
+            element.RenderTransform = group;
+        }
+
         Element   = element;
         Translate = translate;
         Rotate    = rotate;
-        Scale     = scale;
+        Scale     = effectiveScale;
     }
 
     /// <summary>
@@ -288,17 +300,13 @@ internal sealed class MaotaiRasterRenderer
             MaotaiRasterFaceLayout.CalibratePupilY(frame.RightPupil.Y),
             frame.RightPupil.RotationDeg);
 
-        ApplyLegBone(_visuals.FrontLeftUpper, frame.FrontLeftUpper);
-        ApplyLegBone(_visuals.FrontLeftLower, frame.FrontLeftLower);
+        ApplyContinuousLeg(_visuals.FrontLeftUpper, _visuals.FrontLeftLower, frame.FrontLeftUpper, frame.FrontLeftPaw);
         ApplyBone(_visuals.FrontLeftPaw, frame.FrontLeftPaw);
-        ApplyLegBone(_visuals.FrontRightUpper, frame.FrontRightUpper);
-        ApplyLegBone(_visuals.FrontRightLower, frame.FrontRightLower);
+        ApplyContinuousLeg(_visuals.FrontRightUpper, _visuals.FrontRightLower, frame.FrontRightUpper, frame.FrontRightPaw);
         ApplyBone(_visuals.FrontRightPaw, frame.FrontRightPaw);
-        ApplyLegBone(_visuals.HindLeftUpper, frame.HindLeftUpper);
-        ApplyLegBone(_visuals.HindLeftLower, frame.HindLeftLower);
+        ApplyContinuousLeg(_visuals.HindLeftUpper, _visuals.HindLeftLower, frame.HindLeftUpper, frame.HindLeftPaw);
         ApplyBone(_visuals.HindLeftPaw, frame.HindLeftPaw);
-        ApplyLegBone(_visuals.HindRightUpper, frame.HindRightUpper);
-        ApplyLegBone(_visuals.HindRightLower, frame.HindRightLower);
+        ApplyContinuousLeg(_visuals.HindRightUpper, _visuals.HindRightLower, frame.HindRightUpper, frame.HindRightPaw);
         ApplyBone(_visuals.HindRightPaw, frame.HindRightPaw);
         ApplyBone(_visuals.TailBase, frame.TailBase);
         ApplyBone(_visuals.TailMid, frame.TailMid);
@@ -321,6 +329,32 @@ internal sealed class MaotaiRasterRenderer
         }
 
         throw new InvalidOperationException($"Maotai v2 face layer missing: {name}");
+    }
+
+    private static void ApplyContinuousLeg(
+        MaotaiRasterPart upper,
+        MaotaiRasterPart lower,
+        in MaotaiBonePose upperPose,
+        in MaotaiBonePose pawPose)
+    {
+        var dx       = pawPose.X - upperPose.X;
+        var dy       = pawPose.Y - upperPose.Y;
+        var distance = Math.Sqrt((dx * dx) + (dy * dy));
+        var angleDeg = Math.Atan2(dy, dx) * 180.0 / Math.PI;
+
+        // Visual reach       : use the actual post-pivot PNG reach and overlap the paw by a few pixels.
+        // Width compression  : a slightly slimmer furry silhouette avoids the rectangular two-bone pillar look.
+        var pivotY      = upper.Element.RenderTransformOrigin.Y;
+        var visualReach = Math.Max(1.0, upper.Element.Height * (1.0 - pivotY));
+        var scaleY      = Math.Clamp((distance + 4.0) / visualReach, 0.72, 1.30);
+        upper.Apply(
+            upperPose.X,
+            upperPose.Y,
+            MaotaiRasterAxis.LegRotationFromIkDegrees(angleDeg),
+            scaleX: 0.86,
+            scaleY: scaleY);
+
+        lower.Element.Opacity = 0.0;
     }
 
     private static void ApplyLegBone(
@@ -347,7 +381,7 @@ internal sealed class MaotaiRasterRenderer
     {
         // Pose occlusion      : work/rest poses tuck the long IK middle segments behind the plush torso.
         // Contact readability : paws remain fully visible so keyboard/ground contact never looks detached.
-        var hideMiddleSegments = state is
+        var hideUpperSegments = state is
             MaotaiMotionState.WorkSettle or
             MaotaiMotionState.WorkTyping or
             MaotaiMotionState.WorkTired or
@@ -358,16 +392,17 @@ internal sealed class MaotaiRasterRenderer
             MaotaiMotionState.Sleep or
             MaotaiMotionState.Wake or
             MaotaiMotionState.GetUp;
-        var segmentOpacity = hideMiddleSegments ? 0.0 : 1.0;
+        var upperOpacity = hideUpperSegments ? 0.0 : 1.0;
 
-        _visuals.FrontLeftUpper.Element.Opacity  = segmentOpacity;
-        _visuals.FrontLeftLower.Element.Opacity  = segmentOpacity;
-        _visuals.FrontRightUpper.Element.Opacity = segmentOpacity;
-        _visuals.FrontRightLower.Element.Opacity = segmentOpacity;
-        _visuals.HindLeftUpper.Element.Opacity   = segmentOpacity;
-        _visuals.HindLeftLower.Element.Opacity   = segmentOpacity;
-        _visuals.HindRightUpper.Element.Opacity  = segmentOpacity;
-        _visuals.HindRightLower.Element.Opacity  = segmentOpacity;
+        _visuals.FrontLeftUpper.Element.Opacity  = upperOpacity;
+        _visuals.FrontRightUpper.Element.Opacity = upperOpacity;
+        _visuals.HindLeftUpper.Element.Opacity   = upperOpacity;
+        _visuals.HindRightUpper.Element.Opacity  = upperOpacity;
+
+        _visuals.FrontLeftLower.Element.Opacity  = 0.0;
+        _visuals.FrontRightLower.Element.Opacity = 0.0;
+        _visuals.HindLeftLower.Element.Opacity   = 0.0;
+        _visuals.HindRightLower.Element.Opacity  = 0.0;
 
         _visuals.FrontLeftPaw.Element.Opacity  = 1.0;
         _visuals.FrontRightPaw.Element.Opacity = 1.0;
