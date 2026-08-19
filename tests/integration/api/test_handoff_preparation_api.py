@@ -75,24 +75,6 @@ def test_prepare_list_get_submit_and_approve_handoff(tmp_path: Path) -> None:
             "base_ref": "feature/phase23-slice-d-diagnostic-snapshot-release",
             "base_commit": "5db6b1f9340ff5abe0d38bbb7b6e3ee9b48c34bb",
         },
-        {
-            "template_id": "picotoopet-repo-maintenance-codex-v1",
-            "display_name": "PicotooPet 受控 Codex 仓库维护",
-            "provider": "codex",
-            "provider_configured": False,
-            "repo_url": "https://github.com/jerryjwres-hue/picotoopet-v2.0",
-            "base_ref": "feature/phase10c-event-stream-recovery",
-            "base_commit": "65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f",
-        },
-        {
-            "template_id": "picotoopet-repo-maintenance-claude-code-v1",
-            "display_name": "PicotooPet 受控 Claude Code 仓库维护",
-            "provider": "claude_code",
-            "provider_configured": False,
-            "repo_url": "https://github.com/jerryjwres-hue/picotoopet-v2.0",
-            "base_ref": "feature/phase10c-event-stream-recovery",
-            "base_commit": "65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f",
-        },
     ]
     assert prepared.status_code == 201
     assert replay.status_code == 201
@@ -116,6 +98,35 @@ def test_prepare_list_get_submit_and_approve_handoff(tmp_path: Path) -> None:
     assert queue_after == queue_before
     assert "token" not in prepared.text.lower()
     assert "token" not in submitted.text.lower()
+
+
+def test_client_cannot_prepare_provider_bound_handoff_templates(tmp_path: Path) -> None:
+    client, headers = make_client(tmp_path)
+
+    with client:
+        responses = []
+        for provider, template_id in (
+            ("codex", "picotoopet-repo-maintenance-codex-v1"),
+            ("claude_code", "picotoopet-repo-maintenance-claude-code-v1"),
+        ):
+            payload = prepare_payload()
+            payload["template_id"] = template_id
+            response = client.post(
+                "/api/v1/handoffs/prepare",
+                headers={
+                    **headers,
+                    "Idempotency-Key": f"client-provider-choice-{provider}",
+                },
+                json=payload,
+            )
+            responses.append(response)
+
+    for response in responses:
+        assert response.status_code == 403
+        body = response.json()
+        assert body["error"]["code"] == "HANDOFF_PROVIDER_SELECTION_FORBIDDEN"
+        assert "codex" not in response.text.lower()
+        assert "claude" not in response.text.lower()
 
 
 def test_prepare_and_submit_require_idempotency_keys(tmp_path: Path) -> None:
