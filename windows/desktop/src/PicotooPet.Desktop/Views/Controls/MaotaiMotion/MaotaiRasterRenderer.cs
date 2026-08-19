@@ -304,6 +304,7 @@ internal sealed class MaotaiRasterRenderer
         ApplyBone(_visuals.TailMid, frame.TailMid);
         ApplyBone(_visuals.TailTip, frame.TailTip);
 
+        ApplyPoseCohesion(frame.MotionState);
         ApplyWorkProps(frame.MotionState);
         ApplyFace(frame);
     }
@@ -341,6 +342,38 @@ internal sealed class MaotaiRasterRenderer
             pose.RotationDeg,
             pose.ScaleX,
             pose.ScaleY);
+
+    private void ApplyPoseCohesion(MaotaiMotionState state)
+    {
+        // Pose occlusion      : work/rest poses tuck the long IK middle segments behind the plush torso.
+        // Contact readability : paws remain fully visible so keyboard/ground contact never looks detached.
+        var hideMiddleSegments = state is
+            MaotaiMotionState.WorkSettle or
+            MaotaiMotionState.WorkTyping or
+            MaotaiMotionState.WorkTired or
+            MaotaiMotionState.Yawn or
+            MaotaiMotionState.WorkAnnoyed or
+            MaotaiMotionState.Recover or
+            MaotaiMotionState.LieDown or
+            MaotaiMotionState.Sleep or
+            MaotaiMotionState.Wake or
+            MaotaiMotionState.GetUp;
+        var segmentOpacity = hideMiddleSegments ? 0.0 : 1.0;
+
+        _visuals.FrontLeftUpper.Element.Opacity  = segmentOpacity;
+        _visuals.FrontLeftLower.Element.Opacity  = segmentOpacity;
+        _visuals.FrontRightUpper.Element.Opacity = segmentOpacity;
+        _visuals.FrontRightLower.Element.Opacity = segmentOpacity;
+        _visuals.HindLeftUpper.Element.Opacity   = segmentOpacity;
+        _visuals.HindLeftLower.Element.Opacity   = segmentOpacity;
+        _visuals.HindRightUpper.Element.Opacity  = segmentOpacity;
+        _visuals.HindRightLower.Element.Opacity  = segmentOpacity;
+
+        _visuals.FrontLeftPaw.Element.Opacity  = 1.0;
+        _visuals.FrontRightPaw.Element.Opacity = 1.0;
+        _visuals.HindLeftPaw.Element.Opacity   = 1.0;
+        _visuals.HindRightPaw.Element.Opacity  = 1.0;
+    }
 
     private void ApplyWorkProps(MaotaiMotionState state)
     {
