@@ -54,13 +54,13 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
         AssertNear(-52.0, Canvas.GetLeft(torso), "neutral torso X 锚点错误");
         AssertNear(-41.0, Canvas.GetTop(torso), "neutral torso Y 锚点错误");
 
-        // Visual-fit contract: image boxes may grow around the same pivots, but IK joint coordinates never change.
-        AssertImageBox(frontUpper, 26.0, 43.0, 0.50, 0.15, "front upper");
-        AssertImageBox(frontLower, 25.0, 40.0, 0.50, 0.15, "front lower");
-        AssertImageBox(frontPaw,   27.0, 20.0, 0.50, 0.50, "front paw");
-        AssertImageBox(hindUpper,  26.0, 42.0, 0.50, 0.15, "hind upper");
-        AssertImageBox(hindLower,  25.0, 39.0, 0.50, 0.15, "hind lower");
-        AssertImageBox(hindPaw,    26.0, 20.0, 0.50, 0.50, "hind paw");
+        // Manifest owns limb art-space size/pivot. Layout may change Z-order, but must not invent a second joint origin.
+        AssertImageBox(frontUpper, 34.0, 46.0, 17.0 / 34.0, 12.0 / 46.0, "front upper");
+        AssertImageBox(frontLower, 32.0, 44.0, 16.0 / 32.0, 12.0 / 44.0, "front lower");
+        AssertImageBox(frontPaw,   38.0, 28.0, 19.0 / 38.0, 12.0 / 28.0, "front paw");
+        AssertImageBox(hindUpper,  38.0, 44.0, 19.0 / 38.0, 12.0 / 44.0, "hind upper");
+        AssertImageBox(hindLower,  36.0, 42.0, 18.0 / 36.0, 12.0 / 42.0, "hind lower");
+        AssertImageBox(hindPaw,    42.0, 30.0, 21.0 / 42.0, 13.0 / 30.0, "hind paw");
 
         Assert(Panel.GetZIndex(hindUpper) < Panel.GetZIndex(torso),
             "hind upper 必须藏在 torso 后，避免髋部接缝外露");
@@ -88,6 +88,8 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
     {
         AssertNear(width, element.Width, $"{label} 显示宽度错误");
         AssertNear(height, element.Height, $"{label} 显示高度错误");
+        AssertNear(pivotX, element.RenderTransformOrigin.X, $"{label} X pivot 必须来自 manifest");
+        AssertNear(pivotY, element.RenderTransformOrigin.Y, $"{label} Y pivot 必须来自 manifest");
         AssertNear(-(width * pivotX), Canvas.GetLeft(element), $"{label} X pivot 被显示校准移动");
         AssertNear(-(height * pivotY), Canvas.GetTop(element), $"{label} Y pivot 被显示校准移动");
     }
