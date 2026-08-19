@@ -1,0 +1,145 @@
+name: Maotai v2 Muzzle Padding Repair Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/maotai-v2-muzzle-padding-repair-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+
+      - name: Re-render muzzle with protected transparent border
+        shell: python
+        run: |
+          from __future__ import annotations
+
+          import math
+          import struct
+          import zlib
+          from pathlib import Path
+
+          asset = Path("windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/muzzle.png")
+          width = 92
+          height = 68
+          pixels = bytearray(width * height * 4)
+
+          def clamp01(value: float) -> float:
+              return max(0.0, min(1.0, value))
+
+          def smoothstep(edge0: float, edge1: float, value: float) -> float:
+              if edge0 == edge1:
+                  return 1.0 if value >= edge1 else 0.0
+              t = clamp01((value - edge0) / (edge1 - edge0))
+              return t * t * (3.0 - 2.0 * t)
+
+          def hash_noise(x: int, y: int, seed: int) -> float:
+              value = (x * 374761393 + y * 668265263 + seed * 69069) & 0xFFFFFFFF
+              value = ((value ^ (value >> 13)) * 1274126177) & 0xFFFFFFFF
+              value ^= value >> 16
+              return value / 4294967295.0
+
+          def blend(a: tuple[float, float, float], b: tuple[float, float, float], t: float) -> tuple[float, float, float]:
+              t = clamp01(t)
+              return tuple(a[i] * (1.0 - t) + b[i] * t for i in range(3))
+
+          cream_base = (235.0, 225.0, 221.0)
+          cream_light = (253.0, 246.0, 241.0)
+
+          for y in range(height):
+              ny = ((y + 0.5) / height) * 2.0 - 1.0
+              for x in range(width):
+                  nx = ((x + 0.5) / width) * 2.0 - 1.0
+                  n1 = hash_noise(x, y, 8101)
+                  n2 = hash_noise(x // 3, y // 3, 8179)
+                  noise = (0.70 * n1) + (0.30 * n2)
+
+                  # Muzzle lobes       : deliberately inset so no visible fur can touch the PNG canvas boundary.
+                  left  = (((nx + 0.25) / 0.58) ** 2) + (((ny + 0.03) / 0.50) ** 2)
+                  right = (((nx - 0.25) / 0.58) ** 2) + (((ny + 0.03) / 0.50) ** 2)
+                  shape = min(left, right)
+                  furry_limit = 1.0 + ((noise - 0.5) * 0.06)
+                  alpha = 1.0 - smoothstep(furry_limit - 0.09, furry_limit + 0.05, shape)
+                  alpha *= 1.0 - smoothstep(0.64, 0.90, ny)
+
+                  # Safety border      : four fully transparent pixels protect rotate/scale sampling from edge clipping.
+                  if x < 4 or x >= width - 4 or y < 4 or y >= height - 4:
+                      alpha = 0.0
+
+                  light = clamp01(0.58 + ((1.0 - ny) * 0.20) + ((noise - 0.5) * 0.16))
+                  color = blend(cream_base, cream_light, light)
+
+                  nose_y = ny + 0.34
+                  nose_width = 0.23 - (0.08 * max(0.0, nose_y))
+                  nose_shape = abs(nx) / max(0.11, nose_width) + abs(nose_y) / 0.21
+                  nose_alpha = 1.0 - smoothstep(0.72, 1.04, nose_shape)
+                  if x < 4 or x >= width - 4 or y < 4 or y >= height - 4:
+                      nose_alpha = 0.0
+                  if nose_alpha > 0.0:
+                      highlight = clamp01(0.35 + ((-nx - ny) * 0.18))
+                      nose = blend((22.0, 19.0, 24.0), (71.0, 62.0, 72.0), highlight)
+                      color = blend(color, nose, nose_alpha)
+                      alpha = max(alpha, nose_alpha)
+
+                  offset = (y * width + x) * 4
+                  pixels[offset + 0] = int(round(color[0]))
+                  pixels[offset + 1] = int(round(color[1]))
+                  pixels[offset + 2] = int(round(color[2]))
+                  pixels[offset + 3] = int(round(clamp01(alpha) * 255.0))
+
+          # Pre-commit guard     : every outer edge must be fully transparent and the interior must remain visibly populated.
+          visible = 0
+          for y in range(height):
+              for x in range(width):
+                  alpha = pixels[((y * width + x) * 4) + 3]
+                  if alpha > 0:
+                      visible += 1
+                      if x == 0 or y == 0 or x == width - 1 or y == height - 1:
+                          raise SystemExit("muzzle visible-pixel border guard failed")
+          if visible < 500:
+              raise SystemExit(f"muzzle visible-pixel count too low: {visible}")
+
+          raw = bytearray()
+          stride = width * 4
+          for row in range(height):
+              raw.append(0)
+              start = row * stride
+              raw.extend(pixels[start:start + stride])
+
+          def chunk(kind: bytes, payload: bytes) -> bytes:
+              return (
+                  struct.pack(">I", len(payload))
+                  + kind
+                  + payload
+                  + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+              )
+
+          payload = (
+              b"\x89PNG\r\n\x1a\n"
+              + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+              + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+              + chunk(b"IEND", b"")
+          )
+          asset.write_bytes(payload)
+          print(f"MAOTAI_V2_MUZZLE=PADDED_FUR:{width}x{height}:{visible}:{len(payload)}")
+
+      - name: Commit focused muzzle padding repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/muzzle.png
+          git diff --cached --check
+          git commit -m "fix(maotai-v2): inset muzzle fur from canvas edges"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
