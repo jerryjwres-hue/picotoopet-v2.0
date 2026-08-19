@@ -1,0 +1,65 @@
+name: Maotai v2 Face Material Upgrade Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/maotai-v2-face-material-upgrade-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+
+      - name: Remove redundant flat chest overlay
+        shell: python
+        run: |
+          from __future__ import annotations
+
+          import struct
+          import zlib
+          from pathlib import Path
+
+          asset = Path("windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/chest_fur.png")
+          width = 124
+          height = 104
+          raw = bytearray()
+          for _ in range(height):
+              raw.append(0)
+              raw.extend(b"\x00\x00\x00\x00" * width)
+
+          def chunk(kind: bytes, payload: bytes) -> bytes:
+              return (
+                  struct.pack(">I", len(payload))
+                  + kind
+                  + payload
+                  + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+              )
+
+          payload = (
+              b"\x89PNG\r\n\x1a\n"
+              + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+              + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+              + chunk(b"IEND", b"")
+          )
+          asset.write_bytes(payload)
+          print(f"MAOTAI_V2_CHEST_OVERLAY=TRANSPARENT:{width}x{height}:{len(payload)}")
+
+      - name: Commit focused chest material fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/chest_fur.png
+          git diff --cached --check
+          git commit -m "fix(maotai-v2): let detailed torso own chest fur"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
