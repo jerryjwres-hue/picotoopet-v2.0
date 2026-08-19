@@ -111,7 +111,7 @@ async def import_legacy_41_database(
         alias="X-Picotoo-Source-Name",
     ),
 ) -> LegacyImportRecord:
-    """Stream one legacy DB into managed staging, import read-only, then enqueue analysis."""
+    """Stream one legacy DB into managed staging, import read-only, then enqueue bounded analysis."""
 
     content_type = str(request.headers.get("content-type") or "").split(";", 1)[0].strip().casefold()
     if content_type not in {"application/octet-stream", "application/vnd.sqlite3", "application/x-sqlite3"}:
@@ -166,16 +166,18 @@ async def import_legacy_41_database(
 
         if record.status == "completed" and record.evidence_imported > 0:
             autopilot = _autopilot(request, repository)
-            product_keys = autopilot.legacy_product_keys(record.source_sha256)
-            if product_keys:
-                try:
+            batches = autopilot.legacy_product_batches(record.source_sha256)
+            try:
+                for batch_index, product_keys in enumerate(batches, start=1):
+                    # ── One import may produce many small P2 Goals, but each keeps the same frozen three-stage chain. ──
                     autopilot.trigger(
                         source="maotai41_import",
-                        event_id=record.import_id,
+                        event_id=f"{record.import_id}:batch:{batch_index:04d}",
                         product_keys=product_keys,
                     )
-                except (KeyError, RuntimeError, ValueError) as error:
-                    _raise_autopilot_error(error)
+            except (KeyError, RuntimeError, ValueError) as error:
+                # ── Earlier batches stay durable; replay safely fills only missing idempotent batches. ──
+                _raise_autopilot_error(error)
         return record
     finally:
         temporary.unlink(missing_ok=True)
