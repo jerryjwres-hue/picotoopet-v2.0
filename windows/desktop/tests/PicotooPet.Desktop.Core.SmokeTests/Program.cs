@@ -44,6 +44,7 @@ internal static class Program
             MaotaiPupilVisibilityV2SmokeTests.Run();
             MaotaiSleepLegGeometryV2SmokeTests.Run();
             MaotaiNeutralLegGeometryV2SmokeTests.Run();
+            MaotaiWorkPawGeometryV2SmokeTests.Run();
             MaotaiRuntimeOwnershipV2SmokeTests.Run();
             MaotaiAutonomousFloatingV2SmokeTests.Run();
             MaotaiAutonomousSleepV2SmokeTests.Run();
