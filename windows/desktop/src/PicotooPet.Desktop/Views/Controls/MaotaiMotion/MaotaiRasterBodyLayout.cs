@@ -181,7 +181,12 @@ internal static class MaotaiRasterBodyLayout
         {
             if (child is FrameworkElement { Name: "MaotaiV2Laptop" } laptop)
             {
-                Canvas.SetLeft(laptop, 68.0);
+                // Work prop footprint : show the complete laptop as one readable foreground object under both typing paws.
+                laptop.Width  = 82.0;
+                laptop.Height = 52.0;
+                Canvas.SetLeft(laptop, 44.0);
+                Canvas.SetTop(laptop, 98.0);
+                System.Windows.Controls.Panel.SetZIndex(laptop, 60);
                 return;
             }
         }
