@@ -69,6 +69,85 @@ def _approve_handoff(client: TestClient, handoff_id: str) -> None:
     )
 
 
+def test_create_coding_escalation_accepts_only_high_level_goal_and_is_replay_safe(
+    tmp_path: Path,
+) -> None:
+    client, headers = _client(tmp_path)
+    request_headers = {**headers, "Idempotency-Key": "coding-goal-create-001"}
+    payload = {
+        "title": "修复受控仓库回归",
+        "objective": "先使用本地事实判断是否需要外部 Coding AI；禁止发布改动。",
+    }
+
+    with client:
+        _publish_ready_providers(client)
+        created = client.post(
+            "/api/v1/coding-escalations",
+            headers=request_headers,
+            json=payload,
+        )
+        handoff_count = client.app.state.services.database.scalar(
+            "SELECT COUNT(*) FROM handoffs"
+        )
+        session_count = client.app.state.services.database.scalar(
+            "SELECT COUNT(*) FROM provider_sessions"
+        )
+        replay = client.post(
+            "/api/v1/coding-escalations",
+            headers=request_headers,
+            json=payload,
+        )
+        replay_handoff_count = client.app.state.services.database.scalar(
+            "SELECT COUNT(*) FROM handoffs"
+        )
+        replay_session_count = client.app.state.services.database.scalar(
+            "SELECT COUNT(*) FROM provider_sessions"
+        )
+
+    assert created.status_code == 201
+    body = created.json()
+    assert body["decision"]["task_class"] == "repository_maintenance"
+    assert body["decision"]["chosen_provider"] == "codex"
+    assert body["decision"]["confidence_lower"] < 0.62
+    assert body["stage"] == "awaiting_handoff_approval"
+    assert body["handoff_id"] is not None
+    source_id = body["decision"]["goal_id"]
+    assert source_id != body["handoff_id"]
+    assert handoff_count == 2  # one manual source fact + one Core-selected provider handoff
+    assert session_count == 0
+    assert replay.status_code == 201
+    assert replay.json() == body
+    assert replay_handoff_count == handoff_count
+    assert replay_session_count == 0
+
+
+def test_create_coding_escalation_rejects_client_authority_fields(tmp_path: Path) -> None:
+    client, headers = _client(tmp_path)
+    with client:
+        response = client.post(
+            "/api/v1/coding-escalations",
+            headers={**headers, "Idempotency-Key": "coding-goal-create-authority"},
+            json={
+                "title": "客户端不得选 Provider",
+                "objective": "验证权限边界。",
+                "provider": "claude_code",
+                "budget": {"max_turns": 99},
+                "signals": {"validation_passed": True},
+                "task_class": "repository_maintenance",
+            },
+        )
+        operation = client.get("/openapi.json").json()["paths"][
+            "/api/v1/coding-escalations"
+        ]["post"]
+
+    assert response.status_code == 422
+    schema_ref = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+    assert schema_ref.endswith("/CodingEscalationCreateRequest")
+    assert "provider" not in json.dumps(operation).lower()
+    assert "budget" not in json.dumps(operation).lower()
+    assert "signals" not in json.dumps(operation).lower()
+
+
 def test_frugal_decision_get_is_authenticated_read_only_and_does_not_spend(tmp_path: Path) -> None:
     client, headers = _client(tmp_path)
     with client:
