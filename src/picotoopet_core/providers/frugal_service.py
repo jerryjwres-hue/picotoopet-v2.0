@@ -145,7 +145,9 @@ class CodingEscalationService:
         """Persist a deterministic decision and prepare at most one approval-bound Handoff."""
 
         sessions_used, attempted, previous_outcome = self._goal_execution_state(goal_id)
-        candidates = tuple(self._candidate(provider) for provider in ("codex", "claude_code"))
+        candidates = tuple(
+            self._candidate(provider, task_class) for provider in ("codex", "claude_code")
+        )
         decision = self.arbiter.decide(
             FrugalEscalationInput(
                 goal_id=goal_id,
@@ -275,14 +277,22 @@ class CodingEscalationService:
         )
         return [self.reconcile(str(row["goal_id"])) for row in rows]
 
-    def provider_history(self, provider: ProviderName) -> ProviderHistorySnapshot:
-        """Count only completed local adoption-validation outcomes, never provider self-reports."""
+    def provider_history(
+        self,
+        provider: ProviderName,
+        *,
+        task_class: str | None = None,
+    ) -> ProviderHistorySnapshot:
+        """Count terminal local outcomes, optionally restricted to one comparable task cohort."""
 
         rows = self.database.fetchall(
             """
-            SELECT pac.status
+            SELECT pac.status, decision.decision_json
             FROM provider_adoption_candidates AS pac
             JOIN provider_sessions AS ps ON ps.session_id = pac.session_id
+            LEFT JOIN handoffs AS handoff ON handoff.handoff_id = ps.handoff_id
+            LEFT JOIN deep_ai_frugal_decisions AS decision
+              ON handoff.prepare_idempotency_key = 'frugal-handoff:' || decision.decision_digest
             WHERE ps.provider = ?
             ORDER BY pac.created_at, pac.candidate_id
             """,
@@ -291,6 +301,17 @@ class CodingEscalationService:
         success_count = 0
         sample_size = 0
         for row in rows:
+            if task_class is not None:
+                raw_decision = row["decision_json"]
+                if not raw_decision:
+                    continue
+                try:
+                    historical_task_class = json.loads(raw_decision).get("task_class")
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if historical_task_class != task_class:
+                    continue
+
             status = str(row["status"])
             if status == "adoption_ready":
                 success_count += 1
@@ -302,12 +323,12 @@ class CodingEscalationService:
             sample_size=sample_size,
         )
 
-    def _candidate(self, provider: ProviderName) -> ProviderCandidate:
+    def _candidate(self, provider: ProviderName, task_class: str) -> ProviderCandidate:
         readiness = self.provider_sessions.provider_status(provider).readiness.value
         return ProviderCandidate(
             provider=provider,
             readiness=readiness,  # type: ignore[arg-type]
-            history=self.provider_history(provider),
+            history=self.provider_history(provider, task_class=task_class),
             expected_quality_uplift=0.45,
             cost_penalty=0.10,
             latency_penalty=0.10,
