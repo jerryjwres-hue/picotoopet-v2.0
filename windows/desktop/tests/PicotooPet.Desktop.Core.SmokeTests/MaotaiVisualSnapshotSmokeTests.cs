@@ -104,6 +104,7 @@ internal static class MaotaiVisualSnapshotSmokeTests
         apply.Invoke(renderer, [frame]);
         VerifyWorkAccessoryVisibility(panel, label, expectedVisible: baseState == "Working");
         VerifyPoseCohesionVisibility(panel, label);
+        VerifyRunPawFootprint(panel, label);
         if (baseState == "Working")
         {
             VerifyWorkPropLayout(panel);
@@ -200,6 +201,39 @@ internal static class MaotaiVisualSnapshotSmokeTests
         var rearPawOpacity = label == "run" ? 0.0 : 1.0;
         AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",  rearPawOpacity, "前视后脚遮挡");
         AssertOpacity(panel, label, "MaotaiV2HindRightPaw", rearPawOpacity, "前视后脚遮挡");
+    }
+
+    private static void VerifyRunPawFootprint(AssistantPetPanel panel, string label)
+    {
+        if (label != "run")
+        {
+            return;
+        }
+
+        // Paw footprint       : keep the physical contact pivot unchanged, but narrow only the rendered moving paw fur.
+        // Overlap prevention  : two full-width 34px paw sprites visibly stack in front view even when IK lanes are valid.
+        foreach (var name in new[]
+                 {
+                     "MaotaiV2FrontLeftPaw",
+                     "MaotaiV2FrontRightPaw",
+                 })
+        {
+            var element = panel.FindName(name) as FrameworkElement
+                ?? throw new InvalidOperationException($"Maotai visual snapshot 缺少 {name}");
+            if (element.RenderTransform is not TransformGroup group ||
+                group.Children.Count == 0 ||
+                group.Children[0] is not ScaleTransform scale)
+            {
+                throw new InvalidOperationException($"Maotai visual snapshot {name} 缺少缓存 ScaleTransform");
+            }
+
+            if (scale.ScaleX > 0.80 || scale.ScaleX < 0.70)
+            {
+                throw new InvalidOperationException(
+                    $"Maotai run {name} 横向 footprint 必须收窄以避免双爪毛边堆叠；" +
+                    $"expected=0.70..0.80, actual={scale.ScaleX:F2}");
+            }
+        }
     }
 
     private static void AssertOpacity(
