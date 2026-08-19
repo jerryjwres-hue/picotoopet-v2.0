@@ -1,4 +1,4 @@
-# one-shot visual evidence attempt 2
+# one-shot visual evidence attempt 3: bounded + instrumented
 name: Maotai v2 Visual Snapshot Once
 
 on:
@@ -14,7 +14,7 @@ jobs:
   snapshot:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/maotai-natural-motion-v2'
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 8
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
@@ -34,9 +34,7 @@ jobs:
           New-Item -ItemType Directory -Path $assetRoot -Force | Out-Null
           Copy-Item 'windows\desktop\src\PicotooPet.Desktop\Assets\Maotai\V2\*.png' $assetRoot -Force
           $count = @(Get-ChildItem $assetRoot -Filter '*.png').Count
-          if ($count -ne 44) {
-            throw "Expected 44 Maotai v2 assets, got $count"
-          }
+          if ($count -ne 44) { throw "Expected 44 Maotai v2 assets, got $count" }
           Write-Host "MAOTAI_ASSET_OVERRIDE=$assetRoot"
 
       - name: Render deterministic Maotai visual snapshots
@@ -44,22 +42,15 @@ jobs:
         run: |
           $out = 'windows\desktop\artifacts\maotai-visual-snapshot'
           New-Item -ItemType Directory -Path $out -Force | Out-Null
-          $output = dotnet run `
+          dotnet run `
             --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
             --configuration Release `
             -- `
             --maotai-visual-snapshot $out
-          $output | Write-Host
-          if ($output -notcontains "MAOTAI_VISUAL_SNAPSHOT=PASS | $((Resolve-Path $out).Path)") {
-            if (-not ($output -match 'MAOTAI_VISUAL_SNAPSHOT=PASS')) {
-              throw 'Maotai visual snapshot PASS marker missing.'
-            }
-          }
+          if ($LASTEXITCODE -ne 0) { throw "Maotai visual snapshot process failed with exit code $LASTEXITCODE" }
           foreach ($name in @('maotai-idle.png','maotai-work.png','maotai-sleep.png','maotai-run.png','maotai-visual-snapshot.json')) {
             $path = Join-Path $out $name
-            if (-not (Test-Path $path)) {
-              throw "Missing visual evidence: $name"
-            }
+            if (-not (Test-Path $path)) { throw "Missing visual evidence: $name" }
           }
           Get-ChildItem $out | Format-Table Name,Length
 
