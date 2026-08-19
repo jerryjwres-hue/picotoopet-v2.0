@@ -1,4 +1,4 @@
-"""Phase 10A/10D Handoff 准备、预览和审批绑定模型。"""
+"""Phase 10A/10D Handoff preparation, preview and approval-bound models."""
 
 from __future__ import annotations
 
@@ -11,8 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 HandoffTemplateId = Literal[
     "picotoopet-repo-maintenance-v1",
     "picotoopet-repo-maintenance-codex-v1",
+    "picotoopet-repo-maintenance-claude-code-v1",
 ]
-HandoffProvider = Literal["manual", "codex"]
+HandoffProvider = Literal["manual", "codex", "claude_code"]
 
 
 class HandoffStatus(StrEnum):
