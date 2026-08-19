@@ -49,10 +49,14 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
 
         configure.Invoke(null, [body]);
 
-        AssertNear(104.0, torso.Width, "neutral torso 宽度没有按最终比例校准");
-        AssertNear(82.0, torso.Height, "neutral torso 高度没有按最终比例校准");
-        AssertNear(-52.0, Canvas.GetLeft(torso), "neutral torso X 锚点错误");
-        AssertNear(-41.0, Canvas.GetTop(torso), "neutral torso Y 锚点错误");
+        AssertNear(112.0, torso.Width, "neutral torso 宽度没有按 plush 比例校准");
+        AssertNear(90.0, torso.Height, "neutral torso 高度没有按 plush 比例校准");
+        AssertNear(-56.0, Canvas.GetLeft(torso), "neutral torso X 锚点错误");
+        AssertNear(-45.0, Canvas.GetTop(torso), "neutral torso Y 锚点错误");
+        AssertNear(116.0, crouch.Width, "crouch torso 宽度没有同步 plush coverage");
+        AssertNear(84.0, crouch.Height, "crouch torso 高度没有同步 plush coverage");
+        AssertNear(108.0, stretch.Width, "stretch torso 宽度没有同步 plush coverage");
+        AssertNear(96.0, stretch.Height, "stretch torso 高度没有同步 plush coverage");
 
         // 组合截图表明旧显示框把独立毛发部件横向压窄了 20%–40%，关节处像被切断。
         // 新 footprint 接近 manifest 逻辑尺寸，但 Pivot 仍必须沿用 manifest 的毛发 overlap 锚点。
@@ -78,7 +82,7 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
         Assert(Panel.GetZIndex(frontPaw) > Panel.GetZIndex(torso),
             "front paw 必须在 torso 前方，保证落脚可读");
         Assert(Panel.GetZIndex(chest) > Panel.GetZIndex(torso),
-            "胸毛必须覆盖 torso 接缝而不是被压在后面");
+            "胸毛兼容层必须继续位于 torso 上方，即使当前素材透明也不能改变图层契约");
         Assert(Panel.GetZIndex(head) > Panel.GetZIndex(frontPaw),
             "head 必须位于身体与爪子上方，避免身体层穿脸");
     }
