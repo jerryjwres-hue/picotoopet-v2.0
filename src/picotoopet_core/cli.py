@@ -158,13 +158,13 @@ def _run_worker(
     if settings.provider_execution_configured:
         assert settings.provider_repository is not None
         assert settings.provider_worktree_root is not None
-        assert settings.codex_executable is not None
         provider_coordinator = ProviderExecutionCoordinator(
             queue=services.queue,
             sessions=services.provider_sessions,
             repository=settings.provider_repository,
             worktree_root=settings.provider_worktree_root,
             codex_executable=settings.codex_executable,
+            claude_code_executable=settings.claude_code_executable,
             worker_id=resolved_worker_id,
             artifact_store=services.provider_artifacts,
         )
@@ -182,7 +182,8 @@ def _run_worker(
             worktree_root=settings.paths.runtime_dir / "commit-worktrees",
             artifact_store=services.provider_artifacts,
         )
-        runtime.handlers[ProviderExecutionCoordinator.TASK_TYPE] = provider_coordinator.handler
+        for task_type in provider_coordinator.configured_task_types:
+            runtime.handlers[task_type] = provider_coordinator.handler
         runtime.handlers[AdoptionExecutionCoordinator.TASK_TYPE] = adoption_coordinator.handler
         runtime.handlers[ProviderCommitExecutionCoordinator.TASK_TYPE] = commit_coordinator.handler
     if settings.provider_publication_configured:
