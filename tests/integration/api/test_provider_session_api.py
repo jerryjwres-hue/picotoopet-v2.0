@@ -42,7 +42,7 @@ def approve_codex_handoff(client: TestClient, headers: dict[str, str]) -> dict[s
         json={
             "decision": "approve",
             "request_digest": approval["request_digest"],
-            "reason": "批准一次低预算 Codex Session。",
+            "reason": "批准受控 Handoff；Provider Session 创建权保留在 Mac Core。",
         },
     )
     assert approved.status_code == 200
@@ -54,7 +54,7 @@ def approve_codex_handoff(client: TestClient, headers: dict[str, str]) -> dict[s
     return final.json()
 
 
-def test_confirm_usage_and_create_one_codex_session(tmp_path: Path) -> None:
+def test_confirm_usage_then_read_core_created_codex_session(tmp_path: Path) -> None:
     client, headers = make_client(tmp_path)
     with client:
         handoff = approve_codex_handoff(client, headers)
@@ -68,17 +68,14 @@ def test_confirm_usage_and_create_one_codex_session(tmp_path: Path) -> None:
             headers={**headers, "Idempotency-Key": "provider-usage-confirm"},
             json={"status": "confirmed_available"},
         )
-        created = client.post(
-            f"/api/v1/handoffs/{handoff['handoff_id']}/provider-sessions/codex",
-            headers={**headers, "Idempotency-Key": "provider-session-create"},
+        created = client.app.state.services.provider_sessions.create_codex_session(
+            str(handoff["handoff_id"]),
+            idempotency_key="core-internal-provider-session-create",
         )
-        replay_created = client.post(
-            f"/api/v1/handoffs/{handoff['handoff_id']}/provider-sessions/codex",
-            headers={**headers, "Idempotency-Key": "provider-session-create"},
-        )
+        created_json = created.model_dump(mode="json")
         listed = client.get("/api/v1/provider-sessions?limit=100", headers=headers)
         fetched = client.get(
-            f"/api/v1/provider-sessions/{created.json()['session_id']}",
+            f"/api/v1/provider-sessions/{created.session_id}",
             headers=headers,
         )
 
@@ -95,17 +92,17 @@ def test_confirm_usage_and_create_one_codex_session(tmp_path: Path) -> None:
         "concurrency": 1,
         "network_tools_allowed": False,
     }
-    assert created.status_code == 201
-    assert replay_created.json() == created.json()
-    assert created.json()["status"] == "waiting_provider_ready"
-    assert listed.json() == [created.json()]
-    assert fetched.json() == created.json()
-    text = created.text.lower()
+    assert created_json["status"] == "waiting_provider_ready"
+    assert listed.json() == [created_json]
+    assert fetched.json() == created_json
+    text = fetched.text.lower()
     for forbidden in ("token", "cookie", "authorization", "api_key", "transcript"):
         assert forbidden not in text
 
 
-def test_provider_api_rejects_arbitrary_body_and_low_usage(tmp_path: Path) -> None:
+def test_provider_api_rejects_arbitrary_usage_fields_and_direct_session_create(
+    tmp_path: Path,
+) -> None:
     client, headers = make_client(tmp_path)
     with client:
         handoff = approve_codex_handoff(client, headers)
@@ -119,21 +116,14 @@ def test_provider_api_rejects_arbitrary_body_and_low_usage(tmp_path: Path) -> No
             headers={**headers, "Idempotency-Key": "provider-low-confirm"},
             json={"status": "confirmed_low"},
         )
-        denied = client.post(
+        direct_create = client.post(
             f"/api/v1/handoffs/{handoff['handoff_id']}/provider-sessions/codex",
-            headers={**headers, "Idempotency-Key": "provider-low-session"},
-        )
-        arbitrary_create = client.post(
-            f"/api/v1/handoffs/{handoff['handoff_id']}/provider-sessions/codex",
-            headers={**headers, "Idempotency-Key": "provider-body-session"},
-            json={"command": "do anything"},
+            headers={**headers, "Idempotency-Key": "provider-direct-create"},
         )
 
     assert arbitrary_confirmation.status_code == 422
     assert low.status_code == 201
-    assert denied.status_code == 400
-    assert denied.json()["error"]["code"] == "PROVIDER_POLICY_DENIED"
-    assert arbitrary_create.status_code == 422
+    assert direct_create.status_code == 404
 
 
 def test_provider_api_requires_authentication_and_idempotency(tmp_path: Path) -> None:

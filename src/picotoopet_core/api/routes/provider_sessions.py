@@ -65,62 +65,12 @@ def confirm_provider_usage(
     )
 
 
-@router.post(
-    "/handoffs/{handoff_id}/provider-sessions/codex",
-    response_model=ProviderSessionRecord,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_codex_session(
-    handoff_id: str,
-    request: Request,
-    idempotency_key: str = Header(
-        min_length=1,
-        max_length=200,
-        alias="Idempotency-Key",
-    ),
-) -> ProviderSessionRecord:
-    """Create the unique low-budget Session for an approved Codex Handoff."""
-
-    await require_empty_body(request)
-    return execute_provider(
-        lambda: request.app.state.services.provider_sessions.create_codex_session(
-            handoff_id,
-            idempotency_key=idempotency_key,
-        )
-    )
-
-
-@router.post(
-    "/handoffs/{handoff_id}/provider-sessions/claude-code",
-    response_model=ProviderSessionRecord,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_claude_code_session(
-    handoff_id: str,
-    request: Request,
-    idempotency_key: str = Header(
-        min_length=1,
-        max_length=200,
-        alias="Idempotency-Key",
-    ),
-) -> ProviderSessionRecord:
-    """Create the unique low-budget Session for an approved Claude Code Handoff."""
-
-    await require_empty_body(request)
-    return execute_provider(
-        lambda: request.app.state.services.provider_sessions.create_claude_code_session(
-            handoff_id,
-            idempotency_key=idempotency_key,
-        )
-    )
-
-
 @router.get("/provider-sessions", response_model=list[ProviderSessionRecord])
 def list_provider_sessions(
     request: Request,
     limit: int = Query(default=100, ge=1, le=100),
 ) -> list[ProviderSessionRecord]:
-    """Read recent Provider Session safe projections."""
+    """Read recent Core-created Provider Session safe projections."""
 
     return execute_provider(
         lambda: request.app.state.services.provider_sessions.list_sessions(limit=limit)
@@ -132,7 +82,7 @@ def list_provider_sessions(
     response_model=ProviderSessionRecord,
 )
 def get_provider_session(session_id: str, request: Request) -> ProviderSessionRecord:
-    """Read one Provider Session safe projection."""
+    """Read one Core-created Provider Session safe projection."""
 
     return execute_provider(
         lambda: request.app.state.services.provider_sessions.get_session(session_id)
@@ -162,7 +112,7 @@ async def cancel_provider_session(
 
 
 async def require_empty_body(request: Request) -> None:
-    """Session create/cancel never accepts paths, commands, models, credentials or flags."""
+    """Provider cancellation never accepts paths, commands, models, credentials or flags."""
 
     if await request.body():
         raise ApiError(
