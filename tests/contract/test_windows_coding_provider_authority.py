@@ -17,8 +17,9 @@ HANDOFF_SESSION = (
 
 def test_windows_filters_handoff_templates_to_manual_provider_only() -> None:
     source = HANDOFF_SESSION.read_text(encoding="utf-8-sig")
+    compact = "".join(source.split())
 
     assert "GetHandoffTemplatesAsync" in source
     assert ".Where(" in source
-    assert 'template.Provider, "manual"' in source
-    assert "StringComparison.Ordinal" in source
+    assert 'template.Provider,"manual",StringComparison.Ordinal' in compact
+    assert ".ToArray();" in source
