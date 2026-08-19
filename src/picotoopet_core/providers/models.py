@@ -1,16 +1,18 @@
-"""Phase 10D-A 受控 Codex Provider 的安全模型。"""
+"""Shared safety models for bounded Codex and Claude Code provider sessions."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
+ProviderName: TypeAlias = Literal["codex", "claude_code"]
+
 
 class ProviderUsageStatus(StrEnum):
-    """用户从外部 Usage 页面人工确认的账户层状态。"""
+    """Account-layer availability fact; it never contains credentials or balances."""
 
     CONFIRMED_AVAILABLE = "confirmed_available"
     CONFIRMED_LOW = "confirmed_low"
@@ -19,7 +21,7 @@ class ProviderUsageStatus(StrEnum):
 
 
 class ProviderReadinessStatus(StrEnum):
-    """Mac 执行节点可公开的最小 Provider 就绪状态。"""
+    """Minimal non-secret provider readiness visible to Mac Core/Windows."""
 
     READY = "ready"
     NOT_AUTHENTICATED = "not_authenticated"
@@ -28,7 +30,7 @@ class ProviderReadinessStatus(StrEnum):
 
 
 class ProviderSessionStatus(StrEnum):
-    """真实 Provider Session 的固定状态集合。"""
+    """Fixed lifecycle states for a real bounded provider session."""
 
     REQUESTED = "requested"
     WAITING_USAGE_CONFIRMATION = "waiting_usage_confirmation"
@@ -49,7 +51,7 @@ class ProviderSessionStatus(StrEnum):
 
 
 class ProviderBudget(BaseModel):
-    """Mac Core 固定、客户端不可扩大的低预算。"""
+    """Mac Core fixed low budget that no client can enlarge."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -64,11 +66,11 @@ class ProviderBudget(BaseModel):
 
 
 class ProviderStatusRecord(BaseModel):
-    """不包含凭据或账户余额的 Provider 状态。"""
+    """Non-secret readiness projection for one fixed coding provider."""
 
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["codex"] = "codex"
+    provider: ProviderName = "codex"
     readiness: ProviderReadinessStatus
     real_execution_default: Literal[False] = False
     usage_machine_readable: Literal[False] = False
@@ -77,7 +79,7 @@ class ProviderStatusRecord(BaseModel):
 
 
 class ProviderUsageConfirmationRequest(BaseModel):
-    """Windows 唯一可提交的账户层人工确认。"""
+    """Legacy account-layer availability confirmation; it cannot set execution policy."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -85,7 +87,7 @@ class ProviderUsageConfirmationRequest(BaseModel):
 
 
 class ProviderUsageConfirmationRecord(BaseModel):
-    """绑定 Handoff digest、固定预算和短期过期时间的安全事实。"""
+    """Availability fact bound to exact handoff digests and the fixed shared budget."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -93,7 +95,7 @@ class ProviderUsageConfirmationRecord(BaseModel):
         pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     )
     handoff_id: str = Field(min_length=1, max_length=80)
-    provider: Literal["codex"] = "codex"
+    provider: ProviderName = "codex"
     status: ProviderUsageStatus
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     package_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -103,7 +105,7 @@ class ProviderUsageConfirmationRecord(BaseModel):
 
 
 class ProviderSessionRecord(BaseModel):
-    """Windows 可读取的 Provider Session 安全投影。"""
+    """Windows-safe projection of one Codex or Claude Code session."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -111,7 +113,7 @@ class ProviderSessionRecord(BaseModel):
         pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     )
     handoff_id: str = Field(min_length=1, max_length=80)
-    provider: Literal["codex"] = "codex"
+    provider: ProviderName = "codex"
     status: ProviderSessionStatus
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     package_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
