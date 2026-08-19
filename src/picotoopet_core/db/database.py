@@ -21,6 +21,7 @@ from .migration_017 import MIGRATION_017
 from .migration_018 import MIGRATION_018
 from .migration_019 import MIGRATION_019
 from .migration_020 import MIGRATION_020
+from .migration_021 import MIGRATION_021
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -309,7 +310,18 @@ class Database:
                     (20, datetime.now(UTC).isoformat()),
                 )
 
-            # 2.3.27.1 删除/恢复仍是操作员列表元数据；连接证据把累计 Core Schema 推进到 20。
+            migration_021_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 21"
+            ).fetchone()
+            if migration_021_exists is None:
+                # Frugal coding escalation decisions are Core-owned immutable audit facts.
+                connection.executescript(MIGRATION_021)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (21, datetime.now(UTC).isoformat()),
+                )
+
+            # 2.3.27.1 删除/恢复仍是操作员列表元数据；Frugal 决策把累计 Core Schema 推进到 21。
             connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
