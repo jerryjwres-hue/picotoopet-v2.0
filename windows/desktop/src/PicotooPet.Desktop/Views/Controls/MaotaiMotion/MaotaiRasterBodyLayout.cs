@@ -33,28 +33,93 @@ internal static class MaotaiRasterBodyLayout
                     break;
 
                 case "MaotaiV2HindLeftUpper":
+                    ConfigureManifestPivotedImage(
+                        element,
+                        26.0,
+                        42.0,
+                        MaotaiAssetManifest.HindLeftUpper,
+                        10);
+                    break;
+
                 case "MaotaiV2HindRightUpper":
-                    ConfigurePivotedImage(element, 26.0, 42.0, 0.50, 0.15, 10);
+                    ConfigureManifestPivotedImage(
+                        element,
+                        26.0,
+                        42.0,
+                        MaotaiAssetManifest.HindRightUpper,
+                        10);
                     break;
 
                 case "MaotaiV2HindLeftLower":
+                    ConfigureManifestPivotedImage(
+                        element,
+                        25.0,
+                        39.0,
+                        MaotaiAssetManifest.HindLeftLower,
+                        10);
+                    break;
+
                 case "MaotaiV2HindRightLower":
-                    ConfigurePivotedImage(element, 25.0, 39.0, 0.50, 0.15, 10);
+                    ConfigureManifestPivotedImage(
+                        element,
+                        25.0,
+                        39.0,
+                        MaotaiAssetManifest.HindRightLower,
+                        10);
                     break;
 
                 case "MaotaiV2HindLeftPaw":
+                    ConfigureManifestPivotedImage(
+                        element,
+                        26.0,
+                        20.0,
+                        MaotaiAssetManifest.HindLeftPaw,
+                        12);
+                    break;
+
                 case "MaotaiV2HindRightPaw":
-                    ConfigurePivotedImage(element, 26.0, 20.0, 0.50, 0.50, 12);
+                    ConfigureManifestPivotedImage(
+                        element,
+                        26.0,
+                        20.0,
+                        MaotaiAssetManifest.HindRightPaw,
+                        12);
                     break;
 
                 case "MaotaiV2FrontLeftUpper":
+                    ConfigureManifestPivotedImage(
+                        element,
+                        26.0,
+                        43.0,
+                        MaotaiAssetManifest.FrontLeftUpper,
+                        16);
+                    break;
+
                 case "MaotaiV2FrontRightUpper":
-                    ConfigurePivotedImage(element, 26.0, 43.0, 0.50, 0.15, 16);
+                    ConfigureManifestPivotedImage(
+                        element,
+                        26.0,
+                        43.0,
+                        MaotaiAssetManifest.FrontRightUpper,
+                        16);
                     break;
 
                 case "MaotaiV2FrontLeftLower":
+                    ConfigureManifestPivotedImage(
+                        element,
+                        25.0,
+                        40.0,
+                        MaotaiAssetManifest.FrontLeftLower,
+                        16);
+                    break;
+
                 case "MaotaiV2FrontRightLower":
-                    ConfigurePivotedImage(element, 25.0, 40.0, 0.50, 0.15, 16);
+                    ConfigureManifestPivotedImage(
+                        element,
+                        25.0,
+                        40.0,
+                        MaotaiAssetManifest.FrontRightLower,
+                        16);
                     break;
 
                 case "MaotaiV2TorsoNeutral":
@@ -74,8 +139,21 @@ internal static class MaotaiRasterBodyLayout
                     break;
 
                 case "MaotaiV2FrontLeftPaw":
+                    ConfigureManifestPivotedImage(
+                        element,
+                        27.0,
+                        20.0,
+                        MaotaiAssetManifest.FrontLeftPaw,
+                        30);
+                    break;
+
                 case "MaotaiV2FrontRightPaw":
-                    ConfigurePivotedImage(element, 27.0, 20.0, 0.50, 0.50, 30);
+                    ConfigureManifestPivotedImage(
+                        element,
+                        27.0,
+                        20.0,
+                        MaotaiAssetManifest.FrontRightPaw,
+                        30);
                     break;
 
                 case "MaotaiV2HeadBone":
@@ -108,6 +186,30 @@ internal static class MaotaiRasterBodyLayout
         }
     }
 
+    /// <summary>
+    /// 显示框允许按组合效果缩放，但旋转中心必须来自 Manifest 的原始透明素材 Pivot。
+    /// 这样缩小肢体时仍围绕真正的关节毛发重叠区旋转，不会再次出现“纸片被撕开”的接缝。
+    /// </summary>
+    private static void ConfigureManifestPivotedImage(
+        FrameworkElement element,
+        double width,
+        double height,
+        string assetFileName,
+        int zIndex)
+    {
+        if (!MaotaiAssetManifest.TryGetDescriptor(assetFileName, out var descriptor) ||
+            descriptor.Width <= 0.0 ||
+            descriptor.Height <= 0.0)
+        {
+            throw new InvalidOperationException(
+                $"Maotai v2 body layout descriptor missing: {assetFileName}");
+        }
+
+        var pivotX = descriptor.PivotX / descriptor.Width;
+        var pivotY = descriptor.PivotY / descriptor.Height;
+        ConfigurePivotedImage(element, width, height, pivotX, pivotY, zIndex);
+    }
+
     private static void ConfigurePivotedImage(
         FrameworkElement element,
         double width,
@@ -116,8 +218,8 @@ internal static class MaotaiRasterBodyLayout
         double pivotY,
         int zIndex)
     {
-        element.Width = width;
-        element.Height = height;
+        element.Width                 = width;
+        element.Height                = height;
         element.RenderTransformOrigin = new System.Windows.Point(pivotX, pivotY);
         Canvas.SetLeft(element, -(width * pivotX));
         Canvas.SetTop(element, -(height * pivotY));
