@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from picotoopet_core.providers.process_runner import BoundedProcessResult
+from picotoopet_core.providers.process_runner import (
+    BoundedProcessResult,
+    BoundedProcessRunner,
+)
 
 
 def _module():  # type: ignore[no-untyped-def]
@@ -49,10 +52,12 @@ def _success_payload() -> str:
 def _policy_compatible_help() -> str:
     return " ".join(
         (
+            "--safe-mode",
             "--output-format",
             "--max-turns",
+            "--no-session-persistence",
             "--permission-mode",
-            "--allowedTools",
+            "--tools",
             "--disallowedTools",
             "--version",
         )
@@ -78,20 +83,20 @@ def test_argv_is_fixed_noninteractive_and_file_tools_only(tmp_path: Path) -> Non
     joined = " ".join(argv)
 
     assert argv[0] == str(executable)
+    assert "--safe-mode" in argv
     assert "-p" in argv
     assert "--output-format" in argv and "json" in argv
     assert "--max-turns" in argv and "8" in argv
+    assert "--no-session-persistence" in argv
     assert "--permission-mode" in argv and "acceptEdits" in argv
-    assert "--allowedTools" in argv and "Read,Edit,Write" in argv
+    # --tools restricts which built-in tools exist; --allowedTools alone would only pre-authorize.
+    assert "--tools" in argv and "Read,Edit,Write" in argv
     assert "--disallowedTools" in argv
     assert "Bash" in joined
     assert "WebFetch" in joined
     assert "WebSearch" in joined
     assert "Agent" in joined
     assert "mcp__*" in joined
-    assert "--safe-mode" not in argv
-    assert "--no-session-persistence" not in argv
-    assert "--tools" not in argv
     assert "--dangerously-skip-permissions" not in argv
     assert "--add-dir" not in argv
     assert "--mcp-config" not in argv
@@ -99,6 +104,15 @@ def test_argv_is_fixed_noninteractive_and_file_tools_only(tmp_path: Path) -> Non
     assert "--model" not in argv
     assert "--resume" not in argv
     assert "--continue" not in argv
+    assert "--agents" not in argv
+    assert "--plugin-dir" not in argv
+
+
+def test_provider_environment_forces_automatic_updates_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DISABLE_AUTOUPDATER", "0")
+    environment = BoundedProcessRunner._safe_environment()
+
+    assert environment["DISABLE_AUTOUPDATER"] == "1"
 
 
 def test_run_uses_only_isolated_cwd_fixed_limits_and_safe_summary(tmp_path: Path) -> None:
@@ -156,9 +170,7 @@ def test_result_parser_rejects_non_result_or_over_budget_turns() -> None:
         )
 
 
-def test_readiness_checks_documented_policy_flags_then_auth_without_reading_credentials(
-    tmp_path: Path,
-) -> None:
+def test_readiness_checks_policy_flags_then_auth_without_reading_credentials(tmp_path: Path) -> None:
     module = _module()
     executable = tmp_path / "claude"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
