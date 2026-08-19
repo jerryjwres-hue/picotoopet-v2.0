@@ -23,8 +23,9 @@ REQUIRED_GOAL_CENTER_WHEEL_ENTRIES = (
     "picotoopet_core/autonomous/prompts/web_gpt_master_v1.txt",
 )
 
+# `autonomous.discovery.v1` 只有在 Research Gateway readiness + 本地 Scout 同时健康时
+# 才会被生产 Worker 注册，所以这里不重复要求 Worker 自己再暴露 research.search handler。
 REQUIRED_LIVE_TASK_TYPES = (
-    "research.search",
     "autonomous.discovery.v1",
     "autonomous.goal_synthesis.v1",
     "autonomous.goal_handoff.v1",
