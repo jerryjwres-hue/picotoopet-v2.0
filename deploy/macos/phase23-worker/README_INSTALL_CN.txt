@@ -19,7 +19,7 @@ Goal Center / Autonomous Intelligence 能力：
 - Mac Core 是 Goal、任务、结果、证据和审计的唯一事实源；
 - Mac Worker 在真实依赖健康时动态注册 autonomous.discovery.v1、autonomous.goal_synthesis.v1、autonomous.goal_handoff.v1；
 - autonomous.discovery.v1 只有在 Research Gateway readiness 与本地 Scout 同时健康时才会注册；
-- Content Discovery 会按当前任务目标自动生成研究查询，不再只使用固定通用关键词；
+- Content Discovery 会自动按当前任务目标生成研究查询，不再只使用固定通用关键词；
 - 迁移 Maotai OS 4.1 的确定性信息增益、采集节奏和来源策略算法，但不迁移旧 UI 或旧数据库事实源；
 - 提供只读 Browser Broker 公开页面采集合同；它只接受经过安全校验的公开页面证据，不读取 Cookie、密码、Token、浏览器存储或支付信息；
 - 固定 Web GPT Prompt 会随 Python wheel 一起交付，用于后续人工把交接包提交给网页 ChatGPT；程序不会登录或控制网页 ChatGPT；
