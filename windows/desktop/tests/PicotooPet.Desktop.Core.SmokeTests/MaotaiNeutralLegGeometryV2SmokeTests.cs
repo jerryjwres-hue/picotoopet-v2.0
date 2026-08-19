@@ -52,8 +52,8 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
         var input      = CreateRestingInput(targetX: 150.0, wantsRun: true);
         var sawRun     = false;
 
-        // Run lane contract   : front-view gait may advance/retract, but each paw must stay on its own half-body.
-        // Minimum clearance   : keep a small center gap so the single-silhouette legs never cross into an X shape.
+        // Visible run contract : renderer intentionally occludes the rear pair in front-view locomotion.
+        // Support vs swing     : planted paws keep world-lock; only airborne swing paws must stay in a tight shoulder lane.
         for (var frame = 0; frame < 90; frame++)
         {
             var pose = update.Invoke(engine, [1.0 / 60.0, input])
@@ -64,10 +64,18 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
             }
 
             sawRun = true;
-            VerifyRunPawLane(pose, "FrontLeftUpper",  "FrontLeftPaw",  expectedSideSign: -1);
-            VerifyRunPawLane(pose, "FrontRightUpper", "FrontRightPaw", expectedSideSign: 1);
-            VerifyRunPawLane(pose, "HindLeftUpper",   "HindLeftPaw",   expectedSideSign: -1);
-            VerifyRunPawLane(pose, "HindRightUpper",  "HindRightPaw",  expectedSideSign: 1);
+            VerifyRunPawLane(
+                pose,
+                "FrontLeftUpper",
+                "FrontLeftPaw",
+                "FrontLeftSupport",
+                expectedSideSign: -1);
+            VerifyRunPawLane(
+                pose,
+                "FrontRightUpper",
+                "FrontRightPaw",
+                "FrontRightSupport",
+                expectedSideSign: 1);
         }
 
         Assert(sawRun, "跑步夹具在 1.5 秒内没有进入 Run，无法验证左右腿通道");
@@ -77,18 +85,23 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
         object pose,
         string upperName,
         string pawName,
+        string supportPropertyName,
         int expectedSideSign)
     {
         var shoulderX = ReadPoseDouble(pose, upperName, "X");
         var pawX      = ReadPoseDouble(pose, pawName, "X");
+        var isSupport = ReadRootBool(pose, supportPropertyName);
 
-        // Center clearance    : furry feet never enter the narrow center corridor.
-        // Shoulder lane       : front-view running stays nearly vertical instead of producing long crossing diagonals.
-        Assert((pawX * expectedSideSign) >= 10.0,
-            $"{pawName} 跑步时过度靠近身体中线，会形成 X 形拼接；x={pawX:F2}");
-        Assert(Math.Abs(pawX - shoulderX) <= 6.0,
+        // Planted support      : allow modest body travel over a world-locked paw, but never let it cross the center corridor.
+        // Airborne swing       : keep the visible front paw close to its shoulder so the furry silhouette cannot form an X.
+        var centerClearance = isSupport ? 8.0 : 10.0;
+        var shoulderRadius  = isSupport ? 10.0 : 6.0;
+        Assert((pawX * expectedSideSign) >= centerClearance,
+            $"{pawName} 跑步时过度靠近身体中线，会形成 X 形拼接；" +
+            $"support={isSupport}, x={pawX:F2}");
+        Assert(Math.Abs(pawX - shoulderX) <= shoulderRadius,
             $"{pawName} 跑步时偏离 {upperName} 肩根过大，会形成长斜向拼接；" +
-            $"shoulder={shoulderX:F2}, paw={pawX:F2}");
+            $"support={isSupport}, shoulder={shoulderX:F2}, paw={pawX:F2}");
     }
 
     private static void VerifyLeg(
@@ -182,6 +195,10 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
         return (double)(RequireProperty(pose.GetType(), propertyName).GetValue(pose)
             ?? throw new InvalidOperationException($"{poseName}.{propertyName} 为空"));
     }
+
+    private static bool ReadRootBool(object value, string propertyName) =>
+        (bool)(RequireProperty(value.GetType(), propertyName).GetValue(value)
+            ?? throw new InvalidOperationException($"{propertyName} 为空"));
 
     private static Type RequireType(string fullName) =>
         DesktopAssembly.GetType(fullName) ??
