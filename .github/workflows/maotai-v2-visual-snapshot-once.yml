@@ -1,0 +1,71 @@
+name: Maotai v2 Visual Snapshot Once
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/maotai-v2-visual-snapshot-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/maotai-natural-motion-v2'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install exact .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Prepare fixed app-owned Maotai v2 asset override
+        shell: powershell
+        run: |
+          $assetRoot = Join-Path $env:LOCALAPPDATA 'PicotooPet\ui-assets\maotai\v2'
+          New-Item -ItemType Directory -Path $assetRoot -Force | Out-Null
+          Copy-Item 'windows\desktop\src\PicotooPet.Desktop\Assets\Maotai\V2\*.png' $assetRoot -Force
+          $count = @(Get-ChildItem $assetRoot -Filter '*.png').Count
+          if ($count -ne 44) {
+            throw "Expected 44 Maotai v2 assets, got $count"
+          }
+          Write-Host "MAOTAI_ASSET_OVERRIDE=$assetRoot"
+
+      - name: Render deterministic Maotai visual snapshots
+        shell: powershell
+        run: |
+          $out = 'windows\desktop\artifacts\maotai-visual-snapshot'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $output = dotnet run `
+            --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
+            --configuration Release `
+            -- `
+            --maotai-visual-snapshot $out
+          $output | Write-Host
+          if ($output -notcontains "MAOTAI_VISUAL_SNAPSHOT=PASS | $((Resolve-Path $out).Path)") {
+            if (-not ($output -match 'MAOTAI_VISUAL_SNAPSHOT=PASS')) {
+              throw 'Maotai visual snapshot PASS marker missing.'
+            }
+          }
+          foreach ($name in @('maotai-idle.png','maotai-work.png','maotai-sleep.png','maotai-run.png','maotai-visual-snapshot.json')) {
+            $path = Join-Path $out $name
+            if (-not (Test-Path $path)) {
+              throw "Missing visual evidence: $name"
+            }
+          }
+          Get-ChildItem $out | Format-Table Name,Length
+
+      - name: Upload Maotai visual evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: Maotai-v2-Visual-Snapshot-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 14
+          path: windows/desktop/artifacts/maotai-visual-snapshot/*
