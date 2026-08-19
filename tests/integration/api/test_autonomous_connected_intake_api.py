@@ -76,6 +76,13 @@ def _legacy_db(path: Path) -> bytes:
     return path.read_bytes()
 
 
+def _visible_auto_goals(client: TestClient, headers: dict[str, str]) -> list[dict[str, object]]:
+    # ── Product-visible autonomous intake Goals share the existing Goal Center surface. ──
+    response = client.get("/api/v1/autonomous/goals", headers=headers)
+    assert response.status_code == 200
+    return [item for item in response.json() if item["origin"] == "autonomous"]
+
+
 def test_browser_bridge_intake_is_authenticated_and_persists_canonical_evidence(
     tmp_path: Path,
 ) -> None:
@@ -109,6 +116,30 @@ def test_browser_bridge_intake_is_authenticated_and_persists_canonical_evidence(
             "SELECT COUNT(*) FROM autonomous_evidence"
         ) == 2
 
+        # ── New connected evidence must immediately materialize one bounded P2 Goal. ──
+        auto_goals = _visible_auto_goals(client, headers)
+        assert len(auto_goals) == 1
+        auto_goal = auto_goals[0]
+        assert auto_goal["intent_type"] == "product.research_to_video"
+        assert auto_goal["priority_class"] == "P2"
+        assert auto_goal["constraints"]["read_only_research"] is True
+        assert auto_goal["constraints"]["product_visible"] is True
+        assert auto_goal["constraints"]["auto_trigger_source"] == "browser_bridge"
+        assert auto_goal["constraints"]["connected_product_keys"] == [
+            created.json()["product_key"]
+        ]
+        assert auto_goal["workflow_id"]
+
+        workflow = client.app.state.services.workflows.get_workflow(str(auto_goal["workflow_id"]))
+        assert [step.task_type for step in workflow.steps] == [
+            "autonomous.discovery.v1",
+            "autonomous.goal_synthesis.v1",
+            "autonomous.goal_handoff.v1",
+        ]
+        assert workflow.steps[0].payload["connected_product_keys"] == [
+            created.json()["product_key"]
+        ]
+
         replay = client.post(
             path,
             headers={**headers, "Idempotency-Key": "browser-api-1"},
@@ -119,6 +150,8 @@ def test_browser_bridge_intake_is_authenticated_and_persists_canonical_evidence(
         assert client.app.state.services.database.scalar(
             "SELECT COUNT(*) FROM autonomous_evidence"
         ) == 2
+        # ── Replaying the same intake event must not create a second Goal or Workflow. ──
+        assert len(_visible_auto_goals(client, headers)) == 1
 
 
 def test_browser_bridge_intake_rejects_secret_payload(tmp_path: Path) -> None:
@@ -139,6 +172,8 @@ def test_browser_bridge_intake_rejects_secret_payload(tmp_path: Path) -> None:
         assert client.app.state.services.database.scalar(
             "SELECT COUNT(*) FROM autonomous_evidence"
         ) == 0
+        # ── Rejected evidence can never trigger autonomous analysis. ──
+        assert _visible_auto_goals(client, headers) == []
 
 
 def test_legacy_41_database_upload_is_streamed_into_managed_staging_and_imported(
@@ -167,6 +202,16 @@ def test_legacy_41_database_upload_is_streamed_into_managed_staging_and_imported
         assert client.app.state.services.database.scalar(
             "SELECT COUNT(*) FROM autonomous_evidence"
         ) == 1
+
+        # ── One completed legacy import becomes one bounded visible analysis Goal. ──
+        auto_goals = _visible_auto_goals(client, headers)
+        assert len(auto_goals) == 1
+        auto_goal = auto_goals[0]
+        assert auto_goal["intent_type"] == "product.research_to_video"
+        assert auto_goal["priority_class"] == "P2"
+        assert auto_goal["constraints"]["auto_trigger_source"] == "maotai41_import"
+        assert auto_goal["constraints"]["connected_product_keys"] == ["legacy41:p1"]
+        assert auto_goal["workflow_id"]
 
         imports_root = paths.autonomous_staging_dir / "legacy-4.1-imports"
         assert not imports_root.exists() or not list(imports_root.iterdir())
