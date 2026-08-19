@@ -12,6 +12,9 @@ WORKER_BUILDER = ROOT / "scripts" / "mac" / "phase23-worker" / "Build-MacWorkerS
 LIVE_GOAL_CENTER_VERIFIER = (
     ROOT / "deploy" / "macos" / "phase23-worker" / "VERIFY_GOAL_CENTER_E2E.command"
 )
+LIVE_CODING_PROVIDER_VERIFIER = (
+    ROOT / "deploy" / "macos" / "phase23-worker" / "VERIFY_CODING_PROVIDERS.command"
+)
 
 REQUIRED_GOAL_CENTER_WHEEL_ENTRIES = (
     "picotoopet_core/api/routes/autonomous_goals.py",
@@ -22,6 +25,15 @@ REQUIRED_GOAL_CENTER_WHEEL_ENTRIES = (
     "picotoopet_core/autonomous/browser_broker.py",
     "picotoopet_core/autonomous/goal_handoff_access.py",
     "picotoopet_core/autonomous/prompts/web_gpt_master_v1.txt",
+)
+
+REQUIRED_FRUGAL_CODING_WHEEL_ENTRIES = (
+    "picotoopet_core/api/routes/frugal_escalation.py",
+    "picotoopet_core/deep_ai/frugal.py",
+    "picotoopet_core/deep_ai/frugal_repository.py",
+    "picotoopet_core/providers/frugal_service.py",
+    "picotoopet_core/worker/codex_adapter.py",
+    "picotoopet_core/worker/claude_code_adapter.py",
 )
 
 # `autonomous.discovery.v1` 只有在 Research Gateway readiness + 本地 Scout 同时健康时
@@ -37,6 +49,11 @@ REQUIRED_GOAL_CENTER_ROUTES = (
     "/api/v1/autonomous/goals",
 )
 
+REQUIRED_CODING_PROVIDER_STATUS_ROUTES = (
+    "/api/v1/providers/codex/status",
+    "/api/v1/providers/claude-code/status",
+)
+
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -47,7 +64,7 @@ def test_mac_core_package_verifier_opens_project_wheel_and_requires_goal_center_
 
     assert "zipfile" in verifier
     assert "project_wheel" in verifier
-    for entry in REQUIRED_GOAL_CENTER_WHEEL_ENTRIES:
+    for entry in REQUIRED_GOAL_CENTER_WHEEL_ENTRIES + REQUIRED_FRUGAL_CODING_WHEEL_ENTRIES:
         assert entry in verifier
     assert "PHASE23_MAC_CORE_GOAL_CENTER_CONTENT=PASS" in verifier
 
@@ -57,7 +74,7 @@ def test_mac_worker_package_verifier_requires_same_goal_center_runtime_and_promp
 
     assert "zipfile" in verifier
     assert "project_wheel" in verifier
-    for entry in REQUIRED_GOAL_CENTER_WHEEL_ENTRIES:
+    for entry in REQUIRED_GOAL_CENTER_WHEEL_ENTRIES + REQUIRED_FRUGAL_CODING_WHEEL_ENTRIES:
         assert entry in verifier
     assert "PHASE23_MAC_WORKER_GOAL_CENTER_CONTENT=PASS" in verifier
 
@@ -80,3 +97,20 @@ def test_mac_worker_package_contains_separate_live_goal_center_readiness_verifie
 
     package_verifier = _read(WORKER_VERIFIER)
     assert "VERIFY_GOAL_CENTER_E2E.command" in package_verifier
+
+
+def test_mac_worker_package_contains_separate_coding_provider_readiness_verifier() -> None:
+    assert LIVE_CODING_PROVIDER_VERIFIER.is_file()
+    verifier = _read(LIVE_CODING_PROVIDER_VERIFIER)
+    for route in REQUIRED_CODING_PROVIDER_STATUS_ROUTES:
+        assert route in verifier
+    assert "CODEX_READINESS=" in verifier
+    assert "CLAUDE_CODE_READINESS=" in verifier
+    assert "AUTHENTICATION_USER_ACTION_REQUIRED=true" in verifier
+    assert "CODING_PROVIDER_PROBE_NETWORK_TRIGGERED=false" in verifier
+    assert "PICOTOO_FIXTURE_MODE" not in verifier
+
+    builder = _read(WORKER_BUILDER)
+    assert "VERIFY_CODING_PROVIDERS.command" in builder
+    package_verifier = _read(WORKER_VERIFIER)
+    assert "VERIFY_CODING_PROVIDERS.command" in package_verifier
