@@ -1,4 +1,4 @@
-"""Bounded human Goal Center contracts over the canonical autonomous Goal repository."""
+"""Bounded product-facing Goal Center contracts over the canonical Goal repository."""
 
 from __future__ import annotations
 
@@ -140,8 +140,7 @@ class HumanGoalService:
         if goal.workflow_id is None:
             workflow = self.workflows.create_workflow(self.planner.plan(goal))
             goal = self.repository.bind_workflow(goal.goal_id, workflow.workflow_id)
-        # Reconcile only materializes a task when a real capability is registered.
-        # Otherwise the first step remains Ready and the Goal truthfully keeps waiting.
+        # ── Reconcile schedules work only when a real registered capability is healthy. ──
         self.workflows.reconcile(goal.workflow_id)
         return self._project_workflow_status(self.repository.get(goal.goal_id))
 
@@ -149,14 +148,25 @@ class HumanGoalService:
         return [
             self._project_workflow_status(goal)
             for goal in self.repository.list(limit=limit)
-            if goal.origin is GoalOrigin.HUMAN
+            if self._is_product_visible(goal)
         ]
 
     def get(self, goal_id: str) -> GoalRecord:
         goal = self.repository.get(goal_id)
-        if goal.origin is not GoalOrigin.HUMAN:
-            raise KeyError(f"human goal not found: {goal_id}")
+        if not self._is_product_visible(goal):
+            raise KeyError(f"product-visible goal not found: {goal_id}")
         return self._project_workflow_status(goal)
+
+    @staticmethod
+    def _is_product_visible(goal: GoalRecord) -> bool:
+        """Keep P3/P4 maintenance hidden while exposing Core-created intake Goals."""
+
+        if goal.origin is GoalOrigin.HUMAN:
+            return True
+        return bool(
+            goal.origin is GoalOrigin.AUTONOMOUS
+            and goal.constraints.get("product_visible") is True
+        )
 
     def _project_workflow_status(self, goal: GoalRecord) -> GoalRecord:
         """Persist the canonical Workflow lifecycle onto the user-facing Goal fact."""
@@ -166,8 +176,7 @@ class HumanGoalService:
         try:
             workflow = self.workflows.get_workflow(goal.workflow_id)
         except KeyError:
-            # Missing workflow is an integrity/recovery problem. A read must not fabricate
-            # a Failed state, so keep the last durable Goal fact visible to diagnostics.
+            # ── A read never fabricates failure for a missing workflow integrity problem. ──
             return goal
 
         target = _WORKFLOW_GOAL_STATUS.get(workflow.status)
