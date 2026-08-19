@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 
@@ -9,6 +10,7 @@ namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 /// </summary>
 internal static class MaotaiRasterFaceLayout
 {
+    private const double HeadVisualScale = 0.90;
     private const double EarTop = -20.5;
     private const double EyeTop = -16.0;
     private const double MuzzleTop = -13.0;
@@ -19,6 +21,10 @@ internal static class MaotaiRasterFaceLayout
     public static void Configure(System.Windows.Controls.Panel headPanel)
     {
         ArgumentNullException.ThrowIfNull(headPanel);
+
+        // Static art-fit scale is intentionally separate from MaotaiV2HeadScale, which remains
+        // owned by Motion Engine for breathing, wake-up and interaction motion.
+        headPanel.LayoutTransform = new ScaleTransform(HeadVisualScale, HeadVisualScale);
 
         foreach (var child in headPanel.Children)
         {
