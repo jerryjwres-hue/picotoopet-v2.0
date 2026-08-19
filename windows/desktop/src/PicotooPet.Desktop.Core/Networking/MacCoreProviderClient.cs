@@ -6,7 +6,7 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.Networking;
 
-/// <summary>只访问固定 Codex Provider REST 合同；不接受任意路径、命令、模型或凭据。</summary>
+/// <summary>Windows 只访问 Provider 状态、额度确认、会话读取与紧急取消；Session 创建权归 Mac Core。</summary>
 public sealed class MacCoreProviderClient : IAsyncDisposable
 {
     private const int MaxProviderResponseBytes = 128 * 1024;
@@ -103,21 +103,6 @@ public sealed class MacCoreProviderClient : IAsyncDisposable
             HttpMethod.Post,
             $"api/v1/handoffs/{Uri.EscapeDataString(handoffId)}/provider-usage-confirmation",
             new ProviderUsageConfirmationRequest(usageStatus),
-            idempotencyKey,
-            cancellationToken);
-    }
-
-    public Task<ProviderSessionRecord> StartSessionAsync(
-        string handoffId,
-        string idempotencyKey,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(handoffId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
-        return SendAsync<ProviderSessionRecord>(
-            HttpMethod.Post,
-            $"api/v1/handoffs/{Uri.EscapeDataString(handoffId)}/provider-sessions/codex",
-            payload: null,
             idempotencyKey,
             cancellationToken);
     }

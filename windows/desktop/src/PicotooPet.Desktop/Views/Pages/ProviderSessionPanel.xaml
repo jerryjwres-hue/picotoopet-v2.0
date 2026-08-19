@@ -17,9 +17,9 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Phase 10D-A · 真实 Codex Provider" />
+                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Phase 10D-A · Codex Provider 状态" />
                         <TextBlock Margin="0,5,0,0" Foreground="#475569"
-                                   Text="人工确认 Usage 后，只允许一次固定低预算 Session。Windows 不读取凭据、余额、transcript、任意命令或文件正文。"
+                                   Text="Windows 只记录人工 Usage 确认、查看 Mac Core 创建的 Session，并保留紧急取消。Provider 选择和 Session 创建完全由 Mac Core Frugal 仲裁器负责。"
                                    TextWrapping="Wrap" />
                     </StackPanel>
                     <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Top"
@@ -42,13 +42,13 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock FontSize="17" FontWeight="SemiBold" Text="1. 选择 approved Codex Handoff" />
+                        <TextBlock FontSize="17" FontWeight="SemiBold" Text="1. 查看 approved Codex Handoff" />
                         <ComboBox Margin="0,8,0,0" MinHeight="38"
                                   ItemsSource="{Binding EligibleHandoffs, Mode=OneWay}"
                                   SelectedItem="{Binding SelectedHandoff, Mode=TwoWay}"
                                   DisplayMemberPath="Title" />
                         <TextBlock Margin="0,8,0,0" Foreground="#64748B"
-                                   Text="只有 provider=codex 且 status=approved 的 Handoff 会显示。" TextWrapping="Wrap" />
+                                   Text="这里仅展示 Mac Core 已绑定为 Codex 且 status=approved 的 Handoff；Windows 不能改 Provider。" TextWrapping="Wrap" />
                         <TextBlock Margin="0,16,0,0" FontSize="17" FontWeight="SemiBold" Text="2. 人工确认 Usage 状态" />
                         <ComboBox Margin="0,8,0,0" MinHeight="38"
                                   ItemsSource="{Binding UsageStatusOptions, Mode=OneWay}"
@@ -65,10 +65,11 @@
                                 <TextBlock Margin="0,4,0,0" Text="{Binding LatestConfirmation.Status, Mode=OneWay, TargetNullValue=尚未确认}" />
                                 <TextBlock Margin="0,4,0,0" Foreground="#64748B"
                                            Text="{Binding LatestConfirmation.ExpiresAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}, TargetNullValue=—}" />
+                                <TextBlock Margin="0,6,0,0" Foreground="#475569"
+                                           Text="确认只提供短期额度事实；满足条件后由 Mac Core 自动 reconcile，Windows 不提供启动按钮。"
+                                           TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
-                        <Button Margin="0,12,0,0" HorizontalAlignment="Left"
-                                Content="启动一次低预算 Codex Session" Command="{Binding StartSessionCommand, Mode=OneWay}" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="2">

@@ -2,7 +2,7 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Services;
 
-/// <summary>Windows Phase 10D-A 只允许调用的固定 Codex Provider 操作表面。</summary>
+/// <summary>Windows 只保留 Provider 状态、人工额度确认、会话读取与紧急取消。</summary>
 public interface IProviderSessionGateway
 {
     Task<ProviderStatusRecord> GetStatusAsync(CancellationToken cancellationToken);
@@ -17,18 +17,13 @@ public interface IProviderSessionGateway
         string idempotencyKey,
         CancellationToken cancellationToken);
 
-    Task<ProviderSessionRecord> StartSessionAsync(
-        string handoffId,
-        string idempotencyKey,
-        CancellationToken cancellationToken);
-
     Task<ProviderSessionRecord> CancelSessionAsync(
         string sessionId,
         string idempotencyKey,
         CancellationToken cancellationToken);
 }
 
-/// <summary>把 ControlCenterSession 限缩为 Phase 10D-A Provider 网关。</summary>
+/// <summary>把 ControlCenterSession 限缩为只读/确认/紧急取消 Provider 网关。</summary>
 public sealed class ControlCenterProviderGateway : IProviderSessionGateway
 {
     private readonly ControlCenterSession _session;
@@ -55,15 +50,6 @@ public sealed class ControlCenterProviderGateway : IProviderSessionGateway
         _session.ConfirmProviderUsageAsync(
             handoffId,
             usageStatus,
-            idempotencyKey,
-            cancellationToken);
-
-    public Task<ProviderSessionRecord> StartSessionAsync(
-        string handoffId,
-        string idempotencyKey,
-        CancellationToken cancellationToken) =>
-        _session.StartProviderSessionAsync(
-            handoffId,
             idempotencyKey,
             cancellationToken);
 

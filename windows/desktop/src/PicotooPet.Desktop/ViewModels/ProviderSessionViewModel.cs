@@ -4,7 +4,7 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
-/// <summary>Phase 10D-A 人工额度确认、真实 Codex Session、进度与取消的原生模型。</summary>
+/// <summary>人工额度确认、Core 创建的 Codex Session 进度与紧急取消的原生模型。</summary>
 public sealed class ProviderSessionViewModel : ObservableObject
 {
     private static readonly IReadOnlyList<string> UsageChoices = Array.AsReadOnly(
@@ -58,7 +58,7 @@ public sealed class ProviderSessionViewModel : ObservableObject
         _eligibleHandoffs = Array.Empty<HandoffRecord>();
         _recentSessions   = Array.Empty<ProviderSessionRecord>();
         _statusMessage =
-            "真实 Codex 默认关闭；只有 approved Codex Handoff + 15 分钟内人工额度确认才允许启动。";
+            "外部 Coding Session 由 Mac Core Frugal 仲裁器推进；Windows 只确认额度、查看状态和紧急取消。";
 
         RefreshCommand = new AsyncRelayCommand(
             () => RefreshAsync(CancellationToken.None),
@@ -68,10 +68,6 @@ public sealed class ProviderSessionViewModel : ObservableObject
             () => ConfirmUsageAsync(CancellationToken.None),
             HandleCommandError,
             () => CanConfirmUsage);
-        StartSessionCommand = new AsyncRelayCommand(
-            () => StartSessionAsync(CancellationToken.None),
-            HandleCommandError,
-            () => CanStartSession);
         CancelSessionCommand = new AsyncRelayCommand(
             () => CancelSelectedSessionAsync(CancellationToken.None),
             HandleCommandError,
@@ -217,7 +213,7 @@ public sealed class ProviderSessionViewModel : ObservableObject
     }
 
     public string SessionProgressSummary => SelectedSession is null
-        ? "尚未启动真实 Codex Session。"
+        ? "尚无 Mac Core 创建的 Coding Session。"
         : $"{SelectedSession.Status} · turns {SelectedSession.TurnsUsed}/{SelectedSession.Budget.MaxTurns} · "
           + $"{SelectedSession.ElapsedSeconds}/{SelectedSession.Budget.TimeoutSeconds} 秒 · "
           + $"变更文件 {SelectedSession.ChangedFileCount}/{SelectedSession.Budget.MaxChangedFiles}";
@@ -252,18 +248,6 @@ public sealed class ProviderSessionViewModel : ObservableObject
         && SelectedHandoff is { Status: "approved", Provider: "codex" }
         && UsageChoices.Contains(SelectedUsageStatus, StringComparer.Ordinal);
 
-    public bool CanStartSession =>
-        !IsBusy
-        && _gateway is not null
-        && ProviderStatus.Readiness == "ready"
-        && SelectedHandoff is { Status: "approved", Provider: "codex" }
-        && LatestConfirmation is
-        {
-            Status: "confirmed_available",
-        } confirmation
-        && confirmation.ExpiresAt > DateTimeOffset.UtcNow
-        && (SelectedSession is null || TerminalStatuses.Contains(SelectedSession.Status));
-
     public bool CanCancelSession =>
         !IsBusy
         && _gateway is not null
@@ -273,8 +257,6 @@ public sealed class ProviderSessionViewModel : ObservableObject
     public AsyncRelayCommand RefreshCommand { get; }
 
     public AsyncRelayCommand ConfirmUsageCommand { get; }
-
-    public AsyncRelayCommand StartSessionCommand { get; }
 
     public AsyncRelayCommand CancelSessionCommand { get; }
 
@@ -320,37 +302,8 @@ public sealed class ProviderSessionViewModel : ObservableObject
                 idempotencyKey,
                 cancellationToken).ConfigureAwait(true);
             StatusMessage = LatestConfirmation.Status == "confirmed_available"
-                ? "额度人工确认为可用；15 分钟内可启动一次固定低预算 Session。"
-                : "额度状态不是 confirmed_available；真实 Session 保持禁用。";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
-
-    public async Task StartSessionAsync(CancellationToken cancellationToken)
-    {
-        var gateway = _gateway
-            ?? throw new InvalidOperationException("Smoke test 模式不能启动真实 Session。");
-        var handoff = SelectedHandoff
-            ?? throw new InvalidOperationException("请先选择 approved Codex Handoff。");
-        if (!CanStartSession)
-        {
-            throw new InvalidOperationException("Provider、审批或额度确认尚未满足启动条件。");
-        }
-
-        IsBusy = true;
-        StatusMessage = "正在创建唯一真实 Codex Session；不会自动重试、充值、提交或推送……";
-        try
-        {
-            var idempotencyKey = $"windows-codex-session-{handoff.HandoffId}-{Guid.NewGuid():N}";
-            var created = await gateway.StartSessionAsync(
-                handoff.HandoffId,
-                idempotencyKey,
-                cancellationToken).ConfigureAwait(true);
-            UpsertAndSelect(created);
-            StatusMessage = "Codex Session 已创建；Mac Worker 将在独占 worktree 中执行固定预算任务。";
+                ? "额度人工确认为可用；Mac Core 将依据 Frugal 决策自动推进已选择 Provider，Windows 不启动 Session。"
+                : "额度状态不是 confirmed_available；Mac Core 不会启动外部 Coding Session。";
         }
         finally
         {
@@ -463,11 +416,9 @@ public sealed class ProviderSessionViewModel : ObservableObject
     private void RaiseActionProperties()
     {
         RaisePropertyChanged(nameof(CanConfirmUsage));
-        RaisePropertyChanged(nameof(CanStartSession));
         RaisePropertyChanged(nameof(CanCancelSession));
         RefreshCommand.NotifyCanExecuteChanged();
         ConfirmUsageCommand.NotifyCanExecuteChanged();
-        StartSessionCommand.NotifyCanExecuteChanged();
         CancelSessionCommand.NotifyCanExecuteChanged();
     }
 

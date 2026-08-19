@@ -4,7 +4,7 @@ using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>Phase 10D-A Windows Provider 控制面的确定性行为合同。</summary>
+/// <summary>Windows Provider 控制面：人工额度确认、Core 创建 Session 的观察与紧急取消。</summary>
 internal static class ProviderSessionSmokeTests
 {
     public static async Task RunAsync()
@@ -19,13 +19,19 @@ internal static class ProviderSessionSmokeTests
 
         viewModel.SelectedUsageStatus = "confirmed_available";
         await viewModel.ConfirmUsageAsync(CancellationToken.None).ConfigureAwait(false);
-        SmokeAssert.True(viewModel.CanStartSession, "额度确认后应允许启动一次低预算 Session");
         SmokeAssert.Equal(8, viewModel.LatestConfirmation!.Budget.MaxTurns, "Windows 不得扩大 turn 预算");
         SmokeAssert.Equal(900, viewModel.LatestConfirmation.Budget.TimeoutSeconds, "Windows 不得扩大时间预算");
+        SmokeAssert.True(
+            viewModel.StatusMessage.Contains("Mac Core", StringComparison.Ordinal),
+            "额度确认后必须明确由 Mac Core 继续推进，不得提示 Windows 启动 Session");
 
-        await viewModel.StartSessionAsync(CancellationToken.None).ConfigureAwait(false);
-        SmokeAssert.Equal("waiting_provider_ready", viewModel.SelectedSession!.Status, "Session 初始状态错误");
-        SmokeAssert.True(viewModel.CanCancelSession, "活动 Session 必须允许取消");
+        gateway.SeedCoreCreatedActiveSession();
+        await viewModel.RefreshAsync(CancellationToken.None).ConfigureAwait(false);
+        SmokeAssert.Equal(
+            "waiting_provider_ready",
+            viewModel.SelectedSession!.Status,
+            "Windows 应能观察 Mac Core 创建的活动 Session");
+        SmokeAssert.True(viewModel.CanCancelSession, "活动 Session 必须允许紧急取消");
 
         await viewModel.CancelSelectedSessionAsync(CancellationToken.None).ConfigureAwait(false);
         SmokeAssert.Equal("cancelled", viewModel.SelectedSession!.Status, "取消状态未回写");
@@ -97,14 +103,11 @@ internal static class ProviderSessionSmokeTests
                 DateTimeOffset.UtcNow,
                 DateTimeOffset.UtcNow.AddMinutes(15)));
 
-        public Task<ProviderSessionRecord> StartSessionAsync(
-            string handoffId,
-            string idempotencyKey,
-            CancellationToken cancellationToken)
+        public void SeedCoreCreatedActiveSession()
         {
             _session = new ProviderSessionRecord(
                 "22222222-2222-2222-2222-222222222222",
-                handoffId,
+                _eligible.HandoffId,
                 "codex",
                 "waiting_provider_ready",
                 _eligible.RequestDigest,
@@ -119,8 +122,7 @@ internal static class ProviderSessionSmokeTests
                 DateTimeOffset.UtcNow,
                 DateTimeOffset.UtcNow,
                 null,
-                "固定低预算 Session。");
-            return Task.FromResult(_session);
+                "Mac Core Frugal 仲裁器创建的固定低预算 Session。" );
         }
 
         public Task<ProviderSessionRecord> CancelSessionAsync(
