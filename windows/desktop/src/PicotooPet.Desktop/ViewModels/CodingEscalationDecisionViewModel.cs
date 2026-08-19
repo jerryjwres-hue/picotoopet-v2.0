@@ -36,7 +36,7 @@ public sealed class CodingEscalationDecisionViewModel : ObservableObject
         {
             if (SetProperty(ref _goalId, value))
             {
-                RefreshCommand.RaiseCanExecuteChanged();
+                RefreshCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -73,7 +73,7 @@ public sealed class CodingEscalationDecisionViewModel : ObservableObject
             if (SetProperty(ref _isBusy, value))
             {
                 RaisePropertyChanged(nameof(CanRefresh));
-                RefreshCommand.RaiseCanExecuteChanged();
+                RefreshCommand.NotifyCanExecuteChanged();
             }
         }
     }
