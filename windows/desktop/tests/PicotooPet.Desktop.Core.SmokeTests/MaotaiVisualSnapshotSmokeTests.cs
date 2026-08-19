@@ -223,11 +223,28 @@ internal static class MaotaiVisualSnapshotSmokeTests
     {
         var laptop = panel.FindName("MaotaiV2Laptop") as FrameworkElement
             ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MaotaiV2Laptop");
-        var laptopLeft = Canvas.GetLeft(laptop);
-        if (!double.IsFinite(laptopLeft) || Math.Abs(laptopLeft - 68.0) > 0.000001)
+        var root = panel.FindName("MaotaiV2Root") as FrameworkElement
+            ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MaotaiV2Root");
+
+        // Complete prop      : laptop must render as one readable object in front of the lower body, never a purple fragment behind it.
+        // Typing composition : keep the screen centered under the front paws while preserving the drink on the left.
+        AssertNear(Canvas.GetLeft(laptop), 44.0, "work laptop left");
+        AssertNear(Canvas.GetTop(laptop), 98.0, "work laptop top");
+        AssertNear(laptop.Width, 82.0, "work laptop width");
+        AssertNear(laptop.Height, 52.0, "work laptop height");
+        if (Panel.GetZIndex(laptop) <= Panel.GetZIndex(root))
         {
             throw new InvalidOperationException(
-                $"Maotai work laptop 必须对齐双爪键盘区；expected left=68.0, actual={laptopLeft:F1}");
+                $"Maotai work laptop 必须完整显示在身体前景；laptopZ={Panel.GetZIndex(laptop)}, rootZ={Panel.GetZIndex(root)}");
+        }
+    }
+
+    private static void AssertNear(double actual, double expected, string contract)
+    {
+        if (!double.IsFinite(actual) || Math.Abs(actual - expected) > 0.000001)
+        {
+            throw new InvalidOperationException(
+                $"Maotai visual snapshot {contract} 错误；expected={expected:F1}, actual={actual:F1}");
         }
     }
 
