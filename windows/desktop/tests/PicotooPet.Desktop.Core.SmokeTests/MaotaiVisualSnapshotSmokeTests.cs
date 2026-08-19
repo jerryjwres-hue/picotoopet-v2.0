@@ -161,20 +161,27 @@ internal static class MaotaiVisualSnapshotSmokeTests
 
     private static void VerifyPoseCohesionVisibility(AssistantPetPanel panel, string label)
     {
-        // Single-silhouette legs : ordinary standing/running uses one continuous furry upper silhouette per leg.
-        // Hidden folded limbs     : work/sleep tuck the whole middle limb behind torso; paws remain contact markers.
-        var expectedUpperOpacity = label is "work" or "sleep" ? 0.0 : 1.0;
-        const double expectedLowerOpacity = 0.0;
+        // Front-view occlusion  : moving rear limbs sit behind the torso/front pair instead of creating detached side pieces.
+        // Folded rest/work      : work/sleep continue to tuck all long upper segments behind the plush torso.
+        var hideFrontUpper = label is "work" or "sleep";
+        var hideRearUpper  = label is "work" or "sleep" or "run";
 
         foreach (var name in new[]
                  {
                      "MaotaiV2FrontLeftUpper",
                      "MaotaiV2FrontRightUpper",
+                 })
+        {
+            AssertOpacity(panel, label, name, hideFrontUpper ? 0.0 : 1.0, "前腿连续主轮廓");
+        }
+
+        foreach (var name in new[]
+                 {
                      "MaotaiV2HindLeftUpper",
                      "MaotaiV2HindRightUpper",
                  })
         {
-            AssertOpacity(panel, label, name, expectedUpperOpacity, "连续腿主轮廓");
+            AssertOpacity(panel, label, name, hideRearUpper ? 0.0 : 1.0, "前视后腿遮挡");
         }
 
         foreach (var name in new[]
@@ -185,19 +192,14 @@ internal static class MaotaiVisualSnapshotSmokeTests
                      "MaotaiV2HindRightLower",
                  })
         {
-            AssertOpacity(panel, label, name, expectedLowerOpacity, "禁止上下腿横向拼接缝");
+            AssertOpacity(panel, label, name, 0.0, "禁止上下腿横向拼接缝");
         }
 
-        foreach (var name in new[]
-                 {
-                     "MaotaiV2FrontLeftPaw",
-                     "MaotaiV2FrontRightPaw",
-                     "MaotaiV2HindLeftPaw",
-                     "MaotaiV2HindRightPaw",
-                 })
-        {
-            AssertOpacity(panel, label, name, 1.0, "接触脚掌不能被遮掉");
-        }
+        AssertOpacity(panel, label, "MaotaiV2FrontLeftPaw",  1.0, "前脚接触点");
+        AssertOpacity(panel, label, "MaotaiV2FrontRightPaw", 1.0, "前脚接触点");
+        var rearPawOpacity = label == "run" ? 0.0 : 1.0;
+        AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",  rearPawOpacity, "前视后脚遮挡");
+        AssertOpacity(panel, label, "MaotaiV2HindRightPaw", rearPawOpacity, "前视后脚遮挡");
     }
 
     private static void AssertOpacity(
