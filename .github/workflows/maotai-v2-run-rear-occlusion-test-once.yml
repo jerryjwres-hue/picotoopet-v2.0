@@ -1,0 +1,44 @@
+name: Maotai v2 Run Rear Occlusion Test Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/maotai-v2-run-rear-occlusion-test-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test-contract:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+
+      - name: Require coherent front-view rear-limb occlusion
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiVisualSnapshotSmokeTests.cs")
+          text = path.read_text(encoding="utf-8")
+          old = """        // Single-silhouette legs : ordinary standing/running uses one continuous furry upper silhouette per leg.\n        // Hidden folded limbs     : work/sleep tuck the whole middle limb behind torso; paws remain contact markers.\n        var expectedUpperOpacity = label is \"work\" or \"sleep\" ? 0.0 : 1.0;\n        const double expectedLowerOpacity = 0.0;\n\n        foreach (var name in new[]\n                 {\n                     \"MaotaiV2FrontLeftUpper\",\n                     \"MaotaiV2FrontRightUpper\",\n                     \"MaotaiV2HindLeftUpper\",\n                     \"MaotaiV2HindRightUpper\",\n                 })\n        {\n            AssertOpacity(panel, label, name, expectedUpperOpacity, \"连续腿主轮廓\");\n        }\n\n        foreach (var name in new[]\n                 {\n                     \"MaotaiV2FrontLeftLower\",\n                     \"MaotaiV2FrontRightLower\",\n                     \"MaotaiV2HindLeftLower\",\n                     \"MaotaiV2HindRightLower\",\n                 })\n        {\n            AssertOpacity(panel, label, name, expectedLowerOpacity, \"禁止上下腿横向拼接缝\");\n        }\n\n        foreach (var name in new[]\n                 {\n                     \"MaotaiV2FrontLeftPaw\",\n                     \"MaotaiV2FrontRightPaw\",\n                     \"MaotaiV2HindLeftPaw\",\n                     \"MaotaiV2HindRightPaw\",\n                 })\n        {\n            AssertOpacity(panel, label, name, 1.0, \"接触脚掌不能被遮掉\");\n        }"""
+          new = """        // Front-view occlusion  : moving rear limbs sit behind the torso/front pair instead of creating detached side pieces.\n        // Folded rest/work      : work/sleep continue to tuck all long upper segments behind the plush torso.\n        var hideFrontUpper = label is \"work\" or \"sleep\";\n        var hideRearUpper  = label is \"work\" or \"sleep\" or \"run\";\n\n        foreach (var name in new[]\n                 {\n                     \"MaotaiV2FrontLeftUpper\",\n                     \"MaotaiV2FrontRightUpper\",\n                 })\n        {\n            AssertOpacity(panel, label, name, hideFrontUpper ? 0.0 : 1.0, \"前腿连续主轮廓\");\n        }\n\n        foreach (var name in new[]\n                 {\n                     \"MaotaiV2HindLeftUpper\",\n                     \"MaotaiV2HindRightUpper\",\n                 })\n        {\n            AssertOpacity(panel, label, name, hideRearUpper ? 0.0 : 1.0, \"前视后腿遮挡\");\n        }\n\n        foreach (var name in new[]\n                 {\n                     \"MaotaiV2FrontLeftLower\",\n                     \"MaotaiV2FrontRightLower\",\n                     \"MaotaiV2HindLeftLower\",\n                     \"MaotaiV2HindRightLower\",\n                 })\n        {\n            AssertOpacity(panel, label, name, 0.0, \"禁止上下腿横向拼接缝\");\n        }\n\n        AssertOpacity(panel, label, \"MaotaiV2FrontLeftPaw\",  1.0, \"前脚接触点\");\n        AssertOpacity(panel, label, \"MaotaiV2FrontRightPaw\", 1.0, \"前脚接触点\");\n        var rearPawOpacity = label == \"run\" ? 0.0 : 1.0;\n        AssertOpacity(panel, label, \"MaotaiV2HindLeftPaw\",  rearPawOpacity, \"前视后脚遮挡\");\n        AssertOpacity(panel, label, \"MaotaiV2HindRightPaw\", rearPawOpacity, \"前视后脚遮挡\");"""
+          if old not in text:
+              raise SystemExit("pose-cohesion test anchor not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+      - name: Commit rear-limb visual contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiVisualSnapshotSmokeTests.cs
+          git diff --cached --check
+          git commit -m "test: reject detached Maotai rear paws while running"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
