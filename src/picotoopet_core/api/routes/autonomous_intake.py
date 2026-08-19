@@ -16,6 +16,7 @@ from picotoopet_core.autonomous.connected_evidence import (
     Legacy41Importer,
     LegacyImportRecord,
 )
+from picotoopet_core.autonomous.intake_autopilot import ConnectedIntakeAutopilot
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -24,6 +25,29 @@ _MAX_LEGACY_UPLOAD_BYTES = 512 * 1024 * 1024
 
 def _repository(request: Request) -> ConnectedEvidenceRepository:
     return ConnectedEvidenceRepository(request.app.state.services.database)
+
+
+def _autopilot(
+    request: Request,
+    repository: ConnectedEvidenceRepository,
+) -> ConnectedIntakeAutopilot:
+    services = request.app.state.services
+    return ConnectedIntakeAutopilot(
+        evidence=repository,
+        goals=services.autonomous_goals,
+        workflows=services.workflows,
+    )
+
+
+def _raise_autopilot_error(error: Exception) -> None:
+    """Keep already-canonical evidence durable while telling callers the analysis enqueue can retry."""
+
+    raise ApiError(
+        status_code=503,
+        code="CONNECTED_INTAKE_AUTOPILOT_UNAVAILABLE",
+        message="数据已经安全接入 Mac Core，但自动分析 Goal 暂未成功排队，可安全重试本次接入。",
+        retryable=True,
+    ) from error
 
 
 @router.post(
@@ -40,10 +64,11 @@ def ingest_browser_capture(
         alias="Idempotency-Key",
     ),
 ) -> BrowserCaptureRecord:
-    """Persist only the sanitized public projection of one Browser Bridge packet."""
+    """Persist one public Browser packet, then enqueue one replay-safe P2 analysis Goal."""
 
+    repository = _repository(request)
     try:
-        return BrowserCaptureIntake(_repository(request)).ingest(
+        record = BrowserCaptureIntake(repository).ingest(
             packet,
             idempotency_key=idempotency_key,
         )
@@ -60,6 +85,17 @@ def ingest_browser_capture(
             retryable=False,
         ) from error
 
+    if record.evidence_count > 0:
+        try:
+            _autopilot(request, repository).trigger(
+                source="browser_bridge",
+                event_id=record.capture_id,
+                product_keys=[record.product_key],
+            )
+        except (KeyError, RuntimeError, ValueError) as error:
+            _raise_autopilot_error(error)
+    return record
+
 
 @router.post(
     "/autonomous/legacy-4.1/import",
@@ -75,7 +111,7 @@ async def import_legacy_41_database(
         alias="X-Picotoo-Source-Name",
     ),
 ) -> LegacyImportRecord:
-    """Stream one user-selected legacy DB into managed staging, import read-only, then delete the copy."""
+    """Stream one legacy DB into managed staging, import read-only, then enqueue analysis."""
 
     content_type = str(request.headers.get("content-type") or "").split(";", 1)[0].strip().casefold()
     if content_type not in {"application/octet-stream", "application/vnd.sqlite3", "application/x-sqlite3"}:
@@ -87,6 +123,7 @@ async def import_legacy_41_database(
         )
 
     paths = request.app.state.services.settings.paths
+    repository = _repository(request)
     staging_root = paths.autonomous_staging_dir / "legacy-4.1-imports"
     staging_root.mkdir(parents=True, exist_ok=True)
     temporary = staging_root / f".upload-{uuid4().hex}.sqlite"
@@ -115,7 +152,7 @@ async def import_legacy_41_database(
                 retryable=False,
             )
         try:
-            return Legacy41Importer(_repository(request)).import_database(
+            record = Legacy41Importer(repository).import_database(
                 temporary,
                 source_name=Path(source_name).name,
             )
@@ -126,6 +163,20 @@ async def import_legacy_41_database(
                 message="旧版 4.1 数据库未通过只读兼容导入校验。",
                 retryable=False,
             ) from error
+
+        if record.status == "completed" and record.evidence_imported > 0:
+            autopilot = _autopilot(request, repository)
+            product_keys = autopilot.legacy_product_keys(record.source_sha256)
+            if product_keys:
+                try:
+                    autopilot.trigger(
+                        source="maotai41_import",
+                        event_id=record.import_id,
+                        product_keys=product_keys,
+                    )
+                except (KeyError, RuntimeError, ValueError) as error:
+                    _raise_autopilot_error(error)
+        return record
     finally:
         temporary.unlink(missing_ok=True)
         try:
