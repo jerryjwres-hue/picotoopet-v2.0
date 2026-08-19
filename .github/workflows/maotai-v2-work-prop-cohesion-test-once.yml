@@ -1,0 +1,44 @@
+name: Maotai v2 Work Prop Cohesion Test Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/maotai-v2-work-prop-cohesion-test-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test-contract:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+
+      - name: Require a complete foreground laptop composition
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiVisualSnapshotSmokeTests.cs")
+          text = path.read_text(encoding="utf-8")
+          old = """    private static void VerifyWorkPropLayout(AssistantPetPanel panel)\n    {\n        var laptop = panel.FindName(\"MaotaiV2Laptop\") as FrameworkElement\n            ?? throw new InvalidOperationException(\"Maotai visual snapshot 缺少 MaotaiV2Laptop\");\n        var laptopLeft = Canvas.GetLeft(laptop);\n        if (!double.IsFinite(laptopLeft) || Math.Abs(laptopLeft - 68.0) > 0.000001)\n        {\n            throw new InvalidOperationException(\n                $\"Maotai work laptop 必须对齐双爪键盘区；expected left=68.0, actual={laptopLeft:F1}\");\n        }\n    }"""
+          new = """    private static void VerifyWorkPropLayout(AssistantPetPanel panel)\n    {\n        var laptop = panel.FindName(\"MaotaiV2Laptop\") as FrameworkElement\n            ?? throw new InvalidOperationException(\"Maotai visual snapshot 缺少 MaotaiV2Laptop\");\n        var root = panel.FindName(\"MaotaiV2Root\") as FrameworkElement\n            ?? throw new InvalidOperationException(\"Maotai visual snapshot 缺少 MaotaiV2Root\");\n\n        // Complete prop      : laptop must render as one readable object in front of the lower body, never a purple fragment behind it.\n        // Typing composition : keep the screen centered under the front paws while preserving the drink on the left.\n        AssertNear(Canvas.GetLeft(laptop), 44.0, \"work laptop left\");\n        AssertNear(Canvas.GetTop(laptop), 98.0, \"work laptop top\");\n        AssertNear(laptop.Width, 82.0, \"work laptop width\");\n        AssertNear(laptop.Height, 52.0, \"work laptop height\");\n        if (Panel.GetZIndex(laptop) <= Panel.GetZIndex(root))\n        {\n            throw new InvalidOperationException(\n                $\"Maotai work laptop 必须完整显示在身体前景；laptopZ={Panel.GetZIndex(laptop)}, rootZ={Panel.GetZIndex(root)}\");\n        }\n    }\n\n    private static void AssertNear(double actual, double expected, string contract)\n    {\n        if (!double.IsFinite(actual) || Math.Abs(actual - expected) > 0.000001)\n        {\n            throw new InvalidOperationException(\n                $\"Maotai visual snapshot {contract} 错误；expected={expected:F1}, actual={actual:F1}\");\n        }\n    }"""
+          if old not in text:
+              raise SystemExit("work-prop test anchor not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+      - name: Commit work prop visual contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiVisualSnapshotSmokeTests.cs
+          git diff --cached --check
+          git commit -m "test: reject fragmented Maotai work laptop"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
