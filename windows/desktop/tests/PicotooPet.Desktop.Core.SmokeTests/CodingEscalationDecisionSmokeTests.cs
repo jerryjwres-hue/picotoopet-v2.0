@@ -183,11 +183,11 @@ internal static class CodingEscalationDecisionSmokeTests
                     "task_class":"repository_maintenance",
                     "eligibility":true,
                     "action":"local_only",
-                    "local_quality_score":86,
+                    "local_quality_score":86.0,
                     "confidence_center":0.86,
                     "confidence_lower":0.81,
                     "confidence_upper":0.90,
-                    "risk_score":0.2,
+                    "risk_score":0.1,
                     "reason_codes":["LOCAL_CONFIDENCE_SUFFICIENT"],
                     "candidate_provider_scores":[],
                     "provider_history":[],
@@ -201,25 +201,8 @@ internal static class CodingEscalationDecisionSmokeTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json"),
-                RequestMessage = request,
             });
         }
-    }
-
-    private static int CountVisual<T>(System.Windows.DependencyObject root, int count = 0)
-        where T : System.Windows.DependencyObject
-    {
-        if (root is T)
-        {
-            count++;
-        }
-
-        for (var index = 0; index < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); index++)
-        {
-            count = CountVisual<T>(System.Windows.Media.VisualTreeHelper.GetChild(root, index), count);
-        }
-
-        return count;
     }
 
     private static void Assert(bool condition, string message)
