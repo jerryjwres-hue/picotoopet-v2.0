@@ -28,7 +28,7 @@ _AUTO_OBJECTIVE = (
 
 
 class ConnectedIntakeAutopilot:
-    """Create one replay-safe P2 Goal for one successful canonical intake event."""
+    """Create replay-safe P2 Goals for successful canonical intake events."""
 
     def __init__(
         self,
@@ -50,7 +50,7 @@ class ConnectedIntakeAutopilot:
         event_id: str,
         product_keys: list[str] | tuple[str, ...],
     ) -> GoalRecord:
-        """Materialize the existing research-to-video pipeline without executing providers inline."""
+        """Materialize one existing research-to-video pipeline without provider execution inline."""
 
         safe_source = source.strip()
         safe_event_id = event_id.strip()
@@ -89,8 +89,8 @@ class ConnectedIntakeAutopilot:
         self.workflows.reconcile(goal.workflow_id)
         return self.goals.get(goal.goal_id)
 
-    def legacy_product_keys(self, source_sha256: str) -> tuple[str, ...]:
-        """Resolve only products imported from one exact 4.1 backup, bounded to one Goal."""
+    def legacy_product_batches(self, source_sha256: str) -> tuple[tuple[str, ...], ...]:
+        """Resolve every product from one exact 4.1 backup into fixed batches of at most eight."""
 
         source_hash = source_sha256.strip().casefold()
         if len(source_hash) != 64 or any(char not in "0123456789abcdef" for char in source_hash):
@@ -114,9 +114,12 @@ class ConnectedIntakeAutopilot:
             if not isinstance(metadata, dict) or metadata.get("source_sha256") != source_hash:
                 continue
             selected.append(str(row["product_key"]))
-            if len(selected) >= _MAX_CONNECTED_PRODUCT_KEYS:
-                break
-        return tuple(selected)
+
+        # ── The importer itself rejects more than 10k products, so this covers its complete safe domain. ──
+        return tuple(
+            tuple(selected[index : index + _MAX_CONNECTED_PRODUCT_KEYS])
+            for index in range(0, len(selected), _MAX_CONNECTED_PRODUCT_KEYS)
+        )
 
     def _scoped_plan(
         self,
