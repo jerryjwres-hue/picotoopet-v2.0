@@ -32,6 +32,7 @@ from picotoopet_core.deep_ai.evaluation import (
     QualityEvaluationRepository,
     QualityEvaluationService,
 )
+from picotoopet_core.deep_ai.frugal_repository import FrugalDecisionRepository
 from picotoopet_core.deep_ai.learning import DeepAiLearningLedger
 from picotoopet_core.deep_ai.policy import DeepAiEscalationPolicy
 from picotoopet_core.deep_ai.promotion import QualityPromotionRepository, QualityPromotionService
@@ -55,6 +56,7 @@ from picotoopet_core.production.store import ProductionArtifactStore
 from picotoopet_core.projects.repository import ProjectRepository
 from picotoopet_core.providers.artifact_store import ProviderReturnArtifactStore
 from picotoopet_core.providers.commit_service import ProviderCommitService
+from picotoopet_core.providers.frugal_service import CodingEscalationService
 from picotoopet_core.providers.publication_service import ProviderPublicationService
 from picotoopet_core.providers.readiness import ProviderReadinessProjection
 from picotoopet_core.providers.review_service import ProviderReviewService
@@ -109,6 +111,7 @@ class Services:
     returns: ReturnValidationService
     broker_sessions: BrokerSessionService
     provider_sessions: ProviderSessionService
+    coding_escalation: CodingEscalationService
     provider_artifacts: ProviderReturnArtifactStore
     provider_reviews: ProviderReviewService
     provider_commits: ProviderCommitService
@@ -230,6 +233,12 @@ def build_services(settings: AppSettings) -> Services:
         handoffs,
         readiness_by_provider=provider_readiness.status,
     )
+    coding_escalation = CodingEscalationService(
+        database=database,
+        handoffs=handoffs,
+        provider_sessions=provider_sessions,
+        decisions=FrugalDecisionRepository(database),
+    )
     provider_artifacts = ProviderReturnArtifactStore(settings.paths.provider_returns_dir)
     provider_reviews = ProviderReviewService(database, provider_artifacts)
     provider_commits = ProviderCommitService(database, approvals)
@@ -281,6 +290,7 @@ def build_services(settings: AppSettings) -> Services:
         returns=returns,
         broker_sessions=broker_sessions,
         provider_sessions=provider_sessions,
+        coding_escalation=coding_escalation,
         provider_artifacts=provider_artifacts,
         provider_reviews=provider_reviews,
         provider_commits=provider_commits,
