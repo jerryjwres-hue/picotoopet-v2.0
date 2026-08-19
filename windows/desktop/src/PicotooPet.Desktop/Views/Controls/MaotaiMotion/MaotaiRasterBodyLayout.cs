@@ -95,7 +95,7 @@ internal static class MaotaiRasterBodyLayout
     {
         element.Width = width;
         element.Height = height;
-        element.RenderTransformOrigin = new Point(pivotX, pivotY);
+        element.RenderTransformOrigin = new System.Windows.Point(pivotX, pivotY);
         Canvas.SetLeft(element, -(width * pivotX));
         Canvas.SetTop(element, -(height * pivotY));
         System.Windows.Controls.Panel.SetZIndex(element, zIndex);
