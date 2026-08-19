@@ -106,6 +106,19 @@ if [[ "$(read_manifest "$package_root" autonomous_capabilities)" != '["content.d
   echo "清单 Autonomous Intelligence 能力不符合冻结合同。" >&2
   exit 1
 fi
+goal_center_included="$(read_manifest "$package_root" goal_center_e2e_included)"
+if [[ "$goal_center_included" != "True" && "$goal_center_included" != "true" ]]; then
+  echo "清单未声明 Goal Center E2E 交付。" >&2
+  exit 1
+fi
+if [[ "$(read_manifest "$package_root" goal_center_live_verifier)" != "VERIFY_GOAL_CENTER_E2E.command" ]]; then
+  echo "清单 Goal Center 实机验收入口不正确。" >&2
+  exit 1
+fi
+if [[ "$(read_manifest "$package_root" goal_center_runtime_task_types)" != '["autonomous.discovery.v1", "autonomous.goal_synthesis.v1", "autonomous.goal_handoff.v1"]' ]]; then
+  echo "清单 Goal Center 动态任务类型不符合冻结链路。" >&2
+  exit 1
+fi
 if [[ "$(read_manifest "$package_root" diagnostic_hard_timeout_seconds)" != "30" ]]; then
   echo "清单诊断硬超时不是 30 秒。" >&2
   exit 1
@@ -167,11 +180,36 @@ echo "PHASE23_MAC_WORKER_GOAL_CENTER_CONTENT=PASS"
 for script in \
   INSTALL_MAC_WORKER_SLICE_C.command \
   VERIFY_MAC_WORKER_SLICE_C.command \
+  VERIFY_GOAL_CENTER_E2E.command \
   ROLLBACK_MAC_WORKER_SLICE_C.command \
   lib.sh \
   worker-lib.sh; do
+  if [[ ! -f "$package_root/$script" ]]; then
+    echo "包内缺少脚本：$script" >&2
+    exit 1
+  fi
   bash -n "$package_root/$script"
 done
+
+live_verifier="$package_root/VERIFY_GOAL_CENTER_E2E.command"
+for marker in \
+  "autonomous.discovery.v1" \
+  "autonomous.goal_synthesis.v1" \
+  "autonomous.goal_handoff.v1" \
+  "/api/v1/autonomous/goals/templates" \
+  "/api/v1/autonomous/goals" \
+  "PHASE23_GOAL_CENTER_E2E_READY=PASS"; do
+  if ! grep -Fq "$marker" "$live_verifier"; then
+    echo "Goal Center 实机验收器缺少冻结标记：$marker" >&2
+    exit 1
+  fi
+done
+if grep -Fq "PICOTOO_FIXTURE_MODE" "$live_verifier"; then
+  echo "Goal Center 实机验收器不得降级到 fixture 模式。" >&2
+  exit 1
+fi
+
+echo "PHASE23_MAC_WORKER_GOAL_CENTER_LIVE_VERIFIER=PASS"
 
 installer="$package_root/INSTALL_MAC_WORKER_SLICE_C.command"
 if grep -Fq 'picotoopet-core==2.3.0.dev' "$installer"; then
@@ -194,6 +232,7 @@ fi
 combined="$(cat \
   "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" \
   "$package_root/VERIFY_MAC_WORKER_SLICE_C.command" \
+  "$package_root/VERIFY_GOAL_CENTER_E2E.command" \
   "$package_root/ROLLBACK_MAC_WORKER_SLICE_C.command" \
   "$package_root/worker-lib.sh")"
 for forbidden in \
