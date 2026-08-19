@@ -20,9 +20,10 @@ Goal Center / Autonomous Intelligence 能力：
 - Mac Worker 在真实依赖健康时动态注册 autonomous.discovery.v1、autonomous.goal_synthesis.v1、autonomous.goal_handoff.v1；
 - autonomous.discovery.v1 只有在 Research Gateway readiness 与本地 Scout 同时健康时才会注册；
 - Content Discovery 会自动按当前任务目标生成研究查询，不再只使用固定通用关键词；
-- Browser Bridge 或 Maotai OS 4.1 成功接入新的规范化证据后，Mac Core 会自动创建一个 P2、产品可见、只读的 research-to-video Goal；不需要用户再手工创建第二个分析任务；
-- 自动 Goal 仍复用 discovery → local synthesis → handoff 三段冻结链路，只把 Mac Core 已确认的 canonical product keys 作为精确证据作用域；外部程序不能指定 task type、provider、prompt、shell 或账号写操作；
-- 同一 intake event 通过确定性幂等键只产生一个 Goal；重复提交不会重复排队；
+- Browser Bridge 成功接入新的规范化证据后，Mac Core 会自动创建一个 P2、产品可见、只读的 research-to-video Goal；不需要用户再手工创建第二个分析任务；
+- Maotai OS 4.1 成功导入后，Mac Core 会把该备份内全部已导入 canonical products 自动按每批最多 8 个拆成若干 P2 Goal，直到该导入的安全产品上限全部覆盖；不会只处理前 8 个；
+- 每个自动 Goal 仍复用 discovery → local synthesis → handoff 三段冻结链路，只把 Mac Core 已确认的 canonical product keys 作为精确证据作用域；外部程序不能指定 task type、provider、prompt、shell 或账号写操作；
+- Browser capture 使用单事件确定性幂等键；4.1 每个产品批次也使用稳定批次幂等键。重复提交同一 capture / 同一备份不会重复生成 Goal；如果中途某一批排队失败，重试只补齐缺失批次；
 - 迁移 Maotai OS 4.1 的确定性信息增益、采集节奏和来源策略算法，但不迁移旧 UI 或旧数据库事实源；
 - 提供只读 Browser Broker 公开页面采集合同；它只接受经过安全校验的公开页面证据，不读取 Cookie、密码、Token、浏览器存储或支付信息；
 - 固定 Web GPT Prompt 会随 Python wheel 一起交付，用于后续人工把交接包提交给网页 ChatGPT；程序不会登录或控制网页 ChatGPT；
