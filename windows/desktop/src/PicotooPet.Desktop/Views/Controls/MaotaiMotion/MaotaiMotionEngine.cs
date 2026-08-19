@@ -746,6 +746,19 @@ internal sealed class MaotaiMotionEngine
                 (Math.Sin(swingAngle) * (4.5 + (speedRatio * (frontLeg ? 6.5 : 5.5))));
         }
 
+        if (grounded && moving)
+        {
+            // Front-view lane     : preserve a center gap so wide furry silhouettes never cross into an X shape.
+            // Foot-lock priority  : keep the world lock until it reaches the lane edge, then clamp only the visual paw lane.
+            var laneSign      = Math.Sign(shoulderLocalX);
+            var laneClearance = frontLeg ? 7.0 : 6.0;
+            var pawLocalX     = pawWorldX - _locomotion.PositionX;
+            pawLocalX = laneSign < 0.0
+                ? Math.Min(pawLocalX, -laneClearance)
+                : Math.Max(pawLocalX, laneClearance);
+            pawWorldX = _locomotion.PositionX + pawLocalX;
+        }
+
         lockState.WasSupport = support;
         var solved = SolveLeg(
             shoulderLocalX,
