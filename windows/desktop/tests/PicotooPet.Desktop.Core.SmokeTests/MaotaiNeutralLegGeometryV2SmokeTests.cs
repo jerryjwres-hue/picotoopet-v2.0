@@ -64,20 +64,31 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
             }
 
             sawRun = true;
-            VerifyRunPawLane(pose, "FrontLeftPaw",  expectedSideSign: -1);
-            VerifyRunPawLane(pose, "FrontRightPaw", expectedSideSign: 1);
-            VerifyRunPawLane(pose, "HindLeftPaw",   expectedSideSign: -1);
-            VerifyRunPawLane(pose, "HindRightPaw",  expectedSideSign: 1);
+            VerifyRunPawLane(pose, "FrontLeftUpper",  "FrontLeftPaw",  expectedSideSign: -1);
+            VerifyRunPawLane(pose, "FrontRightUpper", "FrontRightPaw", expectedSideSign: 1);
+            VerifyRunPawLane(pose, "HindLeftUpper",   "HindLeftPaw",   expectedSideSign: -1);
+            VerifyRunPawLane(pose, "HindRightUpper",  "HindRightPaw",  expectedSideSign: 1);
         }
 
         Assert(sawRun, "跑步夹具在 1.5 秒内没有进入 Run，无法验证左右腿通道");
     }
 
-    private static void VerifyRunPawLane(object pose, string pawName, int expectedSideSign)
+    private static void VerifyRunPawLane(
+        object pose,
+        string upperName,
+        string pawName,
+        int expectedSideSign)
     {
-        var pawX = ReadPoseDouble(pose, pawName, "X");
-        Assert((pawX * expectedSideSign) >= 3.0,
-            $"{pawName} 跑步时跨过身体中线，会形成 X 形拼接；x={pawX:F2}");
+        var shoulderX = ReadPoseDouble(pose, upperName, "X");
+        var pawX      = ReadPoseDouble(pose, pawName, "X");
+
+        // Center clearance    : furry feet never enter the narrow center corridor.
+        // Shoulder lane       : front-view running stays nearly vertical instead of producing long crossing diagonals.
+        Assert((pawX * expectedSideSign) >= 10.0,
+            $"{pawName} 跑步时过度靠近身体中线，会形成 X 形拼接；x={pawX:F2}");
+        Assert(Math.Abs(pawX - shoulderX) <= 6.0,
+            $"{pawName} 跑步时偏离 {upperName} 肩根过大，会形成长斜向拼接；" +
+            $"shoulder={shoulderX:F2}, paw={pawX:F2}");
     }
 
     private static void VerifyLeg(
