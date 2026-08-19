@@ -17,6 +17,7 @@ REQUIRED_GOAL_CENTER_WHEEL_ENTRIES = (
     "picotoopet_core/api/routes/autonomous_goals.py",
     "picotoopet_core/api/routes/autonomous_intake.py",
     "picotoopet_core/autonomous/human_pipeline.py",
+    "picotoopet_core/autonomous/intake_autopilot.py",
     "picotoopet_core/autonomous/legacy_import.py",
     "picotoopet_core/autonomous/browser_broker.py",
     "picotoopet_core/autonomous/goal_handoff_access.py",
@@ -70,8 +71,7 @@ def test_mac_worker_package_contains_separate_live_goal_center_readiness_verifie
     for route in REQUIRED_GOAL_CENTER_ROUTES:
         assert route in verifier
 
-    # 基础安装 VERIFY 可在离线 fixture 中通过；这个独立入口才负责严格判断
-    # Research Gateway + 本地模型 + Goal handoff 是否已在用户实机同时就绪。
+    # ── 基础安装 VERIFY 可离线通过；此入口才严格判断整条自动链是否实机就绪。 ──
     assert "PHASE23_GOAL_CENTER_E2E_READY=PASS" in verifier
     assert "PICOTOO_FIXTURE_MODE" not in verifier
 
