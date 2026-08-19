@@ -1,0 +1,68 @@
+name: Maotai v2 Run Paw Footprint Fix Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/maotai-v2-run-paw-footprint-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+
+      - name: Narrow only moving front paw fur
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/MaotaiRasterRenderer.cs")
+          text = path.read_text(encoding="utf-8")
+
+          old_calls = """        ApplyContinuousLeg(_visuals.FrontLeftUpper, _visuals.FrontLeftLower, frame.FrontLeftUpper, frame.FrontLeftPaw);\n        ApplyBone(_visuals.FrontLeftPaw, frame.FrontLeftPaw);\n        ApplyContinuousLeg(_visuals.FrontRightUpper, _visuals.FrontRightLower, frame.FrontRightUpper, frame.FrontRightPaw);\n        ApplyBone(_visuals.FrontRightPaw, frame.FrontRightPaw);"""
+          new_calls = """        ApplyContinuousLeg(_visuals.FrontLeftUpper, _visuals.FrontLeftLower, frame.FrontLeftUpper, frame.FrontLeftPaw);\n        ApplyFrontPaw(_visuals.FrontLeftPaw, frame.FrontLeftPaw, frame.MotionState);\n        ApplyContinuousLeg(_visuals.FrontRightUpper, _visuals.FrontRightLower, frame.FrontRightUpper, frame.FrontRightPaw);\n        ApplyFrontPaw(_visuals.FrontRightPaw, frame.FrontRightPaw, frame.MotionState);"""
+          if text.count(old_calls) != 1:
+              raise SystemExit("front paw call anchor mismatch")
+          text = text.replace(old_calls, new_calls, 1)
+
+          old_helper = """    private static void ApplyBone(\n        MaotaiRasterPart part,\n        in MaotaiBonePose pose) =>\n        part.Apply(\n            pose.X,\n            pose.Y,\n            pose.RotationDeg,\n            pose.ScaleX,\n            pose.ScaleY);\n\n    private void ApplyPoseCohesion(MaotaiMotionState state)"""
+          new_helper = """    private static void ApplyBone(\n        MaotaiRasterPart part,\n        in MaotaiBonePose pose) =>\n        part.Apply(\n            pose.X,\n            pose.Y,\n            pose.RotationDeg,\n            pose.ScaleX,\n            pose.ScaleY);\n\n    private static void ApplyFrontPaw(\n        MaotaiRasterPart part,\n        in MaotaiBonePose pose,\n        MaotaiMotionState state)\n    {\n        var movingFrontView = state is MaotaiMotionState.Walk or MaotaiMotionState.Run;\n\n        // Contact pivot       : position/rotation remain the exact Motion Engine output, so foot-lock physics are untouched.\n        // Fur footprint       : narrow only the displayed moving paw around its existing pivot to stop front-view sprite stacking.\n        part.Apply(\n            pose.X,\n            pose.Y,\n            pose.RotationDeg,\n            scaleX: pose.ScaleX * (movingFrontView ? 0.76 : 1.0),\n            scaleY: pose.ScaleY);\n    }\n\n    private void ApplyPoseCohesion(MaotaiMotionState state)"""
+          if text.count(old_helper) != 1:
+              raise SystemExit("ApplyBone helper anchor mismatch")
+          text = text.replace(old_helper, new_helper, 1)
+          path.write_text(text, encoding="utf-8")
+
+      - name: Verify production footprint contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          text = Path("windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/MaotaiRasterRenderer.cs").read_text(encoding="utf-8")
+          required = [
+              "ApplyFrontPaw(_visuals.FrontLeftPaw",
+              "ApplyFrontPaw(_visuals.FrontRightPaw",
+              "movingFrontView ? 0.76 : 1.0",
+              "foot-lock physics are untouched",
+          ]
+          missing = [value for value in required if value not in text]
+          if missing:
+              raise SystemExit(f"missing footprint production invariants: {missing}")
+
+      - name: Commit run paw footprint fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/MaotaiRasterRenderer.cs
+          git diff --cached --check
+          git commit -m "fix: refine Maotai running paw footprint"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
