@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -42,7 +43,12 @@ from picotoopet_core.worker.codex_worktree import (
 from picotoopet_core.worker.handlers import HandlerResult
 
 from .artifact_store import ProviderArtifactError, ProviderReturnArtifactStore
-from .models import ProviderName, ProviderSessionRecord, ProviderSessionStatus
+from .models import (
+    ProviderName,
+    ProviderReadinessStatus,
+    ProviderSessionRecord,
+    ProviderSessionStatus,
+)
 from .service import ProviderSessionService
 
 
@@ -97,6 +103,7 @@ class ProviderExecutionCoordinator:
         claude_code_executable: Path | None = None,
         worker_id: str,
         artifact_store: ProviderReturnArtifactStore,
+        readiness_by_provider: Callable[[ProviderName], ProviderReadinessStatus] | None = None,
     ) -> None:
         self.queue = queue
         self.sessions = sessions
@@ -106,6 +113,9 @@ class ProviderExecutionCoordinator:
         self.claude_code_executable = claude_code_executable
         self.worker_id = worker_id
         self.artifact_store = artifact_store
+        self._readiness_by_provider = readiness_by_provider or (
+            lambda _provider: ProviderReadinessStatus.UNAVAILABLE
+        )
 
     @property
     def configured_task_types(self) -> tuple[str, ...]:
@@ -127,7 +137,7 @@ class ProviderExecutionCoordinator:
         raise ValueError("Unknown coding provider.")
 
     def enqueue_pending(self) -> None:
-        """Idempotently create tasks only for providers explicitly configured on this Worker."""
+        """Create tasks only for explicitly configured and currently ready providers."""
 
         configured = frozenset(self.configured_task_types)
         if not configured:
@@ -141,6 +151,8 @@ class ProviderExecutionCoordinator:
             session = ProviderSessionRecord.model_validate(json.loads(row["preview_json"]))
             task_type = self.task_type_for(session.provider)
             if task_type not in configured:
+                continue
+            if self._readiness_by_provider(session.provider) is not ProviderReadinessStatus.READY:
                 continue
             handoff = self.sessions.handoffs.get(session.handoff_id)
             if handoff.provider != session.provider:
@@ -184,13 +196,14 @@ class ProviderExecutionCoordinator:
             or handoff.provider != current.provider
             or task.task_type != expected_task_type
             or expected_task_type not in self.configured_task_types
+            or self._readiness_by_provider(current.provider) is not ProviderReadinessStatus.READY
         ):
             self._fail(
                 payload.session_id,
                 ProviderSessionStatus.STOPPED_BY_POLICY,
                 "PROVIDER_BINDING_MISMATCH",
             )
-            raise RuntimeError("Provider task/session/handoff binding mismatch.")
+            raise RuntimeError("Provider task/session/handoff/readiness binding mismatch.")
         if current.request_digest != payload.request_digest:
             raise RuntimeError("Provider request digest 不匹配。")
         if current.package_digest != payload.package_digest:
