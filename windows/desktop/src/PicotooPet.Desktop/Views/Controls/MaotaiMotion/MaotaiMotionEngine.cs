@@ -549,27 +549,27 @@ internal sealed class MaotaiMotionEngine
                 break;
 
             case MaotaiMotionState.LieDown:
-                bodyWorldY += 13.0 * blend;
-                bodyScaleX += 0.070 * blend;
-                bodyScaleY -= 0.130 * blend;
-                headOffsetY += 3.0 * blend;
+                bodyWorldY += 10.0 * blend;
+                bodyScaleX += 0.050 * blend;
+                bodyScaleY -= 0.095 * blend;
+                headOffsetY += 4.0 * blend;
                 break;
 
             case MaotaiMotionState.Sleep:
-                bodyWorldY += 15.0;
-                bodyScaleX += 0.090;
-                bodyScaleY -= 0.150;
-                headOffsetY += 5.0;
-                headBiasDeg += 4.0 * facingSign;
-                earDrop     += 3.0;
+                bodyWorldY += 11.5;
+                bodyScaleX += 0.055;
+                bodyScaleY -= 0.100;
+                headOffsetY += 6.0;
+                headBiasDeg += 7.5 * facingSign;
+                earDrop     += 4.0;
                 break;
 
             case MaotaiMotionState.Wake:
-                bodyWorldY += Lerp(15.0, 5.4, blend);
-                bodyScaleX += 0.090 * (1.0 - blend);
-                bodyScaleY -= 0.150 * (1.0 - blend);
-                headOffsetY += 3.0 * (1.0 - blend);
-                earDrop     += 3.0 * (1.0 - blend);
+                bodyWorldY += Lerp(11.5, 5.4, blend);
+                bodyScaleX += 0.055 * (1.0 - blend);
+                bodyScaleY -= 0.100 * (1.0 - blend);
+                headOffsetY += 4.5 * (1.0 - blend);
+                earDrop     += 4.0 * (1.0 - blend);
                 break;
 
             case MaotaiMotionState.GetUp:
