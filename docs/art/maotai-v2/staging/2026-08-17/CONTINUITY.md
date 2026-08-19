@@ -8,7 +8,7 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 - Branch: `feature/maotai-natural-motion-v2`
 - Draft PR: `#36` — keep Draft; do not merge or mark Ready.
 - `MaotaiAssetManifest.cs` is authoritative for file names, logical dimensions, pivots and overlap values.
-- Every useful art candidate must be committed to this staging area before runtime promotion so a new chat can resume without regenerating work.
+- Every useful art candidate/checkpoint must be committed to staging before runtime promotion so a new chat can resume without regenerating work.
 - Formal PNGs are promoted only after RGBA/alpha/border/dimension checks and exact Git blob SHA verification.
 
 ## CI-confirmed formal assets added in this art pass
@@ -20,15 +20,38 @@ This directory is non-runtime staging only. Runtime assets live under `windows/d
 
 Current formal raster blocker after those CI runs: `head.png`.
 
-## Current missing formal PNGs
+## 2026-08-18 batch checkpoint — restart safe
 
-17 files remain:
+A generated **modular asset board** contained independently rendered cells for 16 of the 17 remaining files. Only those independent cells were used; complete-character preview poses and sprite examples were explicitly excluded.
 
-- head/face base: `head.png`, `muzzle.png`
-- limb segments: `front_left_upper.png`, `front_left_lower.png`, `front_right_upper.png`, `front_right_lower.png`, `hind_left_upper.png`, `hind_left_lower.png`, `hind_right_upper.png`, `hind_right_lower.png`
-- tail: `tail_base.png`, `tail_mid.png`, `tail_tip.png`
-- headphones: `headphone_band.png`, `headphone_left.png`, `headphone_right.png`
-- prop: `laptop.png`
+The following 16 candidates are now preserved in GitHub as a compact reversible checkpoint:
+
+- `muzzle.png`
+- `front_left_upper.png`, `front_left_lower.png`, `front_right_upper.png`, `front_right_lower.png`
+- `hind_left_upper.png`, `hind_left_lower.png`, `hind_right_upper.png`, `hind_right_lower.png`
+- `tail_base.png`, `tail_mid.png`, `tail_tip.png`
+- `headphone_band.png`, `headphone_left.png`, `headphone_right.png`
+- `laptop.png`
+
+Checkpoint files:
+
+- `docs/art/maotai-v2/staging/2026-08-18/batch1_missing16.mtr.b85`
+- `docs/art/maotai-v2/staging/2026-08-18/restore_batch1_missing16.py`
+- checkpoint commit: `3d542cb6e4ac1ecace9be2127f81291f787caead`
+- decoder commit: `a6024306064ce36cd5fbfb9912591510fcd281ce`
+
+The MTR1 checkpoint stores logical-resolution RGBA/palette/index data and is designed only to prevent regeneration after a chat restart. Restored candidates still need @2x manifest sizing, pivot/overlap placement, RGBA outer-border validation and formal runtime promotion.
+
+Batch processing decisions already made:
+
+- limb source cells contain paw-like ends; formal upper/lower segments must remove those ends because the four paw PNGs already exist independently.
+- tail cells are mirrored horizontally before formal promotion so their root sits on the right-side pivot specified by the manifest.
+- headset-only source is allowed to produce band/left/right pieces because it is not a complete-character render.
+- modular independent-part cells may be used as production sources; complete-character preview/state images remain forbidden as cut sources.
+
+## Remaining formal PNGs
+
+17 files were missing before the checkpoint. The 16 above now have restart-safe candidate data, but are not yet all promoted to runtime. `head.png` remains the only asset that still needs a satisfactory independent visual master before the whole batch can be promoted and CI-walked.
 
 Existing ears, eyes, pupils, brows, five mouth states, all four paws, drink and shadow remain separate and should not be redrawn unless final visual assembly proves a mismatch.
 
@@ -52,16 +75,14 @@ Reference/source notes:
 
 - `torso_candidate_v1_preview.png`: rejected for tall/narrow proportions, edge issue and hollow socket geometry.
 - Canva Magic Layers single-layer torso resize: rejected because it could not repaint socket geometry.
-- atlas/reference boards and complete-character renders are reference only; never crop them into runtime parts.
+- complete-character renders are reference only; never crop them into runtime parts.
 - `head_candidate_v1.png`: rejected; torso texture deformed into a head silhouette still read as a distorted torso.
-- generation ids `17741133-9c6a-4434-8413-59dde9964f8f`, `dd15985b-9272-4377-a1fb-5ec232d604e3`, `de41edc5-3327-4b0b-b8d3-35bf9ad85647`: rejected because image generation drifted to promotional boards/full-character collages instead of a single formal part.
+- image generation repeatedly drifted to promotional/asset boards when asked for one isolated part. Do not spend repeated turns retrying that same free-generation path; use head-only source reconstruction/editing instead.
 - never attach a GitHub PNG blob unless GitHub's returned blob SHA exactly matches the locally computed Git blob SHA.
 
 ## Exact next action
 
-1. Produce one true independent `head.png` at the manifest contract above.
-2. Validate RGBA decode, transparent outer borders, nonempty alpha bbox, dimensions and pivot-compatible composition.
-3. Verify local vs remote Git blob SHA exactly.
-4. Commit staging + formal runtime copy together, fast-forward only.
-5. Run Windows/Prebuilt and let the hard gate expose the next missing asset.
-6. Continue in manifest order; keep PR #36 Draft until the full formal rig and real-Windows visual acceptance are complete.
+1. Finish a satisfactory independent `head.png` at `78 x 70` logical / `156 x 140` @2x.
+2. Restore the batch checkpoint and promote the head + 16 candidates in grouped fast-forward commits.
+3. Run the formal pixel/manifest gate and Windows/Prebuilt; fix only assets that the gate or visual assembly actually rejects.
+4. Keep PR #36 Draft until the full formal rig and real-Windows visual acceptance are complete.
