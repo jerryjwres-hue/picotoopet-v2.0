@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from picotoopet_core.api.app import create_app
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.handoffs.models import HandoffPrepareRequest
 
 
 def make_client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
@@ -17,20 +18,20 @@ def make_client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
 
 
 def approve_codex_handoff(client: TestClient, headers: dict[str, str]) -> dict[str, object]:
-    prepared = client.post(
-        "/api/v1/handoffs/prepare",
-        headers={**headers, "Idempotency-Key": "provider-handoff-prepare"},
-        json={
-            "template_id": "picotoopet-repo-maintenance-codex-v1",
-            "title": "受控 Codex 修复",
-            "objective": "只修改批准范围并返回本地可验证结果。",
-            "expires_seconds": 1800,
-        },
+    # Provider-bound templates are Core-internal authority. Public /handoffs/prepare
+    # intentionally rejects them, so Provider API tests seed the trusted Core fact directly.
+    prepared = client.app.state.services.handoffs.prepare(
+        HandoffPrepareRequest(
+            template_id="picotoopet-repo-maintenance-codex-v1",
+            title="受控 Codex 修复",
+            objective="只修改批准范围并返回本地可验证结果。",
+            expires_seconds=1800,
+        ),
+        idempotency_key="provider-handoff-prepare",
     )
-    assert prepared.status_code == 201
-    handoff = prepared.json()
+    handoff_id = prepared.handoff_id
     submitted = client.post(
-        f"/api/v1/handoffs/{handoff['handoff_id']}/submit-approval",
+        f"/api/v1/handoffs/{handoff_id}/submit-approval",
         headers={**headers, "Idempotency-Key": "provider-handoff-submit"},
     )
     assert submitted.status_code == 200
@@ -46,7 +47,7 @@ def approve_codex_handoff(client: TestClient, headers: dict[str, str]) -> dict[s
     )
     assert approved.status_code == 200
     final = client.get(
-        f"/api/v1/handoffs/{handoff['handoff_id']}",
+        f"/api/v1/handoffs/{handoff_id}",
         headers=headers,
     )
     assert final.json()["status"] == "approved"
