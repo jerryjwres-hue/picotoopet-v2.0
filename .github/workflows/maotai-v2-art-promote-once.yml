@@ -1,9 +1,8 @@
 name: Maotai v2 Art Promote Once
 
 on:
-  push:
-    branches:
-      - feature/maotai-natural-motion-v2
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - .github/workflows/maotai-v2-art-promote-once.yml
 
@@ -12,7 +11,7 @@ permissions:
 
 jobs:
   promote:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/maotai-natural-motion-v2'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,10 +36,10 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
-          from PIL import Image
-          import numpy as np
+          from PIL import Image, ImageDraw
+          import os
 
-          src = Path(r'${{ runner.temp }}') / 'maotai-restored'
+          src = Path(os.environ['RUNNER_TEMP']) / 'maotai-restored'
           dst = Path('windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2')
           dst.mkdir(parents=True, exist_ok=True)
 
@@ -72,20 +71,21 @@ jobs:
               img = Image.open(src / name).convert('RGBA')
               if img.size != size:
                   img = img.resize(size, Image.Resampling.NEAREST)
-              a = np.array(img.getchannel('A'))
-              if not np.any(a):
+              alpha = img.getchannel('A')
+              if alpha.getbbox() is None:
                   raise SystemExit(f'{name}: empty alpha')
-              rgba = np.array(img)
-              rgba[0, :, 3] = 0
-              rgba[-1, :, 3] = 0
-              rgba[:, 0, 3] = 0
-              rgba[:, -1, 3] = 0
-              img = Image.fromarray(rgba, 'RGBA')
-              if img.size != size:
-                  raise SystemExit(f'{name}: wrong size {img.size} != {size}')
-              a = np.array(img.getchannel('A'))
-              if max(a[0].max(), a[-1].max(), a[:,0].max(), a[:,-1].max()) != 0:
-                  raise SystemExit(f'{name}: alpha touches outer border')
+              draw = ImageDraw.Draw(alpha)
+              draw.line((0, 0, size[0]-1, 0), fill=0)
+              draw.line((0, size[1]-1, size[0]-1, size[1]-1), fill=0)
+              draw.line((0, 0, 0, size[1]-1), fill=0)
+              draw.line((size[0]-1, 0, size[0]-1, size[1]-1), fill=0)
+              img.putalpha(alpha)
+              if img.size != size or alpha.getbbox() is None:
+                  raise SystemExit(f'{name}: validation failed')
+              if any(alpha.getpixel((x, 0)) for x in range(size[0])) or any(alpha.getpixel((x, size[1]-1)) for x in range(size[0])):
+                  raise SystemExit(f'{name}: alpha touches horizontal border')
+              if any(alpha.getpixel((0, y)) for y in range(size[1])) or any(alpha.getpixel((size[0]-1, y)) for y in range(size[1])):
+                  raise SystemExit(f'{name}: alpha touches vertical border')
               img.save(dst / name, 'PNG', optimize=True, compress_level=9)
               print(f'PROMOTED {name} {size}')
           PY
