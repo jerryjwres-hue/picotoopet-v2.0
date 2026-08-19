@@ -99,7 +99,9 @@ class ProviderSessionService:
         label = "Codex" if provider == "codex" else "Claude Code"
         messages = {
             ProviderReadinessStatus.READY: f"Mac Worker 已检测到本机 {label} CLI 和可用认证。",
-            ProviderReadinessStatus.NOT_AUTHENTICATED: f"Mac Worker 的 {label} CLI 尚未完成本机登录。",
+            ProviderReadinessStatus.NOT_AUTHENTICATED: (
+                f"Mac Worker 的 {label} CLI 尚未完成本机登录。"
+            ),
             ProviderReadinessStatus.UNAVAILABLE: f"Mac Worker 尚未报告 {label} CLI 就绪状态。",
             ProviderReadinessStatus.POLICY_BLOCKED: f"{label} 因本地安全策略被阻止。",
         }
