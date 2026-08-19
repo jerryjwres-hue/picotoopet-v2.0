@@ -120,6 +120,16 @@ internal static class MaotaiAssetPixelValidationSmokeTests
                maxY <= converted.PixelHeight - 3,
             $"v2 PNG 可见毛发贴到画布边缘，旋转/缩放可能被裁断：{fileName}");
 
+        if (fileName is "torso_neutral.png" or "torso_crouch.png" or "torso_stretch.png")
+        {
+            var visibleWidthRatio  = (maxX - minX + 1.0) / converted.PixelWidth;
+            var visibleHeightRatio = (maxY - minY + 1.0) / converted.PixelHeight;
+            Assert(visibleWidthRatio >= 0.78,
+                $"v2 torso 有效横向 silhouette 过窄，会被 head 覆盖：{fileName} ratio={visibleWidthRatio:F3}");
+            Assert(visibleHeightRatio >= 0.80,
+                $"v2 torso 有效纵向 silhouette 过小，肢体根部无法藏入毛发：{fileName} ratio={visibleHeightRatio:F3}");
+        }
+
         AssertOuterBorderTransparent(pixels, converted.PixelWidth, converted.PixelHeight, stride, fileName);
     }
 
