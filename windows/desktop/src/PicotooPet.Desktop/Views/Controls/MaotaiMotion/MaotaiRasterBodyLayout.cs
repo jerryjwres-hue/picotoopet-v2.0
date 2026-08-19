@@ -83,6 +83,29 @@ internal static class MaotaiRasterBodyLayout
                     break;
             }
         }
+
+        ConfigureWorkProps(bodyPanel);
+    }
+
+    /// <summary>
+    /// 工作道具与身体共用同一个舞台坐标系；只在初始化时校准一次，避免把视觉偏移写进 Motion Engine。
+    /// </summary>
+    private static void ConfigureWorkProps(System.Windows.Controls.Panel bodyPanel)
+    {
+        if (bodyPanel.Parent is not FrameworkElement root ||
+            root.Parent is not System.Windows.Controls.Panel motionLayer)
+        {
+            return;
+        }
+
+        foreach (var child in motionLayer.Children)
+        {
+            if (child is FrameworkElement { Name: "MaotaiV2Laptop" } laptop)
+            {
+                Canvas.SetLeft(laptop, 68.0);
+                return;
+            }
+        }
     }
 
     private static void ConfigurePivotedImage(
