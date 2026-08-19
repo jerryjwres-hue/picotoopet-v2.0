@@ -8,7 +8,9 @@ type, provider, prompt, shell command or account write operation through intake.
 from __future__ import annotations
 
 import hashlib
+import json
 
+from picotoopet_core.automation.models import WorkflowCreate
 from picotoopet_core.automation.service import WorkflowService
 
 from .connected_evidence import ConnectedEvidenceRepository
@@ -18,6 +20,7 @@ from .repository import AutonomousGoalRepository
 
 _MAX_CONNECTED_PRODUCT_KEYS = 8
 _MAX_PRODUCT_KEY_CHARS = 200
+_MAX_LEGACY_PRODUCT_SCAN = 10_000
 _AUTO_OBJECTIVE = (
     "自动分析本次新接入的公开证据，筛选有价值的消费者痛点、商业机会和可用于 "
     "AI 视频制作的内容方向，并生成可追溯的 Web GPT 交接包。"
@@ -78,13 +81,67 @@ class ConnectedIntakeAutopilot:
             )
         )
         if goal.workflow_id is None:
-            workflow = self.workflows.create_workflow(self.planner.plan(goal))
+            workflow = self.workflows.create_workflow(self._scoped_plan(goal, normalized))
             goal = self.goals.bind_workflow(goal.goal_id, workflow.workflow_id)
 
         # ── Reconcile only schedules registered capabilities; it never executes a provider inline. ──
         assert goal.workflow_id is not None
         self.workflows.reconcile(goal.workflow_id)
         return self.goals.get(goal.goal_id)
+
+    def legacy_product_keys(self, source_sha256: str) -> tuple[str, ...]:
+        """Resolve only products imported from one exact 4.1 backup, bounded to one Goal."""
+
+        source_hash = source_sha256.strip().casefold()
+        if len(source_hash) != 64 or any(char not in "0123456789abcdef" for char in source_hash):
+            raise ValueError("legacy source sha256 is invalid")
+        rows = self.evidence.database.fetchall(
+            """
+            SELECT product_key, metadata_json
+            FROM autonomous_products
+            WHERE origin = 'maotai41_import'
+            ORDER BY product_key
+            LIMIT ?
+            """,
+            (_MAX_LEGACY_PRODUCT_SCAN,),
+        )
+        selected: list[str] = []
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(metadata, dict) or metadata.get("source_sha256") != source_hash:
+                continue
+            selected.append(str(row["product_key"]))
+            if len(selected) >= _MAX_CONNECTED_PRODUCT_KEYS:
+                break
+        return tuple(selected)
+
+    def _scoped_plan(
+        self,
+        goal: GoalRecord,
+        product_keys: tuple[str, ...],
+    ) -> WorkflowCreate:
+        """Reuse the approved three-stage planner and scope only its discovery payload."""
+
+        plan = self.planner.plan(goal)
+        first = plan.steps[0]
+        scoped_first = first.model_copy(
+            update={
+                "payload": {
+                    **dict(first.payload),
+                    "connected_product_keys": list(product_keys),
+                }
+            }
+        )
+        return plan.model_copy(
+            update={
+                "idempotency_key": f"connected-intake-workflow:{goal.goal_id}",
+                "name": f"connected-intake-goal:{goal.goal_id}",
+                "steps": [scoped_first, *plan.steps[1:]],
+            }
+        )
 
     def _validated_product_keys(
         self,
