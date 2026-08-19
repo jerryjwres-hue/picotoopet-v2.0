@@ -1,4 +1,4 @@
-# one-shot visual evidence attempt 4: dedicated STA startup object
+# one-shot visual evidence attempt 5: scoped snapshot build flag
 name: Maotai v2 Visual Snapshot Once
 
 on:
@@ -45,7 +45,7 @@ jobs:
           dotnet run `
             --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
             --configuration Release `
-            -p:StartupObject=PicotooPet.Desktop.Core.SmokeTests.MaotaiVisualSnapshotProgram `
+            -p:MaotaiVisualSnapshot=true `
             -- `
             $out
           if ($LASTEXITCODE -ne 0) { throw "Maotai visual snapshot process failed with exit code $LASTEXITCODE" }
