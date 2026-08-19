@@ -164,6 +164,7 @@ required = {
     "picotoopet_core/api/routes/autonomous_goals.py",
     "picotoopet_core/api/routes/autonomous_intake.py",
     "picotoopet_core/autonomous/human_pipeline.py",
+    "picotoopet_core/autonomous/intake_autopilot.py",
     "picotoopet_core/autonomous/legacy_import.py",
     "picotoopet_core/autonomous/browser_broker.py",
     "picotoopet_core/autonomous/goal_handoff_access.py",
