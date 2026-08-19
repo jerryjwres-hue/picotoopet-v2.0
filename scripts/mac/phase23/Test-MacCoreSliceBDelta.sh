@@ -130,6 +130,12 @@ required = {
     "picotoopet_core/autonomous/browser_broker.py",
     "picotoopet_core/autonomous/goal_handoff_access.py",
     "picotoopet_core/autonomous/prompts/web_gpt_master_v1.txt",
+    "picotoopet_core/api/routes/frugal_escalation.py",
+    "picotoopet_core/deep_ai/frugal.py",
+    "picotoopet_core/deep_ai/frugal_repository.py",
+    "picotoopet_core/providers/frugal_service.py",
+    "picotoopet_core/worker/codex_adapter.py",
+    "picotoopet_core/worker/claude_code_adapter.py",
 }
 with zipfile.ZipFile(sys.argv[1], "r") as wheel:
     names = set(wheel.namelist())
