@@ -22,6 +22,7 @@ internal static class MaotaiVisualSnapshotSmokeTests
         ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
         var root = Path.GetFullPath(outputDirectory);
         Directory.CreateDirectory(root);
+        Log("run:start");
 
         var snapshots = new[]
         {
@@ -31,9 +32,11 @@ internal static class MaotaiVisualSnapshotSmokeTests
             Capture(root, "run",   "Resting", 138.0, wantsRun: true, frames: 90),
         };
 
+        Log("json:write");
         File.WriteAllText(
             Path.Combine(root, "maotai-visual-snapshot.json"),
             JsonSerializer.Serialize(snapshots, SnapshotJsonOptions));
+        Log("run:done");
     }
 
     private static SnapshotEvidence Capture(
@@ -44,6 +47,7 @@ internal static class MaotaiVisualSnapshotSmokeTests
         bool wantsRun,
         int frames)
     {
+        Log($"{label}:panel-create");
         var panel = new AssistantPetPanel
         {
             IsFloatingMode = true,
@@ -52,7 +56,9 @@ internal static class MaotaiVisualSnapshotSmokeTests
             Background = Brushes.Transparent,
         };
 
+        Log($"{label}:layout-1");
         Layout(panel);
+        Log($"{label}:rig-init");
         InvokePanel(panel, "EnsureMaotaiV2Initialized");
         InvokePanel(panel, "StopMaotaiRendering");
 
@@ -76,6 +82,7 @@ internal static class MaotaiVisualSnapshotSmokeTests
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("MaotaiRasterRenderer 缺少 Apply");
 
+        Log($"{label}:engine-update");
         var input = CreateInput(baseState, targetX, wantsRun);
         object? frame = null;
         for (var index = 0; index < frames; index++)
@@ -87,12 +94,15 @@ internal static class MaotaiVisualSnapshotSmokeTests
             throw new InvalidOperationException($"Maotai visual snapshot '{label}' 没有生成 PoseFrame");
         }
 
+        Log($"{label}:renderer-apply");
         apply.Invoke(renderer, [frame]);
         Layout(panel);
 
         var fileName = $"maotai-{label}.png";
         var path = Path.Combine(root, fileName);
+        Log($"{label}:bitmap-render");
         SaveVisual(panel, path);
+        Log($"{label}:saved");
 
         var state = ReadProperty(frame, "State")?.ToString() ?? "Unknown";
         return new SnapshotEvidence(label, state, fileName, 260, 240);
@@ -171,6 +181,9 @@ internal static class MaotaiVisualSnapshotSmokeTests
         target.GetType().GetProperty(
             propertyName,
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(target);
+
+    private static void Log(string stage) =>
+        Console.WriteLine($"MAOTAI_SNAPSHOT_STAGE={stage}");
 
     private sealed record SnapshotEvidence(
         string Label,
