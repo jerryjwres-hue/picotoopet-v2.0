@@ -147,11 +147,15 @@ class ClaudeCodeAdapter:
                 cancel_event=cancel_event,
             )
         except BoundedProcessTimeout as error:
-            raise ClaudeCodeAdapterTimeout("Claude Code Session reached the 900 second limit.") from error
+            raise ClaudeCodeAdapterTimeout(
+                "Claude Code Session reached the 900 second limit."
+            ) from error
         except BoundedProcessCancelled as error:
             raise ClaudeCodeAdapterCancelled("Claude Code Session cancelled.") from error
         except BoundedProcessOutputLimit as error:
-            raise ClaudeCodeAdapterProtocolError("Claude Code output exceeded the fixed limit.") from error
+            raise ClaudeCodeAdapterProtocolError(
+                "Claude Code output exceeded the fixed limit."
+            ) from error
         except BoundedProcessError as error:
             raise ClaudeCodeAdapterError("Claude Code subprocess failed.") from error
 
@@ -168,14 +172,16 @@ class ClaudeCodeAdapter:
 
     @staticmethod
     def parse_result(payload: str) -> ClaudeCodeRunResult:
-        """Parse only safe usage/status fields from Claude JSON; discard answer/transcript fields."""
+        """Parse safe usage/status fields and discard answer/transcript fields."""
 
         try:
             raw = json.loads(payload)
         except json.JSONDecodeError as error:
             raise ClaudeCodeAdapterProtocolError("Claude Code JSON result invalid.") from error
         if not isinstance(raw, dict) or raw.get("type") != "result":
-            raise ClaudeCodeAdapterProtocolError("Claude Code must return exactly one result object.")
+            raise ClaudeCodeAdapterProtocolError(
+                "Claude Code must return exactly one result object."
+            )
 
         subtype = raw.get("subtype")
         if not isinstance(subtype, str) or subtype not in _SAFE_SUBTYPES:
@@ -198,7 +204,9 @@ class ClaudeCodeAdapter:
             input_tokens = ClaudeCodeAdapter._safe_token_count(usage.get("input_tokens"))
             output_tokens = ClaudeCodeAdapter._safe_token_count(usage.get("output_tokens"))
 
-        provider_usage_unknown = safe_cost is None and input_tokens is None and output_tokens is None
+        provider_usage_unknown = (
+            safe_cost is None and input_tokens is None and output_tokens is None
+        )
         return ClaudeCodeRunResult(
             subtype=subtype,
             turns_used=turns,
@@ -210,7 +218,7 @@ class ClaudeCodeAdapter:
         )
 
     def probe_readiness(self, *, cwd: Path) -> ReadinessStatus:
-        """Verify policy-compatible CLI flags before asking the CLI for non-secret auth status."""
+        """Verify policy flags before asking the CLI for non-secret auth status."""
 
         if not self.executable.is_file():
             return "unavailable"
@@ -251,7 +259,7 @@ class ClaudeCodeAdapter:
             try:
                 auth_payload = json.loads(auth_result.stdout)
             except json.JSONDecodeError:
-                # Claude documents exit status as authoritative; avoid depending on credential details.
+                # Exit status is authoritative; credential details stay opaque.
                 return "ready"
             if isinstance(auth_payload, dict) and auth_payload.get("loggedIn") is False:
                 return "not_authenticated"
