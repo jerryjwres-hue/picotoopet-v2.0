@@ -89,10 +89,16 @@ def test_codex_template_binds_provider_commit_tests_and_budget(tmp_path: Path) -
     assert set(templates) == {
         "picotoopet-repo-maintenance-v1",
         "picotoopet-repo-maintenance-codex-v1",
+        "picotoopet-repo-maintenance-claude-code-v1",
     }
     assert templates["picotoopet-repo-maintenance-codex-v1"].provider == "codex"
+    assert templates["picotoopet-repo-maintenance-claude-code-v1"].provider == "claude_code"
     assert (
         templates["picotoopet-repo-maintenance-codex-v1"].base_commit
+        == "65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f"
+    )
+    assert (
+        templates["picotoopet-repo-maintenance-claude-code-v1"].base_commit
         == "65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f"
     )
 
