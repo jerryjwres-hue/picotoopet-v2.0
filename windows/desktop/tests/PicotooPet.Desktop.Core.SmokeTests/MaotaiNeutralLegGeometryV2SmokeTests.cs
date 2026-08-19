@@ -4,7 +4,7 @@ using PicotooPet.Desktop.Views.Controls;
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
 /// <summary>
-/// 冻结茅台静止站姿的腿部可读性：左右腿必须分居身体中线两侧，静止时接近自然直腿。
+/// 冻结茅台静止站姿与跑步腿部可读性：左右腿必须分居身体中线两侧，禁止奔跑时交叉成 X 形拼接。
 /// 骨长代表两个关节 Pivot 之间的有效距离，不等于整张带 overlap 的 PNG 高度。
 /// </summary>
 internal static class MaotaiNeutralLegGeometryV2SmokeTests
@@ -12,6 +12,12 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
 
     public static void Run()
+    {
+        VerifyNeutralStance();
+        VerifyRunLanes();
+    }
+
+    private static void VerifyNeutralStance()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
         var update     = RequireMethod(engineType, "Update");
@@ -21,7 +27,7 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
         object? pose = null;
         for (var frame = 0; frame < 120; frame++)
         {
-            pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput()]);
+            pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(targetX: 72.0, wantsRun: false)]);
         }
 
         if (pose is null)
@@ -35,6 +41,43 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
         VerifyLeg(pose, "FrontRightUpper", "FrontRightLower", "FrontRightPaw", expectedSideSign: 1);
         VerifyLeg(pose, "HindLeftUpper",   "HindLeftLower",   "HindLeftPaw",   expectedSideSign: -1);
         VerifyLeg(pose, "HindRightUpper",  "HindRightLower",  "HindRightPaw",  expectedSideSign: 1);
+    }
+
+    private static void VerifyRunLanes()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 71, 43.0)
+            ?? throw new InvalidOperationException("无法创建茅台跑步 Motion Engine");
+        var input      = CreateRestingInput(targetX: 150.0, wantsRun: true);
+        var sawRun     = false;
+
+        // Run lane contract   : front-view gait may advance/retract, but each paw must stay on its own half-body.
+        // Minimum clearance   : keep a small center gap so the single-silhouette legs never cross into an X shape.
+        for (var frame = 0; frame < 90; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, input])
+                ?? throw new InvalidOperationException("跑步姿态没有输出 PoseFrame");
+            if (!string.Equals(ReadProperty(pose.GetType(), "MotionState").GetValue(pose)?.ToString(), "Run", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            sawRun = true;
+            VerifyRunPawLane(pose, "FrontLeftPaw",  expectedSideSign: -1);
+            VerifyRunPawLane(pose, "FrontRightPaw", expectedSideSign: 1);
+            VerifyRunPawLane(pose, "HindLeftPaw",   expectedSideSign: -1);
+            VerifyRunPawLane(pose, "HindRightPaw",  expectedSideSign: 1);
+        }
+
+        Assert(sawRun, "跑步夹具在 1.5 秒内没有进入 Run，无法验证左右腿通道");
+    }
+
+    private static void VerifyRunPawLane(object pose, string pawName, int expectedSideSign)
+    {
+        var pawX = ReadPoseDouble(pose, pawName, "X");
+        Assert((pawX * expectedSideSign) >= 3.0,
+            $"{pawName} 跑步时跨过身体中线，会形成 X 形拼接；x={pawX:F2}");
     }
 
     private static void VerifyLeg(
@@ -70,8 +113,8 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
 
         var jointProgress = (((jointX - upperX) * segmentDx) + ((jointY - upperY) * segmentDy)) /
             segmentLengthSquared;
-        var projectedX = upperX + (segmentDx * jointProgress);
-        var projectedY = upperY + (segmentDy * jointProgress);
+        var projectedX  = upperX + (segmentDx * jointProgress);
+        var projectedY  = upperY + (segmentDy * jointProgress);
         var lineDistance = Math.Sqrt(
             ((jointX - projectedX) * (jointX - projectedX)) +
             ((jointY - projectedY) * (jointY - projectedY)));
@@ -99,7 +142,7 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
         return angle;
     }
 
-    private static object CreateRestingInput()
+    private static object CreateRestingInput(double targetX, bool wantsRun)
     {
         var baseType        = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
         var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
@@ -113,12 +156,12 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
             false,
             Enum.Parse(interactionType, "None"),
             28.0,
-            120.0,
-            72.0,
-            false,
+            150.0,
+            targetX,
+            wantsRun,
             false,
             108.0)
-            ?? throw new InvalidOperationException("无法创建茅台中性站姿 MotionInput");
+            ?? throw new InvalidOperationException("无法创建茅台中性/跑步 MotionInput");
     }
 
     private static double ReadPoseDouble(object value, string poseName, string propertyName)
