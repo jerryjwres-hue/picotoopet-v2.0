@@ -85,6 +85,34 @@ internal static class CodingEscalationDecisionSmokeTests
 
     private static void VerifyPanelHasNoProviderOverrideControls()
     {
+        Exception? failure = null;
+        var thread = new System.Threading.Thread(() =>
+        {
+            try
+            {
+                VerifyPanelHasNoProviderOverrideControlsOnStaThread();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(System.Threading.ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null)
+        {
+            throw new InvalidOperationException("Frugal WPF STA smoke failed.", failure);
+        }
+    }
+
+    private static void VerifyPanelHasNoProviderOverrideControlsOnStaThread()
+    {
+        Assert(
+            System.Threading.Thread.CurrentThread.GetApartmentState()
+                == System.Threading.ApartmentState.STA,
+            "Frugal WPF smoke 必须运行在 STA 线程。叙");
         var panel = new CodingEscalationDecisionPanel();
         panel.Measure(new System.Windows.Size(900, 600));
         panel.Arrange(new System.Windows.Rect(0, 0, 900, 600));
