@@ -26,8 +26,8 @@ def test_schema_16_adds_quality_evaluation_tables_after_schema_15(tmp_path: Path
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
         }
-        # Current schema gate      Migration history advances through connected-evidence schema 20.
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 20
+        # Current schema gate      Migration history advances through frugal-decision schema 21.
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 21
         # 23.1 schema gate         Migration 16 itself remains registered exactly once.
         assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version=16") == 1
         # 22.1 preservation gate   Existing Deep-AI / learning facts must remain present.
@@ -38,7 +38,7 @@ def test_schema_16_adds_quality_evaluation_tables_after_schema_15(tmp_path: Path
         assert EVALUATION_TABLES <= tables
 
         database.apply_migrations()
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 20
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 21
     finally:
         database.close()
 
