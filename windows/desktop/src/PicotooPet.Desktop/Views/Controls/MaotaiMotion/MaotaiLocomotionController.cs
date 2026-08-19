@@ -3,19 +3,19 @@ namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 /// <summary>连续位置、速度、步态相位和跳跃高度控制；不直接操作任何 WPF 元素。</summary>
 internal sealed class MaotaiLocomotionController
 {
-    private const double WalkSpeed             = 38.0;
-    private const double RunSpeed              = 76.0;
-    private const double WalkAcceleration      = 150.0;
-    private const double RunAcceleration       = 230.0;
-    private const double Deceleration          = 260.0;
-    private const double StopDistance          = 1.25;
+    private const double WalkSpeed                  = 38.0;
+    private const double RunSpeed                   = 76.0;
+    private const double WalkAcceleration           = 150.0;
+    private const double RunAcceleration            = 230.0;
+    private const double Deceleration               = 260.0;
+    private const double StopDistance               = 1.25;
     private const double StopInPlaceCommandDistance = 0.10;
     private const double StopInPlaceReleaseDistance = 2.0;
-    private const double GaitCyclesPerUnit     = 0.018;
-    private const double JumpVelocity          = -146.0;
-    private const double Gravity               = 430.0;
-    private const double FacingFlipSpeed       = 5.0;
-    private const double TurnAnticipationRate  = 5.5;
+    private const double GaitCyclesPerUnit          = 0.040;
+    private const double JumpVelocity               = -146.0;
+    private const double Gravity                    = 430.0;
+    private const double FacingFlipSpeed            = 5.0;
+    private const double TurnAnticipationRate       = 5.5;
 
     private bool _stopInPlaceLatched;
     private double _stopCommandTarget;
@@ -145,7 +145,7 @@ internal sealed class MaotaiLocomotionController
             VelocityX = 0.0;
         }
 
-        // Gait phase        : distance-driven phase naturally preserves foot cadence through walk/run blending.
+        // Gait phase        : distance-driven cadence stays continuous, while the denser cycle keeps planted paws near their shoulder lanes.
         GaitPhase = Wrap01(
             GaitPhase + (Math.Abs(VelocityX) * GaitCyclesPerUnit * dt));
 
