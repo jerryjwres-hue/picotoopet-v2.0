@@ -9,7 +9,7 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>验证 Handoff、Provider、Return、Publication 与 Mock Broker 使用有界原生 WPF 控件并完成真实布局。</summary>
+/// <summary>验证 Handoff、Coding 仲裁、Provider、Return、Publication 与 Mock Broker 使用有界原生 WPF 控件。</summary>
 internal static class CloudDevelopmentPageWpfLayoutSmokeTests
 {
     public static void Run()
@@ -57,14 +57,21 @@ internal static class CloudDevelopmentPageWpfLayoutSmokeTests
         SmokeAssert.True(page.ActualHeight > 0, "Cloud Development Page 实际高度无效");
         var buttons = FindVisualChildren<Button>(page);
         SmokeAssert.True(
-            buttons.Count >= 14,
-            "页面必须提供 Handoff、Provider、Return、Publication 和 Broker 的原生操作按钮");
+            buttons.Count >= 15,
+            "页面必须提供 Handoff、Coding 仲裁、Provider、Return、Publication 和 Broker 的原生按钮");
+        SmokeAssert.True(
+            buttons.Any(button => Equals(button.Content, "查看决策")),
+            "Frugal Coding 仲裁必须提供唯一的只读查询按钮");
         SmokeAssert.True(
             buttons.Any(button => Equals(button.Content, "准备 Push + Draft PR")),
             "Phase 10E 必须在真实 WPF 树中提供受控 Publication 准备按钮");
         SmokeAssert.True(
-            FindVisualChildren<TextBox>(page).Count >= 2,
-            "Handoff 必须保留标题和目标摘要输入框");
+            FindVisualChildren<TextBox>(page).Count >= 3,
+            "Cloud Development 必须保留 Handoff 输入并新增 Coding Goal ID 查询框");
+        SmokeAssert.Equal(
+            1,
+            FindVisualChildren<CodingEscalationDecisionPanel>(page).Count,
+            "Frugal Coding 仲裁必须提供唯一的只读决策卡");
         SmokeAssert.Equal(
             1,
             FindVisualChildren<ProviderSessionPanel>(page).Count,
