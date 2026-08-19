@@ -301,9 +301,9 @@ internal sealed class MaotaiRasterRenderer
             frame.RightPupil.RotationDeg);
 
         ApplyContinuousLeg(_visuals.FrontLeftUpper, _visuals.FrontLeftLower, frame.FrontLeftUpper, frame.FrontLeftPaw);
-        ApplyBone(_visuals.FrontLeftPaw, frame.FrontLeftPaw);
+        ApplyFrontPaw(_visuals.FrontLeftPaw, frame.FrontLeftPaw, frame.MotionState);
         ApplyContinuousLeg(_visuals.FrontRightUpper, _visuals.FrontRightLower, frame.FrontRightUpper, frame.FrontRightPaw);
-        ApplyBone(_visuals.FrontRightPaw, frame.FrontRightPaw);
+        ApplyFrontPaw(_visuals.FrontRightPaw, frame.FrontRightPaw, frame.MotionState);
         ApplyContinuousLeg(_visuals.HindLeftUpper, _visuals.HindLeftLower, frame.HindLeftUpper, frame.HindLeftPaw);
         ApplyBone(_visuals.HindLeftPaw, frame.HindLeftPaw);
         ApplyContinuousLeg(_visuals.HindRightUpper, _visuals.HindRightLower, frame.HindRightUpper, frame.HindRightPaw);
@@ -376,6 +376,23 @@ internal sealed class MaotaiRasterRenderer
             pose.RotationDeg,
             pose.ScaleX,
             pose.ScaleY);
+
+    private static void ApplyFrontPaw(
+        MaotaiRasterPart part,
+        in MaotaiBonePose pose,
+        MaotaiMotionState state)
+    {
+        var movingFrontView = state is MaotaiMotionState.Walk or MaotaiMotionState.Run;
+
+        // Contact pivot       : position/rotation remain the exact Motion Engine output, so foot-lock physics are untouched.
+        // Fur footprint       : narrow only the displayed moving paw around its existing pivot to stop front-view sprite stacking.
+        part.Apply(
+            pose.X,
+            pose.Y,
+            pose.RotationDeg,
+            scaleX: pose.ScaleX * (movingFrontView ? 0.76 : 1.0),
+            scaleY: pose.ScaleY);
+    }
 
     private void ApplyPoseCohesion(MaotaiMotionState state)
     {
