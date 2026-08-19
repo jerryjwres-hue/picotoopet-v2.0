@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from typing import Literal, cast
@@ -55,10 +56,20 @@ class CodingEscalationPlan(BaseModel):
 class CodingEscalationService:
     """Choose zero or one coding provider without accepting a caller-selected provider."""
 
+    _SOURCE_TEMPLATE = "picotoopet-repo-maintenance-v1"
     _TEMPLATES: dict[ProviderName, str] = {
         "codex": "picotoopet-repo-maintenance-codex-v1",
         "claude_code": "picotoopet-repo-maintenance-claude-code-v1",
     }
+    _INITIAL_REQUEST_SIGNALS = FrugalAssessmentSignals(
+        contract_valid=True,
+        validation_passed=False,
+        coverage=0.0,
+        contradiction_rate=0.0,
+        model_confidence=0.0,
+        risk_score=0.75,
+        retry_count=0,
+    )
     _TERMINAL_VALIDATION_FAILURES = frozenset(
         {
             "artifact_invalid",
@@ -91,6 +102,36 @@ class CodingEscalationService:
         self.provider_sessions = provider_sessions
         self.decisions = decisions
         self.arbiter = arbiter or FrugalEscalationArbiter()
+
+    def create_repository_maintenance_request(
+        self,
+        *,
+        title: str,
+        objective: str,
+        idempotency_key: str,
+    ) -> CodingEscalationPlan:
+        """Create one high-level coding source fact, then let Core own all authority fields."""
+
+        source = self.handoffs.prepare(
+            HandoffPrepareRequest(
+                template_id=self._SOURCE_TEMPLATE,
+                title=title,
+                objective=objective,
+                expires_seconds=1800,
+            ),
+            idempotency_key=self._source_key(idempotency_key),
+        )
+        existing = self.decisions.list_for_goal(source.handoff_id, limit=1)
+        if existing:
+            return self._plan_for_existing_decision(existing[0].decision)
+
+        return self.evaluate(
+            goal_id=source.handoff_id,
+            task_class="repository_maintenance",
+            title=title,
+            objective=objective,
+            signals=self._INITIAL_REQUEST_SIGNALS,
+        )
 
     def evaluate(
         self,
@@ -273,6 +314,30 @@ class CodingEscalationService:
             permission_risk=0.10,
         )
 
+    def _plan_for_existing_decision(
+        self,
+        decision: ProviderEscalationDecision,
+    ) -> CodingEscalationPlan:
+        """Render an idempotent replay without creating approval, Usage, or Session facts."""
+
+        if decision.action == "local_only":
+            return CodingEscalationPlan(decision=decision, stage="local_only")
+        if decision.action != "external_provider" or decision.chosen_provider == "none":
+            return CodingEscalationPlan(decision=decision, stage="manual_review")
+
+        provider = cast(ProviderName, decision.chosen_provider)
+        handoff_row = self.database.fetchone(
+            "SELECT handoff_id FROM handoffs WHERE prepare_idempotency_key = ?",
+            (self._handoff_key(decision.decision_digest),),
+        )
+        if handoff_row is None:
+            return CodingEscalationPlan(decision=decision, stage="manual_review")
+        handoff_id = str(handoff_row["handoff_id"])
+        existing_session = self._session_for_handoff(handoff_id, provider)
+        if existing_session is not None:
+            return self._plan_for_session(decision, handoff_id, existing_session)
+        return self._plan_for_handoff(decision, handoff_id)
+
     def _plan_for_handoff(
         self,
         decision: ProviderEscalationDecision,
@@ -396,6 +461,14 @@ class CodingEscalationService:
         if status in self._TERMINAL_VALIDATION_FAILURES:
             return "failed"
         return None
+
+    @staticmethod
+    def _source_key(idempotency_key: str) -> str:
+        normalized = idempotency_key.strip()
+        if not normalized:
+            raise ValueError("CODING_ESCALATION_IDEMPOTENCY_KEY_REQUIRED")
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return f"frugal-source:{digest}"
 
     @staticmethod
     def _handoff_key(decision_digest: str) -> str:
