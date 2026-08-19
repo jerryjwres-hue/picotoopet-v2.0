@@ -99,3 +99,15 @@ def test_windows_cannot_start_coding_provider_session_directly() -> None:
     assert "StartSessionAsync" not in gateway
     assert "StartSessionCommand" not in view_model
     assert "启动一次低预算 Codex Session" not in panel
+
+
+def test_windows_usage_confirmation_supports_core_selected_dual_providers() -> None:
+    view_model = PROVIDER_VIEW_MODEL.read_text(encoding="utf-8-sig")
+    panel = PROVIDER_PANEL.read_text(encoding="utf-8-sig")
+
+    # This is not a provider picker. Both values must come only from already
+    # approved Handoffs whose provider was persisted by Mac Core.
+    assert '"codex"' in view_model
+    assert '"claude_code"' in view_model
+    assert "Core 已绑定" in panel
+    assert "Codex / Claude Code" in panel
