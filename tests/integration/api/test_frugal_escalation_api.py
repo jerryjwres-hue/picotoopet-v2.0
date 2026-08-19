@@ -9,7 +9,8 @@ from picotoopet_core.api.app import create_app
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.deep_ai.frugal import FrugalAssessmentSignals
-from picotoopet_core.providers.models import ProviderUsageStatus
+from picotoopet_core.providers.models import ProviderReadinessStatus, ProviderUsageStatus
+from picotoopet_core.providers.readiness import ProviderReadinessProjection
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
@@ -30,6 +31,22 @@ def _signals() -> FrugalAssessmentSignals:
         model_confidence=0.65,
         risk_score=0.30,
         retry_count=0,
+    )
+
+
+def _publish_ready_providers(client: TestClient) -> None:
+    projection = ProviderReadinessProjection(client.app.state.services.capability_router)
+    projection.publish(
+        worker_id="frugal-api-worker",
+        provider="codex",
+        status=ProviderReadinessStatus.READY,
+        task_type="provider.codex.handoff-v1",
+    )
+    projection.publish(
+        worker_id="frugal-api-worker",
+        provider="claude_code",
+        status=ProviderReadinessStatus.READY,
+        task_type="provider.claude-code.handoff-v1",
     )
 
 
@@ -56,6 +73,7 @@ def test_frugal_decision_get_is_authenticated_read_only_and_does_not_spend(tmp_p
     client, headers = _client(tmp_path)
     with client:
         services = client.app.state.services
+        _publish_ready_providers(client)
         plan = services.coding_escalation.evaluate(
             goal_id="goal-frugal-api",
             task_class="repository_maintenance",
