@@ -379,9 +379,9 @@ internal sealed class MaotaiRasterRenderer
 
     private void ApplyPoseCohesion(MaotaiMotionState state)
     {
-        // Pose occlusion      : work/rest poses tuck the long IK middle segments behind the plush torso.
-        // Contact readability : paws remain fully visible so keyboard/ground contact never looks detached.
-        var hideUpperSegments = state is
+        // Folded-pose occlusion : work/rest poses tuck the long limb silhouettes behind the plush torso.
+        // Front-view locomotion : rear limbs stay behind the torso/front pair so no detached side paw can pop out.
+        var hideFrontUpper = state is
             MaotaiMotionState.WorkSettle or
             MaotaiMotionState.WorkTyping or
             MaotaiMotionState.WorkTired or
@@ -392,12 +392,14 @@ internal sealed class MaotaiRasterRenderer
             MaotaiMotionState.Sleep or
             MaotaiMotionState.Wake or
             MaotaiMotionState.GetUp;
-        var upperOpacity = hideUpperSegments ? 0.0 : 1.0;
+        var movingFrontView = state is MaotaiMotionState.Walk or MaotaiMotionState.Run;
+        var frontUpperOpacity = hideFrontUpper ? 0.0 : 1.0;
+        var rearUpperOpacity  = hideFrontUpper || movingFrontView ? 0.0 : 1.0;
 
-        _visuals.FrontLeftUpper.Element.Opacity  = upperOpacity;
-        _visuals.FrontRightUpper.Element.Opacity = upperOpacity;
-        _visuals.HindLeftUpper.Element.Opacity   = upperOpacity;
-        _visuals.HindRightUpper.Element.Opacity  = upperOpacity;
+        _visuals.FrontLeftUpper.Element.Opacity  = frontUpperOpacity;
+        _visuals.FrontRightUpper.Element.Opacity = frontUpperOpacity;
+        _visuals.HindLeftUpper.Element.Opacity   = rearUpperOpacity;
+        _visuals.HindRightUpper.Element.Opacity  = rearUpperOpacity;
 
         _visuals.FrontLeftLower.Element.Opacity  = 0.0;
         _visuals.FrontRightLower.Element.Opacity = 0.0;
@@ -406,8 +408,8 @@ internal sealed class MaotaiRasterRenderer
 
         _visuals.FrontLeftPaw.Element.Opacity  = 1.0;
         _visuals.FrontRightPaw.Element.Opacity = 1.0;
-        _visuals.HindLeftPaw.Element.Opacity   = 1.0;
-        _visuals.HindRightPaw.Element.Opacity  = 1.0;
+        _visuals.HindLeftPaw.Element.Opacity   = movingFrontView ? 0.0 : 1.0;
+        _visuals.HindRightPaw.Element.Opacity  = movingFrontView ? 0.0 : 1.0;
     }
 
     private void ApplyWorkProps(MaotaiMotionState state)
