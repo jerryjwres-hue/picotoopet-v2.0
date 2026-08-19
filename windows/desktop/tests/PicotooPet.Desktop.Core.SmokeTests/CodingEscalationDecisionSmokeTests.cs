@@ -14,9 +14,9 @@ internal static class CodingEscalationDecisionSmokeTests
     public static async Task RunAsync()
     {
         VerifyGatewayIsReadOnly();
+        VerifyPanelHasNoProviderOverrideControls();
         await VerifyFixedGetRouteAsync().ConfigureAwait(false);
         await VerifyStableFormattingAsync().ConfigureAwait(false);
-        VerifyPanelHasNoProviderOverrideControls();
     }
 
     private static void VerifyGatewayIsReadOnly()
