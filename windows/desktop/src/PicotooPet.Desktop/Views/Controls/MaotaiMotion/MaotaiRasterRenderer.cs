@@ -216,6 +216,9 @@ internal sealed class MaotaiRasterVisuals
 internal sealed class MaotaiRasterRenderer
 {
     private readonly MaotaiRasterVisuals _visuals;
+    private readonly WpfImage _headphoneBand;
+    private readonly WpfImage _headphoneLeft;
+    private readonly WpfImage _headphoneRight;
 
     public MaotaiRasterRenderer(MaotaiRasterVisuals visuals)
     {
@@ -230,6 +233,9 @@ internal sealed class MaotaiRasterRenderer
         var headPanel = _visuals.EyeLeftOpen.Parent as WpfPanel
             ?? throw new InvalidOperationException("Maotai v2 face layers are not attached to the head panel.");
         MaotaiRasterFaceLayout.Configure(headPanel);
+        _headphoneBand  = RequireNamedImage(headPanel, "MaotaiV2HeadphoneBand");
+        _headphoneLeft  = RequireNamedImage(headPanel, "MaotaiV2HeadphoneLeft");
+        _headphoneRight = RequireNamedImage(headPanel, "MaotaiV2HeadphoneRight");
     }
 
     /// <summary>每显示帧调用；层级 Transform 与 Motion Engine 的 Body->Chest/Head/Leg/Tail 坐标一致。</summary>
@@ -302,6 +308,20 @@ internal sealed class MaotaiRasterRenderer
         ApplyFace(frame);
     }
 
+    private static WpfImage RequireNamedImage(WpfPanel panel, string name)
+    {
+        foreach (var child in panel.Children)
+        {
+            if (child is WpfImage image &&
+                string.Equals(image.Name, name, StringComparison.Ordinal))
+            {
+                return image;
+            }
+        }
+
+        throw new InvalidOperationException($"Maotai v2 face layer missing: {name}");
+    }
+
     private static void ApplyLegBone(
         MaotaiRasterPart part,
         in MaotaiBonePose pose) =>
@@ -335,6 +355,9 @@ internal sealed class MaotaiRasterRenderer
         var opacity = visible ? 1.0 : 0.0;
         _visuals.Laptop.Opacity = opacity;
         _visuals.Drink.Opacity  = opacity;
+        _headphoneBand.Opacity  = opacity;
+        _headphoneLeft.Opacity  = opacity;
+        _headphoneRight.Opacity = opacity;
     }
 
     private void ApplyFace(in MaotaiPoseFrame frame)
