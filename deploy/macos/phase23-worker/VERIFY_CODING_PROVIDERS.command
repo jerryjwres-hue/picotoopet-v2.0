@@ -33,10 +33,6 @@ import urllib.request
 base = sys.argv[1].rstrip("/")
 token = sys.argv[2]
 allowed = {"ready", "not_authenticated", "unavailable", "policy_blocked"}
-providers = (
-    ("codex", "/api/v1/providers/codex/status", "CODEX_READINESS"),
-    ("claude_code", "/api/v1/providers/claude-code/status", "CLAUDE_CODE_READINESS"),
-)
 
 
 def get_json(path: str) -> object:
@@ -56,7 +52,7 @@ def get_json(path: str) -> object:
         ) from error
 
 
-for provider, path, marker in providers:
+def readiness_for(provider: str, path: str) -> str:
     payload = get_json(path)
     if not isinstance(payload, dict):
         raise SystemExit(f"Coding Provider readiness 返回无效：{path}")
@@ -71,7 +67,16 @@ for provider, path, marker in providers:
         raise SystemExit(f"Coding Provider 不得读取账号 Usage/余额：{provider}")
     if payload.get("execution_host") != "mac-worker":
         raise SystemExit(f"Coding Provider execution_host 不正确：{provider}")
-    print(f"{marker}={readiness}")
+    return readiness
+
+
+codex_readiness = readiness_for("codex", "/api/v1/providers/codex/status")
+claude_readiness = readiness_for(
+    "claude_code",
+    "/api/v1/providers/claude-code/status",
+)
+print(f"CODEX_READINESS={codex_readiness}")
+print(f"CLAUDE_CODE_READINESS={claude_readiness}")
 PY
 
 echo "PHASE23_CODING_PROVIDER_READINESS_CHECK=PASS"
