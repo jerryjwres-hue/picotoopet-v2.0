@@ -45,11 +45,17 @@ class ContentDiscoveryRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=2_000)
     read_only: bool = True
     max_candidates: int = Field(default=20, ge=1, le=50)
+    connected_product_keys: tuple[str, ...] = Field(default=(), max_length=8)
 
     @model_validator(mode="after")
-    def _require_read_only(self) -> ContentDiscoveryRequest:
+    def _require_safe_scope(self) -> ContentDiscoveryRequest:
         if self.read_only is not True:
             raise ValueError("autonomous discovery must remain read-only")
+        if len(set(self.connected_product_keys)) != len(self.connected_product_keys):
+            raise ValueError("connected_product_keys must be unique")
+        for key in self.connected_product_keys:
+            if not key or key != key.strip() or len(key) > 200:
+                raise ValueError("connected_product_keys must contain bounded canonical keys")
         return self
 
 
@@ -131,12 +137,11 @@ class ContentDiscoveryCoordinator:
         self.search = search
         self.local = local
         self.connected_evidence = connected_evidence
-        # Explicit seeds remain available only as a deterministic fixture/manual override.
-        # Production-default discovery derives the bounded search plan from each objective.
+        # ── Explicit seeds remain only a deterministic fixture/manual override. ──
         self.seed_queries = normalized
 
     def handler(self, task: TaskRecord) -> HandlerResult:
-        """Use uniquely matched Core evidence, bounded searches, Radar cleanup, then one Scout pass."""
+        """Use scoped Core evidence, bounded searches, Radar cleanup, then one Scout pass."""
 
         if task.task_type != self.TASK_TYPE:
             raise ContentDiscoveryError("unsupported autonomous discovery task type")
@@ -145,7 +150,10 @@ class ContentDiscoveryCoordinator:
         except ValidationError as error:
             raise ContentDiscoveryError("invalid autonomous discovery request") from error
 
-        connected = self._connected_evidence_for_objective(request.objective)
+        if request.connected_product_keys:
+            connected = self._connected_evidence_for_keys(request.connected_product_keys)
+        else:
+            connected = self._connected_evidence_for_objective(request.objective)
         connected_ids = [item["evidence_id"] for item in connected]
         queries = self._queries_for_objective(request.objective)
         per_query_limit = max(
@@ -182,17 +190,13 @@ class ContentDiscoveryCoordinator:
                 )
             )
 
-        # Existing canonical evidence is a real source. Research Gateway outage must not erase
-        # already imported/browser-captured evidence, but an evidence-empty run still fails closed.
+        # ── Canonical evidence remains usable when the Research Gateway is temporarily offline. ──
         if not successful and not connected:
             raise ContentDiscoveryError("all discovery searches failed")
 
         radar_candidates = normalize_candidates(radar_inputs)[: request.max_candidates]
         radar_clusters = cluster_candidates(radar_candidates)
-        # Current crawler envelopes provide content/provenance but no trustworthy
-        # velocity, resonance, business or actionability metrics. Therefore every
-        # missing scoring dimension remains None/zero instead of being inferred
-        # from prose or from the Scout's free-form findings.
+        # ── Missing trustworthy velocity/business metrics stay unscored rather than inferred. ──
         radar_scores = [
             {
                 "candidate_id": candidate.candidate_id,
@@ -206,9 +210,6 @@ class ContentDiscoveryCoordinator:
             round_number=0,
             evidence_ids=evidence_ids,
             cluster_ids=[cluster.cluster_id for cluster in radar_clusters],
-            # Initial collection is measured against an empty evidence set; all
-            # accepted evidence is new at round zero. Later rounds must measure
-            # marginal gain and are constrained by research_stop.py.
             information_gain_ratio=1.0,
         )
         stop_decision = evaluate_research_stop([initial_round])
@@ -290,6 +291,29 @@ class ContentDiscoveryCoordinator:
             return self.seed_queries
         return build_discovery_queries(objective)
 
+    def _connected_evidence_for_keys(
+        self,
+        product_keys: tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        """Read only exact Core-selected products; never fuzzy-expand an automatic intake scope."""
+
+        if self.connected_evidence is None:
+            return []
+        selected: list[dict[str, object]] = []
+        seen_ids: set[str] = set()
+        for product_key in product_keys:
+            for record in self.connected_evidence.list_evidence(
+                product_key=product_key,
+                limit=_MAX_CONNECTED_EVIDENCE,
+            ):
+                item = _connected_evidence_item(record, seen_ids)
+                if item is None:
+                    continue
+                selected.append(item)
+                if len(selected) >= _MAX_CONNECTED_EVIDENCE:
+                    return selected
+        return selected
+
     def _connected_evidence_for_objective(self, objective: str) -> list[dict[str, object]]:
         """Use existing evidence only when deterministic text matching identifies one product."""
 
@@ -307,8 +331,7 @@ class ContentDiscoveryCoordinator:
             if key_match or title_match:
                 matches[product.product_key] = product
         if len(matches) != 1:
-            # Ambiguous product context is never resolved by fuzzy/model guessing; normal
-            # read-only research can still run without contaminating evidence across products.
+            # ── Ambiguity is never resolved by fuzzy/model guessing across products. ──
             return []
 
         product_key = next(iter(matches))
@@ -318,29 +341,36 @@ class ContentDiscoveryCoordinator:
             product_key=product_key,
             limit=_MAX_CONNECTED_EVIDENCE,
         ):
-            if record.evidence_id in seen_ids:
-                continue
-            text_excerpt = _truncate_text(record.text_value.strip(), _MAX_CONNECTED_TEXT_CHARS)
-            if not text_excerpt and record.numeric_value is None:
-                continue
-            seen_ids.add(record.evidence_id)
-            selected.append(
-                {
-                    "evidence_id": record.evidence_id,
-                    "product_key": record.product_key,
-                    "evidence_type": record.evidence_type,
-                    "source": record.source,
-                    "platform": record.platform,
-                    "source_url": record.source_url,
-                    "text_excerpt": text_excerpt,
-                    "numeric_value": record.numeric_value,
-                    "trust_level": record.trust_level,
-                    "confidence": record.confidence,
-                    "captured_at": record.captured_at,
-                    "origin": record.origin,
-                }
-            )
+            item = _connected_evidence_item(record, seen_ids)
+            if item is not None:
+                selected.append(item)
         return selected
+
+
+def _connected_evidence_item(
+    record: _ConnectedEvidence,
+    seen_ids: set[str],
+) -> dict[str, object] | None:
+    if record.evidence_id in seen_ids:
+        return None
+    text_excerpt = _truncate_text(record.text_value.strip(), _MAX_CONNECTED_TEXT_CHARS)
+    if not text_excerpt and record.numeric_value is None:
+        return None
+    seen_ids.add(record.evidence_id)
+    return {
+        "evidence_id": record.evidence_id,
+        "product_key": record.product_key,
+        "evidence_type": record.evidence_type,
+        "source": record.source,
+        "platform": record.platform,
+        "source_url": record.source_url,
+        "text_excerpt": text_excerpt,
+        "numeric_value": record.numeric_value,
+        "trust_level": record.trust_level,
+        "confidence": record.confidence,
+        "captured_at": record.captured_at,
+        "origin": record.origin,
+    }
 
 
 def _extract_typed_radar_inputs(*, evidence_id: str, output: str) -> list[RadarCandidateInput]:
@@ -388,8 +418,7 @@ def _extract_typed_radar_inputs(*, evidence_id: str, output: str) -> list[RadarC
                 excerpt=excerpt,
                 platform=platform,
             )
-            # Validate the public URL through the canonical Radar path per item,
-            # so one malformed/private document cannot poison the whole batch.
+            # ── One malformed/private document cannot poison the whole typed batch. ──
             normalize_candidates([candidate])
         except (ValidationError, ValueError):
             continue
@@ -468,7 +497,7 @@ def _render_combined_scout_input(
             )
     if search_text.strip():
         lines.extend(["", "Read-only Research Gateway evidence:", search_text])
-    # LocalAnalysisRequest enforces 24k chars. Leave deterministic headroom for role instructions.
+    # ── LocalAnalysisRequest caps input at 24k; leave deterministic instruction headroom. ──
     return _truncate_text("\n".join(lines), 23_000)
 
 
