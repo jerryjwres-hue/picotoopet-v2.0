@@ -161,35 +161,31 @@ internal static class MaotaiVisualSnapshotSmokeTests
 
     private static void VerifyPoseCohesionVisibility(AssistantPetPanel panel, string label)
     {
-        // Pose cohesion       : 静止/跑步保留完整 IK 四肢；办公/睡眠则把会横穿 torso 的中间腿段藏到身体后。
-        // Paws remain visible : 保留白色脚掌作为接触点，避免“整条腿突然消失”的另一种拼贴感。
-        var expectedSegmentOpacity = label switch
-        {
-            "work"  => 0.0,
-            "sleep" => 0.0,
-            _       => 1.0,
-        };
+        // Single-silhouette legs : ordinary standing/running uses one continuous furry upper silhouette per leg.
+        // Hidden folded limbs     : work/sleep tuck the whole middle limb behind torso; paws remain contact markers.
+        var expectedUpperOpacity = label is "work" or "sleep" ? 0.0 : 1.0;
+        const double expectedLowerOpacity = 0.0;
 
         foreach (var name in new[]
                  {
                      "MaotaiV2FrontLeftUpper",
-                     "MaotaiV2FrontLeftLower",
                      "MaotaiV2FrontRightUpper",
-                     "MaotaiV2FrontRightLower",
                      "MaotaiV2HindLeftUpper",
-                     "MaotaiV2HindLeftLower",
                      "MaotaiV2HindRightUpper",
+                 })
+        {
+            AssertOpacity(panel, label, name, expectedUpperOpacity, "连续腿主轮廓");
+        }
+
+        foreach (var name in new[]
+                 {
+                     "MaotaiV2FrontLeftLower",
+                     "MaotaiV2FrontRightLower",
+                     "MaotaiV2HindLeftLower",
                      "MaotaiV2HindRightLower",
                  })
         {
-            var element = panel.FindName(name) as FrameworkElement
-                ?? throw new InvalidOperationException($"Maotai visual snapshot 缺少 {name}");
-            if (Math.Abs(element.Opacity - expectedSegmentOpacity) > 0.000001)
-            {
-                throw new InvalidOperationException(
-                    $"Maotai visual snapshot '{label}' 的 {name} 拼接遮挡错误；" +
-                    $"expected={expectedSegmentOpacity:F1}, actual={element.Opacity:F1}");
-            }
+            AssertOpacity(panel, label, name, expectedLowerOpacity, "禁止上下腿横向拼接缝");
         }
 
         foreach (var name in new[]
@@ -200,13 +196,24 @@ internal static class MaotaiVisualSnapshotSmokeTests
                      "MaotaiV2HindRightPaw",
                  })
         {
-            var element = panel.FindName(name) as FrameworkElement
-                ?? throw new InvalidOperationException($"Maotai visual snapshot 缺少 {name}");
-            if (Math.Abs(element.Opacity - 1.0) > 0.000001)
-            {
-                throw new InvalidOperationException(
-                    $"Maotai visual snapshot '{label}' 的 {name} 接触脚掌不能被遮掉；actual={element.Opacity:F1}");
-            }
+            AssertOpacity(panel, label, name, 1.0, "接触脚掌不能被遮掉");
+        }
+    }
+
+    private static void AssertOpacity(
+        AssistantPetPanel panel,
+        string label,
+        string name,
+        double expected,
+        string contract)
+    {
+        var element = panel.FindName(name) as FrameworkElement
+            ?? throw new InvalidOperationException($"Maotai visual snapshot 缺少 {name}");
+        if (Math.Abs(element.Opacity - expected) > 0.000001)
+        {
+            throw new InvalidOperationException(
+                $"Maotai visual snapshot '{label}' 的 {name} {contract}；" +
+                $"expected={expected:F1}, actual={element.Opacity:F1}");
         }
     }
 
