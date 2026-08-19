@@ -142,7 +142,7 @@ class CodingEscalationService:
         return self._plan_for_handoff(decision, handoff.handoff_id)
 
     def reconcile(self, goal_id: str) -> CodingEscalationPlan:
-        """Advance one chosen provider only after existing approval and Usage gates are satisfied."""
+        """Advance one chosen provider after existing approval and Usage gates are satisfied."""
 
         decision = self.decisions.latest_for_goal(goal_id).decision
         if decision.action == "local_only":
