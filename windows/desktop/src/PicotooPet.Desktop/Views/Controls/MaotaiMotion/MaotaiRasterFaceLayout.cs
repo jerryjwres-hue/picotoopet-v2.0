@@ -10,7 +10,7 @@ namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 /// </summary>
 internal static class MaotaiRasterFaceLayout
 {
-    private const double HeadVisualScale = 0.90;
+    private const double HeadVisualScale = 0.96;
     private const double EarTop = -20.5;
     private const double EyeTop = -16.0;
     private const double MuzzleTop = -13.0;
@@ -22,8 +22,7 @@ internal static class MaotaiRasterFaceLayout
     {
         ArgumentNullException.ThrowIfNull(headPanel);
 
-        // Static art-fit scale is intentionally separate from MaotaiV2HeadScale, which remains
-        // owned by Motion Engine for breathing, wake-up and interaction motion.
+        // Static art-fit scale : new neutral fur shell is intentionally fuller; dynamic HeadScale remains Motion Engine-owned.
         headPanel.LayoutTransform = new ScaleTransform(HeadVisualScale, HeadVisualScale);
 
         foreach (var child in headPanel.Children)
