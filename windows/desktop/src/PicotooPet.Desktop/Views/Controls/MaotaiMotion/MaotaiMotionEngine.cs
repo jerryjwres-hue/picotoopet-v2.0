@@ -322,6 +322,7 @@ internal sealed class MaotaiMotionEngine
         _tailMid.Step((_tailBase.Value * 1.08) - (_locomotion.VelocityX * 0.025), dt);
         _tailTip.Step((_tailMid.Value * 1.12) - (_locomotion.VelocityX * 0.018), dt);
 
+        // Canonical front view : left/right asset pairs straddle body center; gait phase still carries depth.
         var frontLeft = BuildLockedLeg(
             ref _frontLeftLock,
             gaitPhase,
@@ -329,7 +330,7 @@ internal sealed class MaotaiMotionEngine
             bodyWorldY,
             facingSign,
             grounded,
-            shoulderLocalX: 17.5,
+            shoulderLocalX: -17.5,
             shoulderLocalY: 9.5,
             frontLeg: true);
         var frontRight = BuildLockedLeg(
@@ -359,7 +360,7 @@ internal sealed class MaotaiMotionEngine
             bodyWorldY,
             facingSign,
             grounded,
-            shoulderLocalX: -17.0,
+            shoulderLocalX: 17.0,
             shoulderLocalY: 12.0,
             frontLeg: false);
 
@@ -387,7 +388,7 @@ internal sealed class MaotaiMotionEngine
             var rightPress = (1.0 - Math.Cos(_typingPhaseRadians + Math.PI)) * amplitude;
 
             frontLeft = BuildWorkPaw(
-                shoulderLocalX: 17.5,
+                shoulderLocalX: -17.5,
                 shoulderLocalY: 9.5,
                 keyboardLocalX: 12.0,
                 keyboardLocalY: 39.0,
@@ -639,6 +640,21 @@ internal sealed class MaotaiMotionEngine
             ? Math.Clamp(_stateElapsedSeconds / YawnEnvelopeSeconds, 0.0, 1.0)
             : 0.0;
 
+    /// <summary>把地面站姿连续混入坐下/趴下/睡眠收腿，避免身体下沉时脚掌仍锁在世界地面。</summary>
+    private double GetRestLegTuck()
+    {
+        var blend = SmoothStep(_graph.TransitionProgress);
+        return _graph.ActiveState switch
+        {
+            MaotaiMotionState.Sit     => 0.28 * blend,
+            MaotaiMotionState.LieDown => Lerp(0.28, 1.0, blend),
+            MaotaiMotionState.Sleep   => 1.0,
+            MaotaiMotionState.Wake    => Lerp(1.0, 0.55, blend),
+            MaotaiMotionState.GetUp   => 0.55 * (1.0 - blend),
+            _                         => 0.0,
+        };
+    }
+
     private MaotaiLegPose BuildWorkPaw(
         double shoulderLocalX,
         double shoulderLocalY,
@@ -705,8 +721,17 @@ internal sealed class MaotaiMotionEngine
         }
         else if (!moving)
         {
-            pawWorldX = _locomotion.PositionX + shoulderLocalX + (facingSign * (frontLeg ? 3.0 : -2.0));
-            pawWorldY = GroundWorldY;
+            var restTuck = GetRestLegTuck();
+            var standingPawLocalX = shoulderLocalX + (facingSign * (frontLeg ? 3.0 : -2.0));
+            var tuckedPawLocalX   = shoulderLocalX * 0.72;
+            var tuckedPawWorldY   = bodyWorldY + (frontLeg ? 26.0 : 27.0);
+
+            // Resting foot       : interpolate in world space so Sit → LieDown → Sleep never snaps off the floor.
+            pawWorldX = Lerp(
+                _locomotion.PositionX + standingPawLocalX,
+                _locomotion.PositionX + tuckedPawLocalX,
+                restTuck);
+            pawWorldY = Lerp(GroundWorldY, tuckedPawWorldY, restTuck);
         }
         else
         {
