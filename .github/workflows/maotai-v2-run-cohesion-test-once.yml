@@ -1,0 +1,52 @@
+name: Maotai v2 Run Cohesion Test Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/maotai-v2-run-cohesion-test-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test-contract:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+
+      - name: Require compact front-view running lanes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiNeutralLegGeometryV2SmokeTests.cs")
+          text = path.read_text(encoding="utf-8")
+
+          calls_old = """            VerifyRunPawLane(pose, \"FrontLeftPaw\",  expectedSideSign: -1);\n            VerifyRunPawLane(pose, \"FrontRightPaw\", expectedSideSign: 1);\n            VerifyRunPawLane(pose, \"HindLeftPaw\",   expectedSideSign: -1);\n            VerifyRunPawLane(pose, \"HindRightPaw\",  expectedSideSign: 1);"""
+          calls_new = """            VerifyRunPawLane(pose, \"FrontLeftUpper\",  \"FrontLeftPaw\",  expectedSideSign: -1);\n            VerifyRunPawLane(pose, \"FrontRightUpper\", \"FrontRightPaw\", expectedSideSign: 1);\n            VerifyRunPawLane(pose, \"HindLeftUpper\",   \"HindLeftPaw\",   expectedSideSign: -1);\n            VerifyRunPawLane(pose, \"HindRightUpper\",  \"HindRightPaw\",  expectedSideSign: 1);"""
+          if calls_old not in text:
+              raise SystemExit("run-lane call anchor not found")
+          text = text.replace(calls_old, calls_new, 1)
+
+          method_old = """    private static void VerifyRunPawLane(object pose, string pawName, int expectedSideSign)\n    {\n        var pawX = ReadPoseDouble(pose, pawName, \"X\");\n        Assert((pawX * expectedSideSign) >= 3.0,\n            $\"{pawName} 跑步时跨过身体中线，会形成 X 形拼接；x={pawX:F2}\");\n    }"""
+          method_new = """    private static void VerifyRunPawLane(\n        object pose,\n        string upperName,\n        string pawName,\n        int expectedSideSign)\n    {\n        var shoulderX = ReadPoseDouble(pose, upperName, \"X\");\n        var pawX      = ReadPoseDouble(pose, pawName, \"X\");\n\n        // Center clearance    : furry feet never enter the narrow center corridor.\n        // Shoulder lane       : front-view running stays nearly vertical instead of producing long crossing diagonals.\n        Assert((pawX * expectedSideSign) >= 10.0,\n            $\"{pawName} 跑步时过度靠近身体中线，会形成 X 形拼接；x={pawX:F2}\");\n        Assert(Math.Abs(pawX - shoulderX) <= 6.0,\n            $\"{pawName} 跑步时偏离 {upperName} 肩根过大，会形成长斜向拼接；\" +\n            $\"shoulder={shoulderX:F2}, paw={pawX:F2}\");\n    }"""
+          if method_old not in text:
+              raise SystemExit("run-lane method anchor not found")
+          text = text.replace(method_old, method_new, 1)
+          path.write_text(text, encoding="utf-8")
+
+      - name: Commit hard visual geometry contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiNeutralLegGeometryV2SmokeTests.cs
+          git diff --cached --check
+          git commit -m "test: reject diagonal Maotai run leg crossings"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
