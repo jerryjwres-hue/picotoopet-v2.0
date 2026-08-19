@@ -113,8 +113,8 @@ def test_workflow_api_materializes_only_registered_queue_contract_and_health_is_
 
         health = client.get("/api/v1/automation/health", headers=headers)
         assert health.status_code == 200
-        # Schema gate               Connected evidence extends the autonomous Core schema to 20.
-        assert health.json()["database_schema_version"] == 20
+        # Schema gate               Frugal escalation decisions extend Core schema to 21.
+        assert health.json()["database_schema_version"] == 21
         assert health.json()["workflow_counts"]["Running"] == 1
 
         diagnostics = client.get("/api/v1/automation/diagnostics", headers=headers)
