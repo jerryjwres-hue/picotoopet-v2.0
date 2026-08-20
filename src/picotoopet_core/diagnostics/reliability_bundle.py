@@ -88,7 +88,7 @@ class ReliabilityBundleBuilder:
         self.home_dir           = Path(home_dir).expanduser().resolve()
 
     def build(self, data: ReliabilityBundleInput) -> Path:
-        """Write a deterministic-entry bundle without scanning arbitrary files or browser storage."""
+        """Write a fixed-entry bundle without arbitrary file or browser-storage scans."""
 
         self.managed_output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = _utc_timestamp(data.snapshot.observed_at)
@@ -165,9 +165,9 @@ class ReliabilityBundleBuilder:
         except OSError:
             return None
 
-        text  = raw.decode("utf-8", errors="replace")
-        lines = text.splitlines()[-_MAX_LOG_LINES:]
-        safe  = "\n".join(_sanitize_log_line(line) for line in lines)
+        text    = raw.decode("utf-8", errors="replace")
+        lines   = text.splitlines()[-_MAX_LOG_LINES:]
+        safe    = "\n".join(_sanitize_log_line(line) for line in lines)
         encoded = safe.encode("utf-8")
         if len(encoded) > _MAX_LOG_OUTPUT_BYTES:
             encoded = encoded[-_MAX_LOG_OUTPUT_BYTES:]
@@ -208,7 +208,10 @@ def _sanitize_text(value: str) -> str:
 
     bounded = value[:4_000]
     bounded = _BEARER_VALUE.sub("Bearer [REDACTED]", bounded)
-    bounded = _CREDENTIAL_VALUE.sub(lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", bounded)
+    bounded = _CREDENTIAL_VALUE.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]",
+        bounded,
+    )
     return bounded
 
 
