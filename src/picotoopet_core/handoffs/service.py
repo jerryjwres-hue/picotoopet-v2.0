@@ -47,8 +47,8 @@ class HandoffService:
         provider="codex",
         provider_configured=False,
         repo_url="https://github.com/jerryjwres-hue/picotoopet-v2.0",
-        base_ref="feature/phase10c-event-stream-recovery",
-        base_commit="65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f",
+        base_ref="feature/autonomous-intelligence-e2e-goal-center-2.3.27.1",
+        base_commit="423f14ea549a3303137f4ab5ad99d2afb60dbded",
     )
     _CLAUDE_CODE_TEMPLATE = HandoffTemplate(
         template_id="picotoopet-repo-maintenance-claude-code-v1",
@@ -56,8 +56,8 @@ class HandoffService:
         provider="claude_code",
         provider_configured=False,
         repo_url="https://github.com/jerryjwres-hue/picotoopet-v2.0",
-        base_ref="feature/phase10c-event-stream-recovery",
-        base_commit="65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f",
+        base_ref="feature/autonomous-intelligence-e2e-goal-center-2.3.27.1",
+        base_commit="423f14ea549a3303137f4ab5ad99d2afb60dbded",
     )
     _CODING_PROVIDERS = frozenset({"codex", "claude_code"})
     _REQUIRED_TESTS = [
