@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.audit.writer import AuditWriter
@@ -43,6 +44,8 @@ from picotoopet_core.deep_ai.service import CoreDeepAiSourceResolver, DeepAiEsca
 from picotoopet_core.deep_ai.shadow import QualityShadowRepository, QualityShadowService
 from picotoopet_core.deep_ai.store import DeepAiSanitizedPackageStore
 from picotoopet_core.deep_ai.validation import DeepAiResultValidator
+from picotoopet_core.diagnostics.reliability_bundle import ReliabilityBundleBuilder
+from picotoopet_core.diagnostics.reliability_service import ReliabilityService
 from picotoopet_core.events.broker import EventBroker
 from picotoopet_core.events.dispatcher import OutboxDispatcher
 from picotoopet_core.events.outbox import EventOutbox
@@ -53,6 +56,7 @@ from picotoopet_core.ollama.resident_manager import ResidentManager
 from picotoopet_core.production.repository import ProductionRepository
 from picotoopet_core.production.service import ProductionService
 from picotoopet_core.production.store import ProductionArtifactStore
+from picotoopet_core.progress.repository import ProgressRepository
 from picotoopet_core.projects.repository import ProjectRepository
 from picotoopet_core.providers.artifact_store import ProviderReturnArtifactStore
 from picotoopet_core.providers.commit_service import ProviderCommitService
@@ -124,6 +128,8 @@ class Services:
     dispatcher: OutboxDispatcher
     ollama: OllamaClient
     resident: ResidentManager
+    progress: ProgressRepository
+    reliability: ReliabilityService
     worker_state: WorkerStateStore
 
     def close(self) -> None:
@@ -249,6 +255,18 @@ def build_services(settings: AppSettings) -> Services:
         settings.paths.state_dir / "worker-status.json",
         stale_after_seconds=settings.worker_status_stale_seconds,
     )
+    progress = ProgressRepository(database)
+    reliability = ReliabilityService(
+        database=database,
+        worker_state=worker_state,
+        ollama=ollama,
+        progress=progress,
+        bundle_builder=ReliabilityBundleBuilder(
+            managed_output_dir=settings.paths.reliability_diagnostics_dir,
+            # ── The only external log source is the current user's fixed Ollama server log. ──
+            home_dir=Path.home(),
+        ),
+    )
     return Services(
         settings=settings,
         database=database,
@@ -303,5 +321,7 @@ def build_services(settings: AppSettings) -> Services:
         dispatcher=dispatcher,
         ollama=ollama,
         resident=ResidentManager(ollama, settings.ollama_model),
+        progress=progress,
+        reliability=reliability,
         worker_state=worker_state,
     )
