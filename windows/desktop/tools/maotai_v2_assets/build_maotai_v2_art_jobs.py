@@ -284,6 +284,12 @@ def _seed_family(file_name: str) -> str:
     stem = file_name.removesuffix(".png")
     if stem.startswith("torso_"):
         return "torso"
+    if stem.startswith("front_"):
+        return "front_leg"
+    if stem.startswith("hind_"):
+        return "hind_leg"
+    if stem.startswith("tail_"):
+        return "tail_chain"
 
     mirrored = re.sub(r"(^|_)left(?=_|$)", r"\1side", stem)
     mirrored = re.sub(r"(^|_)right(?=_|$)", r"\1side", mirrored)
