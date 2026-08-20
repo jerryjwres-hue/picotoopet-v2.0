@@ -10,6 +10,8 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from picotoopet_core.domain.models import TaskRecord
+from picotoopet_core.progress.models import ProgressUpdate
+from picotoopet_core.progress.reporter import ProgressReporter
 from picotoopet_core.research.execution import ResearchGatewayExecutionError
 from picotoopet_core.research.models import ResearchSearchResult
 from picotoopet_core.worker.handlers import HandlerResult
@@ -124,6 +126,7 @@ class ContentDiscoveryCoordinator:
         local: LocalIntelligenceAdapter,
         seed_queries: tuple[str, ...] | None = None,
         connected_evidence: _ConnectedEvidenceReader | None = None,
+        progress: ProgressReporter | None = None,
     ) -> None:
         normalized: tuple[str, ...] | None = None
         if seed_queries is not None:
@@ -134,11 +137,12 @@ class ContentDiscoveryCoordinator:
                 raise ValueError("each discovery query must be 1-240 characters")
             if len(set(normalized)) != len(normalized):
                 raise ValueError("seed_queries must be unique")
-        self.search = search
-        self.local = local
-        self.connected_evidence = connected_evidence
+        self.search              = search
+        self.local               = local
+        self.connected_evidence  = connected_evidence
+        self.progress            = progress
         # ── Explicit seeds remain only a deterministic fixture/manual override. ──
-        self.seed_queries = normalized
+        self.seed_queries        = normalized
 
     def handler(self, task: TaskRecord) -> HandlerResult:
         """Use scoped Core evidence, bounded searches, Radar cleanup, then one Scout pass."""
@@ -150,11 +154,25 @@ class ContentDiscoveryCoordinator:
         except ValidationError as error:
             raise ContentDiscoveryError("invalid autonomous discovery request") from error
 
+        self._emit_progress(
+            task=task,
+            stage="prepare",
+            message="正在准备研究目标和已有证据。",
+            component="worker",
+        )
         if request.connected_product_keys:
             connected = self._connected_evidence_for_keys(request.connected_product_keys)
         else:
             connected = self._connected_evidence_for_objective(request.objective)
         connected_ids = [item["evidence_id"] for item in connected]
+        self._emit_progress(
+            task=task,
+            stage="connected-evidence",
+            message=f"已读取 {len(connected)} 条现有可信证据。",
+            component="core",
+            details={"connected_evidence_count": len(connected)},
+        )
+
         queries = self._queries_for_objective(request.objective)
         per_query_limit = max(
             1,
@@ -165,6 +183,15 @@ class ContentDiscoveryCoordinator:
         successful: list[dict[str, str]] = []
         radar_inputs: list[RadarCandidateInput] = []
         failed_count = 0
+        self._emit_progress(
+            task=task,
+            stage="research-search",
+            completed=0,
+            total=len(queries),
+            message=f"准备执行 {len(queries)} 个只读研究查询。",
+            component="research",
+            details={"successful_sources": 0, "failed_sources": 0},
+        )
         for index, query in enumerate(queries, start=1):
             evidence_id = f"search-{index:02d}"
             try:
@@ -175,6 +202,18 @@ class ContentDiscoveryCoordinator:
                 )
             except ResearchGatewayExecutionError:
                 failed_count += 1
+                self._emit_progress(
+                    task=task,
+                    stage="research-search",
+                    completed=index,
+                    total=len(queries),
+                    message=f"研究查询 {index}/{len(queries)} 完成；本次来源失败。",
+                    component="research",
+                    details={
+                        "successful_sources": len(successful),
+                        "failed_sources": failed_count,
+                    },
+                )
                 continue
             successful.append(
                 {
@@ -189,13 +228,35 @@ class ContentDiscoveryCoordinator:
                     output=result.output,
                 )
             )
+            self._emit_progress(
+                task=task,
+                stage="research-search",
+                completed=index,
+                total=len(queries),
+                message=f"研究查询 {index}/{len(queries)} 完成。",
+                component="research",
+                details={
+                    "successful_sources": len(successful),
+                    "failed_sources": failed_count,
+                },
+            )
 
-        # ── Canonical evidence remains usable when the Research Gateway is temporarily offline. ──
+        # ── Canonical evidence remains usable when Research Gateway is temporarily offline. ──
         if not successful and not connected:
             raise ContentDiscoveryError("all discovery searches failed")
 
+        self._emit_progress(
+            task=task,
+            stage="radar-normalize",
+            message="正在去重并整理研究候选。",
+            component="worker",
+            details={
+                "successful_sources": len(successful),
+                "failed_sources": failed_count,
+            },
+        )
         radar_candidates = normalize_candidates(radar_inputs)[: request.max_candidates]
-        radar_clusters = cluster_candidates(radar_candidates)
+        radar_clusters   = cluster_candidates(radar_candidates)
         # ── Missing trustworthy velocity/business metrics stay unscored rather than inferred. ──
         radar_scores = [
             {
@@ -204,7 +265,7 @@ class ContentDiscoveryCoordinator:
             }
             for candidate in radar_candidates
         ]
-        search_ids = [item["evidence_id"] for item in successful]
+        search_ids   = [item["evidence_id"] for item in successful]
         evidence_ids = connected_ids + search_ids
         initial_round = ResearchRound(
             round_number=0,
@@ -228,6 +289,16 @@ class ContentDiscoveryCoordinator:
             objective=request.objective,
             connected_evidence=connected,
             search_text=search_text,
+        )
+        self._emit_progress(
+            task=task,
+            stage="local-scout",
+            message="研究证据已准备完成，正在进行本地 Scout 分析。",
+            component="ollama",
+            details={
+                "evidence_count": len(evidence_ids),
+                "candidate_count": len(radar_candidates),
+            },
         )
         try:
             raw_analysis = self.local.analyze(
@@ -268,6 +339,19 @@ class ContentDiscoveryCoordinator:
             "recommended_actions": analysis.recommended_actions,
             "evidence_ids": analysis.evidence_ids,
         }
+        self._emit_progress(
+            task=task,
+            stage="discovery-complete",
+            completed=1,
+            total=1,
+            message="资料搜集和首轮本地筛选已完成。",
+            component="worker",
+            details={
+                "evidence_count": len(evidence_ids),
+                "candidate_count": len(radar_candidates),
+                "failed_sources": failed_count,
+            },
+        )
         return HandlerResult(
             summary={
                 "task_type": self.TASK_TYPE,
@@ -282,6 +366,33 @@ class ContentDiscoveryCoordinator:
             result_document=document,
             result_type=self.TASK_TYPE,
             schema_version="1.0",
+        )
+
+    def _emit_progress(
+        self,
+        *,
+        task: TaskRecord,
+        stage: str,
+        message: str,
+        component: str,
+        completed: int | None = None,
+        total: int | None = None,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        """Emit only a bounded fact; a missing reporter preserves deterministic unit fixtures."""
+
+        if self.progress is None:
+            return
+        self.progress.emit(
+            ProgressUpdate(
+                task_id=task.task_id,
+                stage=stage,
+                completed=completed,
+                total=total,
+                message=message,
+                component=component,
+                details=details or {},
+            )
         )
 
     def _queries_for_objective(self, objective: str) -> tuple[str, ...]:
@@ -322,7 +433,7 @@ class ContentDiscoveryCoordinator:
         normalized_objective = _normalize_subject(objective)
         matches: dict[str, _ConnectedProduct] = {}
         for product in self.connected_evidence.list_products(limit=_MAX_CONNECTED_PRODUCTS):
-            normalized_key = _normalize_subject(product.product_key)
+            normalized_key   = _normalize_subject(product.product_key)
             normalized_title = _normalize_subject(product.title)
             key_match = bool(normalized_key and normalized_key in normalized_objective)
             title_match = bool(
@@ -393,7 +504,7 @@ def _extract_typed_radar_inputs(*, evidence_id: str, output: str) -> list[RadarC
         url = document.get("url")
         if not isinstance(url, str) or not url.strip():
             continue
-        title_value = document.get("title")
+        title_value  = document.get("title")
         source_value = document.get("source")
         title = (
             title_value.strip()
