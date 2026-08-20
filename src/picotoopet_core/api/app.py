@@ -30,6 +30,7 @@ from .routes import (
     handoffs,
     health,
     production,
+    progress,
     projects,
     provider_commits,
     provider_publications,
@@ -63,7 +64,7 @@ def create_app(settings: AppSettings) -> FastAPI:
                 continue
 
     async def run_business_pipeline_scheduler(stop_event: asyncio.Event) -> None:
-        # ── Reuse the bounded workflow cadence; do not add a producer-controlled interval ──
+        # ── Reuse the bounded workflow cadence; do not add a producer-controlled interval. ──
         while not stop_event.is_set():
             try:
                 services.business_pipeline_scheduler.reconcile_all()
@@ -75,8 +76,7 @@ def create_app(settings: AppSettings) -> FastAPI:
                 continue
 
     async def run_deep_ai_result_scheduler(stop_event: asyncio.Event) -> None:
-        # This scheduler has no provider execution authority. It only finalizes already-paid,
-        # durably committed results that are waiting in the deterministic Validating state.
+        # ── No provider execution authority: only finalize already-paid Validating jobs. ──
         while not stop_event.is_set():
             try:
                 for job in services.deep_ai_repository.list_jobs(limit=100):
@@ -138,9 +138,10 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(production.router, prefix=prefix, tags=["production"])
     app.include_router(deep_ai.router, prefix=prefix, tags=["deep-ai"])
     app.include_router(frugal_escalation.router, prefix=prefix, tags=["coding-escalation"])
-    # 25.1 governance gate       Promotion routes share the Deep-AI namespace but no paid executor.
+    # ── 25.1 governance gate: Promotion routes share Deep-AI namespace, no paid executor. ──
     app.include_router(quality_promotion.router, prefix=prefix, tags=["deep-ai", "promotion"])
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
+    app.include_router(progress.router, prefix=prefix, tags=["task-progress"])
     app.include_router(workers.router, prefix=prefix, tags=["workers"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
     app.include_router(handoffs.router, prefix=prefix, tags=["handoffs"])
