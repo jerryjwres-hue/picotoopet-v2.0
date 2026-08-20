@@ -92,7 +92,7 @@ internal static class MaotaiRasterBodyLayout
                         31.0,
                         45.0,
                         MaotaiAssetManifest.FrontLeftUpper,
-                        16);
+                        22);
                     break;
 
                 case "MaotaiV2FrontRightUpper":
@@ -101,7 +101,7 @@ internal static class MaotaiRasterBodyLayout
                         31.0,
                         45.0,
                         MaotaiAssetManifest.FrontRightUpper,
-                        16);
+                        22);
                     break;
 
                 case "MaotaiV2FrontLeftLower":
@@ -110,7 +110,7 @@ internal static class MaotaiRasterBodyLayout
                         30.0,
                         42.0,
                         MaotaiAssetManifest.FrontLeftLower,
-                        17);
+                        23);
                     break;
 
                 case "MaotaiV2FrontRightLower":
@@ -119,10 +119,10 @@ internal static class MaotaiRasterBodyLayout
                         30.0,
                         42.0,
                         MaotaiAssetManifest.FrontRightLower,
-                        17);
+                        23);
                     break;
 
-                // Plush torso      : slightly larger body coverage hides shoulder/hip seams while preserving the same body pivot.
+                // Plush torso      : slightly larger body coverage keeps the main silhouette soft and continuous.
                 case "MaotaiV2TorsoNeutral":
                     ConfigureImage(element, 112.0, 90.0, -56.0, -45.0, 20);
                     break;
