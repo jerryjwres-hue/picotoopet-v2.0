@@ -92,3 +92,35 @@ def test_job_metadata_exposes_separate_identity_and_geometry_sources() -> None:
         assert fidelity["geometry_reference"] == "01_maotai_rig_design_sheet.png"
         assert fidelity["preserve_native_aspect"] is True
         assert fidelity["assembly_preview_required"] is True
+
+
+def test_structural_jobs_cannot_be_promoted_as_rectangular_texture_plates() -> None:
+    builder = _load_builder()
+    plan    = builder.build_art_plan(MANIFEST_PATH, scale=4.0)
+    jobs    = {job["target_file"]: job for job in plan["jobs"]}
+
+    structural_files = {
+        "torso_neutral.png",
+        "torso_crouch.png",
+        "torso_stretch.png",
+        "head.png",
+        "front_left_upper.png",
+        "front_left_lower.png",
+        "front_right_upper.png",
+        "front_right_lower.png",
+        "hind_left_upper.png",
+        "hind_left_lower.png",
+        "hind_right_upper.png",
+        "hind_right_lower.png",
+        "tail_base.png",
+        "tail_mid.png",
+        "tail_tip.png",
+    }
+
+    for file_name in structural_files:
+        quality = jobs[file_name]["structural_quality"]
+        assert quality["gate"] == "organic_silhouette"
+        assert quality["reject_rectangular_plate"] is True
+        assert quality["require_soft_alpha_edge"] is True
+        assert quality["forbid_visible_connector_geometry"] is True
+        assert quality["assembly_preview_required"] is True
