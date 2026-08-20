@@ -124,3 +124,26 @@ def test_structural_jobs_cannot_be_promoted_as_rectangular_texture_plates() -> N
         assert quality["require_soft_alpha_edge"] is True
         assert quality["forbid_visible_connector_geometry"] is True
         assert quality["assembly_preview_required"] is True
+
+
+def test_connected_fur_segments_share_seed_families_to_reduce_material_seams() -> None:
+    builder = _load_builder()
+    plan    = builder.build_art_plan(MANIFEST_PATH, scale=4.0)
+    jobs    = {job["target_file"]: job for job in plan["jobs"]}
+
+    # Front chain           : upper/lower and mirrored sides must inherit one deterministic fur-noise family.
+    front_family = jobs["front_left_upper.png"]["seed_family"]
+    assert front_family == jobs["front_left_lower.png"]["seed_family"]
+    assert front_family == jobs["front_right_upper.png"]["seed_family"]
+    assert front_family == jobs["front_right_lower.png"]["seed_family"]
+
+    # Hind chain            : same rule for hip/knee-connected art.
+    hind_family = jobs["hind_left_upper.png"]["seed_family"]
+    assert hind_family == jobs["hind_left_lower.png"]["seed_family"]
+    assert hind_family == jobs["hind_right_upper.png"]["seed_family"]
+    assert hind_family == jobs["hind_right_lower.png"]["seed_family"]
+
+    # Tail chain            : base/mid/tip must not regenerate three unrelated fur materials.
+    tail_family = jobs["tail_base.png"]["seed_family"]
+    assert tail_family == jobs["tail_mid.png"]["seed_family"]
+    assert tail_family == jobs["tail_tip.png"]["seed_family"]
