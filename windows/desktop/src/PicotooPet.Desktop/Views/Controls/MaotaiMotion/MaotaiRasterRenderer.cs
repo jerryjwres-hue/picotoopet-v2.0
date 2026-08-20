@@ -300,9 +300,21 @@ internal sealed class MaotaiRasterRenderer
             MaotaiRasterFaceLayout.CalibratePupilY(frame.RightPupil.Y),
             frame.RightPupil.RotationDeg);
 
-        ApplyContinuousLeg(_visuals.FrontLeftUpper, _visuals.FrontLeftLower, frame.FrontLeftUpper, frame.FrontLeftPaw);
+        ApplyContinuousLeg(
+            _visuals.FrontLeftUpper,
+            _visuals.FrontLeftLower,
+            frame.FrontLeftUpper,
+            frame.FrontLeftPaw,
+            visualRootYOffset: -10.0,
+            maxScaleY: 1.44);
         ApplyFrontPaw(_visuals.FrontLeftPaw, frame.FrontLeftPaw, frame.MotionState);
-        ApplyContinuousLeg(_visuals.FrontRightUpper, _visuals.FrontRightLower, frame.FrontRightUpper, frame.FrontRightPaw);
+        ApplyContinuousLeg(
+            _visuals.FrontRightUpper,
+            _visuals.FrontRightLower,
+            frame.FrontRightUpper,
+            frame.FrontRightPaw,
+            visualRootYOffset: -10.0,
+            maxScaleY: 1.44);
         ApplyFrontPaw(_visuals.FrontRightPaw, frame.FrontRightPaw, frame.MotionState);
         ApplyContinuousLeg(_visuals.HindLeftUpper, _visuals.HindLeftLower, frame.HindLeftUpper, frame.HindLeftPaw);
         ApplyBone(_visuals.HindLeftPaw, frame.HindLeftPaw);
@@ -335,21 +347,24 @@ internal sealed class MaotaiRasterRenderer
         MaotaiRasterPart upper,
         MaotaiRasterPart lower,
         in MaotaiBonePose upperPose,
-        in MaotaiBonePose pawPose)
+        in MaotaiBonePose pawPose,
+        double visualRootYOffset = 0.0,
+        double maxScaleY = 1.30)
     {
-        var dx       = pawPose.X - upperPose.X;
-        var dy       = pawPose.Y - upperPose.Y;
-        var distance = Math.Sqrt((dx * dx) + (dy * dy));
-        var angleDeg = Math.Atan2(dy, dx) * 180.0 / Math.PI;
+        var visualRootY = upperPose.Y + visualRootYOffset;
+        var dx          = pawPose.X - upperPose.X;
+        var dy          = pawPose.Y - visualRootY;
+        var distance    = Math.Sqrt((dx * dx) + (dy * dy));
+        var angleDeg    = Math.Atan2(dy, dx) * 180.0 / Math.PI;
 
-        // Visual reach       : use the actual post-pivot PNG reach and overlap the paw by a few pixels.
-        // Width compression  : a slightly slimmer furry silhouette avoids the rectangular two-bone pillar look.
+        // Visual root        : front-leg art starts higher inside torso fur; Motion Engine shoulder/foot-lock coordinates stay untouched.
+        // Visual reach       : use the post-pivot PNG reach and overlap the paw by a few pixels so no white socket ring remains visible.
         var pivotY      = upper.Element.RenderTransformOrigin.Y;
         var visualReach = Math.Max(1.0, upper.Element.Height * (1.0 - pivotY));
-        var scaleY      = Math.Clamp((distance + 4.0) / visualReach, 0.72, 1.30);
+        var scaleY      = Math.Clamp((distance + 4.0) / visualReach, 0.72, maxScaleY);
         upper.Apply(
             upperPose.X,
-            upperPose.Y,
+            visualRootY,
             MaotaiRasterAxis.LegRotationFromIkDegrees(angleDeg),
             scaleX: 0.86,
             scaleY: scaleY);
