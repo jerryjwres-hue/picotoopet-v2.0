@@ -69,6 +69,12 @@ class RuntimePaths:
         return self.runtime_dir / "reliability-diagnostics"
 
     @property
+    def model_runner_dir(self) -> Path:
+        """隔离模型子进程只在 Core 管理的短生命周期工作区交换请求与结果。"""
+
+        return self.runtime_dir / "model-runner"
+
+    @property
     def provider_returns_dir(self) -> Path:
         """返回仅由 Mac Core 推导的 Provider Return Artifact 根目录。"""
 
@@ -186,6 +192,7 @@ class RuntimePaths:
             self.backups_dir,
             self.runtime_dir,
             self.reliability_diagnostics_dir,
+            self.model_runner_dir,
             self.provider_returns_dir,
             self.business_root,
             self.business_staging_dir,
