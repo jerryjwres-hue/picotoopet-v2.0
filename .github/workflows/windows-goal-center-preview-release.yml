@@ -1,0 +1,118 @@
+name: Windows Goal Center Preview Release
+
+on:
+  push:
+    branches:
+      - feature/autonomous-intelligence-e2e-goal-center-2.3.27.1
+    paths:
+      - ".github/workflows/windows-goal-center-preview-release.yml"
+      - ".github/workflows/windows-control-center-ci.yml"
+      - "tests/contract/**"
+      - "tests/security/**"
+      - "windows/desktop/**"
+      - "src/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-goal-center-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-goal-center-preview:
+    name: Build and lifecycle-test Windows Goal Center Preview
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+      PICOTOO_SOURCE_HEAD_SHA: ${{ github.sha }}
+      PICOTOO_SOURCE_REF: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install locked Python test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . `
+            pytest==9.1.1 `
+            pytest-asyncio==1.4.0 `
+            pytest-cov==7.1.0 `
+            ruff==0.16.1 `
+            jsonschema==4.26.0 `
+            PyYAML
+
+      - name: Run Windows contracts and security tests
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = ".;src"
+          python -m pytest -q tests/contract tests/security
+
+      - name: Install exact .NET SDK from global.json
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Build WPF and run UI-only native smoke
+        shell: pwsh
+        run: |
+          dotnet restore windows/desktop/PicotooPet.Desktop.sln --nologo
+          dotnet build windows/desktop/PicotooPet.Desktop.sln --configuration Release --no-restore --nologo -p:ContinuousIntegrationBuild=true -warnaserror
+          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj --configuration Release --no-build -- --ui-interaction-only
+
+      - name: Build installable Windows Goal Center Preview
+        shell: pwsh
+        run: |
+          $shortSha = "${{ github.sha }}".Substring(0, 12)
+          $version  = "2.3.27.1-goal-center-preview-${{ github.run_number }}-$shortSha"
+          & windows/desktop/scripts/Build-Phase2WindowsRelease.ps1 `
+            -Version $version `
+            -ValidationScope UiPreview
+
+      - name: Verify install upgrade recovery rollback lifecycle
+        shell: pwsh
+        run: |
+          & windows/desktop/scripts/Test-Phase2WindowsRelease.ps1 `
+            -ReleaseRoot windows/desktop/artifacts/release
+
+      - name: Create outer artifact SHA-256
+        shell: pwsh
+        run: |
+          $root = "windows/desktop/artifacts/release"
+          $zips = @(Get-ChildItem -LiteralPath $root -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
+          if ($zips.Count -ne 1) {
+            throw "Expected exactly one Windows Goal Center Preview ZIP, found $($zips.Count)."
+          }
+          $zip  = $zips[0]
+          $hash = (Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText(
+            (Join-Path $root "artifact-sha256.txt"),
+            "$hash  $($zip.Name)`n",
+            [System.Text.UTF8Encoding]::new($false))
+
+      - name: Upload Windows Goal Center Preview installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-Windows-GoalCenter-Preview-2.3.27.1-${{ github.run_number }}
+          path: |
+            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
+            windows/desktop/artifacts/release/*.sha256.txt
+            windows/desktop/artifacts/release/artifact-sha256.txt
+            windows/desktop/artifacts/release/windows-build-report.json
+            windows/desktop/artifacts/release/fixture-evidence/**
+          if-no-files-found: error
+          retention-days: 14
