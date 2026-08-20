@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from picotoopet_core.diagnostics.reliability import MemoryPressureSummary
+from picotoopet_core.ollama.client import OllamaProcessSnapshot
 
 MemoryPressureLevel = Literal["unknown", "normal", "warn", "high"]
 
@@ -12,6 +16,7 @@ _BASE_MAX_INPUT_CHARS = 23_000
 _BASE_MAX_ESTIMATED_TOKENS = 5_750
 _MIN_MAX_INPUT_CHARS = 4_000
 _MIN_MAX_ESTIMATED_TOKENS = 1_000
+_VALID_PRESSURE_LEVELS = frozenset({"unknown", "normal", "warn", "high"})
 
 
 class ModelInputBudget(BaseModel):
@@ -26,6 +31,42 @@ class ModelInputBudget(BaseModel):
     max_input_chars: int = Field(ge=_MIN_MAX_INPUT_CHARS, le=_BASE_MAX_INPUT_CHARS)
     max_concurrency: int = Field(default=1, ge=1, le=1)
     requires_chunking: bool
+
+
+class AdaptiveModelInputBudgetProvider:
+    """Read only coarse live resource facts and fail closed to a conservative budget."""
+
+    def __init__(
+        self,
+        *,
+        memory_pressure: Callable[[], MemoryPressureSummary],
+        process_snapshot: Callable[[], OllamaProcessSnapshot],
+    ) -> None:
+        self._memory_pressure = memory_pressure
+        self._process_snapshot = process_snapshot
+
+    def __call__(self, estimated_tokens: int) -> ModelInputBudget:
+        pressure: MemoryPressureLevel = "unknown"
+        loaded_model_count = 1
+
+        try:
+            observed_pressure = self._memory_pressure().level
+            if observed_pressure in _VALID_PRESSURE_LEVELS:
+                pressure = observed_pressure
+        except Exception:
+            pressure = "unknown"
+
+        try:
+            snapshot = self._process_snapshot()
+            loaded_model_count = max(1, int(snapshot.loaded_model_count))
+        except Exception:
+            loaded_model_count = 1
+
+        return plan_model_input_budget(
+            estimated_tokens=estimated_tokens,
+            memory_pressure=pressure,
+            loaded_model_count=loaded_model_count,
+        )
 
 
 def plan_model_input_budget(
