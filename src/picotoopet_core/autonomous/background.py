@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict
 from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.models import CapabilityRegistration
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.progress.reporter import RepositoryProgressReporter
+from picotoopet_core.progress.repository import ProgressRepository
 from picotoopet_core.research.execution import ResearchGatewayExecutor
 from picotoopet_core.results.repository import ResultRepository
 from picotoopet_core.worker.handlers import WorkerHandler
@@ -72,22 +74,23 @@ class AutonomousBackgroundCoordinator:
             raise ValueError("model_id must not be empty")
         if research_probe_interval_seconds <= 0:
             raise ValueError("research_probe_interval_seconds must be positive")
-        self.manager = manager
-        self.capability_router = capability_router
-        self.runtime = runtime
-        self.worker_id = worker_id
-        self.local_intelligence_handler = local_intelligence_handler
-        self.goal_synthesis_handler = goal_synthesis_handler
-        self.goal_handoff_handler = goal_handoff_handler
-        self.model_id = model_id
-        self._clock = clock or (lambda: datetime.now(UTC))
-        self._monotonic = monotonic or time.monotonic
+        self.manager                         = manager
+        self.capability_router               = capability_router
+        self.runtime                         = runtime
+        self.worker_id                       = worker_id
+        self.local_intelligence_handler      = local_intelligence_handler
+        self.goal_synthesis_handler          = goal_synthesis_handler
+        self.goal_handoff_handler            = goal_handoff_handler
+        self.model_id                        = model_id
+        self._clock                          = clock or (lambda: datetime.now(UTC))
+        self._monotonic                      = monotonic or time.monotonic
         self._research_probe_interval_seconds = research_probe_interval_seconds
-        self._research_last_probe = float("-inf")
-        self._research_healthy_cached = False
+        self._research_last_probe            = float("-inf")
+        self._research_healthy_cached        = False
+        progress_reporter                    = self._progress_reporter_from_manager_database()
 
-        # Reuse the exact local adapter already injected by the existing Worker CLI.
-        # This avoids creating a second gpt-oss agent/model client solely for discovery.
+        # ── Reuse the exact local adapter already injected by the existing Worker CLI. ──
+        # ── This avoids creating a second gpt-oss agent/model client solely for discovery. ──
         handler_owner = getattr(local_intelligence_handler, "__self__", None)
         if content_discovery_handler is None and isinstance(
             handler_owner, LocalIntelligenceCoordinator
@@ -96,29 +99,29 @@ class AutonomousBackgroundCoordinator:
             content_discovery_handler = ContentDiscoveryCoordinator(
                 search=search_executor,
                 local=handler_owner.adapter,
-                # Read the exact same Mac Core SQLite connection already owned by the
-                # autonomous Manager. The model receives only bounded evidence records.
+                # ── The model receives only bounded evidence records, never a DB handle. ──
                 connected_evidence=self._connected_evidence_from_manager_database(),
+                progress=progress_reporter,
             ).handler
             if research_probe is None:
                 research_probe = search_executor.search_ready
         self.content_discovery_handler = content_discovery_handler
-        self._research_probe = research_probe
+        self._research_probe           = research_probe
 
-        # Production CLI already gives this coordinator the canonical Manager, runtime and
-        # bound local coordinator. Derive the two closed Goal stages from those trusted
-        # objects so no second Worker/composition root is introduced.
+        # ── Production CLI derives closed Goal stages from the same canonical runtime. ──
         if isinstance(handler_owner, LocalIntelligenceCoordinator) and (
             self.goal_synthesis_handler is None or self.goal_handoff_handler is None
         ):
-            synthesis, handoff = self._goal_handlers_from_managed_runtime(handler_owner)
+            synthesis, handoff = self._goal_handlers_from_managed_runtime(
+                handler_owner,
+                progress_reporter=progress_reporter,
+            )
             if self.goal_synthesis_handler is None:
                 self.goal_synthesis_handler = synthesis
             if self.goal_handoff_handler is None:
                 self.goal_handoff_handler = handoff
 
-        # Storage maintenance is allowed to auto-bind only from the canonical
-        # PicotooPet runtime layout that owns this same Mac Core database.
+        # ── Storage maintenance may bind only from the canonical PicotooPet runtime root. ──
         if storage_maintenance_handler is None:
             storage_maintenance_handler = self._storage_handler_from_manager_database()
         self.storage_maintenance_handler = storage_maintenance_handler
@@ -150,12 +153,10 @@ class AutonomousBackgroundCoordinator:
             )
         )
 
-        # Human Goal stages share this Worker. Synthesis follows model health, while the
-        # deterministic ZIP handoff remains available during a temporary model outage.
+        # ── Synthesis follows model health; deterministic ZIP handoff does not require Ollama. ──
         self.refresh_human_goal_pipeline(local_healthy=healthy)
 
-        # Tool-first gate: local model health is insufficient. A cached fixed
-        # Research Gateway readiness probe must also pass before P3 can exist.
+        # ── Discovery requires both the local model and a healthy fixed Research Gateway. ──
         research_healthy = self._refresh_research_health() if healthy else False
         self.refresh_content_discovery(
             local_healthy=healthy,
@@ -279,8 +280,7 @@ class AutonomousBackgroundCoordinator:
         """Isolate any autonomous orchestration error from the Worker lifetime."""
 
         try:
-            # Register the real handler before Manager scheduling so P4 never
-            # materializes a storage task that this Worker cannot execute.
+            # ── Register the real handler before Manager scheduling so P4 stays executable. ──
             if self.storage_maintenance_handler is not None:
                 self.refresh_storage_maintenance(healthy=True)
             result = self.manager.tick()
@@ -303,13 +303,15 @@ class AutonomousBackgroundCoordinator:
     def _goal_handlers_from_managed_runtime(
         self,
         local: LocalIntelligenceCoordinator,
+        *,
+        progress_reporter: RepositoryProgressReporter | None,
     ) -> tuple[WorkerHandler | None, WorkerHandler | None]:
         """Derive Goal handlers only from the same canonical Core database/runtime."""
 
-        database = getattr(self.manager, "database", None)
-        goals = getattr(self.manager, "goals", None)
-        workflows = getattr(self.manager, "workflows", None)
-        result_store = getattr(self.runtime, "result_store", None)
+        database      = getattr(self.manager, "database", None)
+        goals         = getattr(self.manager, "goals", None)
+        workflows     = getattr(self.manager, "workflows", None)
+        result_store  = getattr(self.runtime, "result_store", None)
         database_path = getattr(database, "path", None)
         if (
             not isinstance(database_path, Path)
@@ -332,6 +334,7 @@ class AutonomousBackgroundCoordinator:
                 result_records=result_records,
                 result_store=result_store,
                 local=local.adapter,
+                progress=progress_reporter,
             )
             handoff = GoalHandoffCoordinator(
                 paths=paths,
@@ -339,15 +342,34 @@ class AutonomousBackgroundCoordinator:
                 workflows=workflows,
                 result_records=result_records,
                 result_store=result_store,
+                progress=progress_reporter,
             )
         except (OSError, TypeError, ValueError):
             return None, None
         return synthesis.handler, handoff.handler
 
+    def _progress_reporter_from_manager_database(self) -> RepositoryProgressReporter | None:
+        """Bind progress only to the exact canonical Core database already owned by Manager."""
+
+        database      = getattr(self.manager, "database", None)
+        database_path = getattr(database, "path", None)
+        if not isinstance(database_path, Path):
+            return None
+        resolved_database = database_path.expanduser().resolve()
+        if resolved_database.name != "core.db" or resolved_database.parent.name != "database":
+            return None
+        paths = RuntimePaths.from_root(resolved_database.parent.parent)
+        if paths.database_file != resolved_database:
+            return None
+        try:
+            return RepositoryProgressReporter(ProgressRepository(database))
+        except (TypeError, ValueError):
+            return None
+
     def _connected_evidence_from_manager_database(self) -> ConnectedEvidenceRepository | None:
         """Return a read-only repository facade over the exact canonical Manager database."""
 
-        database = getattr(self.manager, "database", None)
+        database      = getattr(self.manager, "database", None)
         database_path = getattr(database, "path", None)
         if not isinstance(database_path, Path):
             return None
@@ -365,7 +387,7 @@ class AutonomousBackgroundCoordinator:
     def _storage_handler_from_manager_database(self) -> WorkerHandler | None:
         """Derive a managed runtime only from `<runtime>/database/core.db`."""
 
-        database = getattr(self.manager, "database", None)
+        database      = getattr(self.manager, "database", None)
         database_path = getattr(database, "path", None)
         if not isinstance(database_path, Path):
             return None
