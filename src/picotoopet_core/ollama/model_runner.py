@@ -13,6 +13,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -63,6 +64,20 @@ class ModelRunnerPolicy(BaseModel):
     max_result_bytes: int = Field(default=_MAX_CHILD_RESULT_BYTES, ge=1_024, le=256 * 1024)
 
 
+class ModelRunnerStatus(BaseModel):
+    """Sanitized durable outcome projected for Core reliability diagnostics."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = Field(default="1.0", pattern=r"^1\.0$")
+    outcome: str = Field(
+        pattern=r"^(success|timeout|result_invalid|execution_error|circuit_open)$"
+    )
+    consecutive_failures: int = Field(ge=0, le=1_000_000)
+    circuit_open: bool
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class _ChildRequest(BaseModel):
     """Internal request file; prompt is never placed in argv or child stdout."""
 
@@ -89,10 +104,10 @@ class IsolatedModelRunner:
     ) -> None:
         if not model_name.strip() or len(model_name) > 200:
             raise ValueError("model_name must be 1-200 characters")
-        self.base_url     = _validate_loopback_base_url(base_url)
-        self.model_name   = model_name.strip()
-        self.work_root    = Path(work_root).expanduser().resolve()
-        self.policy       = policy or ModelRunnerPolicy()
+        self.base_url      = _validate_loopback_base_url(base_url)
+        self.model_name    = model_name.strip()
+        self.work_root     = Path(work_root).expanduser().resolve()
+        self.policy        = policy or ModelRunnerPolicy()
         self.child_command = child_command or (
             sys.executable,
             "-m",
@@ -110,6 +125,12 @@ class IsolatedModelRunner:
     def consecutive_failures(self) -> int:
         return self._consecutive_failures
 
+    @property
+    def status_path(self) -> Path:
+        """Return the one fixed sanitized status projection path."""
+
+        return self.work_root / "status.json"
+
     def analyze(self, prompt: str) -> AgentResult:
         """Return one validated result or a stable bounded failure without hanging Worker."""
 
@@ -117,7 +138,11 @@ class IsolatedModelRunner:
             raise ModelRunnerRequestError("MODEL_RUNNER_REQUEST_INVALID: prompt is required")
         if len(prompt) > self.policy.max_prompt_chars:
             raise ModelRunnerRequestError("MODEL_RUNNER_REQUEST_INVALID: prompt exceeds bound")
-        self._ensure_circuit_available()
+        try:
+            self._ensure_circuit_available()
+        except ModelRunnerCircuitOpenError:
+            self._write_status("circuit_open")
+            raise
 
         last_error: ModelRunnerError | None = None
         for _attempt in range(1, self.policy.max_attempts + 1):
@@ -128,10 +153,12 @@ class IsolatedModelRunner:
                 continue
             self._consecutive_failures = 0
             self._circuit_open_until = None
+            self._write_status("success")
             return result
 
         assert last_error is not None
         self._record_failed_call()
+        self._write_status(_status_outcome(last_error))
         raise last_error
 
     def _ensure_circuit_available(self) -> None:
@@ -147,6 +174,14 @@ class IsolatedModelRunner:
         self._consecutive_failures += 1
         if self._consecutive_failures >= self.policy.circuit_failure_threshold:
             self._circuit_open_until = self._monotonic() + self.policy.circuit_cooldown_seconds
+
+    def _write_status(self, outcome: str) -> None:
+        status = ModelRunnerStatus(
+            outcome=outcome,
+            consecutive_failures=self._consecutive_failures,
+            circuit_open=self._circuit_open_until is not None,
+        )
+        _write_status_atomic(self.status_path, status)
 
     def _run_attempt(self, prompt: str) -> AgentResult:
         self.work_root.mkdir(parents=True, exist_ok=True)
@@ -235,6 +270,16 @@ class IsolatedModelRunner:
         process.wait(timeout=self.policy.terminate_grace_seconds)
 
 
+def _status_outcome(error: ModelRunnerError) -> str:
+    if isinstance(error, ModelRunnerTimeoutError):
+        return "timeout"
+    if isinstance(error, ModelRunnerResultInvalidError):
+        return "result_invalid"
+    if isinstance(error, ModelRunnerCircuitOpenError):
+        return "circuit_open"
+    return "execution_error"
+
+
 def _validate_loopback_base_url(value: str) -> str:
     parsed = urlparse(value.strip())
     if parsed.scheme != "http" or parsed.username or parsed.password or not parsed.hostname:
@@ -248,6 +293,26 @@ def _validate_loopback_base_url(value: str) -> str:
     host_text = f"[{host}]" if ":" in host else host
     path = parsed.path.rstrip("/")
     return f"http://{host_text}{port}{path}"
+
+
+def _write_status_atomic(status_path: Path, status: ModelRunnerStatus) -> None:
+    data = status.model_dump_json().encode("utf-8")
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".model-status-",
+        dir=status_path.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        with suppress(OSError):
+            temporary.chmod(0o600)
+        os.replace(temporary, status_path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _write_result_atomic(output_path: Path, result: AgentResult) -> None:
