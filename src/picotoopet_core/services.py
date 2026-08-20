@@ -266,6 +266,10 @@ def build_services(settings: AppSettings) -> Services:
             # ── The only external log source is the current user's fixed Ollama server log. ──
             home_dir=Path.home(),
         ),
+        # ── Reliability reads only the sanitized fixed status projection, never model prompts. ──
+        model_runner_status_path=(
+            settings.paths.runtime_dir / "model-runner" / "status.json"
+        ),
     )
     return Services(
         settings=settings,
