@@ -73,3 +73,23 @@ def test_model_runner_timeout_is_projected_as_reliability_fault(tmp_path: Path) 
 
     assert snapshot.primary_fault is ReliabilityFaultCode.MODEL_JOB_TIMEOUT
     assert snapshot.status == "failed"
+
+
+def test_model_runner_invalid_result_is_projected_as_reliability_fault(
+    tmp_path: Path,
+) -> None:
+    service, database = _service(
+        tmp_path,
+        ModelRunnerStatus(
+            outcome="result_invalid",
+            consecutive_failures=1,
+            circuit_open=False,
+        ),
+    )
+    try:
+        snapshot = service.snapshot()
+    finally:
+        database.close()
+
+    assert snapshot.primary_fault is ReliabilityFaultCode.MODEL_OUTPUT_INVALID
+    assert snapshot.status == "failed"
