@@ -11,6 +11,7 @@ _TOOL_DIRECTORY = str(Path(__file__).resolve().parent)
 if _TOOL_DIRECTORY not in sys.path:
     sys.path.insert(0, _TOOL_DIRECTORY)
 
+from maotai_connector_geometry import validate_visible_connector_geometry  # noqa: E402
 from maotai_manifest_contract import parse_manifest  # noqa: E402
 from maotai_png_validation import (  # noqa: E402
     validate_png_asset,
@@ -44,7 +45,7 @@ def validate_generated_candidates(
     candidate_root: Path | str,
     art_plan_path: Path | str,
 ) -> CandidateValidationReport:
-    """只验收本轮已生成部件；技术 PNG 合同与 organic silhouette 合同必须同时通过。"""
+    """只验收本轮已生成部件；技术 PNG、organic silhouette 与可见连接器合同必须同时通过。"""
     root = Path(candidate_root)
     if not root.is_dir():
         return CandidateValidationReport(
@@ -91,6 +92,7 @@ def validate_generated_candidates(
                 errors.append(f"art job structural_quality must be an object: {file_name}")
             else:
                 errors.extend(validate_structural_art_quality(path, descriptor, quality))
+                errors.extend(validate_visible_connector_geometry(path, descriptor, quality))
 
     return CandidateValidationReport(errors, checked)
 
