@@ -1,0 +1,347 @@
+name: Maotai v2 Head Shape Fix Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/maotai-v2-head-shape-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+
+      - name: Prove old circular head fails canine taper contract
+        shell: python
+        run: |
+          from pathlib import Path
+          import struct
+          import zlib
+
+          path = Path("windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/head.png")
+
+          def decode_rgba_png(value: Path):
+              data = value.read_bytes()
+              if data[:8] != b"\x89PNG\r\n\x1a\n":
+                  raise SystemExit("head.png is not a PNG")
+              offset = 8
+              width = height = None
+              compressed = bytearray()
+              while offset < len(data):
+                  length = struct.unpack(">I", data[offset:offset + 4])[0]
+                  kind = data[offset + 4:offset + 8]
+                  payload = data[offset + 8:offset + 8 + length]
+                  offset += 12 + length
+                  if kind == b"IHDR":
+                      width, height, depth, colour, compression, filtering, interlace = struct.unpack(">IIBBBBB", payload)
+                      if (depth, colour, compression, filtering, interlace) != (8, 6, 0, 0, 0):
+                          raise SystemExit("head.png must remain non-interlaced RGBA8")
+                  elif kind == b"IDAT":
+                      compressed.extend(payload)
+                  elif kind == b"IEND":
+                      break
+              if width is None or height is None:
+                  raise SystemExit("head.png missing IHDR")
+              raw = zlib.decompress(bytes(compressed))
+              stride = width * 4
+              rows = []
+              previous = bytearray(stride)
+              cursor = 0
+              for _ in range(height):
+                  filter_type = raw[cursor]
+                  cursor += 1
+                  scan = bytearray(raw[cursor:cursor + stride])
+                  cursor += stride
+                  recon = bytearray(stride)
+                  for index, value_byte in enumerate(scan):
+                      left = recon[index - 4] if index >= 4 else 0
+                      up = previous[index]
+                      up_left = previous[index - 4] if index >= 4 else 0
+                      if filter_type == 0:
+                          predictor = 0
+                      elif filter_type == 1:
+                          predictor = left
+                      elif filter_type == 2:
+                          predictor = up
+                      elif filter_type == 3:
+                          predictor = (left + up) // 2
+                      elif filter_type == 4:
+                          p = left + up - up_left
+                          pa = abs(p - left)
+                          pb = abs(p - up)
+                          pc = abs(p - up_left)
+                          predictor = left if pa <= pb and pa <= pc else up if pb <= pc else up_left
+                      else:
+                          raise SystemExit(f"unsupported PNG filter {filter_type}")
+                      recon[index] = (value_byte + predictor) & 0xFF
+                  rows.append(recon)
+                  previous = recon
+              return width, height, rows
+
+          def jaw_ratio(value: Path):
+              width, height, rows = decode_rgba_png(value)
+              visible_y = [y for y, row in enumerate(rows) if any(row[(x * 4) + 3] > 0 for x in range(width))]
+              min_y, max_y = min(visible_y), max(visible_y)
+              def span(frac: float):
+                  y = round(min_y + frac * (max_y - min_y))
+                  xs = [x for x in range(width) if rows[y][(x * 4) + 3] >= 16]
+                  return (max(xs) - min(xs) + 1) if xs else 0
+              mid = span(0.55)
+              jaw = span(0.85)
+              return jaw / mid
+
+          ratio = jaw_ratio(path)
+          print(f"MAOTAI_HEAD_OLD_JAW_TO_MID={ratio:.4f}")
+          if ratio <= 0.76:
+              raise SystemExit("RED precondition missing: current head is already tapered")
+
+      - name: Replace circular shell with tapered Malamute head and tune real WPF face
+        shell: python
+        run: |
+          from pathlib import Path
+          import binascii
+          import struct
+          import zlib
+
+          asset_path = Path("windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/head.png")
+          face_path = Path("windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/MaotaiRasterFaceLayout.cs")
+          face_test_path = Path("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiRasterFaceLayoutV2SmokeTests.cs")
+          pixel_test_path = Path("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiAssetPixelValidationSmokeTests.cs")
+
+          def decode_rgba_png(value: Path):
+              data = value.read_bytes()
+              if data[:8] != b"\x89PNG\r\n\x1a\n":
+                  raise SystemExit("head.png is not a PNG")
+              offset = 8
+              width = height = None
+              compressed = bytearray()
+              while offset < len(data):
+                  length = struct.unpack(">I", data[offset:offset + 4])[0]
+                  kind = data[offset + 4:offset + 8]
+                  payload = data[offset + 8:offset + 8 + length]
+                  offset += 12 + length
+                  if kind == b"IHDR":
+                      width, height, depth, colour, compression, filtering, interlace = struct.unpack(">IIBBBBB", payload)
+                      if (depth, colour, compression, filtering, interlace) != (8, 6, 0, 0, 0):
+                          raise SystemExit("head.png must remain non-interlaced RGBA8")
+                  elif kind == b"IDAT":
+                      compressed.extend(payload)
+                  elif kind == b"IEND":
+                      break
+              if width is None or height is None:
+                  raise SystemExit("head.png missing IHDR")
+              raw = zlib.decompress(bytes(compressed))
+              stride = width * 4
+              rows = []
+              previous = bytearray(stride)
+              cursor = 0
+              for _ in range(height):
+                  filter_type = raw[cursor]
+                  cursor += 1
+                  scan = bytearray(raw[cursor:cursor + stride])
+                  cursor += stride
+                  recon = bytearray(stride)
+                  for index, value_byte in enumerate(scan):
+                      left = recon[index - 4] if index >= 4 else 0
+                      up = previous[index]
+                      up_left = previous[index - 4] if index >= 4 else 0
+                      if filter_type == 0:
+                          predictor = 0
+                      elif filter_type == 1:
+                          predictor = left
+                      elif filter_type == 2:
+                          predictor = up
+                      elif filter_type == 3:
+                          predictor = (left + up) // 2
+                      elif filter_type == 4:
+                          p = left + up - up_left
+                          pa = abs(p - left)
+                          pb = abs(p - up)
+                          pc = abs(p - up_left)
+                          predictor = left if pa <= pb and pa <= pc else up if pb <= pc else up_left
+                      else:
+                          raise SystemExit(f"unsupported PNG filter {filter_type}")
+                      recon[index] = (value_byte + predictor) & 0xFF
+                  rows.append(recon)
+                  previous = recon
+              return width, height, rows
+
+          def png_chunk(kind: bytes, payload: bytes):
+              crc = binascii.crc32(kind)
+              crc = binascii.crc32(payload, crc) & 0xFFFFFFFF
+              return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", crc)
+
+          def encode_rgba_png(value: Path, width: int, height: int, rows):
+              raw = b"".join(b"\x00" + bytes(row) for row in rows)
+              ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+              data = (
+                  b"\x89PNG\r\n\x1a\n" +
+                  png_chunk(b"IHDR", ihdr) +
+                  png_chunk(b"IDAT", zlib.compress(raw, 9)) +
+                  png_chunk(b"IEND", b"")
+              )
+              value.write_bytes(data)
+
+          def point_inside(px: float, py: float, polygon):
+              inside = False
+              previous = len(polygon) - 1
+              for index, (x_i, y_i) in enumerate(polygon):
+                  x_j, y_j = polygon[previous]
+                  crosses = (y_i > py) != (y_j > py)
+                  if crosses:
+                      boundary_x = ((x_j - x_i) * (py - y_i) / (y_j - y_i)) + x_i
+                      if px < boundary_x:
+                          inside = not inside
+                  previous = index
+              return inside
+
+          width, height, rows = decode_rgba_png(asset_path)
+          if (width, height) != (156, 140):
+              raise SystemExit(f"unexpected head.png dimensions: {width}x{height}")
+
+          # Canine shell       : keep the original fur texture but carve the circular lower half into a tapered Malamute jaw.
+          # Edge antialiasing  : 4x4 coverage preserves soft independent-PNG fur edges instead of introducing a hard vector cut.
+          polygon = [
+              (78, 8), (58, 13), (40, 21), (29, 34), (23, 51), (22, 68),
+              (27, 88), (40, 107), (58, 121), (78, 127), (98, 121), (116, 107),
+              (129, 88), (134, 68), (133, 51), (127, 34), (116, 21), (98, 13),
+          ]
+          samples = 4
+          for y in range(height):
+              for x in range(width):
+                  hits = 0
+                  for sample_y in range(samples):
+                      for sample_x in range(samples):
+                          px = x + (sample_x + 0.5) / samples
+                          py = y + (sample_y + 0.5) / samples
+                          hits += 1 if point_inside(px, py, polygon) else 0
+                  coverage = round(255 * hits / (samples * samples))
+                  alpha_index = (x * 4) + 3
+                  rows[y][alpha_index] = (rows[y][alpha_index] * coverage) // 255
+          encode_rgba_png(asset_path, width, height, rows)
+
+          face = face_path.read_text(encoding="utf-8")
+          replacements = {
+              "    private const double HeadVisualScale = 0.96;\n    private const double EarTop = -20.5;":
+                  "    private const double HeadVisualScaleX = 0.92;\n    private const double HeadVisualScaleY = 0.98;\n    private const double EarTop = -26.0;",
+              "        // Static art-fit scale : new neutral fur shell is intentionally fuller; dynamic HeadScale remains Motion Engine-owned.\n        headPanel.LayoutTransform = new ScaleTransform(HeadVisualScale, HeadVisualScale);":
+                  "        // Static art-fit scale : the real head shell is intentionally slightly taller/narrower than a circle.\n        // Motion ownership     : dynamic HeadScale remains Motion Engine-owned; this only calibrates raster proportions once.\n        headPanel.LayoutTransform = new ScaleTransform(HeadVisualScaleX, HeadVisualScaleY);",
+          }
+          for old, new in replacements.items():
+              if face.count(old) != 1:
+                  raise SystemExit(f"face layout anchor mismatch: {old[:48]}")
+              face = face.replace(old, new, 1)
+          face_path.write_text(face, encoding="utf-8")
+
+          face_test = face_test_path.read_text(encoding="utf-8")
+          face_test_replacements = {
+              "        AssertNear(0.96, visualScale.ScaleX, \"head 静态视觉宽度比例错误\");":
+                  "        AssertNear(0.92, visualScale.ScaleX, \"head 静态视觉宽度比例错误\");",
+              "        AssertNear(0.96, visualScale.ScaleY, \"head 静态视觉高度比例错误\");":
+                  "        AssertNear(0.98, visualScale.ScaleY, \"head 静态视觉高度比例错误\");",
+              "        AssertNear(-20.5, Canvas.GetTop(ear), \"耳根没有压入 head 毛发轮廓\");":
+                  "        AssertNear(-26.0, Canvas.GetTop(ear), \"耳朵露出量不足，head 会重新读成圆球\");",
+          }
+          for old, new in face_test_replacements.items():
+              if face_test.count(old) != 1:
+                  raise SystemExit(f"face smoke anchor mismatch: {old[:48]}")
+              face_test = face_test.replace(old, new, 1)
+          face_test_path.write_text(face_test, encoding="utf-8")
+
+          pixel_test = pixel_test_path.read_text(encoding="utf-8")
+          torso_block = '''        if (fileName is "torso_neutral.png" or "torso_crouch.png" or "torso_stretch.png")\n        {\n            var visibleWidthRatio  = (maxX - minX + 1.0) / converted.PixelWidth;\n            var visibleHeightRatio = (maxY - minY + 1.0) / converted.PixelHeight;\n            Assert(visibleWidthRatio >= 0.78,\n                $"v2 torso 有效横向 silhouette 过窄，会被 head 覆盖：{fileName} ratio={visibleWidthRatio:F3}");\n            Assert(visibleHeightRatio >= 0.80,\n                $"v2 torso 有效纵向 silhouette 过小，肢体根部无法藏入毛发：{fileName} ratio={visibleHeightRatio:F3}");\n        }\n\n        AssertOuterBorderTransparent'''
+          head_block = '''        if (fileName is "torso_neutral.png" or "torso_crouch.png" or "torso_stretch.png")\n        {\n            var visibleWidthRatio  = (maxX - minX + 1.0) / converted.PixelWidth;\n            var visibleHeightRatio = (maxY - minY + 1.0) / converted.PixelHeight;\n            Assert(visibleWidthRatio >= 0.78,\n                $"v2 torso 有效横向 silhouette 过窄，会被 head 覆盖：{fileName} ratio={visibleWidthRatio:F3}");\n            Assert(visibleHeightRatio >= 0.80,\n                $"v2 torso 有效纵向 silhouette 过小，肢体根部无法藏入毛发：{fileName} ratio={visibleHeightRatio:F3}");\n        }\n\n        if (fileName == "head.png")\n        {\n            // Canine silhouette : the lower head must visibly taper into a jaw instead of reading as a circular mascot ball.\n            // Alpha threshold   : ignore only the faintest fur fringe so the contract measures the readable silhouette.\n            var midY       = minY + (int)Math.Round((maxY - minY) * 0.55);\n            var jawY       = minY + (int)Math.Round((maxY - minY) * 0.85);\n            var midWidth   = VisibleWidthAtY(pixels, converted.PixelWidth, stride, midY, minAlpha: 16);\n            var jawWidth   = VisibleWidthAtY(pixels, converted.PixelWidth, stride, jawY, minAlpha: 16);\n            var jawToMid   = jawWidth / (double)Math.Max(1, midWidth);\n            Assert(midWidth > 0 && jawWidth > 0, "v2 head silhouette 采样失败");\n            Assert(jawToMid <= 0.76,\n                $"v2 head 下颌没有收窄，仍会读成圆球；ratio={jawToMid:F3}");\n        }\n\n        AssertOuterBorderTransparent'''
+          if pixel_test.count(torso_block) != 1:
+              raise SystemExit("pixel smoke torso anchor mismatch")
+          pixel_test = pixel_test.replace(torso_block, head_block, 1)
+
+          helper_anchor = '''    private static void AssertOuterBorderTransparent(\n        byte[] pixels,'''
+          helper = '''    private static int VisibleWidthAtY(\n        byte[] pixels,\n        int width,\n        int stride,\n        int y,\n        byte minAlpha)\n    {\n        var minX = width;\n        var maxX = -1;\n        for (var x = 0; x < width; x++)\n        {\n            if (ReadAlpha(pixels, stride, x, y) < minAlpha)\n            {\n                continue;\n            }\n\n            minX = Math.Min(minX, x);\n            maxX = Math.Max(maxX, x);\n        }\n\n        return maxX >= minX ? maxX - minX + 1 : 0;\n    }\n\n    private static void AssertOuterBorderTransparent(\n        byte[] pixels,'''
+          if pixel_test.count(helper_anchor) != 1:
+              raise SystemExit("pixel smoke helper anchor mismatch")
+          pixel_test = pixel_test.replace(helper_anchor, helper, 1)
+          pixel_test_path.write_text(pixel_test, encoding="utf-8")
+
+      - name: Verify new head taper and source contracts
+        shell: python
+        run: |
+          from pathlib import Path
+          import struct
+          import zlib
+
+          asset = Path("windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/head.png")
+          data = asset.read_bytes()
+          offset = 8
+          compressed = bytearray()
+          width = height = None
+          while offset < len(data):
+              length = struct.unpack(">I", data[offset:offset + 4])[0]
+              kind = data[offset + 4:offset + 8]
+              payload = data[offset + 8:offset + 8 + length]
+              offset += 12 + length
+              if kind == b"IHDR":
+                  width, height, *_ = struct.unpack(">IIBBBBB", payload)
+              elif kind == b"IDAT":
+                  compressed.extend(payload)
+              elif kind == b"IEND":
+                  break
+          raw = zlib.decompress(bytes(compressed))
+          stride = width * 4
+          rows = []
+          previous = bytearray(stride)
+          cursor = 0
+          for _ in range(height):
+              filter_type = raw[cursor]
+              cursor += 1
+              scan = bytearray(raw[cursor:cursor + stride])
+              cursor += stride
+              if filter_type != 0:
+                  raise SystemExit("rewritten head.png must use deterministic filter 0")
+              rows.append(scan)
+              previous = scan
+          visible_y = [y for y, row in enumerate(rows) if any(row[(x * 4) + 3] > 0 for x in range(width))]
+          min_y, max_y = min(visible_y), max(visible_y)
+          def span(frac):
+              y = round(min_y + frac * (max_y - min_y))
+              xs = [x for x in range(width) if rows[y][(x * 4) + 3] >= 16]
+              return max(xs) - min(xs) + 1
+          ratio = span(0.85) / span(0.55)
+          print(f"MAOTAI_HEAD_NEW_JAW_TO_MID={ratio:.4f}")
+          if ratio > 0.76:
+              raise SystemExit("new head is still too circular")
+
+          face = Path("windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/MaotaiRasterFaceLayout.cs").read_text(encoding="utf-8")
+          test = Path("windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiAssetPixelValidationSmokeTests.cs").read_text(encoding="utf-8")
+          required = [
+              "HeadVisualScaleX = 0.92",
+              "HeadVisualScaleY = 0.98",
+              "EarTop = -26.0",
+          ]
+          missing = [value for value in required if value not in face]
+          if missing:
+              raise SystemExit(f"missing face invariants: {missing}")
+          if "jawToMid <= 0.76" not in test:
+              raise SystemExit("permanent head silhouette smoke contract missing")
+
+      - name: Commit real desktop-pet head fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/head.png \
+            windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/MaotaiRasterFaceLayout.cs \
+            windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiRasterFaceLayoutV2SmokeTests.cs \
+            windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/MaotaiAssetPixelValidationSmokeTests.cs
+          git diff --cached --check
+          git commit -m "fix: reshape Maotai real desktop-pet head"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
