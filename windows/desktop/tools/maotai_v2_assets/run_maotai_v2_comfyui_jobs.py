@@ -19,8 +19,6 @@ _TOOL_DIRECTORY = str(Path(__file__).resolve().parent)
 if _TOOL_DIRECTORY not in sys.path:
     sys.path.insert(0, _TOOL_DIRECTORY)
 
-from maotai_manifest_contract import parse_manifest  # noqa: E402
-from maotai_png_validation import validate_structural_art_quality  # noqa: E402
 from validate_maotai_v2_assets import (  # noqa: E402
     stage_asset_directory,
     validate_asset_directory,
@@ -80,27 +78,33 @@ def load_bindings(path: Path | str) -> dict[str, Any]:
 
 def build_bindings_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
     """按固定 MAOTAI_* 节点标题自动绑定 API workflow，避免用户手工查询 ComfyUI node ID。"""
-    title_to_node: dict[str, tuple[str, dict[str, Any]]] = {}
+    title_index: dict[str, str] = {}
+    watched_titles              = set(_REQUIRED_AUTO_TITLES) | set(_OPTIONAL_AUTO_TITLES)
+
     for node_id, node in workflow.items():
-        if not isinstance(node, dict):
+        if not isinstance(node_id, str) or not isinstance(node, dict):
             continue
         metadata = node.get("_meta")
-        title    = metadata.get("title") if isinstance(metadata, dict) else None
-        if not isinstance(title, str) or title not in (*_REQUIRED_AUTO_TITLES, *_OPTIONAL_AUTO_TITLES):
+        if not isinstance(metadata, dict):
             continue
-        if title in title_to_node:
+        title = metadata.get("title")
+        if not isinstance(title, str) or title not in watched_titles:
+            continue
+        if title in title_index:
             raise ValueError(f"duplicate ComfyUI auto-bind title: {title}")
-        title_to_node[title] = (str(node_id), node)
+        title_index[title] = node_id
 
-    missing_titles = [title for title in _REQUIRED_AUTO_TITLES if title not in title_to_node]
+    missing_titles = [title for title in _REQUIRED_AUTO_TITLES if title not in title_index]
     if missing_titles:
-        raise ValueError("missing required ComfyUI auto-bind title(s): " + ", ".join(missing_titles))
+        raise ValueError(
+            "missing required ComfyUI auto-bind title(s): " + ", ".join(missing_titles)
+        )
 
-    sampler_id, sampler_node   = title_to_node["MAOTAI_SAMPLER"]
-    canvas_id, canvas_node     = title_to_node["MAOTAI_CANVAS"]
-    positive_id, positive_node = title_to_node["MAOTAI_POSITIVE"]
-    negative_id, negative_node = title_to_node["MAOTAI_NEGATIVE"]
-    save_id, save_node         = title_to_node["MAOTAI_SAVE"]
+    sampler_id  = title_index["MAOTAI_SAMPLER"]
+    canvas_id   = title_index["MAOTAI_CANVAS"]
+    positive_id = title_index["MAOTAI_POSITIVE"]
+    negative_id = title_index["MAOTAI_NEGATIVE"]
+    save_id     = title_index["MAOTAI_SAVE"]
 
     _require_node_input(workflow, sampler_id, "seed", "MAOTAI_SAMPLER")
     _require_node_input(workflow, canvas_id, "width", "MAOTAI_CANVAS")
@@ -118,20 +122,23 @@ def build_bindings_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
         "filename_prefix": {"node": save_id, "input": "filename_prefix"},
     }
 
-    reference = title_to_node.get("MAOTAI_REFERENCE")
-    if reference is not None:
-        reference_id, _ = reference
+    reference_id = title_index.get("MAOTAI_REFERENCE")
+    if reference_id is not None:
         _require_node_input(workflow, reference_id, "image", "MAOTAI_REFERENCE")
         bindings["reference_image"] = {"node": reference_id, "input": "image"}
 
-    rmbg = title_to_node.get("MAOTAI_RMBG")
-    if rmbg is not None:
-        rmbg_id, _ = rmbg
+    rmbg_id = title_index.get("MAOTAI_RMBG")
+    if rmbg_id is not None:
+        rmbg_node = workflow.get(rmbg_id)
+        if not isinstance(rmbg_node, dict) or rmbg_node.get("class_type") != "BiRefNetRMBG":
+            raise ValueError("MAOTAI_RMBG must target a BiRefNetRMBG node")
+        _require_node_input(workflow, rmbg_id, "background", "MAOTAI_RMBG")
+        _require_node_input(workflow, rmbg_id, "model", "MAOTAI_RMBG")
         bindings["rmbg"] = {
             "node": rmbg_id,
             "background_input": "background",
             "model_input": "model",
-            "model": "BiRefNet-general",
+            "model": "Lucida",
         }
 
     _validate_required_bindings(bindings)
@@ -140,97 +147,296 @@ def build_bindings_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
 
 def workflow_upstream_node_ids(
     workflow: dict[str, Any],
-    start_node_id: str,
+    node_id: str,
 ) -> set[str]:
-    """沿 ComfyUI API 的 [node_id, output_index] 连接反向遍历，并拒绝悬空依赖。"""
-    start = str(start_node_id)
-    if start not in workflow:
-        raise ValueError(f"ComfyUI workflow start node is missing: {start}")
+    """沿 ComfyUI API link `[upstream_node_id, output_index]` 收集最终节点的全部上游。"""
+    if not isinstance(workflow, dict):
+        raise ValueError("ComfyUI workflow must be an object")
+    if node_id not in workflow or not isinstance(workflow.get(node_id), dict):
+        raise ValueError(f"ComfyUI workflow node is missing: {node_id}")
 
-    visited: set[str] = set()
-    pending           = [start]
+    upstream: set[str] = set()
+    visited: set[str]  = {node_id}
+    pending: list[str] = [node_id]
+
     while pending:
-        node_id = pending.pop()
-        if node_id in visited:
+        current_id = pending.pop()
+        current    = workflow.get(current_id)
+        if not isinstance(current, dict):
+            raise ValueError(f"ComfyUI workflow node is invalid: {current_id}")
+        inputs = current.get("inputs")
+        if inputs is None:
             continue
-        node = workflow.get(node_id)
-        if not isinstance(node, dict):
-            raise ValueError(f"ComfyUI workflow node is invalid: {node_id}")
-        visited.add(node_id)
-
-        inputs = node.get("inputs")
         if not isinstance(inputs, dict):
-            continue
-        for value in inputs.values():
-            linked_node = _linked_node_id(value)
-            if linked_node is None:
-                continue
-            if linked_node not in workflow:
-                raise ValueError(
-                    f"ComfyUI workflow contains dangling link: {node_id} -> {linked_node}"
-                )
-            if linked_node not in visited:
-                pending.append(linked_node)
+            raise ValueError(f"ComfyUI workflow node inputs are invalid: {current_id}")
 
-    visited.discard(start)
-    return visited
+        for input_value in inputs.values():
+            linked_id = _workflow_link_node_id(input_value)
+            if linked_id is None:
+                continue
+            if linked_id not in workflow or not isinstance(workflow.get(linked_id), dict):
+                raise ValueError(
+                    f"dangling ComfyUI workflow link: {current_id} -> {linked_id}"
+                )
+            if linked_id in visited:
+                continue
+
+            visited.add(linked_id)
+            upstream.add(linked_id)
+            pending.append(linked_id)
+
+    upstream.discard(node_id)
+    return upstream
 
 
 def validate_maotai_workflow_graph(
     workflow: dict[str, Any],
     bindings: dict[str, Any],
 ) -> None:
-    """确认保存路径真正消费参考图、提示、采样、画布和 RMBG，而不只存在同名孤岛节点。"""
+    """确认命名生产节点真实参与最终 SaveImage 上游链，拒绝摆设节点和旁路 alpha。"""
     _validate_required_bindings(bindings)
-    save_binding = bindings["filename_prefix"]
-    save_node_id = str(save_binding["node"])
-    upstream     = workflow_upstream_node_ids(workflow, save_node_id)
 
-    for binding_name in ("positive", "negative", "width", "height", "seed"):
-        node_id = str(bindings[binding_name]["node"])
-        if node_id not in upstream:
+    save_binding = bindings["filename_prefix"]
+    save_id      = save_binding.get("node")
+    if not isinstance(save_id, str):
+        raise ValueError("MAOTAI_SAVE binding requires a node string")
+
+    upstream = workflow_upstream_node_ids(workflow, save_id)
+    required_roles = (
+        ("positive", "MAOTAI_POSITIVE"),
+        ("negative", "MAOTAI_NEGATIVE"),
+        ("width", "MAOTAI_CANVAS"),
+        ("height", "MAOTAI_CANVAS"),
+        ("seed", "MAOTAI_SAMPLER"),
+    )
+
+    for binding_name, title in required_roles:
+        binding = bindings[binding_name]
+        node_id = binding.get("node")
+        if not isinstance(node_id, str) or node_id not in upstream:
             raise ValueError(
-                f"ComfyUI {binding_name} binding node is not upstream of MAOTAI_SAVE: {node_id}"
+                f"{title} ({binding_name}) must be upstream of MAOTAI_SAVE"
             )
 
     reference = bindings.get("reference_image")
-    if isinstance(reference, dict):
-        node_id = str(reference.get("node", ""))
-        if not node_id or node_id not in upstream:
-            raise ValueError(
-                f"ComfyUI MAOTAI_REFERENCE node is not upstream of MAOTAI_SAVE: {node_id}"
-            )
+    if reference is not None:
+        if not isinstance(reference, dict) or not isinstance(reference.get("node"), str):
+            raise ValueError("MAOTAI_REFERENCE binding requires a node string")
+        if reference["node"] not in upstream:
+            raise ValueError("MAOTAI_REFERENCE must be upstream of MAOTAI_SAVE")
 
     rmbg = bindings.get("rmbg")
-    if isinstance(rmbg, dict):
-        node_id = str(rmbg.get("node", ""))
-        if not node_id or node_id not in upstream:
-            raise ValueError(
-                f"ComfyUI MAOTAI_RMBG node is not upstream of MAOTAI_SAVE: {node_id}"
-            )
+    if rmbg is not None:
+        if not isinstance(rmbg, dict) or not isinstance(rmbg.get("node"), str):
+            raise ValueError("MAOTAI_RMBG binding requires a node string")
+        if rmbg["node"] not in upstream:
+            raise ValueError("MAOTAI_RMBG must be upstream of MAOTAI_SAVE")
 
 
 def validate_comfyui_workflow_node_types(
     object_info: dict[str, Any],
     workflow: dict[str, Any],
 ) -> None:
-    """在上传参考图或排队 prompt 前确认 workflow 的所有 node class 已在当前 ComfyUI 注册。"""
+    """在上传参考图前确认 workflow 的每种 node class 已由当前本机 ComfyUI 注册。"""
     if not isinstance(object_info, dict):
-        raise ValueError("ComfyUI object_info response must be an object")
+        raise ValueError("ComfyUI /object_info must be an object")
+    if not isinstance(workflow, dict):
+        raise ValueError("ComfyUI workflow must be an object")
 
     missing: list[str] = []
-    for node in workflow.values():
-        if not isinstance(node, dict):
-            continue
+    for node_id, node in workflow.items():
+        if not isinstance(node_id, str) or not isinstance(node, dict):
+            raise ValueError(f"ComfyUI workflow node is invalid: {node_id!r}")
         class_type = node.get("class_type")
-        if isinstance(class_type, str) and class_type not in object_info:
-            missing.append(class_type)
+        if not isinstance(class_type, str) or not class_type:
+            raise ValueError(f"ComfyUI workflow node class_type is invalid: {node_id}")
+        if class_type not in object_info:
+            missing.append(f"{node_id}:{class_type}")
 
     if missing:
         raise ValueError(
-            "ComfyUI workflow references unregistered node class(es): "
-            + ", ".join(sorted(set(missing)))
+            "ComfyUI workflow node class is not registered: " + ", ".join(missing)
         )
+
+
+def _workflow_link_node_id(value: Any) -> str | None:
+    """只把 ComfyUI API 的二元 link 识别为依赖，普通列表参数不参与图遍历。"""
+    if (
+        isinstance(value, list)
+        and len(value) == 2
+        and isinstance(value[0], str)
+        and isinstance(value[1], int)
+        and not isinstance(value[1], bool)
+    ):
+        return value[0]
+    return None
+
+
+def build_multipart_image_upload(
+    image_path: Path | str,
+    *,
+    subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
+    boundary: str | None = None,
+) -> tuple[bytes, str]:
+    """按 ComfyUI `/upload/image` 的标准字段构造 multipart；不依赖第三方 HTTP 包。"""
+    path       = Path(image_path)
+    folder     = _normalize_reference_subfolder(subfolder)
+    file_name  = _validate_reference_png(path)
+    boundary   = boundary or f"PicotooPetMaotai{uuid.uuid4().hex}"
+    boundary_b = _validate_multipart_boundary(boundary)
+    payload    = path.read_bytes()
+
+    body = bytearray()
+
+    def add_text(name: str, value: str) -> None:
+        body.extend(b"--" + boundary_b + b"\r\n")
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("ascii"))
+        body.extend(value.encode("utf-8"))
+        body.extend(b"\r\n")
+
+    body.extend(b"--" + boundary_b + b"\r\n")
+    body.extend(
+        (
+            'Content-Disposition: form-data; name="image"; '
+            f'filename="{file_name}"\r\n'
+        ).encode("ascii")
+    )
+    body.extend(b"Content-Type: image/png\r\n\r\n")
+    body.extend(payload)
+    body.extend(b"\r\n")
+    add_text("overwrite", "true")
+    add_text("type", "input")
+    add_text("subfolder", folder)
+    body.extend(b"--" + boundary_b + b"--\r\n")
+
+    return bytes(body), f"multipart/form-data; boundary={boundary}"
+
+
+def normalize_uploaded_input_name(
+    payload: dict[str, Any],
+    *,
+    expected_name: str,
+    expected_subfolder: str,
+) -> str:
+    """严格核对 ComfyUI 上传响应，防止把 output/temp 或意外目录当成 LoadImage 输入。"""
+    if not isinstance(payload, dict):
+        raise ValueError("ComfyUI upload response must be an object")
+
+    actual_name      = payload.get("name")
+    actual_subfolder = payload.get("subfolder")
+    actual_type      = payload.get("type")
+    if actual_name != expected_name:
+        raise ValueError(
+            f"ComfyUI upload name mismatch: expected {expected_name}, got {actual_name!r}"
+        )
+    if actual_subfolder != expected_subfolder:
+        raise ValueError(
+            "ComfyUI upload subfolder mismatch: "
+            f"expected {expected_subfolder}, got {actual_subfolder!r}"
+        )
+    if actual_type != "input":
+        raise ValueError(f"ComfyUI upload type must be input, got {actual_type!r}")
+
+    return f"{expected_subfolder}/{expected_name}" if expected_subfolder else expected_name
+
+
+def prepare_reference_uploads(
+    plan: dict[str, Any],
+    reference_root: Path | str,
+    client: Any,
+    *,
+    subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
+) -> dict[str, str]:
+    """先完整 preflight 所有 job 的主参考图，再逐张上传；缺一张时保证零上传副作用。"""
+    root       = Path(reference_root)
+    folder     = _normalize_reference_subfolder(subfolder)
+    references = _required_primary_references(plan)
+
+    if not root.is_dir():
+        raise ValueError(f"reference directory missing: {root}")
+
+    # Preflight first       : validate every required reference before the first HTTP side effect.
+    reference_paths: dict[str, Path] = {}
+    for reference in references:
+        path = root / reference
+        if not path.is_file():
+            raise ValueError(f"required Maotai reference is missing: {reference}")
+        _validate_reference_png(path)
+        reference_paths[reference] = path
+
+    uploaded: dict[str, str] = {}
+    for reference in references:
+        uploaded[reference] = client.upload_input_image(
+            reference_paths[reference],
+            subfolder=folder,
+        )
+    return uploaded
+
+
+def materialize_reference_zip(
+    plan: dict[str, Any],
+    zip_path: Path | str,
+    destination_root: Path | str,
+    *,
+    max_reference_bytes: int = _DEFAULT_MAX_REFERENCE_BYTES,
+) -> Path:
+    """只物化 plan 需要的参考 PNG；先全量预检，再按安全 basename 写入临时目录。"""
+    archive_path = Path(zip_path)
+    destination  = Path(destination_root)
+    references   = _required_primary_references(plan)
+
+    if max_reference_bytes < len(_PNG_SIGNATURE):
+        raise ValueError("reference size limit is too small for a PNG")
+    if not archive_path.is_file():
+        raise ValueError(f"reference ZIP is missing: {archive_path}")
+
+    try:
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            matches: dict[str, zipfile.ZipInfo] = {}
+
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                member = _validate_zip_member_path(info.filename)
+                basename = member.name
+                if basename not in references:
+                    continue
+                if basename in matches:
+                    raise ValueError(
+                        f"duplicate required reference basename in archive: {basename}"
+                    )
+                _validate_zip_reference_info(
+                    info,
+                    basename,
+                    max_reference_bytes=max_reference_bytes,
+                )
+                matches[basename] = info
+
+            missing = [reference for reference in references if reference not in matches]
+            if missing:
+                raise ValueError(
+                    "required Maotai reference missing from ZIP: " + ", ".join(missing)
+                )
+
+            # Read and validate all payloads before creating/writing the destination directory.
+            payloads: dict[str, bytes] = {}
+            for reference in references:
+                info    = matches[reference]
+                payload = archive.read(info)
+                if len(payload) > max_reference_bytes:
+                    raise ValueError(
+                        f"reference size exceeds limit after decompression: {reference}"
+                    )
+                if not payload.startswith(_PNG_SIGNATURE):
+                    raise ValueError(f"reference is not a PNG payload: {reference}")
+                payloads[reference] = payload
+    except zipfile.BadZipFile as error:
+        raise ValueError(f"invalid Maotai reference ZIP: {archive_path}") from error
+
+    destination.mkdir(parents=True, exist_ok=True)
+    for reference in references:
+        (destination / reference).write_bytes(payloads[reference])
+    return destination
 
 
 def apply_job_to_workflow(
@@ -242,67 +448,54 @@ def apply_job_to_workflow(
     filename_prefix: str,
     reference_inputs: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """把单个 manifest job 注入 workflow；每个 job 只产生一个目标部件。"""
+    """深拷贝 API workflow 并只改显式绑定字段；模板对象本身保持不变。"""
     _validate_required_bindings(bindings)
     rendered = copy.deepcopy(workflow)
-
-    output = job.get("output")
+    output   = job.get("output")
     if not isinstance(output, dict):
-        raise ValueError("art job output must be an object")
-    width  = output.get("width_px")
-    height = output.get("height_px")
-    if not isinstance(width, int) or width <= 0:
-        raise ValueError("art job output width_px must be a positive integer")
-    if not isinstance(height, int) or height <= 0:
-        raise ValueError("art job output height_px must be a positive integer")
+        raise ValueError("art job output contract is missing")
 
-    positive = job.get("positive_prompt")
-    negative = job.get("negative_prompt")
-    if not isinstance(positive, str) or not positive:
-        raise ValueError("art job positive_prompt must be a non-empty string")
-    if not isinstance(negative, str) or not negative:
-        raise ValueError("art job negative_prompt must be a non-empty string")
-
-    _set_binding(rendered, bindings["positive"], positive, "positive")
-    _set_binding(rendered, bindings["negative"], negative, "negative")
-    _set_binding(rendered, bindings["width"], width, "width")
-    _set_binding(rendered, bindings["height"], height, "height")
-    _set_binding(rendered, bindings["seed"], seed, "seed")
-    _set_binding(rendered, bindings["filename_prefix"], filename_prefix, "filename_prefix")
+    values = {
+        "positive": job.get("positive_prompt"),
+        "negative": job.get("negative_prompt"),
+        "width": output.get("width_px"),
+        "height": output.get("height_px"),
+        "seed": seed,
+        "filename_prefix": filename_prefix,
+    }
+    for binding_name, value in values.items():
+        if value is None:
+            raise ValueError(f"art job value missing for binding: {binding_name}")
+        _set_binding(rendered, bindings[binding_name], value, binding_name)
 
     reference_binding = bindings.get("reference_image")
-    if isinstance(reference_binding, dict):
-        reference = job.get("primary_reference")
-        if not isinstance(reference, str) or not reference:
-            raise ValueError("art job primary_reference is missing")
-        if reference_inputs is None or reference not in reference_inputs:
-            raise ValueError(f"reference input was not uploaded before prompt queue: {reference}")
-        _set_binding(
-            rendered,
-            reference_binding,
-            reference_inputs[reference],
-            "reference_image",
-        )
+    if reference_binding is not None:
+        reference_name = job.get("primary_reference")
+        if not isinstance(reference_name, str) or not reference_name:
+            raise ValueError("reference_image binding requires job.primary_reference")
+        reference_value = reference_name
+        if reference_inputs is not None:
+            reference_value = reference_inputs.get(reference_name, "")
+            if not reference_value:
+                raise ValueError(
+                    f"uploaded reference mapping is missing: {reference_name}"
+                )
+        _set_binding(rendered, reference_binding, reference_value, "reference_image")
 
-    if "rmbg" in bindings:
-        _apply_rmbg_binding(rendered, bindings["rmbg"])
+    rmbg_binding = bindings.get("rmbg")
+    if rmbg_binding is not None:
+        _apply_rmbg_binding(rendered, rmbg_binding)
+
     return rendered
 
 
-def deterministic_seed(base_seed: int, seed_family: str) -> int:
-    """同一 seed family 固定共享 seed；左右对称件和 torso 变体保持身份一致。"""
-    digest = hashlib.sha256(seed_family.encode("utf-8")).digest()
-    offset = int.from_bytes(digest[:4], "big")
-    return (int(base_seed) + offset) % (2**63 - 1)
-
-
 def select_single_png_output(history: dict[str, Any]) -> dict[str, str]:
-    """严格选择唯一 PNG；多图或非 PNG 输出 fail closed，避免错配到 manifest。"""
+    """只接受一次 job 的唯一 PNG 输出，避免误把 preview/mask/旧结果当正式部件。"""
     outputs = history.get("outputs")
     if not isinstance(outputs, dict):
-        raise ValueError("ComfyUI history is missing outputs")
+        raise ValueError("ComfyUI history must contain outputs")
 
-    candidates: list[dict[str, str]] = []
+    png_outputs: list[dict[str, str]] = []
     for node_output in outputs.values():
         if not isinstance(node_output, dict):
             continue
@@ -313,122 +506,41 @@ def select_single_png_output(history: dict[str, Any]) -> dict[str, str]:
             if not isinstance(image, dict):
                 continue
             filename = image.get("filename")
-            subfolder = image.get("subfolder", "")
-            image_type = image.get("type", "output")
-            if (
-                isinstance(filename, str)
-                and filename.lower().endswith(".png")
-                and isinstance(subfolder, str)
-                and isinstance(image_type, str)
-            ):
-                candidates.append(
-                    {
-                        "filename": filename,
-                        "subfolder": subfolder,
-                        "type": image_type,
-                    }
-                )
-
-    if len(candidates) != 1:
-        raise ValueError(f"ComfyUI prompt must produce exactly one PNG output, got {len(candidates)}")
-    return candidates[0]
-
-
-def prepare_reference_uploads(
-    plan: dict[str, Any],
-    reference_root: Path | str,
-    client: "ComfyUiLocalClient",
-    *,
-    subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
-) -> dict[str, str]:
-    """验证并上传 art plan 实际使用的参考图；返回可直接写入 LoadImage.image 的值。"""
-    root       = Path(reference_root).resolve()
-    normalized = _normalize_reference_subfolder(subfolder)
-    uploaded: dict[str, str] = {}
-    for reference in _required_primary_references(plan):
-        path = (root / reference).resolve()
-        try:
-            path.relative_to(root)
-        except ValueError as error:
-            raise ValueError(f"reference path escapes reference root: {reference}") from error
-        _validate_reference_png(path)
-        uploaded[reference] = client.upload_input_image(
-            path,
-            subfolder=normalized,
-        )
-    return uploaded
-
-
-def materialize_reference_zip(
-    plan: dict[str, Any],
-    archive_path: Path | str,
-    destination_root: Path | str,
-    *,
-    max_reference_bytes: int = _DEFAULT_MAX_REFERENCE_BYTES,
-) -> Path:
-    """只从 ZIP 提取 plan 真正使用的参考 PNG，并拒绝路径穿越、重复与压缩炸弹。"""
-    if max_reference_bytes <= 0:
-        raise ValueError("max_reference_bytes must be positive")
-
-    archive     = Path(archive_path)
-    destination = Path(destination_root).resolve()
-    destination.mkdir(parents=True, exist_ok=True)
-    required    = _required_primary_references(plan)
-    found: dict[str, zipfile.ZipInfo] = {}
-
-    with zipfile.ZipFile(archive, "r") as bundle:
-        for info in bundle.infolist():
-            if info.is_dir():
+            if not isinstance(filename, str) or not filename.lower().endswith(".png"):
                 continue
-            member_path = _validate_zip_member_path(info.filename)
-            basename    = member_path.name
-            if basename not in required:
-                continue
-            if basename in found:
-                raise ValueError(f"duplicate reference in archive: {basename}")
-            _validate_zip_reference_info(
-                info,
-                basename,
-                max_reference_bytes=max_reference_bytes,
+            png_outputs.append(
+                {
+                    "filename": filename,
+                    "subfolder": str(image.get("subfolder", "")),
+                    "type": str(image.get("type", "output")),
+                }
             )
-            found[basename] = info
 
-        missing = [reference for reference in required if reference not in found]
-        if missing:
-            raise ValueError("reference archive is missing required PNG(s): " + ", ".join(missing))
+    if len(png_outputs) != 1:
+        raise ValueError(
+            f"ComfyUI job must produce exactly one PNG output, found {len(png_outputs)}"
+        )
+    return png_outputs[0]
 
-        for reference in required:
-            info       = found[reference]
-            output     = (destination / reference).resolve()
-            try:
-                output.relative_to(destination)
-            except ValueError as error:
-                raise ValueError(f"reference output escapes destination: {reference}") from error
-            payload = bundle.read(info)
-            if len(payload) > max_reference_bytes:
-                raise ValueError(f"reference size exceeds limit after extract: {reference}")
-            output.write_bytes(payload)
-            _validate_reference_png(output)
 
-    return destination
+def deterministic_seed(base_seed: int, seed_family: str) -> int:
+    """镜像/变体共享 seed family，保持身份相关性而不维护第二份资产清单。"""
+    digest = hashlib.sha256(f"{base_seed}:{seed_family}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") & 0x7FFF_FFFF_FFFF_FFFF
 
 
 class ComfyUiLocalClient:
-    """最小本机 ComfyUI API client；只允许 loopback，不依赖第三方 HTTP 包。"""
+    """最小本地 ComfyUI API client；只访问 normalize_server_url 允许的 loopback。"""
 
-    def __init__(
-        self,
-        server_url: str,
-        *,
-        request_timeout_seconds: float = 30.0,
-    ) -> None:
-        self.server_url             = normalize_server_url(server_url)
-        self.request_timeout_seconds = request_timeout_seconds
+    def __init__(self, server_url: str, *, request_timeout_seconds: float = 30.0) -> None:
+        self.server_url              = normalize_server_url(server_url)
+        self.request_timeout_seconds = max(1.0, float(request_timeout_seconds))
+        self.client_id               = uuid.uuid4().hex
 
     def object_info(self) -> dict[str, Any]:
         payload = self._request_json("GET", "/object_info")
         if not isinstance(payload, dict):
-            raise ValueError("ComfyUI /object_info response must be an object")
+            raise ValueError("ComfyUI /object_info did not return an object")
         return payload
 
     def upload_input_image(
@@ -437,68 +549,62 @@ class ComfyUiLocalClient:
         *,
         subfolder: str = _DEFAULT_REFERENCE_SUBFOLDER,
     ) -> str:
-        """用 ComfyUI 官方 `/upload/image` multipart 入口上传参考图，并返回 LoadImage 可消费的名称。"""
-        path       = Path(image_path)
-        file_name  = _validate_reference_png(path)
-        normalized = _normalize_reference_subfolder(subfolder)
-        boundary   = f"----PicotooPetMaotai{uuid.uuid4().hex}"
-        body       = _encode_multipart_form_data(
-            boundary,
-            fields={
-                "type": "input",
-                "subfolder": normalized,
-                "overwrite": "true",
-            },
-            file_field="image",
-            file_name=file_name,
-            file_bytes=path.read_bytes(),
-        )
-        payload = self._request_multipart_json(
+        """上传本地参考 PNG 到 ComfyUI input；响应必须与请求的 name/subfolder/type 精确一致。"""
+        path               = Path(image_path)
+        folder             = _normalize_reference_subfolder(subfolder)
+        expected_name      = _validate_reference_png(path)
+        body, content_type = build_multipart_image_upload(path, subfolder=folder)
+        response           = self._request_multipart_json(
             "/upload/image",
             body,
-            f"multipart/form-data; boundary={boundary}",
+            content_type,
         )
-        uploaded_name = payload.get("name")
-        uploaded_sub  = payload.get("subfolder", normalized)
-        if not isinstance(uploaded_name, str) or not uploaded_name:
-            raise ValueError("ComfyUI upload response is missing image name")
-        if not isinstance(uploaded_sub, str):
-            raise ValueError("ComfyUI upload response has invalid subfolder")
-        uploaded_sub = _normalize_reference_subfolder(uploaded_sub)
-        if uploaded_sub:
-            return f"{uploaded_sub}/{uploaded_name}"
-        return uploaded_name
+        return normalize_uploaded_input_name(
+            response,
+            expected_name=expected_name,
+            expected_subfolder=folder,
+        )
 
     def queue_prompt(self, workflow: dict[str, Any]) -> str:
-        payload = self._request_json("POST", "/prompt", {"prompt": workflow})
-        prompt_id = payload.get("prompt_id")
-        if not isinstance(prompt_id, str) or not prompt_id:
-            raise ValueError("ComfyUI /prompt did not return prompt_id")
-        return prompt_id
+        payload = self._request_json(
+            "POST",
+            "/prompt",
+            {
+                "prompt": workflow,
+                "client_id": self.client_id,
+            },
+        )
+        if not isinstance(payload, dict) or not isinstance(payload.get("prompt_id"), str):
+            raise ValueError("ComfyUI /prompt response is missing prompt_id")
+        return payload["prompt_id"]
 
     def wait_for_history(
         self,
         prompt_id: str,
         *,
         timeout_seconds: float,
-        poll_interval_seconds: float = 0.35,
+        poll_interval_seconds: float = 0.25,
     ) -> dict[str, Any]:
-        deadline = time.monotonic() + timeout_seconds
+        deadline = time.monotonic() + max(1.0, timeout_seconds)
+        encoded  = urllib.parse.quote(prompt_id, safe="")
+
         while time.monotonic() < deadline:
-            payload = self._request_json("GET", f"/history/{urllib.parse.quote(prompt_id)}")
-            entry   = payload.get(prompt_id)
-            if isinstance(entry, dict):
-                status = entry.get("status")
-                if isinstance(status, dict) and status.get("status_str") == "error":
-                    raise RuntimeError(f"ComfyUI prompt failed: {prompt_id}")
-                outputs = entry.get("outputs")
-                if isinstance(outputs, dict) and outputs:
-                    return entry
-            time.sleep(poll_interval_seconds)
+            payload = self._request_json("GET", f"/history/{encoded}")
+            history = _unwrap_history(payload, prompt_id)
+            if history is not None and isinstance(history.get("outputs"), dict):
+                return history
+            time.sleep(max(0.05, poll_interval_seconds))
+
         raise TimeoutError(f"ComfyUI prompt timed out: {prompt_id}")
 
     def download_output(self, output: dict[str, str]) -> bytes:
-        query = urllib.parse.urlencode(output)
+        query = urllib.parse.urlencode(
+            {
+                "filename": output["filename"],
+                "subfolder": output.get("subfolder", ""),
+                "type": output.get("type", "output"),
+            }
+        )
         return self._request_bytes("GET", f"/view?{query}")
 
     def _request_json(
@@ -506,10 +612,11 @@ class ComfyUiLocalClient:
         method: str,
         path: str,
         payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        data    = None if payload is None else json.dumps(payload).encode("utf-8")
+    ) -> Any:
+        data    = None
         headers = {"Accept": "application/json"}
-        if data is not None:
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
 
         request = urllib.request.Request(
@@ -603,12 +710,8 @@ def run_art_plan(
             + ", ".join(existing_pngs[:5])
         )
 
-    manifest_path = _manifest_from_plan(plan)
-    descriptors   = parse_manifest(manifest_path)
-    client        = ComfyUiLocalClient(server_url)
-    object_info   = client.object_info()
-    validate_comfyui_workflow_node_types(object_info, workflow)
-    _verify_optional_rmbg(object_info, workflow, bindings)
+    client = ComfyUiLocalClient(server_url)
+    _verify_optional_rmbg(client.object_info(), workflow, bindings)
     reference_inputs = _prepare_reference_inputs(
         plan,
         bindings,
@@ -651,23 +754,11 @@ def run_art_plan(
         if not png_bytes.startswith(_PNG_SIGNATURE):
             raise ValueError(f"ComfyUI returned a non-PNG payload for {target_file}")
 
-        candidate_path = incoming / f".{target_file}.candidate"
-        final_path     = incoming / target_file
-        candidate_path.write_bytes(png_bytes)
-        try:
-            _validate_generated_structural_output(
-                candidate_path,
-                target_file,
-                job,
-                descriptors,
-            )
-            candidate_path.replace(final_path)
-        finally:
-            if candidate_path.exists():
-                candidate_path.unlink()
+        (incoming / target_file).write_bytes(png_bytes)
         generated.append(target_file)
 
-    report = validate_asset_directory(incoming, manifest_path)
+    manifest_path = _manifest_from_plan(plan)
+    report        = validate_asset_directory(incoming, manifest_path)
     if not report.ok:
         raise ValueError("generated Maotai v2 assets failed validation: " + "; ".join(report.errors))
 
@@ -683,30 +774,6 @@ def run_art_plan(
         "asset_count": report.asset_count,
         "staged": stage,
     }
-
-
-def _validate_generated_structural_output(
-    path: Path,
-    target_file: str,
-    job: dict[str, Any],
-    descriptors: dict[str, Any],
-) -> None:
-    descriptor = descriptors.get(target_file)
-    if descriptor is None:
-        raise ValueError(f"art job target is missing from manifest: {target_file}")
-
-    quality = job.get("structural_quality")
-    if quality is None:
-        return
-    if not isinstance(quality, dict):
-        raise ValueError(f"art job structural_quality must be an object: {target_file}")
-
-    errors = validate_structural_art_quality(path, descriptor, quality)
-    if errors:
-        raise ValueError(
-            "generated Maotai v2 structural art failed organic silhouette gate: "
-            + "; ".join(errors)
-        )
 
 
 def _prepare_reference_inputs(
@@ -914,20 +981,30 @@ def _verify_optional_rmbg(
     workflow: dict[str, Any],
     bindings: dict[str, Any],
 ) -> None:
+    # Node availability     : reject any workflow class missing from this local ComfyUI before reference upload.
     validate_comfyui_workflow_node_types(object_info, workflow)
-    if "rmbg" not in bindings:
+
+    rmbg = bindings.get("rmbg")
+    if rmbg is None:
         return
-    rmbg = bindings["rmbg"]
-    if not isinstance(rmbg, dict):
-        raise ValueError("rmbg binding must be an object")
-    node_id = rmbg.get("node")
-    if not isinstance(node_id, str):
-        raise ValueError("rmbg binding requires node")
-    node = workflow.get(node_id)
-    if not isinstance(node, dict) or node.get("class_type") != "BiRefNetRMBG":
-        raise ValueError("rmbg node must be BiRefNetRMBG")
     if "BiRefNetRMBG" not in object_info:
-        raise ValueError("BiRefNetRMBG is not registered in ComfyUI object_info")
+        raise ValueError(
+            "ComfyUI-RMBG BiRefNetRMBG node is not installed; remove the rmbg binding or install it"
+        )
+    if not isinstance(rmbg, dict) or not isinstance(rmbg.get("node"), str):
+        raise ValueError("rmbg binding requires a node string")
+    node = workflow.get(rmbg["node"])
+    if not isinstance(node, dict) or node.get("class_type") != "BiRefNetRMBG":
+        raise ValueError("rmbg binding does not point to a BiRefNetRMBG workflow node")
+
+
+def _unwrap_history(payload: Any, prompt_id: str) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    if isinstance(payload.get("outputs"), dict):
+        return payload
+    nested = payload.get(prompt_id)
+    return nested if isinstance(nested, dict) else None
 
 
 def _load_json_object(path: Path | str, label: str) -> dict[str, Any]:
@@ -937,15 +1014,8 @@ def _load_json_object(path: Path | str, label: str) -> dict[str, Any]:
     return payload
 
 
-def _linked_node_id(value: Any) -> str | None:
-    if (
-        isinstance(value, list)
-        and len(value) == 2
-        and isinstance(value[0], (str, int))
-        and isinstance(value[1], int)
-    ):
-        return str(value[0])
-    return None
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[4]
 
 
 def _manifest_from_plan(plan: dict[str, Any]) -> Path:
@@ -971,74 +1041,48 @@ def _default_asset_root() -> Path:
     )
 
 
-def _repository_root() -> Path:
-    return Path(__file__).resolve().parents[4]
-
-
-def _encode_multipart_form_data(
-    boundary: str,
-    *,
-    fields: dict[str, str],
-    file_field: str,
-    file_name: str,
-    file_bytes: bytes,
-) -> bytes:
-    encoded_boundary = _validate_multipart_boundary(boundary)
-    chunks: list[bytes] = []
-    for name, value in fields.items():
-        if any(character in name for character in ('"', "\r", "\n")):
-            raise ValueError("multipart field name contains unsafe characters")
-        chunks.extend(
-            [
-                b"--" + encoded_boundary + b"\r\n",
-                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
-                value.encode("utf-8"),
-                b"\r\n",
-            ]
-        )
-
-    if any(character in file_field for character in ('"', "\r", "\n")):
-        raise ValueError("multipart file field contains unsafe characters")
-    if any(character in file_name for character in ('"', "\r", "\n")):
-        raise ValueError("multipart filename contains unsafe characters")
-    chunks.extend(
-        [
-            b"--" + encoded_boundary + b"\r\n",
-            (
-                f'Content-Disposition: form-data; name="{file_field}"; '
-                f'filename="{file_name}"\r\n'
-            ).encode("utf-8"),
-            b"Content-Type: image/png\r\n\r\n",
-            file_bytes,
-            b"\r\n",
-            b"--" + encoded_boundary + b"--\r\n",
-        ]
-    )
-    return b"".join(chunks)
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run manifest-derived Maotai v2 art jobs against local ComfyUI.",
+        description="Run manifest-derived Maotai v2 art jobs through a local ComfyUI API workflow.",
     )
-    parser.add_argument("plan", type=Path)
-    parser.add_argument("workflow", type=Path)
-    parser.add_argument("--bindings", type=Path)
+    parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument("--workflow", type=Path, required=True)
+    parser.add_argument(
+        "--bindings",
+        type=Path,
+        default=None,
+        help="Optional explicit binding JSON; omitted means MAOTAI_* title auto-binding.",
+    )
     parser.add_argument("--incoming", type=Path, required=True)
+
+    reference_source = parser.add_mutually_exclusive_group()
+    reference_source.add_argument(
+        "--reference-dir",
+        type=Path,
+        default=None,
+        help="Local directory whose required references are uploaded to ComfyUI input.",
+    )
+    reference_source.add_argument(
+        "--reference-zip",
+        type=Path,
+        default=None,
+        help="Handoff ZIP; only required reference PNGs are safely materialized and uploaded.",
+    )
+    parser.add_argument(
+        "--reference-subfolder",
+        default=_DEFAULT_REFERENCE_SUBFOLDER,
+        help="ComfyUI input subfolder used for uploaded Maotai references.",
+    )
     parser.add_argument("--server", default="http://127.0.0.1:8188")
     parser.add_argument("--base-seed", type=int, default=230815)
-    parser.add_argument("--timeout", type=float, default=900.0)
-    reference_group = parser.add_mutually_exclusive_group()
-    reference_group.add_argument("--reference-root", type=Path)
-    reference_group.add_argument("--reference-zip", type=Path)
-    parser.add_argument("--reference-subfolder", default=_DEFAULT_REFERENCE_SUBFOLDER)
+    parser.add_argument("--prompt-timeout", type=float, default=900.0)
     parser.add_argument("--stage", action="store_true")
-    parser.add_argument("--destination", type=Path)
+    parser.add_argument("--destination", type=Path, default=None)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    args   = _build_parser().parse_args(argv)
     result = run_art_plan(
         args.plan,
         args.workflow,
@@ -1046,14 +1090,14 @@ def main(argv: list[str] | None = None) -> int:
         args.incoming,
         server_url=args.server,
         base_seed=args.base_seed,
-        prompt_timeout_seconds=args.timeout,
-        reference_root=args.reference_root,
+        prompt_timeout_seconds=args.prompt_timeout,
+        reference_root=args.reference_dir,
         reference_zip=args.reference_zip,
         reference_subfolder=args.reference_subfolder,
         stage=args.stage,
         destination_root=args.destination,
     )
-    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
