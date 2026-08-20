@@ -10,8 +10,9 @@ namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 /// </summary>
 internal static class MaotaiRasterFaceLayout
 {
-    private const double HeadVisualScale = 0.96;
-    private const double EarTop = -20.5;
+    private const double HeadVisualScaleX = 0.92;
+    private const double HeadVisualScaleY = 0.98;
+    private const double EarTop = -26.0;
     private const double EyeTop = -16.0;
     private const double MuzzleTop = -13.0;
     private const double MouthTop = -2.0;
@@ -22,8 +23,9 @@ internal static class MaotaiRasterFaceLayout
     {
         ArgumentNullException.ThrowIfNull(headPanel);
 
-        // Static art-fit scale : new neutral fur shell is intentionally fuller; dynamic HeadScale remains Motion Engine-owned.
-        headPanel.LayoutTransform = new ScaleTransform(HeadVisualScale, HeadVisualScale);
+        // Static art-fit scale : the real head shell is intentionally slightly taller/narrower than a circle.
+        // Motion ownership     : dynamic HeadScale remains Motion Engine-owned; this only calibrates raster proportions once.
+        headPanel.LayoutTransform = new ScaleTransform(HeadVisualScaleX, HeadVisualScaleY);
 
         foreach (var child in headPanel.Children)
         {

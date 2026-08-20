@@ -130,7 +130,44 @@ internal static class MaotaiAssetPixelValidationSmokeTests
                 $"v2 torso 有效纵向 silhouette 过小，肢体根部无法藏入毛发：{fileName} ratio={visibleHeightRatio:F3}");
         }
 
+        if (fileName == "head.png")
+        {
+            // Canine silhouette : the lower head must visibly taper into a jaw instead of reading as a circular mascot ball.
+            // Alpha threshold   : ignore only the faintest fur fringe so the contract measures the readable silhouette.
+            var midY       = minY + (int)Math.Round((maxY - minY) * 0.55);
+            var jawY       = minY + (int)Math.Round((maxY - minY) * 0.85);
+            var midWidth   = VisibleWidthAtY(pixels, converted.PixelWidth, stride, midY, minAlpha: 16);
+            var jawWidth   = VisibleWidthAtY(pixels, converted.PixelWidth, stride, jawY, minAlpha: 16);
+            var jawToMid   = jawWidth / (double)Math.Max(1, midWidth);
+            Assert(midWidth > 0 && jawWidth > 0, "v2 head silhouette 采样失败");
+            Assert(jawToMid <= 0.76,
+                $"v2 head 下颌没有收窄，仍会读成圆球；ratio={jawToMid:F3}");
+        }
+
         AssertOuterBorderTransparent(pixels, converted.PixelWidth, converted.PixelHeight, stride, fileName);
+    }
+
+    private static int VisibleWidthAtY(
+        byte[] pixels,
+        int width,
+        int stride,
+        int y,
+        byte minAlpha)
+    {
+        var minX = width;
+        var maxX = -1;
+        for (var x = 0; x < width; x++)
+        {
+            if (ReadAlpha(pixels, stride, x, y) < minAlpha)
+            {
+                continue;
+            }
+
+            minX = Math.Min(minX, x);
+            maxX = Math.Max(maxX, x);
+        }
+
+        return maxX >= minX ? maxX - minX + 1 : 0;
     }
 
     private static void AssertOuterBorderTransparent(

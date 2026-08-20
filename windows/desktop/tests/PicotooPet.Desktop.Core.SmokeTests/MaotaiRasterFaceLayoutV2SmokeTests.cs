@@ -56,10 +56,10 @@ internal static class MaotaiRasterFaceLayoutV2SmokeTests
 
         var visualScale = head.LayoutTransform as ScaleTransform
             ?? throw new InvalidOperationException("head 必须有独立的静态视觉缩放，不能改 Motion Engine 的动态 HeadScale");
-        AssertNear(0.96, visualScale.ScaleX, "head 静态视觉宽度比例错误");
-        AssertNear(0.96, visualScale.ScaleY, "head 静态视觉高度比例错误");
+        AssertNear(0.92, visualScale.ScaleX, "head 静态视觉宽度比例错误");
+        AssertNear(0.98, visualScale.ScaleY, "head 静态视觉高度比例错误");
 
-        AssertNear(-20.5, Canvas.GetTop(ear), "耳根没有压入 head 毛发轮廓");
+        AssertNear(-26.0, Canvas.GetTop(ear), "耳朵露出量不足，head 会重新读成圆球");
         AssertNear(-13.0, Canvas.GetTop(muzzle), "muzzle 垂直校准错误");
         AssertNear(-16.0, Canvas.GetTop(eye), "眼睛垂直校准错误");
         AssertNear(-2.0, Canvas.GetTop(mouth), "嘴型垂直校准错误");
