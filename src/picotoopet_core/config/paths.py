@@ -63,6 +63,12 @@ class RuntimePaths:
         return self.root / "runtime"
 
     @property
+    def reliability_diagnostics_dir(self) -> Path:
+        """可靠性黑盒只写入 Core 管理的脱敏诊断目录。"""
+
+        return self.runtime_dir / "reliability-diagnostics"
+
+    @property
     def provider_returns_dir(self) -> Path:
         """返回仅由 Mac Core 推导的 Provider Return Artifact 根目录。"""
 
@@ -179,6 +185,7 @@ class RuntimePaths:
             self.pairing_dir,
             self.backups_dir,
             self.runtime_dir,
+            self.reliability_diagnostics_dir,
             self.provider_returns_dir,
             self.business_root,
             self.business_staging_dir,
