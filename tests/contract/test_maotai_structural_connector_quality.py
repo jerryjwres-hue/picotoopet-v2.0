@@ -11,8 +11,8 @@ TOOL_ROOT = ROOT / "windows" / "desktop" / "tools" / "maotai_v2_assets"
 if str(TOOL_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOL_ROOT))
 
+from maotai_connector_geometry import validate_visible_connector_geometry  # noqa: E402
 from maotai_manifest_contract import AssetDescriptor  # noqa: E402
-from maotai_png_validation import validate_structural_art_quality  # noqa: E402
 
 
 QUALITY = {
@@ -91,7 +91,7 @@ def test_torso_connector_lobes_are_rejected(tmp_path: Path) -> None:
     path = tmp_path / "torso_neutral.png"
     _write_rgba_png(path, with_connector_lobes=True)
 
-    errors = validate_structural_art_quality(path, _descriptor(), QUALITY)
+    errors = validate_visible_connector_geometry(path, _descriptor(), QUALITY)
 
     assert any("connector" in error.lower() or "stump" in error.lower() for error in errors)
 
@@ -100,6 +100,6 @@ def test_smooth_torso_silhouette_has_no_connector_error(tmp_path: Path) -> None:
     path = tmp_path / "torso_neutral.png"
     _write_rgba_png(path, with_connector_lobes=False)
 
-    errors = validate_structural_art_quality(path, _descriptor(), QUALITY)
+    errors = validate_visible_connector_geometry(path, _descriptor(), QUALITY)
 
     assert not any("connector" in error.lower() or "stump" in error.lower() for error in errors)
