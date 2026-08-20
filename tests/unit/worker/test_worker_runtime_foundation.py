@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event, Thread
+from time import sleep
 
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import TaskStatus
-from picotoopet_core.domain.models import TaskCreate
+from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.queue.repository import QueueRepository
+from picotoopet_core.worker.handlers import HandlerResult
 from picotoopet_core.worker.runtime import WorkerRuntime
 from picotoopet_core.worker.state import WorkerStateStore
 
@@ -66,6 +69,51 @@ def test_worker_runtime_records_handler_failure_without_crashing_loop(tmp_path: 
     assert failed.error_code == "WORKER_HANDLER_ERROR"
     assert failed.error_message == "system.noop handler failed"
     assert store.read_status().state == "degraded"
+    database.close()
+
+
+def test_worker_runtime_keeps_liveness_fresh_while_handler_runs(tmp_path: Path) -> None:
+    """长任务执行期间 Worker 状态心跳必须独立刷新，不能被误判离线。"""
+
+    database = Database(tmp_path / "core.db")
+    database.open()
+    database.apply_migrations()
+    queue = QueueRepository(database)
+    store = WorkerStateStore(
+        tmp_path / "state" / "worker-status.json",
+        stale_after_seconds=1,
+    )
+    started = Event()
+    release = Event()
+
+    def blocking_handler(task: TaskRecord) -> HandlerResult:
+        started.set()
+        if not release.wait(timeout=5):
+            raise RuntimeError("test handler release timed out")
+        return HandlerResult(summary={"task_type": task.task_type})
+
+    runtime = WorkerRuntime(
+        queue=queue,
+        state_store=store,
+        worker_id="worker-m4",
+        handlers={"test.blocking": blocking_handler},
+        lease_seconds=6,
+        heartbeat_seconds=1,
+    )
+    queue.create(TaskCreate(task_type="test.blocking"))
+    runner = Thread(target=runtime.run_once, daemon=True)
+    runner.start()
+
+    assert started.wait(timeout=2)
+    sleep(1.25)
+    during = store.read_status()
+
+    release.set()
+    runner.join(timeout=5)
+    assert runner.is_alive() is False
+    assert during.state == "online"
+    assert during.reason == "executing"
+    assert during.available is True
     database.close()
 
 
