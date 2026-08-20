@@ -1,4 +1,4 @@
-# one-shot visual evidence attempt 6: no-socket torso A/B
+# actual runtime asset visual evidence
 name: Maotai v2 Visual Snapshot Once
 
 on:
@@ -26,19 +26,6 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: windows/desktop/global.json
-
-      - name: Build diagnostic no-socket neutral torso candidate
-        shell: powershell
-        run: |
-          $assetDir = 'windows\desktop\src\PicotooPet.Desktop\Assets\Maotai\V2'
-          $source = Join-Path $assetDir 'torso_neutral.png'
-          $candidate = Join-Path $assetDir 'torso_neutral.candidate.png'
-          python windows/desktop/tools/maotai_v2_assets/diagnostic_build_torso_candidate.py $source $candidate
-          if ($LASTEXITCODE -ne 0) { throw "Torso candidate build failed with exit code $LASTEXITCODE" }
-          if (-not (Test-Path $candidate)) { throw 'Torso candidate was not produced' }
-          $hash = (Get-FileHash -Algorithm SHA256 $candidate).Hash.ToLowerInvariant()
-          Write-Host "MAOTAI_TORSO_CANDIDATE_SHA256=$hash"
-          Move-Item -LiteralPath $candidate -Destination $source -Force
 
       - name: Prepare fixed app-owned Maotai v2 asset override
         shell: powershell
