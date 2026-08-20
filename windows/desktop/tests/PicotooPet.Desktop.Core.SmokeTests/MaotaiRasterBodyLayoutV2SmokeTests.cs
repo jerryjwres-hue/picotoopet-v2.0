@@ -5,7 +5,7 @@ using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 v2 身体比例与遮挡：腿根藏在 torso 后，前爪在前，head 永远盖住身体。</summary>
+/// <summary>冻结 v2 身体比例与遮挡：后腿藏在 torso 后，前腿盖住可见肩部插口，胸毛再压住内侧根部。</summary>
 internal static class MaotaiRasterBodyLayoutV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
@@ -73,16 +73,19 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
             "hind lower 必须覆盖 upper 的膝部 overlap，不能依赖 XAML 子项顺序");
         Assert(Panel.GetZIndex(hindPaw) > Panel.GetZIndex(hindLower),
             "hind paw 必须覆盖 lower 的踝部 overlap，避免睡眠/站立时出现断脚");
-        Assert(Panel.GetZIndex(frontUpper) < Panel.GetZIndex(torso),
-            "front upper 必须藏在 torso 后，不能像机械手臂贴在胸口");
+
+        // Shoulder socket cover : neutral torso 素材本身带浅色圆形插口，front upper 必须压在 torso 上方把它遮掉。
+        // Chest overpaint       : chest 再位于 front upper 上方，只覆盖内侧根部，避免手臂像贴纸穿过胸毛。
+        Assert(Panel.GetZIndex(frontUpper) > Panel.GetZIndex(torso),
+            "front upper 必须盖住 torso 的浅色肩部插口，禁止再次出现机器人式圆环关节");
+        Assert(Panel.GetZIndex(frontUpper) < Panel.GetZIndex(chest),
+            "front upper 根部必须允许 chest 毛发二次遮挡，保持连续毛发轮廓");
         Assert(Panel.GetZIndex(frontLower) > Panel.GetZIndex(frontUpper),
             "front lower 必须覆盖 upper 的肘部 overlap，避免上下臂出现水平断口");
-        Assert(Panel.GetZIndex(frontLower) < Panel.GetZIndex(torso),
-            "front lower 的上端必须允许被 torso 遮住");
-        Assert(Panel.GetZIndex(frontPaw) > Panel.GetZIndex(torso),
-            "front paw 必须在 torso 前方，保证落脚可读");
+        Assert(Panel.GetZIndex(frontPaw) > Panel.GetZIndex(chest),
+            "front paw 必须在 torso/chest 前方，保证落脚可读");
         Assert(Panel.GetZIndex(chest) > Panel.GetZIndex(torso),
-            "胸毛兼容层必须继续位于 torso 上方，即使当前素材透明也不能改变图层契约");
+            "胸毛兼容层必须继续位于 torso 上方");
         Assert(Panel.GetZIndex(head) > Panel.GetZIndex(frontPaw),
             "head 必须位于身体与爪子上方，避免身体层穿脸");
     }
