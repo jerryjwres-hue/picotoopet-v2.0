@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from enum import StrEnum
 import re
 import subprocess
 import sys
+from datetime import datetime
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 
 MemoryPressureLevel = Literal["unknown", "normal", "warn", "high"]
 _MEMORY_FREE_PERCENT = re.compile(r"System-wide memory free percentage:\s*(\d+)%")
