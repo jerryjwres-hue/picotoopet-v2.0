@@ -35,13 +35,28 @@ jobs:
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $bootstrap = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap"
           $bundle = Join-Path $env:RUNNER_TEMP "PVP_DirectorConsole_Native_N6E1.zip"
-          $parts = Get-ChildItem -LiteralPath $bootstrap -Filter "native.part*.b64" | Sort-Object Name
+          $parts = @(Get-ChildItem -LiteralPath $bootstrap -Filter "native.part*.b64" | Sort-Object Name)
           if ($parts.Count -lt 1) { throw "N6E1 Native source bundle parts are missing." }
-          $base64 = ($parts | ForEach-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() }) -join ""
-          [System.IO.File]::WriteAllBytes($bundle, [System.Convert]::FromBase64String($base64))
+
+          # Each part ends on a Base64 quartet boundary. Decode each part independently and
+          # append bytes so whitespace/newline differences between GitHub text blobs cannot
+          # corrupt the reconstructed ZIP.
+          $stream = [System.IO.File]::Open($bundle, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+          try {
+            foreach ($part in $parts) {
+              $text = (Get-Content -LiteralPath $part.FullName -Raw).Trim()
+              if (($text.Length % 4) -ne 0) { throw "Invalid Base64 quartet length: $($part.Name) = $($text.Length)" }
+              $bytes = [System.Convert]::FromBase64String($text)
+              $stream.Write($bytes, 0, $bytes.Length)
+            }
+          }
+          finally {
+            $stream.Dispose()
+          }
+
           $expected = (Get-Content -LiteralPath (Join-Path $bootstrap "NATIVE_BUNDLE.sha256") -Raw).Trim().Split()[0].ToLowerInvariant()
           $actual = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "N6E1 Native source bundle SHA-256 mismatch." }
+          if ($actual -ne $expected) { throw "N6E1 Native source bundle SHA-256 mismatch. expected=$expected actual=$actual" }
           $target = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2"
           if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
           [System.IO.Directory]::CreateDirectory($target) | Out-Null
