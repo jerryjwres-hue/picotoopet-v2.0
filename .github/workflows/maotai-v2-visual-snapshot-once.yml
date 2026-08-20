@@ -1,4 +1,4 @@
-# one-shot visual evidence attempt 5: scoped snapshot build flag
+# one-shot visual evidence attempt 6: reconstruct organic front-upper candidate on Windows runner
 name: Maotai v2 Visual Snapshot Once
 
 on:
@@ -26,6 +26,48 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: windows/desktop/global.json
+
+      - name: Reconstruct organic front-upper candidate
+        shell: powershell
+        run: |
+          $partsRoot = '.github\maotai-candidate\front-upper-left'
+          $parts = @(
+            'part00.b64',
+            'part01.b64',
+            'part02.b64',
+            'part03.b64',
+            'part04-0.b64',
+            'part04-1.b64',
+            'part04-2.b64',
+            'part05-0.b64',
+            'part05-1.b64',
+            'part05-2.b64'
+          )
+          $encoded = ($parts | ForEach-Object { Get-Content (Join-Path $partsRoot $_) -Raw }) -join ''
+          $bytes = [Convert]::FromBase64String($encoded)
+          $sourceRoot = 'windows\desktop\src\PicotooPet.Desktop\Assets\Maotai\V2'
+          $left = Join-Path $sourceRoot 'front_left_upper.png'
+          $right = Join-Path $sourceRoot 'front_right_upper.png'
+          [IO.File]::WriteAllBytes($left, $bytes)
+
+          $expected = 'D1CCFE29467027AD46B77BE3099011C51B87976D67F5CC2EC6902B043FE900AA'
+          $actual = (Get-FileHash $left -Algorithm SHA256).Hash
+          if ($actual -ne $expected) {
+            throw "Organic front-left candidate hash mismatch: expected=$expected actual=$actual"
+          }
+
+          Add-Type -AssemblyName System.Drawing
+          $bitmap = [System.Drawing.Bitmap]::FromFile((Resolve-Path $left))
+          try {
+            $bitmap.RotateFlip([System.Drawing.RotateFlipType]::RotateNoneFlipX)
+            $bitmap.Save((Join-Path (Resolve-Path $sourceRoot) 'front_right_upper.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          }
+          finally {
+            $bitmap.Dispose()
+          }
+
+          Write-Host "MAOTAI_FRONT_LEFT_SHA256=$actual"
+          Write-Host "MAOTAI_FRONT_RIGHT_SHA256=$((Get-FileHash $right -Algorithm SHA256).Hash)"
 
       - name: Prepare fixed app-owned Maotai v2 asset override
         shell: powershell
