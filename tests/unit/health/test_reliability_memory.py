@@ -1,5 +1,6 @@
 """Health supervision must expose coarse memory pressure without process dumps."""
 
+import json
 from pathlib import Path
 
 from picotoopet_core.config.paths import RuntimePaths
@@ -47,9 +48,10 @@ def test_high_memory_pressure_degrades_health_without_exposing_process_data(
     assert report.status == "degraded"
     assert report.checks["memory_pressure"].status == "degraded"
     assert report.checks["memory_pressure"].detail == "high"
-    assert database.scalar(
-        "SELECT detail FROM service_health WHERE service_name = 'memory_pressure'"
-    ) == "high"
+    persisted = database.scalar(
+        "SELECT details_json FROM service_health WHERE service_name = 'memory_pressure'"
+    )
+    assert json.loads(persisted) == {"detail": "high"}
     database.close()
 
 
