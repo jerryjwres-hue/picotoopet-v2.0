@@ -25,6 +25,25 @@ _CANONICAL_VIEW     = "three-quarter front"
 _IDENTITY_ANCHOR    = "03_working_happy.png"
 _GEOMETRY_REFERENCE = "01_maotai_rig_design_sheet.png"
 _ORGANIC_CATEGORIES = frozenset({"core", "face", "limb", "tail", "accessory"})
+_STRUCTURAL_FILES   = frozenset(
+    {
+        "torso_neutral.png",
+        "torso_crouch.png",
+        "torso_stretch.png",
+        "head.png",
+        "front_left_upper.png",
+        "front_left_lower.png",
+        "front_right_upper.png",
+        "front_right_lower.png",
+        "hind_left_upper.png",
+        "hind_left_lower.png",
+        "hind_right_upper.png",
+        "hind_right_lower.png",
+        "tail_base.png",
+        "tail_mid.png",
+        "tail_tip.png",
+    }
+)
 
 
 def build_art_plan(
@@ -105,6 +124,7 @@ def _build_job(
             "preserve_native_aspect": True,
             "assembly_preview_required": True,
         },
+        "structural_quality": _structural_quality(descriptor.file_name),
         "output": {
             "width_px": width_px,
             "height_px": height_px,
@@ -125,6 +145,25 @@ def _build_job(
             overlap=overlap,
         ),
         "negative_prompt": _negative_prompt(),
+    }
+
+
+def _structural_quality(file_name: str) -> dict[str, object]:
+    if file_name not in _STRUCTURAL_FILES:
+        return {
+            "gate": "standard_overlay",
+            "reject_rectangular_plate": False,
+            "require_soft_alpha_edge": False,
+            "forbid_visible_connector_geometry": False,
+            "assembly_preview_required": True,
+        }
+
+    return {
+        "gate": "organic_silhouette",
+        "reject_rectangular_plate": True,
+        "require_soft_alpha_edge": True,
+        "forbid_visible_connector_geometry": True,
+        "assembly_preview_required": True,
     }
 
 
