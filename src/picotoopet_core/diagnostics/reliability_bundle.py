@@ -7,7 +7,6 @@ import re
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,7 +16,7 @@ from picotoopet_core.ollama.client import (
 )
 from picotoopet_core.progress.models import ProgressEvent
 
-from .reliability import ReliabilitySnapshot
+from .reliability import MemoryPressureSummary, ReliabilitySnapshot
 
 _MAX_PROGRESS_EVENTS  = 100
 _MAX_LOG_LINES        = 200
@@ -54,16 +53,6 @@ class WorkerLeaseFact(BaseModel):
     worker_id: str = Field(min_length=1, max_length=200)
     lease_alive: bool
     lease_expires_at: datetime | None = None
-
-
-class MemoryPressureSummary(BaseModel):
-    """Coarse memory pressure only; never includes a process memory dump."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    level: Literal["normal", "warn", "high"]
-    source: str = Field(min_length=1, max_length=80)
-    available_bytes: int | None = Field(default=None, ge=0, le=10**16)
 
 
 class ReliabilityBundleInput(BaseModel):
