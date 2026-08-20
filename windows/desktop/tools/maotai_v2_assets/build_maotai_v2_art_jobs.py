@@ -22,7 +22,8 @@ DEFAULT_REFERENCE_FILES = (
 
 _MIN_SCALE          = 2.0
 _CANONICAL_VIEW     = "three-quarter front"
-_IDENTITY_ANCHOR    = "01_maotai_rig_design_sheet.png"
+_IDENTITY_ANCHOR    = "03_working_happy.png"
+_GEOMETRY_REFERENCE = "01_maotai_rig_design_sheet.png"
 _ORGANIC_CATEGORIES = frozenset({"core", "face", "limb", "tail", "accessory"})
 
 
@@ -39,10 +40,11 @@ def build_art_plan(
     manifest    = Path(manifest_path).resolve()
     descriptors = parse_manifest(manifest)
     references  = _normalize_reference_files(reference_files)
-    if _IDENTITY_ANCHOR not in references:
-        raise ValueError(
-            f"Maotai v2 canonical identity anchor is required: {_IDENTITY_ANCHOR}"
-        )
+    for required_reference in (_IDENTITY_ANCHOR, _GEOMETRY_REFERENCE):
+        if required_reference not in references:
+            raise ValueError(
+                f"Maotai v2 required art reference is missing: {required_reference}"
+            )
 
     jobs = [
         _build_job(descriptor, scale=float(scale), references=references)
@@ -60,6 +62,7 @@ def build_art_plan(
             "default_scale": float(scale),
             "canonical_view": _CANONICAL_VIEW,
             "identity_anchor": _IDENTITY_ANCHOR,
+            "geometry_reference": _GEOMETRY_REFERENCE,
             "camera_locked_across_jobs": True,
             "lighting_locked_across_jobs": True,
             "structural_anisotropic_warp_forbidden": True,
@@ -98,6 +101,7 @@ def _build_job(
         "design_fidelity": {
             "canonical_view": _CANONICAL_VIEW,
             "identity_anchor": _IDENTITY_ANCHOR,
+            "geometry_reference": _GEOMETRY_REFERENCE,
             "preserve_native_aspect": True,
             "assembly_preview_required": True,
         },
@@ -144,7 +148,7 @@ def _positive_prompt(
         "face": (
             "Render only the requested facial/head component with matching fur direction, material, "
             "expression language, and transparent padding around the overlay. Keep skull taper, muzzle "
-            "placement, and eye spacing locked to the canonical design anchor rather than inventing a round mask."
+            "placement, and eye spacing locked to the canonical identity art rather than inventing a round mask."
         ),
         "limb": (
             "Render only this limb segment or paw in the canonical joint orientation; preserve generous "
@@ -169,11 +173,13 @@ def _positive_prompt(
         f"Create exactly one isolated independent raster component: {part_name}. "
         "Character identity is Maotai, a premium cute chibi Alaskan Malamute desktop pet with soft "
         "high-end 3D CG fur rendering and the established blue-headphone visual identity where relevant. "
-        f"Lock the camera to the exact canonical {_CANONICAL_VIEW} view from {_IDENTITY_ANCHOR}; do not "
-        "reinterpret the camera separately for this component. Lock fur colors, strand scale, material response, "
-        "and studio lighting to that same identity anchor. Other supplied references may clarify expression or "
-        "props only; they must not override camera, skull/body proportions, coat palette, or fur material. "
-        "References are identity/style/pose guidance only; do not crop or extract pixels from them. "
+        f"Use {_IDENTITY_ANCHOR} as the sole identity, material, coat-palette, proportion, camera, and lighting "
+        f"anchor for organic character surfaces, locked to the canonical {_CANONICAL_VIEW} view. "
+        f"Use {_GEOMETRY_REFERENCE} as a geometry guide only: it may guide pivot, attachment location, overlap, "
+        "and component extent, but none of its rig sockets, cutaway edges, connector circles, stumps, or exploded "
+        "construction marks may appear in final visible art. Other supplied references may clarify expression or "
+        "props only; they must not override the identity anchor. References are guidance only; do not crop or "
+        "extract pixels from a complete dog. "
         f"{category_instruction} "
         f"Final canvas is {width_px}x{height_px}px with transparent background. "
         f"Target logical pivot maps to approximately ({pivot_x:.1f}, {pivot_y:.1f})px on this canvas. "
@@ -227,12 +233,12 @@ def _part_category(file_name: str) -> str:
 
 
 def _primary_reference(category: str) -> str:
-    # Identity surfaces      : all organic parts share one camera/material anchor; per-state art cannot redefine identity.
+    # Identity surfaces      : completed character art owns camera/material; the rig sheet is geometry-only.
     if category in _ORGANIC_CATEGORIES:
         return _IDENTITY_ANCHOR
 
-    # Props only             : working reference remains useful for laptop/drink scale without contaminating character identity.
-    return "03_working_happy.png"
+    # Props only             : working reference also defines laptop/drink scale without changing character identity.
+    return _IDENTITY_ANCHOR
 
 
 def _seed_family(file_name: str) -> str:
