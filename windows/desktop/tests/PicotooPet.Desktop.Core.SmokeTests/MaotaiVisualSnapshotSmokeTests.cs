@@ -104,7 +104,7 @@ internal static class MaotaiVisualSnapshotSmokeTests
         apply.Invoke(renderer, [frame]);
         VerifyWorkAccessoryVisibility(panel, label, expectedVisible: baseState == "Working");
         VerifyPoseCohesionVisibility(panel, label);
-        VerifyRunPawFootprint(panel, label);
+        VerifyRunPawNativeScale(panel, label);
         if (baseState == "Working")
         {
             VerifyWorkPropLayout(panel);
@@ -162,56 +162,46 @@ internal static class MaotaiVisualSnapshotSmokeTests
 
     private static void VerifyPoseCohesionVisibility(AssistantPetPanel panel, string label)
     {
-        // Front-view occlusion  : moving rear limbs sit behind the torso/front pair instead of creating detached side pieces.
-        // Folded rest/work      : work/sleep continue to tuck all long upper segments behind the plush torso.
-        var hideFrontUpper = label is "work" or "sleep";
-        var hideRearUpper  = label is "work" or "sleep" or "run";
+        // Folded poses        : work/sleep may tuck long segments behind the plush torso while keeping paws readable.
+        // Locomotion/idle     : real Upper -> Lower -> Paw chains remain visible; do not hide rear legs to fake cohesion.
+        var foldedPose = label is "work" or "sleep";
+        var segmentOpacity = foldedPose ? 0.0 : 1.0;
 
         foreach (var name in new[]
                  {
                      "MaotaiV2FrontLeftUpper",
                      "MaotaiV2FrontRightUpper",
-                 })
-        {
-            AssertOpacity(panel, label, name, hideFrontUpper ? 0.0 : 1.0, "前腿连续主轮廓");
-        }
-
-        foreach (var name in new[]
-                 {
-                     "MaotaiV2HindLeftUpper",
-                     "MaotaiV2HindRightUpper",
-                 })
-        {
-            AssertOpacity(panel, label, name, hideRearUpper ? 0.0 : 1.0, "前视后腿遮挡");
-        }
-
-        foreach (var name in new[]
-                 {
                      "MaotaiV2FrontLeftLower",
                      "MaotaiV2FrontRightLower",
+                     "MaotaiV2HindLeftUpper",
+                     "MaotaiV2HindRightUpper",
                      "MaotaiV2HindLeftLower",
                      "MaotaiV2HindRightLower",
                  })
         {
-            AssertOpacity(panel, label, name, 0.0, "禁止上下腿横向拼接缝");
+            AssertOpacity(panel, label, name, segmentOpacity, "真实双段腿显隐");
         }
 
-        AssertOpacity(panel, label, "MaotaiV2FrontLeftPaw",  1.0, "前脚接触点");
-        AssertOpacity(panel, label, "MaotaiV2FrontRightPaw", 1.0, "前脚接触点");
-        var rearPawOpacity = label == "run" ? 0.0 : 1.0;
-        AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",  rearPawOpacity, "前视后脚遮挡");
-        AssertOpacity(panel, label, "MaotaiV2HindRightPaw", rearPawOpacity, "前视后脚遮挡");
+        foreach (var name in new[]
+                 {
+                     "MaotaiV2FrontLeftPaw",
+                     "MaotaiV2FrontRightPaw",
+                     "MaotaiV2HindLeftPaw",
+                     "MaotaiV2HindRightPaw",
+                 })
+        {
+            AssertOpacity(panel, label, name, 1.0, "四脚自然接触点");
+        }
     }
 
-    private static void VerifyRunPawFootprint(AssistantPetPanel panel, string label)
+    private static void VerifyRunPawNativeScale(AssistantPetPanel panel, string label)
     {
         if (label != "run")
         {
             return;
         }
 
-        // Paw footprint       : keep the physical contact pivot unchanged, but narrow only the rendered moving paw fur.
-        // Overlap prevention  : two full-width 34px paw sprites visibly stack in front view even when IK lanes are valid.
+        // Native paw volume   : lane/IK math resolves crossing; renderer must not squash the actual paw artwork.
         foreach (var name in new[]
                  {
                      "MaotaiV2FrontLeftPaw",
@@ -227,11 +217,11 @@ internal static class MaotaiVisualSnapshotSmokeTests
                 throw new InvalidOperationException($"Maotai visual snapshot {name} 缺少缓存 ScaleTransform");
             }
 
-            if (scale.ScaleX > 0.80 || scale.ScaleX < 0.70)
+            if (scale.ScaleX < 0.95 || scale.ScaleX > 1.05)
             {
                 throw new InvalidOperationException(
-                    $"Maotai run {name} 横向 footprint 必须收窄以避免双爪毛边堆叠；" +
-                    $"expected=0.70..0.80, actual={scale.ScaleX:F2}");
+                    $"Maotai run {name} 必须保留原生横向体积；" +
+                    $"expected=0.95..1.05, actual={scale.ScaleX:F2}");
             }
         }
     }
