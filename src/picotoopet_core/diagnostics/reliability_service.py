@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
+from pydantic import ValidationError
 
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import TaskStatus
@@ -15,6 +17,7 @@ from picotoopet_core.ollama.client import (
     OllamaProcessSnapshot,
     OllamaVersionObservation,
 )
+from picotoopet_core.ollama.model_runner import ModelRunnerStatus
 from picotoopet_core.progress.models import ProgressEvent
 from picotoopet_core.progress.repository import ProgressRepository
 from picotoopet_core.worker.state import WorkerStateStore
@@ -34,6 +37,7 @@ from .reliability_bundle import (
 )
 
 _MAX_COMPONENT_HEALTH = 64
+_MAX_MODEL_RUNNER_STATUS_BYTES = 16 * 1024
 
 
 class ReliabilityService:
@@ -48,13 +52,19 @@ class ReliabilityService:
         progress: ProgressRepository,
         bundle_builder: ReliabilityBundleBuilder,
         memory_pressure: Callable[[], MemoryPressureSummary] | None = None,
+        model_runner_status_path: Path | str | None = None,
     ) -> None:
-        self.database        = database
-        self.worker_state    = worker_state
-        self.ollama          = ollama
-        self.progress        = progress
-        self.bundle_builder  = bundle_builder
-        self.memory_pressure = memory_pressure or observe_memory_pressure
+        self.database                 = database
+        self.worker_state             = worker_state
+        self.ollama                   = ollama
+        self.progress                 = progress
+        self.bundle_builder           = bundle_builder
+        self.memory_pressure          = memory_pressure or observe_memory_pressure
+        self.model_runner_status_path = (
+            None
+            if model_runner_status_path is None
+            else Path(model_runner_status_path).expanduser().resolve()
+        )
 
     def snapshot(self) -> ReliabilitySnapshot:
         """Return one truthful current projection without creating tasks or loading models."""
@@ -82,6 +92,7 @@ class ReliabilityService:
 
         memory = self._memory_pressure()
         ollama_version, ollama_processes, ollama_reachable = self._ollama_facts()
+        model_runner_status = self._model_runner_status()
         snapshot = classify_reliability(
             ReliabilityObservation(
                 observed_at=observed_at,
@@ -91,8 +102,11 @@ class ReliabilityService:
                 worker_status_stale=worker.reason == "worker_heartbeat_stale",
                 active_task_lease_alive=lease is not None,
                 ollama_server_reachable=ollama_reachable,
-                # ── Model execution faults stay false until a canonical runner records them. ──
-                model_job_timed_out=False,
+                model_job_timed_out=(
+                    model_runner_status is not None
+                    and model_runner_status.outcome == "timeout"
+                ),
+                # ── Invalid-output projection is added by its own RED contract. ──
                 model_output_invalid=False,
                 memory_pressure=memory.level,
                 active_task_id=None if lease is None else lease.task_id,
@@ -109,6 +123,18 @@ class ReliabilityService:
             ollama_processes=ollama_processes,
             memory=memory,
         )
+
+    def _model_runner_status(self) -> ModelRunnerStatus | None:
+        path = self.model_runner_status_path
+        if path is None or not path.is_file():
+            return None
+        try:
+            if path.stat().st_size > _MAX_MODEL_RUNNER_STATUS_BYTES:
+                return None
+            return ModelRunnerStatus.model_validate_json(path.read_bytes())
+        except (OSError, ValidationError, ValueError):
+            # ── A missing/corrupt diagnostic projection cannot invent a model fault. ──
+            return None
 
     def _active_lease(self, observed_at: datetime) -> WorkerLeaseFact | None:
         row = self.database.fetchone(
