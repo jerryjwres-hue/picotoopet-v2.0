@@ -55,7 +55,8 @@ def test_goal_creation_is_idempotent_and_does_not_create_a_second_queue(tmp_path
     assert database.scalar("SELECT COUNT(*) FROM autonomous_goals") == 1
     assert database.scalar("SELECT COUNT(*) FROM tasks") == 0
     assert database.scalar("SELECT COUNT(*) FROM workflow_runs") == 0
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 21
+    # Schema retention gate      Goal facts survive progress-ledger schema 22.
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 22
     database.close()
 
 
