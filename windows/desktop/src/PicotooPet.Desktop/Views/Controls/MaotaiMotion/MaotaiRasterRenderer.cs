@@ -357,8 +357,8 @@ internal sealed class MaotaiRasterRenderer
         var distance    = Math.Sqrt((dx * dx) + (dy * dy));
         var angleDeg    = Math.Atan2(dy, dx) * 180.0 / Math.PI;
 
-        // Visual root        : front-leg art starts higher inside torso fur; Motion Engine shoulder/foot-lock coordinates stay untouched.
-        // Visual reach       : use the post-pivot PNG reach and overlap the paw by a few pixels so no white socket ring remains visible.
+        // Visual root       : front-leg art starts higher inside torso fur; Motion Engine shoulder/foot-lock coordinates stay untouched.
+        // Visual reach      : use the post-pivot PNG reach and overlap the paw by a few pixels so no white socket ring remains visible.
         var pivotY      = upper.Element.RenderTransformOrigin.Y;
         var visualReach = Math.Max(1.0, upper.Element.Height * (1.0 - pivotY));
         var scaleY      = Math.Clamp((distance + 4.0) / visualReach, 0.72, maxScaleY);
@@ -399,8 +399,8 @@ internal sealed class MaotaiRasterRenderer
     {
         var movingFrontView = state is MaotaiMotionState.Walk or MaotaiMotionState.Run;
 
-        // Contact pivot       : position/rotation remain the exact Motion Engine output, so foot-lock physics are untouched.
-        // Fur footprint       : narrow only the displayed moving paw around its existing pivot to stop front-view sprite stacking.
+        // Contact pivot      : position/rotation remain the exact Motion Engine output, so foot-lock physics are untouched.
+        // Fur footprint      : narrow only the displayed moving paw around its existing pivot to stop front-view sprite stacking.
         part.Apply(
             pose.X,
             pose.Y,
