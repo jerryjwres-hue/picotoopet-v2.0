@@ -11,6 +11,8 @@ from maotai_png_validation import MAX_PIXEL_DIMENSION, PNG_SIGNATURE, _unfilter_
 
 
 _TORSO_SIDE_LOBE_RETURN_LIMIT = 0.12
+_TORSO_SIDE_LOBE_WINDOW_RATIO = 0.12
+_TORSO_SIDE_LOBE_SEARCH_BANDS = ((0.12, 0.45), (0.55, 0.88))
 
 
 def validate_visible_connector_geometry(
@@ -39,7 +41,7 @@ def validate_visible_connector_geometry(
 
 
 def measure_torso_side_lobe_return_ratio(path: Path) -> float:
-    """量化上半身侧凸后快速回缩；插口/残根会形成明显局部峰值，连续躯干不会。"""
+    """量化躯干侧向局部凸起；连续躯干的单调扩张/收缩不应被误判为连接残根。"""
     row_spans = _decode_visible_row_spans(path)
     if len(row_spans) < 8:
         return 0.0
@@ -49,23 +51,29 @@ def measure_torso_side_lobe_return_ratio(path: Path) -> float:
         return 0.0
 
     row_count       = len(row_spans)
-    search_start    = max(0, int(math.floor(row_count * 0.15)))
-    search_end      = min(row_count - 1, int(math.floor(row_count * 0.55)))
-    lookahead_rows  = max(3, int(math.ceil(row_count * 0.20)))
+    shoulder_window = max(3, int(math.ceil(row_count * _TORSO_SIDE_LOBE_WINDOW_RATIO)))
     strongest_ratio = 0.0
 
-    for index in range(search_start, search_end + 1):
-        end = min(row_count, index + lookahead_rows + 1)
-        if index + 1 >= end:
+    for start_ratio, end_ratio in _TORSO_SIDE_LOBE_SEARCH_BANDS:
+        search_start = max(shoulder_window, int(math.floor(row_count * start_ratio)))
+        search_end   = min(
+            row_count - shoulder_window - 1,
+            int(math.floor(row_count * end_ratio)),
+        )
+        if search_start > search_end:
             continue
 
-        peak_span   = row_spans[index]
-        return_span = min(row_spans[index + 1 : end])
-        if return_span >= peak_span:
-            continue
+        for index in range(search_start, search_end + 1):
+            peak_span    = row_spans[index]
+            previous_min = min(row_spans[index - shoulder_window : index])
+            following_min = min(row_spans[index + 1 : index + shoulder_window + 1])
 
-        ratio = (peak_span - return_span) / float(maximum_span)
-        strongest_ratio = max(strongest_ratio, ratio)
+            rise_ratio   = (peak_span - previous_min) / float(maximum_span)
+            return_ratio = (peak_span - following_min) / float(maximum_span)
+            if rise_ratio <= 0.0 or return_ratio <= 0.0:
+                continue
+
+            strongest_ratio = max(strongest_ratio, min(rise_ratio, return_ratio))
 
     return strongest_ratio
 
