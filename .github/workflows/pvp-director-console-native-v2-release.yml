@@ -38,9 +38,6 @@ jobs:
           $parts = @(Get-ChildItem -LiteralPath $bootstrap -Filter "native.part*.b64" | Sort-Object Name)
           if ($parts.Count -lt 1) { throw "N6E1 Native source bundle parts are missing." }
 
-          # Each part ends on a Base64 quartet boundary. Decode each part independently and
-          # append bytes so whitespace/newline differences between GitHub text blobs cannot
-          # corrupt the reconstructed ZIP.
           $stream = [System.IO.File]::Open($bundle, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
           try {
             foreach ($part in $parts) {
@@ -66,6 +63,18 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
+      - name: Smoke exact VBS launchers under Chinese and spaced path
+        shell: powershell
+        run: |
+          $src = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\vbs-smoke"
+          $dst = Join-Path $env:RUNNER_TEMP "视频 制作\安装包"
+          New-Item -ItemType Directory -Path $dst -Force | Out-Null
+          Copy-Item -Path (Join-Path $src '*') -Destination $dst -Force
+          foreach ($name in @('INSTALL_PVP_DIRECTOR_CONSOLE.vbs','VERIFY_PVP_DIRECTOR_CONSOLE.vbs','ROLLBACK_PVP_DIRECTOR_CONSOLE.vbs')) {
+            & "$env:SystemRoot\System32\cscript.exe" //nologo (Join-Path $dst $name)
+            if ($LASTEXITCODE -ne 0) { throw "$name failed cscript smoke with exit code $LASTEXITCODE" }
+          }
 
       - name: Install exact .NET SDK
         uses: actions/setup-dotnet@v6
