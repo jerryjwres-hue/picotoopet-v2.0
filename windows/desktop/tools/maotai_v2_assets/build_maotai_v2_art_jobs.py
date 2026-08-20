@@ -20,7 +20,10 @@ DEFAULT_REFERENCE_FILES = (
     "06_idle_paw.png",
 )
 
-_MIN_SCALE = 2.0
+_MIN_SCALE          = 2.0
+_CANONICAL_VIEW     = "three-quarter front"
+_IDENTITY_ANCHOR    = "01_maotai_rig_design_sheet.png"
+_ORGANIC_CATEGORIES = frozenset({"core", "face", "limb", "tail", "accessory"})
 
 
 def build_art_plan(
@@ -36,7 +39,12 @@ def build_art_plan(
     manifest    = Path(manifest_path).resolve()
     descriptors = parse_manifest(manifest)
     references  = _normalize_reference_files(reference_files)
-    jobs        = [
+    if _IDENTITY_ANCHOR not in references:
+        raise ValueError(
+            f"Maotai v2 canonical identity anchor is required: {_IDENTITY_ANCHOR}"
+        )
+
+    jobs = [
         _build_job(descriptor, scale=float(scale), references=references)
         for descriptor in descriptors.values()
     ]
@@ -50,7 +58,11 @@ def build_art_plan(
             "parts_per_job": 1,
             "source_mode": "reference_only",
             "default_scale": float(scale),
-            "canonical_view": "three-quarter front",
+            "canonical_view": _CANONICAL_VIEW,
+            "identity_anchor": _IDENTITY_ANCHOR,
+            "camera_locked_across_jobs": True,
+            "lighting_locked_across_jobs": True,
+            "structural_anisotropic_warp_forbidden": True,
             "transparent_background_required": True,
             "whole_character_crop_forbidden": True,
         },
@@ -83,6 +95,12 @@ def _build_job(
         "seed_family": _seed_family(descriptor.file_name),
         "reference_files": list(references),
         "primary_reference": _primary_reference(category),
+        "design_fidelity": {
+            "canonical_view": _CANONICAL_VIEW,
+            "identity_anchor": _IDENTITY_ANCHOR,
+            "preserve_native_aspect": True,
+            "assembly_preview_required": True,
+        },
         "output": {
             "width_px": width_px,
             "height_px": height_px,
@@ -119,19 +137,23 @@ def _positive_prompt(
     category_instruction = {
         "core": (
             "Preserve the canonical silhouette and attachment geometry; torso variants may change "
-            "only the intended crouch/stretch silhouette, never camera or identity."
+            "only the intended crouch/stretch silhouette, never camera or identity. Build continuous fur "
+            "attachment zones with no visible joint socket; torso art must contain no pre-rendered limb "
+            "stumps, rings, cuffs, or connector hardware."
         ),
         "face": (
             "Render only the requested facial/head component with matching fur direction, material, "
-            "expression language, and transparent padding around the overlay."
+            "expression language, and transparent padding around the overlay. Keep skull taper, muzzle "
+            "placement, and eye spacing locked to the canonical design anchor rather than inventing a round mask."
         ),
         "limb": (
             "Render only this limb segment or paw in the canonical joint orientation; preserve generous "
-            "hidden attachment fur so rotation cannot reveal seams."
+            "hidden attachment fur so rotation cannot reveal seams. The visible silhouette must read as "
+            "continuous organic fur with no cuff, no hard ring, no socket lip, and no mechanical transition."
         ),
         "tail": (
             "Render only this tail segment with continuous fur flow and generous hidden attachment fur "
-            "for rotation overlap."
+            "for rotation overlap. Match the same strand scale, palette, light direction, and softness as the torso."
         ),
         "accessory": (
             "Render only the requested blue-headphone component, matching the canonical material, "
@@ -147,24 +169,29 @@ def _positive_prompt(
         f"Create exactly one isolated independent raster component: {part_name}. "
         "Character identity is Maotai, a premium cute chibi Alaskan Malamute desktop pet with soft "
         "high-end 3D CG fur rendering and the established blue-headphone visual identity where relevant. "
-        "Use the exact canonical three-quarter front perspective, proportions, fur colors, material response, "
-        "and studio lighting from the supplied reference images. References are identity/style/pose guidance "
-        "only; do not crop or extract pixels from them. "
+        f"Lock the camera to the exact canonical {_CANONICAL_VIEW} view from {_IDENTITY_ANCHOR}; do not "
+        "reinterpret the camera separately for this component. Lock fur colors, strand scale, material response, "
+        "and studio lighting to that same identity anchor. Other supplied references may clarify expression or "
+        "props only; they must not override camera, skull/body proportions, coat palette, or fur material. "
+        "References are identity/style/pose guidance only; do not crop or extract pixels from them. "
         f"{category_instruction} "
         f"Final canvas is {width_px}x{height_px}px with transparent background. "
         f"Target logical pivot maps to approximately ({pivot_x:.1f}, {pivot_y:.1f})px on this canvas. "
         f"Where this part attaches, preserve hidden fur overlap of approximately {overlap:.1f}px; for overlays "
         "without a rotating joint, preserve clean transparent padding while keeping the same hidden fur overlap "
-        "production margin. Keep the requested component fully inside the canvas with transparent edge padding."
+        "production margin. Preserve the native component aspect ratio implied by the manifest; do not squash "
+        "or stretch the component to compensate for assembly problems. Keep the requested component fully "
+        "inside the canvas with transparent edge padding."
     )
 
 
 def _negative_prompt() -> str:
     return (
         "complete dog, assembled dog, full-body character, whole character frame, complete head when only a "
-        "sub-part is requested, extra limb, duplicate part, additional body parts, disconnected duplicate fur, "
-        "sprite sheet, contact sheet, exploded sheet, grid, panel layout, crop marks, labels, text, typography, "
-        "UI, interface, scenery, room, landscape, decorative background, white background, opaque background, "
+        "sub-part is requested, extra limb, duplicate part, additional body parts, limb stump, circular connector, "
+        "socket ring, mechanical connector, visible joint socket, hard cuff, disconnected duplicate fur, sprite "
+        "sheet, contact sheet, exploded sheet, grid, panel layout, crop marks, labels, text, typography, UI, "
+        "interface, scenery, room, landscape, decorative background, white background, opaque background, "
         "colored background, hard rectangle edge, clipping, cutout from a complete dog, inconsistent camera, "
         "different breed, husky identity drift, mismatched lighting, mismatched fur palette, low-detail vector art"
     )
@@ -200,11 +227,12 @@ def _part_category(file_name: str) -> str:
 
 
 def _primary_reference(category: str) -> str:
-    if category in {"core", "face", "accessory"}:
-        return "03_working_happy.png"
-    if category == "limb":
-        return "06_idle_paw.png"
-    return "01_maotai_rig_design_sheet.png"
+    # Identity surfaces      : all organic parts share one camera/material anchor; per-state art cannot redefine identity.
+    if category in _ORGANIC_CATEGORIES:
+        return _IDENTITY_ANCHOR
+
+    # Props only             : working reference remains useful for laptop/drink scale without contaminating character identity.
+    return "03_working_happy.png"
 
 
 def _seed_family(file_name: str) -> str:
