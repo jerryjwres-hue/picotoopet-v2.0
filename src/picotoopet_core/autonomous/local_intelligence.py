@@ -8,6 +8,8 @@ commands; callers provide only a fixed role, bounded text and evidence IDs.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
@@ -186,24 +188,42 @@ def _to_local_result(request: LocalAnalysisRequest, result: object) -> LocalAnal
     )
 
 
+def _default_model_runner_root() -> Path:
+    """Mirror the configured runtime root so legacy worker assembly stays managed."""
+
+    configured = os.getenv("PICOTOO_RUNTIME_ROOT", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve() / "runtime" / "model-runner"
+    if sys.platform == "darwin":
+        root = Path.home() / "Library" / "Application Support" / "PicotooPetV2"
+    else:
+        root = Path.home() / ".local" / "share" / "PicotooPetV2"
+    return root / "runtime" / "model-runner"
+
+
 def build_ollama_local_intelligence_adapter(
     *,
-    work_root: Path | str,
+    work_root: Path | str | None = None,
     model_name: str = "gpt-oss:20b",
     base_url: str = "http://127.0.0.1:11434/v1",
-    timeout_seconds: float = 900.0,
+    timeout_seconds: float | None = None,
 ) -> IsolatedRunnerLocalIntelligenceAdapter:
     """Build the production local-analysis adapter with a hard subprocess boundary."""
 
+    configured_timeout = (
+        float(os.getenv("PICOTOO_LOCAL_INTELLIGENCE_TIMEOUT_SECONDS", "900"))
+        if timeout_seconds is None
+        else float(timeout_seconds)
+    )
     policy = ModelRunnerPolicy(
-        hard_timeout_seconds=min(float(timeout_seconds), 1800.0),
+        hard_timeout_seconds=min(configured_timeout, 1800.0),
         max_attempts=2,
         circuit_failure_threshold=2,
         circuit_cooldown_seconds=60.0,
     )
     return IsolatedRunnerLocalIntelligenceAdapter(
         IsolatedModelRunner(
-            work_root=work_root,
+            work_root=work_root or _default_model_runner_root(),
             model_name=model_name,
             base_url=base_url,
             policy=policy,
