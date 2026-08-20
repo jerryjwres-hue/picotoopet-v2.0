@@ -15,10 +15,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  windows-release:
-    name: PVP native Windows build and prebuilt release gate
+  native-wpf-gate:
+    name: N6E1 native WPF compile publish self-test
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       CI: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -29,19 +29,19 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v6
 
-      - name: Reassemble and expand frozen N6E source bundle
+      - name: Reassemble frozen Native source bundle
         shell: powershell
         run: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $bootstrap = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap"
-          $bundle = Join-Path $env:RUNNER_TEMP "PVP_DirectorConsole_Native_V2_N6E_SOURCE.zip"
-          $parts = Get-ChildItem -LiteralPath $bootstrap -Filter "source.part*.b64" | Sort-Object Name
-          if ($parts.Count -lt 1) { throw "N6E source bundle parts are missing." }
+          $bundle = Join-Path $env:RUNNER_TEMP "PVP_DirectorConsole_Native_N6E1.zip"
+          $parts = Get-ChildItem -LiteralPath $bootstrap -Filter "native.part*.b64" | Sort-Object Name
+          if ($parts.Count -lt 1) { throw "N6E1 Native source bundle parts are missing." }
           $base64 = ($parts | ForEach-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() }) -join ""
           [System.IO.File]::WriteAllBytes($bundle, [System.Convert]::FromBase64String($base64))
-          $expected = (Get-Content -LiteralPath (Join-Path $bootstrap "SOURCE_BUNDLE.sha256") -Raw).Trim().Split()[0].ToLowerInvariant()
+          $expected = (Get-Content -LiteralPath (Join-Path $bootstrap "NATIVE_BUNDLE.sha256") -Raw).Trim().Split()[0].ToLowerInvariant()
           $actual = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "N6E source bundle SHA-256 mismatch." }
+          if ($actual -ne $expected) { throw "N6E1 Native source bundle SHA-256 mismatch." }
           $target = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2"
           if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
           [System.IO.Directory]::CreateDirectory($target) | Out-Null
@@ -57,31 +57,45 @@ jobs:
         with:
           global-json-file: pvp/director-console-native-v2/global.json
 
-      - name: Show Windows and toolchain
+      - name: Run Native source contracts
         shell: powershell
         run: |
-          [Environment]::OSVersion.VersionString
-          python --version
-          dotnet --info
-          $PSVersionTable.PSVersion
+          python -m unittest discover -s .\pvp\director-console-native-v2\native\tests -p "test_*.py" -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Build, publish and self-test
+      - name: Build Native WPF
         shell: powershell
         run: |
-          .\pvp\director-console-native-v2\scripts\Build-PvpDirectorConsoleRelease.ps1
+          $project = ".\pvp\director-console-native-v2\native\PVP.DirectorConsole\PVP.DirectorConsole.csproj"
+          dotnet restore $project --runtime win-x64 --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build $project --configuration Release --runtime win-x64 --no-restore --nologo -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Verify final prebuilt package on Windows PowerShell 5.1
+      - name: Publish self-contained Native EXE
         shell: powershell
         run: |
-          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\pvp\director-console-native-v2\scripts\Test-PvpDirectorConsoleRelease.ps1
+          $project = ".\pvp\director-console-native-v2\native\PVP.DirectorConsole\PVP.DirectorConsole.csproj"
+          $output = ".\pvp\director-console-native-v2\artifacts\native-publish"
+          dotnet publish $project --configuration Release --runtime win-x64 --self-contained true --output $output --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload prebuilt installer and evidence
+      - name: Run published Native self-test
+        shell: powershell
+        run: |
+          $exe = ".\pvp\director-console-native-v2\artifacts\native-publish\PVP Director Console.exe"
+          $report = ".\pvp\director-console-native-v2\artifacts\native-self-test.json"
+          & $exe --self-test --self-test-output $report
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if ([string]$result.status -ne "pass") { throw "Native self-test report is not pass." }
+
+      - name: Upload N6E1 Native artifact and evidence
         uses: actions/upload-artifact@v7
         with:
-          name: PVP-DirectorConsole-NativeV2-Prebuilt
+          name: PVP-DirectorConsole-NativeV2-N6E1
           path: |
-            pvp/director-console-native-v2/artifacts/release/PVP-DirectorConsole-NativeV2-Prebuilt-*.zip
-            pvp/director-console-native-v2/artifacts/release/PVP-DirectorConsole-NativeV2-Prebuilt-*.zip.sha256.txt
-            pvp/director-console-native-v2/artifacts/release/windows-build-report.json
+            pvp/director-console-native-v2/artifacts/native-publish/**
+            pvp/director-console-native-v2/artifacts/native-self-test.json
           if-no-files-found: error
           retention-days: 30
