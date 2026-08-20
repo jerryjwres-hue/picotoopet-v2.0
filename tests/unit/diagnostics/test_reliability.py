@@ -40,16 +40,15 @@ def test_worker_status_stale_while_lease_alive_is_a_distinct_fault() -> None:
         )
     )
 
-    assert snapshot.primary_fault is ReliabilityFaultCode.WORKER_STATUS_HEARTBEAT_STALE_WHILE_LEASE_ALIVE
+    expected = ReliabilityFaultCode.WORKER_STATUS_HEARTBEAT_STALE_WHILE_LEASE_ALIVE
+    assert snapshot.primary_fault is expected
     assert snapshot.status == "failed"
     assert snapshot.active_task_id == "task-long-model"
     assert snapshot.active_stage == "local-analysis"
 
 
 def test_event_stream_transient_does_not_mark_reachable_core_offline() -> None:
-    snapshot = classify_reliability(
-        _observation(event_stream_connected=False)
-    )
+    snapshot = classify_reliability(_observation(event_stream_connected=False))
 
     assert snapshot.primary_fault is ReliabilityFaultCode.EVENT_STREAM_TRANSIENT
     assert snapshot.status == "degraded"
