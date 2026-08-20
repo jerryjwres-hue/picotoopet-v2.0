@@ -23,7 +23,7 @@ internal static class MaotaiRasterFaceLayout
     {
         ArgumentNullException.ThrowIfNull(headPanel);
 
-        // Static art-fit scale : the real head shell is intentionally slightly taller/narrower than a circle.
+        // Canine profile       : keep the real raster head slightly taller/narrower so it never reads as a circular mascot ball.
         // Motion ownership     : dynamic HeadScale remains Motion Engine-owned; this only calibrates raster proportions once.
         headPanel.LayoutTransform = new ScaleTransform(HeadVisualScaleX, HeadVisualScaleY);
 
