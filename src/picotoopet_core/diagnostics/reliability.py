@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+MemoryPressureLevel = Literal["unknown", "normal", "warn", "high"]
+_MEMORY_FREE_PERCENT = re.compile(r"System-wide memory free percentage:\s*(\d+)%")
 
 
 class ReliabilityFaultCode(StrEnum):
@@ -23,6 +30,16 @@ class ReliabilityFaultCode(StrEnum):
     MEMORY_PRESSURE_HIGH       = "MEMORY_PRESSURE_HIGH"
 
 
+class MemoryPressureSummary(BaseModel):
+    """Coarse memory pressure only; never includes process dumps or raw command output."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    level: MemoryPressureLevel
+    source: str = Field(min_length=1, max_length=80)
+    available_bytes: int | None = Field(default=None, ge=0, le=10**16)
+
+
 class ReliabilityObservation(BaseModel):
     """Bounded facts only; this model never accepts credentials, paths, or raw model text."""
 
@@ -36,7 +53,7 @@ class ReliabilityObservation(BaseModel):
     ollama_server_reachable: bool | None = None
     model_job_timed_out: bool = False
     model_output_invalid: bool = False
-    memory_pressure: Literal["normal", "warn", "high"] = "normal"
+    memory_pressure: MemoryPressureLevel = "unknown"
     active_task_id: str | None = Field(default=None, max_length=200)
     active_stage: str | None = Field(default=None, max_length=100)
     input_chars: int | None = Field(default=None, ge=0, le=1_000_000)
@@ -60,7 +77,7 @@ class ReliabilitySnapshot(BaseModel):
     core_reachable: bool
     event_stream_connected: bool | None = None
     ollama_server_reachable: bool | None = None
-    memory_pressure: Literal["normal", "warn", "high"]
+    memory_pressure: MemoryPressureLevel
     active_task_id: str | None = Field(default=None, max_length=200)
     active_stage: str | None = Field(default=None, max_length=100)
     input_chars: int | None = Field(default=None, ge=0, le=1_000_000)
@@ -85,6 +102,37 @@ _FAILED_FAULTS: frozenset[ReliabilityFaultCode] = frozenset(
         ReliabilityFaultCode.MODEL_OUTPUT_INVALID,
     }
 )
+
+
+def observe_memory_pressure() -> MemoryPressureSummary:
+    """Observe macOS memory pressure with a fixed read-only command and coarse output only."""
+
+    if sys.platform != "darwin":
+        return MemoryPressureSummary(level="unknown", source="unsupported-platform")
+    try:
+        result = subprocess.run(
+            ["memory_pressure", "-Q"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return MemoryPressureSummary(level="unknown", source="macos-memory-pressure")
+    if result.returncode != 0:
+        return MemoryPressureSummary(level="unknown", source="macos-memory-pressure")
+
+    match = _MEMORY_FREE_PERCENT.search(result.stdout)
+    if match is None:
+        return MemoryPressureSummary(level="unknown", source="macos-memory-pressure")
+    free_percent = int(match.group(1))
+    if free_percent < 8:
+        level: MemoryPressureLevel = "high"
+    elif free_percent < 15:
+        level = "warn"
+    else:
+        level = "normal"
+    return MemoryPressureSummary(level=level, source="macos-memory-pressure")
 
 
 def classify_reliability(observation: ReliabilityObservation) -> ReliabilitySnapshot:
