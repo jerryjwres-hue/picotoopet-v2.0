@@ -22,6 +22,7 @@ from .migration_018 import MIGRATION_018
 from .migration_019 import MIGRATION_019
 from .migration_020 import MIGRATION_020
 from .migration_021 import MIGRATION_021
+from .migration_022 import MIGRATION_022
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -39,9 +40,9 @@ class Database:
     """Mac Core SQLite 数据库。"""
 
     def __init__(self, path: Path | str) -> None:
-        self.path = Path(path).expanduser().resolve()
+        self.path        = Path(path).expanduser().resolve()
         self._connection: sqlite3.Connection | None = None
-        self._lock = threading.RLock()
+        self._lock       = threading.RLock()
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -292,7 +293,7 @@ class Database:
                 "SELECT 1 FROM schema_migrations WHERE version = 19"
             ).fetchone()
             if migration_019_exists is None:
-                # Autonomous Goal metadata extends existing workflows; it never duplicates queue facts.
+                # ── Autonomous Goal metadata extends existing workflows without duplicating queue facts. ──
                 connection.executescript(MIGRATION_019)
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
@@ -303,7 +304,7 @@ class Database:
                 "SELECT 1 FROM schema_migrations WHERE version = 20"
             ).fetchone()
             if migration_020_exists is None:
-                # Connected-program evidence is copied into Core-owned canonical facts; legacy DBs stay read-only.
+                # ── Connected evidence becomes Core-owned facts; legacy databases stay read-only. ──
                 connection.executescript(MIGRATION_020)
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
@@ -314,14 +315,25 @@ class Database:
                 "SELECT 1 FROM schema_migrations WHERE version = 21"
             ).fetchone()
             if migration_021_exists is None:
-                # Frugal coding escalation decisions are Core-owned immutable audit facts.
+                # ── Frugal coding escalation decisions remain immutable Core-owned audit facts. ──
                 connection.executescript(MIGRATION_021)
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (21, datetime.now(UTC).isoformat()),
                 )
 
-            # 2.3.27.1 删除/恢复仍是操作员列表元数据；Frugal 决策把累计 Core Schema 推进到 21。
+            migration_022_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 22"
+            ).fetchone()
+            if migration_022_exists is None:
+                # ── Superpower v1.0 progress is append-only Core truth, never a UI-only estimate. ──
+                connection.executescript(MIGRATION_022)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (22, datetime.now(UTC).isoformat()),
+                )
+
+            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 22。 ──
             connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
