@@ -65,12 +65,12 @@ class LeaseHeartbeat:
             raise ValueError("heartbeat_seconds 必须大于 0。")
         if heartbeat_seconds >= lease_seconds:
             raise ValueError("heartbeat_seconds 必须小于 lease_seconds。")
-        self.queue = queue
-        self.task_id = task_id
-        self.worker_id = worker_id
-        self.lease_seconds = lease_seconds
+        self.queue             = queue
+        self.task_id           = task_id
+        self.worker_id         = worker_id
+        self.lease_seconds     = lease_seconds
         self.heartbeat_seconds = heartbeat_seconds
-        self._stop = Event()
+        self._stop             = Event()
         self._thread: Thread | None = None
         self._error: Exception | None = None
 
@@ -96,13 +96,72 @@ class LeaseHeartbeat:
                     worker_id=self.worker_id,
                     lease_seconds=self.lease_seconds,
                 )
-            except Exception as error:  # 后台线程把错误交回主执行路径。
+            except Exception as error:  # ── 后台线程把错误交回主执行路径。 ──
                 self._error = error
                 self._stop.set()
                 return
 
     def raise_if_failed(self) -> None:
         """把续租失败重新抛到 Worker 主循环。"""
+
+        if self._error is not None:
+            raise self._error
+
+
+class WorkerLivenessHeartbeat:
+    """长任务期间独立刷新 Worker 状态，不与任务 Lease 续租职责耦合。"""
+
+    def __init__(
+        self,
+        *,
+        state_store: WorkerStateStore,
+        worker_id: str,
+        supported_task_types: tuple[str, ...],
+        active_task_id: str,
+        heartbeat_seconds: int,
+    ) -> None:
+        if heartbeat_seconds < 1:
+            raise ValueError("heartbeat_seconds 必须大于 0。")
+        self.state_store          = state_store
+        self.worker_id            = worker_id
+        self.supported_task_types = supported_task_types
+        self.active_task_id       = active_task_id
+        self.heartbeat_seconds    = heartbeat_seconds
+        self._stop                = Event()
+        self._thread: Thread | None = None
+        self._error: Exception | None = None
+
+    def __enter__(self) -> WorkerLivenessHeartbeat:
+        self._thread = Thread(
+            target=self._run,
+            name=f"picotoopet-worker-liveness-{self.active_task_id}",
+            daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:  # type: ignore[no-untyped-def]
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(1, self.heartbeat_seconds + 1))
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.heartbeat_seconds):
+            try:
+                self.state_store.publish(
+                    state="online",
+                    reason="executing",
+                    worker_id=self.worker_id,
+                    supported_task_types=self.supported_task_types,
+                    active_task_id=self.active_task_id,
+                )
+            except Exception as error:  # ── 状态心跳失败必须回到主执行路径，不能静默吞掉。 ──
+                self._error = error
+                self._stop.set()
+                return
+
+    def raise_if_failed(self) -> None:
+        """把状态心跳失败重新抛到 Worker 主循环。"""
 
         if self._error is not None:
             raise self._error
@@ -136,17 +195,17 @@ class WorkerRuntime:
         if database is not None and not isinstance(queue, DiagnosticQueueRepository):
             raise TypeError("诊断 Worker 必须使用 DiagnosticQueueRepository。")
 
-        self.queue = queue
-        self.state_store = state_store
-        self.worker_id = worker_id
-        self.database = database
-        self.result_store = result_store
+        self.queue             = queue
+        self.state_store       = state_store
+        self.worker_id         = worker_id
+        self.database          = database
+        self.result_store      = result_store
         self.diagnostic_runner = diagnostic_runner or DiagnosticSubprocessRunner()
-        self.lease_seconds = lease_seconds
+        self.lease_seconds     = lease_seconds
         self.heartbeat_seconds = heartbeat_seconds
-        self.poll_seconds = poll_seconds
-        diagnostic_handler = self._handle_diagnostic if database is not None else None
-        self.handlers = dict(handlers or default_handlers(diagnostic_handler))
+        self.poll_seconds      = poll_seconds
+        diagnostic_handler     = self._handle_diagnostic if database is not None else None
+        self.handlers          = dict(handlers or default_handlers(diagnostic_handler))
 
     @property
     def supported_task_types(self) -> tuple[str, ...]:
@@ -181,15 +240,23 @@ class WorkerRuntime:
         self._publish(state="online", reason="executing", active_task_id=task.task_id)
         handler = self.handlers[task.task_type]
         try:
+            # ── Lease 与 Worker liveness 是两个独立事实；长推理不能让 Worker 状态过期。 ──
             with LeaseHeartbeat(
                 queue=self.queue,
                 task_id=task.task_id,
                 worker_id=self.worker_id,
                 lease_seconds=self.lease_seconds,
                 heartbeat_seconds=self.heartbeat_seconds,
-            ) as heartbeat:
+            ) as lease_heartbeat, WorkerLivenessHeartbeat(
+                state_store=self.state_store,
+                worker_id=self.worker_id,
+                supported_task_types=self.supported_task_types,
+                active_task_id=task.task_id,
+                heartbeat_seconds=self.heartbeat_seconds,
+            ) as liveness_heartbeat:
                 handler_result = handler(task)
-                heartbeat.raise_if_failed()
+                lease_heartbeat.raise_if_failed()
+                liveness_heartbeat.raise_if_failed()
 
             if self._cancel_requested(task.task_id):
                 return self._finish_cancelled(task)
