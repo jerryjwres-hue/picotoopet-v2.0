@@ -106,8 +106,10 @@ class ReliabilityService:
                     model_runner_status is not None
                     and model_runner_status.outcome == "timeout"
                 ),
-                # ── Invalid-output projection is added by its own RED contract. ──
-                model_output_invalid=False,
+                model_output_invalid=(
+                    model_runner_status is not None
+                    and model_runner_status.outcome == "result_invalid"
+                ),
                 memory_pressure=memory.level,
                 active_task_id=None if lease is None else lease.task_id,
                 active_stage=active_stage,
