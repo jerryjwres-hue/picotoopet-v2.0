@@ -4,6 +4,7 @@ import math
 import struct
 import zlib
 from pathlib import Path
+from typing import Mapping
 
 from maotai_manifest_contract import AssetDescriptor
 
@@ -22,11 +23,14 @@ class PngMetrics:
         "height",
         "visible_count",
         "transparent_count",
+        "semi_transparent_count",
+        "alpha_level_count",
         "min_x",
         "min_y",
         "max_x",
         "max_y",
         "border_is_transparent",
+        "row_span_variation",
     )
 
     def __init__(
@@ -35,21 +39,43 @@ class PngMetrics:
         height: int,
         visible_count: int,
         transparent_count: int,
+        semi_transparent_count: int,
+        alpha_level_count: int,
         min_x: int,
         min_y: int,
         max_x: int,
         max_y: int,
         border_is_transparent: bool,
+        row_span_variation: float,
     ) -> None:
-        self.width                 = width
-        self.height                = height
-        self.visible_count         = visible_count
-        self.transparent_count     = transparent_count
-        self.min_x                 = min_x
-        self.min_y                 = min_y
-        self.max_x                 = max_x
-        self.max_y                 = max_y
-        self.border_is_transparent = border_is_transparent
+        self.width                  = width
+        self.height                 = height
+        self.visible_count          = visible_count
+        self.transparent_count      = transparent_count
+        self.semi_transparent_count = semi_transparent_count
+        self.alpha_level_count      = alpha_level_count
+        self.min_x                  = min_x
+        self.min_y                  = min_y
+        self.max_x                  = max_x
+        self.max_y                  = max_y
+        self.border_is_transparent  = border_is_transparent
+        self.row_span_variation     = row_span_variation
+
+    @property
+    def visible_bbox_fill_ratio(self) -> float:
+        """可见像素占自身包围盒比例；接近 1 且宽度无变化通常意味着矩形贴片。"""
+        if self.visible_count <= 0 or self.max_x < self.min_x or self.max_y < self.min_y:
+            return 0.0
+        width  = self.max_x - self.min_x + 1
+        height = self.max_y - self.min_y + 1
+        return self.visible_count / float(width * height)
+
+    @property
+    def semi_transparent_ratio(self) -> float:
+        """半透明毛边占可见像素比例；0 表示硬切 alpha 边缘。"""
+        if self.visible_count <= 0:
+            return 0.0
+        return self.semi_transparent_count / float(self.visible_count)
 
 
 def validate_png_asset(path: Path, descriptor: AssetDescriptor) -> list[str]:
@@ -85,6 +111,57 @@ def validate_png_asset(path: Path, descriptor: AssetDescriptor) -> list[str]:
         ):
             errors.append(
                 f"{descriptor.file_name}: visible pixels touch the protected canvas edge"
+            )
+
+    return errors
+
+
+def validate_structural_art_quality(
+    path: Path,
+    descriptor: AssetDescriptor,
+    quality_contract: Mapping[str, object],
+) -> list[str]:
+    """拒绝技术上合法、但会在骨骼组合时暴露为矩形贴片或硬切零件的结构素材。"""
+    if quality_contract.get("gate") != "organic_silhouette":
+        return []
+
+    try:
+        metrics = decode_png_metrics(path)
+    except (OSError, ValueError, zlib.error) as error:
+        return [f"{descriptor.file_name}: structural PNG decode failed: {error}"]
+
+    errors: list[str] = []
+    if bool(quality_contract.get("require_soft_alpha_edge")):
+        if metrics.alpha_level_count < 2 or metrics.semi_transparent_ratio < 0.015:
+            errors.append(
+                f"{descriptor.file_name}: organic structural art requires a soft alpha fur edge "
+                f"(levels={metrics.alpha_level_count}, semi={metrics.semi_transparent_ratio:.3f})"
+            )
+
+    if bool(quality_contract.get("reject_rectangular_plate")):
+        fill_ratio    = metrics.visible_bbox_fill_ratio
+        span_variance = metrics.row_span_variation
+        file_name     = descriptor.file_name
+        is_limb       = file_name.startswith(("front_", "hind_"))
+        is_upper      = file_name.endswith("_upper.png")
+
+        # Upper limbs         : existing failure mode is a long near-constant-width texture column.
+        if is_upper and (fill_ratio > 0.80 or span_variance < 0.10):
+            errors.append(
+                f"{file_name}: upper-limb silhouette is too rectangular/plate-like "
+                f"(fill={fill_ratio:.3f}, row_span_cv={span_variance:.3f})"
+            )
+        # Other limb segments : keep a looser threshold so real tapered lower-leg fur is not over-rejected.
+        elif is_limb and fill_ratio > 0.86 and span_variance < 0.08:
+            errors.append(
+                f"{file_name}: limb silhouette is too rectangular/plate-like "
+                f"(fill={fill_ratio:.3f}, row_span_cv={span_variance:.3f})"
+            )
+        # Core/head/tail       : only reject an obvious filled plate; socket semantics still require assembly review.
+        elif not is_limb and fill_ratio > 0.93 and span_variance < 0.05:
+            errors.append(
+                f"{file_name}: structural silhouette is an obvious rectangular plate "
+                f"(fill={fill_ratio:.3f}, row_span_cv={span_variance:.3f})"
             )
 
     return errors
@@ -173,6 +250,9 @@ def decode_png_metrics(path: Path) -> PngMetrics:
     previous_row          = bytearray(stride)
     visible_count         = 0
     transparent_count     = 0
+    semi_transparent_count = 0
+    alpha_levels          = [False] * 256
+    row_spans: list[int]  = []
     min_x                 = width
     min_y                 = height
     max_x                 = -1
@@ -187,6 +267,8 @@ def decode_png_metrics(path: Path) -> PngMetrics:
         cursor     += stride
         _unfilter_row(row, previous_row, bytes_per_pixel, filter_type)
 
+        row_min_x = width
+        row_max_x = -1
         for x in range(width):
             alpha = row[(x * bytes_per_pixel) + alpha_offset]
             if alpha == 0:
@@ -194,26 +276,47 @@ def decode_png_metrics(path: Path) -> PngMetrics:
                 continue
 
             visible_count += 1
-            min_x = min(min_x, x)
-            min_y = min(min_y, y)
-            max_x = max(max_x, x)
-            max_y = max(max_y, y)
+            alpha_levels[alpha] = True
+            if alpha < 255:
+                semi_transparent_count += 1
+            min_x     = min(min_x, x)
+            min_y     = min(min_y, y)
+            max_x     = max(max_x, x)
+            max_y     = max(max_y, y)
+            row_min_x = min(row_min_x, x)
+            row_max_x = max(row_max_x, x)
             if x == 0 or x == width - 1 or y == 0 or y == height - 1:
                 border_is_transparent = False
 
+        if row_max_x >= row_min_x:
+            row_spans.append(row_max_x - row_min_x + 1)
         previous_row = row
 
+    row_span_variation = _coefficient_of_variation(row_spans)
     return PngMetrics(
         width,
         height,
         visible_count,
         transparent_count,
+        semi_transparent_count,
+        sum(1 for present in alpha_levels[1:] if present),
         min_x,
         min_y,
         max_x,
         max_y,
         border_is_transparent,
+        row_span_variation,
     )
+
+
+def _coefficient_of_variation(values: list[int]) -> float:
+    if not values:
+        return 0.0
+    mean = sum(values) / float(len(values))
+    if mean <= 0.0:
+        return 0.0
+    variance = sum((value - mean) ** 2 for value in values) / float(len(values))
+    return math.sqrt(variance) / mean
 
 
 def _unfilter_row(
