@@ -145,8 +145,10 @@ def validate_structural_art_quality(
         is_limb       = file_name.startswith(("front_", "hind_"))
         is_upper      = file_name.endswith("_upper.png")
 
-        # Upper limbs         : existing failure mode is a long near-constant-width texture column.
-        if is_upper and (fill_ratio > 0.80 or span_variance < 0.10):
+        # Upper limbs         : reject a genuinely filled/constant-width plate without rejecting a natural taper.
+        if is_upper and (
+            fill_ratio > 0.90 or (fill_ratio > 0.82 and span_variance < 0.05)
+        ):
             errors.append(
                 f"{file_name}: upper-limb silhouette is too rectangular/plate-like "
                 f"(fill={fill_ratio:.3f}, row_span_cv={span_variance:.3f})"
@@ -247,18 +249,18 @@ def decode_png_metrics(path: Path) -> PngMetrics:
             f"unexpected decompressed size: {len(raw)} != {expected_bytes}"
         )
 
-    previous_row          = bytearray(stride)
-    visible_count         = 0
-    transparent_count     = 0
+    previous_row           = bytearray(stride)
+    visible_count          = 0
+    transparent_count      = 0
     semi_transparent_count = 0
-    alpha_levels          = [False] * 256
-    row_spans: list[int]  = []
-    min_x                 = width
-    min_y                 = height
-    max_x                 = -1
-    max_y                 = -1
-    border_is_transparent = True
-    cursor                = 0
+    alpha_levels           = [False] * 256
+    row_spans: list[int]   = []
+    min_x                  = width
+    min_y                  = height
+    max_x                  = -1
+    max_y                  = -1
+    border_is_transparent  = True
+    cursor                 = 0
 
     for y in range(height):
         filter_type = raw[cursor]
