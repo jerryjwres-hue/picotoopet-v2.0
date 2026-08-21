@@ -41,7 +41,7 @@ internal static class ProductVersionWpfSmokeTests
     private static void RunOnStaThread()
     {
         SmokeAssert.True(
-            ProductVersionInfo.Current == "2.3.26.1",
+            ProductVersionInfo.Current == "2.3.27.1",
             "Windows 产品工程版本资源错误");
 
         using var viewModel = ShellViewModel.CreateForSmokeTest(
@@ -76,10 +76,10 @@ internal static class ProductVersionWpfSmokeTests
 
         // Public identity gate     Superpower v1.0 is the product identity; 2.3.x remains engineering metadata.
         SmokeAssert.True(
-            window.Title == "PicotooPet AI — Superpower v1.0 · 2.3.26.1",
+            window.Title == "PicotooPet AI — Superpower v1.0 · 2.3.27.1",
             "窗口标题必须同时显示 Superpower v1.0 产品身份和工程版本");
         SmokeAssert.True(
-            subtitle.Text == "Superpower v1.0 · Control Center · v2.3.26.1",
+            subtitle.Text == "Superpower v1.0 · Control Center · v2.3.27.1",
             "控制中心副标题产品身份/版本错误");
 
         window.Close();
