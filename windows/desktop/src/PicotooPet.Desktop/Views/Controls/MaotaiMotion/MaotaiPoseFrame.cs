@@ -90,6 +90,9 @@ internal readonly record struct MaotaiPoseFrame
 
     public MaotaiMotionState MotionState { get; init; }
 
+    // Locomotion envelope   : 0=standing, 1=full run; renderer uses this continuous value instead of snapping limb visuals by state name.
+    public double LocomotionBlend { get; init; }
+
     // Expression envelope   : continuous values let overlays blend instead of snapping discrete face images.
     public double YawnProgress { get; init; }
 
