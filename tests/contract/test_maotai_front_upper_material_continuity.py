@@ -77,10 +77,8 @@ def test_runtime_front_upper_reads_as_complete_furred_leg(file_name: str) -> Non
     assert bottom_mean >= 130.0
     assert max(row_spans) - min(row_spans) >= 14
 
-    # The upper limb must also read as anatomy: a broad shoulder overlap narrows
-    # into the foreleg, then only modestly flares into lower fur. Requiring a
-    # small centerline excursion prevents a mathematically straight pillar while
-    # preserving the existing pivot and canvas semantics.
+    # The single-piece runtime limb must use shoulder overlap and a real curved
+    # centerline, then taper toward the paw instead of forming a symmetric cuff.
     assert shoulder_width - shaft_width >= 9
-    assert 2 <= lower_width - shaft_width <= 7
-    assert center_drift >= 2.5
+    assert -1 <= lower_width - shaft_width <= 4
+    assert center_drift >= 4.0
