@@ -20,25 +20,25 @@ internal static class MaotaiLegVisualPolicy
         var moving = state is MaotaiMotionState.Walk or MaotaiMotionState.Run;
         if (moving)
         {
-            // Front locomotion : reveal the real IK joint with a short overlapping lower-fur bridge.
-            // Rear depth       : keep the rear pair alive at reduced visual weight instead of deleting it.
+            // Front locomotion : keep the real IK knee, but render Lower as a narrow fur bridge instead of a second full limb block.
+            // Rear depth       : preserve a subordinate rear silhouette and paw contact without exposing another complete articulated stack.
             return isFront
                 ? new MaotaiLegVisualStyle(
                     UseArticulation: true,
                     UpperOpacity: 1.0,
-                    LowerOpacity: 0.68,
+                    LowerOpacity: 0.24,
                     PawOpacity: 1.0,
-                    PawScaleX: 0.90,
-                    UpperScaleX: 0.88,
-                    LowerScaleX: 0.78)
+                    PawScaleX: 0.92,
+                    UpperScaleX: 0.84,
+                    LowerScaleX: 0.58)
                 : new MaotaiLegVisualStyle(
-                    UseArticulation: true,
-                    UpperOpacity: 0.46,
-                    LowerOpacity: 0.34,
-                    PawOpacity: 0.44,
-                    PawScaleX: 0.88,
-                    UpperScaleX: 0.82,
-                    LowerScaleX: 0.74);
+                    UseArticulation: false,
+                    UpperOpacity: 0.28,
+                    LowerOpacity: 0.0,
+                    PawOpacity: 0.18,
+                    PawScaleX: 0.92,
+                    UpperScaleX: 0.80,
+                    LowerScaleX: 0.58);
         }
 
         var folded = state is
