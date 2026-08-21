@@ -163,21 +163,21 @@ internal static class MaotaiVisualSnapshotSmokeTests
     private static void VerifyPoseCohesionVisibility(AssistantPetPanel panel, string label)
     {
         // Stable/folded states : Idle keeps the accepted continuous silhouette; work/sleep tuck long segments under torso fur.
-        // Moving state         : Run must expose the real IK knee while the rear pair stays visible at lower depth weight.
+        // Moving state         : Run exposes a subtle front knee bridge while rear limbs remain a quiet depth cue.
         if (label == "run")
         {
             AssertOpacity(panel, label, "MaotaiV2FrontLeftUpper",  1.00, "前腿 Upper 必须可见");
             AssertOpacity(panel, label, "MaotaiV2FrontRightUpper", 1.00, "前腿 Upper 必须可见");
-            AssertOpacity(panel, label, "MaotaiV2FrontLeftLower",  0.68, "前腿 Lower 必须参与真实关节链");
-            AssertOpacity(panel, label, "MaotaiV2FrontRightLower", 0.68, "前腿 Lower 必须参与真实关节链");
-            AssertOpacity(panel, label, "MaotaiV2HindLeftUpper",   0.46, "后腿 Upper 必须后景可见");
-            AssertOpacity(panel, label, "MaotaiV2HindRightUpper",  0.46, "后腿 Upper 必须后景可见");
-            AssertOpacity(panel, label, "MaotaiV2HindLeftLower",   0.34, "后腿 Lower 必须后景可见");
-            AssertOpacity(panel, label, "MaotaiV2HindRightLower",  0.34, "后腿 Lower 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2FrontLeftLower",  0.24, "前腿 Lower 必须保持克制的毛发关节桥");
+            AssertOpacity(panel, label, "MaotaiV2FrontRightLower", 0.24, "前腿 Lower 必须保持克制的毛发关节桥");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftUpper",   0.28, "后腿 Upper 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindRightUpper",  0.28, "后腿 Upper 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftLower",   0.00, "后腿 Lower 应融入连续后景轮廓");
+            AssertOpacity(panel, label, "MaotaiV2HindRightLower",  0.00, "后腿 Lower 应融入连续后景轮廓");
             AssertOpacity(panel, label, "MaotaiV2FrontLeftPaw",    1.00, "前脚接触点");
             AssertOpacity(panel, label, "MaotaiV2FrontRightPaw",   1.00, "前脚接触点");
-            AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",     0.44, "后脚必须保留后景接触语义");
-            AssertOpacity(panel, label, "MaotaiV2HindRightPaw",    0.44, "后脚必须保留后景接触语义");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",     0.18, "后脚必须保留轻微接触语义");
+            AssertOpacity(panel, label, "MaotaiV2HindRightPaw",    0.18, "后脚必须保留轻微接触语义");
             return;
         }
 
@@ -235,11 +235,11 @@ internal static class MaotaiVisualSnapshotSmokeTests
                 throw new InvalidOperationException($"Maotai visual snapshot {name} 缺少缓存 ScaleTransform");
             }
 
-            if (scale.ScaleX > 0.92 || scale.ScaleX < 0.88)
+            if (scale.ScaleX > 0.94 || scale.ScaleX < 0.90)
             {
                 throw new InvalidOperationException(
                     $"Maotai run {name} 横向 footprint 应保留接近原生宽度；" +
-                    $"expected=0.88..0.92, actual={scale.ScaleX:F2}");
+                    $"expected=0.90..0.94, actual={scale.ScaleX:F2}");
             }
         }
     }
