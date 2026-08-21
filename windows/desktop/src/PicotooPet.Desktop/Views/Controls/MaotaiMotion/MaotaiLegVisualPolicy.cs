@@ -17,8 +17,7 @@ internal static class MaotaiLegVisualPolicy
         MaotaiMotionState state,
         bool isFront)
     {
-        var moving = state is MaotaiMotionState.Walk or MaotaiMotionState.Run;
-        if (moving)
+        if (IsLocomotionState(state))
         {
             // Front locomotion : keep the real IK knee, but render Lower as a narrow fur bridge instead of a second full limb block.
             // Rear depth       : preserve a subordinate rear silhouette and paw contact without exposing another complete articulated stack.
@@ -65,8 +64,48 @@ internal static class MaotaiLegVisualPolicy
                 LowerScaleX: 0.80);
         }
 
-        // Stable posture      : preserve the cleaner continuous silhouette outside locomotion.
-        return new MaotaiLegVisualStyle(
+        return StableStyle();
+    }
+
+    /// <summary>
+    /// 只对真实位移状态做视觉包络插值。blend=0 与稳定站姿完全一致；blend=1 才到达运动目标样式，
+    /// 因此状态机先切到 Walk/Run/WorkApproach 时不会立即闪出 Lower 或把后腿突然压暗。
+    /// </summary>
+    public static MaotaiLegVisualStyle ResolveForBlend(
+        MaotaiMotionState state,
+        bool isFront,
+        double locomotionBlend)
+    {
+        var target = Resolve(state, isFront);
+        if (!IsLocomotionState(state))
+        {
+            return target;
+        }
+
+        var start = StableStyle();
+        var t     = Math.Clamp(
+            double.IsFinite(locomotionBlend) ? locomotionBlend : 0.0,
+            0.0,
+            1.0);
+
+        return target with
+        {
+            UpperOpacity = Lerp(start.UpperOpacity, target.UpperOpacity, t),
+            LowerOpacity = Lerp(start.LowerOpacity, target.LowerOpacity, t),
+            PawOpacity   = Lerp(start.PawOpacity, target.PawOpacity, t),
+            PawScaleX    = Lerp(start.PawScaleX, target.PawScaleX, t),
+            UpperScaleX  = Lerp(start.UpperScaleX, target.UpperScaleX, t),
+            LowerScaleX  = Lerp(start.LowerScaleX, target.LowerScaleX, t),
+        };
+    }
+
+    private static bool IsLocomotionState(MaotaiMotionState state) =>
+        state is MaotaiMotionState.Walk or
+            MaotaiMotionState.Run or
+            MaotaiMotionState.WorkApproach;
+
+    private static MaotaiLegVisualStyle StableStyle() =>
+        new(
             UseArticulation: false,
             UpperOpacity: 1.0,
             LowerOpacity: 0.0,
@@ -74,5 +113,7 @@ internal static class MaotaiLegVisualPolicy
             PawScaleX: 1.0,
             UpperScaleX: 0.86,
             LowerScaleX: 0.80);
-    }
+
+    private static double Lerp(double from, double to, double t) =>
+        from + ((to - from) * Math.Clamp(t, 0.0, 1.0));
 }
