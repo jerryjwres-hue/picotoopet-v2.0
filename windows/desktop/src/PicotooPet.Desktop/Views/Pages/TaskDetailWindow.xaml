@@ -184,7 +184,7 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                   <TextBlock Text="当前处理进度"
-                             FontSize="13"
+                             FontSize="14"
                              Foreground="#FF7A8A9E" />
                   <TextBlock Text="{Binding ProgressStageText}"
                              Margin="0,3,0,0"
@@ -211,19 +211,19 @@
                          TextWrapping="Wrap" />
               <TextBlock Text="{Binding LastActivityText, StringFormat=最近活动：{0}}"
                          Margin="0,7,0,0"
-                         FontSize="13"
+                         FontSize="14"
                          Foreground="#FF7A8A9E" />
 
               <TextBlock Text="最近活动"
                          Margin="0,12,0,0"
-                         FontSize="13"
+                         FontSize="14"
                          FontWeight="SemiBold"
                          Foreground="#FF66788E" />
               <TextBlock Text="{Binding RecentActivityText}"
                          Margin="0,4,0,0"
                          MaxHeight="116"
-                         FontSize="13"
-                         LineHeight="20"
+                         FontSize="14"
+                         LineHeight="21"
                          Foreground="#FF52657B"
                          TextWrapping="Wrap" />
             </StackPanel>
