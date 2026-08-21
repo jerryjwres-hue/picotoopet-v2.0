@@ -76,6 +76,32 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "$name failed cscript smoke with exit code $LASTEXITCODE" }
           }
 
+      - name: Parse and bootstrap-smoke exact N6E2.2 installer entry
+        shell: powershell
+        run: |
+          $src = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\installer-smoke"
+          $dst = Join-Path $env:RUNNER_TEMP "视频 制作\N6E22 安装包"
+          New-Item -ItemType Directory -Path $dst -Force | Out-Null
+          Copy-Item -Path (Join-Path $src '*') -Destination $dst -Force
+          $ps1 = Join-Path $dst 'Install-PvpDirectorConsolePrebuilt.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($ps1,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Host $_.ToString() }
+            throw "Exact N6E2.2 installer has PowerShell parse errors."
+          }
+          $env:PVP_INSTALLER_BOOTSTRAP_SMOKE = '1'
+          $env:PVP_INSTALLER_CI = '1'
+          & "$env:SystemRoot\System32\cmd.exe" /d /c (Join-Path $dst 'INSTALL_PVP_DIRECTOR_CONSOLE.cmd')
+          if ($LASTEXITCODE -ne 0) { throw "N6E2.2 CMD bootstrap smoke failed with exit code $LASTEXITCODE" }
+          $result = @(Get-ChildItem -LiteralPath $dst -Filter 'PVP_DIRECTOR_CONSOLE_N6E22_INSTALL_RESULT_*.zip')
+          if ($result.Count -lt 1) { throw 'N6E2.2 bootstrap smoke did not create a result ZIP.' }
+          $bootLog = Join-Path $dst 'PVP_DIRECTOR_CONSOLE_N6E22_BOOTSTRAP.log'
+          if (-not (Test-Path -LiteralPath $bootLog)) { throw 'N6E2.2 bootstrap smoke did not create bootstrap log.' }
+          & "$env:SystemRoot\System32\cscript.exe" //nologo (Join-Path $dst 'INSTALL_PVP_DIRECTOR_CONSOLE.vbs')
+          if ($LASTEXITCODE -ne 0) { throw "N6E2.2 VBS-over-CMD bootstrap smoke failed with exit code $LASTEXITCODE" }
+
       - name: Install exact .NET SDK
         uses: actions/setup-dotnet@v6
         with:
