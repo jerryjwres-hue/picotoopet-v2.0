@@ -14,6 +14,7 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
         VerifyLocomotionUsesSubtleFrontKneeBridge();
         VerifyLocomotionKeepsRearDepthWithoutFullBlockStack();
         VerifyFoldedStatesKeepLongSegmentsOccluded();
+        MaotaiLocomotionVisualBlendV2SmokeTests.Run();
     }
 
     private static void VerifyIdleKeepsStableContinuousSilhouette()
@@ -80,7 +81,7 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
         {
             var style = Resolve(state, isFront: true);
 
-            // Folded pose           : paws may remain for typing/rest contact, long segments stay under torso fur.
+            // Folded pose          : paws may remain for typing/rest contact, long segments stay under torso fur.
             Assert(!ReadBool(style, "UseArticulation"),
                 $"{state} 不应暴露运动用双段腿");
             Assert(ReadDouble(style, "UpperOpacity") <= 0.01,
@@ -113,12 +114,12 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
             ?? throw new InvalidOperationException($"{propertyName} 为空"));
 
     private static Type RequireType(string fullName) =>
-        DesktopAssembly.GetType(fullName) ??
-        throw new InvalidOperationException($"缺少类型 {fullName}");
+        DesktopAssembly.GetType(fullName)
+        ?? throw new InvalidOperationException($"缺少类型 {fullName}");
 
     private static PropertyInfo RequireProperty(Type type, string name) =>
-        type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance) ??
-        throw new InvalidOperationException($"{type.Name} 缺少属性 {name}");
+        type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance)
+        ?? throw new InvalidOperationException($"{type.Name} 缺少属性 {name}");
 
     private static void Assert(bool condition, string message)
     {
