@@ -12,21 +12,21 @@ public static class ProductVersionInfo
     /// <summary>统一的用户可见产品名；不改变既有 EXE/安装生命周期。</summary>
     public const string ProductName = "PicotooPet AI";
 
-    /// <summary>当前自主能力层的小字产品标识。</summary>
-    public const string SuperpowerLabel = "superpower v1.0";
+    /// <summary>当前自主能力层的公共产品标识。</summary>
+    public const string SuperpowerLabel = "Superpower v1.0";
 
     private static readonly Regex ProductVersionPattern = new(
         "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
-    /// <summary>当前四段式用户产品版本；文件缺失或格式错误时启动失败关闭。</summary>
+    /// <summary>当前四段式工程版本；文件缺失或格式错误时启动失败关闭。</summary>
     public static string Current { get; } = Parse(
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, FileName)));
 
-    /// <summary>Windows 主窗口标题。</summary>
-    public static string WindowTitle => $"{ProductName} {Current}";
+    /// <summary>Windows 主窗口标题：公共产品身份 + 工程版本元数据。</summary>
+    public static string WindowTitle => $"{ProductName} — {SuperpowerLabel} · {Current}";
 
-    /// <summary>Control Center 左上角小字：能力层标识 + 现有控制中心版本。</summary>
+    /// <summary>Control Center 左上角小字：能力层标识 + 现有控制中心工程版本。</summary>
     public static string ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center · v{Current}";
 
     /// <summary>规范化并验证四段式数字版本。</summary>
