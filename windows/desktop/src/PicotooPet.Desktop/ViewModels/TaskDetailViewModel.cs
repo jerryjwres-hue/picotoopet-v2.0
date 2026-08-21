@@ -10,6 +10,7 @@ public sealed class TaskDetailViewModel : ObservableObject
 {
     private const string DiagnosticTaskType = "system.diagnostic_snapshot";
     private const string ResearchTaskType = "research.search";
+    private static readonly TimeSpan ProgressRefreshInterval = TimeSpan.FromSeconds(2);
 
     private readonly ControlCenterSession _session;
     private readonly TaskRecord _task;
@@ -148,6 +149,16 @@ public sealed class TaskDetailViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    /// <summary>窗口存活期间以固定 2 秒节奏刷新 Core 耐久进度；关闭窗口即由调用方取消。</summary>
+    public async Task RunProgressLoopAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            await Task.Delay(ProgressRefreshInterval, cancellationToken);
+            await LoadProgressAsync(cancellationToken);
         }
     }
 
