@@ -26,7 +26,7 @@ if not "%PVP_EXIT%"=="0" (
   echo If a PVP_DIRECTOR_CONSOLE_N6E22_INSTALL_RESULT_*.zip exists,
   echo send that ZIP back for diagnosis.
   echo ============================================================
-  pause
+  if /I not "%PVP_INSTALLER_CI%"=="1" pause
 ) else (
   echo Installation completed successfully.
 )
