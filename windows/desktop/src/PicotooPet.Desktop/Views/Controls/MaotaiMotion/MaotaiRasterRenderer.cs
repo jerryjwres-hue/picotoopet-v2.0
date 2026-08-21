@@ -308,6 +308,7 @@ internal sealed class MaotaiRasterRenderer
             frame.FrontLeftLower,
             frame.FrontLeftPaw,
             frame.MotionState,
+            frame.LocomotionBlend,
             isFront: true,
             visualRootYOffset: -8.0,
             continuousMaxScaleY: 1.44);
@@ -319,6 +320,7 @@ internal sealed class MaotaiRasterRenderer
             frame.FrontRightLower,
             frame.FrontRightPaw,
             frame.MotionState,
+            frame.LocomotionBlend,
             isFront: true,
             visualRootYOffset: -8.0,
             continuousMaxScaleY: 1.44);
@@ -330,6 +332,7 @@ internal sealed class MaotaiRasterRenderer
             frame.HindLeftLower,
             frame.HindLeftPaw,
             frame.MotionState,
+            frame.LocomotionBlend,
             isFront: false);
         ApplyLeg(
             _visuals.HindRightUpper,
@@ -339,6 +342,7 @@ internal sealed class MaotaiRasterRenderer
             frame.HindRightLower,
             frame.HindRightPaw,
             frame.MotionState,
+            frame.LocomotionBlend,
             isFront: false);
         ApplyBone(_visuals.TailBase, frame.TailBase);
         ApplyBone(_visuals.TailMid, frame.TailMid);
@@ -370,30 +374,47 @@ internal sealed class MaotaiRasterRenderer
         in MaotaiBonePose lowerPose,
         in MaotaiBonePose pawPose,
         MaotaiMotionState state,
+        double locomotionBlend,
         bool isFront,
         double visualRootYOffset = 0.0,
         double continuousMaxScaleY = 1.30)
     {
-        var style = MaotaiLegVisualPolicy.Resolve(state, isFront);
+        var transition = Math.Clamp(
+            double.IsFinite(locomotionBlend) ? locomotionBlend : 0.0,
+            0.0,
+            1.0);
+        var style = MaotaiLegVisualPolicy.ResolveForBlend(
+            state,
+            isFront,
+            transition);
+
         if (style.UseArticulation)
         {
-            // Upper bridge        : start inside torso fur, end at the real IK knee, and use manifest-like overlap instead of stretching to the paw.
-            ApplyArticulatedSegment(
+            // Geometry envelope   : blend the Upper endpoint from Paw -> IK knee, so entering Walk/Run never snaps a long continuous leg into a short segment.
+            var upperEnd = new MaotaiBonePose(
+                Lerp(pawPose.X, lowerPose.X, transition),
+                Lerp(pawPose.Y, lowerPose.Y, transition),
+                0.0);
+            ApplySegment(
                 upper,
                 upperPose,
-                lowerPose,
+                upperEnd,
                 scaleX: style.UpperScaleX,
                 visualRootYOffset: visualRootYOffset,
-                overlapPixels: isFront ? 7.0 : 6.0);
+                overlapPixels: Lerp(4.0, isFront ? 7.0 : 6.0, transition),
+                minScaleY: Lerp(0.72, 0.62, transition),
+                maxScaleY: Lerp(continuousMaxScaleY, 1.05, transition));
 
-            // Lower bridge        : keep this segment shorter/narrower so the knee reads as fur continuity rather than a second rectangular limb block.
-            ApplyArticulatedSegment(
+            // Lower fur bridge   : geometry may follow the real knee immediately because opacity starts at zero and rises only with the same locomotion envelope.
+            ApplySegment(
                 lower,
                 lowerPose,
                 pawPose,
                 scaleX: style.LowerScaleX,
                 visualRootYOffset: 0.0,
-                overlapPixels: 6.0);
+                overlapPixels: 6.0,
+                minScaleY: 0.62,
+                maxScaleY: 1.05);
         }
         else
         {
@@ -403,10 +424,11 @@ internal sealed class MaotaiRasterRenderer
                 upperPose,
                 pawPose,
                 visualRootYOffset,
-                continuousMaxScaleY);
+                continuousMaxScaleY,
+                style.UpperScaleX);
         }
 
-        // Contact pivot         : preserve Motion Engine foot-lock coordinates; only the display footprint follows the visual policy.
+        // Contact pivot         : preserve Motion Engine foot-lock coordinates; only the display footprint follows the continuous visual envelope.
         paw.Apply(
             pawPose.X,
             pawPose.Y,
@@ -414,19 +436,21 @@ internal sealed class MaotaiRasterRenderer
             scaleX: pawPose.ScaleX * style.PawScaleX,
             scaleY: pawPose.ScaleY);
 
-        // Visibility ownership : one centralized policy replaces permanent Lower=0 and moving rear-leg deletion.
+        // Visibility ownership : all moving-layer opacity now follows the same speed envelope instead of the discrete state transition frame.
         upper.Element.Opacity = style.UpperOpacity;
         lower.Element.Opacity = style.LowerOpacity;
         paw.Element.Opacity   = style.PawOpacity;
     }
 
-    private static void ApplyArticulatedSegment(
+    private static void ApplySegment(
         MaotaiRasterPart part,
         in MaotaiBonePose rootPose,
         in MaotaiBonePose endPose,
         double scaleX,
         double visualRootYOffset,
-        double overlapPixels)
+        double overlapPixels,
+        double minScaleY,
+        double maxScaleY)
     {
         var visualRootY = rootPose.Y + visualRootYOffset;
         var dx          = endPose.X - rootPose.X;
@@ -434,10 +458,13 @@ internal sealed class MaotaiRasterRenderer
         var distance    = Math.Sqrt((dx * dx) + (dy * dy));
         var angleDeg    = Math.Atan2(dy, dx) * 180.0 / Math.PI;
 
-        // Segment reach        : logical bones are shorter than their overlap-rich PNGs; controlled overlap hides joints without producing long stretched pillars.
+        // Segment reach        : logical bones are shorter than overlap-rich PNGs; the caller owns the continuous reach envelope.
         var pivotY      = part.Element.RenderTransformOrigin.Y;
         var visualReach = Math.Max(1.0, part.Element.Height * (1.0 - pivotY));
-        var scaleY      = Math.Clamp((distance + overlapPixels) / visualReach, 0.62, 1.05);
+        var scaleY      = Math.Clamp(
+            (distance + overlapPixels) / visualReach,
+            Math.Min(minScaleY, maxScaleY),
+            Math.Max(minScaleY, maxScaleY));
         part.Apply(
             rootPose.X,
             visualRootY,
@@ -452,7 +479,8 @@ internal sealed class MaotaiRasterRenderer
         in MaotaiBonePose upperPose,
         in MaotaiBonePose pawPose,
         double visualRootYOffset = 0.0,
-        double maxScaleY = 1.30)
+        double maxScaleY = 1.30,
+        double scaleX = 0.86)
     {
         var visualRootY = upperPose.Y + visualRootYOffset;
         var dx          = pawPose.X - upperPose.X;
@@ -469,7 +497,7 @@ internal sealed class MaotaiRasterRenderer
             upperPose.X,
             visualRootY,
             MaotaiRasterAxis.LegRotationFromIkDegrees(angleDeg),
-            scaleX: 0.86,
+            scaleX: scaleX,
             scaleY: scaleY);
 
         lower.Element.Opacity = 0.0;
@@ -578,4 +606,7 @@ internal sealed class MaotaiRasterRenderer
         _visuals.MouthYawn.Opacity    = yawn;
         _visuals.MouthTongue.Opacity  = tongue;
     }
+
+    private static double Lerp(double from, double to, double t) =>
+        from + ((to - from) * Math.Clamp(t, 0.0, 1.0));
 }
