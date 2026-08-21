@@ -58,5 +58,5 @@ def test_phase10d_c_windows_surface_is_read_only_and_explicit() -> None:
 
 def test_phase10d_c_is_retained_in_current_rollup() -> None:
     version = _read("src/picotoopet_core/product-version.txt").strip()
-    # Version retention gate: Local commit safety boundary remains in cumulative 26.1.
-    assert version == "2.3.26.1"
+    # Version retention gate: Local commit safety boundary remains in cumulative 27.1.
+    assert version == "2.3.27.1"
