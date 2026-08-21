@@ -122,7 +122,7 @@ jobs:
           foreach ($needle in @('DisplayDepartment','DisplayMode')) {
             if (-not $models.Contains($needle)) { throw "Missing N6E3 localized model property: $needle" }
           }
-          foreach ($needle in @('DeleteNodesAsync','RestoreNodesAsync')) {
+          foreach ($needle in @('PreviewBatchDeleteAsync','BatchDeleteAsync','PreviewBatchRestoreAsync','BatchRestoreAsync')) {
             if (-not $client.Contains($needle)) { throw "Missing N6E3 typed client method: $needle" }
           }
           foreach ($needle in @('RunSupervisorAsync','ConfirmOwnedProcessUnhealthyAsync','TimeSpan.FromMilliseconds(500)','TimeSpan.FromSeconds(8)')) {
