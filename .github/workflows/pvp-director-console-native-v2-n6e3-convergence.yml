@@ -103,7 +103,7 @@ jobs:
           $needle = 'StringFormat= {0}'
           $replacement = 'StringFormat={}{0}'
           $count = ([regex]::Matches($xaml, [regex]::Escape($needle))).Count
-          if ($count -ne 1) { throw "Expected exactly one unsafe StringFormat marker, got $count." }
+          if ($count -ne 2) { throw "Expected exactly two unsafe StringFormat markers, got $count." }
           $xaml = $xaml.Replace($needle, $replacement)
           [IO.File]::WriteAllText($xamlPath, $xaml, $utf8)
 
