@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.models import CapabilityRegistration
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.ollama.budget import ModelInputBudget
 from picotoopet_core.progress.reporter import RepositoryProgressReporter
 from picotoopet_core.progress.repository import ProgressRepository
 from picotoopet_core.research.execution import ResearchGatewayExecutor
@@ -63,6 +64,7 @@ class AutonomousBackgroundCoordinator:
         storage_maintenance_handler: WorkerHandler | None = None,
         goal_synthesis_handler: WorkerHandler | None = None,
         goal_handoff_handler: WorkerHandler | None = None,
+        model_input_budget: Callable[[int], ModelInputBudget] | None = None,
         model_id: str,
         clock: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] | None = None,
@@ -74,20 +76,21 @@ class AutonomousBackgroundCoordinator:
             raise ValueError("model_id must not be empty")
         if research_probe_interval_seconds <= 0:
             raise ValueError("research_probe_interval_seconds must be positive")
-        self.manager                         = manager
-        self.capability_router               = capability_router
-        self.runtime                         = runtime
-        self.worker_id                       = worker_id
-        self.local_intelligence_handler      = local_intelligence_handler
-        self.goal_synthesis_handler          = goal_synthesis_handler
-        self.goal_handoff_handler            = goal_handoff_handler
-        self.model_id                        = model_id
-        self._clock                          = clock or (lambda: datetime.now(UTC))
-        self._monotonic                      = monotonic or time.monotonic
+        self.manager                          = manager
+        self.capability_router                = capability_router
+        self.runtime                          = runtime
+        self.worker_id                        = worker_id
+        self.local_intelligence_handler       = local_intelligence_handler
+        self.goal_synthesis_handler           = goal_synthesis_handler
+        self.goal_handoff_handler             = goal_handoff_handler
+        self.model_input_budget               = model_input_budget
+        self.model_id                         = model_id
+        self._clock                           = clock or (lambda: datetime.now(UTC))
+        self._monotonic                       = monotonic or time.monotonic
         self._research_probe_interval_seconds = research_probe_interval_seconds
-        self._research_last_probe            = float("-inf")
-        self._research_healthy_cached        = False
-        progress_reporter                    = self._progress_reporter_from_manager_database()
+        self._research_last_probe             = float("-inf")
+        self._research_healthy_cached         = False
+        progress_reporter                     = self._progress_reporter_from_manager_database()
 
         # ── Reuse the exact local adapter already injected by the existing Worker CLI. ──
         # ── This avoids creating a second gpt-oss agent/model client solely for discovery. ──
@@ -335,6 +338,7 @@ class AutonomousBackgroundCoordinator:
                 result_store=result_store,
                 local=local.adapter,
                 progress=progress_reporter,
+                input_budget=self.model_input_budget,
             )
             handoff = GoalHandoffCoordinator(
                 paths=paths,
