@@ -1,4 +1,4 @@
-"""Windows WPF user-facing product-version surfaces and output resource contract."""
+"""Windows WPF public identity and internal build-version resource contract."""
 
 import json
 from pathlib import Path
@@ -21,12 +21,16 @@ def read(root: Path, relative: str) -> str:
 
 
 def test_canonical_product_version_is_2_3_27_1() -> None:
+    """四段式工程版本继续用于安装、兼容和诊断，不等同于公共产品名。"""
+
     assert PRODUCT_VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.27.1"
     release = json.loads(RELEASE_INVARIANTS.read_text(encoding="utf-8"))
     assert release["windows"]["product_version"]["value"] == "2.3.27.1"
 
 
-def test_shell_binds_exact_product_version_surfaces_one_way() -> None:
+def test_shell_binds_superpower_public_identity_without_engineering_version() -> None:
+    """主窗口正常视图只显示 Superpower v1.0，工程版本留在诊断面。"""
+
     shell = read(DESKTOP, "Views/ShellWindow.xaml")
     view_model = read(DESKTOP, "ViewModels/ShellViewModel.cs")
     provider = read(DESKTOP, "Versioning/ProductVersionInfo.cs")
@@ -38,8 +42,10 @@ def test_shell_binds_exact_product_version_surfaces_one_way() -> None:
     assert "ProductVersionInfo.ControlCenterSubtitle" in view_model
     assert 'ProductName = "PicotooPet AI"' in provider
     assert 'SuperpowerLabel = "Superpower v1.0"' in provider
-    assert 'WindowTitle => $"{ProductName} — {SuperpowerLabel} · {Current}"' in provider
-    assert 'ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center · v{Current}"' in provider
+    assert 'WindowTitle => $"{ProductName} — {SuperpowerLabel}"' in provider
+    assert 'ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center"' in provider
+    assert 'WindowTitle => $"{ProductName} — {SuperpowerLabel} · {Current}"' not in provider
+    assert 'ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center · v{Current}"' not in provider
 
 
 def test_desktop_and_smoke_outputs_receive_the_canonical_version_file() -> None:
@@ -53,7 +59,7 @@ def test_desktop_and_smoke_outputs_receive_the_canonical_version_file() -> None:
     assert "<CopyToPublishDirectory>Always</CopyToPublishDirectory>" in desktop_project
 
 
-def test_real_sta_smoke_runs_version_binding_and_layout() -> None:
+def test_real_sta_smoke_runs_public_identity_binding_and_internal_version_check() -> None:
     program = read(SMOKE, "Program.cs")
     smoke = read(SMOKE, "ProductVersionWpfSmokeTests.cs")
 
@@ -66,13 +72,15 @@ def test_real_sta_smoke_runs_version_binding_and_layout() -> None:
         "UpdateLayout()",
         "DispatcherPriority.DataBind",
         'ProductVersionInfo.Current == "2.3.27.1"',
-        '"PicotooPet AI — Superpower v1.0 · 2.3.27.1"',
-        '"Superpower v1.0 · Control Center · v2.3.27.1"',
+        '"PicotooPet AI — Superpower v1.0"',
+        '"Superpower v1.0 · Control Center"',
     ):
         assert required in smoke
+    assert '"PicotooPet AI — Superpower v1.0 · 2.3.27.1"' not in smoke
+    assert '"Superpower v1.0 · Control Center · v2.3.27.1"' not in smoke
 
 
-def test_published_self_test_reports_exact_product_version_surfaces() -> None:
+def test_published_self_test_reports_public_identity_and_internal_version_separately() -> None:
     self_test = read(DESKTOP, "Services/AppSelfTest.cs")
     for required in (
         '["product_version"]',
