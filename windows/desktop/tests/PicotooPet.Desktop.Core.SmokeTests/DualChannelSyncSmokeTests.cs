@@ -3,17 +3,17 @@ using PicotooPet.Desktop.Core.State;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>验证 REST 真相通道与 WebSocket 实时通道互不误伤。</summary>
+/// <summary>验证 REST 真相通道与 WebSocket 实时通道互不误伤，并可从实时降级恢复。</summary>
 internal static class DualChannelSyncSmokeTests
 {
-    /// <summary>执行双通道状态与自适应轮询合同。</summary>
+    /// <summary>执行双通道状态、自适应轮询与恢复合同。</summary>
     public static async Task RunAsync()
     {
-        VerifyRestHealthyKeepsSystemUsableWhenRealtimeDegrades();
+        VerifyRestHealthyKeepsSystemUsableWhenRealtimeDegradesAndRecovers();
         await VerifyPollerAcceleratesDuringRealtimeDegradationAsync().ConfigureAwait(false);
     }
 
-    private static void VerifyRestHealthyKeepsSystemUsableWhenRealtimeDegrades()
+    private static void VerifyRestHealthyKeepsSystemUsableWhenRealtimeDegradesAndRecovers()
     {
         var store = new ConnectionStateStore();
 
@@ -30,6 +30,15 @@ internal static class DualChannelSyncSmokeTests
         SmokeAssert.True(
             store.Snapshot.EventStreamState == ConnectionState.Reconnecting,
             "实时通道状态必须保留独立事实");
+
+        store.SetEventStreamState(ConnectionState.Online);
+
+        SmokeAssert.True(store.Snapshot.CoreReachable, "实时通道恢复不得改写 REST Core 健康事实");
+        SmokeAssert.True(store.Snapshot.State == ConnectionState.Online, "实时通道恢复后系统必须继续在线");
+        SmokeAssert.True(!store.Snapshot.RealtimeDegraded, "实时通道恢复后必须清除降级标记");
+        SmokeAssert.True(
+            store.Snapshot.EventStreamState == ConnectionState.Online,
+            "恢复后的实时通道状态必须回到 Online");
     }
 
     private static async Task VerifyPollerAcceleratesDuringRealtimeDegradationAsync()
