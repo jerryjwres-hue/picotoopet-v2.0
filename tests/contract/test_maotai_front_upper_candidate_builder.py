@@ -28,10 +28,10 @@ def _silhouette_metrics(path: Path) -> dict[str, float]:
     last_y  = rows[-1][0]
     span_y  = max(1, last_y - first_y)
 
-    shoulder: list[int] = []
-    shaft: list[int]    = []
-    lower: list[int]    = []
-    centers: list[float] = []
+    shoulder: list[int]     = []
+    shaft: list[int]        = []
+    lower: list[int]        = []
+    centers: list[float]    = []
     top_values: list[float] = []
     bottom_values: list[float] = []
 
@@ -86,11 +86,11 @@ def test_front_upper_candidate_builder_outputs_mirrored_organic_pair(tmp_path: P
         metrics = _silhouette_metrics(path)
 
         # Preserve the existing rig canvas while replacing a straight pillar
-        # with broad shoulder overlap, a narrower shaft, and modest lower fur.
+        # with broad shoulder overlap, a narrower shaft, and a tapered lower leg.
         assert (metrics["width"], metrics["height"]) == (68.0, 92.0)
         assert metrics["shoulder"] - metrics["shaft"] >= 9.0
-        assert 2.0 <= metrics["lower"] - metrics["shaft"] <= 7.0
-        assert metrics["center_drift"] >= 2.5
+        assert -1.0 <= metrics["lower"] - metrics["shaft"] <= 4.0
+        assert metrics["center_drift"] >= 4.0
 
         # Renderer still stretches Upper toward the paw, so this single runtime
         # asset must retain the charcoal-to-warm-cream material transition.
