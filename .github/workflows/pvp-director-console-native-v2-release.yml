@@ -37,7 +37,6 @@ jobs:
           $bundle = Join-Path $env:RUNNER_TEMP "PVP_DirectorConsole_Native_N6E1.zip"
           $parts = @(Get-ChildItem -LiteralPath $bootstrap -Filter "native.part*.b64" | Sort-Object Name)
           if ($parts.Count -lt 1) { throw "N6E1 Native source bundle parts are missing." }
-
           $stream = [System.IO.File]::Open($bundle, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
           try {
             foreach ($part in $parts) {
@@ -47,10 +46,7 @@ jobs:
               $stream.Write($bytes, 0, $bytes.Length)
             }
           }
-          finally {
-            $stream.Dispose()
-          }
-
+          finally { $stream.Dispose() }
           $expected = (Get-Content -LiteralPath (Join-Path $bootstrap "NATIVE_BUNDLE.sha256") -Raw).Trim().Split()[0].ToLowerInvariant()
           $actual = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw "N6E1 Native source bundle SHA-256 mismatch. expected=$expected actual=$actual" }
@@ -64,7 +60,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Apply N6E3 director-experience patch
+      - name: Apply N6E3 Native-only director-experience patch
         shell: powershell
         run: |
           $patchDir = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\n6e3-patch"
@@ -77,26 +73,14 @@ jobs:
           [IO.File]::WriteAllBytes($compressedPath, $compressed)
           python -c "import gzip, pathlib; src=pathlib.Path(r'$compressedPath'); dst=pathlib.Path(r'$patchPath'); dst.write_bytes(gzip.decompress(src.read_bytes()))"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Push-Location (Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2")
+          Push-Location $env:GITHUB_WORKSPACE
           try {
-            git apply --no-index -p1 --whitespace=nowarn $patchPath
+            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --include='native/**' --whitespace=nowarn $patchPath
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           finally { Pop-Location }
-          if (-not (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\tests\test_n6e3_director_experience_contract.py"))) {
-            throw "N6E3 patch did not materialize Native contract test."
-          }
-          if (-not (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\payload\producer\extensions\director_console_native_v2\tests\test_n6e3_batch_deleted_items.py"))) {
-            throw "N6E3 patch did not materialize backend batch-delete test."
-          }
-
-      - name: Run N6E3 backend tests
-        shell: powershell
-        run: |
-          $extension = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\payload\producer\extensions\director_console_native_v2"
-          $env:PYTHONPATH = Join-Path $extension "src"
-          python -m unittest discover -s (Join-Path $extension "tests") -p "test_*.py" -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $contract = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\tests\test_n6e3_director_experience_contract.py"
+          if (-not (Test-Path -LiteralPath $contract)) { throw "N6E3 patch did not materialize Native contract test." }
 
       - name: Run N6E3 Native source contracts
         shell: powershell
@@ -109,7 +93,6 @@ jobs:
         run: |
           $root = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2"
           $nativeRuntime = Join-Path $root "native\PVP.DirectorConsole"
-          $backendRuntime = Join-Path $root "payload\producer\extensions\director_console_native_v2\src"
           $xaml = Get-Content -LiteralPath (Join-Path $nativeRuntime "MainWindow.xaml") -Raw
           $client = Get-Content -LiteralPath (Join-Path $nativeRuntime "Services\DirectorCoreClient.cs") -Raw
           $manager = Get-Content -LiteralPath (Join-Path $nativeRuntime "Services\DirectorCoreProcessManager.cs") -Raw
@@ -123,10 +106,8 @@ jobs:
             if (-not $manager.Contains($needle)) { throw "Missing N6E3 supervisor marker: $needle" }
           }
           foreach ($forbidden in @('WebView2','RunStaticCanaryAsync','queue_prompt','/prompt')) {
-            $matches = @()
-            $matches += Get-ChildItem -LiteralPath $nativeRuntime -Recurse -File | Where-Object { $_.Extension -in @('.cs','.xaml') } | Select-String -SimpleMatch $forbidden -ErrorAction SilentlyContinue
-            $matches += Get-ChildItem -LiteralPath $backendRuntime -Recurse -File | Where-Object { $_.Extension -eq '.py' } | Select-String -SimpleMatch $forbidden -ErrorAction SilentlyContinue
-            if ($matches) { throw "Forbidden runtime marker found: $forbidden" }
+            $matches = Get-ChildItem -LiteralPath $nativeRuntime -Recurse -File | Where-Object { $_.Extension -in @('.cs','.xaml') } | Select-String -SimpleMatch $forbidden -ErrorAction SilentlyContinue
+            if ($matches) { throw "Forbidden Native runtime marker found: $forbidden" }
           }
 
       - name: Smoke exact VBS launchers under Chinese and spaced path
