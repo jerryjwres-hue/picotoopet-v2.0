@@ -94,11 +94,24 @@ jobs:
           }
           finally { Pop-Location }
 
+      - name: Apply N6E3 WPF StringFormat compiler fix
+        shell: powershell
+        run: |
+          $xamlPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\PVP.DirectorConsole\MainWindow.xaml"
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          $xaml = [IO.File]::ReadAllText($xamlPath, [Text.Encoding]::UTF8)
+          $needle = 'StringFormat= {0}'
+          $replacement = 'StringFormat={}{0}'
+          $count = ([regex]::Matches($xaml, [regex]::Escape($needle))).Count
+          if ($count -ne 1) { throw "Expected exactly one unsafe StringFormat marker, got $count." }
+          $xaml = $xaml.Replace($needle, $replacement)
+          [IO.File]::WriteAllText($xamlPath, $xaml, $utf8)
+
       - name: WPF binding markup regression test
         shell: powershell
         run: |
           $xamlPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\PVP.DirectorConsole\MainWindow.xaml"
-          $xaml = Get-Content -LiteralPath $xamlPath -Raw
+          $xaml = [IO.File]::ReadAllText($xamlPath, [Text.Encoding]::UTF8)
           if ($xaml.Contains('StringFormat= {0}')) { throw 'Unescaped WPF Binding StringFormat markup extension remains.' }
           if (-not $xaml.Contains('StringFormat={}{0}')) { throw 'Escaped WPF Binding StringFormat regression marker is missing.' }
 
@@ -112,7 +125,7 @@ jobs:
         shell: powershell
         run: |
           $xamlPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\PVP.DirectorConsole\MainWindow.xaml"
-          $lines = Get-Content -LiteralPath $xamlPath
+          $lines = [IO.File]::ReadAllLines($xamlPath, [Text.Encoding]::UTF8)
           Write-Host "=== MainWindow.xaml lines 56-70 ==="
           for ($i = 55; $i -lt [Math]::Min(70, $lines.Count); $i++) {
             Write-Host (("{0,4}: {1}" -f ($i + 1), $lines[$i]))
