@@ -240,3 +240,25 @@ def test_desktop_filters_diagnostic_tasks_before_state_storage_and_rest_transfer
     assert '"phase2-diagnostic"' in coordinator
     assert "Predicate<TaskRecord>? includeTask" in task_state
     assert "_stateStore.Apply(envelope" not in view_model
+
+
+def test_task_detail_projects_durable_core_progress_without_fake_percent() -> None:
+    """任务详情必须读取 Core 的耐久进度，不得用本地耗时猜测百分比。"""
+
+    contracts = read("src/PicotooPet.Desktop.Core/Contracts/TaskProgressContracts.cs")
+    session = read("src/PicotooPet.Desktop/Services/ControlCenterSession.TaskProgress.cs")
+    view_model = read("src/PicotooPet.Desktop/ViewModels/TaskDetailViewModel.cs")
+    xaml = read("src/PicotooPet.Desktop/Views/Pages/TaskDetailWindow.xaml")
+
+    assert "TaskProgressSnapshot" in contracts
+    assert "TaskProgressEvent" in contracts
+    assert "GetTaskProgressAsync" in session
+    assert "api/v1/tasks/{Uri.EscapeDataString(taskId)}/progress" in session
+    assert "ProgressStageText" in view_model
+    assert "ProgressValueText" in view_model
+    assert "RecentActivityText" in view_model
+    assert "Stopwatch" not in view_model
+    assert "DateTimeOffset.UtcNow -" not in view_model
+    assert 'Text="{Binding ProgressStageText}"' in xaml
+    assert 'Text="{Binding ProgressValueText}"' in xaml
+    assert 'Text="{Binding RecentActivityText}"' in xaml
