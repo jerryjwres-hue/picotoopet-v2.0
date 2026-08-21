@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结茅台运动腿部的混合关节显示策略，禁止再次用永久隐藏 Lower / 后腿来伪装连续动作。</summary>
+/// <summary>冻结茅台运动腿部的混合关节显示策略，禁止再次用拉长单图或完整块状双段腿伪装自然动作。</summary>
 internal static class MaotaiLegVisualPolicyV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
@@ -11,8 +11,8 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
     public static void Run()
     {
         VerifyIdleKeepsStableContinuousSilhouette();
-        VerifyLocomotionUsesArticulatedFrontLeg();
-        VerifyLocomotionKeepsRearLegsVisibleInDepth();
+        VerifyLocomotionUsesSubtleFrontKneeBridge();
+        VerifyLocomotionKeepsRearDepthWithoutFullBlockStack();
         VerifyFoldedStatesKeepLongSegmentsOccluded();
     }
 
@@ -30,19 +30,22 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
             "Idle 脚掌必须保持可见");
     }
 
-    private static void VerifyLocomotionUsesArticulatedFrontLeg()
+    private static void VerifyLocomotionUsesSubtleFrontKneeBridge()
     {
         foreach (var state in new[] { "Walk", "Run" })
         {
             var style = Resolve(state, isFront: true);
 
-            // Locomotion articulation : only moving states reveal a short overlapping lower segment.
+            // Real knee            : moving front legs follow Upper→Lower→Paw from IK.
+            // Fur bridge           : Lower remains deliberately narrow/faint so it cannot become a second rectangular limb block.
             Assert(ReadBool(style, "UseArticulation"),
-                $"{state} 必须使用真实 Upper→Lower→Paw 关节链");
+                $"{state} 前腿必须使用真实 Upper→Lower→Paw 关节链");
             Assert(ReadDouble(style, "UpperOpacity") >= 0.99,
                 $"{state} 前腿 Upper 必须完整可见");
-            Assert(ReadDouble(style, "LowerOpacity") >= 0.50,
-                $"{state} 前腿 Lower 不能继续永久透明");
+            Assert(ReadDouble(style, "LowerOpacity") >= 0.15 && ReadDouble(style, "LowerOpacity") <= 0.35,
+                $"{state} 前腿 Lower 必须是可读但克制的毛发关节桥");
+            Assert(ReadDouble(style, "LowerScaleX") <= 0.65,
+                $"{state} 前腿 Lower 必须收窄，禁止恢复完整块状腿");
             Assert(ReadDouble(style, "PawOpacity") >= 0.99,
                 $"{state} 前爪必须保持可见");
             Assert(ReadDouble(style, "PawScaleX") >= 0.88,
@@ -50,22 +53,22 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
         }
     }
 
-    private static void VerifyLocomotionKeepsRearLegsVisibleInDepth()
+    private static void VerifyLocomotionKeepsRearDepthWithoutFullBlockStack()
     {
         foreach (var state in new[] { "Walk", "Run" })
         {
             var front = Resolve(state, isFront: true);
             var rear  = Resolve(state, isFront: false);
 
-            // Depth cue            : rear legs remain visible but subordinate to the front pair.
-            Assert(ReadBool(rear, "UseArticulation"),
-                $"{state} 后腿也必须保留真实关节链");
-            Assert(ReadDouble(rear, "UpperOpacity") > 0.20,
-                $"{state} 后腿 Upper 不得直接消失");
-            Assert(ReadDouble(rear, "LowerOpacity") > 0.15,
-                $"{state} 后腿 Lower 不得直接消失");
-            Assert(ReadDouble(rear, "PawOpacity") > 0.20,
-                $"{state} 后脚掌不得直接消失");
+            // Rear silhouette      : retain motion/depth evidence, but do not expose another full articulated stack in front view.
+            Assert(!ReadBool(rear, "UseArticulation"),
+                $"{state} 后腿前视角应使用低权重连续毛发轮廓，而不是第二组完整块状关节");
+            Assert(ReadDouble(rear, "UpperOpacity") >= 0.20,
+                $"{state} 后腿 Upper 不得再次完全消失");
+            Assert(ReadDouble(rear, "LowerOpacity") <= 0.01,
+                $"{state} 后腿 Lower 应隐藏在连续后景毛发里");
+            Assert(ReadDouble(rear, "PawOpacity") >= 0.10,
+                $"{state} 后脚掌必须保留轻微接触语义");
             Assert(ReadDouble(rear, "UpperOpacity") < ReadDouble(front, "UpperOpacity"),
                 $"{state} 后腿必须保持后景权重，避免抢到前腿前面");
         }
