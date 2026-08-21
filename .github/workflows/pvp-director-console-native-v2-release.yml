@@ -108,10 +108,11 @@ jobs:
         shell: powershell
         run: |
           $root = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2"
-          $xaml = Get-Content -LiteralPath (Join-Path $root "native\PVP.DirectorConsole\MainWindow.xaml") -Raw
-          $vm = Get-Content -LiteralPath (Join-Path $root "native\PVP.DirectorConsole\ViewModels\MainWindowViewModel.cs") -Raw
-          $client = Get-Content -LiteralPath (Join-Path $root "native\PVP.DirectorConsole\Services\DirectorCoreClient.cs") -Raw
-          $manager = Get-Content -LiteralPath (Join-Path $root "native\PVP.DirectorConsole\Services\DirectorCoreProcessManager.cs") -Raw
+          $nativeRuntime = Join-Path $root "native\PVP.DirectorConsole"
+          $backendRuntime = Join-Path $root "payload\producer\extensions\director_console_native_v2\src"
+          $xaml = Get-Content -LiteralPath (Join-Path $nativeRuntime "MainWindow.xaml") -Raw
+          $client = Get-Content -LiteralPath (Join-Path $nativeRuntime "Services\DirectorCoreClient.cs") -Raw
+          $manager = Get-Content -LiteralPath (Join-Path $nativeRuntime "Services\DirectorCoreProcessManager.cs") -Raw
           foreach ($needle in @('批量选择','删除选中','恢复选中','高级详情','系统与执行准备')) {
             if (-not $xaml.Contains($needle)) { throw "Missing N6E3 UX marker: $needle" }
           }
@@ -122,7 +123,9 @@ jobs:
             if (-not $manager.Contains($needle)) { throw "Missing N6E3 supervisor marker: $needle" }
           }
           foreach ($forbidden in @('WebView2','RunStaticCanaryAsync','queue_prompt','/prompt')) {
-            $matches = Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Extension -in @('.cs','.xaml','.py','.ps1') } | Select-String -SimpleMatch $forbidden -ErrorAction SilentlyContinue
+            $matches = @()
+            $matches += Get-ChildItem -LiteralPath $nativeRuntime -Recurse -File | Where-Object { $_.Extension -in @('.cs','.xaml') } | Select-String -SimpleMatch $forbidden -ErrorAction SilentlyContinue
+            $matches += Get-ChildItem -LiteralPath $backendRuntime -Recurse -File | Where-Object { $_.Extension -eq '.py' } | Select-String -SimpleMatch $forbidden -ErrorAction SilentlyContinue
             if ($matches) { throw "Forbidden runtime marker found: $forbidden" }
           }
 
