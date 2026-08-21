@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Core.State;
 
-/// <summary>统一协调 REST 初始快照、WebSocket 增量和有界恢复。</summary>
+/// <summary>统一协调 REST 真相快照、WebSocket 实时增量和有界恢复。</summary>
 public sealed class StateSyncCoordinator : IAsyncDisposable
 {
     private static readonly HashSet<string> WorkerStates = new(StringComparer.Ordinal)
@@ -14,6 +14,9 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         "degraded",
         "offline",
     };
+
+    private static readonly TimeSpan HealthyRestPollInterval  = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan DegradedRestPollInterval = TimeSpan.FromSeconds(3);
 
     private readonly object _streamGate = new();
     private readonly MacCoreClient _client;
@@ -79,11 +82,10 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         CancellationToken cancellationToken) =>
         RefreshAsync(cancellationToken);
 
-    /// <summary>重新加载服务端快照；旧服务缺失新接口时使用保守状态。</summary>
+    /// <summary>手动重新加载完整服务端快照；REST 成功是系统可用性的权威事实。</summary>
     public async Task<HealthResponse> RefreshAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        _connectionStore.Set(ConnectionState.Connecting);
 
         try
         {
@@ -101,23 +103,23 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
             _capabilityStore.Set(capabilities);
             _workerStore.Set(worker);
             _taskStore.ReplaceTasks(tasks);
-            _connectionStore.Set(ConnectionState.Online);
+            _connectionStore.SetCoreReachability(reachable: true);
             HealthChanged?.Invoke(this, health);
             return health;
         }
         catch (ApiException exception) when (exception.StatusCode is 401 or 403)
         {
-            _connectionStore.Set(ConnectionState.AuthenticationFailed, exception.Message);
+            _connectionStore.SetCoreAuthenticationFailed(exception.Message);
             throw;
         }
         catch (Exception exception)
         {
-            _connectionStore.Set(ConnectionState.Faulted, exception.Message);
+            _connectionStore.SetCoreReachability(reachable: false, exception.Message);
             throw;
         }
     }
 
-    /// <summary>启动并等待单一事件流；必须先成功提交初始快照。</summary>
+    /// <summary>启动 WebSocket 实时通道，并同时保持低频 REST 真相对账。</summary>
     public Task RunEventStreamAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
@@ -137,7 +139,8 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
             stream.SocketMeasured         += OnSocketMeasured;
             _streamLifetime = lifetime;
             _eventStream    = stream;
-            _streamTask     = RunEventStreamCoreAsync(stream, lifetime);
+            _connectionStore.SetEventStreamState(ConnectionState.Connecting);
+            _streamTask = RunDualChannelCoreAsync(stream, lifetime);
             return _streamTask;
         }
     }
@@ -208,7 +211,7 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         return task;
     }
 
-    /// <summary>取消并等待旧事件循环，确保重连时只有一个消费者。</summary>
+    /// <summary>取消并等待旧双通道同步循环，确保重连时只有一个消费者。</summary>
     public async Task StopAsync()
     {
         Task? streamTask;
@@ -228,7 +231,7 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
             }
             catch (OperationCanceledException)
             {
-                // 主动停止事件流属于正常控制路径。
+                // 主动停止双通道同步属于正常控制路径。
             }
         }
     }
@@ -300,30 +303,26 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
         }
     }
 
-    private async Task RunEventStreamCoreAsync(
+    private async Task RunDualChannelCoreAsync(
         IEventStreamSession stream,
         CancellationTokenSource lifetime)
     {
+        var eventTask = RunEventStreamSessionAsync(stream, lifetime.Token);
+        var pollTask  = RunSnapshotPollingAsync(lifetime.Token);
         try
         {
-            await stream.RunAsync(ApplyEventAsync, lifetime.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-        {
-            // 停止或重新配对时取消旧事件流属于正常控制路径。
-        }
-        catch (EventStreamAuthenticationException exception)
-        {
-            _connectionStore.Set(ConnectionState.AuthenticationFailed, exception.Message);
-            throw;
-        }
-        catch (Exception exception)
-        {
-            _connectionStore.Set(ConnectionState.Faulted, exception.Message);
-            throw;
+            var completed = await Task.WhenAny(eventTask, pollTask).ConfigureAwait(false);
+            await completed.ConfigureAwait(false);
         }
         finally
         {
+            lifetime.Cancel();
+            await ObserveCancellationAsync(eventTask).ConfigureAwait(false);
+            await ObserveCancellationAsync(pollTask).ConfigureAwait(false);
+            if (_connectionStore.Snapshot.EventStreamState != ConnectionState.AuthenticationFailed)
+            {
+                _connectionStore.SetEventStreamState(ConnectionState.Offline);
+            }
             stream.ConnectionStateChanged -= OnConnectionStateChanged;
             stream.SocketMeasured         -= OnSocketMeasured;
             await stream.DisposeAsync().ConfigureAwait(false);
@@ -337,6 +336,84 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
                     _streamTask     = null;
                 }
             }
+        }
+    }
+
+    private async Task RunEventStreamSessionAsync(
+        IEventStreamSession stream,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await stream.RunAsync(ApplyEventAsync, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (EventStreamAuthenticationException exception)
+        {
+            _connectionStore.SetEventStreamState(
+                ConnectionState.AuthenticationFailed,
+                exception.Message);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _connectionStore.SetEventStreamState(ConnectionState.Faulted, exception.Message);
+            DiagnosticRaised?.Invoke(this, "event_stream_transient");
+            throw;
+        }
+    }
+
+    private async Task RunSnapshotPollingAsync(CancellationToken cancellationToken)
+    {
+        // ── Initial REST snapshot is already fresh; avoid a duplicate immediate full task reload. ──
+        var firstInterval = IsRealtimeHealthy()
+            ? HealthyRestPollInterval
+            : DegradedRestPollInterval;
+        await Task.Delay(firstInterval, cancellationToken).ConfigureAwait(false);
+        var poller = new CoreSnapshotPoller(
+            RefreshTruthSnapshotAsync,
+            IsRealtimeHealthy,
+            HealthyRestPollInterval,
+            DegradedRestPollInterval);
+        await poller.RunAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private bool IsRealtimeHealthy() =>
+        _connectionStore.Snapshot.CoreReachable
+        && _connectionStore.Snapshot.EventStreamState == ConnectionState.Online;
+
+    private async Task RefreshTruthSnapshotAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var healthTask = _client.GetHealthAsync(cancellationToken);
+            var workerTask = LoadWorkerStatusAsync(cancellationToken);
+            var tasksTask  = _client.GetTasksAsync(cancellationToken);
+            await Task.WhenAll(healthTask, workerTask, tasksTask).ConfigureAwait(false);
+
+            var health = await healthTask.ConfigureAwait(false);
+            _workerStore.Set(await workerTask.ConfigureAwait(false));
+            _taskStore.ReplaceTasks(await tasksTask.ConfigureAwait(false));
+            _connectionStore.SetCoreReachability(reachable: true);
+            HealthChanged?.Invoke(this, health);
+        }
+        catch (ApiException exception) when (exception.StatusCode is 401 or 403)
+        {
+            _connectionStore.SetCoreAuthenticationFailed(exception.Message);
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _connectionStore.SetCoreReachability(reachable: false, exception.Message);
+            DiagnosticRaised?.Invoke(this, "rest_truth_poll_failed");
+            // ── Keep the poller alive so transient REST failure can self-recover on the next short interval. ──
         }
     }
 
@@ -369,8 +446,30 @@ public sealed class StateSyncCoordinator : IAsyncDisposable
     private void OnSocketMeasured(object? sender, SocketMeasurement measurement) =>
         SocketMeasured?.Invoke(this, measurement);
 
-    private void OnConnectionStateChanged(object? sender, ConnectionState state) =>
-        _connectionStore.Set(state);
+    private void OnConnectionStateChanged(object? sender, ConnectionState state)
+    {
+        _connectionStore.SetEventStreamState(state);
+        if (state is ConnectionState.Reconnecting or ConnectionState.Faulted)
+        {
+            DiagnosticRaised?.Invoke(this, "event_stream_transient");
+        }
+    }
+
+    private static async Task ObserveCancellationAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // 对端任务由双通道协调器取消。
+        }
+        catch
+        {
+            // 原始完成任务已经由调用路径观察；这里只负责释放另一通道。
+        }
+    }
 
     private static CapabilitiesResponse Legacy22Response() => new(
         "2.2.0",
