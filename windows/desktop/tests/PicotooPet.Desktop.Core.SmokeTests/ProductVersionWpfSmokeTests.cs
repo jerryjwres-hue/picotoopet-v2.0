@@ -10,10 +10,10 @@ using PicotooPet.Desktop.Versioning;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>在真实 STA WPF 绑定和布局管线中冻结用户可见产品身份和工程版本。</summary>
+/// <summary>在真实 STA WPF 绑定和布局管线中冻结 Superpower 公共身份并独立校验工程版本。</summary>
 internal static class ProductVersionWpfSmokeTests
 {
-    /// <summary>验证唯一版本资源、OneWay 绑定和布局后的精确文案。</summary>
+    /// <summary>验证唯一工程版本资源、OneWay 绑定和布局后的公共产品文案。</summary>
     public static void Run()
     {
         Exception? failure = null;
@@ -42,7 +42,7 @@ internal static class ProductVersionWpfSmokeTests
     {
         SmokeAssert.True(
             ProductVersionInfo.Current == "2.3.27.1",
-            "Windows 产品工程版本资源错误");
+            "Windows 内部工程版本资源错误");
 
         using var viewModel = ShellViewModel.CreateForSmokeTest(
             ControlCenterCapabilities.Legacy22);
@@ -74,13 +74,13 @@ internal static class ProductVersionWpfSmokeTests
         window.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
         window.UpdateLayout();
 
-        // Public identity gate     Superpower v1.0 is the product identity; 2.3.x remains engineering metadata.
+        // Public identity gate     正常 UI 只展示 Superpower v1.0；2.3.x 仅作为内部工程元数据保留。
         SmokeAssert.True(
-            window.Title == "PicotooPet AI — Superpower v1.0 · 2.3.27.1",
-            "窗口标题必须同时显示 Superpower v1.0 产品身份和工程版本");
+            window.Title == "PicotooPet AI — Superpower v1.0",
+            "窗口标题必须只显示 Superpower v1.0 公共产品身份");
         SmokeAssert.True(
-            subtitle.Text == "Superpower v1.0 · Control Center · v2.3.27.1",
-            "控制中心副标题产品身份/版本错误");
+            subtitle.Text == "Superpower v1.0 · Control Center",
+            "控制中心副标题公共产品身份错误");
 
         window.Close();
     }
