@@ -17,7 +17,7 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- 顶部只保留任务身份；具体元数据和结果在左右区域分别阅读。 -->
+    <!-- 顶部只保留任务身份；具体元数据、耐久进度和结果分别阅读。 -->
     <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
@@ -47,7 +47,7 @@
       </Border>
     </Grid>
 
-    <!-- 左边理解任务，右边专心阅读结果；两区独立滚动，避免长结果把元数据挤散。 -->
+    <!-- 左边理解任务，右边先看 Core 耐久进度再看结果；两区独立滚动。 -->
     <Grid x:Name="DetailWorkspace" Grid.Row="1" Margin="0,18,0,0">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="330" />
@@ -147,6 +147,7 @@
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
           </Grid.RowDefinitions>
 
@@ -167,7 +168,68 @@
                   Margin="0,15,0,0"
                   Background="#FFE5EBF2" />
 
-          <ScrollViewer Grid.Row="2"
+          <!-- 这里只展示 Mac Core 已经耐久提交的进度事实；没有事实就明确显示“无可验证进度”。 -->
+          <Border Grid.Row="2"
+                  Margin="0,16,0,0"
+                  Padding="14"
+                  CornerRadius="11"
+                  Background="#FFF7FAFE"
+                  BorderBrush="#FFDCE8F7"
+                  BorderThickness="1">
+            <StackPanel>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="当前处理进度"
+                             FontSize="13"
+                             Foreground="#FF7A8A9E" />
+                  <TextBlock Text="{Binding ProgressStageText}"
+                             Margin="0,3,0,0"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             Foreground="#FF203854"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding ProgressValueText}"
+                           Margin="18,0,0,0"
+                           VerticalAlignment="Center"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="#FF236BC4"
+                           TextWrapping="Wrap" />
+              </Grid>
+
+              <TextBlock Text="{Binding ProgressMessageText}"
+                         Margin="0,10,0,0"
+                         FontSize="14"
+                         LineHeight="21"
+                         Foreground="#FF40536A"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding LastActivityText, StringFormat=最近活动：{0}}"
+                         Margin="0,7,0,0"
+                         FontSize="12"
+                         Foreground="#FF7A8A9E" />
+
+              <TextBlock Text="最近活动"
+                         Margin="0,12,0,0"
+                         FontSize="12"
+                         FontWeight="SemiBold"
+                         Foreground="#FF66788E" />
+              <TextBlock Text="{Binding RecentActivityText}"
+                         Margin="0,4,0,0"
+                         MaxHeight="116"
+                         FontSize="12"
+                         LineHeight="19"
+                         Foreground="#FF52657B"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+
+          <ScrollViewer Grid.Row="3"
                         Margin="0,16,0,0"
                         VerticalScrollBarVisibility="Auto"
                         HorizontalScrollBarVisibility="Disabled">
