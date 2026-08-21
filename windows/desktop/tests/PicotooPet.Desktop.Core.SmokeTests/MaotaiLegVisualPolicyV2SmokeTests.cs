@@ -14,7 +14,6 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
         VerifyLocomotionUsesSubtleFrontKneeBridge();
         VerifyLocomotionKeepsRearDepthWithoutFullBlockStack();
         VerifyFoldedStatesKeepLongSegmentsOccluded();
-        MaotaiLocomotionVisualBlendV2SmokeTests.Run();
     }
 
     private static void VerifyIdleKeepsStableContinuousSilhouette()
