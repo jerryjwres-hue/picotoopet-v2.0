@@ -146,17 +146,19 @@ def test_native_interop_and_websocket_cleanup_are_compile_safe() -> None:
     assert "_pendingPings.Clear();" in stream
 
 
-def test_websocket_detects_half_open_connections_within_bounded_time() -> None:
-    """应用级 Pong 超时必须主动触发重连，不能让半连接永久显示在线。"""
+def test_websocket_detects_half_open_connections_without_false_disconnects() -> None:
+    """业务入站必须视作存活；只有持续无入站才允许 Pong 超时触发重连。"""
 
     stream = read("src/PicotooPet.Desktop.Core/Networking/EventStreamClient.cs")
 
     assert "_pongTimeout" in stream
     assert "_pingInterval" in stream
     assert "ThrowIfPongExpired" in stream
+    assert "RecordInboundActivity" in stream
     assert "Stopwatch.GetElapsedTime" in stream
-    assert "TimeSpan.FromSeconds(2)" in stream
-    assert "TimeSpan.FromSeconds(1)" in stream
+    assert "TimeSpan.FromSeconds(30)" in stream
+    assert "TimeSpan.FromSeconds(10)" in stream
+    assert "KeepAliveInterval = TimeSpan.FromSeconds(30)" in stream
 
 
 def test_network_failures_remain_traceable_and_auth_state_is_not_overwritten() -> None:
