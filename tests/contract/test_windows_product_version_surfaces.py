@@ -11,10 +11,15 @@ SMOKE = (
     / "tests"
     / "PicotooPet.Desktop.Core.SmokeTests"
 )
+PRODUCT_VERSION_FILE = ROOT / "src" / "picotoopet_core" / "product-version.txt"
 
 
 def read(root: Path, relative: str) -> str:
     return (root / relative).read_text(encoding="utf-8")
+
+
+def test_canonical_product_version_is_2_3_27_1() -> None:
+    assert PRODUCT_VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.27.1"
 
 
 def test_shell_binds_exact_product_version_surfaces_one_way() -> None:
@@ -56,8 +61,9 @@ def test_real_sta_smoke_runs_version_binding_and_layout() -> None:
         "Arrange(new Rect(0, 0, 900, 700))",
         "UpdateLayout()",
         "DispatcherPriority.DataBind",
-        '"PicotooPet AI — Superpower v1.0 · 2.3.26.1"',
-        '"Superpower v1.0 · Control Center · v2.3.26.1"',
+        'ProductVersionInfo.Current == "2.3.27.1"',
+        '"PicotooPet AI — Superpower v1.0 · 2.3.27.1"',
+        '"Superpower v1.0 · Control Center · v2.3.27.1"',
     ):
         assert required in smoke
 
