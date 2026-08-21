@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_PRODUCT_VERSION = "2.3.26.1"
+EXPECTED_PRODUCT_VERSION = "2.3.27.1"
 
 
 def read(path: Path) -> str:
