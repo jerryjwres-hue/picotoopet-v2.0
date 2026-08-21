@@ -168,7 +168,7 @@ public partial class AssistantPetPanel
         _maotaiLastSeconds = now;
 
         ExpireMaotaiInteraction(now);
-        var input = BuildMaotaiMotionInput(dt);
+        var input = BuildMaotaiMotionInput();
         var frame = _maotaiMotionEngine.Update(dt, input);
         _maotaiRenderer.Apply(frame);
         _maotaiJumpRequested = false;
@@ -202,7 +202,7 @@ public partial class AssistantPetPanel
         // First pose       : apply while root is hidden so eyes/mouth cannot flash through all states at once.
         var initialFrame = _maotaiMotionEngine.Update(
             0.0,
-            BuildMaotaiMotionInput(0.0));
+            BuildMaotaiMotionInput());
         _maotaiRenderer.Apply(initialFrame);
         MaotaiV2Root.Opacity = 1.0;
     }
