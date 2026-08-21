@@ -254,7 +254,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception exception)
         {
-            // 协调器已经提交 Faulted；展示层不重复修改网络状态。
+            // 实时通道可独立降级；REST 真相仍健康时不得在这里把系统判离线。
             _logger.Error("WebSocket 事件链路异常", exception);
         }
     }
@@ -297,11 +297,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             ConnectionText = snapshot.ConnectionState switch
             {
-                ConnectionState.Online               => "在线",
+                ConnectionState.Online => snapshot.RealtimeDegraded
+                    ? "在线 · 实时通道降级"
+                    : "在线",
                 ConnectionState.Connecting           => "连接中",
                 ConnectionState.Reconnecting         => "正在重连",
                 ConnectionState.AuthenticationFailed => "认证失败",
-                ConnectionState.Faulted              => "连接故障",
+                ConnectionState.Faulted              => "Mac Core 无法连接",
                 _                                    => "离线",
             };
             ApplyTaskDiff(snapshot);
