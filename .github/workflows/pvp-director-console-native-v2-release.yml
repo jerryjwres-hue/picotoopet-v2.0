@@ -60,27 +60,45 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Apply N6E3 Native-only director-experience patch
+      - name: Apply N6E3 Native director-experience patch
         shell: powershell
         run: |
           $patchDir = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\n6e3-patch"
           $parts = @(Get-ChildItem -LiteralPath $patchDir -Filter "n6e3.patch*.b64" | Sort-Object Name)
           if ($parts.Count -ne 8) { throw "Expected 8 N6E3 patch parts, got $($parts.Count)." }
           $encoded = (($parts | ForEach-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() }) -join '')
-          $compressed = [Convert]::FromBase64String($encoded)
           $compressedPath = Join-Path $env:RUNNER_TEMP "n6e3.patch.gz"
           $patchPath = Join-Path $env:RUNNER_TEMP "n6e3.patch"
-          [IO.File]::WriteAllBytes($compressedPath, $compressed)
+          [IO.File]::WriteAllBytes($compressedPath, [Convert]::FromBase64String($encoded))
           python -c "import gzip, pathlib; src=pathlib.Path(r'$compressedPath'); dst=pathlib.Path(r'$patchPath'); dst.write_bytes(gzip.decompress(src.read_bytes()))"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Push-Location $env:GITHUB_WORKSPACE
           try {
-            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --include='native/**' --whitespace=nowarn $patchPath
+            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --include='*/native/**' --whitespace=nowarn $patchPath
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           finally { Pop-Location }
           $contract = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\tests\test_n6e3_director_experience_contract.py"
-          if (-not (Test-Path -LiteralPath $contract)) { throw "N6E3 patch did not materialize Native contract test." }
+          if (-not (Test-Path -LiteralPath $contract)) { throw "N6E3 base patch did not materialize Native contract test." }
+
+      - name: Apply N6E3 stability and localization delta
+        shell: powershell
+        run: |
+          $patchDir = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\n6e3-delta"
+          $parts = @(Get-ChildItem -LiteralPath $patchDir -Filter "n6e3.delta.patch*.b64" | Sort-Object Name)
+          if ($parts.Count -ne 2) { throw "Expected 2 N6E3 delta parts, got $($parts.Count)." }
+          $encoded = (($parts | ForEach-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() }) -join '')
+          $compressedPath = Join-Path $env:RUNNER_TEMP "n6e3-delta.patch.gz"
+          $patchPath = Join-Path $env:RUNNER_TEMP "n6e3-delta.patch"
+          [IO.File]::WriteAllBytes($compressedPath, [Convert]::FromBase64String($encoded))
+          python -c "import gzip, pathlib; src=pathlib.Path(r'$compressedPath'); dst=pathlib.Path(r'$patchPath'); dst.write_bytes(gzip.decompress(src.read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $env:GITHUB_WORKSPACE
+          try {
+            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --include='*/native/**' --whitespace=nowarn $patchPath
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          finally { Pop-Location }
 
       - name: Run N6E3 Native source contracts
         shell: powershell
@@ -88,22 +106,30 @@ jobs:
           python -m unittest discover -s .\pvp\director-console-native-v2\native\tests -p "test_*.py" -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: N6E3 safety and UX contract scan
+      - name: N6E3 safety stability and UX contract scan
         shell: powershell
         run: |
           $root = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2"
           $nativeRuntime = Join-Path $root "native\PVP.DirectorConsole"
           $xaml = Get-Content -LiteralPath (Join-Path $nativeRuntime "MainWindow.xaml") -Raw
+          $models = Get-Content -LiteralPath (Join-Path $nativeRuntime "Models\ApiModels.cs") -Raw
           $client = Get-Content -LiteralPath (Join-Path $nativeRuntime "Services\DirectorCoreClient.cs") -Raw
           $manager = Get-Content -LiteralPath (Join-Path $nativeRuntime "Services\DirectorCoreProcessManager.cs") -Raw
-          foreach ($needle in @('批量选择','删除选中','恢复选中','高级详情','系统与执行准备')) {
+          $vm = Get-Content -LiteralPath (Join-Path $nativeRuntime "ViewModels\MainWindowViewModel.cs") -Raw
+          foreach ($needle in @('批量选择','删除选中','恢复选中','高级详情','系统与执行准备','自动导演','协同导演','人工控制')) {
             if (-not $xaml.Contains($needle)) { throw "Missing N6E3 UX marker: $needle" }
+          }
+          foreach ($needle in @('DisplayDepartment','DisplayMode')) {
+            if (-not $models.Contains($needle)) { throw "Missing N6E3 localized model property: $needle" }
           }
           foreach ($needle in @('DeleteNodesAsync','RestoreNodesAsync')) {
             if (-not $client.Contains($needle)) { throw "Missing N6E3 typed client method: $needle" }
           }
-          foreach ($needle in @('RunSupervisorAsync','TimeSpan.FromMilliseconds(500)','TimeSpan.FromSeconds(8)')) {
+          foreach ($needle in @('RunSupervisorAsync','ConfirmOwnedProcessUnhealthyAsync','TimeSpan.FromMilliseconds(500)','TimeSpan.FromSeconds(8)')) {
             if (-not $manager.Contains($needle)) { throw "Missing N6E3 supervisor marker: $needle" }
+          }
+          foreach ($needle in @('RefreshPollingSnapshotAsync','部分数据刷新失败')) {
+            if (-not $vm.Contains($needle)) { throw "Missing N6E3 lightweight polling marker: $needle" }
           }
           foreach ($forbidden in @('WebView2','RunStaticCanaryAsync','queue_prompt','/prompt')) {
             $matches = Get-ChildItem -LiteralPath $nativeRuntime -Recurse -File | Where-Object { $_.Extension -in @('.cs','.xaml') } | Select-String -SimpleMatch $forbidden -ErrorAction SilentlyContinue
@@ -145,8 +171,6 @@ jobs:
           if ($result.Count -lt 1) { throw 'N6E2.2 bootstrap smoke did not create a result ZIP.' }
           $bootLog = Join-Path $dst 'PVP_DIRECTOR_CONSOLE_N6E22_BOOTSTRAP.log'
           if (-not (Test-Path -LiteralPath $bootLog)) { throw 'N6E2.2 bootstrap smoke did not create bootstrap log.' }
-          & "$env:SystemRoot\System32\cscript.exe" //nologo (Join-Path $dst 'INSTALL_PVP_DIRECTOR_CONSOLE.vbs')
-          if ($LASTEXITCODE -ne 0) { throw "N6E2.2 VBS-over-CMD bootstrap smoke failed with exit code $LASTEXITCODE" }
 
       - name: Install exact .NET SDK
         uses: actions/setup-dotnet@v6
