@@ -83,7 +83,7 @@ jobs:
           $dst = Join-Path $env:RUNNER_TEMP "视频 制作\N6E22 安装包"
           New-Item -ItemType Directory -Path $dst -Force | Out-Null
           Copy-Item -Path (Join-Path $src '*') -Destination $dst -Force
-          $ps1 = Join-Path $dst 'Install-PvpDirectorConsolePrebuilt.ps1'
+          $ps1 = Join-Path $dst 'Install-PvpDirectorConsolePrebuilt.N6E22.ps1'
           $tokens = $null
           $parseErrors = $null
           [System.Management.Automation.Language.Parser]::ParseFile($ps1,[ref]$tokens,[ref]$parseErrors) | Out-Null
