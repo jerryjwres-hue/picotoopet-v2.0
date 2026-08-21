@@ -1,5 +1,6 @@
 """Windows WPF user-facing product-version surfaces and output resource contract."""
 
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,6 +13,7 @@ SMOKE = (
     / "PicotooPet.Desktop.Core.SmokeTests"
 )
 PRODUCT_VERSION_FILE = ROOT / "src" / "picotoopet_core" / "product-version.txt"
+RELEASE_INVARIANTS = ROOT / "contracts" / "release" / "project-goal-invariants.json"
 
 
 def read(root: Path, relative: str) -> str:
@@ -20,6 +22,8 @@ def read(root: Path, relative: str) -> str:
 
 def test_canonical_product_version_is_2_3_27_1() -> None:
     assert PRODUCT_VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.27.1"
+    release = json.loads(RELEASE_INVARIANTS.read_text(encoding="utf-8"))
+    assert release["windows"]["product_version"]["value"] == "2.3.27.1"
 
 
 def test_shell_binds_exact_product_version_surfaces_one_way() -> None:
