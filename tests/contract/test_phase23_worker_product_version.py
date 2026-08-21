@@ -33,8 +33,8 @@ def test_worker_builder_packages_canonical_product_version() -> None:
     ):
         assert required in builder
     assert "phase23_worker_product_version" in verifier
-    # Version gate              Worker package reads the same current 26.1 product resource as Core.
-    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.26.1"
+    # Version gate              Worker package reads the same current 27.1 product resource as Core.
+    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.27.1"
 
 
 def test_worker_verifier_accepts_only_the_cumulative_closed_task_allowlist() -> None:
