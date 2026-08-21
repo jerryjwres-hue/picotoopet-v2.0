@@ -34,7 +34,9 @@ from picotoopet_core.deep_ai.provider import (
     DeepAiWorkerProviderConfig,
     OpenAiResponsesPaidAiAdapter,
 )
+from picotoopet_core.diagnostics.reliability import observe_memory_pressure
 from picotoopet_core.health.supervisor import HealthSupervisor
+from picotoopet_core.ollama.budget import AdaptiveModelInputBudgetProvider
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import (
     ResidentManager,
@@ -68,6 +70,19 @@ class _HealthyResident:
 def _build_resident_manager(settings: AppSettings) -> ResidentManager:
     client = OllamaClient(settings.ollama_base_url, timeout_seconds=10.0)
     return ResidentManager(client, settings.ollama_model)
+
+
+def _build_autonomous_model_budget(
+    settings: AppSettings,
+) -> tuple[AdaptiveModelInputBudgetProvider, OllamaClient]:
+    """Bind one read-only live resource observer for adaptive local-model input limits."""
+
+    client = OllamaClient(settings.local_intelligence_base_url, timeout_seconds=2.0)
+    provider = AdaptiveModelInputBudgetProvider(
+        memory_pressure=observe_memory_pressure,
+        process_snapshot=client.process_snapshot,
+    )
+    return provider, client
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -152,6 +167,7 @@ def _run_worker(
     business_adapter: OpenAiCompatibleLocalIntelligenceAdapter | None = None
     business_coordinator: BusinessLocalIntelligenceCoordinator | None = None
     creative_coordinator: CreativeIntelligenceCoordinator | None = None
+    autonomous_budget_client: OllamaClient | None = None
     deep_ai_provider_config = DeepAiWorkerProviderConfig.from_environment(os.environ)
     deep_ai_provider_adapter: OpenAiResponsesPaidAiAdapter | None = None
     deep_ai_execution_loop: DeepAiWorkerExecutionLoop | None = None
@@ -246,12 +262,14 @@ def _run_worker(
             base_url=settings.local_intelligence_base_url.rstrip("/"),
         )
     )
+    autonomous_model_budget, autonomous_budget_client = _build_autonomous_model_budget(settings)
     autonomous_background = AutonomousBackgroundCoordinator(
         manager=services.autonomous_manager,
         capability_router=services.capability_router,
         runtime=runtime,
         worker_id=resolved_worker_id,
         local_intelligence_handler=autonomous_local_coordinator.handler,
+        model_input_budget=autonomous_model_budget,
         model_id=settings.local_intelligence_model,
     )
 
@@ -438,6 +456,8 @@ def _run_worker(
                 deep_ai_provider_adapter.close()
             if business_adapter is not None:
                 business_adapter.close()
+            if autonomous_budget_client is not None:
+                autonomous_budget_client.close()
             services.close()
 
 
