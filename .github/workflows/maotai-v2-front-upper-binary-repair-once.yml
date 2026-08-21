@@ -1,0 +1,102 @@
+name: Maotai v2 Front Upper Binary Repair Once
+
+on:
+  push:
+    branches:
+      - feature/maotai-natural-motion-v2
+    paths:
+      - .github/workflows/maotai-v2-front-upper-binary-repair-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: windows-2025
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/maotai-natural-motion-v2
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Rebuild and validate front upper runtime assets
+        shell: python
+        run: |
+          from __future__ import annotations
+
+          import hashlib
+          import struct
+          import subprocess
+          import sys
+          import zlib
+          from pathlib import Path
+
+          root      = Path.cwd()
+          tool_root = root / "windows" / "desktop" / "tools" / "maotai_v2_assets"
+          asset_dir = root / "windows" / "desktop" / "src" / "PicotooPet.Desktop" / "Assets" / "Maotai" / "V2"
+          output    = root / ".tmp_maotai_front_upper_repair"
+          builder   = tool_root / "diagnostic_build_front_upper_candidate.py"
+          expected  = {
+              "front_left_upper.png":  "015b15f3659beb270f05e94e18affe23133edafce4b972c2d171f653f6b382d9",
+              "front_right_upper.png": "943112c47509e84b1bbf081c82285ec1cc76825c7fb88219d101fc0abbe2be33",
+          }
+
+          subprocess.run([sys.executable, str(builder), str(output)], check=True)
+
+          for file_name, expected_sha in expected.items():
+              source = output / file_name
+              data   = source.read_bytes()
+              actual = hashlib.sha256(data).hexdigest()
+              if actual != expected_sha:
+                  raise SystemExit(f"{file_name}: SHA-256 mismatch: {actual}")
+              if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                  raise SystemExit(f"{file_name}: invalid PNG signature")
+
+              offset = 8
+              while offset < len(data):
+                  length   = struct.unpack(">I", data[offset : offset + 4])[0]
+                  kind     = data[offset + 4 : offset + 8]
+                  start    = offset + 8
+                  end      = start + length
+                  payload  = data[start:end]
+                  expected_crc = struct.unpack(">I", data[end : end + 4])[0]
+                  actual_crc   = zlib.crc32(kind + payload) & 0xFFFFFFFF
+                  if actual_crc != expected_crc:
+                      raise SystemExit(f"{file_name}: CRC mismatch in {kind!r}")
+                  offset = end + 4
+                  if kind == b"IEND":
+                      break
+
+              (asset_dir / file_name).write_bytes(data)
+              print(f"verified {file_name}: {len(data)} bytes sha256={actual}")
+
+      - name: Run focused front upper contracts
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = ".;src"
+          python -m pytest -q `
+            tests/contract/test_maotai_front_upper_candidate_builder.py `
+            tests/contract/test_maotai_front_upper_material_continuity.py
+
+      - name: Commit exact repaired PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/front_left_upper.png \
+            windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/front_right_upper.png
+          if git diff --cached --quiet; then
+            echo "No runtime asset changes were required."
+            exit 0
+          fi
+          git commit -m "fix(maotai-v2): repair exact front upper PNG binaries"
+          git push origin HEAD:feature/maotai-natural-motion-v2
