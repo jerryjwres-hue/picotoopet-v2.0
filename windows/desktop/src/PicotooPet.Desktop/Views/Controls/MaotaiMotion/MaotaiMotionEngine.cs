@@ -388,7 +388,7 @@ internal sealed class MaotaiMotionEngine
             var leftPress  = (1.0 - Math.Cos(_typingPhaseRadians)) * amplitude;
             var rightPress = (1.0 - Math.Cos(_typingPhaseRadians + Math.PI)) * amplitude;
 
-            frontLeft = BuildWorkPaw(
+            var workLeft = BuildWorkPaw(
                 shoulderLocalX: -17.5,
                 shoulderLocalY: 9.5,
                 keyboardLocalX: -12.0,
@@ -396,7 +396,7 @@ internal sealed class MaotaiMotionEngine
                 pressOffset: leftPress,
                 bodyWorldY,
                 facingSign);
-            frontRight = BuildWorkPaw(
+            var workRight = BuildWorkPaw(
                 shoulderLocalX: 15.5,
                 shoulderLocalY: 10.0,
                 keyboardLocalX: 12.0,
@@ -404,6 +404,21 @@ internal sealed class MaotaiMotionEngine
                 pressOffset: rightPress,
                 bodyWorldY,
                 facingSign);
+
+            // Work handoff        : WorkSettle ends with the current standing IK. WorkTyping then lowers both paws onto
+            // the keyboard over the graph's existing 0.28s transition instead of teleporting targets on its first frame.
+            if (_graph.ActiveState == MaotaiMotionState.WorkTyping &&
+                _graph.PreviousState == MaotaiMotionState.WorkSettle &&
+                _graph.IsTransitioning)
+            {
+                frontLeft  = BlendLegPose(frontLeft, workLeft, blend);
+                frontRight = BlendLegPose(frontRight, workRight, blend);
+            }
+            else
+            {
+                frontLeft  = workLeft;
+                frontRight = workRight;
+            }
         }
 
         var baseEyeState = input.BaseState switch
@@ -550,19 +565,21 @@ internal sealed class MaotaiMotionEngine
                 break;
 
             case MaotaiMotionState.LieDown:
-                bodyWorldY += 10.0 * blend;
-                bodyScaleX += 0.050 * blend;
-                bodyScaleY -= 0.095 * blend;
-                headOffsetY += 4.0 * blend;
+                // State boundary      : inherit the exact Sit endpoint before easing toward the lie-down endpoint.
+                bodyWorldY += Lerp(7.0, 10.0, blend);
+                bodyScaleX += Lerp(0.0, 0.050, blend);
+                bodyScaleY -= Lerp(0.055, 0.095, blend);
+                headOffsetY += Lerp(-1.0, 4.0, blend);
                 break;
 
             case MaotaiMotionState.Sleep:
-                bodyWorldY += 11.5;
-                bodyScaleX += 0.055;
-                bodyScaleY -= 0.100;
-                headOffsetY += 6.0;
-                headBiasDeg += 7.5 * facingSign;
-                earDrop     += 4.0;
+                // State boundary      : Sleep is a continuation of LieDown, not a fresh neutral-origin pose.
+                bodyWorldY += Lerp(10.0, 11.5, blend);
+                bodyScaleX += Lerp(0.050, 0.055, blend);
+                bodyScaleY -= Lerp(0.095, 0.100, blend);
+                headOffsetY += Lerp(4.0, 6.0, blend);
+                headBiasDeg += 7.5 * facingSign * blend;
+                earDrop     += 4.0 * blend;
                 break;
 
             case MaotaiMotionState.Wake:
@@ -578,9 +595,23 @@ internal sealed class MaotaiMotionEngine
                 break;
 
             case MaotaiMotionState.WorkSettle:
-            case MaotaiMotionState.WorkTyping:
                 bodyWorldY += 2.0 * blend;
                 bodyScaleY -= 0.015 * blend;
+                break;
+
+            case MaotaiMotionState.WorkTyping:
+                if (_graph.PreviousState == MaotaiMotionState.WorkSettle &&
+                    _graph.IsTransitioning)
+                {
+                    // Work handoff     : preserve WorkSettle's completed body posture while paws move to the keyboard.
+                    bodyWorldY += 2.0;
+                    bodyScaleY -= 0.015;
+                }
+                else
+                {
+                    bodyWorldY += 2.0 * blend;
+                    bodyScaleY -= 0.015 * blend;
+                }
                 break;
 
             case MaotaiMotionState.WorkTired:
@@ -837,6 +868,41 @@ internal sealed class MaotaiMotionEngine
             Lower = leg.Lower with { X = jointX, Y = jointY, RotationDeg = lowerAngle },
             Paw   = leg.Paw with { RotationDeg = -lowerAngle * 0.08 },
         };
+    }
+
+    private static MaotaiLegPose BlendLegPose(
+        in MaotaiLegPose from,
+        in MaotaiLegPose to,
+        double amount)
+    {
+        var t = Math.Clamp(amount, 0.0, 1.0);
+        return new MaotaiLegPose(
+            BlendBonePose(from.Upper, to.Upper, t),
+            BlendBonePose(from.Lower, to.Lower, t),
+            BlendBonePose(from.Paw, to.Paw, t),
+            Lerp(from.PawWorldX, to.PawWorldX, t),
+            Lerp(from.PawWorldY, to.PawWorldY, t),
+            t < 0.5 ? from.IsSupport : to.IsSupport);
+    }
+
+    private static MaotaiBonePose BlendBonePose(
+        in MaotaiBonePose from,
+        in MaotaiBonePose to,
+        double amount) =>
+        new(
+            Lerp(from.X, to.X, amount),
+            Lerp(from.Y, to.Y, amount),
+            LerpAngleDegrees(from.RotationDeg, to.RotationDeg, amount),
+            Lerp(from.ScaleX, to.ScaleX, amount),
+            Lerp(from.ScaleY, to.ScaleY, amount));
+
+    private static double LerpAngleDegrees(
+        double from,
+        double to,
+        double amount)
+    {
+        var delta = ((to - from + 540.0) % 360.0) - 180.0;
+        return from + (delta * Math.Clamp(amount, 0.0, 1.0));
     }
 
     private static bool IsWorkingPawState(MaotaiMotionState state) =>
