@@ -100,6 +100,27 @@ jobs:
           }
           finally { Pop-Location }
 
+      - name: Apply N6E3 WPF compiler fix
+        shell: powershell
+        run: |
+          $xamlPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\PVP.DirectorConsole\MainWindow.xaml"
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          $xaml = [IO.File]::ReadAllText($xamlPath, [Text.Encoding]::UTF8)
+          $needle = 'StringFormat= {0}'
+          $replacement = 'StringFormat={}{0}'
+          $count = ([regex]::Matches($xaml, [regex]::Escape($needle))).Count
+          if ($count -ne 2) { throw "Expected exactly two unsafe StringFormat markers, got $count." }
+          $xaml = $xaml.Replace($needle, $replacement)
+          [IO.File]::WriteAllText($xamlPath, $xaml, $utf8)
+
+      - name: N6E3 WPF compiler regression gate
+        shell: powershell
+        run: |
+          $xamlPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\PVP.DirectorConsole\MainWindow.xaml"
+          $xaml = [IO.File]::ReadAllText($xamlPath, [Text.Encoding]::UTF8)
+          if ($xaml.Contains('StringFormat= {0}')) { throw 'Unescaped WPF Binding StringFormat markup extension remains.' }
+          if (-not $xaml.Contains('StringFormat={}{0}')) { throw 'Escaped WPF Binding StringFormat regression marker is missing.' }
+
       - name: Run N6E3 Native source contracts
         shell: powershell
         run: |
@@ -111,11 +132,11 @@ jobs:
         run: |
           $root = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2"
           $nativeRuntime = Join-Path $root "native\PVP.DirectorConsole"
-          $xaml = Get-Content -LiteralPath (Join-Path $nativeRuntime "MainWindow.xaml") -Raw
-          $models = Get-Content -LiteralPath (Join-Path $nativeRuntime "Models\ApiModels.cs") -Raw
-          $client = Get-Content -LiteralPath (Join-Path $nativeRuntime "Services\DirectorCoreClient.cs") -Raw
-          $manager = Get-Content -LiteralPath (Join-Path $nativeRuntime "Services\DirectorCoreProcessManager.cs") -Raw
-          $vm = Get-Content -LiteralPath (Join-Path $nativeRuntime "ViewModels\MainWindowViewModel.cs") -Raw
+          $xaml = [IO.File]::ReadAllText((Join-Path $nativeRuntime "MainWindow.xaml"), [Text.Encoding]::UTF8)
+          $models = [IO.File]::ReadAllText((Join-Path $nativeRuntime "Models\ApiModels.cs"), [Text.Encoding]::UTF8)
+          $client = [IO.File]::ReadAllText((Join-Path $nativeRuntime "Services\DirectorCoreClient.cs"), [Text.Encoding]::UTF8)
+          $manager = [IO.File]::ReadAllText((Join-Path $nativeRuntime "Services\DirectorCoreProcessManager.cs"), [Text.Encoding]::UTF8)
+          $vm = [IO.File]::ReadAllText((Join-Path $nativeRuntime "ViewModels\MainWindowViewModel.cs"), [Text.Encoding]::UTF8)
           foreach ($needle in @('批量选择','删除选中','恢复选中','高级详情','系统与执行准备','自动导演','协同导演','人工控制')) {
             if (-not $xaml.Contains($needle)) { throw "Missing N6E3 UX marker: $needle" }
           }
