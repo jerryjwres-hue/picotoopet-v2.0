@@ -28,8 +28,8 @@ def test_shell_binds_exact_product_version_surfaces_one_way() -> None:
     assert "ProductVersionInfo.WindowTitle" in view_model
     assert "ProductVersionInfo.ControlCenterSubtitle" in view_model
     assert 'ProductName = "PicotooPet AI"' in provider
-    assert 'SuperpowerLabel = "superpower v1.0"' in provider
-    assert 'WindowTitle => $"{ProductName} {Current}"' in provider
+    assert 'SuperpowerLabel = "Superpower v1.0"' in provider
+    assert 'WindowTitle => $"{ProductName} — {SuperpowerLabel} · {Current}"' in provider
     assert 'ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center · v{Current}"' in provider
 
 
@@ -56,8 +56,8 @@ def test_real_sta_smoke_runs_version_binding_and_layout() -> None:
         "Arrange(new Rect(0, 0, 900, 700))",
         "UpdateLayout()",
         "DispatcherPriority.DataBind",
-        '"PicotooPet AI 2.3.26.1"',
-        '"superpower v1.0 · Control Center · v2.3.26.1"',
+        '"PicotooPet AI — Superpower v1.0 · 2.3.26.1"',
+        '"Superpower v1.0 · Control Center · v2.3.26.1"',
     ):
         assert required in smoke
 
