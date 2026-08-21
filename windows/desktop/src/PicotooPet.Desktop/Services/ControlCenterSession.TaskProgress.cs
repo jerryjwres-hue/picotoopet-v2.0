@@ -33,7 +33,7 @@ public sealed partial class ControlCenterSession
 
         var token = _tokenStore.Read();
         ValidateConnectionInput(macBaseUrl, token ?? string.Empty, out var baseUri);
-        var normalizedBaseUri = baseUri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
+        var normalizedBaseUri = baseUri.AbsoluteUri.EndsWith('/')
             ? baseUri
             : new Uri(baseUri.AbsoluteUri + "/", UriKind.Absolute);
         var relativePath = $"api/v1/tasks/{Uri.EscapeDataString(taskId)}/progress";
