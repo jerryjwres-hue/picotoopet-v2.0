@@ -30,6 +30,7 @@ from .local_intelligence import (
     LocalAnalysisResult,
     LocalAnalysisRole,
     LocalIntelligenceAdapter,
+    LocalIntelligenceError,
 )
 from .research_stop import ResearchRound, evaluate_research_stop
 
@@ -110,6 +111,7 @@ _MAX_RADAR_EXCERPT_CHARS = 4_000
 _MAX_CONNECTED_PRODUCTS = 1_000
 _MAX_CONNECTED_EVIDENCE = 16
 _MAX_CONNECTED_TEXT_CHARS = 600
+_MAX_SCOUT_STAGE_ATTEMPTS = 2
 _SUBJECT_WHITESPACE = re.compile(r"\s+")
 
 
@@ -298,21 +300,45 @@ class ContentDiscoveryCoordinator:
             details={
                 "evidence_count": len(evidence_ids),
                 "candidate_count": len(radar_candidates),
+                "attempt": 1,
             },
         )
-        try:
-            raw_analysis = self.local.analyze(
-                LocalAnalysisRequest(
-                    role=LocalAnalysisRole.SCOUT,
-                    text=scout_text,
-                    evidence_ids=evidence_ids,
+        analysis_request = LocalAnalysisRequest(
+            role=LocalAnalysisRole.SCOUT,
+            text=scout_text,
+            evidence_ids=evidence_ids,
+        )
+        analysis: LocalAnalysisResult | None = None
+        for scout_attempt in range(1, _MAX_SCOUT_STAGE_ATTEMPTS + 1):
+            try:
+                raw_analysis = self.local.analyze(analysis_request)
+                analysis = LocalAnalysisResult.model_validate(raw_analysis)
+                break
+            except (ValidationError, TypeError, ValueError) as error:
+                raise ContentDiscoveryError(
+                    "local scout returned invalid structured output"
+                ) from error
+            except LocalIntelligenceError as error:
+                is_timeout = str(error).strip() == "MODEL_RUNNER_TIMEOUT"
+                if not is_timeout or scout_attempt >= _MAX_SCOUT_STAGE_ATTEMPTS:
+                    raise ContentDiscoveryError("local scout failed") from error
+                # ── Research evidence is already complete in memory; resume only Scout. ──
+                self._emit_progress(
+                    task=task,
+                    stage="local-scout",
+                    message="本地模型超时；保留已完成研究证据并重试 Scout。",
+                    component="ollama",
+                    details={
+                        "evidence_count": len(evidence_ids),
+                        "candidate_count": len(radar_candidates),
+                        "attempt": scout_attempt + 1,
+                        "checkpoint": "research-complete",
+                    },
                 )
-            )
-            analysis = LocalAnalysisResult.model_validate(raw_analysis)
-        except (ValidationError, TypeError, ValueError) as error:
-            raise ContentDiscoveryError("local scout returned invalid structured output") from error
-        except Exception as error:
-            raise ContentDiscoveryError("local scout failed") from error
+            except Exception as error:
+                raise ContentDiscoveryError("local scout failed") from error
+        if analysis is None:
+            raise ContentDiscoveryError("local scout failed")
 
         document = {
             "schema_version": "1.0",
