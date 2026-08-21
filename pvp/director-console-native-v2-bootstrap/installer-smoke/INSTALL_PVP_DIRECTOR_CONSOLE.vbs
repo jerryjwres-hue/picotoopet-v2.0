@@ -10,7 +10,7 @@ If Not fso.FileExists(cmdPath) Then
 End If
 command = shell.ExpandEnvironmentStrings("%ComSpec%") & " /d /c " & Chr(34) & Chr(34) & cmdPath & Chr(34) & Chr(34)
 exitCode = shell.Run(command, 1, True)
-If exitCode <> 0 Then
+If exitCode <> 0 And shell.ExpandEnvironmentStrings("%PVP_INSTALLER_CI%") <> "1" Then
   MsgBox "Installation failed with exit code " & CStr(exitCode) & "." & vbCrLf & "The command window contains the full error and will remain open until acknowledged.", 16, "PVP Director Console Setup"
 End If
 WScript.Quit exitCode
