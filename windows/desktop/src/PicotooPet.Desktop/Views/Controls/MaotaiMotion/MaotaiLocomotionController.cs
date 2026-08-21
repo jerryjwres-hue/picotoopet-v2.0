@@ -120,34 +120,50 @@ internal sealed class MaotaiLocomotionController
             FacingSign = direction;
         }
 
-        var desiredSpeed = _stopInPlaceLatched || Math.Abs(distance) <= StopDistance
+        // Arrival braking     : start decelerating by physical stopping distance instead of waiting for an overshoot
+        // and then zeroing velocity in one frame. This keeps locomotion blend, body lean and leg articulation continuous.
+        var speedMagnitude   = Math.Abs(VelocityX);
+        var brakingDistance  = (speedMagnitude * speedMagnitude) / (2.0 * Deceleration);
+        var movingTowardGoal = direction != 0 && velocitySign == direction;
+        var arrivalBrake     = !_stopInPlaceLatched &&
+            movingTowardGoal &&
+            Math.Abs(distance) <= StopDistance + brakingDistance;
+        var desiredSpeed = _stopInPlaceLatched ||
+                           Math.Abs(distance) <= StopDistance ||
+                           arrivalBrake
             ? 0.0
             : direction * (wantsRun ? RunSpeed : WalkSpeed);
         var acceleration = Math.Abs(desiredSpeed) < Math.Abs(VelocityX) || reversing
             ? Deceleration
             : wantsRun ? RunAcceleration : WalkAcceleration;
 
+        var previousX = PositionX;
         VelocityX = MoveTowards(VelocityX, desiredSpeed, acceleration * dt);
         var nextX = PositionX + (VelocityX * dt);
 
-        if (!_stopInPlaceLatched &&
-            ((distance > 0 && nextX > targetX) ||
-             (distance < 0 && nextX < targetX)))
+        var crossesTarget = !_stopInPlaceLatched &&
+            ((distance > 0.0 && nextX > targetX) ||
+             (distance < 0.0 && nextX < targetX));
+        var settlesAtTarget = !_stopInPlaceLatched &&
+            (Math.Abs(distance) <= StopDistance || crossesTarget);
+        if (settlesAtTarget)
         {
-            nextX     = targetX;
-            VelocityX = 0.0;
+            // Position may pin at the contact point, but VelocityX continues its bounded deceleration on following frames.
+            // Gait phase is driven from real displacement below, so a pinned root cannot keep running in place.
+            nextX = targetX;
         }
 
         PositionX = Math.Clamp(nextX, minX, maxX);
         if ((PositionX <= minX && VelocityX < 0) ||
             (PositionX >= maxX && VelocityX > 0))
         {
-            VelocityX = 0.0;
+            VelocityX = MoveTowards(VelocityX, 0.0, Deceleration * dt);
         }
 
-        // Gait phase        : distance-driven cadence stays continuous, while the denser cycle keeps planted paws near their shoulder lanes.
+        // Gait phase          : advance from actual root displacement, not latent velocity while target/boundary pinning settles.
+        var travelledDistance = Math.Abs(PositionX - previousX);
         GaitPhase = Wrap01(
-            GaitPhase + (Math.Abs(VelocityX) * GaitCyclesPerUnit * dt));
+            GaitPhase + (travelledDistance * GaitCyclesPerUnit));
 
         if (wantsJump && IsGrounded)
         {
