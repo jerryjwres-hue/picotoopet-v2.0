@@ -25,6 +25,21 @@ def test_windows_core_targets_current_lts_without_third_party_packages() -> None
     assert '"version": "10.0.302"' in global_json
 
 
+def test_release_builder_resolves_pinned_sdk_from_desktop_root() -> None:
+    """发布器无论从哪个目录启动，都必须在 global.json 所在目录解析固定 SDK。"""
+
+    builder = read("scripts/Build-Phase2WindowsRelease.ps1")
+
+    assert '[string]$WorkingDirectory = ""' in builder
+    assert "$startInfo.WorkingDirectory = $WorkingDirectory" in builder
+    assert (
+        'Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") '
+        '-WorkingDirectory $desktopRoot'
+    ) in builder
+    # SDK 检测、restore/build/run/publish 都必须继承同一 desktopRoot，禁止调用方 CWD 漂移。
+    assert builder.count("-WorkingDirectory $desktopRoot") >= 8
+
+
 def test_network_clients_use_pooling_bounded_channel_and_resume_sequence() -> None:
     """REST 与 WebSocket 客户端必须复用连接、背压并支持断线续传。"""
 
