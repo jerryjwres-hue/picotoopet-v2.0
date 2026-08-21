@@ -6,8 +6,6 @@ namespace PicotooPet.Desktop.Views.Pages;
 public partial class TaskDetailWindow : System.Windows.Window
 {
     private readonly TaskDetailViewModel _viewModel;
-    private readonly CancellationTokenSource _progressLifetime = new();
-    private Task? _progressLoopTask;
 
     public TaskDetailWindow(TaskDetailViewModel viewModel)
     {
@@ -15,41 +13,31 @@ public partial class TaskDetailWindow : System.Windows.Window
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         DataContext = _viewModel;
         Loaded += OnLoaded;
-        Closed += OnClosed;
     }
 
     private async void OnLoaded(object sender, System.Windows.RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
+        using var progressLifetime = new CancellationTokenSource();
+        EventHandler closedHandler = (_, _) => OnClosed(progressLifetime);
+        Closed += closedHandler;
         try
         {
-            await _viewModel.LoadAsync(_progressLifetime.Token);
-            _progressLoopTask = _viewModel.RunProgressLoopAsync(_progressLifetime.Token);
+            await _viewModel.LoadAsync(progressLifetime.Token);
+            await _viewModel.RunProgressLoopAsync(progressLifetime.Token);
         }
-        catch (OperationCanceledException) when (_progressLifetime.IsCancellationRequested)
-        {
-            // Window lifecycle cancellation does not mutate the task or result.
-        }
-    }
-
-    private async void OnClosed(object? sender, EventArgs e)
-    {
-        Closed -= OnClosed;
-        _progressLifetime.Cancel();
-        try
-        {
-            if (_progressLoopTask is not null)
-            {
-                await _progressLoopTask;
-            }
-        }
-        catch (OperationCanceledException) when (_progressLifetime.IsCancellationRequested)
+        catch (OperationCanceledException) when (progressLifetime.IsCancellationRequested)
         {
             // 正常关闭只停止本窗口的只读轮询，不取消 Mac Core 中的任务。
         }
         finally
         {
-            _progressLifetime.Dispose();
+            Closed -= closedHandler;
         }
+    }
+
+    private static void OnClosed(CancellationTokenSource progressLifetime)
+    {
+        progressLifetime.Cancel();
     }
 }
