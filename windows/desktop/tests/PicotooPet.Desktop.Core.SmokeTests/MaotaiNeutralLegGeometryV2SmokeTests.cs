@@ -15,6 +15,7 @@ internal static class MaotaiNeutralLegGeometryV2SmokeTests
     {
         VerifyNeutralStance();
         VerifyRunLanes();
+        MaotaiLegVisualPolicyV2SmokeTests.Run();
     }
 
     private static void VerifyNeutralStance()
