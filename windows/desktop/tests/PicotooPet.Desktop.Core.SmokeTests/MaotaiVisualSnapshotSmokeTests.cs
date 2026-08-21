@@ -162,27 +162,36 @@ internal static class MaotaiVisualSnapshotSmokeTests
 
     private static void VerifyPoseCohesionVisibility(AssistantPetPanel panel, string label)
     {
-        // Front-view occlusion  : moving rear limbs sit behind the torso/front pair instead of creating detached side pieces.
-        // Folded rest/work      : work/sleep continue to tuck all long upper segments behind the plush torso.
-        var hideFrontUpper = label is "work" or "sleep";
-        var hideRearUpper  = label is "work" or "sleep" or "run";
+        // Stable/folded states : Idle keeps the accepted continuous silhouette; work/sleep tuck long segments under torso fur.
+        // Moving state         : Run must expose the real IK knee while the rear pair stays visible at lower depth weight.
+        if (label == "run")
+        {
+            AssertOpacity(panel, label, "MaotaiV2FrontLeftUpper",  1.00, "前腿 Upper 必须可见");
+            AssertOpacity(panel, label, "MaotaiV2FrontRightUpper", 1.00, "前腿 Upper 必须可见");
+            AssertOpacity(panel, label, "MaotaiV2FrontLeftLower",  0.68, "前腿 Lower 必须参与真实关节链");
+            AssertOpacity(panel, label, "MaotaiV2FrontRightLower", 0.68, "前腿 Lower 必须参与真实关节链");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftUpper",   0.46, "后腿 Upper 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindRightUpper",  0.46, "后腿 Upper 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftLower",   0.34, "后腿 Lower 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindRightLower",  0.34, "后腿 Lower 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2FrontLeftPaw",    1.00, "前脚接触点");
+            AssertOpacity(panel, label, "MaotaiV2FrontRightPaw",   1.00, "前脚接触点");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",     0.44, "后脚必须保留后景接触语义");
+            AssertOpacity(panel, label, "MaotaiV2HindRightPaw",    0.44, "后脚必须保留后景接触语义");
+            return;
+        }
 
+        var folded = label is "work" or "sleep";
+        var upperOpacity = folded ? 0.0 : 1.0;
         foreach (var name in new[]
                  {
                      "MaotaiV2FrontLeftUpper",
                      "MaotaiV2FrontRightUpper",
-                 })
-        {
-            AssertOpacity(panel, label, name, hideFrontUpper ? 0.0 : 1.0, "前腿连续主轮廓");
-        }
-
-        foreach (var name in new[]
-                 {
                      "MaotaiV2HindLeftUpper",
                      "MaotaiV2HindRightUpper",
                  })
         {
-            AssertOpacity(panel, label, name, hideRearUpper ? 0.0 : 1.0, "前视后腿遮挡");
+            AssertOpacity(panel, label, name, upperOpacity, folded ? "收腿长段遮挡" : "稳定站姿主轮廓");
         }
 
         foreach (var name in new[]
@@ -193,14 +202,13 @@ internal static class MaotaiVisualSnapshotSmokeTests
                      "MaotaiV2HindRightLower",
                  })
         {
-            AssertOpacity(panel, label, name, 0.0, "禁止上下腿横向拼接缝");
+            AssertOpacity(panel, label, name, 0.0, "非运动状态 Lower 保持隐藏");
         }
 
         AssertOpacity(panel, label, "MaotaiV2FrontLeftPaw",  1.0, "前脚接触点");
         AssertOpacity(panel, label, "MaotaiV2FrontRightPaw", 1.0, "前脚接触点");
-        var rearPawOpacity = label == "run" ? 0.0 : 1.0;
-        AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",  rearPawOpacity, "前视后脚遮挡");
-        AssertOpacity(panel, label, "MaotaiV2HindRightPaw", rearPawOpacity, "前视后脚遮挡");
+        AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",   1.0, "后脚接触点");
+        AssertOpacity(panel, label, "MaotaiV2HindRightPaw",  1.0, "后脚接触点");
     }
 
     private static void VerifyRunPawFootprint(AssistantPetPanel panel, string label)
@@ -210,8 +218,8 @@ internal static class MaotaiVisualSnapshotSmokeTests
             return;
         }
 
-        // Paw footprint       : keep the physical contact pivot unchanged, but narrow only the rendered moving paw fur.
-        // Overlap prevention  : two full-width 34px paw sprites visibly stack in front view even when IK lanes are valid.
+        // Paw footprint       : preserve almost all native paw width now that the knee/rear-depth policy resolves stacking structurally.
+        // Contact pivot       : scaling remains centered on the cached paw pivot, so physical foot-lock coordinates are unchanged.
         foreach (var name in new[]
                  {
                      "MaotaiV2FrontLeftPaw",
@@ -227,11 +235,11 @@ internal static class MaotaiVisualSnapshotSmokeTests
                 throw new InvalidOperationException($"Maotai visual snapshot {name} 缺少缓存 ScaleTransform");
             }
 
-            if (scale.ScaleX > 0.80 || scale.ScaleX < 0.70)
+            if (scale.ScaleX > 0.92 || scale.ScaleX < 0.88)
             {
                 throw new InvalidOperationException(
-                    $"Maotai run {name} 横向 footprint 必须收窄以避免双爪毛边堆叠；" +
-                    $"expected=0.70..0.80, actual={scale.ScaleX:F2}");
+                    $"Maotai run {name} 横向 footprint 应保留接近原生宽度；" +
+                    $"expected=0.88..0.92, actual={scale.ScaleX:F2}");
             }
         }
     }
@@ -249,7 +257,7 @@ internal static class MaotaiVisualSnapshotSmokeTests
         {
             throw new InvalidOperationException(
                 $"Maotai visual snapshot '{label}' 的 {name} {contract}；" +
-                $"expected={expected:F1}, actual={element.Opacity:F1}");
+                $"expected={expected:F2}, actual={element.Opacity:F2}");
         }
     }
 
