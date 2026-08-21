@@ -8,7 +8,7 @@ echo ============================================================
 echo.
 echo Starting prebuilt installation. No source build will run on this PC.
 echo.
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-PvpDirectorConsolePrebuilt.N6E22.ps1"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-PvpDirectorConsolePrebuilt.N6E22.ps1" -PackageRoot "%CD%"
 set "PVP_EXIT=%ERRORLEVEL%"
 echo.
 if not "%PVP_EXIT%"=="0" (
