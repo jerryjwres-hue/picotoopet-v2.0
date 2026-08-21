@@ -14,8 +14,8 @@ def test_windows_identity_is_picotoopet_ai_superpower_v1() -> None:
     shell_code = SHELL_CODE.read_text(encoding="utf-8")
 
     assert 'public const string ProductName = "PicotooPet AI";' in version_text
-    assert 'public const string SuperpowerLabel = "superpower v1.0";' in version_text
-    assert 'WindowTitle => $"{ProductName} {Current}"' in version_text
+    assert 'public const string SuperpowerLabel = "Superpower v1.0";' in version_text
+    assert 'WindowTitle => $"{ProductName} — {SuperpowerLabel} · {Current}"' in version_text
     assert 'ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center · v{Current}"' in version_text
 
     # Keep the existing XAML/layout intact: Shell normalizes only the legacy brand TextBlocks at runtime.
