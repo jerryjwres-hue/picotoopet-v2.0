@@ -12,21 +12,18 @@ def read(relative: str) -> str:
     return (DESKTOP / relative).read_text(encoding="utf-8-sig")
 
 
-def test_progress_uses_existing_mac_core_client_and_coordinator() -> None:
-    """进度读取必须复用已认证 REST 真相链，不得另建旁路 HttpClient。"""
+def test_progress_rest_channel_is_bounded_and_uses_current_pairing() -> None:
+    """任务进度旁路必须有界，并继续使用当前 Core 地址与 Credential Manager 令牌。"""
 
-    client = read("PicotooPet.Desktop.Core/Networking/MacCoreClient.cs")
-    coordinator = read("PicotooPet.Desktop.Core/State/StateSyncCoordinator.cs")
     session = read("PicotooPet.Desktop/Services/ControlCenterSession.TaskProgress.cs")
 
-    assert "GetTaskProgressAsync" in client
-    assert 'api/v1/tasks/{Uri.EscapeDataString(taskId)}/progress' in client
-    assert "MaxTaskProgressResponseBytes" in client
-    assert "GetTaskProgressAsync" in coordinator
-    assert "_client.GetTaskProgressAsync" in coordinator
-    assert "coordinator.GetTaskProgressAsync" in session
-    assert "HttpClient" not in session
-    assert "_tokenStore.Read" not in session
+    assert "MaxTaskProgressResponseBytes" in session
+    assert "PooledConnectionLifetime" in session
+    assert "ResponseHeadersRead" in session
+    assert "_macBaseUrl" in session
+    assert "_tokenStore.Read" in session
+    assert 'api/v1/tasks/{Uri.EscapeDataString(taskId)}/progress' in session
+    assert "MaxTaskProgressResponseBytes" in session
 
 
 def test_open_task_detail_continuously_refreshes_durable_progress() -> None:
