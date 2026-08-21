@@ -29,6 +29,8 @@ internal enum MaotaiMouthState
 /// <summary>Motion Engine 输出给渲染器的一帧纯值类型数据；帧循环无需创建集合。</summary>
 internal readonly record struct MaotaiPoseFrame
 {
+    private const double FullRunBodyLeanDegrees = 5.4;
+
     private readonly MaotaiMouthState _mouthState;
 
     public MaotaiBonePose Root { get; init; }
@@ -90,8 +92,13 @@ internal readonly record struct MaotaiPoseFrame
 
     public MaotaiMotionState MotionState { get; init; }
 
-    // Locomotion envelope   : 0=standing, 1=full run; renderer uses this continuous value instead of snapping limb visuals by state name.
-    public double LocomotionBlend { get; init; }
+    // Locomotion envelope   : Body lean is generated from the same continuous speed ratio; only real travel states may expose it to Renderer.
+    public double LocomotionBlend => MotionState is
+        MaotaiMotionState.Walk or
+        MaotaiMotionState.Run or
+        MaotaiMotionState.WorkApproach
+            ? Math.Clamp(Math.Abs(Body.RotationDeg) / FullRunBodyLeanDegrees, 0.0, 1.0)
+            : 0.0;
 
     // Expression envelope   : continuous values let overlays blend instead of snapping discrete face images.
     public double YawnProgress { get; init; }
