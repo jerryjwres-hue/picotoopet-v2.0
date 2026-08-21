@@ -1,0 +1,126 @@
+name: PVP Director Console Native v2 N6E3 Convergence
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pvp/director-console-native-v2-bootstrap/**"
+      - ".github/workflows/pvp-director-console-native-v2-n6e3-convergence.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pvp-director-native-v2-n6e3-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose-and-build:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Reassemble frozen Native source bundle
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $bootstrap = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap"
+          $bundle = Join-Path $env:RUNNER_TEMP "PVP_DirectorConsole_Native_N6E1.zip"
+          $parts = @(Get-ChildItem -LiteralPath $bootstrap -Filter "native.part*.b64" | Sort-Object Name)
+          if ($parts.Count -lt 1) { throw "Native source bundle parts are missing." }
+          $stream = [System.IO.File]::Open($bundle, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+          try {
+            foreach ($part in $parts) {
+              $text = (Get-Content -LiteralPath $part.FullName -Raw).Trim()
+              if (($text.Length % 4) -ne 0) { throw "Invalid Base64 quartet length: $($part.Name)" }
+              $bytes = [Convert]::FromBase64String($text)
+              $stream.Write($bytes, 0, $bytes.Length)
+            }
+          }
+          finally { $stream.Dispose() }
+          $expected = (Get-Content -LiteralPath (Join-Path $bootstrap "NATIVE_BUNDLE.sha256") -Raw).Trim().Split()[0].ToLowerInvariant()
+          $actual = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Native source bundle SHA mismatch." }
+          $target = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2"
+          if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+          [IO.Directory]::CreateDirectory($target) | Out-Null
+          [IO.Compression.ZipFile]::ExtractToDirectory($bundle, $target)
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Apply N6E3 Native director-experience patch
+        shell: powershell
+        run: |
+          $patchDir = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\n6e3-patch"
+          $parts = @(Get-ChildItem -LiteralPath $patchDir -Filter "n6e3.patch*.b64" | Sort-Object Name)
+          if ($parts.Count -ne 8) { throw "Expected 8 base patch parts, got $($parts.Count)." }
+          $encoded = (($parts | ForEach-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() }) -join '')
+          $gz = Join-Path $env:RUNNER_TEMP "n6e3.patch.gz"
+          $patch = Join-Path $env:RUNNER_TEMP "n6e3.patch"
+          [IO.File]::WriteAllBytes($gz, [Convert]::FromBase64String($encoded))
+          python -c "import gzip,pathlib; pathlib.Path(r'$patch').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $env:GITHUB_WORKSPACE
+          try {
+            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --include='*/native/**' --whitespace=nowarn $patch
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          finally { Pop-Location }
+
+      - name: Apply last verified N6E3 stability and localization delta
+        shell: powershell
+        run: |
+          $patchDir = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\n6e3-delta"
+          $parts = @(Get-ChildItem -LiteralPath $patchDir -Filter "n6e3.delta.patch*.b64" | Sort-Object Name)
+          if ($parts.Count -ne 2) { throw "Expected 2 delta patch parts, got $($parts.Count)." }
+          $encoded = (($parts | ForEach-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() }) -join '')
+          $gz = Join-Path $env:RUNNER_TEMP "n6e3-delta.patch.gz"
+          $patch = Join-Path $env:RUNNER_TEMP "n6e3-delta.patch"
+          [IO.File]::WriteAllBytes($gz, [Convert]::FromBase64String($encoded))
+          python -c "import gzip,pathlib; pathlib.Path(r'$patch').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $env:GITHUB_WORKSPACE
+          try {
+            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --include='*/native/**' --whitespace=nowarn $patch
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          finally { Pop-Location }
+
+      - name: Run Native source contracts
+        shell: powershell
+        run: |
+          python -m unittest discover -s .\pvp\director-console-native-v2\native\tests -p "test_*.py" -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Capture XAML compiler evidence
+        shell: powershell
+        run: |
+          $xamlPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\PVP.DirectorConsole\MainWindow.xaml"
+          $lines = Get-Content -LiteralPath $xamlPath
+          Write-Host "=== MainWindow.xaml lines 56-70 ==="
+          for ($i = 55; $i -lt [Math]::Min(70, $lines.Count); $i++) {
+            Write-Host (("{0,4}: {1}" -f ($i + 1), $lines[$i]))
+          }
+          Write-Host "=== angle-bracket candidates around line 63 ==="
+          $lines | Select-String -Pattern '<[0-9]' -AllMatches | ForEach-Object { Write-Host $_.LineNumber ':' $_.Line }
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: pvp/director-console-native-v2/global.json
+
+      - name: Build Native WPF
+        shell: powershell
+        run: |
+          $project = ".\pvp\director-console-native-v2\native\PVP.DirectorConsole\PVP.DirectorConsole.csproj"
+          dotnet restore $project --runtime win-x64 --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build $project --configuration Release --runtime win-x64 --no-restore --nologo -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
