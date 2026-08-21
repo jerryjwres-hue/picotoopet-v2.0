@@ -13,20 +13,20 @@ HEIGHT = 92
 _CENTER_POINTS: tuple[tuple[int, float], ...] = (
     (3, 34.0),
     (14, 33.6),
-    (28, 32.3),
-    (44, 31.2),
-    (58, 31.4),
-    (72, 32.4),
-    (88, 33.2),
+    (28, 31.3),
+    (44, 28.8),
+    (58, 29.3),
+    (72, 31.3),
+    (88, 32.4),
 )
 _HALF_WIDTH_POINTS: tuple[tuple[int, float], ...] = (
-    (3, 18.5),
-    (14, 17.2),
-    (28, 13.7),
-    (44, 10.5),
-    (58, 10.9),
-    (72, 11.8),
-    (88, 12.5),
+    (3, 18.6),
+    (14, 17.0),
+    (28, 13.3),
+    (44, 10.0),
+    (58, 9.8),
+    (72, 10.3),
+    (88, 10.7),
 )
 
 
@@ -71,10 +71,10 @@ def _build_one(path: Path, *, mirror: bool) -> None:
 
         # Low-frequency edge motion plus a few broad tufts keeps the outline
         # organic without creating a sawtooth or another symmetric hourglass.
-        left_wave  = (0.45 * math.sin((y * 0.19) + 0.6)) + (0.28 * math.sin(y * 0.37))
-        right_wave = (0.38 * math.sin((y * 0.17) + 1.8)) + (0.24 * math.sin((y * 0.31) + 0.4))
-        outer_tuft = _bump(y, 14, 5, 2.6) + _bump(y, 23, 4, 1.5) + _bump(y, 66, 5, 1.7)
-        inner_tuft = _bump(y, 10, 4, 1.3) + _bump(y, 55, 5, 1.0) + _bump(y, 78, 4, 1.6)
+        left_wave  = (0.32 * math.sin((y * 0.18) + 0.6)) + (0.18 * math.sin(y * 0.34))
+        right_wave = (0.30 * math.sin((y * 0.16) + 1.8)) + (0.16 * math.sin((y * 0.29) + 0.4))
+        outer_tuft = _bump(y, 14, 5, 2.4) + _bump(y, 25, 4.5, 1.2) + _bump(y, 63, 5.5, 1.1)
+        inner_tuft = _bump(y, 10, 4.5, 1.1) + _bump(y, 54, 5.5, 0.7) + _bump(y, 78, 4.5, 0.9)
 
         if not mirror:
             edge_left  = center_x - half_width - left_wave - outer_tuft
@@ -91,10 +91,10 @@ def _build_one(path: Path, *, mirror: bool) -> None:
             if x < edge_left - 3.0 or x > edge_right + 3.0:
                 continue
 
-            if x < edge_left + 2.5:
-                alpha = _smoothstep((x - (edge_left - 3.0)) / 5.5)
-            elif x > edge_right - 2.5:
-                alpha = _smoothstep(((edge_right + 3.0) - x) / 5.5)
+            if x < edge_left + 2.3:
+                alpha = _smoothstep((x - (edge_left - 3.0)) / 5.3)
+            elif x > edge_right - 2.3:
+                alpha = _smoothstep(((edge_right + 3.0) - x) / 5.3)
             else:
                 alpha = 1.0
             if alpha <= 0.0:
@@ -102,31 +102,33 @@ def _build_one(path: Path, *, mirror: bool) -> None:
 
             side    = min(1.0, abs(x - row_center) / row_half)
             texture = (
-                math.sin((x * 0.47) + (y * 0.23))
-                + (0.45 * math.sin((x * 0.18) - (y * 0.41)))
-                + (0.30 * math.sin((x * 0.91) + (y * 0.13)))
+                math.sin((x * 0.45) + (y * 0.22))
+                + (0.42 * math.sin((x * 0.17) - (y * 0.39)))
+                + (0.28 * math.sin((x * 0.88) + (y * 0.12)))
             )
             dark = (
-                82.0 - (20.0 * side) + (3.4 * texture),
-                76.0 - (18.0 * side) + (3.0 * texture),
-                82.0 - (15.0 * side) + (3.2 * texture),
+                82.0 - (20.0 * side) + (3.3 * texture),
+                76.0 - (18.0 * side) + (2.9 * texture),
+                82.0 - (15.0 * side) + (3.1 * texture),
             )
             cream = (
-                224.0 - (31.0 * side) + (3.8 * texture),
-                217.0 - (29.0 * side) + (3.4 * texture),
-                210.0 - (26.0 * side) + (3.5 * texture),
+                225.0 - (30.0 * side) + (3.7 * texture),
+                218.0 - (28.0 * side) + (3.3 * texture),
+                211.0 - (25.0 * side) + (3.4 * texture),
             )
 
-            # The warm-cream transition follows an inner-fur wedge instead of
-            # a horizontal band, which prevents a painted sock/cuff appearance.
+            # Delay the warm-cream transition and break it into longitudinal
+            # fur strands so the lower leg does not read as a horizontal sock.
             inner_coordinate = (x - row_center) / row_half
-            wedge            = 0.055 * inner_coordinate * (-1.0 if mirror else 1.0)
-            cream_mix        = _smoothstep((progress - 0.48 + wedge) / 0.34)
+            wedge            = 0.045 * inner_coordinate * (-1.0 if mirror else 1.0)
+            strand_phase     = 1.1 if mirror else 0.0
+            strand           = 0.035 * math.sin((x * 0.42) + (y * 0.12) + strand_phase)
+            cream_mix        = _smoothstep((progress - 0.52 + wedge + strand) / 0.38)
             if not mirror:
                 inner_weight = _smoothstep((inner_coordinate + 0.05) / 0.95)
             else:
                 inner_weight = _smoothstep((-inner_coordinate + 0.05) / 0.95)
-            inner_lock = 0.12 * inner_weight * _bump(progress, 0.53, 0.10, 1.0)
+            inner_lock = 0.08 * inner_weight * _bump(progress, 0.58, 0.11, 1.0)
             cream_mix = min(1.0, cream_mix + inner_lock)
 
             highlight = ((1.0 - side) ** 1.8) * 6.0
