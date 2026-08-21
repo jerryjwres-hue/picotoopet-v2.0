@@ -300,31 +300,50 @@ internal sealed class MaotaiRasterRenderer
             MaotaiRasterFaceLayout.CalibratePupilY(frame.RightPupil.Y),
             frame.RightPupil.RotationDeg);
 
-        ApplyContinuousLeg(
+        ApplyLeg(
             _visuals.FrontLeftUpper,
             _visuals.FrontLeftLower,
+            _visuals.FrontLeftPaw,
             frame.FrontLeftUpper,
+            frame.FrontLeftLower,
             frame.FrontLeftPaw,
-            visualRootYOffset: -10.0,
-            maxScaleY: 1.44);
-        ApplyFrontPaw(_visuals.FrontLeftPaw, frame.FrontLeftPaw, frame.MotionState);
-        ApplyContinuousLeg(
+            frame.MotionState,
+            isFront: true,
+            visualRootYOffset: -8.0,
+            continuousMaxScaleY: 1.44);
+        ApplyLeg(
             _visuals.FrontRightUpper,
             _visuals.FrontRightLower,
+            _visuals.FrontRightPaw,
             frame.FrontRightUpper,
+            frame.FrontRightLower,
             frame.FrontRightPaw,
-            visualRootYOffset: -10.0,
-            maxScaleY: 1.44);
-        ApplyFrontPaw(_visuals.FrontRightPaw, frame.FrontRightPaw, frame.MotionState);
-        ApplyContinuousLeg(_visuals.HindLeftUpper, _visuals.HindLeftLower, frame.HindLeftUpper, frame.HindLeftPaw);
-        ApplyBone(_visuals.HindLeftPaw, frame.HindLeftPaw);
-        ApplyContinuousLeg(_visuals.HindRightUpper, _visuals.HindRightLower, frame.HindRightUpper, frame.HindRightPaw);
-        ApplyBone(_visuals.HindRightPaw, frame.HindRightPaw);
+            frame.MotionState,
+            isFront: true,
+            visualRootYOffset: -8.0,
+            continuousMaxScaleY: 1.44);
+        ApplyLeg(
+            _visuals.HindLeftUpper,
+            _visuals.HindLeftLower,
+            _visuals.HindLeftPaw,
+            frame.HindLeftUpper,
+            frame.HindLeftLower,
+            frame.HindLeftPaw,
+            frame.MotionState,
+            isFront: false);
+        ApplyLeg(
+            _visuals.HindRightUpper,
+            _visuals.HindRightLower,
+            _visuals.HindRightPaw,
+            frame.HindRightUpper,
+            frame.HindRightLower,
+            frame.HindRightPaw,
+            frame.MotionState,
+            isFront: false);
         ApplyBone(_visuals.TailBase, frame.TailBase);
         ApplyBone(_visuals.TailMid, frame.TailMid);
         ApplyBone(_visuals.TailTip, frame.TailTip);
 
-        ApplyPoseCohesion(frame.MotionState);
         ApplyWorkProps(frame.MotionState);
         ApplyFace(frame);
     }
@@ -343,6 +362,90 @@ internal sealed class MaotaiRasterRenderer
         throw new InvalidOperationException($"Maotai v2 face layer missing: {name}");
     }
 
+    private static void ApplyLeg(
+        MaotaiRasterPart upper,
+        MaotaiRasterPart lower,
+        MaotaiRasterPart paw,
+        in MaotaiBonePose upperPose,
+        in MaotaiBonePose lowerPose,
+        in MaotaiBonePose pawPose,
+        MaotaiMotionState state,
+        bool isFront,
+        double visualRootYOffset = 0.0,
+        double continuousMaxScaleY = 1.30)
+    {
+        var style = MaotaiLegVisualPolicy.Resolve(state, isFront);
+        if (style.UseArticulation)
+        {
+            // Upper bridge        : start inside torso fur, end at the real IK knee, and use manifest-like overlap instead of stretching to the paw.
+            ApplyArticulatedSegment(
+                upper,
+                upperPose,
+                lowerPose,
+                scaleX: style.UpperScaleX,
+                visualRootYOffset: visualRootYOffset,
+                overlapPixels: isFront ? 7.0 : 6.0);
+
+            // Lower bridge        : keep this segment shorter/narrower so the knee reads as fur continuity rather than a second rectangular limb block.
+            ApplyArticulatedSegment(
+                lower,
+                lowerPose,
+                pawPose,
+                scaleX: style.LowerScaleX,
+                visualRootYOffset: 0.0,
+                overlapPixels: 6.0);
+        }
+        else
+        {
+            ApplyContinuousLeg(
+                upper,
+                lower,
+                upperPose,
+                pawPose,
+                visualRootYOffset,
+                continuousMaxScaleY);
+        }
+
+        // Contact pivot         : preserve Motion Engine foot-lock coordinates; only the display footprint follows the visual policy.
+        paw.Apply(
+            pawPose.X,
+            pawPose.Y,
+            pawPose.RotationDeg,
+            scaleX: pawPose.ScaleX * style.PawScaleX,
+            scaleY: pawPose.ScaleY);
+
+        // Visibility ownership : one centralized policy replaces permanent Lower=0 and moving rear-leg deletion.
+        upper.Element.Opacity = style.UpperOpacity;
+        lower.Element.Opacity = style.LowerOpacity;
+        paw.Element.Opacity   = style.PawOpacity;
+    }
+
+    private static void ApplyArticulatedSegment(
+        MaotaiRasterPart part,
+        in MaotaiBonePose rootPose,
+        in MaotaiBonePose endPose,
+        double scaleX,
+        double visualRootYOffset,
+        double overlapPixels)
+    {
+        var visualRootY = rootPose.Y + visualRootYOffset;
+        var dx          = endPose.X - rootPose.X;
+        var dy          = endPose.Y - visualRootY;
+        var distance    = Math.Sqrt((dx * dx) + (dy * dy));
+        var angleDeg    = Math.Atan2(dy, dx) * 180.0 / Math.PI;
+
+        // Segment reach        : logical bones are shorter than their overlap-rich PNGs; controlled overlap hides joints without producing long stretched pillars.
+        var pivotY      = part.Element.RenderTransformOrigin.Y;
+        var visualReach = Math.Max(1.0, part.Element.Height * (1.0 - pivotY));
+        var scaleY      = Math.Clamp((distance + overlapPixels) / visualReach, 0.62, 1.05);
+        part.Apply(
+            rootPose.X,
+            visualRootY,
+            MaotaiRasterAxis.LegRotationFromIkDegrees(angleDeg),
+            scaleX,
+            scaleY);
+    }
+
     private static void ApplyContinuousLeg(
         MaotaiRasterPart upper,
         MaotaiRasterPart lower,
@@ -357,8 +460,8 @@ internal sealed class MaotaiRasterRenderer
         var distance    = Math.Sqrt((dx * dx) + (dy * dy));
         var angleDeg    = Math.Atan2(dy, dx) * 180.0 / Math.PI;
 
-        // Visual root       : front-leg art starts higher inside torso fur; Motion Engine shoulder/foot-lock coordinates stay untouched.
-        // Visual reach      : use the post-pivot PNG reach and overlap the paw by a few pixels so no white socket ring remains visible.
+        // Visual root          : stable poses retain the cleaner single-fur silhouette already accepted in Idle/Work/Sleep.
+        // Visual reach         : use the post-pivot PNG reach and overlap the paw by a few pixels so no socket ring becomes visible.
         var pivotY      = upper.Element.RenderTransformOrigin.Y;
         var visualReach = Math.Max(1.0, upper.Element.Height * (1.0 - pivotY));
         var scaleY      = Math.Clamp((distance + 4.0) / visualReach, 0.72, maxScaleY);
@@ -372,16 +475,6 @@ internal sealed class MaotaiRasterRenderer
         lower.Element.Opacity = 0.0;
     }
 
-    private static void ApplyLegBone(
-        MaotaiRasterPart part,
-        in MaotaiBonePose pose) =>
-        part.Apply(
-            pose.X,
-            pose.Y,
-            MaotaiRasterAxis.LegRotationFromIkDegrees(pose.RotationDeg),
-            pose.ScaleX,
-            pose.ScaleY);
-
     private static void ApplyBone(
         MaotaiRasterPart part,
         in MaotaiBonePose pose) =>
@@ -391,58 +484,6 @@ internal sealed class MaotaiRasterRenderer
             pose.RotationDeg,
             pose.ScaleX,
             pose.ScaleY);
-
-    private static void ApplyFrontPaw(
-        MaotaiRasterPart part,
-        in MaotaiBonePose pose,
-        MaotaiMotionState state)
-    {
-        var movingFrontView = state is MaotaiMotionState.Walk or MaotaiMotionState.Run;
-
-        // Contact pivot      : position/rotation remain the exact Motion Engine output, so foot-lock physics are untouched.
-        // Fur footprint      : narrow only the displayed moving paw around its existing pivot to stop front-view sprite stacking.
-        part.Apply(
-            pose.X,
-            pose.Y,
-            pose.RotationDeg,
-            scaleX: pose.ScaleX * (movingFrontView ? 0.76 : 1.0),
-            scaleY: pose.ScaleY);
-    }
-
-    private void ApplyPoseCohesion(MaotaiMotionState state)
-    {
-        // Folded-pose occlusion : work/rest poses tuck the long limb silhouettes behind the plush torso.
-        // Front-view locomotion : rear limbs stay behind the torso/front pair so no detached side paw can pop out.
-        var hideFrontUpper = state is
-            MaotaiMotionState.WorkSettle or
-            MaotaiMotionState.WorkTyping or
-            MaotaiMotionState.WorkTired or
-            MaotaiMotionState.Yawn or
-            MaotaiMotionState.WorkAnnoyed or
-            MaotaiMotionState.Recover or
-            MaotaiMotionState.LieDown or
-            MaotaiMotionState.Sleep or
-            MaotaiMotionState.Wake or
-            MaotaiMotionState.GetUp;
-        var movingFrontView = state is MaotaiMotionState.Walk or MaotaiMotionState.Run;
-        var frontUpperOpacity = hideFrontUpper ? 0.0 : 1.0;
-        var rearUpperOpacity  = hideFrontUpper || movingFrontView ? 0.0 : 1.0;
-
-        _visuals.FrontLeftUpper.Element.Opacity  = frontUpperOpacity;
-        _visuals.FrontRightUpper.Element.Opacity = frontUpperOpacity;
-        _visuals.HindLeftUpper.Element.Opacity   = rearUpperOpacity;
-        _visuals.HindRightUpper.Element.Opacity  = rearUpperOpacity;
-
-        _visuals.FrontLeftLower.Element.Opacity  = 0.0;
-        _visuals.FrontRightLower.Element.Opacity = 0.0;
-        _visuals.HindLeftLower.Element.Opacity   = 0.0;
-        _visuals.HindRightLower.Element.Opacity  = 0.0;
-
-        _visuals.FrontLeftPaw.Element.Opacity  = 1.0;
-        _visuals.FrontRightPaw.Element.Opacity = 1.0;
-        _visuals.HindLeftPaw.Element.Opacity   = movingFrontView ? 0.0 : 1.0;
-        _visuals.HindRightPaw.Element.Opacity  = movingFrontView ? 0.0 : 1.0;
-    }
 
     private void ApplyWorkProps(MaotaiMotionState state)
     {
