@@ -38,6 +38,31 @@ from .handlers import HandlerResult, WorkerHandler, default_handlers
 from .state import WorkerStateStore
 
 _MAX_DIAGNOSTIC_BYTES = 64 * 1024
+_MAX_RESEARCH_BYTES = 64 * 1024
+_MAX_AUTONOMOUS_BYTES = 256 * 1024
+_MAX_DEFAULT_RESULT_BYTES = 256 * 1024
+
+
+def _result_limit_bytes(*, task_type: str, result_type: str) -> int:
+    """按冻结结果合同选择有界大小；诊断 64 KiB 不能误伤自主调研结果。"""
+
+    if task_type == "system.diagnostic_snapshot" or result_type == "system.diagnostic_snapshot":
+        return _MAX_DIAGNOSTIC_BYTES
+    if task_type == "research.search" or result_type == "research.search":
+        return _MAX_RESEARCH_BYTES
+    if task_type.startswith("autonomous.") or result_type.startswith("autonomous."):
+        return _MAX_AUTONOMOUS_BYTES
+    return _MAX_DEFAULT_RESULT_BYTES
+
+
+def _result_too_large_error(task_type: str) -> tuple[str, str]:
+    """结果大小错误必须与任务域一致，不能把普通任务伪装成诊断失败。"""
+
+    if task_type == "system.diagnostic_snapshot":
+        return "DIAGNOSTIC_RESULT_TOO_LARGE", "诊断结果超过大小上限。"
+    if task_type == "research.search":
+        return "RESEARCH_RESULT_TOO_LARGE", "Research 结果超过大小上限。"
+    return "WORKER_RESULT_TOO_LARGE", "任务结果超过大小上限。"
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,10 +312,11 @@ class WorkerRuntime:
                 error_message="诊断结果合同无效。",
             )
         except ResultTooLargeError:
+            error_code, error_message = _result_too_large_error(task.task_type)
             return self._finish_failed(
                 task,
-                error_code="DIAGNOSTIC_RESULT_TOO_LARGE",
-                error_message="诊断结果超过大小上限。",
+                error_code=error_code,
+                error_message=error_message,
             )
         except DiagnosticCollectionError:
             return self._finish_failed(
@@ -432,7 +458,10 @@ class WorkerRuntime:
         stored = self.result_store.put_json(
             handler_result.result_document,
             result_type=handler_result.result_type,
-            max_bytes=_MAX_DIAGNOSTIC_BYTES,
+            max_bytes=_result_limit_bytes(
+                task_type=task.task_type,
+                result_type=handler_result.result_type,
+            ),
         )
         self.queue.complete_leased_with_result(
             task.task_id,
