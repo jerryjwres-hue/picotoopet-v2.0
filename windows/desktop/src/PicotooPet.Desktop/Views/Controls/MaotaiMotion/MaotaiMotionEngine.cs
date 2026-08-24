@@ -615,9 +615,10 @@ internal sealed class MaotaiMotionEngine
                 break;
 
             case MaotaiMotionState.WorkTired:
-                bodyWorldY += 2.6 * blend;
+                // Work-cycle boundary : inherit the stable typing body before easing into the tired endpoint.
+                bodyWorldY += Lerp(2.0, 2.6, blend);
                 bodyScaleX += 0.018 * blend;
-                bodyScaleY -= 0.045 * blend;
+                bodyScaleY -= Lerp(0.015, 0.045, blend);
                 headOffsetY += 4.2 * blend;
                 headBiasDeg += 3.0 * facingSign * blend;
                 earDrop     += 3.2 * blend;
@@ -641,9 +642,10 @@ internal sealed class MaotaiMotionEngine
             }
 
             case MaotaiMotionState.WorkAnnoyed:
-                bodyWorldY += 1.0 * blend;
+                // Work-cycle boundary : inherit the stable typing body before easing into the annoyed endpoint.
+                bodyWorldY += Lerp(2.0, 1.0, blend);
                 bodyScaleX -= 0.020 * blend;
-                bodyScaleY += 0.022 * blend;
+                bodyScaleY += Lerp(-0.015, 0.022, blend);
                 bodyTilt   -= 3.8 * facingSign * blend;
                 headOffsetY -= 0.8 * blend;
                 headBiasDeg -= 2.8 * facingSign * blend;
