@@ -64,6 +64,7 @@ internal static class MaotaiRestTransitionSmokeTests
             "睡着时被摸/点击必须先 Wake -> GetUp，再进入 UserReaction，禁止 Sleep 硬切互动姿态");
 
         VerifyWakeGetUpPoseContinuity();
+        VerifyDeferredUserReactionPoseContinuity();
     }
 
     /// <summary>状态链合法还不够；Sleep/Wake/GetUp 的真实相邻帧也不能出现身体、头部或耳朵跳变。</summary>
@@ -182,7 +183,97 @@ internal static class MaotaiRestTransitionSmokeTests
             $"Wake -> GetUp 身体纵向缩放不能突然压缩；delta={scaleYDelta:F4}, wakeScaleY={wakeScaleY:F4}, getUpScaleY={getUpScaleY:F4}");
     }
 
-    private static object CreateRestingInput(string? autonomousState)
+    /// <summary>真实 Pat 脉冲结束后，延迟互动从 GetUp 接到 UserReaction 的首帧也必须保持骨骼连续。</summary>
+    private static void VerifyDeferredUserReactionPoseContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update = engineType.GetMethod("Update", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("MotionEngine 缺少 Update");
+        var engine = Activator.CreateInstance(engineType, 521, 72.0)
+            ?? throw new InvalidOperationException("无法创建延迟互动连续性 Motion Engine");
+
+        object? previousPose = null;
+        var stableSleepFrames = 0;
+        for (var frame = 0; frame < 420; frame++)
+        {
+            previousPose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput("Sleep")])
+                ?? throw new InvalidOperationException("延迟互动测试的睡眠预热没有输出 Pose");
+            if (ReadString(previousPose, "MotionState") == "Sleep")
+            {
+                stableSleepFrames++;
+                if (stableSleepFrames >= 30)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                stableSleepFrames = 0;
+            }
+        }
+
+        Assert(stableSleepFrames >= 30, "延迟互动连续性测试未能稳定进入 Sleep");
+
+        var previousState = ReadString(previousPose!, "MotionState");
+        var sawBoundary = false;
+
+        void ObserveBoundary(object pose)
+        {
+            var state = ReadString(pose, "MotionState");
+            if (!sawBoundary && previousState == "GetUp" && state == "UserReaction")
+            {
+                var bodyYDelta = Math.Abs(
+                    ReadBodyValue(pose, "Y") - ReadBodyValue(previousPose!, "Y"));
+                var scaleXDelta = Math.Abs(
+                    ReadBodyValue(pose, "ScaleX") - ReadBodyValue(previousPose!, "ScaleX"));
+                var scaleYDelta = Math.Abs(
+                    ReadBodyValue(pose, "ScaleY") - ReadBodyValue(previousPose!, "ScaleY"));
+                var headDelta = BoneDistance(previousPose!, pose, "Head");
+                var leftPawDelta = BoneDistance(previousPose!, pose, "FrontLeftPaw");
+                var rightPawDelta = BoneDistance(previousPose!, pose, "FrontRightPaw");
+
+                Assert(bodyYDelta < 0.75,
+                    $"GetUp -> UserReaction 身体高度出现节点跳帧；delta={bodyYDelta:F3}");
+                Assert(scaleXDelta < 0.012,
+                    $"GetUp -> UserReaction 身体横向缩放出现硬切；delta={scaleXDelta:F4}");
+                Assert(scaleYDelta < 0.012,
+                    $"GetUp -> UserReaction 身体纵向缩放出现硬切；delta={scaleYDelta:F4}");
+                Assert(headDelta < 0.75,
+                    $"GetUp -> UserReaction 头部首帧位移过大；delta={headDelta:F3}");
+                Assert(leftPawDelta < 1.25,
+                    $"GetUp -> UserReaction 左前爪首帧瞬移；delta={leftPawDelta:F3}");
+                Assert(rightPawDelta < 1.25,
+                    $"GetUp -> UserReaction 右前爪首帧瞬移；delta={rightPawDelta:F3}");
+                sawBoundary = true;
+            }
+
+            previousPose = pose;
+            previousState = state;
+        }
+
+        // Real UI pulse       : Pat stays raw for 0.55 s (33 frames); if the mandatory wake chain is longer,
+        // the engine's deferred latch must carry it until UserReaction without creating a pose seam.
+        for (var frame = 0; frame < 33 && !sawBoundary; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(null, interaction: "Pat")])
+                ?? throw new InvalidOperationException("延迟互动 Pat 脉冲没有输出 Pose");
+            ObserveBoundary(pose);
+        }
+
+        for (var frame = 0; frame < 120 && !sawBoundary; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateRestingInput(null)])
+                ?? throw new InvalidOperationException("Pat 脉冲过期后的延迟互动没有输出 Pose");
+            ObserveBoundary(pose);
+        }
+
+        Assert(sawBoundary,
+            "真实 0.55 秒 Pat 脉冲后没有观察到 GetUp -> UserReaction 相邻帧边界");
+    }
+
+    private static object CreateRestingInput(
+        string? autonomousState,
+        string interaction = "None")
     {
         var baseType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
         var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
@@ -193,7 +284,7 @@ internal static class MaotaiRestTransitionSmokeTests
             0.0,
             0.0,
             false,
-            Enum.Parse(interactionType, "None"),
+            Enum.Parse(interactionType, interaction),
             20.0,
             140.0,
             72.0,
@@ -215,6 +306,13 @@ internal static class MaotaiRestTransitionSmokeTests
 
     private static double ReadBodyValue(object pose, string propertyName) =>
         ReadBoneValue(pose, "Body", propertyName);
+
+    private static double BoneDistance(object previousPose, object pose, string boneName)
+    {
+        var dx = ReadBoneValue(pose, boneName, "X") - ReadBoneValue(previousPose, boneName, "X");
+        var dy = ReadBoneValue(pose, boneName, "Y") - ReadBoneValue(previousPose, boneName, "Y");
+        return Math.Sqrt((dx * dx) + (dy * dy));
+    }
 
     private static double ReadBoneValue(object pose, string boneName, string propertyName)
     {
