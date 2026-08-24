@@ -13,6 +13,7 @@ internal static class MaotaiPoseBoundaryContinuityV2SmokeTests
         VerifySitLieDownSleepBoundaries();
         VerifyWorkSettleTypingBoundary();
         VerifyWorkCycleBoundaries();
+        VerifyJumpBoundaries();
     }
 
     private static void VerifySitLieDownSleepBoundaries()
@@ -149,6 +150,66 @@ internal static class MaotaiPoseBoundaryContinuityV2SmokeTests
             $"完整工作循环只观察到 {boundaryIndex}/{expectedBoundaries.Length} 个连续性边界");
     }
 
+    private static void VerifyJumpBoundaries()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 727, 72.0)
+            ?? throw new InvalidOperationException("无法创建跳跃边界 Motion Engine");
+
+        object? previousPose = null;
+        var previousState    = string.Empty;
+        var sawPrepAir       = false;
+        var sawAirLand       = false;
+
+        for (var frame = 0; frame < 360; frame++)
+        {
+            var input = CreateJumpInput(wantsJump: frame == 0);
+            var pose = update.Invoke(engine, [1.0 / 60.0, input])
+                ?? throw new InvalidOperationException("跳跃边界测试没有输出 Pose");
+            var state = ReadString(pose, "MotionState");
+
+            if (previousPose is not null && previousState == "JumpPrep" && state == "JumpAir")
+            {
+                AssertJumpBodyBoundary(previousPose, pose, "JumpPrep→JumpAir");
+                sawPrepAir = true;
+            }
+
+            if (previousPose is not null && previousState == "JumpAir" && state == "Land")
+            {
+                AssertJumpBodyBoundary(previousPose, pose, "JumpAir→Land");
+                sawAirLand = true;
+                break;
+            }
+
+            previousPose  = pose;
+            previousState = state;
+        }
+
+        Assert(sawPrepAir, "跳跃边界测试未观察到 JumpPrep→JumpAir");
+        Assert(sawAirLand, "跳跃边界测试未观察到 JumpAir→Land");
+    }
+
+    private static void AssertJumpBodyBoundary(object previousPose, object pose, string label)
+    {
+        var previousLocalY = ReadBoneDouble(previousPose, "Body", "Y") - ReadDouble(previousPose, "StageYOffset");
+        var currentLocalY  = ReadBoneDouble(pose, "Body", "Y") - ReadDouble(pose, "StageYOffset");
+        var localYDelta    = Math.Abs(currentLocalY - previousLocalY);
+        var scaleXDelta    = Math.Abs(
+            ReadBoneDouble(pose, "Body", "ScaleX") -
+            ReadBoneDouble(previousPose, "Body", "ScaleX"));
+        var scaleYDelta    = Math.Abs(
+            ReadBoneDouble(pose, "Body", "ScaleY") -
+            ReadBoneDouble(previousPose, "Body", "ScaleY"));
+
+        Assert(localYDelta < 0.80,
+            $"{label} 身体相对跳跃根节点出现姿态跳帧；delta={localYDelta:F3}");
+        Assert(scaleXDelta < 0.020,
+            $"{label} 身体横向缩放出现节点硬切；delta={scaleXDelta:F4}");
+        Assert(scaleYDelta < 0.020,
+            $"{label} 身体纵向缩放出现节点硬切；delta={scaleYDelta:F4}");
+    }
+
     private static void AssertBodyBoundary(
         object previousPose,
         object pose,
@@ -217,6 +278,28 @@ internal static class MaotaiPoseBoundaryContinuityV2SmokeTests
         return input;
     }
 
+    private static object CreateJumpInput(bool wantsJump)
+    {
+        var inputType       = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionInput");
+        var baseStateType   = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
+        var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
+        return Activator.CreateInstance(
+            inputType,
+            [
+                Enum.Parse(baseStateType, "Resting"),
+                0.0,
+                0.0,
+                false,
+                Enum.Parse(interactionType, "None"),
+                18.0,
+                150.0,
+                72.0,
+                false,
+                wantsJump,
+                108.0,
+            ]) ?? throw new InvalidOperationException("无法创建跳跃边界 MotionInput");
+    }
+
     private static double ReadBoneDouble(object pose, string boneName, string propertyName)
     {
         var bone = RequireProperty(pose.GetType(), boneName).GetValue(pose)
@@ -225,6 +308,11 @@ internal static class MaotaiPoseBoundaryContinuityV2SmokeTests
             RequireProperty(bone.GetType(), propertyName).GetValue(bone),
             System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    private static double ReadDouble(object value, string propertyName) =>
+        Convert.ToDouble(
+            RequireProperty(value.GetType(), propertyName).GetValue(value),
+            System.Globalization.CultureInfo.InvariantCulture);
 
     private static string ReadString(object value, string propertyName) =>
         RequireProperty(value.GetType(), propertyName).GetValue(value)?.ToString() ?? string.Empty;
