@@ -44,13 +44,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 打包范围：只包含 PicotooPet 接线层，不打包任何共享研究工具或浏览器状态。
-mkdir -p "$package_root/payload"
+# 打包 PicotooPet 自有 Gateway/Crawler 接线与 runner；共享研究工具和浏览器状态仍不进入包。
+mkdir -p "$package_root/payload/research_gateway"
 for file in INSTALL_RESEARCH_GATEWAY.command VERIFY_RESEARCH_GATEWAY.command UNINSTALL_RESEARCH_GATEWAY.command README_INSTALL_CN.txt; do
   cp "$repo_root/deploy/macos/research_gateway/$file" "$package_root/$file"
 done
 cp "$repo_root/research_gateway/gateway.py" "$package_root/payload/gateway.py"
 cp "$repo_root/research_gateway/VERSION" "$package_root/payload/VERSION"
+cp "$repo_root/research_gateway/__init__.py" "$package_root/payload/research_gateway/__init__.py"
+cp "$repo_root/research_gateway/crawler_adapter.py" "$package_root/payload/research_gateway/crawler_adapter.py"
+cp "$repo_root/research_gateway/crawl4ai_runner.py" "$package_root/payload/crawl4ai_runner.py"
+cp "$repo_root/research_gateway/CRAWL4AI_ADAPTER_VERSION" "$package_root/payload/CRAWL4AI_ADAPTER_VERSION"
 chmod 755 "$package_root"/*.command
 
 python3 - "$package_root" "$version" "$architecture" "$commit" <<'PY'
@@ -74,7 +78,7 @@ for path in sorted(item for item in root.rglob("*") if item.is_file()):
         }
     )
 manifest = {
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "release_type": "research-gateway-bootstrap",
     "target": "macos",
     "version": sys.argv[2],
@@ -85,6 +89,7 @@ manifest = {
     "xiaoyuzhou_enabled": False,
     "browser_cookies_included": False,
     "external_tools_bundled": False,
+    "package_owned_crawl4ai_seed_included": True,
     "files": files,
 }
 (root / "release-manifest.json").write_text(
@@ -114,6 +119,7 @@ report = {
     "process_isolated_from_mac_core": True,
     "read_only": True,
     "external_tools_bundled": False,
+    "package_owned_crawl4ai_seed_included": True,
 }
 Path(sys.argv[1]).write_text(
     json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
