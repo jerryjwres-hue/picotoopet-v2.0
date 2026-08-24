@@ -541,10 +541,12 @@ internal sealed class MaotaiMotionEngine
                 break;
 
             case MaotaiMotionState.JumpAir:
-                bodyScaleX -= 0.018;
-                bodyScaleY += 0.025;
-                headOffsetY -= 0.7;
-                earDrop     += 1.0;
+                // Jump boundary       : keep the completed prep squash on the first airborne frame, then extend over the graph hop.
+                bodyWorldY += Lerp(3.2, 0.0, blend);
+                bodyScaleX += Lerp(0.055, -0.018, blend);
+                bodyScaleY += Lerp(-0.085, 0.025, blend);
+                headOffsetY += Lerp(1.0, -0.7, blend);
+                earDrop     += 1.0 * blend;
                 break;
 
             case MaotaiMotionState.Land:
