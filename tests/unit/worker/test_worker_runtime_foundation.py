@@ -8,7 +8,9 @@ from time import sleep
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.models import TaskCreate, TaskRecord
+from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.queue.repository import QueueRepository
+from picotoopet_core.results.store import ResultStore
 from picotoopet_core.worker.handlers import HandlerResult
 from picotoopet_core.worker.runtime import WorkerRuntime
 from picotoopet_core.worker.state import WorkerStateStore
@@ -151,3 +153,47 @@ def test_worker_state_store_reports_missing_stale_and_corrupt_states(tmp_path: P
     assert corrupt.state == "degraded"
     assert corrupt.available is False
     assert corrupt.reason == "worker_status_corrupt"
+
+
+def test_worker_runtime_does_not_apply_diagnostic_64k_cap_to_autonomous_results(
+    tmp_path: Path,
+) -> None:
+    """自主调研结果有独立上限，不能被诊断结果 64 KiB 合同误伤。"""
+
+    database = Database(tmp_path / "core.db")
+    database.open()
+    database.apply_migrations()
+    queue = DiagnosticQueueRepository(database)
+    result_store = ResultStore(tmp_path / "results")
+
+    def large_discovery(task: TaskRecord) -> HandlerResult:
+        return HandlerResult(
+            summary={"task_type": task.task_type},
+            result_document={"schema_version": "1.0", "payload": "x" * 80_000},
+            result_type=task.task_type,
+            schema_version="1.0",
+        )
+
+    runtime = WorkerRuntime(
+        queue=queue,
+        state_store=WorkerStateStore(
+            tmp_path / "state" / "result-size-worker.json",
+            stale_after_seconds=30,
+        ),
+        worker_id="result-size-worker",
+        handlers={"autonomous.discovery.v1": large_discovery},
+        database=database,
+        result_store=result_store,
+        lease_seconds=30,
+        heartbeat_seconds=2,
+        poll_seconds=0.01,
+    )
+    task = queue.create(TaskCreate(task_type="autonomous.discovery.v1"))
+
+    cycle = runtime.run_once()
+
+    assert cycle.succeeded is True
+    completed = queue.get(task.task_id)
+    assert completed.status is TaskStatus.COMPLETED
+    assert completed.result_id is not None
+    database.close()
