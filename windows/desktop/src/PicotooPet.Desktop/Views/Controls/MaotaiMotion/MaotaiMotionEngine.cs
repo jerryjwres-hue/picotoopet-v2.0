@@ -551,12 +551,21 @@ internal sealed class MaotaiMotionEngine
 
             case MaotaiMotionState.Land:
             {
-                var compression = Math.Exp(-Math.Max(0.0, _stateElapsedSeconds) * 9.0);
+                const double impactAttackSeconds = 0.05;
+                var attack = SmoothStep(Math.Clamp(
+                    _stateElapsedSeconds / impactAttackSeconds,
+                    0.0,
+                    1.0));
+                var recoil = Math.Exp(-Math.Max(0.0, _stateElapsedSeconds - impactAttackSeconds) * 9.0);
+                var compression = attack * recoil;
+                var airResidual = 1.0 - attack;
+
+                // Landing boundary    : first contact keeps the airborne stretch exactly; compression then builds over 50 ms before recoil.
                 bodyWorldY += 2.8 * compression;
-                bodyScaleX += 0.060 * compression;
-                bodyScaleY -= 0.075 * compression;
-                headOffsetY += 1.4 * compression;
-                earDrop     += 1.2 * compression;
+                bodyScaleX += (-0.018 * airResidual) + (0.060 * compression);
+                bodyScaleY += (0.025 * airResidual) - (0.075 * compression);
+                headOffsetY += (-0.7 * airResidual) + (1.4 * compression);
+                earDrop     += (1.0 * airResidual) + (1.2 * compression);
                 break;
             }
 
