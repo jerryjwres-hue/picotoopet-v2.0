@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/research-gateway-2.3.27.1-final
+      - feature/autonomous-intelligence-e2e-goal-center-2.3.27.1
     paths:
       - ".github/workflows/research-gateway-final-release.yml"
       - "research_gateway/**"
