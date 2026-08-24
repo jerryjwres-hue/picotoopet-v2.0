@@ -12,6 +12,7 @@ internal static class MaotaiPoseBoundaryContinuityV2SmokeTests
     {
         VerifySitLieDownSleepBoundaries();
         VerifyWorkSettleTypingBoundary();
+        VerifyWorkCycleBoundaries();
     }
 
     private static void VerifySitLieDownSleepBoundaries()
@@ -88,6 +89,64 @@ internal static class MaotaiPoseBoundaryContinuityV2SmokeTests
         }
 
         Assert(sawBoundary, "工作边界测试未观察到 WorkSettle→WorkTyping");
+    }
+
+    private static void VerifyWorkCycleBoundaries()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 719, 108.0)
+            ?? throw new InvalidOperationException("无法创建完整工作循环 Motion Engine");
+        var input      = CreateInput("Working", 108.0, 108.0, autonomousState: null);
+
+        (string From, string To, string Label)[] expectedBoundaries =
+        [
+            ("WorkTyping", "WorkTired", "WorkTyping→WorkTired"),
+            ("WorkTired", "Yawn", "WorkTired→Yawn"),
+            ("Yawn", "WorkTyping", "Yawn→WorkTyping"),
+            ("WorkTyping", "WorkAnnoyed", "WorkTyping→WorkAnnoyed"),
+            ("WorkAnnoyed", "Recover", "WorkAnnoyed→Recover"),
+            ("Recover", "WorkTyping", "Recover→WorkTyping"),
+        ];
+
+        object? previousPose = null;
+        var previousState    = string.Empty;
+        var boundaryIndex    = 0;
+
+        for (var frame = 0; frame < 2100 && boundaryIndex < expectedBoundaries.Length; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, input])
+                ?? throw new InvalidOperationException("完整工作循环边界测试没有输出 Pose");
+            var state = ReadString(pose, "MotionState");
+
+            if (previousPose is not null && previousState != state)
+            {
+                var expected = expectedBoundaries[boundaryIndex];
+                if (previousState == expected.From && state == expected.To)
+                {
+                    AssertBodyBoundary(
+                        previousPose,
+                        pose,
+                        expected.Label,
+                        maxYDelta: 0.75,
+                        maxScaleYDelta: 0.012);
+
+                    var leftPawDelta  = BoneDistance(previousPose, pose, "FrontLeftPaw");
+                    var rightPawDelta = BoneDistance(previousPose, pose, "FrontRightPaw");
+                    Assert(leftPawDelta < 1.60,
+                        $"{expected.Label} 左前爪出现节点瞬移；delta={leftPawDelta:F3}");
+                    Assert(rightPawDelta < 1.60,
+                        $"{expected.Label} 右前爪出现节点瞬移；delta={rightPawDelta:F3}");
+                    boundaryIndex++;
+                }
+            }
+
+            previousPose  = pose;
+            previousState = state;
+        }
+
+        Assert(boundaryIndex == expectedBoundaries.Length,
+            $"完整工作循环只观察到 {boundaryIndex}/{expectedBoundaries.Length} 个连续性边界");
     }
 
     private static void AssertBodyBoundary(
