@@ -172,5 +172,5 @@ EOF
 
 printf '\nPicotooPet Research Gateway 2.3.27.1 已更新：\n%s\n' "$bin_dir/picotoopet-research-gateway"
 printf 'Crawl4AI 使用独立私有目录：%s\n' "$crawl_root"
-printf '共享 Agent Reach/OpenCLI/Scrapling/Thunderbit 等只做绑定，不升级、不覆盖登录态。\n'
+printf '共享 Agent Reach/OpenCLI/Scrapling/Thunderbit 等只做绑定；不会安装、升级或覆盖这些共享工具及其登录态。\n'
 printf '请运行 VERIFY_RESEARCH_GATEWAY.command 做完整只读工具调用验证。\n'
