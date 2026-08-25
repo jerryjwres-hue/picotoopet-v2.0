@@ -7,7 +7,7 @@
   "source_archive_sha256_pin": "ea291ce62444c7c327b8e1f19a8db22b83e0b3c75e3684d0af32953ebc713ca1",
   "core_prefix": "payload/producer/extensions/director_console_native_v2/",
   "core_entry_count": null,
-  "verified_entry_count": 11,
+  "verified_entry_count": 23,
   "notes": [
     "PARTIAL means this file is an audit ledger only and MUST NOT be accepted by the Core materializer.",
     "Entries below were decoded from N6D4 embedded-ZIP central-directory records; no source file content was guessed or rewritten.",
@@ -53,6 +53,14 @@
       "compressed_size": 1788,
       "uncompressed_size": 6516,
       "local_header_offset": 73332
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/execution_readiness.py",
+      "compression_method": 8,
+      "crc32": "44e3f4a0",
+      "compressed_size": 687,
+      "uncompressed_size": 1788,
+      "local_header_offset": 79917
     },
     {
       "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/method_approval.py",
@@ -101,6 +109,94 @@
       "compressed_size": 3476,
       "uncompressed_size": 16619,
       "local_header_offset": 95509
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/shot_gate.py",
+      "compression_method": 8,
+      "crc32": "83e31611",
+      "compressed_size": 1165,
+      "uncompressed_size": 3459,
+      "local_header_offset": 100670
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/sqlite_store.py",
+      "compression_method": 8,
+      "crc32": "18386759",
+      "compressed_size": 5148,
+      "uncompressed_size": 21587,
+      "local_header_offset": 103530
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/tasks.py",
+      "compression_method": 8,
+      "crc32": "4c179ab2",
+      "compressed_size": 1874,
+      "uncompressed_size": 6506,
+      "local_header_offset": 108804
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/support.py",
+      "compression_method": 8,
+      "crc32": "80598d77",
+      "compressed_size": 1889,
+      "uncompressed_size": 6047,
+      "local_header_offset": 112261
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/test_n1_api_v2.py",
+      "compression_method": 8,
+      "crc32": "4330a250",
+      "compressed_size": 1845,
+      "uncompressed_size": 7305,
+      "local_header_offset": 114253
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/test_n1_bootstrap.py",
+      "compression_method": 8,
+      "crc32": "532574d5",
+      "compressed_size": 435,
+      "uncompressed_size": 864,
+      "local_header_offset": 116206
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/test_n3_editing.py",
+      "compression_method": 8,
+      "crc32": "65b9df85",
+      "compressed_size": 1699,
+      "uncompressed_size": 5082,
+      "local_header_offset": 121716
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/test_n5_crew_gate.py",
+      "compression_method": 8,
+      "crc32": "34100864",
+      "compressed_size": 1853,
+      "uncompressed_size": 6055,
+      "local_header_offset": 123538
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/test_n6_execution_binding.py",
+      "compression_method": 8,
+      "crc32": "169f7420",
+      "compressed_size": 2448,
+      "uncompressed_size": 9066,
+      "local_header_offset": 125502
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/test_n6b_method_approval.py",
+      "compression_method": 8,
+      "crc32": "75127f21",
+      "compressed_size": 2025,
+      "uncompressed_size": 7585,
+      "local_header_offset": 128069
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/test_n6c_binding_contract.py",
+      "compression_method": 8,
+      "crc32": "1d1b5d34",
+      "compressed_size": 2907,
+      "uncompressed_size": 10674,
+      "local_header_offset": 130212
     }
   ]
 }
