@@ -77,8 +77,8 @@ class RecoverN6D4CoreBundleTests(unittest.TestCase):
 
     def test_recovers_from_exact_embedded_archive_sha_without_script_reencoding(self) -> None:
         script, archive_sha = self._build_all_in_one()
-        payload = script.split("$ArchiveBase64 = @'\n", 1)[1].split("'@\n", 1)[0]       # Reproduce exact embedded ZIP bytes, not PowerShell text bytes.
-        archive_bytes = base64.b64decode("".join(payload.split()), validate=True)      # Archive SHA remains the authoritative payload identity.
+        payload = script.split("$ArchiveBase64 = @'\n", 1)[1].split("'@\n", 1)[0]             # Reproduce the exact embedded ZIP bytes, not PowerShell text bytes.
+        archive_bytes = base64.b64decode("".join(payload.split()), validate=True)                    # Archive SHA remains the authoritative payload identity.
 
         with tempfile.TemporaryDirectory() as temp_dir:
             result = recover_core_archive(
@@ -96,7 +96,7 @@ class RecoverN6D4CoreBundleTests(unittest.TestCase):
 
     def test_archive_mode_rejects_wrong_embedded_archive_sha(self) -> None:
         script, _ = self._build_all_in_one()
-        payload = script.split("$ArchiveBase64 = @'\n", 1)[1].split("'@\n", 1)[0]       # Keep the synthetic ZIP valid while deliberately supplying the wrong pin.
+        payload = script.split("$ArchiveBase64 = @'\n", 1)[1].split("'@\n", 1)[0]             # Keep the synthetic ZIP valid while deliberately supplying the wrong pin.
         archive_bytes = base64.b64decode("".join(payload.split()), validate=True)
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -183,6 +183,25 @@ class RecoverN6D4CoreBundleTests(unittest.TestCase):
                     expected_script_sha256=script_sha,
                     expected_archive_sha256=archive_sha,
                 )
+
+    def test_rejects_windows_style_traversal_and_drive_paths(self) -> None:
+        for unsafe_name in ("..\\escape.txt", "C:\\escape.txt"):
+            with self.subTest(unsafe_name=unsafe_name):
+                archive_buffer = io.BytesIO()
+                with zipfile.ZipFile(archive_buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                    archive.writestr(unsafe_name, "escape")                                      # Windows separators and drive-qualified names are equally unsafe.
+                    archive.writestr(f"{CORE_PREFIX}VERSION", "N6D4\n")
+
+                archive_bytes = archive_buffer.getvalue()
+                archive_sha = hashlib.sha256(archive_bytes).hexdigest()
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    with self.assertRaisesRegex(ValueError, "unsafe ZIP member path"):
+                        recover_core_archive(
+                            archive_bytes=archive_bytes,
+                            output_dir=Path(temp_dir),
+                            expected_archive_sha256=archive_sha,
+                            source_script_sha256_pin="a" * 64,
+                        )
 
 
 if __name__ == "__main__":
