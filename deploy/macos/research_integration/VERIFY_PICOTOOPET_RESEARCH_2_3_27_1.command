@@ -1,5 +1,5 @@
 #!/bin/bash
-# 验证 Gateway、Core/Worker 版本与 research.search 的真实注册状态。
+# 验证 Gateway、Core/Worker、research.search 注册，以及所有已接入 Research 工具的真实只读调用。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -13,34 +13,10 @@ if [[ ! -x "$gateway" ]]; then
   exit 1
 fi
 
-# Gateway 验证只要求本次 research.search 真正依赖的只读边界与 mcporter；其他平台工具是可选能力。
-health_file="$(mktemp "${TMPDIR:-/tmp}/picotoopet-research-health.XXXXXX")"
-cleanup() {
-  rm -f "$health_file"
-}
-trap cleanup EXIT
-"$gateway" --health > "$health_file"
-python3 - "$health_file" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-health = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if health.get("version") != "2.3.27.1":
-    raise SystemExit(f"unexpected gateway version: {health!r}")
-if health.get("read_only") is not True:
-    raise SystemExit("Research Gateway must remain read-only")
-if health.get("xiaoyuzhou_enabled") is not False:
-    raise SystemExit("Xiaoyuzhou must remain disabled")
-tools = health.get("tools")
-if not isinstance(tools, dict) or tools.get("mcporter") is not True:
-    raise SystemExit("mcporter is required for research.search")
-PY
-
-# 复用正式 Worker 验证器验证 Core/Worker 安装生命周期、产品版本和已有能力边界。
+# 第一层：验证 Core/Worker 安装生命周期、版本与固定能力边界。
 bash "$worker_root/VERIFY_MAC_WORKER_SLICE_C.command"
 
-# 组合包额外要求 research.search 必须真实出现在 Worker 状态中，否则不能声称“已经接入程序”。
+# 第二层：research.search 必须由真实在线 Worker 注册，不能只存在于源代码或 Gateway 文件里。
 # shellcheck source=/dev/null
 source "$worker_root/lib.sh"
 runtime_root="$(phase23_runtime_root)"
@@ -57,4 +33,10 @@ if not isinstance(supported, list) or "research.search" not in supported:
     raise SystemExit(f"research.search is not registered: {status!r}")
 PY
 
+# 第三层：复用 Gateway 正式实机验证器做限量真实调用。
+# 包括 Exa、Crawl4AI、Scrapling、GitHub、YouTube 与已接入 OpenCLI 社媒渠道；
+# Thunderbit 只验证绑定，不自动消耗 credits。任何失败都保留具体能力名供修复。
+bash "$gateway_root/VERIFY_RESEARCH_GATEWAY.command"
+
 echo "PICOTOOPET_RESEARCH_2_3_27_1_VERIFY=PASS"
+echo "PICOTOOPET_RESEARCH_TOOL_CALLS=PASS"
