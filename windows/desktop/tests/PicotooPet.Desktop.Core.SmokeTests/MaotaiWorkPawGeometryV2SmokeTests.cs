@@ -16,6 +16,7 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
         VerifyWorkExitContinuity();
         VerifyInterruptedTiredExitContinuity();
         VerifyInterruptedYawnExitContinuity();
+        VerifyInterruptedRecoverExitContinuity();
     }
 
     private static void VerifyTypingGeometry()
@@ -195,6 +196,54 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
             $"Yawn→Recover 身体横向缩放不能节点硬切；delta={bodyScaleXDelta:F4}");
         Assert(bodyScaleYDelta < 0.012,
             $"Yawn→Recover 身体纵向缩放不能节点硬切；delta={bodyScaleYDelta:F4}");
+    }
+
+    /// <summary>Recover 自身尚未结束时若真实 Working 结束，Idle 必须从用户刚看到的恢复姿态继续。</summary>
+    private static void VerifyInterruptedRecoverExitContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 79, 108.0)
+            ?? throw new InvalidOperationException("无法创建恢复打断连续性 Motion Engine");
+
+        object? recoverPose = null;
+        for (var frame = 0; frame < 1800; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working")])
+                ?? throw new InvalidOperationException("恢复打断预热没有输出 PoseFrame");
+            var state = ReadProperty(pose, "MotionState")?.ToString();
+            var previousState = ReadProperty(pose, "PreviousMotionState")?.ToString();
+            var transitionBlend = ReadDouble(pose, "MotionTransitionBlend");
+            if (string.Equals(state, "Recover", StringComparison.Ordinal) &&
+                string.Equals(previousState, "WorkAnnoyed", StringComparison.Ordinal) &&
+                transitionBlend >= 0.12 && transitionBlend <= 0.18)
+            {
+                recoverPose = pose;
+                break;
+            }
+        }
+
+        Assert(recoverPose is not null, "恢复打断连续性测试未捕获到早段 WorkAnnoyed→Recover");
+
+        var idlePose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Resting")])
+            ?? throw new InvalidOperationException("恢复打断退出首帧没有输出 PoseFrame");
+        var idleState = ReadProperty(idlePose, "MotionState")?.ToString();
+        Assert(string.Equals(idleState, "Idle", StringComparison.Ordinal),
+            $"Recover 被 Resting 打断后应直接安全回退 Idle；actual={idleState}");
+
+        var bodyYDelta = Math.Abs(
+            ReadPoseDouble(idlePose, "Body", "Y") - ReadPoseDouble(recoverPose!, "Body", "Y"));
+        var bodyScaleXDelta = Math.Abs(
+            ReadPoseDouble(idlePose, "Body", "ScaleX") - ReadPoseDouble(recoverPose!, "Body", "ScaleX"));
+        var bodyScaleYDelta = Math.Abs(
+            ReadPoseDouble(idlePose, "Body", "ScaleY") - ReadPoseDouble(recoverPose!, "Body", "ScaleY"));
+
+        Assert(bodyYDelta < 0.75,
+            $"Recover→Idle 身体高度不能在恢复尚未结束时瞬间归零；delta={bodyYDelta:F3}");
+        Assert(bodyScaleXDelta < 0.012,
+            $"Recover→Idle 身体横向缩放不能在恢复尚未结束时硬切；delta={bodyScaleXDelta:F4}");
+        Assert(bodyScaleYDelta < 0.012,
+            $"Recover→Idle 身体纵向缩放不能在恢复尚未结束时硬切；delta={bodyScaleYDelta:F4}");
     }
 
     private static object CreateInput(string baseState)
