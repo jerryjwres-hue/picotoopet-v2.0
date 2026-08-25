@@ -24,8 +24,8 @@ def test_schema_18_adds_promotion_tables_after_schema_17(tmp_path: Path) -> None
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
         }
-        # 25.1 schema gate         Migration 18 remains once after schema 22 advances cumulative history.
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 22
+        # 25.1 schema gate         Migration 18 remains once after schema 23 advances cumulative history.
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
         assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version=18") == 1
         # 24.1 preservation gate   Shadow evidence remains durable and unchanged.
         assert "quality_shadow_runs" in tables
@@ -34,7 +34,7 @@ def test_schema_18_adds_promotion_tables_after_schema_17(tmp_path: Path) -> None
         assert PROMOTION_TABLES <= tables
 
         database.apply_migrations()
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 22
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
     finally:
         database.close()
 
