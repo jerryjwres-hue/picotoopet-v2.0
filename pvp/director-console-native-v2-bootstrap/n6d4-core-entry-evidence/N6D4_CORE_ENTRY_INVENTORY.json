@@ -7,16 +7,18 @@
   "source_archive_sha256_pin": "ea291ce62444c7c327b8e1f19a8db22b83e0b3c75e3684d0af32953ebc713ca1",
   "core_prefix": "payload/producer/extensions/director_console_native_v2/",
   "core_entry_count": null,
-  "verified_entry_count": 29,
+  "verified_entry_count": 30,
   "notes": [
     "PARTIAL means this file is an audit ledger only and MUST NOT be accepted by the Core materializer.",
     "Entries below were decoded from N6D4 embedded-ZIP central-directory records; no source file content was guessed or rewritten.",
     "Promote inventory_status to complete only after the complete frozen Core path set has been enumerated and independently checked.",
     "Entry formerly labeled deleted_items.py at local offset 75250 was removed after a later N6D4 central-directory decode contradicted its metadata; the record remains unresolved until its full filename is recovered.",
     "test_n1_tasks.py is pinned by direct N6D4 central-directory binary decoding: CRC 6d2be2cd, compressed size 629, uncompressed size 1960, local offset 121266; its minimum local-entry end is exactly the next entry offset 122002.",
-    "execution_readiness.py is pinned by one continuous N6D4 central-directory decode together with lookdev_router.py, method_approval.py and migration.py: CRC 1ce8e7d9, compressed 1464, uncompressed 4242, local offset 82116."
+    "execution_readiness.py is pinned by one continuous N6D4 central-directory decode together with lookdev_router.py, method_approval.py and migration.py: CRC 1ce8e7d9, compressed 1464, uncompressed 4242, local offset 82116.",
+    "VERSION is pinned by direct N6D4 central-directory binary decoding: CRC fc60625f, compressed 33, uncompressed 31, local offset 71486; its minimum local-entry end is exactly the bindings/README.md offset 71611."
   ],
   "entries": [
+    {"path":"payload/producer/extensions/director_console_native_v2/VERSION","compression_method":8,"crc32":"fc60625f","compressed_size":33,"uncompressed_size":31,"local_header_offset":71486},
     {"path":"payload/producer/extensions/director_console_native_v2/bindings/README.md","compression_method":8,"crc32":"398b32c0","compressed_size":287,"uncompressed_size":442,"local_header_offset":71611},
     {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/__init__.py","compression_method":8,"crc32":"d27434e4","compressed_size":36,"uncompressed_size":34,"local_header_offset":72001},
     {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/bootstrap.py","compression_method":8,"crc32":"c294c49e","compressed_size":663,"uncompressed_size":1489,"local_header_offset":72160},
