@@ -112,7 +112,9 @@ internal readonly record struct MaotaiFaceLayerWeights(
     }
 
     private static MaotaiFaceLayerWeights ForMotionStateEndpoint(MaotaiMotionState state) =>
-        FromStates(ExpectedEyeState(state), ExpectedMouthState(state));
+        state == MaotaiMotionState.Yawn
+            ? ForYawn(1.0, 0.0)
+            : FromStates(ExpectedEyeState(state), ExpectedMouthState(state));
 
     private static MaotaiEyeState ExpectedEyeState(MaotaiMotionState state) =>
         state switch
@@ -128,12 +130,12 @@ internal readonly record struct MaotaiFaceLayerWeights(
     private static MaotaiMouthState ExpectedMouthState(MaotaiMotionState state) =>
         state switch
         {
-            MaotaiMotionState.Sleep       => MaotaiMouthState.Tired,
-            MaotaiMotionState.WorkTired   => MaotaiMouthState.Tired,
-            MaotaiMotionState.WorkAnnoyed => MaotaiMouthState.Annoyed,
-            MaotaiMotionState.Yawn        => MaotaiMouthState.Yawn,
+            MaotaiMotionState.Sleep        => MaotaiMouthState.Tired,
+            MaotaiMotionState.WorkTired    => MaotaiMouthState.Tired,
+            MaotaiMotionState.WorkAnnoyed  => MaotaiMouthState.Annoyed,
+            MaotaiMotionState.Yawn         => MaotaiMouthState.Yawn,
             MaotaiMotionState.UserReaction => MaotaiMouthState.Tongue,
-            _                             => MaotaiMouthState.Smile,
+            _                              => MaotaiMouthState.Smile,
         };
 
     private static double Clamp01(double value) =>
