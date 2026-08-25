@@ -14,7 +14,7 @@
     "Promote inventory_status to complete only after the complete frozen Core path set has been enumerated and independently checked.",
     "Entry formerly labeled deleted_items.py at local offset 75250 was removed after a later N6D4 central-directory decode contradicted its metadata; the record remains unresolved until its full filename is recovered.",
     "test_n1_tasks.py was re-admitted from its directly decoded N6D4 central-directory record: CRC 6d2be2cd, compressed size 592, uncompressed size 1960, local offset 121266.",
-    "execution_readiness.py uncompressed size was corrected to 4754 from its directly decoded N6D4 central-directory record; CRC, compressed size and local offset remain unchanged."
+    "execution_readiness.py is pinned by one continuous N6D4 central-directory decode together with lookdev_router.py, method_approval.py and migration.py: CRC 1ce8e7d9, compressed 1464, uncompressed 4242, local offset 82116."
   ],
   "entries": [
     {"path":"payload/producer/extensions/director_console_native_v2/bindings/README.md","compression_method":8,"crc32":"398b32c0","compressed_size":287,"uncompressed_size":442,"local_header_offset":71611},
@@ -22,7 +22,7 @@
     {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/bootstrap.py","compression_method":8,"crc32":"c294c49e","compressed_size":663,"uncompressed_size":1489,"local_header_offset":72160},
     {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/bootstrap_cli.py","compression_method":8,"crc32":"a3288d2c","compressed_size":257,"uncompressed_size":412,"local_header_offset":72947},
     {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/canary_attempts.py","compression_method":8,"crc32":"b485b50e","compressed_size":1788,"uncompressed_size":6516,"local_header_offset":73332},
-    {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/execution_readiness.py","compression_method":8,"crc32":"1ce8e7d9","compressed_size":1464,"uncompressed_size":4754,"local_header_offset":82116},
+    {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/execution_readiness.py","compression_method":8,"crc32":"1ce8e7d9","compressed_size":1464,"uncompressed_size":4242,"local_header_offset":82116},
     {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/lookdev_router.py","compression_method":8,"crc32":"c786c218","compressed_size":1133,"uncompressed_size":2803,"local_header_offset":83714},
     {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/method_approval.py","compression_method":8,"crc32":"2cd71c3d","compressed_size":1469,"uncompressed_size":5242,"local_header_offset":84976},
     {"path":"payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/migration.py","compression_method":8,"crc32":"71d264e9","compressed_size":2262,"uncompressed_size":6854,"local_header_offset":86575},
