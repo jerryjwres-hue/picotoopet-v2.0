@@ -53,6 +53,10 @@ def _document(
     )
 
 
+def _provider(provider: CrawlerProvider, outcome: CrawlerDocument | CrawlerProviderError) -> FakeProvider:
+    return FakeProvider(provider, [outcome])
+
+
 def test_default_limits_are_explicit_and_conservative() -> None:
     limits = CrawlLimits()
     assert limits.max_pages == 3
@@ -76,8 +80,14 @@ def test_provider_registry_is_a_closed_two_provider_allowlist() -> None:
 
 
 def test_static_page_prefers_crawl4ai_and_never_runs_scrapling_on_success() -> None:
-    crawl4ai = FakeProvider(CrawlerProvider.CRAWL4AI, [_document(provider=CrawlerProvider.CRAWL4AI)])
-    scrapling = FakeProvider(CrawlerProvider.SCRAPLING, [_document(provider=CrawlerProvider.SCRAPLING)])
+    crawl4ai = _provider(
+        CrawlerProvider.CRAWL4AI,
+        _document(provider=CrawlerProvider.CRAWL4AI),
+    )
+    scrapling = _provider(
+        CrawlerProvider.SCRAPLING,
+        _document(provider=CrawlerProvider.SCRAPLING),
+    )
     adapter = CrawlerAdapter(crawl4ai=crawl4ai, scrapling=scrapling)
     document = adapter.crawl(CrawlRequest(url="https://example.com/article"))
     assert document.provider is CrawlerProvider.CRAWL4AI
@@ -87,8 +97,14 @@ def test_static_page_prefers_crawl4ai_and_never_runs_scrapling_on_success() -> N
 
 
 def test_javascript_page_still_prefers_crawl4ai() -> None:
-    crawl4ai = FakeProvider(CrawlerProvider.CRAWL4AI, [_document(provider=CrawlerProvider.CRAWL4AI, markdown="# JS\n\nRendered")])
-    scrapling = FakeProvider(CrawlerProvider.SCRAPLING, [_document(provider=CrawlerProvider.SCRAPLING)])
+    crawl4ai = _provider(
+        CrawlerProvider.CRAWL4AI,
+        _document(provider=CrawlerProvider.CRAWL4AI, markdown="# JS\n\nRendered"),
+    )
+    scrapling = _provider(
+        CrawlerProvider.SCRAPLING,
+        _document(provider=CrawlerProvider.SCRAPLING),
+    )
     adapter = CrawlerAdapter(crawl4ai=crawl4ai, scrapling=scrapling)
     document = adapter.crawl(CrawlRequest(url="https://example.com/app", javascript=True))
     assert document.provider is CrawlerProvider.CRAWL4AI
@@ -97,8 +113,14 @@ def test_javascript_page_still_prefers_crawl4ai() -> None:
 
 
 def test_crawl4ai_failure_allows_exactly_one_scrapling_fallback() -> None:
-    crawl4ai = FakeProvider(CrawlerProvider.CRAWL4AI, [CrawlerProviderError("crawl_failed", provider=CrawlerProvider.CRAWL4AI)])
-    scrapling = FakeProvider(CrawlerProvider.SCRAPLING, [_document(provider=CrawlerProvider.SCRAPLING)])
+    crawl4ai = _provider(
+        CrawlerProvider.CRAWL4AI,
+        CrawlerProviderError("crawl_failed", provider=CrawlerProvider.CRAWL4AI),
+    )
+    scrapling = _provider(
+        CrawlerProvider.SCRAPLING,
+        _document(provider=CrawlerProvider.SCRAPLING),
+    )
     adapter = CrawlerAdapter(crawl4ai=crawl4ai, scrapling=scrapling)
     document = adapter.crawl(CrawlRequest(url="https://example.com/article"))
     assert document.provider is CrawlerProvider.SCRAPLING
@@ -107,8 +129,14 @@ def test_crawl4ai_failure_allows_exactly_one_scrapling_fallback() -> None:
 
 
 def test_both_providers_fail_once_without_recursive_retry() -> None:
-    crawl4ai = FakeProvider(CrawlerProvider.CRAWL4AI, [CrawlerProviderError("network_failed", provider=CrawlerProvider.CRAWL4AI)])
-    scrapling = FakeProvider(CrawlerProvider.SCRAPLING, [CrawlerProviderError("network_failed", provider=CrawlerProvider.SCRAPLING)])
+    crawl4ai = _provider(
+        CrawlerProvider.CRAWL4AI,
+        CrawlerProviderError("network_failed", provider=CrawlerProvider.CRAWL4AI),
+    )
+    scrapling = _provider(
+        CrawlerProvider.SCRAPLING,
+        CrawlerProviderError("network_failed", provider=CrawlerProvider.SCRAPLING),
+    )
     adapter = CrawlerAdapter(crawl4ai=crawl4ai, scrapling=scrapling)
     with pytest.raises(CrawlerProviderError, match="all crawler providers failed"):
         adapter.crawl(CrawlRequest(url="https://example.com/article"))
@@ -117,8 +145,18 @@ def test_both_providers_fail_once_without_recursive_retry() -> None:
 
 
 def test_captcha_failure_never_escalates_to_fallback_or_stealth() -> None:
-    crawl4ai = FakeProvider(CrawlerProvider.CRAWL4AI, [CrawlerProviderError("captcha_required", provider=CrawlerProvider.CRAWL4AI, captcha=True)])
-    scrapling = FakeProvider(CrawlerProvider.SCRAPLING, [_document(provider=CrawlerProvider.SCRAPLING)])
+    crawl4ai = _provider(
+        CrawlerProvider.CRAWL4AI,
+        CrawlerProviderError(
+            "captcha_required",
+            provider=CrawlerProvider.CRAWL4AI,
+            captcha=True,
+        ),
+    )
+    scrapling = _provider(
+        CrawlerProvider.SCRAPLING,
+        _document(provider=CrawlerProvider.SCRAPLING),
+    )
     adapter = CrawlerAdapter(crawl4ai=crawl4ai, scrapling=scrapling)
     with pytest.raises(CrawlerProviderError, match="captcha_required"):
         adapter.crawl(CrawlRequest(url="https://example.com/challenge"))
@@ -128,8 +166,14 @@ def test_captcha_failure_never_escalates_to_fallback_or_stealth() -> None:
 
 def test_content_over_limit_is_a_controlled_failure() -> None:
     limits = CrawlLimits(max_content_bytes=32)
-    crawl4ai = FakeProvider(CrawlerProvider.CRAWL4AI, [_document(provider=CrawlerProvider.CRAWL4AI, markdown="x" * 33)])
-    scrapling = FakeProvider(CrawlerProvider.SCRAPLING, [_document(provider=CrawlerProvider.SCRAPLING, markdown="y" * 33)])
+    crawl4ai = _provider(
+        CrawlerProvider.CRAWL4AI,
+        _document(provider=CrawlerProvider.CRAWL4AI, markdown="x" * 33),
+    )
+    scrapling = _provider(
+        CrawlerProvider.SCRAPLING,
+        _document(provider=CrawlerProvider.SCRAPLING, markdown="y" * 33),
+    )
     adapter = CrawlerAdapter(crawl4ai=crawl4ai, scrapling=scrapling, limits=limits)
     with pytest.raises(CrawlerProviderError, match="content_limit_exceeded"):
         adapter.crawl(CrawlRequest(url="https://example.com/large"))
