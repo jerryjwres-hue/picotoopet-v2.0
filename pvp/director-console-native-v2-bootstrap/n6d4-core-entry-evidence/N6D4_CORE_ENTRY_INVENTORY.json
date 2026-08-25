@@ -13,7 +13,7 @@
     "Entries below were decoded from N6D4 embedded-ZIP central-directory records; no source file content was guessed or rewritten.",
     "Promote inventory_status to complete only after the complete frozen Core path set has been enumerated and independently checked.",
     "Entry formerly labeled deleted_items.py at local offset 75250 was removed after a later N6D4 central-directory decode contradicted its metadata; the record remains unresolved until its full filename is recovered.",
-    "test_n1_tasks.py was re-admitted from its directly decoded N6D4 central-directory record: CRC 6d2be2cd, compressed size 592, uncompressed size 1960, local offset 121266.",
+    "test_n1_tasks.py is pinned by direct N6D4 central-directory binary decoding: CRC 6d2be2cd, compressed size 629, uncompressed size 1960, local offset 121266; its minimum local-entry end is exactly the next entry offset 122002.",
     "execution_readiness.py is pinned by one continuous N6D4 central-directory decode together with lookdev_router.py, method_approval.py and migration.py: CRC 1ce8e7d9, compressed 1464, uncompressed 4242, local offset 82116."
   ],
   "entries": [
@@ -39,7 +39,7 @@
     {"path":"payload/producer/extensions/director_console_native_v2/tests/test_n1_migration.py","compression_method":8,"crc32":"7a1b58f1","compressed_size":904,"uncompressed_size":2759,"local_header_offset":118502},
     {"path":"payload/producer/extensions/director_console_native_v2/tests/test_n1_mutations.py","compression_method":8,"crc32":"9a289a35","compressed_size":883,"uncompressed_size":3889,"local_header_offset":119517},
     {"path":"payload/producer/extensions/director_console_native_v2/tests/test_n1_store.py","compression_method":8,"crc32":"348d25b8","compressed_size":648,"uncompressed_size":1512,"local_header_offset":120511},
-    {"path":"payload/producer/extensions/director_console_native_v2/tests/test_n1_tasks.py","compression_method":8,"crc32":"6d2be2cd","compressed_size":592,"uncompressed_size":1960,"local_header_offset":121266},
+    {"path":"payload/producer/extensions/director_console_native_v2/tests/test_n1_tasks.py","compression_method":8,"crc32":"6d2be2cd","compressed_size":629,"uncompressed_size":1960,"local_header_offset":121266},
     {"path":"payload/producer/extensions/director_console_native_v2/tests/test_n3_editing.py","compression_method":8,"crc32":"ced4cc79","compressed_size":1427,"uncompressed_size":4793,"local_header_offset":122002},
     {"path":"payload/producer/extensions/director_console_native_v2/tests/test_n5_crew_gate.py","compression_method":8,"crc32":"340f4264","compressed_size":1853,"uncompressed_size":6055,"local_header_offset":123538},
     {"path":"payload/producer/extensions/director_console_native_v2/tests/test_n6_execution_binding.py","compression_method":8,"crc32":"169f7420","compressed_size":2448,"uncompressed_size":9066,"local_header_offset":125502},
