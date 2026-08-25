@@ -74,6 +74,15 @@ internal sealed class MaotaiAnimationGraph
         }
 
         _requestedState = target;
+        if (target == MaotaiMotionState.Idle &&
+            ActiveState == MaotaiMotionState.Recover &&
+            IsTransitioning)
+        {
+            // Recover already converges to neutral. Keep the latest Idle request latched,
+            // but let this neutralizing hop finish instead of restarting from a partial pose.
+            return;
+        }
+
         if (target == ActiveState && !IsTransitioning)
         {
             TargetState = target;
