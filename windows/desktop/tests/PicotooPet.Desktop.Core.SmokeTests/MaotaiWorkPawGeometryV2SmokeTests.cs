@@ -15,6 +15,7 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
         VerifyTypingGeometry();
         VerifyWorkExitContinuity();
         VerifyInterruptedTiredExitContinuity();
+        VerifyInterruptedYawnExitContinuity();
     }
 
     private static void VerifyTypingGeometry()
@@ -147,6 +148,53 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
             $"WorkTired→Recover 身体横向缩放不能节点硬切；delta={bodyScaleXDelta:F4}");
         Assert(bodyScaleYDelta < 0.012,
             $"WorkTired→Recover 身体纵向缩放不能节点硬切；delta={bodyScaleYDelta:F4}");
+    }
+
+    /// <summary>中段哈欠被真实 Resting 打断时，Recover 必须从当下动态哈欠姿态连续离开。</summary>
+    private static void VerifyInterruptedYawnExitContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 73, 108.0)
+            ?? throw new InvalidOperationException("无法创建哈欠打断连续性 Motion Engine");
+
+        object? yawnPose = null;
+        for (var frame = 0; frame < 960; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working")])
+                ?? throw new InvalidOperationException("哈欠打断预热没有输出 PoseFrame");
+            var state = ReadProperty(pose, "MotionState")?.ToString();
+            var yawnProgress = ReadDouble(pose, "YawnProgress");
+            if (string.Equals(state, "Yawn", StringComparison.Ordinal) &&
+                ReadDouble(pose, "MotionTransitionBlend") >= 0.999 &&
+                yawnProgress >= 0.45 && yawnProgress <= 0.55)
+            {
+                yawnPose = pose;
+                break;
+            }
+        }
+
+        Assert(yawnPose is not null, "哈欠打断连续性测试未捕获到稳定过渡后的中段 Yawn");
+
+        var recoverPose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Resting")])
+            ?? throw new InvalidOperationException("哈欠打断退出首帧没有输出 PoseFrame");
+        var recoverState = ReadProperty(recoverPose, "MotionState")?.ToString();
+        Assert(string.Equals(recoverState, "Recover", StringComparison.Ordinal),
+            $"Yawn 被 Resting 打断后的安全回退首跳应为 Recover；actual={recoverState}");
+
+        var bodyYDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "Y") - ReadPoseDouble(yawnPose!, "Body", "Y"));
+        var bodyScaleXDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "ScaleX") - ReadPoseDouble(yawnPose!, "Body", "ScaleX"));
+        var bodyScaleYDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "ScaleY") - ReadPoseDouble(yawnPose!, "Body", "ScaleY"));
+
+        Assert(bodyYDelta < 0.75,
+            $"Yawn→Recover 身体高度不能从中段哈欠切到固定恢复起点；delta={bodyYDelta:F3}");
+        Assert(bodyScaleXDelta < 0.012,
+            $"Yawn→Recover 身体横向缩放不能节点硬切；delta={bodyScaleXDelta:F4}");
+        Assert(bodyScaleYDelta < 0.012,
+            $"Yawn→Recover 身体纵向缩放不能节点硬切；delta={bodyScaleYDelta:F4}");
     }
 
     private static object CreateInput(string baseState)
