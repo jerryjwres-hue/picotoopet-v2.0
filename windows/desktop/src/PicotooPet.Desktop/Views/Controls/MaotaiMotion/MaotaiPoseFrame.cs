@@ -92,6 +92,11 @@ internal readonly record struct MaotaiPoseFrame
 
     public MaotaiMotionState MotionState { get; init; }
 
+    // Graph envelope        : renderer receives only immutable transition telemetry, never the mutable AnimationGraph itself.
+    public MaotaiMotionState PreviousMotionState { get; init; }
+
+    public double MotionTransitionBlend { get; init; }
+
     // Locomotion envelope   : travel states derive this from the same speed-driven body lean; non-travel policies ignore it, so action-specific tilt cannot expose leg articulation.
     public double LocomotionBlend => Math.Clamp(
         Math.Abs(Body.RotationDeg) / FullRunBodyLeanDegrees,

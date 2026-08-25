@@ -308,7 +308,9 @@ internal sealed class MaotaiRasterRenderer
             frame.FrontLeftLower,
             frame.FrontLeftPaw,
             frame.MotionState,
+            frame.PreviousMotionState,
             frame.LocomotionBlend,
+            frame.MotionTransitionBlend,
             isFront: true,
             visualRootYOffset: -8.0,
             continuousMaxScaleY: 1.44);
@@ -320,7 +322,9 @@ internal sealed class MaotaiRasterRenderer
             frame.FrontRightLower,
             frame.FrontRightPaw,
             frame.MotionState,
+            frame.PreviousMotionState,
             frame.LocomotionBlend,
+            frame.MotionTransitionBlend,
             isFront: true,
             visualRootYOffset: -8.0,
             continuousMaxScaleY: 1.44);
@@ -332,7 +336,9 @@ internal sealed class MaotaiRasterRenderer
             frame.HindLeftLower,
             frame.HindLeftPaw,
             frame.MotionState,
+            frame.PreviousMotionState,
             frame.LocomotionBlend,
+            frame.MotionTransitionBlend,
             isFront: false);
         ApplyLeg(
             _visuals.HindRightUpper,
@@ -342,7 +348,9 @@ internal sealed class MaotaiRasterRenderer
             frame.HindRightLower,
             frame.HindRightPaw,
             frame.MotionState,
+            frame.PreviousMotionState,
             frame.LocomotionBlend,
+            frame.MotionTransitionBlend,
             isFront: false);
         ApplyBone(_visuals.TailBase, frame.TailBase);
         ApplyBone(_visuals.TailMid, frame.TailMid);
@@ -374,26 +382,34 @@ internal sealed class MaotaiRasterRenderer
         in MaotaiBonePose lowerPose,
         in MaotaiBonePose pawPose,
         MaotaiMotionState state,
+        MaotaiMotionState previousState,
         double locomotionBlend,
+        double motionTransitionBlend,
         bool isFront,
         double visualRootYOffset = 0.0,
         double continuousMaxScaleY = 1.30)
     {
-        var transition = Math.Clamp(
+        var locomotion = Math.Clamp(
             double.IsFinite(locomotionBlend) ? locomotionBlend : 0.0,
             0.0,
             1.0);
-        var style = MaotaiLegVisualPolicy.ResolveForBlend(
+        var stateTransition = Math.Clamp(
+            double.IsFinite(motionTransitionBlend) ? motionTransitionBlend : 0.0,
+            0.0,
+            1.0);
+        var style = MaotaiLegVisualPolicy.ResolveForTransition(
             state,
+            previousState,
             isFront,
-            transition);
+            locomotion,
+            stateTransition);
 
         if (style.UseArticulation)
         {
             // Geometry envelope   : blend the Upper endpoint from Paw -> IK knee, so entering Walk/Run never snaps a long continuous leg into a short segment.
             var upperEnd = new MaotaiBonePose(
-                Lerp(pawPose.X, lowerPose.X, transition),
-                Lerp(pawPose.Y, lowerPose.Y, transition),
+                Lerp(pawPose.X, lowerPose.X, locomotion),
+                Lerp(pawPose.Y, lowerPose.Y, locomotion),
                 0.0);
             ApplySegment(
                 upper,
@@ -401,9 +417,9 @@ internal sealed class MaotaiRasterRenderer
                 upperEnd,
                 scaleX: style.UpperScaleX,
                 visualRootYOffset: visualRootYOffset,
-                overlapPixels: Lerp(4.0, isFront ? 7.0 : 6.0, transition),
-                minScaleY: Lerp(0.72, 0.62, transition),
-                maxScaleY: Lerp(continuousMaxScaleY, 1.05, transition));
+                overlapPixels: Lerp(4.0, isFront ? 7.0 : 6.0, locomotion),
+                minScaleY: Lerp(0.72, 0.62, locomotion),
+                maxScaleY: Lerp(continuousMaxScaleY, 1.05, locomotion));
 
             // Lower fur bridge   : geometry may follow the real knee immediately because opacity starts at zero and rises only with the same locomotion envelope.
             ApplySegment(
@@ -436,7 +452,7 @@ internal sealed class MaotaiRasterRenderer
             scaleX: pawPose.ScaleX * style.PawScaleX,
             scaleY: pawPose.ScaleY);
 
-        // Visibility ownership : all moving-layer opacity now follows the same speed envelope instead of the discrete state transition frame.
+        // Visibility ownership : speed controls locomotion detail while graph transition carries opacity across discrete state boundaries.
         upper.Element.Opacity = style.UpperOpacity;
         lower.Element.Opacity = style.LowerOpacity;
         paw.Element.Opacity   = style.PawOpacity;

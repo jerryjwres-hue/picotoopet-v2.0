@@ -406,7 +406,7 @@ internal sealed class MaotaiMotionEngine
                 facingSign);
 
             // Work handoff        : WorkSettle ends with the current standing IK. WorkTyping then lowers both paws onto
-            // the keyboard over the graph's existing 0.28s transition instead of teleporting targets on its first frame.
+            // the keyboard over the graph's existing transition instead of teleporting targets on its first frame.
             if (_graph.ActiveState == MaotaiMotionState.WorkTyping &&
                 _graph.PreviousState == MaotaiMotionState.WorkSettle &&
                 _graph.IsTransitioning)
@@ -499,6 +499,8 @@ internal sealed class MaotaiMotionEngine
             EyeState                = eyeState,
             MouthState              = mouthState,
             MotionState             = _graph.ActiveState,
+            PreviousMotionState     = _graph.PreviousState,
+            MotionTransitionBlend   = blend,
             YawnProgress            = yawnProgress,
             MouthOpenAmount         = mouthOpenAmount,
             FacingSign              = facingSign,

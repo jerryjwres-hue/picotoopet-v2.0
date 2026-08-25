@@ -83,20 +83,38 @@ internal static class MaotaiLegVisualPolicy
         }
 
         var start = StableStyle();
-        var t     = Math.Clamp(
-            double.IsFinite(locomotionBlend) ? locomotionBlend : 0.0,
-            0.0,
-            1.0);
+        var t     = Clamp01(locomotionBlend);
 
-        return target with
+        return BlendStyle(start, target, t, target.UseArticulation);
+    }
+
+    /// <summary>
+    /// 用 AnimationGraph 的连续过渡包络承接离散状态的显示策略；速度包络只负责 locomotion 几何，
+    /// 因此 WorkApproach 到 WorkSettle 即使仍在物理减速，也不会把可见腿部一帧清零。
+    /// </summary>
+    public static MaotaiLegVisualStyle ResolveForTransition(
+        MaotaiMotionState state,
+        MaotaiMotionState previousState,
+        bool isFront,
+        double locomotionBlend,
+        double transitionBlend)
+    {
+        var current = ResolveForBlend(state, isFront, locomotionBlend);
+        var t       = Clamp01(transitionBlend);
+        if (previousState == state || t >= 1.0)
         {
-            UpperOpacity = Lerp(start.UpperOpacity, target.UpperOpacity, t),
-            LowerOpacity = Lerp(start.LowerOpacity, target.LowerOpacity, t),
-            PawOpacity   = Lerp(start.PawOpacity, target.PawOpacity, t),
-            PawScaleX    = Lerp(start.PawScaleX, target.PawScaleX, t),
-            UpperScaleX  = Lerp(start.UpperScaleX, target.UpperScaleX, t),
-            LowerScaleX  = Lerp(start.LowerScaleX, target.LowerScaleX, t),
-        };
+            return current;
+        }
+
+        var previous = ResolveForBlend(previousState, isFront, locomotionBlend);
+
+        // Articulation handoff : when an articulated limb is fading into an occluded folded pose,
+        // keep the old geometry until its long segments are fully transparent; changing the branch while visible would create a second seam.
+        var useArticulation = previous.UseArticulation && current.UpperOpacity <= 0.01
+            ? true
+            : current.UseArticulation;
+
+        return BlendStyle(previous, current, t, useArticulation);
     }
 
     private static bool IsLocomotionState(MaotaiMotionState state) =>
@@ -114,6 +132,26 @@ internal static class MaotaiLegVisualPolicy
             UpperScaleX: 0.86,
             LowerScaleX: 0.80);
 
+    private static MaotaiLegVisualStyle BlendStyle(
+        in MaotaiLegVisualStyle from,
+        in MaotaiLegVisualStyle to,
+        double amount,
+        bool useArticulation)
+    {
+        var t = Clamp01(amount);
+        return new MaotaiLegVisualStyle(
+            UseArticulation: useArticulation,
+            UpperOpacity: Lerp(from.UpperOpacity, to.UpperOpacity, t),
+            LowerOpacity: Lerp(from.LowerOpacity, to.LowerOpacity, t),
+            PawOpacity: Lerp(from.PawOpacity, to.PawOpacity, t),
+            PawScaleX: Lerp(from.PawScaleX, to.PawScaleX, t),
+            UpperScaleX: Lerp(from.UpperScaleX, to.UpperScaleX, t),
+            LowerScaleX: Lerp(from.LowerScaleX, to.LowerScaleX, t));
+    }
+
+    private static double Clamp01(double value) =>
+        Math.Clamp(double.IsFinite(value) ? value : 0.0, 0.0, 1.0);
+
     private static double Lerp(double from, double to, double t) =>
-        from + ((to - from) * Math.Clamp(t, 0.0, 1.0));
+        from + ((to - from) * Clamp01(t));
 }

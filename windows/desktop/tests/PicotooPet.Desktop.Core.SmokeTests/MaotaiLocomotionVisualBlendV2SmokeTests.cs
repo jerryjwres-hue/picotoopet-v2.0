@@ -13,7 +13,7 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
         VerifyMotionEnvelopeIsContinuous();
         VerifyWorkApproachToSettleVisualContinuity();
         VerifyLegPolicyBlendsFromStableSilhouette();
-        VerifyRendererConsumesLocomotionBlend();
+        VerifyRendererConsumesTransitionEnvelopes();
     }
 
     private static void VerifyMotionEnvelopeIsContinuous()
@@ -61,11 +61,13 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
         var policyType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiLegVisualPolicy");
         var update     = RequireMethod(engineType, "Update");
         var motion     = RequireProperty(poseType, "MotionState");
-        var blend      = RequireProperty(poseType, "LocomotionBlend");
-        var resolve    = policyType.GetMethod(
-            "ResolveForBlend",
+        var previousMotion = RequireProperty(poseType, "PreviousMotionState");
+        var locomotionBlend = RequireProperty(poseType, "LocomotionBlend");
+        var transitionBlend = RequireProperty(poseType, "MotionTransitionBlend");
+        var resolve = policyType.GetMethod(
+            "ResolveForTransition",
             BindingFlags.Public | BindingFlags.Static)
-            ?? throw new InvalidOperationException("MaotaiLegVisualPolicy 缺少 ResolveForBlend");
+            ?? throw new InvalidOperationException("MaotaiLegVisualPolicy 缺少 ResolveForTransition");
         var engine = Activator.CreateInstance(engineType, 83, 28.0)
             ?? throw new InvalidOperationException("无法创建工作落位视觉连续性 Motion Engine");
 
@@ -80,20 +82,32 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
             var pose = update.Invoke(engine, [1.0 / 60.0, CreateWorkingInput()])
                 ?? throw new InvalidOperationException("工作落位视觉连续性没有输出 PoseFrame");
             var stateName = motion.GetValue(pose)?.ToString() ?? string.Empty;
-            var blendValue = (double)(blend.GetValue(pose)
+            var previousStateName = previousMotion.GetValue(pose)?.ToString() ?? string.Empty;
+            var locomotionValue = (double)(locomotionBlend.GetValue(pose)
                 ?? throw new InvalidOperationException("WorkSettle LocomotionBlend 为空"));
+            var transitionValue = (double)(transitionBlend.GetValue(pose)
+                ?? throw new InvalidOperationException("WorkSettle MotionTransitionBlend 为空"));
             var state = Enum.Parse(stateType, stateName);
-            var frontStyle = resolve.Invoke(null, [state, true, blendValue])
+            var previousGraphState = Enum.Parse(stateType, previousStateName);
+            var frontStyle = resolve.Invoke(
+                null,
+                [state, previousGraphState, true, locomotionValue, transitionValue])
                 ?? throw new InvalidOperationException($"{stateName} 前腿视觉策略为空");
-            var rearStyle = resolve.Invoke(null, [state, false, blendValue])
+            var rearStyle = resolve.Invoke(
+                null,
+                [state, previousGraphState, false, locomotionValue, transitionValue])
                 ?? throw new InvalidOperationException($"{stateName} 后腿视觉策略为空");
 
             if (previousState == "WorkApproach" && stateName == "WorkSettle")
             {
                 Assert(previousFrontStyle is not null && previousRearStyle is not null,
                     "WorkApproach -> WorkSettle 边界缺少上一帧视觉策略");
-                Assert(previousBlend >= 0.20 && blendValue >= 0.20,
-                    $"测试必须覆盖仍在物理减速的工作落位；prevBlend={previousBlend:F3}, settleBlend={blendValue:F3}");
+                Assert(previousStateName == "WorkApproach",
+                    $"WorkSettle PoseFrame 必须保留真实上一图节点；actual={previousStateName}");
+                Assert(previousBlend >= 0.20 && locomotionValue >= 0.20,
+                    $"测试必须覆盖仍在物理减速的工作落位；prevBlend={previousBlend:F3}, settleBlend={locomotionValue:F3}");
+                Assert(transitionValue > 0.0 && transitionValue < 0.20,
+                    $"WorkSettle 首个可见帧必须暴露早期 graph transition envelope；actual={transitionValue:F3}");
 
                 var frontUpperDelta = Math.Abs(
                     ReadDouble(frontStyle, "UpperOpacity") -
@@ -109,7 +123,7 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
                     ReadDouble(previousFrontStyle!, "PawScaleX"));
 
                 Assert(frontUpperDelta <= 0.20,
-                    $"WorkApproach -> WorkSettle 前腿 Upper 不能单帧消失；delta={frontUpperDelta:F3}, prevBlend={previousBlend:F3}, settleBlend={blendValue:F3}");
+                    $"WorkApproach -> WorkSettle 前腿 Upper 不能单帧消失；delta={frontUpperDelta:F3}, prevBlend={previousBlend:F3}, settleBlend={locomotionValue:F3}");
                 Assert(rearUpperDelta <= 0.20,
                     $"WorkApproach -> WorkSettle 后腿 Upper 不能单帧消失；delta={rearUpperDelta:F3}");
                 Assert(rearPawDelta <= 0.20,
@@ -123,7 +137,7 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
             previousFrontStyle = frontStyle;
             previousRearStyle  = rearStyle;
             previousState      = stateName;
-            previousBlend      = blendValue;
+            previousBlend      = locomotionValue;
         }
 
         Assert(sawBoundary,
@@ -175,7 +189,7 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
             "Run 满速后腿仍需回到后景权重，避免抢到前腿前面");
     }
 
-    private static void VerifyRendererConsumesLocomotionBlend()
+    private static void VerifyRendererConsumesTransitionEnvelopes()
     {
         var root = FindRepositoryRoot();
         var path = Path.Combine(
@@ -191,9 +205,13 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
         var source = File.ReadAllText(path);
 
         Assert(source.Contains("frame.LocomotionBlend", StringComparison.Ordinal),
-            "Renderer 必须消费 PoseFrame.LocomotionBlend，不能继续只按 MotionState 切腿部几何");
-        Assert(source.Contains("ResolveForBlend", StringComparison.Ordinal),
-            "Renderer 必须使用连续腿部视觉策略，而不是只调用离散 Resolve");
+            "Renderer 必须继续消费 PoseFrame.LocomotionBlend，真实速度仍是 locomotion 几何权重来源");
+        Assert(source.Contains("frame.PreviousMotionState", StringComparison.Ordinal),
+            "Renderer 必须消费上一 AnimationGraph 节点，不能猜测 WorkSettle 的来源");
+        Assert(source.Contains("frame.MotionTransitionBlend", StringComparison.Ordinal),
+            "Renderer 必须消费连续 graph transition envelope，不能按离散状态清空腿部图层");
+        Assert(source.Contains("ResolveForTransition", StringComparison.Ordinal),
+            "Renderer 必须使用跨状态连续腿部视觉策略");
     }
 
     private static object CreateInput(double targetX, bool wantsRun)
