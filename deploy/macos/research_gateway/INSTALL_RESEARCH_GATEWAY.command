@@ -23,20 +23,6 @@ for file in gateway.py VERSION research_gateway/__init__.py research_gateway/cra
   fi
 done
 
-mkdir -p "$runtime_dir/research_gateway" "$bin_dir" "$state_dir"
-install -m 0644 "$payload_dir/gateway.py" "$runtime_dir/gateway.py"
-install -m 0644 "$payload_dir/VERSION" "$runtime_dir/VERSION"
-install -m 0644 "$payload_dir/research_gateway/__init__.py" "$runtime_dir/research_gateway/__init__.py"
-install -m 0644 "$payload_dir/research_gateway/crawler_adapter.py" "$runtime_dir/research_gateway/crawler_adapter.py"
-
-cat > "$bin_dir/picotoopet-research-gateway" <<EOF
-#!/bin/bash
-set -euo pipefail
-export PYTHONPATH="$runtime_dir\${PYTHONPATH:+:\$PYTHONPATH}"
-exec python3 "$runtime_dir/gateway.py" "\$@"
-EOF
-chmod 755 "$bin_dir/picotoopet-research-gateway"
-
 is_compatible_python() {
   local candidate="$1"
   [[ -x "$candidate" ]] || return 1
@@ -86,13 +72,17 @@ select_compatible_python() {
   return 1
 }
 
+# 先完成解释器预检，再写入 Gateway，避免失败时留下半安装状态。
+if ! python_bin="$(select_compatible_python)"; then
+  echo "Research Gateway 需要 Python 3.12-3.13；未找到兼容解释器，未修改现有安装。" >&2
+  echo "可设置 PICOTOOPET_PYTHON_BIN=/完整路径/python3 后重新运行。" >&2
+  exit 1
+fi
+
+gateway_python="$python_bin"
+
 # Crawl4AI 属于 PicotooPet 自有 provider：只装进 ~/.local/share/picotoopet/research/crawl4ai，绝不进 Mac Core venv。
 if [[ "$skip_crawl4ai" != "1" ]]; then
-  if ! python_bin="$(select_compatible_python)"; then
-    echo "Research Gateway 已写入，但 Crawl4AI 需要 Python 3.12-3.13；未找到兼容解释器，安装中止。" >&2
-    echo "可设置 PICOTOOPET_PYTHON_BIN=/完整路径/python3 后重新运行。" >&2
-    exit 1
-  fi
   mkdir -p "$crawl_runtime" "$crawl_bin" "$crawl_data"
   if [[ ! -x "$crawl_venv/bin/python" ]]; then
     "$python_bin" -m venv "$crawl_venv"
@@ -126,7 +116,24 @@ export PICOTOOPET_CRAWL4AI_DATA_ROOT="$crawl_data"
 exec "$crawl_venv/bin/python" "$crawl_runtime/crawl4ai_runner.py" "\$@"
 EOF
   chmod 755 "$crawl_bin/picotoopet-crawl4ai-provider"
+  gateway_python="$crawl_venv/bin/python"
 fi
+
+mkdir -p "$runtime_dir/research_gateway" "$bin_dir" "$state_dir"
+install -m 0644 "$payload_dir/gateway.py" "$runtime_dir/gateway.py"
+install -m 0644 "$payload_dir/VERSION" "$runtime_dir/VERSION"
+install -m 0644 "$payload_dir/research_gateway/__init__.py" "$runtime_dir/research_gateway/__init__.py"
+install -m 0644 "$payload_dir/research_gateway/crawler_adapter.py" "$runtime_dir/research_gateway/crawler_adapter.py"
+
+# 固定到安装时验证过的兼容解释器，避免 macOS /usr/bin/python3 版本较旧导致启动后再失败。
+cat > "$bin_dir/picotoopet-research-gateway" <<EOF
+#!/bin/bash
+set -euo pipefail
+export PYTHONPATH="$runtime_dir\${PYTHONPATH:+:\$PYTHONPATH}"
+export PICOTOOPET_CRAWL4AI_ROOT="$crawl_root"
+exec "$gateway_python" "$runtime_dir/gateway.py" "\$@"
+EOF
+chmod 755 "$bin_dir/picotoopet-research-gateway"
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
@@ -171,6 +178,7 @@ EOF
 "$bin_dir/picotoopet-research-gateway" --health
 
 printf '\nPicotooPet Research Gateway 2.3.27.1 已更新：\n%s\n' "$bin_dir/picotoopet-research-gateway"
+printf 'Gateway 固定使用已验证解释器：%s\n' "$gateway_python"
 printf 'Crawl4AI 使用独立私有目录：%s\n' "$crawl_root"
 printf '共享 Agent Reach/OpenCLI/Scrapling/Thunderbit 等只做绑定；不会安装、升级或覆盖这些共享工具及其登录态。\n'
 printf '请运行 VERIFY_RESEARCH_GATEWAY.command 做完整只读工具调用验证。\n'
