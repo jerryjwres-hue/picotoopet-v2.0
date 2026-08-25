@@ -60,6 +60,7 @@ internal sealed class MaotaiMotionEngine
     private double _stateElapsedSeconds;
     private double _typingPhaseRadians;
     private double _lastYawnProgress;
+    private double _lastTiredBlend;
     private double _lastAnnoyedBlend;
 
     public MaotaiMotionEngine(int seed, double initialX)
@@ -250,6 +251,12 @@ internal sealed class MaotaiMotionEngine
             // Dynamic handoff source : retain the exact rendered yawn phase so an external state change
             // can leave the in-flight envelope from the pose the user actually saw on the previous frame.
             _lastYawnProgress = yawnProgress;
+        }
+        else if (_graph.ActiveState == MaotaiMotionState.WorkTired)
+        {
+            // Re-entrant mood exit : retain the actual partial tired pose so Recover can leave from
+            // the fatigue amount the user saw instead of jumping to the full tired endpoint.
+            _lastTiredBlend = blend;
         }
         else if (_graph.ActiveState == MaotaiMotionState.WorkAnnoyed)
         {
@@ -715,15 +722,16 @@ internal sealed class MaotaiMotionEngine
                 var residual = 1.0 - blend;
                 if (_graph.PreviousState == MaotaiMotionState.WorkTired)
                 {
-                    // Interrupted tired exit : Recover can also be entered because real Working ended while tired.
-                    // Preserve that tired endpoint as the source instead of reusing the annoyed recovery pose.
-                    bodyWorldY  += 2.6 * residual;
-                    bodyScaleX  += 0.018 * residual;
-                    bodyScaleY  -= 0.045 * residual;
-                    headOffsetY += 4.2 * residual;
-                    headBiasDeg += 3.0 * facingSign * residual;
-                    earDrop     += 3.2 * residual;
-                    earTension   = 2.0 * residual;
+                    // Interrupted tired exit : reconstruct the actual partial tired source. Stable tired
+                    // caches 1.0, preserving the existing full-endpoint recovery exactly.
+                    var sourceBlend = Math.Clamp(_lastTiredBlend, 0.0, 1.0);
+                    bodyWorldY += Lerp(2.0, 2.6, sourceBlend) * residual;
+                    bodyScaleX += 0.018 * sourceBlend * residual;
+                    bodyScaleY -= Lerp(0.015, 0.045, sourceBlend) * residual;
+                    headOffsetY += 4.2 * sourceBlend * residual;
+                    headBiasDeg += 3.0 * facingSign * sourceBlend * residual;
+                    earDrop += 3.2 * sourceBlend * residual;
+                    earTension = 2.0 * sourceBlend * residual;
                 }
                 else if (_graph.PreviousState == MaotaiMotionState.Yawn)
                 {
