@@ -145,6 +145,38 @@ class MaterializeN6D4CoreBundleTests(unittest.TestCase):
                 materialize_core_bundle(bootstrap_dir=bootstrap, target_root=target)
             self.assertFalse((target / "payload/outside.txt").exists())
 
+    def test_rejects_windows_drive_qualified_member_before_extraction(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            bootstrap = root / "bootstrap"
+            target = root / "source"
+            bootstrap.mkdir()
+
+            unsafe_name = "C:\\escape.txt"                                                     # A drive-qualified member must never be interpreted relative to target_root.
+            data = b"escape\n"
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr(unsafe_name, data)
+            bundle = buffer.getvalue()
+            encoded = base64.b64encode(bundle).decode("ascii")
+            (bootstrap / "core.part00.b64").write_text(encoded + "\n", encoding="ascii")
+            bundle_sha = hashlib.sha256(bundle).hexdigest()
+            (bootstrap / "CORE_BUNDLE.sha256").write_text(f"{bundle_sha}  bad.zip\n", encoding="ascii")
+            manifest = {
+                "schema_version": "1.0",
+                "source_checkpoint": "N6D4",
+                "core_prefix": CORE_PREFIX,
+                "core_bundle_sha256": bundle_sha,
+                "core_file_count": 1,
+                "files": [{"path": unsafe_name, "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}],
+            }
+            (bootstrap / "CORE_MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            (bootstrap / "SOURCE_PROVENANCE.txt").write_text("N6D4_ARCHIVE_SHA256_VERIFIED=YES\n", encoding="ascii")
+
+            with self.assertRaisesRegex(ValueError, "unsafe Core bundle path"):
+                materialize_core_bundle(bootstrap_dir=bootstrap, target_root=target)
+            self.assertFalse((target / "C:" / "escape.txt").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
