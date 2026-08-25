@@ -544,37 +544,22 @@ internal sealed class MaotaiRasterRenderer
 
     private void ApplyFace(in MaotaiPoseFrame frame)
     {
-        if (frame.MotionState == MaotaiMotionState.Yawn)
-        {
-            var progress = Math.Clamp(frame.YawnProgress, 0.0, 1.0);
-            var opening  = Math.Clamp(frame.MouthOpenAmount, 0.0, 1.0);
-            var baseFace = 1.0 - opening;
-            var tired    = baseFace * (1.0 - progress);
-            var smile    = baseFace * progress;
+        var face = MaotaiFaceLayerWeights.Resolve(
+            frame.MotionState,
+            frame.PreviousMotionState,
+            frame.MotionTransitionBlend,
+            frame.EyeState,
+            frame.MouthState,
+            frame.YawnProgress,
+            frame.MouthOpenAmount);
 
-            ApplyEyeOpacities(
-                open: smile,
-                half: tired,
-                closed: opening);
-            ApplyMouthOpacities(
-                smile: smile,
-                tired: tired,
-                annoyed: 0.0,
-                yawn: opening,
-                tongue: 0.0);
-            return;
-        }
-
-        ApplyEyeState(frame.EyeState);
-        ApplyMouthState(frame.MouthState);
-    }
-
-    private void ApplyEyeState(MaotaiEyeState state)
-    {
-        var open   = state == MaotaiEyeState.Open ? 1.0 : 0.0;
-        var half   = state == MaotaiEyeState.Half ? 1.0 : 0.0;
-        var closed = state == MaotaiEyeState.Closed ? 1.0 : 0.0;
-        ApplyEyeOpacities(open, half, closed);
+        ApplyEyeOpacities(face.EyeOpen, face.EyeHalf, face.EyeClosed);
+        ApplyMouthOpacities(
+            face.MouthSmile,
+            face.MouthTired,
+            face.MouthAnnoyed,
+            face.MouthYawn,
+            face.MouthTongue);
     }
 
     private void ApplyEyeOpacities(
@@ -592,16 +577,6 @@ internal sealed class MaotaiRasterRenderer
         var pupilOpacity = MaotaiEyeLayerOpacity.PupilFromOpenWeight(open);
         _visuals.LeftPupil.Element.Opacity  = pupilOpacity;
         _visuals.RightPupil.Element.Opacity = pupilOpacity;
-    }
-
-    private void ApplyMouthState(MaotaiMouthState state)
-    {
-        ApplyMouthOpacities(
-            smile: state == MaotaiMouthState.Smile ? 1.0 : 0.0,
-            tired: state == MaotaiMouthState.Tired ? 1.0 : 0.0,
-            annoyed: state == MaotaiMouthState.Annoyed ? 1.0 : 0.0,
-            yawn: state == MaotaiMouthState.Yawn ? 1.0 : 0.0,
-            tongue: state == MaotaiMouthState.Tongue ? 1.0 : 0.0);
     }
 
     private void ApplyMouthOpacities(
