@@ -2,14 +2,14 @@
 
 MIGRATION_023 = r"""
 CREATE TABLE autonomous_browser_captures_v2 (
-    capture_id TEXT PRIMARY KEY,
+    capture_id TEXT NOT NULL,
     product_key TEXT NOT NULL REFERENCES autonomous_products(product_key) ON DELETE RESTRICT,
     source_url TEXT NOT NULL,
     platform TEXT NOT NULL DEFAULT '',
     capture_type TEXT NOT NULL,
     packet_sha256 TEXT NOT NULL,
     evidence_count INTEGER NOT NULL DEFAULT 0,
-    idempotency_key TEXT NOT NULL UNIQUE,
+    idempotency_key TEXT PRIMARY KEY,
     captured_at TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
@@ -30,4 +30,6 @@ CREATE INDEX IF NOT EXISTS idx_autonomous_browser_capture_product
     ON autonomous_browser_captures(product_key, captured_at DESC);
 CREATE INDEX IF NOT EXISTS idx_autonomous_browser_capture_packet
     ON autonomous_browser_captures(source_url, packet_sha256);
+CREATE INDEX IF NOT EXISTS idx_autonomous_browser_capture_content_id
+    ON autonomous_browser_captures(capture_id);
 """
