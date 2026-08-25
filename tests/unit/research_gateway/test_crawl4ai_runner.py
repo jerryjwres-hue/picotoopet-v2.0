@@ -22,12 +22,16 @@ def _args(*, retry_limit: int = 1) -> argparse.Namespace:
 
 
 @pytest.mark.asyncio
-async def test_transient_network_failure_retries_only_to_explicit_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_transient_network_failure_retries_only_to_explicit_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = 0
+
     async def fake_crawl_once(_: argparse.Namespace) -> dict[str, object]:
         nonlocal calls
         calls += 1
         return {"ok": False, "error": "network_failed", "captcha": False}
+
     monkeypatch.setattr(crawl4ai_runner, "_crawl_once", fake_crawl_once)
     result = await crawl4ai_runner._run_with_retries(_args(retry_limit=1))
     assert result["error"] == "network_failed"
@@ -35,12 +39,16 @@ async def test_transient_network_failure_retries_only_to_explicit_limit(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_captcha_stops_immediately_without_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_captcha_stops_immediately_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = 0
+
     async def fake_crawl_once(_: argparse.Namespace) -> dict[str, object]:
         nonlocal calls
         calls += 1
         return {"ok": False, "error": "captcha_required", "captcha": True}
+
     monkeypatch.setattr(crawl4ai_runner, "_crawl_once", fake_crawl_once)
     result = await crawl4ai_runner._run_with_retries(_args(retry_limit=2))
     assert result == {"ok": False, "error": "captcha_required", "captcha": True}
@@ -50,10 +58,12 @@ async def test_captcha_stops_immediately_without_retry(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_timeout_is_bounded_by_retry_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = 0
+
     async def fake_crawl_once(_: argparse.Namespace) -> dict[str, object]:
         nonlocal calls
         calls += 1
         raise TimeoutError
+
     monkeypatch.setattr(crawl4ai_runner, "_crawl_once", fake_crawl_once)
     result = await crawl4ai_runner._run_with_retries(_args(retry_limit=1))
     assert result["error"] == "timeout"
@@ -61,13 +71,29 @@ async def test_timeout_is_bounded_by_retry_limit(monkeypatch: pytest.MonkeyPatch
 
 
 def test_browser_error_classifier_keeps_timeout_distinct_from_network_failure() -> None:
-    assert crawl4ai_runner._classify_provider_failure("Page.goto: Timeout 1000ms exceeded while navigating") == "timeout"
-    assert crawl4ai_runner._classify_provider_failure("net::ERR_CONNECTION_RESET") == "network_failed"
-    assert crawl4ai_runner._classify_provider_failure("unexpected scraper error") == "crawl_failed"
+    assert (
+        crawl4ai_runner._classify_provider_failure(
+            "Page.goto: Timeout 1000ms exceeded while navigating"
+        )
+        == "timeout"
+    )
+    assert (
+        crawl4ai_runner._classify_provider_failure("net::ERR_CONNECTION_RESET")
+        == "network_failed"
+    )
+    assert (
+        crawl4ai_runner._classify_provider_failure("unexpected scraper error")
+        == "crawl_failed"
+    )
 
 
 def test_browser_error_classifier_recovers_404_when_status_code_is_missing() -> None:
-    assert crawl4ai_runner._classify_provider_failure("Unexpected error in _crawl_web: HTTP status code 404: Not Found") == "not_found"
+    assert (
+        crawl4ai_runner._classify_provider_failure(
+            "Unexpected error in _crawl_web: HTTP status code 404: Not Found"
+        )
+        == "not_found"
+    )
     assert crawl4ai_runner._classify_provider_failure("404 Not Found") == "not_found"
 
 
@@ -78,7 +104,15 @@ def test_effective_status_prefers_provider_then_main_navigation_observation() ->
     assert crawl4ai_runner._effective_status_code(None, None) is None
 
 
-@pytest.mark.parametrize("url", ["file:///etc/passwd", "http://127.0.0.1/", "http://169.254.169.254/latest/meta-data", "https://user:password@example.com/"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file:///etc/passwd",
+        "http://127.0.0.1/",
+        "http://169.254.169.254/latest/meta-data",
+        "https://user:password@example.com/",
+    ],
+)
 def test_runner_rejects_non_public_or_credential_destinations(url: str) -> None:
     with pytest.raises(ValueError):
         crawl4ai_runner._validate_public_url(url)
