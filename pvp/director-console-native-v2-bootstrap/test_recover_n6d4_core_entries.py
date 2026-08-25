@@ -11,7 +11,7 @@ from pathlib import Path
 from recover_n6d4_core_entries import recover_core_entries
 
 
-CORE_PREFIX = "payload/producer/extensions/director_console_native_v2/"  # Frozen Director Core subtree.
+CORE_PREFIX = "payload/producer/extensions/director_console_native_v2/"                    # Frozen Director Core subtree.
 
 
 class RecoverN6D4CoreEntriesTests(unittest.TestCase):
@@ -21,22 +21,33 @@ class RecoverN6D4CoreEntriesTests(unittest.TestCase):
             f"{CORE_PREFIX}src/pvp_director_native_v2/server_v2.py": b"print('server')\n",
         }
         entries = []
+        inventory_entries = []
         for index, (name, data) in enumerate(sorted(files.items())):
             compressor = zlib.compressobj(level=9, wbits=-15)                              # ZIP method 8 stores raw DEFLATE, not zlib framing.
             compressed = compressor.compress(data) + compressor.flush()
             evidence_name = f"entry{index:02d}.deflate.b64"
             (root / evidence_name).write_text(base64.b64encode(compressed).decode("ascii") + "\n", encoding="ascii")
-            entries.append(
-                {
-                    "path": name,
-                    "compression_method": 8,
-                    "crc32": f"{binascii.crc32(data) & 0xffffffff:08x}",
-                    "compressed_size": len(compressed),
-                    "uncompressed_size": len(data),
-                    "local_header_offset": 1000 + index * 100,
-                    "evidence_file": evidence_name,
-                }
-            )
+            metadata = {
+                "path": name,
+                "compression_method": 8,
+                "crc32": f"{binascii.crc32(data) & 0xffffffff:08x}",
+                "compressed_size": len(compressed),
+                "uncompressed_size": len(data),
+                "local_header_offset": 1000 + index * 100,
+            }
+            inventory_entries.append(dict(metadata))                                       # Inventory is independent of recovered payload evidence.
+            entries.append({**metadata, "evidence_file": evidence_name})
+
+        inventory = {
+            "schema_version": "1.0",
+            "source_checkpoint": "N6D4",
+            "inventory_status": "complete",
+            "core_prefix": CORE_PREFIX,
+            "core_entry_count": len(inventory_entries),
+            "entries": inventory_entries,
+        }
+        (root / "N6D4_CORE_ENTRY_INVENTORY.json").write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
+
         manifest = {
             "schema_version": "1.0",
             "source_checkpoint": "N6D4",
@@ -150,6 +161,55 @@ class RecoverN6D4CoreEntriesTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "outside frozen Core prefix"):
                 recover_core_entries(evidence_dir=evidence, output_dir=output)
+
+    def test_rejects_partial_authoritative_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            evidence = root / "evidence"
+            output = root / "out"
+            evidence.mkdir()
+            self._write_evidence(evidence)
+            inventory_path = evidence / "N6D4_CORE_ENTRY_INVENTORY.json"
+            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+            inventory["inventory_status"] = "partial"                                      # Recovery research may be partial; production materialization may not.
+            inventory_path.write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "authoritative Core inventory is not complete"):
+                recover_core_entries(evidence_dir=evidence, output_dir=output)
+            self.assertFalse(output.exists())
+
+    def test_rejects_evidence_path_set_that_differs_from_authoritative_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            evidence = root / "evidence"
+            output = root / "out"
+            evidence.mkdir()
+            self._write_evidence(evidence)
+            manifest_path = evidence / "N6D4_CORE_ENTRY_EVIDENCE.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["entries"] = manifest["entries"][:1]                                 # Self-declared count must not redefine the frozen Core file set.
+            manifest["complete_core_entry_count"] = 1
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "evidence path set does not match authoritative Core inventory"):
+                recover_core_entries(evidence_dir=evidence, output_dir=output)
+            self.assertFalse(output.exists())
+
+    def test_rejects_evidence_metadata_that_differs_from_authoritative_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            evidence = root / "evidence"
+            output = root / "out"
+            evidence.mkdir()
+            self._write_evidence(evidence)
+            manifest_path = evidence / "N6D4_CORE_ENTRY_EVIDENCE.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["entries"][0]["crc32"] = "00000000"                                  # Payload metadata is pinned by inventory, not trusted from evidence.
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "evidence metadata does not match authoritative Core inventory"):
+                recover_core_entries(evidence_dir=evidence, output_dir=output)
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":
