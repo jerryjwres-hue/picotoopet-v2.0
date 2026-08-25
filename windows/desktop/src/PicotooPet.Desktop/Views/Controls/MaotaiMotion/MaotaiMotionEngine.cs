@@ -698,14 +698,29 @@ internal sealed class MaotaiMotionEngine
             case MaotaiMotionState.Recover:
             {
                 var residual = 1.0 - blend;
-                bodyWorldY  += 1.0 * residual;
-                bodyTilt    -= 3.8 * facingSign * residual;
-                bodyScaleX  -= 0.020 * residual;
-                bodyScaleY  += 0.022 * residual;
-                headOffsetY -= 0.8 * residual;
-                headBiasDeg -= 2.8 * facingSign * residual;
-                earDrop     -= 0.8 * residual;
-                earTension   = 4.5 * residual;
+                if (_graph.PreviousState == MaotaiMotionState.WorkTired)
+                {
+                    // Interrupted tired exit : Recover can also be entered because real Working ended while tired.
+                    // Preserve that tired endpoint as the source instead of reusing the annoyed recovery pose.
+                    bodyWorldY  += 2.6 * residual;
+                    bodyScaleX  += 0.018 * residual;
+                    bodyScaleY  -= 0.045 * residual;
+                    headOffsetY += 4.2 * residual;
+                    headBiasDeg += 3.0 * facingSign * residual;
+                    earDrop     += 3.2 * residual;
+                    earTension   = 2.0 * residual;
+                }
+                else
+                {
+                    bodyWorldY  += 1.0 * residual;
+                    bodyTilt    -= 3.8 * facingSign * residual;
+                    bodyScaleX  -= 0.020 * residual;
+                    bodyScaleY  += 0.022 * residual;
+                    headOffsetY -= 0.8 * residual;
+                    headBiasDeg -= 2.8 * facingSign * residual;
+                    earDrop     -= 0.8 * residual;
+                    earTension   = 4.5 * residual;
+                }
                 break;
             }
         }
