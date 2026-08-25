@@ -6,6 +6,8 @@ on:
     paths:
       - "pvp/director-console-native-v2-bootstrap/recover_n6d4_core_bundle.py"
       - "pvp/director-console-native-v2-bootstrap/test_recover_n6d4_core_bundle.py"
+      - "pvp/director-console-native-v2-bootstrap/materialize_n6d4_core_bundle.py"
+      - "pvp/director-console-native-v2-bootstrap/test_materialize_n6d4_core_bundle.py"
       - "pvp/director-console-native-v2-bootstrap/core.part*.b64"
       - "pvp/director-console-native-v2-bootstrap/CORE_BUNDLE.sha256"
       - "pvp/director-console-native-v2-bootstrap/CORE_MANIFEST.json"
@@ -27,66 +29,38 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run N6D4 Core recovery unit contracts
+      - name: Run N6D4 Core recovery and materialization unit contracts
         working-directory: pvp/director-console-native-v2-bootstrap
         run: |
-          # Recovery contract : raw script SHA, embedded ZIP SHA, subtree isolation and path safety.
-          python -m unittest -v test_recover_n6d4_core_bundle.py
+          # Unit contract     : raw source pinning, deterministic bundling, safe materialization and no-write-on-failure behavior.
+          python -m unittest -v test_recover_n6d4_core_bundle.py test_materialize_n6d4_core_bundle.py
 
       - name: Verify pinned Core bundle when materialized
         working-directory: pvp/director-console-native-v2-bootstrap
         run: |
-          # Pin contract      : once core.part*.b64 exists, all metadata and ZIP hashes become mandatory.
-          python - <<'PY'
-          from __future__ import annotations
+          # Pin contract      : materialized parts must survive the same verified consumer path used by convergence CI.
+          shopt -s nullglob
+          parts=(core.part*.b64)
+          metadata=(CORE_BUNDLE.sha256 CORE_MANIFEST.json SOURCE_PROVENANCE.txt)
+          present=0
+          for item in "${metadata[@]}"; do
+            if [[ -e "$item" ]]; then present=$((present + 1)); fi
+          done
 
-          import base64
-          import hashlib
-          import io
-          import json
-          import zipfile
-          from pathlib import Path, PurePosixPath
+          if (( ${#parts[@]} == 0 && present == 0 )); then
+            echo "N6D4_CORE_BUNDLE=NOT_MATERIALIZED"                                      # Tooling can be CI-green before authoritative bytes are pinned.
+            exit 0
+          fi
+          if (( ${#parts[@]} == 0 )); then
+            echo "Core metadata exists without core.part*.b64 payload" >&2
+            exit 1
+          fi
+          if (( present != ${#metadata[@]} )); then
+            echo "Core payload exists without the complete metadata set" >&2
+            exit 1
+          fi
 
-          root = Path(".")
-          parts = sorted(root.glob("core.part*.b64"))                                      # Deterministic part ordering.
-          metadata = [root / "CORE_BUNDLE.sha256", root / "CORE_MANIFEST.json", root / "SOURCE_PROVENANCE.txt"]
-          present_metadata = [path for path in metadata if path.exists()]
-
-          if not parts and not present_metadata:
-              print("N6D4_CORE_BUNDLE=NOT_MATERIALIZED")                                   # Recovery tool is tested before bytes are pinned.
-              raise SystemExit(0)
-          if not parts:
-              raise SystemExit("Core metadata exists without core.part*.b64 payload")
-          missing = [path.name for path in metadata if not path.is_file()]
-          if missing:
-              raise SystemExit(f"Core payload exists but metadata is missing: {missing}")
-
-          encoded = "".join(path.read_text(encoding="ascii").strip() for path in parts)     # Reassemble exact deterministic Base64 stream.
-          bundle = base64.b64decode(encoded, validate=True)
-          expected = (root / "CORE_BUNDLE.sha256").read_text(encoding="ascii").split()[0].lower()
-          actual = hashlib.sha256(bundle).hexdigest()
-          if actual != expected:
-              raise SystemExit(f"Core bundle SHA mismatch: expected={expected} actual={actual}")
-
-          manifest = json.loads((root / "CORE_MANIFEST.json").read_text(encoding="utf-8"))
-          expected_files = {entry["path"]: entry for entry in manifest["files"]}
-          with zipfile.ZipFile(io.BytesIO(bundle), "r") as archive:
-              bad = archive.testzip()
-              if bad is not None:
-                  raise SystemExit(f"Core bundle CRC failure: {bad}")
-              actual_names = [info.filename for info in archive.infolist() if not info.is_dir()]
-              if set(actual_names) != set(expected_files):
-                  raise SystemExit("Core bundle file set does not match CORE_MANIFEST.json")
-              for name in actual_names:
-                  path = PurePosixPath(name)
-                  if path.is_absolute() or ".." in path.parts:
-                      raise SystemExit(f"Unsafe Core bundle path: {name}")
-                  data = archive.read(name)
-                  entry = expected_files[name]
-                  if hashlib.sha256(data).hexdigest() != entry["sha256"]:
-                      raise SystemExit(f"Core file SHA mismatch: {name}")
-                  if len(data) != entry["size_bytes"]:
-                      raise SystemExit(f"Core file size mismatch: {name}")
-
-          print(f"N6D4_CORE_BUNDLE=PASS files={len(expected_files)} sha256={actual}")
-          PY
+          target="$RUNNER_TEMP/n6d4-core-materialized"
+          python materialize_n6d4_core_bundle.py --bootstrap-dir . --target-root "$target"
+          test -f "$target/payload/producer/extensions/director_console_native_v2/VERSION"
+          echo "N6D4_CORE_MATERIALIZATION=PASS"
