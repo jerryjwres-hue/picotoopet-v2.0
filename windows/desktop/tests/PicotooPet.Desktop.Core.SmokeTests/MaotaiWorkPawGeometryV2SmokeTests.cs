@@ -14,6 +14,7 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
     {
         VerifyTypingGeometry();
         VerifyWorkExitContinuity();
+        VerifyInterruptedTiredExitContinuity();
     }
 
     private static void VerifyTypingGeometry()
@@ -102,6 +103,50 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
             $"WorkTyping→Idle 左前爪不能从键盘瞬移回站姿；delta={leftPawDelta:F3}");
         Assert(rightPawDelta < 1.60,
             $"WorkTyping→Idle 右前爪不能从键盘瞬移回站姿；delta={rightPawDelta:F3}");
+    }
+
+    /// <summary>真实 Working 在疲劳节点结束时，Recover 必须从当前疲劳姿态继续，而不是套用烦躁恢复起点。</summary>
+    private static void VerifyInterruptedTiredExitContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 71, 108.0)
+            ?? throw new InvalidOperationException("无法创建疲劳打断连续性 Motion Engine");
+
+        object? tiredPose = null;
+        for (var frame = 0; frame < 720; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working")])
+                ?? throw new InvalidOperationException("疲劳打断预热没有输出 PoseFrame");
+            if (string.Equals(ReadProperty(pose, "MotionState")?.ToString(), "WorkTired", StringComparison.Ordinal) &&
+                ReadDouble(pose, "MotionTransitionBlend") >= 0.999)
+            {
+                tiredPose = pose;
+                break;
+            }
+        }
+
+        Assert(tiredPose is not null, "疲劳打断连续性测试未能进入稳定 WorkTired");
+
+        var recoverPose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Resting")])
+            ?? throw new InvalidOperationException("疲劳打断退出首帧没有输出 PoseFrame");
+        var state = ReadProperty(recoverPose, "MotionState")?.ToString();
+        Assert(string.Equals(state, "Recover", StringComparison.Ordinal),
+            $"WorkTired 被 Resting 打断后的安全回退首跳应为 Recover；actual={state}");
+
+        var bodyYDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "Y") - ReadPoseDouble(tiredPose!, "Body", "Y"));
+        var bodyScaleXDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "ScaleX") - ReadPoseDouble(tiredPose!, "Body", "ScaleX"));
+        var bodyScaleYDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "ScaleY") - ReadPoseDouble(tiredPose!, "Body", "ScaleY"));
+
+        Assert(bodyYDelta < 0.75,
+            $"WorkTired→Recover 身体高度不能切到烦躁恢复起点；delta={bodyYDelta:F3}");
+        Assert(bodyScaleXDelta < 0.012,
+            $"WorkTired→Recover 身体横向缩放不能节点硬切；delta={bodyScaleXDelta:F4}");
+        Assert(bodyScaleYDelta < 0.012,
+            $"WorkTired→Recover 身体纵向缩放不能节点硬切；delta={bodyScaleYDelta:F4}");
     }
 
     private static object CreateInput(string baseState)
