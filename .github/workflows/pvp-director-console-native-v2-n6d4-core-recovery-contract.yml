@@ -6,8 +6,11 @@ on:
     paths:
       - "pvp/director-console-native-v2-bootstrap/recover_n6d4_core_bundle.py"
       - "pvp/director-console-native-v2-bootstrap/test_recover_n6d4_core_bundle.py"
+      - "pvp/director-console-native-v2-bootstrap/recover_n6d4_core_entries.py"
+      - "pvp/director-console-native-v2-bootstrap/test_recover_n6d4_core_entries.py"
       - "pvp/director-console-native-v2-bootstrap/materialize_n6d4_core_bundle.py"
       - "pvp/director-console-native-v2-bootstrap/test_materialize_n6d4_core_bundle.py"
+      - "pvp/director-console-native-v2-bootstrap/n6d4-core-entry-evidence/**"
       - "pvp/director-console-native-v2-bootstrap/core.part*.b64"
       - "pvp/director-console-native-v2-bootstrap/CORE_BUNDLE.sha256"
       - "pvp/director-console-native-v2-bootstrap/CORE_MANIFEST.json"
@@ -32,8 +35,12 @@ jobs:
       - name: Run N6D4 Core recovery and materialization unit contracts
         working-directory: pvp/director-console-native-v2-bootstrap
         run: |
-          # Unit contract     : raw source pinning, deterministic bundling, safe materialization and no-write-on-failure behavior.
-          python -m unittest -v test_recover_n6d4_core_bundle.py test_materialize_n6d4_core_bundle.py
+          # Unit contract     : raw source pinning, per-entry CRC/DEFLATE recovery, deterministic bundling and safe materialization.
+          # Fail-closed rule  : corruption, missing evidence, duplicate paths and unsafe ZIP paths must all fail before output.
+          python -m unittest -v \
+            test_recover_n6d4_core_bundle.py \
+            test_recover_n6d4_core_entries.py \
+            test_materialize_n6d4_core_bundle.py
 
       - name: Verify pinned Core bundle when materialized
         working-directory: pvp/director-console-native-v2-bootstrap
