@@ -13,6 +13,7 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
         VerifyMotionEnvelopeIsContinuous();
         VerifyWorkApproachToSettleVisualContinuity();
         VerifyLegPolicyBlendsFromStableSilhouette();
+        VerifyWorkPropsDoNotBypassGraphTransition();
         VerifyRendererConsumesTransitionEnvelopes();
     }
 
@@ -189,7 +190,62 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
             "Run 满速后腿仍需回到后景权重，避免抢到前腿前面");
     }
 
+    /// <summary>工作道具必须跟随真实 AnimationGraph envelope 渐入，不能在 WorkApproach 状态首帧整套闪现。</summary>
+    private static void VerifyWorkPropsDoNotBypassGraphTransition()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var poseType   = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiPoseFrame");
+        var update     = RequireMethod(engineType, "Update");
+        var motion     = RequireProperty(poseType, "MotionState");
+        var previousMotion = RequireProperty(poseType, "PreviousMotionState");
+        var transitionBlend = RequireProperty(poseType, "MotionTransitionBlend");
+        var engine = Activator.CreateInstance(engineType, 89, 72.0)
+            ?? throw new InvalidOperationException("无法创建工作道具渐入 Motion Engine");
+
+        object? pose = null;
+        for (var frame = 0; frame < 45; frame++)
+        {
+            pose = update.Invoke(engine, [1.0 / 60.0, CreateInput(targetX: 72.0, wantsRun: false)])
+                ?? throw new InvalidOperationException("工作道具渐入测试的 Idle 预热没有输出 PoseFrame");
+        }
+
+        Assert(pose is not null && ReadString(pose, motion) == "Idle",
+            "工作道具渐入测试必须先稳定在 Idle");
+
+        pose = update.Invoke(engine, [1.0 / 60.0, CreateWorkingInput()])
+            ?? throw new InvalidOperationException("工作道具渐入测试没有输出首个 Working PoseFrame");
+        var stateName = ReadString(pose, motion);
+        var previousStateName = ReadString(pose, previousMotion);
+        var transitionValue = (double)(transitionBlend.GetValue(pose)
+            ?? throw new InvalidOperationException("WorkApproach MotionTransitionBlend 为空"));
+
+        Assert(stateName == "WorkApproach" && previousStateName == "Idle",
+            $"工作道具渐入测试必须覆盖 Idle -> WorkApproach 首帧；actual={previousStateName} -> {stateName}");
+        Assert(transitionValue > 0.0 && transitionValue < 0.20,
+            $"WorkApproach 首帧必须仍处于早期 graph transition；actual={transitionValue:F3}");
+
+        var source = ReadRendererSource();
+        Assert(!source.Contains("ApplyWorkProps(frame.MotionState)", StringComparison.Ordinal),
+            $"Idle -> WorkApproach 首帧 graph transition={transitionValue:F3}，电脑/饮料/耳机不能按 state-only 0/1 整套闪现");
+        Assert(source.Contains("ApplyWorkProps(frame)", StringComparison.Ordinal),
+            "Renderer 必须把完整 PoseFrame transition envelope 交给工作道具显隐");
+    }
+
     private static void VerifyRendererConsumesTransitionEnvelopes()
+    {
+        var source = ReadRendererSource();
+
+        Assert(source.Contains("frame.LocomotionBlend", StringComparison.Ordinal),
+            "Renderer 必须继续消费 PoseFrame.LocomotionBlend，真实速度仍是 locomotion 几何权重来源");
+        Assert(source.Contains("frame.PreviousMotionState", StringComparison.Ordinal),
+            "Renderer 必须消费上一 AnimationGraph 节点，不能猜测 WorkSettle 的来源");
+        Assert(source.Contains("frame.MotionTransitionBlend", StringComparison.Ordinal),
+            "Renderer 必须消费连续 graph transition envelope，不能按离散状态清空腿部图层");
+        Assert(source.Contains("ResolveForTransition", StringComparison.Ordinal),
+            "Renderer 必须使用跨状态连续腿部视觉策略");
+    }
+
+    private static string ReadRendererSource()
     {
         var root = FindRepositoryRoot();
         var path = Path.Combine(
@@ -202,16 +258,7 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
             "Controls",
             "MaotaiMotion",
             "MaotaiRasterRenderer.cs");
-        var source = File.ReadAllText(path);
-
-        Assert(source.Contains("frame.LocomotionBlend", StringComparison.Ordinal),
-            "Renderer 必须继续消费 PoseFrame.LocomotionBlend，真实速度仍是 locomotion 几何权重来源");
-        Assert(source.Contains("frame.PreviousMotionState", StringComparison.Ordinal),
-            "Renderer 必须消费上一 AnimationGraph 节点，不能猜测 WorkSettle 的来源");
-        Assert(source.Contains("frame.MotionTransitionBlend", StringComparison.Ordinal),
-            "Renderer 必须消费连续 graph transition envelope，不能按离散状态清空腿部图层");
-        Assert(source.Contains("ResolveForTransition", StringComparison.Ordinal),
-            "Renderer 必须使用跨状态连续腿部视觉策略");
+        return File.ReadAllText(path);
     }
 
     private static object CreateInput(double targetX, bool wantsRun)
@@ -257,6 +304,9 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
             108.0)
             ?? throw new InvalidOperationException("无法创建 Working locomotion visual MotionInput");
     }
+
+    private static string ReadString(object value, PropertyInfo property) =>
+        property.GetValue(value)?.ToString() ?? string.Empty;
 
     private static double ReadDouble(object value, string propertyName) =>
         (double)(RequireProperty(value.GetType(), propertyName).GetValue(value)
