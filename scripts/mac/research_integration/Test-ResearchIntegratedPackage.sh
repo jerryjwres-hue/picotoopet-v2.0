@@ -35,7 +35,7 @@ from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 manifest = json.loads((root / "release-manifest.json").read_text(encoding="utf-8"))
 assert manifest["release_version"] == "2.3.27.1"
-assert manifest["product_version"] == "2.3.26.1"
+assert manifest["product_version"] == "2.3.27.1"
 assert manifest["architecture"] == "arm64"
 assert manifest["gateway_included"] is True
 assert manifest["core_worker_update_included"] is True
@@ -55,6 +55,8 @@ required = {
     "gateway/VERIFY_RESEARCH_GATEWAY.command",
     "gateway/payload/gateway.py",
     "gateway/payload/research_gateway/__init__.py",
+    "gateway/payload/research_gateway/gateway.py",
+    "gateway/payload/research_gateway/VERSION",
     "gateway/payload/research_gateway/crawler_adapter.py",
     "gateway/payload/crawl4ai_runner.py",
     "gateway/payload/CRAWL4AI_ADAPTER_VERSION",
