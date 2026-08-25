@@ -7,7 +7,7 @@
   "source_archive_sha256_pin": "ea291ce62444c7c327b8e1f19a8db22b83e0b3c75e3684d0af32953ebc713ca1",
   "core_prefix": "payload/producer/extensions/director_console_native_v2/",
   "core_entry_count": null,
-  "verified_entry_count": 26,
+  "verified_entry_count": 28,
   "notes": [
     "PARTIAL means this file is an audit ledger only and MUST NOT be accepted by the Core materializer.",
     "Entries below were decoded from N6D4 embedded-ZIP central-directory records; no source file content was guessed or rewritten.",
@@ -53,6 +53,14 @@
       "compressed_size": 1788,
       "uncompressed_size": 6516,
       "local_header_offset": 73332
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/deleted_items.py",
+      "compression_method": 8,
+      "crc32": "5264fe56",
+      "compressed_size": 1319,
+      "uncompressed_size": 3607,
+      "local_header_offset": 75250
     },
     {
       "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/execution_readiness.py",
@@ -175,12 +183,20 @@
       "local_header_offset": 116752
     },
     {
+      "path": "payload/producer/extensions/director_console_native_v2/tests/test_n1_tasks.py",
+      "compression_method": 8,
+      "crc32": "6d2be2cd",
+      "compressed_size": 629,
+      "uncompressed_size": 1960,
+      "local_header_offset": 121266
+    },
+    {
       "path": "payload/producer/extensions/director_console_native_v2/tests/test_n3_editing.py",
       "compression_method": 8,
-      "crc32": "65b9df85",
-      "compressed_size": 1699,
-      "uncompressed_size": 5082,
-      "local_header_offset": 121716
+      "crc32": "ced4cc79",
+      "compressed_size": 1427,
+      "uncompressed_size": 4793,
+      "local_header_offset": 122002
     },
     {
       "path": "payload/producer/extensions/director_console_native_v2/tests/test_n5_crew_gate.py",
