@@ -1,5 +1,5 @@
 #!/bin/bash
-# 验证 Mac 一体化包的外层哈希、Manifest、双组件结构和不修改外部工具链的边界。
+# 验证 Mac 一体化包的外层哈希、Manifest、双组件结构和不修改共享外部工具链的边界。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -18,6 +18,11 @@ test -f "$sha_file"
 
 # CI 使用临时目录展开归档；Runner 生命周期结束后由系统回收。
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-research-integrated-test.XXXXXX")"
+cleanup() {
+  rm -rf "$fixture_root"
+}
+trap cleanup EXIT
+
 tar -xzf "$tarball" -C "$fixture_root"
 package_root="$fixture_root/$package_name"
 
@@ -47,7 +52,12 @@ required = {
     "ROLLBACK_PICOTOOPET_RESEARCH_2_3_27_1.command",
     "README_INSTALL_CN.txt",
     "gateway/INSTALL_RESEARCH_GATEWAY.command",
+    "gateway/VERIFY_RESEARCH_GATEWAY.command",
     "gateway/payload/gateway.py",
+    "gateway/payload/research_gateway/__init__.py",
+    "gateway/payload/research_gateway/crawler_adapter.py",
+    "gateway/payload/crawl4ai_runner.py",
+    "gateway/payload/CRAWL4AI_ADAPTER_VERSION",
     "worker/INSTALL_MAC_WORKER_SLICE_C.command",
     "worker/VERIFY_MAC_WORKER_SLICE_C.command",
     "worker/ROLLBACK_MAC_WORKER_SLICE_C.command",
@@ -65,14 +75,25 @@ for item in manifest["files"]:
     assert hashlib.sha256(content).hexdigest() == item["sha256"], item["path"]
 PY
 
-# 安装边界：这些安装/升级片段不得出现在 Gateway 安装器里。
+# 共享工具安装边界：Gateway 可以安装 PicotooPet 自有 Crawl4AI 私有 venv，
+# 但不能安装/升级 Agent Reach、OpenCLI、Scrapling、Thunderbit 或其它共享工具链。
 installer="$package_root/gateway/INSTALL_RESEARCH_GATEWAY.command"
-for forbidden in "brew install" "npm install" "pipx install" "pipx upgrade" "agent-reach install"; do
+for forbidden in \
+  "brew install" \
+  "npm install" \
+  "pipx install" \
+  "pipx upgrade" \
+  "agent-reach install" \
+  "opencli install" \
+  "scrapling-mcp-local install"; do
   if grep -Fq "$forbidden" "$installer"; then
-    echo "组合包违反 bind-only 安装边界：$forbidden" >&2
+    echo "组合包违反 shared-tool bind-only 安装边界：$forbidden" >&2
     exit 1
   fi
 done
+grep -Fq 'crawl4ai==0.9.2' "$installer"
+grep -Fq 'PLAYWRIGHT_BROWSERS_PATH' "$installer"
+grep -Fq '不会安装、升级或覆盖' "$installer"
 
 # Shell 静态验收：顶层与两个内层安装生命周期脚本均必须通过 Bash 语法检查。
 for command_file in \
