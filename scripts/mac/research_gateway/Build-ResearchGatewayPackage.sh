@@ -49,9 +49,13 @@ mkdir -p "$package_root/payload/research_gateway"
 for file in INSTALL_RESEARCH_GATEWAY.command VERIFY_RESEARCH_GATEWAY.command UNINSTALL_RESEARCH_GATEWAY.command README_INSTALL_CN.txt; do
   cp "$repo_root/deploy/macos/research_gateway/$file" "$package_root/$file"
 done
+
+# package-owned Python 布局以 research_gateway/ 为 canonical；顶层副本只保留向后兼容。
 cp "$repo_root/research_gateway/gateway.py" "$package_root/payload/gateway.py"
 cp "$repo_root/research_gateway/VERSION" "$package_root/payload/VERSION"
 cp "$repo_root/research_gateway/__init__.py" "$package_root/payload/research_gateway/__init__.py"
+cp "$repo_root/research_gateway/gateway.py" "$package_root/payload/research_gateway/gateway.py"
+cp "$repo_root/research_gateway/VERSION" "$package_root/payload/research_gateway/VERSION"
 cp "$repo_root/research_gateway/crawler_adapter.py" "$package_root/payload/research_gateway/crawler_adapter.py"
 cp "$repo_root/research_gateway/crawl4ai_runner.py" "$package_root/payload/crawl4ai_runner.py"
 cp "$repo_root/research_gateway/CRAWL4AI_ADAPTER_VERSION" "$package_root/payload/CRAWL4AI_ADAPTER_VERSION"
