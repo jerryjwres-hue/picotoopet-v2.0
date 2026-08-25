@@ -60,6 +60,7 @@ internal sealed class MaotaiMotionEngine
     private double _stateElapsedSeconds;
     private double _typingPhaseRadians;
     private double _lastYawnProgress;
+    private double _lastAnnoyedBlend;
 
     public MaotaiMotionEngine(int seed, double initialX)
     {
@@ -249,6 +250,12 @@ internal sealed class MaotaiMotionEngine
             // Dynamic handoff source : retain the exact rendered yawn phase so an external state change
             // can leave the in-flight envelope from the pose the user actually saw on the previous frame.
             _lastYawnProgress = yawnProgress;
+        }
+        else if (_graph.ActiveState == MaotaiMotionState.WorkAnnoyed)
+        {
+            // Re-entrant mood exit : retain the actual partial annoyed pose. A real state change may
+            // interrupt the attack before its endpoint, so Recover must start from what was rendered.
+            _lastAnnoyedBlend = blend;
         }
 
         var mouthOpenAmount = _graph.ActiveState == MaotaiMotionState.Yawn
@@ -733,6 +740,20 @@ internal sealed class MaotaiMotionEngine
                         (4.0 * facingSign * envelope)) * residual;
                     earDrop += ((3.2 * tiredResidual) + (1.4 * envelope)) * residual;
                     earTension = 2.0 * tiredResidual * residual;
+                }
+                else if (_graph.PreviousState == MaotaiMotionState.WorkAnnoyed)
+                {
+                    // Interrupted annoyance exit : preserve the exact partial attack that was rendered.
+                    // A stable annoyance caches 1.0, so the ordinary work-cycle recovery is unchanged.
+                    var sourceBlend = Math.Clamp(_lastAnnoyedBlend, 0.0, 1.0);
+                    bodyWorldY += Lerp(2.0, 1.0, sourceBlend) * residual;
+                    bodyTilt -= 3.8 * facingSign * sourceBlend * residual;
+                    bodyScaleX -= 0.020 * sourceBlend * residual;
+                    bodyScaleY += Lerp(-0.015, 0.022, sourceBlend) * residual;
+                    headOffsetY -= 0.8 * sourceBlend * residual;
+                    headBiasDeg -= 2.8 * facingSign * sourceBlend * residual;
+                    earDrop -= 0.8 * sourceBlend * residual;
+                    earTension = 4.5 * sourceBlend * residual;
                 }
                 else
                 {
