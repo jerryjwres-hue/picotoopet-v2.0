@@ -13,6 +13,15 @@ from pathlib import Path, PurePosixPath
 
 CORE_PREFIX = "payload/producer/extensions/director_console_native_v2/"                    # Frozen Director Core subtree.
 DEFAULT_CHUNK_CHARS = 4800                                                                   # Small text chunks for GitHub contents API reliability.
+INVENTORY_FILENAME = "N6D4_CORE_ENTRY_INVENTORY.json"                                      # Independent authority for the complete frozen Core file set.
+EVIDENCE_FILENAME = "N6D4_CORE_ENTRY_EVIDENCE.json"                                        # Recovered compressed payload references for inventory entries.
+PINNED_ENTRY_FIELDS = (                                                                      # Evidence may add evidence_file, but may not redefine ZIP metadata.
+    "compression_method",
+    "crc32",
+    "compressed_size",
+    "uncompressed_size",
+    "local_header_offset",
+)
 
 
 def _sha256(data: bytes) -> str:
@@ -27,6 +36,50 @@ def _validate_core_path(name: str) -> PurePosixPath:
     if not path.as_posix().startswith(CORE_PREFIX):
         raise ValueError(f"Core entry outside frozen Core prefix: {name}")
     return path
+
+
+def _normalize_entry_metadata(entry: dict[str, object]) -> tuple[object, ...]:
+    return (
+        int(entry["compression_method"]),
+        str(entry["crc32"]).lower(),
+        int(entry["compressed_size"]),
+        int(entry["uncompressed_size"]),
+        int(entry["local_header_offset"]),
+    )                                                                                       # Canonical tuple makes metadata comparison explicit and type-stable.
+
+
+def _validate_unique_paths(entries: list[dict[str, object]], *, source_label: str) -> dict[str, dict[str, object]]:
+    indexed: dict[str, dict[str, object]] = {}
+    for entry in entries:
+        name = str(entry["path"])
+        _validate_core_path(name)                                                            # Reject traversal/out-of-prefix before set comparison hides the root cause.
+        if name in indexed:
+            if source_label == "evidence":
+                raise ValueError(f"duplicate Core entry path: {name}")
+            raise ValueError(f"duplicate authoritative Core inventory path: {name}")
+        indexed[name] = entry
+    return indexed
+
+
+def _load_authoritative_inventory(evidence_dir: Path) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
+    inventory_path = evidence_dir / INVENTORY_FILENAME
+    if not inventory_path.is_file():
+        raise ValueError("authoritative N6D4 Core inventory is missing")
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+
+    if inventory.get("source_checkpoint") != "N6D4":
+        raise ValueError("authoritative Core inventory checkpoint is not N6D4")
+    if inventory.get("inventory_status") != "complete":
+        raise ValueError("authoritative Core inventory is not complete")
+    if inventory.get("core_prefix") != CORE_PREFIX:
+        raise ValueError("authoritative Core inventory prefix does not match frozen prefix")
+
+    entries = list(inventory.get("entries", []))
+    expected_count = int(inventory.get("core_entry_count", -1))
+    if expected_count != len(entries) or expected_count < 1:
+        raise ValueError(f"authoritative Core inventory count mismatch: expected={expected_count} actual={len(entries)}")
+    indexed = _validate_unique_paths(entries, source_label="inventory")
+    return inventory, indexed
 
 
 def _read_entry_payload(evidence_dir: Path, entry: dict[str, object]) -> bytes:
@@ -66,7 +119,14 @@ def _read_entry_payload(evidence_dir: Path, entry: dict[str, object]) -> bytes:
     return data
 
 
-def _emit_bundle(*, output_dir: Path, files: list[tuple[str, bytes, str]], evidence: dict[str, object], chunk_chars: int) -> dict[str, object]:
+def _emit_bundle(
+    *,
+    output_dir: Path,
+    files: list[tuple[str, bytes, str]],
+    evidence: dict[str, object],
+    inventory: dict[str, object],
+    chunk_chars: int,
+) -> dict[str, object]:
     if chunk_chars <= 0:
         raise ValueError("chunk_chars must be positive")
 
@@ -98,8 +158,9 @@ def _emit_bundle(*, output_dir: Path, files: list[tuple[str, bytes, str]], evide
     for index, chunk in enumerate(chunks):
         (output_dir / f"core.part{index:02d}.b64").write_text(chunk + "\n", encoding="ascii")
 
+    inventory_bytes = (json.dumps(inventory, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     manifest: dict[str, object] = {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "source_checkpoint": "N6D4",
         "source_mode": "n6d4_zip_entries_crc32",
         "source_script_sha256_pin": str(evidence["source_script_sha256_pin"]).lower(),
@@ -108,6 +169,8 @@ def _emit_bundle(*, output_dir: Path, files: list[tuple[str, bytes, str]], evide
         "source_archive_sha256_verified": False,
         "source_zip_entries_verified": True,
         "source_zip_entry_count": len(files),
+        "authoritative_inventory_status": "complete",
+        "authoritative_inventory_sha256": _sha256(inventory_bytes),
         "core_prefix": CORE_PREFIX,
         "core_bundle_sha256": bundle_sha,
         "core_file_count": len(files),
@@ -123,6 +186,8 @@ def _emit_bundle(*, output_dir: Path, files: list[tuple[str, bytes, str]], evide
                 "N6D4_SCRIPT_SHA256_VERIFIED=NO",
                 f"N6D4_ARCHIVE_SHA256_PIN={str(evidence['source_archive_sha256_pin']).lower()}",
                 "N6D4_ARCHIVE_SHA256_VERIFIED=NO",
+                "N6D4_CORE_INVENTORY_STATUS=complete",
+                f"N6D4_CORE_INVENTORY_SHA256={manifest['authoritative_inventory_sha256']}",
                 f"N6D4_ZIP_ENTRY_COUNT={len(files)}",
                 "N6D4_ZIP_ENTRIES_VERIFIED=YES",
                 "",
@@ -134,7 +199,9 @@ def _emit_bundle(*, output_dir: Path, files: list[tuple[str, bytes, str]], evide
 
 
 def recover_core_entries(*, evidence_dir: Path, output_dir: Path, chunk_chars: int = DEFAULT_CHUNK_CHARS) -> dict[str, object]:
-    manifest_path = evidence_dir / "N6D4_CORE_ENTRY_EVIDENCE.json"
+    inventory, inventory_by_path = _load_authoritative_inventory(evidence_dir)               # Completeness authority is independent from recovered evidence.
+
+    manifest_path = evidence_dir / EVIDENCE_FILENAME
     if not manifest_path.is_file():
         raise ValueError("N6D4 Core entry evidence manifest is missing")
     evidence = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -154,6 +221,19 @@ def recover_core_entries(*, evidence_dir: Path, output_dir: Path, chunk_chars: i
     expected_count = int(evidence.get("complete_core_entry_count", -1))
     if expected_count != len(entries) or expected_count < 1:
         raise ValueError(f"Core entry evidence is incomplete: expected={expected_count} actual={len(entries)}")
+    evidence_by_path = _validate_unique_paths(entries, source_label="evidence")
+
+    if set(evidence_by_path) != set(inventory_by_path):
+        missing = sorted(set(inventory_by_path) - set(evidence_by_path))
+        extra = sorted(set(evidence_by_path) - set(inventory_by_path))
+        raise ValueError(
+            "evidence path set does not match authoritative Core inventory: "
+            f"missing={missing} extra={extra}"
+        )
+
+    for name in sorted(inventory_by_path):
+        if _normalize_entry_metadata(evidence_by_path[name]) != _normalize_entry_metadata(inventory_by_path[name]):
+            raise ValueError(f"evidence metadata does not match authoritative Core inventory: {name}")
 
     missing_evidence = [
         str(entry.get("evidence_file", "")) or "<empty>"
@@ -164,18 +244,19 @@ def recover_core_entries(*, evidence_dir: Path, output_dir: Path, chunk_chars: i
     if missing_evidence:
         raise ValueError(f"entry evidence is missing: {', '.join(missing_evidence)}")
 
-    seen: set[str] = set()
     files: list[tuple[str, bytes, str]] = []
     for entry in entries:
         name = str(entry["path"])
-        _validate_core_path(name)
-        if name in seen:
-            raise ValueError(f"duplicate Core entry path: {name}")
-        seen.add(name)
         data = _read_entry_payload(evidence_dir, entry)
         files.append((name, data, str(entry["crc32"]).lower()))
 
-    return _emit_bundle(output_dir=output_dir, files=files, evidence=evidence, chunk_chars=chunk_chars)
+    return _emit_bundle(
+        output_dir=output_dir,
+        files=files,
+        evidence=evidence,
+        inventory=inventory,
+        chunk_chars=chunk_chars,
+    )
 
 
 def main() -> int:
