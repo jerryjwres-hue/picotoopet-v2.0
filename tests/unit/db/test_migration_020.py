@@ -10,8 +10,8 @@ def test_migration_020_adds_canonical_connected_evidence_tables(tmp_path: Path) 
     database.open()
     database.apply_migrations()
     try:
-        # Schema retention gate      Migration 20 facts survive progress-ledger schema 22.
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 22
+        # Schema retention gate      Migration 20 facts survive current schema 23.
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
         tables = {
             row["name"]
             for row in database.fetchall(
