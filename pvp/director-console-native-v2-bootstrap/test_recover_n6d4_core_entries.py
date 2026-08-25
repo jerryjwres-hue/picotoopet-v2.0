@@ -101,6 +101,25 @@ class RecoverN6D4CoreEntriesTests(unittest.TestCase):
                 recover_core_entries(evidence_dir=evidence, output_dir=output)
             self.assertFalse(output.exists())
 
+    def test_reports_all_missing_entry_evidence_in_one_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            evidence = root / "evidence"
+            output = root / "out"
+            evidence.mkdir()
+            self._write_evidence(evidence)
+            (evidence / "entry00.deflate.b64").unlink()
+            (evidence / "entry01.deflate.b64").unlink()
+
+            with self.assertRaises(ValueError) as context:
+                recover_core_entries(evidence_dir=evidence, output_dir=output)
+
+            self.assertEqual(
+                str(context.exception),
+                "entry evidence is missing: entry00.deflate.b64, entry01.deflate.b64",
+            )
+            self.assertFalse(output.exists())
+
     def test_rejects_incomplete_or_duplicate_core_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
