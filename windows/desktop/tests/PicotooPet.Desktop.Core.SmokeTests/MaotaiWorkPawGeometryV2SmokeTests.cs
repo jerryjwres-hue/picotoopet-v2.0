@@ -198,7 +198,7 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
             $"Yawn→Recover 身体纵向缩放不能节点硬切；delta={bodyScaleYDelta:F4}");
     }
 
-    /// <summary>Recover 自身尚未结束时若真实 Working 结束，Idle 必须从用户刚看到的恢复姿态继续。</summary>
+    /// <summary>Recover 自身尚未结束时若真实 Working 结束，先连续完成当前 neutralizing hop，再进入 Idle。</summary>
     private static void VerifyInterruptedRecoverExitContinuity()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
@@ -228,8 +228,8 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
         var idlePose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Resting")])
             ?? throw new InvalidOperationException("恢复打断退出首帧没有输出 PoseFrame");
         var idleState = ReadProperty(idlePose, "MotionState")?.ToString();
-        Assert(string.Equals(idleState, "Idle", StringComparison.Ordinal),
-            $"Recover 被 Resting 打断后应直接安全回退 Idle；actual={idleState}");
+        Assert(string.Equals(idleState, "Recover", StringComparison.Ordinal),
+            $"Recover 被 Resting 打断时应先完成当前 neutralizing hop，而不是二次抢占；actual={idleState}");
 
         var bodyYDelta = Math.Abs(
             ReadPoseDouble(idlePose, "Body", "Y") - ReadPoseDouble(recoverPose!, "Body", "Y"));
@@ -239,11 +239,11 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
             ReadPoseDouble(idlePose, "Body", "ScaleY") - ReadPoseDouble(recoverPose!, "Body", "ScaleY"));
 
         Assert(bodyYDelta < 0.75,
-            $"Recover→Idle 身体高度不能在恢复尚未结束时瞬间归零；delta={bodyYDelta:F3}");
+            $"Recover→Idle 请求不能让恢复尚未结束的身体高度瞬间归零；delta={bodyYDelta:F3}");
         Assert(bodyScaleXDelta < 0.012,
-            $"Recover→Idle 身体横向缩放不能在恢复尚未结束时硬切；delta={bodyScaleXDelta:F4}");
+            $"Recover→Idle 请求不能让恢复尚未结束的身体横向缩放硬切；delta={bodyScaleXDelta:F4}");
         Assert(bodyScaleYDelta < 0.012,
-            $"Recover→Idle 身体纵向缩放不能在恢复尚未结束时硬切；delta={bodyScaleYDelta:F4}");
+            $"Recover→Idle 请求不能让恢复尚未结束的身体纵向缩放硬切；delta={bodyScaleYDelta:F4}");
     }
 
     private static object CreateInput(string baseState)
