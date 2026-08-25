@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Threading;
+using System.Windows.Controls;
 using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
@@ -7,10 +9,12 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 internal static class MaotaiNaturalExpressionV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
+    private static readonly Type PanelType = typeof(AssistantPetPanel);
 
     public static void Run()
     {
         VerifyWorkingExpressions();
+        VerifyWorkingExpressionRendererBoundaryContinuity();
         VerifyAutonomousSleepExpression();
         VerifyWakeExpression();
         VerifySleepingPatCompletesAfterPulseExpires();
@@ -65,6 +69,84 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
             "WorkAnnoyed 必须使用半眯眼 + 烦躁嘴型");
         Assert(sawRecoverExpression,
             "Recover 必须平滑回到睁眼 + 微笑基准表情");
+    }
+
+    /// <summary>真实 WorkTyping -> WorkTired 首帧仍处于早期 graph transition，WPF 眼睛/嘴型图层不能 1↔0 闪切。</summary>
+    private static void VerifyWorkingExpressionRendererBoundaryContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 43, 108.0)
+            ?? throw new InvalidOperationException("无法创建工作表情边界 Motion Engine");
+
+        object? previousPose = null;
+        object? tiredPose    = null;
+        for (var frame = 0; frame < 900; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateWorkingInput()])
+                ?? throw new InvalidOperationException("工作表情边界测试没有输出 Pose");
+            if (previousPose is not null &&
+                ReadString(previousPose, "MotionState") == "WorkTyping" &&
+                ReadString(pose, "MotionState") == "WorkTired")
+            {
+                tiredPose = pose;
+                break;
+            }
+
+            previousPose = pose;
+        }
+
+        Assert(previousPose is not null && tiredPose is not null,
+            "工作表情边界测试未在 900 帧内观察到 WorkTyping -> WorkTired");
+        var transition = ReadDouble(tiredPose!, "MotionTransitionBlend");
+        Assert(transition >= 0.0 && transition < 0.10,
+            $"WorkTired 首个可见帧必须处于早期 graph transition；actual={transition:F3}");
+        Assert(ReadString(previousPose!, "MouthState") == "Smile" &&
+               ReadString(tiredPose!, "MouthState") == "Tired",
+            "测试夹具必须覆盖 Smile -> Tired 真实工作表情边界");
+        Assert(ReadString(previousPose!, "EyeState") == "Open" &&
+               ReadString(tiredPose!, "EyeState") == "Half",
+            "测试夹具必须覆盖 Open -> Half 真实工作眼态边界，不能碰巧落在自然眨眼帧");
+
+        RunOnSta(() =>
+        {
+            var panel = new AssistantPetPanel();
+            var buildVisuals = PanelType.GetMethod(
+                "BuildMaotaiRasterVisuals",
+                BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("AssistantPetPanel 缺少 BuildMaotaiRasterVisuals");
+            var visuals = buildVisuals.Invoke(panel, null)
+                ?? throw new InvalidOperationException("BuildMaotaiRasterVisuals 没有返回可见层集合");
+            var rendererType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiRasterRenderer");
+            var renderer = Activator.CreateInstance(rendererType, visuals)
+                ?? throw new InvalidOperationException("无法创建工作表情边界 MaotaiRasterRenderer");
+            var apply = rendererType.GetMethod(
+                "Apply",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("MaotaiRasterRenderer 缺少 Apply");
+
+            var eyeOpen    = GetField<Image>(panel, "MaotaiV2EyeLeftOpen");
+            var eyeHalf    = GetField<Image>(panel, "MaotaiV2EyeLeftHalf");
+            var mouthSmile = GetField<Image>(panel, "MaotaiV2MouthSmile");
+            var mouthTired = GetField<Image>(panel, "MaotaiV2MouthTired");
+
+            apply.Invoke(renderer, [previousPose!]);
+            var previousEyeOpen    = eyeOpen.Opacity;
+            var previousEyeHalf    = eyeHalf.Opacity;
+            var previousMouthSmile = mouthSmile.Opacity;
+            var previousMouthTired = mouthTired.Opacity;
+
+            apply.Invoke(renderer, [tiredPose!]);
+            var eyeOpenDelta    = Math.Abs(eyeOpen.Opacity - previousEyeOpen);
+            var eyeHalfDelta    = Math.Abs(eyeHalf.Opacity - previousEyeHalf);
+            var mouthSmileDelta = Math.Abs(mouthSmile.Opacity - previousMouthSmile);
+            var mouthTiredDelta = Math.Abs(mouthTired.Opacity - previousMouthTired);
+
+            Assert(eyeOpenDelta <= 0.20 && eyeHalfDelta <= 0.20,
+                $"WorkTyping -> WorkTired 眼睛图层不能单帧 Open/Half 互切；openDelta={eyeOpenDelta:F3}, halfDelta={eyeHalfDelta:F3}, transition={transition:F3}");
+            Assert(mouthSmileDelta <= 0.20 && mouthTiredDelta <= 0.20,
+                $"WorkTyping -> WorkTired 嘴型图层不能单帧 Smile/Tired 互切；smileDelta={mouthSmileDelta:F3}, tiredDelta={mouthTiredDelta:F3}, transition={transition:F3}");
+        });
     }
 
     /// <summary>自主小睡必须真正闭眼并使用放松嘴型，不能继续沿用普通待机微笑。</summary>
@@ -306,6 +388,34 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
         return input;
     }
 
+    private static void RunOnSta(Action action)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null)
+        {
+            throw new InvalidOperationException("Maotai 工作表情 Renderer 连续性 smoke failed.", failure);
+        }
+    }
+
+    private static T GetField<T>(object target, string fieldName) where T : class =>
+        PanelType.GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(target) as T
+        ?? throw new InvalidOperationException($"AssistantPetPanel 缺少字段 {fieldName} 或类型不是 {typeof(T).Name}");
+
     private static Type RequireType(string fullName) =>
         DesktopAssembly.GetType(fullName) ??
         throw new InvalidOperationException($"缺少类型 {fullName}");
@@ -320,6 +430,10 @@ internal static class MaotaiNaturalExpressionV2SmokeTests
 
     private static string ReadString(object value, string propertyName) =>
         RequireProperty(value.GetType(), propertyName).GetValue(value)?.ToString() ?? string.Empty;
+
+    private static double ReadDouble(object value, string propertyName) =>
+        (double)(RequireProperty(value.GetType(), propertyName).GetValue(value)
+            ?? throw new InvalidOperationException($"{propertyName} 为空"));
 
     private static void Assert(bool condition, string message)
     {
