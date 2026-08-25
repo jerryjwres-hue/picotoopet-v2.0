@@ -6,7 +6,7 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
 output_root="$repo_root/artifacts/research-integration"
 release_version="2.3.27.1"
-expected_product_version="2.3.26.1"
+expected_product_version="2.3.27.1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -23,7 +23,7 @@ done
 
 product_version="$(tr -d '\r\n' < "$repo_root/src/picotoopet_core/product-version.txt")"
 if [[ "$product_version" != "$expected_product_version" ]]; then
-  echo "Research $release_version 必须叠加在产品基线 $expected_product_version：$product_version" >&2
+  echo "Research ${release_version} 必须叠加在产品基线 ${expected_product_version}：${product_version}" >&2
   exit 1
 fi
 if [[ "$(uname -m)" != "arm64" ]]; then
