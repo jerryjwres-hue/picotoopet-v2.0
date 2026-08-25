@@ -4,6 +4,23 @@ on:
   push:
     branches:
       - feature/research-gateway-2.3.27.1-final
+      - feature/autonomous-intelligence-e2e-goal-center-2.3.27.1
+    paths:
+      - ".github/workflows/research-mac-final-integration-release.yml"
+      - "src/**"
+      - "research_gateway/**"
+      - "tests/**"
+      - "deploy/macos/research_gateway/**"
+      - "deploy/macos/research_integration/**"
+      - "deploy/macos/phase23-worker/**"
+      - "deploy/macos/phase23/lib.sh"
+      - "scripts/mac/research_gateway/**"
+      - "scripts/mac/research_integration/**"
+      - "scripts/mac/phase23-worker/**"
+      - "pyproject.toml"
+  pull_request:
+    branches:
+      - feature/autonomous-intelligence-slice-c-2.3.27.1
     paths:
       - ".github/workflows/research-mac-final-integration-release.yml"
       - "src/**"
@@ -68,11 +85,13 @@ jobs:
           test "$(uname -m)" = "arm64"
           test "$(python -c 'import platform; print(platform.machine())')" = "arm64"
 
-      - name: Run Research and Worker contracts
+      - name: Run Research Worker and targeted-review contracts
         shell: bash
         run: |
           PYTHONPATH=.:src python -m pytest -q \
             tests/unit/research_gateway \
+            tests/unit/autonomous/test_targeted_review_browser_intake.py \
+            tests/unit/db/test_migration_023.py \
             tests/unit/worker/test_research_gateway_execution.py \
             tests/integration/api/test_research_search_api.py \
             tests/contract/test_research_gateway_package.py \
@@ -95,7 +114,10 @@ jobs:
             src/picotoopet_core/research \
             src/picotoopet_core/api/routes/tasks.py \
             src/picotoopet_core/worker/handlers.py \
+            src/picotoopet_core/db/migration_023.py \
             tests/unit/research_gateway \
+            tests/unit/autonomous/test_targeted_review_browser_intake.py \
+            tests/unit/db/test_migration_023.py \
             tests/unit/worker/test_research_gateway_execution.py \
             tests/integration/api/test_research_search_api.py \
             tests/contract/test_research_gateway_package.py
