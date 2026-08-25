@@ -11,6 +11,7 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
     public static void Run()
     {
         VerifyMotionEnvelopeIsContinuous();
+        VerifyWorkApproachToSettleVisualContinuity();
         VerifyLegPolicyBlendsFromStableSilhouette();
         VerifyRendererConsumesLocomotionBlend();
     }
@@ -49,6 +50,84 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
 
         Assert(peak >= 0.80,
             "连续 locomotion blend 从未进入明确运动区间，Renderer 无法平滑进入关节步态");
+    }
+
+    /// <summary>真实 Working 到达电脑时仍处于物理减速，WorkSettle 首帧不能把可见腿部直接清零。</summary>
+    private static void VerifyWorkApproachToSettleVisualContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var poseType   = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiPoseFrame");
+        var stateType  = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionState");
+        var policyType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiLegVisualPolicy");
+        var update     = RequireMethod(engineType, "Update");
+        var motion     = RequireProperty(poseType, "MotionState");
+        var blend      = RequireProperty(poseType, "LocomotionBlend");
+        var resolve    = policyType.GetMethod(
+            "ResolveForBlend",
+            BindingFlags.Public | BindingFlags.Static)
+            ?? throw new InvalidOperationException("MaotaiLegVisualPolicy 缺少 ResolveForBlend");
+        var engine = Activator.CreateInstance(engineType, 83, 28.0)
+            ?? throw new InvalidOperationException("无法创建工作落位视觉连续性 Motion Engine");
+
+        object? previousFrontStyle = null;
+        object? previousRearStyle  = null;
+        var previousState = string.Empty;
+        var previousBlend = 0.0;
+        var sawBoundary   = false;
+
+        for (var frame = 0; frame < 360; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateWorkingInput()])
+                ?? throw new InvalidOperationException("工作落位视觉连续性没有输出 PoseFrame");
+            var stateName = motion.GetValue(pose)?.ToString() ?? string.Empty;
+            var blendValue = (double)(blend.GetValue(pose)
+                ?? throw new InvalidOperationException("WorkSettle LocomotionBlend 为空"));
+            var state = Enum.Parse(stateType, stateName);
+            var frontStyle = resolve.Invoke(null, [state, true, blendValue])
+                ?? throw new InvalidOperationException($"{stateName} 前腿视觉策略为空");
+            var rearStyle = resolve.Invoke(null, [state, false, blendValue])
+                ?? throw new InvalidOperationException($"{stateName} 后腿视觉策略为空");
+
+            if (previousState == "WorkApproach" && stateName == "WorkSettle")
+            {
+                Assert(previousFrontStyle is not null && previousRearStyle is not null,
+                    "WorkApproach -> WorkSettle 边界缺少上一帧视觉策略");
+                Assert(previousBlend >= 0.20 && blendValue >= 0.20,
+                    $"测试必须覆盖仍在物理减速的工作落位；prevBlend={previousBlend:F3}, settleBlend={blendValue:F3}");
+
+                var frontUpperDelta = Math.Abs(
+                    ReadDouble(frontStyle, "UpperOpacity") -
+                    ReadDouble(previousFrontStyle!, "UpperOpacity"));
+                var rearUpperDelta = Math.Abs(
+                    ReadDouble(rearStyle, "UpperOpacity") -
+                    ReadDouble(previousRearStyle!, "UpperOpacity"));
+                var rearPawDelta = Math.Abs(
+                    ReadDouble(rearStyle, "PawOpacity") -
+                    ReadDouble(previousRearStyle!, "PawOpacity"));
+                var frontPawScaleDelta = Math.Abs(
+                    ReadDouble(frontStyle, "PawScaleX") -
+                    ReadDouble(previousFrontStyle!, "PawScaleX"));
+
+                Assert(frontUpperDelta <= 0.20,
+                    $"WorkApproach -> WorkSettle 前腿 Upper 不能单帧消失；delta={frontUpperDelta:F3}, prevBlend={previousBlend:F3}, settleBlend={blendValue:F3}");
+                Assert(rearUpperDelta <= 0.20,
+                    $"WorkApproach -> WorkSettle 后腿 Upper 不能单帧消失；delta={rearUpperDelta:F3}");
+                Assert(rearPawDelta <= 0.20,
+                    $"WorkApproach -> WorkSettle 后脚掌层级不能单帧闪亮/消失；delta={rearPawDelta:F3}");
+                Assert(frontPawScaleDelta <= 0.04,
+                    $"WorkApproach -> WorkSettle 前爪 footprint 不能突然变宽；delta={frontPawScaleDelta:F3}");
+                sawBoundary = true;
+                break;
+            }
+
+            previousFrontStyle = frontStyle;
+            previousRearStyle  = rearStyle;
+            previousState      = stateName;
+            previousBlend      = blendValue;
+        }
+
+        Assert(sawBoundary,
+            "工作落位视觉连续性测试未在 360 帧内观察到 WorkApproach -> WorkSettle 边界");
     }
 
     private static void VerifyLegPolicyBlendsFromStableSilhouette()
@@ -137,6 +216,28 @@ internal static class MaotaiLocomotionVisualBlendV2SmokeTests
             false,
             108.0)
             ?? throw new InvalidOperationException("无法创建 locomotion blend MotionInput");
+    }
+
+    private static object CreateWorkingInput()
+    {
+        var baseStateType   = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
+        var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
+        var inputType       = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionInput");
+
+        return Activator.CreateInstance(
+            inputType,
+            Enum.Parse(baseStateType, "Working"),
+            0.0,
+            0.0,
+            false,
+            Enum.Parse(interactionType, "None"),
+            20.0,
+            140.0,
+            108.0,
+            false,
+            false,
+            108.0)
+            ?? throw new InvalidOperationException("无法创建 Working locomotion visual MotionInput");
     }
 
     private static double ReadDouble(object value, string propertyName) =>
