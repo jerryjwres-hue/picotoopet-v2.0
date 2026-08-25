@@ -61,6 +61,26 @@ def _validate_unique_paths(entries: list[dict[str, object]], *, source_label: st
     return indexed
 
 
+def _validate_minimum_local_entry_spans(entries: list[dict[str, object]]) -> None:
+    ordered = sorted(entries, key=lambda entry: int(entry["local_header_offset"]))
+    for current, following in zip(ordered, ordered[1:]):
+        current_name = str(current["path"])
+        current_offset = int(current["local_header_offset"])
+        compressed_size = int(current["compressed_size"])
+        following_offset = int(following["local_header_offset"])
+
+        if current_offset < 0 or compressed_size < 0 or following_offset < 0:
+            raise ValueError("negative Core ZIP entry offset or size")
+
+        minimum_end = current_offset + 30 + len(current_name.encode("utf-8")) + compressed_size
+        if following_offset < minimum_end:
+            raise ValueError(
+                "overlapping Core ZIP entry spans: "
+                f"{current_name} minimum_end={minimum_end} "
+                f"next={following['path']} next_offset={following_offset}"
+            )                                                                               # Local extra fields can only increase the real end, so this lower-bound overlap is impossible.
+
+
 def _load_authoritative_inventory(evidence_dir: Path) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
     inventory_path = evidence_dir / INVENTORY_FILENAME
     if not inventory_path.is_file():
@@ -79,6 +99,7 @@ def _load_authoritative_inventory(evidence_dir: Path) -> tuple[dict[str, object]
     if expected_count != len(entries) or expected_count < 1:
         raise ValueError(f"authoritative Core inventory count mismatch: expected={expected_count} actual={len(entries)}")
     indexed = _validate_unique_paths(entries, source_label="inventory")
+    _validate_minimum_local_entry_spans(entries)                                             # Reject physically impossible central-directory metadata before payload recovery.
     return inventory, indexed
 
 
