@@ -59,6 +59,7 @@ internal sealed class MaotaiMotionEngine
     private double _elapsedSeconds;
     private double _stateElapsedSeconds;
     private double _typingPhaseRadians;
+    private double _lastYawnProgress;
 
     public MaotaiMotionEngine(int seed, double initialX)
     {
@@ -243,6 +244,13 @@ internal sealed class MaotaiMotionEngine
         var facingSign      = _locomotion.FacingSign;
         var blend           = SmoothStep(_graph.TransitionProgress);
         var yawnProgress    = GetYawnProgress();
+        if (_graph.ActiveState == MaotaiMotionState.Yawn)
+        {
+            // Dynamic handoff source : retain the exact rendered yawn phase so an external state change
+            // can leave the in-flight envelope from the pose the user actually saw on the previous frame.
+            _lastYawnProgress = yawnProgress;
+        }
+
         var mouthOpenAmount = _graph.ActiveState == MaotaiMotionState.Yawn
             ? Math.Sin(yawnProgress * Math.PI)
             : 0.0;
@@ -709,6 +717,22 @@ internal sealed class MaotaiMotionEngine
                     headBiasDeg += 3.0 * facingSign * residual;
                     earDrop     += 3.2 * residual;
                     earTension   = 2.0 * residual;
+                }
+                else if (_graph.PreviousState == MaotaiMotionState.Yawn)
+                {
+                    // Interrupted yawn exit : Yawn is a time-varying envelope, so preserve the exact
+                    // phase rendered on the previous frame rather than substituting any fixed endpoint.
+                    var phase = Math.Clamp(_lastYawnProgress, 0.0, 1.0);
+                    var envelope = Math.Sin(phase * Math.PI);
+                    var tiredResidual = (1.0 - phase) * (1.0 - phase);
+                    bodyWorldY += ((2.6 * tiredResidual) - (1.6 * envelope)) * residual;
+                    bodyScaleX += ((0.018 * tiredResidual) - (0.025 * envelope)) * residual;
+                    bodyScaleY += ((-0.045 * tiredResidual) + (0.070 * envelope)) * residual;
+                    headOffsetY += ((4.2 * tiredResidual) - (2.4 * envelope)) * residual;
+                    headBiasDeg += ((3.0 * facingSign * tiredResidual) -
+                        (4.0 * facingSign * envelope)) * residual;
+                    earDrop += ((3.2 * tiredResidual) + (1.4 * envelope)) * residual;
+                    earTension = 2.0 * tiredResidual * residual;
                 }
                 else
                 {
