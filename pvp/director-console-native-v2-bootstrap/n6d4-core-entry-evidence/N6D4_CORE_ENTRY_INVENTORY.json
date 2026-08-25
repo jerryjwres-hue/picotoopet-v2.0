@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "source_checkpoint": "N6D4",
+  "inventory_status": "partial",
+  "source_script": "PVP_DirectorConsole_Native_V2_0_N6D4_ALL_IN_ONE_2026-08-20.ps1",
+  "source_script_sha256_pin": "616b0732dbb3fa4160f1e980a776c86d184c3f58b31bcbc8879734f6abcf0b99",
+  "source_archive_sha256_pin": "ea291ce62444c7c327b8e1f19a8db22b83e0b3c75e3684d0af32953ebc713ca1",
+  "core_prefix": "payload/producer/extensions/director_console_native_v2/",
+  "core_entry_count": null,
+  "verified_entry_count": 11,
+  "notes": [
+    "PARTIAL means this file is an audit ledger only and MUST NOT be accepted by the Core materializer.",
+    "Entries below were decoded from N6D4 embedded-ZIP central-directory records; no source file content was guessed or rewritten.",
+    "Promote inventory_status to complete only after the complete frozen Core path set has been enumerated and independently checked."
+  ],
+  "entries": [
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/bindings/README.md",
+      "compression_method": 8,
+      "crc32": "398b32c0",
+      "compressed_size": 287,
+      "uncompressed_size": 442,
+      "local_header_offset": 71611
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/__init__.py",
+      "compression_method": 8,
+      "crc32": "d23434e4",
+      "compressed_size": 36,
+      "uncompressed_size": 34,
+      "local_header_offset": 72001
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/bootstrap.py",
+      "compression_method": 8,
+      "crc32": "c294c49e",
+      "compressed_size": 663,
+      "uncompressed_size": 1489,
+      "local_header_offset": 72160
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/bootstrap_cli.py",
+      "compression_method": 8,
+      "crc32": "a3288d2c",
+      "compressed_size": 257,
+      "uncompressed_size": 412,
+      "local_header_offset": 72947
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/canary_attempts.py",
+      "compression_method": 8,
+      "crc32": "b485b50e",
+      "compressed_size": 1788,
+      "uncompressed_size": 6516,
+      "local_header_offset": 73332
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/method_approval.py",
+      "compression_method": 8,
+      "crc32": "2cd71c3d",
+      "compressed_size": 1469,
+      "uncompressed_size": 5242,
+      "local_header_offset": 84976
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/migration.py",
+      "compression_method": 8,
+      "crc32": "71d264e9",
+      "compressed_size": 2262,
+      "uncompressed_size": 6854,
+      "local_header_offset": 86575
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/mutations.py",
+      "compression_method": 8,
+      "crc32": "f5e45117",
+      "compressed_size": 1707,
+      "uncompressed_size": 6732,
+      "local_header_offset": 88961
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/proposals.py",
+      "compression_method": 8,
+      "crc32": "3474eb6d",
+      "compressed_size": 2340,
+      "uncompressed_size": 8094,
+      "local_header_offset": 90792
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/runtime_capabilities.py",
+      "compression_method": 8,
+      "crc32": "65abbbf3",
+      "compressed_size": 2118,
+      "uncompressed_size": 6276,
+      "local_header_offset": 93256
+    },
+    {
+      "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/server_v2.py",
+      "compression_method": 8,
+      "crc32": "58cb88aa",
+      "compressed_size": 3476,
+      "uncompressed_size": 16619,
+      "local_header_offset": 95509
+    }
+  ]
+}
