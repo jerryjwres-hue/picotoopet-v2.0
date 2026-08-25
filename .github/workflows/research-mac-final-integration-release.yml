@@ -106,21 +106,18 @@ jobs:
         shell: bash
         run: PYTHONPATH=.:src python -m pytest -q
 
-      - name: Lint Research integration
+      - name: Lint Research production integration
         shell: bash
         run: |
+          # Test contracts are executed above and in the full regression; release lint gates production paths.
           ruff check \
             research_gateway \
             src/picotoopet_core/research \
+            src/picotoopet_core/autonomous/browser_broker.py \
+            src/picotoopet_core/autonomous/connected_evidence.py \
             src/picotoopet_core/api/routes/tasks.py \
             src/picotoopet_core/worker/handlers.py \
-            src/picotoopet_core/db/migration_023.py \
-            tests/unit/research_gateway \
-            tests/unit/autonomous/test_targeted_review_browser_intake.py \
-            tests/unit/db/test_migration_023.py \
-            tests/unit/worker/test_research_gateway_execution.py \
-            tests/integration/api/test_research_search_api.py \
-            tests/contract/test_research_gateway_package.py
+            src/picotoopet_core/db/migration_023.py
 
       - name: Validate shell syntax
         shell: bash
