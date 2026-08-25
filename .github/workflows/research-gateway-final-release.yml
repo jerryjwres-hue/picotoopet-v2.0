@@ -10,7 +10,13 @@ on:
       - "research_gateway/**"
       - "deploy/macos/research_gateway/**"
       - "scripts/mac/research_gateway/**"
+      - "src/picotoopet_core/autonomous/browser_broker.py"
+      - "src/picotoopet_core/autonomous/connected_evidence.py"
+      - "src/picotoopet_core/db/database.py"
+      - "src/picotoopet_core/db/migration_023.py"
       - "tests/unit/research_gateway/**"
+      - "tests/unit/autonomous/test_targeted_review_browser_intake.py"
+      - "tests/unit/db/test_migration_023.py"
       - "tests/contract/test_research_gateway_package.py"
   workflow_dispatch:
 
@@ -51,17 +57,25 @@ jobs:
           python --version
           test "$(uname -m)" = "arm64"
 
-      - name: Run Research Gateway contracts
+      - name: Run Research Gateway and targeted review contracts
         shell: bash
         run: |
           PYTHONPATH=.:src python -m pytest -q \
             tests/unit/research_gateway \
+            tests/unit/autonomous/test_targeted_review_browser_intake.py \
+            tests/unit/db/test_migration_023.py \
             tests/contract/test_research_gateway_package.py
 
       - name: Lint Research Gateway Python
         shell: bash
         run: |
-          ruff check research_gateway tests/unit/research_gateway tests/contract/test_research_gateway_package.py
+          ruff check \
+            research_gateway \
+            src/picotoopet_core/db/migration_023.py \
+            tests/unit/research_gateway \
+            tests/unit/autonomous/test_targeted_review_browser_intake.py \
+            tests/unit/db/test_migration_023.py \
+            tests/contract/test_research_gateway_package.py
 
       - name: Verify repository governance and Python compilation
         shell: bash
@@ -71,7 +85,7 @@ jobs:
           else
             echo "ALIGNMENT_VERIFIER=NOT_PRESENT_PREEXISTING_GOVERNANCE_DRIFT"
           fi
-          python -m compileall -q scripts research_gateway
+          python -m compileall -q scripts research_gateway src/picotoopet_core
 
       - name: Run full Python regression
         shell: bash
