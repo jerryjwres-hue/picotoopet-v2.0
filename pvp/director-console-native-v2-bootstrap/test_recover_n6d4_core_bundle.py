@@ -9,7 +9,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from recover_n6d4_core_bundle import recover_core_bundle
+from recover_n6d4_core_bundle import recover_core_archive, recover_core_bundle
 
 
 CORE_PREFIX = "payload/producer/extensions/director_console_native_v2/"  # Authoritative Director Core subtree.
@@ -74,6 +74,39 @@ class RecoverN6D4CoreBundleTests(unittest.TestCase):
             with zipfile.ZipFile(io.BytesIO(rebuilt)) as bundle:
                 self.assertEqual(bundle.testzip(), None)
                 self.assertEqual(sorted(bundle.namelist()), paths)
+
+    def test_recovers_from_exact_embedded_archive_sha_without_script_reencoding(self) -> None:
+        script, archive_sha = self._build_all_in_one()
+        payload = script.split("$ArchiveBase64 = @'\n", 1)[1].split("'@\n", 1)[0]       # Reproduce exact embedded ZIP bytes, not PowerShell text bytes.
+        archive_bytes = base64.b64decode("".join(payload.split()), validate=True)      # Archive SHA remains the authoritative payload identity.
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = recover_core_archive(
+                archive_bytes=archive_bytes,
+                output_dir=Path(temp_dir),
+                expected_archive_sha256=archive_sha,
+                source_script_sha256_pin="a" * 64,
+            )
+
+            self.assertEqual(result["source_mode"], "embedded_archive_sha256")
+            self.assertEqual(result["source_archive_sha256"], archive_sha)
+            self.assertEqual(result["source_script_sha256_pin"], "a" * 64)
+            self.assertFalse(result["source_script_sha256_verified"])
+            self.assertEqual(result["core_file_count"], 2)
+
+    def test_archive_mode_rejects_wrong_embedded_archive_sha(self) -> None:
+        script, _ = self._build_all_in_one()
+        payload = script.split("$ArchiveBase64 = @'\n", 1)[1].split("'@\n", 1)[0]       # Keep the synthetic ZIP valid while deliberately supplying the wrong pin.
+        archive_bytes = base64.b64decode("".join(payload.split()), validate=True)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(ValueError, "archive SHA-256 mismatch"):
+                recover_core_archive(
+                    archive_bytes=archive_bytes,
+                    output_dir=Path(temp_dir),
+                    expected_archive_sha256="f" * 64,
+                    source_script_sha256_pin="a" * 64,
+                )
 
     def test_rejects_script_hash_mismatch_before_archive_processing(self) -> None:
         script, archive_sha = self._build_all_in_one()
