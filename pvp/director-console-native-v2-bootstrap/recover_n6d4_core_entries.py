@@ -155,6 +155,15 @@ def recover_core_entries(*, evidence_dir: Path, output_dir: Path, chunk_chars: i
     if expected_count != len(entries) or expected_count < 1:
         raise ValueError(f"Core entry evidence is incomplete: expected={expected_count} actual={len(entries)}")
 
+    missing_evidence = [
+        str(entry.get("evidence_file", "")) or "<empty>"
+        for entry in entries
+        if not str(entry.get("evidence_file", ""))
+        or not (evidence_dir / str(entry.get("evidence_file", ""))).is_file()
+    ]                                                                                       # Report every known recovery gap before decoding any payload.
+    if missing_evidence:
+        raise ValueError(f"entry evidence is missing: {', '.join(missing_evidence)}")
+
     seen: set[str] = set()
     files: list[tuple[str, bytes, str]] = []
     for entry in entries:
