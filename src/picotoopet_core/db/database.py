@@ -23,6 +23,7 @@ from .migration_019 import MIGRATION_019
 from .migration_020 import MIGRATION_020
 from .migration_021 import MIGRATION_021
 from .migration_022 import MIGRATION_022
+from .migration_023 import MIGRATION_023
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -333,7 +334,18 @@ class Database:
                     (22, datetime.now(UTC).isoformat()),
                 )
 
-            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 22。 ──
+            migration_023_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 23"
+            ).fetchone()
+            if migration_023_exists is None:
+                # ── Each Browser Bridge scan stays auditable; canonical evidence remains globally deduped. ──
+                connection.executescript(MIGRATION_023)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (23, datetime.now(UTC).isoformat()),
+                )
+
+            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 23。 ──
             connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
