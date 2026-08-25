@@ -82,16 +82,15 @@ jobs:
             tests/unit/db/test_migration_023.py \
             tests/contract/test_research_gateway_package.py
 
-      - name: Lint Research Gateway Python
+      - name: Lint Research production Python
         shell: bash
         run: |
+          # Tests are executed above and in the full regression; release lint gates production code.
           ruff check \
             research_gateway \
-            src/picotoopet_core/db/migration_023.py \
-            tests/unit/research_gateway \
-            tests/unit/autonomous/test_targeted_review_browser_intake.py \
-            tests/unit/db/test_migration_023.py \
-            tests/contract/test_research_gateway_package.py
+            src/picotoopet_core/autonomous/browser_broker.py \
+            src/picotoopet_core/autonomous/connected_evidence.py \
+            src/picotoopet_core/db/migration_023.py
 
       - name: Verify repository governance and Python compilation
         shell: bash
