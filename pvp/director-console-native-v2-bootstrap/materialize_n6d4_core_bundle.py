@@ -19,7 +19,8 @@ def _sha256(data: bytes) -> str:
 
 def _validate_member(name: str) -> PurePosixPath:
     path = PurePosixPath(name.replace("\\", "/"))                                  # Normalize alternate ZIP separators before safety checks.
-    if path.is_absolute() or ".." in path.parts:
+    drive_qualified = bool(path.parts and len(path.parts[0]) == 2 and path.parts[0][0].isalpha() and path.parts[0][1] == ":")
+    if path.is_absolute() or ".." in path.parts or drive_qualified:
         raise ValueError(f"unsafe Core bundle path: {name}")
     normalized = path.as_posix()
     if not normalized.startswith(CORE_PREFIX):
