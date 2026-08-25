@@ -72,31 +72,18 @@ def _build_core_bundle(source_archive: bytes) -> tuple[bytes, list[dict[str, obj
     return bundle_buffer.getvalue(), manifest_files
 
 
-def recover_core_bundle(
+def _emit_core_bundle(
     *,
+    source_archive: bytes,
     output_dir: Path,
-    script_bytes: bytes | None = None,
-    script_text: str | None = None,
-    expected_script_sha256: str,
+    source_mode: str,
+    source_script_sha256_pin: str,
+    source_script_sha256_verified: bool,
+    source_script_sha256: str | None,
     expected_archive_sha256: str,
-    chunk_chars: int = DEFAULT_CHUNK_CHARS,
+    chunk_chars: int,
 ) -> dict[str, object]:
-    if (script_bytes is None) == (script_text is None):
-        raise ValueError("provide exactly one of script_bytes or script_text")
-    raw_script = script_bytes if script_bytes is not None else script_text.encode("utf-8")  # Hash exact source bytes whenever available.
-    actual_script_sha = _sha256_bytes(raw_script)                                            # Sidecar comparison happens before decoding.
-
-    if actual_script_sha != expected_script_sha256.lower():
-        raise ValueError(f"script SHA-256 mismatch: expected={expected_script_sha256.lower()} actual={actual_script_sha}")
-
-    if script_text is None:
-        try:
-            script_text = raw_script.decode("utf-8-sig")                                    # Decode only after exact raw-byte SHA passes.
-        except UnicodeDecodeError as exc:
-            raise ValueError("N6D4 script is not valid UTF-8") from exc
-
-    source_archive = _extract_archive_bytes(script_text)
-    actual_archive_sha = _sha256_bytes(source_archive)
+    actual_archive_sha = _sha256_bytes(source_archive)                                                # Archive identity is always verified before ZIP parsing.
     if actual_archive_sha != expected_archive_sha256.lower():
         raise ValueError(f"archive SHA-256 mismatch: expected={expected_archive_sha256.lower()} actual={actual_archive_sha}")
 
@@ -113,39 +100,121 @@ def recover_core_bundle(
     for index, chunk in enumerate(chunks):
         (output_dir / f"core.part{index:02d}.b64").write_text(chunk + "\n", encoding="ascii")
 
-    manifest = {
-        "schema_version": "1.0",
+    manifest: dict[str, object] = {
+        "schema_version": "1.1",
         "source_checkpoint": "N6D4",
-        "source_script_sha256": actual_script_sha,
+        "source_mode": source_mode,
+        "source_script_sha256_pin": source_script_sha256_pin.lower(),
+        "source_script_sha256_verified": source_script_sha256_verified,
         "source_archive_sha256": actual_archive_sha,
+        "source_archive_sha256_verified": True,
         "core_prefix": CORE_PREFIX,
         "core_bundle_sha256": bundle_sha,
         "core_file_count": len(manifest_files),
         "files": manifest_files,
     }
+    if source_script_sha256 is not None:
+        manifest["source_script_sha256"] = source_script_sha256.lower()                               # Preserve legacy field when raw script bytes were actually verified.
+
     (output_dir / "CORE_MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (output_dir / "CORE_BUNDLE.sha256").write_text(f"{bundle_sha}  PVP_DirectorConsole_Core_N6D4.zip\n", encoding="ascii")
     (output_dir / "SOURCE_PROVENANCE.txt").write_text(
-        f"N6D4_SCRIPT_SHA256={actual_script_sha}\nN6D4_ARCHIVE_SHA256={actual_archive_sha}\n",
+        "\n".join(
+            [
+                f"SOURCE_MODE={source_mode}",
+                f"N6D4_SCRIPT_SHA256_PIN={source_script_sha256_pin.lower()}",
+                f"N6D4_SCRIPT_SHA256_VERIFIED={'YES' if source_script_sha256_verified else 'NO'}",
+                f"N6D4_ARCHIVE_SHA256={actual_archive_sha}",
+                "N6D4_ARCHIVE_SHA256_VERIFIED=YES",
+                "",
+            ]
+        ),
         encoding="ascii",
     )
     return manifest
 
 
+def recover_core_archive(
+    *,
+    archive_bytes: bytes,
+    output_dir: Path,
+    expected_archive_sha256: str,
+    source_script_sha256_pin: str = N6D4_SCRIPT_SHA256,
+    chunk_chars: int = DEFAULT_CHUNK_CHARS,
+) -> dict[str, object]:
+    return _emit_core_bundle(
+        source_archive=archive_bytes,
+        output_dir=output_dir,
+        source_mode="embedded_archive_sha256",
+        source_script_sha256_pin=source_script_sha256_pin,
+        source_script_sha256_verified=False,                                                           # Archive mode proves payload identity, not original PowerShell byte layout.
+        source_script_sha256=None,
+        expected_archive_sha256=expected_archive_sha256,
+        chunk_chars=chunk_chars,
+    )
+
+
+def recover_core_bundle(
+    *,
+    output_dir: Path,
+    script_bytes: bytes | None = None,
+    script_text: str | None = None,
+    expected_script_sha256: str,
+    expected_archive_sha256: str,
+    chunk_chars: int = DEFAULT_CHUNK_CHARS,
+) -> dict[str, object]:
+    if (script_bytes is None) == (script_text is None):
+        raise ValueError("provide exactly one of script_bytes or script_text")
+    raw_script = script_bytes if script_bytes is not None else script_text.encode("utf-8")              # Hash exact source bytes whenever available.
+    actual_script_sha = _sha256_bytes(raw_script)                                                        # Sidecar comparison happens before decoding.
+
+    if actual_script_sha != expected_script_sha256.lower():
+        raise ValueError(f"script SHA-256 mismatch: expected={expected_script_sha256.lower()} actual={actual_script_sha}")
+
+    if script_text is None:
+        try:
+            script_text = raw_script.decode("utf-8-sig")                                               # Decode only after exact raw-byte SHA passes.
+        except UnicodeDecodeError as exc:
+            raise ValueError("N6D4 script is not valid UTF-8") from exc
+
+    source_archive = _extract_archive_bytes(script_text)
+    return _emit_core_bundle(
+        source_archive=source_archive,
+        output_dir=output_dir,
+        source_mode="all_in_one_script_sha256",
+        source_script_sha256_pin=expected_script_sha256,
+        source_script_sha256_verified=True,
+        source_script_sha256=actual_script_sha,
+        expected_archive_sha256=expected_archive_sha256,
+        chunk_chars=chunk_chars,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Recover the frozen N6D4 Director Core subtree into a deterministic GitHub bundle.")
-    parser.add_argument("--all-in-one", required=True, help="Path to PVP_DirectorConsole_Native_V2_0_N6D4_ALL_IN_ONE_2026-08-20.ps1")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--all-in-one", help="Path to PVP_DirectorConsole_Native_V2_0_N6D4_ALL_IN_ONE_2026-08-20.ps1")
+    source.add_argument("--archive-zip", help="Path to the byte-exact embedded N6D4 ZIP; its pinned SHA-256 is mandatory")
     parser.add_argument("--output-dir", required=True, help="Directory that will receive CORE_BUNDLE metadata and core.part*.b64")
     args = parser.parse_args()
 
-    script_path = Path(args.all_in_one)
-    script_bytes = script_path.read_bytes()                                                  # Preserve BOM and CRLF for authoritative SHA verification.
-    manifest = recover_core_bundle(
-        script_bytes=script_bytes,
-        output_dir=Path(args.output_dir),
-        expected_script_sha256=N6D4_SCRIPT_SHA256,
-        expected_archive_sha256=N6D4_ARCHIVE_SHA256,
-    )
+    if args.all_in_one:
+        script_bytes = Path(args.all_in_one).read_bytes()                                                # Preserve BOM and CRLF for authoritative script SHA verification.
+        manifest = recover_core_bundle(
+            script_bytes=script_bytes,
+            output_dir=Path(args.output_dir),
+            expected_script_sha256=N6D4_SCRIPT_SHA256,
+            expected_archive_sha256=N6D4_ARCHIVE_SHA256,
+        )
+    else:
+        archive_bytes = Path(args.archive_zip).read_bytes()                                              # Archive mode accepts only bytes matching the authoritative embedded ZIP pin.
+        manifest = recover_core_archive(
+            archive_bytes=archive_bytes,
+            output_dir=Path(args.output_dir),
+            expected_archive_sha256=N6D4_ARCHIVE_SHA256,
+            source_script_sha256_pin=N6D4_SCRIPT_SHA256,
+        )
+
     print(json.dumps({"status": "pass", **manifest}, ensure_ascii=False))
     return 0
 
