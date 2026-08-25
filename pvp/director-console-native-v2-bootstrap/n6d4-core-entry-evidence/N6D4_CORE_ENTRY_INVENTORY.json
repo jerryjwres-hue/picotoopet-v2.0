@@ -17,7 +17,7 @@
     {
       "path": "payload/producer/extensions/director_console_native_v2/bindings/README.md",
       "compression_method": 8,
-      "crc32": "398b32c0",
+      "crc32": "398bc2c0",
       "compressed_size": 287,
       "uncompressed_size": 442,
       "local_header_offset": 71611
@@ -25,7 +25,7 @@
     {
       "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/__init__.py",
       "compression_method": 8,
-      "crc32": "d23434e4",
+      "crc32": "d27434e4",
       "compressed_size": 36,
       "uncompressed_size": 34,
       "local_header_offset": 72001
@@ -81,7 +81,7 @@
     {
       "path": "payload/producer/extensions/director_console_native_v2/src/pvp_director_native_v2/proposals.py",
       "compression_method": 8,
-      "crc32": "3474eb6d",
+      "crc32": "3474ed6d",
       "compressed_size": 2340,
       "uncompressed_size": 8094,
       "local_header_offset": 90792
