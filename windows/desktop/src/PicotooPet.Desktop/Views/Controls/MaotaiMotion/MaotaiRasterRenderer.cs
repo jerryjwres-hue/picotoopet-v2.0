@@ -356,7 +356,7 @@ internal sealed class MaotaiRasterRenderer
         ApplyBone(_visuals.TailMid, frame.TailMid);
         ApplyBone(_visuals.TailTip, frame.TailTip);
 
-        ApplyWorkProps(frame.MotionState);
+        ApplyWorkProps(frame);
         ApplyFace(frame);
     }
 
@@ -529,17 +529,12 @@ internal sealed class MaotaiRasterRenderer
             pose.ScaleX,
             pose.ScaleY);
 
-    private void ApplyWorkProps(MaotaiMotionState state)
+    private void ApplyWorkProps(in MaotaiPoseFrame frame)
     {
-        var visible = state is
-            MaotaiMotionState.WorkApproach or
-            MaotaiMotionState.WorkSettle or
-            MaotaiMotionState.WorkTyping or
-            MaotaiMotionState.WorkTired or
-            MaotaiMotionState.Yawn or
-            MaotaiMotionState.WorkAnnoyed or
-            MaotaiMotionState.Recover;
-        var opacity = visible ? 1.0 : 0.0;
+        var opacity = MaotaiWorkPropOpacity.Resolve(
+            frame.MotionState,
+            frame.PreviousMotionState,
+            frame.MotionTransitionBlend);
         _visuals.Laptop.Opacity = opacity;
         _visuals.Drink.Opacity  = opacity;
         _headphoneBand.Opacity  = opacity;
