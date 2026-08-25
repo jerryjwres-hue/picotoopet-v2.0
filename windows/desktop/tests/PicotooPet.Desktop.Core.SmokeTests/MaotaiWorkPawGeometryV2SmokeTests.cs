@@ -16,6 +16,7 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
         VerifyWorkExitContinuity();
         VerifyInterruptedTiredExitContinuity();
         VerifyInterruptedYawnExitContinuity();
+        VerifyInterruptedAnnoyedExitContinuity();
         VerifyInterruptedRecoverExitContinuity();
     }
 
@@ -196,6 +197,54 @@ internal static class MaotaiWorkPawGeometryV2SmokeTests
             $"Yawn→Recover 身体横向缩放不能节点硬切；delta={bodyScaleXDelta:F4}");
         Assert(bodyScaleYDelta < 0.012,
             $"Yawn→Recover 身体纵向缩放不能节点硬切；delta={bodyScaleYDelta:F4}");
+    }
+
+    /// <summary>WorkAnnoyed 尚在进入阶段时若真实 Working 结束，Recover 必须从用户刚看到的半程烦躁姿态连续离开。</summary>
+    private static void VerifyInterruptedAnnoyedExitContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update     = RequireMethod(engineType, "Update");
+        var engine     = Activator.CreateInstance(engineType, 83, 108.0)
+            ?? throw new InvalidOperationException("无法创建烦躁打断连续性 Motion Engine");
+
+        object? annoyedPose = null;
+        for (var frame = 0; frame < 1800; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working")])
+                ?? throw new InvalidOperationException("烦躁打断预热没有输出 PoseFrame");
+            var state = ReadProperty(pose, "MotionState")?.ToString();
+            var previousState = ReadProperty(pose, "PreviousMotionState")?.ToString();
+            var transitionBlend = ReadDouble(pose, "MotionTransitionBlend");
+            if (string.Equals(state, "WorkAnnoyed", StringComparison.Ordinal) &&
+                string.Equals(previousState, "WorkTyping", StringComparison.Ordinal) &&
+                transitionBlend >= 0.12 && transitionBlend <= 0.18)
+            {
+                annoyedPose = pose;
+                break;
+            }
+        }
+
+        Assert(annoyedPose is not null, "烦躁打断连续性测试未捕获到早段 WorkTyping→WorkAnnoyed");
+
+        var recoverPose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Resting")])
+            ?? throw new InvalidOperationException("烦躁打断退出首帧没有输出 PoseFrame");
+        var recoverState = ReadProperty(recoverPose, "MotionState")?.ToString();
+        Assert(string.Equals(recoverState, "Recover", StringComparison.Ordinal),
+            $"WorkAnnoyed 被 Resting 打断后应立即进入安全 Recover，而不是继续陈旧烦躁；actual={recoverState}");
+
+        var bodyYDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "Y") - ReadPoseDouble(annoyedPose!, "Body", "Y"));
+        var bodyScaleXDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "ScaleX") - ReadPoseDouble(annoyedPose!, "Body", "ScaleX"));
+        var bodyScaleYDelta = Math.Abs(
+            ReadPoseDouble(recoverPose, "Body", "ScaleY") - ReadPoseDouble(annoyedPose!, "Body", "ScaleY"));
+
+        Assert(bodyYDelta < 0.75,
+            $"mid WorkAnnoyed→Recover 身体高度不能把半程烦躁瞬间重启到完整烦躁端点；delta={bodyYDelta:F3}");
+        Assert(bodyScaleXDelta < 0.012,
+            $"mid WorkAnnoyed→Recover 身体横向缩放不能二次抢占硬切；delta={bodyScaleXDelta:F4}");
+        Assert(bodyScaleYDelta < 0.012,
+            $"mid WorkAnnoyed→Recover 身体纵向缩放不能二次抢占硬切；delta={bodyScaleYDelta:F4}");
     }
 
     /// <summary>Recover 自身尚未结束时若真实 Working 结束，先连续完成当前 neutralizing hop，再进入 Idle。</summary>
