@@ -16,7 +16,15 @@ crawl_browser="$crawl_root/ms-playwright"
 crawl_data="$crawl_root/data"
 skip_crawl4ai="${PICOTOOPET_SKIP_CRAWL4AI_INSTALL:-0}"
 
-for file in gateway.py VERSION research_gateway/__init__.py research_gateway/crawler_adapter.py crawl4ai_runner.py CRAWL4AI_ADAPTER_VERSION; do
+for file in \
+  gateway.py \
+  VERSION \
+  research_gateway/__init__.py \
+  research_gateway/gateway.py \
+  research_gateway/VERSION \
+  research_gateway/crawler_adapter.py \
+  crawl4ai_runner.py \
+  CRAWL4AI_ADAPTER_VERSION; do
   if [[ ! -f "$payload_dir/$file" ]]; then
     echo "安装包损坏：缺少 payload/$file。" >&2
     exit 1
@@ -120,18 +128,22 @@ EOF
 fi
 
 mkdir -p "$runtime_dir/research_gateway" "$bin_dir" "$state_dir"
+
+# 顶层副本保留给旧诊断脚本；正式启动使用完整 Python package，避免 __init__ 缺少 gateway 模块。
 install -m 0644 "$payload_dir/gateway.py" "$runtime_dir/gateway.py"
 install -m 0644 "$payload_dir/VERSION" "$runtime_dir/VERSION"
 install -m 0644 "$payload_dir/research_gateway/__init__.py" "$runtime_dir/research_gateway/__init__.py"
+install -m 0644 "$payload_dir/research_gateway/gateway.py" "$runtime_dir/research_gateway/gateway.py"
+install -m 0644 "$payload_dir/research_gateway/VERSION" "$runtime_dir/research_gateway/VERSION"
 install -m 0644 "$payload_dir/research_gateway/crawler_adapter.py" "$runtime_dir/research_gateway/crawler_adapter.py"
 
-# 固定到安装时验证过的兼容解释器，避免 macOS /usr/bin/python3 版本较旧导致启动后再失败。
+# 固定到安装时验证过的兼容解释器，并从 canonical package entrypoint 启动。
 cat > "$bin_dir/picotoopet-research-gateway" <<EOF
 #!/bin/bash
 set -euo pipefail
 export PYTHONPATH="$runtime_dir\${PYTHONPATH:+:\$PYTHONPATH}"
 export PICOTOOPET_CRAWL4AI_ROOT="$crawl_root"
-exec "$gateway_python" "$runtime_dir/gateway.py" "\$@"
+exec "$gateway_python" -m research_gateway.gateway "\$@"
 EOF
 chmod 755 "$bin_dir/picotoopet-research-gateway"
 
