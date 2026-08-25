@@ -58,6 +58,16 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Materialize pinned N6D4 Director Core
+        shell: powershell
+        run: |
+          # Core boundary    : reconstruct only the frozen Director Core from independently pinned bundle metadata.
+          # Fail-closed rule : missing, partial or hash-invalid Core input stops before any N6E3 backend mutation is applied.
+          python .\pvp\director-console-native-v2-bootstrap\materialize_n6d4_core_bundle.py `
+            --bootstrap-dir .\pvp\director-console-native-v2-bootstrap `
+            --target-root .\pvp\director-console-native-v2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Apply N6E3 Native director-experience patch
         shell: powershell
         run: |
