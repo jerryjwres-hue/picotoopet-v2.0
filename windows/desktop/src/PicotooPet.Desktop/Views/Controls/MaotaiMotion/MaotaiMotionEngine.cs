@@ -365,10 +365,20 @@ internal sealed class MaotaiMotionEngine
             shoulderLocalY: 12.0,
             frontLeg: false);
 
-        if (IsWorkingPawState(_graph.ActiveState))
+        var workPawExitTransition =
+            _graph.ActiveState == MaotaiMotionState.Idle &&
+            _graph.IsTransitioning &&
+            IsWorkingPawState(_graph.PreviousState);
+        if (IsWorkingPawState(_graph.ActiveState) || workPawExitTransition)
         {
-            var cadenceHz = GetTypingCadenceHz(_graph.ActiveState, blend);
-            var amplitude = GetTypingAmplitude(_graph.ActiveState, blend);
+            var workPawState = workPawExitTransition
+                ? _graph.PreviousState
+                : _graph.ActiveState;
+            var workPawBlend = workPawExitTransition
+                ? 1.0
+                : blend;
+            var cadenceHz = GetTypingCadenceHz(workPawState, workPawBlend);
+            var amplitude = GetTypingAmplitude(workPawState, workPawBlend);
             if (_graph.ActiveState == MaotaiMotionState.Yawn)
             {
                 cadenceHz = Lerp(1.55, 0.40, mouthOpenAmount);
@@ -413,6 +423,13 @@ internal sealed class MaotaiMotionEngine
             {
                 frontLeft  = BlendLegPose(frontLeft, workLeft, blend);
                 frontRight = BlendLegPose(frontRight, workRight, blend);
+            }
+            else if (workPawExitTransition)
+            {
+                // Work exit handoff : keep the last keyboard IK as the source, then release both paws
+                // toward standing IK over the graph transition instead of snapping on the first Idle frame.
+                frontLeft  = BlendLegPose(workLeft, frontLeft, blend);
+                frontRight = BlendLegPose(workRight, frontRight, blend);
             }
             else
             {
@@ -535,6 +552,18 @@ internal sealed class MaotaiMotionEngine
     {
         switch (_graph.ActiveState)
         {
+            case MaotaiMotionState.Idle:
+                if (_graph.PreviousState == MaotaiMotionState.WorkTyping &&
+                    _graph.IsTransitioning)
+                {
+                    // Work exit body  : preserve the stable typing endpoint, then release it toward
+                    // neutral Idle over the same graph envelope as the keyboard-paw handoff.
+                    var residual = 1.0 - blend;
+                    bodyWorldY += 2.0 * residual;
+                    bodyScaleY -= 0.015 * residual;
+                }
+                break;
+
             case MaotaiMotionState.JumpPrep:
                 bodyWorldY += 3.2 * blend;
                 bodyScaleX += 0.055 * blend;
