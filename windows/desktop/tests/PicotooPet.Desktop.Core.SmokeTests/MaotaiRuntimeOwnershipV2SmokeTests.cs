@@ -206,11 +206,13 @@ internal static class MaotaiRuntimeOwnershipV2SmokeTests
             boneType,
             [chestX, chestY, chestRotation, 1.0, 1.0])
             ?? throw new InvalidOperationException("无法创建 Chest MaotaiBonePose");
+        var stableState = Enum.Parse(motionStateType, motionState);
 
         RequireProperty(poseType, "Chest").SetValue(pose, chest);
-        RequireProperty(poseType, "MotionState").SetValue(
-            pose,
-            Enum.Parse(motionStateType, motionState));
+        RequireProperty(poseType, "MotionState").SetValue(pose, stableState);
+        // Synthetic renderer fixtures model a completed stable frame, not the first frame of a graph transition.
+        RequireProperty(poseType, "PreviousMotionState").SetValue(pose, stableState);
+        RequireProperty(poseType, "MotionTransitionBlend").SetValue(pose, 1.0);
         RequireProperty(poseType, "FacingSign").SetValue(pose, 1);
         return pose;
     }
