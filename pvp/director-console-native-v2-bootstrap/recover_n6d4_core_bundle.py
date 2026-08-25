@@ -32,8 +32,9 @@ def _extract_archive_bytes(script_text: str) -> bytes:
 
 
 def _validate_member_path(name: str) -> None:
-    path = PurePosixPath(name)
-    if path.is_absolute() or ".." in path.parts:
+    path = PurePosixPath(name.replace("\\", "/"))                                      # Normalize Windows ZIP separators before traversal checks.
+    drive_qualified = bool(path.parts and len(path.parts[0]) == 2 and path.parts[0][0].isalpha() and path.parts[0][1] == ":")
+    if path.is_absolute() or ".." in path.parts or drive_qualified:
         raise ValueError(f"unsafe ZIP member path: {name}")
 
 
