@@ -52,6 +52,7 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PICOTOOPET_CODEX_EXECUTABLE: "${{ github.workspace }}/tests/fixtures/codex/fake_codex_jsonl.py"
+      PICOTOOPET_RELEASE_SOURCE_COMMIT: "${{ github.event.pull_request.head.sha || github.sha }}"
 
     steps:
       - name: Check out final integration source
@@ -144,7 +145,7 @@ jobs:
           mkdir -p "$output"
           bash scripts/mac/phase23-worker/Build-MacWorkerSliceC.sh \
             --output-root "$output" \
-            --version-label "2.3.27.1-research-${{ github.run_number }}-${{ github.sha }}"
+            --version-label "2.3.27.1-research-${{ github.run_number }}-$PICOTOOPET_RELEASE_SOURCE_COMMIT"
           bash scripts/mac/phase23-worker/Test-MacWorkerSliceC.sh "$output"
           bash scripts/mac/phase23-worker/Test-MacWorkerSliceCFixture.sh "$output"
 
