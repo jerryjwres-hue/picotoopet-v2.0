@@ -8,9 +8,11 @@ output_root="${1:-$repo_root/artifacts/research-integration}"
 package_name="PicotooPet-Research-2.3.27.1-Mac-arm64"
 tarball="$output_root/$package_name.tar.gz"
 sha_file="$tarball.sha256.txt"
+report_file="$output_root/research-integrated-build-report.json"
 
 test -f "$tarball"
 test -f "$sha_file"
+test -f "$report_file"
 (
   cd "$output_root"
   shasum -a 256 -c "$(basename "$sha_file")"
@@ -26,14 +28,18 @@ trap cleanup EXIT
 tar -xzf "$tarball" -C "$fixture_root"
 package_root="$fixture_root/$package_name"
 
-python3 - "$package_root" <<'PY'
+python3 - "$package_root" "$report_file" <<'PY'
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
+report_path = Path(sys.argv[2]).resolve()
 manifest = json.loads((root / "release-manifest.json").read_text(encoding="utf-8"))
+report = json.loads(report_path.read_text(encoding="utf-8"))
+
 assert manifest["release_version"] == "2.3.27.1"
 assert manifest["product_version"] == "2.3.27.1"
 assert manifest["architecture"] == "arm64"
@@ -45,6 +51,18 @@ assert manifest["external_research_tools_bundled"] is False
 assert manifest["browser_cookies_included"] is False
 assert manifest["xiaoyuzhou_enabled"] is False
 assert manifest["direct_windows_task_types"] == ["research.search"]
+
+# Release 审计必须同时能追到触发源码提交和 Runner 实际构建提交。
+for key in ("commit", "source_commit", "build_commit"):
+    value = manifest[key]
+    assert len(value) == 40 and all(char in "0123456789abcdef" for char in value), (key, value)
+assert manifest["commit"] == manifest["source_commit"]
+assert report["commit"] == manifest["source_commit"]
+assert report["source_commit"] == manifest["source_commit"]
+assert report["build_commit"] == manifest["build_commit"]
+expected_source_commit = os.environ.get("PICOTOOPET_RELEASE_SOURCE_COMMIT")
+if expected_source_commit:
+    assert manifest["source_commit"] == expected_source_commit.lower()
 
 required = {
     "INSTALL_PICOTOOPET_RESEARCH_2_3_27_1.command",
