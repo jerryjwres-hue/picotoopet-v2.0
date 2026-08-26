@@ -15,6 +15,34 @@ crawl_bin="$crawl_root/bin"
 crawl_browser="$crawl_root/ms-playwright"
 crawl_data="$crawl_root/data"
 skip_crawl4ai="${PICOTOOPET_SKIP_CRAWL4AI_INSTALL:-0}"
+install_success=0
+gateway_touched=0
+install_root_existed=0
+backup_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-research-gateway-backup.XXXXXX")"
+
+if [[ -d "$install_root" ]]; then
+  install_root_existed=1
+  cp -a "$install_root" "$backup_root/install-root"
+fi
+
+cleanup_install() {
+  local code=$?
+  trap - EXIT
+  if [[ "$install_success" != "1" && "$gateway_touched" == "1" ]]; then
+    # Gateway 属于本安装包：失败时恢复安装前快照，避免 health 失败留下半升级状态。
+    rm -rf "$install_root"
+    if [[ "$install_root_existed" == "1" && -d "$backup_root/install-root" ]]; then
+      mkdir -p "$(dirname "$install_root")"
+      cp -a "$backup_root/install-root" "$install_root"
+    fi
+  fi
+  rm -rf "$backup_root"
+  if [[ "$install_success" != "1" && "$code" -eq 0 ]]; then
+    code=1
+  fi
+  exit "$code"
+}
+trap cleanup_install EXIT
 
 for file in \
   gateway.py \
@@ -127,6 +155,7 @@ EOF
   gateway_python="$crawl_venv/bin/python"
 fi
 
+gateway_touched=1
 mkdir -p "$runtime_dir/research_gateway" "$bin_dir" "$state_dir"
 
 # 顶层副本保留给旧诊断脚本；正式启动使用完整 Python package，避免 __init__ 缺少 gateway 模块。
@@ -188,6 +217,7 @@ cat > "$state_dir/bindings.json" <<EOF
 EOF
 
 "$bin_dir/picotoopet-research-gateway" --health
+install_success=1
 
 printf '\nPicotooPet Research Gateway 2.3.27.1 已更新：\n%s\n' "$bin_dir/picotoopet-research-gateway"
 printf 'Gateway 固定使用已验证解释器：%s\n' "$gateway_python"
