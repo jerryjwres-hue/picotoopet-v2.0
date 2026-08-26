@@ -407,6 +407,13 @@ internal sealed class MaotaiAnimationGraph
             return ReturnTowardIdle(current);
         }
 
+        if (requested == MaotaiMotionState.Look)
+        {
+            return IsWorkFamilyState(current)
+                ? ReturnTowardIdle(current)
+                : MaotaiMotionState.Look;
+        }
+
         if (requested is MaotaiMotionState.WorkTired or MaotaiMotionState.WorkAnnoyed)
         {
             return current == MaotaiMotionState.WorkTyping
