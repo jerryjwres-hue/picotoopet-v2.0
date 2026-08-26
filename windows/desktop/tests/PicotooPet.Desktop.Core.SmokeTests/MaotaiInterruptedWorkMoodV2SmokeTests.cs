@@ -176,7 +176,7 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
         Assert(reachedLook, "Error 身体经 Recover 后必须在 1.5 秒内进入最终 Look，禁止卡在工作恢复态");
     }
 
-    /// <summary>用户摸头必须立即响应，但不能把中段疲劳身体直接清零成中性 UserReaction。</summary>
+    /// <summary>用户摸头必须立即响应，但不能把中段疲劳身体和键盘前爪瞬间清零成中性 UserReaction。</summary>
     private static void VerifyInterruptedTiredPatContinuity()
     {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
@@ -217,6 +217,8 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
             ReadPoseDouble(patPose, "Body", "ScaleX") - ReadPoseDouble(tiredPose!, "Body", "ScaleX"));
         var bodyScaleYDelta = Math.Abs(
             ReadPoseDouble(patPose, "Body", "ScaleY") - ReadPoseDouble(tiredPose!, "Body", "ScaleY"));
+        var leftPawDelta = PoseDistance(tiredPose!, patPose, "FrontLeftPaw");
+        var rightPawDelta = PoseDistance(tiredPose!, patPose, "FrontRightPaw");
 
         Assert(bodyYDelta < 0.75,
             $"Pat 打断 WorkTired 的身体高度不能瞬间清零；delta={bodyYDelta:F3}");
@@ -224,6 +226,10 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
             $"Pat 打断 WorkTired 的横向缩放不能瞬间清零；delta={bodyScaleXDelta:F4}");
         Assert(bodyScaleYDelta < 0.012,
             $"Pat 打断 WorkTired 的纵向缩放不能瞬间清零；delta={bodyScaleYDelta:F4}");
+        Assert(leftPawDelta < 1.60,
+            $"Pat 打断 WorkTired 时左前爪不能从键盘瞬移回站姿；delta={leftPawDelta:F3}");
+        Assert(rightPawDelta < 1.60,
+            $"Pat 打断 WorkTired 时右前爪不能从键盘瞬移回站姿；delta={rightPawDelta:F3}");
     }
 
     private static object CreateInput(string baseState, string interaction = "None")
@@ -246,6 +252,13 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
             false,
             108.0)
             ?? throw new InvalidOperationException("无法创建工作中断 MotionInput");
+    }
+
+    private static double PoseDistance(object from, object to, string poseName)
+    {
+        var dx = ReadPoseDouble(to, poseName, "X") - ReadPoseDouble(from, poseName, "X");
+        var dy = ReadPoseDouble(to, poseName, "Y") - ReadPoseDouble(from, poseName, "Y");
+        return Math.Sqrt((dx * dx) + (dy * dy));
     }
 
     private static double ReadPoseDouble(object value, string poseName, string propertyName)
