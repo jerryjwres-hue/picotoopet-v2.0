@@ -31,6 +31,7 @@ class AuditN6D4CoreInventoryTests(unittest.TestCase):
             root = Path(temp_dir)
             first = f"{CORE_PREFIX}src/pvp_director_native_v2/a.py"
             second = f"{CORE_PREFIX}src/pvp_director_native_v2/b.py"
+            second_offset = 300                                                            # Deliberately beyond the first entry's minimum physical ZIP span.
             path = self._write_inventory(
                 root,
                 [
@@ -48,7 +49,7 @@ class AuditN6D4CoreInventoryTests(unittest.TestCase):
                         "crc32": "00000002",
                         "compressed_size": 5,
                         "uncompressed_size": 10,
-                        "local_header_offset": 200,
+                        "local_header_offset": second_offset,
                     },
                 ],
             )
@@ -62,8 +63,8 @@ class AuditN6D4CoreInventoryTests(unittest.TestCase):
             self.assertEqual(result["gaps"][0]["after_path"], first)
             self.assertEqual(result["gaps"][0]["before_path"], second)
             self.assertEqual(result["gaps"][0]["gap_start"], expected_min_end)
-            self.assertEqual(result["gaps"][0]["gap_end"], 200)
-            self.assertEqual(result["gaps"][0]["gap_bytes"], 200 - expected_min_end)
+            self.assertEqual(result["gaps"][0]["gap_end"], second_offset)
+            self.assertEqual(result["gaps"][0]["gap_bytes"], second_offset - expected_min_end)
 
     def test_rejects_overlapping_minimum_local_spans(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -117,7 +118,7 @@ class AuditN6D4CoreInventoryTests(unittest.TestCase):
                         "crc32": "00000002",
                         "compressed_size": 5,
                         "uncompressed_size": 10,
-                        "local_header_offset": 200,
+                        "local_header_offset": 300,
                     },
                 ],
             )
