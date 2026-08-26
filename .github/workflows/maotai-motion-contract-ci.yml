@@ -1,5 +1,6 @@
 name: Maotai Motion Contract CI
 
+# Bootstrap note: keep a post-creation push path so the branch-native motion gate is exercised.
 on:
   push:
     branches:
