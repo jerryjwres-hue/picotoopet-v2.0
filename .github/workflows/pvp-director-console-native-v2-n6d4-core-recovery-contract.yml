@@ -9,6 +9,8 @@ on:
       - "pvp/director-console-native-v2-bootstrap/recover_n6d4_core_entries.py"
       - "pvp/director-console-native-v2-bootstrap/test_recover_n6d4_core_entries.py"
       - "pvp/director-console-native-v2-bootstrap/test_recover_n6d4_core_entry_spans.py"
+      - "pvp/director-console-native-v2-bootstrap/audit_n6d4_core_inventory.py"
+      - "pvp/director-console-native-v2-bootstrap/test_audit_n6d4_core_inventory.py"
       - "pvp/director-console-native-v2-bootstrap/materialize_n6d4_core_bundle.py"
       - "pvp/director-console-native-v2-bootstrap/test_materialize_n6d4_core_bundle.py"
       - "pvp/director-console-native-v2-bootstrap/n6d4-core-entry-evidence/**"
@@ -36,13 +38,21 @@ jobs:
       - name: Run N6D4 Core recovery and materialization unit contracts
         working-directory: pvp/director-console-native-v2-bootstrap
         run: |
-          # Unit contract     : raw source pinning, per-entry CRC/DEFLATE recovery, deterministic bundling and safe materialization.
+          # Unit contract     : raw source pinning, inventory gap audit, per-entry CRC/DEFLATE recovery, deterministic bundling and safe materialization.
           # Fail-closed rule  : corruption, missing evidence, duplicate/overlapping paths and unsafe ZIP paths must all fail before output.
           python -m unittest -v \
             test_recover_n6d4_core_bundle.py \
             test_recover_n6d4_core_entries.py \
             test_recover_n6d4_core_entry_spans.py \
+            test_audit_n6d4_core_inventory.py \
             test_materialize_n6d4_core_bundle.py
+
+      - name: Report current N6D4 Core inventory gaps
+        working-directory: pvp/director-console-native-v2-bootstrap
+        run: |
+          # Partial inventories are allowed during recovery, but their unexplained byte ranges must remain visible in CI.
+          python audit_n6d4_core_inventory.py \
+            --inventory n6d4-core-entry-evidence/N6D4_CORE_ENTRY_INVENTORY.json
 
       - name: Verify pinned Core bundle when materialized
         working-directory: pvp/director-console-native-v2-bootstrap
