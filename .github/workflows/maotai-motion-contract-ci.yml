@@ -1,0 +1,57 @@
+name: Maotai Motion Contract CI
+
+on:
+  push:
+    branches:
+      - feature/maotai-natural-motion-v2
+    paths:
+      - "windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/**"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Maotai*.cs"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs"
+      - "windows/desktop/global.json"
+      - ".github/workflows/maotai-motion-contract-ci.yml"
+  pull_request:
+    paths:
+      - "windows/desktop/src/PicotooPet.Desktop/Views/Controls/MaotaiMotion/**"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Maotai*.cs"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs"
+      - "windows/desktop/global.json"
+      - ".github/workflows/maotai-motion-contract-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: maotai-motion-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-motion-contract:
+    name: Native Windows Maotai motion smoke
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install exact .NET SDK from global.json
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Show exact source and SDK
+        shell: powershell
+        run: |
+          git rev-parse HEAD
+          dotnet --version
+
+      - name: Run native Maotai motion contracts
+        shell: powershell
+        run: |
+          dotnet run `
+            --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
+            --configuration Release
