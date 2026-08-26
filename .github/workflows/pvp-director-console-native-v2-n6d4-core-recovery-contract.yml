@@ -1,0 +1,85 @@
+name: PVP Director Console Native v2 N6D4 Core Recovery Contract
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pvp/director-console-native-v2-bootstrap/recover_n6d4_core_bundle.py"
+      - "pvp/director-console-native-v2-bootstrap/test_recover_n6d4_core_bundle.py"
+      - "pvp/director-console-native-v2-bootstrap/recover_n6d4_core_entries.py"
+      - "pvp/director-console-native-v2-bootstrap/test_recover_n6d4_core_entries.py"
+      - "pvp/director-console-native-v2-bootstrap/test_recover_n6d4_core_entry_spans.py"
+      - "pvp/director-console-native-v2-bootstrap/audit_n6d4_core_inventory.py"
+      - "pvp/director-console-native-v2-bootstrap/test_audit_n6d4_core_inventory.py"
+      - "pvp/director-console-native-v2-bootstrap/materialize_n6d4_core_bundle.py"
+      - "pvp/director-console-native-v2-bootstrap/test_materialize_n6d4_core_bundle.py"
+      - "pvp/director-console-native-v2-bootstrap/n6d4-core-entry-evidence/**"
+      - "pvp/director-console-native-v2-bootstrap/core.part*.b64"
+      - "pvp/director-console-native-v2-bootstrap/CORE_BUNDLE.sha256"
+      - "pvp/director-console-native-v2-bootstrap/CORE_MANIFEST.json"
+      - "pvp/director-console-native-v2-bootstrap/SOURCE_PROVENANCE.txt"
+      - ".github/workflows/pvp-director-console-native-v2-n6d4-core-recovery-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Run N6D4 Core recovery and materialization unit contracts
+        working-directory: pvp/director-console-native-v2-bootstrap
+        run: |
+          # Unit contract     : raw source pinning, inventory gap audit, per-entry CRC/DEFLATE recovery, deterministic bundling and safe materialization.
+          # Fail-closed rule  : corruption, missing evidence, duplicate/overlapping paths and unsafe ZIP paths must all fail before output.
+          python -m unittest -v \
+            test_recover_n6d4_core_bundle.py \
+            test_recover_n6d4_core_entries.py \
+            test_recover_n6d4_core_entry_spans.py \
+            test_audit_n6d4_core_inventory.py \
+            test_materialize_n6d4_core_bundle.py
+
+      - name: Report current N6D4 Core inventory gaps
+        working-directory: pvp/director-console-native-v2-bootstrap
+        run: |
+          # Partial inventories are allowed during recovery, but their unexplained byte ranges must remain visible in CI.
+          python audit_n6d4_core_inventory.py \
+            --inventory n6d4-core-entry-evidence/N6D4_CORE_ENTRY_INVENTORY.json
+
+      - name: Verify pinned Core bundle when materialized
+        working-directory: pvp/director-console-native-v2-bootstrap
+        run: |
+          # Pin contract      : materialized parts must survive the same verified consumer path used by convergence CI.
+          shopt -s nullglob
+          parts=(core.part*.b64)
+          metadata=(CORE_BUNDLE.sha256 CORE_MANIFEST.json SOURCE_PROVENANCE.txt)
+          present=0
+          for item in "${metadata[@]}"; do
+            if [[ -e "$item" ]]; then present=$((present + 1)); fi
+          done
+
+          if (( ${#parts[@]} == 0 && present == 0 )); then
+            echo "N6D4_CORE_BUNDLE=NOT_MATERIALIZED"                                      # Tooling can be CI-green before authoritative bytes are pinned.
+            exit 0
+          fi
+          if (( ${#parts[@]} == 0 )); then
+            echo "Core metadata exists without core.part*.b64 payload" >&2
+            exit 1
+          fi
+          if (( present != ${#metadata[@]} )); then
+            echo "Core payload exists without the complete metadata set" >&2
+            exit 1
+          fi
+
+          target="$RUNNER_TEMP/n6d4-core-materialized"
+          python materialize_n6d4_core_bundle.py --bootstrap-dir . --target-root "$target"
+          test -f "$target/payload/producer/extensions/director_console_native_v2/VERSION"
+          echo "N6D4_CORE_MATERIALIZATION=PASS"

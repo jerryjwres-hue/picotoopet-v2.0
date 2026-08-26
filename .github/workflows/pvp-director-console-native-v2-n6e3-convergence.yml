@@ -1,0 +1,315 @@
+name: PVP Director Console Native v2 N6E3 Convergence
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pvp/director-console-native-v2-bootstrap/**"
+      - ".github/workflows/pvp-director-console-native-v2-n6e3-convergence.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pvp-director-native-v2-n6e3-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-release-gate:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Reassemble frozen Native source bundle
+        shell: powershell
+        run: |
+          # Source boundary  : rebuild the pinned source payload exactly once.
+          # User-PC boundary : no source compilation or dependency installation is moved back to the user machine.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $bootstrap = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap"
+          $bundle = Join-Path $env:RUNNER_TEMP "PVP_DirectorConsole_Native_N6E1.zip"
+          $parts = @(Get-ChildItem -LiteralPath $bootstrap -Filter "native.part*.b64" | Sort-Object Name)
+          if ($parts.Count -lt 1) { throw "Native source bundle parts are missing." }
+          $stream = [IO.File]::Open($bundle,[IO.FileMode]::Create,[IO.FileAccess]::Write)
+          try {
+            foreach ($part in $parts) {
+              $text = (Get-Content -LiteralPath $part.FullName -Raw).Trim()
+              if (($text.Length % 4) -ne 0) { throw "Invalid Base64 quartet length: $($part.Name)" }
+              $bytes = [Convert]::FromBase64String($text)
+              $stream.Write($bytes,0,$bytes.Length)
+            }
+          } finally { $stream.Dispose() }
+          $expected = (Get-Content -LiteralPath (Join-Path $bootstrap "NATIVE_BUNDLE.sha256") -Raw).Trim().Split()[0].ToLowerInvariant()
+          $actual = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Native source bundle SHA mismatch. expected=$expected actual=$actual" }
+          $target = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2"
+          if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+          [IO.Directory]::CreateDirectory($target) | Out-Null
+          [IO.Compression.ZipFile]::ExtractToDirectory($bundle,$target)
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Materialize pinned N6D4 Director Core
+        shell: powershell
+        run: |
+          # Core boundary    : reconstruct only the frozen Director Core from independently pinned bundle metadata.
+          # Fail-closed rule : missing, partial or hash-invalid Core input stops before any N6E3 backend mutation is applied.
+          python .\pvp\director-console-native-v2-bootstrap\materialize_n6d4_core_bundle.py `
+            --bootstrap-dir .\pvp\director-console-native-v2-bootstrap `
+            --target-root .\pvp\director-console-native-v2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Apply N6E3 Native director-experience patch
+        shell: powershell
+        run: |
+          # Native patch     : Chinese-first UI, batch interaction and Core supervisor implementation.
+          $patchDir = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\n6e3-patch"
+          $parts = @(Get-ChildItem -LiteralPath $patchDir -Filter "n6e3.patch*.b64" | Sort-Object Name)
+          if ($parts.Count -ne 8) { throw "Expected 8 base patch parts, got $($parts.Count)." }
+          $encoded = (($parts | ForEach-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() }) -join '')
+          $gz = Join-Path $env:RUNNER_TEMP "n6e3.patch.gz"
+          $patch = Join-Path $env:RUNNER_TEMP "n6e3.patch"
+          [IO.File]::WriteAllBytes($gz,[Convert]::FromBase64String($encoded))
+          python -c "import gzip,pathlib; pathlib.Path(r'$patch').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $env:GITHUB_WORKSPACE
+          try {
+            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --include='*/native/**' --whitespace=nowarn $patch
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+
+      - name: Apply last verified N6E3 stability and localization delta
+        shell: powershell
+        run: |
+          # Stability delta  : retain the last Windows-compiled localization/recovery fixes.
+          $patchDir = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\n6e3-delta"
+          $parts = @(Get-ChildItem -LiteralPath $patchDir -Filter "n6e3.delta.patch*.b64" | Sort-Object Name)
+          if ($parts.Count -ne 2) { throw "Expected 2 delta patch parts, got $($parts.Count)." }
+          $encoded = (($parts | ForEach-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() }) -join '')
+          $gz = Join-Path $env:RUNNER_TEMP "n6e3-delta.patch.gz"
+          $patch = Join-Path $env:RUNNER_TEMP "n6e3-delta.patch"
+          [IO.File]::WriteAllBytes($gz,[Convert]::FromBase64String($encoded))
+          python -c "import gzip,pathlib; pathlib.Path(r'$patch').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $env:GITHUB_WORKSPACE
+          try {
+            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --include='*/native/**' --whitespace=nowarn $patch
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+
+      - name: Apply N6E3 backend batch delete and restore patch
+        shell: powershell
+        run: |
+          # Backend boundary : materialize the already-reviewed atomic batch delete/restore patch into the release source.
+          # Safety gate      : check patch applicability before changing the reconstructed source tree.
+          $encodedPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\n6e3-backend\n6e3.backend.patch.gz.b64"
+          if (-not (Test-Path -LiteralPath $encodedPath)) { throw "N6E3 backend patch payload is missing." }
+          $encoded = (Get-Content -LiteralPath $encodedPath -Raw).Trim()
+          $gz = Join-Path $env:RUNNER_TEMP "n6e3-backend.patch.gz"
+          $patch = Join-Path $env:RUNNER_TEMP "n6e3-backend.patch"
+          [IO.File]::WriteAllBytes($gz,[Convert]::FromBase64String($encoded))
+          python -c "import gzip,pathlib; pathlib.Path(r'$patch').write_bytes(gzip.decompress(pathlib.Path(r'$gz').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $env:GITHUB_WORKSPACE
+          try {
+            git apply --no-index --check --directory=pvp/director-console-native-v2 -p1 --whitespace=nowarn $patch
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            git apply --no-index --directory=pvp/director-console-native-v2 -p1 --whitespace=nowarn $patch
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+
+      - name: Run backend regression and compile gates
+        shell: powershell
+        run: |
+          # Test boundary    : prove the actual extension payload, including atomic batch mutations, before packaging it.
+          $extension = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\payload\producer\extensions\director_console_native_v2"
+          $tests = Join-Path $extension "tests"
+          $src = Join-Path $extension "src"
+          if (-not (Test-Path -LiteralPath $tests)) { throw "Director Core backend tests are missing." }
+          if (-not (Test-Path -LiteralPath $src)) { throw "Director Core backend source is missing." }
+          $env:PYTHONPATH = $src
+          python -m unittest discover -s $tests -p "test_*.py" -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m compileall -q $src
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Apply N6E3 WPF StringFormat compiler fix
+        shell: powershell
+        run: |
+          # Compiler gate    : escape literal StringFormat markup before the real WPF build.
+          $xamlPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\PVP.DirectorConsole\MainWindow.xaml"
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          $xaml = [IO.File]::ReadAllText($xamlPath,[Text.Encoding]::UTF8)
+          $needle = 'StringFormat= {0}'
+          $replacement = 'StringFormat={}{0}'
+          $count = ([regex]::Matches($xaml,[regex]::Escape($needle))).Count
+          if ($count -ne 2) { throw "Expected exactly two unsafe StringFormat markers, got $count." }
+          [IO.File]::WriteAllText($xamlPath,$xaml.Replace($needle,$replacement),$utf8)
+
+      - name: WPF binding markup regression test
+        shell: powershell
+        run: |
+          # Regression gate  : make the original XAML compiler failure reproducible and permanent.
+          $xamlPath = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2\native\PVP.DirectorConsole\MainWindow.xaml"
+          $xaml = [IO.File]::ReadAllText($xamlPath,[Text.Encoding]::UTF8)
+          if ($xaml.Contains('StringFormat= {0}')) { throw 'Unescaped WPF Binding StringFormat markup extension remains.' }
+          if (-not $xaml.Contains('StringFormat={}{0}')) { throw 'Escaped WPF Binding StringFormat regression marker is missing.' }
+
+      - name: Run Native source contracts
+        shell: powershell
+        run: |
+          # Native contracts : verify the UI, typed API surface and Core-supervisor behavior before compilation.
+          python -m unittest discover -s .\pvp\director-console-native-v2\native\tests -p "test_*.py" -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run UTF-8 safe runtime contract checker
+        shell: powershell
+        run: |
+          # Runtime contract : Chinese UX, batch actions, supervisor markers and forbidden media calls.
+          python .\pvp\director-console-native-v2-bootstrap\check_n6e3_runtime_contract.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke exact VBS launchers under true Unicode and spaced path
+        shell: powershell
+        run: |
+          # Launcher smoke   : protect Chinese/spaced install paths even though CMD remains the recommended entry.
+          $src = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\vbs-smoke"
+          $leaf = ([char]0x89C6)+([char]0x9891)+' '+([char]0x5236)+([char]0x4F5C)+'\'+([char]0x5B89)+([char]0x88C5)+([char]0x5305)
+          $dst = Join-Path $env:RUNNER_TEMP $leaf
+          New-Item -ItemType Directory -Path $dst -Force | Out-Null
+          Copy-Item -Path (Join-Path $src '*') -Destination $dst -Force
+          foreach ($name in @('INSTALL_PVP_DIRECTOR_CONSOLE.vbs','VERIFY_PVP_DIRECTOR_CONSOLE.vbs','ROLLBACK_PVP_DIRECTOR_CONSOLE.vbs')) {
+            & "$env:SystemRoot\System32\cscript.exe" //nologo (Join-Path $dst $name)
+            if ($LASTEXITCODE -ne 0) { throw "$name failed Unicode path smoke with exit code $LASTEXITCODE" }
+          }
+
+      - name: Parse and bootstrap-smoke legacy installer transaction
+        shell: powershell
+        run: |
+          # Transaction smoke: prove the reused N6E2.2 deterministic transaction before it is relabeled into N6E3.
+          $src = Join-Path $env:GITHUB_WORKSPACE "pvp\director-console-native-v2-bootstrap\installer-smoke"
+          $leaf = ([char]0x89C6)+([char]0x9891)+' '+([char]0x5236)+([char]0x4F5C)+'\N6E3 '+([char]0x5B89)+([char]0x88C5)+([char]0x5305)
+          $dst = Join-Path $env:RUNNER_TEMP $leaf
+          New-Item -ItemType Directory -Path $dst -Force | Out-Null
+          Copy-Item -Path (Join-Path $src '*') -Destination $dst -Force
+          $ps1 = Join-Path $dst 'Install-PvpDirectorConsolePrebuilt.N6E22.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($ps1,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count -ne 0) { throw "Installer has PowerShell parse errors." }
+          $env:PVP_INSTALLER_BOOTSTRAP_SMOKE='1'
+          $env:PVP_INSTALLER_CI='1'
+          & "$env:SystemRoot\System32\cmd.exe" /d /c (Join-Path $dst 'INSTALL_PVP_DIRECTOR_CONSOLE.cmd')
+          if ($LASTEXITCODE -ne 0) { throw "Installer bootstrap smoke failed with exit code $LASTEXITCODE" }
+          if (@(Get-ChildItem -LiteralPath $dst -Filter 'PVP_DIRECTOR_CONSOLE_N6E22_INSTALL_RESULT_*.zip').Count -lt 1) { throw 'Installer bootstrap smoke did not create result ZIP.' }
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: pvp/director-console-native-v2/global.json
+
+      - name: Build Native WPF
+        shell: powershell
+        run: |
+          # Build boundary   : real Windows WPF compile happens only on GitHub windows-2025.
+          $project = ".\pvp\director-console-native-v2\native\PVP.DirectorConsole\PVP.DirectorConsole.csproj"
+          dotnet restore $project --runtime win-x64 --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build $project --configuration Release --runtime win-x64 --no-restore --nologo -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish self-contained Native EXE
+        shell: powershell
+        run: |
+          # Publish boundary : user machine receives a self-contained win-x64 executable, never a source build job.
+          $project = ".\pvp\director-console-native-v2\native\PVP.DirectorConsole\PVP.DirectorConsole.csproj"
+          $output = ".\pvp\director-console-native-v2\artifacts\native-publish"
+          dotnet publish $project --configuration Release --runtime win-x64 --self-contained true --output $output --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run published Native self-test
+        shell: powershell
+        run: |
+          # Binary gate      : execute the exact published EXE that will be inserted into the final installer.
+          $exe = ".\pvp\director-console-native-v2\artifacts\native-publish\PVP Director Console.exe"
+          $report = ".\pvp\director-console-native-v2\artifacts\native-self-test.json"
+          & $exe --self-test --self-test-output $report
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if ([string]$result.status -ne 'pass') { throw 'Native self-test report is not pass.' }
+
+      - name: Generate Native artifact SHA evidence
+        shell: powershell
+        run: |
+          # Evidence boundary: pin the exact EXE hash before deterministic packaging.
+          $artifact = ".\pvp\director-console-native-v2\artifacts"
+          $exe = Join-Path $artifact "native-publish\PVP Director Console.exe"
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $artifact 'native-exe.sha256'),($hash+'  PVP Director Console.exe'+[Environment]::NewLine),(New-Object Text.UTF8Encoding($false)))
+
+      - name: Build deterministic final N6E3 prebuilt installer
+        shell: powershell
+        run: |
+          # Package boundary : combine the same-run EXE, patched runtime extension and deterministic installer transaction.
+          $headSha = '${{ github.event.pull_request.head.sha }}'
+          if ([string]::IsNullOrWhiteSpace($headSha)) { $headSha = '${{ github.sha }}' }
+          $output = ".\pvp\director-console-native-v2\artifacts\final-package"
+          python .\pvp\director-console-native-v2-bootstrap\build_n6e3_prebuilt.py `
+            --source-root .\pvp\director-console-native-v2 `
+            --native-publish .\pvp\director-console-native-v2\artifacts\native-publish `
+            --installer-root .\pvp\director-console-native-v2-bootstrap\installer-smoke `
+            --output-root $output `
+            --head-sha $headSha `
+            --run-id '${{ github.run_id }}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify final N6E3 package integrity contract
+        shell: powershell
+        run: |
+          # Package contract : require payload hashes, batch endpoints, N6E3 labels, ZIP safety and SHA sidecar consistency.
+          $output = Resolve-Path ".\pvp\director-console-native-v2\artifacts\final-package"
+          $package = Join-Path $output "PVP_DirectorConsole_Native_V2_N6E3_PREBUILT"
+          $zips = @(Get-ChildItem -LiteralPath $output -Filter 'PVP_DirectorConsole_Native_V2_N6E3_PREBUILT_*.zip' -File)
+          if ($zips.Count -ne 1) { throw "Expected exactly one final N6E3 ZIP, got $($zips.Count)." }
+          python .\pvp\director-console-native-v2-bootstrap\verify_n6e3_package.py --package-dir $package --zip $zips[0].FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke exact final N6E3 installer under true Unicode path
+        shell: powershell
+        run: |
+          # Final-entry gate : execute the exact CMD/PowerShell pair that the user will receive, from a Chinese/spaced path.
+          $output = Resolve-Path ".\pvp\director-console-native-v2\artifacts\final-package"
+          $src = Join-Path $output "PVP_DirectorConsole_Native_V2_N6E3_PREBUILT"
+          $leaf = ([char]0x89C6)+([char]0x9891)+' '+([char]0x5236)+([char]0x4F5C)+'\N6E3 '+([char]0x6700)+([char]0x7EC8)+([char]0x5B89)+([char]0x88C5)+([char]0x5305)
+          $dst = Join-Path $env:RUNNER_TEMP $leaf
+          if (Test-Path -LiteralPath $dst) { Remove-Item -LiteralPath $dst -Recurse -Force }
+          New-Item -ItemType Directory -Path $dst -Force | Out-Null
+          Copy-Item -Path (Join-Path $src '*') -Destination $dst -Recurse -Force
+          $ps1 = Join-Path $dst 'Install-PvpDirectorConsolePrebuilt.N6E3.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($ps1,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count -ne 0) { throw "Final N6E3 installer has PowerShell parse errors." }
+          $env:PVP_INSTALLER_BOOTSTRAP_SMOKE='1'
+          $env:PVP_INSTALLER_CI='1'
+          & "$env:SystemRoot\System32\cmd.exe" /d /c (Join-Path $dst 'INSTALL_PVP_DIRECTOR_CONSOLE.cmd')
+          if ($LASTEXITCODE -ne 0) { throw "Final N6E3 installer bootstrap smoke failed with exit code $LASTEXITCODE" }
+          if (@(Get-ChildItem -LiteralPath $dst -Filter 'PVP_DIRECTOR_CONSOLE_N6E3_INSTALL_RESULT_*.zip').Count -lt 1) { throw 'Final N6E3 installer did not create result ZIP.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $dst 'PVP_DIRECTOR_CONSOLE_N6E3_BOOTSTRAP.log'))) { throw 'Final N6E3 installer did not create bootstrap log.' }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PVP-DirectorConsole-NativeV2-N6E3-Installer-Green
+          path: |
+            pvp/director-console-native-v2/artifacts/final-package/PVP_DirectorConsole_Native_V2_N6E3_PREBUILT_*.zip
+            pvp/director-console-native-v2/artifacts/final-package/PVP_DirectorConsole_Native_V2_N6E3_PREBUILT_*.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
