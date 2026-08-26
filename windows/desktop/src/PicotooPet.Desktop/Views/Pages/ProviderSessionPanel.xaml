@@ -17,9 +17,9 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Phase 10D-A · 真实 Codex Provider" />
+                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Phase 10D-A · Coding Provider 状态" />
                         <TextBlock Margin="0,5,0,0" Foreground="#475569"
-                                   Text="人工确认 Usage 后，只允许一次固定低预算 Session。Windows 不读取凭据、余额、transcript、任意命令或文件正文。"
+                                   Text="Windows 只对 Mac Core 已绑定且 approved 的 Codex / Claude Code Handoff 记录人工 Usage 确认、查看 Mac Core 创建的 Session，并保留紧急取消。Provider 选择和 Session 创建完全由 Mac Core Frugal 仲裁器负责。"
                                    TextWrapping="Wrap" />
                     </StackPanel>
                     <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Top"
@@ -30,7 +30,12 @@
                         BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="7">
                     <StackPanel>
                         <TextBlock FontWeight="SemiBold" Text="{Binding ProviderReadySummary, Mode=OneWay}" TextWrapping="Wrap" />
-                        <TextBlock Margin="0,5,0,0" Foreground="#1E3A8A" Text="{Binding ProviderStatus.Message, Mode=OneWay}" TextWrapping="Wrap" />
+                        <TextBlock Margin="0,5,0,0" Foreground="#1E3A8A"
+                                   Text="{Binding ProviderStatus.Message, Mode=OneWay, StringFormat='Codex：{0}'}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Margin="0,5,0,0" Foreground="#1E3A8A"
+                                   Text="{Binding ClaudeCodeStatus.Message, Mode=OneWay, StringFormat='Claude Code：{0}'}"
+                                   TextWrapping="Wrap" />
                         <TextBlock Margin="0,5,0,0" Foreground="#1E3A8A" Text="{Binding BudgetSummary, Mode=OneWay}" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
@@ -42,19 +47,20 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock FontSize="17" FontWeight="SemiBold" Text="1. 选择 approved Codex Handoff" />
+                        <TextBlock FontSize="17" FontWeight="SemiBold" Text="1. 查看 Core 已绑定的 approved Coding Handoff" />
                         <ComboBox Margin="0,8,0,0" MinHeight="38"
                                   ItemsSource="{Binding EligibleHandoffs, Mode=OneWay}"
                                   SelectedItem="{Binding SelectedHandoff, Mode=TwoWay}"
                                   DisplayMemberPath="Title" />
                         <TextBlock Margin="0,8,0,0" Foreground="#64748B"
-                                   Text="只有 provider=codex 且 status=approved 的 Handoff 会显示。" TextWrapping="Wrap" />
+                                   Text="这里只展示 Mac Core 已绑定且 status=approved 的 Codex / Claude Code Handoff；Windows 不能改 Provider。"
+                                   TextWrapping="Wrap" />
                         <TextBlock Margin="0,16,0,0" FontSize="17" FontWeight="SemiBold" Text="2. 人工确认 Usage 状态" />
                         <ComboBox Margin="0,8,0,0" MinHeight="38"
                                   ItemsSource="{Binding UsageStatusOptions, Mode=OneWay}"
                                   SelectedItem="{Binding SelectedUsageStatus, Mode=TwoWay}" />
                         <TextBlock Margin="0,8,0,0" Foreground="#64748B"
-                                   Text="请在你自己的 Codex/ChatGPT 界面人工查看 Usage；PicotooPet 不抓取 Usage 页面，也不猜测余额。"
+                                   Text="请在你自己的 Codex / Claude Code 账户界面人工查看 Usage；PicotooPet 不抓取 Usage 页面，也不猜测余额。"
                                    TextWrapping="Wrap" />
                         <Button Margin="0,10,0,0" HorizontalAlignment="Left"
                                 Content="记录人工额度确认" Command="{Binding ConfirmUsageCommand, Mode=OneWay}" />
@@ -62,13 +68,15 @@
                                 BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6">
                             <StackPanel>
                                 <TextBlock FontWeight="SemiBold" Text="最近人工确认" />
+                                <TextBlock Margin="0,4,0,0" Text="{Binding LatestConfirmation.Provider, Mode=OneWay, TargetNullValue=—}" />
                                 <TextBlock Margin="0,4,0,0" Text="{Binding LatestConfirmation.Status, Mode=OneWay, TargetNullValue=尚未确认}" />
                                 <TextBlock Margin="0,4,0,0" Foreground="#64748B"
                                            Text="{Binding LatestConfirmation.ExpiresAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}, TargetNullValue=—}" />
+                                <TextBlock Margin="0,6,0,0" Foreground="#475569"
+                                           Text="确认只提供短期额度事实；满足条件后由 Mac Core 自动 reconcile，Windows 不提供启动按钮。"
+                                           TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
-                        <Button Margin="0,12,0,0" HorizontalAlignment="Left"
-                                Content="启动一次低预算 Codex Session" Command="{Binding StartSessionCommand, Mode=OneWay}" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="2">
@@ -88,6 +96,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock FontFamily="Consolas" FontSize="12" Text="{Binding SessionId, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Margin="0,3,0,0" Foreground="#64748B" Text="{Binding Provider, Mode=OneWay}" />
                                                 <TextBlock Margin="0,3,0,0" Foreground="#64748B" Text="{Binding UpdatedAt, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" />
                                             </StackPanel>
                                             <TextBlock Grid.Column="1" Margin="10,0,0,0" Foreground="#1D4ED8" FontWeight="SemiBold" Text="{Binding Status, Mode=OneWay}" />
@@ -108,17 +117,20 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <TextBlock FontWeight="SemiBold" Text="状态" />
-                                <TextBlock Grid.Column="1" Text="{Binding SelectedSession.Status, Mode=OneWay, TargetNullValue=—}" />
-                                <TextBlock Grid.Row="1" Margin="0,5,0,0" FontWeight="SemiBold" Text="turns" />
-                                <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.TurnsUsed, Mode=OneWay, TargetNullValue=0}" />
-                                <TextBlock Grid.Row="2" Margin="0,5,0,0" FontWeight="SemiBold" Text="elapsed seconds" />
-                                <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.ElapsedSeconds, Mode=OneWay, TargetNullValue=0}" />
-                                <TextBlock Grid.Row="3" Margin="0,5,0,0" FontWeight="SemiBold" Text="changed files" />
-                                <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.ChangedFileCount, Mode=OneWay, TargetNullValue=0}" />
-                                <TextBlock Grid.Row="4" Margin="0,5,0,0" FontWeight="SemiBold" Text="failure code" />
-                                <TextBlock Grid.Row="4" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.FailureCode, Mode=OneWay, TargetNullValue=—}" />
+                                <TextBlock FontWeight="SemiBold" Text="Provider" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedSession.Provider, Mode=OneWay, TargetNullValue=—}" />
+                                <TextBlock Grid.Row="1" Margin="0,5,0,0" FontWeight="SemiBold" Text="状态" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.Status, Mode=OneWay, TargetNullValue=—}" />
+                                <TextBlock Grid.Row="2" Margin="0,5,0,0" FontWeight="SemiBold" Text="turns" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.TurnsUsed, Mode=OneWay, TargetNullValue=0}" />
+                                <TextBlock Grid.Row="3" Margin="0,5,0,0" FontWeight="SemiBold" Text="elapsed seconds" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.ElapsedSeconds, Mode=OneWay, TargetNullValue=0}" />
+                                <TextBlock Grid.Row="4" Margin="0,5,0,0" FontWeight="SemiBold" Text="changed files" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.ChangedFileCount, Mode=OneWay, TargetNullValue=0}" />
+                                <TextBlock Grid.Row="5" Margin="0,5,0,0" FontWeight="SemiBold" Text="failure code" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" Margin="0,5,0,0" Text="{Binding SelectedSession.FailureCode, Mode=OneWay, TargetNullValue=—}" />
                             </Grid>
                         </Border>
                         <Button Margin="0,10,0,0" HorizontalAlignment="Left"

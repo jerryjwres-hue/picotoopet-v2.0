@@ -4,12 +4,35 @@ on:
   push:
     branches:
       - feature/research-gateway-2.3.27.1-final
+      - feature/autonomous-intelligence-e2e-goal-center-2.3.27.1
     paths:
       - ".github/workflows/research-gateway-final-release.yml"
       - "research_gateway/**"
       - "deploy/macos/research_gateway/**"
       - "scripts/mac/research_gateway/**"
+      - "src/picotoopet_core/autonomous/browser_broker.py"
+      - "src/picotoopet_core/autonomous/connected_evidence.py"
+      - "src/picotoopet_core/db/database.py"
+      - "src/picotoopet_core/db/migration_023.py"
       - "tests/unit/research_gateway/**"
+      - "tests/unit/autonomous/test_targeted_review_browser_intake.py"
+      - "tests/unit/db/test_migration_023.py"
+      - "tests/contract/test_research_gateway_package.py"
+  pull_request:
+    branches:
+      - feature/autonomous-intelligence-slice-c-2.3.27.1
+    paths:
+      - ".github/workflows/research-gateway-final-release.yml"
+      - "research_gateway/**"
+      - "deploy/macos/research_gateway/**"
+      - "scripts/mac/research_gateway/**"
+      - "src/picotoopet_core/autonomous/browser_broker.py"
+      - "src/picotoopet_core/autonomous/connected_evidence.py"
+      - "src/picotoopet_core/db/database.py"
+      - "src/picotoopet_core/db/migration_023.py"
+      - "tests/unit/research_gateway/**"
+      - "tests/unit/autonomous/test_targeted_review_browser_intake.py"
+      - "tests/unit/db/test_migration_023.py"
       - "tests/contract/test_research_gateway_package.py"
   workflow_dispatch:
 
@@ -50,17 +73,27 @@ jobs:
           python --version
           test "$(uname -m)" = "arm64"
 
-      - name: Run Research Gateway contracts
+      - name: Run Research Gateway and targeted review contracts
         shell: bash
         run: |
           PYTHONPATH=.:src python -m pytest -q \
             tests/unit/research_gateway \
+            tests/unit/autonomous/test_targeted_review_browser_intake.py \
+            tests/unit/db/test_migration_023.py \
             tests/contract/test_research_gateway_package.py
 
-      - name: Lint Research Gateway Python
+      - name: Lint Research production Python
         shell: bash
         run: |
-          ruff check research_gateway tests/unit/research_gateway tests/contract/test_research_gateway_package.py
+          # New Research production code remains strict. Legacy autonomous intake files
+          # predate the repository's current Ruff style rules; runtime/contract safety is
+          # covered by the focused tests above plus the full regression below.
+          ruff check \
+            research_gateway \
+            src/picotoopet_core/db/migration_023.py
+          ruff check --ignore E501,F401,UP035 \
+            src/picotoopet_core/autonomous/browser_broker.py \
+            src/picotoopet_core/autonomous/connected_evidence.py
 
       - name: Verify repository governance and Python compilation
         shell: bash
@@ -70,7 +103,7 @@ jobs:
           else
             echo "ALIGNMENT_VERIFIER=NOT_PRESENT_PREEXISTING_GOVERNANCE_DRIFT"
           fi
-          python -m compileall -q scripts research_gateway
+          python -m compileall -q scripts research_gateway src/picotoopet_core
 
       - name: Run full Python regression
         shell: bash

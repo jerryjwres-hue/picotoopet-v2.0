@@ -25,6 +25,21 @@ def test_windows_core_targets_current_lts_without_third_party_packages() -> None
     assert '"version": "10.0.302"' in global_json
 
 
+def test_release_builder_resolves_pinned_sdk_from_desktop_root() -> None:
+    """发布器无论从哪个目录启动，都必须在 global.json 所在目录解析固定 SDK。"""
+
+    builder = read("scripts/Build-Phase2WindowsRelease.ps1")
+
+    assert '[string]$WorkingDirectory = ""' in builder
+    assert "$startInfo.WorkingDirectory = $WorkingDirectory" in builder
+    assert (
+        'Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") '
+        '-WorkingDirectory $desktopRoot'
+    ) in builder
+    # SDK 检测、restore/build/run/publish 都必须继承同一 desktopRoot，禁止调用方 CWD 漂移。
+    assert builder.count("-WorkingDirectory $desktopRoot") >= 8
+
+
 def test_network_clients_use_pooling_bounded_channel_and_resume_sequence() -> None:
     """REST 与 WebSocket 客户端必须复用连接、背压并支持断线续传。"""
 
@@ -131,17 +146,19 @@ def test_native_interop_and_websocket_cleanup_are_compile_safe() -> None:
     assert "_pendingPings.Clear();" in stream
 
 
-def test_websocket_detects_half_open_connections_within_bounded_time() -> None:
-    """应用级 Pong 超时必须主动触发重连，不能让半连接永久显示在线。"""
+def test_websocket_detects_half_open_connections_without_false_disconnects() -> None:
+    """业务入站必须视作存活；只有持续无入站才允许 Pong 超时触发重连。"""
 
     stream = read("src/PicotooPet.Desktop.Core/Networking/EventStreamClient.cs")
 
     assert "_pongTimeout" in stream
     assert "_pingInterval" in stream
     assert "ThrowIfPongExpired" in stream
+    assert "RecordInboundActivity" in stream
     assert "Stopwatch.GetElapsedTime" in stream
-    assert "TimeSpan.FromSeconds(2)" in stream
-    assert "TimeSpan.FromSeconds(1)" in stream
+    assert "TimeSpan.FromSeconds(30)" in stream
+    assert "TimeSpan.FromSeconds(10)" in stream
+    assert "KeepAliveInterval = TimeSpan.FromSeconds(30)" in stream
 
 
 def test_network_failures_remain_traceable_and_auth_state_is_not_overwritten() -> None:
@@ -240,3 +257,25 @@ def test_desktop_filters_diagnostic_tasks_before_state_storage_and_rest_transfer
     assert '"phase2-diagnostic"' in coordinator
     assert "Predicate<TaskRecord>? includeTask" in task_state
     assert "_stateStore.Apply(envelope" not in view_model
+
+
+def test_task_detail_projects_durable_core_progress_without_fake_percent() -> None:
+    """任务详情必须读取 Core 的耐久进度，不得用本地耗时猜测百分比。"""
+
+    contracts = read("src/PicotooPet.Desktop.Core/Contracts/TaskProgressContracts.cs")
+    session = read("src/PicotooPet.Desktop/Services/ControlCenterSession.TaskProgress.cs")
+    view_model = read("src/PicotooPet.Desktop/ViewModels/TaskDetailViewModel.cs")
+    xaml = read("src/PicotooPet.Desktop/Views/Pages/TaskDetailWindow.xaml")
+
+    assert "TaskProgressSnapshot" in contracts
+    assert "TaskProgressEvent" in contracts
+    assert "GetTaskProgressAsync" in session
+    assert "api/v1/tasks/{Uri.EscapeDataString(taskId)}/progress" in session
+    assert "ProgressStageText" in view_model
+    assert "ProgressValueText" in view_model
+    assert "RecentActivityText" in view_model
+    assert "Stopwatch" not in view_model
+    assert "DateTimeOffset.UtcNow -" not in view_model
+    assert 'Text="{Binding ProgressStageText}"' in xaml
+    assert 'Text="{Binding ProgressValueText}"' in xaml
+    assert 'Text="{Binding RecentActivityText}"' in xaml

@@ -1,9 +1,10 @@
-"""数据库、磁盘和 Ollama 常驻状态监督。"""
+"""数据库、磁盘、内存压力和 Ollama 常驻状态监督。"""
 
 from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -11,6 +12,10 @@ from pydantic import BaseModel
 
 from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.db.database import Database
+from picotoopet_core.diagnostics.reliability import (
+    MemoryPressureSummary,
+    observe_memory_pressure,
+)
 from picotoopet_core.ollama.resident_manager import ResidentResult, ResidentStatus
 
 
@@ -46,11 +51,13 @@ class HealthSupervisor:
         paths: RuntimePaths,
         resident: ResidentLike,
         minimum_free_bytes: int = 5 * 1024**3,
+        memory_pressure: Callable[[], MemoryPressureSummary] | None = None,
     ) -> None:
         self.database           = database
         self.paths              = paths
         self.resident           = resident
         self.minimum_free_bytes = minimum_free_bytes
+        self.memory_pressure    = memory_pressure or observe_memory_pressure
 
     def run_once(self) -> HealthReport:
         """运行一次检查；异常转为 degraded，不让守护进程崩溃。"""
@@ -83,6 +90,25 @@ class HealthSupervisor:
                 detail=f"磁盘检查异常：{type(exc).__name__}",
             )
 
+        try:
+            memory = self.memory_pressure()
+            memory_status = {
+                "normal": "ok",
+                "warn": "degraded",
+                "high": "degraded",
+                "unknown": "unknown",
+            }[memory.level]
+            checks["memory_pressure"] = HealthCheck(
+                status=memory_status,
+                # ── Persist only the coarse state; never raw command/process output. ──
+                detail=memory.level,
+            )
+        except Exception:  # noqa: BLE001 - 监控失败不能击穿主健康循环
+            checks["memory_pressure"] = HealthCheck(
+                status="unknown",
+                detail="unknown",
+            )
+
         resident_result = self.resident.ensure_resident()
         checks["ollama_resident"] = HealthCheck(
             status="ok" if resident_result.status is ResidentStatus.RESIDENT else "degraded",
@@ -102,10 +128,20 @@ class HealthSupervisor:
                 (
                     name,
                     check.status,
-                    json.dumps({"detail": check.detail}, ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(
+                        {"detail": check.detail},
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
                     checked_at.isoformat(),
                 ),
             )
 
-        overall = "ok" if all(check.status == "ok" for check in checks.values()) else "degraded"
+        # ── Unknown means unobserved, not failed; only known unhealthy states degrade. ──
+        healthy_statuses = {"ok", "unknown"}
+        overall = (
+            "ok"
+            if all(check.status in healthy_statuses for check in checks.values())
+            else "degraded"
+        )
         return HealthReport(status=overall, checked_at=checked_at, checks=checks)

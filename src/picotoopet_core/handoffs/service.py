@@ -1,4 +1,4 @@
-"""确定性 Handoff 准备、持久化、幂等和审批状态同步。"""
+"""Deterministic Handoff preparation, persistence, idempotency and approval sync."""
 
 from __future__ import annotations
 
@@ -18,19 +18,19 @@ from .models import HandoffPrepareRequest, HandoffRecord, HandoffStatus, Handoff
 
 
 class HandoffError(RuntimeError):
-    """Handoff 准备或状态操作失败。"""
+    """Handoff preparation or state operation failed."""
 
 
 class HandoffConflict(HandoffError):
-    """幂等键、状态或摘要发生冲突。"""
+    """Idempotency key, state or digest conflict."""
 
 
 class HandoffPolicyError(HandoffError):
-    """输入违反固定安全边界。"""
+    """Input violates fixed safety boundaries."""
 
 
 class HandoffService:
-    """Mac Core 中 Handoff 的唯一事实服务。"""
+    """Mac Core source of truth for bounded Handoffs."""
 
     _TEMPLATE = HandoffTemplate(
         template_id="picotoopet-repo-maintenance-v1",
@@ -47,29 +47,40 @@ class HandoffService:
         provider="codex",
         provider_configured=False,
         repo_url="https://github.com/jerryjwres-hue/picotoopet-v2.0",
-        base_ref="feature/phase10c-event-stream-recovery",
-        base_commit="65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f",
+        base_ref="feature/autonomous-intelligence-e2e-goal-center-2.3.27.1",
+        base_commit="423f14ea549a3303137f4ab5ad99d2afb60dbded",
     )
+    _CLAUDE_CODE_TEMPLATE = HandoffTemplate(
+        template_id="picotoopet-repo-maintenance-claude-code-v1",
+        display_name="PicotooPet 受控 Claude Code 仓库维护",
+        provider="claude_code",
+        provider_configured=False,
+        repo_url="https://github.com/jerryjwres-hue/picotoopet-v2.0",
+        base_ref="feature/autonomous-intelligence-e2e-goal-center-2.3.27.1",
+        base_commit="423f14ea549a3303137f4ab5ad99d2afb60dbded",
+    )
+    _CODING_PROVIDERS = frozenset({"codex", "claude_code"})
     _REQUIRED_TESTS = [
         "python-regression",
         "windows-wpf-behavior",
         "windows-formal-release",
         "mac-core-arm64",
     ]
-    _CODEX_REQUIRED_TESTS = [
+    _PROVIDER_REQUIRED_TESTS = [
         "python-regression",
         "windows-wpf-behavior",
         "windows-formal-release",
         "mac-core-arm64",
         "mac-worker-arm64",
     ]
+    _CODEX_REQUIRED_TESTS = _PROVIDER_REQUIRED_TESTS
     _MANUAL_BUDGET = {
         "max_turns": 20,
         "timeout_seconds": 1800,
         "concurrency": 1,
         "network_tools": False,
     }
-    _CODEX_BUDGET = {
+    _PROVIDER_BUDGET = {
         "max_turns": 8,
         "timeout_seconds": 900,
         "concurrency": 1,
@@ -81,6 +92,7 @@ class HandoffService:
         "automatic_top_up": False,
         "automatic_publish": False,
     }
+    _CODEX_BUDGET = _PROVIDER_BUDGET
     _SECURITY_BOUNDARIES = [
         "Protected source is excluded from every package.",
         "Provider execution is disabled in Phase 10A.",
@@ -88,14 +100,15 @@ class HandoffService:
         "Local validation and human review remain mandatory.",
         "Push, merge, tag and release remain independently prohibited.",
     ]
-    _CODEX_SECURITY_BOUNDARIES = [
+    _PROVIDER_SECURITY_BOUNDARIES = [
         "Protected source and Raw Evidence are excluded from every package.",
-        "Windows controls the Session but never receives Codex credentials.",
+        "Windows controls the Session but never receives coding-provider credentials.",
         "Mac Worker may write only inside one Session-exclusive Git worktree.",
         "One manual Usage confirmation permits one low-budget Session only.",
         "Local validation and human review remain mandatory.",
         "Automatic commit, push, PR, merge, tag, release and top-up are prohibited.",
     ]
+    _CODEX_SECURITY_BOUNDARIES = _PROVIDER_SECURITY_BOUNDARIES
     _UNSAFE_TEXT_PATTERNS = (
         re.compile(r"(?:^|[\s/\\])\.\.(?:[/\\\s]|$)", re.IGNORECASE),
         re.compile(r"\b(?:main|master)\b", re.IGNORECASE),
@@ -123,11 +136,12 @@ class HandoffService:
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def templates(self) -> list[HandoffTemplate]:
-        """返回固定模板，禁止客户端自行构造权限事实。"""
+        """Return fixed templates; callers cannot construct provider authority."""
 
         return [
             self._TEMPLATE.model_copy(deep=True),
             self._CODEX_TEMPLATE.model_copy(deep=True),
+            self._CLAUDE_CODE_TEMPLATE.model_copy(deep=True),
         ]
 
     def prepare(
@@ -136,23 +150,16 @@ class HandoffService:
         *,
         idempotency_key: str,
     ) -> HandoffRecord:
-        """规范化输入并生成确定性 Handoff 草稿。"""
+        """Normalize input and create a deterministic bounded Handoff draft."""
 
         key = self._require_idempotency_key(idempotency_key)
         self._enforce_safe_text(request.title, request.objective)
         template = self._template(request.template_id)
-        required_tests = (
-            self._CODEX_REQUIRED_TESTS
-            if template.provider == "codex"
-            else self._REQUIRED_TESTS
-        )
-        budget = (
-            self._CODEX_BUDGET if template.provider == "codex" else self._MANUAL_BUDGET
-        )
+        coding_provider = template.provider in self._CODING_PROVIDERS
+        required_tests = self._PROVIDER_REQUIRED_TESTS if coding_provider else self._REQUIRED_TESTS
+        budget = self._PROVIDER_BUDGET if coding_provider else self._MANUAL_BUDGET
         boundaries = (
-            self._CODEX_SECURITY_BOUNDARIES
-            if template.provider == "codex"
-            else self._SECURITY_BOUNDARIES
+            self._PROVIDER_SECURITY_BOUNDARIES if coding_provider else self._SECURITY_BOUNDARIES
         )
         normalized_input = {
             "template_id": request.template_id,
@@ -173,7 +180,7 @@ class HandoffService:
         created_at = self._now()
         expires_at = created_at + timedelta(seconds=request.expires_seconds)
         handoff_id = str(uuid4())
-        if template.provider == "codex":
+        if coding_provider:
             read_root = "workspace/source"
             write_root = "workspace/changes"
         else:
@@ -266,7 +273,7 @@ class HandoffService:
         return self.get(handoff_id)
 
     def list(self, *, limit: int = 100) -> list[HandoffRecord]:
-        """按创建时间倒序读取有界安全投影。"""
+        """Read bounded safe projections ordered by creation time."""
 
         bounded = max(1, min(limit, 100))
         rows = self.database.fetchall(
@@ -276,7 +283,7 @@ class HandoffService:
         return [self._record_from_row(self._expire_if_needed(row)) for row in rows]
 
     def get(self, handoff_id: str) -> HandoffRecord:
-        """读取单个 Handoff 的安全投影。"""
+        """Read one Handoff safe projection."""
 
         row = self.database.fetchone(
             "SELECT * FROM handoffs WHERE handoff_id = ?",
@@ -292,7 +299,7 @@ class HandoffService:
         *,
         idempotency_key: str,
     ) -> HandoffRecord:
-        """在一个事务中创建资源审批并把 Handoff 推进到等待状态。"""
+        """Create the resource approval and advance the Handoff in one transaction."""
 
         key = self._require_idempotency_key(idempotency_key)
         current = self.get(handoff_id)
@@ -358,7 +365,7 @@ class HandoffService:
         return self.get(handoff_id)
 
     def reconcile_approval(self, approval: ApprovalRecord) -> None:
-        """把 Handoff 审批终态同步回事实表，不触发任务队列。"""
+        """Sync terminal approval state without triggering the task queue."""
 
         if approval.approval_type != "handoff.prepare":
             return
@@ -529,11 +536,13 @@ class HandoffService:
             return cls._TEMPLATE
         if template_id == cls._CODEX_TEMPLATE.template_id:
             return cls._CODEX_TEMPLATE
+        if template_id == cls._CLAUDE_CODE_TEMPLATE.template_id:
+            return cls._CLAUDE_CODE_TEMPLATE
         raise HandoffPolicyError("未知 Handoff 模板。")
 
-    @staticmethod
-    def _budget_summary(provider: str) -> str:
-        if provider == "codex":
+    @classmethod
+    def _budget_summary(cls, provider: str) -> str:
+        if provider in cls._CODING_PROVIDERS:
             return "8 turns · 900 秒 · 1 并发 · 5 文件 · 0 自动重试 · 无网络工具"
         return "20 turns · 1800 秒 · 1 并发 · 无网络工具"
 

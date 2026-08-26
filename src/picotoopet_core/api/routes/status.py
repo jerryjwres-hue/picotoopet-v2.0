@@ -1,12 +1,14 @@
-"""运行状态和审计完整性接口。"""
+"""运行状态、可靠性黑盒和审计完整性接口。"""
 
 from __future__ import annotations
 
 import json
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import FileResponse
 
 from picotoopet_core.audit.verifier import verify_audit_chain
+from picotoopet_core.diagnostics.reliability import ReliabilitySnapshot
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -35,6 +37,27 @@ def status(request: Request) -> dict[str, object]:
             for row in health_rows
         },
     }
+
+
+@router.get("/status/reliability", response_model=ReliabilitySnapshot)
+def reliability_status(request: Request) -> ReliabilitySnapshot:
+    """聚合 Core-owned lease/progress 与固定只读本地观测，不触发任何任务。"""
+
+    return request.app.state.services.reliability.snapshot()
+
+
+@router.post("/status/reliability/bundle", response_class=FileResponse)
+def reliability_bundle(request: Request) -> FileResponse:
+    """生成固定条目、脱敏、无浏览器扫描的 Reliability Black Box ZIP。"""
+
+    bundle = request.app.state.services.reliability.build_bundle()
+    return FileResponse(
+        path=bundle,
+        media_type="application/zip",
+        filename=bundle.name,
+        # ── Diagnostic archives are point-in-time local evidence; never cache them in clients. ──
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/audit/verify")

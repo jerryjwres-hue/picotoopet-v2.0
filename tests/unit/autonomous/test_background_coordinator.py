@@ -8,6 +8,10 @@ from pathlib import Path
 from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.repository import AutomationRepository
 from picotoopet_core.autonomous.background import AutonomousBackgroundCoordinator
+from picotoopet_core.autonomous.human_pipeline import (
+    GoalHandoffCoordinator,
+    GoalSynthesisCoordinator,
+)
 from picotoopet_core.autonomous.local_intelligence import LocalIntelligenceCoordinator
 from picotoopet_core.db.database import Database
 from picotoopet_core.worker.handlers import HandlerResult
@@ -38,6 +42,19 @@ class FakeManager:
             workflow_id = "workflow-1"
 
         return Result()
+
+
+class FakeLocalAdapter:
+    def analyze(self, request):  # type: ignore[no-untyped-def]
+        del request
+        return {
+            "role": "analyst",
+            "summary": "ok",
+            "confidence": 0.5,
+            "findings": [],
+            "recommended_actions": [],
+            "evidence_ids": [],
+        }
 
 
 def _handler(task) -> HandlerResult:  # type: ignore[no-untyped-def]
@@ -78,6 +95,86 @@ def test_healthy_local_model_registers_only_fixed_analysis_task(tmp_path: Path) 
     assert registration.worker_id == "mac-worker-test"
     assert registration.metadata["model"] == "gpt-oss:20b"
     assert "autonomous.discovery.v1" not in runtime.handlers
+    database.close()
+
+
+def test_human_goal_pipeline_registers_fixed_synthesis_and_handoff_handlers(tmp_path: Path) -> None:
+    database = Database(tmp_path / "core.db")
+    database.open()
+    database.apply_migrations()
+    router = CapabilityRouter(AutomationRepository(database))
+    runtime = FakeRuntime()
+    coordinator = AutonomousBackgroundCoordinator(
+        manager=FakeManager(),
+        capability_router=router,
+        runtime=runtime,
+        worker_id="mac-worker-test",
+        local_intelligence_handler=_handler,
+        goal_synthesis_handler=_handler,
+        goal_handoff_handler=_handler,
+        model_id="gpt-oss:20b",
+        clock=lambda: NOW,
+    )
+
+    coordinator.refresh_local_intelligence(healthy=True)
+
+    assert runtime.handlers[GoalSynthesisCoordinator.TASK_TYPE] is _handler
+    assert runtime.handlers[GoalHandoffCoordinator.TASK_TYPE] is _handler
+    assert router.select(
+        GoalSynthesisCoordinator.CAPABILITY,
+        task_type=GoalSynthesisCoordinator.TASK_TYPE,
+        now=NOW,
+    ) is not None
+    assert router.select(
+        GoalHandoffCoordinator.CAPABILITY,
+        task_type=GoalHandoffCoordinator.TASK_TYPE,
+        now=NOW,
+    ) is not None
+
+    coordinator.refresh_local_intelligence(healthy=False)
+    assert GoalSynthesisCoordinator.TASK_TYPE not in runtime.handlers
+    # Handoff is deterministic packaging and does not need the model once synthesis exists.
+    assert runtime.handlers[GoalHandoffCoordinator.TASK_TYPE] is _handler
+    assert router.select(
+        GoalSynthesisCoordinator.CAPABILITY,
+        task_type=GoalSynthesisCoordinator.TASK_TYPE,
+        now=NOW,
+    ) is None
+    assert router.select(
+        GoalHandoffCoordinator.CAPABILITY,
+        task_type=GoalHandoffCoordinator.TASK_TYPE,
+        now=NOW,
+    ) is not None
+    database.close()
+
+
+def test_real_local_coordinator_auto_wires_goal_stages_from_managed_runtime(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    database = Database(runtime_root / "database" / "core.db")
+    database.open()
+    database.apply_migrations()
+    router = CapabilityRouter(AutomationRepository(database))
+    runtime = FakeRuntime()
+    runtime.result_store = object()  # type: ignore[attr-defined]
+    manager = FakeManager()
+    manager.database = database  # type: ignore[attr-defined]
+    manager.goals = object()  # type: ignore[attr-defined]
+    manager.workflows = object()  # type: ignore[attr-defined]
+    local = LocalIntelligenceCoordinator(FakeLocalAdapter())
+
+    coordinator = AutonomousBackgroundCoordinator(
+        manager=manager,
+        capability_router=router,
+        runtime=runtime,
+        worker_id="mac-worker-test",
+        local_intelligence_handler=local.handler,
+        model_id="gpt-oss:20b",
+        clock=lambda: NOW,
+    )
+    coordinator.refresh_local_intelligence(healthy=True)
+
+    assert GoalSynthesisCoordinator.TASK_TYPE in runtime.handlers
+    assert GoalHandoffCoordinator.TASK_TYPE in runtime.handlers
     database.close()
 
 

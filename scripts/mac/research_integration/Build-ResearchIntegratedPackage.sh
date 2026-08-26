@@ -6,7 +6,7 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
 output_root="$repo_root/artifacts/research-integration"
 release_version="2.3.27.1"
-expected_product_version="2.3.26.1"
+expected_product_version="2.3.27.1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -23,7 +23,7 @@ done
 
 product_version="$(tr -d '\r\n' < "$repo_root/src/picotoopet_core/product-version.txt")"
 if [[ "$product_version" != "$expected_product_version" ]]; then
-  echo "Research $release_version 必须叠加在产品基线 $expected_product_version：$product_version" >&2
+  echo "Research ${release_version} 必须叠加在产品基线 ${expected_product_version}：${product_version}" >&2
   exit 1
 fi
 if [[ "$(uname -m)" != "arm64" ]]; then
@@ -31,8 +31,15 @@ if [[ "$(uname -m)" != "arm64" ]]; then
   exit 1
 fi
 
-commit="$(git -C "$repo_root" rev-parse HEAD)"
-short_commit="${commit:0:12}"
+# build_commit 记录 Runner 实际 checkout 的树；source_commit 记录触发 Release 的源码提交。
+build_commit="$(git -C "$repo_root" rev-parse HEAD)"
+source_commit="${PICOTOOPET_RELEASE_SOURCE_COMMIT:-$build_commit}"
+if [[ ! "$source_commit" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  echo "Release source commit 非法：$source_commit" >&2
+  exit 1
+fi
+source_commit="$(printf '%s' "$source_commit" | tr '[:upper:]' '[:lower:]')"
+short_commit="${source_commit:0:12}"
 work_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-research-integrated.XXXXXX")"
 cleanup() {
   rm -rf "$work_root"
@@ -85,8 +92,8 @@ for file in \
 done
 chmod 755 "$package_root"/*.command
 
-# 外层 Manifest 同时记录产品基线与 Research 能力版本，并对全部内嵌文件做哈希。
-python3 - "$package_root" "$commit" "$release_version" "$product_version" <<'PY'
+# 外层 Manifest 同时记录源码提交、实际构建提交、产品基线与 Research 能力版本，并对全部内嵌文件做哈希。
+python3 - "$package_root" "$source_commit" "$build_commit" "$release_version" "$product_version" <<'PY'
 import hashlib
 import json
 import sys
@@ -109,11 +116,13 @@ for path in sorted(item for item in root.rglob("*") if item.is_file()):
 manifest = {
     "schema_version": "1.0",
     "release_type": "picotoopet-research-integrated-update",
-    "release_version": sys.argv[3],
-    "product_version": sys.argv[4],
+    "release_version": sys.argv[4],
+    "product_version": sys.argv[5],
     "target": "macos",
     "architecture": "arm64",
     "commit": sys.argv[2],
+    "source_commit": sys.argv[2],
+    "build_commit": sys.argv[3],
     "gateway_included": True,
     "core_worker_update_included": True,
     "read_only": True,
@@ -136,19 +145,21 @@ tar -czf "$tarball" -C "$work_root" "$package_name"
 sha256="$(shasum -a 256 "$tarball" | awk '{print tolower($1)}')"
 printf '%s  %s\n' "$sha256" "$(basename "$tarball")" > "$tarball.sha256.txt"
 
-python3 - "$output_root/research-integrated-build-report.json" "$commit" "$tarball" "$sha256" "$release_version" "$product_version" <<'PY'
+python3 - "$output_root/research-integrated-build-report.json" "$source_commit" "$build_commit" "$tarball" "$sha256" "$release_version" "$product_version" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 report = {
     "status": "pass",
-    "release_version": sys.argv[5],
-    "product_version": sys.argv[6],
+    "release_version": sys.argv[6],
+    "product_version": sys.argv[7],
     "architecture": "arm64",
     "commit": sys.argv[2],
-    "package": str(Path(sys.argv[3]).resolve()),
-    "sha256": sys.argv[4],
+    "source_commit": sys.argv[2],
+    "build_commit": sys.argv[3],
+    "package": str(Path(sys.argv[4]).resolve()),
+    "sha256": sys.argv[5],
     "gateway_included": True,
     "core_worker_update_included": True,
     "external_research_tools_bundled": False,
@@ -163,5 +174,7 @@ PY
 echo "PICOTOOPET_RESEARCH_INTEGRATED_BUILD=PASS"
 echo "RELEASE_VERSION=$release_version"
 echo "PRODUCT_VERSION=$product_version"
+echo "SOURCE_COMMIT=$source_commit"
+echo "BUILD_COMMIT=$build_commit"
 echo "PACKAGE=$tarball"
 echo "SHA256=$sha256"

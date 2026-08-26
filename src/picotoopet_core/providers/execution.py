@@ -1,9 +1,11 @@
-"""Phase 10D-A/10D-B Provider 任务排队、隔离执行和安全 Return 收口。"""
+"""Bounded coding-provider task queueing, isolated execution and immutable Return capture."""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event, Thread
@@ -18,6 +20,13 @@ from picotoopet_core.returns.models import (
     ReturnRecord,
     ReturnStatus,
     ReturnValidationCheck,
+)
+from picotoopet_core.worker.claude_code_adapter import (
+    ClaudeCodeAdapter,
+    ClaudeCodeAdapterCancelled,
+    ClaudeCodeAdapterError,
+    ClaudeCodeAdapterProtocolError,
+    ClaudeCodeAdapterTimeout,
 )
 from picotoopet_core.worker.codex_adapter import (
     CodexAdapter,
@@ -34,15 +43,21 @@ from picotoopet_core.worker.codex_worktree import (
 from picotoopet_core.worker.handlers import HandlerResult
 
 from .artifact_store import ProviderArtifactError, ProviderReturnArtifactStore
-from .models import ProviderSessionStatus
+from .models import (
+    ProviderName,
+    ProviderReadinessStatus,
+    ProviderSessionRecord,
+    ProviderSessionStatus,
+)
 from .service import ProviderSessionService
 
 
 class ProviderTaskPayload(BaseModel):
-    """只由 Mac Core 生成的固定 Worker payload。"""
+    """Fixed Worker payload generated only from Mac Core provider-session facts."""
 
     model_config = ConfigDict(extra="forbid")
 
+    provider: ProviderName = "codex"
     session_id: str
     handoff_id: str
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -59,10 +74,23 @@ class ProviderTaskPayload(BaseModel):
     )
 
 
-class ProviderExecutionCoordinator:
-    """把等待 Session 映射为唯一任务，并执行固定 Codex Adapter。"""
+@dataclass(frozen=True, slots=True)
+class _ProviderRunSummary:
+    """Adapter-neutral safe execution summary; it never contains model text."""
 
-    TASK_TYPE = "provider.codex.handoff-v1"
+    turns_used: int
+    elapsed_seconds: int
+    provider_usage_unknown: bool
+    events: tuple[dict[str, object], ...]
+
+
+class ProviderExecutionCoordinator:
+    """Map bounded provider Sessions onto one shared worktree/Return execution lane."""
+
+    CODEX_TASK_TYPE = "provider.codex.handoff-v1"
+    CLAUDE_CODE_TASK_TYPE = "provider.claude-code.handoff-v1"
+    TASK_TYPE = CODEX_TASK_TYPE  # Backward-compatible constant used by existing installers/tests.
+    TASK_TYPES = (CODEX_TASK_TYPE, CLAUDE_CODE_TASK_TYPE)
 
     def __init__(
         self,
@@ -71,31 +99,72 @@ class ProviderExecutionCoordinator:
         sessions: ProviderSessionService,
         repository: Path,
         worktree_root: Path,
-        codex_executable: Path,
+        codex_executable: Path | None,
+        claude_code_executable: Path | None = None,
         worker_id: str,
         artifact_store: ProviderReturnArtifactStore,
+        readiness_by_provider: Callable[[ProviderName], ProviderReadinessStatus] | None = None,
     ) -> None:
         self.queue = queue
         self.sessions = sessions
         self.repository = repository
         self.worktree_root = worktree_root
         self.codex_executable = codex_executable
+        self.claude_code_executable = claude_code_executable
         self.worker_id = worker_id
         self.artifact_store = artifact_store
+        self._readiness_by_provider = readiness_by_provider or (
+            lambda _provider: ProviderReadinessStatus.UNAVAILABLE
+        )
+
+    @property
+    def configured_task_types(self) -> tuple[str, ...]:
+        """Expose only task types backed by explicitly configured provider executables."""
+
+        task_types: list[str] = []
+        if self.codex_executable is not None:
+            task_types.append(self.CODEX_TASK_TYPE)
+        if self.claude_code_executable is not None:
+            task_types.append(self.CLAUDE_CODE_TASK_TYPE)
+        return tuple(task_types)
+
+    @classmethod
+    def task_type_for(cls, provider: ProviderName) -> str:
+        if provider == "codex":
+            return cls.CODEX_TASK_TYPE
+        if provider == "claude_code":
+            return cls.CLAUDE_CODE_TASK_TYPE
+        raise ValueError("Unknown coding provider.")
 
     def enqueue_pending(self) -> None:
-        """幂等地为所有等待执行的 Session 创建唯一 Worker 任务。"""
+        """Create tasks only for explicitly configured and currently ready providers."""
 
+        configured = frozenset(self.configured_task_types)
+        if not configured:
+            return
         rows = self.sessions.database.fetchall(
             "SELECT preview_json FROM provider_sessions WHERE status = ? "
             "ORDER BY created_at LIMIT 20",
             (ProviderSessionStatus.WAITING_PROVIDER_READY.value,),
         )
         for row in rows:
-            session = json.loads(row["preview_json"])
-            handoff = self.sessions.handoffs.get(session["handoff_id"])
+            session = ProviderSessionRecord.model_validate(json.loads(row["preview_json"]))
+            task_type = self.task_type_for(session.provider)
+            if task_type not in configured:
+                continue
+            if self._readiness_by_provider(session.provider) is not ProviderReadinessStatus.READY:
+                continue
+            handoff = self.sessions.handoffs.get(session.handoff_id)
+            if handoff.provider != session.provider:
+                self._fail(
+                    session.session_id,
+                    ProviderSessionStatus.STOPPED_BY_POLICY,
+                    "PROVIDER_BINDING_MISMATCH",
+                )
+                continue
             payload = ProviderTaskPayload(
-                session_id=session["session_id"],
+                provider=session.provider,
+                session_id=session.session_id,
                 handoff_id=handoff.handoff_id,
                 request_digest=handoff.request_digest,
                 package_digest=handoff.package_digest,
@@ -104,22 +173,37 @@ class ProviderExecutionCoordinator:
             )
             self.queue.create(
                 TaskCreate(
-                    task_type=self.TASK_TYPE,
+                    task_type=task_type,
                     payload=payload.model_dump(mode="json"),
                     priority=40,
                     resource_tag="provider",
-                    idempotency_key=f"provider-task:{session['session_id']}",
-                    dedupe_key=f"provider-codex:{handoff.handoff_id}",
+                    idempotency_key=f"provider-task:{session.session_id}",
+                    dedupe_key=f"provider-{session.provider}:{handoff.handoff_id}",
                     max_attempts=1,
                     timeout_seconds=900,
                 )
             )
 
     def handler(self, task: TaskRecord) -> HandlerResult:
-        """执行一个受控 Session；无论结果如何都清理 worktree。"""
+        """Execute one provider-bound Session and always clean its isolated worktree."""
 
         payload = ProviderTaskPayload.model_validate(task.payload)
         current = self.sessions.get_session(payload.session_id)
+        expected_task_type = self.task_type_for(current.provider)
+        handoff = self.sessions.handoffs.get(payload.handoff_id)
+        if (
+            payload.provider != current.provider
+            or handoff.provider != current.provider
+            or task.task_type != expected_task_type
+            or expected_task_type not in self.configured_task_types
+            or self._readiness_by_provider(current.provider) is not ProviderReadinessStatus.READY
+        ):
+            self._fail(
+                payload.session_id,
+                ProviderSessionStatus.STOPPED_BY_POLICY,
+                "PROVIDER_BINDING_MISMATCH",
+            )
+            raise RuntimeError("Provider task/session/handoff/readiness binding mismatch.")
         if current.request_digest != payload.request_digest:
             raise RuntimeError("Provider request digest 不匹配。")
         if current.package_digest != payload.package_digest:
@@ -150,7 +234,8 @@ class ProviderExecutionCoordinator:
             )
             self.sessions.transition(payload.session_id, ProviderSessionStatus.RUNNING)
             prompt = self._build_prompt(payload)
-            run = CodexAdapter(self.codex_executable).run(
+            run = self._run_provider(
+                payload.provider,
                 prompt=prompt,
                 worktree=worktree.path,
                 cancel_event=cancel_event,
@@ -177,24 +262,29 @@ class ProviderExecutionCoordinator:
             return HandlerResult(
                 summary={
                     "session_id": payload.session_id,
+                    "provider": payload.provider,
                     "return_id": record.return_id,
                     "changed_file_count": len(captured.changes),
                 }
             )
-        except CodexAdapterCancelled:
+        except (CodexAdapterCancelled, ClaudeCodeAdapterCancelled):
             self._fail(payload.session_id, ProviderSessionStatus.CANCELLED, "PROVIDER_CANCELLED")
             raise
-        except CodexAdapterTimeout:
+        except (CodexAdapterTimeout, ClaudeCodeAdapterTimeout):
             self._fail(payload.session_id, ProviderSessionStatus.TIMED_OUT, "PROVIDER_TIMED_OUT")
             raise
-        except (CodexWorktreeError, CodexAdapterProtocolError):
+        except (
+            CodexWorktreeError,
+            CodexAdapterProtocolError,
+            ClaudeCodeAdapterProtocolError,
+        ):
             self._fail(
                 payload.session_id,
                 ProviderSessionStatus.STOPPED_BY_POLICY,
                 "PROVIDER_POLICY_STOP",
             )
             raise
-        except CodexAdapterError:
+        except (CodexAdapterError, ClaudeCodeAdapterError):
             self._fail(
                 payload.session_id,
                 ProviderSessionStatus.PROVIDER_FAILED,
@@ -207,13 +297,49 @@ class ProviderExecutionCoordinator:
             if worktree is not None:
                 manager.cleanup(worktree)
 
+    def _run_provider(
+        self,
+        provider: ProviderName,
+        *,
+        prompt: str,
+        worktree: Path,
+        cancel_event: Event,
+    ) -> _ProviderRunSummary:
+        if provider == "codex":
+            if self.codex_executable is None:
+                raise CodexAdapterError("Codex executable is not configured.")
+            run = CodexAdapter(self.codex_executable).run(
+                prompt=prompt,
+                worktree=worktree,
+                cancel_event=cancel_event,
+            )
+            return _ProviderRunSummary(
+                turns_used=run.turns_used,
+                elapsed_seconds=run.elapsed_seconds,
+                provider_usage_unknown=run.provider_usage_unknown,
+                events=run.events,
+            )
+        if self.claude_code_executable is None:
+            raise ClaudeCodeAdapterError("Claude Code executable is not configured.")
+        run = ClaudeCodeAdapter(self.claude_code_executable).run(
+            prompt=prompt,
+            worktree=worktree,
+            cancel_event=cancel_event,
+        )
+        return _ProviderRunSummary(
+            turns_used=run.turns_used,
+            elapsed_seconds=run.elapsed_seconds,
+            provider_usage_unknown=run.provider_usage_unknown,
+            events=({"type": f"claude_code.{run.subtype}"},),
+        )
+
     def _persist_return(
         self,
         payload: ProviderTaskPayload,
         captured: CapturedProviderChanges,
         events: tuple[dict[str, object], ...],
     ) -> ReturnRecord:
-        """Artifact 先落盘，DB 再原子登记 Return 与 reviewable artifact 事实。"""
+        """Write immutable artifact first, then atomically register Return/review facts."""
 
         if len(captured.changes) > 5 or len(events) > 100:
             raise CodexWorktreeError("Provider Return 超过固定预算。")
@@ -235,11 +361,12 @@ class ProviderExecutionCoordinator:
         except ProviderArtifactError as exc:
             raise CodexWorktreeError(exc.code) from exc
 
+        label = "Codex" if payload.provider == "codex" else "Claude Code"
         summaries = [
             ReturnEventSummary(
                 sequence=index,
                 event_type=str(event["type"]),
-                summary="Codex 安全阶段事件。",
+                summary=f"{label} 安全阶段事件。",
             )
             for index, event in enumerate(events, start=1)
         ]
@@ -247,7 +374,7 @@ class ProviderExecutionCoordinator:
             return_id=return_id,
             handoff_id=payload.handoff_id,
             status=ReturnStatus.CONTRACT_VALIDATED,
-            provider="codex",
+            provider=payload.provider,
             request_digest=payload.request_digest,
             package_digest=payload.package_digest,
             manifest_digest=stored.change_set_digest,
@@ -266,7 +393,7 @@ class ProviderExecutionCoordinator:
             created_at=now,
             updated_at=now,
             execution_notice=(
-                "Codex Return 已通过本地合同校验并生成只读落地 Artifact；未自动提交、"
+                f"{label} Return 已通过本地合同校验并生成只读落地 Artifact；未自动提交、"
                 "推送、创建 PR、合并、标签或发布。"
             ),
         )
@@ -281,6 +408,7 @@ class ProviderExecutionCoordinator:
                 "return_id": return_id,
                 "session_id": payload.session_id,
                 "handoff_id": payload.handoff_id,
+                "provider": payload.provider,
                 "base_commit": payload.base_commit,
                 "change_set_digest": stored.change_set_digest,
                 "review_diff_digest": stored.review_diff_digest,
@@ -318,7 +446,7 @@ class ProviderExecutionCoordinator:
                         return_id,
                         payload.handoff_id,
                         record.status.value,
-                        "codex",
+                        payload.provider,
                         payload.request_digest,
                         payload.package_digest,
                         stored.change_set_digest,

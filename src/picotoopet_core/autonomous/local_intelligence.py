@@ -8,13 +8,21 @@ commands; callers provide only a fixed role, bounded text and evidence IDs.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 from enum import StrEnum
+from pathlib import Path
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from picotoopet_core.agents.runtime import AgentRuntime, build_ollama_agent
+from picotoopet_core.agents.runtime import AgentRuntime
 from picotoopet_core.domain.models import TaskRecord
+from picotoopet_core.ollama.model_runner import (
+    IsolatedModelRunner,
+    ModelRunnerError,
+    ModelRunnerPolicy,
+)
 from picotoopet_core.worker.handlers import HandlerResult
 
 
@@ -112,52 +120,114 @@ _ROLE_INSTRUCTIONS: dict[LocalAnalysisRole, str] = {
 }
 
 
+def _build_prompt(request: LocalAnalysisRequest) -> str:
+    evidence = ", ".join(request.evidence_ids) if request.evidence_ids else "无"
+    return (
+        "你正在执行 PicotooPet AI 的固定本地分析工位。\n"
+        f"角色：{request.role.value}\n"
+        f"固定职责：{_ROLE_INSTRUCTIONS[request.role]}\n"
+        "规则：只使用下面给出的文本；不要调用工具、不要访问网络、不要读取文件、"
+        "不要假设未提供的数据。输出必须符合既定结构化结果。\n"
+        f"Evidence IDs：{evidence}\n"
+        "输入文本：\n"
+        f"{request.text}"
+    )
+
+
 class AgentRuntimeLocalIntelligenceAdapter:
-    """Bridge the existing PydanticAI/Ollama runtime into one synchronous Worker call."""
+    """Legacy in-process adapter retained only for explicitly injected tests and callers."""
 
     def __init__(self, runtime: AgentRuntime) -> None:
         self.runtime = runtime
 
     def analyze(self, request: LocalAnalysisRequest) -> LocalAnalysisResult:
-        prompt = self._build_prompt(request)
+        prompt = _build_prompt(request)
         try:
             result = asyncio.run(self.runtime.analyze(prompt))
         except RuntimeError as error:
-            # Worker execution is synchronous; a nested event loop would be an invalid host.
+            # ── Production assembly no longer uses this in-process path. ──
             raise LocalIntelligenceError("local model runtime unavailable") from error
-        return LocalAnalysisResult(
-            role=request.role,
-            summary=result.summary,
-            confidence=result.confidence,
-            findings=result.findings,
-            recommended_actions=result.recommended_actions,
-            evidence_ids=request.evidence_ids,
-        )
+        return _to_local_result(request, result)
 
     @staticmethod
     def _build_prompt(request: LocalAnalysisRequest) -> str:
-        evidence = ", ".join(request.evidence_ids) if request.evidence_ids else "无"
-        return (
-            "你正在执行 PicotooPet AI 的固定本地分析工位。\n"
-            f"角色：{request.role.value}\n"
-            f"固定职责：{_ROLE_INSTRUCTIONS[request.role]}\n"
-            "规则：只使用下面给出的文本；不要调用工具、不要访问网络、不要读取文件、"
-            "不要假设未提供的数据。输出必须符合既定结构化结果。\n"
-            f"Evidence IDs：{evidence}\n"
-            "输入文本：\n"
-            f"{request.text}"
-        )
+        """Compatibility helper used by existing focused tests/callers."""
+
+        return _build_prompt(request)
+
+
+class IsolatedRunnerLocalIntelligenceAdapter:
+    """Production adapter: long model execution lives only in a killable child process."""
+
+    def __init__(self, runner: IsolatedModelRunner) -> None:
+        self.runner = runner
+
+    def analyze(self, request: LocalAnalysisRequest) -> LocalAnalysisResult:
+        try:
+            result = self.runner.analyze(_build_prompt(request))
+        except ModelRunnerError as error:
+            # ── Stable runner codes are preserved without exposing prompt or child output. ──
+            raise LocalIntelligenceError(str(error)) from error
+        return _to_local_result(request, result)
+
+
+def _to_local_result(request: LocalAnalysisRequest, result: object) -> LocalAnalysisResult:
+    """Map the validated AgentResult shape into the local-analysis result contract."""
+
+    summary = getattr(result, "summary")
+    confidence = getattr(result, "confidence")
+    findings = getattr(result, "findings")
+    recommended_actions = getattr(result, "recommended_actions")
+    return LocalAnalysisResult(
+        role=request.role,
+        summary=summary,
+        confidence=confidence,
+        findings=findings,
+        recommended_actions=recommended_actions,
+        evidence_ids=request.evidence_ids,
+    )
+
+
+def _default_model_runner_root() -> Path:
+    """Mirror the configured runtime root so legacy worker assembly stays managed."""
+
+    configured = os.getenv("PICOTOO_RUNTIME_ROOT", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve() / "runtime" / "model-runner"
+    if sys.platform == "darwin":
+        root = Path.home() / "Library" / "Application Support" / "PicotooPetV2"
+    else:
+        root = Path.home() / ".local" / "share" / "PicotooPetV2"
+    return root / "runtime" / "model-runner"
 
 
 def build_ollama_local_intelligence_adapter(
     *,
+    work_root: Path | str | None = None,
     model_name: str = "gpt-oss:20b",
     base_url: str = "http://127.0.0.1:11434/v1",
-) -> AgentRuntimeLocalIntelligenceAdapter:
-    """Build the production adapter from the already-existing local Ollama runtime."""
+    timeout_seconds: float | None = None,
+) -> IsolatedRunnerLocalIntelligenceAdapter:
+    """Build the production local-analysis adapter with a hard subprocess boundary."""
 
-    return AgentRuntimeLocalIntelligenceAdapter(
-        build_ollama_agent(model_name=model_name, base_url=base_url)
+    configured_timeout = (
+        float(os.getenv("PICOTOO_LOCAL_INTELLIGENCE_TIMEOUT_SECONDS", "900"))
+        if timeout_seconds is None
+        else float(timeout_seconds)
+    )
+    policy = ModelRunnerPolicy(
+        hard_timeout_seconds=min(configured_timeout, 1800.0),
+        max_attempts=2,
+        circuit_failure_threshold=2,
+        circuit_cooldown_seconds=60.0,
+    )
+    return IsolatedRunnerLocalIntelligenceAdapter(
+        IsolatedModelRunner(
+            work_root=work_root or _default_model_runner_root(),
+            model_name=model_name,
+            base_url=base_url,
+            policy=policy,
+        )
     )
 
 

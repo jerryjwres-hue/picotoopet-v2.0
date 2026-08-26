@@ -34,7 +34,9 @@ from picotoopet_core.deep_ai.provider import (
     DeepAiWorkerProviderConfig,
     OpenAiResponsesPaidAiAdapter,
 )
+from picotoopet_core.diagnostics.reliability import observe_memory_pressure
 from picotoopet_core.health.supervisor import HealthSupervisor
+from picotoopet_core.ollama.budget import AdaptiveModelInputBudgetProvider
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import (
     ResidentManager,
@@ -47,6 +49,8 @@ from picotoopet_core.providers.execution import ProviderExecutionCoordinator
 from picotoopet_core.providers.publication_execution import (
     ProviderPublicationExecutionCoordinator,
 )
+from picotoopet_core.providers.readiness import ProviderReadinessProjection
+from picotoopet_core.providers.readiness_worker import ProviderReadinessPublisher
 from picotoopet_core.services import build_services
 from picotoopet_core.worker.runtime import WorkerRuntime
 
@@ -66,6 +70,19 @@ class _HealthyResident:
 def _build_resident_manager(settings: AppSettings) -> ResidentManager:
     client = OllamaClient(settings.ollama_base_url, timeout_seconds=10.0)
     return ResidentManager(client, settings.ollama_model)
+
+
+def _build_autonomous_model_budget(
+    settings: AppSettings,
+) -> tuple[AdaptiveModelInputBudgetProvider, OllamaClient]:
+    """Bind one read-only live resource observer for adaptive local-model input limits."""
+
+    client = OllamaClient(settings.local_intelligence_base_url, timeout_seconds=2.0)
+    provider = AdaptiveModelInputBudgetProvider(
+        memory_pressure=observe_memory_pressure,
+        process_snapshot=client.process_snapshot,
+    )
+    return provider, client
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -143,12 +160,14 @@ def _run_worker(
         poll_seconds=settings.worker_poll_seconds,
     )
     provider_coordinator: ProviderExecutionCoordinator | None = None
+    provider_readiness: ProviderReadinessPublisher | None = None
     adoption_coordinator: AdoptionExecutionCoordinator | None = None
     commit_coordinator: ProviderCommitExecutionCoordinator | None = None
     publication_coordinator: ProviderPublicationExecutionCoordinator | None = None
     business_adapter: OpenAiCompatibleLocalIntelligenceAdapter | None = None
     business_coordinator: BusinessLocalIntelligenceCoordinator | None = None
     creative_coordinator: CreativeIntelligenceCoordinator | None = None
+    autonomous_budget_client: OllamaClient | None = None
     deep_ai_provider_config = DeepAiWorkerProviderConfig.from_environment(os.environ)
     deep_ai_provider_adapter: OpenAiResponsesPaidAiAdapter | None = None
     deep_ai_execution_loop: DeepAiWorkerExecutionLoop | None = None
@@ -158,15 +177,23 @@ def _run_worker(
     if settings.provider_execution_configured:
         assert settings.provider_repository is not None
         assert settings.provider_worktree_root is not None
-        assert settings.codex_executable is not None
+        provider_readiness = ProviderReadinessPublisher(
+            projection=ProviderReadinessProjection(services.capability_router),
+            worker_id=resolved_worker_id,
+            repository=settings.provider_repository,
+            codex_executable=settings.codex_executable,
+            claude_code_executable=settings.claude_code_executable,
+        )
         provider_coordinator = ProviderExecutionCoordinator(
             queue=services.queue,
             sessions=services.provider_sessions,
             repository=settings.provider_repository,
             worktree_root=settings.provider_worktree_root,
             codex_executable=settings.codex_executable,
+            claude_code_executable=settings.claude_code_executable,
             worker_id=resolved_worker_id,
             artifact_store=services.provider_artifacts,
+            readiness_by_provider=provider_readiness.status,
         )
         adoption_coordinator = AdoptionExecutionCoordinator(
             database=services.database,
@@ -182,7 +209,8 @@ def _run_worker(
             worktree_root=settings.paths.runtime_dir / "commit-worktrees",
             artifact_store=services.provider_artifacts,
         )
-        runtime.handlers[ProviderExecutionCoordinator.TASK_TYPE] = provider_coordinator.handler
+        for task_type in provider_coordinator.configured_task_types:
+            runtime.handlers[task_type] = provider_coordinator.handler
         runtime.handlers[AdoptionExecutionCoordinator.TASK_TYPE] = adoption_coordinator.handler
         runtime.handlers[ProviderCommitExecutionCoordinator.TASK_TYPE] = commit_coordinator.handler
     if settings.provider_publication_configured:
@@ -224,30 +252,28 @@ def _run_worker(
             configured_model_id=local_config.model_id,
         )
     except ValueError:
-        # Invalid trusted configuration disables only local intelligence capabilities.
         business_adapter = None
         business_coordinator = None
         creative_coordinator = None
 
-    # 自治本地分析复用同一个 gpt-oss:20b / loopback 服务，但使用独立固定结构化合同。
     autonomous_local_coordinator = LocalIntelligenceCoordinator(
         build_ollama_local_intelligence_adapter(
             model_name=settings.local_intelligence_model,
             base_url=settings.local_intelligence_base_url.rstrip("/"),
         )
     )
+    autonomous_model_budget, autonomous_budget_client = _build_autonomous_model_budget(settings)
     autonomous_background = AutonomousBackgroundCoordinator(
         manager=services.autonomous_manager,
         capability_router=services.capability_router,
         runtime=runtime,
         worker_id=resolved_worker_id,
         local_intelligence_handler=autonomous_local_coordinator.handler,
+        model_input_budget=autonomous_model_budget,
         model_id=settings.local_intelligence_model,
     )
 
     if deep_ai_provider_config.execution_enabled:
-        # Paid execution is constructed only inside the Worker process after explicit opt-in + key.
-        # Core `serve`, Windows and package manifests never receive the raw credential.
         deep_ai_provider_adapter = OpenAiResponsesPaidAiAdapter(deep_ai_provider_config)
         deep_ai_execution_loop = DeepAiWorkerExecutionLoop(
             repository=services.deep_ai_repository,
@@ -261,6 +287,7 @@ def _run_worker(
 
     def enqueue_controlled_work() -> None:
         if provider_coordinator is not None:
+            services.coding_escalation.reconcile_pending(limit=20)
             provider_coordinator.enqueue_pending()
         if adoption_coordinator is not None:
             adoption_coordinator.enqueue_pending()
@@ -272,7 +299,6 @@ def _run_worker(
     def refresh_business_capability(*, force: bool = False) -> bool:
         """Probe one loopback model and atomically expose both closed intelligence capabilities."""
 
-        # Retain explicit source marker for creative.intelligence.v1 → creative.content_plan.v1.
         nonlocal business_healthy, last_business_probe
         now = time.monotonic()
         if force or now - last_business_probe >= 15.0:
@@ -350,6 +376,8 @@ def _run_worker(
     try:
         if once:
             local_healthy = refresh_business_capability(force=True)
+            if provider_readiness is not None:
+                provider_readiness.refresh(force=True)
             autonomous_background.refresh_local_intelligence(healthy=local_healthy)
             publish_paid_ai_capability(healthy=deep_ai_execution_loop is not None)
             publish_execution_capability(healthy=True)
@@ -383,13 +411,14 @@ def _run_worker(
         signal.signal(signal.SIGTERM, request_stop)
         while not stop_event.is_set():
             local_healthy = refresh_business_capability()
+            if provider_readiness is not None:
+                provider_readiness.refresh()
             autonomous_background.refresh_local_intelligence(healthy=local_healthy)
             publish_paid_ai_capability(healthy=deep_ai_execution_loop is not None)
             publish_execution_capability(healthy=True)
             enqueue_controlled_work()
             if deep_ai_execution_loop is not None:
                 deep_ai_execution_loop.run_once()
-            # 自治层只负责创建/推进现有 Workflow；失败被隔离，不得终止 7x24 Worker。
             autonomous_background.tick_safely()
             runtime.run_once()
             stop_event.wait(settings.worker_poll_seconds)
@@ -397,6 +426,8 @@ def _run_worker(
     finally:
         try:
             autonomous_background.refresh_local_intelligence(healthy=False)
+            if provider_readiness is not None:
+                provider_readiness.publish_unavailable()
             services.capability_router.register(
                 CapabilityRegistration(
                     worker_id=resolved_worker_id,
@@ -425,6 +456,8 @@ def _run_worker(
                 deep_ai_provider_adapter.close()
             if business_adapter is not None:
                 business_adapter.close()
+            if autonomous_budget_client is not None:
+                autonomous_budget_client.close()
             services.close()
 
 

@@ -6,13 +6,19 @@ namespace PicotooPet.Desktop.Services;
 /// <summary>把低频 Handoff 操作接入当前安全配对会话。</summary>
 public sealed partial class ControlCenterSession
 {
-    /// <summary>读取 Mac Core 发布的固定 Handoff 模板。</summary>
+    /// <summary>读取 Mac Core 发布的固定 Handoff 模板；Windows 只保留 manual 模板。</summary>
     public async Task<HandoffTemplateRecord[]> GetHandoffTemplatesAsync(
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         await using var client = CreateHandoffClient();
-        return await client.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
+        var templates = await client.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
+        return templates
+            .Where(template => string.Equals(
+                template.Provider,
+                "manual",
+                StringComparison.Ordinal))
+            .ToArray();
     }
 
     /// <summary>读取最多一百条 Handoff 安全投影。</summary>

@@ -109,17 +109,23 @@ public sealed class AppStateStore
             connection.LastError,
             tasks.LastSequence,
             tasks.TaskReset,
-            tasks.ChangedTask);
+            tasks.ChangedTask,
+            connection.CoreReachable,
+            connection.EventStreamState,
+            connection.RealtimeDegraded);
 
     private void PublishSnapshot(AppSnapshot snapshot) =>
         SnapshotChanged?.Invoke(this, snapshot);
 }
 
-/// <summary>界面层消费的不可变应用快照，并携带增量变化提示。</summary>
+/// <summary>界面层消费的不可变应用快照，并携带双通道与增量变化提示。</summary>
 public sealed record AppSnapshot(
     ConnectionState ConnectionState,
     IReadOnlyList<TaskRecord> Tasks,
     string? LastError,
     long LastSequence,
     bool TaskReset,
-    TaskRecord? ChangedTask);
+    TaskRecord? ChangedTask,
+    bool CoreReachable = false,
+    ConnectionState EventStreamState = ConnectionState.Offline,
+    bool RealtimeDegraded = true);

@@ -1,4 +1,4 @@
-"""Phase 10D-A Codex Provider 静态安全合同。"""
+"""Phase 10D-A bounded coding Provider static safety contract."""
 
 from __future__ import annotations
 
@@ -23,17 +23,23 @@ def test_phase10d_core_has_separate_provider_domain_and_additive_migration() -> 
     app = _read("src/picotoopet_core/api/app.py")
 
     assert "class ProviderSessionStatus" in models
-    assert 'Literal["codex"]' in models
+    assert 'Literal["codex", "claude_code"]' in models
     assert 'extra="forbid"' in models
     assert "class ProviderSessionService" in service
+    assert "create_codex_session" in service
+    assert "create_claude_code_session" in service
     assert "MIGRATION_006" in schema
     assert "provider_usage_confirmations" in schema
     assert "provider_sessions" in schema
     assert "MIGRATION_006" in database
     assert "provider_sessions: ProviderSessionService" in services
     assert "provider_sessions.router" in app
-    assert "/provider-sessions/codex" in routes
+    assert "/provider-sessions/codex" not in routes
+    assert "/provider-sessions/claude-code" not in routes
     assert "/provider-usage-confirmation" in routes
+    assert '@router.get("/provider-sessions"' in routes
+    assert '"/provider-sessions/{session_id}"' in routes
+    assert '"/provider-sessions/{session_id}/cancel"' in routes
 
 
 def test_phase10d_budget_is_fixed_and_cannot_auto_expand() -> None:
@@ -80,3 +86,5 @@ def test_phase10d_api_rejects_arbitrary_provider_inputs_and_secrets() -> None:
     assert "require_empty_body" in routes
     assert "Idempotency-Key" in routes
     assert "response_model=ProviderSessionRecord" in routes
+    assert "create_codex_session" not in routes
+    assert "create_claude_code_session" not in routes

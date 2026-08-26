@@ -49,8 +49,8 @@ public sealed class EventStreamClient : IEventStreamSession
         _token           = token;
         _lastSequence    = Math.Max(0, lastSequence);
         _reconnectPolicy = reconnectPolicy ?? new ReconnectPolicy();
-        _pongTimeout     = pongTimeout ?? TimeSpan.FromSeconds(2);
-        _pingInterval    = pingInterval ?? TimeSpan.FromSeconds(1);
+        _pongTimeout     = pongTimeout ?? TimeSpan.FromSeconds(30);
+        _pingInterval    = pingInterval ?? TimeSpan.FromSeconds(10);
         if (_pongTimeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(pongTimeout), "Pong 超时必须大于零。");
@@ -100,7 +100,7 @@ public sealed class EventStreamClient : IEventStreamSession
             PublishState(attempt == 0 ? ConnectionState.Connecting : ConnectionState.Reconnecting);
             using var socket = new ClientWebSocket();
             socket.Options.SetRequestHeader("Authorization", $"Bearer {_token}");
-            socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(1);
+            socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
             try
             {
                 await socket.ConnectAsync(BuildEventUri(), cancellationToken).ConfigureAwait(false);
@@ -201,8 +201,12 @@ public sealed class EventStreamClient : IEventStreamSession
                 var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 SocketMeasured?.Invoke(this, new SocketMeasurement(elapsed, nonce));
             }
+            RecordInboundActivity();
             return;
         }
+
+        // ── Any valid inbound application message proves the transport is alive. ──
+        RecordInboundActivity();
         if (root.TryGetProperty("topic", out var topic) && topic.GetString() == "connected")
         {
             return;
@@ -215,6 +219,12 @@ public sealed class EventStreamClient : IEventStreamSession
         }
         await _channel.Writer.WriteAsync(envelope, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// 有效入站业务消息比单个延迟应用层 Pong 更强，因此丢弃旧 Ping 延迟样本，
+    /// 防止服务端事件发送锁或历史重放把健康连接误判为半连接。
+    /// </summary>
+    private void RecordInboundActivity() => _pendingPings.Clear();
 
     private async Task PingLoopAsync(
         ClientWebSocket socket,
@@ -262,7 +272,7 @@ public sealed class EventStreamClient : IEventStreamSession
             return;
         }
 
-        // 超过两秒且当前没有待消费事件时才视为半连接；事件积压本身证明链路仍有入站流量。
+        // 只有持续超过 deadline 且期间没有更近的有效入站消息时，才把连接视为半连接。
         foreach (var pending in _pendingPings)
         {
             if (Stopwatch.GetElapsedTime(pending.Value) < _pongTimeout)
@@ -270,7 +280,7 @@ public sealed class EventStreamClient : IEventStreamSession
                 continue;
             }
             throw new TimeoutException(
-                $"WebSocket Pong 超时：{_pongTimeout.TotalMilliseconds:F0} ms。");
+                $"WebSocket Pong 超时：{_pongTimeout.TotalMilliseconds:F0} ms。" );
         }
     }
 

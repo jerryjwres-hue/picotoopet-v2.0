@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_PRODUCT_VERSION = "2.3.26.1"
+CURRENT_PRODUCT_VERSION = "2.3.27.1"
 CURRENT_DATABASE_SCHEMA = 18
 
 

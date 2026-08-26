@@ -28,6 +28,7 @@ function Invoke-NativeCommand {
     param(
         [Parameter(Mandatory)][string]$FilePath,
         [Parameter(Mandatory)][string[]]$Arguments,
+        [string]$WorkingDirectory = "",
         [int]$TimeoutSeconds = 900
     )
 
@@ -38,6 +39,10 @@ function Invoke-NativeCommand {
     $startInfo                        = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName               = $FilePath
     $startInfo.Arguments              = $argumentLine
+    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        # global.json is resolved from the child process working directory, not the caller's CWD.
+        $startInfo.WorkingDirectory = $WorkingDirectory
+    }
     $startInfo.UseShellExecute        = $false
     $startInfo.CreateNoWindow         = $true
     $startInfo.RedirectStandardOutput = $true
@@ -209,7 +214,7 @@ if ($Version -notmatch '^[A-Za-z0-9._-]+$') {
 }
 
 $dotnet     = (Get-Command "dotnet.exe" -ErrorAction Stop).Source
-$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version")).StdOut.Trim()
+$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot).StdOut.Trim()
 if ($sdkVersion -ne "10.0.302") {
     throw "Windows 发布必须使用 .NET SDK 10.0.302，实际为 $sdkVersion。"
 }
@@ -236,11 +241,11 @@ New-Item -ItemType Directory -Path $appOutput, $diagOutput, $packageRoot -Force 
 
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $solution, "--nologo"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "build", $solution, "--configuration", "Release", "--no-restore", "--nologo",
     "-p:ContinuousIntegrationBuild=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 
 # Smoke scope -----------------------------------------------------------------
 $smokeArguments = @(
@@ -249,16 +254,16 @@ $smokeArguments = @(
 if ($ValidationScope -eq "UiPreview") {
     $smokeArguments += @("--", "--ui-interaction-only")
 }
-Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments | Out-Null
+Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments -WorkingDirectory $desktopRoot | Out-Null
 
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $appProject, "--runtime", "win-x64", "--nologo",
     "-p:PublishReadyToRun=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $diagProject, "--runtime", "win-x64", "--nologo",
     "-p:PublishReadyToRun=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "publish", $appProject, "--configuration", "Release", "--runtime", "win-x64",
     "--self-contained", "true", "--output", $appOutput, "--no-restore",
@@ -266,7 +271,7 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "-p:PublishReadyToRunShowWarnings=true",
     "-p:IncludeNativeLibrariesForSelfExtract=true", "-p:PublishTrimmed=false",
     "-p:DebugType=None", "-p:DebugSymbols=false", "-p:ContinuousIntegrationBuild=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "publish", $diagProject, "--configuration", "Release", "--runtime", "win-x64",
     "--self-contained", "true", "--output", $diagOutput, "--no-restore",
@@ -274,7 +279,7 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "-p:PublishReadyToRunShowWarnings=true",
     "-p:IncludeNativeLibrariesForSelfExtract=true", "-p:PublishTrimmed=false",
     "-p:DebugType=None", "-p:DebugSymbols=false", "-p:ContinuousIntegrationBuild=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 
 $appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"
 $diagExecutable = Join-Path $diagOutput "PicotooPet.Desktop.Diagnostics.exe"
@@ -307,8 +312,7 @@ if ([string]$selfTest.status -ne "pass") {
     throw "桌面自检报告不是 pass。"
 }
 if ([string]$selfTest.product_version -ne $ProductVersion -or
-    [string]$selfTest.window_title -ne "Picotoo Pet AI $ProductVersion" -or
-    [string]$selfTest.control_center_subtitle -ne "Control Center · v$ProductVersion") {
+    [string]$selfTest.checks.product_version_surfaces -ne "pass") {
     throw "桌面自检产品版本文案不一致。"
 }
 

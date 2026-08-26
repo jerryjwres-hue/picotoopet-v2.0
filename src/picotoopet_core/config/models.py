@@ -34,17 +34,28 @@ class AppSettings(BaseModel):
     provider_repository: Path | None = None
     provider_worktree_root: Path | None = None
     codex_executable: Path | None = None
+    claude_code_executable: Path | None = None
     github_cli_executable: Path | None = None
 
     @property
+    def configured_coding_providers(self) -> tuple[str, ...]:
+        """Return only providers explicitly configured on this Worker."""
+
+        providers: list[str] = []
+        if self.codex_executable is not None:
+            providers.append("codex")
+        if self.claude_code_executable is not None:
+            providers.append("claude_code")
+        return tuple(providers)
+
+    @property
     def provider_execution_configured(self) -> bool:
-        return all(
-            value is not None
-            for value in (
-                self.provider_repository,
-                self.provider_worktree_root,
-                self.codex_executable,
-            )
+        """Execution requires an isolated repo/worktree plus at least one explicit provider."""
+
+        return (
+            self.provider_repository is not None
+            and self.provider_worktree_root is not None
+            and bool(self.configured_coding_providers)
         )
 
     @property
@@ -67,6 +78,9 @@ class AppSettings(BaseModel):
         )
         payload["codex_executable"] = (
             "configured" if self.codex_executable is not None else "disabled"
+        )
+        payload["claude_code_executable"] = (
+            "configured" if self.claude_code_executable is not None else "disabled"
         )
         payload["github_cli_executable"] = (
             "configured" if self.github_cli_executable is not None else "disabled"

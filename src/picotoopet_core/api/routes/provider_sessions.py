@@ -1,4 +1,4 @@
-"""Phase 10D-A 受控 Codex Provider REST 路由。"""
+"""Bounded Codex and Claude Code Provider REST routes."""
 
 from collections.abc import Callable
 
@@ -23,10 +23,19 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 @router.get("/providers/codex/status", response_model=ProviderStatusRecord)
 def get_codex_status(request: Request) -> ProviderStatusRecord:
-    """读取 Mac Worker 投影的最小就绪状态，不读取凭据或 Usage 页面。"""
+    """Read the minimal Codex readiness projection without credentials or Usage data."""
 
     return execute_provider(
-        lambda: request.app.state.services.provider_sessions.provider_status()
+        lambda: request.app.state.services.provider_sessions.provider_status("codex")
+    )
+
+
+@router.get("/providers/claude-code/status", response_model=ProviderStatusRecord)
+def get_claude_code_status(request: Request) -> ProviderStatusRecord:
+    """Read the minimal Claude Code readiness projection without credentials or Usage data."""
+
+    return execute_provider(
+        lambda: request.app.state.services.provider_sessions.provider_status("claude_code")
     )
 
 
@@ -35,7 +44,7 @@ def get_codex_status(request: Request) -> ProviderStatusRecord:
     response_model=ProviderUsageConfirmationRecord,
     status_code=status.HTTP_201_CREATED,
 )
-def confirm_codex_usage(
+def confirm_provider_usage(
     handoff_id: str,
     body: ProviderUsageConfirmationRequest,
     request: Request,
@@ -45,7 +54,7 @@ def confirm_codex_usage(
         alias="Idempotency-Key",
     ),
 ) -> ProviderUsageConfirmationRecord:
-    """记录用户在外部 Codex Usage 页面完成的短期人工确认。"""
+    """Record one short-lived usage fact for the provider already bound by the Handoff."""
 
     return execute_provider(
         lambda: request.app.state.services.provider_sessions.confirm_usage(
@@ -56,37 +65,12 @@ def confirm_codex_usage(
     )
 
 
-@router.post(
-    "/handoffs/{handoff_id}/provider-sessions/codex",
-    response_model=ProviderSessionRecord,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_codex_session(
-    handoff_id: str,
-    request: Request,
-    idempotency_key: str = Header(
-        min_length=1,
-        max_length=200,
-        alias="Idempotency-Key",
-    ),
-) -> ProviderSessionRecord:
-    """为 approved Codex Handoff 幂等创建唯一低预算 Session。"""
-
-    await require_empty_body(request)
-    return execute_provider(
-        lambda: request.app.state.services.provider_sessions.create_codex_session(
-            handoff_id,
-            idempotency_key=idempotency_key,
-        )
-    )
-
-
 @router.get("/provider-sessions", response_model=list[ProviderSessionRecord])
 def list_provider_sessions(
     request: Request,
     limit: int = Query(default=100, ge=1, le=100),
 ) -> list[ProviderSessionRecord]:
-    """读取最近的 Provider Session 安全投影。"""
+    """Read recent Core-created Provider Session safe projections."""
 
     return execute_provider(
         lambda: request.app.state.services.provider_sessions.list_sessions(limit=limit)
@@ -98,7 +82,7 @@ def list_provider_sessions(
     response_model=ProviderSessionRecord,
 )
 def get_provider_session(session_id: str, request: Request) -> ProviderSessionRecord:
-    """读取单个 Provider Session 安全投影。"""
+    """Read one Core-created Provider Session safe projection."""
 
     return execute_provider(
         lambda: request.app.state.services.provider_sessions.get_session(session_id)
@@ -118,7 +102,7 @@ async def cancel_provider_session(
         alias="Idempotency-Key",
     ),
 ) -> ProviderSessionRecord:
-    """记录取消事实；Mac Worker 负责终止完整进程组并清理 worktree。"""
+    """Record cancellation; Mac Worker terminates the process group and cleans worktree."""
 
     del idempotency_key
     await require_empty_body(request)
@@ -128,7 +112,7 @@ async def cancel_provider_session(
 
 
 async def require_empty_body(request: Request) -> None:
-    """Session 创建和取消不接受路径、命令、模型、凭据或任意 JSON。"""
+    """Provider cancellation never accepts paths, commands, models, credentials or flags."""
 
     if await request.body():
         raise ApiError(
@@ -140,7 +124,7 @@ async def require_empty_body(request: Request) -> None:
 
 
 def execute_provider[TResult](operation: Callable[[], TResult]) -> TResult:
-    """把 Provider 领域错误映射为固定、不泄密的 API 错误。"""
+    """Map Provider domain failures to fixed non-secret API errors."""
 
     try:
         return operation()

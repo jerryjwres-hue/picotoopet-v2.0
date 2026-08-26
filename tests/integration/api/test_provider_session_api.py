@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from picotoopet_core.api.app import create_app
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.handoffs.models import HandoffPrepareRequest
 
 
 def make_client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
@@ -17,20 +18,20 @@ def make_client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
 
 
 def approve_codex_handoff(client: TestClient, headers: dict[str, str]) -> dict[str, object]:
-    prepared = client.post(
-        "/api/v1/handoffs/prepare",
-        headers={**headers, "Idempotency-Key": "provider-handoff-prepare"},
-        json={
-            "template_id": "picotoopet-repo-maintenance-codex-v1",
-            "title": "受控 Codex 修复",
-            "objective": "只修改批准范围并返回本地可验证结果。",
-            "expires_seconds": 1800,
-        },
+    # Provider-bound templates are Core-internal authority. Public /handoffs/prepare
+    # intentionally rejects them, so Provider API tests seed the trusted Core fact directly.
+    prepared = client.app.state.services.handoffs.prepare(
+        HandoffPrepareRequest(
+            template_id="picotoopet-repo-maintenance-codex-v1",
+            title="受控 Codex 修复",
+            objective="只修改批准范围并返回本地可验证结果。",
+            expires_seconds=1800,
+        ),
+        idempotency_key="provider-handoff-prepare",
     )
-    assert prepared.status_code == 201
-    handoff = prepared.json()
+    handoff_id = prepared.handoff_id
     submitted = client.post(
-        f"/api/v1/handoffs/{handoff['handoff_id']}/submit-approval",
+        f"/api/v1/handoffs/{handoff_id}/submit-approval",
         headers={**headers, "Idempotency-Key": "provider-handoff-submit"},
     )
     assert submitted.status_code == 200
@@ -41,19 +42,19 @@ def approve_codex_handoff(client: TestClient, headers: dict[str, str]) -> dict[s
         json={
             "decision": "approve",
             "request_digest": approval["request_digest"],
-            "reason": "批准一次低预算 Codex Session。",
+            "reason": "批准受控 Handoff；Provider Session 创建权保留在 Mac Core。",
         },
     )
     assert approved.status_code == 200
     final = client.get(
-        f"/api/v1/handoffs/{handoff['handoff_id']}",
+        f"/api/v1/handoffs/{handoff_id}",
         headers=headers,
     )
     assert final.json()["status"] == "approved"
     return final.json()
 
 
-def test_confirm_usage_and_create_one_codex_session(tmp_path: Path) -> None:
+def test_confirm_usage_then_read_core_created_codex_session(tmp_path: Path) -> None:
     client, headers = make_client(tmp_path)
     with client:
         handoff = approve_codex_handoff(client, headers)
@@ -67,17 +68,14 @@ def test_confirm_usage_and_create_one_codex_session(tmp_path: Path) -> None:
             headers={**headers, "Idempotency-Key": "provider-usage-confirm"},
             json={"status": "confirmed_available"},
         )
-        created = client.post(
-            f"/api/v1/handoffs/{handoff['handoff_id']}/provider-sessions/codex",
-            headers={**headers, "Idempotency-Key": "provider-session-create"},
+        created = client.app.state.services.provider_sessions.create_codex_session(
+            str(handoff["handoff_id"]),
+            idempotency_key="core-internal-provider-session-create",
         )
-        replay_created = client.post(
-            f"/api/v1/handoffs/{handoff['handoff_id']}/provider-sessions/codex",
-            headers={**headers, "Idempotency-Key": "provider-session-create"},
-        )
+        created_json = created.model_dump(mode="json")
         listed = client.get("/api/v1/provider-sessions?limit=100", headers=headers)
         fetched = client.get(
-            f"/api/v1/provider-sessions/{created.json()['session_id']}",
+            f"/api/v1/provider-sessions/{created.session_id}",
             headers=headers,
         )
 
@@ -94,17 +92,17 @@ def test_confirm_usage_and_create_one_codex_session(tmp_path: Path) -> None:
         "concurrency": 1,
         "network_tools_allowed": False,
     }
-    assert created.status_code == 201
-    assert replay_created.json() == created.json()
-    assert created.json()["status"] == "waiting_provider_ready"
-    assert listed.json() == [created.json()]
-    assert fetched.json() == created.json()
-    text = created.text.lower()
+    assert created_json["status"] == "waiting_provider_ready"
+    assert listed.json() == [created_json]
+    assert fetched.json() == created_json
+    text = fetched.text.lower()
     for forbidden in ("token", "cookie", "authorization", "api_key", "transcript"):
         assert forbidden not in text
 
 
-def test_provider_api_rejects_arbitrary_body_and_low_usage(tmp_path: Path) -> None:
+def test_provider_api_rejects_arbitrary_usage_fields_and_direct_session_create(
+    tmp_path: Path,
+) -> None:
     client, headers = make_client(tmp_path)
     with client:
         handoff = approve_codex_handoff(client, headers)
@@ -118,21 +116,14 @@ def test_provider_api_rejects_arbitrary_body_and_low_usage(tmp_path: Path) -> No
             headers={**headers, "Idempotency-Key": "provider-low-confirm"},
             json={"status": "confirmed_low"},
         )
-        denied = client.post(
+        direct_create = client.post(
             f"/api/v1/handoffs/{handoff['handoff_id']}/provider-sessions/codex",
-            headers={**headers, "Idempotency-Key": "provider-low-session"},
-        )
-        arbitrary_create = client.post(
-            f"/api/v1/handoffs/{handoff['handoff_id']}/provider-sessions/codex",
-            headers={**headers, "Idempotency-Key": "provider-body-session"},
-            json={"command": "do anything"},
+            headers={**headers, "Idempotency-Key": "provider-direct-create"},
         )
 
     assert arbitrary_confirmation.status_code == 422
     assert low.status_code == 201
-    assert denied.status_code == 400
-    assert denied.json()["error"]["code"] == "PROVIDER_POLICY_DENIED"
-    assert arbitrary_create.status_code == 422
+    assert direct_create.status_code == 404
 
 
 def test_provider_api_requires_authentication_and_idempotency(tmp_path: Path) -> None:

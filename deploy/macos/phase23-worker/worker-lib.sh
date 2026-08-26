@@ -149,12 +149,26 @@ stop_fixture_worker() {
   rm -f "$pid_file"
 }
 
+wait_for_worker_agent_unloaded() {
+  local attempts="${1:-40}"
+  local index
+  for ((index = 0; index < attempts; index += 1)); do
+    if ! launchctl print "gui/$UID/$(worker_label)" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "Worker LaunchAgent 未完成卸载：$(worker_label)" >&2
+  return 1
+}
+
 stop_worker_agent() {
   if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
     stop_fixture_worker "$(phase23_runtime_root)"
     return 0
   fi
   launchctl bootout "gui/$UID/$(worker_label)" >/dev/null 2>&1 || true
+  wait_for_worker_agent_unloaded
 }
 
 start_fixture_worker() {
@@ -228,6 +242,8 @@ if expected == "online":
     allowed = required | {
         "autonomous.local_analysis.v1",
         "autonomous.discovery.v1",
+        "autonomous.goal_synthesis.v1",
+        "autonomous.goal_handoff.v1",
         "autonomous.storage_maintenance.v1",
         "business.local_intelligence.v1",
         "creative.content_plan.v1",
@@ -326,6 +342,8 @@ required = {"system.diagnostic_snapshot", "system.noop"}
 allowed = required | {
     "autonomous.local_analysis.v1",
     "autonomous.discovery.v1",
+    "autonomous.goal_synthesis.v1",
+    "autonomous.goal_handoff.v1",
     "autonomous.storage_maintenance.v1",
     "business.local_intelligence.v1",
     "creative.content_plan.v1",
@@ -386,6 +404,8 @@ payload = {
     "worker_optional_registered_task_types": [
         "autonomous.local_analysis.v1",
         "autonomous.discovery.v1",
+        "autonomous.goal_synthesis.v1",
+        "autonomous.goal_handoff.v1",
         "autonomous.storage_maintenance.v1",
         "business.local_intelligence.v1",
         "creative.content_plan.v1",

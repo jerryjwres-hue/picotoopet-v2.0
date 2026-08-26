@@ -3,8 +3,10 @@ using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
@@ -13,7 +15,7 @@ using PicotooPet.Desktop.Views.Pages;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结 2.3.27.1 六入口导航、任务可恢复隐藏投影、受控 Research 向导和 STA WPF 布局。</summary>
+/// <summary>冻结 2.3.27.1 六入口导航、目标中心、任务可恢复隐藏投影和 STA WPF 布局。</summary>
 internal static class OperatorSimpleModeSmokeTests
 {
     private static readonly string[] ReviewTaskIds = new[] { "review" };
@@ -32,6 +34,7 @@ internal static class OperatorSimpleModeSmokeTests
     {
         VerifyNavigation();
         VerifyProjectionAndWizard();
+        VerifyGoalCenterClientContract();
         VerifyWpfLayout();
     }
 
@@ -102,6 +105,29 @@ internal static class OperatorSimpleModeSmokeTests
         }
     }
 
+    /// <summary>目标中心必须走 Mac Core 的固定 Goal/Handoff API，不能在 Windows 自造工作流。</summary>
+    private static void VerifyGoalCenterClientContract()
+    {
+        var methods = typeof(MacCoreClient)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Select(method => method.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        var required = new[]
+        {
+            "GetGoalTemplatesAsync",
+            "GetGoalsAsync",
+            "GetGoalAsync",
+            "CreateGoalAsync",
+            "GetGoalHandoffAsync",
+            "DownloadGoalHandoffAsync",
+            "GetGoalHandoffPromptAsync",
+        };
+        foreach (var method in required)
+        {
+            SmokeAssert.True(methods.Contains(method), $"MacCoreClient 缺少 Goal Center 固定调用：{method}");
+        }
+    }
+
     private static void VerifyWpfLayout()
     {
         Exception? failure = null;
@@ -118,7 +144,14 @@ internal static class OperatorSimpleModeSmokeTests
                 var completedViewModel = new OperatorTaskListPageViewModel("已完成", completed: true, snapshot);
                 var reviewViewModel = OperatorReviewPageViewModel.CreateForSmokeTest();
 
-                Layout(new OperatorHomePage { DataContext = homeViewModel });
+                var homePage = new OperatorHomePage { DataContext = homeViewModel };
+                Layout(homePage);
+                SmokeAssert.True(homePage.FindName("GoalObjectiveTextBox") is TextBox, "首页缺少目标输入框");
+                SmokeAssert.True(homePage.FindName("GoalTemplateItems") is ItemsControl, "首页缺少建议目标模板");
+                SmokeAssert.True(homePage.FindName("GoalDepthComboBox") is ComboBox, "首页缺少研究深度选择");
+                SmokeAssert.True(homePage.FindName("CreateGoalButton") is Button, "首页缺少发送目标按钮");
+                SmokeAssert.True(homePage.FindName("GoalStatusCard") is FrameworkElement, "首页缺少目标自动执行状态区");
+
                 Layout(new OperatorTaskListPage { DataContext = activeViewModel });
                 Layout(new OperatorTaskListPage { DataContext = completedViewModel });
                 Layout(new OperatorReviewPage { DataContext = reviewViewModel });

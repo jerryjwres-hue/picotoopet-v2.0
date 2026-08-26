@@ -67,5 +67,5 @@ def test_creative_release_boundary_is_frozen() -> None:
 
 
 def test_creative_intelligence_is_retained_in_current_rollup() -> None:
-    # Version retention gate: 19.1 Creative remains included in current 26.1.
-    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.26.1"
+    # Version retention gate: 19.1 Creative remains included in current 27.1.
+    assert _read("src/picotoopet_core/product-version.txt").strip() == "2.3.27.1"
