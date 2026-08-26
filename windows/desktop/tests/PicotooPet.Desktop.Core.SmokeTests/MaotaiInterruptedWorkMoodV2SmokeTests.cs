@@ -13,6 +13,7 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
         VerifyMidTransitionWorkSettleExitContinuity();
         VerifyMidTransitionTiredExitContinuity();
         VerifyInterruptedTiredErrorContinuity();
+        VerifyInterruptedTiredPatContinuity();
     }
 
     /// <summary>中后段 WorkSettle 被 Resting 打断时，Idle 必须从当下部分下沉姿态连续释放。</summary>
@@ -175,7 +176,57 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
         Assert(reachedLook, "Error 身体经 Recover 后必须在 1.5 秒内进入最终 Look，禁止卡在工作恢复态");
     }
 
-    private static object CreateInput(string baseState)
+    /// <summary>用户摸头必须立即响应，但不能把中段疲劳身体直接清零成中性 UserReaction。</summary>
+    private static void VerifyInterruptedTiredPatContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update = RequireMethod(engineType, "Update");
+        var engine = Activator.CreateInstance(engineType, 97, 108.0)
+            ?? throw new InvalidOperationException("无法创建摸头中断 Motion Engine");
+
+        object? tiredPose = null;
+        for (var frame = 0; frame < 960; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working")])
+                ?? throw new InvalidOperationException("摸头中断预热没有输出 PoseFrame");
+            var state = ReadProperty(pose, "MotionState")?.ToString();
+            var previousState = ReadProperty(pose, "PreviousMotionState")?.ToString();
+            var transitionBlend = ReadDouble(pose, "MotionTransitionBlend");
+            if (string.Equals(state, "WorkTired", StringComparison.Ordinal) &&
+                string.Equals(previousState, "WorkTyping", StringComparison.Ordinal) &&
+                transitionBlend >= 0.45 && transitionBlend <= 0.55)
+            {
+                tiredPose = pose;
+                break;
+            }
+        }
+
+        Assert(tiredPose is not null, "摸头中断测试未捕获到中段 WorkTyping→WorkTired");
+
+        var patPose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working", "Pat")])
+            ?? throw new InvalidOperationException("摸头中断首帧没有输出 PoseFrame");
+        var patState = ReadProperty(patPose, "MotionState")?.ToString();
+        Assert(string.Equals(patState, "UserReaction", StringComparison.Ordinal),
+            $"Pat 必须首帧响应为 UserReaction，不能为了身体过渡延迟互动；actual={patState}");
+        Assert(string.Equals(ReadProperty(patPose, "MouthState")?.ToString(), "Tongue", StringComparison.Ordinal),
+            "Pat 首帧必须立即显示 Tongue 嘴型，连续性修复不能牺牲交互反馈");
+
+        var bodyYDelta = Math.Abs(
+            ReadPoseDouble(patPose, "Body", "Y") - ReadPoseDouble(tiredPose!, "Body", "Y"));
+        var bodyScaleXDelta = Math.Abs(
+            ReadPoseDouble(patPose, "Body", "ScaleX") - ReadPoseDouble(tiredPose!, "Body", "ScaleX"));
+        var bodyScaleYDelta = Math.Abs(
+            ReadPoseDouble(patPose, "Body", "ScaleY") - ReadPoseDouble(tiredPose!, "Body", "ScaleY"));
+
+        Assert(bodyYDelta < 0.75,
+            $"Pat 打断 WorkTired 的身体高度不能瞬间清零；delta={bodyYDelta:F3}");
+        Assert(bodyScaleXDelta < 0.012,
+            $"Pat 打断 WorkTired 的横向缩放不能瞬间清零；delta={bodyScaleXDelta:F4}");
+        Assert(bodyScaleYDelta < 0.012,
+            $"Pat 打断 WorkTired 的纵向缩放不能瞬间清零；delta={bodyScaleYDelta:F4}");
+    }
+
+    private static object CreateInput(string baseState, string interaction = "None")
     {
         var baseType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
         var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
@@ -187,7 +238,7 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
             0.0,
             0.0,
             false,
-            Enum.Parse(interactionType, "None"),
+            Enum.Parse(interactionType, interaction),
             28.0,
             120.0,
             108.0,
