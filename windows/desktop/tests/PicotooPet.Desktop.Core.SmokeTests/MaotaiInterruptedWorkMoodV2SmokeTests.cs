@@ -44,8 +44,11 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
         var idlePose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Resting")])
             ?? throw new InvalidOperationException("工作落位中断退出首帧没有输出 PoseFrame");
         var stateAfterInterrupt = ReadProperty(idlePose, "MotionState")?.ToString();
+        var previousAfterInterrupt = ReadProperty(idlePose, "PreviousMotionState")?.ToString();
         Assert(string.Equals(stateAfterInterrupt, "Idle", StringComparison.Ordinal),
             $"WorkSettle 被 Resting 打断后应立即回退 Idle；actual={stateAfterInterrupt}");
+        Assert(string.Equals(previousAfterInterrupt, "WorkSettle", StringComparison.Ordinal),
+            $"WorkSettle→Idle 必须保留真实 source state 供姿态连续释放；previous={previousAfterInterrupt}");
 
         var bodyYDelta = Math.Abs(
             ReadPoseDouble(idlePose, "Body", "Y") - ReadPoseDouble(settlePose!, "Body", "Y"));
