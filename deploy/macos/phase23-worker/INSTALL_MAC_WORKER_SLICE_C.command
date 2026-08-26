@@ -30,6 +30,8 @@ core_label="com.picotoopet.mac-core"
 version=""
 product_version=""
 new_version=""
+new_version_created=0
+install_marker_name=".picotoopet-install-incomplete"
 previous_target=""
 existing_port=""
 api_token=""
@@ -61,6 +63,21 @@ discover_github_cli_executable() {
     return 0
   fi
   return 1
+}
+
+cleanup_new_version() {
+  # 只清理由本次安装创建、且仍带“未完成”标记的候选版本，绝不删除已成功激活或未知目录。
+  if [[ "$new_version_created" != "1" || -z "$new_version" ]]; then
+    return 0
+  fi
+  if [[ "$new_version" != "$versions_root"/* ]]; then
+    echo "拒绝清理 versions 目录之外的候选路径：$new_version" >&2
+    return 1
+  fi
+  if [[ -f "$new_version/$install_marker_name" ]]; then
+    rm -rf "$new_version"
+  fi
+  new_version_created=0
 }
 
 cleanup_candidate() {
@@ -127,6 +144,7 @@ on_error() {
   trap - ERR
   cleanup_candidate
   rollback_after_failed_activation || true
+  cleanup_new_version || true
   local report
   report="$(write_worker_report \
     "$runtime_root" \
@@ -223,10 +241,18 @@ github_cli_executable="$(discover_github_cli_executable || true)"
 
 new_version="$versions_root/${version}-${package_arch}"
 if [[ -e "$new_version" ]]; then
-  echo "目标版本已存在，拒绝覆盖：$new_version" >&2
-  exit 1
+  # 仅允许自动清理由上一轮失败留下、且明确带安装未完成标记的目录；未知目录继续拒绝覆盖。
+  if [[ -f "$new_version/$install_marker_name" ]]; then
+    echo "检测到上一轮未完成安装，清理后重试：$new_version"
+    rm -rf "$new_version"
+  else
+    echo "目标版本已存在，拒绝覆盖：$new_version" >&2
+    exit 1
+  fi
 fi
 mkdir -p "$new_version"
+touch "$new_version/$install_marker_name"
+new_version_created=1
 "$current_python" -m venv "$new_version/.venv"
 "$new_version/.venv/bin/python" -m pip install \
   --no-index \
@@ -272,6 +298,8 @@ verify_worker_api_contract "http://127.0.0.1:$existing_port" "$api_token"
 
 activated=0
 worker_started=0
+rm -f "$new_version/$install_marker_name"
+new_version_created=0
 report="$(write_worker_report \
   "$runtime_root" \
   "install" \
