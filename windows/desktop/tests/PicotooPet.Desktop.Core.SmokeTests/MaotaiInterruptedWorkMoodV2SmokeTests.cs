@@ -3,14 +3,59 @@ using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结工作情绪动作被真实业务状态打断时的相邻帧连续性。</summary>
+/// <summary>冻结工作动作被真实业务状态打断时的相邻帧连续性。</summary>
 internal static class MaotaiInterruptedWorkMoodV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
 
     public static void Run()
     {
+        VerifyMidTransitionWorkSettleExitContinuity();
         VerifyMidTransitionTiredExitContinuity();
+    }
+
+    /// <summary>中后段 WorkSettle 被 Resting 打断时，Idle 必须从当下部分下沉姿态连续释放。</summary>
+    private static void VerifyMidTransitionWorkSettleExitContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update = RequireMethod(engineType, "Update");
+        var engine = Activator.CreateInstance(engineType, 81, 108.0)
+            ?? throw new InvalidOperationException("无法创建工作落位中断 Motion Engine");
+
+        object? settlePose = null;
+        for (var frame = 0; frame < 360; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working")])
+                ?? throw new InvalidOperationException("工作落位中断预热没有输出 PoseFrame");
+            var state = ReadProperty(pose, "MotionState")?.ToString();
+            var previousState = ReadProperty(pose, "PreviousMotionState")?.ToString();
+            var transitionBlend = ReadDouble(pose, "MotionTransitionBlend");
+            if (string.Equals(state, "WorkSettle", StringComparison.Ordinal) &&
+                string.Equals(previousState, "WorkApproach", StringComparison.Ordinal) &&
+                transitionBlend >= 0.79 && transitionBlend <= 0.82)
+            {
+                settlePose = pose;
+                break;
+            }
+        }
+
+        Assert(settlePose is not null, "工作落位中断测试未捕获到中后段 WorkApproach→WorkSettle");
+
+        var idlePose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Resting")])
+            ?? throw new InvalidOperationException("工作落位中断退出首帧没有输出 PoseFrame");
+        var stateAfterInterrupt = ReadProperty(idlePose, "MotionState")?.ToString();
+        Assert(string.Equals(stateAfterInterrupt, "Idle", StringComparison.Ordinal),
+            $"WorkSettle 被 Resting 打断后应立即回退 Idle；actual={stateAfterInterrupt}");
+
+        var bodyYDelta = Math.Abs(
+            ReadPoseDouble(idlePose, "Body", "Y") - ReadPoseDouble(settlePose!, "Body", "Y"));
+        var bodyScaleYDelta = Math.Abs(
+            ReadPoseDouble(idlePose, "Body", "ScaleY") - ReadPoseDouble(settlePose!, "Body", "ScaleY"));
+
+        Assert(bodyYDelta < 0.75,
+            $"中段 WorkSettle→Idle 身体高度不能把部分落位姿态瞬间归零；delta={bodyYDelta:F3}");
+        Assert(bodyScaleYDelta < 0.012,
+            $"中段 WorkSettle→Idle 纵向缩放不能把部分落位姿态瞬间归零；delta={bodyScaleYDelta:F4}");
     }
 
     /// <summary>早段 WorkTired 被 Resting 打断时，Recover 必须从当下部分疲劳姿态继续。</summary>
@@ -80,7 +125,7 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
             false,
             false,
             108.0)
-            ?? throw new InvalidOperationException("无法创建疲劳中断 MotionInput");
+            ?? throw new InvalidOperationException("无法创建工作中断 MotionInput");
     }
 
     private static double ReadPoseDouble(object value, string poseName, string propertyName)
