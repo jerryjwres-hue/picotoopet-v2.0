@@ -726,6 +726,24 @@ internal sealed class MaotaiMotionEngine
                 earTension   = 4.5 * blend;
                 break;
 
+            case MaotaiMotionState.UserReaction:
+                if (_graph.PreviousState == MaotaiMotionState.WorkTired &&
+                    _graph.IsTransitioning)
+                {
+                    // Direct interaction : Pat/Paw/Celebrate must react immediately, but the body starts
+                    // from the exact partial tired pose rendered on the previous frame instead of snapping neutral.
+                    var residual = 1.0 - blend;
+                    var sourceBlend = Math.Clamp(_lastTiredBlend, 0.0, 1.0);
+                    bodyWorldY += Lerp(2.0, 2.6, sourceBlend) * residual;
+                    bodyScaleX += 0.018 * sourceBlend * residual;
+                    bodyScaleY -= Lerp(0.015, 0.045, sourceBlend) * residual;
+                    headOffsetY += 4.2 * sourceBlend * residual;
+                    headBiasDeg += 3.0 * facingSign * sourceBlend * residual;
+                    earDrop += 3.2 * sourceBlend * residual;
+                    earTension = 2.0 * sourceBlend * residual;
+                }
+                break;
+
             case MaotaiMotionState.Recover:
             {
                 var residual = 1.0 - blend;
