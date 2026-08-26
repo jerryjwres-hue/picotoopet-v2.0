@@ -60,6 +60,7 @@ internal sealed class MaotaiMotionEngine
     private double _stateElapsedSeconds;
     private double _typingPhaseRadians;
     private double _lastYawnProgress;
+    private double _lastWorkSettleBlend;
     private double _lastTiredBlend;
     private double _lastAnnoyedBlend;
 
@@ -251,6 +252,11 @@ internal sealed class MaotaiMotionEngine
             // Dynamic handoff source : retain the exact rendered yawn phase so an external state change
             // can leave the in-flight envelope from the pose the user actually saw on the previous frame.
             _lastYawnProgress = yawnProgress;
+        }
+        else if (_graph.ActiveState == MaotaiMotionState.WorkSettle)
+        {
+            // Re-entrant work exit : retain the exact partial settle pose rendered on the previous frame.
+            _lastWorkSettleBlend = blend;
         }
         else if (_graph.ActiveState == MaotaiMotionState.WorkTired)
         {
@@ -575,14 +581,17 @@ internal sealed class MaotaiMotionEngine
         switch (_graph.ActiveState)
         {
             case MaotaiMotionState.Idle:
-                if (_graph.PreviousState == MaotaiMotionState.WorkTyping &&
-                    _graph.IsTransitioning)
+                if (_graph.IsTransitioning &&
+                    (_graph.PreviousState == MaotaiMotionState.WorkTyping ||
+                     _graph.PreviousState == MaotaiMotionState.WorkSettle))
                 {
-                    // Work exit body  : preserve the stable typing endpoint, then release it toward
-                    // neutral Idle over the same graph envelope as the keyboard-paw handoff.
+                    // Work exit body : leave from the exact body posture rendered on the previous work frame.
                     var residual = 1.0 - blend;
-                    bodyWorldY += 2.0 * residual;
-                    bodyScaleY -= 0.015 * residual;
+                    var sourceBlend = _graph.PreviousState == MaotaiMotionState.WorkSettle
+                        ? Math.Clamp(_lastWorkSettleBlend, 0.0, 1.0)
+                        : 1.0;
+                    bodyWorldY += 2.0 * sourceBlend * residual;
+                    bodyScaleY -= 0.015 * sourceBlend * residual;
                 }
                 break;
 
