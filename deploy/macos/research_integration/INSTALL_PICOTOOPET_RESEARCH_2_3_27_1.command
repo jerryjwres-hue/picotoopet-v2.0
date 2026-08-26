@@ -19,7 +19,7 @@ done
 bash "$gateway_root/INSTALL_RESEARCH_GATEWAY.command"
 bash "$worker_root/INSTALL_MAC_WORKER_SLICE_C.command" --package-root "$worker_root"
 
-# 最终验收由组合验证器确认 Worker 已真实宣告 research.search，而不是只装了文件。
-bash "$script_dir/VERIFY_PICOTOOPET_RESEARCH_2_3_27_1.command"
+# 安装阶段验收：只验证 PicotooPet 自身安装合同，不把共享外部服务健康度当作安装成败。
+bash "$script_dir/VERIFY_PICOTOOPET_RESEARCH_2_3_27_1.command" --mode install-contract
 
 echo "PICOTOOPET_RESEARCH_2_3_27_1_INSTALL=PASS"
