@@ -12,6 +12,7 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
     {
         VerifyMidTransitionWorkSettleExitContinuity();
         VerifyMidTransitionTiredExitContinuity();
+        VerifyInterruptedTiredErrorContinuity();
     }
 
     /// <summary>中后段 WorkSettle 被 Resting 打断时，Idle 必须从当下部分下沉姿态连续释放。</summary>
@@ -107,6 +108,71 @@ internal static class MaotaiInterruptedWorkMoodV2SmokeTests
             $"早段 WorkTired→Recover 横向缩放不能跳到完整疲劳端点；delta={bodyScaleXDelta:F4}");
         Assert(bodyScaleYDelta < 0.012,
             $"早段 WorkTired→Recover 纵向缩放不能跳到完整疲劳端点；delta={bodyScaleYDelta:F4}");
+    }
+
+    /// <summary>Error 强状态必须立即改变表情，但工作疲劳身体先经 Recover 连续释放，再进入 Look。</summary>
+    private static void VerifyInterruptedTiredErrorContinuity()
+    {
+        var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
+        var update = RequireMethod(engineType, "Update");
+        var engine = Activator.CreateInstance(engineType, 89, 108.0)
+            ?? throw new InvalidOperationException("无法创建错误强状态中断 Motion Engine");
+
+        object? tiredPose = null;
+        for (var frame = 0; frame < 960; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working")])
+                ?? throw new InvalidOperationException("错误强状态预热没有输出 PoseFrame");
+            var state = ReadProperty(pose, "MotionState")?.ToString();
+            var previousState = ReadProperty(pose, "PreviousMotionState")?.ToString();
+            var transitionBlend = ReadDouble(pose, "MotionTransitionBlend");
+            if (string.Equals(state, "WorkTired", StringComparison.Ordinal) &&
+                string.Equals(previousState, "WorkTyping", StringComparison.Ordinal) &&
+                transitionBlend >= 0.45 && transitionBlend <= 0.55)
+            {
+                tiredPose = pose;
+                break;
+            }
+        }
+
+        Assert(tiredPose is not null, "错误强状态测试未捕获到中段 WorkTyping→WorkTired");
+
+        var errorPose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Error")])
+            ?? throw new InvalidOperationException("错误强状态首帧没有输出 PoseFrame");
+        var errorMotionState = ReadProperty(errorPose, "MotionState")?.ToString();
+        Assert(string.Equals(errorMotionState, "Recover", StringComparison.Ordinal),
+            $"Error 打断 WorkTired 时身体应先安全 Recover，而不是直接清零到 Look；actual={errorMotionState}");
+        Assert(string.Equals(ReadProperty(errorPose, "EyeState")?.ToString(), "Half", StringComparison.Ordinal),
+            "Error 首帧必须立即显示 Half 眼神，身体安全过渡不能延迟错误视觉信号");
+        Assert(string.Equals(ReadProperty(errorPose, "MouthState")?.ToString(), "Annoyed", StringComparison.Ordinal),
+            "Error 首帧必须立即显示 Annoyed 嘴型，身体安全过渡不能延迟错误视觉信号");
+
+        var bodyYDelta = Math.Abs(
+            ReadPoseDouble(errorPose, "Body", "Y") - ReadPoseDouble(tiredPose!, "Body", "Y"));
+        var bodyScaleXDelta = Math.Abs(
+            ReadPoseDouble(errorPose, "Body", "ScaleX") - ReadPoseDouble(tiredPose!, "Body", "ScaleX"));
+        var bodyScaleYDelta = Math.Abs(
+            ReadPoseDouble(errorPose, "Body", "ScaleY") - ReadPoseDouble(tiredPose!, "Body", "ScaleY"));
+        Assert(bodyYDelta < 0.75,
+            $"Error 打断 WorkTired 的身体高度不能瞬间清零；delta={bodyYDelta:F3}");
+        Assert(bodyScaleXDelta < 0.012,
+            $"Error 打断 WorkTired 的横向缩放不能瞬间清零；delta={bodyScaleXDelta:F4}");
+        Assert(bodyScaleYDelta < 0.012,
+            $"Error 打断 WorkTired 的纵向缩放不能瞬间清零；delta={bodyScaleYDelta:F4}");
+
+        var reachedLook = false;
+        for (var frame = 0; frame < 90; frame++)
+        {
+            var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Error")])
+                ?? throw new InvalidOperationException("错误强状态恢复链没有输出 PoseFrame");
+            if (string.Equals(ReadProperty(pose, "MotionState")?.ToString(), "Look", StringComparison.Ordinal))
+            {
+                reachedLook = true;
+                break;
+            }
+        }
+
+        Assert(reachedLook, "Error 身体经 Recover 后必须在 1.5 秒内进入最终 Look，禁止卡在工作恢复态");
     }
 
     private static object CreateInput(string baseState)
