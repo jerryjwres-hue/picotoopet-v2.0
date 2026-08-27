@@ -393,18 +393,24 @@ internal sealed class MaotaiMotionEngine
             shoulderLocalY: 12.0,
             frontLeg: false);
 
+        var workPawReactionTransition =
+            _graph.ActiveState == MaotaiMotionState.UserReaction &&
+            _graph.PreviousState == MaotaiMotionState.WorkTired &&
+            _graph.IsTransitioning;
         var workPawExitTransition =
-            _graph.ActiveState == MaotaiMotionState.Idle &&
             _graph.IsTransitioning &&
-            IsWorkingPawState(_graph.PreviousState);
+            IsWorkingPawState(_graph.PreviousState) &&
+            (_graph.ActiveState == MaotaiMotionState.Idle || workPawReactionTransition);
         if (IsWorkingPawState(_graph.ActiveState) || workPawExitTransition)
         {
             var workPawState = workPawExitTransition
                 ? _graph.PreviousState
                 : _graph.ActiveState;
-            var workPawBlend = workPawExitTransition
-                ? 1.0
-                : blend;
+            var workPawBlend = workPawReactionTransition
+                ? Math.Clamp(_lastTiredBlend, 0.0, 1.0)
+                : workPawExitTransition
+                    ? 1.0
+                    : blend;
             var cadenceHz = GetTypingCadenceHz(workPawState, workPawBlend);
             var amplitude = GetTypingAmplitude(workPawState, workPawBlend);
             if (_graph.ActiveState == MaotaiMotionState.Yawn)
@@ -455,7 +461,7 @@ internal sealed class MaotaiMotionEngine
             else if (workPawExitTransition)
             {
                 // Work exit handoff : keep the last keyboard IK as the source, then release both paws
-                // toward standing IK over the graph transition instead of snapping on the first Idle frame.
+                // toward standing IK over the graph transition instead of snapping on the first exit frame.
                 frontLeft  = BlendLegPose(workLeft, frontLeft, blend);
                 frontRight = BlendLegPose(workRight, frontRight, blend);
             }
