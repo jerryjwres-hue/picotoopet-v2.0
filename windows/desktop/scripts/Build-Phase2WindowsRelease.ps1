@@ -26,7 +26,8 @@ function Invoke-NativeCommand {
     param(
         [Parameter(Mandatory)][string]$FilePath,
         [Parameter(Mandatory)][string[]]$Arguments,
-        [int]$TimeoutSeconds = 900
+        [int]$TimeoutSeconds = 900,
+        [string]$WorkingDirectory = ""
     )
 
     $argumentLine = ($Arguments | ForEach-Object {
@@ -40,6 +41,9 @@ function Invoke-NativeCommand {
     $startInfo.CreateNoWindow         = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError  = $true
+    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        $startInfo.WorkingDirectory = $WorkingDirectory
+    }
 
     $process           = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
@@ -152,6 +156,16 @@ function Get-FileEntry {
 
 $desktopRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot    = Split-Path -Parent (Split-Path -Parent $desktopRoot)
+$globalJson  = Join-Path $desktopRoot "global.json"
+if (-not (Test-Path -LiteralPath $globalJson -PathType Leaf)) {
+    throw "缺少 Windows desktop SDK 锁定文件：$globalJson"
+}
+$globalJsonData = Get-Content -LiteralPath $globalJson -Raw | ConvertFrom-Json
+$requiredSdkVersion = [string]$globalJsonData.sdk.version
+if ([string]::IsNullOrWhiteSpace($requiredSdkVersion)) {
+    throw "Windows desktop global.json 缺少 sdk.version。"
+}
+
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $desktopRoot "artifacts\release"
 }
@@ -207,9 +221,9 @@ if ($Version -notmatch '^[A-Za-z0-9._-]+$') {
 }
 
 $dotnet     = (Get-Command "dotnet.exe" -ErrorAction Stop).Source
-$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version")).StdOut.Trim()
-if ($sdkVersion -ne "10.0.302") {
-    throw "Windows 发布必须使用 .NET SDK 10.0.302，实际为 $sdkVersion。"
+$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot).StdOut.Trim()
+if ($sdkVersion -ne $requiredSdkVersion) {
+    throw "Windows 发布必须使用 .NET SDK $requiredSdkVersion，实际为 $sdkVersion。"
 }
 
 $solution     = Join-Path $desktopRoot "PicotooPet.Desktop.sln"
@@ -234,22 +248,22 @@ New-Item -ItemType Directory -Path $appOutput, $diagOutput, $packageRoot -Force 
 
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $solution, "--nologo"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "build", $solution, "--configuration", "Release", "--no-restore", "--nologo",
     "-p:ContinuousIntegrationBuild=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "run", "--project", $smokeProject, "--configuration", "Release", "--no-build"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $appProject, "--runtime", "win-x64", "--nologo",
     "-p:PublishReadyToRun=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $diagProject, "--runtime", "win-x64", "--nologo",
     "-p:PublishReadyToRun=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "publish", $appProject, "--configuration", "Release", "--runtime", "win-x64",
     "--self-contained", "true", "--output", $appOutput, "--no-restore",
@@ -257,7 +271,7 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "-p:PublishReadyToRunShowWarnings=true",
     "-p:IncludeNativeLibrariesForSelfExtract=true", "-p:PublishTrimmed=false",
     "-p:DebugType=None", "-p:DebugSymbols=false", "-p:ContinuousIntegrationBuild=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "publish", $diagProject, "--configuration", "Release", "--runtime", "win-x64",
     "--self-contained", "true", "--output", $diagOutput, "--no-restore",
@@ -265,7 +279,7 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "-p:PublishReadyToRunShowWarnings=true",
     "-p:IncludeNativeLibrariesForSelfExtract=true", "-p:PublishTrimmed=false",
     "-p:DebugType=None", "-p:DebugSymbols=false", "-p:ContinuousIntegrationBuild=true"
-) | Out-Null
+) -WorkingDirectory $desktopRoot | Out-Null
 
 $appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"
 $diagExecutable = Join-Path $diagOutput "PicotooPet.Desktop.Diagnostics.exe"

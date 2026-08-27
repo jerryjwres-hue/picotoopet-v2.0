@@ -4,6 +4,8 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>PicotooPet.Desktop.Core.SmokeTests</RootNamespace>
+    <StartupObject Condition="'$(MaotaiVisualSnapshot)' == 'true'">PicotooPet.Desktop.Core.SmokeTests.MaotaiVisualSnapshotProgram</StartupObject>
+    <StartupObject Condition="'$(MaotaiVisualSnapshot)' != 'true'">PicotooPet.Desktop.Core.SmokeTests.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />

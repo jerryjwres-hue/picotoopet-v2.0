@@ -1,0 +1,376 @@
+using System.Reflection;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using PicotooPet.Desktop.Views.Controls;
+
+namespace PicotooPet.Desktop.Core.SmokeTests;
+
+/// <summary>只读视觉验收入口：用真实 WPF Rig/Renderer 输出确定性截图，不写 Core/Worker/Task/Approval。</summary>
+internal static class MaotaiVisualSnapshotSmokeTests
+{
+    private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
+    private static readonly Type PanelType = typeof(AssistantPetPanel);
+    private static readonly JsonSerializerOptions SnapshotJsonOptions = new()
+    {
+        WriteIndented = true,
+    };
+
+    public static void Run(string outputDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
+        var root = Path.GetFullPath(outputDirectory);
+        Directory.CreateDirectory(root);
+        Log("run:start");
+
+        // Sampling contract   : each label must freeze the advertised live state, not a later stopped frame.
+        // Offline needs longer : Sleep traverses Sit -> LieDown -> Sleep, so give the real graph six seconds.
+        var snapshots = new[]
+        {
+            Capture(root, "idle",  "Resting", 72.0, wantsRun: false, frames: 12),
+            Capture(root, "work",  "Working", 70.0, wantsRun: false, frames: 150),
+            Capture(root, "sleep", "Offline", 72.0, wantsRun: false, frames: 360),
+            Capture(root, "run",   "Resting", 138.0, wantsRun: true, frames: 30),
+        };
+
+        Log("json:write");
+        File.WriteAllText(
+            Path.Combine(root, "maotai-visual-snapshot.json"),
+            JsonSerializer.Serialize(snapshots, SnapshotJsonOptions));
+        Log("run:done");
+    }
+
+    private static SnapshotEvidence Capture(
+        string root,
+        string label,
+        string baseState,
+        double targetX,
+        bool wantsRun,
+        int frames)
+    {
+        Log($"{label}:panel-create");
+        var panel = new AssistantPetPanel
+        {
+            IsFloatingMode = true,
+            Width = 260,
+            Height = 240,
+            Background = Brushes.Transparent,
+        };
+
+        Log($"{label}:layout-1");
+        Layout(panel);
+        Log($"{label}:rig-init");
+        InvokePanel(panel, "EnsureMaotaiV2Initialized");
+        InvokePanel(panel, "StopMaotaiRendering");
+
+        var ready = (bool)(RequirePanelField("_maotaiRigReady").GetValue(panel) ?? false);
+        if (!ready)
+        {
+            throw new InvalidOperationException(
+                $"Maotai visual snapshot '{label}' 无法初始化完整 v2 Rig");
+        }
+
+        var engine = RequirePanelField("_maotaiMotionEngine").GetValue(panel)
+            ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MotionEngine");
+        var renderer = RequirePanelField("_maotaiRenderer").GetValue(panel)
+            ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 RasterRenderer");
+        var update = engine.GetType().GetMethod(
+            "Update",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("MaotaiMotionEngine 缺少 Update");
+        var apply = renderer.GetType().GetMethod(
+            "Apply",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("MaotaiRasterRenderer 缺少 Apply");
+
+        Log($"{label}:engine-update");
+        var input = CreateInput(baseState, targetX, wantsRun);
+        object? frame = null;
+        for (var index = 0; index < frames; index++)
+        {
+            frame = update.Invoke(engine, [1.0 / 60.0, input]);
+        }
+        if (frame is null)
+        {
+            throw new InvalidOperationException($"Maotai visual snapshot '{label}' 没有生成 PoseFrame");
+        }
+
+        var motionState = ReadProperty(frame, "MotionState")?.ToString() ?? "Unknown";
+        VerifyExpectedMotionState(label, motionState);
+
+        Log($"{label}:renderer-apply");
+        apply.Invoke(renderer, [frame]);
+        VerifyWorkAccessoryVisibility(panel, label, expectedVisible: baseState == "Working");
+        VerifyPoseCohesionVisibility(panel, label);
+        VerifyRunPawFootprint(panel, label);
+        if (baseState == "Working")
+        {
+            VerifyWorkPropLayout(panel);
+        }
+        Layout(panel);
+
+        var fileName = $"maotai-{label}.png";
+        var path = Path.Combine(root, fileName);
+        Log($"{label}:bitmap-render");
+        SaveVisual(panel, path);
+        Log($"{label}:saved");
+
+        return new SnapshotEvidence(label, motionState, fileName, 260, 240);
+    }
+
+    private static void VerifyExpectedMotionState(string label, string motionState)
+    {
+        var valid = label switch
+        {
+            "idle"  => motionState is "Idle" or "Look",
+            "work"  => motionState is "WorkSettle" or "WorkTyping" or "WorkTired" or "Yawn" or "WorkAnnoyed" or "Recover",
+            "sleep" => motionState == "Sleep",
+            "run"   => motionState == "Run",
+            _       => false,
+        };
+        if (!valid)
+        {
+            throw new InvalidOperationException(
+                $"Maotai visual snapshot '{label}' 捕获了错误动作状态；actual={motionState}");
+        }
+    }
+
+    private static void VerifyWorkAccessoryVisibility(
+        AssistantPetPanel panel,
+        string label,
+        bool expectedVisible)
+    {
+        var expected = expectedVisible ? 1.0 : 0.0;
+        foreach (var name in new[]
+                 {
+                     "MaotaiV2HeadphoneBand",
+                     "MaotaiV2HeadphoneLeft",
+                     "MaotaiV2HeadphoneRight",
+                 })
+        {
+            var element = panel.FindName(name) as FrameworkElement
+                ?? throw new InvalidOperationException($"Maotai visual snapshot 缺少 {name}");
+            if (Math.Abs(element.Opacity - expected) > 0.000001)
+            {
+                throw new InvalidOperationException(
+                    $"Maotai visual snapshot '{label}' 的 {name} 显隐错误；expected={expected:F1}, actual={element.Opacity:F1}");
+            }
+        }
+    }
+
+    private static void VerifyPoseCohesionVisibility(AssistantPetPanel panel, string label)
+    {
+        // Stable/folded states : Idle keeps the accepted continuous silhouette; work/sleep tuck long segments under torso fur.
+        // Moving state         : Run exposes a subtle front knee bridge while rear limbs remain a quiet depth cue.
+        if (label == "run")
+        {
+            AssertOpacity(panel, label, "MaotaiV2FrontLeftUpper",  1.00, "前腿 Upper 必须可见");
+            AssertOpacity(panel, label, "MaotaiV2FrontRightUpper", 1.00, "前腿 Upper 必须可见");
+            AssertOpacity(panel, label, "MaotaiV2FrontLeftLower",  0.24, "前腿 Lower 必须保持克制的毛发关节桥");
+            AssertOpacity(panel, label, "MaotaiV2FrontRightLower", 0.24, "前腿 Lower 必须保持克制的毛发关节桥");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftUpper",   0.28, "后腿 Upper 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindRightUpper",  0.28, "后腿 Upper 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftLower",   0.00, "后腿 Lower 应融入连续后景轮廓");
+            AssertOpacity(panel, label, "MaotaiV2HindRightLower",  0.00, "后腿 Lower 应融入连续后景轮廓");
+            AssertOpacity(panel, label, "MaotaiV2FrontLeftPaw",    1.00, "前脚接触点");
+            AssertOpacity(panel, label, "MaotaiV2FrontRightPaw",   1.00, "前脚接触点");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",     0.18, "后脚必须保留轻微接触语义");
+            AssertOpacity(panel, label, "MaotaiV2HindRightPaw",    0.18, "后脚必须保留轻微接触语义");
+            return;
+        }
+
+        var folded = label is "work" or "sleep";
+        var upperOpacity = folded ? 0.0 : 1.0;
+        foreach (var name in new[]
+                 {
+                     "MaotaiV2FrontLeftUpper",
+                     "MaotaiV2FrontRightUpper",
+                     "MaotaiV2HindLeftUpper",
+                     "MaotaiV2HindRightUpper",
+                 })
+        {
+            AssertOpacity(panel, label, name, upperOpacity, folded ? "收腿长段遮挡" : "稳定站姿主轮廓");
+        }
+
+        foreach (var name in new[]
+                 {
+                     "MaotaiV2FrontLeftLower",
+                     "MaotaiV2FrontRightLower",
+                     "MaotaiV2HindLeftLower",
+                     "MaotaiV2HindRightLower",
+                 })
+        {
+            AssertOpacity(panel, label, name, 0.0, "非运动状态 Lower 保持隐藏");
+        }
+
+        AssertOpacity(panel, label, "MaotaiV2FrontLeftPaw",  1.0, "前脚接触点");
+        AssertOpacity(panel, label, "MaotaiV2FrontRightPaw", 1.0, "前脚接触点");
+        AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",   1.0, "后脚接触点");
+        AssertOpacity(panel, label, "MaotaiV2HindRightPaw",  1.0, "后脚接触点");
+    }
+
+    private static void VerifyRunPawFootprint(AssistantPetPanel panel, string label)
+    {
+        if (label != "run")
+        {
+            return;
+        }
+
+        // Paw footprint       : preserve almost all native paw width now that the knee/rear-depth policy resolves stacking structurally.
+        // Contact pivot       : scaling remains centered on the cached paw pivot, so physical foot-lock coordinates are unchanged.
+        foreach (var name in new[]
+                 {
+                     "MaotaiV2FrontLeftPaw",
+                     "MaotaiV2FrontRightPaw",
+                 })
+        {
+            var element = panel.FindName(name) as FrameworkElement
+                ?? throw new InvalidOperationException($"Maotai visual snapshot 缺少 {name}");
+            if (element.RenderTransform is not TransformGroup group ||
+                group.Children.Count == 0 ||
+                group.Children[0] is not ScaleTransform scale)
+            {
+                throw new InvalidOperationException($"Maotai visual snapshot {name} 缺少缓存 ScaleTransform");
+            }
+
+            if (scale.ScaleX > 0.94 || scale.ScaleX < 0.90)
+            {
+                throw new InvalidOperationException(
+                    $"Maotai run {name} 横向 footprint 应保留接近原生宽度；" +
+                    $"expected=0.90..0.94, actual={scale.ScaleX:F2}");
+            }
+        }
+    }
+
+    private static void AssertOpacity(
+        AssistantPetPanel panel,
+        string label,
+        string name,
+        double expected,
+        string contract)
+    {
+        var element = panel.FindName(name) as FrameworkElement
+            ?? throw new InvalidOperationException($"Maotai visual snapshot 缺少 {name}");
+        if (Math.Abs(element.Opacity - expected) > 0.000001)
+        {
+            throw new InvalidOperationException(
+                $"Maotai visual snapshot '{label}' 的 {name} {contract}；" +
+                $"expected={expected:F2}, actual={element.Opacity:F2}");
+        }
+    }
+
+    private static void VerifyWorkPropLayout(AssistantPetPanel panel)
+    {
+        var laptop = panel.FindName("MaotaiV2Laptop") as FrameworkElement
+            ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MaotaiV2Laptop");
+        var root = panel.FindName("MaotaiV2Root") as FrameworkElement
+            ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MaotaiV2Root");
+
+        // Complete prop      : laptop must render as one readable object in front of the lower body, never a purple fragment behind it.
+        // Typing composition : keep the screen centered under the front paws while preserving the drink on the left.
+        AssertNear(Canvas.GetLeft(laptop), 44.0, "work laptop left");
+        AssertNear(Canvas.GetTop(laptop), 98.0, "work laptop top");
+        AssertNear(laptop.Width, 82.0, "work laptop width");
+        AssertNear(laptop.Height, 52.0, "work laptop height");
+        if (Panel.GetZIndex(laptop) <= Panel.GetZIndex(root))
+        {
+            throw new InvalidOperationException(
+                $"Maotai work laptop 必须完整显示在身体前景；laptopZ={Panel.GetZIndex(laptop)}, rootZ={Panel.GetZIndex(root)}");
+        }
+    }
+
+    private static void AssertNear(double actual, double expected, string contract)
+    {
+        if (!double.IsFinite(actual) || Math.Abs(actual - expected) > 0.000001)
+        {
+            throw new InvalidOperationException(
+                $"Maotai visual snapshot {contract} 错误；expected={expected:F1}, actual={actual:F1}");
+        }
+    }
+
+    private static object CreateInput(string baseState, double targetX, bool wantsRun)
+    {
+        var inputType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionInput");
+        var baseStateType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiBaseState");
+        var interactionType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiInteractionKind");
+        return Activator.CreateInstance(
+            inputType,
+            [
+                Enum.Parse(baseStateType, baseState),
+                0.0,
+                0.0,
+                false,
+                Enum.Parse(interactionType, "None"),
+                18.0,
+                150.0,
+                targetX,
+                wantsRun,
+                false,
+                70.0,
+            ]) ?? throw new InvalidOperationException("无法创建 MaotaiMotionInput");
+    }
+
+    private static void SaveVisual(FrameworkElement visual, string path)
+    {
+        const int width = 260;
+        const int height = 240;
+        var bitmap = new RenderTargetBitmap(
+            width,
+            height,
+            96.0,
+            96.0,
+            PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        bitmap.Freeze();
+
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = File.Create(path);
+        encoder.Save(stream);
+        if (stream.Length <= 128)
+        {
+            throw new InvalidOperationException($"Maotai visual snapshot '{path}' 输出为空");
+        }
+    }
+
+    private static void Layout(FrameworkElement panel)
+    {
+        var size = new Size(260, 240);
+        panel.Measure(size);
+        panel.Arrange(new Rect(new Point(0, 0), size));
+        panel.UpdateLayout();
+    }
+
+    private static void InvokePanel(object panel, string methodName)
+    {
+        var method = PanelType.GetMethod(
+            methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"AssistantPetPanel 缺少 {methodName}");
+        method.Invoke(panel, null);
+    }
+
+    private static FieldInfo RequirePanelField(string fieldName) =>
+        PanelType.GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException($"AssistantPetPanel 缺少字段 {fieldName}");
+
+    private static Type RequireType(string typeName) =>
+        DesktopAssembly.GetType(typeName, throwOnError: true)!;
+
+    private static object? ReadProperty(object target, string propertyName) =>
+        target.GetType().GetProperty(
+            propertyName,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(target);
+
+    private static void Log(string stage) =>
+        Console.WriteLine($"MAOTAI_SNAPSHOT_STAGE={stage}");
+
+    private sealed record SnapshotEvidence(
+        string Label,
+        string MotionState,
+        string FileName,
+        int Width,
+        int Height);
+}

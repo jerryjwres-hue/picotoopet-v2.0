@@ -1,0 +1,2 @@
+source generation id: ca81c0bd-bcab-45fd-b254-0b8632d0e6e6
+status: REJECTED formal asset; image edit drifted to a full character design board instead of editing the torso-only source. Never crop this into runtime V2 assets.

@@ -243,30 +243,34 @@ class WorkflowService:
 
     def _materialize(self, workflow: WorkflowRecord, step: WorkflowStepRecord) -> None:
         next_attempt = step.attempt_count + 1
-        task = self.queue.create(
-            TaskCreate(
-                project_id=workflow.project_id,
-                task_type=step.task_type,
-                # Task payload belongs exclusively to the task contract. Workflow linkage
-                # stays in durable workflow-step facts, resource_tag and idempotency_key.
-                payload=step.payload,
-                priority=workflow.priority,
-                resource_tag=f"workflow:{workflow.workflow_id}",
-                idempotency_key=(
-                    f"workflow:{workflow.workflow_id}:step:{step.step_key}:attempt:{next_attempt}"
-                ),
-                # Workflow owns the bounded retry budget; each queue task is one physical attempt.
-                max_attempts=1,
-                timeout_seconds=step.timeout_seconds,
+        request = TaskCreate(
+            project_id=workflow.project_id,
+            task_type=step.task_type,
+            # Task payload belongs exclusively to the task contract. Workflow linkage
+            # stays in durable workflow-step facts, resource_tag and idempotency_key.
+            payload=step.payload,
+            priority=workflow.priority,
+            resource_tag=f"workflow:{workflow.workflow_id}",
+            idempotency_key=(
+                f"workflow:{workflow.workflow_id}:step:{step.step_key}:attempt:{next_attempt}"
+            ),
+            # Workflow owns the bounded retry budget; each queue task is one physical attempt.
+            max_attempts=1,
+            timeout_seconds=step.timeout_seconds,
+        )
+
+        # Queue task creation (including task event/outbox facts) and workflow-step binding
+        # are one durability unit. Database.execute() reuses this same SQLite connection,
+        # so a binding failure rolls the task back instead of leaving an orphan task visible.
+        with self.database.transaction() as connection:
+            task = self.queue._create_in_transaction(connection, request=request)
+            self.repository.update_step(
+                workflow.workflow_id,
+                step.step_key,
+                status=WorkflowStepStatus.RUNNING,
+                task_id=task.task_id,
+                increment_attempt=True,
             )
-        )
-        self.repository.update_step(
-            workflow.workflow_id,
-            step.step_key,
-            status=WorkflowStepStatus.RUNNING,
-            task_id=task.task_id,
-            increment_attempt=True,
-        )
 
     def _checkpoint(self, workflow_id: str, event: str) -> None:
         workflow = self.repository.get_workflow(workflow_id)
