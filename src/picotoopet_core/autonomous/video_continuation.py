@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -79,7 +78,6 @@ class GoalVideoContinuationService:
                 "verified_fact_ids": payload.verified_fact_ids,
                 "generated_at": payload.generated_at.isoformat(),
             },
-            completed_at=datetime.now(UTC),
         )
         self.production.create_job(
             ProductionJobCreateRequest(
