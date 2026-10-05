@@ -94,6 +94,33 @@ cleanup_candidate() {
   candidate_root=""
 }
 
+wait_for_candidate_health() {
+  local base_url="$1"
+  local attempts="${2:-240}"
+  local index
+  for ((index = 0; index < attempts; index += 1)); do
+    if curl --silent --show-error --fail --max-time 2 \
+      "$base_url/api/v1/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    if [[ -n "$candidate_pid" ]] && ! kill -0 "$candidate_pid" >/dev/null 2>&1; then
+      echo "候选 Worker 进程在 health ready 前已退出。" >&2
+      if [[ -f "$candidate_root/candidate.stderr.log" ]]; then
+        echo "候选 Worker stderr：" >&2
+        cat "$candidate_root/candidate.stderr.log" >&2 || true
+      fi
+      return 1
+    fi
+    sleep 0.25
+  done
+  echo "候选 Worker health 在 $((attempts / 4)) 秒内未 ready：$base_url" >&2
+  if [[ -f "$candidate_root/candidate.stderr.log" ]]; then
+    echo "候选 Worker stderr：" >&2
+    cat "$candidate_root/candidate.stderr.log" >&2 || true
+  fi
+  return 1
+}
+
 restart_core_runtime() {
   if [[ "${PICOTOO_FIXTURE_MODE:-0}" == "1" ]]; then
     stop_fixture_service "$runtime_root"
@@ -172,7 +199,9 @@ on_error() {
     "$new_version" \
     "命令失败：$failed_command" \
     "false" \
-    "$product_version")" || true
+    "$product_version" \
+    "$candidate_stdout_report" \
+    "$candidate_stderr_report")" || true
   echo "Slice D Worker 安装失败。报告：$report" >&2
   exit "$code"
 }
@@ -297,7 +326,7 @@ PICOTOO_API_TOKEN="$api_token" \
     2>"$candidate_root/candidate.stderr.log" &
 candidate_pid=$!
 candidate_url="http://127.0.0.1:$candidate_port"
-wait_for_health "$candidate_url"
+wait_for_candidate_health "$candidate_url" 240
 verify_slice_d_candidate_contract "$candidate_url" "$api_token" "$product_version"
 cleanup_candidate
 
