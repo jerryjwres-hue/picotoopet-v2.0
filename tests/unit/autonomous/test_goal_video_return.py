@@ -264,6 +264,20 @@ def test_context_reads_only_verified_manifest_and_derives_stable_finding_refs(
     assert first.handoff_task_id == "handoff-task"
 
 
+def test_return_prompt_supplies_exact_binding_refs_and_machine_schema(tmp_path: Path) -> None:
+    access = _access(tmp_path)
+    context = access.context("goal-video-1")
+
+    prompt = access.return_prompt("goal-video-1")
+
+    assert "PICOTOO_RETURN_JSON" in prompt
+    assert context.package_sha256 in prompt
+    assert context.source_finding_refs["ev-001"] in prompt
+    assert '"idea_ranking"' in prompt
+    assert '"creative_brief"' in prompt
+    assert '"shot_plan"' in prompt
+
+
 def test_return_contract_forbids_extra_provider_or_renderer_authority(tmp_path: Path) -> None:
     context = _access(tmp_path).context("goal-video-1")
     payload = _payload(context)
