@@ -372,6 +372,8 @@ write_worker_report() {
   local error_message="${6:-}"
   local worker_installed="${7:-false}"
   local product_version="${8:-}"
+  local candidate_stdout_log="${9:-}"
+  local candidate_stderr_log="${10:-}"
   local reports="$runtime_root/reports"
   mkdir -p "$reports"
   local stamp
@@ -384,7 +386,9 @@ write_worker_report() {
     "$install_path" \
     "$error_message" \
     "$worker_installed" \
-    "$product_version" <<'PY'
+    "$product_version" \
+    "$candidate_stdout_log" \
+    "$candidate_stderr_log" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -417,6 +421,8 @@ payload = {
     ],
     "diagnostic_hard_timeout_seconds": 30,
     "diagnostic_termination_grace_seconds": 5,
+    "diagnostic_candidate_stdout_log": sys.argv[8] or None,
+    "diagnostic_candidate_stderr_log": sys.argv[9] or None,
     "error": sys.argv[5] or None,
 }
 path = Path(sys.argv[1])
