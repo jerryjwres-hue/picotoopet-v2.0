@@ -280,6 +280,19 @@ if [[ ${#api_token} -lt 16 ]]; then
   exit 1
 fi
 
+github_cli_executable="$(discover_github_cli_executable || true)"\n\nnew_version="$versions_root/${version}-${package_arch}"
+if [[ -e "$new_version" ]]; then
+  # 仅允许自动清理由上一轮失败留下、且明确带安装未完成标记的目录；未知目录继续拒绝覆盖。
+  if [[ -f "$new_version/$install_marker_name" ]]; then
+    echo "检测到上一轮未完成安装，清理后重试：$new_version"
+    rm -rf "$new_version"
+  else
+    echo "目标版本已存在，拒绝覆盖：$new_version" >&2
+    exit 1
+  fi
+fi
+
+# 只有确认本次安装可以继续后才刷新回滚锚点；重复运行一个已安装版本不能覆盖最后已知可回退版本。
 printf '%s\n' "$previous_target" > "$previous_version_file"
 plist="$(worker_plist_path)"
 if [[ -f "$plist" ]]; then
@@ -291,20 +304,6 @@ else
 fi
 printf '%s\n' "$previous_worker_present" > "$worker_present_file"
 backup_captured=1
-
-github_cli_executable="$(discover_github_cli_executable || true)"
-
-new_version="$versions_root/${version}-${package_arch}"
-if [[ -e "$new_version" ]]; then
-  # 仅允许自动清理由上一轮失败留下、且明确带安装未完成标记的目录；未知目录继续拒绝覆盖。
-  if [[ -f "$new_version/$install_marker_name" ]]; then
-    echo "检测到上一轮未完成安装，清理后重试：$new_version"
-    rm -rf "$new_version"
-  else
-    echo "目标版本已存在，拒绝覆盖：$new_version" >&2
-    exit 1
-  fi
-fi
 mkdir -p "$new_version"
 touch "$new_version/$install_marker_name"
 new_version_created=1
