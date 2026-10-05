@@ -28,6 +28,19 @@ def test_worker_installer_marks_and_cleans_incomplete_versions() -> None:
     assert "目标版本已存在，拒绝覆盖" in source
 
 
+def test_worker_installer_preserves_real_mac_startup_diagnostics() -> None:
+    source = _read(WORKER_INSTALLER)
+
+    # 实机候选进程失败必须可诊断：提前退出立即暴露 stderr，慢启动给足窗口，
+    # cleanup 前把临时 stdout/stderr 固化到 reports。
+    assert "wait_for_candidate_health()" in source
+    assert 'wait_for_candidate_health "$candidate_url" 240' in source
+    assert "候选 Worker 进程在 health ready 前已退出" in source
+    assert "candidate.stderr.log" in source
+    assert "candidate_stdout_report" in source
+    assert "candidate_stderr_report" in source
+
+
 def test_gateway_installer_restores_snapshot_when_health_fails() -> None:
     source = _read(GATEWAY_INSTALLER)
 
