@@ -120,7 +120,7 @@ def download_goal_handoff(goal_id: str, request: Request) -> FileResponse:
 @router.get("/autonomous/goals/{goal_id}/handoff/prompt", response_class=PlainTextResponse)
 def get_goal_handoff_prompt(goal_id: str, request: Request) -> PlainTextResponse:
     try:
-        prompt = _handoff_access(request).fixed_prompt(goal_id)
+        prompt = _handoff_access(request).return_prompt(goal_id)
         return PlainTextResponse(prompt, media_type="text/plain; charset=utf-8")
     except HandoffAccessError as error:
         _raise_handoff_api_error(error)
