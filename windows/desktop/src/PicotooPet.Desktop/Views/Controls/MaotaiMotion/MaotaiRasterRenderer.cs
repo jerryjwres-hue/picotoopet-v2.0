@@ -352,9 +352,14 @@ internal sealed class MaotaiRasterRenderer
             frame.LocomotionBlend,
             frame.MotionTransitionBlend,
             isFront: false);
-        ApplyBone(_visuals.TailBase, frame.TailBase);
-        ApplyBone(_visuals.TailMid, frame.TailMid);
-        ApplyBone(_visuals.TailTip, frame.TailTip);
+        // Tail hierarchy      : Base is Body-local; Mid and Tip are local offsets from the preceding segment.
+        //                        Spring rotations are already per-segment world headings, so only positions compose.
+        var tailBasePose = frame.TailBase;
+        var tailMidPose  = ResolveTailChildWorldPose(tailBasePose, frame.TailMid);
+        var tailTipPose  = ResolveTailChildWorldPose(tailMidPose, frame.TailTip);
+        ApplyBone(_visuals.TailBase, tailBasePose);
+        ApplyBone(_visuals.TailMid, tailMidPose);
+        ApplyBone(_visuals.TailTip, tailTipPose);
 
         ApplyWorkProps(frame);
         ApplyFace(frame);
@@ -517,6 +522,30 @@ internal sealed class MaotaiRasterRenderer
             scaleY: scaleY);
 
         lower.Element.Opacity = 0.0;
+    }
+
+    /// <summary>
+    /// 把尾巴子段的局部连接偏移解析到 Body 局部世界坐标。
+    /// RotationDeg 是 Motion Engine 已经阻尼后的各段 world heading，不再次与父段角度相加。
+    /// </summary>
+    private static MaotaiBonePose ResolveTailChildWorldPose(
+        in MaotaiBonePose parent,
+        in MaotaiBonePose child)
+    {
+        var radians = parent.RotationDeg * Math.PI / 180.0;
+        var cosine  = Math.Cos(radians);
+        var sine    = Math.Sin(radians);
+        var localX  = child.X * parent.ScaleX;
+        var localY  = child.Y * parent.ScaleY;
+        var worldX  = parent.X + (localX * cosine) - (localY * sine);
+        var worldY  = parent.Y + (localX * sine) + (localY * cosine);
+
+        return new MaotaiBonePose(
+            worldX,
+            worldY,
+            child.RotationDeg,
+            parent.ScaleX * child.ScaleX,
+            parent.ScaleY * child.ScaleY);
     }
 
     private static void ApplyBone(
