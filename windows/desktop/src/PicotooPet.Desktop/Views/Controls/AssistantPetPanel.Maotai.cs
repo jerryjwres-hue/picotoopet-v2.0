@@ -273,7 +273,11 @@ public partial class AssistantPetPanel
         MaotaiV2TorsoNeutral.Opacity    = 1.0;
         MaotaiV2TorsoCrouch.Opacity     = 0.0;
         MaotaiV2TorsoStretch.Opacity    = 0.0;
-        MaotaiV2ChestFur.Opacity        = 1.0;
+
+        // Chest material     : torso art already owns the high-detail white coat.
+        //                      Keep the legacy chest asset loaded for manifest/package compatibility,
+        //                      but never stack it as a second visible flat bib over the torso.
+        MaotaiV2ChestFur.Opacity        = 0.0;
         MaotaiV2Head.Opacity            = 1.0;
         MaotaiV2EarLeft.Opacity         = 1.0;
         MaotaiV2EarRight.Opacity        = 1.0;
