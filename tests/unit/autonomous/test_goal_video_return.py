@@ -22,6 +22,15 @@ from picotoopet_core.autonomous.video_return import (
     validate_goal_video_return,
 )
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.creative.repository import CreativeRepository
+from picotoopet_core.creative.service import CreativeIntelligenceService
+from picotoopet_core.creative.source import CreativeSourceNormalizer
+from picotoopet_core.creative.store import CreativeArtifactStore
+from picotoopet_core.db.database import Database
+from picotoopet_core.production.repository import ProductionRepository
+from picotoopet_core.production.service import ProductionService
+from picotoopet_core.production.store import ProductionArtifactStore
+from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
@@ -306,3 +315,98 @@ def test_valid_return_produces_canonical_digest_source_set_and_stage_results(
         "script.v1",
         "shot_plan.v1",
     }
+
+
+def _continuation_services(tmp_path: Path):  # type: ignore[no-untyped-def]
+    from picotoopet_core.autonomous.video_continuation import GoalVideoContinuationService
+
+    paths = RuntimePaths.from_root(tmp_path / "continuation-runtime")
+    database = Database(paths.database_file)
+    database.open()
+    database.apply_migrations()
+    creative_repository = CreativeRepository(database)
+    creative = CreativeIntelligenceService(
+        repository=creative_repository,
+        source_normalizer=CreativeSourceNormalizer(database),
+        store=CreativeArtifactStore(paths),
+        queue=DiagnosticQueueRepository(database),
+    )
+    production = ProductionService(
+        repository=ProductionRepository(database),
+        creative_repository=creative_repository,
+        store=ProductionArtifactStore(paths),
+    )
+    service = GoalVideoContinuationService(
+        database=database,
+        handoffs=_access(tmp_path),
+        creative=creative,
+        production=production,
+    )
+    return database, service, creative, production
+
+
+def test_valid_goal_return_reaches_existing_production_job_and_replays_idempotently(
+    tmp_path: Path,
+) -> None:
+    database, service, _creative, production = _continuation_services(tmp_path)
+    context = _access(tmp_path).context("goal-video-1")
+    payload = GoalVideoReturnV1.model_validate(_payload(context))
+    try:
+        first = service.submit("goal-video-1", payload)
+        second = service.submit("goal-video-1", payload)
+
+        assert second == first
+        assert first.production_status == "Ready"
+        plan = production.get_plan(first.production_job_id)
+        assert plan.production_profile == "production.comfyui.v1"
+        assert plan.creative_package_digest == first.creative_package_digest
+        assert service.status("goal-video-1") == first
+    finally:
+        database.close()
+
+
+def test_conflicting_replay_is_rejected_and_restart_reconciles_existing_creative(
+    tmp_path: Path,
+) -> None:
+    from picotoopet_core.autonomous.video_continuation import GoalVideoContinuationService
+
+    database, service, creative, production = _continuation_services(tmp_path)
+    context = _access(tmp_path).context("goal-video-1")
+    payload = GoalVideoReturnV1.model_validate(_payload(context))
+    validated = validate_goal_video_return(payload, context)
+    try:
+        package = creative.adopt_external(
+            source_set=validated.source_set,
+            stage_results=validated.stage_results,
+            creative_objective=payload.selected_direction,
+            idempotency_key="goal-video:goal-video-1",
+            provenance={
+                "goal_id": payload.goal_id,
+                "handoff_sha256": payload.handoff_sha256,
+                "prompt_version": payload.prompt_version,
+                "return_sha256": validated.return_digest,
+                "verified_fact_ids": payload.verified_fact_ids,
+            },
+            completed_at=payload.generated_at,
+        )
+        assert database.scalar("SELECT COUNT(*) FROM production_jobs") == 0
+
+        restarted = GoalVideoContinuationService(
+            database=database,
+            handoffs=_access(tmp_path),
+            creative=creative,
+            production=production,
+        )
+        reconciled = restarted.submit("goal-video-1", payload)
+        assert reconciled.creative_package_id == package.creative_package_id
+        assert database.scalar("SELECT COUNT(*) FROM production_jobs") == 1
+
+        conflicting_raw = _payload(context)
+        conflicting_raw["creative_summary"] = "A different but schema-valid direction."
+        with pytest.raises(ValueError, match="idempotency key conflict"):
+            service.submit(
+                "goal-video-1",
+                GoalVideoReturnV1.model_validate(conflicting_raw),
+            )
+    finally:
+        database.close()

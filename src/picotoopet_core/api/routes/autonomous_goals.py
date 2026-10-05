@@ -17,6 +17,11 @@ from picotoopet_core.autonomous.goal_service import (
     HumanGoalService,
 )
 from picotoopet_core.autonomous.models import GoalRecord
+from picotoopet_core.autonomous.video_continuation import (
+    GoalVideoContinuationRecord,
+    GoalVideoContinuationService,
+)
+from picotoopet_core.autonomous.video_return import GoalVideoReturnError, GoalVideoReturnV1
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -35,6 +40,16 @@ def _handoff_access(request: Request) -> GoalHandoffAccess:
         workflows=services.workflows,
         result_records=services.result_records,
         result_store=services.results,
+    )
+
+
+def _video_return_service(request: Request) -> GoalVideoContinuationService:
+    services = request.app.state.services
+    return GoalVideoContinuationService(
+        database=services.database,
+        handoffs=_handoff_access(request),
+        creative=services.creative,
+        production=services.production,
     )
 
 
@@ -109,6 +124,55 @@ def get_goal_handoff_prompt(goal_id: str, request: Request) -> PlainTextResponse
         return PlainTextResponse(prompt, media_type="text/plain; charset=utf-8")
     except HandoffAccessError as error:
         _raise_handoff_api_error(error)
+
+
+@router.post(
+    "/autonomous/goals/{goal_id}/handoff/video-return",
+    response_model=GoalVideoContinuationRecord,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_goal_video_return(
+    goal_id: str,
+    payload: GoalVideoReturnV1,
+    request: Request,
+) -> GoalVideoContinuationRecord:
+    try:
+        return _video_return_service(request).submit(goal_id, payload)
+    except HandoffAccessError as error:
+        _raise_handoff_api_error(error)
+    except GoalVideoReturnError as error:
+        raise ApiError(
+            status_code=409,
+            code=error.code,
+            message="返回内容未通过交接绑定、证据或安全验证。",
+            retryable=False,
+        ) from error
+    except ValueError as error:
+        raise ApiError(
+            status_code=409,
+            code="AUTONOMOUS_VIDEO_RETURN_CONFLICT",
+            message=str(error),
+            retryable=False,
+        ) from error
+
+
+@router.get(
+    "/autonomous/goals/{goal_id}/handoff/video-return",
+    response_model=GoalVideoContinuationRecord,
+)
+def get_goal_video_return_status(
+    goal_id: str,
+    request: Request,
+) -> GoalVideoContinuationRecord:
+    try:
+        return _video_return_service(request).status(goal_id)
+    except KeyError as error:
+        raise ApiError(
+            status_code=404,
+            code="AUTONOMOUS_VIDEO_RETURN_NOT_FOUND",
+            message="尚未找到已采纳的视频返回。",
+            retryable=False,
+        ) from error
 
 
 @router.get("/autonomous/goals/{goal_id}", response_model=GoalRecord)
