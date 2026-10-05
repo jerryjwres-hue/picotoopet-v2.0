@@ -357,12 +357,14 @@ class Database:
     def fetchone(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Row | None:
         """读取单行。"""
 
-        with self._lock:\n            return self.connection.execute(sql, tuple(parameters)).fetchone()
+        with self._lock:
+            return self.connection.execute(sql, tuple(parameters)).fetchone()
 
     def fetchall(self, sql: str, parameters: Sequence[Any] = ()) -> list[sqlite3.Row]:
         """读取全部行。"""
 
-        with self._lock:\n            return list(self.connection.execute(sql, tuple(parameters)).fetchall())
+        with self._lock:
+            return list(self.connection.execute(sql, tuple(parameters)).fetchall())
 
     def scalar(self, sql: str, parameters: Sequence[Any] = ()) -> Any:
         """读取首行首列。"""
