@@ -195,20 +195,21 @@
                 </TransformGroup>
               </Canvas.RenderTransform>
 
-              <!-- Tail and hind legs render behind the torso; overlap is supplied by the exported art itself. -->
-              <Image x:Name="MaotaiV2TailTip"
-                     Width="38"
-                     Height="28"
-                     Canvas.Left="-7"
-                     Canvas.Top="-15"
+              <!-- Tail draw order       : parent first, then children; each child covers the parent's hidden fur seam.
+                   Torso ownership        : all three tail pieces still render behind the torso and hind-leg foreground. -->
+              <Image x:Name="MaotaiV2TailBase"
+                     Width="42"
+                     Height="32"
+                     Canvas.Left="-8"
+                     Canvas.Top="-17"
                      RenderTransformOrigin="0.18,0.54"
                      Stretch="Uniform"
                      Opacity="0"
                      RenderOptions.BitmapScalingMode="HighQuality">
                 <Image.RenderTransform>
                   <TransformGroup>
-                    <RotateTransform x:Name="MaotaiV2TailTipRotate" />
-                    <TranslateTransform x:Name="MaotaiV2TailTipTranslate" />
+                    <RotateTransform x:Name="MaotaiV2TailBaseRotate" />
+                    <TranslateTransform x:Name="MaotaiV2TailBaseTranslate" />
                   </TransformGroup>
                 </Image.RenderTransform>
               </Image>
@@ -228,19 +229,19 @@
                   </TransformGroup>
                 </Image.RenderTransform>
               </Image>
-              <Image x:Name="MaotaiV2TailBase"
-                     Width="42"
-                     Height="32"
-                     Canvas.Left="-8"
-                     Canvas.Top="-17"
+              <Image x:Name="MaotaiV2TailTip"
+                     Width="38"
+                     Height="28"
+                     Canvas.Left="-7"
+                     Canvas.Top="-15"
                      RenderTransformOrigin="0.18,0.54"
                      Stretch="Uniform"
                      Opacity="0"
                      RenderOptions.BitmapScalingMode="HighQuality">
                 <Image.RenderTransform>
                   <TransformGroup>
-                    <RotateTransform x:Name="MaotaiV2TailBaseRotate" />
-                    <TranslateTransform x:Name="MaotaiV2TailBaseTranslate" />
+                    <RotateTransform x:Name="MaotaiV2TailTipRotate" />
+                    <TranslateTransform x:Name="MaotaiV2TailTipTranslate" />
                   </TransformGroup>
                 </Image.RenderTransform>
               </Image>
