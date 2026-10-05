@@ -3,23 +3,30 @@ using PicotooPet.Desktop.Views.Controls;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结中段哈欠被摸头即时打断时的身体与键盘前爪连续性。</summary>
+/// <summary>冻结中段哈欠被即时用户互动打断时的身体与键盘前爪连续性。</summary>
 internal static class MaotaiInterruptedYawnPatV2SmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
 
     public static void Run()
     {
+        VerifyInteraction("Pat", 101);
+        VerifyInteraction("Paw", 103);
+        VerifyInteraction("Celebrate", 107);
+    }
+
+    private static void VerifyInteraction(string interaction, int seed)
+    {
         var engineType = RequireType("PicotooPet.Desktop.Views.Controls.MaotaiMotion.MaotaiMotionEngine");
         var update = RequireMethod(engineType, "Update");
-        var engine = Activator.CreateInstance(engineType, 101, 108.0)
-            ?? throw new InvalidOperationException("无法创建哈欠摸头中断 Motion Engine");
+        var engine = Activator.CreateInstance(engineType, seed, 108.0)
+            ?? throw new InvalidOperationException($"无法创建哈欠 {interaction} 中断 Motion Engine");
 
         object? yawnPose = null;
         for (var frame = 0; frame < 1200; frame++)
         {
             var pose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working")])
-                ?? throw new InvalidOperationException("哈欠摸头中断预热没有输出 PoseFrame");
+                ?? throw new InvalidOperationException($"哈欠 {interaction} 中断预热没有输出 PoseFrame");
             var state = ReadProperty(pose, "MotionState")?.ToString();
             var transitionBlend = ReadDouble(pose, "MotionTransitionBlend");
             var yawnProgress = ReadDouble(pose, "YawnProgress");
@@ -32,35 +39,35 @@ internal static class MaotaiInterruptedYawnPatV2SmokeTests
             }
         }
 
-        Assert(yawnPose is not null, "哈欠摸头中断测试未捕获到稳定过渡后的中段 Yawn");
+        Assert(yawnPose is not null, $"哈欠 {interaction} 中断测试未捕获到稳定过渡后的中段 Yawn");
 
-        var patPose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working", "Pat")])
-            ?? throw new InvalidOperationException("哈欠摸头中断首帧没有输出 PoseFrame");
-        var patState = ReadProperty(patPose, "MotionState")?.ToString();
-        Assert(string.Equals(patState, "UserReaction", StringComparison.Ordinal),
-            $"Pat 必须首帧打断 Yawn 并进入 UserReaction；actual={patState}");
-        Assert(string.Equals(ReadProperty(patPose, "MouthState")?.ToString(), "Tongue", StringComparison.Ordinal),
-            "Pat 打断 Yawn 的首帧必须立即显示 Tongue，连续性不能延迟互动反馈");
+        var reactionPose = update.Invoke(engine, [1.0 / 60.0, CreateInput("Working", interaction)])
+            ?? throw new InvalidOperationException($"哈欠 {interaction} 中断首帧没有输出 PoseFrame");
+        var reactionState = ReadProperty(reactionPose, "MotionState")?.ToString();
+        Assert(string.Equals(reactionState, "UserReaction", StringComparison.Ordinal),
+            $"{interaction} 必须首帧打断 Yawn 并进入 UserReaction；actual={reactionState}");
+        Assert(string.Equals(ReadProperty(reactionPose, "MouthState")?.ToString(), "Tongue", StringComparison.Ordinal),
+            $"{interaction} 打断 Yawn 的首帧必须立即显示 Tongue，连续性不能延迟互动反馈");
 
         var bodyYDelta = Math.Abs(
-            ReadPoseDouble(patPose, "Body", "Y") - ReadPoseDouble(yawnPose!, "Body", "Y"));
+            ReadPoseDouble(reactionPose, "Body", "Y") - ReadPoseDouble(yawnPose!, "Body", "Y"));
         var bodyScaleXDelta = Math.Abs(
-            ReadPoseDouble(patPose, "Body", "ScaleX") - ReadPoseDouble(yawnPose!, "Body", "ScaleX"));
+            ReadPoseDouble(reactionPose, "Body", "ScaleX") - ReadPoseDouble(yawnPose!, "Body", "ScaleX"));
         var bodyScaleYDelta = Math.Abs(
-            ReadPoseDouble(patPose, "Body", "ScaleY") - ReadPoseDouble(yawnPose!, "Body", "ScaleY"));
-        var leftPawDelta = PoseDistance(yawnPose!, patPose, "FrontLeftPaw");
-        var rightPawDelta = PoseDistance(yawnPose!, patPose, "FrontRightPaw");
+            ReadPoseDouble(reactionPose, "Body", "ScaleY") - ReadPoseDouble(yawnPose!, "Body", "ScaleY"));
+        var leftPawDelta = PoseDistance(yawnPose!, reactionPose, "FrontLeftPaw");
+        var rightPawDelta = PoseDistance(yawnPose!, reactionPose, "FrontRightPaw");
 
         Assert(bodyYDelta < 0.75,
-            $"Pat 打断中段 Yawn 时身体高度不能瞬间归零；delta={bodyYDelta:F3}");
+            $"{interaction} 打断中段 Yawn 时身体高度不能瞬间归零；delta={bodyYDelta:F3}");
         Assert(bodyScaleXDelta < 0.012,
-            $"Pat 打断中段 Yawn 时横向缩放不能瞬间归零；delta={bodyScaleXDelta:F4}");
+            $"{interaction} 打断中段 Yawn 时横向缩放不能瞬间归零；delta={bodyScaleXDelta:F4}");
         Assert(bodyScaleYDelta < 0.012,
-            $"Pat 打断中段 Yawn 时纵向缩放不能瞬间归零；delta={bodyScaleYDelta:F4}");
+            $"{interaction} 打断中段 Yawn 时纵向缩放不能瞬间归零；delta={bodyScaleYDelta:F4}");
         Assert(leftPawDelta < 1.60,
-            $"Pat 打断中段 Yawn 时左前爪不能从键盘瞬移回站姿；delta={leftPawDelta:F3}");
+            $"{interaction} 打断中段 Yawn 时左前爪不能从键盘瞬移回站姿；delta={leftPawDelta:F3}");
         Assert(rightPawDelta < 1.60,
-            $"Pat 打断中段 Yawn 时右前爪不能从键盘瞬移回站姿；delta={rightPawDelta:F3}");
+            $"{interaction} 打断中段 Yawn 时右前爪不能从键盘瞬移回站姿；delta={rightPawDelta:F3}");
     }
 
     private static object CreateInput(string baseState, string interaction = "None")
@@ -82,7 +89,7 @@ internal static class MaotaiInterruptedYawnPatV2SmokeTests
             false,
             false,
             108.0)
-            ?? throw new InvalidOperationException("无法创建哈欠摸头中断 MotionInput");
+            ?? throw new InvalidOperationException("无法创建哈欠用户互动中断 MotionInput");
     }
 
     private static double PoseDistance(object from, object to, string poseName)
