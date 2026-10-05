@@ -187,7 +187,7 @@ class CreativeIntelligenceService:
             if record.result_digest is None:
                 self.repository.update_stage(
                     record.stage_run_id,
-                    status=CreativeQualityOutcome.PASS.value,
+                    status="Completed",
                     model_attempts=0,
                     result=raw,
                     result_digest=result_digest,
