@@ -395,7 +395,8 @@ internal sealed class MaotaiMotionEngine
 
         var workPawReactionTransition =
             _graph.ActiveState == MaotaiMotionState.UserReaction &&
-            _graph.PreviousState == MaotaiMotionState.WorkTired &&
+            (_graph.PreviousState == MaotaiMotionState.WorkTired ||
+             _graph.PreviousState == MaotaiMotionState.Yawn) &&
             _graph.IsTransitioning;
         var workPawExitTransition =
             _graph.IsTransitioning &&
@@ -406,17 +407,24 @@ internal sealed class MaotaiMotionEngine
             var workPawState = workPawExitTransition
                 ? _graph.PreviousState
                 : _graph.ActiveState;
-            var workPawBlend = workPawReactionTransition
+            var workPawBlend = workPawReactionTransition &&
+                               _graph.PreviousState == MaotaiMotionState.WorkTired
                 ? Math.Clamp(_lastTiredBlend, 0.0, 1.0)
                 : workPawExitTransition
                     ? 1.0
                     : blend;
             var cadenceHz = GetTypingCadenceHz(workPawState, workPawBlend);
             var amplitude = GetTypingAmplitude(workPawState, workPawBlend);
-            if (_graph.ActiveState == MaotaiMotionState.Yawn)
+            if (workPawState == MaotaiMotionState.Yawn)
             {
-                cadenceHz = Lerp(1.55, 0.40, mouthOpenAmount);
-                amplitude = Lerp(1.15, 0.55, mouthOpenAmount);
+                // Yawn handoff       : when Pat interrupts the yawn, reconstruct the last visible yawn
+                //                     cadence/amplitude instead of jumping the keyboard paws to typing defaults.
+                var workYawnProgress = _graph.ActiveState == MaotaiMotionState.Yawn
+                    ? yawnProgress
+                    : Math.Clamp(_lastYawnProgress, 0.0, 1.0);
+                var workYawnOpenAmount = Math.Sin(workYawnProgress * Math.PI);
+                cadenceHz = Lerp(1.55, 0.40, workYawnOpenAmount);
+                amplitude = Lerp(1.15, 0.55, workYawnOpenAmount);
             }
             else if (_graph.ActiveState == MaotaiMotionState.WorkTyping &&
                      _graph.PreviousState == MaotaiMotionState.Yawn &&
@@ -737,7 +745,7 @@ internal sealed class MaotaiMotionEngine
                     _graph.IsTransitioning)
                 {
                     // Direct interaction : Pat/Paw/Celebrate must react immediately, but the body starts
-                    // from the exact partial tired pose rendered on the previous frame instead of snapping neutral.
+                    //                      from the exact partial tired pose rendered on the previous frame.
                     var residual = 1.0 - blend;
                     var sourceBlend = Math.Clamp(_lastTiredBlend, 0.0, 1.0);
                     bodyWorldY += Lerp(2.0, 2.6, sourceBlend) * residual;
@@ -747,6 +755,24 @@ internal sealed class MaotaiMotionEngine
                     headBiasDeg += 3.0 * facingSign * sourceBlend * residual;
                     earDrop += 3.2 * sourceBlend * residual;
                     earTension = 2.0 * sourceBlend * residual;
+                }
+                else if (_graph.PreviousState == MaotaiMotionState.Yawn &&
+                         _graph.IsTransitioning)
+                {
+                    // Yawn interaction    : preserve the exact time-varying yawn envelope on the first
+                    //                      UserReaction frames so Pat feedback is immediate without a pose snap.
+                    var residual      = 1.0 - blend;
+                    var phase         = Math.Clamp(_lastYawnProgress, 0.0, 1.0);
+                    var envelope      = Math.Sin(phase * Math.PI);
+                    var tiredResidual = (1.0 - phase) * (1.0 - phase);
+                    bodyWorldY += ((2.6 * tiredResidual) - (1.6 * envelope)) * residual;
+                    bodyScaleX += ((0.018 * tiredResidual) - (0.025 * envelope)) * residual;
+                    bodyScaleY += ((-0.045 * tiredResidual) + (0.070 * envelope)) * residual;
+                    headOffsetY += ((4.2 * tiredResidual) - (2.4 * envelope)) * residual;
+                    headBiasDeg += ((3.0 * facingSign * tiredResidual) -
+                        (4.0 * facingSign * envelope)) * residual;
+                    earDrop += ((3.2 * tiredResidual) + (1.4 * envelope)) * residual;
+                    earTension = 2.0 * tiredResidual * residual;
                 }
                 break;
 
