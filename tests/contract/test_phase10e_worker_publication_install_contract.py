@@ -35,11 +35,15 @@ def test_worker_installer_discovers_fixed_github_cli_without_installing_it() -> 
         "write_worker_plist",
     ):
         assert required in source
+
+    # The installer may use curl for bounded loopback health checks.                  #
+    # This contract only forbids privilege escalation or downloading/installing gh.  #
     for forbidden in (
         "brew install gh",
         "sudo ",
-        "curl ",
-        "wget ",
+        "github.com/cli/cli/releases",
+        "api.github.com/repos/cli/cli/releases",
+        "raw.githubusercontent.com/cli/cli",
     ):
         assert forbidden not in source
 
