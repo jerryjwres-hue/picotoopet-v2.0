@@ -43,7 +43,7 @@ class CreativeQualityGate:
         except ValidationError as error:
             return self._retry("RESULT_SCHEMA_INVALID", self._validation_correction(error)), None
 
-        if self._contains_forbidden_output(parsed.model_dump(mode="json")):
+        if self.contains_forbidden_output(parsed.model_dump(mode="json")):
             return CreativeQualityDecision(
                 outcome=CreativeQualityOutcome.REJECT,
                 reasons=["CREATIVE_OUTPUT_FORBIDDEN_PAYLOAD"],
@@ -122,7 +122,9 @@ class CreativeQualityGate:
         return "Repair only the strict JSON schema fields: " + ", ".join(filter(None, locations))
 
     @staticmethod
-    def _contains_forbidden_output(value: object) -> bool:
+    def contains_forbidden_output(value: object) -> bool:
+        """Return whether a value carries forbidden execution/configuration authority."""
+
         encoded = json.dumps(value, ensure_ascii=False, sort_keys=True).lower()
         markers = (
             "authorization: bearer",
