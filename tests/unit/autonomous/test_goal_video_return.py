@@ -397,6 +397,7 @@ def test_conflicting_replay_is_rejected_and_restart_reconciles_existing_creative
                 "prompt_version": payload.prompt_version,
                 "return_sha256": validated.return_digest,
                 "verified_fact_ids": payload.verified_fact_ids,
+                "generated_at": payload.generated_at.isoformat(),
             },
         )
         assert database.scalar("SELECT COUNT(*) FROM production_jobs") == 0
