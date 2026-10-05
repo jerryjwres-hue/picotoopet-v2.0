@@ -99,8 +99,15 @@ wait_for_candidate_health() {
   local attempts="${2:-240}"
   local index
   for ((index = 0; index < attempts; index += 1)); do
-    if curl --silent --show-error --fail --max-time 2 \
-      "$base_url/api/v1/health" >/dev/null 2>&1; then
+    if python3 - "$base_url" >/dev/null 2>&1 <<'PY'
+import sys
+import urllib.request
+
+base = sys.argv[1].rstrip("/")
+with urllib.request.urlopen(f"{base}/api/v1/health", timeout=2) as response:
+    raise SystemExit(0 if response.status == 200 else 1)
+PY
+    then
       return 0
     fi
     if [[ -n "$candidate_pid" ]] && ! kill -0 "$candidate_pid" >/dev/null 2>&1; then
