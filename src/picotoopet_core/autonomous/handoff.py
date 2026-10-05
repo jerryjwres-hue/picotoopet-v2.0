@@ -154,7 +154,8 @@ class WebGptHandoffBuilder:
         files_payload: dict[str, bytes] = {
             "00_README_直接拖给GPT.md": self._text_bytes(
                 "# PicotooPet AI Web GPT 交接包\n\n"
-                "把整个 ZIP 交给网页 GPT，并同时粘贴 Windows Goal Center 的“复制 GPT 提示词”。\n"\n                "复制出的提示词会在固定 Master Prompt 后附加当前交接包的回导绑定和严格 schema。\n\n"
+                "把整个 ZIP 交给网页 GPT，并同时粘贴 Windows Goal Center 的“复制 GPT 提示词”。\n"
+                "复制出的提示词会在固定 Master Prompt 后附加当前交接包的回导绑定和严格 schema。\n\n"
                 f"- Goal ID: `{goal.goal_id}`\n"
                 f"- Goal: {goal.objective}\n"
                 f"- Prompt: `{PROMPT_VERSION}`\n"
