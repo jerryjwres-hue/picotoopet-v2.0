@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -175,7 +174,6 @@ def test_external_adoption_uses_quality_gate_and_is_restart_idempotent(tmp_path:
             creative_objective="Create a short video.",
             idempotency_key="goal-video:goal-001",
             provenance=provenance,
-            completed_at=datetime(2026, 10, 5, tzinfo=UTC),
         )
         second = service.adopt_external(
             source_set=source,
@@ -183,7 +181,6 @@ def test_external_adoption_uses_quality_gate_and_is_restart_idempotent(tmp_path:
             creative_objective="Create a short video.",
             idempotency_key="goal-video:goal-001",
             provenance=provenance,
-            completed_at=datetime(2026, 10, 5, tzinfo=UTC),
         )
 
         assert second.creative_package_id == first.creative_package_id
@@ -218,7 +215,6 @@ def test_external_adoption_rejects_unknown_evidence_before_creating_job(tmp_path
                 creative_objective="Create a short video.",
                 idempotency_key="goal-video:goal-001",
                 provenance={"goal_id": "goal-001"},
-                completed_at=datetime(2026, 10, 5, tzinfo=UTC),
             )
         assert database.fetchone("SELECT COUNT(*) AS count FROM creative_jobs")["count"] == 0
     finally:
