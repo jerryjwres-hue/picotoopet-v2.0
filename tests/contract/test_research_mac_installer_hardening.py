@@ -99,3 +99,13 @@ def test_worker_loopback_checks_ignore_user_proxy_environment() -> None:
     assert "ProxyHandler({})" in installer
     assert worker_lib.count("ProxyHandler({})") >= 2
     assert core_lib.count("ProxyHandler({})") >= 3
+
+
+def test_worker_installer_does_not_overwrite_rollback_anchor_before_existing_target_check() -> None:
+    source = _read(WORKER_INSTALLER)
+
+    target_check = source.index('if [[ -e "$new_version" ]]')
+    target_reject = source.index('echo "目标版本已存在，拒绝覆盖：$new_version"')
+    rollback_anchor = source.index('printf \'%s\\n\' "$previous_target" > "$previous_version_file"')
+
+    assert target_check < target_reject < rollback_anchor
