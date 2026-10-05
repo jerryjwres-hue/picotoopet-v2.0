@@ -68,3 +68,14 @@ def test_install_contract_is_separate_from_full_shared_health() -> None:
     assert 'VERIFY_PICOTOOPET_RESEARCH_2_3_27_1.command" --mode install-contract' in installer_source
     assert 'verify_mode="full"' in integrated_source
     assert 'VERIFY_RESEARCH_GATEWAY.command" --mode "$verify_mode"' in integrated_source
+
+
+def test_worker_loopback_checks_ignore_user_proxy_environment() -> None:
+    installer = _read(WORKER_INSTALLER)
+    worker_lib = _read(REPO_ROOT / "deploy/macos/phase23-worker/worker-lib.sh")
+    core_lib = _read(REPO_ROOT / "deploy/macos/phase23/lib.sh")
+
+    # 所有安装/验证期 loopback HTTP 必须绕过用户 HTTP(S)/ALL_PROXY。
+    assert "ProxyHandler({})" in installer
+    assert worker_lib.count("ProxyHandler({})") >= 2
+    assert core_lib.count("ProxyHandler({})") >= 3
