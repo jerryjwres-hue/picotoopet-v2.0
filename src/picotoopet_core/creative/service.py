@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from contextlib import suppress
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -132,7 +131,6 @@ class CreativeIntelligenceService:
         creative_objective: str | None,
         idempotency_key: str,
         provenance: dict[str, Any],
-        completed_at: datetime,
     ) -> CreativePackageRecord:
         """Validate and adopt an external result without granting provider authority."""
 
@@ -204,7 +202,7 @@ class CreativeIntelligenceService:
             profile=profile,
             configured_model_id="manual-web-gpt-unspecified-model",
             package_id=package_id,
-            completed_at=completed_at,
+            completed_at=job.created_at,
             external_provenance=provenance,
         )
         self.repository.transition_job(
