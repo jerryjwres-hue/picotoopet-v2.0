@@ -411,15 +411,41 @@ class GatewayDispatcher:
         return ["mcporter", "call", expression], 120
 
 
+def _crawl4ai_root() -> Path:
+    configured = str(os.environ.get("PICOTOOPET_CRAWL4AI_ROOT", "")).strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".local" / "share" / "picotoopet" / "research" / "crawl4ai"
+
+
 def health_snapshot() -> dict[str, object]:
-    """Return process-level dependency presence without reading browser cookies or secrets."""
+    """Return read-only dependency presence without reading browser cookies or secrets."""
 
     tools = {name: shutil.which(name) is not None for name in _REQUIRED_TOOLS}
+    crawl_root = _crawl4ai_root()
+    crawl_provider = crawl_root / "bin" / "picotoopet-crawl4ai-provider"
+    crawl_python = crawl_root / "venv" / "bin" / "python"
+    scrapling = bool(
+        shutil.which("scrapling-mcp-local")
+        or (Path.home() / ".local" / "bin" / "scrapling-mcp-local").is_file()
+    )
+    thunderbit = (Path.home() / ".codex" / "mcp-servers" / "thunderbit").is_dir()
     return {
         "version": _read_version(),
         "read_only": True,
         "xiaoyuzhou_enabled": False,
         "tools": tools,
+        "crawl4ai": {
+            "installed": crawl_provider.is_file() and os.access(crawl_provider, os.X_OK),
+            "private_runtime": crawl_python.is_file() and os.access(crawl_python, os.X_OK),
+        },
+        "scrapling": {"installed": scrapling},
+        "thunderbit": {"installed": thunderbit, "paid_smoke_test_performed": False},
+        "browser_bridge": {
+            "opencli_installed": tools["opencli"],
+            "agent_reach_installed": tools["agent-reach"],
+        },
+        "search_ready": tools["mcporter"],
         "ready": all(tools.values()),
     }
 

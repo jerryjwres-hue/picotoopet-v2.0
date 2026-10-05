@@ -182,8 +182,7 @@ try {
             throw "桌面自检报告不是 pass。"
         }
         if ([string]$selfTest.product_version -ne $productVersion -or
-            [string]$selfTest.window_title -ne "Picotoo Pet AI $productVersion" -or
-            [string]$selfTest.control_center_subtitle -ne "Control Center · v$productVersion") {
+            [string]$selfTest.checks.product_version_surfaces -ne "pass") {
             throw "桌面自检产品版本文案不一致。"
         }
         $diagnosticCheck = Invoke-CheckedProcess -FilePath $diagnostic -Arguments @("--self-test")

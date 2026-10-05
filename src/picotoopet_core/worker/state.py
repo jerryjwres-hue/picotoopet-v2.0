@@ -31,6 +31,8 @@ class WorkerStateStore:
         worker_id: str,
         supported_task_types: tuple[str, ...],
         active_task_id: str | None,
+        active_stage: str | None = None,
+        last_progress_at: datetime | None = None,
         observed_at: datetime | None = None,
     ) -> WorkerStatusResponse:
         """使用临时文件和原子替换写入完整状态。"""
@@ -43,6 +45,8 @@ class WorkerStateStore:
             worker_id=worker_id,
             supported_task_types=list(supported_task_types),
             active_task_id=active_task_id,
+            active_stage=active_stage,
+            last_progress_at=last_progress_at,
             last_heartbeat_at=now,
             observed_at=now,
         )
@@ -83,6 +87,7 @@ class WorkerStateStore:
                     "state": "offline",
                     "reason": "worker_heartbeat_stale",
                     "active_task_id": None,
+                    "active_stage": None,
                     "observed_at": checked_at,
                 }
             )

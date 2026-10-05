@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "windows" / "desktop"
 BUILDER = DESKTOP / "scripts" / "Build-Phase2WindowsRelease.ps1"
+VERIFIER = DESKTOP / "release" / "Verify-Phase2Prebuilt.ps1"
 PREVIEW = ROOT / ".github" / "workflows" / "windows-ui-preview-release.yml"
 FORMAL = ROOT / ".github" / "workflows" / "windows-phase2-release.yml"
 RESEARCH_FORMAL = ROOT / ".github" / "workflows" / "research-windows-final-release.yml"
@@ -66,6 +67,39 @@ def test_ui_preview_workflow_builds_installable_lifecycle_verified_artifact() ->
     # Preview 只能作为验收包，不能伪装正式发布或跳过生命周期验证。
     assert "windows-phase2-release.yml" not in workflow
     assert "research-windows-final-release.yml" not in workflow
+
+
+def test_goal_center_delivery_branch_is_covered_by_installable_ui_preview() -> None:
+    workflow = _read(PREVIEW)
+
+    # Goal Center 改动必须在自己的交付分支上自动构建可安装 Preview；
+    # 不能依赖旧 UI polish 分支，也不能改用 Full release 绕过 Natural Motion 资产门。
+    assert "feature/autonomous-intelligence-e2e-goal-center-2.3.27.1" in workflow
+    assert "-ValidationScope UiPreview" in workflow
+
+
+def test_release_builder_uses_published_version_surface_self_test_contract() -> None:
+    builder = _read(BUILDER)
+
+    # 发布 EXE 已在 AppSelfTest 内把 Shell 的标题/副标题与 ProductVersionInfo 做同源比较。
+    # 外层打包器只重复校验唯一产品版本，并要求同源 UI 表面自检为 pass，
+    # 不再复制任何可能过期的窗口标题或副标题字符串。
+    assert '[string]$selfTest.checks.product_version_surfaces -ne "pass"' in builder
+    assert '[string]$selfTest.product_version -ne $ProductVersion' in builder
+    assert '[string]$selfTest.window_title -ne "Picotoo Pet AI $ProductVersion"' not in builder
+    assert '[string]$selfTest.control_center_subtitle -ne "Control Center · v$ProductVersion"' not in builder
+
+
+def test_installed_verifier_uses_published_version_surface_self_test_contract() -> None:
+    verifier = _read(VERIFIER)
+
+    # 安装后的 OfflinePackageOnly 验证同样不能复制 Shell 文案。它必须严格比较
+    # 安装指针/Manifest/product-version.txt 与 EXE 报告的产品版本，并依赖 EXE
+    # 自己的 product_version_surfaces 检查验证窗口标题和 Control Center 副标题。
+    assert '[string]$selfTest.checks.product_version_surfaces -ne "pass"' in verifier
+    assert '[string]$selfTest.product_version -ne $productVersion' in verifier
+    assert '[string]$selfTest.window_title -ne "Picotoo Pet AI $productVersion"' not in verifier
+    assert '[string]$selfTest.control_center_subtitle -ne "Control Center · v$productVersion"' not in verifier
 
 
 def test_ui_preview_publishes_auditable_run_provenance_to_source_commit() -> None:

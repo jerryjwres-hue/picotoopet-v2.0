@@ -67,6 +67,7 @@ class ReturnRecord(BaseModel):
         "local-contract-self-test",
         "local-mock-dev-broker",
         "codex",
+        "claude_code",
     ]
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     package_digest: str = Field(pattern=r"^[0-9a-f]{64}$")

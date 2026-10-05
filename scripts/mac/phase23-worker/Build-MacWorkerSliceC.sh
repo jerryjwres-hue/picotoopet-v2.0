@@ -96,6 +96,8 @@ cp "$repo_root/deploy/macos/phase23/lib.sh" "$package_root/lib.sh"
 for file in \
   INSTALL_MAC_WORKER_SLICE_C.command \
   VERIFY_MAC_WORKER_SLICE_C.command \
+  VERIFY_GOAL_CENTER_E2E.command \
+  VERIFY_CODING_PROVIDERS.command \
   ROLLBACK_MAC_WORKER_SLICE_C.command \
   worker-lib.sh \
   README_INSTALL_CN.txt; do
@@ -105,6 +107,8 @@ cp "$product_version_file" "$package_root/product-version.txt"
 chmod 755 \
   "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" \
   "$package_root/VERIFY_MAC_WORKER_SLICE_C.command" \
+  "$package_root/VERIFY_GOAL_CENTER_E2E.command" \
+  "$package_root/VERIFY_CODING_PROVIDERS.command" \
   "$package_root/ROLLBACK_MAC_WORKER_SLICE_C.command" \
   "$package_root/lib.sh" \
   "$package_root/worker-lib.sh"
@@ -158,6 +162,18 @@ manifest = {
         "browser.capture.contract",
         "objective.query.planning",
     ],
+    "goal_center_e2e_included": True,
+    "goal_center_live_verifier": "VERIFY_GOAL_CENTER_E2E.command",
+    "coding_provider_live_verifier": "VERIFY_CODING_PROVIDERS.command",
+    "coding_provider_status_routes": [
+        "/api/v1/providers/codex/status",
+        "/api/v1/providers/claude-code/status",
+    ],
+    "goal_center_runtime_task_types": [
+        "autonomous.discovery.v1",
+        "autonomous.goal_synthesis.v1",
+        "autonomous.goal_handoff.v1",
+    ],
     "diagnostic_hard_timeout_seconds": 30,
     "diagnostic_termination_grace_seconds": 5,
     "source_build_on_user_mac": False,
@@ -210,6 +226,18 @@ report = {
         "content.discovery",
         "browser.capture.contract",
         "objective.query.planning",
+    ],
+    "goal_center_e2e_included": True,
+    "goal_center_live_verifier": "VERIFY_GOAL_CENTER_E2E.command",
+    "coding_provider_live_verifier": "VERIFY_CODING_PROVIDERS.command",
+    "coding_provider_status_routes": [
+        "/api/v1/providers/codex/status",
+        "/api/v1/providers/claude-code/status",
+    ],
+    "goal_center_runtime_task_types": [
+        "autonomous.discovery.v1",
+        "autonomous.goal_synthesis.v1",
+        "autonomous.goal_handoff.v1",
     ],
     "diagnostic_hard_timeout_seconds": 30,
     "diagnostic_termination_grace_seconds": 5,

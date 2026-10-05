@@ -17,8 +17,8 @@ def test_migration_ten_creates_publication_candidate_table_idempotently(tmp_path
     database.open(); database.apply_migrations(); database.apply_migrations()
     columns = {row["name"] for row in database.fetchall("PRAGMA table_info(provider_publication_candidates)")}
     assert REQUIRED_PUBLICATION_COLUMNS <= columns
-    # Schema retention gate      Migration 10 remains once and later migrations advance through 19.
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 19
+    # Schema retention gate      Migration 10 remains once and later migrations advance through 23.
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 10") == 1
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 11") == 1
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 12") == 1
@@ -29,6 +29,10 @@ def test_migration_ten_creates_publication_candidate_table_idempotently(tmp_path
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 17") == 1
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 18") == 1
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 19") == 1
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 20") == 1
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 21") == 1
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 22") == 1
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 23") == 1
     database.close()
 
 
@@ -37,5 +41,5 @@ def test_migration_ten_preserves_existing_commit_candidate_table(tmp_path: Path)
     database.open(); database.apply_migrations()
     assert database.scalar("SELECT COUNT(*) FROM provider_commit_candidates") == 0
     assert database.scalar("SELECT COUNT(*) FROM provider_publication_candidates") == 0
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 19
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
     database.close()

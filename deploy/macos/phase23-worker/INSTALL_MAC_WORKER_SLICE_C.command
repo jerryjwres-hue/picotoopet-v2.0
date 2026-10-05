@@ -30,11 +30,15 @@ core_label="com.picotoopet.mac-core"
 version=""
 product_version=""
 new_version=""
+new_version_created=0
+install_marker_name=".picotoopet-install-incomplete"
 previous_target=""
 existing_port=""
 api_token=""
 candidate_pid=""
 candidate_root=""
+candidate_stdout_report=""
+candidate_stderr_report=""
 github_cli_executable=""
 activated=0
 worker_started=0
@@ -63,6 +67,21 @@ discover_github_cli_executable() {
   return 1
 }
 
+cleanup_new_version() {
+  # 只清理由本次安装创建、且仍带“未完成”标记的候选版本，绝不删除已成功激活或未知目录。
+  if [[ "$new_version_created" != "1" || -z "$new_version" ]]; then
+    return 0
+  fi
+  if [[ "$new_version" != "$versions_root"/* ]]; then
+    echo "拒绝清理 versions 目录之外的候选路径：$new_version" >&2
+    return 1
+  fi
+  if [[ -f "$new_version/$install_marker_name" ]]; then
+    rm -rf "$new_version"
+  fi
+  new_version_created=0
+}
+
 cleanup_candidate() {
   if [[ -n "$candidate_pid" ]] && kill -0 "$candidate_pid" >/dev/null 2>&1; then
     kill "$candidate_pid" >/dev/null 2>&1 || true
@@ -73,6 +92,41 @@ cleanup_candidate() {
     rm -rf "$candidate_root"
   fi
   candidate_root=""
+}
+
+wait_for_candidate_health() {
+  local base_url="$1"
+  local attempts="${2:-240}"
+  local index
+  for ((index = 0; index < attempts; index += 1)); do
+    if python3 - "$base_url" >/dev/null 2>&1 <<'PY'
+import sys
+import urllib.request
+
+base = sys.argv[1].rstrip("/")
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with opener.open(f"{base}/api/v1/health", timeout=2) as response:
+    raise SystemExit(0 if response.status == 200 else 1)
+PY
+    then
+      return 0
+    fi
+    if [[ -n "$candidate_pid" ]] && ! kill -0 "$candidate_pid" >/dev/null 2>&1; then
+      echo "候选 Worker 进程在 health ready 前已退出。" >&2
+      if [[ -f "$candidate_root/candidate.stderr.log" ]]; then
+        echo "候选 Worker stderr：" >&2
+        cat "$candidate_root/candidate.stderr.log" >&2 || true
+      fi
+      return 1
+    fi
+    sleep 0.25
+  done
+  echo "候选 Worker health 在 $((attempts / 4)) 秒内未 ready：$base_url" >&2
+  if [[ -f "$candidate_root/candidate.stderr.log" ]]; then
+    echo "候选 Worker stderr：" >&2
+    cat "$candidate_root/candidate.stderr.log" >&2 || true
+  fi
+  return 1
 }
 
 restart_core_runtime() {
@@ -125,8 +179,25 @@ on_error() {
   local code=$?
   local failed_command="${BASH_COMMAND:-unknown command}"
   trap - ERR
+  # Preserve candidate process output before cleanup so a real-Mac startup failure
+  # remains diagnosable after the temporary candidate runtime is removed.
+  if [[ -n "$candidate_root" && -d "$candidate_root" ]]; then
+    local diagnostic_stamp
+    diagnostic_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    if [[ -f "$candidate_root/candidate.stdout.log" ]]; then
+      candidate_stdout_report="$runtime_root/reports/phase23-slice-d-worker-candidate-${diagnostic_stamp}.stdout.log"
+      cp "$candidate_root/candidate.stdout.log" "$candidate_stdout_report" || true
+      echo "候选 Worker stdout 已保存：$candidate_stdout_report" >&2
+    fi
+    if [[ -f "$candidate_root/candidate.stderr.log" ]]; then
+      candidate_stderr_report="$runtime_root/reports/phase23-slice-d-worker-candidate-${diagnostic_stamp}.stderr.log"
+      cp "$candidate_root/candidate.stderr.log" "$candidate_stderr_report" || true
+      echo "候选 Worker stderr 已保存：$candidate_stderr_report" >&2
+    fi
+  fi
   cleanup_candidate
   rollback_after_failed_activation || true
+  cleanup_new_version || true
   local report
   report="$(write_worker_report \
     "$runtime_root" \
@@ -136,7 +207,9 @@ on_error() {
     "$new_version" \
     "命令失败：$failed_command" \
     "false" \
-    "$product_version")" || true
+    "$product_version" \
+    "$candidate_stdout_report" \
+    "$candidate_stderr_report")" || true
   echo "Slice D Worker 安装失败。报告：$report" >&2
   exit "$code"
 }
@@ -223,10 +296,18 @@ github_cli_executable="$(discover_github_cli_executable || true)"
 
 new_version="$versions_root/${version}-${package_arch}"
 if [[ -e "$new_version" ]]; then
-  echo "目标版本已存在，拒绝覆盖：$new_version" >&2
-  exit 1
+  # 仅允许自动清理由上一轮失败留下、且明确带安装未完成标记的目录；未知目录继续拒绝覆盖。
+  if [[ -f "$new_version/$install_marker_name" ]]; then
+    echo "检测到上一轮未完成安装，清理后重试：$new_version"
+    rm -rf "$new_version"
+  else
+    echo "目标版本已存在，拒绝覆盖：$new_version" >&2
+    exit 1
+  fi
 fi
 mkdir -p "$new_version"
+touch "$new_version/$install_marker_name"
+new_version_created=1
 "$current_python" -m venv "$new_version/.venv"
 "$new_version/.venv/bin/python" -m pip install \
   --no-index \
@@ -242,6 +323,11 @@ if [[ "$installed_product_version" != "$product_version" ]]; then
   exit 1
 fi
 
+# 候选验证前先暂停旧 Worker。旧 Worker 可能持有大量 loopback 短连接并耗尽
+# macOS ephemeral port；继续并行运行会让健康检查误判“候选未 ready”。
+# 旧定义已在上方完成快照，任何后续失败都会由 on_error -> rollback 恢复。
+stop_worker_agent
+
 candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-d-worker-candidate.XXXXXX")"
 candidate_port="$(choose_free_port)"
 PICOTOO_RUNTIME_ROOT="$candidate_root" \
@@ -253,11 +339,10 @@ PICOTOO_API_TOKEN="$api_token" \
     2>"$candidate_root/candidate.stderr.log" &
 candidate_pid=$!
 candidate_url="http://127.0.0.1:$candidate_port"
-wait_for_health "$candidate_url"
+wait_for_candidate_health "$candidate_url" 240
 verify_slice_d_candidate_contract "$candidate_url" "$api_token" "$product_version"
 cleanup_candidate
 
-stop_worker_agent
 atomic_switch_current "$runtime_root" "$new_version"
 activated=1
 restart_core_runtime
@@ -272,6 +357,8 @@ verify_worker_api_contract "http://127.0.0.1:$existing_port" "$api_token"
 
 activated=0
 worker_started=0
+rm -f "$new_version/$install_marker_name"
+new_version_created=0
 report="$(write_worker_report \
   "$runtime_root" \
   "install" \

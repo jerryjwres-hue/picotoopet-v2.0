@@ -96,8 +96,10 @@ internal static class Program
             await ProviderReviewSmokeTests.RunAsync().ConfigureAwait(false);
             await ReturnValidationSmokeTests.RunAsync().ConfigureAwait(false);
             await BrokerSessionSmokeTests.RunAsync().ConfigureAwait(false);
+            await CodingEscalationDecisionSmokeTests.RunAsync().ConfigureAwait(false);
             await EventStreamColdStartSmokeTests.RunAsync().ConfigureAwait(false);
             await StateSyncCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
+            await DualChannelSyncSmokeTests.RunAsync().ConfigureAwait(false);
             Console.WriteLine("PHASE2_CORE_SMOKE=PASS");
             return 0;
         }
@@ -139,8 +141,10 @@ internal static class Program
         QualityEvaluationPanelWpfSmokeTests.Run();
         QualityShadowPanelWpfSmokeTests.Run();
         QualityPromotionPanelWpfSmokeTests.Run();
+        await CodingEscalationDecisionSmokeTests.RunAsync().ConfigureAwait(false);
         await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
         await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
+        await DualChannelSyncSmokeTests.RunAsync().ConfigureAwait(false);
     }
 
     /// <summary>要求 fatal 证据在方法返回前同步落盘，且继续沿用安全脱敏。</summary>

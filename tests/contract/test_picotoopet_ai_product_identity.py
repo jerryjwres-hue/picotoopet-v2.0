@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION_INFO = ROOT / "windows/desktop/src/PicotooPet.Desktop/Versioning/ProductVersionInfo.cs"
+VERSION_FILE = ROOT / "src/picotoopet_core/product-version.txt"
 SHELL = ROOT / "windows/desktop/src/PicotooPet.Desktop/Views/ShellWindow.xaml"
 SHELL_CODE = ROOT / "windows/desktop/src/PicotooPet.Desktop/Views/ShellWindow.xaml.cs"
 
@@ -14,9 +15,15 @@ def test_windows_identity_is_picotoopet_ai_superpower_v1() -> None:
     shell_code = SHELL_CODE.read_text(encoding="utf-8")
 
     assert 'public const string ProductName = "PicotooPet AI";' in version_text
-    assert 'public const string SuperpowerLabel = "superpower v1.0";' in version_text
-    assert 'WindowTitle => $"{ProductName} {Current}"' in version_text
-    assert 'ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center · v{Current}"' in version_text
+    assert 'public const string SuperpowerLabel = "Superpower v1.0";' in version_text
+    assert 'WindowTitle => $"{ProductName} — {SuperpowerLabel}"' in version_text
+    assert 'ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center"' in version_text
+    assert 'WindowTitle => $"{ProductName} — {SuperpowerLabel} · {Current}"' not in version_text
+    assert 'ControlCenterSubtitle => $"{SuperpowerLabel} · Control Center · v{Current}"' not in version_text
+
+    # Engineering version remains canonical for install/diagnostics but is not part of normal UI branding.
+    assert VERSION_FILE.read_text(encoding="utf-8").strip() == "2.3.27.1"
+    assert "public static string Current" in version_text
 
     # Keep the existing XAML/layout intact: Shell normalizes only the legacy brand TextBlocks at runtime.
     assert "using PicotooPet.Desktop.Versioning;" in shell_code

@@ -76,5 +76,7 @@ class WorkerStatusResponse(BaseModel):
     worker_id: str | None = None
     supported_task_types: list[str] = Field(default_factory=list)
     active_task_id: str | None = None
+    active_stage: str | None = None
+    last_progress_at: datetime | None = None
     last_heartbeat_at: datetime | None = None
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

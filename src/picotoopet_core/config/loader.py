@@ -71,5 +71,6 @@ def load_settings() -> AppSettings:
         provider_repository=_optional_path("PICOTOO_PROVIDER_REPOSITORY"),
         provider_worktree_root=_optional_path("PICOTOO_PROVIDER_WORKTREE_ROOT"),
         codex_executable=_optional_path("PICOTOO_CODEX_EXECUTABLE"),
+        claude_code_executable=_optional_path("PICOTOO_CLAUDE_CODE_EXECUTABLE"),
         github_cli_executable=_optional_path("PICOTOO_GITHUB_CLI_EXECUTABLE"),
     )

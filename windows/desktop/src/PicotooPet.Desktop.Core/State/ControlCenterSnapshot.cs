@@ -2,10 +2,13 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.State;
 
-/// <summary>连接状态仓库发布的不可变快照。</summary>
+/// <summary>连接状态仓库发布的不可变快照；REST 是可用性真相，WebSocket 只负责实时性。</summary>
 public sealed record ConnectionSnapshot(
     ConnectionState State,
-    string? LastError);
+    string? LastError,
+    bool CoreReachable = false,
+    ConnectionState EventStreamState = ConnectionState.Offline,
+    bool RealtimeDegraded = true);
 
 /// <summary>能力状态仓库发布的不可变快照。</summary>
 public sealed record CapabilitySnapshot(

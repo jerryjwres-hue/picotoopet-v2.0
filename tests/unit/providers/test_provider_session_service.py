@@ -89,11 +89,17 @@ def test_codex_template_binds_provider_commit_tests_and_budget(tmp_path: Path) -
     assert set(templates) == {
         "picotoopet-repo-maintenance-v1",
         "picotoopet-repo-maintenance-codex-v1",
+        "picotoopet-repo-maintenance-claude-code-v1",
     }
     assert templates["picotoopet-repo-maintenance-codex-v1"].provider == "codex"
+    assert templates["picotoopet-repo-maintenance-claude-code-v1"].provider == "claude_code"
     assert (
         templates["picotoopet-repo-maintenance-codex-v1"].base_commit
-        == "65d5ba0ef5a4ac6f6b3ca61b0f852599d1286d6f"
+        == "423f14ea549a3303137f4ab5ad99d2afb60dbded"
+    )
+    assert (
+        templates["picotoopet-repo-maintenance-claude-code-v1"].base_commit
+        == "423f14ea549a3303137f4ab5ad99d2afb60dbded"
     )
 
     codex = handoffs.prepare(

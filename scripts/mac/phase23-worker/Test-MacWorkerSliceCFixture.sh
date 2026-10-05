@@ -101,7 +101,16 @@ Path(output).write_text(
 PY
 
 stop_fixture_service "$runtime_root"
-bash "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" --package-root "$package_root"
+HTTP_PROXY="http://127.0.0.1:9" \
+HTTPS_PROXY="http://127.0.0.1:9" \
+ALL_PROXY="http://127.0.0.1:9" \
+http_proxy="http://127.0.0.1:9" \
+https_proxy="http://127.0.0.1:9" \
+all_proxy="http://127.0.0.1:9" \
+NO_PROXY="" \
+no_proxy="" \
+  bash "$package_root/INSTALL_MAC_WORKER_SLICE_C.command" --package-root "$package_root"
+echo "PHASE23_MAC_WORKER_PROXY_ISOLATION_FIXTURE=PASS"
 bash "$package_root/VERIFY_MAC_WORKER_SLICE_C.command"
 
 historical_after="$temp_root/historical-after.json"
@@ -195,6 +204,8 @@ required = {"system.diagnostic_snapshot", "system.noop"}
 allowed = required | {
     "autonomous.local_analysis.v1",
     "autonomous.discovery.v1",
+    "autonomous.goal_synthesis.v1",
+    "autonomous.goal_handoff.v1",
     "autonomous.storage_maintenance.v1",
     "business.local_intelligence.v1",
     "creative.content_plan.v1",

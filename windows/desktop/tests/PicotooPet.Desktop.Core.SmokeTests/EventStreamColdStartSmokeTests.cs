@@ -8,10 +8,10 @@ using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
-/// <summary>冻结冷启动历史事件重放不得误触发 Pong 超时。</summary>
+/// <summary>冻结冷启动历史重放和正常业务入站都不得误触发 Pong 超时。</summary>
 internal static class EventStreamColdStartSmokeTests
 {
-    /// <summary>验证事件积压时延后心跳判定，积压清空后仍保留真实超时。</summary>
+    /// <summary>验证事件积压/业务入站可证明链路存活，同时持续无入站仍会触发真实超时。</summary>
     public static async Task RunAsync()
     {
         await using var client = new EventStreamClient(
@@ -29,6 +29,10 @@ internal static class EventStreamColdStartSmokeTests
             "ThrowIfPongExpired",
             BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("缺少 EventStreamClient Pong 超时检查入口。");
+        var recordInbound = typeof(EventStreamClient).GetMethod(
+            "RecordInboundActivity",
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("缺少 EventStreamClient 入站存活记录入口。");
 
         await channel.Writer.WriteAsync(CreateEvent(sequence: 1)).ConfigureAwait(false);
         pending["cold-start-replay"] = 0;
@@ -38,10 +42,22 @@ internal static class EventStreamColdStartSmokeTests
             "冷启动历史事件仍在有界队列中时，不得把排在事件后的 Pong 误判为超时。");
 
         SmokeAssert.True(channel.Reader.TryRead(out _), "未能清空冷启动事件积压夹具");
+
+        // A valid business message is stronger liveness evidence than one delayed application-level Pong.
+        pending["delayed-pong-with-business-traffic"] = 0;
+        recordInbound.Invoke(client, parameters: null);
+        InvokeWithoutTimeout(
+            timeoutCheck,
+            client,
+            "收到有效业务消息后不得因之前的延迟 Pong 误判断线。");
+        SmokeAssert.True(
+            pending.IsEmpty,
+            "收到有效入站业务消息后应清除已失效的 Ping 延迟样本");
+
         pending["real-timeout"] = 0;
         SmokeAssert.True(
             InvokeExpectingTimeout(timeoutCheck, client),
-            "事件积压清空后必须继续检测真实 Pong 超时");
+            "持续无入站时必须继续检测真实 Pong 超时");
     }
 
     private static EventEnvelope CreateEvent(long sequence) => new(

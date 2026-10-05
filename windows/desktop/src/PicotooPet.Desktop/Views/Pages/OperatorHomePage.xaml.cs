@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -7,19 +8,27 @@ using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 using PicotooPet.Desktop.Views;
+using WpfCursors = System.Windows.Input.Cursors;
+using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
+using WpfUserControl = System.Windows.Controls.UserControl;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
-/// <summary>简单模式首页；任务入口只调用既有安全路由或统一 TaskDetail。</summary>
-public partial class OperatorHomePage : System.Windows.Controls.UserControl
+/// <summary>简单模式首页；主入口为 Goal Center，任务入口仍只调用既有安全路由。</summary>
+public partial class OperatorHomePage : WpfUserControl
 {
     private readonly WindowsResourceSampler _resourceSampler;
     private readonly DispatcherTimer _resourceTimer;
     private readonly Dictionary<FrameworkElement, Action> _workComponentActions = new();
+    private readonly GoalCenterPanel _goalCenterPanel;
 
     public OperatorHomePage()
     {
         InitializeComponent();
+        _goalCenterPanel = new GoalCenterPanel();
+        _goalCenterPanel.AdvancedTaskRequested += GoalCenterPanel_AdvancedTaskRequested;
+        InstallGoalCenterHero();
+
         _resourceSampler = new WindowsResourceSampler();
         _resourceTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -32,6 +41,29 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         WorkComponentsCard.Loaded += WorkComponentsCard_Loaded;
         Loaded += OperatorHomePage_Loaded;
         Unloaded += OperatorHomePage_Unloaded;
+    }
+
+    /// <summary>替换旧“新建任务”Hero；下面的真实任务桶、状态条和高级入口保持不变。</summary>
+    private void InstallGoalCenterHero()
+    {
+        HeroCard.Height = double.NaN;
+        HeroCard.MinHeight = 258;
+        HeroCard.Child = _goalCenterPanel;
+
+        // Smoke/自动化测试从首页 NameScope 查找真实交互控件；这些对象仍由 GoalCenterPanel 负责呈现。
+        RegisterGoalControl("GoalObjectiveTextBox");
+        RegisterGoalControl("GoalTemplateItems");
+        RegisterGoalControl("GoalDepthComboBox");
+        RegisterGoalControl("CreateGoalButton");
+        RegisterGoalControl("GoalStatusCard");
+    }
+
+    private void RegisterGoalControl(string name)
+    {
+        if (_goalCenterPanel.FindName(name) is FrameworkElement control)
+        {
+            RegisterName(name, control);
+        }
     }
 
     private void OperatorHomePage_Loaded(object sender, RoutedEventArgs e)
@@ -60,7 +92,13 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         }
     }
 
-    private async void NewTask_Click(object sender, RoutedEventArgs e)
+    private async void NewTask_Click(object sender, RoutedEventArgs e) =>
+        await OpenTraditionalTaskWizardAsync().ConfigureAwait(true);
+
+    private async void GoalCenterPanel_AdvancedTaskRequested(object? sender, EventArgs e) =>
+        await OpenTraditionalTaskWizardAsync().ConfigureAwait(true);
+
+    private async Task OpenTraditionalTaskWizardAsync()
     {
         if (DataContext is not OperatorHomePageViewModel viewModel)
         {
@@ -97,13 +135,13 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
     private void RecentTasksCard_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         RecentTasksCard.Cursor = FindRecentTaskCard(e.OriginalSource as DependencyObject) is null
-            ? System.Windows.Input.Cursors.Arrow
-            : System.Windows.Input.Cursors.Hand;
+            ? WpfCursors.Arrow
+            : WpfCursors.Hand;
     }
 
     private void RecentTasksCard_MouseLeave(object sender, MouseEventArgs e)
     {
-        RecentTasksCard.Cursor = System.Windows.Input.Cursors.Arrow;
+        RecentTasksCard.Cursor = WpfCursors.Arrow;
     }
 
     private OperatorTaskCard? FindRecentTaskCard(DependencyObject? source)
@@ -160,7 +198,7 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         }
 
         _workComponentActions[element] = action;
-        element.Cursor = System.Windows.Input.Cursors.Hand;
+        element.Cursor = WpfCursors.Hand;
         element.Focusable = true;
         element.ToolTip = toolTip;
         element.PreviewMouseLeftButtonUp += WorkComponent_PreviewMouseLeftButtonUp;
@@ -179,7 +217,7 @@ public partial class OperatorHomePage : System.Windows.Controls.UserControl
         }
     }
 
-    private void WorkComponent_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private void WorkComponent_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
         if (e.Key is not (Key.Enter or Key.Space)
             || sender is not FrameworkElement element

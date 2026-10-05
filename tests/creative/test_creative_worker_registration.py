@@ -6,9 +6,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_mac_worker_registers_creative_capability_only_with_local_model_health() -> None:
     cli = (ROOT / "src/picotoopet_core/cli.py").read_text(encoding="utf-8")
+    execution = (ROOT / "src/picotoopet_core/creative/execution.py").read_text(
+        encoding="utf-8"
+    )
     assert "CreativeIntelligenceCoordinator" in cli
-    assert "creative.intelligence.v1" in cli
-    assert "creative.content_plan.v1" in cli
+    assert 'CAPABILITY = "creative.intelligence.v1"' in execution
+    assert 'TASK_TYPE = "creative.content_plan.v1"' in execution
     assert "business_adapter" in cli
     assert "creative_coordinator.handler" in cli
     assert (

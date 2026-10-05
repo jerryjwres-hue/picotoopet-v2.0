@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/windows-ui-interaction-polish-2.3.27.1
+      - feature/autonomous-intelligence-e2e-goal-center-2.3.27.1
     paths:
       - ".github/workflows/windows-ui-preview-release.yml"
       - ".github/workflows/windows-control-center-ci.yml"

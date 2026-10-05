@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 
@@ -12,6 +13,10 @@ public sealed class MacCoreClient : IAsyncDisposable
 {
     private const int MaxDiagnosticResultBytes = 64 * 1024;
     private const int MaxApprovalListBytes = 128 * 1024;
+    private const int MaxGoalJsonBytes = 512 * 1024;
+    private const int MaxGoalHandoffMetadataBytes = 64 * 1024;
+    private const int MaxGoalPromptBytes = 128 * 1024;
+    private const int MaxGoalHandoffArchiveBytes = 128 * 1024 * 1024;
     private const int MaxApiErrorBytes = 64 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -132,6 +137,109 @@ public sealed class MacCoreClient : IAsyncDisposable
             idempotencyKey,
             cancellationToken,
             MaxApprovalListBytes);
+
+    /// <summary>读取 Mac Core 固定目标模板；Windows 只展示，不重写模板语义。</summary>
+    public Task<GoalTemplateRecord[]> GetGoalTemplatesAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<GoalTemplateRecord[]>(
+            HttpMethod.Get,
+            "api/v1/autonomous/goals/templates",
+            null,
+            "autonomous.goals.templates",
+            null,
+            cancellationToken,
+            MaxGoalJsonBytes);
+
+    /// <summary>读取最近的人类目标事实。</summary>
+    public Task<HumanGoalRecord[]> GetGoalsAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<HumanGoalRecord[]>(
+            HttpMethod.Get,
+            "api/v1/autonomous/goals?limit=200",
+            null,
+            "autonomous.goals.list",
+            null,
+            cancellationToken,
+            MaxGoalJsonBytes);
+
+    /// <summary>按 ID 读取一个耐久目标。</summary>
+    public Task<HumanGoalRecord> GetGoalAsync(
+        string goalId,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<HumanGoalRecord>(
+            HttpMethod.Get,
+            $"api/v1/autonomous/goals/{Uri.EscapeDataString(goalId)}",
+            null,
+            "autonomous.goals.get",
+            null,
+            cancellationToken,
+            MaxGoalJsonBytes);
+
+    /// <summary>幂等提交高层目标；工作流、权限、优先级和 task type 始终由 Mac Core 决定。</summary>
+    public Task<HumanGoalRecord> CreateGoalAsync(
+        HumanGoalCreateRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<HumanGoalRecord>(
+            HttpMethod.Post,
+            "api/v1/autonomous/goals",
+            request,
+            "autonomous.goals.create",
+            idempotencyKey,
+            cancellationToken,
+            MaxGoalJsonBytes);
+
+    /// <summary>读取已完成视频目标的安全交接包元数据，不暴露 Mac 路径。</summary>
+    public Task<GoalHandoffMetadataRecord> GetGoalHandoffAsync(
+        string goalId,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<GoalHandoffMetadataRecord>(
+            HttpMethod.Get,
+            $"api/v1/autonomous/goals/{Uri.EscapeDataString(goalId)}/handoff",
+            null,
+            "autonomous.goals.handoff.metadata",
+            null,
+            cancellationToken,
+            MaxGoalHandoffMetadataBytes);
+
+    /// <summary>有界下载已由 Mac Core 校验 SHA-256 的交接 ZIP。</summary>
+    public Task<byte[]> DownloadGoalHandoffAsync(
+        string goalId,
+        CancellationToken cancellationToken = default) =>
+        SendBoundedBytesAsync(
+            $"api/v1/autonomous/goals/{Uri.EscapeDataString(goalId)}/handoff/download",
+            "autonomous.goals.handoff.download",
+            MaxGoalHandoffArchiveBytes,
+            "application/zip",
+            cancellationToken);
+
+    /// <summary>读取与交接包版本绑定的固定 Web GPT Prompt。</summary>
+    public async Task<string> GetGoalHandoffPromptAsync(
+        string goalId,
+        CancellationToken cancellationToken = default)
+    {
+        var data = await SendBoundedBytesAsync(
+            $"api/v1/autonomous/goals/{Uri.EscapeDataString(goalId)}/handoff/prompt",
+            "autonomous.goals.handoff.prompt",
+            MaxGoalPromptBytes,
+            "text/plain",
+            cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+                .GetString(data);
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new ApiException(
+                "INVALID_RESPONSE",
+                "Mac Core 返回了无法解析的交接提示词。",
+                retryable: false,
+                traceId: string.Empty,
+                statusCode: 200,
+                exception);
+        }
+    }
 
     /// <summary>按 ID 读取单个任务，用于事件断流后的有界恢复。</summary>
     public Task<TaskRecord> GetTaskAsync(
@@ -298,6 +406,103 @@ public sealed class MacCoreClient : IAsyncDisposable
                     "INVALID_RESPONSE",
                     "Mac Core 返回了无法解析的响应。",
                     retryable: true,
+                    responseTrace,
+                    (int)response.StatusCode,
+                    exception);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (!measurementRecorded)
+            {
+                RecordMeasurement(operation, started, traceId, statusCode: 0);
+            }
+            throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            if (!measurementRecorded)
+            {
+                RecordMeasurement(operation, started, traceId, statusCode: 0);
+            }
+            throw new ApiException(
+                "NETWORK_TIMEOUT",
+                "连接 Mac Core 超时，请检查局域网和服务状态。",
+                retryable: true,
+                traceId,
+                statusCode: 0,
+                exception);
+        }
+        catch (HttpRequestException exception)
+        {
+            if (!measurementRecorded)
+            {
+                RecordMeasurement(
+                    operation,
+                    started,
+                    traceId,
+                    exception.StatusCode is null ? 0 : (int)exception.StatusCode.Value);
+            }
+            throw new ApiException(
+                "NETWORK_ERROR",
+                "无法连接 Mac Core，请检查地址、网络和防火墙。",
+                retryable: true,
+                traceId,
+                exception.StatusCode is null ? 0 : (int)exception.StatusCode.Value,
+                exception);
+        }
+    }
+
+    private async Task<byte[]> SendBoundedBytesAsync(
+        string relativeUri,
+        string operation,
+        int maxResponseBytes,
+        string acceptedMediaType,
+        CancellationToken cancellationToken)
+    {
+        var traceId = Guid.NewGuid().ToString("N");
+        using var request = new HttpRequestMessage(HttpMethod.Get, relativeUri);
+        request.Headers.TryAddWithoutValidation("X-Picotoo-Trace-Id", traceId);
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(acceptedMediaType));
+
+        var started = Stopwatch.GetTimestamp();
+        var measurementRecorded = false;
+        try
+        {
+            using var response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+            var responseTrace = response.Headers.TryGetValues("X-Picotoo-Trace-Id", out var traceValues)
+                ? traceValues.FirstOrDefault() ?? traceId
+                : traceId;
+            RecordMeasurement(operation, started, responseTrace, (int)response.StatusCode);
+            measurementRecorded = true;
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = await ReadErrorAsync(response.Content, cancellationToken)
+                    .ConfigureAwait(false);
+                throw new ApiException(
+                    detail?.Code ?? "HTTP_ERROR",
+                    detail?.Message ?? $"Mac Core 返回 HTTP {(int)response.StatusCode}。",
+                    detail?.Retryable ?? IsRetryableStatus(response.StatusCode),
+                    detail?.TraceId ?? responseTrace,
+                    (int)response.StatusCode);
+            }
+
+            try
+            {
+                return await ReadBoundedAsync(response.Content, maxResponseBytes, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (ResponseTooLargeException exception)
+            {
+                throw new ApiException(
+                    "RESPONSE_TOO_LARGE",
+                    "Mac Core 返回的数据超过安全读取上限。",
+                    retryable: false,
                     responseTrace,
                     (int)response.StatusCode,
                     exception);

@@ -12,8 +12,8 @@ WIZARD_XAML = DESKTOP / "Views" / "Pages" / "NewTaskWizardWindow.xaml"
 
 
 def test_version() -> None:
-    # 产品身份仍保持已批准的 2.3.26.1；Research 2.3.27.1 是增量能力包版本。
-    assert VERSION.read_text(encoding="utf-8").strip() == "2.3.26.1"
+    # 当前累计产品身份已推进到 2.3.27.1；历史 26.1 简易模式边界继续保留。
+    assert VERSION.read_text(encoding="utf-8").strip() == "2.3.27.1"
 
 
 def test_simple_sidebar_is_data_driven_six_entry_and_advanced_is_landing_page() -> None:

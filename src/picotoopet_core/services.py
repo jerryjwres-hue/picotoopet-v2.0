@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.audit.writer import AuditWriter
@@ -32,6 +33,7 @@ from picotoopet_core.deep_ai.evaluation import (
     QualityEvaluationRepository,
     QualityEvaluationService,
 )
+from picotoopet_core.deep_ai.frugal_repository import FrugalDecisionRepository
 from picotoopet_core.deep_ai.learning import DeepAiLearningLedger
 from picotoopet_core.deep_ai.policy import DeepAiEscalationPolicy
 from picotoopet_core.deep_ai.promotion import QualityPromotionRepository, QualityPromotionService
@@ -42,6 +44,8 @@ from picotoopet_core.deep_ai.service import CoreDeepAiSourceResolver, DeepAiEsca
 from picotoopet_core.deep_ai.shadow import QualityShadowRepository, QualityShadowService
 from picotoopet_core.deep_ai.store import DeepAiSanitizedPackageStore
 from picotoopet_core.deep_ai.validation import DeepAiResultValidator
+from picotoopet_core.diagnostics.reliability_bundle import ReliabilityBundleBuilder
+from picotoopet_core.diagnostics.reliability_service import ReliabilityService
 from picotoopet_core.events.broker import EventBroker
 from picotoopet_core.events.dispatcher import OutboxDispatcher
 from picotoopet_core.events.outbox import EventOutbox
@@ -52,11 +56,13 @@ from picotoopet_core.ollama.resident_manager import ResidentManager
 from picotoopet_core.production.repository import ProductionRepository
 from picotoopet_core.production.service import ProductionService
 from picotoopet_core.production.store import ProductionArtifactStore
+from picotoopet_core.progress.repository import ProgressRepository
 from picotoopet_core.projects.repository import ProjectRepository
 from picotoopet_core.providers.artifact_store import ProviderReturnArtifactStore
 from picotoopet_core.providers.commit_service import ProviderCommitService
+from picotoopet_core.providers.frugal_service import CodingEscalationService
 from picotoopet_core.providers.publication_service import ProviderPublicationService
-from picotoopet_core.providers.readiness import CodexReadinessProbe
+from picotoopet_core.providers.readiness import ProviderReadinessProjection
 from picotoopet_core.providers.review_service import ProviderReviewService
 from picotoopet_core.providers.service import ProviderSessionService
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
@@ -109,6 +115,7 @@ class Services:
     returns: ReturnValidationService
     broker_sessions: BrokerSessionService
     provider_sessions: ProviderSessionService
+    coding_escalation: CodingEscalationService
     provider_artifacts: ProviderReturnArtifactStore
     provider_reviews: ProviderReviewService
     provider_commits: ProviderCommitService
@@ -121,6 +128,8 @@ class Services:
     dispatcher: OutboxDispatcher
     ollama: OllamaClient
     resident: ResidentManager
+    progress: ProgressRepository
+    reliability: ReliabilityService
     worker_state: WorkerStateStore
 
     def close(self) -> None:
@@ -224,8 +233,18 @@ def build_services(settings: AppSettings) -> Services:
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
     broker_sessions = BrokerSessionService(database, handoffs, returns, api_token=settings.api_token)
-    readiness = CodexReadinessProbe(settings.codex_executable)
-    provider_sessions = ProviderSessionService(database, handoffs, readiness=readiness.status)
+    provider_readiness = ProviderReadinessProjection(capability_router)
+    provider_sessions = ProviderSessionService(
+        database,
+        handoffs,
+        readiness_by_provider=provider_readiness.status,
+    )
+    coding_escalation = CodingEscalationService(
+        database=database,
+        handoffs=handoffs,
+        provider_sessions=provider_sessions,
+        decisions=FrugalDecisionRepository(database),
+    )
     provider_artifacts = ProviderReturnArtifactStore(settings.paths.provider_returns_dir)
     provider_reviews = ProviderReviewService(database, provider_artifacts)
     provider_commits = ProviderCommitService(database, approvals)
@@ -235,6 +254,22 @@ def build_services(settings: AppSettings) -> Services:
     worker_state = WorkerStateStore(
         settings.paths.state_dir / "worker-status.json",
         stale_after_seconds=settings.worker_status_stale_seconds,
+    )
+    progress = ProgressRepository(database)
+    reliability = ReliabilityService(
+        database=database,
+        worker_state=worker_state,
+        ollama=ollama,
+        progress=progress,
+        bundle_builder=ReliabilityBundleBuilder(
+            managed_output_dir=settings.paths.reliability_diagnostics_dir,
+            # ── The only external log source is the current user's fixed Ollama server log. ──
+            home_dir=Path.home(),
+        ),
+        # ── Reliability reads only the sanitized fixed status projection, never model prompts. ──
+        model_runner_status_path=(
+            settings.paths.runtime_dir / "model-runner" / "status.json"
+        ),
     )
     return Services(
         settings=settings,
@@ -277,6 +312,7 @@ def build_services(settings: AppSettings) -> Services:
         returns=returns,
         broker_sessions=broker_sessions,
         provider_sessions=provider_sessions,
+        coding_escalation=coding_escalation,
         provider_artifacts=provider_artifacts,
         provider_reviews=provider_reviews,
         provider_commits=provider_commits,
@@ -289,5 +325,7 @@ def build_services(settings: AppSettings) -> Services:
         dispatcher=dispatcher,
         ollama=ollama,
         resident=ResidentManager(ollama, settings.ollama_model),
+        progress=progress,
+        reliability=reliability,
         worker_state=worker_state,
     )

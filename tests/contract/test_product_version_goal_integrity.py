@@ -15,9 +15,9 @@ def test_goal_contract_names_canonical_product_version_source_and_payload() -> N
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     version = contract["windows"]["product_version"]
 
-    # Release gate: canonical source and packaged payload must agree on current 26.1.
+    # Release gate: canonical source and packaged payload must agree on current 27.1.
     assert version == {
-        "value": "2.3.26.1",
+        "value": "2.3.27.1",
         "source_path": "src/picotoopet_core/product-version.txt",
         "payload_path": "product-version.txt",
     }
