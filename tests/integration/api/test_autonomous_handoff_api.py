@@ -78,6 +78,14 @@ def test_handoff_routes_return_verified_metadata_download_and_fixed_prompt(
             assert goal_id == "goal-video-1"
             return "Prompt-Version: web-gpt-master-v1.0\nDO THE VIDEO WORK\n"
 
+        def return_prompt(self, goal_id: str) -> str:
+            assert goal_id == "goal-video-1"
+            return (
+                self.fixed_prompt(goal_id)
+                + "PICOTOO_RETURN_JSON\n"
+                + digest
+            )
+
     monkeypatch.setattr(
         "picotoopet_core.api.routes.autonomous_goals._handoff_access",
         lambda request: FakeAccess(),
