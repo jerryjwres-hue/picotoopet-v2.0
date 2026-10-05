@@ -191,10 +191,45 @@ class GoalHandoffAccess:
         return resolved
 
     def fixed_prompt(self, goal_id: str) -> str:
-        """Return the exact versioned prompt only for a Goal with a valid handoff result."""
+        """Return the exact versioned master prompt for a Goal with a valid handoff result."""
 
         self.metadata(goal_id)
         return WebGptHandoffBuilder._load_fixed_prompt()
+
+    def return_prompt(self, goal_id: str) -> str:
+        """Return the master prompt plus the exact machine-return binding and schema."""
+
+        context = self.context(goal_id)
+        # Lazy import avoids coupling handoff package construction to the return module.          #
+        from .video_return import GoalVideoReturnV1
+
+        binding = {
+            "goal_id": context.goal_id,
+            "handoff_sha256": context.package_sha256,
+            "prompt_version": context.prompt_version,
+            "source_finding_refs": context.source_finding_refs,
+        }
+        compact_binding = json.dumps(
+            binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        compact_schema = json.dumps(
+            GoalVideoReturnV1.model_json_schema(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return (
+            self.fixed_prompt(goal_id)
+            + "\n\n【PicotooPet 严格回导合同】\n"
+            + "这是当前交接包的 Core 绑定信息；不要修改这些绑定值：\n"
+            + compact_binding
+            + "\n\n最终可读回答之后，必须再输出且只输出一个标记为 PICOTOO_RETURN_JSON 的 JSON 对象。"
+            + "该对象必须严格符合下面的 JSON Schema，不得增加 provider/model/renderer/workflow/"
+            + "endpoint/path/command 等字段。所有 source_finding_refs 只能使用上方映射中的值；"
+            + "所有 evidence 引用只能使用映射中的 key。\n"
+            + compact_schema
+            + "\n"
+        )
 
     def context(self, goal_id: str) -> GoalHandoffContext:
         """Read the exact completed handoff identity and its evidence allowlist."""
