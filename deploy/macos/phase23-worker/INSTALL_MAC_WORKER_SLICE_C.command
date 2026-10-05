@@ -104,7 +104,8 @@ import sys
 import urllib.request
 
 base = sys.argv[1].rstrip("/")
-with urllib.request.urlopen(f"{base}/api/v1/health", timeout=2) as response:
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with opener.open(f"{base}/api/v1/health", timeout=2) as response:
     raise SystemExit(0 if response.status == 200 else 1)
 PY
     then
