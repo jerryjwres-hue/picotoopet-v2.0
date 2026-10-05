@@ -37,6 +37,8 @@ existing_port=""
 api_token=""
 candidate_pid=""
 candidate_root=""
+candidate_stdout_report=""
+candidate_stderr_report=""
 github_cli_executable=""
 activated=0
 worker_started=0
@@ -142,6 +144,22 @@ on_error() {
   local code=$?
   local failed_command="${BASH_COMMAND:-unknown command}"
   trap - ERR
+  # Preserve candidate process output before cleanup so a real-Mac startup failure
+  # remains diagnosable after the temporary candidate runtime is removed.
+  if [[ -n "$candidate_root" && -d "$candidate_root" ]]; then
+    local diagnostic_stamp
+    diagnostic_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    if [[ -f "$candidate_root/candidate.stdout.log" ]]; then
+      candidate_stdout_report="$runtime_root/reports/phase23-slice-d-worker-candidate-${diagnostic_stamp}.stdout.log"
+      cp "$candidate_root/candidate.stdout.log" "$candidate_stdout_report" || true
+      echo "候选 Worker stdout 已保存：$candidate_stdout_report" >&2
+    fi
+    if [[ -f "$candidate_root/candidate.stderr.log" ]]; then
+      candidate_stderr_report="$runtime_root/reports/phase23-slice-d-worker-candidate-${diagnostic_stamp}.stderr.log"
+      cp "$candidate_root/candidate.stderr.log" "$candidate_stderr_report" || true
+      echo "候选 Worker stderr 已保存：$candidate_stderr_report" >&2
+    fi
+  fi
   cleanup_candidate
   rollback_after_failed_activation || true
   cleanup_new_version || true
