@@ -29,13 +29,13 @@ The resulting manifest keeps the normal Creative Package v1 shape and adds fixed
 
 ## Persistence and replay
 
-No migration or duplicate lifecycle table is added. The canonical return JSON is written to the existing content-addressed `ResultStore`. Existing `artifact_provenance` records the verified handoff artifact and a deterministic `goal-video-return:<goal_id>` artifact whose SHA-256 is the canonical return digest and whose metadata stores the Creative Job/Package and Production Job identities.
+No migration or duplicate lifecycle table is added. Durable linkage is reconstructed from the existing Creative and Production repositories: the Creative idempotency/source-set binding includes the canonical return digest, the immutable Creative Package stores Core-authored external provenance, and Production remains bound to that Creative Package through its existing idempotency contract.
 
-Creative and Production idempotency keys are deterministic per Goal + handoff. An identical replay reuses all identities. A changed return conflicts through the Creative source-set/idempotency binding even if a crash happened before the final artifact link; after the link exists its immutable SHA binding rejects the conflict. A restart reconstructs status from artifact metadata and the existing Creative/Production repositories.
+Creative and Production idempotency keys are deterministic per Goal. An identical replay reuses all identities. A changed return conflicts through the Creative source-set/idempotency binding even if a crash happened before Production creation. A restart reconstructs the exact Goal → Creative Package → Production Job relationship from the existing rows and immutable package provenance.
 
 ## API and errors
 
-Authenticated `POST /api/v1/autonomous/goals/{goal_id}/handoff/return` accepts `GoalVideoReturnV1`; authenticated `GET` on the same path returns the durable linkage/status projection. Schema errors are `422`; missing Goals are `404`; stale handoffs, provenance failures, conflicting replay, or incomplete linkage are bounded `409` errors with no untrusted payload echoed.
+Authenticated `POST /api/v1/autonomous/goals/{goal_id}/handoff/video-return` accepts `GoalVideoReturnV1`; authenticated `GET` on the same path returns the durable linkage/status projection. The existing handoff prompt endpoint returns the fixed master prompt plus the current handoff binding, source-finding map, and compact strict return schema so the Web GPT result can be submitted without manual restructuring. Schema errors are `422`; missing Goals are `404`; stale handoffs, provenance failures, conflicting replay, or incomplete linkage are bounded `409` errors with no untrusted payload echoed.
 
 ## Test strategy
 
