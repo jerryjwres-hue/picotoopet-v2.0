@@ -146,7 +146,11 @@ def test_video_return_route_is_authenticated_and_uses_bounded_service(
         "continuity_constraints": [],
         "unresolved_questions": [],
         "recommended_next_actions": [],
-        "idea_ranking": {"schema_version": "1.0", "creative_profile": "creative.content_plan.v1", "ideas": []},
+        "idea_ranking": {
+            "schema_version": "1.0",
+            "creative_profile": "creative.content_plan.v1",
+            "ideas": [],
+        },
         "creative_brief": {},
         "script": {},
         "shot_plan": {},

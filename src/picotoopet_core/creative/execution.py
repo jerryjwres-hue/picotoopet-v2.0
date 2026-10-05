@@ -91,11 +91,18 @@ class CreativeIntelligenceCoordinator:
     def handler(self, task: TaskRecord) -> HandlerResult:
         payload = CreativeTaskPayload.from_task(task)
         job = self.repository.get_job(payload.creative_job_id)
-        if job.source_set_digest != payload.source_set_digest or job.creative_profile is not payload.creative_profile:
+        if (
+            job.source_set_digest != payload.source_set_digest
+            or job.creative_profile is not payload.creative_profile
+        ):
             raise ValueError("CREATIVE_TASK_IDENTITY_MISMATCH")
         if job.status is CreativeJobStatus.CREATIVE_READY:
             return self._summary(job.creative_job_id, CreativeJobStatus.CREATIVE_READY)
-        if job.status in {CreativeJobStatus.REJECTED, CreativeJobStatus.FAILED, CreativeJobStatus.CANCELLED}:
+        if job.status in {
+            CreativeJobStatus.REJECTED,
+            CreativeJobStatus.FAILED,
+            CreativeJobStatus.CANCELLED,
+        }:
             raise ValueError("CREATIVE_JOB_NOT_EXECUTABLE")
         existing_package = self.repository.package_for(job.creative_job_id)
         if existing_package is not None:
@@ -209,9 +216,16 @@ class CreativeIntelligenceCoordinator:
         last_raw: dict[str, Any] = stage.result or {}
         starting_attempts = stage.model_attempts
         if starting_attempts >= self.MAX_MODEL_ATTEMPTS_PER_STAGE and stage.status != "Completed":
-            return None, CreativeQualityOutcome.NEEDS_DEEP_AI, last_raw, ["CREATIVE_STAGE_ATTEMPT_BUDGET_EXHAUSTED"]
+            return (
+                None,
+                CreativeQualityOutcome.NEEDS_DEEP_AI,
+                last_raw,
+                ["CREATIVE_STAGE_ATTEMPT_BUDGET_EXHAUSTED"],
+            )
         for attempt in range(starting_attempts + 1, self.MAX_MODEL_ATTEMPTS_PER_STAGE + 1):
-            self.repository.update_stage(stage.stage_run_id, status="Running", model_attempts=attempt)
+            self.repository.update_stage(
+                stage.stage_run_id, status="Running", model_attempts=attempt
+            )
             raw = self.adapter.run(stage_definition, context, correction=correction)
             last_raw = raw
             decision, parsed = self.quality.evaluate(
@@ -234,7 +248,10 @@ class CreativeIntelligenceCoordinator:
                     finished=True,
                 )
                 return payload, CreativeQualityOutcome.PASS, raw, []
-            if decision.outcome is CreativeQualityOutcome.RETRY and attempt < self.MAX_MODEL_ATTEMPTS_PER_STAGE:
+            if (
+                decision.outcome is CreativeQualityOutcome.RETRY
+                and attempt < self.MAX_MODEL_ATTEMPTS_PER_STAGE
+            ):
                 self.repository.update_stage(
                     stage.stage_run_id,
                     status="Retry",
@@ -260,7 +277,12 @@ class CreativeIntelligenceCoordinator:
                 finished=True,
             )
             return None, terminal, raw, decision.reasons
-        return None, CreativeQualityOutcome.NEEDS_DEEP_AI, last_raw, ["CREATIVE_STAGE_ATTEMPT_BUDGET_EXHAUSTED"]
+        return (
+            None,
+            CreativeQualityOutcome.NEEDS_DEEP_AI,
+            last_raw,
+            ["CREATIVE_STAGE_ATTEMPT_BUDGET_EXHAUSTED"],
+        )
 
     def _finish_package(self, creative_job_id, source_set, previous, profile) -> HandlerResult:  # type: ignore[no-untyped-def]
         self.repository.transition_job(creative_job_id, CreativeJobStatus.QUALITY_CHECK)
@@ -299,7 +321,11 @@ class CreativeIntelligenceCoordinator:
             "failed_stage": stage_kind.value,
             "source_set_digest": source_set.source_set_digest,
             "bounded_findings": [
-                {"source_finding_ref": item.source_finding_ref, "finding": item.finding, "evidence_ids": item.evidence_ids}
+                {
+                    "source_finding_ref": item.source_finding_ref,
+                    "finding": item.finding,
+                    "evidence_ids": item.evidence_ids,
+                }
                 for item in source_set.findings[:24]
             ],
             "prior_validated_stages": previous,
@@ -342,7 +368,8 @@ class CreativeIntelligenceCoordinator:
             "schema_version": "1.0",
             "creative_profile": "creative.content_plan.v1",
             "stage": stage_kind.value,
-            "creative_objective": creative_objective or "Create an evidence-grounded content plan from the supplied findings.",
+            "creative_objective": creative_objective
+            or "Create an evidence-grounded content plan from the supplied findings.",
             "source_findings": [
                 {
                     "source_finding_ref": item.source_finding_ref,
@@ -365,7 +392,9 @@ class CreativeIntelligenceCoordinator:
 
     @staticmethod
     def _digest(value: object) -> str:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        encoded = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+        ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod

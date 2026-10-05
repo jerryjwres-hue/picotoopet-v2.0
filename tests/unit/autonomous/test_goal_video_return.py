@@ -32,7 +32,6 @@ from picotoopet_core.production.service import ProductionService
 from picotoopet_core.production.store import ProductionArtifactStore
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 
-
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
 
 
@@ -279,9 +278,7 @@ def test_return_validation_rejects_stale_binding_unknown_evidence_and_unsafe_val
 ) -> None:
     context = _access(tmp_path).context("goal-video-1")
 
-    stale = GoalVideoReturnV1.model_validate(
-        {**_payload(context), "handoff_sha256": "0" * 64}
-    )
+    stale = GoalVideoReturnV1.model_validate({**_payload(context), "handoff_sha256": "0" * 64})
     with pytest.raises(GoalVideoReturnError, match="HANDOFF_BINDING_MISMATCH"):
         validate_goal_video_return(stale, context)
 

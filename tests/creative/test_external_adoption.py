@@ -192,7 +192,15 @@ def test_external_adoption_uses_quality_gate_and_is_restart_idempotent(tmp_path:
         assert first.manifest["external_provenance"] == provenance
         job = repository.get_job(first.creative_job_id)
         assert job.status.value == "creative_ready"
-        assert len(database.fetchall("SELECT * FROM creative_stage_runs WHERE creative_job_id=?", (job.creative_job_id,))) == 4
+        assert (
+            len(
+                database.fetchall(
+                    "SELECT * FROM creative_stage_runs WHERE creative_job_id=?",
+                    (job.creative_job_id,),
+                )
+            )
+            == 4
+        )
         assert database.fetchone("SELECT COUNT(*) AS count FROM tasks")["count"] == 0
     finally:
         database.close()

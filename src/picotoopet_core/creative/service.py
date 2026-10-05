@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -58,7 +59,9 @@ class CreativeIntelligenceService:
 
     @staticmethod
     def _digest(value: object) -> str:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        encoded = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     def create_job(
@@ -90,7 +93,11 @@ class CreativeIntelligenceService:
         idempotency_key: str,
     ) -> tuple[CreativeJobRecord, NormalizedCreativeSourceSet]:
         profile = creative_profile_definition(profile_id)
-        objective = creative_objective.strip() if creative_objective and creative_objective.strip() else None
+        objective = (
+            creative_objective.strip()
+            if creative_objective and creative_objective.strip()
+            else None
+        )
         if objective is not None and len(objective) > 2000:
             raise ValueError("CREATIVE_OBJECTIVE_TOO_LARGE")
         objective_digest = self._digest({"objective": objective or ""})
@@ -103,7 +110,9 @@ class CreativeIntelligenceService:
                 "templates": [stage.template_version for stage in profile.stages],
             }
         )
-        combined_source_set = source_set.model_copy(update={"source_set_digest": combined_source_digest})
+        combined_source_set = source_set.model_copy(
+            update={"source_set_digest": combined_source_digest}
+        )
         job = self.repository.create_job(
             creative_job_id=str(uuid4()),
             project_key=source_set.project_key,
@@ -240,11 +249,11 @@ class CreativeIntelligenceService:
             if task.resource_tag != f"creative:{creative_job_id}":
                 continue
             if task.status not in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
-                try:
+                with suppress(Exception):
                     self.queue.transition(task.task_id, TaskStatus.CANCELLED, "creative_cancelled")
-                except Exception:
-                    pass
-        return self.repository.transition_job(creative_job_id, CreativeJobStatus.CANCELLED, finished=True)
+        return self.repository.transition_job(
+            creative_job_id, CreativeJobStatus.CANCELLED, finished=True
+        )
 
     def get_package(self, creative_job_id: str) -> CreativePackageRecord | None:
         return self.repository.package_for(creative_job_id)

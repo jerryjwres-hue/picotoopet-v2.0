@@ -219,9 +219,7 @@ class GoalHandoffAccess:
         try:
             with zipfile.ZipFile(package) as archive:
                 matches = [
-                    item
-                    for item in archive.infolist()
-                    if item.filename == "HANDOFF_MANIFEST.json"
+                    item for item in archive.infolist() if item.filename == "HANDOFF_MANIFEST.json"
                 ]
                 if len(matches) != 1 or matches[0].file_size > _MAX_HANDOFF_RESULT_BYTES:
                     raise HandoffAccessError("handoff manifest is invalid")
@@ -230,7 +228,13 @@ class GoalHandoffAccess:
             manifest = GoalHandoffPackageManifest.model_validate(document)
         except HandoffAccessError:
             raise
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, zipfile.BadZipFile, ValidationError) as error:
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            zipfile.BadZipFile,
+            ValidationError,
+        ) as error:
             raise HandoffAccessError("handoff manifest is invalid") from error
         if (
             manifest.goal_id != goal_id
