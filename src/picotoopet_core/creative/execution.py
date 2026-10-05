@@ -19,11 +19,11 @@ from picotoopet_core.worker.handlers import HandlerResult
 from .models import (
     CreativeDeepAiHandoffRecord,
     CreativeJobStatus,
-    CreativePackageRecord,
     CreativeProfile,
     CreativeQualityOutcome,
     CreativeStageKind,
 )
+from .package import CreativePackageFinalizer
 from .profiles import CreativeStageDefinition, creative_profile_definition
 from .quality import CreativeQualityGate
 from .repository import CreativeRepository
@@ -86,6 +86,7 @@ class CreativeIntelligenceCoordinator:
         self.adapter = adapter
         self.configured_model_id = configured_model_id
         self.quality = CreativeQualityGate()
+        self.package_finalizer = CreativePackageFinalizer(repository=repository, store=store)
 
     def handler(self, task: TaskRecord) -> HandlerResult:
         payload = CreativeTaskPayload.from_task(task)
@@ -263,40 +264,13 @@ class CreativeIntelligenceCoordinator:
 
     def _finish_package(self, creative_job_id, source_set, previous, profile) -> HandlerResult:  # type: ignore[no-untyped-def]
         self.repository.transition_job(creative_job_id, CreativeJobStatus.QUALITY_CHECK)
-        package_id = str(uuid4())
-        payload = {
-            "schema_version": "1.0",
-            "creative_package_id": package_id,
-            "creative_job_id": creative_job_id,
-            "project_key": source_set.project_key,
-            "creative_profile": profile.profile_id,
-            "source_result_packages": [
-                {"result_package_id": item, "result_digest": digest}
-                for item, digest in zip(source_set.result_package_ids, source_set.result_digests, strict=True)
-            ],
-            "source_set_digest": source_set.source_set_digest,
-            "source_findings": [
-                {"source_finding_ref": item.source_finding_ref, "finding_digest": item.finding_digest, "evidence_ids": item.evidence_ids}
-                for item in source_set.findings
-            ],
-            "configured_model_id": self.configured_model_id,
-            "stage_template_versions": {stage.stage_kind.value: stage.template_version for stage in profile.stages},
-            "stage_results": previous,
-            "quality_outcome": "PASS",
-            "completed_at": datetime.now(UTC).isoformat(),
-        }
-        relative, package_digest = self.store.write_creative_package(package_id, payload)
-        record = CreativePackageRecord(
-            creative_package_id=package_id,
+        saved = self.package_finalizer.finalize(
             creative_job_id=creative_job_id,
-            source_set_digest=source_set.source_set_digest,
-            package_digest=package_digest,
-            package_relpath=relative,
-            manifest=payload,
-            quality_outcome=CreativeQualityOutcome.PASS,
-            created_at=datetime.now(UTC),
+            source_set=source_set,
+            stage_results=previous,
+            profile=profile,
+            configured_model_id=self.configured_model_id,
         )
-        saved = self.repository.save_package(record)
         self.repository.transition_job(
             creative_job_id,
             CreativeJobStatus.CREATIVE_READY,
