@@ -162,6 +162,10 @@ internal static class MaotaiVisualSnapshotSmokeTests
 
     private static void VerifyPoseCohesionVisibility(AssistantPetPanel panel, string label)
     {
+        // Chest material      : torso_neutral already contains the accepted high-detail chest coat.
+        //                       The legacy chest overlay must remain hidden in every snapshot to avoid a flat duplicate bib.
+        AssertOpacity(panel, label, "MaotaiV2ChestFur", 0.0, "重复胸毛叠层必须隐藏");
+
         // Stable/folded states : Idle keeps the accepted continuous silhouette; work/sleep tuck long segments under torso fur.
         // Moving state         : Run exposes a subtle front knee bridge while rear limbs remain a quiet depth cue.
         if (label == "run")
