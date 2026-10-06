@@ -106,6 +106,12 @@ public static class ProductionLocalEnvironment
             throw new InvalidDataException("PRODUCTION_PATH_ESCAPE");
         }
 
+        if (Directory.Exists(fullPath)
+            && IsReparsePoint(File.GetAttributes(fullPath)))
+        {
+            throw new InvalidDataException("PRODUCTION_REPARSE_POINT_FORBIDDEN");
+        }
+
         var current = new FileInfo(fullPath);
         if (current.Exists && IsReparsePoint(current.Attributes))
         {
