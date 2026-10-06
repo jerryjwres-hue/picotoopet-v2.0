@@ -12,8 +12,8 @@ public sealed partial class ControlCenterSession
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        await using var client = CreateProductionClient();
-        return await client.FailProductionTaskAsync(
+        await using var lease = AcquireProductionClient();
+        return await lease.Client.FailProductionTaskAsync(
             productionJobId,
             productionTaskId,
             request,
