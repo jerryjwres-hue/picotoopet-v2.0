@@ -79,6 +79,17 @@
         </DataTrigger>
       </Style.Triggers>
     </Style>
+
+    <Style x:Key="GoalVideoReturnButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource GoalHandoffButtonStyle}">
+      <Setter Property="Visibility" Value="Collapsed" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding VideoContinuation.CanSubmit, Mode=OneWay}" Value="True">
+          <Setter Property="Visibility" Value="Visible" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
   </UserControl.Resources>
 
   <Border CornerRadius="18" ClipToBounds="True">
@@ -214,14 +225,26 @@
             <TextBlock Text="{Binding HandoffSummary, Mode=OneWay}"
                        Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,0,0,6" />
             <StackPanel Orientation="Horizontal">
-              <Button Content="复制 GPT 提示词"
+              <Button x:Name="CopyPromptButton"
+                      Content="复制 GPT 提示词"
                       Margin="0,0,5,0"
                       Style="{StaticResource GoalHandoffButtonStyle}"
+                      IsEnabled="{Binding HandoffReady, Mode=OneWay}"
                       Click="CopyPrompt_Click" />
-              <Button Content="保存交接 ZIP"
+              <Button x:Name="SaveHandoffButton"
+                      Content="保存交接 ZIP"
+                      Margin="0,0,5,0"
                       Style="{StaticResource GoalHandoffButtonStyle}"
+                      IsEnabled="{Binding HandoffReady, Mode=OneWay}"
                       Click="SaveHandoff_Click" />
+              <Button x:Name="PasteGoalVideoReturnButton"
+                      Content="粘贴 GPT 返回"
+                      Style="{StaticResource GoalVideoReturnButtonStyle}"
+                      IsEnabled="{Binding VideoContinuation.CanSubmit, Mode=OneWay}"
+                      Click="PasteGoalVideoReturn_Click" />
             </StackPanel>
+            <TextBlock Text="{Binding VideoContinuation.StatusText, Mode=OneWay}"
+                       Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,6,0,0" />
           </StackPanel>
         </Grid>
       </Border>

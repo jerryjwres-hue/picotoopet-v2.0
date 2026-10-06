@@ -44,3 +44,28 @@ public sealed record GoalHandoffMetadataRecord(
     [property: JsonPropertyName("package_size_bytes")] long PackageSizeBytes,
     [property: JsonPropertyName("prompt_version")] string PromptVersion,
     [property: JsonPropertyName("manual_web_gpt_upload_required")] bool ManualWebGptUploadRequired);
+
+/// <summary>Mac Core 已采纳视频返回后的耐久 Creative/Production 只读投影。</summary>
+public sealed record GoalVideoContinuationRecord(
+    [property: JsonPropertyName("goal_id")] string GoalId,
+    [property: JsonPropertyName("handoff_sha256")] string HandoffSha256,
+    [property: JsonPropertyName("return_sha256")] string ReturnSha256,
+    [property: JsonPropertyName("creative_job_id")] string CreativeJobId,
+    [property: JsonPropertyName("creative_package_id")] string CreativePackageId,
+    [property: JsonPropertyName("creative_package_digest")] string CreativePackageDigest,
+    [property: JsonPropertyName("creative_status")] string CreativeStatus,
+    [property: JsonPropertyName("production_job_id")] string? ProductionJobId,
+    [property: JsonPropertyName("production_status")] string? ProductionStatus);
+
+/// <summary>Windows 只提交裸 JSON 并读取 Core 投影；不复制返回语义合同。</summary>
+public interface IGoalVideoContinuationGateway
+{
+    Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
+        string goalId,
+        JsonElement payload,
+        CancellationToken cancellationToken);
+
+    Task<GoalVideoContinuationRecord> GetGoalVideoContinuationAsync(
+        string goalId,
+        CancellationToken cancellationToken);
+}
