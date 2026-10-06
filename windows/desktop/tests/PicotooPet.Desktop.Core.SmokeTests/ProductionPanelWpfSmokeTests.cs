@@ -44,7 +44,23 @@ internal static class ProductionPanelWpfSmokeTests
             "pet-dryer-us",
             new string('a', 64),
             DateTimeOffset.UtcNow);
-        using var viewModel = ProductionPanelViewModel.CreateForSmokeTest(new[] { source });
+        var readyJob = new ProductionJobRecord(
+            "production-ready-job",
+            source.CreativePackageId,
+            source.PackageDigest,
+            source.ProjectKey,
+            ProductionPanelViewModel.FixedProductionProfile,
+            new string('b', 64),
+            "Ready",
+            null,
+            null,
+            null,
+            null,
+            "ready-job-key",
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            null);
+        using var viewModel = ProductionPanelViewModel.CreateForSmokeTest(new[] { source }, new[] { readyJob });
         var panel = new ProductionPanel { DataContext = viewModel };
 
         panel.Measure(new Size(1100, 760));
@@ -58,8 +74,8 @@ internal static class ProductionPanelWpfSmokeTests
         SmokeAssert.True(panel.ActualWidth > 0 && panel.ActualHeight > 0, "ProductionPanel 布局尺寸无效");
         SmokeAssert.True(viewModel.CanCreate, "eligible Creative Package 应允许创建固定 Production Job");
         SmokeAssert.True(viewModel.CanPreflight, "ProductionPanel 应允许只读本机 Preflight");
-        SmokeAssert.True(!viewModel.CanStart, "没有 Planned Job 时不得启动 ComfyUI render");
-        SmokeAssert.True(!viewModel.CanCancel, "没有活动 Job 时不得取消");
+        SmokeAssert.True(viewModel.CanStart, "Core 序列化 Ready Job 应允许手动启动 ComfyUI render");
+        SmokeAssert.True(viewModel.CanCancel, "Ready Job 应允许手动取消");
         SmokeAssert.True(
             ProductionPanelViewModel.RendererText.Contains("127.0.0.1:8188", StringComparison.Ordinal),
             "ProductionPanel 必须明确固定 loopback renderer");

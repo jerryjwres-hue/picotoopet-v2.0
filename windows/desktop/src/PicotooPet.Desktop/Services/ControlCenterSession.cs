@@ -18,6 +18,7 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
     private readonly LatencyRecorder _restLatency = new();
     private readonly LatencyRecorder _socketLatency = new();
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly GoalProductionAutopilotCoordinator _productionAutopilot;
     private CancellationTokenSource? _connectionLifetime;
     private StateSyncCoordinator? _coordinator;
     private Task? _eventTask;
@@ -47,7 +48,11 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
         _stateStore.CapabilityStore.SnapshotChanged += OnCapabilitiesChanged;
         _stateStore.WorkerStore.SnapshotChanged     += OnWorkerChanged;
         _stateStore.TaskStore.SnapshotChanged       += OnTasksChanged;
+        _productionAutopilot = GoalProductionAutopilotCoordinator.Create(this);
     }
+
+    /// <summary>会话级 Goal Production 协调器；不保存任何耐久 Production 状态。</summary>
+    public IGoalProductionAutopilotObserver ProductionAutopilot => _productionAutopilot;
 
     /// <summary>会话或服务端状态提交后发布完整只读快照。</summary>
     public event EventHandler<ControlCenterSessionSnapshot>? SnapshotChanged;
@@ -361,6 +366,7 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
         }
         _disposed = true;
         _lifetime.Cancel();
+        await _productionAutopilot.DisposeAsync().ConfigureAwait(false);
         await _connectionGate.WaitAsync().ConfigureAwait(false);
         try
         {

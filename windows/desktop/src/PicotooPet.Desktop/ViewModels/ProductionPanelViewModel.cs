@@ -110,7 +110,7 @@ public sealed class ProductionPanelViewModel : ObservableObject, IDisposable
     public bool CanStart =>
         !IsBusy
         && SelectedJob is not null
-        && SelectedJob.Status is "Planned" or "Claimed" or "Rendering";
+        && SelectedJob.Status is "Ready" or "Planned" or "Claimed" or "Rendering";
 
     public bool CanCancel =>
         !IsBusy
@@ -203,7 +203,7 @@ public sealed class ProductionPanelViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>启动所选 Planned Job；executor 只能运行 Core Plan 指定的 allowlisted workflow。</summary>
+    /// <summary>启动所选 Ready/可恢复 Job；executor 只能运行 Core Plan 指定的 allowlisted workflow。</summary>
     public async Task StartSelectedAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();

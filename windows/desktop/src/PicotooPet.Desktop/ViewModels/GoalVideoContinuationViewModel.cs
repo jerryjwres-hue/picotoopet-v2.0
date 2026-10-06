@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
@@ -8,23 +9,36 @@ namespace PicotooPet.Desktop.ViewModels;
 public sealed class GoalVideoContinuationViewModel : ObservableObject
 {
     private readonly IGoalVideoContinuationGateway? _gateway;
+    private readonly IGoalProductionAutopilotObserver? _autopilot;
     private string? _goalId;
     private bool _available;
     private bool _isBusy;
     private string _errorMessage = string.Empty;
     private GoalVideoContinuationRecord? _continuation;
+    private string? _localProductionStatus;
 
-    public GoalVideoContinuationViewModel(IGoalVideoContinuationGateway? gateway) =>
+    public GoalVideoContinuationViewModel(
+        IGoalVideoContinuationGateway? gateway,
+        IGoalProductionAutopilotObserver? autopilot = null)
+    {
         _gateway = gateway;
+        _autopilot = autopilot;
+    }
 
     public GoalVideoContinuationRecord? Continuation
     {
         get => _continuation;
         private set
         {
+            var previousJobId = _continuation?.ProductionJobId;
             if (SetProperty(ref _continuation, value))
             {
+                if (!string.Equals(previousJobId, value?.ProductionJobId, StringComparison.Ordinal))
+                {
+                    _localProductionStatus = null;
+                }
                 RaisePropertyChanged(nameof(StatusText));
+                RaisePropertyChanged(nameof(ProductionStatusText));
             }
         }
     }
@@ -72,7 +86,35 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             {
                 return "尚未提交 Web GPT 返回";
             }
-            return $"Creative：{Continuation.CreativeStatus} · Production：{Continuation.ProductionStatus ?? "尚未创建"}";
+            return $"Creative：{Continuation.CreativeStatus} · Production：{ProductionStatusText}";
+        }
+    }
+
+    public string ProductionStatusText
+    {
+        get
+        {
+            var coreStatus = Continuation?.ProductionStatus;
+            if (string.Equals(coreStatus, "Ready", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(_localProductionStatus))
+            {
+                return _localProductionStatus;
+            }
+            return coreStatus switch
+            {
+                null => "尚未创建",
+                "Ready" => "等待本地生产启动",
+                "Claimed" => "已认领，准备渲染",
+                "Preflight" => "正在检查本地生产环境",
+                "Rendering" => "正在本地渲染",
+                "Collecting" => "正在收集渲染结果",
+                "QualityCheck" => "正在进行质量检查",
+                "production_ready" => "生产成品已就绪",
+                "NeedsHuman" => "需要人工处理",
+                "Failed" => "生产失败",
+                "Cancelled" => "生产已取消",
+                _ => "生产状态暂不可识别",
+            };
         }
     }
 
@@ -91,6 +133,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             ErrorMessage = string.Empty;
         }
         _available = nextGoalId is not null;
+        ObserveAutopilot();
         RaisePropertyChanged(nameof(CanSubmit));
         RaisePropertyChanged(nameof(StatusText));
     }
@@ -114,6 +157,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             }
             Continuation = continuation;
             ErrorMessage = string.Empty;
+            ObserveAutopilot();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -127,6 +171,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             }
             Continuation = null;
             ErrorMessage = string.Empty;
+            ObserveAutopilot();
         }
         catch (Exception exception)
         {
@@ -159,6 +204,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
                 return;
             }
             Continuation = continuation;
+            ObserveAutopilot();
             await RefreshAfterAcceptedPostAsync(goalId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -203,6 +249,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             if (IsCurrentGoal(goalId))
             {
                 Continuation = continuation;
+                ObserveAutopilot();
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -229,6 +276,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             }
             Continuation = continuation;
             ErrorMessage = string.Empty;
+            ObserveAutopilot();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -245,6 +293,18 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
 
     private bool IsCurrentGoal(string goalId) =>
         string.Equals(_goalId, goalId, StringComparison.Ordinal);
+
+    private void ObserveAutopilot()
+    {
+        if (_autopilot is null)
+        {
+            return;
+        }
+        var snapshot = _autopilot.Observe(_goalId, Continuation);
+        _localProductionStatus = snapshot.StatusText;
+        RaisePropertyChanged(nameof(ProductionStatusText));
+        RaisePropertyChanged(nameof(StatusText));
+    }
 
     private static string ToSafeError(Exception exception) => exception switch
     {

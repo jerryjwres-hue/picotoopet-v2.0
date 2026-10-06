@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Services;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
@@ -118,6 +119,49 @@ internal static class GoalVideoContinuationViewModelSmokeTests
         SmokeAssert.True(
             switching.Continuation is null,
             "旧 Goal 的延迟刷新覆盖了新 Goal continuation");
+
+        var observer = new FixtureAutopilotObserver();
+        var automatic = new GoalVideoContinuationViewModel(gateway, observer);
+        automatic.SetContext(Goal(), Handoff(ready: true));
+        gateway.GetResult = Continuation("production-auto");
+        await automatic.RefreshAsync().ConfigureAwait(false);
+        SmokeAssert.Equal("production-auto", observer.LastProductionJobId, "接受 continuation 后未自动观察精确 Production job");
+        observer.Reset();
+        gateway.PostResult = Continuation("production-submit-auto");
+        gateway.GetResult = gateway.PostResult;
+        await automatic.SubmitAsync(payload).ConfigureAwait(false);
+        SmokeAssert.Equal("production-submit-auto", observer.LastProductionJobId, "手动粘贴返回被 Core 接受后未自动观察 Production job");
+
+        observer.SnapshotToReturn = new GoalProductionAutopilotSnapshot(
+            "goal-1",
+            "production-submit-auto",
+            GoalProductionAutopilotPhase.TemporaryFailure,
+            "本地生产暂时不可用；修复本机条件后将于后续刷新重试。");
+        await automatic.RefreshAsync().ConfigureAwait(false);
+        SmokeAssert.True(
+            automatic.StatusText.Contains("本地生产暂时不可用", StringComparison.Ordinal),
+            "Goal Center 未展示有界本地 Production 失败状态");
+        observer.SnapshotToReturn = null;
+
+        foreach (var (status, expected) in new[]
+        {
+            ("Ready", "等待本地生产启动"),
+            ("Preflight", "正在检查本地生产环境"),
+            ("Rendering", "正在本地渲染"),
+            ("Collecting", "正在收集渲染结果"),
+            ("QualityCheck", "正在进行质量检查"),
+            ("production_ready", "生产成品已就绪"),
+            ("NeedsHuman", "需要人工处理"),
+            ("Failed", "生产失败"),
+            ("Cancelled", "生产已取消"),
+            ("raw-secret-unknown", "生产状态暂不可识别"),
+        })
+        {
+            gateway.GetResult = Continuation("production-auto", "goal-1", status);
+            await automatic.RefreshAsync().ConfigureAwait(false);
+            SmokeAssert.True(automatic.StatusText.Contains(expected, StringComparison.Ordinal), $"Production 状态 {status} 映射错误");
+            SmokeAssert.True(!automatic.StatusText.Contains("raw-secret-unknown", StringComparison.Ordinal), "未知 Core 状态原文泄露到 UI");
+        }
     }
 
     private static IEnumerable<string> InstanceStrings(object instance) =>
@@ -137,10 +181,28 @@ internal static class GoalVideoContinuationViewModelSmokeTests
 
     private static GoalVideoContinuationRecord Continuation(
         string productionJobId,
-        string goalId = "goal-1") => new(
+        string goalId = "goal-1",
+        string productionStatus = "Ready") => new(
         goalId, new string('a', 64), new string('b', 64), "creative-job",
         "11111111-1111-4111-8111-111111111111", new string('c', 64),
-        "creative_ready", productionJobId, "Ready");
+        "creative_ready", productionJobId, productionStatus);
+
+    private sealed class FixtureAutopilotObserver : IGoalProductionAutopilotObserver
+    {
+        public string? LastProductionJobId { get; private set; }
+        public GoalProductionAutopilotSnapshot? SnapshotToReturn { get; set; }
+
+        public void Reset() => LastProductionJobId = null;
+
+        public GoalProductionAutopilotSnapshot Observe(
+            string? goalId,
+            GoalVideoContinuationRecord? continuation)
+        {
+            LastProductionJobId = continuation?.ProductionJobId;
+            return SnapshotToReturn
+                ?? GoalProductionAutopilotSnapshot.Idle(goalId, continuation?.ProductionJobId);
+        }
+    }
 
     private sealed class FixtureGateway : IGoalVideoContinuationGateway
     {
