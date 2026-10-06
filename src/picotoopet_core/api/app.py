@@ -29,6 +29,7 @@ from .routes import (
     frugal_escalation,
     handoffs,
     health,
+    postproduction,
     production,
     progress,
     projects,
@@ -136,6 +137,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(business_pipeline.router, prefix=prefix, tags=["business-pipeline"])
     app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
     app.include_router(production.router, prefix=prefix, tags=["production"])
+    app.include_router(postproduction.router, prefix=prefix, tags=["postproduction"])
     app.include_router(deep_ai.router, prefix=prefix, tags=["deep-ai"])
     app.include_router(frugal_escalation.router, prefix=prefix, tags=["coding-escalation"])
     # ── 25.1 governance gate: Promotion routes share Deep-AI namespace, no paid executor. ──
