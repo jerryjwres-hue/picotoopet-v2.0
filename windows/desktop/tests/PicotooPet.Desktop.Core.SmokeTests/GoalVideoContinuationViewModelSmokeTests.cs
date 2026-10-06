@@ -102,6 +102,22 @@ internal static class GoalVideoContinuationViewModelSmokeTests
             "production-job-reconciled",
             ambiguous.Continuation?.ProductionJobId,
             "不明确 POST 未通过 GET 对账");
+
+
+        var staleGateway = new FixtureGateway
+        {
+            PendingGet = new TaskCompletionSource<GoalVideoContinuationRecord>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var switching = new GoalVideoContinuationViewModel(staleGateway);
+        switching.SetContext(Goal("goal-old"), Handoff(ready: true, "goal-old"));
+        var staleRefresh = switching.RefreshAsync();
+        switching.SetContext(Goal("goal-new"), Handoff(ready: true, "goal-new"));
+        staleGateway.PendingGet.SetResult(Continuation("production-old", "goal-old"));
+        await staleRefresh.ConfigureAwait(false);
+        SmokeAssert.True(
+            switching.Continuation is null,
+            "旧 Goal 的延迟刷新覆盖了新 Goal continuation");
     }
 
     private static IEnumerable<string> InstanceStrings(object instance) =>
@@ -110,17 +126,19 @@ internal static class GoalVideoContinuationViewModelSmokeTests
             .Select(field => field.GetValue(instance))
             .OfType<string>();
 
-    private static HumanGoalRecord Goal() => new(
-        "goal-1", null, "workflow-1", "human", "product.research_to_video", "P1",
+    private static HumanGoalRecord Goal(string goalId = "goal-1") => new(
+        goalId, null, "workflow-1", "human", "product.research_to_video", "P1",
         "研究产品并生成视频", JsonDocument.Parse("{}").RootElement.Clone(), "local-first",
         false, null, "Completed", "goal-key", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
-    private static GoalHandoffMetadataRecord Handoff(bool ready) => new(
-        "1.0", "goal-1", ready, "goal-1.zip", new string('a', 64), 100,
+    private static GoalHandoffMetadataRecord Handoff(bool ready, string goalId = "goal-1") => new(
+        "1.0", goalId, ready, $"{goalId}.zip", new string('a', 64), 100,
         "web-gpt-master-v1.0", true);
 
-    private static GoalVideoContinuationRecord Continuation(string productionJobId) => new(
-        "goal-1", new string('a', 64), new string('b', 64), "creative-job",
+    private static GoalVideoContinuationRecord Continuation(
+        string productionJobId,
+        string goalId = "goal-1") => new(
+        goalId, new string('a', 64), new string('b', 64), "creative-job",
         "11111111-1111-4111-8111-111111111111", new string('c', 64),
         "creative_ready", productionJobId, "Ready");
 
@@ -130,6 +148,7 @@ internal static class GoalVideoContinuationViewModelSmokeTests
         public GoalVideoContinuationRecord? GetResult { get; set; }
         public ApiException? PostError { get; set; }
         public ApiException? GetError { get; set; }
+        public TaskCompletionSource<GoalVideoContinuationRecord>? PendingGet { get; set; }
 
         public Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
             string goalId,
@@ -151,7 +170,11 @@ internal static class GoalVideoContinuationViewModelSmokeTests
             {
                 throw GetError;
             }
-            return Task.FromResult(GetResult ?? Continuation("production-job"));
+            if (PendingGet is not null)
+            {
+                return PendingGet.Task;
+            }
+            return Task.FromResult(GetResult ?? Continuation("production-job", goalId));
         }
     }
 }
