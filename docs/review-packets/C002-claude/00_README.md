@@ -62,3 +62,24 @@ BLOCKERS:
 IMPORTANT:
 TEST GAPS:
 ```
+
+
+## R002 current-code review
+
+The earlier numbered snapshots 02-07 were captured before C002 implementation and are stale.
+For R002, DO NOT use 02-07 to decide whether C002 exists.
+
+Review only:
+- 01_TASK_SPEC.md
+- 08_autonomous_goals.py
+- 09_video_return.py
+- 10_video_continuation.py
+- 11_C002_IMPLEMENTATION.diff
+
+The implementation diff is from commit:
+b8210df7ce8fb4d05ae5c1f87bfd709669b01d68
+
+R002 goal:
+- verify the actual C002 Windows implementation against the task spec and existing C001 backend
+- distinguish pre-existing C001 backend hardening findings from C002 regressions
+- report only actionable blockers / important findings / test gaps
