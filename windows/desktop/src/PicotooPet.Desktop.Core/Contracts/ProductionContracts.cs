@@ -157,7 +157,8 @@ public sealed record ProductionClaimRecord
 public sealed record ProductionTaskAttemptRequest(
     [property: JsonPropertyName("executor_id")] string ExecutorId,
     [property: JsonPropertyName("lease_token")] string LeaseToken,
-    [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId);
+    [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId,
+    [property: JsonPropertyName("retry_previous_attempt")] bool RetryPreviousAttempt = false);
 
 /// <summary>最终本地渲染失败只回传有界身份、lease、prompt 与失败证据。</summary>
 public sealed record ProductionTaskFailureRequest(
