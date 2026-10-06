@@ -405,7 +405,11 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 await _gateway.MarkProductionAttemptAsync(
                     claim.ProductionJobId,
                     task.ProductionTaskId,
-                    new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null),
+                    new ProductionTaskAttemptRequest(
+                        _executorId,
+                        claim.LeaseToken,
+                        null,
+                        RetryPreviousAttempt: attempt > 1),
                     cancellationToken).ConfigureAwait(false);
                 var artifact = await _localMedia.RenderAsync(
                     claim.ProductionJobId,
