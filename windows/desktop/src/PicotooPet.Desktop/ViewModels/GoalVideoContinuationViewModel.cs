@@ -141,11 +141,11 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         JsonElement payload,
         CancellationToken cancellationToken = default)
     {
-        if (_gateway is null || _goalId is null || !CanSubmit)
+        var goalId = _goalId;
+        if (_gateway is null || goalId is null || !CanSubmit)
         {
             return;
         }
-        var goalId = _goalId;
         IsBusy = true;
         ErrorMessage = string.Empty;
         try
