@@ -110,9 +110,9 @@ internal static class GoalVideoContinuationViewModelSmokeTests
                 TaskCreationOptions.RunContinuationsAsynchronously),
         };
         var switching = new GoalVideoContinuationViewModel(staleGateway);
-        switching.SetContext(Goal("goal-old"), Handoff(ready: true, "goal-old"));
+        switching.SetContext(Goal("goal-old"), Handoff(ready: true, goalId: "goal-old"));
         var staleRefresh = switching.RefreshAsync();
-        switching.SetContext(Goal("goal-new"), Handoff(ready: true, "goal-new"));
+        switching.SetContext(Goal("goal-new"), Handoff(ready: true, goalId: "goal-new"));
         staleGateway.PendingGet.SetResult(Continuation("production-old", "goal-old"));
         await staleRefresh.ConfigureAwait(false);
         SmokeAssert.True(
