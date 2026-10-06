@@ -142,7 +142,7 @@ internal static class MaotaiLegVisualPolicy
             UpperOpacity: 1.0,
             LowerOpacity: 0.0,
             PawOpacity: 1.0,
-            PawScaleX: 0.88,
+            PawScaleX: 1.0,
             UpperScaleX: 0.86,
             LowerScaleX: 0.80);
 
