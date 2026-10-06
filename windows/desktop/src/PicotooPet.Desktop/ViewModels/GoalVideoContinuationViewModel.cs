@@ -10,19 +10,24 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
 {
     private readonly IGoalVideoContinuationGateway? _gateway;
     private readonly IGoalProductionAutopilotObserver? _autopilot;
+    private readonly IGoalFinalVideoObserver? _finalVideo;
     private string? _goalId;
     private bool _available;
     private bool _isBusy;
     private string _errorMessage = string.Empty;
     private GoalVideoContinuationRecord? _continuation;
     private string? _localProductionStatus;
+    private string? _localFinalVideoStatus;
+    private bool _canOpenFinalVideo;
 
     public GoalVideoContinuationViewModel(
         IGoalVideoContinuationGateway? gateway,
-        IGoalProductionAutopilotObserver? autopilot = null)
+        IGoalProductionAutopilotObserver? autopilot = null,
+        IGoalFinalVideoObserver? finalVideo = null)
     {
         _gateway = gateway;
         _autopilot = autopilot;
+        _finalVideo = finalVideo;
     }
 
     public GoalVideoContinuationRecord? Continuation
@@ -36,9 +41,12 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
                 if (!string.Equals(previousJobId, value?.ProductionJobId, StringComparison.Ordinal))
                 {
                     _localProductionStatus = null;
+                    _localFinalVideoStatus = null;
+                    _canOpenFinalVideo = false;
                 }
                 RaisePropertyChanged(nameof(StatusText));
                 RaisePropertyChanged(nameof(ProductionStatusText));
+                RaisePropertyChanged(nameof(CanOpenFinalVideo));
             }
         }
     }
@@ -70,6 +78,8 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
 
     public bool CanSubmit => _gateway is not null && _available && !IsBusy;
 
+    public bool CanOpenFinalVideo => _canOpenFinalVideo;
+
     public string StatusText
     {
         get
@@ -95,6 +105,11 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         get
         {
             var coreStatus = Continuation?.ProductionStatus;
+            if (string.Equals(coreStatus, "production_ready", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(_localFinalVideoStatus))
+            {
+                return _localFinalVideoStatus;
+            }
             if (string.Equals(coreStatus, "Ready", StringComparison.Ordinal)
                 && !string.IsNullOrWhiteSpace(_localProductionStatus))
             {
@@ -296,14 +311,43 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
 
     private void ObserveAutopilot()
     {
-        if (_autopilot is null)
+        if (_autopilot is not null)
         {
-            return;
+            var productionSnapshot = _autopilot.Observe(_goalId, Continuation);
+            _localProductionStatus = productionSnapshot.StatusText;
         }
-        var snapshot = _autopilot.Observe(_goalId, Continuation);
-        _localProductionStatus = snapshot.StatusText;
+        if (_finalVideo is not null)
+        {
+            var finalSnapshot = _finalVideo.Observe(_goalId, Continuation);
+            _localFinalVideoStatus = finalSnapshot.StatusText;
+            _canOpenFinalVideo = finalSnapshot.CanOpen;
+        }
+        else
+        {
+            _localFinalVideoStatus = null;
+            _canOpenFinalVideo = false;
+        }
         RaisePropertyChanged(nameof(ProductionStatusText));
         RaisePropertyChanged(nameof(StatusText));
+        RaisePropertyChanged(nameof(CanOpenFinalVideo));
+    }
+
+    public bool OpenFinalVideo()
+    {
+        if (!CanOpenFinalVideo || _finalVideo is null)
+        {
+            return false;
+        }
+        var opened = _finalVideo.OpenCurrent();
+        if (!opened)
+        {
+            _localFinalVideoStatus = "最终视频暂时无法打开；请稍后重试。";
+            _canOpenFinalVideo = false;
+            RaisePropertyChanged(nameof(ProductionStatusText));
+            RaisePropertyChanged(nameof(StatusText));
+            RaisePropertyChanged(nameof(CanOpenFinalVideo));
+        }
+        return opened;
     }
 
     private static string ToSafeError(Exception exception) => exception switch

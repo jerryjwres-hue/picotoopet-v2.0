@@ -30,7 +30,10 @@ internal static class GoalVideoReturnPanelWpfSmokeTests
                 SmokeAssert.True(panel.FindName("SaveHandoffButton") is Button, "保存交接 ZIP 按钮丢失");
                 var paste = panel.FindName("PasteGoalVideoReturnButton") as Button
                     ?? throw new InvalidOperationException("缺少粘贴 GPT 返回按钮");
+                var openFinal = panel.FindName("OpenFinalVideoButton") as Button
+                    ?? throw new InvalidOperationException("缺少打开最终视频按钮");
                 SmokeAssert.Equal(Visibility.Collapsed, paste.Visibility, "未就绪交接错误显示粘贴入口");
+                SmokeAssert.Equal(Visibility.Collapsed, openFinal.Visibility, "未验证成品错误显示打开入口");
 
                 var continuation = new GoalVideoContinuationViewModel(new NoopGateway());
                 continuation.SetContext(Goal(), Handoff());
@@ -38,6 +41,7 @@ internal static class GoalVideoReturnPanelWpfSmokeTests
                 panel.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
                 panel.UpdateLayout();
                 SmokeAssert.Equal(Visibility.Visible, paste.Visibility, "就绪交接未显示粘贴入口");
+                SmokeAssert.Equal(Visibility.Collapsed, openFinal.Visibility, "没有最终成品时错误显示打开入口");
                 SmokeAssert.True(CountVisual<PasswordBox>(panel) == 0, "Goal Center 不得收集凭据");
                 SmokeAssert.True(CountVisual<System.Windows.Controls.WebBrowser>(panel) == 0, "Goal Center 不得嵌入 Web GPT");
             }

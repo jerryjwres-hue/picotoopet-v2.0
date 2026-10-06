@@ -198,6 +198,20 @@ public partial class GoalCenterPanel : WpfUserControl
         }
     }
 
+    private void OpenFinalVideo_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not OperatorHomePageViewModel viewModel
+            || !viewModel.VideoContinuation.OpenFinalVideo())
+        {
+            MessageBox.Show(
+                Window.GetWindow(this),
+                "最终视频暂时无法打开；请稍后重试。",
+                "无法打开最终视频",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+    }
+
     private void AdvancedTask_Click(object sender, RoutedEventArgs e) =>
         AdvancedTaskRequested?.Invoke(this, EventArgs.Empty);
 }

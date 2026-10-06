@@ -90,6 +90,17 @@
         </DataTrigger>
       </Style.Triggers>
     </Style>
+
+    <Style x:Key="GoalFinalVideoButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource GoalHandoffButtonStyle}">
+      <Setter Property="Visibility" Value="Collapsed" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding VideoContinuation.CanOpenFinalVideo, Mode=OneWay}" Value="True">
+          <Setter Property="Visibility" Value="Visible" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
   </UserControl.Resources>
 
   <Border CornerRadius="18" ClipToBounds="True">
@@ -239,9 +250,15 @@
                       Click="SaveHandoff_Click" />
               <Button x:Name="PasteGoalVideoReturnButton"
                       Content="粘贴 GPT 返回"
+                      Margin="0,0,5,0"
                       Style="{StaticResource GoalVideoReturnButtonStyle}"
                       IsEnabled="{Binding VideoContinuation.CanSubmit, Mode=OneWay}"
                       Click="PasteGoalVideoReturn_Click" />
+              <Button x:Name="OpenFinalVideoButton"
+                      Content="打开最终视频"
+                      Style="{StaticResource GoalFinalVideoButtonStyle}"
+                      IsEnabled="{Binding VideoContinuation.CanOpenFinalVideo, Mode=OneWay}"
+                      Click="OpenFinalVideo_Click" />
             </StackPanel>
             <TextBlock Text="{Binding VideoContinuation.StatusText, Mode=OneWay}"
                        Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,6,0,0" />
