@@ -1,75 +1,112 @@
 # S003 — Windows Local TTS Compatibility Result
 
-**Decision: NO_COMPATIBLE_LOCAL_ENGINE_PROVEN**
+**Decision: RECOMMEND_WINDOWS_MEDIA_SPEECH**
 
-**Validation status: UNVERIFIED.** The authoring container had no .NET SDK and no Windows host, so
-the probe was not compiled or run. No engine has been proven or disproven. This token is the only
-decision supportable from evidence so far; it is **not** a finding that both engines are unusable.
-The orchestrator must run the command below on native Windows and replace this decision with
-`RECOMMEND_SYSTEM_SPEECH`, `RECOMMEND_WINDOWS_MEDIA_SPEECH`, or a conclusive
-`NO_COMPATIBLE_LOCAL_ENGINE_PROVEN`, attaching the JSON report.
+**Validation status: PASS on real Windows hardware.**
 
-## Deliverable
+Native validation environment:
+- Windows: Microsoft Windows NT 10.0.26200.0
+- .NET SDK: 10.0.302
+- Runtime: .NET 10.0.10
+- Architecture: win-x64
+- Probe exit: 0
 
-Isolated probe: `windows/tools/PicotooPet.TtsCompatibilityProbe/` (not in `PicotooPet.Desktop.sln`,
-no change to Desktop dependencies, C006A-owned `Program.cs`, workflows, or app behavior).
+The isolated probe built with 0 warnings / 0 errors and its self-test passed.
 
-Run on native Windows (SDK per `windows/desktop/global.json`):
+## Decision
+
+Use `Windows.Media.SpeechSynthesis` / OneCore voices for PicotooPet C007B local narration v1.
+
+Do not use `System.Speech` / SAPI5 for v1 on the validated machine.
+
+### System.Speech result
+
+- status: `ENGINE_UNAVAILABLE`
+- installed compatible SAPI5 voices: none
+- offline/no credentials: yes
+- synthesis: not run
+
+This is an environment/runtime compatibility result for the validated machine, not a claim that System.Speech can never work on any Windows host.
+
+### Windows.Media.SpeechSynthesis result
+
+- status: `PASS`
+- offline/no credentials: yes
+- dependency: Windows SDK TFM + installed OneCore voices
+- selected test voice: Microsoft David, en-US
+- synthesis elapsed: 158 ms
+- cancellation:
+  - status: CANCELLED
+  - elapsed: 154 ms
+  - bounded: true
+
+Detected OneCore voices included:
+- Microsoft David — en-US
+- Microsoft Zira — en-US
+- Microsoft Mark — en-US
+- Microsoft Huihui — zh-CN
+- Microsoft Yaoyao — zh-CN
+- Microsoft Kangkang — zh-CN
+
+Validated WAV:
+- PCM format 1
+- mono
+- 16000 Hz
+- 16-bit
+- data bytes: 106560
+- file bytes: 106606
+- duration: 3330 ms
+
+## Probe deliverable
+
+`windows/tools/PicotooPet.TtsCompatibilityProbe/`
+
+The probe remains isolated from the Desktop shipping solution and adds no cloud/provider dependency.
+
+Native run command is compatible with Windows PowerShell 5.1:
 
 ```powershell
-pwsh -File windows/tools/PicotooPet.TtsCompatibilityProbe/Run-TtsCompatibilityProbe.ps1
+powershell.exe -ExecutionPolicy Bypass -File ".\windows\tools\PicotooPet.TtsCompatibilityProbe\Run-TtsCompatibilityProbe.ps1"
 ```
 
-Exit codes: 10 forbidden-authority scan, 11 build, 12 exe missing, 13 self-test, 14 missing-voice
-path, otherwise the probe's own code (0 = at least one engine PASS, 1 = none).
+## Security/authority result
 
-## Candidates and what the probe measures
+The validated path requires:
+- no API key
+- no account
+- no cloud provider
+- no arbitrary model path
+- no external executable
+- no network TTS
+- no arbitrary output path supplied by the narration plan
 
-| Question | System.Speech (SAPI) | Windows.Media.SpeechSynthesis |
-| --- | --- | --- |
-| Compiles on `net10.0-windows` | Via probe-scoped NuGet `System.Speech` 9.0.0 | Needs Windows SDK TFM `net10.0-windows10.0.19041.0` (no package) |
-| Offline, no key/account | In-process SAPI5; no network API used | In-process OneCore voices; no network API used |
-| Deterministic logical voice | Enumerate installed voices → `en-US` first, then name ordinal | Same rule over `AllVoices` |
-| WAV/PCM without shell-out | `SetOutputToWaveFile` 22.05 kHz/16-bit/mono | `SynthesizeTextToStreamAsync` stream copied to file |
-| Bounded cancel/timeout | `SpeakAsyncCancelAll` + token + hard `WaitAsync` | `IAsyncOperation` cancel via token + hard `WaitAsync` |
-| No compatible voice | `NO_COMPATIBLE_VOICE` | `NO_COMPATIBLE_VOICE` |
-| Runtime dependency | `System.Speech` package + installed SAPI voices | None beyond Windows 10 1903+ voices |
+C007B should preserve these boundaries.
 
-The right-hand column entries above for compilation and behavior are **design expectations, not
-evidence**. Evidence is the report fields below once the probe has run.
+## C007B recommendation
 
-## Probe behavior (by construction)
+Freeze:
+- `tts_profile_id = narration.local.windows.v1`
+- backend = `Windows.Media.SpeechSynthesis`
+- `voice_profile_id = voice.windows.default.v1`
 
-- Fixed phrase `PicotooPet narration compatibility check.`; output only under a per-run temp
-  directory (`%TEMP%\PicotooPetTtsProbe\<guid>`) that is always deleted.
-- Closed CLI: `--engine`, `--timeout-seconds 1..60`, `--simulate-no-voice`, `--self-test`. No voice,
-  model, executable, URL, or output-path argument exists.
-- Voice enumeration is reported for compatibility only; selection is the deterministic rule above.
-- WAV validation: RIFF/WAVE, PCM (format 1), 1–2 channels, 8–48 kHz, 16-bit, nonzero data, total
-  size 45 B – 16 MiB.
-- Cancellation check: a fixed long phrase (the fixed phrase repeated) is cancelled after 150 ms;
-  `bounded=true` requires status `CANCELLED` within 5 s. `NOT_RUN` means synthesis finished before
-  the cancel landed and cancellation was **not** demonstrated.
-- The script statically rejects sources containing network, process-launch, environment,
-  credential, or model-file tokens.
-- Statuses are a closed set; no raw exception text or paths are emitted.
+The product implementation should expose only logical voice profiles. It must never expose OneCore registry IDs/names as caller authority.
 
-## Evidence to attach (all currently absent)
+Voice selection should be deterministic and closed. Runtime absence of a compatible installed voice must fail with a bounded local error; it must not fall back to cloud TTS or arbitrary voices.
 
-Per engine in the JSON report: `status`, `installed_voices`, `selected_voice`, `wav`
-(`audio_format`, `channels`, `sample_rate`, `bits_per_sample`, `data_bytes`, `duration_ms`),
-`synthesis_elapsed_ms`, `cancellation.{status,elapsed_ms,bounded}`; plus script exit code and
-`dotnet --info`, OS version, and whether the runner had any `en` voice installed.
+C007B should produce managed WAV/PCM narration artifacts with:
+- narration plan digest binding
+- segment text SHA binding
+- WAV validation
+- output SHA-256/bytes/duration
+- restart-safe reuse
+- bounded cancellation/timeout
+- no Production lifecycle mutation
 
-Decision rule for the orchestrator: an engine is viable only when `status=PASS`, WAV fields valid,
-and `cancellation.bounded=true`; with both viable prefer System.Speech (smaller moving parts,
-matches the ordered candidate list) unless it shows a defect; if both report `NO_COMPATIBLE_VOICE`
-on a real Windows host, record whether that is a runner image limitation before concluding.
+Audio/video mux remains a later post-production/compositor slice.
 
 ## Residual risk
 
-- Probe code has never been compiled; first Windows build may need small fixes. Warnings are not
-  errors for this spike only.
-- `System.Speech` package version 9.0.0 was chosen as a known-published version; confirm restore
-  works against the repo's NuGet sources, and whether a 10.x package is preferred.
-- CI runner images may lack `en` voices, which would be an environment limitation, not an engine verdict.
+- OneCore voice inventory varies by Windows installation.
+- The validated machine proves English and Chinese OneCore voices are present, but other machines may lack required language voices.
+- C007B still needs product-level tests for deterministic profile-to-installed-voice selection, artifact reuse, segment timing fit, and missing-voice handling.
+- Real-machine validation covered the probe phrase and cancellation path; it did not yet validate full multi-segment narration for a real PicotooPet video.
