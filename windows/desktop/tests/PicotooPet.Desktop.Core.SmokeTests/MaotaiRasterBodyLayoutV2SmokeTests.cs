@@ -49,23 +49,23 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
 
         configure.Invoke(null, [body]);
 
-        AssertNear(112.0, torso.Width, "neutral torso 宽度没有按 plush 比例校准");
-        AssertNear(90.0, torso.Height, "neutral torso 高度没有按 plush 比例校准");
-        AssertNear(-56.0, Canvas.GetLeft(torso), "neutral torso X 锚点错误");
-        AssertNear(-45.0, Canvas.GetTop(torso), "neutral torso Y 锚点错误");
-        AssertNear(116.0, crouch.Width, "crouch torso 宽度没有同步 plush coverage");
-        AssertNear(84.0, crouch.Height, "crouch torso 高度没有同步 plush coverage");
-        AssertNear(108.0, stretch.Width, "stretch torso 宽度没有同步 plush coverage");
-        AssertNear(96.0, stretch.Height, "stretch torso 高度没有同步 plush coverage");
+        AssertNear(104.0, torso.Width, "neutral torso 宽度没有按 plush 比例校准");
+        AssertNear(88.0, torso.Height, "neutral torso 高度没有按 plush 比例校准");
+        AssertNear(-52.0, Canvas.GetLeft(torso), "neutral torso X 锚点错误");
+        AssertNear(-44.0, Canvas.GetTop(torso), "neutral torso Y 锚点错误");
+        AssertNear(108.0, crouch.Width, "crouch torso 宽度没有同步 plush coverage");
+        AssertNear(80.0, crouch.Height, "crouch torso 高度没有同步 plush coverage");
+        AssertNear(102.0, stretch.Width, "stretch torso 宽度没有同步 plush coverage");
+        AssertNear(92.0, stretch.Height, "stretch torso 高度没有同步 plush coverage");
 
-        // 组合截图表明旧显示框把独立毛发部件横向压窄了 20%–40%，关节处像被切断。
-        // 新 footprint 接近 manifest 逻辑尺寸，但 Pivot 仍必须沿用 manifest 的毛发 overlap 锚点。
-        AssertImageBox(frontUpper, 31.0, 45.0, 17.0 / 34.0, 12.0 / 46.0, "front upper");
-        AssertImageBox(frontLower, 30.0, 42.0, 16.0 / 32.0, 12.0 / 44.0, "front lower");
-        AssertImageBox(frontPaw,   34.0, 24.0, 19.0 / 38.0, 12.0 / 28.0, "front paw");
-        AssertImageBox(hindUpper,  33.0, 43.0, 19.0 / 38.0, 12.0 / 44.0, "hind upper");
-        AssertImageBox(hindLower,  32.0, 41.0, 18.0 / 36.0, 12.0 / 42.0, "hind lower");
-        AssertImageBox(hindPaw,    36.0, 26.0, 21.0 / 42.0, 13.0 / 30.0, "hind paw");
+        // Real-Windows review : oversized paws and long limb boxes made the dog read as a rigid paper puppet.
+        // Compact footprint    : keep articulation visible while returning the silhouette toward one continuous body mass.
+        AssertImageBox(frontUpper, 28.0, 40.0, 17.0 / 34.0, 12.0 / 46.0, "front upper");
+        AssertImageBox(frontLower, 27.0, 37.0, 16.0 / 32.0, 12.0 / 44.0, "front lower");
+        AssertImageBox(frontPaw,   29.0, 20.0, 19.0 / 38.0, 12.0 / 28.0, "front paw");
+        AssertImageBox(hindUpper,  30.0, 39.0, 19.0 / 38.0, 12.0 / 44.0, "hind upper");
+        AssertImageBox(hindLower,  29.0, 37.0, 18.0 / 36.0, 12.0 / 42.0, "hind lower");
+        AssertImageBox(hindPaw,    31.0, 22.0, 21.0 / 42.0, 13.0 / 30.0, "hind paw");
 
         Assert(Panel.GetZIndex(hindUpper) < Panel.GetZIndex(torso),
             "hind upper 必须藏在 torso 后，避免髋部接缝外露");

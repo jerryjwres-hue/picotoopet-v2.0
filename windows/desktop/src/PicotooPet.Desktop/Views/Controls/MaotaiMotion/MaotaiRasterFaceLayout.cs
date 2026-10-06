@@ -10,14 +10,14 @@ namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 /// </summary>
 internal static class MaotaiRasterFaceLayout
 {
-    private const double HeadVisualScaleX = 0.92;
-    private const double HeadVisualScaleY = 0.98;
-    private const double EarTop = -26.0;
-    private const double EyeTop = -16.0;
-    private const double MuzzleTop = -13.0;
-    private const double MouthTop = -2.0;
-    private const double PupilHorizontalCorrection = 5.0;
-    private const double PupilVerticalCorrection = -5.0;
+    private const double HeadVisualScaleX = 0.84;
+    private const double HeadVisualScaleY = 0.90;
+    private const double EarTop = -28.0;
+    private const double EyeTop = -14.0;
+    private const double MuzzleTop = -8.0;
+    private const double MouthTop = 2.0;
+    private const double PupilHorizontalCorrection = 3.0;
+    private const double PupilVerticalCorrection = -3.0;
 
     public static void Configure(System.Windows.Controls.Panel headPanel)
     {
@@ -51,27 +51,40 @@ internal static class MaotaiRasterFaceLayout
                     break;
 
                 case "MaotaiV2Muzzle":
-                    Canvas.SetTop(element, MuzzleTop);
+                    ConfigureCentered(element, 36.0, 25.0, MuzzleTop);
                     System.Windows.Controls.Panel.SetZIndex(element, 10);
                     break;
 
                 case "MaotaiV2EyeLeftOpen":
-                case "MaotaiV2EyeRightOpen":
                 case "MaotaiV2EyeLeftHalf":
-                case "MaotaiV2EyeRightHalf":
                 case "MaotaiV2EyeLeftClosed":
+                    ConfigureFaceBox(element, 18.0, 16.0, -18.0, EyeTop);
+                    System.Windows.Controls.Panel.SetZIndex(element, 20);
+                    break;
+
+                case "MaotaiV2EyeRightOpen":
+                case "MaotaiV2EyeRightHalf":
                 case "MaotaiV2EyeRightClosed":
-                    Canvas.SetTop(element, EyeTop);
+                    ConfigureFaceBox(element, 18.0, 16.0, 0.0, EyeTop);
                     System.Windows.Controls.Panel.SetZIndex(element, 20);
                     break;
 
                 case "MaotaiV2PupilLeft":
                 case "MaotaiV2PupilRight":
+                    element.Width  = 8.0;
+                    element.Height = 8.0;
+                    Canvas.SetLeft(element, -4.0);
+                    Canvas.SetTop(element, -4.0);
                     System.Windows.Controls.Panel.SetZIndex(element, 22);
                     break;
 
                 case "MaotaiV2BrowLeft":
+                    ConfigureFaceBox(element, 20.0, 10.0, -20.0, -16.0);
+                    System.Windows.Controls.Panel.SetZIndex(element, 24);
+                    break;
+
                 case "MaotaiV2BrowRight":
+                    ConfigureFaceBox(element, 20.0, 10.0, 0.0, -16.0);
                     System.Windows.Controls.Panel.SetZIndex(element, 24);
                     break;
 
@@ -80,7 +93,7 @@ internal static class MaotaiRasterFaceLayout
                 case "MaotaiV2MouthAnnoyed":
                 case "MaotaiV2MouthYawn":
                 case "MaotaiV2MouthTongue":
-                    Canvas.SetTop(element, MouthTop);
+                    ConfigureCentered(element, 26.0, 18.0, MouthTop);
                     System.Windows.Controls.Panel.SetZIndex(element, 30);
                     break;
 
@@ -90,6 +103,28 @@ internal static class MaotaiRasterFaceLayout
                     break;
             }
         }
+    }
+
+    private static void ConfigureCentered(
+        FrameworkElement element,
+        double width,
+        double height,
+        double top)
+    {
+        ConfigureFaceBox(element, width, height, -(width / 2.0), top);
+    }
+
+    private static void ConfigureFaceBox(
+        FrameworkElement element,
+        double width,
+        double height,
+        double left,
+        double top)
+    {
+        element.Width  = width;
+        element.Height = height;
+        Canvas.SetLeft(element, left);
+        Canvas.SetTop(element, top);
     }
 
     public static double CalibratePupilX(double rawX, bool isLeft) =>
