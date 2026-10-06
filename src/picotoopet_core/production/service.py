@@ -200,6 +200,7 @@ class ProductionService:
             executor_id=request.executor_id,
             lease_token=request.lease_token,
             comfy_prompt_id=request.comfy_prompt_id,
+            retry_previous_attempt=request.retry_previous_attempt,
         )
 
     def fail_task(

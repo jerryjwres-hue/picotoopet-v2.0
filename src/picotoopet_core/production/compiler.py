@@ -13,7 +13,12 @@ from picotoopet_core.creative.models import (
     ShotPlanResult,
 )
 
-from .models import ProductionExecutionDisposition, ProductionPlan, ProductionTaskPlan
+from .models import (
+    ProductionExecutionDisposition,
+    ProductionExecutionProfile,
+    ProductionPlan,
+    ProductionTaskPlan,
+)
 from .profile import (
     I2V_WORKFLOW_ID,
     MAX_FRAME_COUNT,
@@ -106,6 +111,7 @@ def compile_production_plan(
         raise ValueError("PRODUCTION_TIMELINE_MISMATCH")
 
     output_profile = VIDEO_OUTPUT_PROFILES[brief.output_profile_id]
+    script_beats_by_id = {item.beat_id: item for item in script.beats}
 
     tasks: list[ProductionTaskPlan] = []
     for expected_order, shot in enumerate(shot_plan.shots, start=1):
@@ -125,13 +131,35 @@ def compile_production_plan(
             frame_count = MAX_FRAME_COUNT
 
         workflow_id: str | None = None
+        execution_backend: str | None = None
+        execution_profile_id: str | None = None
+        local_media: dict[str, str] | None = None
         disposition = ProductionExecutionDisposition.NEEDS_HUMAN
         if duration_supported and render_intent == "GENERATIVE_VIDEO":
             workflow_id = T2V_WORKFLOW_ID
+            execution_backend = "comfy"
+            execution_profile_id = T2V_WORKFLOW_ID
             disposition = ProductionExecutionDisposition.EXECUTABLE
         elif duration_supported and render_intent == "IMAGE_TO_VIDEO" and asset_ref is not None:
             workflow_id = I2V_WORKFLOW_ID
+            execution_backend = "comfy"
+            execution_profile_id = I2V_WORKFLOW_ID
             disposition = ProductionExecutionDisposition.EXECUTABLE
+        elif duration_supported and render_intent == "TEXT_CARD":
+            script_beat = script_beats_by_id[shot.beat_id]
+            text = shot.text_reference
+            if text is None or not text.strip():
+                text = script_beat.on_screen_text
+            if text is not None and text.strip():
+                text = text.strip()
+                execution_backend = "local_media"
+                execution_profile_id = ProductionExecutionProfile.TEXT_CARD_V1.value
+                local_media = {
+                    "text_digest": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    "text_content": text,
+                    "text_profile_id": ProductionExecutionProfile.TEXT_CARD_V1.value,
+                }
+                disposition = ProductionExecutionDisposition.EXECUTABLE
 
         tasks.append(
             ProductionTaskPlan(
@@ -140,7 +168,10 @@ def compile_production_plan(
                 order=order,
                 render_intent=render_intent,
                 execution_disposition=disposition,
+                execution_backend=execution_backend,
+                execution_profile_id=execution_profile_id,
                 workflow_id=workflow_id,
+                local_media=local_media,
                 positive_prompt=_positive_prompt(raw),
                 negative_prompt_policy_id=NEGATIVE_PROMPT_POLICY_ID,
                 seed=_seed(production_job_id, shot_id),

@@ -7,7 +7,7 @@ internal static class ProductionRecoverySmokeTests
 {
     public static void Run()
     {
-        var firstTask  = PlanTask("00000000-0000-4000-8000-000000000201", "shot-1", 1);
+        var firstTask  = PlanTask("00000000-0000-4000-8000-000000000201", "shot-1", 1, localMedia: true);
         var secondTask = PlanTask("00000000-0000-4000-8000-000000000202", "shot-2", 2);
         var resumePlan = new ProductionPlanRecord(
             "1.0",
@@ -41,14 +41,18 @@ internal static class ProductionRecoverySmokeTests
             "已完成输出 digest 必须保留用于恢复审计");
     }
 
-    private static ProductionTaskPlanRecord PlanTask(string taskId, string shotId, int order) =>
+    private static ProductionTaskPlanRecord PlanTask(
+        string taskId,
+        string shotId,
+        int order,
+        bool localMedia = false) =>
         new(
             taskId,
             shotId,
             order,
-            "GENERATIVE_VIDEO",
+            localMedia ? "TEXT_CARD" : "GENERATIVE_VIDEO",
             "Executable",
-            "comfy.wan22.ti2v5b.t2v.v1",
+            localMedia ? null : "comfy.wan22.ti2v5b.t2v.v1",
             $"product demonstration {order}",
             "wan22.safe-negative.v1",
             1000 + order,
@@ -57,7 +61,15 @@ internal static class ProductionRecoverySmokeTests
             24,
             73,
             3000,
-            null);
+            null,
+            localMedia ? "local_media" : "comfy",
+            localMedia ? "production.local.text-card.v1" : "comfy.wan22.ti2v5b.t2v.v1",
+            localMedia
+                ? new ProductionLocalMediaPayloadRecord(
+                    "f65fb5a5c36901382688e08b4211c85d7bec28acd61049fef5e2e2e24c1eec1f",
+                    "Save time with gentle airflow.",
+                    "production.local.text-card.v1")
+                : null);
 
     private static ProductionTaskRecord TaskRecord(
         ProductionTaskPlanRecord plan,
@@ -75,7 +87,7 @@ internal static class ProductionRecoverySmokeTests
             plan,
             status,
             status == "Succeeded" ? 1 : 0,
-            status == "Succeeded" ? "prompt-completed" : null,
+            status == "Succeeded" && plan.ExecutionBackend == "comfy" ? "prompt-completed" : null,
             outputRelpath,
             outputSha256,
             status == "Succeeded" ? 1024 : null,

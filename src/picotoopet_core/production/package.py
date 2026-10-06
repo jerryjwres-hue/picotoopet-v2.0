@@ -11,7 +11,6 @@ from picotoopet_core.creative.models import CreativePackageRecord
 
 from .models import ProductionJobRecord, ProductionPlan, ProductionTaskRecord
 
-
 # ── Exact API-format workflow file content SHA-256 values shipped by 2.3.20.1 ────
 TRUSTED_WORKFLOW_TEMPLATES: dict[str, dict[str, str]] = {
     "comfy.wan22.ti2v5b.t2v.v1": {
@@ -160,6 +159,19 @@ def build_production_package_payload(
                 "beat_id": beat_id,
                 "source_evidence_ids": deepcopy(evidence_ids),
                 "render_intent": planned.render_intent,
+                "execution_backend": (
+                    planned.execution_backend.value
+                    if planned.execution_backend is not None
+                    else None
+                ),
+                "execution_profile_id": (
+                    planned.execution_profile_id.value
+                    if planned.execution_profile_id is not None
+                    else None
+                ),
+                "text_digest": (
+                    planned.local_media.text_digest if planned.local_media is not None else None
+                ),
                 "workflow_id": task.workflow_id,
                 "prompt_digest": prompt_digest,
                 "seed": planned.seed,
@@ -191,7 +203,7 @@ def build_production_package_payload(
             "base_url": "http://127.0.0.1:8188/",
         },
         "workflow_templates": workflow_templates,
-        "models": deepcopy(TRUSTED_MODELS),
+        "models": deepcopy(TRUSTED_MODELS) if workflow_ids else [],
         "outputs": outputs,
         "creative_provenance": _creative_provenance(source_manifest),
         "warnings": [],
