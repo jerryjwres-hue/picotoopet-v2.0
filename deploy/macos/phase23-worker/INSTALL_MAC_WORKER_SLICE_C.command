@@ -280,7 +280,9 @@ if [[ ${#api_token} -lt 16 ]]; then
   exit 1
 fi
 
-github_cli_executable="$(discover_github_cli_executable || true)"\n\nnew_version="$versions_root/${version}-${package_arch}"
+github_cli_executable="$(discover_github_cli_executable || true)"
+
+new_version="$versions_root/${version}-${package_arch}"
 if [[ -e "$new_version" ]]; then
   # 仅允许自动清理由上一轮失败留下、且明确带安装未完成标记的目录；未知目录继续拒绝覆盖。
   if [[ -f "$new_version/$install_marker_name" ]]; then
