@@ -52,6 +52,13 @@ public sealed partial class MacCoreProductionClient : IAsyncDisposable
         return new MacCoreProductionClient(client, options.Token, ownsClient: true);
     }
 
+    /// <summary>生命周期/测试接缝：包装调用方创建的 HttpClient，并在释放时一并释放它。</summary>
+    public static MacCoreProductionClient CreateOwning(HttpClient client, string token)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        return new MacCoreProductionClient(client, token, ownsClient: true);
+    }
+
     public Task<ProductionEligibleCreativeRecord[]> GetEligibleAsync(
         CancellationToken cancellationToken = default) =>
         SendJsonAsync<ProductionEligibleCreativeRecord[]>(
