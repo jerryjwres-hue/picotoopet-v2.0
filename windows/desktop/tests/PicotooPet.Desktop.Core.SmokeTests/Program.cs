@@ -44,6 +44,7 @@ internal static class Program
             if (args.Contains("--goal-production-autopilot-only", StringComparer.Ordinal))
             {
                 await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
+                await ProductionClientHolderSmokeTests.RunAsync().ConfigureAwait(false);
                 await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
                 ProductionPanelWpfSmokeTests.Run();
                 ProductionRecoverySmokeTests.Run();
@@ -100,6 +101,7 @@ internal static class Program
             QualityPromotionPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
             await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
+            await ProductionClientHolderSmokeTests.RunAsync().ConfigureAwait(false);
             ComfyWorkflowTemplateSmokeTests.Run();
             await VerifyEmergencyLoggerAsync().ConfigureAwait(false);
             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);

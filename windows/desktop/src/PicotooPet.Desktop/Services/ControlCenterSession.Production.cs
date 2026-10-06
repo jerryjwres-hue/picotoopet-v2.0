@@ -9,14 +9,16 @@ public sealed partial class ControlCenterSession
     public async Task<IReadOnlyList<ProductionEligibleCreativeRecord>> GetProductionEligibleAsync(
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.GetEligibleAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<ProductionJobRecord>> GetProductionJobsAsync(
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.GetJobsAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -25,7 +27,8 @@ public sealed partial class ControlCenterSession
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.CreateJobAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
@@ -33,7 +36,8 @@ public sealed partial class ControlCenterSession
         string productionJobId,
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.GetPlanAsync(productionJobId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -42,7 +46,8 @@ public sealed partial class ControlCenterSession
         string executorId,
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.ClaimAsync(productionJobId, executorId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -52,7 +57,8 @@ public sealed partial class ControlCenterSession
         string leaseToken,
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.HeartbeatAsync(
             productionJobId,
             executorId,
@@ -66,7 +72,8 @@ public sealed partial class ControlCenterSession
         ProductionTaskAttemptRequest request,
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.MarkAttemptAsync(
             productionJobId,
             productionTaskId,
@@ -80,7 +87,8 @@ public sealed partial class ControlCenterSession
         ProductionTaskCommitRequest request,
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.CommitResultAsync(
             productionJobId,
             productionTaskId,
@@ -92,7 +100,8 @@ public sealed partial class ControlCenterSession
         string productionJobId,
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.CancelAsync(productionJobId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -100,11 +109,12 @@ public sealed partial class ControlCenterSession
         string productionJobId,
         CancellationToken cancellationToken)
     {
-        await using var client = CreateProductionClient();
+        await using var lease = AcquireProductionClient();
+        var client = lease.Client;
         return await client.GetPackageAsync(productionJobId, cancellationToken).ConfigureAwait(false);
     }
 
-    private MacCoreProductionClient CreateProductionClient()
+    private ProductionClientLease AcquireProductionClient()
     {
         ThrowIfDisposed();
         string macBaseUrl;
@@ -121,6 +131,6 @@ public sealed partial class ControlCenterSession
         {
             throw new InvalidOperationException("已保存的 Mac Core 地址无效。");
         }
-        return MacCoreProductionClient.Create(MacCoreClientOptions.CreateDefault(baseUri, token));
+        return _productionClients.Acquire(baseUri, token);
     }
 }

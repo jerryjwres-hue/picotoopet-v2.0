@@ -7,7 +7,7 @@ using PicotooPet.Desktop.Core.Contracts;
 namespace PicotooPet.Desktop.Core.Networking;
 
 /// <summary>2.3.20.1 Production REST 客户端；只发送 Core 定义的有界状态与执行证据。</summary>
-public sealed partial class MacCoreProductionClient : IAsyncDisposable
+public sealed partial class MacCoreProductionClient : IAsyncDisposable, IDisposable
 {
     private const int MaxJsonResponseBytes = 4 * 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -50,6 +50,13 @@ public sealed partial class MacCoreProductionClient : IAsyncDisposable
             Timeout = TimeSpan.FromMinutes(20),
         };
         return new MacCoreProductionClient(client, options.Token, ownsClient: true);
+    }
+
+    /// <summary>生命周期/测试接缝：包装调用方创建的 HttpClient，并在释放时一并释放它。</summary>
+    public static MacCoreProductionClient CreateOwning(HttpClient client, string token)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        return new MacCoreProductionClient(client, token, ownsClient: true);
     }
 
     public Task<ProductionEligibleCreativeRecord[]> GetEligibleAsync(
@@ -240,12 +247,17 @@ public sealed partial class MacCoreProductionClient : IAsyncDisposable
     private static Uri EnsureTrailingSlash(Uri uri) =>
         uri.AbsoluteUri.EndsWith('/') ? uri : new Uri(uri.AbsoluteUri + "/", UriKind.Absolute);
 
-    public ValueTask DisposeAsync()
+    public void Dispose()
     {
         if (_ownsClient)
         {
             _client.Dispose();
         }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
         return ValueTask.CompletedTask;
     }
 }

@@ -19,6 +19,8 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
     private readonly LatencyRecorder _socketLatency = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly GoalProductionAutopilotCoordinator _productionAutopilot;
+    private readonly ProductionClientHolder _productionClients =
+        new(options => MacCoreProductionClient.Create(options));
     private CancellationTokenSource? _connectionLifetime;
     private StateSyncCoordinator? _coordinator;
     private Task? _eventTask;
@@ -352,6 +354,8 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
             await coordinator.DisposeAsync().ConfigureAwait(false);
         }
         connectionLifetime?.Dispose();
+        // 重连、连接失败或会话释放都会退役旧 Production 客户端，下次调用按新地址/令牌重建。
+        await _productionClients.RetireAsync().ConfigureAwait(false);
     }
 
     private void ThrowIfDisposed() =>
@@ -381,6 +385,7 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
         _stateStore.CapabilityStore.SnapshotChanged -= OnCapabilitiesChanged;
         _stateStore.WorkerStore.SnapshotChanged     -= OnWorkerChanged;
         _stateStore.TaskStore.SnapshotChanged       -= OnTasksChanged;
+        await _productionClients.DisposeAsync().ConfigureAwait(false);
         _connectionGate.Dispose();
         _lifetime.Dispose();
         await _logger.DisposeAsync().ConfigureAwait(false);
