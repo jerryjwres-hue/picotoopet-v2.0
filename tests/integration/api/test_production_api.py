@@ -184,3 +184,47 @@ def test_production_routes_require_auth(tmp_path: Path) -> None:
     app, _headers = _app(tmp_path)
     with TestClient(app) as client:
         assert client.get("/api/v1/production/jobs").status_code == 401
+
+
+def test_idempotent_replay_reuses_bound_plan_after_compiler_upgrade(tmp_path: Path) -> None:
+    app, headers = _app(tmp_path)
+    with TestClient(app) as client:
+        package_id = _seed_creative_package(app.state.services.database)
+        payload = {
+            "creative_package_id": package_id,
+            "production_profile": "production.comfyui.v1",
+            "idempotency_key": "production-upgrade-replay",
+        }
+        first = client.post("/api/v1/production/jobs", headers=headers, json=payload)
+        assert first.status_code == 200
+        job_id = first.json()["production_job_id"]
+
+        # Simulate an immutable pre-C005 plan already bound to this job.
+        row = app.state.services.database.fetchone(
+            "SELECT plan_json FROM production_jobs WHERE production_job_id=?",
+            (job_id,),
+        )
+        plan = json.loads(row["plan_json"])
+        plan.pop("output_profile_id", None)
+        plan.pop("target_runtime_ms", None)
+        for task in plan["tasks"]:
+            task.pop("target_duration_ms", None)
+            task["frame_count"] = 81
+        legacy_json = json.dumps(plan, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        legacy_digest = "d" * 64
+        app.state.services.database.execute(
+            "UPDATE production_jobs SET plan_json=?,plan_digest=? WHERE production_job_id=?",
+            (legacy_json, legacy_digest, job_id),
+        )
+
+        replay = client.post("/api/v1/production/jobs", headers=headers, json=payload)
+        assert replay.status_code == 200
+        assert replay.json()["production_job_id"] == job_id
+        assert replay.json()["plan_digest"] == legacy_digest
+
+        preserved = app.state.services.database.fetchone(
+            "SELECT plan_json,plan_digest FROM production_jobs WHERE production_job_id=?",
+            (job_id,),
+        )
+        assert preserved["plan_json"] == legacy_json
+        assert preserved["plan_digest"] == legacy_digest
