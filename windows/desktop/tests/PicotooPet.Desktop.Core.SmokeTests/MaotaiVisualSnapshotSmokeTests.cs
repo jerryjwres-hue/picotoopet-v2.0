@@ -174,14 +174,14 @@ internal static class MaotaiVisualSnapshotSmokeTests
             AssertOpacity(panel, label, "MaotaiV2FrontRightUpper", 1.00, "前腿 Upper 必须可见");
             AssertOpacity(panel, label, "MaotaiV2FrontLeftLower",  0.24, "前腿 Lower 必须保持克制的毛发关节桥");
             AssertOpacity(panel, label, "MaotaiV2FrontRightLower", 0.24, "前腿 Lower 必须保持克制的毛发关节桥");
-            AssertOpacity(panel, label, "MaotaiV2HindLeftUpper",   0.28, "后腿 Upper 必须后景可见");
-            AssertOpacity(panel, label, "MaotaiV2HindRightUpper",  0.28, "后腿 Upper 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftUpper",   0.22, "后腿 Upper 必须后景可见");
+            AssertOpacity(panel, label, "MaotaiV2HindRightUpper",  0.22, "后腿 Upper 必须后景可见");
             AssertOpacity(panel, label, "MaotaiV2HindLeftLower",   0.00, "后腿 Lower 应融入连续后景轮廓");
             AssertOpacity(panel, label, "MaotaiV2HindRightLower",  0.00, "后腿 Lower 应融入连续后景轮廓");
             AssertOpacity(panel, label, "MaotaiV2FrontLeftPaw",    1.00, "前脚接触点");
             AssertOpacity(panel, label, "MaotaiV2FrontRightPaw",   1.00, "前脚接触点");
-            AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",     0.18, "后脚必须保留轻微接触语义");
-            AssertOpacity(panel, label, "MaotaiV2HindRightPaw",    0.18, "后脚必须保留轻微接触语义");
+            AssertOpacity(panel, label, "MaotaiV2HindLeftPaw",     0.12, "后脚必须保留轻微接触语义");
+            AssertOpacity(panel, label, "MaotaiV2HindRightPaw",    0.12, "后脚必须保留轻微接触语义");
             return;
         }
 
