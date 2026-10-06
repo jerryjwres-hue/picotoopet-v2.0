@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PicotooPet.Desktop.Views.Controls;
@@ -9,6 +11,37 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 internal static class MaotaiAssetPixelValidationSmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
+
+    // Rejected fingerprints : real-Windows review proved these exact binaries are placeholder-quality despite passing
+    //                         generic alpha/density checks. Keep this blacklist until production replacements land.
+    private static readonly IReadOnlyDictionary<string, (string BlobSha1, string Reason)> RejectedAssetFingerprints =
+        new Dictionary<string, (string BlobSha1, string Reason)>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["torso_neutral.png"] = (
+                "33c2e50e8f902a99d4d77ada619ea30e10ae0730",
+                "颈部圆环与胸前矩形白块已烘焙进像素，真实 UI 中形成机器人式 torso"),
+            ["head.png"] = (
+                "5ec9c89588035968b648cef2d3248613ea2f732d",
+                "当前 head 是扁平圆形占位壳，真实 UI 中读成独立卡通头而非阿拉斯加犬头"),
+            ["muzzle.png"] = (
+                "ea837e1c5e656380ef85a512a7b784b75d448a36",
+                "当前 muzzle 是近乎纯色矩形底图加鼻点，缺少正式口鼻毛发轮廓"),
+            ["mouth_smile.png"] = (
+                "e10f3c4a5724855ae039959b7c8a3deb6586e9da",
+                "当前 smile 是独立卡通贴纸嘴，与真实感阿拉斯加 reference 不一致"),
+            ["mouth_tired.png"] = (
+                "9035d2a69fb3033752ed79c393ed290a4371c94e",
+                "当前 tired mouth 仍属于被实机否决的卡通贴纸嘴族"),
+            ["mouth_annoyed.png"] = (
+                "d6c418bfb16024d1d304008b00fcadb7e9dea79b",
+                "当前 annoyed mouth 仍属于被实机否决的卡通贴纸嘴族"),
+            ["mouth_yawn.png"] = (
+                "c31f92a07541357de2393e80bfc749e4325448ab",
+                "当前 yawn mouth 仍属于被实机否决的卡通贴纸嘴族"),
+            ["mouth_tongue.png"] = (
+                "ffa9bdf277214769f0550fb6ccf957d972bdb6f9",
+                "当前 tongue mouth 仍属于被实机否决的卡通贴纸嘴族"),
+        };
 
     public static void Run()
     {
@@ -51,6 +84,7 @@ internal static class MaotaiAssetPixelValidationSmokeTests
         {
             var path = Path.Combine(assetRoot, fileName);
             Assert(File.Exists(path), $"v2 正式独立透明资产尚未交付：{fileName}");
+            AssertNotKnownRejectedAsset(path, fileName);
 
             object?[] arguments = [fileName, null];
             Assert((bool)tryGet.Invoke(null, arguments)!, $"v2 manifest 缺少 {fileName}");
@@ -145,6 +179,26 @@ internal static class MaotaiAssetPixelValidationSmokeTests
         }
 
         AssertOuterBorderTransparent(pixels, converted.PixelWidth, converted.PixelHeight, stride, fileName);
+    }
+
+    private static void AssertNotKnownRejectedAsset(string path, string fileName)
+    {
+        if (!RejectedAssetFingerprints.TryGetValue(fileName, out var rejection))
+        {
+            return;
+        }
+
+        var bytes  = File.ReadAllBytes(path);
+        var header = Encoding.ASCII.GetBytes($"blob {bytes.LongLength}\0");
+
+        // Git parity            : compute the exact Git blob SHA-1 so the gate keys off the reviewed binary, not a path.
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        hash.AppendData(header);
+        hash.AppendData(bytes);
+        var actualBlobSha1 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+
+        Assert(!string.Equals(actualBlobSha1, rejection.BlobSha1, StringComparison.OrdinalIgnoreCase),
+            $"v2 正式素材仍是已被实机否决的占位版本：{fileName}；{rejection.Reason}；blob={actualBlobSha1}");
     }
 
     private static int VisibleWidthAtY(
