@@ -2,6 +2,13 @@
 name: Maotai v2 Visual Snapshot Once
 
 on:
+  workflow_dispatch:
+    inputs:
+      candidate_subdir:
+        description: "Optional repo-relative docs/art/maotai-v2/staging/... directory whose PNGs overlay preview only"
+        required: false
+        default: ""
+        type: string
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -17,7 +24,7 @@ permissions:
 
 jobs:
   snapshot:
-    if: github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.head.ref == 'feature/maotai-natural-motion-v2' || github.event.pull_request.head.ref == 'fix/maotai-visual-fidelity-isolated')
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.head.ref == 'feature/maotai-natural-motion-v2' || github.event.pull_request.head.ref == 'fix/maotai-visual-fidelity-isolated'))
     runs-on: windows-2025
     timeout-minutes: 8
     env:
@@ -34,13 +41,58 @@ jobs:
 
       - name: Prepare fixed app-owned Maotai v2 asset override
         shell: powershell
+        env:
+          MAOTAI_CANDIDATE_SUBDIR: ${{ inputs.candidate_subdir }}
         run: |
           $assetRoot = Join-Path $env:LOCALAPPDATA 'PicotooPet\ui-assets\maotai\v2'
           New-Item -ItemType Directory -Path $assetRoot -Force | Out-Null
           Copy-Item 'windows\desktop\src\PicotooPet.Desktop\Assets\Maotai\V2\*.png' $assetRoot -Force
-          $count = @(Get-ChildItem $assetRoot -Filter '*.png').Count
+
+          # Preview isolation      : manual candidate overlays may only come from the repository staging tree.
+          # Promotion isolation    : overlay files exist only under LOCALAPPDATA and never modify formal runtime assets.
+          $candidateSubdir = ($env:MAOTAI_CANDIDATE_SUBDIR ?? '').Trim().Replace('\', '/')
+          $overlayNames    = @()
+          if ($candidateSubdir) {
+            if ($candidateSubdir.StartsWith('/') -or
+                $candidateSubdir.Contains('..') -or
+                -not $candidateSubdir.StartsWith('docs/art/maotai-v2/staging/', [System.StringComparison]::OrdinalIgnoreCase)) {
+              throw "Candidate directory must stay under docs/art/maotai-v2/staging/: $candidateSubdir"
+            }
+
+            $candidateRoot = Join-Path $env:GITHUB_WORKSPACE $candidateSubdir
+            if (-not (Test-Path -LiteralPath $candidateRoot -PathType Container)) {
+              throw "Candidate directory does not exist: $candidateSubdir"
+            }
+
+            foreach ($candidate in @(Get-ChildItem -LiteralPath $candidateRoot -Filter '*.png' -File)) {
+              $target = Join-Path $assetRoot $candidate.Name
+              if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+                throw "Candidate PNG is not one of the formal 44 asset names: $($candidate.Name)"
+              }
+
+              Copy-Item -LiteralPath $candidate.FullName -Destination $target -Force
+              $overlayNames += $candidate.Name
+            }
+
+            if ($overlayNames.Count -eq 0) {
+              throw "Candidate directory contains no PNG overlays: $candidateSubdir"
+            }
+          }
+
+          $count = @(Get-ChildItem $assetRoot -Filter '*.png' -File).Count
           if ($count -ne 44) { throw "Expected 44 Maotai v2 assets, got $count" }
+
+          $evidenceRoot = 'windows\desktop\artifacts\maotai-visual-snapshot'
+          New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
+          @(
+            "source=runtime-plus-staging-overlay"
+            "candidate_subdir=$candidateSubdir"
+            "overlay_count=$($overlayNames.Count)"
+            "overlay_files=$($overlayNames -join ',')"
+          ) | Set-Content -LiteralPath (Join-Path $evidenceRoot 'maotai-candidate-overlay.txt') -Encoding utf8
+
           Write-Host "MAOTAI_ASSET_OVERRIDE=$assetRoot"
+          Write-Host "MAOTAI_CANDIDATE_OVERLAY_COUNT=$($overlayNames.Count)"
 
       - name: Render deterministic Maotai visual snapshots
         shell: powershell
@@ -54,7 +106,7 @@ jobs:
             -- `
             $out
           if ($LASTEXITCODE -ne 0) { throw "Maotai visual snapshot process failed with exit code $LASTEXITCODE" }
-          foreach ($name in @('maotai-idle.png','maotai-work.png','maotai-sleep.png','maotai-run.png','maotai-visual-snapshot.json')) {
+          foreach ($name in @('maotai-idle.png','maotai-work.png','maotai-sleep.png','maotai-run.png','maotai-visual-snapshot.json','maotai-candidate-overlay.txt')) {
             $path = Join-Path $out $name
             if (-not (Test-Path $path)) { throw "Missing visual evidence: $name" }
           }
