@@ -101,6 +101,7 @@ class ProductionTaskAttemptRequest(BaseModel):
     executor_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.-]+$")
     lease_token: str = Field(min_length=16, max_length=200)
     comfy_prompt_id: str | None = Field(default=None, max_length=200)
+    retry_previous_attempt: bool = False
 
 
 class ProductionTaskFailureRequest(BaseModel):
