@@ -19,6 +19,11 @@ internal static class MaotaiTailHierarchyV2SmokeTests
             BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException(
                 "MaotaiRasterRenderer 缺少尾巴局部层级解析器");
+        var resolveVisual = rendererType.GetMethod(
+            "ResolveTailVisualChildWorldPose",
+            BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException(
+                "MaotaiRasterRenderer 缺少尾巴视觉重叠解析器");
 
         var basePose = CreatePose(poseType, -20.0, -10.0, 0.0);
         var midLocal = CreatePose(poseType, -11.0, -8.0, 12.0);
@@ -42,6 +47,24 @@ internal static class MaotaiTailHierarchyV2SmokeTests
             "父段 90 度时 TailMid 局部 X 必须参与旋转后的 Y");
         AssertNear(ReadDouble(rotatedMid, "RotationDeg"), 12.0,
             "父段旋转不得二次叠加到 TailMid world heading");
+
+        // Visual overlap      : renderer may tuck the displayed child into its parent, but must preserve
+        //                       the child's spring heading and leave the canonical hierarchy math untouched.
+        var visualMid = resolveVisual.Invoke(null, [basePose, midLocal, 0.80])
+            ?? throw new InvalidOperationException("TailMid 视觉重叠解析没有返回 Pose");
+        AssertNear(ReadDouble(visualMid, "X"), -28.8,
+            "TailMid 视觉 X 应把局部连接距离压缩到 80%");
+        AssertNear(ReadDouble(visualMid, "Y"), -16.4,
+            "TailMid 视觉 Y 应把局部连接距离压缩到 80%");
+        AssertNear(ReadDouble(visualMid, "RotationDeg"), 12.0,
+            "TailMid 视觉重叠不得修改 spring heading");
+
+        var visualRotatedMid = resolveVisual.Invoke(null, [rotatedBase, midLocal, 0.80])
+            ?? throw new InvalidOperationException("旋转 TailMid 视觉重叠解析没有返回 Pose");
+        AssertNear(ReadDouble(visualRotatedMid, "X"), -13.6,
+            "父段 90 度时 TailMid 视觉连接仍需按父段旋转");
+        AssertNear(ReadDouble(visualRotatedMid, "Y"), -18.8,
+            "父段 90 度时 TailMid 视觉连接距离应保持 80%");
 
         var tipLocal = CreatePose(poseType, -10.0, -7.0, 18.0);
         var tipWorld = resolve.Invoke(null, [midWorld, tipLocal])

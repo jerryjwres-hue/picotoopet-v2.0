@@ -352,11 +352,12 @@ internal sealed class MaotaiRasterRenderer
             frame.LocomotionBlend,
             frame.MotionTransitionBlend,
             isFront: false);
-        // Tail hierarchy      : Base is Body-local; Mid and Tip are local offsets from the preceding segment.
-        //                        Spring rotations are already per-segment world headings, so only positions compose.
+        // Tail hierarchy      : Base is Body-local; Mid and Tip remain local children with independent spring headings.
+        // Visual overlap      : shorten only the displayed link distance so fur pieces interpenetrate by ~2.5 px;
+        //                       logical Motion Engine offsets and the canonical hierarchy resolver remain unchanged.
         var tailBasePose = frame.TailBase;
-        var tailMidPose  = ResolveTailChildWorldPose(tailBasePose, frame.TailMid);
-        var tailTipPose  = ResolveTailChildWorldPose(tailMidPose, frame.TailTip);
+        var tailMidPose  = ResolveTailVisualChildWorldPose(tailBasePose, frame.TailMid, 0.80);
+        var tailTipPose  = ResolveTailVisualChildWorldPose(tailMidPose, frame.TailTip, 0.80);
         ApplyBone(_visuals.TailBase, tailBasePose);
         ApplyBone(_visuals.TailMid, tailMidPose);
         ApplyBone(_visuals.TailTip, tailTipPose);
@@ -546,6 +547,29 @@ internal sealed class MaotaiRasterRenderer
             child.RotationDeg,
             parent.ScaleX * child.ScaleX,
             parent.ScaleY * child.ScaleY);
+    }
+
+    /// <summary>
+    /// 仅压缩尾巴显示链的局部连接距离，为相邻毛束提供稳定隐藏重叠。
+    /// 旋转、缩放和 Motion Engine 原始 Pose 均保持不变。
+    /// </summary>
+    private static MaotaiBonePose ResolveTailVisualChildWorldPose(
+        in MaotaiBonePose parent,
+        in MaotaiBonePose child,
+        double linkScale)
+    {
+        var visualScale = Math.Clamp(
+            double.IsFinite(linkScale) ? linkScale : 1.0,
+            0.50,
+            1.00);
+        var visualChild = new MaotaiBonePose(
+            child.X * visualScale,
+            child.Y * visualScale,
+            child.RotationDeg,
+            child.ScaleX,
+            child.ScaleY);
+
+        return ResolveTailChildWorldPose(parent, visualChild);
     }
 
     private static void ApplyBone(
