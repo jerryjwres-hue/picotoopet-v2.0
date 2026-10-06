@@ -97,7 +97,8 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
-        if (_gateway is null || _goalId is null)
+        var goalId = _goalId;
+        if (_gateway is null || goalId is null)
         {
             Continuation = null;
             ErrorMessage = string.Empty;
@@ -105,8 +106,13 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         }
         try
         {
-            Continuation = await _gateway.GetGoalVideoContinuationAsync(_goalId, cancellationToken)
+            var continuation = await _gateway.GetGoalVideoContinuationAsync(goalId, cancellationToken)
                 .ConfigureAwait(false);
+            if (!IsCurrentGoal(goalId))
+            {
+                return;
+            }
+            Continuation = continuation;
             ErrorMessage = string.Empty;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -115,12 +121,19 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         }
         catch (ApiException exception) when (exception.StatusCode == 404)
         {
+            if (!IsCurrentGoal(goalId))
+            {
+                return;
+            }
             Continuation = null;
             ErrorMessage = string.Empty;
         }
         catch (Exception exception)
         {
-            ErrorMessage = ToSafeError(exception);
+            if (IsCurrentGoal(goalId))
+            {
+                ErrorMessage = ToSafeError(exception);
+            }
         }
     }
 
@@ -132,15 +145,21 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         {
             return;
         }
+        var goalId = _goalId;
         IsBusy = true;
         ErrorMessage = string.Empty;
         try
         {
-            Continuation = await _gateway.SubmitGoalVideoReturnAsync(
-                _goalId,
+            var continuation = await _gateway.SubmitGoalVideoReturnAsync(
+                goalId,
                 payload,
                 cancellationToken).ConfigureAwait(false);
-            await RefreshAfterAcceptedPostAsync(cancellationToken).ConfigureAwait(false);
+            if (!IsCurrentGoal(goalId))
+            {
+                return;
+            }
+            Continuation = continuation;
+            await RefreshAfterAcceptedPostAsync(goalId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -148,15 +167,24 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         }
         catch (ApiException exception) when (exception.Retryable)
         {
-            await ReconcileAmbiguousPostAsync(cancellationToken).ConfigureAwait(false);
+            if (IsCurrentGoal(goalId))
+            {
+                await ReconcileAmbiguousPostAsync(goalId, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (ApiException exception) when (exception.StatusCode == 409)
         {
-            ErrorMessage = ToSafeError(exception);
+            if (IsCurrentGoal(goalId))
+            {
+                ErrorMessage = ToSafeError(exception);
+            }
         }
         catch (Exception exception)
         {
-            ErrorMessage = ToSafeError(exception);
+            if (IsCurrentGoal(goalId))
+            {
+                ErrorMessage = ToSafeError(exception);
+            }
         }
         finally
         {
@@ -164,12 +192,18 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         }
     }
 
-    private async Task RefreshAfterAcceptedPostAsync(CancellationToken cancellationToken)
+    private async Task RefreshAfterAcceptedPostAsync(
+        string goalId,
+        CancellationToken cancellationToken)
     {
         try
         {
-            Continuation = await _gateway!.GetGoalVideoContinuationAsync(_goalId!, cancellationToken)
+            var continuation = await _gateway!.GetGoalVideoContinuationAsync(goalId, cancellationToken)
                 .ConfigureAwait(false);
+            if (IsCurrentGoal(goalId))
+            {
+                Continuation = continuation;
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -181,12 +215,19 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         }
     }
 
-    private async Task ReconcileAmbiguousPostAsync(CancellationToken cancellationToken)
+    private async Task ReconcileAmbiguousPostAsync(
+        string goalId,
+        CancellationToken cancellationToken)
     {
         try
         {
-            Continuation = await _gateway!.GetGoalVideoContinuationAsync(_goalId!, cancellationToken)
+            var continuation = await _gateway!.GetGoalVideoContinuationAsync(goalId, cancellationToken)
                 .ConfigureAwait(false);
+            if (!IsCurrentGoal(goalId))
+            {
+                return;
+            }
+            Continuation = continuation;
             ErrorMessage = string.Empty;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -195,9 +236,15 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         }
         catch (Exception)
         {
-            ErrorMessage = "提交结果暂时无法确认；请保留同一返回内容后重试。";
+            if (IsCurrentGoal(goalId))
+            {
+                ErrorMessage = "提交结果暂时无法确认；请保留同一返回内容后重试。";
+            }
         }
     }
+
+    private bool IsCurrentGoal(string goalId) =>
+        string.Equals(_goalId, goalId, StringComparison.Ordinal);
 
     private static string ToSafeError(Exception exception) => exception switch
     {
