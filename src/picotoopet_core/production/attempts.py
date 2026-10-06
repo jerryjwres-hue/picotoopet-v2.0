@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from .models import ProductionTaskRecord, ProductionTaskStatus
+from .models import ProductionExecutionBackend, ProductionTaskRecord, ProductionTaskStatus
 from .repository import ProductionRepository
 
 
@@ -22,7 +22,7 @@ def reserve_or_bind_attempt(
     lease_token: str,
     comfy_prompt_id: str | None,
 ) -> ProductionTaskRecord:
-    """Reserve GPU work before submit, then bind the returned prompt id without consuming another attempt."""
+    """Reserve work before submit, then bind a Comfy prompt without another attempt."""
 
     # ── Lease validation remains centralized in the durable repository ──────
     repository._require_lease(production_job_id, executor_id, lease_token)  # noqa: SLF001
@@ -44,20 +44,51 @@ def reserve_or_bind_attempt(
         current_prompt_id = current["comfy_prompt_id"]
         if current_prompt_id is None:
             if comfy_prompt_id is None:
-                # ── Retried HTTP reservation is idempotent ──────────────────
-                return task
-            timestamp = _now()
-            with repository.database.transaction() as connection:
-                connection.execute(
-                    "UPDATE production_attempts SET comfy_prompt_id=? "
-                    "WHERE production_task_id=? AND attempt_number=? AND comfy_prompt_id IS NULL",
-                    (comfy_prompt_id, production_task_id, task.attempt_count),
+                if task.task_plan.execution_backend is not ProductionExecutionBackend.LOCAL_MEDIA:
+                    # ── Retried Comfy HTTP reservation is idempotent ─────────
+                    return task
+                if task.attempt_count >= repository.MAX_ATTEMPTS_PER_TASK:
+                    raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
+                timestamp = _now()
+                with repository.database.transaction() as connection:
+                    connection.execute(
+                        "UPDATE production_attempts SET "
+                        "status='Failed',finished_at=?,failure_code=? "
+                        "WHERE production_task_id=? AND attempt_number=? AND status='Running'",
+                        (
+                            timestamp,
+                            "LOCAL_MEDIA_RETRYABLE_LOCAL_FAILURE",
+                            production_task_id,
+                            task.attempt_count,
+                        ),
+                    )
+                    connection.execute(
+                        "UPDATE production_tasks SET status=?,updated_at=? "
+                        "WHERE production_task_id=?",
+                        (ProductionTaskStatus.READY.value, timestamp, production_task_id),
+                    )
+                return repository.mark_task_attempt(
+                    production_job_id,
+                    production_task_id,
+                    executor_id,
+                    lease_token,
+                    None,
                 )
-                connection.execute(
-                    "UPDATE production_tasks SET comfy_prompt_id=?,updated_at=? WHERE production_task_id=?",
-                    (comfy_prompt_id, timestamp, production_task_id),
-                )
-            return repository.get_task(production_job_id, production_task_id)
+            else:
+                timestamp = _now()
+                with repository.database.transaction() as connection:
+                    connection.execute(
+                        "UPDATE production_attempts SET comfy_prompt_id=? "
+                        "WHERE production_task_id=? AND attempt_number=? "
+                        "AND comfy_prompt_id IS NULL",
+                        (comfy_prompt_id, production_task_id, task.attempt_count),
+                    )
+                    connection.execute(
+                        "UPDATE production_tasks SET comfy_prompt_id=?,updated_at=? "
+                        "WHERE production_task_id=?",
+                        (comfy_prompt_id, timestamp, production_task_id),
+                    )
+                return repository.get_task(production_job_id, production_task_id)
 
         if comfy_prompt_id == current_prompt_id:
             # ── Replayed prompt binding is idempotent ────────────────────────
@@ -81,7 +112,8 @@ def reserve_or_bind_attempt(
             ),
         )
         repository.database.execute(
-            "UPDATE production_tasks SET status=?,comfy_prompt_id=NULL,updated_at=? WHERE production_task_id=?",
+            "UPDATE production_tasks SET status=?,comfy_prompt_id=NULL,updated_at=? "
+            "WHERE production_task_id=?",
             (ProductionTaskStatus.READY.value, timestamp, production_task_id),
         )
         task = repository.get_task(production_job_id, production_task_id)

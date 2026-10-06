@@ -79,6 +79,14 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--text-card-render-only", StringComparer.Ordinal))
+            {
+                await ProductionTextCardSmokeTests.RunAsync().ConfigureAwait(false);
+                ProductionRecoverySmokeTests.Run();
+                Console.WriteLine("TEXT_CARD_RENDER_SMOKE=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
@@ -126,6 +134,7 @@ internal static class Program
             QualityPromotionPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
             ProductionTimelineOutputProfileSmokeTests.Run();
+            await ProductionTextCardSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             await TrustedAssetIngressSmokeTests.RunAsync().ConfigureAwait(false);
             await FinalVideoAssemblyServiceSmokeTests.RunAsync().ConfigureAwait(false);
