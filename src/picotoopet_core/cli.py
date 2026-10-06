@@ -51,7 +51,7 @@ from picotoopet_core.providers.publication_execution import (
 )
 from picotoopet_core.providers.readiness import ProviderReadinessProjection
 from picotoopet_core.providers.readiness_worker import ProviderReadinessPublisher
-from picotoopet_core.services import build_services
+from picotoopet_core.services import Services, build_services
 from picotoopet_core.worker.runtime import WorkerRuntime
 
 
@@ -103,16 +103,26 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _health_supervisor(
+    services: Services, settings: AppSettings, *, skip_ollama: bool
+) -> HealthSupervisor:
+    resident = _HealthyResident(settings.ollama_model) if skip_ollama else services.resident
+    return HealthSupervisor(
+        database=services.database,
+        paths=settings.paths,
+        resident=resident,
+    )
+
+
+def _print_health_report(supervisor: HealthSupervisor) -> None:
+    report = supervisor.run_once()
+    print(json.dumps(report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
+
+
 def _run_health(settings: AppSettings, *, skip_ollama: bool) -> int:
     services = build_services(settings)
     try:
-        resident = _HealthyResident(settings.ollama_model) if skip_ollama else services.resident
-        report = HealthSupervisor(
-            database=services.database,
-            paths=settings.paths,
-            resident=resident,
-        ).run_once()
-        print(json.dumps(report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
+        _print_health_report(_health_supervisor(services, settings, skip_ollama=skip_ollama))
         return 0
     finally:
         services.close()
@@ -131,11 +141,17 @@ def _run_resident_check(settings: AppSettings) -> int:
 
 
 def _run_supervisor(settings: AppSettings, *, loop: bool) -> int:
-    while True:
-        _run_health(settings, skip_ollama=False)
-        if not loop:
-            return 0
-        time.sleep(settings.resident_check_seconds)
+    # 依赖（含 Ollama httpx 连接池）每个 supervisor 进程只构建一次，避免每个周期新建连接。
+    services = build_services(settings)
+    try:
+        supervisor = _health_supervisor(services, settings, skip_ollama=False)
+        while True:
+            _print_health_report(supervisor)
+            if not loop:
+                return 0
+            time.sleep(settings.resident_check_seconds)
+    finally:
+        services.close()
 
 
 def _run_worker(
