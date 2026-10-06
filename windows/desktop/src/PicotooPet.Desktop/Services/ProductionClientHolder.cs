@@ -44,12 +44,7 @@ public sealed class ProductionClientHolder : IAsyncDisposable
             entry.AddLease();
             retired?.Retire();
         }
-        // MacCoreProductionClient.DisposeAsync is synchronous today; observe the ValueTask so
-        // analyzers and future lifecycle changes cannot silently drop disposal work.
-        if (retired is not null)
-        {
-            retired.TryReleaseIfIdle().GetAwaiter().GetResult();
-        }
+        retired?.ReleaseIfIdle();
         return new ProductionClientLease(entry);
     }
 
@@ -65,7 +60,8 @@ public sealed class ProductionClientHolder : IAsyncDisposable
         }
         if (retired is not null)
         {
-            await retired.TryReleaseIfIdle().ConfigureAwait(false);
+            retired.ReleaseIfIdle();
+            await ValueTask.CompletedTask;
         }
     }
 
@@ -112,17 +108,17 @@ public sealed class ProductionClientHolder : IAsyncDisposable
             }
         }
 
-        public ValueTask TryReleaseIfIdle()
+        public void ReleaseIfIdle()
         {
             lock (_gate)
             {
                 if (!_retired || _closed || _leases > 0)
                 {
-                    return ValueTask.CompletedTask;
+                    return;
                 }
                 _closed = true;
             }
-            return Client.DisposeAsync();
+            Client.Dispose();
         }
 
         public ValueTask Return()
@@ -131,7 +127,8 @@ public sealed class ProductionClientHolder : IAsyncDisposable
             {
                 _leases--;
             }
-            return TryReleaseIfIdle();
+            ReleaseIfIdle();
+            return ValueTask.CompletedTask;
         }
     }
 }
