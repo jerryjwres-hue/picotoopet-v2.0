@@ -41,6 +41,42 @@ internal static class MaotaiAssetPixelValidationSmokeTests
             ["mouth_tongue.png"] = (
                 "ffa9bdf277214769f0550fb6ccf957d972bdb6f9",
                 "当前 tongue mouth 仍属于被实机否决的卡通贴纸嘴族"),
+            ["front_left_upper.png"] = (
+                "28ae2689708af81671de554a76367f31626fca3d",
+                "当前左前腿 Upper 仍是狭长独立毛条，#278 中读成灰色柱状拼装腿"),
+            ["front_left_lower.png"] = (
+                "300ed6129048814cef6fdb7a87c35e7018df1bc9",
+                "当前左前腿 Lower 仍属于被实机否决的狭长分段腿族"),
+            ["front_left_paw.png"] = (
+                "ce49156d68cf313033c5498dec08b72dae238adf",
+                "当前左前爪仍是独立块状 paw，无法与腿根形成连续毛发 silhouette"),
+            ["front_right_upper.png"] = (
+                "3ca9b7189f7e1d52a0fae317bbaad8ba6b3e05b3",
+                "当前右前腿 Upper 仍是狭长独立毛条，#278 中读成灰色柱状拼装腿"),
+            ["front_right_lower.png"] = (
+                "4409081d059645c1993601966e75fd1ece88ee4e",
+                "当前右前腿 Lower 仍属于被实机否决的狭长分段腿族"),
+            ["front_right_paw.png"] = (
+                "ac12806022feb9826f029cf7ce4f5d11141717cb",
+                "当前右前爪仍是独立块状 paw，无法与腿根形成连续毛发 silhouette"),
+            ["hind_left_upper.png"] = (
+                "11c849e0f0dd10bdf4224ec60a67960eeec5fcd3",
+                "当前左后腿 Upper 仍属于被实机否决的柱状后景腿族"),
+            ["hind_left_lower.png"] = (
+                "a49bbcfa33b25eed20c8ced5de55600bcc8c9986",
+                "当前左后腿 Lower 仍属于被实机否决的狭长分段腿族"),
+            ["hind_left_paw.png"] = (
+                "3477c4b18e6a3fd6d169b306855cb7978f752813",
+                "当前左后爪仍是独立块状 paw，运动时只能靠降低 opacity 隐藏拼装感"),
+            ["hind_right_upper.png"] = (
+                "f4665affe6f87a07f8dbd61a643f33a10134f292",
+                "当前右后腿 Upper 仍属于被实机否决的柱状后景腿族"),
+            ["hind_right_lower.png"] = (
+                "c28e6e7836019c7caa1c4f7be07e7bab921ec30b",
+                "当前右后腿 Lower 仍属于被实机否决的狭长分段腿族"),
+            ["hind_right_paw.png"] = (
+                "f768b10e54038319fb82ba249ba9fa7b1d0c5da7",
+                "当前右后爪仍是独立块状 paw，运动时只能靠降低 opacity 隐藏拼装感"),
         };
 
     public static void Run()
@@ -80,11 +116,12 @@ internal static class MaotaiAssetPixelValidationSmokeTests
             "laptop.png", "drink.png", "shadow.png",
         ];
 
+        var rejectedAssets = new List<string>();
+
         foreach (var fileName in requiredAssets)
         {
             var path = Path.Combine(assetRoot, fileName);
             Assert(File.Exists(path), $"v2 正式独立透明资产尚未交付：{fileName}");
-            AssertNotKnownRejectedAsset(path, fileName);
 
             object?[] arguments = [fileName, null];
             Assert((bool)tryGet.Invoke(null, arguments)!, $"v2 manifest 缺少 {fileName}");
@@ -93,7 +130,23 @@ internal static class MaotaiAssetPixelValidationSmokeTests
             var logicalWidth  = ReadDouble(descriptor, "Width");
             var logicalHeight = ReadDouble(descriptor, "Height");
 
+            // Known rejection     : collect every reviewed blocker in one run instead of stopping at torso_neutral.
+            // Replacement contract: only unknown/new binaries proceed to generic alpha, density and silhouette gates.
+            if (TryDescribeKnownRejectedAsset(path, fileName, out var rejection))
+            {
+                rejectedAssets.Add(rejection);
+                continue;
+            }
+
             ValidatePixels(path, fileName, logicalWidth, logicalHeight);
+        }
+
+        if (rejectedAssets.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "v2 正式素材仍包含已被实机否决的占位版本：" +
+                Environment.NewLine +
+                string.Join(Environment.NewLine, rejectedAssets.Select(item => $" - {item}")));
         }
     }
 
@@ -181,11 +234,15 @@ internal static class MaotaiAssetPixelValidationSmokeTests
         AssertOuterBorderTransparent(pixels, converted.PixelWidth, converted.PixelHeight, stride, fileName);
     }
 
-    private static void AssertNotKnownRejectedAsset(string path, string fileName)
+    private static bool TryDescribeKnownRejectedAsset(
+        string path,
+        string fileName,
+        out string description)
     {
+        description = string.Empty;
         if (!RejectedAssetFingerprints.TryGetValue(fileName, out var rejection))
         {
-            return;
+            return false;
         }
 
         var bytes  = File.ReadAllBytes(path);
@@ -196,9 +253,13 @@ internal static class MaotaiAssetPixelValidationSmokeTests
         hash.AppendData(header);
         hash.AppendData(bytes);
         var actualBlobSha1 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        if (!string.Equals(actualBlobSha1, rejection.BlobSha1, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
 
-        Assert(!string.Equals(actualBlobSha1, rejection.BlobSha1, StringComparison.OrdinalIgnoreCase),
-            $"v2 正式素材仍是已被实机否决的占位版本：{fileName}；{rejection.Reason}；blob={actualBlobSha1}");
+        description = $"{fileName}；{rejection.Reason}；blob={actualBlobSha1}";
+        return true;
     }
 
     private static int VisibleWidthAtY(
