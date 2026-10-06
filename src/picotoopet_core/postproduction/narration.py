@@ -237,7 +237,7 @@ class NarrationPlanService:
         except ValueError:
             raise NarrationPlanError(NOT_READY) from None
         try:
-            package = self._production._creative_package_by_id(job.creative_package_id)
+            package = self._production.creative_repository.get_package(job.creative_package_id)
         except KeyError:
             raise NarrationPlanError(SOURCE_MISMATCH) from None
         if (
