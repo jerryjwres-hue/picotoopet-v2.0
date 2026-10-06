@@ -21,6 +21,7 @@ def reserve_or_bind_attempt(
     executor_id: str,
     lease_token: str,
     comfy_prompt_id: str | None,
+    retry_previous_attempt: bool = False,
 ) -> ProductionTaskRecord:
     """Reserve work before submit, then bind a Comfy prompt without another attempt."""
 
@@ -46,6 +47,12 @@ def reserve_or_bind_attempt(
             if comfy_prompt_id is None:
                 if task.task_plan.execution_backend is not ProductionExecutionBackend.LOCAL_MEDIA:
                     # ── Retried Comfy HTTP reservation is idempotent ─────────
+                    if retry_previous_attempt:
+                        raise ValueError("PRODUCTION_ATTEMPT_RETRY_FLAG_INVALID")
+                    return task
+                if not retry_previous_attempt:
+                    # ── A duplicate/ambiguous HTTP retry of the same local-media
+                    # reservation must not consume the second durable attempt. ──
                     return task
                 if task.attempt_count >= repository.MAX_ATTEMPTS_PER_TASK:
                     raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
@@ -75,6 +82,8 @@ def reserve_or_bind_attempt(
                     None,
                 )
             else:
+                if retry_previous_attempt:
+                    raise ValueError("PRODUCTION_ATTEMPT_RETRY_FLAG_INVALID")
                 timestamp = _now()
                 with repository.database.transaction() as connection:
                     connection.execute(
@@ -121,6 +130,8 @@ def reserve_or_bind_attempt(
     # ── A prompt id may only bind a Core-reserved attempt, never create one ─
     if comfy_prompt_id is not None:
         raise ValueError("PRODUCTION_ATTEMPT_RESERVATION_REQUIRED")
+    if retry_previous_attempt:
+        raise ValueError("PRODUCTION_ATTEMPT_RETRY_FLAG_INVALID")
 
     return repository.mark_task_attempt(
         production_job_id,
