@@ -3,11 +3,20 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from picotoopet_core.api.app import create_app
+from picotoopet_core.api.errors import ApiError
+from picotoopet_core.api.routes.autonomous_goals import (
+    get_goal_video_return_status,
+    submit_goal_video_return,
+)
 from picotoopet_core.autonomous.goal_handoff_access import GoalHandoffMetadata
-from picotoopet_core.autonomous.video_continuation import GoalVideoContinuationRecord
+from picotoopet_core.autonomous.video_continuation import (
+    GoalVideoContinuationRecord,
+    GoalVideoContinuationStateError,
+)
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
 
@@ -171,3 +180,47 @@ def test_video_return_route_is_authenticated_and_uses_bounded_service(
         status_response = client.get(path, headers=headers)
         assert status_response.status_code == 200
         assert status_response.json()["production_job_id"] == "production-job"
+
+
+def test_video_return_routes_bound_state_errors_and_hide_internal_conflicts(monkeypatch) -> None:
+    class InvalidStateContinuation:
+        def status(self, goal_id):  # type: ignore[no-untyped-def]
+            raise GoalVideoContinuationStateError("GOAL_CREATIVE_PROVENANCE_INVALID")
+
+        def submit(self, goal_id, payload):  # type: ignore[no-untyped-def]
+            raise ValueError("CREATIVE_EXTERNAL_STAGE_CONFLICT secret-internal-detail")
+
+    monkeypatch.setattr(
+        "picotoopet_core.api.routes.autonomous_goals._video_return_service",
+        lambda request: InvalidStateContinuation(),
+    )
+
+    with pytest.raises(ApiError) as status_error:
+        get_goal_video_return_status("goal-video-1", object())  # type: ignore[arg-type]
+    assert status_error.value.status_code == 409
+    assert status_error.value.code == "AUTONOMOUS_VIDEO_RETURN_STATE_INVALID"
+    assert "GOAL_CREATIVE_PROVENANCE_INVALID" not in status_error.value.message
+
+    with pytest.raises(ApiError) as submit_error:
+        submit_goal_video_return("goal-video-1", object(), object())  # type: ignore[arg-type]
+    assert submit_error.value.status_code == 409
+    assert submit_error.value.code == "AUTONOMOUS_VIDEO_RETURN_CONFLICT"
+    assert submit_error.value.retryable is False
+    assert "CREATIVE_EXTERNAL_STAGE_CONFLICT" not in submit_error.value.message
+
+
+def test_video_return_submit_missing_projection_is_retryable_bounded_state(monkeypatch) -> None:
+    class PendingContinuation:
+        def submit(self, goal_id, payload):  # type: ignore[no-untyped-def]
+            raise KeyError(goal_id)
+
+    monkeypatch.setattr(
+        "picotoopet_core.api.routes.autonomous_goals._video_return_service",
+        lambda request: PendingContinuation(),
+    )
+
+    with pytest.raises(ApiError) as error:
+        submit_goal_video_return("goal-video-1", object(), object())  # type: ignore[arg-type]
+    assert error.value.status_code == 409
+    assert error.value.code == "AUTONOMOUS_VIDEO_RETURN_STATE_PENDING"
+    assert error.value.retryable is True
