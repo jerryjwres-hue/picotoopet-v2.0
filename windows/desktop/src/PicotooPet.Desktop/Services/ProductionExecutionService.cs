@@ -7,7 +7,7 @@ using PicotooPet.Desktop.Core.Production;
 namespace PicotooPet.Desktop.Services;
 
 /// <summary>2.3.20.1 Windows 本地 GPU executor；只执行 Core 已冻结的 Production Plan。</summary>
-public sealed class ProductionExecutionService : IAsyncDisposable
+public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncDisposable
 {
     private static readonly string[] RequiredNodeClasses =
     [

@@ -41,6 +41,18 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--goal-production-autopilot-only", StringComparer.Ordinal))
+            {
+                await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
+                await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
+                ProductionPanelWpfSmokeTests.Run();
+                ProductionRecoverySmokeTests.Run();
+                ComfyWorkflowTemplateSmokeTests.Run();
+                await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
+                Console.WriteLine("GOAL_PRODUCTION_AUTOPILOT_SMOKE=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
@@ -87,6 +99,7 @@ internal static class Program
             QualityShadowPanelWpfSmokeTests.Run();
             QualityPromotionPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
+            await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             ComfyWorkflowTemplateSmokeTests.Run();
             await VerifyEmergencyLoggerAsync().ConfigureAwait(false);
             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
@@ -153,6 +166,7 @@ internal static class Program
         BusinessPipelinePanelWpfSmokeTests.Run();
         CreativeIntelligenceWpfSmokeTests.Run();
         ProductionPanelWpfSmokeTests.Run();
+        await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
         DeepAiEscalationPanelWpfSmokeTests.Run();
         QualityEvaluationPanelWpfSmokeTests.Run();
         QualityShadowPanelWpfSmokeTests.Run();
