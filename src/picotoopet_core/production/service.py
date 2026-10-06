@@ -120,8 +120,6 @@ class ProductionService:
             (request.idempotency_key,),
         )
         production_job_id = existing["production_job_id"] if existing is not None else str(uuid4())
-        plan = compile_production_plan(production_job_id, package.manifest, package.package_digest)
-        plan_digest = self._digest(plan.model_dump(mode="json"))
         job = self.repository.create_job(
             production_job_id=production_job_id,
             creative_package_id=package.creative_package_id,
@@ -130,6 +128,16 @@ class ProductionService:
             production_profile=request.production_profile,
             idempotency_key=request.idempotency_key,
         )
+
+        # A bound immutable plan belongs to the job version that created it.
+        # Replays after a software/compiler upgrade must verify source identity
+        # through create_job() above, then reuse that durable plan instead of
+        # recompiling it under newer planning semantics.
+        if job.plan_digest is not None:
+            return job
+
+        plan = compile_production_plan(job.production_job_id, package.manifest, package.package_digest)
+        plan_digest = self._digest(plan.model_dump(mode="json"))
         self.repository.save_plan(job.production_job_id, plan, plan_digest)
         return self.repository.get_job(job.production_job_id)
 
