@@ -20,7 +20,6 @@ from picotoopet_core.autonomous.models import GoalRecord
 from picotoopet_core.autonomous.video_continuation import (
     GoalVideoContinuationRecord,
     GoalVideoContinuationService,
-    GoalVideoContinuationStateError,
 )
 from picotoopet_core.autonomous.video_return import GoalVideoReturnError, GoalVideoReturnV1
 from picotoopet_core.security.auth import require_auth
@@ -148,25 +147,11 @@ def submit_goal_video_return(
             message="返回内容未通过交接绑定、证据或安全验证。",
             retryable=False,
         ) from error
-    except GoalVideoContinuationStateError as error:
-        raise ApiError(
-            status_code=409,
-            code="AUTONOMOUS_VIDEO_RETURN_STATE_INVALID",
-            message="已采纳返回的续接状态未通过完整性检查。",
-            retryable=False,
-        ) from error
-    except KeyError as error:
-        raise ApiError(
-            status_code=409,
-            code="AUTONOMOUS_VIDEO_RETURN_STATE_PENDING",
-            message="返回已处理，但续接状态暂不可读取，请稍后刷新。",
-            retryable=True,
-        ) from error
     except ValueError as error:
         raise ApiError(
             status_code=409,
             code="AUTONOMOUS_VIDEO_RETURN_CONFLICT",
-            message="返回与已采纳结果冲突，现有结果未被修改。",
+            message=str(error),
             retryable=False,
         ) from error
 
@@ -186,13 +171,6 @@ def get_goal_video_return_status(
             status_code=404,
             code="AUTONOMOUS_VIDEO_RETURN_NOT_FOUND",
             message="尚未找到已采纳的视频返回。",
-            retryable=False,
-        ) from error
-    except GoalVideoContinuationStateError as error:
-        raise ApiError(
-            status_code=409,
-            code="AUTONOMOUS_VIDEO_RETURN_STATE_INVALID",
-            message="已采纳返回的续接状态未通过完整性检查。",
             retryable=False,
         ) from error
 

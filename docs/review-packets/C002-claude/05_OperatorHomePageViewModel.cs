@@ -33,8 +33,6 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     private bool _isGoalBusy;
     private string _goalError = string.Empty;
 
-    public GoalVideoContinuationViewModel VideoContinuation { get; }
-
     public OperatorHomePageViewModel(
         ControlCenterSession session,
         ControlCenterSessionSnapshot snapshot)
@@ -42,7 +40,6 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     {
         _session    = session ?? throw new ArgumentNullException(nameof(session));
         _projection = OperatorProjection.FromSnapshot(snapshot);
-        VideoContinuation = new GoalVideoContinuationViewModel(session);
         ApplyHealthIndicators(snapshot);
     }
 
@@ -50,7 +47,6 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         : base("首页")
     {
         _projection = OperatorProjection.FromSnapshot(snapshot);
-        VideoContinuation = new GoalVideoContinuationViewModel(null);
         ApplyHealthIndicators(snapshot);
     }
 
@@ -162,7 +158,6 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         {
             if (SetProperty(ref _currentGoal, value))
             {
-                UpdateVideoContinuationContext();
                 RaiseGoalStatusProperties();
             }
         }
@@ -175,7 +170,6 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         {
             if (SetProperty(ref _currentHandoff, value))
             {
-                UpdateVideoContinuationContext();
                 RaisePropertyChanged(nameof(HandoffReady));
                 RaisePropertyChanged(nameof(HandoffSummary));
             }
@@ -330,7 +324,6 @@ public sealed class OperatorHomePageViewModel : PageViewModel
                 .FirstOrDefault();
             GoalError = string.Empty;
             await RefreshCurrentHandoffAsync(cancellationToken).ConfigureAwait(false);
-            await VideoContinuation.RefreshAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -446,9 +439,6 @@ public sealed class OperatorHomePageViewModel : PageViewModel
             CurrentHandoff = null;
         }
     }
-
-    private void UpdateVideoContinuationContext() =>
-        VideoContinuation.SetContext(CurrentGoal, CurrentHandoff);
 
     private void ApplyHealthIndicators(ControlCenterSessionSnapshot snapshot)
     {

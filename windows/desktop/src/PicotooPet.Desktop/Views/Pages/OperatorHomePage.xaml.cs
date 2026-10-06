@@ -56,6 +56,9 @@ public partial class OperatorHomePage : WpfUserControl
         RegisterGoalControl("GoalDepthComboBox");
         RegisterGoalControl("CreateGoalButton");
         RegisterGoalControl("GoalStatusCard");
+        RegisterGoalControl("CopyPromptButton");
+        RegisterGoalControl("SaveHandoffButton");
+        RegisterGoalControl("PasteGoalVideoReturnButton");
     }
 
     private void RegisterGoalControl(string name)

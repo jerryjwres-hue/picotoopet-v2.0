@@ -2,10 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
-using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.ViewModels;
 using WpfClipboard = System.Windows.Clipboard;
-using WpfTextDataFormat = System.Windows.TextDataFormat;
 using WpfSaveFileDialog = Microsoft.Win32.SaveFileDialog;
 using WpfUserControl = System.Windows.Controls.UserControl;
 
@@ -157,42 +155,6 @@ public partial class GoalCenterPanel : WpfUserControl
                 Window.GetWindow(this),
                 "交接包暂时无法保存。目标事实没有被修改，请检查磁盘权限后重试。",
                 "无法保存交接包",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-    }
-
-    private async void PasteGoalVideoReturn_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is not OperatorHomePageViewModel viewModel
-            || !viewModel.VideoContinuation.CanSubmit)
-        {
-            return;
-        }
-
-        try
-        {
-            var text = WpfClipboard.ContainsText(WpfTextDataFormat.UnicodeText)
-                ? WpfClipboard.GetText(WpfTextDataFormat.UnicodeText)
-                : string.Empty;
-            var payload = GoalVideoReturnParser.Parse(text);
-            await viewModel.VideoContinuation.SubmitAsync(payload).ConfigureAwait(true);
-            var message = !string.IsNullOrWhiteSpace(viewModel.VideoContinuation.ErrorMessage)
-                ? viewModel.VideoContinuation.ErrorMessage
-                : "Web GPT 返回已由 Mac Core 校验并进入 Creative/Production 续接。";
-            MessageBox.Show(
-                Window.GetWindow(this),
-                message,
-                "Web GPT 返回",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-        catch (GoalVideoReturnParseException)
-        {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                "剪贴板内容不是有效的有界 GPT 返回 JSON，或超过 512 KiB。",
-                "无法提交返回",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }

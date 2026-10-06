@@ -15,7 +15,6 @@ public sealed class MacCoreClient : IAsyncDisposable
     private const int MaxApprovalListBytes = 128 * 1024;
     private const int MaxGoalJsonBytes = 512 * 1024;
     private const int MaxGoalHandoffMetadataBytes = 64 * 1024;
-    private const int MaxGoalVideoContinuationBytes = 64 * 1024;
     private const int MaxGoalPromptBytes = 128 * 1024;
     private const int MaxGoalHandoffArchiveBytes = 128 * 1024 * 1024;
     private const int MaxApiErrorBytes = 64 * 1024;
@@ -240,43 +239,6 @@ public sealed class MacCoreClient : IAsyncDisposable
                 statusCode: 200,
                 exception);
         }
-    }
-
-    /// <summary>提交解析后的裸 JSON 对象；字段语义与证据绑定只由 Mac Core 校验。</summary>
-    public Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
-        string goalId,
-        JsonElement payload,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
-        if (payload.ValueKind != JsonValueKind.Object)
-        {
-            throw new ArgumentException("视频返回必须是 JSON 对象。", nameof(payload));
-        }
-        return SendAsync<GoalVideoContinuationRecord>(
-            HttpMethod.Post,
-            $"api/v1/autonomous/goals/{Uri.EscapeDataString(goalId)}/handoff/video-return",
-            payload,
-            "autonomous.goals.handoff.video-return.submit",
-            null,
-            cancellationToken,
-            MaxGoalVideoContinuationBytes);
-    }
-
-    /// <summary>读取 Core 耐久 continuation 投影；Windows 不合成本地生命周期。</summary>
-    public Task<GoalVideoContinuationRecord> GetGoalVideoContinuationAsync(
-        string goalId,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
-        return SendAsync<GoalVideoContinuationRecord>(
-            HttpMethod.Get,
-            $"api/v1/autonomous/goals/{Uri.EscapeDataString(goalId)}/handoff/video-return",
-            null,
-            "autonomous.goals.handoff.video-return.get",
-            null,
-            cancellationToken,
-            MaxGoalVideoContinuationBytes);
     }
 
     /// <summary>按 ID 读取单个任务，用于事件断流后的有界恢复。</summary>

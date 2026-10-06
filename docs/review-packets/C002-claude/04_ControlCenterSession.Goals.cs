@@ -3,7 +3,7 @@ using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Services;
 
-public sealed partial class ControlCenterSession : IGoalVideoContinuationGateway
+public sealed partial class ControlCenterSession
 {
     /// <summary>读取 Mac Core 固定目标模板；设备令牌只在 Session 内从 Credential Manager 取用。</summary>
     public async Task<GoalTemplateRecord[]> GetGoalTemplatesAsync(
@@ -71,29 +71,6 @@ public sealed partial class ControlCenterSession : IGoalVideoContinuationGateway
         ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
         await using var client = CreateGoalCenterClient();
         return await client.GetGoalHandoffPromptAsync(goalId, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>把已解析的裸 JSON 交给 C001；Windows 不解释或保存返回字段。</summary>
-    public async Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
-        string goalId,
-        System.Text.Json.JsonElement payload,
-        CancellationToken cancellationToken)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
-        await using var client = CreateGoalCenterClient();
-        return await client.SubmitGoalVideoReturnAsync(goalId, payload, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>读取 C001 已持久化的 Creative/Production continuation 投影。</summary>
-    public async Task<GoalVideoContinuationRecord> GetGoalVideoContinuationAsync(
-        string goalId,
-        CancellationToken cancellationToken)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
-        await using var client = CreateGoalCenterClient();
-        return await client.GetGoalVideoContinuationAsync(goalId, cancellationToken)
-            .ConfigureAwait(false);
     }
 
     private MacCoreClient CreateGoalCenterClient()

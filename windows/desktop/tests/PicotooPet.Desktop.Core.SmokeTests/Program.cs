@@ -31,6 +31,16 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--goal-video-return-only", StringComparer.Ordinal))
+            {
+                GoalVideoReturnParserSmokeTests.Run();
+                GoalVideoReturnPanelWpfSmokeTests.Run();
+                await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
+                await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
+                Console.WriteLine("GOAL_VIDEO_RETURN_SMOKE=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
@@ -39,6 +49,8 @@ internal static class Program
             StateStoreSmokeTests.Run();
             NavigationSmokeTests.Run();
             OperatorSimpleModeSmokeTests.Run();
+            GoalVideoReturnParserSmokeTests.Run();
+            GoalVideoReturnPanelWpfSmokeTests.Run();
             MaotaiNaturalMotionV2SmokeTests.Run();
             MaotaiRenderLoopPerformanceSmokeTests.Run();
             MaotaiJumpDynamicsSmokeTests.Run();
@@ -78,6 +90,8 @@ internal static class Program
             ComfyWorkflowTemplateSmokeTests.Run();
             await VerifyEmergencyLoggerAsync().ConfigureAwait(false);
             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
+            await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
+            await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
             await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
             await DeepAiClientSmokeTests.RunAsync().ConfigureAwait(false);
             await QualityEvaluationClientSmokeTests.RunAsync().ConfigureAwait(false);
@@ -118,6 +132,8 @@ internal static class Program
     {
         NavigationSmokeTests.Run();
         OperatorSimpleModeSmokeTests.Run();
+        GoalVideoReturnParserSmokeTests.Run();
+        GoalVideoReturnPanelWpfSmokeTests.Run();
         NavigationFaultBoundarySmokeTests.Run();
         NavigationContentRenderingSmokeTests.Run();
         ShellNavigationReconnectWpfSmokeTests.Run();
@@ -144,6 +160,8 @@ internal static class Program
         await CodingEscalationDecisionSmokeTests.RunAsync().ConfigureAwait(false);
         await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
         await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
+        await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
+        await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
         await DualChannelSyncSmokeTests.RunAsync().ConfigureAwait(false);
     }
 

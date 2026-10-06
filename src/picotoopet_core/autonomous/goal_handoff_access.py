@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import zipfile
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
+from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from picotoopet_core.config.paths import RuntimePaths
 
@@ -36,6 +40,57 @@ class GoalHandoffMetadata(BaseModel):
     package_size_bytes: int = Field(gt=0, le=128 * 1024 * 1024)
     prompt_version: str = Field(min_length=1, max_length=100)
     manual_web_gpt_upload_required: bool
+
+
+class GoalHandoffPackageManifest(BaseModel):
+    """Exact bounded manifest read from a verified Core-built handoff ZIP."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1.0"]
+    handoff_type: Literal["web-gpt-production"]
+    prompt_version: str = Field(min_length=1, max_length=100)
+    goal_id: str = Field(min_length=1, max_length=128)
+    created_at: datetime
+    evidence_ids: list[str] = Field(min_length=1, max_length=128)
+    source_ids: list[str] = Field(min_length=1, max_length=128)
+    file_sha256: dict[str, str] = Field(min_length=1, max_length=32)
+
+    @field_validator("evidence_ids", "source_ids")
+    @classmethod
+    def _unique_bounded_ids(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)) or any(not item or len(item) > 128 for item in value):
+            raise ValueError("manifest identifiers must be unique bounded strings")
+        return value
+
+    @field_validator("file_sha256")
+    @classmethod
+    def _valid_file_digests(cls, value: dict[str, str]) -> dict[str, str]:
+        for name, digest in value.items():
+            if (
+                not name
+                or len(name) > 200
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                raise ValueError("manifest file digest is invalid")
+        return value
+
+
+class GoalHandoffContext(BaseModel):
+    """Verified immutable identity and provenance available to return intake."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    goal_id: str
+    workflow_id: str
+    handoff_task_id: str
+    package_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prompt_version: str
+    handoff_created_at: datetime
+    evidence_ids: list[str]
+    source_ids: list[str]
+    source_finding_refs: dict[str, str]
 
 
 class _Goals(Protocol):
@@ -136,10 +191,114 @@ class GoalHandoffAccess:
         return resolved
 
     def fixed_prompt(self, goal_id: str) -> str:
-        """Return the exact versioned prompt only for a Goal with a valid handoff result."""
+        """Return the exact versioned master prompt for a Goal with a valid handoff result."""
 
         self.metadata(goal_id)
         return WebGptHandoffBuilder._load_fixed_prompt()
+
+    def return_prompt(self, goal_id: str) -> str:
+        """Return the master prompt plus the exact machine-return binding and schema."""
+
+        context = self.context(goal_id)
+        # Lazy import avoids coupling handoff package construction to the return module.          #
+        from .video_return import GoalVideoReturnV1
+
+        binding = {
+            "goal_id": context.goal_id,
+            "handoff_sha256": context.package_sha256,
+            "prompt_version": context.prompt_version,
+            "source_finding_refs": context.source_finding_refs,
+        }
+        compact_binding = json.dumps(
+            binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        compact_schema = json.dumps(
+            GoalVideoReturnV1.model_json_schema(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return (
+            self.fixed_prompt(goal_id)
+            + "\n\n【PicotooPet 严格回导合同】\n"
+            + "这是当前交接包的 Core 绑定信息；不要修改这些绑定值：\n"
+            + compact_binding
+            + "\n\n最终可读回答之后，必须再输出且只输出一个标记为 PICOTOO_RETURN_JSON 的 JSON 对象。"
+            + "该对象必须严格符合下面的 JSON Schema，不得增加 provider/model/renderer/workflow/"
+            + "endpoint/path/command 等字段。所有 source_finding_refs 只能使用上方映射中的值；"
+            + "所有 evidence 引用只能使用映射中的 key。\n"
+            + compact_schema
+            + "\n"
+        )
+
+    def context(self, goal_id: str) -> GoalHandoffContext:
+        """Read the exact completed handoff identity and its evidence allowlist."""
+
+        metadata = self.metadata(goal_id)
+        goal = self.goals.get(goal_id)
+        if goal.workflow_id is None:
+            raise HandoffAccessError("handoff is not ready")
+        workflow = self.workflows.get_workflow(goal.workflow_id)
+        step = next(
+            (item for item in workflow.steps if item.step_key == _HANDOFF_STEP),
+            None,
+        )
+        if (
+            step is None
+            or not step.task_id
+            or getattr(step.status, "value", step.status) != "Succeeded"
+        ):
+            raise HandoffAccessError("handoff is not completed")
+
+        package = self.verified_package(goal_id)
+        try:
+            with zipfile.ZipFile(package) as archive:
+                matches = [
+                    item for item in archive.infolist() if item.filename == "HANDOFF_MANIFEST.json"
+                ]
+                if len(matches) != 1 or matches[0].file_size > _MAX_HANDOFF_RESULT_BYTES:
+                    raise HandoffAccessError("handoff manifest is invalid")
+                raw = archive.read(matches[0])
+            document = json.loads(raw.decode("utf-8"))
+            manifest = GoalHandoffPackageManifest.model_validate(document)
+        except HandoffAccessError:
+            raise
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            zipfile.BadZipFile,
+            ValidationError,
+        ) as error:
+            raise HandoffAccessError("handoff manifest is invalid") from error
+        if (
+            manifest.goal_id != goal_id
+            or manifest.prompt_version != metadata.prompt_version
+            or manifest.prompt_version != PROMPT_VERSION
+        ):
+            raise HandoffAccessError("handoff manifest binding mismatch")
+
+        source_package_id = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"picotoopet:goal-video-source:{goal_id}:{metadata.package_sha256}",
+            )
+        )
+        finding_refs = {
+            evidence_id: f"{source_package_id}:finding:{index}"
+            for index, evidence_id in enumerate(manifest.evidence_ids, start=1)
+        }
+        return GoalHandoffContext(
+            goal_id=goal_id,
+            workflow_id=goal.workflow_id,
+            handoff_task_id=step.task_id,
+            package_sha256=metadata.package_sha256,
+            prompt_version=metadata.prompt_version,
+            handoff_created_at=manifest.created_at,
+            evidence_ids=manifest.evidence_ids,
+            source_ids=manifest.source_ids,
+            source_finding_refs=finding_refs,
+        )
 
     @staticmethod
     def _validate_package_name(package_name: str) -> None:
