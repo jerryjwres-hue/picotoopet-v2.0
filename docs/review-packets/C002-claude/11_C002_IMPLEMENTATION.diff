@@ -1,0 +1,1124 @@
+@@ -44,3 +44,28 @@ public sealed record GoalHandoffMetadataRecord(
+     [property: JsonPropertyName("package_size_bytes")] long PackageSizeBytes,
+     [property: JsonPropertyName("prompt_version")] string PromptVersion,
+     [property: JsonPropertyName("manual_web_gpt_upload_required")] bool ManualWebGptUploadRequired);
++
++/// <summary>Mac Core 已采纳视频返回后的耐久 Creative/Production 只读投影。</summary>
++public sealed record GoalVideoContinuationRecord(
++    [property: JsonPropertyName("goal_id")] string GoalId,
++    [property: JsonPropertyName("handoff_sha256")] string HandoffSha256,
++    [property: JsonPropertyName("return_sha256")] string ReturnSha256,
++    [property: JsonPropertyName("creative_job_id")] string CreativeJobId,
++    [property: JsonPropertyName("creative_package_id")] string CreativePackageId,
++    [property: JsonPropertyName("creative_package_digest")] string CreativePackageDigest,
++    [property: JsonPropertyName("creative_status")] string CreativeStatus,
++    [property: JsonPropertyName("production_job_id")] string? ProductionJobId,
++    [property: JsonPropertyName("production_status")] string? ProductionStatus);
++
++/// <summary>Windows 只提交裸 JSON 并读取 Core 投影；不复制返回语义合同。</summary>
++public interface IGoalVideoContinuationGateway
++{
++    Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
++        string goalId,
++        JsonElement payload,
++        CancellationToken cancellationToken);
++
++    Task<GoalVideoContinuationRecord> GetGoalVideoContinuationAsync(
++        string goalId,
++        CancellationToken cancellationToken);
++}
+@@ -0,0 +1,103 @@
++using System.Text;
++using System.Text.Json;
++
++namespace PicotooPet.Desktop.Core.Networking;
++
++/// <summary>仅处理剪贴板传输语法；字段、证据与权限语义只由 Mac Core 校验。</summary>
++public static class GoalVideoReturnParser
++{
++    public const int MaxUtf8Bytes = 512 * 1024;
++    private const string Marker = "PICOTOO_RETURN_JSON";
++
++    public static JsonElement Parse(string text)
++    {
++        if (text is null)
++        {
++            throw new GoalVideoReturnParseException("EMPTY_INPUT");
++        }
++        if (Encoding.UTF8.GetByteCount(text) > MaxUtf8Bytes)
++        {
++            throw new GoalVideoReturnParseException("INPUT_TOO_LARGE");
++        }
++
++        var candidate = text.Trim();
++        if ((candidate.Length == 0 || candidate[0] != 0x7B) && !StartsJsonFence(candidate))
++        {
++            var firstMarker = candidate.IndexOf(Marker, StringComparison.Ordinal);
++            if (firstMarker < 0)
++            {
++                throw new GoalVideoReturnParseException("RETURN_JSON_NOT_FOUND");
++            }
++            if (candidate.IndexOf(
++                    Marker,
++                    firstMarker + Marker.Length,
++                    StringComparison.Ordinal) >= 0)
++            {
++                throw new GoalVideoReturnParseException("DUPLICATE_MARKER");
++            }
++            candidate = candidate[(firstMarker + Marker.Length)..].Trim();
++        }
++
++        candidate = UnwrapJsonFence(candidate);
++        try
++        {
++            using var document = JsonDocument.Parse(
++                candidate,
++                new JsonDocumentOptions
++                {
++                    AllowTrailingCommas = false,
++                    CommentHandling = JsonCommentHandling.Disallow,
++                    MaxDepth = 64,
++                });
++            if (document.RootElement.ValueKind != JsonValueKind.Object)
++            {
++                throw new GoalVideoReturnParseException("OBJECT_ROOT_REQUIRED");
++            }
++            return document.RootElement.Clone();
++        }
++        catch (JsonException exception)
++        {
++            throw new GoalVideoReturnParseException("MALFORMED_JSON", exception);
++        }
++    }
++
++    private static bool StartsJsonFence(string value) =>
++        value.StartsWith("```json", StringComparison.OrdinalIgnoreCase);
++
++    private static string UnwrapJsonFence(string value)
++    {
++        if (!value.StartsWith("```", StringComparison.Ordinal))
++        {
++            if (value.Contains("```", StringComparison.Ordinal))
++            {
++                throw new GoalVideoReturnParseException("INVALID_JSON_FENCE");
++            }
++            return value;
++        }
++
++        var lineEnd = value.IndexOf('\n');
++        if (lineEnd < 0
++            || !string.Equals(value[..lineEnd].Trim(), "```json", StringComparison.OrdinalIgnoreCase)
++            || !value.EndsWith("```", StringComparison.Ordinal))
++        {
++            throw new GoalVideoReturnParseException("INVALID_JSON_FENCE");
++        }
++        var body = value[(lineEnd + 1)..^3].Trim();
++        if (body.Contains("```", StringComparison.Ordinal))
++        {
++            throw new GoalVideoReturnParseException("INVALID_JSON_FENCE");
++        }
++        return body;
++    }
++}
++
++public sealed class GoalVideoReturnParseException : Exception
++{
++    public GoalVideoReturnParseException(string code, Exception? innerException = null)
++        : base(code, innerException)
++    {
++        Code = code;
++    }
++
++    public string Code { get; }
++}
+@@ -15,6 +15,7 @@ public sealed class MacCoreClient : IAsyncDisposable
+     private const int MaxApprovalListBytes = 128 * 1024;
+     private const int MaxGoalJsonBytes = 512 * 1024;
+     private const int MaxGoalHandoffMetadataBytes = 64 * 1024;
++    private const int MaxGoalVideoContinuationBytes = 64 * 1024;
+     private const int MaxGoalPromptBytes = 128 * 1024;
+     private const int MaxGoalHandoffArchiveBytes = 128 * 1024 * 1024;
+     private const int MaxApiErrorBytes = 64 * 1024;
+@@ -241,6 +242,43 @@ public async Task<string> GetGoalHandoffPromptAsync(
+         }
+     }
+ 
++    /// <summary>提交解析后的裸 JSON 对象；字段语义与证据绑定只由 Mac Core 校验。</summary>
++    public Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
++        string goalId,
++        JsonElement payload,
++        CancellationToken cancellationToken = default)
++    {
++        ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
++        if (payload.ValueKind != JsonValueKind.Object)
++        {
++            throw new ArgumentException("视频返回必须是 JSON 对象。", nameof(payload));
++        }
++        return SendAsync<GoalVideoContinuationRecord>(
++            HttpMethod.Post,
++            $"api/v1/autonomous/goals/{Uri.EscapeDataString(goalId)}/handoff/video-return",
++            payload,
++            "autonomous.goals.handoff.video-return.submit",
++            null,
++            cancellationToken,
++            MaxGoalVideoContinuationBytes);
++    }
++
++    /// <summary>读取 Core 耐久 continuation 投影；Windows 不合成本地生命周期。</summary>
++    public Task<GoalVideoContinuationRecord> GetGoalVideoContinuationAsync(
++        string goalId,
++        CancellationToken cancellationToken = default)
++    {
++        ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
++        return SendAsync<GoalVideoContinuationRecord>(
++            HttpMethod.Get,
++            $"api/v1/autonomous/goals/{Uri.EscapeDataString(goalId)}/handoff/video-return",
++            null,
++            "autonomous.goals.handoff.video-return.get",
++            null,
++            cancellationToken,
++            MaxGoalVideoContinuationBytes);
++    }
++
+     /// <summary>按 ID 读取单个任务，用于事件断流后的有界恢复。</summary>
+     public Task<TaskRecord> GetTaskAsync(
+         string taskId,
+@@ -3,7 +3,7 @@
+ 
+ namespace PicotooPet.Desktop.Services;
+ 
+-public sealed partial class ControlCenterSession
++public sealed partial class ControlCenterSession : IGoalVideoContinuationGateway
+ {
+     /// <summary>读取 Mac Core 固定目标模板；设备令牌只在 Session 内从 Credential Manager 取用。</summary>
+     public async Task<GoalTemplateRecord[]> GetGoalTemplatesAsync(
+@@ -73,6 +73,29 @@ public async Task<string> GetGoalHandoffPromptAsync(
+         return await client.GetGoalHandoffPromptAsync(goalId, cancellationToken).ConfigureAwait(false);
+     }
+ 
++    /// <summary>把已解析的裸 JSON 交给 C001；Windows 不解释或保存返回字段。</summary>
++    public async Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
++        string goalId,
++        System.Text.Json.JsonElement payload,
++        CancellationToken cancellationToken)
++    {
++        ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
++        await using var client = CreateGoalCenterClient();
++        return await client.SubmitGoalVideoReturnAsync(goalId, payload, cancellationToken)
++            .ConfigureAwait(false);
++    }
++
++    /// <summary>读取 C001 已持久化的 Creative/Production continuation 投影。</summary>
++    public async Task<GoalVideoContinuationRecord> GetGoalVideoContinuationAsync(
++        string goalId,
++        CancellationToken cancellationToken)
++    {
++        ArgumentException.ThrowIfNullOrWhiteSpace(goalId);
++        await using var client = CreateGoalCenterClient();
++        return await client.GetGoalVideoContinuationAsync(goalId, cancellationToken)
++            .ConfigureAwait(false);
++    }
++
+     private MacCoreClient CreateGoalCenterClient()
+     {
+         ThrowIfDisposed();
+@@ -0,0 +1,210 @@
++using System.Text.Json;
++using PicotooPet.Desktop.Core.Contracts;
++using PicotooPet.Desktop.Core.Networking;
++
++namespace PicotooPet.Desktop.ViewModels;
++
++/// <summary>仅保存 Mac Core continuation 投影；不会保存原始 Web GPT 返回。</summary>
++public sealed class GoalVideoContinuationViewModel : ObservableObject
++{
++    private readonly IGoalVideoContinuationGateway? _gateway;
++    private string? _goalId;
++    private bool _available;
++    private bool _isBusy;
++    private string _errorMessage = string.Empty;
++    private GoalVideoContinuationRecord? _continuation;
++
++    public GoalVideoContinuationViewModel(IGoalVideoContinuationGateway? gateway) =>
++        _gateway = gateway;
++
++    public GoalVideoContinuationRecord? Continuation
++    {
++        get => _continuation;
++        private set
++        {
++            if (SetProperty(ref _continuation, value))
++            {
++                RaisePropertyChanged(nameof(StatusText));
++            }
++        }
++    }
++
++    public bool IsBusy
++    {
++        get => _isBusy;
++        private set
++        {
++            if (SetProperty(ref _isBusy, value))
++            {
++                RaisePropertyChanged(nameof(CanSubmit));
++                RaisePropertyChanged(nameof(StatusText));
++            }
++        }
++    }
++
++    public string ErrorMessage
++    {
++        get => _errorMessage;
++        private set
++        {
++            if (SetProperty(ref _errorMessage, value))
++            {
++                RaisePropertyChanged(nameof(StatusText));
++            }
++        }
++    }
++
++    public bool CanSubmit => _gateway is not null && _available && !IsBusy;
++
++    public string StatusText
++    {
++        get
++        {
++            if (IsBusy)
++            {
++                return "正在向 Mac Core 提交 Web GPT 返回…";
++            }
++            if (!string.IsNullOrWhiteSpace(ErrorMessage))
++            {
++                return ErrorMessage;
++            }
++            if (Continuation is null)
++            {
++                return "尚未提交 Web GPT 返回";
++            }
++            return $"Creative：{Continuation.CreativeStatus} · Production：{Continuation.ProductionStatus ?? "尚未创建"}";
++        }
++    }
++
++    public void SetContext(HumanGoalRecord? goal, GoalHandoffMetadataRecord? handoff)
++    {
++        var nextGoalId = goal is { Status: "Completed" }
++            && goal.IntentType is "video.creative" or "product.research_to_video"
++            && handoff is { HandoffReady: true }
++            && string.Equals(goal.GoalId, handoff.GoalId, StringComparison.Ordinal)
++                ? goal.GoalId
++                : null;
++        if (!string.Equals(_goalId, nextGoalId, StringComparison.Ordinal))
++        {
++            _goalId = nextGoalId;
++            Continuation = null;
++            ErrorMessage = string.Empty;
++        }
++        _available = nextGoalId is not null;
++        RaisePropertyChanged(nameof(CanSubmit));
++        RaisePropertyChanged(nameof(StatusText));
++    }
++
++    public async Task RefreshAsync(CancellationToken cancellationToken = default)
++    {
++        if (_gateway is null || _goalId is null)
++        {
++            Continuation = null;
++            ErrorMessage = string.Empty;
++            return;
++        }
++        try
++        {
++            Continuation = await _gateway.GetGoalVideoContinuationAsync(_goalId, cancellationToken)
++                .ConfigureAwait(false);
++            ErrorMessage = string.Empty;
++        }
++        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
++        {
++            throw;
++        }
++        catch (ApiException exception) when (exception.StatusCode == 404)
++        {
++            Continuation = null;
++            ErrorMessage = string.Empty;
++        }
++        catch (Exception exception)
++        {
++            ErrorMessage = ToSafeError(exception);
++        }
++    }
++
++    public async Task SubmitAsync(
++        JsonElement payload,
++        CancellationToken cancellationToken = default)
++    {
++        if (_gateway is null || _goalId is null || !CanSubmit)
++        {
++            return;
++        }
++        IsBusy = true;
++        ErrorMessage = string.Empty;
++        try
++        {
++            Continuation = await _gateway.SubmitGoalVideoReturnAsync(
++                _goalId,
++                payload,
++                cancellationToken).ConfigureAwait(false);
++            await RefreshAfterAcceptedPostAsync(cancellationToken).ConfigureAwait(false);
++        }
++        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
++        {
++            throw;
++        }
++        catch (ApiException exception) when (exception.Retryable)
++        {
++            await ReconcileAmbiguousPostAsync(cancellationToken).ConfigureAwait(false);
++        }
++        catch (ApiException exception) when (exception.StatusCode == 409)
++        {
++            ErrorMessage = ToSafeError(exception);
++        }
++        catch (Exception exception)
++        {
++            ErrorMessage = ToSafeError(exception);
++        }
++        finally
++        {
++            IsBusy = false;
++        }
++    }
++
++    private async Task RefreshAfterAcceptedPostAsync(CancellationToken cancellationToken)
++    {
++        try
++        {
++            Continuation = await _gateway!.GetGoalVideoContinuationAsync(_goalId!, cancellationToken)
++                .ConfigureAwait(false);
++        }
++        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
++        {
++            throw;
++        }
++        catch (Exception)
++        {
++            // POST 已返回 Core 投影；GET 暂不可用时保留该服务端事实，定时刷新会继续对账。
++        }
++    }
++
++    private async Task ReconcileAmbiguousPostAsync(CancellationToken cancellationToken)
++    {
++        try
++        {
++            Continuation = await _gateway!.GetGoalVideoContinuationAsync(_goalId!, cancellationToken)
++                .ConfigureAwait(false);
++            ErrorMessage = string.Empty;
++        }
++        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
++        {
++            throw;
++        }
++        catch (Exception)
++        {
++            ErrorMessage = "提交结果暂时无法确认；请保留同一返回内容后重试。";
++        }
++    }
++
++    private static string ToSafeError(Exception exception) => exception switch
++    {
++        ApiException api when api.StatusCode is 401 or 403 => "目标中心认证失败，请重新连接 Mac Core。",
++        ApiException api when api.StatusCode == 409 => "返回被 Core 拒绝或与已采纳返回冲突；现有结果未被修改。",
++        ApiException api when api.Retryable => "目标中心暂时不可用；请保留同一返回内容后重试。",
++        GoalVideoReturnParseException => "剪贴板内容不是有效的有界 GPT 返回 JSON。",
++        _ => "Web GPT 返回暂时无法提交；现有目标与生产事实未被修改。",
++    };
++}
+@@ -33,20 +33,24 @@ public sealed class OperatorHomePageViewModel : PageViewModel
+     private bool _isGoalBusy;
+     private string _goalError = string.Empty;
+ 
++    public GoalVideoContinuationViewModel VideoContinuation { get; }
++
+     public OperatorHomePageViewModel(
+         ControlCenterSession session,
+         ControlCenterSessionSnapshot snapshot)
+         : base("首页")
+     {
+         _session    = session ?? throw new ArgumentNullException(nameof(session));
+         _projection = OperatorProjection.FromSnapshot(snapshot);
++        VideoContinuation = new GoalVideoContinuationViewModel(session);
+         ApplyHealthIndicators(snapshot);
+     }
+ 
+     private OperatorHomePageViewModel(ControlCenterSessionSnapshot snapshot)
+         : base("首页")
+     {
+         _projection = OperatorProjection.FromSnapshot(snapshot);
++        VideoContinuation = new GoalVideoContinuationViewModel(null);
+         ApplyHealthIndicators(snapshot);
+     }
+ 
+@@ -158,6 +162,7 @@ private set
+         {
+             if (SetProperty(ref _currentGoal, value))
+             {
++                UpdateVideoContinuationContext();
+                 RaiseGoalStatusProperties();
+             }
+         }
+@@ -170,6 +175,7 @@ private set
+         {
+             if (SetProperty(ref _currentHandoff, value))
+             {
++                UpdateVideoContinuationContext();
+                 RaisePropertyChanged(nameof(HandoffReady));
+                 RaisePropertyChanged(nameof(HandoffSummary));
+             }
+@@ -324,6 +330,7 @@ public async Task RefreshGoalsAsync(CancellationToken cancellationToken = defaul
+                 .FirstOrDefault();
+             GoalError = string.Empty;
+             await RefreshCurrentHandoffAsync(cancellationToken).ConfigureAwait(false);
++            await VideoContinuation.RefreshAsync(cancellationToken).ConfigureAwait(false);
+         }
+         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+         {
+@@ -440,6 +447,9 @@ private async Task RefreshCurrentHandoffAsync(CancellationToken cancellationToke
+         }
+     }
+ 
++    private void UpdateVideoContinuationContext() =>
++        VideoContinuation.SetContext(CurrentGoal, CurrentHandoff);
++
+     private void ApplyHealthIndicators(ControlCenterSessionSnapshot snapshot)
+     {
+         var connectionState = snapshot.State.Connection.State;
+@@ -79,6 +79,17 @@
+         </DataTrigger>
+       </Style.Triggers>
+     </Style>
++
++    <Style x:Key="GoalVideoReturnButtonStyle"
++           TargetType="Button"
++           BasedOn="{StaticResource GoalHandoffButtonStyle}">
++      <Setter Property="Visibility" Value="Collapsed" />
++      <Style.Triggers>
++        <DataTrigger Binding="{Binding VideoContinuation.CanSubmit, Mode=OneWay}" Value="True">
++          <Setter Property="Visibility" Value="Visible" />
++        </DataTrigger>
++      </Style.Triggers>
++    </Style>
+   </UserControl.Resources>
+ 
+   <Border CornerRadius="18" ClipToBounds="True">
+@@ -214,14 +225,26 @@
+             <TextBlock Text="{Binding HandoffSummary, Mode=OneWay}"
+                        Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,0,0,6" />
+             <StackPanel Orientation="Horizontal">
+-              <Button Content="复制 GPT 提示词"
++              <Button x:Name="CopyPromptButton"
++                      Content="复制 GPT 提示词"
+                       Margin="0,0,5,0"
+                       Style="{StaticResource GoalHandoffButtonStyle}"
++                      IsEnabled="{Binding HandoffReady, Mode=OneWay}"
+                       Click="CopyPrompt_Click" />
+-              <Button Content="保存交接 ZIP"
++              <Button x:Name="SaveHandoffButton"
++                      Content="保存交接 ZIP"
++                      Margin="0,0,5,0"
+                       Style="{StaticResource GoalHandoffButtonStyle}"
++                      IsEnabled="{Binding HandoffReady, Mode=OneWay}"
+                       Click="SaveHandoff_Click" />
++              <Button x:Name="PasteGoalVideoReturnButton"
++                      Content="粘贴 GPT 返回"
++                      Style="{StaticResource GoalVideoReturnButtonStyle}"
++                      IsEnabled="{Binding VideoContinuation.CanSubmit, Mode=OneWay}"
++                      Click="PasteGoalVideoReturn_Click" />
+             </StackPanel>
++            <TextBlock Text="{Binding VideoContinuation.StatusText, Mode=OneWay}"
++                       Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,6,0,0" />
+           </StackPanel>
+         </Grid>
+       </Border>
+@@ -2,8 +2,10 @@
+ using System.Windows.Controls;
+ using System.Windows.Threading;
+ using PicotooPet.Desktop.Core.Contracts;
++using PicotooPet.Desktop.Core.Networking;
+ using PicotooPet.Desktop.ViewModels;
+ using WpfClipboard = System.Windows.Clipboard;
++using WpfTextDataFormat = System.Windows.TextDataFormat;
+ using WpfSaveFileDialog = Microsoft.Win32.SaveFileDialog;
+ using WpfUserControl = System.Windows.Controls.UserControl;
+ 
+@@ -160,6 +162,42 @@ private async void SaveHandoff_Click(object sender, RoutedEventArgs e)
+         }
+     }
+ 
++    private async void PasteGoalVideoReturn_Click(object sender, RoutedEventArgs e)
++    {
++        if (DataContext is not OperatorHomePageViewModel viewModel
++            || !viewModel.VideoContinuation.CanSubmit)
++        {
++            return;
++        }
++
++        try
++        {
++            var text = WpfClipboard.ContainsText(WpfTextDataFormat.UnicodeText)
++                ? WpfClipboard.GetText(WpfTextDataFormat.UnicodeText)
++                : string.Empty;
++            var payload = GoalVideoReturnParser.Parse(text);
++            await viewModel.VideoContinuation.SubmitAsync(payload).ConfigureAwait(true);
++            var message = !string.IsNullOrWhiteSpace(viewModel.VideoContinuation.ErrorMessage)
++                ? viewModel.VideoContinuation.ErrorMessage
++                : "Web GPT 返回已由 Mac Core 校验并进入 Creative/Production 续接。";
++            MessageBox.Show(
++                Window.GetWindow(this),
++                message,
++                "Web GPT 返回",
++                MessageBoxButton.OK,
++                MessageBoxImage.Information);
++        }
++        catch (GoalVideoReturnParseException)
++        {
++            MessageBox.Show(
++                Window.GetWindow(this),
++                "剪贴板内容不是有效的有界 GPT 返回 JSON，或超过 512 KiB。",
++                "无法提交返回",
++                MessageBoxButton.OK,
++                MessageBoxImage.Information);
++        }
++    }
++
+     private void AdvancedTask_Click(object sender, RoutedEventArgs e) =>
+         AdvancedTaskRequested?.Invoke(this, EventArgs.Empty);
+ }
+@@ -56,6 +56,9 @@ private void InstallGoalCenterHero()
+         RegisterGoalControl("GoalDepthComboBox");
+         RegisterGoalControl("CreateGoalButton");
+         RegisterGoalControl("GoalStatusCard");
++        RegisterGoalControl("CopyPromptButton");
++        RegisterGoalControl("SaveHandoffButton");
++        RegisterGoalControl("PasteGoalVideoReturnButton");
+     }
+ 
+     private void RegisterGoalControl(string name)
+@@ -0,0 +1,157 @@
++using System.Reflection;
++using System.Text.Json;
++using PicotooPet.Desktop.Core.Contracts;
++using PicotooPet.Desktop.Core.Networking;
++using PicotooPet.Desktop.ViewModels;
++
++namespace PicotooPet.Desktop.Core.SmokeTests;
++
++/// <summary>验证 Windows 只保留 Core continuation 投影，不发明成功或保存原始返回。</summary>
++internal static class GoalVideoContinuationViewModelSmokeTests
++{
++    public static async Task RunAsync()
++    {
++        var gateway = new FixtureGateway();
++        var viewModel = new GoalVideoContinuationViewModel(gateway);
++        viewModel.SetContext(Goal(), Handoff(ready: false));
++        SmokeAssert.True(!viewModel.CanSubmit, "未就绪交接不得启用返回提交");
++
++        viewModel.SetContext(Goal(), Handoff(ready: true));
++        gateway.GetError = new ApiException("NOT_FOUND", "missing", false, "trace", 404);
++        await viewModel.RefreshAsync().ConfigureAwait(false);
++        SmokeAssert.True(viewModel.Continuation is null, "GET 404 不得伪造 continuation");
++        SmokeAssert.Equal("尚未提交 Web GPT 返回", viewModel.StatusText, "GET 404 状态文案错误");
++
++        gateway.GetError = null;
++        gateway.PostResult = Continuation("production-job-1");
++        gateway.GetResult = gateway.PostResult;
++        const string secret = "TOP_SECRET_RAW_RETURN";
++        var payload = GoalVideoReturnParser.Parse($"{{\"creative_summary\":\"{secret}\"}}");
++        await viewModel.SubmitAsync(payload).ConfigureAwait(false);
++        SmokeAssert.Equal("production-job-1", viewModel.Continuation?.ProductionJobId, "提交后未保存 Core 投影");
++        SmokeAssert.True(
++            !InstanceStrings(viewModel).Any(value => value.Contains(secret, StringComparison.Ordinal)),
++            "ViewModel 持久保存了原始 GPT 返回");
++
++        gateway.PostResult = Continuation("production-job-post-accepted");
++        gateway.GetError = new ApiException("INVALID_RESPONSE", "raw invalid body", false, "trace", 502);
++        await viewModel.SubmitAsync(payload).ConfigureAwait(false);
++        SmokeAssert.Equal(
++            "production-job-post-accepted",
++            viewModel.Continuation?.ProductionJobId,
++            "POST 已接受时，后续 GET 异常不应清空服务端投影");
++        SmokeAssert.True(
++            !viewModel.StatusText.Contains("raw invalid body", StringComparison.Ordinal),
++            "GET 异常正文泄露到 UI");
++        gateway.GetError = null;
++        gateway.PostResult = Continuation("production-job-1");
++
++        gateway.PostError = new ApiException("NETWORK_TIMEOUT", "raw timeout", true, "trace", 0);
++        gateway.GetError = new ApiException("NETWORK_ERROR", "raw reconcile failure", true, "trace", 0);
++        await viewModel.SubmitAsync(payload).ConfigureAwait(false);
++        SmokeAssert.Equal(
++            "production-job-post-accepted",
++            viewModel.Continuation?.ProductionJobId,
++            "不明确 POST 对账失败清空了既有 Core 投影");
++        SmokeAssert.True(viewModel.ErrorMessage.Contains("重试", StringComparison.Ordinal), "对账失败未给出安全重试提示");
++        gateway.GetError = null;
++
++        gateway.PostError = new ApiException(
++            "AUTONOMOUS_VIDEO_RETURN_CONFLICT",
++            "raw conflict body",
++            false,
++            "trace",
++            409);
++        await viewModel.SubmitAsync(payload).ConfigureAwait(false);
++        SmokeAssert.Equal(
++            "production-job-post-accepted",
++            viewModel.Continuation?.ProductionJobId,
++            "409 冲突错误清空了已接受的 Core 投影");
++        SmokeAssert.True(
++            viewModel.ErrorMessage.Contains("冲突", StringComparison.Ordinal)
++            && !viewModel.ErrorMessage.Contains("raw conflict body", StringComparison.Ordinal),
++            "409 未映射为安全非重试消息");
++        gateway.PostError = null;
++
++        var restarted = new GoalVideoContinuationViewModel(gateway);
++        restarted.SetContext(Goal(), Handoff(ready: true));
++        await restarted.RefreshAsync().ConfigureAwait(false);
++        SmokeAssert.Equal("production-job-1", restarted.Continuation?.ProductionJobId, "刷新未从 Core 重建状态");
++
++        var retrying = new FixtureGateway
++        {
++            PostError = new ApiException("NETWORK_ERROR", "raw network body", true, "trace", 0),
++            GetError = new ApiException("NOT_FOUND", "missing", false, "trace", 404),
++        };
++        var failed = new GoalVideoContinuationViewModel(retrying);
++        failed.SetContext(Goal(), Handoff(ready: true));
++        await failed.SubmitAsync(payload).ConfigureAwait(false);
++        SmokeAssert.True(failed.Continuation is null, "网络失败不得发明成功状态");
++        SmokeAssert.True(failed.ErrorMessage.Contains("重试", StringComparison.Ordinal), "网络失败未给出安全重试提示");
++        SmokeAssert.True(!failed.ErrorMessage.Contains("raw network body", StringComparison.Ordinal), "UI 泄露原始异常正文");
++
++        var reconciled = new FixtureGateway
++        {
++            PostError = new ApiException("NETWORK_TIMEOUT", "ambiguous", true, "trace", 0),
++            GetResult = Continuation("production-job-reconciled"),
++        };
++        var ambiguous = new GoalVideoContinuationViewModel(reconciled);
++        ambiguous.SetContext(Goal(), Handoff(ready: true));
++        await ambiguous.SubmitAsync(payload).ConfigureAwait(false);
++        SmokeAssert.Equal(
++            "production-job-reconciled",
++            ambiguous.Continuation?.ProductionJobId,
++            "不明确 POST 未通过 GET 对账");
++    }
++
++    private static IEnumerable<string> InstanceStrings(object instance) =>
++        instance.GetType()
++            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
++            .Select(field => field.GetValue(instance))
++            .OfType<string>();
++
++    private static HumanGoalRecord Goal() => new(
++        "goal-1", null, "workflow-1", "human", "product.research_to_video", "P1",
++        "研究产品并生成视频", JsonDocument.Parse("{}").RootElement.Clone(), "local-first",
++        false, null, "Completed", "goal-key", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
++
++    private static GoalHandoffMetadataRecord Handoff(bool ready) => new(
++        "1.0", "goal-1", ready, "goal-1.zip", new string('a', 64), 100,
++        "web-gpt-master-v1.0", true);
++
++    private static GoalVideoContinuationRecord Continuation(string productionJobId) => new(
++        "goal-1", new string('a', 64), new string('b', 64), "creative-job",
++        "11111111-1111-4111-8111-111111111111", new string('c', 64),
++        "creative_ready", productionJobId, "Ready");
++
++    private sealed class FixtureGateway : IGoalVideoContinuationGateway
++    {
++        public GoalVideoContinuationRecord? PostResult { get; set; }
++        public GoalVideoContinuationRecord? GetResult { get; set; }
++        public ApiException? PostError { get; set; }
++        public ApiException? GetError { get; set; }
++
++        public Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
++            string goalId,
++            JsonElement payload,
++            CancellationToken cancellationToken)
++        {
++            if (PostError is not null)
++            {
++                throw PostError;
++            }
++            return Task.FromResult(PostResult ?? Continuation("production-job"));
++        }
++
++        public Task<GoalVideoContinuationRecord> GetGoalVideoContinuationAsync(
++            string goalId,
++            CancellationToken cancellationToken)
++        {
++            if (GetError is not null)
++            {
++                throw GetError;
++            }
++            return Task.FromResult(GetResult ?? Continuation("production-job"));
++        }
++    }
++}
+@@ -0,0 +1,157 @@
++using System.Net;
++using System.Text;
++using PicotooPet.Desktop.Core.Networking;
++
++namespace PicotooPet.Desktop.Core.SmokeTests;
++
++/// <summary>冻结 C001 POST/GET 路径、裸对象 body、认证和有界错误。</summary>
++internal static class GoalVideoReturnClientSmokeTests
++{
++    public static async Task RunAsync()
++    {
++        var handler = new RecordingHandler();
++        using var http = new HttpClient(handler)
++        {
++            BaseAddress = new Uri("http://127.0.0.1:8765/"),
++        };
++        await using var client = new MacCoreClient(http, "fixture-token");
++        var payload = GoalVideoReturnParser.Parse(
++            "{\"goal_id\":\"goal / 1\",\"nested\":{\"value\":\"原样\"}}");
++
++        var submitted = await client.SubmitGoalVideoReturnAsync(
++            "goal / 1",
++            payload,
++            CancellationToken.None).ConfigureAwait(false);
++        var refreshed = await client.GetGoalVideoContinuationAsync(
++            "goal / 1",
++            CancellationToken.None).ConfigureAwait(false);
++
++        SmokeAssert.Equal("production-job", submitted.ProductionJobId, "POST continuation 响应错误");
++        SmokeAssert.Equal("creative_ready", refreshed.CreativeStatus, "GET continuation 响应错误");
++        SmokeAssert.True(
++            handler.Requests.Select(item => $"{item.Method} {item.Path}").SequenceEqual(
++            [
++                "POST /api/v1/autonomous/goals/goal%20%2F%201/handoff/video-return",
++                "GET /api/v1/autonomous/goals/goal%20%2F%201/handoff/video-return",
++            ]),
++            "视频返回客户端访问了错误路径");
++        var post = handler.Requests[0];
++        SmokeAssert.Equal("Bearer fixture-token", post.Authorization, "POST 未复用 Bearer auth");
++        SmokeAssert.True(!string.IsNullOrWhiteSpace(post.TraceId), "POST 未复用 trace header");
++        SmokeAssert.True(post.Body.StartsWith("{\"goal_id\"", StringComparison.Ordinal), "POST body 被包装");
++        SmokeAssert.True(!post.Body.Contains("payload", StringComparison.OrdinalIgnoreCase), "POST body 出现包装字段");
++
++        await Assert409Async(payload).ConfigureAwait(false);
++        await AssertBoundedResponseAsync(payload).ConfigureAwait(false);
++    }
++
++    private static async Task Assert409Async(System.Text.Json.JsonElement payload)
++    {
++        using var http = new HttpClient(new ConflictHandler())
++        {
++            BaseAddress = new Uri("http://127.0.0.1:8765/"),
++        };
++        await using var client = new MacCoreClient(http, "fixture-token");
++        try
++        {
++            _ = await client.SubmitGoalVideoReturnAsync("goal-1", payload).ConfigureAwait(false);
++            throw new InvalidOperationException("409 必须暴露为 ApiException");
++        }
++        catch (ApiException exception)
++        {
++            SmokeAssert.Equal(409, exception.StatusCode, "409 status 丢失");
++            SmokeAssert.True(!exception.Retryable, "409 不得标成可重试");
++        }
++    }
++
++    private static async Task AssertBoundedResponseAsync(System.Text.Json.JsonElement payload)
++    {
++        using var http = new HttpClient(new OversizedHandler())
++        {
++            BaseAddress = new Uri("http://127.0.0.1:8765/"),
++        };
++        await using var client = new MacCoreClient(http, "fixture-token");
++        try
++        {
++            _ = await client.SubmitGoalVideoReturnAsync("goal-1", payload).ConfigureAwait(false);
++            throw new InvalidOperationException("超大 continuation 响应必须拒绝");
++        }
++        catch (ApiException exception)
++        {
++            SmokeAssert.Equal("RESPONSE_TOO_LARGE", exception.Code, "超大响应错误码不正确");
++        }
++    }
++
++    private sealed class RecordingHandler : HttpMessageHandler
++    {
++        public List<CapturedRequest> Requests { get; } = [];
++
++        protected override async Task<HttpResponseMessage> SendAsync(
++            HttpRequestMessage request,
++            CancellationToken cancellationToken)
++        {
++            Requests.Add(new CapturedRequest(
++                request.Method.Method,
++                request.RequestUri?.AbsolutePath ?? string.Empty,
++                request.Headers.Authorization?.ToString() ?? string.Empty,
++                request.Headers.TryGetValues("X-Picotoo-Trace-Id", out var traceIds)
++                    ? traceIds.Single()
++                    : string.Empty,
++                request.Content is null
++                    ? string.Empty
++                    : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)));
++            return Json(HttpStatusCode.OK, ContinuationJson);
++        }
++    }
++
++    private sealed class ConflictHandler : HttpMessageHandler
++    {
++        protected override Task<HttpResponseMessage> SendAsync(
++            HttpRequestMessage request,
++            CancellationToken cancellationToken) =>
++            Task.FromResult(Json(
++                HttpStatusCode.Conflict,
++                "{\"error\":{\"code\":\"AUTONOMOUS_VIDEO_RETURN_CONFLICT\",\"message\":\"conflict\",\"retryable\":false,\"trace_id\":\"trace-409\"}}"));
++    }
++
++    private sealed class OversizedHandler : HttpMessageHandler
++    {
++        protected override Task<HttpResponseMessage> SendAsync(
++            HttpRequestMessage request,
++            CancellationToken cancellationToken) =>
++            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
++            {
++                Content = new StringContent(
++                    "{\"padding\":\"" + new string('x', 70_000) + "\"}",
++                    Encoding.UTF8,
++                    "application/json"),
++            });
++    }
++
++    private static HttpResponseMessage Json(HttpStatusCode status, string content) =>
++        new(status)
++        {
++            Content = new StringContent(content, Encoding.UTF8, "application/json"),
++        };
++
++    private sealed record CapturedRequest(
++        string Method,
++        string Path,
++        string Authorization,
++        string TraceId,
++        string Body);
++
++    private const string ContinuationJson = """
++        {
++          "goal_id":"goal / 1",
++          "handoff_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
++          "return_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
++          "creative_job_id":"creative-job",
++          "creative_package_id":"11111111-1111-4111-8111-111111111111",
++          "creative_package_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
++          "creative_status":"creative_ready",
++          "production_job_id":"production-job",
++          "production_status":"Ready"
++        }
++        """;
++}
+@@ -0,0 +1,88 @@
++using System.Runtime.ExceptionServices;
++using System.Text.Json;
++using System.Threading;
++using System.Windows;
++using System.Windows.Controls;
++using System.Windows.Media;
++using System.Windows.Threading;
++using PicotooPet.Desktop.Core.Contracts;
++using PicotooPet.Desktop.ViewModels;
++using PicotooPet.Desktop.Views.Pages;
++
++namespace PicotooPet.Desktop.Core.SmokeTests;
++
++/// <summary>验证 Goal Center 保留交接动作并只在 ready 时显示粘贴入口。</summary>
++internal static class GoalVideoReturnPanelWpfSmokeTests
++{
++    public static void Run()
++    {
++        Exception? failure = null;
++        var thread = new Thread(() =>
++        {
++            try
++            {
++                var panel = new GoalCenterPanel();
++                panel.Measure(new Size(1100, 500));
++                panel.Arrange(new Rect(0, 0, 1100, 500));
++                panel.UpdateLayout();
++
++                SmokeAssert.True(panel.FindName("CopyPromptButton") is Button, "复制 GPT 提示词按钮丢失");
++                SmokeAssert.True(panel.FindName("SaveHandoffButton") is Button, "保存交接 ZIP 按钮丢失");
++                var paste = panel.FindName("PasteGoalVideoReturnButton") as Button
++                    ?? throw new InvalidOperationException("缺少粘贴 GPT 返回按钮");
++                SmokeAssert.Equal(Visibility.Collapsed, paste.Visibility, "未就绪交接错误显示粘贴入口");
++
++                var continuation = new GoalVideoContinuationViewModel(new NoopGateway());
++                continuation.SetContext(Goal(), Handoff());
++                panel.DataContext = new { VideoContinuation = continuation };
++                panel.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
++                panel.UpdateLayout();
++                SmokeAssert.Equal(Visibility.Visible, paste.Visibility, "就绪交接未显示粘贴入口");
++                SmokeAssert.True(CountVisual<PasswordBox>(panel) == 0, "Goal Center 不得收集凭据");
++                SmokeAssert.True(CountVisual<System.Windows.Controls.WebBrowser>(panel) == 0, "Goal Center 不得嵌入 Web GPT");
++            }
++            catch (Exception exception)
++            {
++                failure = exception;
++            }
++        });
++        thread.SetApartmentState(ApartmentState.STA);
++        thread.Start();
++        thread.Join();
++        if (failure is not null)
++        {
++            ExceptionDispatchInfo.Capture(failure).Throw();
++        }
++    }
++
++    private static int CountVisual<T>(DependencyObject root) where T : DependencyObject
++    {
++        var count = root is T ? 1 : 0;
++        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
++        {
++            count += CountVisual<T>(VisualTreeHelper.GetChild(root, index));
++        }
++        return count;
++    }
++
++    private static HumanGoalRecord Goal() => new(
++        "goal-1", null, "workflow-1", "human", "product.research_to_video", "P1",
++        "研究产品并生成视频", JsonDocument.Parse("{}").RootElement.Clone(), "local-first",
++        false, null, "Completed", "goal-key", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
++
++    private static GoalHandoffMetadataRecord Handoff() => new(
++        "1.0", "goal-1", true, "goal-1.zip", new string('a', 64), 100,
++        "web-gpt-master-v1.0", true);
++
++    private sealed class NoopGateway : IGoalVideoContinuationGateway
++    {
++        public Task<GoalVideoContinuationRecord> SubmitGoalVideoReturnAsync(
++            string goalId,
++            JsonElement payload,
++            CancellationToken cancellationToken) => throw new NotSupportedException();
++
++        public Task<GoalVideoContinuationRecord> GetGoalVideoContinuationAsync(
++            string goalId,
++            CancellationToken cancellationToken) => throw new NotSupportedException();
++    }
++}
+@@ -0,0 +1,60 @@
++using System.Text;
++using System.Text.Json;
++using PicotooPet.Desktop.Core.Networking;
++
++namespace PicotooPet.Desktop.Core.SmokeTests;
++
++/// <summary>冻结 Web GPT 返回的有界传输语法；语义校验仍只属于 Mac Core。</summary>
++internal static class GoalVideoReturnParserSmokeTests
++{
++    public static void Run()
++    {
++        AssertParsed("{\"goal_id\":\"goal-1\"}", "goal-1");
++        AssertParsed(
++            "Web GPT response\nPICOTOO_RETURN_JSON\n{\"goal_id\":\"goal-2\"}",
++            "goal-2");
++        AssertParsed(
++            "PICOTOO_RETURN_JSON\n```json\n{\"goal_id\":\"goal-3\"}\n```",
++            "goal-3");
++
++        AssertRejected(
++            "PICOTOO_RETURN_JSON\n{}\nPICOTOO_RETURN_JSON\n{}",
++            "重复 marker 必须拒绝");
++        AssertRejected("{broken", "畸形 JSON 必须拒绝");
++        AssertRejected("[1,2,3]", "非对象根必须拒绝");
++        AssertRejected(
++            "{\"value\":\"" + new string('界', 180_000) + "\"}",
++            "超过 512 KiB 的 UTF-8 输入必须拒绝");
++
++        const string exact = "{\"text\":\"保留 大小写\\n与空格\",\"number\":1.2300,\"flag\":true}";
++        var preserved = GoalVideoReturnParser.Parse(exact);
++        SmokeAssert.Equal(
++            "保留 大小写\n与空格",
++            preserved.GetProperty("text").GetString(),
++            "字符串值被解析器改写");
++        SmokeAssert.Equal(
++            "1.2300",
++            preserved.GetProperty("number").GetRawText(),
++            "数值表示被解析器改写");
++        SmokeAssert.True(preserved.GetProperty("flag").GetBoolean(), "布尔值被解析器改写");
++    }
++
++    private static void AssertParsed(string text, string goalId)
++    {
++        var parsed = GoalVideoReturnParser.Parse(text);
++        SmokeAssert.Equal(JsonValueKind.Object, parsed.ValueKind, "返回根不是 JSON 对象");
++        SmokeAssert.Equal(goalId, parsed.GetProperty("goal_id").GetString(), "goal_id 未保留");
++    }
++
++    private static void AssertRejected(string text, string message)
++    {
++        try
++        {
++            _ = GoalVideoReturnParser.Parse(text);
++            throw new InvalidOperationException(message);
++        }
++        catch (GoalVideoReturnParseException)
++        {
++        }
++    }
++}
+@@ -31,6 +31,16 @@ private static async Task<int> Main(string[] args)
+                 return 0;
+             }
+ 
++            if (args.Contains("--goal-video-return-only", StringComparer.Ordinal))
++            {
++                GoalVideoReturnParserSmokeTests.Run();
++                GoalVideoReturnPanelWpfSmokeTests.Run();
++                await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
++                await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
++                Console.WriteLine("GOAL_VIDEO_RETURN_SMOKE=PASS");
++                return 0;
++            }
++
+             VerifyLatencyPercentiles();
+             VerifyReconnectBounds();
+             VerifyStateDeduplication();
+@@ -39,6 +49,8 @@ private static async Task<int> Main(string[] args)
+             StateStoreSmokeTests.Run();
+             NavigationSmokeTests.Run();
+             OperatorSimpleModeSmokeTests.Run();
++            GoalVideoReturnParserSmokeTests.Run();
++            GoalVideoReturnPanelWpfSmokeTests.Run();
+             MaotaiNaturalMotionV2SmokeTests.Run();
+             MaotaiRenderLoopPerformanceSmokeTests.Run();
+             MaotaiJumpDynamicsSmokeTests.Run();
+@@ -78,6 +90,8 @@ private static async Task<int> Main(string[] args)
+             ComfyWorkflowTemplateSmokeTests.Run();
+             await VerifyEmergencyLoggerAsync().ConfigureAwait(false);
+             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
++            await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
++            await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
+             await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
+             await DeepAiClientSmokeTests.RunAsync().ConfigureAwait(false);
+             await QualityEvaluationClientSmokeTests.RunAsync().ConfigureAwait(false);
+@@ -118,6 +132,8 @@ private static async Task RunUiInteractionOnlyAsync()
+     {
+         NavigationSmokeTests.Run();
+         OperatorSimpleModeSmokeTests.Run();
++        GoalVideoReturnParserSmokeTests.Run();
++        GoalVideoReturnPanelWpfSmokeTests.Run();
+         NavigationFaultBoundarySmokeTests.Run();
+         NavigationContentRenderingSmokeTests.Run();
+         ShellNavigationReconnectWpfSmokeTests.Run();
+@@ -144,6 +160,8 @@ private static async Task RunUiInteractionOnlyAsync()
+         await CodingEscalationDecisionSmokeTests.RunAsync().ConfigureAwait(false);
+         await BoundedDiagnosticResultSmokeTests.RunAsync().ConfigureAwait(false);
+         await BoundedApiErrorSmokeTests.RunAsync().ConfigureAwait(false);
++        await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
++        await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
+         await DualChannelSyncSmokeTests.RunAsync().ConfigureAwait(false);
+     }
+ 
