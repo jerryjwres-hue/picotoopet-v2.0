@@ -16,6 +16,8 @@ def _creative_manifest(
     duration_seconds: float = 3.0,
     output_profile_id: str | None = "video.landscape.v1",
     script_duration_seconds: float | None = None,
+    text_reference: str | None = None,
+    on_screen_text: str | None = None,
 ) -> dict[str, object]:
     brief: dict[str, object] = {
         "schema_version": "1.0",
@@ -63,7 +65,7 @@ def _creative_manifest(
                         "order": 1,
                         "duration_seconds": target,
                         "voiceover": "Drying time matters.",
-                        "on_screen_text": None,
+                        "on_screen_text": on_screen_text,
                         "visual_intent": "A compact dryer in use",
                         "claim_source_evidence_ids": ["reviews:key:r1"],
                         "unsupported_claim": False,
@@ -91,7 +93,7 @@ def _creative_manifest(
                         "continuity_keys": ["blue body", "same table"],
                         "required_facts": ["portable size"],
                         "source_evidence_ids": ["reviews:key:r1"],
-                        "text_reference": None,
+                        "text_reference": text_reference,
                         "production_notes": "renderer-neutral",
                         "render_intent": render_intent,
                     }
@@ -112,6 +114,9 @@ def test_three_second_shot_compiles_to_nearest_compatible_frame_count() -> None:
     assert plan.target_runtime_ms == 3000
     assert task.target_duration_ms == 3000
     assert task.execution_disposition == "Executable"
+    assert task.execution_backend == "comfy"
+    assert task.execution_profile_id == "comfy.wan22.ti2v5b.t2v.v1"
+    assert task.local_media is None
     assert task.workflow_id == "comfy.wan22.ti2v5b.t2v.v1"
     assert task.width == 832
     assert task.height == 480
@@ -119,6 +124,19 @@ def test_three_second_shot_compiles_to_nearest_compatible_frame_count() -> None:
     assert task.frame_count == 73
     assert task.frame_count % 4 == 1
     assert abs(task.frame_count / task.fps - 3.0) <= 2 / task.fps
+
+
+def test_image_to_video_keeps_comfy_backend_and_frozen_i2v_profile() -> None:
+    manifest = _creative_manifest("IMAGE_TO_VIDEO")
+    manifest["trusted_local_assets"] = {"shot-001": "ingress/shot-001.png"}
+
+    task = compile_production_plan(str(uuid4()), manifest, "b" * 64).tasks[0]
+
+    assert task.execution_disposition == "Executable"
+    assert task.execution_backend == "comfy"
+    assert task.execution_profile_id == "comfy.wan22.ti2v5b.i2v.v1"
+    assert task.workflow_id == "comfy.wan22.ti2v5b.i2v.v1"
+    assert task.trusted_input_asset_ref == "ingress/shot-001.png"
 
 
 @pytest.mark.parametrize(("duration_seconds", "frame_count"), [(0.5, 13), (5.0, 121)])
@@ -253,9 +271,83 @@ def test_identical_inputs_produce_identical_complete_plan() -> None:
     assert first_digest == second_digest
 
 
-def test_unsupported_render_intent_fails_closed_to_needs_human() -> None:
-    plan = compile_production_plan(str(uuid4()), _creative_manifest("TEXT_CARD"), "b" * 64)
+def test_text_card_prefers_shot_text_and_freezes_local_media_payload() -> None:
+    plan = compile_production_plan(
+        str(uuid4()),
+        _creative_manifest(
+            "TEXT_CARD",
+            text_reference="  Save time with gentle airflow.  ",
+            on_screen_text="Fallback text",
+            output_profile_id="video.vertical.v1",
+        ),
+        "b" * 64,
+    )
+    task = plan.tasks[0]
+
+    assert task.execution_disposition == "Executable"
+    assert task.execution_backend == "local_media"
+    assert task.execution_profile_id == "production.local.text-card.v1"
+    assert task.workflow_id is None
+    assert task.local_media is not None
+    assert task.local_media.text_content == "Save time with gentle airflow."
+    assert task.local_media.text_profile_id == "production.local.text-card.v1"
+    assert task.local_media.text_digest == hashlib.sha256(
+        b"Save time with gentle airflow."
+    ).hexdigest()
+    assert (task.width, task.height, task.fps, task.frame_count) == (480, 832, 24, 73)
+
+
+def test_text_card_falls_back_to_matching_script_beat_text() -> None:
+    plan = compile_production_plan(
+        str(uuid4()),
+        _creative_manifest("TEXT_CARD", on_screen_text="A trusted script caption"),
+        "b" * 64,
+    )
+
+    assert plan.tasks[0].local_media is not None
+    assert plan.tasks[0].local_media.text_content == "A trusted script caption"
+
+
+def test_text_card_ignores_blank_shot_text_before_script_fallback() -> None:
+    plan = compile_production_plan(
+        str(uuid4()),
+        _creative_manifest(
+            "TEXT_CARD",
+            text_reference="   ",
+            on_screen_text="A trusted script caption",
+        ),
+        "b" * 64,
+    )
+
+    assert plan.tasks[0].local_media is not None
+    assert plan.tasks[0].local_media.text_content == "A trusted script caption"
+
+
+def test_text_card_without_valid_text_fails_closed_to_needs_human() -> None:
+    plan = compile_production_plan(
+        str(uuid4()),
+        _creative_manifest("TEXT_CARD", text_reference="   ", on_screen_text=None),
+        "b" * 64,
+    )
     task = plan.tasks[0]
 
     assert task.execution_disposition == "NeedsHuman"
+    assert task.execution_backend is None
+    assert task.execution_profile_id is None
     assert task.workflow_id is None
+    assert task.local_media is None
+
+
+@pytest.mark.parametrize(
+    "render_intent",
+    ["GENERATIVE_IMAGE", "EXISTING_ASSET", "PRODUCT_ASSET_COMPOSITE"],
+)
+def test_c006a_excluded_render_intents_remain_needs_human(render_intent: str) -> None:
+    plan = compile_production_plan(
+        str(uuid4()),
+        _creative_manifest(render_intent),
+        "b" * 64,
+    )
+
+    assert plan.tasks[0].execution_disposition == "NeedsHuman"
+    assert plan.tasks[0].execution_backend is None
