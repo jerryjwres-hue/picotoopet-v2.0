@@ -14,8 +14,8 @@ internal static class MaotaiAssetPixelValidationSmokeTests
 
     // Rejected fingerprints : real-Windows review proved these exact binaries are placeholder-quality despite passing
     //                         generic alpha/density checks. Keep this blacklist until production replacements land.
-    private static readonly IReadOnlyDictionary<string, (string BlobSha1, string Reason)> RejectedAssetFingerprints =
-        new Dictionary<string, (string BlobSha1, string Reason)>(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, (string BlobSha1, string Reason)> RejectedAssetFingerprints =
+        new(StringComparer.OrdinalIgnoreCase)
         {
             ["torso_neutral.png"] = (
                 "33c2e50e8f902a99d4d77ada619ea30e10ae0730",
