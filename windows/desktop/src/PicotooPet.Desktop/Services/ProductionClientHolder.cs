@@ -44,8 +44,12 @@ public sealed class ProductionClientHolder : IAsyncDisposable
             entry.AddLease();
             retired?.Retire();
         }
-        // 释放 HttpClient 是同步完成的 ValueTask，这里无需等待。
-        _ = retired?.TryReleaseIfIdle();
+        // MacCoreProductionClient.DisposeAsync is synchronous today; observe the ValueTask so
+        // analyzers and future lifecycle changes cannot silently drop disposal work.
+        if (retired is not null)
+        {
+            retired.TryReleaseIfIdle().GetAwaiter().GetResult();
+        }
         return new ProductionClientLease(entry);
     }
 
