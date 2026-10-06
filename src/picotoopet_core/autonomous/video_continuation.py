@@ -20,6 +20,10 @@ class _Handoffs(Protocol):
     def context(self, goal_id: str) -> GoalHandoffContext: ...
 
 
+class GoalVideoContinuationStateError(ValueError):
+    """Persisted continuation state exists but failed integrity validation."""
+
+
 class GoalVideoContinuationRecord(BaseModel):
     """Restart-safe projection over the existing Creative and Production records."""
 
@@ -103,7 +107,7 @@ class GoalVideoContinuationService:
         manifest = json.loads(package_row["manifest_json"])
         provenance = manifest.get("external_provenance")
         if not isinstance(provenance, dict) or provenance.get("goal_id") != goal_id:
-            raise ValueError("GOAL_CREATIVE_PROVENANCE_INVALID")
+            raise GoalVideoContinuationStateError("GOAL_CREATIVE_PROVENANCE_INVALID")
         production_row = self.database.fetchone(
             "SELECT production_job_id,status FROM production_jobs WHERE creative_package_id=?",
             (package_row["creative_package_id"],),
