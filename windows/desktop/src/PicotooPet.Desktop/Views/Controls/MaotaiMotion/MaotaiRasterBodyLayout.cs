@@ -71,8 +71,8 @@ internal static class MaotaiRasterBodyLayout
                 case "MaotaiV2HindLeftPaw":
                     ConfigureManifestPivotedImage(
                         element,
-                        31.0,
-                        22.0,
+                        27.0,
+                        19.0,
                         MaotaiAssetManifest.HindLeftPaw,
                         12);
                     break;
@@ -80,8 +80,8 @@ internal static class MaotaiRasterBodyLayout
                 case "MaotaiV2HindRightPaw":
                     ConfigureManifestPivotedImage(
                         element,
-                        31.0,
-                        22.0,
+                        27.0,
+                        19.0,
                         MaotaiAssetManifest.HindRightPaw,
                         12);
                     break;
@@ -143,8 +143,8 @@ internal static class MaotaiRasterBodyLayout
                 case "MaotaiV2FrontLeftPaw":
                     ConfigureManifestPivotedImage(
                         element,
-                        29.0,
-                        20.0,
+                        25.0,
+                        17.0,
                         MaotaiAssetManifest.FrontLeftPaw,
                         30);
                     break;
@@ -152,8 +152,8 @@ internal static class MaotaiRasterBodyLayout
                 case "MaotaiV2FrontRightPaw":
                     ConfigureManifestPivotedImage(
                         element,
-                        29.0,
-                        20.0,
+                        25.0,
+                        17.0,
                         MaotaiAssetManifest.FrontRightPaw,
                         30);
                     break;
@@ -180,15 +180,25 @@ internal static class MaotaiRasterBodyLayout
 
         foreach (var child in motionLayer.Children)
         {
-            if (child is FrameworkElement { Name: "MaotaiV2Laptop" } laptop)
+            switch (child)
             {
-                // Work prop footprint : show the complete laptop as one readable foreground object under both typing paws.
-                laptop.Width  = 82.0;
-                laptop.Height = 52.0;
-                Canvas.SetLeft(laptop, 44.0);
-                Canvas.SetTop(laptop, 98.0);
-                System.Windows.Controls.Panel.SetZIndex(laptop, 60);
-                return;
+                case FrameworkElement { Name: "MaotaiV2Laptop" } laptop:
+                    // Work prop footprint : keep the complete laptop readable without covering most of the lower torso.
+                    laptop.Width  = 74.0;
+                    laptop.Height = 47.0;
+                    Canvas.SetLeft(laptop, 48.0);
+                    Canvas.SetTop(laptop, 102.0);
+                    System.Windows.Controls.Panel.SetZIndex(laptop, 60);
+                    break;
+
+                case FrameworkElement { Name: "MaotaiV2Drink" } drink:
+                    // Side prop scale      : the drink stays recognizable but subordinate to Maotai and the typing paws.
+                    drink.Width  = 24.0;
+                    drink.Height = 35.0;
+                    Canvas.SetLeft(drink, 14.0);
+                    Canvas.SetTop(drink, 103.0);
+                    System.Windows.Controls.Panel.SetZIndex(drink, 60);
+                    break;
             }
         }
     }

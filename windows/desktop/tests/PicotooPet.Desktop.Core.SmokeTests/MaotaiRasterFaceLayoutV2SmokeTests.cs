@@ -56,19 +56,23 @@ internal static class MaotaiRasterFaceLayoutV2SmokeTests
 
         var visualScale = head.LayoutTransform as ScaleTransform
             ?? throw new InvalidOperationException("head 必须有独立的静态视觉缩放，不能改 Motion Engine 的动态 HeadScale");
-        AssertNear(0.84, visualScale.ScaleX, "head 静态视觉宽度比例错误");
-        AssertNear(0.90, visualScale.ScaleY, "head 静态视觉高度比例错误");
+        AssertNear(0.80, visualScale.ScaleX, "head 静态视觉宽度比例错误");
+        AssertNear(0.86, visualScale.ScaleY, "head 静态视觉高度比例错误");
 
         AssertNear(-28.0, Canvas.GetTop(ear), "耳朵露出量不足，head 会重新读成圆球");
         AssertNear(-8.0, Canvas.GetTop(muzzle), "muzzle 垂直校准错误");
         AssertNear(-14.0, Canvas.GetTop(eye), "眼睛垂直校准错误");
         AssertNear(2.0, Canvas.GetTop(mouth), "嘴型垂直校准错误");
-        AssertNear(36.0, muzzle.Width, "muzzle 宽度不得继续覆盖大半张脸");
-        AssertNear(25.0, muzzle.Height, "muzzle 高度不得继续覆盖大半张脸");
-        AssertNear(18.0, eye.Width, "eye footprint 必须收回真实犬脸比例");
-        AssertNear(16.0, eye.Height, "eye footprint 必须收回真实犬脸比例");
-        AssertNear(26.0, mouth.Width, "mouth footprint 过大会重新读成贴纸红嘴");
-        AssertNear(18.0, mouth.Height, "mouth footprint 过大会重新读成贴纸红嘴");
+        AssertNear(32.0, muzzle.Width, "muzzle 宽度不得继续覆盖大半张脸");
+        AssertNear(22.0, muzzle.Height, "muzzle 高度不得继续覆盖大半张脸");
+        AssertNear(16.0, eye.Width, "eye footprint 必须收回真实犬脸比例");
+        AssertNear(14.0, eye.Height, "eye footprint 必须收回真实犬脸比例");
+        AssertNear(22.0, mouth.Width, "mouth footprint 过大会重新读成贴纸红嘴");
+        AssertNear(15.0, mouth.Height, "mouth footprint 过大会重新读成贴纸红嘴");
+        AssertNear(66.0, band.Width, "耳机带不得继续比头壳更抢视觉");
+        AssertNear(42.0, band.Height, "耳机带高度过大会形成第二层头壳");
+        AssertNear(20.0, cup.Width, "耳罩宽度必须保持从属比例");
+        AssertNear(28.0, cup.Height, "耳罩高度必须保持从属比例");
         Assert(Panel.GetZIndex(ear) < Panel.GetZIndex(band), "耳朵应位于头戴式耳机带后方");
         Assert(Panel.GetZIndex(band) < Panel.GetZIndex(headShell), "head 必须盖住耳根与耳机带下缘");
         Assert(Panel.GetZIndex(headShell) < Panel.GetZIndex(muzzle), "muzzle 必须位于 head shell 上方");

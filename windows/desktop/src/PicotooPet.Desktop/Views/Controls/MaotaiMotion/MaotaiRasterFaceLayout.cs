@@ -10,8 +10,8 @@ namespace PicotooPet.Desktop.Views.Controls.MaotaiMotion;
 /// </summary>
 internal static class MaotaiRasterFaceLayout
 {
-    private const double HeadVisualScaleX = 0.84;
-    private const double HeadVisualScaleY = 0.90;
+    private const double HeadVisualScaleX = 0.80;
+    private const double HeadVisualScaleY = 0.86;
     private const double EarTop = -28.0;
     private const double EyeTop = -14.0;
     private const double MuzzleTop = -8.0;
@@ -43,6 +43,7 @@ internal static class MaotaiRasterFaceLayout
                     break;
 
                 case "MaotaiV2HeadphoneBand":
+                    ConfigureFaceBox(element, 66.0, 42.0, -33.0, -38.0);
                     System.Windows.Controls.Panel.SetZIndex(element, 4);
                     break;
 
@@ -51,40 +52,40 @@ internal static class MaotaiRasterFaceLayout
                     break;
 
                 case "MaotaiV2Muzzle":
-                    ConfigureCentered(element, 36.0, 25.0, MuzzleTop);
+                    ConfigureCentered(element, 32.0, 22.0, MuzzleTop);
                     System.Windows.Controls.Panel.SetZIndex(element, 10);
                     break;
 
                 case "MaotaiV2EyeLeftOpen":
                 case "MaotaiV2EyeLeftHalf":
                 case "MaotaiV2EyeLeftClosed":
-                    ConfigureFaceBox(element, 18.0, 16.0, -18.0, EyeTop);
+                    ConfigureFaceBox(element, 16.0, 14.0, -16.0, EyeTop);
                     System.Windows.Controls.Panel.SetZIndex(element, 20);
                     break;
 
                 case "MaotaiV2EyeRightOpen":
                 case "MaotaiV2EyeRightHalf":
                 case "MaotaiV2EyeRightClosed":
-                    ConfigureFaceBox(element, 18.0, 16.0, 0.0, EyeTop);
+                    ConfigureFaceBox(element, 16.0, 14.0, 0.0, EyeTop);
                     System.Windows.Controls.Panel.SetZIndex(element, 20);
                     break;
 
                 case "MaotaiV2PupilLeft":
                 case "MaotaiV2PupilRight":
-                    element.Width  = 8.0;
-                    element.Height = 8.0;
-                    Canvas.SetLeft(element, -4.0);
-                    Canvas.SetTop(element, -4.0);
+                    element.Width  = 7.0;
+                    element.Height = 7.0;
+                    Canvas.SetLeft(element, -3.5);
+                    Canvas.SetTop(element, -3.5);
                     System.Windows.Controls.Panel.SetZIndex(element, 22);
                     break;
 
                 case "MaotaiV2BrowLeft":
-                    ConfigureFaceBox(element, 20.0, 10.0, -20.0, -16.0);
+                    ConfigureFaceBox(element, 18.0, 9.0, -18.0, -16.0);
                     System.Windows.Controls.Panel.SetZIndex(element, 24);
                     break;
 
                 case "MaotaiV2BrowRight":
-                    ConfigureFaceBox(element, 20.0, 10.0, 0.0, -16.0);
+                    ConfigureFaceBox(element, 18.0, 9.0, 0.0, -16.0);
                     System.Windows.Controls.Panel.SetZIndex(element, 24);
                     break;
 
@@ -93,12 +94,17 @@ internal static class MaotaiRasterFaceLayout
                 case "MaotaiV2MouthAnnoyed":
                 case "MaotaiV2MouthYawn":
                 case "MaotaiV2MouthTongue":
-                    ConfigureCentered(element, 26.0, 18.0, MouthTop);
+                    ConfigureCentered(element, 22.0, 15.0, MouthTop);
                     System.Windows.Controls.Panel.SetZIndex(element, 30);
                     break;
 
                 case "MaotaiV2HeadphoneLeft":
+                    ConfigureFaceBox(element, 20.0, 28.0, -35.0, -10.0);
+                    System.Windows.Controls.Panel.SetZIndex(element, 40);
+                    break;
+
                 case "MaotaiV2HeadphoneRight":
+                    ConfigureFaceBox(element, 20.0, 28.0, 15.0, -10.0);
                     System.Windows.Controls.Panel.SetZIndex(element, 40);
                     break;
             }

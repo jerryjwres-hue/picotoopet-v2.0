@@ -62,10 +62,10 @@ internal static class MaotaiRasterBodyLayoutV2SmokeTests
         // Compact footprint    : keep articulation visible while returning the silhouette toward one continuous body mass.
         AssertImageBox(frontUpper, 28.0, 40.0, 17.0 / 34.0, 12.0 / 46.0, "front upper");
         AssertImageBox(frontLower, 27.0, 37.0, 16.0 / 32.0, 12.0 / 44.0, "front lower");
-        AssertImageBox(frontPaw,   29.0, 20.0, 19.0 / 38.0, 12.0 / 28.0, "front paw");
+        AssertImageBox(frontPaw,   25.0, 17.0, 19.0 / 38.0, 12.0 / 28.0, "front paw");
         AssertImageBox(hindUpper,  30.0, 39.0, 19.0 / 38.0, 12.0 / 44.0, "hind upper");
         AssertImageBox(hindLower,  29.0, 37.0, 18.0 / 36.0, 12.0 / 42.0, "hind lower");
-        AssertImageBox(hindPaw,    31.0, 22.0, 21.0 / 42.0, 13.0 / 30.0, "hind paw");
+        AssertImageBox(hindPaw,    27.0, 19.0, 21.0 / 42.0, 13.0 / 30.0, "hind paw");
 
         Assert(Panel.GetZIndex(hindUpper) < Panel.GetZIndex(torso),
             "hind upper 必须藏在 torso 后，避免髋部接缝外露");

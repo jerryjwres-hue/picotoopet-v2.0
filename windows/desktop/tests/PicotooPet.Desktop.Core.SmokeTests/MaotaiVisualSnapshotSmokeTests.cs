@@ -239,11 +239,11 @@ internal static class MaotaiVisualSnapshotSmokeTests
                 throw new InvalidOperationException($"Maotai visual snapshot {name} 缺少缓存 ScaleTransform");
             }
 
-            if (scale.ScaleX > 0.94 || scale.ScaleX < 0.90)
+            if (scale.ScaleX > 0.88 || scale.ScaleX < 0.84)
             {
                 throw new InvalidOperationException(
                     $"Maotai run {name} 横向 footprint 应保留接近原生宽度；" +
-                    $"expected=0.90..0.94, actual={scale.ScaleX:F2}");
+                    $"expected=0.84..0.88, actual={scale.ScaleX:F2}");
             }
         }
     }
@@ -269,15 +269,21 @@ internal static class MaotaiVisualSnapshotSmokeTests
     {
         var laptop = panel.FindName("MaotaiV2Laptop") as FrameworkElement
             ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MaotaiV2Laptop");
+        var drink = panel.FindName("MaotaiV2Drink") as FrameworkElement
+            ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MaotaiV2Drink");
         var root = panel.FindName("MaotaiV2Root") as FrameworkElement
             ?? throw new InvalidOperationException("Maotai visual snapshot 缺少 MaotaiV2Root");
 
         // Complete prop      : laptop must render as one readable object in front of the lower body, never a purple fragment behind it.
         // Typing composition : keep the screen centered under the front paws while preserving the drink on the left.
-        AssertNear(Canvas.GetLeft(laptop), 44.0, "work laptop left");
-        AssertNear(Canvas.GetTop(laptop), 98.0, "work laptop top");
-        AssertNear(laptop.Width, 82.0, "work laptop width");
-        AssertNear(laptop.Height, 52.0, "work laptop height");
+        AssertNear(Canvas.GetLeft(laptop), 48.0, "work laptop left");
+        AssertNear(Canvas.GetTop(laptop), 102.0, "work laptop top");
+        AssertNear(laptop.Width, 74.0, "work laptop width");
+        AssertNear(laptop.Height, 47.0, "work laptop height");
+        AssertNear(Canvas.GetLeft(drink), 14.0, "work drink left");
+        AssertNear(Canvas.GetTop(drink), 103.0, "work drink top");
+        AssertNear(drink.Width, 24.0, "work drink width");
+        AssertNear(drink.Height, 35.0, "work drink height");
         if (Panel.GetZIndex(laptop) <= Panel.GetZIndex(root))
         {
             throw new InvalidOperationException(
