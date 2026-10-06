@@ -25,10 +25,10 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         typeof(AssistantPetPanel),
         new FrameworkPropertyMetadata(false, OnFloatingModeChanged));
 
-    // Frame timer       : advances independent body-part poses; it never loads remote/sprite content.
+    // Frame timer       : legacy fallback only; v2 owns all autonomous motion once its rig is ready.
     private readonly DispatcherTimer _frameTimer;
 
-    // Behavior scheduler: adds bounded emotion/micro-action overlays without owning business state.
+    // Behavior scheduler: legacy fallback only; v2 uses MaotaiMotionEngine for autonomous behavior.
     private readonly PetBehaviorController _behaviorController;
 
     // Part transforms   : each named WPF shape owns its own motion, so the pet is articulated.
@@ -279,6 +279,11 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
     private void ConfigureFrameTimer(AssistantPetMode mode)
     {
         _frameTimer.Stop();
+        if (_maotaiRigReady)
+        {
+            return;
+        }
+
         _frameTimer.Interval = mode switch
         {
             AssistantPetMode.Working => TimeSpan.FromMilliseconds(310),
@@ -296,6 +301,12 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
 
     private void FrameTimer_Tick(object? sender, EventArgs e)
     {
+        if (_maotaiRigReady)
+        {
+            _frameTimer.Stop();
+            return;
+        }
+
         _frameIndex++;
         switch (_activeMode)
         {
@@ -694,6 +705,12 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
     private void StartBreathing(AssistantPetMode mode)
     {
         PetScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        if (_maotaiRigReady)
+        {
+            PetScale.ScaleY = 1.0;
+            return;
+        }
+
         if (!_isLoaded || !IsVisible)
         {
             return;
@@ -728,6 +745,15 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
 
     private void AnimateStateTransition(AssistantPetMode mode)
     {
+        if (_maotaiRigReady)
+        {
+            PetMotionLayer.BeginAnimation(OpacityProperty, null);
+            PetMotionLayer.Opacity = 1.0;
+            PetTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+            PetTranslate.X = 0.0;
+            return;
+        }
+
         var fade = new DoubleAnimation
         {
             From           = 0.45,
@@ -745,6 +771,13 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
 
     private void AnimateErrorShake()
     {
+        if (_maotaiRigReady)
+        {
+            PetTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+            PetTranslate.X = 0.0;
+            return;
+        }
+
         var shake = new DoubleAnimationUsingKeyFrames
         {
             Duration = TimeSpan.FromMilliseconds(420),
@@ -941,6 +974,13 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
 
     private void AnimateCelebration()
     {
+        if (_maotaiRigReady)
+        {
+            PetTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+            PetTranslate.Y = 0.0;
+            return;
+        }
+
         var jump = new DoubleAnimationUsingKeyFrames
         {
             Duration = TimeSpan.FromMilliseconds(620),

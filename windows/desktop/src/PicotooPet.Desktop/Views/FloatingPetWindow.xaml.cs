@@ -53,20 +53,27 @@ public partial class FloatingPetWindow : Window
 
     private void DragHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.LeftButton != MouseButtonState.Pressed)
+        if (e.ChangedButton != MouseButton.Left)
         {
             return;
         }
 
+        var edgeSnapped = false;
+        FloatingPet.BeginFloatingWindowDrag();
         try
         {
             DragMove();
-            SnapToNearestEdge();
+            edgeSnapped = SnapToNearestEdge();
         }
         catch (InvalidOperationException)
         {
             // Drag boundary   : a lost mouse button cancels only the window move.
         }
+        finally
+        {
+            FloatingPet.EndFloatingWindowDrag(edgeSnapped);
+        }
+
         e.Handled = true;
     }
 
@@ -104,12 +111,12 @@ public partial class FloatingPetWindow : Window
         ClampToVirtualDesktop();
     }
 
-    /// <summary>拖动结束时只在接近虚拟桌面边缘时吸附，避免强制改变用户选择的位置。</summary>
-    private void SnapToNearestEdge()
+    /// <summary>拖动结束时只在接近虚拟桌面边缘时吸附；返回是否真的发生吸附供 Motion Engine 做站稳。</summary>
+    private bool SnapToNearestEdge()
     {
         if (ActualWidth <= 0 || ActualHeight <= 0)
         {
-            return;
+            return false;
         }
 
         var minLeft = SystemParameters.VirtualScreenLeft;
@@ -127,7 +134,7 @@ public partial class FloatingPetWindow : Window
 
         if (nearest > EdgeSnapThreshold)
         {
-            return;
+            return false;
         }
 
         if (nearest == distanceLeft)
@@ -148,6 +155,7 @@ public partial class FloatingPetWindow : Window
         }
 
         ClampToVirtualDesktop();
+        return true;
     }
 
     private void UpdatePinLabel() =>

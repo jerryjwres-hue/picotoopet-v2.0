@@ -1,0 +1,14 @@
+candidate: chest_fur_transport_8c.png
+status: PROMOTED_TO_FORMAL_CHEST_FUR_PENDING_CI
+pixel_size: 124x104
+logical_contract: 62x52 @2x
+pivot_contract: 31,18
+joint_overlap_logical: 16
+alpha_border: all four outer borders alpha=0
+visible_bbox_alpha_gt_0: x=38..86, y=10..100
+source: reconstructed only from the central white chest/ruff region of the already-valid independent torso-only source; NOT cropped from a full character
+visual_role: independent chest/ruff overlay for the Chest bone; no head, legs, paws, tail, props, text or complete-character pixels
+transport_edit: 8 representative RGB levels with binary alpha to fit the GitHub connector safe binary-transfer size; geometry and manifest alignment preserved
+png_sha256_local: c40f9b95e3d0e23288d89ed80f944af9bd7a943e7600d87e30dea1c9266875d0
+git_blob_sha_local_and_remote: 63f8d0ed08f69c9687b5b75865e4e1303100579f
+rejected_transport_blob: 6747ed2e80a12a2b86843e9d0fb09b33544589a0 did not match local Git blob SHA and was never attached to the branch

@@ -1,0 +1,4 @@
+source generation id: 89bf9df4-8313-41cc-bfb4-615e7a5b8e60
+preview sha256: b6eeeaadfd36b0c1df478b134538310d444e34c7dd597ae0860267118c7f0942
+preview local size: 172918 bytes
+status: REJECTED formal asset; reference-only; never crop into runtime V2 assets.
