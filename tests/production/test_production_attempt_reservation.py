@@ -124,7 +124,9 @@ def test_reserve_then_bind_prompt_id_consumes_only_one_attempt(tmp_path: Path) -
     ) == "prompt-1"
 
 
-def test_local_media_null_prompt_reservations_use_two_attempt_budget(tmp_path: Path) -> None:
+def test_local_media_duplicate_reservation_is_idempotent_and_explicit_retry_uses_budget(
+    tmp_path: Path,
+) -> None:
     service, _repository, job_id, task_id = _service(tmp_path, local_media=True)
     claim = service.claim(job_id, "pc-gpu-1")
     request = ProductionTaskAttemptRequest(
@@ -134,11 +136,21 @@ def test_local_media_null_prompt_reservations_use_two_attempt_budget(tmp_path: P
     )
 
     first = service.mark_attempt(job_id, task_id, request)
-    second = service.mark_attempt(job_id, task_id, request)
+    duplicate = service.mark_attempt(job_id, task_id, request)
+    second = service.mark_attempt(
+        job_id,
+        task_id,
+        request.model_copy(update={"retry_previous_attempt": True}),
+    )
 
     assert first.attempt_count == 1
-    assert first.comfy_prompt_id is None
+    assert duplicate.attempt_count == 1
+    assert duplicate.comfy_prompt_id is None
     assert second.attempt_count == 2
     assert second.comfy_prompt_id is None
     with pytest.raises(ValueError, match="PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED"):
-        service.mark_attempt(job_id, task_id, request)
+        service.mark_attempt(
+            job_id,
+            task_id,
+            request.model_copy(update={"retry_previous_attempt": True}),
+        )
