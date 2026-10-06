@@ -145,8 +145,16 @@ wait_for_health() {
   local attempts="${2:-80}"
   local index
   for ((index = 0; index < attempts; index += 1)); do
-    if curl --silent --show-error --fail --max-time 2 \
-      "$base_url/api/v1/health" >/dev/null 2>&1; then
+    if python3 - "$base_url" >/dev/null 2>&1 <<'PY'
+import sys
+import urllib.request
+
+base = sys.argv[1].rstrip("/")
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with opener.open(f"{base}/api/v1/health", timeout=2) as response:
+    raise SystemExit(0 if response.status == 200 else 1)
+PY
+    then
       return 0
     fi
     sleep 0.25
@@ -186,7 +194,8 @@ import sys
 import urllib.request
 
 base = sys.argv[1].rstrip("/")
-with urllib.request.urlopen(f"{base}/api/v1/health", timeout=5) as response:
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with opener.open(f"{base}/api/v1/health", timeout=5) as response:
     health = json.load(response)
 if health.get("status") != "ok":
     raise SystemExit(f"health status is not ok: {health!r}")
@@ -207,10 +216,13 @@ token = sys.argv[2]
 expected_product_version = sys.argv[3]
 
 
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def get(path: str, *, authenticated: bool = False):
     headers = {"Authorization": f"Bearer {token}"} if authenticated else {}
     request = urllib.request.Request(f"{base}{path}", headers=headers)
-    with urllib.request.urlopen(request, timeout=5) as response:
+    with opener.open(request, timeout=5) as response:
         return json.load(response)
 
 health = get("/api/v1/health")

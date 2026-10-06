@@ -283,10 +283,13 @@ token = sys.argv[2]
 expected_product_version = sys.argv[3]
 
 
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def get(path: str, *, authenticated: bool = False):
     headers = {"Authorization": f"Bearer {token}"} if authenticated else {}
     request = urllib.request.Request(f"{base}{path}", headers=headers)
-    with urllib.request.urlopen(request, timeout=5) as response:
+    with opener.open(request, timeout=5) as response:
         return json.load(response)
 
 health = get("/api/v1/health")
@@ -333,7 +336,8 @@ request = urllib.request.Request(
     f"{base}/api/v1/workers/status",
     headers={"Authorization": f"Bearer {sys.argv[2]}"},
 )
-with urllib.request.urlopen(request, timeout=5) as response:
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with opener.open(request, timeout=5) as response:
     status = json.load(response)
 if status.get("state") != "online" or status.get("available") is not True:
     raise SystemExit(f"Worker 必须在线：{status!r}")

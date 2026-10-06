@@ -41,6 +41,26 @@ def test_worker_installer_preserves_real_mac_startup_diagnostics() -> None:
     assert "candidate_stderr_report" in source
 
 
+def test_worker_installer_quiesces_previous_worker_before_candidate_health() -> None:
+    source = _read(WORKER_INSTALLER)
+
+    # 实机旧 Worker 可能已经制造大量 loopback TIME_WAIT。候选验证前必须先卸载旧 Worker，
+    # 但要在 wheel 安装完成后再暂停以缩短停机窗口；任何失败仍由 rollback 恢复旧定义。
+    pip_install = source.index('"$new_version/.venv/bin/python" -m pip install')
+    quiesce = source.index(
+        "stop_worker_agent",
+        source.index('if [[ "$installed_product_version" != "$product_version" ]]'),
+    )
+    candidate = source.index('candidate_root="$(mktemp -d ')
+    health = source.index('wait_for_candidate_health "$candidate_url" 240')
+    activation = source.index('atomic_switch_current "$runtime_root" "$new_version"')
+
+    assert pip_install < quiesce < candidate < health < activation
+    assert "restore_previous_worker_definition || true" in source
+    assert 'launchctl bootstrap "gui/$UID" "$plist"' in source
+    assert 'launchctl kickstart -k "gui/$UID/$(worker_label)"' in source
+
+
 def test_gateway_installer_restores_snapshot_when_health_fails() -> None:
     source = _read(GATEWAY_INSTALLER)
 
@@ -68,3 +88,14 @@ def test_install_contract_is_separate_from_full_shared_health() -> None:
     assert 'VERIFY_PICOTOOPET_RESEARCH_2_3_27_1.command" --mode install-contract' in installer_source
     assert 'verify_mode="full"' in integrated_source
     assert 'VERIFY_RESEARCH_GATEWAY.command" --mode "$verify_mode"' in integrated_source
+
+
+def test_worker_loopback_checks_ignore_user_proxy_environment() -> None:
+    installer = _read(WORKER_INSTALLER)
+    worker_lib = _read(REPO_ROOT / "deploy/macos/phase23-worker/worker-lib.sh")
+    core_lib = _read(REPO_ROOT / "deploy/macos/phase23/lib.sh")
+
+    # 所有安装/验证期 loopback HTTP 必须绕过用户 HTTP(S)/ALL_PROXY。
+    assert "ProxyHandler({})" in installer
+    assert worker_lib.count("ProxyHandler({})") >= 2
+    assert core_lib.count("ProxyHandler({})") >= 3

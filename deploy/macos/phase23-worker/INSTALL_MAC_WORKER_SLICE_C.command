@@ -104,7 +104,8 @@ import sys
 import urllib.request
 
 base = sys.argv[1].rstrip("/")
-with urllib.request.urlopen(f"{base}/api/v1/health", timeout=2) as response:
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with opener.open(f"{base}/api/v1/health", timeout=2) as response:
     raise SystemExit(0 if response.status == 200 else 1)
 PY
     then
@@ -322,6 +323,11 @@ if [[ "$installed_product_version" != "$product_version" ]]; then
   exit 1
 fi
 
+# 候选验证前先暂停旧 Worker。旧 Worker 可能持有大量 loopback 短连接并耗尽
+# macOS ephemeral port；继续并行运行会让健康检查误判“候选未 ready”。
+# 旧定义已在上方完成快照，任何后续失败都会由 on_error -> rollback 恢复。
+stop_worker_agent
+
 candidate_root="$(mktemp -d "${TMPDIR:-/tmp}/picotoopet-slice-d-worker-candidate.XXXXXX")"
 candidate_port="$(choose_free_port)"
 PICOTOO_RUNTIME_ROOT="$candidate_root" \
@@ -337,7 +343,6 @@ wait_for_candidate_health "$candidate_url" 240
 verify_slice_d_candidate_contract "$candidate_url" "$api_token" "$product_version"
 cleanup_candidate
 
-stop_worker_agent
 atomic_switch_current "$runtime_root" "$new_version"
 activated=1
 restart_core_runtime
