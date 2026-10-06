@@ -31,6 +31,13 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--trusted-asset-ingress-only", StringComparer.Ordinal))
+            {
+                await TrustedAssetIngressSmokeTests.RunAsync().ConfigureAwait(false);
+                Console.WriteLine("TRUSTED_ASSET_INGRESS_SMOKE=PASS");
+                return 0;
+            }
+
             if (args.Contains("--goal-video-return-only", StringComparer.Ordinal))
             {
                 GoalVideoReturnParserSmokeTests.Run();
@@ -120,6 +127,7 @@ internal static class Program
             ProductionRecoverySmokeTests.Run();
             ProductionTimelineOutputProfileSmokeTests.Run();
             await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
+            await TrustedAssetIngressSmokeTests.RunAsync().ConfigureAwait(false);
             await FinalVideoAssemblyServiceSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalFinalVideoCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             ComfyWorkflowTemplateSmokeTests.Run();

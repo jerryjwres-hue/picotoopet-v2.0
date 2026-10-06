@@ -53,7 +53,7 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
     assert "cloud_policy" in task_columns
     assert REQUIRED_HANDOFF_COLUMNS <= handoff_columns
     # Schema gate              Migration history is cumulative and exact through schema 23.
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 24
     database.close()
 
 
