@@ -236,6 +236,26 @@ class CreativeRepository:
         )
         return record
 
+    def get_package(self, creative_package_id: str) -> CreativePackageRecord:
+        """Return one immutable Creative Package by its package identity."""
+
+        row = self.database.fetchone(
+            "SELECT * FROM creative_packages WHERE creative_package_id=?",
+            (creative_package_id,),
+        )
+        if row is None:
+            raise KeyError(creative_package_id)
+        return CreativePackageRecord(
+            creative_package_id=row["creative_package_id"],
+            creative_job_id=row["creative_job_id"],
+            source_set_digest=row["source_set_digest"],
+            package_digest=row["package_digest"],
+            package_relpath=row["package_relpath"],
+            manifest=json.loads(row["manifest_json"]),
+            quality_outcome=row["quality_outcome"],
+            created_at=row["created_at"],
+        )
+
     def package_for(self, creative_job_id: str) -> CreativePackageRecord | None:
         row = self.database.fetchone(
             "SELECT * FROM creative_packages WHERE creative_job_id=?",
