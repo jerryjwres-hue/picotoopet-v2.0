@@ -109,3 +109,10 @@ def test_worker_installer_does_not_overwrite_rollback_anchor_before_existing_tar
     rollback_anchor = source.index('printf \'%s\\n\' "$previous_target" > "$previous_version_file"')
 
     assert target_check < target_reject < rollback_anchor
+
+
+def test_worker_installer_keeps_new_version_assignment_on_real_newlines() -> None:
+    source = _read(WORKER_INSTALLER)
+
+    assert '\\n\\nnew_version=' not in source
+    assert 'github_cli_executable="$(discover_github_cli_executable || true)"\n\nnew_version=' in source
