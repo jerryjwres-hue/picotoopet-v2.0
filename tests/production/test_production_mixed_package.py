@@ -157,6 +157,7 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
     assert [item["workflow_id"] for item in payload["workflow_templates"]] == [
         "comfy.wan22.ti2v5b.t2v.v1"
     ]
+    assert payload["models"]
     outputs = payload["outputs"]
     assert outputs[0]["execution_backend"] == "comfy"
     assert outputs[0]["execution_profile_id"] == "comfy.wan22.ti2v5b.t2v.v1"
@@ -165,3 +166,75 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
     assert outputs[1]["execution_profile_id"] == "production.local.text-card.v1"
     assert outputs[1]["text_digest"] == text_card.local_media.text_digest
     assert "text_content" not in outputs[1]
+
+
+
+def test_text_card_only_package_does_not_claim_comfy_models() -> None:
+    now = datetime.now(UTC)
+    job_id = str(uuid4())
+    creative_job_id = str(uuid4())
+    creative_package_id = str(uuid4())
+    text_card = _plan_task(order=1, local_media=True)
+    plan = ProductionPlan(
+        schema_version="1.0",
+        production_profile="production.comfyui.v1",
+        production_job_id=job_id,
+        creative_package_id=creative_package_id,
+        creative_package_digest="a" * 64,
+        project_key="pet-dryer-us",
+        output_profile_id="video.landscape.v1",
+        target_runtime_ms=3000,
+        tasks=[text_card],
+    )
+    job = ProductionJobRecord(
+        production_job_id=job_id,
+        creative_package_id=creative_package_id,
+        creative_package_digest="a" * 64,
+        project_key="pet-dryer-us",
+        production_profile="production.comfyui.v1",
+        plan_digest="b" * 64,
+        status="QualityCheck",
+        lease_executor_id="pc-gpu-1",
+        idempotency_key="text-card-only-package",
+        created_at=now,
+        updated_at=now,
+    )
+    source = CreativePackageRecord(
+        creative_package_id=creative_package_id,
+        creative_job_id=creative_job_id,
+        source_set_digest="2" * 64,
+        package_digest="a" * 64,
+        package_relpath="creative/source.zip",
+        manifest={
+            "source_result_packages": [],
+            "source_set_digest": "2" * 64,
+            "source_findings": [],
+            "stage_template_versions": {},
+            "configured_model_id": "ollama:qwen3:8b",
+            "stage_results": {
+                "shot_plan.v1": {
+                    "shots": [
+                        {
+                            "shot_id": text_card.shot_id,
+                            "beat_id": "beat-001",
+                            "source_evidence_ids": [],
+                        }
+                    ]
+                }
+            },
+        },
+        quality_outcome="PASS",
+        created_at=now,
+    )
+
+    payload = build_production_package_payload(
+        production_package_id=str(uuid4()),
+        job=job,
+        source_package=source,
+        plan=plan,
+        tasks=[_completed_task(job_id, text_card)],
+        completed_at=now,
+    )
+
+    assert payload["workflow_templates"] == []
+    assert payload["models"] == []
