@@ -203,7 +203,7 @@ def build_production_package_payload(
             "base_url": "http://127.0.0.1:8188/",
         },
         "workflow_templates": workflow_templates,
-        "models": deepcopy(TRUSTED_MODELS),
+        "models": deepcopy(TRUSTED_MODELS) if workflow_ids else [],
         "outputs": outputs,
         "creative_provenance": _creative_provenance(source_manifest),
         "warnings": [],
