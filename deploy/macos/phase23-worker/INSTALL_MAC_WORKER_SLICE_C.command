@@ -280,18 +280,6 @@ if [[ ${#api_token} -lt 16 ]]; then
   exit 1
 fi
 
-printf '%s\n' "$previous_target" > "$previous_version_file"
-plist="$(worker_plist_path)"
-if [[ -f "$plist" ]]; then
-  previous_worker_present=1
-  cp "$plist" "$previous_worker_backup"
-else
-  previous_worker_present=0
-  rm -f "$previous_worker_backup"
-fi
-printf '%s\n' "$previous_worker_present" > "$worker_present_file"
-backup_captured=1
-
 github_cli_executable="$(discover_github_cli_executable || true)"
 
 new_version="$versions_root/${version}-${package_arch}"
@@ -305,6 +293,19 @@ if [[ -e "$new_version" ]]; then
     exit 1
   fi
 fi
+
+# 只有确认本次安装可以继续后才刷新回滚锚点；重复运行一个已安装版本不能覆盖最后已知可回退版本。
+printf '%s\n' "$previous_target" > "$previous_version_file"
+plist="$(worker_plist_path)"
+if [[ -f "$plist" ]]; then
+  previous_worker_present=1
+  cp "$plist" "$previous_worker_backup"
+else
+  previous_worker_present=0
+  rm -f "$previous_worker_backup"
+fi
+printf '%s\n' "$previous_worker_present" > "$worker_present_file"
+backup_captured=1
 mkdir -p "$new_version"
 touch "$new_version/$install_marker_name"
 new_version_created=1
