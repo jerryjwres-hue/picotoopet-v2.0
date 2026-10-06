@@ -353,11 +353,11 @@ internal sealed class MaotaiRasterRenderer
             frame.MotionTransitionBlend,
             isFront: false);
         // Tail hierarchy      : Base is Body-local; Mid and Tip remain local children with independent spring headings.
-        // Visual overlap      : shorten only the displayed link distance so fur pieces interpenetrate by ~2.5 px;
+        // Visual overlap      : shorten only the displayed link distance so adjacent fur pieces interpenetrate;
         //                       logical Motion Engine offsets and the canonical hierarchy resolver remain unchanged.
         var tailBasePose = frame.TailBase;
-        var tailMidPose  = ResolveTailVisualChildWorldPose(tailBasePose, frame.TailMid, 0.80);
-        var tailTipPose  = ResolveTailVisualChildWorldPose(tailMidPose, frame.TailTip, 0.80);
+        var tailMidPose  = ResolveTailVisualChildWorldPose(tailBasePose, frame.TailMid, 0.60);
+        var tailTipPose  = ResolveTailVisualChildWorldPose(tailMidPose, frame.TailTip, 0.60);
         ApplyBone(_visuals.TailBase, tailBasePose);
         ApplyBone(_visuals.TailMid, tailMidPose);
         ApplyBone(_visuals.TailTip, tailTipPose);
