@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    S003 isolated spike. Not referenced by PicotooPet.Desktop.sln or any shipped package.
+    The Windows TFM version is required to project Windows.Media.SpeechSynthesis (WinRT).
+    System.Speech is a probe-scoped package reference only; Desktop dependencies are untouched.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <RootNamespace>PicotooPet.TtsCompatibilityProbe</RootNamespace>
+    <AssemblyName>PicotooPet.TtsCompatibilityProbe</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>14.0</LangVersion>
+    <Deterministic>true</Deterministic>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Probe is unverified on Linux authoring hosts; analyzers must not mask real Windows results. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Speech" Version="9.0.0" />
+  </ItemGroup>
+</Project>
