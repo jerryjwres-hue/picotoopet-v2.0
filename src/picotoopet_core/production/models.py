@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from picotoopet_core.creative.models import VideoOutputProfile
+from picotoopet_core.production.profile import VIDEO_OUTPUT_PROFILES
 
 
 class ProductionProfile(StrEnum):
@@ -142,7 +146,26 @@ class ProductionTaskPlan(BaseModel):
     height: int = Field(ge=256, le=1280)
     fps: int = Field(ge=1, le=30)
     frame_count: int = Field(ge=1, le=121)
+    target_duration_ms: int = Field(gt=0, le=120_000)
     trusted_input_asset_ref: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_target_duration(cls, value: object) -> object:
+        if not isinstance(value, dict) or "target_duration_ms" in value:
+            return value
+        fps = value.get("fps")
+        frame_count = value.get("frame_count")
+        if isinstance(fps, int) and fps > 0 and isinstance(frame_count, int):
+            updated = dict(value)
+            updated["target_duration_ms"] = int(
+                (Decimal(frame_count * 1000) / fps).quantize(
+                    Decimal("1"),
+                    rounding=ROUND_HALF_UP,
+                )
+            )
+            return updated
+        return value
 
     @field_validator("production_task_id")
     @classmethod
@@ -151,9 +174,17 @@ class ProductionTaskPlan(BaseModel):
 
     @model_validator(mode="after")
     def _workflow_matches_disposition(self) -> ProductionTaskPlan:
-        if self.execution_disposition is ProductionExecutionDisposition.EXECUTABLE and not self.workflow_id:
+        if self.frame_count % 4 != 1:
+            raise ValueError("production frame count must use the Wan 4n+1 family")
+        if (
+            self.execution_disposition is ProductionExecutionDisposition.EXECUTABLE
+            and not self.workflow_id
+        ):
             raise ValueError("executable production task requires a workflow id")
-        if self.execution_disposition is ProductionExecutionDisposition.NEEDS_HUMAN and self.workflow_id is not None:
+        if (
+            self.execution_disposition is ProductionExecutionDisposition.NEEDS_HUMAN
+            and self.workflow_id is not None
+        ):
             raise ValueError("needs-human task cannot carry an executable workflow id")
         return self
 
@@ -167,7 +198,39 @@ class ProductionPlan(BaseModel):
     creative_package_id: str
     creative_package_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     project_key: str = Field(min_length=1, max_length=200)
+    output_profile_id: VideoOutputProfile = VideoOutputProfile.LANDSCAPE_V1
+    target_runtime_ms: int = Field(gt=0, le=600_000)
     tasks: list[ProductionTaskPlan] = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_target_runtime(cls, value: object) -> object:
+        if not isinstance(value, dict) or "target_runtime_ms" in value:
+            return value
+        durations = []
+        for task in value.get("tasks", []):
+            if isinstance(task, ProductionTaskPlan):
+                durations.append(task.target_duration_ms)
+            elif isinstance(task, dict):
+                duration = task.get("target_duration_ms")
+                fps = task.get("fps")
+                frame_count = task.get("frame_count")
+                if isinstance(duration, int):
+                    durations.append(duration)
+                elif isinstance(fps, int) and fps > 0 and isinstance(frame_count, int):
+                    durations.append(
+                        int(
+                            (Decimal(frame_count * 1000) / fps).quantize(
+                                Decimal("1"),
+                                rounding=ROUND_HALF_UP,
+                            )
+                        )
+                    )
+        if durations:
+            updated = dict(value)
+            updated["target_runtime_ms"] = sum(durations)
+            return updated
+        return value
 
     @model_validator(mode="after")
     def _task_order_is_deterministic(self) -> ProductionPlan:
@@ -175,6 +238,15 @@ class ProductionPlan(BaseModel):
         shots = [item.shot_id for item in self.tasks]
         if orders != list(range(1, len(self.tasks) + 1)) or len(shots) != len(set(shots)):
             raise ValueError("production task order/shot identity is invalid")
+        profile = VIDEO_OUTPUT_PROFILES[self.output_profile_id]
+        if any(
+            (item.width, item.height, item.fps)
+            != (profile.width, profile.height, profile.fps)
+            for item in self.tasks
+        ):
+            raise ValueError("production task output profile is inconsistent")
+        if self.target_runtime_ms != sum(item.target_duration_ms for item in self.tasks):
+            raise ValueError("production plan runtime is inconsistent")
         return self
 
 

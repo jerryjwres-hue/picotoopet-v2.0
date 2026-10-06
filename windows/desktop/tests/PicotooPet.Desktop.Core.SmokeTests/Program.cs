@@ -63,6 +63,15 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--timeline-output-profile-only", StringComparer.Ordinal))
+            {
+                ProductionTimelineOutputProfileSmokeTests.Run();
+                ProductionRecoverySmokeTests.Run();
+                ComfyWorkflowTemplateSmokeTests.Run();
+                Console.WriteLine("TIMELINE_OUTPUT_PROFILE_SMOKE=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
@@ -109,6 +118,7 @@ internal static class Program
             QualityShadowPanelWpfSmokeTests.Run();
             QualityPromotionPanelWpfSmokeTests.Run();
             ProductionRecoverySmokeTests.Run();
+            ProductionTimelineOutputProfileSmokeTests.Run();
             await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             await FinalVideoAssemblyServiceSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalFinalVideoCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);

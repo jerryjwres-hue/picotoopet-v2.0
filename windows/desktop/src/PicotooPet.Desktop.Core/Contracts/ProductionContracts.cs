@@ -32,6 +32,7 @@ public sealed record ProductionTaskPlanRecord(
     [property: JsonPropertyName("height")] int Height,
     [property: JsonPropertyName("fps")] int Fps,
     [property: JsonPropertyName("frame_count")] int FrameCount,
+    [property: JsonPropertyName("target_duration_ms")] long TargetDurationMs,
     [property: JsonPropertyName("trusted_input_asset_ref")] string? TrustedInputAssetRef);
 
 /// <summary>Core 所有、Windows 只读的 Production Plan。</summary>
@@ -42,6 +43,8 @@ public sealed record ProductionPlanRecord(
     [property: JsonPropertyName("creative_package_id")] string CreativePackageId,
     [property: JsonPropertyName("creative_package_digest")] string CreativePackageDigest,
     [property: JsonPropertyName("project_key")] string ProjectKey,
+    [property: JsonPropertyName("output_profile_id")] string OutputProfileId,
+    [property: JsonPropertyName("target_runtime_ms")] long TargetRuntimeMs,
     [property: JsonPropertyName("tasks")] ProductionTaskPlanRecord[] Tasks);
 
 /// <summary>Core 持久化的 Production Job；不携带任意 renderer 配置。</summary>

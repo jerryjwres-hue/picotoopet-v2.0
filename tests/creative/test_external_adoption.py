@@ -219,3 +219,25 @@ def test_external_adoption_rejects_unknown_evidence_before_creating_job(tmp_path
         assert database.fetchone("SELECT COUNT(*) AS count FROM creative_jobs")["count"] == 0
     finally:
         database.close()
+
+
+def test_external_adoption_validates_and_preserves_closed_output_profile(tmp_path: Path) -> None:
+    database, service, _repository = _fixture(tmp_path)
+    source = _source()
+    stages = _stages(source.findings[0].source_finding_ref)
+    stages["creative_brief.v1"]["output_profile_id"] = "video.square.v1"
+    try:
+        package = service.adopt_external(
+            source_set=source,
+            stage_results=stages,
+            creative_objective="Create a square short video.",
+            idempotency_key="goal-video:goal-square",
+            provenance={"goal_id": "goal-square"},
+        )
+
+        assert (
+            package.manifest["stage_results"]["creative_brief.v1"]["output_profile_id"]
+            == "video.square.v1"
+        )
+    finally:
+        database.close()

@@ -16,6 +16,8 @@ internal static class ProductionRecoverySmokeTests
             "00000000-0000-4000-8000-000000000190",
             new string('a', 64),
             "pet-dryer-us",
+            "video.landscape.v1",
+            3000,
             [secondTask]);
         var completed = TaskRecord(firstTask, "Succeeded", "outputs/shot-1.webm", new string('b', 64));
         var pending   = TaskRecord(secondTask, "Ready", null, null);
@@ -53,7 +55,8 @@ internal static class ProductionRecoverySmokeTests
             832,
             480,
             24,
-            81,
+            73,
+            3000,
             null);
 
     private static ProductionTaskRecord TaskRecord(

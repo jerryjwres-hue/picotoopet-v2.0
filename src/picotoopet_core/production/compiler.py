@@ -5,23 +5,32 @@ from __future__ import annotations
 import hashlib
 from uuid import NAMESPACE_URL, uuid5
 
+from pydantic import ValidationError
+
+from picotoopet_core.creative.models import (
+    CreativeBriefResult,
+    CreativeScriptResult,
+    ShotPlanResult,
+)
+
 from .models import ProductionExecutionDisposition, ProductionPlan, ProductionTaskPlan
 from .profile import (
-    DEFAULT_FPS,
-    DEFAULT_FRAME_COUNT,
-    DEFAULT_HEIGHT,
-    DEFAULT_WIDTH,
     I2V_WORKFLOW_ID,
+    MAX_FRAME_COUNT,
     NEGATIVE_PROMPT_POLICY_ID,
     PRODUCTION_PROFILE_ID,
     PRODUCTION_PROFILE_VERSION,
     T2V_WORKFLOW_ID,
+    TIMELINE_TOLERANCE_SECONDS,
+    VIDEO_OUTPUT_PROFILES,
+    duration_ms,
+    frame_count_for_duration,
 )
 
 
 def _seed(production_job_id: str, shot_id: str) -> int:
     # ── Seed is derived only from trusted plan identity ─────────────────────
-    payload = f"{production_job_id}|{shot_id}|{PRODUCTION_PROFILE_VERSION}".encode("utf-8")
+    payload = f"{production_job_id}|{shot_id}|{PRODUCTION_PROFILE_VERSION}".encode()
     return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") & ((1 << 63) - 1)
 
 
@@ -32,7 +41,9 @@ def _task_id(production_job_id: str, shot_id: str) -> str:
 
 def _positive_prompt(shot: dict[str, object]) -> str:
     # ── Semantic order is frozen for reproducibility ────────────────────────
-    continuity = ", ".join(str(item) for item in shot.get("continuity_keys", []) if str(item).strip())
+    continuity = ", ".join(
+        str(item) for item in shot.get("continuity_keys", []) if str(item).strip()
+    )
     facts = ", ".join(str(item) for item in shot.get("required_facts", []) if str(item).strip())
     segments = [
         str(shot.get("subject", "")).strip(),
@@ -73,27 +84,52 @@ def compile_production_plan(
         raise ValueError("PRODUCTION_CREATIVE_PACKAGE_IDENTITY_INVALID")
     if not isinstance(stage_results, dict):
         raise ValueError("PRODUCTION_SHOT_PLAN_MISSING")
-    shot_plan = stage_results.get("shot_plan.v1")
-    if not isinstance(shot_plan, dict) or not isinstance(shot_plan.get("shots"), list):
-        raise ValueError("PRODUCTION_SHOT_PLAN_MISSING")
+    try:
+        brief = CreativeBriefResult.model_validate(stage_results.get("creative_brief.v1"))
+    except ValidationError as error:
+        raise ValueError("PRODUCTION_CREATIVE_BRIEF_INVALID") from error
+    try:
+        script = CreativeScriptResult.model_validate(stage_results.get("script.v1"))
+    except ValidationError as error:
+        raise ValueError("PRODUCTION_SCRIPT_INVALID") from error
+    try:
+        shot_plan = ShotPlanResult.model_validate(stage_results.get("shot_plan.v1"))
+    except ValidationError as error:
+        raise ValueError("PRODUCTION_SHOT_PLAN_INVALID") from error
+
+    script_beats = {item.beat_id for item in script.beats}
+    shot_beats = {item.beat_id for item in shot_plan.shots}
+    if shot_beats != script_beats:
+        raise ValueError("PRODUCTION_TIMELINE_BEAT_MISMATCH")
+    shot_duration = sum(item.duration_seconds for item in shot_plan.shots)
+    if abs(shot_duration - script.target_duration_seconds) > TIMELINE_TOLERANCE_SECONDS:
+        raise ValueError("PRODUCTION_TIMELINE_MISMATCH")
+
+    output_profile = VIDEO_OUTPUT_PROFILES[brief.output_profile_id]
 
     tasks: list[ProductionTaskPlan] = []
-    for expected_order, raw in enumerate(shot_plan["shots"], start=1):
-        if not isinstance(raw, dict):
-            raise ValueError("PRODUCTION_SHOT_INVALID")
-        shot_id = str(raw.get("shot_id", "")).strip()
-        order = int(raw.get("order", expected_order))
+    for expected_order, shot in enumerate(shot_plan.shots, start=1):
+        raw = shot.model_dump(mode="json")
+        shot_id = shot.shot_id
+        order = shot.order
         if not shot_id or order != expected_order:
             raise ValueError("PRODUCTION_SHOT_ORDER_INVALID")
-        render_intent = str(raw.get("render_intent", "")).strip()
+        render_intent = shot.render_intent.value
         asset_ref = _trusted_asset_ref(manifest, shot_id)
+        target_duration = duration_ms(shot.duration_seconds)
+        duration_supported = True
+        try:
+            frame_count = frame_count_for_duration(shot.duration_seconds, output_profile.fps)
+        except ValueError:
+            duration_supported = False
+            frame_count = MAX_FRAME_COUNT
 
         workflow_id: str | None = None
         disposition = ProductionExecutionDisposition.NEEDS_HUMAN
-        if render_intent == "GENERATIVE_VIDEO":
+        if duration_supported and render_intent == "GENERATIVE_VIDEO":
             workflow_id = T2V_WORKFLOW_ID
             disposition = ProductionExecutionDisposition.EXECUTABLE
-        elif render_intent == "IMAGE_TO_VIDEO" and asset_ref is not None:
+        elif duration_supported and render_intent == "IMAGE_TO_VIDEO" and asset_ref is not None:
             workflow_id = I2V_WORKFLOW_ID
             disposition = ProductionExecutionDisposition.EXECUTABLE
 
@@ -108,10 +144,11 @@ def compile_production_plan(
                 positive_prompt=_positive_prompt(raw),
                 negative_prompt_policy_id=NEGATIVE_PROMPT_POLICY_ID,
                 seed=_seed(production_job_id, shot_id),
-                width=DEFAULT_WIDTH,
-                height=DEFAULT_HEIGHT,
-                fps=DEFAULT_FPS,
-                frame_count=DEFAULT_FRAME_COUNT,
+                width=output_profile.width,
+                height=output_profile.height,
+                fps=output_profile.fps,
+                frame_count=frame_count,
+                target_duration_ms=target_duration,
                 trusted_input_asset_ref=asset_ref,
             )
         )
@@ -123,5 +160,7 @@ def compile_production_plan(
         creative_package_id=creative_package_id,
         creative_package_digest=creative_package_digest,
         project_key=project_key,
+        output_profile_id=brief.output_profile_id,
+        target_runtime_ms=sum(item.target_duration_ms for item in tasks),
         tasks=tasks,
     )

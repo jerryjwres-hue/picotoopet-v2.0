@@ -14,6 +14,12 @@ class CreativeProfile(StrEnum):
     CONTENT_PLAN_V1 = "creative.content_plan.v1"
 
 
+class VideoOutputProfile(StrEnum):
+    LANDSCAPE_V1 = "video.landscape.v1"
+    VERTICAL_V1 = "video.vertical.v1"
+    SQUARE_V1 = "video.square.v1"
+
+
 class CreativeJobStatus(StrEnum):
     READY = "Ready"
     IDEA_RANKING = "IdeaRanking"
@@ -147,6 +153,7 @@ class CreativeBriefResult(BaseModel):
     primary_hook: str = Field(min_length=1, max_length=1000)
     emotional_tone: str = Field(min_length=1, max_length=300)
     content_format: str = Field(min_length=1, max_length=300)
+    output_profile_id: VideoOutputProfile = VideoOutputProfile.LANDSCAPE_V1
     duration_min_seconds: int = Field(ge=3, le=600)
     duration_max_seconds: int = Field(ge=3, le=600)
     message_hierarchy: list[str] = Field(min_length=1, max_length=20)
@@ -200,7 +207,8 @@ class CreativeScriptResult(BaseModel):
             raise ValueError("script beat ids/orders are invalid")
         if self.cta_beat_id not in set(ids):
             raise ValueError("cta beat must resolve")
-        if abs(sum(item.duration_seconds for item in self.beats) - self.target_duration_seconds) > 5.0:
+        beat_duration = sum(item.duration_seconds for item in self.beats)
+        if abs(beat_duration - self.target_duration_seconds) > 5.0:
             raise ValueError("script beat duration does not match target")
         return self
 

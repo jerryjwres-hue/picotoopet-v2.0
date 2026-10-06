@@ -34,6 +34,50 @@ def _seed_creative_package(database) -> str:  # type: ignore[no-untyped-def]
         "source_set_digest": "a" * 64,
         "quality_outcome": "PASS",
         "stage_results": {
+            "creative_brief.v1": {
+                "schema_version": "1.0",
+                "creative_profile": "creative.content_plan.v1",
+                "selected_idea_id": "idea-001",
+                "target_audience": "pet owners",
+                "customer_problem": "slow drying",
+                "value_proposition": "save time",
+                "primary_hook": "Dry faster",
+                "emotional_tone": "practical",
+                "content_format": "short video",
+                "duration_min_seconds": 3,
+                "duration_max_seconds": 10,
+                "message_hierarchy": ["problem", "solution"],
+                "required_source_finding_refs": ["result:finding:1"],
+                "required_source_evidence_ids": ["reviews:key:r1"],
+                "prohibited_claims": [],
+                "cta_intent": "learn more",
+                "continuity_notes": [],
+                "needs_deep_ai": False,
+                "needs_human": False,
+            },
+            "script.v1": {
+                "schema_version": "1.0",
+                "creative_profile": "creative.content_plan.v1",
+                "script_id": "script-001",
+                "title": "Dry faster",
+                "target_duration_seconds": 3,
+                "beats": [
+                    {
+                        "beat_id": "beat-001",
+                        "order": 1,
+                        "duration_seconds": 3,
+                        "voiceover": "Drying time matters.",
+                        "on_screen_text": None,
+                        "visual_intent": "Compact dryer in use",
+                        "claim_source_evidence_ids": [],
+                        "unsupported_claim": False,
+                    }
+                ],
+                "cta_beat_id": "beat-001",
+                "warnings": [],
+                "needs_deep_ai": False,
+                "needs_human": False,
+            },
             "shot_plan.v1": {
                 "schema_version": "1.0",
                 "creative_profile": "creative.content_plan.v1",
@@ -63,8 +107,10 @@ def _seed_creative_package(database) -> str:  # type: ignore[no-untyped-def]
         },
     }
     database.execute(
-        "INSERT INTO creative_jobs(creative_job_id,project_key,creative_profile,creative_objective,objective_digest,"
-        "source_set_digest,status,creative_package_id,idempotency_key,created_at,updated_at,finished_at) "
+        "INSERT INTO creative_jobs("
+        "creative_job_id,project_key,creative_profile,creative_objective,objective_digest,"
+        "source_set_digest,status,creative_package_id,idempotency_key,"
+        "created_at,updated_at,finished_at) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             creative_job_id,
@@ -82,8 +128,10 @@ def _seed_creative_package(database) -> str:  # type: ignore[no-untyped-def]
         ),
     )
     database.execute(
-        "INSERT INTO creative_packages(creative_package_id,creative_job_id,source_set_digest,package_digest,"
-        "package_relpath,manifest_json,quality_outcome,created_at) VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO creative_packages("
+        "creative_package_id,creative_job_id,source_set_digest,package_digest,"
+        "package_relpath,manifest_json,quality_outcome,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
         (
             creative_package_id,
             creative_job_id,
