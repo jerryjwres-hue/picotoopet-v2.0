@@ -42,7 +42,10 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     {
         _session    = session ?? throw new ArgumentNullException(nameof(session));
         _projection = OperatorProjection.FromSnapshot(snapshot);
-        VideoContinuation = new GoalVideoContinuationViewModel(session, session.ProductionAutopilot);
+        VideoContinuation = new GoalVideoContinuationViewModel(
+            session,
+            session.ProductionAutopilot,
+            session.FinalVideoDelivery);
         ApplyHealthIndicators(snapshot);
     }
 

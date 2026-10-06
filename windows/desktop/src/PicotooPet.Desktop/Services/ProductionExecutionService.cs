@@ -117,12 +117,6 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         checks.Add("Wan2.2 5B / UMT5 / VAE pinned hashes：PASS");
 
         var dataRoot = ResolveComfyDataRoot();
-        if (IsDesktopResourceTree(dataRoot))
-        {
-            return ProductionPreflightSnapshot.Failed(
-                "Comfy Desktop resources\\ComfyUI 属于只读程序资源，不能作为生产数据根。",
-                checks);
-        }
         var outputRoot = Path.GetFullPath(Path.Combine(dataRoot, "output"));
         var inputRoot = Path.GetFullPath(Path.Combine(dataRoot, "input"));
         Directory.CreateDirectory(outputRoot);
@@ -379,57 +373,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         return string.Equals(statusText, "error", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ResolveComfyDataRoot()
-    {
-        var candidates = new List<string>();
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var configPath = Path.Combine(appData, "ComfyUI", "config.json");
-        if (File.Exists(configPath))
-        {
-            try
-            {
-                using var config = JsonDocument.Parse(File.ReadAllText(configPath));
-                if (config.RootElement.TryGetProperty("basePath", out var basePath)
-                    && basePath.ValueKind == JsonValueKind.String
-                    && !string.IsNullOrWhiteSpace(basePath.GetString()))
-                {
-                    candidates.Add(basePath.GetString()!);
-                }
-            }
-            catch (JsonException)
-            {
-                // ── 损坏 config 不会扩大候选范围，只继续检查固定安全候选 ───────────
-            }
-        }
-        candidates.AddRange(
-        [
-            Path.Combine(appData, "ComfyUI"),
-            Path.Combine(localAppData, "ComfyUI"),
-            Path.Combine(userProfile, "ComfyUI"),
-            @"D:\ComfyUI",
-            @"D:\PicotooPet\ComfyUI",
-            @"E:\ComfyUI",
-        ]);
-
-        foreach (var candidate in candidates.Where(item => !string.IsNullOrWhiteSpace(item)))
-        {
-            var full = Path.GetFullPath(Environment.ExpandEnvironmentVariables(candidate));
-            if (!Directory.Exists(full) || IsDesktopResourceTree(full))
-            {
-                continue;
-            }
-            if (Directory.Exists(Path.Combine(full, "models"))
-                || Directory.Exists(Path.Combine(full, "custom_nodes"))
-                || File.Exists(Path.Combine(full, "main.py"))
-                || Directory.Exists(Path.Combine(full, "output")))
-            {
-                return full;
-            }
-        }
-        throw new DirectoryNotFoundException("COMFY_DATA_ROOT_NOT_FOUND");
-    }
+    private static string ResolveComfyDataRoot() =>
+        ProductionLocalEnvironment.ResolveComfyDataRoot();
 
     private static string ValidateTrustedInput(string? relative, string inputRoot)
     {
@@ -472,66 +417,16 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private static string ResolveUnderRoot(
         string root,
         string relative,
-        bool requireExistingFile)
-    {
-        if (Path.IsPathRooted(relative))
-        {
-            throw new InvalidDataException("PRODUCTION_PATH_MUST_BE_RELATIVE");
-        }
-        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        var full = Path.GetFullPath(Path.Combine(fullRoot, relative));
-        if (!full.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidDataException("PRODUCTION_PATH_ESCAPE");
-        }
-        if (requireExistingFile && !File.Exists(full))
-        {
-            throw new FileNotFoundException("受信生产文件不存在。", full);
-        }
-        return full;
-    }
+        bool requireExistingFile) =>
+        ProductionLocalEnvironment.ResolveUnderRoot(root, relative, requireExistingFile);
 
-    private static void AssertNoLinkEscape(string root, string path)
-    {
-        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
-        var current = new FileInfo(path);
-        if (current.Exists && current.LinkTarget is not null)
-        {
-            throw new InvalidDataException("PRODUCTION_SYMLINK_FORBIDDEN");
-        }
-        var parent = current.Directory;
-        while (parent is not null
-               && parent.FullName.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            if (parent.LinkTarget is not null)
-            {
-                throw new InvalidDataException("PRODUCTION_SYMLINK_FORBIDDEN");
-            }
-            if (string.Equals(parent.FullName, fullRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                break;
-            }
-            parent = parent.Parent;
-        }
-    }
-
-    private static bool IsDesktopResourceTree(string path) =>
-        path.Replace('/', '\\').Contains("\\resources\\ComfyUI", StringComparison.OrdinalIgnoreCase);
+    private static void AssertNoLinkEscape(string root, string path) =>
+        ProductionLocalEnvironment.AssertNoLinkEscape(root, path);
 
     private static async Task<string> Sha256FileAsync(
         string path,
-        CancellationToken cancellationToken)
-    {
-        await using var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 1024 * 1024,
-            options: FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var digest = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexString(digest).ToLowerInvariant();
-    }
+        CancellationToken cancellationToken) =>
+        await ProductionLocalEnvironment.Sha256FileAsync(path, cancellationToken).ConfigureAwait(false);
 
     private static bool IsRetryable(Exception exception, CancellationToken cancellationToken) =>
         exception is HttpRequestException

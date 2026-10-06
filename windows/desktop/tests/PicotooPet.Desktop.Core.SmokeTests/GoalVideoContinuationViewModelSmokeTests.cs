@@ -162,6 +162,45 @@ internal static class GoalVideoContinuationViewModelSmokeTests
             SmokeAssert.True(automatic.StatusText.Contains(expected, StringComparison.Ordinal), $"Production 状态 {status} 映射错误");
             SmokeAssert.True(!automatic.StatusText.Contains("raw-secret-unknown", StringComparison.Ordinal), "未知 Core 状态原文泄露到 UI");
         }
+
+        var finalObserver = new FixtureFinalVideoObserver
+        {
+            SnapshotToReturn = new GoalFinalVideoSnapshot(
+                "goal-1",
+                "production-final",
+                GoalFinalVideoPhase.Assembling,
+                "正在合成最终视频",
+                CanOpen: false),
+        };
+        var finalVideo = new GoalVideoContinuationViewModel(gateway, observer, finalObserver);
+        finalVideo.SetContext(Goal(), Handoff(ready: true));
+        gateway.GetResult = Continuation("production-final", "goal-1", "production_ready");
+        await finalVideo.RefreshAsync().ConfigureAwait(false);
+        SmokeAssert.True(finalVideo.StatusText.Contains("正在合成最终视频", StringComparison.Ordinal), "Goal Center 未展示最终合成状态");
+        SmokeAssert.True(!finalVideo.CanOpenFinalVideo, "未验证成品错误启用打开动作");
+        SmokeAssert.Equal(0, finalObserver.OpenCount, "状态刷新自动打开了最终视频");
+
+        finalObserver.SnapshotToReturn = new GoalFinalVideoSnapshot(
+            "goal-1",
+            "production-final",
+            GoalFinalVideoPhase.Ready,
+            "最终视频已就绪",
+            CanOpen: true);
+        await finalVideo.RefreshAsync().ConfigureAwait(false);
+        SmokeAssert.True(finalVideo.StatusText.Contains("最终视频已就绪", StringComparison.Ordinal), "Goal Center 未展示最终成品就绪");
+        SmokeAssert.True(finalVideo.CanOpenFinalVideo, "已验证成品未启用打开动作");
+        SmokeAssert.True(finalVideo.OpenFinalVideo(), "显式打开动作失败");
+        SmokeAssert.Equal(1, finalObserver.OpenCount, "打开动作未严格绑定用户点击");
+
+        finalObserver.SnapshotToReturn = new GoalFinalVideoSnapshot(
+            "goal-1",
+            "production-final",
+            GoalFinalVideoPhase.Failed,
+            "最终视频合成失败；源文件和 Core 事实未被修改。",
+            CanOpen: false);
+        await finalVideo.RefreshAsync().ConfigureAwait(false);
+        SmokeAssert.True(finalVideo.StatusText.Contains("最终视频合成失败", StringComparison.Ordinal), "Goal Center 未展示有界最终合成失败");
+        SmokeAssert.True(!finalVideo.StatusText.Contains("C:\\", StringComparison.Ordinal), "Goal Center 最终视频状态泄露绝对路径");
     }
 
     private static IEnumerable<string> InstanceStrings(object instance) =>
@@ -201,6 +240,23 @@ internal static class GoalVideoContinuationViewModelSmokeTests
             LastProductionJobId = continuation?.ProductionJobId;
             return SnapshotToReturn
                 ?? GoalProductionAutopilotSnapshot.Idle(goalId, continuation?.ProductionJobId);
+        }
+    }
+
+    private sealed class FixtureFinalVideoObserver : IGoalFinalVideoObserver
+    {
+        public GoalFinalVideoSnapshot? SnapshotToReturn { get; set; }
+        public int OpenCount { get; private set; }
+
+        public GoalFinalVideoSnapshot Observe(
+            string? goalId,
+            GoalVideoContinuationRecord? continuation) =>
+            SnapshotToReturn ?? GoalFinalVideoSnapshot.Idle(goalId, continuation?.ProductionJobId);
+
+        public bool OpenCurrent()
+        {
+            OpenCount++;
+            return SnapshotToReturn?.CanOpen == true;
         }
     }
 
