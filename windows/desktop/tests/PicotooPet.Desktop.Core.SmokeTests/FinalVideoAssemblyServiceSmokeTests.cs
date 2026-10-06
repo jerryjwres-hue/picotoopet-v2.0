@@ -14,6 +14,7 @@ internal static class FinalVideoAssemblyServiceSmokeTests
         await PreservesOrderedVerifiedSourcesAndFixedFfmpegBoundaryAsync().ConfigureAwait(false);
         await RejectsUnsafeOrMismatchedSourcesAsync().ConfigureAwait(false);
         await RejectsReparseEscapeWhenSupportedAsync().ConfigureAwait(false);
+        RejectsDirectoryReparseWhenSupported();
         await ReusesMatchingArtifactAndRejectsConflictAsync().ConfigureAwait(false);
         await MapsFfmpegFailureAndTimeoutToStableCodesAsync().ConfigureAwait(false);
     }
@@ -93,6 +94,53 @@ internal static class FinalVideoAssemblyServiceSmokeTests
         await ExpectFailureAsync(() => fixture.Service(AssemblyFixture.Package(output), ffmpeg).AssembleAsync("job-1"))
             .ConfigureAwait(false);
         SmokeAssert.Equal(0, ffmpeg.CallCount, "reparse/symlink 源仍进入 FFmpeg");
+    }
+
+    private static void RejectsDirectoryReparseWhenSupported()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"picotoopet-final-root-link-{Guid.NewGuid():N}");
+        var target = Path.Combine(Path.GetTempPath(), $"picotoopet-final-root-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(target);
+        var link = Path.Combine(root, "final");
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(link, target);
+            }
+            catch (Exception exception) when (
+                exception is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            var rejected = false;
+            try
+            {
+                ProductionLocalEnvironment.AssertNoLinkEscape(link, link);
+            }
+            catch (InvalidDataException)
+            {
+                rejected = true;
+            }
+            SmokeAssert.True(rejected, "受管 FinalVideos 根目录为 reparse point 时未 fail closed");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(link))
+                {
+                    Directory.Delete(link);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(target, recursive: true);
+        }
     }
 
     private static async Task ReusesMatchingArtifactAndRejectsConflictAsync()
