@@ -50,7 +50,8 @@ jobs:
 
           # Preview isolation      : manual candidate overlays may only come from the repository staging tree.
           # Promotion isolation    : overlay files exist only under LOCALAPPDATA and never modify formal runtime assets.
-          $candidateSubdir = ($env:MAOTAI_CANDIDATE_SUBDIR ?? '').Trim().Replace('\', '/')
+          $candidateSubdir = [string]$env:MAOTAI_CANDIDATE_SUBDIR
+          $candidateSubdir = $candidateSubdir.Trim().Replace('\', '/')
           $overlayNames    = @()
           if ($candidateSubdir) {
             if ($candidateSubdir.StartsWith('/') -or
