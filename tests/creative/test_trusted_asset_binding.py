@@ -229,4 +229,4 @@ def test_real_registry_exposes_only_same_goal_assets(tmp_path: Path) -> None:
         assert ids[1] not in {item.asset_id for item in first}
         assert access._trusted_assets(str(uuid4())) == []
         dumped = [item.model_dump() for item in first]
-        assert set(dumped[0]) == {"asset_id", "media_type", "width", "height", "sha256"}
+        assert set(dumped[0]) == {"asset_id", "media_type", "width", "height"}
