@@ -72,6 +72,27 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--narration-client-only", StringComparer.Ordinal))
+            {
+                await NarrationClientSmokeTests.RunAsync().ConfigureAwait(false);
+                Console.WriteLine("NARRATION_CLIENT_SMOKE=PASS");
+                return 0;
+            }
+
+            if (args.Contains("--narration-synthesis-only", StringComparer.Ordinal))
+            {
+                await NarrationSynthesisSmokeTests.RunAsync().ConfigureAwait(false);
+                Console.WriteLine("NARRATION_SYNTHESIS_SMOKE=PASS");
+                return 0;
+            }
+
+            if (args.Contains("--narration-real-windows-only", StringComparer.Ordinal))
+            {
+                await NarrationRealWindowsSmokeTests.RunAsync().ConfigureAwait(false);
+                Console.WriteLine("NARRATION_REAL_WINDOWS_SMOKE=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
