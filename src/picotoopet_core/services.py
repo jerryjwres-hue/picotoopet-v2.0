@@ -53,6 +53,8 @@ from picotoopet_core.handoffs.approvals import HandoffApprovalService
 from picotoopet_core.handoffs.service import HandoffService
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import ResidentManager
+from picotoopet_core.assets.repository import TrustedAssetRepository
+from picotoopet_core.assets.service import TrustedAssetService
 from picotoopet_core.production.repository import ProductionRepository
 from picotoopet_core.production.service import ProductionService
 from picotoopet_core.production.store import ProductionArtifactStore
@@ -96,6 +98,7 @@ class Services:
     production_repository: ProductionRepository
     production_store: ProductionArtifactStore
     production: ProductionService
+    assets: TrustedAssetService
     business_pipeline_repository: BusinessPipelineRepository
     business_return_store: BusinessReturnPackageStore
     business_pipeline: BusinessPipelineService
@@ -176,6 +179,7 @@ def build_services(settings: AppSettings) -> Services:
         creative_repository=creative_repository,
         store=production_store,
     )
+    assets = TrustedAssetService(TrustedAssetRepository(database))
     business_pipeline_repository = BusinessPipelineRepository(database)
     business_return_store = BusinessReturnPackageStore(settings.paths)
     business_pipeline = BusinessPipelineService(
@@ -293,6 +297,7 @@ def build_services(settings: AppSettings) -> Services:
         production_repository=production_repository,
         production_store=production_store,
         production=production,
+        assets=assets,
         business_pipeline_repository=business_pipeline_repository,
         business_return_store=business_return_store,
         business_pipeline=business_pipeline,

@@ -33,6 +33,7 @@ from .schema import (
     MIGRATION_006,
     MIGRATION_007,
     MIGRATION_008,
+    MIGRATION_024,
 )
 from .task_visibility_schema import TASK_VISIBILITY_SCHEMA
 
@@ -345,7 +346,18 @@ class Database:
                     (23, datetime.now(UTC).isoformat()),
                 )
 
-            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 23。 ──
+            migration_024_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 24"
+            ).fetchone()
+            if migration_024_exists is None:
+                # ── C006B1: evolve the existing artifact registry in place for trusted asset scopes. ──
+                connection.executescript(MIGRATION_024)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (24, datetime.now(UTC).isoformat()),
+                )
+
+            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 24。 ──
             connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:

@@ -12,7 +12,7 @@ def test_schema_23_makes_scan_manifest_key_primary_and_capture_content_id_repeat
     database.open()
     try:
         database.apply_migrations()
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 24
 
         columns = {
             row["name"]: row

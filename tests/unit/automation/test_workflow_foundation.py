@@ -48,7 +48,7 @@ def test_workflow_replay_survives_restart_after_current_schema(tmp_path: Path) -
     assert created.status.value == "Ready"
     assert [step.step_key for step in created.steps] == ["collect", "review"]
     # Schema retention gate: existing workflows survive current schema 23.
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 24
     workflow_id = created.workflow_id
     database.close()
 

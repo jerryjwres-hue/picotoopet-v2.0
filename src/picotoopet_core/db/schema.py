@@ -380,3 +380,65 @@ CREATE INDEX IF NOT EXISTS idx_provider_commit_status_created
 CREATE INDEX IF NOT EXISTS idx_provider_commit_session_created
     ON provider_commit_candidates(session_id, created_at DESC);
 """
+
+# ── Migration 24: evolve the existing artifacts domain for C006B1 trusted asset ingress. ──
+# executescript() commits the caller's transaction first, so FK enforcement can be switched off here;
+# the script owns its own atomic BEGIN/COMMIT and re-enables FKs. Dependents keep referencing `artifacts`.
+# Rebuild is required because project_id must become nullable for non-Project scopes.
+# Legacy rows are copied intact (new columns NULL); dependents keep referencing artifacts(artifact_id).
+MIGRATION_024 = r"""
+PRAGMA foreign_keys=OFF;
+BEGIN IMMEDIATE;
+
+CREATE TABLE artifacts_v2 (
+    artifact_id         TEXT PRIMARY KEY,
+    project_id          TEXT REFERENCES projects(project_id) ON DELETE RESTRICT,
+    artifact_type       TEXT NOT NULL,
+    classification      TEXT NOT NULL,
+    source_path         TEXT,
+    stored_object_hash  TEXT,
+    media_type          TEXT,
+    size_bytes          INTEGER,
+    sha256              TEXT,
+    is_original         INTEGER NOT NULL DEFAULT 0,
+    cloud_policy        TEXT NOT NULL DEFAULT 'local_only',
+    created_at          TEXT NOT NULL,
+    scope_kind          TEXT,
+    scope_id            TEXT,
+    scope_key           TEXT,
+    managed_root_id     TEXT,
+    managed_relpath     TEXT,
+    width               INTEGER,
+    height              INTEGER,
+    duration_ms         INTEGER,
+    source_kind         TEXT,
+    provenance_json     TEXT,
+    idempotency_key     TEXT,
+    CHECK (source_kind IS NULL OR source_path IS NULL),
+    CHECK (scope_kind IS NULL OR scope_kind IN ('autonomous_goal', 'project'))
+);
+
+INSERT INTO artifacts_v2 (
+    artifact_id, project_id, artifact_type, classification, source_path,
+    stored_object_hash, media_type, size_bytes, sha256, is_original,
+    cloud_policy, created_at
+)
+SELECT
+    artifact_id, project_id, artifact_type, classification, source_path,
+    stored_object_hash, media_type, size_bytes, sha256, is_original,
+    cloud_policy, created_at
+FROM artifacts;
+
+DROP TABLE artifacts;
+ALTER TABLE artifacts_v2 RENAME TO artifacts;
+
+CREATE UNIQUE INDEX idx_artifacts_trusted_idempotency
+    ON artifacts(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX idx_artifacts_trusted_scope_content
+    ON artifacts(scope_key, sha256, media_type) WHERE source_kind IS NOT NULL;
+CREATE INDEX idx_artifacts_trusted_scope_created
+    ON artifacts(scope_kind, scope_id, created_at) WHERE source_kind IS NOT NULL;
+
+COMMIT;
+PRAGMA foreign_keys=ON;
+"""

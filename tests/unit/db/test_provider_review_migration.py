@@ -19,7 +19,7 @@ def test_migration_seven_creates_review_and_adoption_tables_idempotently(tmp_pat
     assert REQUIRED_DECISION_COLUMNS <= _columns(database, "provider_review_decisions")
     assert REQUIRED_CANDIDATE_COLUMNS <= _columns(database, "provider_adoption_candidates")
     # Schema retention gate      Migration 7 remains exactly once inside cumulative schema 23.
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 24
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 7") == 1
     database.close()
 
