@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -19,6 +19,9 @@ from picotoopet_core.creative.models import (
     VideoOutputProfile,
 )
 from picotoopet_core.production.models import ProductionPlan
+
+if TYPE_CHECKING:
+    from picotoopet_core.production.service import ProductionService
 
 CAPTION_STYLE_PROFILE_ID = "caption.lower-third.v1"
 OVERLAY_STYLE_PROFILE_ID = "overlay.title-safe.v1"
@@ -117,6 +120,15 @@ class CaptionOverlayPlanV1(BaseModel):
         _validate_cue_sequence(self.captions, self.target_runtime_ms)
         _validate_cue_sequence(self.overlays, self.target_runtime_ms)
         return self
+
+
+class CaptionOverlayPlanResponse(BaseModel):
+    """Read-only API projection for one deterministic CaptionOverlayPlan."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    plan: CaptionOverlayPlanV1
+    caption_overlay_plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 def _sha256_text(value: str) -> str:
@@ -309,3 +321,49 @@ def _validate_cue_sequence(
         if cue.start_ms < previous_start or cue.end_ms > target_runtime_ms:
             raise ValueError("cue timing is outside the target runtime")
         previous_start = cue.start_ms
+
+
+class CaptionOverlayPlanService:
+    """Read-only projection over the existing Production and Creative repositories."""
+
+    def __init__(self, production: ProductionService) -> None:
+        self._production = production
+
+    def get_plan(self, production_job_id: str) -> CaptionOverlayPlanResponse:
+        # ── Resolve exactly one Production identity; never scan or synthesize jobs. ──
+        job = self._production.get_job(production_job_id)
+        if job.plan_digest is None:
+            raise CaptionOverlayPlanError(NOT_READY)
+
+        try:
+            production_plan = self._production.get_plan(production_job_id)
+        except ValueError:
+            # ── A digest-bound but unreadable plan is a source-integrity failure. ─
+            raise CaptionOverlayPlanError(SOURCE_MISMATCH) from None
+
+        try:
+            package = self._production.creative_repository.get_package(job.creative_package_id)
+        except KeyError:
+            # ── Missing bound Creative provenance is never reinterpreted as not-ready. ─
+            raise CaptionOverlayPlanError(SOURCE_MISMATCH) from None
+
+        # ── Job, stored plan and package must bind the same immutable Creative source. ─
+        if (
+            production_plan.production_job_id != job.production_job_id
+            or production_plan.creative_package_id != job.creative_package_id
+            or production_plan.creative_package_digest != job.creative_package_digest
+            or package.creative_package_id != job.creative_package_id
+            or package.package_digest != job.creative_package_digest
+        ):
+            raise CaptionOverlayPlanError(SOURCE_MISMATCH)
+
+        plan = compile_caption_overlay_plan(
+            production_plan=production_plan,
+            production_plan_digest=job.plan_digest,
+            manifest=package.manifest,
+            creative_package_digest=package.package_digest,
+        )
+        return CaptionOverlayPlanResponse(
+            plan=plan,
+            caption_overlay_plan_digest=caption_overlay_plan_digest(plan),
+        )
