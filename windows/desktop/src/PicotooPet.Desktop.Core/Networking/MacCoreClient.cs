@@ -9,7 +9,7 @@ using PicotooPet.Desktop.Core.Contracts;
 namespace PicotooPet.Desktop.Core.Networking;
 
 /// <summary>复用连接池、幂等键和 Trace Header 的 Mac Core REST 客户端。</summary>
-public sealed class MacCoreClient : IAsyncDisposable
+public sealed partial class MacCoreClient : IAsyncDisposable
 {
     private const int MaxDiagnosticResultBytes = 64 * 1024;
     private const int MaxApprovalListBytes = 128 * 1024;
