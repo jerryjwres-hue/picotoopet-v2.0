@@ -456,6 +456,7 @@ def _asset_shot_payload(context, asset_ref: str | None) -> dict[str, object]:  #
     shot["render_intent"] = "EXISTING_ASSET"
     if asset_ref is not None:
         shot["existing_asset_ref"] = asset_ref
+        payload["asset_allowlist_digest"] = context.asset_allowlist_digest
     return payload
 
 
@@ -473,15 +474,16 @@ def test_context_lists_only_safe_same_goal_assets_and_empty_when_none(tmp_path: 
         "media_type",
         "width",
         "height",
-        "sha256",
     }
+    assert len(context.asset_allowlist_digest) == 64
 
 
 def test_return_prompt_binds_safe_asset_metadata_without_locations(tmp_path: Path) -> None:
     prompt = _access(tmp_path, _FakeAssets(ASSET_A)).return_prompt("goal-video-1")
 
     assert ASSET_A in prompt
-    assert '"trusted_assets"' in prompt
+    assert '"allowed_existing_assets"' in prompt
+    assert '"asset_allowlist_digest"' in prompt
     assert '"media_type":"image/png"' in prompt
     assert "existing_asset_ref" in prompt
     assert (
@@ -489,10 +491,39 @@ def test_return_prompt_binds_safe_asset_metadata_without_locations(tmp_path: Pat
     )
     assert "secret-location" not in prompt
     assert "PicotooPet/assets" not in prompt
+    assert ("a" * 64) not in prompt.split("PicotooPet 严格回导合同")[1].split("JSON Schema")[0]
 
     no_assets = _access(tmp_path / "none").return_prompt("goal-video-1")
-    assert '"trusted_assets":[]' in no_assets
+    assert '"allowed_existing_assets":[]' in no_assets
+    assert '"asset_allowlist_digest"' in no_assets
 
+
+
+
+def test_asset_return_requires_exact_allowlist_snapshot_digest(tmp_path: Path) -> None:
+    context = _access(tmp_path, _FakeAssets(ASSET_A)).context("goal-video-1")
+
+    missing = _asset_shot_payload(context, ASSET_A)
+    missing.pop("asset_allowlist_digest")
+    with pytest.raises(GoalVideoReturnError, match="ASSET_ALLOWLIST_BINDING_MISMATCH"):
+        validate_goal_video_return(GoalVideoReturnV1.model_validate(missing), context)
+
+    stale = _asset_shot_payload(context, ASSET_A)
+    stale["asset_allowlist_digest"] = "0" * 64
+    with pytest.raises(GoalVideoReturnError, match="ASSET_ALLOWLIST_BINDING_MISMATCH"):
+        validate_goal_video_return(GoalVideoReturnV1.model_validate(stale), context)
+
+    invented = _asset_shot_payload(context, ASSET_B)
+    with pytest.raises(GoalVideoReturnError, match="UNKNOWN_EXISTING_ASSET_REF"):
+        validate_goal_video_return(GoalVideoReturnV1.model_validate(invented), context)
+
+
+def test_asset_allowlist_digest_changes_when_prompt_allowlist_changes(tmp_path: Path) -> None:
+    none = _access(tmp_path / "none").context("goal-video-1")
+    one = _access(tmp_path / "one", _FakeAssets(ASSET_A)).context("goal-video-1")
+    two = _access(tmp_path / "two", _FakeAssets(ASSET_A, ASSET_B)).context("goal-video-1")
+
+    assert len({none.asset_allowlist_digest, one.asset_allowlist_digest, two.asset_allowlist_digest}) == 3
 
 def test_source_set_digest_binds_trusted_asset_allowlist(tmp_path: Path) -> None:
     def digest_for(*asset_ids: str) -> tuple[str, list[str]]:
