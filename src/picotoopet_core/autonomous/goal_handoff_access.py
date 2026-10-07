@@ -86,7 +86,6 @@ class TrustedAssetAllowlistItem(BaseModel):
     media_type: Literal["image/png", "image/jpeg"]
     width: int = Field(ge=1, le=16384)
     height: int = Field(ge=1, le=16384)
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class _TrustedAssets(Protocol):
@@ -110,6 +109,7 @@ class GoalHandoffContext(BaseModel):
     source_ids: list[str]
     source_finding_refs: dict[str, str]
     trusted_assets: list[TrustedAssetAllowlistItem] = Field(default_factory=list, max_length=100)
+    asset_allowlist_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class _Goals(Protocol):
@@ -229,7 +229,10 @@ class GoalHandoffAccess:
             "handoff_sha256": context.package_sha256,
             "prompt_version": context.prompt_version,
             "source_finding_refs": context.source_finding_refs,
-            "trusted_assets": [item.model_dump(mode="json") for item in context.trusted_assets],
+            "allowed_existing_assets": [
+                item.model_dump(mode="json") for item in context.trusted_assets
+            ],
+            "asset_allowlist_digest": context.asset_allowlist_digest,
         }
         compact_binding = json.dumps(
             binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -250,7 +253,8 @@ class GoalHandoffAccess:
             + "endpoint/path/command 等字段。所有 source_finding_refs 只能使用上方映射中的值；"
             + "所有 evidence 引用只能使用映射中的 key。"
             + "只有 render_intent 为 EXISTING_ASSET 的镜头才可填写 existing_asset_ref，"
-            + "且只能取自上方 trusted_assets 列表中的 asset_id；"
+            + "且只能取自上方 allowed_existing_assets 列表中的 asset_id；"
+            + "使用 EXISTING_ASSET 时必须原样返回 asset_allowlist_digest；"
             + "其他镜头不得填写；列表为空时不得使用 EXISTING_ASSET。\n"
             + compact_schema
             + "\n"
@@ -323,7 +327,8 @@ class GoalHandoffAccess:
             evidence_ids=manifest.evidence_ids,
             source_ids=manifest.source_ids,
             source_finding_refs=finding_refs,
-            trusted_assets=self._trusted_assets(goal_id),
+            trusted_assets=(trusted_assets := self._trusted_assets(goal_id)),
+            asset_allowlist_digest=self._asset_allowlist_digest(trusted_assets),
         )
 
     def _trusted_assets(self, goal_id: str) -> list[TrustedAssetAllowlistItem]:
@@ -342,12 +347,21 @@ class GoalHandoffAccess:
                     media_type=record.media_type,
                     width=record.width,
                     height=record.height,
-                    sha256=record.sha256,
                 )
                 for record in records
             ),
             key=lambda item: item.asset_id,
         )
+
+    @staticmethod
+    def _asset_allowlist_digest(items: list[TrustedAssetAllowlistItem]) -> str:
+        canonical = json.dumps(
+            [item.model_dump(mode="json") for item in items],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _validate_package_name(package_name: str) -> None:
