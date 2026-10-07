@@ -41,6 +41,7 @@ def _handoff_access(request: Request) -> GoalHandoffAccess:
         workflows=services.workflows,
         result_records=services.result_records,
         result_store=services.results,
+        assets=services.assets,
     )
 
 

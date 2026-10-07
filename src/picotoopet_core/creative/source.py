@@ -40,6 +40,8 @@ class NormalizedCreativeSourceSet(BaseModel):
     result_digests: list[str]
     findings: list[CreativeSourceFinding]
     evidence_ids: list[str]
+    # ── Core-supplied allowlist of C006B1 asset ids a ShotPlan may reference; empty by default. ──
+    trusted_asset_ids: list[str] = Field(default_factory=list, max_length=100)
     source_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 

@@ -135,6 +135,11 @@ def _source_set(
         "handoff_sha256": context.package_sha256,
         "prompt_version": context.prompt_version,
         "return_digest": return_digest,
+        **(
+            {"trusted_assets": [item.model_dump(mode="json") for item in context.trusted_assets]}
+            if context.trusted_assets
+            else {}
+        ),
         "findings": [
             {
                 "source_finding_ref": item.source_finding_ref,
@@ -150,6 +155,7 @@ def _source_set(
         result_digests=[context.package_sha256],
         findings=findings,
         evidence_ids=list(context.evidence_ids),
+        trusted_asset_ids=[item.asset_id for item in context.trusted_assets],
         source_set_digest=_digest(source_identity),
     )
 

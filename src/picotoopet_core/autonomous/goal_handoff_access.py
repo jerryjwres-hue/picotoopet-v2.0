@@ -77,6 +77,24 @@ class GoalHandoffPackageManifest(BaseModel):
         return value
 
 
+class TrustedAssetAllowlistItem(BaseModel):
+    """Safe projection of one same-goal C006B1 asset; no path or managed location is exposed."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    asset_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
+    media_type: Literal["image/png", "image/jpeg"]
+    width: int = Field(ge=1, le=16384)
+    height: int = Field(ge=1, le=16384)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class _TrustedAssets(Protocol):
+    def list(  # type: ignore[no-untyped-def]
+        self, scope_kind: str, scope_id: str, limit: int = 50
+    ): ...
+
+
 class GoalHandoffContext(BaseModel):
     """Verified immutable identity and provenance available to return intake."""
 
@@ -91,6 +109,7 @@ class GoalHandoffContext(BaseModel):
     evidence_ids: list[str]
     source_ids: list[str]
     source_finding_refs: dict[str, str]
+    trusted_assets: list[TrustedAssetAllowlistItem] = Field(default_factory=list, max_length=100)
 
 
 class _Goals(Protocol):
@@ -120,12 +139,14 @@ class GoalHandoffAccess:
         workflows: _Workflows,
         result_records: _ResultRecords,
         result_store: _ResultStore,
+        assets: _TrustedAssets | None = None,
     ) -> None:
         self.paths = paths
         self.goals = goals
         self.workflows = workflows
         self.result_records = result_records
         self.result_store = result_store
+        self.assets = assets
 
     def metadata(self, goal_id: str) -> GoalHandoffMetadata:
         """Return only verified handoff metadata; never infer readiness from a file alone."""
@@ -208,6 +229,7 @@ class GoalHandoffAccess:
             "handoff_sha256": context.package_sha256,
             "prompt_version": context.prompt_version,
             "source_finding_refs": context.source_finding_refs,
+            "trusted_assets": [item.model_dump(mode="json") for item in context.trusted_assets],
         }
         compact_binding = json.dumps(
             binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -226,7 +248,10 @@ class GoalHandoffAccess:
             + "\n\n最终可读回答之后，必须再输出且只输出一个标记为 PICOTOO_RETURN_JSON 的 JSON 对象。"
             + "该对象必须严格符合下面的 JSON Schema，不得增加 provider/model/renderer/workflow/"
             + "endpoint/path/command 等字段。所有 source_finding_refs 只能使用上方映射中的值；"
-            + "所有 evidence 引用只能使用映射中的 key。\n"
+            + "所有 evidence 引用只能使用映射中的 key。"
+            + "只有 render_intent 为 EXISTING_ASSET 的镜头才可填写 existing_asset_ref，"
+            + "且只能取自上方 trusted_assets 列表中的 asset_id；"
+            + "其他镜头不得填写；列表为空时不得使用 EXISTING_ASSET。\n"
             + compact_schema
             + "\n"
         )
@@ -298,6 +323,30 @@ class GoalHandoffAccess:
             evidence_ids=manifest.evidence_ids,
             source_ids=manifest.source_ids,
             source_finding_refs=finding_refs,
+            trusted_assets=self._trusted_assets(goal_id),
+        )
+
+    def _trusted_assets(self, goal_id: str) -> list[TrustedAssetAllowlistItem]:
+        """Same-goal assets only, straight from the C006B1 registry; safe fields only."""
+
+        if self.assets is None:
+            return []
+        try:
+            records = self.assets.list("autonomous_goal", goal_id, 100)
+        except ValueError:
+            return []
+        return sorted(
+            (
+                TrustedAssetAllowlistItem(
+                    asset_id=record.asset_id,
+                    media_type=record.media_type,
+                    width=record.width,
+                    height=record.height,
+                    sha256=record.sha256,
+                )
+                for record in records
+            ),
+            key=lambda item: item.asset_id,
         )
 
     @staticmethod
