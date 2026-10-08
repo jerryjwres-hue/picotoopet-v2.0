@@ -59,10 +59,6 @@ public static class NarrationPlanContract
             || !Digest(plan.CreativePackageDigest)
             || !Digest(plan.ProductionPlanDigest)
             || !Digest(response.NarrationPlanDigest)
-            || !string.Equals(
-                ComputeDigest(plan),
-                response.NarrationPlanDigest,
-                StringComparison.Ordinal)
             || plan.TargetRuntimeMs is <= 0 or > 600_000
             || plan.TtsProfileId != TtsProfileId
             || plan.VoiceProfileId != VoiceProfileId
@@ -90,6 +86,13 @@ public static class NarrationPlanContract
                 throw new NarrationPlanContractException();
             }
             previousEnd = segment.EndMs;
+        }
+        if (!string.Equals(
+            ComputeDigest(plan),
+            response.NarrationPlanDigest,
+            StringComparison.Ordinal))
+        {
+            throw new NarrationPlanContractException();
         }
     }
 
