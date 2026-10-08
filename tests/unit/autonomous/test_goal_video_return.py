@@ -551,27 +551,21 @@ def test_external_return_with_allowlisted_asset_passes_and_invented_fails(tmp_pa
     context = _access(tmp_path, _FakeAssets(ASSET_A)).context("goal-video-1")
     profile = creative_profile_definition("creative.content_plan.v1")
 
-    def evaluate(asset_ref: str | None, source_set):  # type: ignore[no-untyped-def]
-        payload = GoalVideoReturnV1.model_validate(_asset_shot_payload(context, asset_ref))
-        validated = validate_goal_video_return(payload, context)
-        decision, parsed = CreativeQualityGate().evaluate(
-            stage_kind=CreativeStageKind.SHOT_PLAN,
-            profile=profile,
-            source_set=source_set,
-            previous_stages={"script.v1": validated.stage_results["script.v1"]},
-            raw_result=validated.stage_results["shot_plan.v1"],
-        )
-        return decision, parsed, validated
-
-    probe = validate_goal_video_return(GoalVideoReturnV1.model_validate(_payload(context)), context)
-    ok, parsed, _ = evaluate(ASSET_A, probe.source_set)
-    assert ok.outcome.value == "PASS" and parsed is not None
+    allowed_payload = GoalVideoReturnV1.model_validate(_asset_shot_payload(context, ASSET_A))
+    validated = validate_goal_video_return(allowed_payload, context)
+    decision, parsed = CreativeQualityGate().evaluate(
+        stage_kind=CreativeStageKind.SHOT_PLAN,
+        profile=profile,
+        source_set=validated.source_set,
+        previous_stages={"script.v1": validated.stage_results["script.v1"]},
+        raw_result=validated.stage_results["shot_plan.v1"],
+    )
+    assert decision.outcome.value == "PASS" and parsed is not None
     assert parsed.shots[0].existing_asset_ref == ASSET_A  # type: ignore[attr-defined]
 
-    invented, _, _ = evaluate(ASSET_B, probe.source_set)
-    assert invented.outcome.value == "RETRY"
-    assert invented.reasons == ["UNKNOWN_TRUSTED_ASSET_REF"]
-    assert ASSET_B not in (invented.correction_instruction or "")
+    invented_payload = GoalVideoReturnV1.model_validate(_asset_shot_payload(context, ASSET_B))
+    with pytest.raises(GoalVideoReturnError, match="UNKNOWN_EXISTING_ASSET_REF"):
+        validate_goal_video_return(invented_payload, context)
 
 
 def test_old_return_payload_without_asset_field_still_validates(tmp_path: Path) -> None:
