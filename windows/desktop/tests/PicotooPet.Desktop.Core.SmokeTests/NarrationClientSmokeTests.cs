@@ -13,6 +13,7 @@ internal static class NarrationClientSmokeTests
         await ReadsStrictAuthenticatedPlanAsync().ConfigureAwait(false);
         await RejectsOversizedResponseAsync().ConfigureAwait(false);
         await RejectsExtraFieldsAsync().ConfigureAwait(false);
+        await RejectsDigestMismatchAsync().ConfigureAwait(false);
         await RedactsFailedApiBodyAsync().ConfigureAwait(false);
     }
 
@@ -92,6 +93,32 @@ internal static class NarrationClientSmokeTests
                 "NARRATION_PLAN_INVALID",
                 exception.Code,
                 "Extra narration fields were not rejected as an invalid plan");
+        }
+    }
+
+    private static async Task RejectsDigestMismatchAsync()
+    {
+        var mismatched = ValidResponse.Replace(
+            "038faffe9050e03616e7a74d086d9af82aeaaba27918e6bbd3f4faee4dc2ec33",
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            StringComparison.Ordinal);
+        using var http = new HttpClient(new NarrationHandler(mismatched))
+        {
+            BaseAddress = new Uri("http://127.0.0.1:18186/", UriKind.Absolute),
+        };
+        await using var client = new MacCoreClient(http, "fixture-token");
+        try
+        {
+            _ = await client.GetNarrationPlanAsync("job-1", CancellationToken.None)
+                .ConfigureAwait(false);
+            throw new InvalidOperationException("Narration plan digest mismatch was accepted");
+        }
+        catch (ApiException exception)
+        {
+            SmokeAssert.Equal(
+                "NARRATION_PLAN_INVALID",
+                exception.Code,
+                "Narration plan digest mismatch did not fail closed");
         }
     }
 
@@ -187,7 +214,7 @@ internal static class NarrationClientSmokeTests
               {"segment_id":"segment-002","beat_id":"beat-2","order":2,"text":"World.","text_sha256":"52b66d1951f731ecbecf14051c45b98498bfa189833e99dbab4aba1de4b9152e","start_ms":1500,"end_ms":3000}
             ]
           },
-          "narration_plan_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          "narration_plan_digest":"038faffe9050e03616e7a74d086d9af82aeaaba27918e6bbd3f4faee4dc2ec33"
         }
         """;
 }
