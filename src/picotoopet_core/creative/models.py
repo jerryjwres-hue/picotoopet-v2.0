@@ -7,7 +7,15 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 
 class CreativeProfile(StrEnum):
@@ -231,6 +239,25 @@ class ShotPlanItem(BaseModel):
     text_reference: str | None = Field(default=None, max_length=800)
     production_notes: str = Field(default="renderer-neutral", max_length=1200)
     render_intent: CreativeRenderIntent
+    # ── Logical trusted asset_id only (C006B1 registry); never a path, URL or relpath. ──
+    existing_asset_ref: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$"
+    )
+
+    @model_validator(mode="after")
+    def _asset_ref_matches_intent(self) -> ShotPlanItem:
+        needs_ref = self.render_intent is CreativeRenderIntent.EXISTING_ASSET
+        if needs_ref != (self.existing_asset_ref is not None):
+            raise ValueError("existing_asset_ref is required for, and only for, EXISTING_ASSET")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_asset_ref(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # Keeps canonical dumps (and therefore stage/package digests) of legacy shots unchanged.
+        data = handler(self)
+        if data.get("existing_asset_ref") is None:
+            data.pop("existing_asset_ref", None)
+        return data
 
 
 class ShotPlanResult(BaseModel):

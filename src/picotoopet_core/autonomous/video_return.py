@@ -9,7 +9,14 @@ from datetime import datetime
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+)
 
 from picotoopet_core.creative.models import (
     CreativeBriefResult,
@@ -43,6 +50,7 @@ class GoalVideoReturnV1(BaseModel):
     goal_id: str = Field(min_length=1, max_length=128)
     handoff_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     prompt_version: str = Field(min_length=1, max_length=100)
+    asset_allowlist_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     generated_at: datetime
     selected_direction: str = Field(min_length=1, max_length=500)
     reasoning_summary: str = Field(min_length=1, max_length=4000)
@@ -58,6 +66,15 @@ class GoalVideoReturnV1(BaseModel):
     creative_brief: CreativeBriefResult
     script: CreativeScriptResult
     shot_plan: ShotPlanResult
+
+    @model_serializer(mode="wrap")
+    def _omit_legacy_null_asset_binding(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        data = handler(self)
+        if self.asset_allowlist_digest is None:
+            data.pop("asset_allowlist_digest", None)
+        return data
 
     @field_validator("verified_fact_ids")
     @classmethod
@@ -135,6 +152,14 @@ def _source_set(
         "handoff_sha256": context.package_sha256,
         "prompt_version": context.prompt_version,
         "return_digest": return_digest,
+        **(
+            {
+                "trusted_asset_ids": [item.asset_id for item in context.trusted_assets],
+                "asset_allowlist_digest": context.asset_allowlist_digest,
+            }
+            if context.trusted_assets
+            else {}
+        ),
         "findings": [
             {
                 "source_finding_ref": item.source_finding_ref,
@@ -150,6 +175,7 @@ def _source_set(
         result_digests=[context.package_sha256],
         findings=findings,
         evidence_ids=list(context.evidence_ids),
+        trusted_asset_ids=[item.asset_id for item in context.trusted_assets],
         source_set_digest=_digest(source_identity),
     )
 
@@ -168,6 +194,22 @@ def validate_goal_video_return(
         raise GoalVideoReturnError("HANDOFF_BINDING_MISMATCH")
     if not set(payload.verified_fact_ids).issubset(context.evidence_ids):
         raise GoalVideoReturnError("EVIDENCE_REFERENCE_INVALID")
+
+    referenced_assets = {
+        shot.existing_asset_ref
+        for shot in payload.shot_plan.shots
+        if shot.existing_asset_ref is not None
+    }
+    if payload.asset_allowlist_digest is not None and (
+        payload.asset_allowlist_digest != context.asset_allowlist_digest
+    ):
+        raise GoalVideoReturnError("ASSET_ALLOWLIST_BINDING_MISMATCH")
+    if referenced_assets:
+        if payload.asset_allowlist_digest != context.asset_allowlist_digest:
+            raise GoalVideoReturnError("ASSET_ALLOWLIST_BINDING_MISMATCH")
+        allowed_assets = {item.asset_id for item in context.trusted_assets}
+        if not referenced_assets <= allowed_assets:
+            raise GoalVideoReturnError("UNKNOWN_EXISTING_ASSET_REF")
 
     canonical = payload.model_dump(mode="json")
     if CreativeQualityGate.contains_forbidden_output(canonical):

@@ -96,7 +96,7 @@ class _Results:
         return dict(self.document)
 
 
-def _access(tmp_path: Path) -> GoalHandoffAccess:
+def _access(tmp_path: Path, assets: object | None = None) -> GoalHandoffAccess:
     paths = RuntimePaths.from_root(tmp_path / "runtime")
     paths.ensure()
     package = WebGptHandoffBuilder(paths, clock=lambda: NOW).build(
@@ -130,6 +130,7 @@ def _access(tmp_path: Path) -> GoalHandoffAccess:
         workflows=_Workflows(),
         result_records=_Records(object_hash),
         result_store=_Results(object_hash, document),
+        assets=assets,  # type: ignore[arg-type]
     )
 
 
@@ -421,3 +422,156 @@ def test_conflicting_replay_is_rejected_and_restart_reconciles_existing_creative
             )
     finally:
         database.close()
+
+
+ASSET_A = "11111111-1111-5111-8111-111111111111"
+ASSET_B = "22222222-2222-5222-8222-222222222222"
+
+
+class _FakeAssets:
+    """Stands in for TrustedAssetService; records the exact scope queried."""
+
+    def __init__(self, *asset_ids: str) -> None:
+        self.queries: list[tuple[str, str]] = []
+        self._records = [
+            SimpleNamespace(
+                asset_id=asset_id,
+                media_type="image/png",
+                width=640,
+                height=360,
+                sha256=("a" if index == 0 else "b") * 64,
+                managed_relpath="PicotooPet/assets/v1/aa/secret-location.png",
+            )
+            for index, asset_id in enumerate(asset_ids)
+        ]
+
+    def list(self, scope_kind: str, scope_id: str, limit: int = 50):  # type: ignore[no-untyped-def]
+        self.queries.append((scope_kind, scope_id))
+        return self._records
+
+
+def _asset_shot_payload(context, asset_ref: str | None) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    payload = _payload(context)
+    shot = payload["shot_plan"]["shots"][0]  # type: ignore[index]
+    shot["render_intent"] = "EXISTING_ASSET"
+    if asset_ref is not None:
+        shot["existing_asset_ref"] = asset_ref
+        payload["asset_allowlist_digest"] = context.asset_allowlist_digest
+    return payload
+
+
+def test_context_lists_only_safe_same_goal_assets_and_empty_when_none(tmp_path: Path) -> None:
+    empty = _access(tmp_path / "empty").context("goal-video-1")
+    assert empty.trusted_assets == []
+
+    fake = _FakeAssets(ASSET_B, ASSET_A)
+    context = _access(tmp_path / "with", fake).context("goal-video-1")
+
+    assert fake.queries == [("autonomous_goal", "goal-video-1")]
+    assert [item.asset_id for item in context.trusted_assets] == [ASSET_A, ASSET_B]
+    assert set(context.trusted_assets[0].model_dump()) == {
+        "asset_id",
+        "media_type",
+        "width",
+        "height",
+    }
+    assert len(context.asset_allowlist_digest) == 64
+
+
+def test_return_prompt_binds_safe_asset_metadata_without_locations(tmp_path: Path) -> None:
+    prompt = _access(tmp_path, _FakeAssets(ASSET_A)).return_prompt("goal-video-1")
+
+    assert ASSET_A in prompt
+    assert '"allowed_existing_assets"' in prompt
+    assert '"asset_allowlist_digest"' in prompt
+    assert '"media_type":"image/png"' in prompt
+    assert "existing_asset_ref" in prompt
+    assert (
+        "managed_relpath" not in prompt.split("PicotooPet 严格回导合同")[1].split("JSON Schema")[0]
+    )
+    assert "secret-location" not in prompt
+    assert "PicotooPet/assets" not in prompt
+    assert ("a" * 64) not in prompt.split("PicotooPet 严格回导合同")[1].split("JSON Schema")[0]
+
+    no_assets = _access(tmp_path / "none").return_prompt("goal-video-1")
+    assert '"allowed_existing_assets":[]' in no_assets
+    assert '"asset_allowlist_digest"' in no_assets
+
+
+
+
+def test_asset_return_requires_exact_allowlist_snapshot_digest(tmp_path: Path) -> None:
+    context = _access(tmp_path, _FakeAssets(ASSET_A)).context("goal-video-1")
+
+    missing = _asset_shot_payload(context, ASSET_A)
+    missing.pop("asset_allowlist_digest")
+    with pytest.raises(GoalVideoReturnError, match="ASSET_ALLOWLIST_BINDING_MISMATCH"):
+        validate_goal_video_return(GoalVideoReturnV1.model_validate(missing), context)
+
+    stale = _asset_shot_payload(context, ASSET_A)
+    stale["asset_allowlist_digest"] = "0" * 64
+    with pytest.raises(GoalVideoReturnError, match="ASSET_ALLOWLIST_BINDING_MISMATCH"):
+        validate_goal_video_return(GoalVideoReturnV1.model_validate(stale), context)
+
+    invented = _asset_shot_payload(context, ASSET_B)
+    with pytest.raises(GoalVideoReturnError, match="UNKNOWN_EXISTING_ASSET_REF"):
+        validate_goal_video_return(GoalVideoReturnV1.model_validate(invented), context)
+
+
+def test_asset_allowlist_digest_changes_when_prompt_allowlist_changes(tmp_path: Path) -> None:
+    none = _access(tmp_path / "none").context("goal-video-1")
+    one = _access(tmp_path / "one", _FakeAssets(ASSET_A)).context("goal-video-1")
+    two = _access(tmp_path / "two", _FakeAssets(ASSET_A, ASSET_B)).context("goal-video-1")
+
+    assert len({none.asset_allowlist_digest, one.asset_allowlist_digest, two.asset_allowlist_digest}) == 3
+
+def test_source_set_digest_binds_trusted_asset_allowlist(tmp_path: Path) -> None:
+    def digest_for(*asset_ids: str) -> tuple[str, list[str]]:
+        context = _access(
+            tmp_path / "-".join(asset_ids or ("none",)), _FakeAssets(*asset_ids)
+        ).context("goal-video-1")
+        validated = validate_goal_video_return(
+            GoalVideoReturnV1.model_validate(_payload(context)), context
+        )
+        return validated.source_set.source_set_digest, validated.source_set.trusted_asset_ids
+
+    none_digest, none_ids = digest_for()
+    one_digest, one_ids = digest_for(ASSET_A)
+    two_digest, two_ids = digest_for(ASSET_A, ASSET_B)
+
+    assert none_ids == [] and one_ids == [ASSET_A] and two_ids == [ASSET_A, ASSET_B]
+    assert len({none_digest, one_digest, two_digest}) == 3
+
+
+def test_external_return_with_allowlisted_asset_passes_and_invented_fails(tmp_path: Path) -> None:
+    from picotoopet_core.creative.models import CreativeStageKind
+    from picotoopet_core.creative.profiles import creative_profile_definition
+    from picotoopet_core.creative.quality import CreativeQualityGate
+
+    context = _access(tmp_path, _FakeAssets(ASSET_A)).context("goal-video-1")
+    profile = creative_profile_definition("creative.content_plan.v1")
+
+    allowed_payload = GoalVideoReturnV1.model_validate(_asset_shot_payload(context, ASSET_A))
+    validated = validate_goal_video_return(allowed_payload, context)
+    decision, parsed = CreativeQualityGate().evaluate(
+        stage_kind=CreativeStageKind.SHOT_PLAN,
+        profile=profile,
+        source_set=validated.source_set,
+        previous_stages={"script.v1": validated.stage_results["script.v1"]},
+        raw_result=validated.stage_results["shot_plan.v1"],
+    )
+    assert decision.outcome.value == "PASS" and parsed is not None
+    assert parsed.shots[0].existing_asset_ref == ASSET_A  # type: ignore[attr-defined]
+
+    invented_payload = GoalVideoReturnV1.model_validate(_asset_shot_payload(context, ASSET_B))
+    with pytest.raises(GoalVideoReturnError, match="UNKNOWN_EXISTING_ASSET_REF"):
+        validate_goal_video_return(invented_payload, context)
+
+
+def test_old_return_payload_without_asset_field_still_validates(tmp_path: Path) -> None:
+    context = _access(tmp_path).context("goal-video-1")
+    payload = GoalVideoReturnV1.model_validate(_payload(context))
+
+    validated = validate_goal_video_return(payload, context)
+
+    assert "existing_asset_ref" not in validated.stage_results["shot_plan.v1"]["shots"][0]  # type: ignore[index]
