@@ -15,6 +15,7 @@ internal static class NarrationSynthesisSmokeTests
     {
         VerifyVoiceSelection();
         VerifyWavValidation();
+        VerifyCanonicalDigestMatchesCore();
         await VerifyArtifactAndReuseAsync().ConfigureAwait(false);
         await VerifyConflictsAsync().ConfigureAwait(false);
         await VerifyTimeoutAndCancellationAsync().ConfigureAwait(false);
@@ -48,6 +49,35 @@ internal static class NarrationSynthesisSmokeTests
         {
             SmokeAssert.Equal("NARRATION_VOICE_UNAVAILABLE", exception.Message, "Wrong voice failure code");
         }
+    }
+
+    private static void VerifyCanonicalDigestMatchesCore()
+    {
+        var text = "你好，欢迎使用。";
+        var plan = new NarrationPlanRecord(
+            "1.0",
+            "job-zh",
+            "creative-1",
+            new string('a', 64),
+            new string('b', 64),
+            1_000,
+            NarrationPlanContract.TtsProfileId,
+            NarrationPlanContract.VoiceProfileId,
+            true,
+            [
+                new NarrationSegmentPlanRecord(
+                    "segment-001",
+                    "beat-1",
+                    1,
+                    text,
+                    "4ae53831e6ba6f6ac2c466a8758d9a17b476f217c258233046846ce6cf5e8b22",
+                    0,
+                    1_000),
+            ]);
+        SmokeAssert.Equal(
+            "273e2c65cce79cda6f2a2897fae0919e41db0460f8808308b7552c37a6e3cbb0",
+            NarrationPlanContract.ComputeDigest(plan),
+            "Windows canonical narration digest diverged from Core for Unicode text");
     }
 
     private static void VerifyWavValidation()
