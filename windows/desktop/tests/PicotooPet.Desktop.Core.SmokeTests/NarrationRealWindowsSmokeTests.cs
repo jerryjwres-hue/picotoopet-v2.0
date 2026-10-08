@@ -42,11 +42,13 @@ internal static class NarrationRealWindowsSmokeTests
         var segments = text.Select((value, index) => new NarrationSegmentPlanRecord(
             $"segment-{index + 1}", $"beat-{index + 1}", index + 1, value, Sha(value),
             index * 10_000, (index + 1) * 10_000)).ToArray();
+        var plan = new NarrationPlanRecord(
+            "1.0", jobId, "creative-real", Sha("creative-real"),
+            Sha("production-real"), 20_000, NarrationPlanContract.TtsProfileId,
+            NarrationPlanContract.VoiceProfileId, true, segments);
         var response = new NarrationPlanResponseRecord(
-            new NarrationPlanRecord("1.0", jobId, "creative-real", Sha("creative-real"),
-                Sha("production-real"), 20_000, NarrationPlanContract.TtsProfileId,
-                NarrationPlanContract.VoiceProfileId, true, segments),
-            Sha(jobId));
+            plan,
+            NarrationPlanContract.ComputeDigest(plan));
         var service = new WindowsNarrationSynthesisService(root, backend, TimeSpan.FromSeconds(30));
         var before = backend.SynthesisCount;
         var first = await service.SynthesizeAsync(response, CancellationToken.None).ConfigureAwait(false);
