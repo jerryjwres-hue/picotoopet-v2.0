@@ -122,8 +122,10 @@ internal static class NarrationSynthesisSmokeTests
             {
                 var changedService = new WindowsNarrationSynthesisService(changedRoot, backend, TimeSpan.FromSeconds(2));
                 _ = await changedService.SynthesizeAsync(Response("changed", "1", [Segment("Hello.", 1, 0, 1_000)]), CancellationToken.None).ConfigureAwait(false);
-                await ExpectCodeAsync("NARRATION_ARTIFACT_CONFLICT", () => changedService.SynthesizeAsync(
-                    Response("changed", "2", [Segment("Hello.", 1, 0, 1_000)]), CancellationToken.None));
+                var changed = Response("changed", "2", [Segment("Changed text.", 1, 0, 1_000)]);
+                await ExpectCodeAsync(
+                    "NARRATION_ARTIFACT_CONFLICT",
+                    () => changedService.SynthesizeAsync(changed, CancellationToken.None));
             }
             finally
             {
@@ -230,15 +232,16 @@ internal static class NarrationSynthesisSmokeTests
 
     private static NarrationPlanResponseRecord Response(string jobId, string digestSeed, NarrationSegmentPlanRecord[] segments)
     {
-        var digest = Sha(digestSeed);
-        var plan = new NarrationPlanResponseRecord(
-            new NarrationPlanRecord("1.0", jobId, "creative-1", Sha("creative"), Sha("production"),
-                segments.Length == 0 ? 1_000 : segments.Max(item => item.EndMs),
-                NarrationPlanContract.TtsProfileId, NarrationPlanContract.VoiceProfileId,
-                segments.Length > 0, segments),
-            digest);
-        NarrationPlanContract.Validate(plan);
-        return plan;
+        var record = new NarrationPlanRecord(
+            "1.0", jobId, "creative-1", Sha("creative"), Sha("production"),
+            segments.Length == 0 ? 1_000 : segments.Max(item => item.EndMs),
+            NarrationPlanContract.TtsProfileId, NarrationPlanContract.VoiceProfileId,
+            segments.Length > 0, segments);
+        var response = new NarrationPlanResponseRecord(
+            record,
+            NarrationPlanContract.ComputeDigest(record));
+        NarrationPlanContract.Validate(response);
+        return response;
     }
 
     private static NarrationSegmentPlanRecord Segment(string text, int order, long start, long end) =>
