@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from .models import ProductionTaskCommitRequest, ProductionTaskPlan
+from .models import (
+    ProductionExecutionBackend,
+    ProductionTaskCommitRequest,
+    ProductionTaskPlan,
+)
 from .profile import MAX_FPS, MAX_FRAME_COUNT, MAX_HEIGHT, MAX_WIDTH, MIN_HEIGHT, MIN_WIDTH
 
 
@@ -23,6 +27,11 @@ def validate_task_commit(task: ProductionTaskPlan, request: ProductionTaskCommit
     if request.mime_type != "video/webm" or not request.output_relpath.lower().endswith(".webm"):
         raise ValueError("PRODUCTION_OUTPUT_MEDIA_TYPE_INVALID")
 
-    # ── Prompt identity must resolve to the current Comfy attempt ───────────
-    if not request.comfy_prompt_id.strip():
+    # ── Prompt identity exists only for the Comfy execution plane ──────────
+    if task.execution_backend is ProductionExecutionBackend.COMFY and not request.comfy_prompt_id:
         raise ValueError("PRODUCTION_PROMPT_ID_REQUIRED")
+    if (
+        task.execution_backend is ProductionExecutionBackend.LOCAL_MEDIA
+        and request.comfy_prompt_id is not None
+    ):
+        raise ValueError("PRODUCTION_LOCAL_MEDIA_PROMPT_FORBIDDEN")

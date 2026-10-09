@@ -13,6 +13,7 @@ from .models import (
     ProductionTaskPlan,
     ProductionTaskRecord,
     ProductionTaskStatus,
+    ProductionTrustedAssetSnapshotV1,
 )
 from .repository import ProductionRepository
 from .service import ProductionService
@@ -31,5 +32,6 @@ __all__ = [
     "ProductionTaskPlan",
     "ProductionTaskRecord",
     "ProductionTaskStatus",
+    "ProductionTrustedAssetSnapshotV1",
     "compile_production_plan",
 ]

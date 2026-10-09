@@ -8,10 +8,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from pydantic import ValidationError
+
+from picotoopet_core.assets.service import TrustedAssetError, TrustedAssetService
 from picotoopet_core.creative.models import (
     CreativeJobStatus,
     CreativePackageRecord,
     CreativeQualityOutcome,
+    ShotPlanResult,
 )
 from picotoopet_core.creative.repository import CreativeRepository
 
@@ -32,6 +36,7 @@ from .models import (
     ProductionTaskFailureRequest,
     ProductionTaskRecord,
     ProductionTaskStatus,
+    ProductionTrustedAssetSnapshotV1,
 )
 from .package import build_production_package_payload
 from .quality import validate_task_commit
@@ -46,11 +51,70 @@ class ProductionService:
         repository: ProductionRepository,
         creative_repository: CreativeRepository,
         store: ProductionArtifactStore,
+        trusted_assets: TrustedAssetService | None = None,
     ) -> None:
         # ── Core remains the only durable state authority ───────────────────
         self.repository = repository
         self.creative_repository = creative_repository
         self.store = store
+        self.trusted_assets = trusted_assets
+
+    def _resolve_trusted_assets(
+        self,
+        manifest: dict[str, object],
+        project_key: str,
+    ) -> dict[str, ProductionTrustedAssetSnapshotV1]:
+        stage_results = manifest.get("stage_results")
+        if not isinstance(stage_results, dict):
+            raise ValueError("PRODUCTION_SHOT_PLAN_MISSING")
+        try:
+            shot_plan = ShotPlanResult.model_validate(stage_results.get("shot_plan.v1"))
+        except ValidationError as error:
+            raise ValueError("PRODUCTION_SHOT_PLAN_INVALID") from error
+        refs = sorted(
+            {
+                shot.existing_asset_ref
+                for shot in shot_plan.shots
+                if shot.render_intent.value == "EXISTING_ASSET"
+                and shot.existing_asset_ref is not None
+            }
+        )
+        if not refs:
+            return {}
+        prefix = "autonomous-goal:"
+        if not project_key.startswith(prefix) or not project_key[len(prefix) :]:
+            raise ValueError("PRODUCTION_TRUSTED_ASSET_SCOPE_INVALID")
+        if self.trusted_assets is None:
+            raise ValueError("PRODUCTION_TRUSTED_ASSET_NOT_FOUND")
+        goal_id = project_key[len(prefix) :]
+        snapshots: dict[str, ProductionTrustedAssetSnapshotV1] = {}
+        for asset_id in refs:
+            try:
+                record = self.trusted_assets.get(
+                    asset_id,
+                    scope_kind="autonomous_goal",
+                    scope_id=goal_id,
+                )
+            except TrustedAssetError as error:
+                raise ValueError("PRODUCTION_TRUSTED_ASSET_NOT_FOUND") from error
+            if record.duration_ms is not None:
+                raise ValueError("PRODUCTION_TRUSTED_ASSET_FACTS_INVALID")
+            try:
+                snapshots[asset_id] = ProductionTrustedAssetSnapshotV1(
+                    asset_id=record.asset_id,
+                    scope_kind=record.scope_kind,
+                    scope_id=record.scope_id,
+                    managed_root_id=record.managed_root_id,
+                    managed_relpath=record.managed_relpath,
+                    sha256=record.sha256,
+                    size_bytes=record.size_bytes,
+                    media_type=record.media_type,
+                    width=record.width,
+                    height=record.height,
+                )
+            except ValidationError as error:
+                raise ValueError("PRODUCTION_TRUSTED_ASSET_FACTS_INVALID") from error
+        return snapshots
 
     @staticmethod
     def _digest(value: object) -> str:
@@ -86,7 +150,8 @@ class ProductionService:
     def list_eligible(self) -> list[ProductionEligibleCreativeRecord]:
         # ── Only unused PASS + creative_ready packages may enter production ─
         rows = self.repository.database.fetchall(
-            "SELECT cp.creative_package_id,cp.creative_job_id,cj.project_key,cp.package_digest,cp.created_at "
+            "SELECT cp.creative_package_id,cp.creative_job_id,cj.project_key,"
+            "cp.package_digest,cp.created_at "
             "FROM creative_packages cp "
             "JOIN creative_jobs cj ON cj.creative_job_id=cp.creative_job_id "
             "LEFT JOIN production_jobs pj ON pj.creative_package_id=cp.creative_package_id "
@@ -136,7 +201,15 @@ class ProductionService:
         if job.plan_digest is not None:
             return job
 
-        plan = compile_production_plan(job.production_job_id, package.manifest, package.package_digest)
+        if package.manifest.get("project_key") != creative_job.project_key:
+            raise ValueError("PRODUCTION_CREATIVE_PACKAGE_IDENTITY_INVALID")
+        trusted_assets = self._resolve_trusted_assets(package.manifest, creative_job.project_key)
+        plan = compile_production_plan(
+            job.production_job_id,
+            package.manifest,
+            package.package_digest,
+            trusted_assets=trusted_assets,
+        )
         plan_digest = self._digest(plan.model_dump(mode="json"))
         self.repository.save_plan(job.production_job_id, plan, plan_digest)
         return self.repository.get_job(job.production_job_id)
@@ -179,7 +252,9 @@ class ProductionService:
         resume_plan = claim.plan.model_copy(update={"tasks": resume_tasks})
         return claim.model_copy(update={"plan": resume_plan})
 
-    def heartbeat(self, production_job_id: str, request: ProductionHeartbeatRequest) -> ProductionJobRecord:
+    def heartbeat(
+        self, production_job_id: str, request: ProductionHeartbeatRequest
+    ) -> ProductionJobRecord:
         return self.repository.heartbeat(
             production_job_id,
             request.executor_id,
@@ -200,6 +275,7 @@ class ProductionService:
             executor_id=request.executor_id,
             lease_token=request.lease_token,
             comfy_prompt_id=request.comfy_prompt_id,
+            retry_previous_attempt=request.retry_previous_attempt,
         )
 
     def fail_task(
@@ -225,7 +301,9 @@ class ProductionService:
         # ── Validate evidence against the exact task plan before persistence ─
         task = self.repository.get_task(production_job_id, production_task_id)
         validate_task_commit(task.task_plan, request)
-        committed = self.repository.commit_task_result(production_job_id, production_task_id, request)
+        committed = self.repository.commit_task_result(
+            production_job_id, production_task_id, request
+        )
         self._finalize_if_complete(production_job_id)
         return committed
 

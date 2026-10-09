@@ -17,6 +17,25 @@ public sealed record ProductionJobCreateRequest(
     [property: JsonPropertyName("production_profile")] string ProductionProfile,
     [property: JsonPropertyName("idempotency_key")] string IdempotencyKey);
 
+/// <summary>Core 冻结的 TEXT_CARD 文本事实；不携带字体、路径、命令或 filter 权限。</summary>
+public sealed record ProductionLocalMediaPayloadRecord(
+    [property: JsonPropertyName("text_digest")] string TextDigest,
+    [property: JsonPropertyName("text_content")] string TextContent,
+    [property: JsonPropertyName("text_profile_id")] string TextProfileId);
+
+/// <summary>Core 冻结的受信图片事实；不携带绝对路径或任意执行权限。</summary>
+public sealed record ProductionTrustedAssetSnapshotRecord(
+    [property: JsonPropertyName("asset_id")] string AssetId,
+    [property: JsonPropertyName("scope_kind")] string ScopeKind,
+    [property: JsonPropertyName("scope_id")] string ScopeId,
+    [property: JsonPropertyName("managed_root_id")] string ManagedRootId,
+    [property: JsonPropertyName("managed_relpath")] string ManagedRelpath,
+    [property: JsonPropertyName("sha256")] string Sha256,
+    [property: JsonPropertyName("size_bytes")] long SizeBytes,
+    [property: JsonPropertyName("media_type")] string MediaType,
+    [property: JsonPropertyName("width")] int Width,
+    [property: JsonPropertyName("height")] int Height);
+
 /// <summary>Core 编译出的单个 shot 固定执行计划。</summary>
 public sealed record ProductionTaskPlanRecord(
     [property: JsonPropertyName("production_task_id")] string ProductionTaskId,
@@ -33,7 +52,11 @@ public sealed record ProductionTaskPlanRecord(
     [property: JsonPropertyName("fps")] int Fps,
     [property: JsonPropertyName("frame_count")] int FrameCount,
     [property: JsonPropertyName("target_duration_ms")] long TargetDurationMs,
-    [property: JsonPropertyName("trusted_input_asset_ref")] string? TrustedInputAssetRef);
+    [property: JsonPropertyName("trusted_input_asset_ref")] string? TrustedInputAssetRef,
+    [property: JsonPropertyName("execution_backend")] string? ExecutionBackend = null,
+    [property: JsonPropertyName("execution_profile_id")] string? ExecutionProfileId = null,
+    [property: JsonPropertyName("local_media")] ProductionLocalMediaPayloadRecord? LocalMedia = null,
+    [property: JsonPropertyName("trusted_asset")] ProductionTrustedAssetSnapshotRecord? TrustedAsset = null);
 
 /// <summary>Core 所有、Windows 只读的 Production Plan。</summary>
 public sealed record ProductionPlanRecord(
@@ -148,7 +171,8 @@ public sealed record ProductionClaimRecord
 public sealed record ProductionTaskAttemptRequest(
     [property: JsonPropertyName("executor_id")] string ExecutorId,
     [property: JsonPropertyName("lease_token")] string LeaseToken,
-    [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId);
+    [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId,
+    [property: JsonPropertyName("retry_previous_attempt")] bool RetryPreviousAttempt = false);
 
 /// <summary>最终本地渲染失败只回传有界身份、lease、prompt 与失败证据。</summary>
 public sealed record ProductionTaskFailureRequest(
@@ -162,7 +186,7 @@ public sealed record ProductionTaskFailureRequest(
 public sealed record ProductionTaskCommitRequest(
     [property: JsonPropertyName("executor_id")] string ExecutorId,
     [property: JsonPropertyName("lease_token")] string LeaseToken,
-    [property: JsonPropertyName("comfy_prompt_id")] string ComfyPromptId,
+    [property: JsonPropertyName("comfy_prompt_id")] string? ComfyPromptId,
     [property: JsonPropertyName("output_relpath")] string OutputRelpath,
     [property: JsonPropertyName("output_sha256")] string OutputSha256,
     [property: JsonPropertyName("output_bytes")] long OutputBytes,

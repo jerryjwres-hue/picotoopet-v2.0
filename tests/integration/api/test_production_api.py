@@ -20,7 +20,12 @@ def _app(tmp_path: Path):  # type: ignore[no-untyped-def]
     return app, {"Authorization": f"Bearer {token}"}
 
 
-def _seed_creative_package(database) -> str:  # type: ignore[no-untyped-def]
+def _seed_creative_package(  # type: ignore[no-untyped-def]
+    database,
+    *,
+    render_intent: str = "GENERATIVE_VIDEO",
+    text_reference: str | None = None,
+) -> str:
     # ── Minimal persisted creative_ready package ─────────────────────────────
     now = datetime.now(UTC).isoformat()
     creative_job_id = str(uuid4())
@@ -32,6 +37,10 @@ def _seed_creative_package(database) -> str:  # type: ignore[no-untyped-def]
         "project_key": "pet-dryer-us",
         "creative_profile": "creative.content_plan.v1",
         "source_set_digest": "a" * 64,
+        "source_result_packages": [],
+        "source_findings": [],
+        "configured_model_id": "ollama:qwen3:8b",
+        "stage_template_versions": {},
         "quality_outcome": "PASS",
         "stage_results": {
             "creative_brief.v1": {
@@ -95,9 +104,9 @@ def _seed_creative_package(database) -> str:  # type: ignore[no-untyped-def]
                         "continuity_keys": [],
                         "required_facts": [],
                         "source_evidence_ids": [],
-                        "text_reference": None,
+                        "text_reference": text_reference,
                         "production_notes": "renderer-neutral",
-                        "render_intent": "GENERATIVE_VIDEO",
+                        "render_intent": render_intent,
                     }
                 ],
                 "warnings": [],
@@ -228,3 +237,73 @@ def test_idempotent_replay_reuses_bound_plan_after_compiler_upgrade(tmp_path: Pa
         )
         assert preserved["plan_json"] == legacy_json
         assert preserved["plan_digest"] == legacy_digest
+
+
+def test_text_card_uses_existing_attempt_commit_and_package_routes(tmp_path: Path) -> None:
+    app, headers = _app(tmp_path)
+    with TestClient(app) as client:
+        package_id = _seed_creative_package(
+            app.state.services.database,
+            render_intent="TEXT_CARD",
+            text_reference="Save time with gentle airflow.",
+        )
+        created = client.post(
+            "/api/v1/production/jobs",
+            headers=headers,
+            json={
+                "creative_package_id": package_id,
+                "production_profile": "production.comfyui.v1",
+                "idempotency_key": "production-text-card",
+            },
+        )
+        assert created.status_code == 200
+        job_id = created.json()["production_job_id"]
+        plan = client.get(f"/api/v1/production/jobs/{job_id}/plan", headers=headers).json()
+        task = plan["tasks"][0]
+        assert task["execution_backend"] == "local_media"
+        assert task["workflow_id"] is None
+
+        claim = client.post(
+            f"/api/v1/production/jobs/{job_id}/claim",
+            headers=headers,
+            json={"executor_id": "pc-gpu-1"},
+        ).json()
+        task_id = task["production_task_id"]
+        attempt = client.post(
+            f"/api/v1/production/jobs/{job_id}/tasks/{task_id}/attempt",
+            headers=headers,
+            json={
+                "executor_id": "pc-gpu-1",
+                "lease_token": claim["lease_token"],
+                "comfy_prompt_id": None,
+            },
+        )
+        assert attempt.status_code == 200
+        committed = client.post(
+            f"/api/v1/production/jobs/{job_id}/tasks/{task_id}/result",
+            headers=headers,
+            json={
+                "executor_id": "pc-gpu-1",
+                "lease_token": claim["lease_token"],
+                "comfy_prompt_id": None,
+                "output_relpath": "PicotooPet/production/job/001-text-card.webm",
+                "output_sha256": "d" * 64,
+                "output_bytes": 4096,
+                "mime_type": "video/webm",
+                "width": task["width"],
+                "height": task["height"],
+                "frame_count": task["frame_count"],
+                "fps": task["fps"],
+            },
+        )
+        assert committed.status_code == 200
+        assert committed.json()["comfy_prompt_id"] is None
+        packaged = client.get(
+            f"/api/v1/production/jobs/{job_id}/package",
+            headers=headers,
+        )
+        assert packaged.status_code == 200
+        output = packaged.json()["manifest"]["outputs"][0]
+        assert output["execution_backend"] == "local_media"
+        assert output["text_digest"] == task["local_media"]["text_digest"]
+        assert "text_content" not in output

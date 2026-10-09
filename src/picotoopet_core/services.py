@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from picotoopet_core.approvals.service import ApprovalService
+from picotoopet_core.assets.repository import TrustedAssetRepository
+from picotoopet_core.assets.service import TrustedAssetService
 from picotoopet_core.audit.writer import AuditWriter
 from picotoopet_core.automation.capabilities import CapabilityRouter
 from picotoopet_core.automation.quality import QualityGate
@@ -53,8 +55,6 @@ from picotoopet_core.handoffs.approvals import HandoffApprovalService
 from picotoopet_core.handoffs.service import HandoffService
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import ResidentManager
-from picotoopet_core.assets.repository import TrustedAssetRepository
-from picotoopet_core.assets.service import TrustedAssetService
 from picotoopet_core.production.repository import ProductionRepository
 from picotoopet_core.production.service import ProductionService
 from picotoopet_core.production.store import ProductionArtifactStore
@@ -174,12 +174,13 @@ def build_services(settings: AppSettings) -> Services:
     )
     production_repository = ProductionRepository(database)
     production_store = ProductionArtifactStore(settings.paths)
+    assets = TrustedAssetService(TrustedAssetRepository(database))
     production = ProductionService(
         repository=production_repository,
         creative_repository=creative_repository,
         store=production_store,
+        trusted_assets=assets,
     )
-    assets = TrustedAssetService(TrustedAssetRepository(database))
     business_pipeline_repository = BusinessPipelineRepository(database)
     business_return_store = BusinessReturnPackageStore(settings.paths)
     business_pipeline = BusinessPipelineService(
@@ -236,7 +237,9 @@ def build_services(settings: AppSettings) -> Services:
     )
     handoffs = HandoffService(database, approvals)
     returns = ReturnValidationService(database, handoffs)
-    broker_sessions = BrokerSessionService(database, handoffs, returns, api_token=settings.api_token)
+    broker_sessions = BrokerSessionService(
+        database, handoffs, returns, api_token=settings.api_token
+    )
     provider_readiness = ProviderReadinessProjection(capability_router)
     provider_sessions = ProviderSessionService(
         database,
@@ -271,9 +274,7 @@ def build_services(settings: AppSettings) -> Services:
             home_dir=Path.home(),
         ),
         # ── Reliability reads only the sanitized fixed status projection, never model prompts. ──
-        model_runner_status_path=(
-            settings.paths.runtime_dir / "model-runner" / "status.json"
-        ),
+        model_runner_status_path=(settings.paths.runtime_dir / "model-runner" / "status.json"),
     )
     return Services(
         settings=settings,
