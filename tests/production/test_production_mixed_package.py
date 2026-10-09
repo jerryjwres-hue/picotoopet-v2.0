@@ -116,6 +116,21 @@ def _existing_asset_task(*, order: int) -> ProductionTaskPlan:
     )
 
 
+def _i2v_asset_task(*, order: int, legacy: bool = False) -> ProductionTaskPlan:
+    task = _existing_asset_task(order=order)
+    payload = task.model_dump(mode="json")
+    payload.update(
+        render_intent="IMAGE_TO_VIDEO",
+        execution_backend="comfy",
+        execution_profile_id="comfy.wan22.ti2v5b.i2v.v1",
+        workflow_id="comfy.wan22.ti2v5b.i2v.v1",
+    )
+    if legacy:
+        payload["trusted_asset"] = None
+        payload["trusted_input_asset_ref"] = "legacy/input.png"
+    return ProductionTaskPlan.model_validate(payload)
+
+
 def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
     now = datetime.now(UTC)
     job_id = str(uuid4())
@@ -124,6 +139,8 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
     comfy = _plan_task(order=1, local_media=False)
     text_card = _plan_task(order=2, local_media=True)
     existing_asset = _existing_asset_task(order=3)
+    i2v_asset = _i2v_asset_task(order=4)
+    legacy_i2v = _i2v_asset_task(order=5, legacy=True)
     plan = ProductionPlan(
         schema_version="1.0",
         production_profile="production.comfyui.v1",
@@ -132,8 +149,8 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
         creative_package_digest="a" * 64,
         project_key="pet-dryer-us",
         output_profile_id="video.landscape.v1",
-        target_runtime_ms=9000,
-        tasks=[comfy, text_card, existing_asset],
+        target_runtime_ms=15000,
+        tasks=[comfy, text_card, existing_asset, i2v_asset, legacy_i2v],
     )
     job = ProductionJobRecord(
         production_job_id=job_id,
@@ -178,6 +195,16 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
                             "beat_id": "beat-003",
                             "source_evidence_ids": [],
                         },
+                        {
+                            "shot_id": i2v_asset.shot_id,
+                            "beat_id": "beat-004",
+                            "source_evidence_ids": [],
+                        },
+                        {
+                            "shot_id": legacy_i2v.shot_id,
+                            "beat_id": "beat-005",
+                            "source_evidence_ids": [],
+                        },
                     ]
                 }
             },
@@ -195,13 +222,16 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
             _completed_task(job_id, comfy),
             _completed_task(job_id, text_card),
             _completed_task(job_id, existing_asset),
+            _completed_task(job_id, i2v_asset),
+            _completed_task(job_id, legacy_i2v),
         ],
         completed_at=now,
     )
 
-    assert [item["workflow_id"] for item in payload["workflow_templates"]] == [
-        "comfy.wan22.ti2v5b.t2v.v1"
-    ]
+    assert {item["workflow_id"] for item in payload["workflow_templates"]} == {
+        "comfy.wan22.ti2v5b.t2v.v1",
+        "comfy.wan22.ti2v5b.i2v.v1",
+    }
     assert payload["models"]
     outputs = payload["outputs"]
     assert outputs[0]["execution_backend"] == "comfy"
@@ -223,6 +253,19 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
         "managed_relpath": f"PicotooPet/assets/v1/ee/{'e' * 64}.png",
     }
     assert not any("source_path" in key or "absolute" in key for key in outputs[2])
+    assert outputs[3]["execution_profile_id"] == "comfy.wan22.ti2v5b.i2v.v1"
+    assert outputs[3]["workflow_id"] == "comfy.wan22.ti2v5b.i2v.v1"
+    assert outputs[3]["source_asset"] == {
+        "asset_id": i2v_asset.trusted_asset.asset_id,
+        "sha256": "e" * 64,
+        "media_type": "image/png",
+        "width": 1200,
+        "height": 800,
+        "managed_root_id": "windows.comfy-input.v1",
+        "managed_relpath": f"PicotooPet/assets/v1/ee/{'e' * 64}.png",
+    }
+    assert outputs[4]["workflow_id"] == "comfy.wan22.ti2v5b.i2v.v1"
+    assert outputs[4]["source_asset"] is None
 
 
 def test_text_card_only_package_does_not_claim_comfy_models() -> None:

@@ -69,24 +69,29 @@ def _evaluate(shots: list[dict[str, object]], source_set: NormalizedCreativeSour
     )
 
 
-def test_legacy_shot_without_ref_validates_and_serializes_without_the_field() -> None:
-    item = ShotPlanItem.model_validate(_shot())
+@pytest.mark.parametrize("render_intent", ["GENERATIVE_VIDEO", "IMAGE_TO_VIDEO"])
+def test_legacy_shot_without_ref_validates_and_serializes_without_the_field(
+    render_intent: str,
+) -> None:
+    item = ShotPlanItem.model_validate(_shot(render_intent=render_intent))
     assert item.existing_asset_ref is None
     assert "existing_asset_ref" not in item.model_dump(mode="json")
     assert ShotPlanItem.model_validate(item.model_dump(mode="json")) == item
 
 
-def test_existing_asset_requires_ref_and_other_intents_forbid_it() -> None:
+def test_asset_ref_is_allowed_only_for_existing_asset_and_image_to_video() -> None:
     with pytest.raises(ValidationError):
         ShotPlanItem.model_validate(_shot(render_intent="EXISTING_ASSET"))
     with pytest.raises(ValidationError):
         ShotPlanItem.model_validate(_shot(existing_asset_ref=ASSET))
-    with pytest.raises(ValidationError):
-        ShotPlanItem.model_validate(_shot(render_intent="IMAGE_TO_VIDEO", existing_asset_ref=ASSET))
+    i2v = ShotPlanItem.model_validate(
+        _shot(render_intent="IMAGE_TO_VIDEO", existing_asset_ref=ASSET)
+    )
     ok = ShotPlanItem.model_validate(
         _shot(render_intent="EXISTING_ASSET", existing_asset_ref=ASSET)
     )
     assert ok.existing_asset_ref == ASSET
+    assert i2v.existing_asset_ref == ASSET
     assert ok.model_dump(mode="json")["existing_asset_ref"] == ASSET
 
 
@@ -115,6 +120,13 @@ def test_gate_passes_allowlisted_ref_and_rejects_unknown_without_leaking() -> No
     decision, parsed = _evaluate(shots, _source_set())
     assert decision.outcome.value == "RETRY" and parsed is None
     assert decision.reasons == ["UNKNOWN_TRUSTED_ASSET_REF"]
+
+    i2v = [_shot(render_intent="IMAGE_TO_VIDEO", existing_asset_ref=ASSET)]
+    decision, parsed = _evaluate(i2v, _source_set(ASSET))
+    assert decision.outcome.value == "PASS" and parsed is not None
+    decision, parsed = _evaluate(i2v, _source_set())
+    assert decision.outcome.value == "RETRY" and parsed is None
+    assert decision.reasons == ["UNKNOWN_TRUSTED_ASSET_REF"]
     assert ASSET not in (decision.correction_instruction or "")
 
     decision, _ = _evaluate(shots, _source_set("44444444-4444-5444-8444-444444444444"))
@@ -128,6 +140,11 @@ def test_gate_schema_failures_for_missing_or_misplaced_ref_are_bounded() -> None
         assert decision.outcome.value == "RETRY"
         assert decision.reasons == ["RESULT_SCHEMA_INVALID"]
         assert ASSET not in (decision.correction_instruction or "")
+
+    missing_i2v, parsed = _evaluate([_shot(render_intent="IMAGE_TO_VIDEO")], _source_set(ASSET))
+    assert parsed is None
+    assert missing_i2v.outcome.value == "RETRY"
+    assert missing_i2v.reasons == ["TRUSTED_ASSET_REF_INVALID"]
 
 
 def test_local_creative_with_empty_allowlist_cannot_accept_existing_asset() -> None:

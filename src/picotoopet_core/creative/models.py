@@ -246,9 +246,16 @@ class ShotPlanItem(BaseModel):
 
     @model_validator(mode="after")
     def _asset_ref_matches_intent(self) -> ShotPlanItem:
-        needs_ref = self.render_intent is CreativeRenderIntent.EXISTING_ASSET
-        if needs_ref != (self.existing_asset_ref is not None):
-            raise ValueError("existing_asset_ref is required for, and only for, EXISTING_ASSET")
+        if (
+            self.render_intent is CreativeRenderIntent.EXISTING_ASSET
+            and self.existing_asset_ref is None
+        ):
+            raise ValueError("existing_asset_ref is required for EXISTING_ASSET")
+        if self.existing_asset_ref is not None and self.render_intent not in {
+            CreativeRenderIntent.EXISTING_ASSET,
+            CreativeRenderIntent.IMAGE_TO_VIDEO,
+        }:
+            raise ValueError("existing_asset_ref is allowed only for trusted-image intents")
         return self
 
     @model_serializer(mode="wrap")

@@ -75,7 +75,7 @@ class ProductionService:
             {
                 shot.existing_asset_ref
                 for shot in shot_plan.shots
-                if shot.render_intent.value == "EXISTING_ASSET"
+                if shot.render_intent.value in {"EXISTING_ASSET", "IMAGE_TO_VIDEO"}
                 and shot.existing_asset_ref is not None
             }
         )

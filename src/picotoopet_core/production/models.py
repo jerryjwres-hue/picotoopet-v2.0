@@ -270,17 +270,35 @@ class ProductionTaskPlan(BaseModel):
         if self.execution_backend is None or self.execution_profile_id is None:
             raise ValueError("executable production task requires backend and profile")
         if self.execution_backend is ProductionExecutionBackend.COMFY:
-            if (
-                self.workflow_id is None
-                or self.local_media is not None
-                or self.trusted_asset is not None
-            ):
-                raise ValueError(
-                    "comfy task requires a workflow id and forbids local media or trusted asset"
-                )
+            if self.workflow_id is None or self.local_media is not None:
+                raise ValueError("comfy task requires a workflow id and forbids local media")
             if self.execution_profile_id.value != self.workflow_id:
                 raise ValueError("comfy execution profile must match workflow")
-            return self
+            if self.execution_profile_id is ProductionExecutionProfile.COMFY_T2V:
+                if (
+                    self.render_intent != "GENERATIVE_VIDEO"
+                    or self.trusted_asset is not None
+                    or self.trusted_input_asset_ref is not None
+                ):
+                    raise ValueError("T2V task cannot carry trusted asset authority")
+                return self
+            if self.execution_profile_id is ProductionExecutionProfile.COMFY_I2V:
+                new_identity = (
+                    self.render_intent == "IMAGE_TO_VIDEO"
+                    and self.trusted_asset is not None
+                    and self.trusted_input_asset_ref is None
+                )
+                # Restart-only compatibility. Remove only after no nonterminal I2V plan
+                # remains with trusted_asset=null and trusted_input_asset_ref set.
+                legacy_identity = (
+                    self.render_intent == "IMAGE_TO_VIDEO"
+                    and self.trusted_asset is None
+                    and self.trusted_input_asset_ref is not None
+                )
+                if not (new_identity or legacy_identity):
+                    raise ValueError("I2V task requires exactly one trusted image authority")
+                return self
+            raise ValueError("comfy execution profile is invalid")
         if self.execution_backend is not ProductionExecutionBackend.LOCAL_MEDIA:
             raise ValueError("local-media task contract is invalid")
         if self.execution_profile_id is ProductionExecutionProfile.TEXT_CARD_V1:
