@@ -190,7 +190,7 @@ public static class CanonicalJson
                 builder.Append("null");
                 break;
             case JsonObject obj:
-                builder.Append('{');
+                builder.Append((char)0x7B);
                 var first = true;
                 foreach (var pair in obj.OrderBy(static item => item.Key, StringComparer.Ordinal))
                 {
@@ -203,10 +203,10 @@ public static class CanonicalJson
                     builder.Append(':');
                     Append(builder, pair.Value);
                 }
-                builder.Append('}');
+                builder.Append((char)0x7D);
                 break;
             case JsonArray array:
-                builder.Append('[');
+                builder.Append((char)0x5B);
                 for (var index = 0; index < array.Count; index++)
                 {
                     if (index > 0)
@@ -215,7 +215,7 @@ public static class CanonicalJson
                     }
                     Append(builder, array[index]);
                 }
-                builder.Append(']');
+                builder.Append((char)0x5D);
                 break;
             case JsonValue value:
                 if (value.TryGetValue<string>(out var text))
