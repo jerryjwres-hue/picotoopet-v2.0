@@ -59,7 +59,8 @@ public sealed class TextOverlayProcessRunner : ITextOverlayProcessRunner
         try
         {
             await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
-            await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(KillGrace).ConfigureAwait(false);
+            await Task.WhenAll(stdoutTask, stderrTask)
+                .WaitAsync(KillGrace, cancellationToken).ConfigureAwait(false);
             return new TextOverlayProcessResult(
                 process.ExitCode,
                 false,
