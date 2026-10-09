@@ -172,8 +172,8 @@ public static class CaptionOverlayPlanParser
 /// <summary>与 Python json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False) 逐字一致的规范 JSON。</summary>
 public static class CanonicalJson
 {
-    private const string Quote = "\"";
-    private const string Backslash = "\\";
+    private const char Quote = '"';
+    private const char Backslash = '\\';
 
     public static byte[] Serialize(JsonNode node)
     {
@@ -190,32 +190,32 @@ public static class CanonicalJson
                 builder.Append("null");
                 break;
             case JsonObject obj:
-                builder.Append("{");
+                builder.Append('{');
                 var first = true;
                 foreach (var pair in obj.OrderBy(static item => item.Key, StringComparer.Ordinal))
                 {
                     if (!first)
                     {
-                        builder.Append(",");
+                        builder.Append(',');
                     }
                     first = false;
                     AppendString(builder, pair.Key);
-                    builder.Append(":");
+                    builder.Append(':');
                     Append(builder, pair.Value);
                 }
-                builder.Append("}");
+                builder.Append('}');
                 break;
             case JsonArray array:
-                builder.Append("[");
+                builder.Append('[');
                 for (var index = 0; index < array.Count; index++)
                 {
                     if (index > 0)
                     {
-                        builder.Append(",");
+                        builder.Append(',');
                     }
                     Append(builder, array[index]);
                 }
-                builder.Append("]");
+                builder.Append(']');
                 break;
             case JsonValue value:
                 if (value.TryGetValue<string>(out var text))
@@ -250,27 +250,27 @@ public static class CanonicalJson
             }
             else if (code == 0x0A)
             {
-                builder.Append(Backslash).Append("n");
+                builder.Append(Backslash).Append('n');
             }
             else if (code == 0x0D)
             {
-                builder.Append(Backslash).Append("r");
+                builder.Append(Backslash).Append('r');
             }
             else if (code == 0x09)
             {
-                builder.Append(Backslash).Append("t");
+                builder.Append(Backslash).Append('t');
             }
             else if (code == 0x08)
             {
-                builder.Append(Backslash).Append("b");
+                builder.Append(Backslash).Append('b');
             }
             else if (code == 0x0C)
             {
-                builder.Append(Backslash).Append("f");
+                builder.Append(Backslash).Append('f');
             }
             else if (code < 0x20)
             {
-                builder.Append(Backslash).Append("u").Append(code.ToString("x4", System.Globalization.CultureInfo.InvariantCulture));
+                builder.Append(Backslash).Append('u').Append(code.ToString("x4", System.Globalization.CultureInfo.InvariantCulture));
             }
             else
             {
