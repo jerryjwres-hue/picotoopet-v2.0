@@ -32,9 +32,10 @@ It does NOT contain C007B implementation.
 
 Before implementing C009A, first bring the C008B base to its latest reviewed fix, then cherry-pick C007B.
 
-First cherry-pick this exact C008B follow-up commit:
+First cherry-pick these exact C008B follow-up commits in order:
 
 0. 933b5822a1a3b20e9608390c285737773d0d423f
+0b. 94e7ff518466fb31f50df5c463dffec67cb874c1
 
 Then cherry-pick these exact C007B commits in order:
 
