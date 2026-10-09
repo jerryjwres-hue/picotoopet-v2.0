@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Isolated C009B harness. Intentionally NOT added to the shared solution and independent of the shared
+    PicotooPet.Desktop.Core.SmokeTests/Program.cs.
+    Run: dotnet run --project windows/desktop/tests/PicotooPet.PostProductionMasterMux.SmokeTests -c Release
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>PicotooPet.PostProductionMasterMux.SmokeTests</RootNamespace>
+    <!-- Harness authored without a local .NET SDK; analyzers must not mask real results. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
+    <ProjectReference Include="..\..\src\PicotooPet.Desktop\PicotooPet.Desktop.csproj" />
+  </ItemGroup>
+</Project>
