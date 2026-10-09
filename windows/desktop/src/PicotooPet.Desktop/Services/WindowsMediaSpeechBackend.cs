@@ -3,6 +3,7 @@ using Windows.Media.SpeechSynthesis;
 
 namespace PicotooPet.Desktop.Services;
 
+/// <summary>使用已验证的 OneCore 本地语音离线合成旁白，不接入云端或外部模型。</summary>
 internal sealed class WindowsMediaSpeechBackend : INarrationSpeechBackend
 {
     public IReadOnlyList<NarrationInstalledVoice> GetInstalledVoices() =>
