@@ -30,7 +30,13 @@ It does NOT contain C007B implementation.
 
 ## Required dependency composition
 
-Before implementing C009A, cherry-pick these exact C007B commits in order:
+Before implementing C009A, first bring the C008B base to its latest reviewed fix, then cherry-pick C007B.
+
+First cherry-pick this exact C008B follow-up commit:
+
+0. 933b5822a1a3b20e9608390c285737773d0d423f
+
+Then cherry-pick these exact C007B commits in order:
 
 1. 37dc969626883c8a69f3659befaa236b187cb29b
 2. 5d6150b1787118035a01b4ffdbdd24e28c7bd57c
@@ -46,6 +52,7 @@ Before implementing C009A, cherry-pick these exact C007B commits in order:
 12. 1948c6c20aec4849dd17a13bf3f402a11543d067
 13. 864305b8282de8a4865765c2384ac31ed091a47d
 14. 96db125b842a5c6107850aee9ec64cab37162301
+15. 32b1645b6e675bb4a603c7451c5162f2732479df
 
 Do not merge or rebase.
 
