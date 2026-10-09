@@ -1,3 +1,4 @@
+// 旁白合同镜像 Core C007A 的只读计划，并在 Windows 侧重新验证规范摘要与有界字段。
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
