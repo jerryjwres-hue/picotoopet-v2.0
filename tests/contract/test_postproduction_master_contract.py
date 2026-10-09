@@ -64,6 +64,12 @@ def test_manifest_and_identity_exclude_text_paths_and_timestamps() -> None:
     assert ".Text," not in identity_body
     assert "MasterManifest" in compositor
     assert "segment.Text," not in compositor
+    assert "private static void WriteNullable" in contracts
+
+
+def test_async_manifest_reader_keeps_cancellation_last_for_windows_analyzers() -> None:
+    verifier = read("PostProductionMasterSourceVerifier.cs")
+    assert "string code,\n        CancellationToken cancellationToken)" in verifier
 
 
 def test_service_uses_identity_scoped_atomic_directory_promotion() -> None:

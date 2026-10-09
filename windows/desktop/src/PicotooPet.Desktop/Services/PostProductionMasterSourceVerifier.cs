@@ -72,7 +72,7 @@ internal sealed class PostProductionMasterSourceVerifier
             RequireOrdinary(_finalRoot, expectedFile, artifact.Bytes, MasterCompositionException.VisualInvalid);
             RequireOrdinary(_finalRoot, expectedManifest, null, MasterCompositionException.VisualInvalid);
             var manifest = await ReadManifestAsync<FinalVideoManifest>(
-                expectedManifest, cancellationToken, MasterCompositionException.VisualInvalid).ConfigureAwait(false);
+                expectedManifest, MasterCompositionException.VisualInvalid, cancellationToken).ConfigureAwait(false);
             var actualSha = await ProductionLocalEnvironment.Sha256FileAsync(expectedFile, cancellationToken)
                 .ConfigureAwait(false);
             if (manifest.SchemaVersion != "1.0"
@@ -134,7 +134,7 @@ internal sealed class PostProductionMasterSourceVerifier
             RequireOrdinary(_overlayRoot, manifestPath, null, MasterCompositionException.VisualInvalid);
             RequireOrdinary(_overlayRoot, outputPath, artifact.Bytes, MasterCompositionException.VisualInvalid);
             var manifest = await ReadManifestAsync<TextOverlayManifest>(
-                manifestPath, cancellationToken, MasterCompositionException.VisualInvalid).ConfigureAwait(false);
+                manifestPath, MasterCompositionException.VisualInvalid, cancellationToken).ConfigureAwait(false);
             if (!Sha(manifest.ArtifactIdentitySha256))
             {
                 throw VisualInvalid();
@@ -211,7 +211,7 @@ internal sealed class PostProductionMasterSourceVerifier
             RequireExactPath(expectedManifest, artifact.ManifestPath, MasterCompositionException.NarrationInvalid);
             RequireOrdinary(_narrationRoot, expectedManifest, null, MasterCompositionException.NarrationInvalid);
             var manifest = await ReadManifestAsync<NarrationManifest>(
-                expectedManifest, cancellationToken, MasterCompositionException.NarrationInvalid).ConfigureAwait(false);
+                expectedManifest, MasterCompositionException.NarrationInvalid, cancellationToken).ConfigureAwait(false);
             if (manifest.SchemaVersion != "1.0"
                 || manifest.ProductionJobId != plan.ProductionJobId
                 || manifest.CreativePackageId != plan.CreativePackageId
@@ -458,8 +458,8 @@ internal sealed class PostProductionMasterSourceVerifier
 
     private static async Task<T> ReadManifestAsync<T>(
         string path,
-        CancellationToken cancellationToken,
-        string code)
+        string code,
+        CancellationToken cancellationToken)
         where T : class
     {
         var length = new FileInfo(path).Length;
