@@ -172,8 +172,8 @@ public static class CaptionOverlayPlanParser
 /// <summary>与 Python json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False) 逐字一致的规范 JSON。</summary>
 public static class CanonicalJson
 {
-    private const char Quote = '"';
-    private const char Backslash = '\\';
+    private const string Quote = "\"";
+    private const string Backslash = "\\";
 
     public static byte[] Serialize(JsonNode node)
     {
@@ -236,47 +236,47 @@ public static class CanonicalJson
 
     private static void AppendString(StringBuilder builder, string value)
     {
-        builder.Append(Quote);
+        builder.Append(Quote[0]);
         foreach (var ch in value)
         {
             var code = (int)ch;
             if (code == 0x22)
             {
-                builder.Append(Backslash).Append(Quote);
+                builder.Append(Backslash[0]).Append(Quote);
             }
             else if (code == 0x5C)
             {
-                builder.Append(Backslash).Append(Backslash);
+                builder.Append(Backslash[0]).Append(Backslash);
             }
             else if (code == 0x0A)
             {
-                builder.Append(Backslash).Append('n');
+                builder.Append(Backslash[0]).Append('n');
             }
             else if (code == 0x0D)
             {
-                builder.Append(Backslash).Append('r');
+                builder.Append(Backslash[0]).Append('r');
             }
             else if (code == 0x09)
             {
-                builder.Append(Backslash).Append('t');
+                builder.Append(Backslash[0]).Append('t');
             }
             else if (code == 0x08)
             {
-                builder.Append(Backslash).Append('b');
+                builder.Append(Backslash[0]).Append('b');
             }
             else if (code == 0x0C)
             {
-                builder.Append(Backslash).Append('f');
+                builder.Append(Backslash[0]).Append('f');
             }
             else if (code < 0x20)
             {
-                builder.Append(Backslash).Append('u').Append(code.ToString("x4", System.Globalization.CultureInfo.InvariantCulture));
+                builder.Append(Backslash[0]).Append('u').Append(code.ToString("x4", System.Globalization.CultureInfo.InvariantCulture));
             }
             else
             {
                 builder.Append(ch);
             }
         }
-        builder.Append(Quote);
+        builder.Append(Quote[0]);
     }
 }
