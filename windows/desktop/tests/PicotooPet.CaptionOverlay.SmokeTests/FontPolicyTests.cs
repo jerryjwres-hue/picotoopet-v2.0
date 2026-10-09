@@ -38,12 +38,17 @@ internal static class FontPolicyTests
             // 缺字体：目录为空。
             ExpectCode(root, "Hello", TextOverlayException.FontUnavailable, "无字体必须有界失败");
 
-            // 仅 Latin 字体：英文成功；汉字 → GLYPH_MISSING（字体存在但不覆盖）。
+            // 仅英文闭集字体存在：英文成功；Han 闭集没有任何可用文件 → FONT_UNAVAILABLE。
             WriteFont(root, "arial.ttf", Latin);
             var english = new WindowsTextOverlayFontPolicy(root).Resolve("Hello 123");
             SmokeAssert.Equal("arial.ttf", english.FileName, "英文选择 arial");
             SmokeAssert.Equal(64, english.IdentitySha256.Length, "字体身份是 SHA-256");
-            ExpectCode(root, "字幕", TextOverlayException.GlyphMissing, "字体不覆盖汉字必须 GLYPH_MISSING");
+            ExpectCode(root, "字幕", TextOverlayException.FontUnavailable, "Han 闭集无候选字体必须 FONT_UNAVAILABLE");
+
+            // 中文候选文件存在但不覆盖汉字 → GLYPH_MISSING。
+            WriteFont(root, "msyh.ttc", Latin);
+            ExpectCode(root, "字幕", TextOverlayException.GlyphMissing, "中文候选字体不覆盖汉字必须 GLYPH_MISSING");
+            File.Delete(Path.Combine(root, "msyh.ttc"));
 
             // Deng 覆盖汉字；msyh 缺席 → 取 Deng（固定顺序第二位）。
             WriteFont(root, "Deng.ttf", Latin, Han, FullWidth);
