@@ -82,8 +82,20 @@ internal sealed partial class MuxProbe
         // ── Validation, then the one fixed mux command; output is promoted only on success. ──
         var validation = SegmentValidator.Validate(parsed, Profile.TimelineMs);
         var placements = Fixtures.Select(item => item.Placement).ToList();
-        var commandShape = string.Join(' ', MuxCommands.MuxArguments(VideoFile, placements, Profile.TimelineMs, "<partial>", false)
-            .Select(argument => argument.StartsWith("[1:a]", StringComparison.Ordinal) ? "<filter_complex>" : argument));
+        const string commandShapeOutput = "command-shape.partial.mp4";
+        var commandShape = string.Join(
+            ' ',
+            MuxCommands.MuxArguments(
+                VideoFile,
+                placements,
+                Profile.TimelineMs,
+                commandShapeOutput,
+                false)
+            .Select(argument => argument.StartsWith("[1:a]", StringComparison.Ordinal)
+                ? "<filter_complex>"
+                : string.Equals(argument, commandShapeOutput, StringComparison.Ordinal)
+                    ? "<partial>"
+                    : argument));
         FinalStreamFacts? final = null;
         string? inputMd5 = null;
         string? finalMd5 = null;
