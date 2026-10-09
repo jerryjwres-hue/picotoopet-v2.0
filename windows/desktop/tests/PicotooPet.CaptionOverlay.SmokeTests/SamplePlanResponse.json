@@ -1,0 +1,40 @@
+{
+  "plan": {
+    "schema_version": "1.0",
+    "production_job_id": "job-1",
+    "creative_package_id": "pkg-1",
+    "creative_package_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "production_plan_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "target_runtime_ms": 6000,
+    "output_profile_id": "video.landscape.v1",
+    "caption_style_profile_id": "caption.lower-third.v1",
+    "overlay_style_profile_id": "overlay.title-safe.v1",
+    "font_profile_id": "font.windows-system-sans.v1",
+    "captions_required": false,
+    "overlays_required": true,
+    "captions": [],
+    "overlays": [
+      {
+        "cue_id": "overlay-1",
+        "beat_id": "beat-1",
+        "order": 1,
+        "cue_kind": "overlay",
+        "text": "Fresh & Fast 'dry'",
+        "text_sha256": "9d67a2e07326c3d8c2e96c2ad6d2665356cf569d5e75505707721f73048e1c3e",
+        "start_ms": 500,
+        "end_ms": 2500
+      },
+      {
+        "cue_id": "overlay-2",
+        "beat_id": "beat-2",
+        "order": 2,
+        "cue_kind": "overlay",
+        "text": "快速干燥，轻松护理",
+        "text_sha256": "dcf66cc6644bc766555ade06134117d23a168307f52578ba72e6258b82ca7530",
+        "start_ms": 3000,
+        "end_ms": 5500
+      }
+    ]
+  },
+  "caption_overlay_plan_digest": "a7acfdf77215cbbf620ebe421952759d4491bad28bf78bcc06d28e1da63dea1b"
+}
