@@ -7,6 +7,7 @@ using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Services;
 
+// 本地旁白合成服务只使用受控 OneCore 语音与托管 WAV 产物，不引入云端或任意模型。
 internal sealed record NarrationInstalledVoice(string Id, string DisplayName, string Culture);
 
 internal interface INarrationSpeechBackend
