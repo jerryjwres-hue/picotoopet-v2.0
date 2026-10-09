@@ -139,11 +139,12 @@ internal static class ProductionTextCardSmokeTests
             string productionJobId,
             ProductionTaskPlanRecord task,
             string outputRoot,
+            string? trustedInputRoot,
             CancellationToken cancellationToken)
         {
             events.Add("render");
             return await new ProductionLocalMediaRenderer(new RecordingRunner())
-                .RenderAsync(productionJobId, task, root, cancellationToken)
+                .RenderAsync(productionJobId, task, root, trustedInputRoot, cancellationToken)
                 .ConfigureAwait(false);
         }
     }

@@ -69,6 +69,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private readonly ComfyProductionClient _comfy;
     private readonly IProductionLocalMediaRenderer _localMedia;
     private readonly Func<string> _localOutputRootResolver;
+    private readonly Func<string> _trustedInputRootResolver;
     private readonly bool _ownsComfy;
     private readonly string _executorId;
 
@@ -81,6 +82,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             comfy,
             new ProductionLocalMediaRenderer(new ProductionLocalMediaProcessRunner()),
             ResolveLocalOutputRoot,
+            ResolveTrustedInputRoot,
             executorId ?? $"windows-production-{Environment.MachineName}")
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
@@ -92,6 +94,23 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         IProductionLocalMediaRenderer localMedia,
         Func<string> localOutputRootResolver,
         string executorId)
+        : this(
+            gateway,
+            comfy,
+            localMedia,
+            localOutputRootResolver,
+            ResolveTrustedInputRoot,
+            executorId)
+    {
+    }
+
+    public ProductionExecutionService(
+        IProductionExecutionGateway gateway,
+        ComfyProductionClient comfy,
+        IProductionLocalMediaRenderer localMedia,
+        Func<string> localOutputRootResolver,
+        Func<string> trustedInputRootResolver,
+        string executorId)
     {
         _session = null;
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
@@ -99,6 +118,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _localMedia = localMedia ?? throw new ArgumentNullException(nameof(localMedia));
         _localOutputRootResolver = localOutputRootResolver
             ?? throw new ArgumentNullException(nameof(localOutputRootResolver));
+        _trustedInputRootResolver = trustedInputRootResolver
+            ?? throw new ArgumentNullException(nameof(trustedInputRootResolver));
         _ownsComfy = false;
         _executorId = NormalizeExecutorId(executorId);
     }
@@ -108,6 +129,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         ComfyProductionClient comfy,
         IProductionLocalMediaRenderer localMedia,
         Func<string> localOutputRootResolver,
+        Func<string> trustedInputRootResolver,
         string executorId,
         bool ownsComfy,
         ControlCenterSession session)
@@ -117,6 +139,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _comfy = comfy;
         _localMedia = localMedia;
         _localOutputRootResolver = localOutputRootResolver;
+        _trustedInputRootResolver = trustedInputRootResolver;
         _executorId = executorId;
         _ownsComfy = ownsComfy;
     }
@@ -128,6 +151,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             ComfyProductionClient.Create(),
             new ProductionLocalMediaRenderer(new ProductionLocalMediaProcessRunner()),
             ResolveLocalOutputRoot,
+            ResolveTrustedInputRoot,
             NormalizeExecutorId($"windows-production-{Environment.MachineName}"),
             ownsComfy: true,
             session);
@@ -218,9 +242,14 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         }
         var needsComfy = plan.Tasks.Any(task =>
             string.Equals(task.ExecutionBackend, "comfy", StringComparison.Ordinal));
+        var needsTrustedInput = plan.Tasks.Any(task =>
+            string.Equals(
+                task.ExecutionProfileId,
+                ProductionLocalMediaRenderer.ExistingImageProfileId,
+                StringComparison.Ordinal));
         var preflight = needsComfy
             ? await PreflightAsync(cancellationToken).ConfigureAwait(false)
-            : LocalMediaPreflight();
+            : LocalMediaPreflight(needsTrustedInput);
         if (!preflight.IsReady)
         {
             throw new InvalidOperationException($"PRODUCTION_PREFLIGHT_FAILED:{preflight.Detail}");
@@ -248,6 +277,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                     claim,
                     task,
                     preflight.OutputRoot!,
+                    preflight.InputRoot,
                     cancellationToken).ConfigureAwait(false);
             }
         }
@@ -394,6 +424,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         ProductionClaimRecord claim,
         ProductionTaskPlanRecord task,
         string outputRoot,
+        string? trustedInputRoot,
         CancellationToken cancellationToken)
     {
         Exception? lastRetryable = null;
@@ -415,6 +446,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                     claim.ProductionJobId,
                     task,
                     outputRoot,
+                    trustedInputRoot,
                     cancellationToken).ConfigureAwait(false);
                 await _gateway.CommitProductionResultAsync(
                     claim.ProductionJobId,
@@ -469,35 +501,53 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         {
             if (string.IsNullOrWhiteSpace(task.WorkflowId)
                 || !string.Equals(task.ExecutionProfileId, task.WorkflowId, StringComparison.Ordinal)
-                || task.LocalMedia is not null)
+                || task.LocalMedia is not null
+                || task.TrustedAsset is not null)
             {
                 throw new InvalidOperationException("PRODUCTION_COMFY_CONTRACT_INVALID");
             }
             return;
         }
         if (string.Equals(task.ExecutionBackend, "local_media", StringComparison.Ordinal)
-            && string.Equals(
-                task.ExecutionProfileId,
-                ProductionLocalMediaRenderer.TextCardProfileId,
-                StringComparison.Ordinal)
             && task.WorkflowId is null
-            && task.LocalMedia is not null)
+            && ((string.Equals(
+                    task.ExecutionProfileId,
+                    ProductionLocalMediaRenderer.TextCardProfileId,
+                    StringComparison.Ordinal)
+                    && task.LocalMedia is not null
+                    && task.TrustedAsset is null)
+                || (string.Equals(
+                    task.ExecutionProfileId,
+                    ProductionLocalMediaRenderer.ExistingImageProfileId,
+                    StringComparison.Ordinal)
+                    && task.LocalMedia is null
+                    && task.TrustedAsset is not null)))
         {
             return;
         }
         throw new InvalidOperationException("PRODUCTION_EXECUTION_BACKEND_UNKNOWN");
     }
 
-    private ProductionPreflightSnapshot LocalMediaPreflight()
+    private ProductionPreflightSnapshot LocalMediaPreflight(bool needsTrustedInput)
     {
         var outputRoot = Path.GetFullPath(_localOutputRootResolver());
         Directory.CreateDirectory(outputRoot);
         ProductionLocalEnvironment.AssertNoLinkEscape(outputRoot, outputRoot);
+        string? inputRoot = null;
+        if (needsTrustedInput)
+        {
+            inputRoot = Path.GetFullPath(_trustedInputRootResolver());
+            if (!Directory.Exists(inputRoot))
+            {
+                throw new DirectoryNotFoundException("LOCAL_MEDIA_TRUSTED_INPUT_ROOT_MISSING");
+            }
+            ProductionLocalEnvironment.AssertNoLinkEscape(inputRoot, inputRoot);
+        }
         return new ProductionPreflightSnapshot(
             true,
             "本地 TEXT_CARD 输出根 preflight 通过。",
             Path.GetDirectoryName(outputRoot),
-            null,
+            inputRoot,
             outputRoot,
             null,
             ["local_media output root：PASS"]);
@@ -510,6 +560,18 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         Directory.CreateDirectory(outputRoot);
         ProductionLocalEnvironment.AssertNoLinkEscape(dataRoot, outputRoot);
         return outputRoot;
+    }
+
+    private static string ResolveTrustedInputRoot()
+    {
+        var dataRoot = ProductionLocalEnvironment.ResolveComfyDataRoot();
+        var inputRoot = Path.GetFullPath(Path.Combine(dataRoot, "input"));
+        if (!Directory.Exists(inputRoot))
+        {
+            throw new DirectoryNotFoundException("LOCAL_MEDIA_TRUSTED_INPUT_ROOT_MISSING");
+        }
+        ProductionLocalEnvironment.AssertNoLinkEscape(dataRoot, inputRoot);
+        return inputRoot;
     }
 
     private async Task<ComfyOutputEvidence> WaitForOutputAsync(

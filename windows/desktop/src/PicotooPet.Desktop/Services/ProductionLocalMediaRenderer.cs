@@ -16,6 +16,7 @@ public interface IProductionLocalMediaRenderer
         string productionJobId,
         ProductionTaskPlanRecord task,
         string outputRoot,
+        string? trustedInputRoot,
         CancellationToken cancellationToken);
 }
 
@@ -44,6 +45,7 @@ public sealed record ProductionLocalMediaArtifact(
 public sealed class ProductionLocalMediaRenderer : IProductionLocalMediaRenderer
 {
     public const string TextCardProfileId = "production.local.text-card.v1";
+    public const string ExistingImageProfileId = "production.local.existing-image.v1";
     private static readonly TimeSpan FixedTimeout = TimeSpan.FromMinutes(5);
     private readonly IProductionLocalMediaProcessRunner _runner;
 
@@ -54,9 +56,19 @@ public sealed class ProductionLocalMediaRenderer : IProductionLocalMediaRenderer
         string productionJobId,
         ProductionTaskPlanRecord task,
         string outputRoot,
+        string? trustedInputRoot,
         CancellationToken cancellationToken)
     {
         ValidateTask(task);
+        if (string.Equals(task.ExecutionProfileId, ExistingImageProfileId, StringComparison.Ordinal))
+        {
+            return await RenderExistingImageAsync(
+                productionJobId,
+                task,
+                outputRoot,
+                trustedInputRoot,
+                cancellationToken).ConfigureAwait(false);
+        }
         cancellationToken.ThrowIfCancellationRequested();
         var root = Path.GetFullPath(outputRoot);
         Directory.CreateDirectory(root);
@@ -131,8 +143,42 @@ public sealed class ProductionLocalMediaRenderer : IProductionLocalMediaRenderer
         }
     }
 
+    public Task<ProductionLocalMediaArtifact> RenderAsync(
+        string productionJobId,
+        ProductionTaskPlanRecord task,
+        string outputRoot,
+        CancellationToken cancellationToken) =>
+        RenderAsync(productionJobId, task, outputRoot, null, cancellationToken);
+
     private static void ValidateTask(ProductionTaskPlanRecord task)
     {
+        if (string.Equals(task.ExecutionProfileId, ExistingImageProfileId, StringComparison.Ordinal))
+        {
+            var asset = task.TrustedAsset;
+            if (!string.Equals(task.RenderIntent, "EXISTING_ASSET", StringComparison.Ordinal)
+                || !string.Equals(task.ExecutionDisposition, "Executable", StringComparison.Ordinal)
+                || !string.Equals(task.ExecutionBackend, "local_media", StringComparison.Ordinal)
+                || task.WorkflowId is not null
+                || task.LocalMedia is not null
+                || task.TrustedInputAssetRef is not null
+                || asset is null
+                || !Guid.TryParse(asset.AssetId, out _)
+                || !string.Equals(asset.ScopeKind, "autonomous_goal", StringComparison.Ordinal)
+                || !string.Equals(asset.ManagedRootId, "windows.comfy-input.v1", StringComparison.Ordinal)
+                || (asset.MediaType is not "image/png" and not "image/jpeg")
+                || asset.SizeBytes <= 0
+                || asset.Width <= 0
+                || asset.Height <= 0
+                || asset.Sha256.Length != 64
+                || task.Width <= 0
+                || task.Height <= 0
+                || task.Fps <= 0
+                || task.FrameCount <= 0)
+            {
+                throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_CONTRACT_INVALID");
+            }
+            return;
+        }
         var payload = task.LocalMedia;
         if (!string.Equals(task.RenderIntent, "TEXT_CARD", StringComparison.Ordinal)
             || !string.Equals(task.ExecutionDisposition, "Executable", StringComparison.Ordinal)
@@ -156,6 +202,165 @@ public sealed class ProductionLocalMediaRenderer : IProductionLocalMediaRenderer
         {
             throw new InvalidDataException("LOCAL_MEDIA_TEXT_DIGEST_MISMATCH");
         }
+    }
+
+    private async Task<ProductionLocalMediaArtifact> RenderExistingImageAsync(
+        string productionJobId,
+        ProductionTaskPlanRecord task,
+        string outputRoot,
+        string? trustedInputRoot,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(trustedInputRoot))
+        {
+            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_INPUT_ROOT_MISSING");
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        var asset = task.TrustedAsset!;
+        var inputRoot = Path.GetFullPath(trustedInputRoot);
+        ProductionLocalEnvironment.AssertNoLinkEscape(inputRoot, inputRoot);
+        var sourcePath = ProductionLocalEnvironment.ResolveUnderRoot(
+            inputRoot,
+            asset.ManagedRelpath,
+            requireExistingFile: true);
+        ProductionLocalEnvironment.AssertNoLinkEscape(inputRoot, sourcePath);
+        if (!ProductionLocalEnvironment.IsOrdinaryFile(sourcePath))
+        {
+            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_FILE_INVALID");
+        }
+        if (new FileInfo(sourcePath).Length != asset.SizeBytes)
+        {
+            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_SIZE_MISMATCH");
+        }
+        var digest = await ProductionLocalEnvironment.Sha256FileAsync(sourcePath, cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.Equals(digest, asset.Sha256, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_SHA256_MISMATCH");
+        }
+        VerifyImageFacts(sourcePath, asset);
+
+        var root = Path.GetFullPath(outputRoot);
+        Directory.CreateDirectory(root);
+        ProductionLocalEnvironment.AssertNoLinkEscape(root, root);
+        var safeJob = SafeIdentity(productionJobId);
+        var safeShot = SafeIdentity(task.ShotId);
+        var prefix = $"{task.Order:D3}-{safeShot}-existing-{asset.Sha256[..16]}";
+        var relativeDirectory = Path.Combine("PicotooPet", "production", safeJob);
+        var relativeOutput = Path.Combine(relativeDirectory, prefix + ".webm");
+        var outputPath = ProductionLocalEnvironment.ResolveUnderRoot(root, relativeOutput, false);
+        var outputDirectory = Path.GetDirectoryName(outputPath)!;
+        Directory.CreateDirectory(outputDirectory);
+        ProductionLocalEnvironment.AssertNoLinkEscape(root, outputDirectory);
+        var partialPath = ProductionLocalEnvironment.ResolveUnderRoot(
+            root,
+            Path.Combine(relativeDirectory, "." + prefix + ".partial.webm"),
+            false);
+        try
+        {
+            DeleteOrdinaryFile(partialPath);
+            var result = await _runner.RunAsync(
+                BuildExistingImageStartInfo(sourcePath, partialPath, task),
+                FixedTimeout,
+                cancellationToken).ConfigureAwait(false);
+            if (result.TimedOut)
+            {
+                throw new TimeoutException("LOCAL_MEDIA_FFMPEG_TIMEOUT");
+            }
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException("LOCAL_MEDIA_FFMPEG_FAILED");
+            }
+            if (!ProductionLocalEnvironment.IsOrdinaryFile(partialPath))
+            {
+                throw new InvalidDataException("LOCAL_MEDIA_OUTPUT_MISSING");
+            }
+            var bytes = new FileInfo(partialPath).Length;
+            if (bytes <= 0)
+            {
+                throw new InvalidDataException("LOCAL_MEDIA_OUTPUT_EMPTY");
+            }
+            var sha256 = await ProductionLocalEnvironment.Sha256FileAsync(partialPath, cancellationToken)
+                .ConfigureAwait(false);
+            DeleteOrdinaryFile(outputPath);
+            File.Move(partialPath, outputPath, overwrite: false);
+            return new ProductionLocalMediaArtifact(
+                relativeOutput.Replace('\\', '/'), outputPath, sha256, bytes, "video/webm",
+                task.Width, task.Height, task.FrameCount, task.Fps);
+        }
+        finally
+        {
+            DeleteOrdinaryFile(partialPath);
+        }
+    }
+
+    private static void VerifyImageFacts(
+        string sourcePath,
+        ProductionTrustedAssetSnapshotRecord asset)
+    {
+        using var stream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Span<byte> header = stackalloc byte[8];
+        if (stream.Read(header) != header.Length)
+        {
+            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_DECODE_FAILED");
+        }
+        var isPng = header.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+        var isJpeg = header[0] == 0xff && header[1] == 0xd8 && header[2] == 0xff;
+        var decodedMediaType = isPng ? "image/png" : isJpeg ? "image/jpeg" : null;
+        if (!string.Equals(decodedMediaType, asset.MediaType, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_MIME_MISMATCH");
+        }
+        stream.Position = 0;
+        BitmapDecoder decoder;
+        try
+        {
+            decoder = BitmapDecoder.Create(
+                stream,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+        }
+        catch (Exception exception) when (exception is NotSupportedException or FileFormatException)
+        {
+            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_DECODE_FAILED", exception);
+        }
+        var frame = decoder.Frames.FirstOrDefault()
+            ?? throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_DECODE_FAILED");
+        if (frame.PixelWidth != asset.Width || frame.PixelHeight != asset.Height)
+        {
+            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_DIMENSION_MISMATCH");
+        }
+    }
+
+    private static ProcessStartInfo BuildExistingImageStartInfo(
+        string sourcePath,
+        string partialPath,
+        ProductionTaskPlanRecord task)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "ffmpeg.exe",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        var filter = $"scale={task.Width}:{task.Height}:force_original_aspect_ratio=decrease," +
+            $"pad={task.Width}:{task.Height}:(ow-iw)/2:(oh-ih)/2:color=0x101820";
+        foreach (var argument in new[]
+        {
+            "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+            "-loop", "1", "-framerate", Invariant(task.Fps), "-i", sourcePath,
+            "-vf", filter, "-frames:v", Invariant(task.FrameCount), "-an",
+            "-c:v", "libvpx-vp9", "-deadline", "good", "-cpu-used", "2",
+            "-threads", "1", "-row-mt", "0", "-pix_fmt", "yuv420p",
+            "-r", Invariant(task.Fps), "-map_metadata", "-1", "-fflags", "+bitexact",
+            "-flags:v", "+bitexact", "-f", "webm", partialPath,
+        })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+        return startInfo;
     }
 
     private static ProcessStartInfo BuildStartInfo(

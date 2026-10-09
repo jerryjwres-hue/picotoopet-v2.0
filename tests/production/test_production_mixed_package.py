@@ -9,6 +9,7 @@ from picotoopet_core.production.models import (
     ProductionPlan,
     ProductionTaskPlan,
     ProductionTaskRecord,
+    ProductionTrustedAssetSnapshotV1,
 )
 from picotoopet_core.production.package import build_production_package_payload
 
@@ -24,9 +25,7 @@ def _plan_task(*, order: int, local_media: bool) -> ProductionTaskPlan:
             "execution_disposition": "Executable",
             "execution_backend": "local_media" if local_media else "comfy",
             "execution_profile_id": (
-                "production.local.text-card.v1"
-                if local_media
-                else "comfy.wan22.ti2v5b.t2v.v1"
+                "production.local.text-card.v1" if local_media else "comfy.wan22.ti2v5b.t2v.v1"
             ),
             "workflow_id": None if local_media else "comfy.wan22.ti2v5b.t2v.v1",
             "local_media": (
@@ -81,6 +80,42 @@ def _completed_task(job_id: str, plan: ProductionTaskPlan) -> ProductionTaskReco
     )
 
 
+def _existing_asset_task(*, order: int) -> ProductionTaskPlan:
+    sha256 = "e" * 64
+    return ProductionTaskPlan(
+        production_task_id=str(uuid4()),
+        shot_id=f"shot-{order:03d}",
+        order=order,
+        render_intent="EXISTING_ASSET",
+        execution_disposition="Executable",
+        execution_backend="local_media",
+        execution_profile_id="production.local.existing-image.v1",
+        workflow_id=None,
+        local_media=None,
+        trusted_asset=ProductionTrustedAssetSnapshotV1(
+            asset_id=str(uuid4()),
+            scope_kind="autonomous_goal",
+            scope_id="goal-001",
+            managed_root_id="windows.comfy-input.v1",
+            managed_relpath=f"PicotooPet/assets/v1/ee/{sha256}.png",
+            sha256=sha256,
+            size_bytes=2048,
+            media_type="image/png",
+            width=1200,
+            height=800,
+        ),
+        positive_prompt="trusted existing asset",
+        negative_prompt_policy_id="wan22.safe-negative.v1",
+        seed=order,
+        width=832,
+        height=480,
+        fps=24,
+        frame_count=73,
+        target_duration_ms=3000,
+        trusted_input_asset_ref=None,
+    )
+
+
 def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
     now = datetime.now(UTC)
     job_id = str(uuid4())
@@ -88,6 +123,7 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
     creative_package_id = str(uuid4())
     comfy = _plan_task(order=1, local_media=False)
     text_card = _plan_task(order=2, local_media=True)
+    existing_asset = _existing_asset_task(order=3)
     plan = ProductionPlan(
         schema_version="1.0",
         production_profile="production.comfyui.v1",
@@ -96,8 +132,8 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
         creative_package_digest="a" * 64,
         project_key="pet-dryer-us",
         output_profile_id="video.landscape.v1",
-        target_runtime_ms=6000,
-        tasks=[comfy, text_card],
+        target_runtime_ms=9000,
+        tasks=[comfy, text_card, existing_asset],
     )
     job = ProductionJobRecord(
         production_job_id=job_id,
@@ -137,6 +173,11 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
                             "beat_id": "beat-002",
                             "source_evidence_ids": [],
                         },
+                        {
+                            "shot_id": existing_asset.shot_id,
+                            "beat_id": "beat-003",
+                            "source_evidence_ids": [],
+                        },
                     ]
                 }
             },
@@ -150,7 +191,11 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
         job=job,
         source_package=source,
         plan=plan,
-        tasks=[_completed_task(job_id, comfy), _completed_task(job_id, text_card)],
+        tasks=[
+            _completed_task(job_id, comfy),
+            _completed_task(job_id, text_card),
+            _completed_task(job_id, existing_asset),
+        ],
         completed_at=now,
     )
 
@@ -166,7 +211,18 @@ def test_mixed_comfy_and_text_card_share_one_package_without_raw_text() -> None:
     assert outputs[1]["execution_profile_id"] == "production.local.text-card.v1"
     assert outputs[1]["text_digest"] == text_card.local_media.text_digest
     assert "text_content" not in outputs[1]
-
+    assert outputs[2]["execution_profile_id"] == "production.local.existing-image.v1"
+    assert outputs[2]["workflow_id"] is None
+    assert outputs[2]["source_asset"] == {
+        "asset_id": existing_asset.trusted_asset.asset_id,
+        "sha256": "e" * 64,
+        "media_type": "image/png",
+        "width": 1200,
+        "height": 800,
+        "managed_root_id": "windows.comfy-input.v1",
+        "managed_relpath": f"PicotooPet/assets/v1/ee/{'e' * 64}.png",
+    }
+    assert not any("source_path" in key or "absolute" in key for key in outputs[2])
 
 
 def test_text_card_only_package_does_not_claim_comfy_models() -> None:

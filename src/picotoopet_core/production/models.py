@@ -11,6 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from picotoopet_core.assets.models import derive_managed_relpath
 from picotoopet_core.creative.models import VideoOutputProfile
 from picotoopet_core.production.profile import VIDEO_OUTPUT_PROFILES
 
@@ -65,6 +66,7 @@ class ProductionExecutionProfile(StrEnum):
     COMFY_T2V = "comfy.wan22.ti2v5b.t2v.v1"
     COMFY_I2V = "comfy.wan22.ti2v5b.i2v.v1"
     TEXT_CARD_V1 = "production.local.text-card.v1"
+    EXISTING_IMAGE_V1 = "production.local.existing-image.v1"
 
 
 class ProductionJobCreateRequest(BaseModel):
@@ -158,6 +160,34 @@ class ProductionLocalMediaPayload(BaseModel):
         return self
 
 
+class ProductionTrustedAssetSnapshotV1(BaseModel):
+    """Closed immutable image facts resolved by Core before compilation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    asset_id: str
+    scope_kind: Literal["autonomous_goal", "project"]
+    scope_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.-]+$")
+    managed_root_id: Literal["windows.comfy-input.v1"]
+    managed_relpath: str = Field(min_length=1, max_length=500)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(gt=0, le=50_000_000)
+    media_type: Literal["image/png", "image/jpeg"]
+    width: int = Field(ge=1, le=16_384)
+    height: int = Field(ge=1, le=16_384)
+
+    @field_validator("asset_id")
+    @classmethod
+    def _valid_asset_id(cls, value: str) -> str:
+        return str(UUID(value))
+
+    @model_validator(mode="after")
+    def _canonical_managed_path(self) -> ProductionTrustedAssetSnapshotV1:
+        if self.managed_relpath != derive_managed_relpath(self.sha256, self.media_type):
+            raise ValueError("trusted asset managed path does not match immutable facts")
+        return self
+
+
 class ProductionTaskPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -170,6 +200,7 @@ class ProductionTaskPlan(BaseModel):
     execution_profile_id: ProductionExecutionProfile | None = None
     workflow_id: str | None = Field(default=None, max_length=120)
     local_media: ProductionLocalMediaPayload | None = None
+    trusted_asset: ProductionTrustedAssetSnapshotV1 | None = None
     positive_prompt: str = Field(min_length=1, max_length=5000)
     negative_prompt_policy_id: str = Field(min_length=1, max_length=120)
     seed: int = Field(ge=0, lt=2**63)
@@ -231,6 +262,7 @@ class ProductionTaskPlan(BaseModel):
                     self.execution_profile_id,
                     self.workflow_id,
                     self.local_media,
+                    self.trusted_asset,
                 )
             ):
                 raise ValueError("needs-human task cannot carry executable authority")
@@ -238,21 +270,40 @@ class ProductionTaskPlan(BaseModel):
         if self.execution_backend is None or self.execution_profile_id is None:
             raise ValueError("executable production task requires backend and profile")
         if self.execution_backend is ProductionExecutionBackend.COMFY:
-            if self.workflow_id is None or self.local_media is not None:
-                raise ValueError("comfy task requires only a workflow id")
+            if (
+                self.workflow_id is None
+                or self.local_media is not None
+                or self.trusted_asset is not None
+            ):
+                raise ValueError(
+                    "comfy task requires a workflow id and forbids local media or trusted asset"
+                )
             if self.execution_profile_id.value != self.workflow_id:
                 raise ValueError("comfy execution profile must match workflow")
             return self
-        if (
-            self.execution_backend is not ProductionExecutionBackend.LOCAL_MEDIA
-            or self.execution_profile_id is not ProductionExecutionProfile.TEXT_CARD_V1
-            or self.render_intent != "TEXT_CARD"
-            or self.workflow_id is not None
-            or self.local_media is None
-            or self.local_media.text_profile_id != self.execution_profile_id.value
-        ):
+        if self.execution_backend is not ProductionExecutionBackend.LOCAL_MEDIA:
             raise ValueError("local-media task contract is invalid")
-        return self
+        if self.execution_profile_id is ProductionExecutionProfile.TEXT_CARD_V1:
+            if (
+                self.render_intent != "TEXT_CARD"
+                or self.workflow_id is not None
+                or self.local_media is None
+                or self.trusted_asset is not None
+                or self.local_media.text_profile_id != self.execution_profile_id.value
+            ):
+                raise ValueError("local-media task contract is invalid")
+            return self
+        if self.execution_profile_id is ProductionExecutionProfile.EXISTING_IMAGE_V1:
+            if (
+                self.render_intent != "EXISTING_ASSET"
+                or self.workflow_id is not None
+                or self.local_media is not None
+                or self.trusted_asset is None
+                or self.trusted_input_asset_ref is not None
+            ):
+                raise ValueError("trusted asset local-media task contract is invalid")
+            return self
+        raise ValueError("local-media task contract is invalid")
 
 
 class ProductionPlan(BaseModel):
@@ -306,8 +357,7 @@ class ProductionPlan(BaseModel):
             raise ValueError("production task order/shot identity is invalid")
         profile = VIDEO_OUTPUT_PROFILES[self.output_profile_id]
         if any(
-            (item.width, item.height, item.fps)
-            != (profile.width, profile.height, profile.fps)
+            (item.width, item.height, item.fps) != (profile.width, profile.height, profile.fps)
             for item in self.tasks
         ):
             raise ValueError("production task output profile is inconsistent")

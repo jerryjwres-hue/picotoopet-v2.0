@@ -87,6 +87,14 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--existing-asset-production-only", StringComparer.Ordinal))
+            {
+                await ProductionExistingAssetSmokeTests.RunAsync().ConfigureAwait(false);
+                ProductionRecoverySmokeTests.Run();
+                Console.WriteLine("EXISTING_ASSET_PRODUCTION_SMOKE=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
@@ -135,6 +143,7 @@ internal static class Program
             ProductionRecoverySmokeTests.Run();
             ProductionTimelineOutputProfileSmokeTests.Run();
             await ProductionTextCardSmokeTests.RunAsync().ConfigureAwait(false);
+            await ProductionExistingAssetSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             await TrustedAssetIngressSmokeTests.RunAsync().ConfigureAwait(false);
             await FinalVideoAssemblyServiceSmokeTests.RunAsync().ConfigureAwait(false);

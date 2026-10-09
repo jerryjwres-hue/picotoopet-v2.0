@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import ValidationError
@@ -18,6 +19,7 @@ from .models import (
     ProductionExecutionProfile,
     ProductionPlan,
     ProductionTaskPlan,
+    ProductionTrustedAssetSnapshotV1,
 )
 from .profile import (
     I2V_WORKFLOW_ID,
@@ -77,6 +79,8 @@ def compile_production_plan(
     production_job_id: str,
     manifest: dict[str, object],
     creative_package_digest: str,
+    *,
+    trusted_assets: Mapping[str, ProductionTrustedAssetSnapshotV1] | None = None,
 ) -> ProductionPlan:
     """Compile a renderer-neutral 19.1 package into a closed 20.1 plan."""
 
@@ -134,6 +138,7 @@ def compile_production_plan(
         execution_backend: str | None = None
         execution_profile_id: str | None = None
         local_media: dict[str, str] | None = None
+        trusted_asset: ProductionTrustedAssetSnapshotV1 | None = None
         disposition = ProductionExecutionDisposition.NEEDS_HUMAN
         if duration_supported and render_intent == "GENERATIVE_VIDEO":
             workflow_id = T2V_WORKFLOW_ID
@@ -160,6 +165,23 @@ def compile_production_plan(
                     "text_profile_id": ProductionExecutionProfile.TEXT_CARD_V1.value,
                 }
                 disposition = ProductionExecutionDisposition.EXECUTABLE
+        elif duration_supported and render_intent == "EXISTING_ASSET":
+            existing_asset_ref = shot.existing_asset_ref
+            if existing_asset_ref is None:
+                raise ValueError("PRODUCTION_TRUSTED_ASSET_NOT_FOUND")
+            trusted_asset = (trusted_assets or {}).get(existing_asset_ref)
+            if trusted_asset is None or trusted_asset.asset_id != existing_asset_ref:
+                raise ValueError("PRODUCTION_TRUSTED_ASSET_NOT_FOUND")
+            goal_prefix = "autonomous-goal:"
+            if (
+                not project_key.startswith(goal_prefix)
+                or trusted_asset.scope_kind != "autonomous_goal"
+                or trusted_asset.scope_id != project_key[len(goal_prefix) :]
+            ):
+                raise ValueError("PRODUCTION_TRUSTED_ASSET_SCOPE_INVALID")
+            execution_backend = "local_media"
+            execution_profile_id = ProductionExecutionProfile.EXISTING_IMAGE_V1.value
+            disposition = ProductionExecutionDisposition.EXECUTABLE
 
         tasks.append(
             ProductionTaskPlan(
@@ -172,6 +194,7 @@ def compile_production_plan(
                 execution_profile_id=execution_profile_id,
                 workflow_id=workflow_id,
                 local_media=local_media,
+                trusted_asset=trusted_asset,
                 positive_prompt=_positive_prompt(raw),
                 negative_prompt_policy_id=NEGATIVE_PROMPT_POLICY_ID,
                 seed=_seed(production_job_id, shot_id),
