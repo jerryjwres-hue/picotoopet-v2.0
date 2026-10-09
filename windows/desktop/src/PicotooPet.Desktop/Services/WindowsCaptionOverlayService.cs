@@ -281,7 +281,7 @@ public sealed class WindowsCaptionOverlayService
             _timeProvider.GetUtcNow());
 
     /// <summary>清单+输出逐项重验；任何缺失、不一致、被篡改都 fail closed，且绝不覆盖。</summary>
-    private async Task<TextOverlayArtifact> ReuseAsync(
+    private static async Task<TextOverlayArtifact> ReuseAsync(
         FinalVideoArtifact source,
         CaptionOverlayPlanResponseRecord response,
         string identity,
