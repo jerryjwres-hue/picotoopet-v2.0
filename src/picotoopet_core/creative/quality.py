@@ -133,13 +133,16 @@ class CreativeQualityGate:
             # ── Trusted assets: only Core-allowlisted logical ids; non-asset shots carry none. ──
             allowed_assets = set(source_set.trusted_asset_ids)
             for shot in parsed.shots:
-                is_asset_shot = shot.render_intent is CreativeRenderIntent.EXISTING_ASSET
-                if is_asset_shot != (shot.existing_asset_ref is not None):
+                uses_asset = shot.render_intent in {
+                    CreativeRenderIntent.EXISTING_ASSET,
+                    CreativeRenderIntent.IMAGE_TO_VIDEO,
+                }
+                if uses_asset != (shot.existing_asset_ref is not None):
                     return self._retry(
                         "TRUSTED_ASSET_REF_INVALID",
-                        "Set existing_asset_ref only on EXISTING_ASSET shots.",
+                        "Set existing_asset_ref on trusted-image shots only.",
                     ), None
-                if is_asset_shot and shot.existing_asset_ref not in allowed_assets:
+                if uses_asset and shot.existing_asset_ref not in allowed_assets:
                     return self._retry(
                         "UNKNOWN_TRUSTED_ASSET_REF",
                         "Use only supplied trusted asset IDs.",

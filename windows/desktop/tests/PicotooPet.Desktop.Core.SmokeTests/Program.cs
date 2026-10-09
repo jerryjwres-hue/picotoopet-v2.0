@@ -95,6 +95,13 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--i2v-trusted-asset-only", StringComparer.Ordinal))
+            {
+                await ProductionI2VTrustedAssetSmokeTests.RunAsync().ConfigureAwait(false);
+                Console.WriteLine("I2V_TRUSTED_ASSET_SMOKE=PASS");
+                return 0;
+            }
+
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
             VerifyStateDeduplication();
@@ -144,6 +151,7 @@ internal static class Program
             ProductionTimelineOutputProfileSmokeTests.Run();
             await ProductionTextCardSmokeTests.RunAsync().ConfigureAwait(false);
             await ProductionExistingAssetSmokeTests.RunAsync().ConfigureAwait(false);
+            await ProductionI2VTrustedAssetSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             await TrustedAssetIngressSmokeTests.RunAsync().ConfigureAwait(false);
             await FinalVideoAssemblyServiceSmokeTests.RunAsync().ConfigureAwait(false);

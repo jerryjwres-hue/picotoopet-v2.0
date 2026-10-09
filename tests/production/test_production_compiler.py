@@ -133,17 +133,17 @@ def test_three_second_shot_compiles_to_nearest_compatible_frame_count() -> None:
     assert abs(task.frame_count / task.fps - 3.0) <= 2 / task.fps
 
 
-def test_image_to_video_keeps_comfy_backend_and_frozen_i2v_profile() -> None:
+def test_legacy_trusted_local_assets_no_longer_authorize_new_i2v_compile() -> None:
     manifest = _creative_manifest("IMAGE_TO_VIDEO")
     manifest["trusted_local_assets"] = {"shot-001": "ingress/shot-001.png"}
 
     task = compile_production_plan(str(uuid4()), manifest, "b" * 64).tasks[0]
 
-    assert task.execution_disposition == "Executable"
-    assert task.execution_backend == "comfy"
-    assert task.execution_profile_id == "comfy.wan22.ti2v5b.i2v.v1"
-    assert task.workflow_id == "comfy.wan22.ti2v5b.i2v.v1"
-    assert task.trusted_input_asset_ref == "ingress/shot-001.png"
+    assert task.execution_disposition == "NeedsHuman"
+    assert task.execution_backend is None
+    assert task.execution_profile_id is None
+    assert task.workflow_id is None
+    assert task.trusted_input_asset_ref is None
 
 
 @pytest.mark.parametrize(("duration_seconds", "frame_count"), [(0.5, 13), (5.0, 121)])
@@ -409,6 +409,43 @@ def test_existing_asset_compiles_from_closed_frozen_snapshot() -> None:
     assert task.trusted_input_asset_ref is None
 
 
+def test_image_to_video_compiles_with_same_closed_frozen_snapshot() -> None:
+    manifest, snapshot = _existing_asset_case()
+    shot = manifest["stage_results"]["shot_plan.v1"]["shots"][0]  # type: ignore[index]
+    shot["render_intent"] = "IMAGE_TO_VIDEO"  # type: ignore[index]
+    manifest["trusted_local_assets"] = {"shot-001": "../../legacy-ignored.png"}
+
+    task = compile_production_plan(
+        str(uuid4()), manifest, "b" * 64, trusted_assets={snapshot.asset_id: snapshot}
+    ).tasks[0]
+
+    assert task.execution_disposition == "Executable"
+    assert task.execution_backend == "comfy"
+    assert task.execution_profile_id == "comfy.wan22.ti2v5b.i2v.v1"
+    assert task.workflow_id == "comfy.wan22.ti2v5b.i2v.v1"
+    assert task.trusted_asset == snapshot
+    assert task.trusted_input_asset_ref is None
+    assert task.local_media is None
+
+
+def test_legacy_frozen_i2v_plan_stays_loadable_but_t2v_cannot_carry_snapshot() -> None:
+    manifest, snapshot = _existing_asset_case()
+    ordinary = compile_production_plan(str(uuid4()), _creative_manifest(), "b" * 64).tasks[0]
+    legacy = ordinary.model_dump(mode="json")
+    legacy.update(
+        render_intent="IMAGE_TO_VIDEO",
+        execution_profile_id="comfy.wan22.ti2v5b.i2v.v1",
+        workflow_id="comfy.wan22.ti2v5b.i2v.v1",
+        trusted_input_asset_ref="PicotooPet/assets/legacy.png",
+    )
+    assert ProductionTaskPlan.model_validate(legacy).trusted_asset is None
+
+    t2v_with_asset = ordinary.model_dump(mode="json")
+    t2v_with_asset["trusted_asset"] = snapshot.model_dump(mode="json")
+    with pytest.raises(ValueError, match="trusted asset"):
+        ProductionTaskPlan.model_validate(t2v_with_asset)
+
+
 def test_existing_asset_missing_snapshot_fails_closed() -> None:
     manifest, _snapshot = _existing_asset_case()
 
@@ -502,3 +539,29 @@ def test_service_hides_unknown_and_cross_goal_assets_behind_bounded_failure() ->
         service._resolve_trusted_assets(manifest, "autonomous-goal:goal-001")
     with pytest.raises(ValueError, match="^PRODUCTION_TRUSTED_ASSET_SCOPE_INVALID$"):
         service._resolve_trusted_assets(manifest, "project-001")
+
+
+def test_service_resolves_i2v_ref_through_same_goal_scoped_registry() -> None:
+    manifest, snapshot = _existing_asset_case()
+    shot = manifest["stage_results"]["shot_plan.v1"]["shots"][0]  # type: ignore[index]
+    shot["render_intent"] = "IMAGE_TO_VIDEO"  # type: ignore[index]
+
+    class Assets:
+        def get(self, asset_id: str, *, scope_kind: str | None = None, scope_id: str | None = None):
+            assert (asset_id, scope_kind, scope_id) == (
+                snapshot.asset_id,
+                "autonomous_goal",
+                "goal-001",
+            )
+            return SimpleNamespace(**snapshot.model_dump(mode="python"), duration_ms=None)
+
+    service = ProductionService(
+        repository=None,  # type: ignore[arg-type]
+        creative_repository=None,  # type: ignore[arg-type]
+        store=None,  # type: ignore[arg-type]
+        trusted_assets=Assets(),  # type: ignore[arg-type]
+    )
+
+    assert service._resolve_trusted_assets(manifest, "autonomous-goal:goal-001") == {
+        snapshot.asset_id: snapshot
+    }

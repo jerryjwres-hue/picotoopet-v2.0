@@ -217,28 +217,12 @@ public sealed class ProductionLocalMediaRenderer : IProductionLocalMediaRenderer
         }
         cancellationToken.ThrowIfCancellationRequested();
         var asset = task.TrustedAsset!;
-        var inputRoot = Path.GetFullPath(trustedInputRoot);
-        ProductionLocalEnvironment.AssertNoLinkEscape(inputRoot, inputRoot);
-        var sourcePath = ProductionLocalEnvironment.ResolveUnderRoot(
-            inputRoot,
-            asset.ManagedRelpath,
-            requireExistingFile: true);
-        ProductionLocalEnvironment.AssertNoLinkEscape(inputRoot, sourcePath);
-        if (!ProductionLocalEnvironment.IsOrdinaryFile(sourcePath))
-        {
-            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_FILE_INVALID");
-        }
-        if (new FileInfo(sourcePath).Length != asset.SizeBytes)
-        {
-            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_SIZE_MISMATCH");
-        }
-        var digest = await ProductionLocalEnvironment.Sha256FileAsync(sourcePath, cancellationToken)
+        var verified = await ProductionTrustedAssetVerifier.VerifyAsync(
+            asset,
+            trustedInputRoot,
+            cancellationToken)
             .ConfigureAwait(false);
-        if (!string.Equals(digest, asset.Sha256, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_SHA256_MISMATCH");
-        }
-        VerifyImageFacts(sourcePath, asset);
+        var sourcePath = verified.AbsolutePath;
 
         var root = Path.GetFullPath(outputRoot);
         Directory.CreateDirectory(root);
@@ -291,44 +275,6 @@ public sealed class ProductionLocalMediaRenderer : IProductionLocalMediaRenderer
         finally
         {
             DeleteOrdinaryFile(partialPath);
-        }
-    }
-
-    private static void VerifyImageFacts(
-        string sourcePath,
-        ProductionTrustedAssetSnapshotRecord asset)
-    {
-        using var stream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        Span<byte> header = stackalloc byte[8];
-        if (stream.Read(header) != header.Length)
-        {
-            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_DECODE_FAILED");
-        }
-        var isPng = header.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
-        var isJpeg = header[0] == 0xff && header[1] == 0xd8 && header[2] == 0xff;
-        var decodedMediaType = isPng ? "image/png" : isJpeg ? "image/jpeg" : null;
-        if (!string.Equals(decodedMediaType, asset.MediaType, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_MIME_MISMATCH");
-        }
-        stream.Position = 0;
-        BitmapDecoder decoder;
-        try
-        {
-            decoder = BitmapDecoder.Create(
-                stream,
-                BitmapCreateOptions.PreservePixelFormat,
-                BitmapCacheOption.OnLoad);
-        }
-        catch (Exception exception) when (exception is NotSupportedException or FileFormatException)
-        {
-            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_DECODE_FAILED", exception);
-        }
-        var frame = decoder.Frames.FirstOrDefault()
-            ?? throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_DECODE_FAILED");
-        if (frame.PixelWidth != asset.Width || frame.PixelHeight != asset.Height)
-        {
-            throw new InvalidDataException("LOCAL_MEDIA_TRUSTED_ASSET_DIMENSION_MISMATCH");
         }
     }
 

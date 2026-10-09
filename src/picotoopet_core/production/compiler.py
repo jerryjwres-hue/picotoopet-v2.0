@@ -64,15 +64,22 @@ def _positive_prompt(shot: dict[str, object]) -> str:
     return "; ".join(segment for segment in segments if segment)
 
 
-def _trusted_asset_ref(manifest: dict[str, object], shot_id: str) -> str | None:
-    # ── Only Core-authored Creative Package metadata may provide an asset ref ─
-    assets = manifest.get("trusted_local_assets")
-    if not isinstance(assets, dict):
-        return None
-    value = assets.get(shot_id)
-    if not isinstance(value, str) or not value.strip():
-        return None
-    return value.strip()[:300]
+def _trusted_snapshot(
+    asset_id: str,
+    trusted_assets: Mapping[str, ProductionTrustedAssetSnapshotV1] | None,
+    project_key: str,
+) -> ProductionTrustedAssetSnapshotV1:
+    snapshot = (trusted_assets or {}).get(asset_id)
+    if snapshot is None or snapshot.asset_id != asset_id:
+        raise ValueError("PRODUCTION_TRUSTED_ASSET_NOT_FOUND")
+    goal_prefix = "autonomous-goal:"
+    if (
+        not project_key.startswith(goal_prefix)
+        or snapshot.scope_kind != "autonomous_goal"
+        or snapshot.scope_id != project_key[len(goal_prefix) :]
+    ):
+        raise ValueError("PRODUCTION_TRUSTED_ASSET_SCOPE_INVALID")
+    return snapshot
 
 
 def compile_production_plan(
@@ -125,7 +132,6 @@ def compile_production_plan(
         if not shot_id or order != expected_order:
             raise ValueError("PRODUCTION_SHOT_ORDER_INVALID")
         render_intent = shot.render_intent.value
-        asset_ref = _trusted_asset_ref(manifest, shot_id)
         target_duration = duration_ms(shot.duration_seconds)
         duration_supported = True
         try:
@@ -145,11 +151,17 @@ def compile_production_plan(
             execution_backend = "comfy"
             execution_profile_id = T2V_WORKFLOW_ID
             disposition = ProductionExecutionDisposition.EXECUTABLE
-        elif duration_supported and render_intent == "IMAGE_TO_VIDEO" and asset_ref is not None:
-            workflow_id = I2V_WORKFLOW_ID
-            execution_backend = "comfy"
-            execution_profile_id = I2V_WORKFLOW_ID
-            disposition = ProductionExecutionDisposition.EXECUTABLE
+        elif duration_supported and render_intent == "IMAGE_TO_VIDEO":
+            if shot.existing_asset_ref is not None:
+                trusted_asset = _trusted_snapshot(
+                    shot.existing_asset_ref,
+                    trusted_assets,
+                    project_key,
+                )
+                workflow_id = I2V_WORKFLOW_ID
+                execution_backend = "comfy"
+                execution_profile_id = I2V_WORKFLOW_ID
+                disposition = ProductionExecutionDisposition.EXECUTABLE
         elif duration_supported and render_intent == "TEXT_CARD":
             script_beat = script_beats_by_id[shot.beat_id]
             text = shot.text_reference
@@ -169,16 +181,7 @@ def compile_production_plan(
             existing_asset_ref = shot.existing_asset_ref
             if existing_asset_ref is None:
                 raise ValueError("PRODUCTION_TRUSTED_ASSET_NOT_FOUND")
-            trusted_asset = (trusted_assets or {}).get(existing_asset_ref)
-            if trusted_asset is None or trusted_asset.asset_id != existing_asset_ref:
-                raise ValueError("PRODUCTION_TRUSTED_ASSET_NOT_FOUND")
-            goal_prefix = "autonomous-goal:"
-            if (
-                not project_key.startswith(goal_prefix)
-                or trusted_asset.scope_kind != "autonomous_goal"
-                or trusted_asset.scope_id != project_key[len(goal_prefix) :]
-            ):
-                raise ValueError("PRODUCTION_TRUSTED_ASSET_SCOPE_INVALID")
+            trusted_asset = _trusted_snapshot(existing_asset_ref, trusted_assets, project_key)
             execution_backend = "local_media"
             execution_profile_id = ProductionExecutionProfile.EXISTING_IMAGE_V1.value
             disposition = ProductionExecutionDisposition.EXECUTABLE
@@ -203,7 +206,7 @@ def compile_production_plan(
                 fps=output_profile.fps,
                 frame_count=frame_count,
                 target_duration_ms=target_duration,
-                trusted_input_asset_ref=asset_ref,
+                trusted_input_asset_ref=None,
             )
         )
 

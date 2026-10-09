@@ -195,6 +195,12 @@ def validate_goal_video_return(
     if not set(payload.verified_fact_ids).issubset(context.evidence_ids):
         raise GoalVideoReturnError("EVIDENCE_REFERENCE_INVALID")
 
+    if any(
+        shot.render_intent.value == "IMAGE_TO_VIDEO" and shot.existing_asset_ref is None
+        for shot in payload.shot_plan.shots
+    ):
+        raise GoalVideoReturnError("TRUSTED_ASSET_REF_REQUIRED")
+
     referenced_assets = {
         shot.existing_asset_ref
         for shot in payload.shot_plan.shots

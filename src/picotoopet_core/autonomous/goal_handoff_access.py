@@ -248,14 +248,16 @@ class GoalHandoffAccess:
             + "\n\n【PicotooPet 严格回导合同】\n"
             + "这是当前交接包的 Core 绑定信息；不要修改这些绑定值：\n"
             + compact_binding
-            + "\n\n最终可读回答之后，必须再输出且只输出一个标记为 PICOTOO_RETURN_JSON 的 JSON 对象。"
+            + "\n\n最终可读回答之后，必须再输出且只输出一个标记为 "
+            + "PICOTOO_RETURN_JSON 的 JSON 对象。"
             + "该对象必须严格符合下面的 JSON Schema，不得增加 provider/model/renderer/workflow/"
             + "endpoint/path/command 等字段。所有 source_finding_refs 只能使用上方映射中的值；"
             + "所有 evidence 引用只能使用映射中的 key。"
-            + "只有 render_intent 为 EXISTING_ASSET 的镜头才可填写 existing_asset_ref，"
+            + "render_intent 为 EXISTING_ASSET 或 IMAGE_TO_VIDEO 的镜头必须填写 "
+            + "existing_asset_ref，"
             + "且只能取自上方 allowed_existing_assets 列表中的 asset_id；"
-            + "使用 EXISTING_ASSET 时必须原样返回 asset_allowlist_digest；"
-            + "其他镜头不得填写；列表为空时不得使用 EXISTING_ASSET。\n"
+            + "使用这两种 intent 时必须原样返回 asset_allowlist_digest；"
+            + "其他镜头不得填写；列表为空时不得使用这两种 intent。\n"
             + compact_schema
             + "\n"
         )

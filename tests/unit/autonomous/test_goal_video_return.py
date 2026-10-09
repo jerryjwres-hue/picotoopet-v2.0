@@ -460,6 +460,16 @@ def _asset_shot_payload(context, asset_ref: str | None) -> dict[str, object]:  #
     return payload
 
 
+def _i2v_shot_payload(context, asset_ref: str | None) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    payload = _payload(context)
+    shot = payload["shot_plan"]["shots"][0]  # type: ignore[index]
+    shot["render_intent"] = "IMAGE_TO_VIDEO"
+    if asset_ref is not None:
+        shot["existing_asset_ref"] = asset_ref
+        payload["asset_allowlist_digest"] = context.asset_allowlist_digest
+    return payload
+
+
 def test_context_lists_only_safe_same_goal_assets_and_empty_when_none(tmp_path: Path) -> None:
     empty = _access(tmp_path / "empty").context("goal-video-1")
     assert empty.trusted_assets == []
@@ -486,6 +496,7 @@ def test_return_prompt_binds_safe_asset_metadata_without_locations(tmp_path: Pat
     assert '"asset_allowlist_digest"' in prompt
     assert '"media_type":"image/png"' in prompt
     assert "existing_asset_ref" in prompt
+    assert "IMAGE_TO_VIDEO" in prompt
     assert (
         "managed_relpath" not in prompt.split("PicotooPet 严格回导合同")[1].split("JSON Schema")[0]
     )
@@ -518,12 +529,40 @@ def test_asset_return_requires_exact_allowlist_snapshot_digest(tmp_path: Path) -
         validate_goal_video_return(GoalVideoReturnV1.model_validate(invented), context)
 
 
+def test_i2v_return_requires_allowlisted_asset_and_rejects_missing_or_invented(
+    tmp_path: Path,
+) -> None:
+    context = _access(tmp_path, _FakeAssets(ASSET_A)).context("goal-video-1")
+
+    allowed = validate_goal_video_return(
+        GoalVideoReturnV1.model_validate(_i2v_shot_payload(context, ASSET_A)),
+        context,
+    )
+    assert allowed.stage_results["shot_plan.v1"]["shots"][0]["existing_asset_ref"] == ASSET_A  # type: ignore[index]
+
+    with pytest.raises(GoalVideoReturnError, match="TRUSTED_ASSET_REF_REQUIRED"):
+        validate_goal_video_return(
+            GoalVideoReturnV1.model_validate(_i2v_shot_payload(context, None)),
+            context,
+        )
+    with pytest.raises(GoalVideoReturnError, match="UNKNOWN_EXISTING_ASSET_REF"):
+        validate_goal_video_return(
+            GoalVideoReturnV1.model_validate(_i2v_shot_payload(context, ASSET_B)),
+            context,
+        )
+
+
 def test_asset_allowlist_digest_changes_when_prompt_allowlist_changes(tmp_path: Path) -> None:
     none = _access(tmp_path / "none").context("goal-video-1")
     one = _access(tmp_path / "one", _FakeAssets(ASSET_A)).context("goal-video-1")
     two = _access(tmp_path / "two", _FakeAssets(ASSET_A, ASSET_B)).context("goal-video-1")
 
-    assert len({none.asset_allowlist_digest, one.asset_allowlist_digest, two.asset_allowlist_digest}) == 3
+    digests = {
+        none.asset_allowlist_digest,
+        one.asset_allowlist_digest,
+        two.asset_allowlist_digest,
+    }
+    assert len(digests) == 3
 
 def test_source_set_digest_binds_trusted_asset_allowlist(tmp_path: Path) -> None:
     def digest_for(*asset_ids: str) -> tuple[str, list[str]]:

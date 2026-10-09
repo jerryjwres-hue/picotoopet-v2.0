@@ -299,24 +299,26 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         for (var attempt = 1; attempt <= 2; attempt++)
         {
             string? currentPromptId = null;
+            var attemptReserved = false;
+            var isI2v = string.Equals(
+                task.WorkflowId,
+                ComfyWorkflowTemplateValidator.I2VWorkflowId,
+                StringComparison.Ordinal);
             try
             {
                 var template = ComfyWorkflowCatalog.Load(task.WorkflowId!);
                 var filenamePrefix = BuildFilenamePrefix(claim.ProductionJobId, task);
-                string? trustedInput = null;
-                if (string.Equals(
-                    task.WorkflowId,
-                    ComfyWorkflowTemplateValidator.I2VWorkflowId,
-                    StringComparison.Ordinal))
+                JsonObject? prompt = null;
+                if (!isI2v)
                 {
-                    trustedInput = ValidateTrustedInput(task.TrustedInputAssetRef, preflight.InputRoot!);
+                    // Preserve T2V behavior: validate and bind before reserving an attempt.
+                    prompt = ComfyWorkflowTemplateValidator.Bind(
+                        task.WorkflowId!,
+                        template,
+                        task,
+                        filenamePrefix,
+                        null);
                 }
-                var prompt = ComfyWorkflowTemplateValidator.Bind(
-                    task.WorkflowId!,
-                    template,
-                    task,
-                    filenamePrefix,
-                    trustedInput);
 
                 // ── Core 必须先预留 attempt，GPU submit 才允许发生；避免孤儿任务 ──────
                 if (_session is not null)
@@ -335,7 +337,22 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                         new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null),
                         cancellationToken).ConfigureAwait(false);
                 }
-                currentPromptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken)
+                attemptReserved = true;
+                string? trustedInput = null;
+                if (isI2v)
+                {
+                    trustedInput = await ProductionTrustedInputResolver.ResolveAsync(
+                        task,
+                        preflight.InputRoot!,
+                        cancellationToken).ConfigureAwait(false);
+                    prompt = ComfyWorkflowTemplateValidator.Bind(
+                        task.WorkflowId!,
+                        template,
+                        task,
+                        filenamePrefix,
+                        trustedInput);
+                }
+                currentPromptId = await _comfy.SubmitPromptAsync(prompt!, cancellationToken)
                     .ConfigureAwait(false);
 
                 // ── prompt_id 只绑定刚才的 reservation，不消耗第二次 attempt ──────────
@@ -392,6 +409,21 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                         task.Fps),
                     cancellationToken).ConfigureAwait(false);
                 return;
+            }
+            catch (InvalidDataException exception) when (
+                isI2v && attemptReserved && currentPromptId is null)
+            {
+                await _gateway.FailProductionTaskAsync(
+                    claim.ProductionJobId,
+                    task.ProductionTaskId,
+                    new ProductionTaskFailureRequest(
+                        _executorId,
+                        claim.LeaseToken,
+                        null,
+                        "COMFY_TRUSTED_INPUT_INVALID",
+                        null),
+                    cancellationToken).ConfigureAwait(false);
+                throw new InvalidOperationException("COMFY_TRUSTED_INPUT_INVALID", exception);
             }
             catch (Exception exception) when (IsRetryable(exception, cancellationToken))
             {
@@ -501,12 +533,36 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         {
             if (string.IsNullOrWhiteSpace(task.WorkflowId)
                 || !string.Equals(task.ExecutionProfileId, task.WorkflowId, StringComparison.Ordinal)
-                || task.LocalMedia is not null
-                || task.TrustedAsset is not null)
+                || task.LocalMedia is not null)
             {
                 throw new InvalidOperationException("PRODUCTION_COMFY_CONTRACT_INVALID");
             }
-            return;
+            var isT2v = string.Equals(
+                task.WorkflowId,
+                ComfyWorkflowTemplateValidator.T2VWorkflowId,
+                StringComparison.Ordinal);
+            if (isT2v
+                && string.Equals(task.RenderIntent, "GENERATIVE_VIDEO", StringComparison.Ordinal)
+                && task.TrustedAsset is null
+                && task.TrustedInputAssetRef is null)
+            {
+                return;
+            }
+            var isI2v = string.Equals(
+                task.WorkflowId,
+                ComfyWorkflowTemplateValidator.I2VWorkflowId,
+                StringComparison.Ordinal);
+            var newIdentity = task.TrustedAsset is not null
+                && task.TrustedInputAssetRef is null;
+            var legacyIdentity = task.TrustedAsset is null
+                && !string.IsNullOrWhiteSpace(task.TrustedInputAssetRef);
+            if (isI2v
+                && string.Equals(task.RenderIntent, "IMAGE_TO_VIDEO", StringComparison.Ordinal)
+                && (newIdentity || legacyIdentity))
+            {
+                return;
+            }
+            throw new InvalidOperationException("PRODUCTION_COMFY_CONTRACT_INVALID");
         }
         if (string.Equals(task.ExecutionBackend, "local_media", StringComparison.Ordinal)
             && task.WorkflowId is null
@@ -664,17 +720,6 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
 
     private static string ResolveComfyDataRoot() =>
         ProductionLocalEnvironment.ResolveComfyDataRoot();
-
-    private static string ValidateTrustedInput(string? relative, string inputRoot)
-    {
-        if (string.IsNullOrWhiteSpace(relative))
-        {
-            throw new InvalidDataException("COMFY_I2V_INPUT_MISSING");
-        }
-        var path = ResolveUnderRoot(inputRoot, relative, requireExistingFile: true);
-        AssertNoLinkEscape(inputRoot, path);
-        return Path.GetRelativePath(inputRoot, path).Replace('\\', '/');
-    }
 
     private static string BuildFilenamePrefix(string jobId, ProductionTaskPlanRecord task)
     {
