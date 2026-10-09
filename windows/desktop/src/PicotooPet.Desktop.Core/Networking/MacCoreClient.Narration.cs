@@ -1,3 +1,4 @@
+// 旁白计划客户端复用现有认证连接，只读取 Core 冻结的 C007A 计划并执行严格响应校验。
 using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Core.Networking;
