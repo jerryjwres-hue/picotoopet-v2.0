@@ -242,11 +242,11 @@ public static class CanonicalJson
             var code = (int)ch;
             if (code == 0x22)
             {
-                builder.Append(Backslash[0]).Append(Quote);
+                builder.Append(Backslash[0]).Append(Quote[0]);
             }
             else if (code == 0x5C)
             {
-                builder.Append(Backslash[0]).Append(Backslash);
+                builder.Append(Backslash[0]).Append(Backslash[0]);
             }
             else if (code == 0x0A)
             {
