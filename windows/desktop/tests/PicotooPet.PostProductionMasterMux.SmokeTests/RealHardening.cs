@@ -172,6 +172,7 @@ internal static class RealHardening
                 cancelled = true;
             }
             Check.True(cancelled, $"Kill 失败（{name}）不得改变取消语义");
+            await AssertNoOrphansAsync(before, $"Kill 失败（{name}）后").ConfigureAwait(false);
         }
 
         var unrelated = new FixedMasterVideoProcessRunner(_ => throw new FormatException("unrelated"));
@@ -185,8 +186,23 @@ internal static class RealHardening
             // 预期：不被吞掉，且 finally 兜底已结束进程。
         }
 
-        await Task.Delay(1000).ConfigureAwait(false);
-        Check.True(Process.GetProcessesByName("ffmpeg").Length <= before, "不得残留 ffmpeg 孤儿进程");
+        await AssertNoOrphansAsync(before, "无关异常传播后").ConfigureAwait(false);
+    }
+
+    private static async Task AssertNoOrphansAsync(int before, string stage)
+    {
+        // 终止是异步的：最多等 5 s 让已被 Kill 的进程消失，再判定残留。
+        var count = 0;
+        for (var i = 0; i < 25; i++)
+        {
+            count = Process.GetProcessesByName("ffmpeg").Length;
+            if (count <= before)
+            {
+                return;
+            }
+            await Task.Delay(200).ConfigureAwait(false);
+        }
+        throw new InvalidOperationException($"不得残留 ffmpeg 孤儿进程：{stage} before={before} now={count}");
     }
 
     /// <summary>真实 mux 中途取消：抛出取消、不留 master.mp4/partial、不残留孤儿进程、输入句柄已释放。</summary>
@@ -218,8 +234,7 @@ internal static class RealHardening
         Check.True(cancelled, "中途取消必须抛出取消");
         Check.True(!File.Exists(output), "取消后不得留下输出");
         Check.True(Directory.GetFiles(work).Length == 0, "取消后工作目录不得有残留文件");
-        await Task.Delay(1000).ConfigureAwait(false);
-        Check.True(Process.GetProcessesByName("ffmpeg").Length <= before, "不得残留 ffmpeg 孤儿进程");
+        await AssertNoOrphansAsync(before, "取消中途 mux 后").ConfigureAwait(false);
         File.Move(visual.Path, visual.Path + ".after");
         File.Move(segment.WavPath, segment.WavPath + ".after");
     }
