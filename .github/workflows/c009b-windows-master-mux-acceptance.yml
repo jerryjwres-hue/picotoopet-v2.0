@@ -24,7 +24,8 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # 与桌面项目的固定 SDK 版本一致，避免 rollForward=disable 时发生工具链漂移。
+          global-json-file: windows/desktop/global.json
 
       - name: Ensure native FFmpeg and FFprobe
         shell: pwsh
