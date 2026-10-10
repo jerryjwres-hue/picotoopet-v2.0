@@ -200,7 +200,8 @@ public partial class GoalCenterPanel : WpfUserControl
 
     private async void OpenFinalVideo_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not OperatorHomePageViewModel viewModel)
+        if (DataContext is not OperatorHomePageViewModel viewModel
+            || !viewModel.VideoContinuation.CanOpenFinalVideo)
         {
             return;
         }
