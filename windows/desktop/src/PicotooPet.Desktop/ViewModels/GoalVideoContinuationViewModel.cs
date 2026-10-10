@@ -11,6 +11,9 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
     private readonly IGoalVideoContinuationGateway? _gateway;
     private readonly IGoalProductionAutopilotObserver? _autopilot;
     private readonly IPostProductionDeliveryObserver? _finalVideo;
+    // Source-compatibility for the frozen C004 coordinator smoke harness only.
+    // The production composition root never injects this observer.
+    private readonly IGoalFinalVideoObserver? _legacyFinalVideo;
     private string? _goalId;
     private bool _available;
     private bool _isBusy;
@@ -29,6 +32,17 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         _gateway = gateway;
         _autopilot = autopilot;
         _finalVideo = finalVideo;
+    }
+
+    /// <summary>Compatibility only: existing C004 smoke tests still bind their original observer.</summary>
+    public GoalVideoContinuationViewModel(
+        IGoalVideoContinuationGateway? gateway,
+        IGoalProductionAutopilotObserver? autopilot,
+        IGoalFinalVideoObserver legacyFinalVideo)
+    {
+        _gateway = gateway;
+        _autopilot = autopilot;
+        _legacyFinalVideo = legacyFinalVideo ?? throw new ArgumentNullException(nameof(legacyFinalVideo));
     }
 
     public GoalVideoContinuationRecord? Continuation
@@ -323,6 +337,12 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             _localFinalVideoStatus = finalSnapshot.StatusText;
             _canOpenFinalVideo = finalSnapshot.CanOpen;
         }
+        else if (_legacyFinalVideo is not null)
+        {
+            var legacySnapshot = _legacyFinalVideo.Observe(_goalId, Continuation);
+            _localFinalVideoStatus = legacySnapshot.StatusText;
+            _canOpenFinalVideo = legacySnapshot.CanOpen;
+        }
         else
         {
             _localFinalVideoStatus = null;
@@ -331,6 +351,26 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         RaisePropertyChanged(nameof(ProductionStatusText));
         RaisePropertyChanged(nameof(StatusText));
         RaisePropertyChanged(nameof(CanOpenFinalVideo));
+    }
+
+    /// <summary>Legacy C004 smoke compatibility, never used by the one production UI action.</summary>
+    [Obsolete("Use OpenFinalVideoAsync with IPostProductionDeliveryObserver for Goal Center.")]
+    public bool OpenFinalVideo()
+    {
+        if (_legacyFinalVideo is null || !CanOpenFinalVideo)
+        {
+            return false;
+        }
+        var opened = _legacyFinalVideo.OpenCurrent();
+        if (!opened)
+        {
+            _localFinalVideoStatus = "最终视频暂时无法打开；请稍后重试。";
+            _canOpenFinalVideo = false;
+            RaisePropertyChanged(nameof(ProductionStatusText));
+            RaisePropertyChanged(nameof(StatusText));
+            RaisePropertyChanged(nameof(CanOpenFinalVideo));
+        }
+        return opened;
     }
 
     public async Task<bool> OpenFinalVideoAsync(CancellationToken cancellationToken = default)
