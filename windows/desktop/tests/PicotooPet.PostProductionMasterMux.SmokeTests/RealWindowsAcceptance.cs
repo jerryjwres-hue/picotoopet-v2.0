@@ -154,7 +154,7 @@ internal static class RealWindowsAcceptance
              "-f", "s16le", "-ac", "1", "-ar", "48000", rawPath], output).ConfigureAwait(false);
         Check.Equal(0, decode.ExitCode, $"{name}: 解码音频");
         var pcm = await File.ReadAllBytesAsync(rawPath).ConfigureAwait(false);
-        var tones = new[] { (Start: 150, End: 1350, Hz: 440, Label: "seg1"), (2650, 3850, 660, "seg2"), (4650, 5350, 880, "seg3") };
+        (int Start, int End, int Hz, string Label)[] tones = [(150, 1350, 440, "seg1"), (2650, 3850, 660, "seg2"), (4650, 5350, 880, "seg3")];
         var rms = new List<double>();
         foreach (var tone in tones)
         {
@@ -163,7 +163,7 @@ internal static class RealWindowsAcceptance
             Check.True(level >= 3000, $"{name}/{tone.Label}: 音调窗口必须有声");
             Check.Equal(tone.Hz, TestMedia.StrongestTone(pcm, tone.Start, tone.End, 440, 660, 880), $"{name}/{tone.Label}: 主频");
         }
-        foreach (var gap in new[] { (Start: 1650, End: 2350, Label: "gap1"), (4150, 4350, "gap2"), (5650, 5850, "gap3") })
+        foreach (var gap in new (int Start, int End, string Label)[] { (1650, 2350, "gap1"), (4150, 4350, "gap2"), (5650, 5850, "gap3") })
         {
             Check.True(TestMedia.Rms(pcm, gap.Start, gap.End) <= 200, $"{name}/{gap.Label}: 静音窗口必须静音");
         }
