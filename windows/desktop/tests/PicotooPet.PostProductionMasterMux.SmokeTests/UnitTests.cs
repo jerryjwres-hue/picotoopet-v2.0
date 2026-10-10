@@ -163,7 +163,7 @@ internal static class UnitTests
         // 滤镜文本只由整数时间与固定结构构成。
         var skeleton = Regex.Replace(filter, @"\d+", "N");
         Check.True(
-            Regex.IsMatch(skeleton, @"^(\[N:a\](pan=mono\|c0=N\.N\*c0\+N\.N\*c1,)?aformat=sample_rates=N:channel_layouts=mono:sample_fmts=fltp,adelay=N:all=1\[aN\];)+(\[aN\])+amix=inputs=N:duration=longest:normalize=N,apad=whole_dur=N\.N\[aout\]$"),
+            Regex.IsMatch(skeleton, @"^(\[N:a\](pan=mono\|c0=N\.N\*c0\+N\.N\*c1,)?aformat=sample_rates=N:channel_layouts=mono:sample_fmts=fltp,adelay=N:all=N\[aN\];)+(\[aN\])+amix=inputs=N:duration=longest:normalize=N,apad=whole_dur=N\.N\[aout\]$"),
             "滤镜图只含固定结构 + 整数");
 
         var args = FixedFfmpegMasterVideoComposer.BuildMuxArguments(env.Visual.Path, env.Segments, Target, env.OutputPath);
