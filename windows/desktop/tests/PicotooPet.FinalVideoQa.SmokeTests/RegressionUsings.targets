@@ -1,0 +1,7 @@
+<Project>
+  <!-- Build-only compatibility for upstream WPF smoke harnesses missing System.IO.
+       Explicit opt-in when running regressions; does not change producer source or default builds. -->
+  <ItemGroup>
+    <Using Include="System.IO" />
+  </ItemGroup>
+</Project>
