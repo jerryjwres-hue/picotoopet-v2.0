@@ -343,6 +343,9 @@ internal sealed class FakeRunner : IMasterVideoProcessRunner
 
     public string? OutputProbe { get; set; }
 
+    /// <summary>在每次（假）进程调用时触发，此时 composer 已完成校验并持有输入句柄。</summary>
+    public Action<ProcessStartInfo>? OnProcess { get; set; }
+
     public Task<MasterVideoProcessResult> RunAsync(
         ProcessStartInfo startInfo,
         TimeSpan timeout,
@@ -350,6 +353,7 @@ internal sealed class FakeRunner : IMasterVideoProcessRunner
     {
         var arguments = startInfo.ArgumentList.ToList();
         Calls.Add((startInfo.FileName, arguments));
+        OnProcess?.Invoke(startInfo);
         if (startInfo.FileName == "ffprobe.exe")
         {
             var isOutput = Path.GetFileName(arguments[^1]) == "master.mp4";
@@ -445,9 +449,9 @@ internal sealed class TestEnv : IDisposable
 
 internal static class Env
 {
-    public static TestEnv Create(IReadOnlyList<SegSpec> specs)
+    public static TestEnv Create(IReadOnlyList<SegSpec> specs, string rootSuffix = "")
     {
-        var root = Path.Combine(Path.GetTempPath(), "picotoo-mux-smoke-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "picotoo-mux-smoke-" + Guid.NewGuid().ToString("N") + rootSuffix);
         var sources = Path.Combine(root, "sources");
         var work = Path.Combine(root, "work");
         Directory.CreateDirectory(sources);
