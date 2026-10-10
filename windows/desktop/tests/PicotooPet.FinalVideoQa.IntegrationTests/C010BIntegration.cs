@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -98,14 +99,14 @@ internal static class C010BIntegration
         {
             using var f = await Fixture.CreateAsync(narr, overlay);
             var (master, input) = await ComposeAsync(f);
-            Check(master is not null, "master prerequisite");
+            var actualMaster = master ?? throw new InvalidOperationException("master prerequisite");
             await LifecycleTests.Throws("MASTER_REQUIRED",
                 () => VerifyAsync(f, input with { MasterArtifact = null }, new NeverRunner()));
             await LifecycleTests.Throws("LINEAGE_MISMATCH",
-                () => VerifyAsync(f, input with { MasterArtifact = master with { MasterInputDigest = new string('f', 64) } },
+                () => VerifyAsync(f, input with { MasterArtifact = actualMaster with { MasterInputDigest = new string('f', 64) } },
                     new NeverRunner()));
             await LifecycleTests.Throws("LINEAGE_MISMATCH",
-                () => VerifyAsync(f, input with { MasterArtifact = master with { FilePath = f.Input.C004.FilePath } },
+                () => VerifyAsync(f, input with { MasterArtifact = actualMaster with { FilePath = f.Input.C004.FilePath } },
                     new NeverRunner()));
             Check(!Directory.Exists(Path.Combine(f.Root, "receipts")), "wrong candidate must never receipt fallback C004");
         }
