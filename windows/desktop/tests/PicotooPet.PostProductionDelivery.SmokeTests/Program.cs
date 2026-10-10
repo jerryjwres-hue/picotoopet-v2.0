@@ -39,6 +39,7 @@ internal static class Program
         await fixture.VerifyFallbackAndTamperAsync().ConfigureAwait(false);
         await fixture.VerifyMasterAndTamperAsync().ConfigureAwait(false);
         await CoordinatorIntegrationTests.RunAsync().ConfigureAwait(false);
+        await GoalCenterAsyncOpenIntegrationTests.RunAsync().ConfigureAwait(false);
         Console.WriteLine("POSTPRODUCTION_DELIVERY_ISOLATED_SMOKE=PASS");
         return 0;
     }
