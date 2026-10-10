@@ -35,7 +35,7 @@ internal static class GoalCenterAsyncOpenIntegrationTests
 
             var responsiveness = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
-            Dispatcher.CurrentDispatcher.BeginInvoke(() =>
+            _ = Dispatcher.CurrentDispatcher.BeginInvoke(() =>
             {
                 responsiveness.TrySetResult(true);
                 observer.Resolve(true);
