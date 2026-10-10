@@ -387,8 +387,13 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             // The coordinator revalidates exact managed bytes/manifest off the UI thread.
             // Do not allow a previous Goal/job's completion to mutate the new Goal display.
             var opened = await _finalVideo.OpenCurrentAsync(cancellationToken).ConfigureAwait(true);
-            if (!opened && string.Equals(_goalId, goalAtClick, StringComparison.Ordinal)
-                && string.Equals(Continuation?.ProductionJobId, jobAtClick, StringComparison.Ordinal))
+            // A stale Goal/job response must never be reported as a successful current open.
+            if (!string.Equals(_goalId, goalAtClick, StringComparison.Ordinal)
+                || !string.Equals(Continuation?.ProductionJobId, jobAtClick, StringComparison.Ordinal))
+            {
+                return false;
+            }
+            if (!opened)
             {
                 _localFinalVideoStatus = "最终视频暂时无法打开；请稍后重试。";
                 _canOpenFinalVideo = false;
