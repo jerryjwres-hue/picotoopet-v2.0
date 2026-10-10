@@ -51,7 +51,7 @@ internal static class C010BIntegration
         catch (Exception error)
         {
             Interlocked.Increment(ref _failed);
-            Console.Error.WriteLine($"C010B_FAIL {name} error_type={error.GetType().Name} error_code={error is FinalVideoQaException q ? q.Code : "UNEXPECTED"}");
+            Console.Error.WriteLine($"C010B_FAIL {name} error_type={error.GetType().Name} error_code={(error is FinalVideoQaException q ? q.Code : "UNEXPECTED")}");
         }
     }
 
