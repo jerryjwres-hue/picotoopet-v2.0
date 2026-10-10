@@ -354,7 +354,6 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
     }
 
     /// <summary>Legacy C004 smoke compatibility, never used by the one production UI action.</summary>
-    [Obsolete("Use OpenFinalVideoAsync with IPostProductionDeliveryObserver for Goal Center.")]
     public bool OpenFinalVideo()
     {
         if (_legacyFinalVideo is null || !CanOpenFinalVideo)
