@@ -2,7 +2,7 @@
   <!--
     Isolated C009B harness. Intentionally NOT added to the shared solution and independent of the shared
     PicotooPet.Desktop.Core.SmokeTests/Program.cs.
-    Run: dotnet run --project windows/desktop/tests/PicotooPet.PostProductionMasterMux.SmokeTests -c Release
+    Run the isolated console harness using dotnet run with a project path in Release mode.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
