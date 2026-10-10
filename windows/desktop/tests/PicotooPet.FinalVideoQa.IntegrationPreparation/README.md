@@ -20,10 +20,23 @@ After a genuine C009A/B master is available in an isolated test root, run:
 
 This validates known C009A v1 manifest fields, then creates isolated copies of real source bits with 17 negative modifications. It never fabricates a fake authoritative master, never edits the input and never invokes unknown C010A APIs. Null manifest-hash variants are NOT_APPLICABLE_TO_SPECIMEN.
 
-## API gates
+## Actual C010A API integration status
 
-Base: ef71d84868e9fc4afd1e8b8f7203d72aa4e12415 (C009A/B). C010A production QA/receipt callable types were not present on this base, so all receipt/restart/lineage/candidate assertions remain BLOCKED_C010A_API. Frozen names from the implementation brief are targets, not implemented invocation signatures; do not invent one. Add a test adapter here ONLY once the actual API lands. Do not modify C010A production files.
+The real C010A API has now landed on PR #71. Its audited SHA is
+b418777f1e3f72e1eb394a26a1e6202e62e718cc.
 
-C009B FixedMasterVideoProcessRunner exists, but MasterVideoMediaProbe does not contain all stream-index/chapter/per-stream-duration/full-decode facts needed for final C010A QA. Do not substitute this oracle as production QA.
+New independent C010B tests are in the sibling directory
+PicotooPet.FinalVideoQa.IntegrationTests. Its Windows workflow composes C010B
+test-only files into a disposable C010A checkout without merge/rebase. Those
+tests use the actual FinalVideoQaService.VerifyAsync, receipt/result contracts,
+and compile-linked upstream test fixtures.
 
-See docs/testing/C010B_FINAL_VIDEO_QA_INTEGRATION_MATRIX_V1.md and coverage_scenarios.json for the full matrix.
+The 20 synthetic-media fixture oracle cases remain separate from production QA.
+The 17 staged MasterManifest mutations still require genuine master specimens.
+See coverage_scenarios.json for per-case status; INTEGRATION_TEST_ADDED_UNVERIFIED
+does not mean C010B native execution has passed.
+
+Do not alter C010A production or reinterpret C009B's mux-only MasterVideoMediaProbe
+as the complete final QA probe.
+
+See docs/testing/C010B_FINAL_VIDEO_QA_INTEGRATION_MATRIX_V1.md for the current matrix.

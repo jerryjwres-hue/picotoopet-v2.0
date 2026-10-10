@@ -166,466 +166,512 @@
     {
       "id": "FVQ-C-no-postprod-c004-fallback",
       "area": "candidate-selection",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "FinalVideoQaInputV1 callable QA service/result/error surface",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-C-narration-only-requires-master",
       "area": "candidate-selection",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "FinalVideoQaInputV1 callable QA service/result/error surface",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-C-overlay-only-requires-master",
       "area": "candidate-selection",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "FinalVideoQaInputV1 callable QA service/result/error surface",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-C-narration-and-overlay-requires-master",
       "area": "candidate-selection",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "FinalVideoQaInputV1 callable QA service/result/error surface",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-C-missing-required-master-no-fallback",
       "area": "candidate-selection",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "FinalVideoQaInputV1 callable QA service/result/error surface",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-C-stale-master-no-postproduction",
       "area": "candidate-selection",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "FinalVideoQaInputV1 callable QA service/result/error surface",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-L-production-job-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-production-package-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-production-plan-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-creative-package-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-source-c004-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-caption-plan-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-narration-plan-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-selected-visual-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-master-input-digest-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-master-output-sha-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-master-output-bytes-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-master-audio-flag-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-narration-manifest-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-overlay-manifest-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-unexpected-directory-entry",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-missing-master-manifest",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-L-master-media-byte-tamper",
       "area": "c009a-lineage",
-      "status": "STAGING_AVAILABLE_API_BLOCKED",
+      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "real C009A master specimen + QA callable surface",
+      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
       "fixture": "stage_master_manifest_mutations.py"
     },
     {
       "id": "FVQ-R-pass-only-receipt",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "PASS_RECEIPT_CREATED",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-failed-qa-no-receipt",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "NO_RECEIPT",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-stable-qa-input-digest",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "SAME_DIGEST",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-changed-plan-new-qa-digest",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-changed-narration-manifest",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-changed-overlay-manifest",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-changed-master-manifest",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-receipt-digest-excludes-verified-at",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "SAME_DIGEST",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-receipt-observed-fact-change",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-receipt-tamper",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_RECEIPT_CONFLICT",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-receipt-unknown-field",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_RECEIPT_CONFLICT",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-receipt-extra-entry",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_RECEIPT_CONFLICT",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-receipt-partial-final-dir",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "FINAL_QA_RECEIPT_CONFLICT",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-restart-reuse-no-redecode",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "PASS_REUSED",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-artifact-tamper-after-pass",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "OPEN_DENIED",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-restart-wrong-lineage",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "NOT_READY",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-R-open-reverify-exact-candidate",
       "area": "receipt-restart",
-      "status": "BLOCKED_C010A_API",
+      "status": "BLOCKED_GOAL_CENTER_OPEN_API",
       "expected_outcome": "OPEN_ONLY_VERIFIED",
-      "dependency": "actual C010A receipt serializer/store, digest and QA result APIs",
+      "dependency": "Goal Center C010B Open action/receipt-gated catalog not landed; C010A VerifyAsync protects QA, not UI Open",
       "fixture": ""
     },
     {
       "id": "FVQ-D-header-valid-corrupt-packets",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-cancel-terminates-process",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-timeout-terminates-process",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-no-stderr-leak",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-no-output-write",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-unexpected-data-stream",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-attached-picture",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-extra-chapter",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-aac-non-lc",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-wrong-audio-duration",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-frame-quantization-boundary",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-D-23_976-not-24",
       "area": "full-decode-or-media-edge",
-      "status": "BLOCKED_C010A_API",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "actual C010A fixed full-decode and media probe callable APIs",
-      "fixture": ""
+      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
     },
     {
       "id": "FVQ-W-real-windows-c004",
       "area": "windows-end-to-end",
-      "status": "BLOCKED_REAL_WINDOWS_AND_C010A",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "C009A/B durable actual artifacts + C010A callable QA + Windows host",
-      "fixture": ""
+      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
     },
     {
       "id": "FVQ-W-real-windows-narration-only",
       "area": "windows-end-to-end",
-      "status": "BLOCKED_REAL_WINDOWS_AND_C010A",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "C009A/B durable actual artifacts + C010A callable QA + Windows host",
-      "fixture": ""
+      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
     },
     {
       "id": "FVQ-W-real-windows-overlay-only",
       "area": "windows-end-to-end",
-      "status": "BLOCKED_REAL_WINDOWS_AND_C010A",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "C009A/B durable actual artifacts + C010A callable QA + Windows host",
-      "fixture": ""
+      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
     },
     {
       "id": "FVQ-W-real-windows-narration-overlay",
       "area": "windows-end-to-end",
-      "status": "BLOCKED_REAL_WINDOWS_AND_C010A",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "C009A/B durable actual artifacts + C010A callable QA + Windows host",
-      "fixture": ""
+      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
     },
     {
       "id": "FVQ-W-real-windows-same-digest-reuse",
       "area": "windows-end-to-end",
-      "status": "BLOCKED_REAL_WINDOWS_AND_C010A",
+      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "C009A/B durable actual artifacts + C010A callable QA + Windows host",
-      "fixture": ""
+      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "fixture": "",
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
     },
     {
       "id": "FVQ-W-real-windows-24fps-all-profiles",
       "area": "windows-end-to-end",
-      "status": "BLOCKED_REAL_WINDOWS_AND_C010A",
+      "status": "BLOCKED_C010B_ALL_PROFILES_REAL_WINDOWS",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "C009A/B durable actual artifacts + C010A callable QA + Windows host",
+      "dependency": "C010B independent real test currently exercises 832x480 24fps; upstream C010A CI covers three profiles; independent 3-profile assertion not added",
       "fixture": ""
     }
-  ]
+  ],
+  "integration": {
+    "c010a_commit": "b418777f1e3f72e1eb394a26a1e6202e62e718cc",
+    "c010a_pr": 71,
+    "independent_test_project": "windows/desktop/tests/PicotooPet.FinalVideoQa.IntegrationTests",
+    "execution_status": "UNVERIFIED until native Windows C010B CI passes; no new scenario marked PASS",
+    "method": "two isolated checkouts and test-only file overlay; no merge/rebase/production edit"
+  }
 }

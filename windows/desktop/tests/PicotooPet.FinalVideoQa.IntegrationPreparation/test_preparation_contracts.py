@@ -1,6 +1,6 @@
 """Portable tests of the C010B PREPARATION registry and mutation tooling only.
 
-These tests deliberately never instantiate unimplemented C010A QA/receipt objects.
+These portable tests verify the matrix/staging tools only. The separate Windows C010B IntegrationTests project now calls the real C010A API.
 """
 from __future__ import annotations
 
@@ -26,8 +26,9 @@ class PreparationContractTests(unittest.TestCase):
         self.assertGreaterEqual(len(ids), 60)
 
     def test_all_blocked_cases_name_dependency(self):
-        allowed = {"FIXTURE_ORACLE_READY", "STAGING_AVAILABLE_API_BLOCKED",
-                   "BLOCKED_C010A_API", "BLOCKED_REAL_WINDOWS_AND_C010A"}
+        allowed = {"FIXTURE_ORACLE_READY", "INTEGRATION_TEST_ADDED_UNVERIFIED",
+                   "STAGING_READY_REAL_MASTER_BLOCKED", "BLOCKED_GOAL_CENTER_OPEN_API",
+                   "BLOCKED_C010B_ALL_PROFILES_REAL_WINDOWS"}
         for case in self.cases:
             self.assertIn(case["status"], allowed)
             if "BLOCKED" in case["status"]:
@@ -75,7 +76,10 @@ class PreparationContractTests(unittest.TestCase):
         self.assertIn("Fixture oracle PASS != product C010A PASS", self.spec["important"])
         e2e = [case for case in self.cases if case["area"] in {"receipt-restart", "candidate-selection"}]
         self.assertTrue(e2e)
-        self.assertTrue(all(case["status"] == "BLOCKED_C010A_API" for case in e2e))
+        self.assertEqual(len(e2e), 23)
+        self.assertEqual(sum(case["status"] == "INTEGRATION_TEST_ADDED_UNVERIFIED" for case in e2e), 22)
+        self.assertEqual(sum(case["status"] == "BLOCKED_GOAL_CENTER_OPEN_API" for case in e2e), 1)
+        self.assertEqual(self.spec["integration"]["execution_status"].startswith("UNVERIFIED"), True)
 
 
 if __name__ == "__main__":
