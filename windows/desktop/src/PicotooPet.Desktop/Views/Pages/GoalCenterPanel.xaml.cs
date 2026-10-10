@@ -198,17 +198,35 @@ public partial class GoalCenterPanel : WpfUserControl
         }
     }
 
-    private void OpenFinalVideo_Click(object sender, RoutedEventArgs e)
+    private async void OpenFinalVideo_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not OperatorHomePageViewModel viewModel
-            || !viewModel.VideoContinuation.OpenFinalVideo())
+        if (DataContext is not OperatorHomePageViewModel viewModel)
         {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                "最终视频暂时无法打开；请稍后重试。",
-                "无法打开最终视频",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            return;
+        }
+        var button = sender as System.Windows.Controls.Button;
+        if (button is not null)
+        {
+            button.IsEnabled = false;
+        }
+        try
+        {
+            if (!await viewModel.VideoContinuation.OpenFinalVideoAsync().ConfigureAwait(true))
+            {
+                MessageBox.Show(
+                    Window.GetWindow(this),
+                    "最终视频暂时无法打开；请稍后重试。",
+                    "无法打开最终视频",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
+        finally
+        {
+            if (button is not null)
+            {
+                button.IsEnabled = viewModel.VideoContinuation.CanOpenFinalVideo;
+            }
         }
     }
 
