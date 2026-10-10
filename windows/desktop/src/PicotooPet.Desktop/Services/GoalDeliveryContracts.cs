@@ -191,6 +191,11 @@ public sealed class GoalDeliveryCandidateVerifier
         {
             throw;
         }
+        catch (InvalidDataException)
+        {
+            // Invalid candidate identity and managed paths are non-openable, not UI exceptions.
+            return false;
+        }
         catch (Exception exception) when (IsRejectedFileError(exception))
         {
             return false;
