@@ -143,13 +143,19 @@ internal static class RealHardening
         var args = StressArguments(directory, Path.Combine(directory, "stress.partial.mp4"));
         var before = Process.GetProcessesByName("ffmpeg").Length;
 
+        // 真实 Kill(entireProcessTree: true) 会先尽力终止，再以 AggregateException 等报告失败；
+        // 这里先真实终止进程树再抛出，忠实模拟“部分失败”。纯空操作 killer 只覆盖语义（见下）。
+        static Action<Process> TreeKillThenThrow(Func<Exception> failure) => process =>
+        {
+            process.Kill(entireProcessTree: true);
+            throw failure();
+        };
         var knownFailures = new (string Name, Action<Process> Killer)[]
         {
-            ("AggregateException", _ => throw new AggregateException(new Win32Exception(5))),
-            ("NotSupportedException", _ => throw new NotSupportedException()),
-            ("Win32Exception", _ => throw new Win32Exception(5)),
-            ("InvalidOperationException", _ => throw new InvalidOperationException()),
-            ("no-op killer", _ => { }),
+            ("AggregateException", TreeKillThenThrow(() => new AggregateException(new Win32Exception(5)))),
+            ("NotSupportedException", TreeKillThenThrow(() => new NotSupportedException())),
+            ("Win32Exception", TreeKillThenThrow(() => new Win32Exception(5))),
+            ("InvalidOperationException", TreeKillThenThrow(() => new InvalidOperationException())),
         };
         foreach (var (name, killer) in knownFailures)
         {
@@ -175,7 +181,7 @@ internal static class RealHardening
             await AssertNoOrphansAsync(before, $"Kill 失败（{name}）后").ConfigureAwait(false);
         }
 
-        var unrelated = new FixedMasterVideoProcessRunner(_ => throw new FormatException("unrelated"));
+        var unrelated = new FixedMasterVideoProcessRunner(TreeKillThenThrow(() => new FormatException("unrelated")));
         try
         {
             await RealWindowsAcceptance.RunAsync(unrelated, "ffmpeg.exe", args, directory, TimeSpan.FromSeconds(1)).ConfigureAwait(false);
@@ -187,6 +193,33 @@ internal static class RealHardening
         }
 
         await AssertNoOrphansAsync(before, "无关异常传播后").ConfigureAwait(false);
+
+        // 仅兜底路径（树终止完全未执行）：语义必须不变；仅终止根进程，后代是否残留如实记录（文档化的不可恢复限制）。
+        var fallbackOnly = new FixedMasterVideoProcessRunner(_ => throw new NotSupportedException());
+        var fallbackResult = await RealWindowsAcceptance.RunAsync(fallbackOnly, "ffmpeg.exe", args, directory, TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+        Check.True(fallbackResult.TimedOut, "仅兜底路径不得改变超时语义");
+        await Task.Delay(1000).ConfigureAwait(false);
+        var leftovers = Process.GetProcessesByName("ffmpeg");
+        Console.WriteLine("MASTER_MUX_HARDENING_FALLBACK_ONLY_LEFTOVER_FFMPEG=" + Math.Max(0, leftovers.Length - before));
+        foreach (var leftover in leftovers)
+        {
+            try
+            {
+                leftover.Kill();
+            }
+            catch (InvalidOperationException)
+            {
+                // 已退出。
+            }
+            catch (Win32Exception)
+            {
+                // 测试清理尽力而为。
+            }
+            finally
+            {
+                leftover.Dispose();
+            }
+        }
     }
 
     private static async Task AssertNoOrphansAsync(int before, string stage)
