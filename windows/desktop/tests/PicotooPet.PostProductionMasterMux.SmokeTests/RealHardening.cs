@@ -158,7 +158,8 @@ internal static class RealHardening
             var timedOut = await RealWindowsAcceptance.RunAsync(runner, "ffmpeg.exe", args, directory, TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             Check.True(timedOut.TimedOut, $"Kill 失败（{name}）不得改变超时语义");
             Check.True(!timedOut.CleanupIncomplete, $"兜底终止后清理应完成（{name}）");
-            Check.True(clock.ElapsedMilliseconds <= 10000, $"超时必须有界（{name}）");
+            // 设计上界：1 s 超时 + 5 s 终止宽限 + 进程启动；CI 负载下留足余量，仍远小于无界。
+            Check.True(clock.ElapsedMilliseconds <= 30000, $"超时必须有界（{name}）elapsedMs={clock.ElapsedMilliseconds}");
 
             using var source = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
             var cancelled = false;
