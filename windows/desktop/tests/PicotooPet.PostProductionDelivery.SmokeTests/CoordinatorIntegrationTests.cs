@@ -37,6 +37,10 @@ internal static class CoordinatorIntegrationTests
         {
             await fixture.SwitchAndCancellationAsync().ConfigureAwait(false);
         }
+        using (var fixture = new Fixture())
+        {
+            await fixture.DisposeDuringReconciliationAsync().ConfigureAwait(false);
+        }
         Console.WriteLine("POSTPRODUCTION_DELIVERY_COORDINATOR_INTEGRATION=PASS");
     }
 
@@ -217,6 +221,24 @@ internal static class CoordinatorIntegrationTests
             Check(await coordinator.OpenCurrentAsync().ConfigureAwait(false), "new Goal candidate opens");
             Check(_launcher.LastPath!.Contains(Sha(newJob)[..32], StringComparison.Ordinal),
                 "opened current job, not stale job");
+        }
+
+        public async Task DisposeDuringReconciliationAsync()
+        {
+            _delayFirstAssembler = true;
+            var coordinator = NewCoordinator(false, false);
+            const string goal = "shutdown-goal";
+            const string job = "shutdown-job";
+            coordinator.Observe(goal, Continuation(goal, job));
+            for (var i = 0; i < 200 && Volatile.Read(ref _assembleCallCount) == 0; i++)
+            {
+                await Task.Delay(10).ConfigureAwait(false);
+            }
+            Check(_assembleCallCount > 0, "cancellation fixture must enter reconcile");
+            await coordinator.DisposeAsync().ConfigureAwait(false);
+            Check(coordinator.CurrentSnapshot.Phase != GoalDeliveryPhase.Failed,
+                "shutdown cancellation must never publish Failed");
+            Check(_launcher.Opens == 0, "shutdown cancellation cannot open");
         }
 
         private PostProductionDeliveryCoordinator NewCoordinator(bool narration, bool overlays)
