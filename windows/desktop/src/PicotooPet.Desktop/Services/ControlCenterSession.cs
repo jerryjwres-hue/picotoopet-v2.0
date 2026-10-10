@@ -19,7 +19,7 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
     private readonly LatencyRecorder _socketLatency = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly GoalProductionAutopilotCoordinator _productionAutopilot;
-    private readonly GoalFinalVideoCoordinator _finalVideoCoordinator;
+    private readonly PostProductionDeliveryCoordinator _postProductionDelivery;
     private CancellationTokenSource? _connectionLifetime;
     private StateSyncCoordinator? _coordinator;
     private Task? _eventTask;
@@ -50,14 +50,16 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
         _stateStore.WorkerStore.SnapshotChanged     += OnWorkerChanged;
         _stateStore.TaskStore.SnapshotChanged       += OnTasksChanged;
         _productionAutopilot = GoalProductionAutopilotCoordinator.Create(this);
-        _finalVideoCoordinator = GoalFinalVideoCoordinator.Create(this);
+        var masterService = PostProductionMasterCompositorService.Create(
+            new FixedFfmpegMasterVideoComposer());
+        _postProductionDelivery = PostProductionDeliveryCoordinator.Create(this, masterService);
     }
 
     /// <summary>会话级 Goal Production 协调器；不保存任何耐久 Production 状态。</summary>
     public IGoalProductionAutopilotObserver ProductionAutopilot => _productionAutopilot;
 
     /// <summary>会话级最终视频协调器；只保存当前进程内观察状态。</summary>
-    public IGoalFinalVideoObserver FinalVideoDelivery => _finalVideoCoordinator;
+    public IPostProductionDeliveryObserver FinalVideoDelivery => _postProductionDelivery;
 
     /// <summary>会话或服务端状态提交后发布完整只读快照。</summary>
     public event EventHandler<ControlCenterSessionSnapshot>? SnapshotChanged;
@@ -371,7 +373,7 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
         }
         _disposed = true;
         _lifetime.Cancel();
-        await _finalVideoCoordinator.DisposeAsync().ConfigureAwait(false);
+        await _postProductionDelivery.DisposeAsync().ConfigureAwait(false);
         await _productionAutopilot.DisposeAsync().ConfigureAwait(false);
         await _connectionGate.WaitAsync().ConfigureAwait(false);
         try
