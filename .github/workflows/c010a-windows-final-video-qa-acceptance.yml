@@ -1,0 +1,61 @@
+name: C010A Windows Final Video QA Acceptance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/c010a-windows-final-video-qa-acceptance.yml'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/FinalVideoQa*.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/FinalArtifactReceiptStore.cs'
+      - 'windows/desktop/tests/PicotooPet.FinalVideoQa.SmokeTests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  final-video-qa:
+    name: Native Windows deterministic QA, full decode and receipt
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pinned .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          # 与 Windows 桌面工程 global.json 保持完全一致。
+          global-json-file: windows/desktop/global.json
+
+      - name: Ensure FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "FFmpeg installation failed" }
+            # GitHub PATH 持久化至下一步骤。
+            "C:\ProgramData\chocolatey\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH += ";C:\ProgramData\chocolatey\bin"
+          }
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue)) { throw "ffmpeg.exe unavailable" }
+          if (-not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) { throw "ffprobe.exe unavailable" }
+          ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          ffprobe.exe -hide_banner -version | Select-Object -First 1
+
+      - name: Execute isolated real Windows C010A acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:RUNNER_TEMP "c010a-final-video-qa.log"
+          & dotnet run --project windows/desktop/tests/PicotooPet.FinalVideoQa.SmokeTests -c Release -- --real *> $log
+          $exit = $LASTEXITCODE
+          Get-Content $log | Write-Host
+          if ($exit -ne 0) { throw "C010A Windows QA harness exited $exit" }
+          $text = Get-Content $log -Raw
+          if ($text -notmatch 'QA_MEDIA_POLICY=PASS') { throw "C010A media policy PASS missing" }
+          # 3 个 C005 profile × 4 种旁白/叠字组合必须全部实测通过。
+          $realCount = ([regex]::Matches($text, '(?m)^PASS REAL_WINDOWS video\.(?:landscape|vertical|square)\.v1 narration=(?:True|False) overlay=(?:True|False)\s*$')).Count
+          if ($realCount -ne 12) { throw "C010A expected 12 native media cases, got $realCount" }
+          if ($text -notmatch 'QA_REAL_CORRUPT_PACKET_DECODE_TIMEOUT_CANCEL=PASS') {
+            throw "C010A corrupt-packet/decode/timeout/cancel PASS missing"
+          }
