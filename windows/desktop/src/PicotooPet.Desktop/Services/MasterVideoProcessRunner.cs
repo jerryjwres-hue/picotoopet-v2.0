@@ -86,7 +86,7 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
         try
         {
             await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
-            await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(KillGrace).ConfigureAwait(false);
+            await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(KillGrace, cancellationToken).ConfigureAwait(false);
             return new MasterVideoProcessResult(
                 process.ExitCode, false, Encoding.UTF8.GetString(stdout.ToArray()));
         }
