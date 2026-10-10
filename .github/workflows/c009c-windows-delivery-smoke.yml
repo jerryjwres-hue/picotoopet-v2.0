@@ -6,6 +6,9 @@ on:
       - '.github/workflows/c009c-windows-delivery-smoke.yml'
       - 'windows/desktop/src/PicotooPet.Desktop/Services/GoalDeliveryContracts.cs'
       - 'windows/desktop/src/PicotooPet.Desktop/Services/PostProductionDeliveryCoordinator.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/ControlCenterSession.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/ViewModels/GoalVideoContinuationViewModel.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml.cs'
       - 'windows/desktop/tests/PicotooPet.PostProductionDelivery.SmokeTests/**'
   push:
     branches:
@@ -14,6 +17,9 @@ on:
       - '.github/workflows/c009c-windows-delivery-smoke.yml'
       - 'windows/desktop/src/PicotooPet.Desktop/Services/GoalDeliveryContracts.cs'
       - 'windows/desktop/src/PicotooPet.Desktop/Services/PostProductionDeliveryCoordinator.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/ControlCenterSession.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/ViewModels/GoalVideoContinuationViewModel.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml.cs'
       - 'windows/desktop/tests/PicotooPet.PostProductionDelivery.SmokeTests/**'
   workflow_dispatch:
 
