@@ -26,7 +26,7 @@ class PreparationContractTests(unittest.TestCase):
         self.assertGreaterEqual(len(ids), 60)
 
     def test_all_blocked_cases_name_dependency(self):
-        allowed = {"FIXTURE_ORACLE_READY", "INTEGRATION_TEST_ADDED_UNVERIFIED",
+        allowed = {"FIXTURE_ORACLE_READY", "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
                    "STAGING_READY_REAL_MASTER_BLOCKED", "BLOCKED_GOAL_CENTER_OPEN_API",
                    "BLOCKED_C010B_ALL_PROFILES_REAL_WINDOWS"}
         for case in self.cases:
@@ -77,9 +77,10 @@ class PreparationContractTests(unittest.TestCase):
         e2e = [case for case in self.cases if case["area"] in {"receipt-restart", "candidate-selection"}]
         self.assertTrue(e2e)
         self.assertEqual(len(e2e), 23)
-        self.assertEqual(sum(case["status"] == "INTEGRATION_TEST_ADDED_UNVERIFIED" for case in e2e), 22)
+        self.assertEqual(sum(case["status"] == "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE" for case in e2e), 22)
         self.assertEqual(sum(case["status"] == "BLOCKED_GOAL_CENTER_OPEN_API" for case in e2e), 1)
-        self.assertEqual(self.spec["integration"]["execution_status"].startswith("UNVERIFIED"), True)
+        self.assertEqual(self.spec["integration"]["workflow_run"], 38021044347)
+        self.assertEqual(self.spec["integration"]["workflow_conclusion"], "success")
 
 
 if __name__ == "__main__":

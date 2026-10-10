@@ -33,8 +33,7 @@ and compile-linked upstream test fixtures.
 
 The 20 synthetic-media fixture oracle cases remain separate from production QA.
 The 17 staged MasterManifest mutations still require genuine master specimens.
-See coverage_scenarios.json for per-case status; INTEGRATION_TEST_ADDED_UNVERIFIED
-does not mean C010B native execution has passed.
+See coverage_scenarios.json for per-case mapping. Native Windows C010B workflow run 38021044347 completed SUCCESS (15/15 groups, 4/4 real video modes); the 39 mapped cases are marked COVERED_BY_PASS_NATIVE_WINDOWS_SUITE. This is group coverage, not 39 independent test methods.
 
 Do not alter C010A production or reinterpret C009B's mux-only MasterVideoMediaProbe
 as the complete final QA probe.

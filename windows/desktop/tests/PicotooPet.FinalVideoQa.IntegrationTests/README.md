@@ -41,7 +41,7 @@ A controlled runner proves **service/receipt contract behavior**, not actual MP4
 
 ## Honest reporting
 
-Added source files are not proof of an executed PASS. Windows workflow conclusion must be recorded. Existing 17 C009A manifest-mutation scenarios require a genuine master specimen and remain blocked. The Goal Center Open final-video action is owned by a later slice; no Open UI is tested here. C010B does not independently repeat every C005 profile real media case (upstream C010A Windows acceptance does).
+Actual Windows workflow **38021044347** completed SUCCESS on test commit e5969c10fe70991a525644bf443684082b36a678: 15/15 group PASS, 4/4 real media modes, corrupted-packet full decode rejected and timeout/cancel PASS. This evidence covers only the mapped group tests, not separately staged mutation cases. Existing 17 C009A manifest-mutation scenarios require a genuine master specimen and remain blocked. The Goal Center Open final-video action is owned by a later slice; no Open UI is tested here. C010B does not independently repeat every C005 profile real media case (upstream C010A Windows acceptance does).
 
 See docs/testing/C010B_FINAL_VIDEO_QA_INTEGRATION_MATRIX_V1.md and ../PicotooPet.FinalVideoQa.IntegrationPreparation/coverage_scenarios.json.
 

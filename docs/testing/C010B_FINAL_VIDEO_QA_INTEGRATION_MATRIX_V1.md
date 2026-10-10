@@ -23,13 +23,13 @@ The actual internal dependency-injection constructor is used through C010A's exi
 | Status | Cases | Meaning |
 | --- | ---: | --- |
 | FIXTURE_ORACLE_READY | 20 | Standalone synthetic-media oracle, not product acceptance |
-| INTEGRATION_TEST_ADDED_UNVERIFIED | 39 | Mapped to actual API test source; real Windows C010B execution must be confirmed |
+| COVERED_BY_PASS_NATIVE_WINDOWS_SUITE | 39 | Mapped to actual C010A APIs; native Windows C010B suite 15/15 PASS, run 38021044347 |
 | STAGING_READY_REAL_MASTER_BLOCKED | 17 | Real master specimen/catalog negative scenario execution still needed |
 | BLOCKED_GOAL_CENTER_OPEN_API | 1 | Later Goal Center Open behavior not in C010A |
 | BLOCKED_C010B_ALL_PROFILES_REAL_WINDOWS | 1 | Independent three-profile native C010B E2E not yet added |
 | TOTAL | 78 | No invented PASS |
 
-The former 35 BLOCKED_C010A_API entries are now 34 actual-API-backed test mappings plus one Goal Center Open blocker.
+The former 35 BLOCKED_C010A_API entries are now **34 actual API-backed mappings covered by the successful native Windows suite**, plus one Goal Center Open blocker. Five additional native E2E scenario mappings are also covered by the same PASS suite. This is mapped group coverage, not 39 separately enumerated test methods.
 
 ## Independent integration test groups
 
@@ -55,9 +55,24 @@ For the first 12 groups, controlled media facts test receipt/lineage/service pol
 
 ## Remaining blockers / run policy
 
-1. Composed C010B Windows CI must execute successfully. Code written != PASS.
+1. **Completed:** native Windows C010B workflow [run 38021044347](https://github.com/jerryjwres-hue/picotoopet-v2.0/actions/runs/38021044347) finished **SUCCESS**, with 15/15 integration groups and all four real-media delivery modes passing.
 2. The 17 full C009A master manifest negative staging scenarios need genuine durable master specimen plus catalog verification test adapter.
 3. Goal Center Open final-video action/receipt-gated catalog remains owned elsewhere, not C010A.
 4. C010B does not independently repeat real 480x832 and 640x640 profiles; upstream C010A real Windows CI verifies them, but does not silently count as C010B independent coverage.
 
 GitHub Actions composes by two separate checkouts and copies only C010B test source into a disposable C010A checkout. No merge/rebase/tag/release and no production edits.
+
+## Native Windows execution receipt
+
+- Workflow: C010B Independent Final Video QA Integration
+- Run: 38021044347
+- Conclusion: SUCCESS
+- Test commit: e5969c10fe70991a525644bf443684082b36a678
+- Actual C010A pinned source: b418777f1e3f72e1eb394a26a1e6202e62e718cc
+- Logs: C010B_INTEGRATION_SUMMARY=passed=15;failed=0;real=True
+- Real media: narration=False/True × overlays=False/True = 4/4 PASS
+- Header-readable corrupt-packet decode rejection: PASS
+- Real FFmpeg timeout and cancellation: PASS
+- Remaining: 17 staged master mutation tests, one Goal Center Open gate, one independent real 3-profile E2E coverage item.
+
+The three earlier C010B runs failed in C010B-owned test compilation and were corrected without altering production; only the successful final native run is acceptance evidence.

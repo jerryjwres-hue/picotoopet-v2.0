@@ -166,56 +166,62 @@
     {
       "id": "FVQ-C-no-postprod-c004-fallback",
       "area": "candidate-selection",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-C-narration-only-requires-master",
       "area": "candidate-selection",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-C-overlay-only-requires-master",
       "area": "candidate-selection",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-C-narration-and-overlay-requires-master",
       "area": "candidate-selection",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-C-missing-required-master-no-fallback",
       "area": "candidate-selection",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-C-stale-master-no-postproduction",
       "area": "candidate-selection",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_*",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-L-production-job-mismatch",
@@ -356,146 +362,162 @@
     {
       "id": "FVQ-R-pass-only-receipt",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "PASS_RECEIPT_CREATED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-failed-qa-no-receipt",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "NO_RECEIPT",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-stable-qa-input-digest",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "SAME_DIGEST",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-changed-plan-new-qa-digest",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-changed-narration-manifest",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-changed-overlay-manifest",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-changed-master-manifest",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-receipt-digest-excludes-verified-at",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "SAME_DIGEST",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-receipt-observed-fact-change",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "NEW_DIGEST",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-receipt-tamper",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_RECEIPT_CONFLICT",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-receipt-unknown-field",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_RECEIPT_CONFLICT",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-receipt-extra-entry",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_RECEIPT_CONFLICT",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-receipt-partial-final-dir",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "FINAL_QA_RECEIPT_CONFLICT",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-restart-reuse-no-redecode",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "PASS_REUSED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-artifact-tamper-after-pass",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "OPEN_DENIED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-restart-wrong-lineage",
       "area": "receipt-restart",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "NOT_READY",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-R-open-reverify-exact-candidate",
@@ -508,155 +530,172 @@
     {
       "id": "FVQ-D-header-valid-corrupt-packets",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-cancel-terminates-process",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-timeout-terminates-process",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-no-stderr-leak",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-no-output-write",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-unexpected-data-stream",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-attached-picture",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-extra-chapter",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-aac-non-lc",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-wrong-audio-duration",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-frame-quantization-boundary",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-D-23_976-not-24",
       "area": "full-decode-or-media-edge",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "REJECT_OR_BOUNDED",
-      "dependency": "compose real C010A at b418777f1e3f72e1eb394a26a1e6202e62e718cc + C010B independent test project on native Windows",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-W-real-windows-c004",
       "area": "windows-end-to-end",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-W-real-windows-narration-only",
       "area": "windows-end-to-end",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-W-real-windows-overlay-only",
       "area": "windows-end-to-end",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-W-real-windows-narration-overlay",
       "area": "windows-end-to-end",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-W-real-windows-same-digest-reuse",
       "area": "windows-end-to-end",
-      "status": "INTEGRATION_TEST_ADDED_UNVERIFIED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "native Windows C010B composed CI run required, C010A exact PR71 commit pinned",
+      "dependency": "mapped to real C010A API C010B test group; native Windows suite 15/15 PASS; detailed master staging and Goal Center Open remain separate",
       "fixture": "",
-      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real"
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BIntegration.cs --real",
+      "validation_run": 38021044347
     },
     {
       "id": "FVQ-W-real-windows-24fps-all-profiles",
@@ -671,7 +710,16 @@
     "c010a_commit": "b418777f1e3f72e1eb394a26a1e6202e62e718cc",
     "c010a_pr": 71,
     "independent_test_project": "windows/desktop/tests/PicotooPet.FinalVideoQa.IntegrationTests",
-    "execution_status": "UNVERIFIED until native Windows C010B CI passes; no new scenario marked PASS",
-    "method": "two isolated checkouts and test-only file overlay; no merge/rebase/production edit"
+    "execution_status": "PASS: native Windows C010B composed CI run 38021044347, 15/15 independent groups, 4/4 real media modes; zero failures",
+    "method": "two isolated checkouts and test-only file overlay; no merge/rebase/production edit",
+    "workflow_run": 38021044347,
+    "workflow_conclusion": "success",
+    "native_results": {
+      "integration_groups_passed": 15,
+      "integration_groups_failed": 0,
+      "real_candidate_modes_passed": 4,
+      "full_decode_corruption_rejected": true,
+      "process_cancel_timeout_passed": true
+    }
   }
 }
