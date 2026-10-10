@@ -10,7 +10,10 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
 {
     private readonly IGoalVideoContinuationGateway? _gateway;
     private readonly IGoalProductionAutopilotObserver? _autopilot;
-    private readonly IGoalFinalVideoObserver? _finalVideo;
+    private readonly IPostProductionDeliveryObserver? _finalVideo;
+    // Source-compatibility for the frozen C004 coordinator smoke harness only.
+    // The production composition root never injects this observer.
+    private readonly IGoalFinalVideoObserver? _legacyFinalVideo;
     private string? _goalId;
     private bool _available;
     private bool _isBusy;
@@ -19,15 +22,27 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
     private string? _localProductionStatus;
     private string? _localFinalVideoStatus;
     private bool _canOpenFinalVideo;
+    private int _openingFinalVideo;
 
     public GoalVideoContinuationViewModel(
         IGoalVideoContinuationGateway? gateway,
         IGoalProductionAutopilotObserver? autopilot = null,
-        IGoalFinalVideoObserver? finalVideo = null)
+        IPostProductionDeliveryObserver? finalVideo = null)
     {
         _gateway = gateway;
         _autopilot = autopilot;
         _finalVideo = finalVideo;
+    }
+
+    /// <summary>Compatibility only: existing C004 smoke tests still bind their original observer.</summary>
+    public GoalVideoContinuationViewModel(
+        IGoalVideoContinuationGateway? gateway,
+        IGoalProductionAutopilotObserver? autopilot,
+        IGoalFinalVideoObserver legacyFinalVideo)
+    {
+        _gateway = gateway;
+        _autopilot = autopilot;
+        _legacyFinalVideo = legacyFinalVideo ?? throw new ArgumentNullException(nameof(legacyFinalVideo));
     }
 
     public GoalVideoContinuationRecord? Continuation
@@ -78,7 +93,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
 
     public bool CanSubmit => _gateway is not null && _available && !IsBusy;
 
-    public bool CanOpenFinalVideo => _canOpenFinalVideo;
+    public bool CanOpenFinalVideo => _canOpenFinalVideo && Volatile.Read(ref _openingFinalVideo) == 0;
 
     public string StatusText
     {
@@ -322,6 +337,12 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             _localFinalVideoStatus = finalSnapshot.StatusText;
             _canOpenFinalVideo = finalSnapshot.CanOpen;
         }
+        else if (_legacyFinalVideo is not null)
+        {
+            var legacySnapshot = _legacyFinalVideo.Observe(_goalId, Continuation);
+            _localFinalVideoStatus = legacySnapshot.StatusText;
+            _canOpenFinalVideo = legacySnapshot.CanOpen;
+        }
         else
         {
             _localFinalVideoStatus = null;
@@ -332,13 +353,14 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         RaisePropertyChanged(nameof(CanOpenFinalVideo));
     }
 
+    /// <summary>Legacy C004 smoke compatibility, never used by the one production UI action.</summary>
     public bool OpenFinalVideo()
     {
-        if (!CanOpenFinalVideo || _finalVideo is null)
+        if (_legacyFinalVideo is null || !CanOpenFinalVideo)
         {
             return false;
         }
-        var opened = _finalVideo.OpenCurrent();
+        var opened = _legacyFinalVideo.OpenCurrent();
         if (!opened)
         {
             _localFinalVideoStatus = "最终视频暂时无法打开；请稍后重试。";
@@ -348,6 +370,59 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             RaisePropertyChanged(nameof(CanOpenFinalVideo));
         }
         return opened;
+    }
+
+    public async Task<bool> OpenFinalVideoAsync(CancellationToken cancellationToken = default)
+    {
+        if (_finalVideo is null || !_canOpenFinalVideo
+            || Interlocked.CompareExchange(ref _openingFinalVideo, 1, 0) != 0)
+        {
+            return false;
+        }
+        var goalAtClick = _goalId;
+        var jobAtClick = Continuation?.ProductionJobId;
+        RaisePropertyChanged(nameof(CanOpenFinalVideo));
+        try
+        {
+            // The coordinator revalidates exact managed bytes/manifest off the UI thread.
+            // Do not allow a previous Goal/job's completion to mutate the new Goal display.
+            var opened = await _finalVideo.OpenCurrentAsync(cancellationToken).ConfigureAwait(true);
+            // A stale Goal/job response must never be reported as a successful current open.
+            if (!string.Equals(_goalId, goalAtClick, StringComparison.Ordinal)
+                || !string.Equals(Continuation?.ProductionJobId, jobAtClick, StringComparison.Ordinal))
+            {
+                return false;
+            }
+            if (!opened)
+            {
+                _localFinalVideoStatus = "最终视频暂时无法打开；请稍后重试。";
+                _canOpenFinalVideo = false;
+                RaisePropertyChanged(nameof(ProductionStatusText));
+                RaisePropertyChanged(nameof(StatusText));
+            }
+            return opened;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch (Exception)
+        {
+            if (string.Equals(_goalId, goalAtClick, StringComparison.Ordinal)
+                && string.Equals(Continuation?.ProductionJobId, jobAtClick, StringComparison.Ordinal))
+            {
+                _localFinalVideoStatus = "最终视频暂时无法打开；请稍后重试。";
+                _canOpenFinalVideo = false;
+                RaisePropertyChanged(nameof(ProductionStatusText));
+                RaisePropertyChanged(nameof(StatusText));
+            }
+            return false;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _openingFinalVideo, 0);
+            RaisePropertyChanged(nameof(CanOpenFinalVideo));
+        }
     }
 
     private static string ToSafeError(Exception exception) => exception switch

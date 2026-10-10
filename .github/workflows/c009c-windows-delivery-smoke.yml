@@ -1,0 +1,78 @@
+name: C009C Windows Delivery Core Smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/c009c-windows-delivery-smoke.yml'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/GoalDeliveryContracts.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/PostProductionDeliveryCoordinator.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/ControlCenterSession.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/ViewModels/GoalVideoContinuationViewModel.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml.cs'
+      - 'windows/desktop/tests/PicotooPet.PostProductionDelivery.SmokeTests/**'
+  push:
+    branches:
+      - feature/goal-master-delivery-selector-v1
+    paths:
+      - '.github/workflows/c009c-windows-delivery-smoke.yml'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/GoalDeliveryContracts.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/PostProductionDeliveryCoordinator.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/ControlCenterSession.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/ViewModels/GoalVideoContinuationViewModel.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml.cs'
+      - 'windows/desktop/tests/PicotooPet.PostProductionDelivery.SmokeTests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-delivery-smoke:
+    name: C009C isolated Windows Release build and smoke
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows/desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install exactly the pinned Windows Desktop SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Assert pinned SDK
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = (Get-Content global.json -Raw | ConvertFrom-Json).sdk.version
+          $actual = (& dotnet --version).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $required) {
+            throw "Incorrect .NET SDK: required=$required actual=$actual"
+          }
+          Write-Host "C009C_DOTNET_SDK=$actual"
+
+      - name: Build standalone C009C smoke harness Release
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & dotnet build tests/PicotooPet.PostProductionDelivery.SmokeTests/PicotooPet.PostProductionDelivery.SmokeTests.csproj -c Release --nologo --warnaserror
+          if ($LASTEXITCODE -ne 0) {
+            throw "C009C_RELEASE_BUILD=FAIL"
+          }
+          Write-Host 'C009C_RELEASE_BUILD=PASS'
+
+      - name: Run isolated C009C policy and managed-file smokes
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:RUNNER_TEMP 'c009c-delivery-smoke.log'
+          & dotnet run --no-build --project tests/PicotooPet.PostProductionDelivery.SmokeTests/PicotooPet.PostProductionDelivery.SmokeTests.csproj -c Release *> $log
+          $code = $LASTEXITCODE
+          Get-Content $log | Write-Host
+          if ($code -ne 0) {
+            throw "C009C_SMOKE_EXECUTION=FAIL ($code)"
+          }
+          if ((Get-Content $log -Raw) -notmatch 'POSTPRODUCTION_DELIVERY_ISOLATED_SMOKE=PASS') {
+            throw "C009C_SMOKE_PASS_MARKER_MISSING"
+          }
+          Write-Host 'C009C_SMOKE_EXECUTION=PASS'

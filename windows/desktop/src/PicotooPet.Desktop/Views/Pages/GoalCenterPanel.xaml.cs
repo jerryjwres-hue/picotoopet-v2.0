@@ -198,10 +198,18 @@ public partial class GoalCenterPanel : WpfUserControl
         }
     }
 
-    private void OpenFinalVideo_Click(object sender, RoutedEventArgs e)
+    private async void OpenFinalVideo_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not OperatorHomePageViewModel viewModel
-            || !viewModel.VideoContinuation.OpenFinalVideo())
+            || !viewModel.VideoContinuation.CanOpenFinalVideo)
+        {
+            return;
+        }
+
+        // ViewModel owns the in-flight guard and updates the existing IsEnabled binding.
+        // Never set Button.IsEnabled directly: that would replace the WPF binding expression.
+        var opened = await viewModel.VideoContinuation.OpenFinalVideoAsync().ConfigureAwait(true);
+        if (!opened && ReferenceEquals(DataContext, viewModel))
         {
             MessageBox.Show(
                 Window.GetWindow(this),
