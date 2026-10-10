@@ -29,6 +29,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private GoalDeliverySnapshot _current = GoalDeliverySnapshot.Idle(null, null);
     private GoalDeliveryCandidateV1? _candidate;
     private bool _disposed;
+    private bool _opening;
 
     /// <summary>
     /// 依赖均由调用方注入，特意不依赖未经 Windows 验收的 C009B concrete composer。
@@ -52,6 +53,26 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         _compose = compose ?? throw new ArgumentNullException(nameof(compose));
         _verifier = verifier ?? throw new ArgumentNullException(nameof(verifier));
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
+    }
+
+    /// <summary>Composition root wires only accepted C009B composer through frozen C009A service.</summary>
+    public static PostProductionDeliveryCoordinator Create(
+        ControlCenterSession session,
+        PostProductionMasterCompositorService masterService)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(masterService);
+        var narration = WindowsNarrationSynthesisService.CreateDefault();
+        var overlays = WindowsCaptionOverlayService.Create();
+        return new PostProductionDeliveryCoordinator(
+            FinalVideoAssemblyService.Create(session),
+            session.GetNarrationPlanAsync,
+            session.GetCaptionOverlayPlanAsync,
+            narration.SynthesizeAsync,
+            overlays.ApplyAsync,
+            masterService.ComposeAsync,
+            GoalDeliveryCandidateVerifier.CreateDefault(),
+            new ShellFinalVideoLauncher());
     }
 
     public GoalDeliverySnapshot CurrentSnapshot
@@ -117,7 +138,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         GoalDeliverySnapshot snapshot;
         lock (_gate)
         {
-            if (_disposed || _candidate is null || !_current.CanOpen
+            if (_disposed || _opening || _candidate is null || !_current.CanOpen
                 || !GoalDeliveryPolicy.IsPreQaOpenable(_current.Phase, _candidate.Kind)
                 || _current.ProductionJobId != _candidate.ProductionJobId
                 || !GoalDeliveryPolicy.IsAllowed(
@@ -127,8 +148,27 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             }
             candidate = _candidate;
             snapshot = _current;
+            _opening = true;
         }
 
+        try
+        {
+            return await OpenVerifiedAsync(candidate, snapshot, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _opening = false;
+            }
+        }
+    }
+
+    private async Task<bool> OpenVerifiedAsync(
+        GoalDeliveryCandidateV1 candidate,
+        GoalDeliverySnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
         bool valid;
         try
         {
