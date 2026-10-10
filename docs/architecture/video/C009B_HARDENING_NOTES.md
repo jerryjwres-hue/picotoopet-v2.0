@@ -18,6 +18,7 @@ Frozen and unchanged: ffmpeg arguments, H.264 `-c:v copy`, AAC-LC 48 kHz mono 12
 - Pre-open race: a symlink or junction swapped on the leaf path between the pre-open reparse check and `CreateFile` is not detectable. Once opened, the handle pins the file.
 - Reparse checks cover the file and its immediate parent only. Ancestor directories are C009A's responsibility.
 - Unrecoverable cleanup: if the OS refuses to terminate a process (EDR protection, handle inheritance), the runner returns or throws the cancel/timeout result and sets `CleanupIncomplete`. It cannot force termination.
+- Observed on Windows CI (run 38022563554): when the tree kill is not executed at all and only the single-process fallback `Kill()` runs, 1 ffmpeg process was left behind (`MASTER_MUX_HARDENING_FALLBACK_ONLY_LEFTOVER_FFMPEG=1`; the exact parent/child cause is UNVERIFIED). Cancel/timeout semantics are unchanged and `CleanupIncomplete` is reported when exit cannot be confirmed. A real `Kill(entireProcessTree: true)` that throws after doing its work leaves no orphans (tested). A Job Object would close this gap and is deferred.
 - The held-handle guarantee covers files the composer opened. The directory that holds them is not locked.
 
 ## Deferred (not required for this task)
@@ -26,4 +27,4 @@ Job Object containment, arbitrary executable resolution, long-path support, sub-
 
 ## Verification
 
-Local Linux: contract tests only. Native Windows verification is the GitHub Actions run of `c009b-windows-master-mux-hardening.yml`; the required markers are `MASTER_MUX_UNIT`, `MASTER_MUX_REAL_WINDOWS`, `MASTER_MUX_HARDENING_UNIT` and `MASTER_MUX_HARDENING_REAL`, all `PASS`. Anything not observed there is UNVERIFIED.
+Local Linux: contract tests only (342 passed). Windows CI run 38022563554 on 30d29411 passed all required markers (earlier runs 1–4 failed on test-side issues fixed in the follow-up commits). Native Windows verification is the GitHub Actions run of `c009b-windows-master-mux-hardening.yml`; the required markers are `MASTER_MUX_UNIT`, `MASTER_MUX_REAL_WINDOWS`, `MASTER_MUX_HARDENING_UNIT` and `MASTER_MUX_HARDENING_REAL`, all `PASS`. Anything not observed there is UNVERIFIED.
