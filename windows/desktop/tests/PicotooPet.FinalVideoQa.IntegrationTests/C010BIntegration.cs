@@ -152,8 +152,9 @@ internal static class C010BIntegration
         Check(!first.Reused && restart.Reused, "actual store returns reused after restart");
         Check(first.ReceiptPath == restart.ReceiptPath && first.Receipt.QaInputDigest == restart.Receipt.QaInputDigest,
               "same digest-scoped receipt");
+        var restartBytes = await File.ReadAllBytesAsync(restart.ReceiptPath);
         Check(first.Receipt.ReceiptDigest == restart.Receipt.ReceiptDigest &&
-              firstBytes.SequenceEqual(await File.ReadAllBytesAsync(restart.ReceiptPath)), "immutable content");
+              firstBytes.SequenceEqual(restartBytes), "immutable content");
         Check(FinalQaIdentity.ReceiptDigest(first.Receipt with { VerifiedAt = DateTimeOffset.MinValue }) ==
               first.Receipt.ReceiptDigest, "timestamp does not enter receipt digest");
         Check(FinalQaIdentity.ReceiptDigest(first.Receipt with {
