@@ -1,0 +1,67 @@
+name: C009B Windows Master Mux Hardening
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/c009b-windows-master-mux-hardening.yml'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/FixedFfmpegMasterVideoComposer.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/MasterVideoMediaProbe.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/MasterVideoProcessRunner.cs'
+      - 'windows/desktop/tests/PicotooPet.PostProductionMasterMux.SmokeTests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mux-hardening:
+    name: Native Windows hardening and regression
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          # 与桌面项目的固定 SDK 版本一致，避免 rollForward=disable 时发生工具链漂移。
+          global-json-file: windows/desktop/global.json
+
+      - name: Ensure native FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "FFmpeg installation failed" }
+            $env:PATH += ";C:\ProgramData\chocolatey\bin"
+          }
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue)) { throw "ffmpeg.exe unavailable" }
+          if (-not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) { throw "ffprobe.exe unavailable" }
+          ffmpeg -hide_banner -version | Select-Object -First 1
+          ffprobe -hide_banner -version | Select-Object -First 1
+
+      - name: Release build of the Desktop project (warnings as errors)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & dotnet build windows/desktop/src/PicotooPet.Desktop -c Release
+          if ($LASTEXITCODE -ne 0) { throw "Desktop Release build failed" }
+
+      - name: C009B hardening unit and real Windows acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:RUNNER_TEMP "c009b-hardening.log"
+          & dotnet run --project windows/desktop/tests/PicotooPet.PostProductionMasterMux.SmokeTests -c Release *> $log
+          $exit = $LASTEXITCODE
+          Get-Content $log | Write-Host
+          if ($exit -ne 0) { throw "C009B harness exited $exit" }
+          $text = Get-Content $log -Raw
+          if ($text -notmatch 'MASTER_MUX_UNIT=PASS') { throw "C009B unit PASS missing" }
+          if ($text -notmatch 'MASTER_MUX_REAL_WINDOWS=PASS') { throw "C009B native Windows PASS missing" }
+          if ($text -notmatch 'MASTER_MUX_HARDENING_UNIT=PASS') { throw "C009B hardening unit PASS missing" }
+          if ($text -notmatch 'MASTER_MUX_HARDENING_REAL=PASS') { throw "C009B hardening real Windows PASS missing" }
+          foreach ($p in 'LANDSCAPE','VERTICAL','SQUARE','ZERO_NARRATION','BOUNDED_AND_FAILURE') {
+            if ($text -notmatch "MASTER_MUX_REAL_$p=PASS") { throw "C009B regression marker $p missing" }
+          }

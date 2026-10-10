@@ -69,7 +69,7 @@ internal static class RealWindowsAcceptance
         }
     }
 
-    private static async Task<MasterVideoProcessResult> RunAsync(
+    internal static async Task<MasterVideoProcessResult> RunAsync(
         IMasterVideoProcessRunner runner,
         string executable,
         IEnumerable<string> arguments,
@@ -86,7 +86,7 @@ internal static class RealWindowsAcceptance
     }
 
     /// <summary>固定 H.264/yuv420p 24 fps 视觉源（lavfi testsrc2，仅用于验收）。</summary>
-    private static async Task<string> GenerateVisualAsync(IMasterVideoProcessRunner runner, string directory, int width, int height)
+    internal static async Task<string> GenerateVisualAsync(IMasterVideoProcessRunner runner, string directory, int width, int height)
     {
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "visual.mp4");

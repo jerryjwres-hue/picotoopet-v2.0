@@ -43,6 +43,11 @@ public sealed class MasterVideoMediaProbe
 
     public async Task<MasterMediaFacts> ProbeAsync(string mediaPath, CancellationToken cancellationToken)
     {
+        // 使用点路径策略：ffprobe 只会看到本地盘符完全限定路径（不会触发 UNC/设备访问）。
+        if (!MasterVideoPathPolicy.IsSafeLocalFullyQualified(mediaPath))
+        {
+            throw new MasterVideoComposerException(MasterVideoComposerException.PathInvalid);
+        }
         var startInfo = new ProcessStartInfo
         {
             FileName = FixedMasterVideoProcessRunner.Ffprobe,

@@ -12,6 +12,10 @@ internal static class Program
             Console.WriteLine("MASTER_MUX_UNIT=PASS");
             var real = await RealWindowsAcceptance.RunAsync().ConfigureAwait(false);
             Console.WriteLine("MASTER_MUX_REAL_WINDOWS=" + real);
+            await HardeningTests.RunAsync().ConfigureAwait(false);
+            Console.WriteLine("MASTER_MUX_HARDENING_UNIT=PASS");
+            var hardening = await RealHardening.RunAsync().ConfigureAwait(false);
+            Console.WriteLine("MASTER_MUX_HARDENING_REAL=" + hardening);
             return 0;
         }
         catch (Exception exception)
