@@ -1,0 +1,82 @@
+name: C010B Independent Final Video QA Integration
+on:
+  push:
+    branches:
+      - test/final-video-qa-integration-v1
+    paths:
+      - '.github/workflows/c010b-final-video-qa-integration.yml'
+      - 'windows/desktop/tests/PicotooPet.FinalVideoQa.IntegrationTests/**'
+      - 'windows/desktop/tests/PicotooPet.FinalVideoQa.IntegrationPreparation/**'
+      - 'docs/testing/C010B_FINAL_VIDEO_QA_INTEGRATION_MATRIX_V1.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Windows C010B actual API receipt and full decode
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout independent C010B tests only
+        uses: actions/checkout@v4
+        with:
+          path: c010b-test-branch
+
+      - name: Checkout frozen actual C010A implementation (PR 71)
+        uses: actions/checkout@v4
+        with:
+          # Pinned audited C010A commit; no merge or rebase of either branch.
+          ref: b418777f1e3f72e1eb394a26a1e6202e62e718cc
+          path: c010a-source
+
+      - name: Compose isolated test workspace without changing either Git branch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'c010b-test-branch/windows/desktop/tests/PicotooPet.FinalVideoQa.IntegrationTests'
+          $targetParent = Join-Path $env:GITHUB_WORKSPACE 'c010a-source/windows/desktop/tests'
+          if (-not (Test-Path $source)) { throw "C010B isolated test source not found" }
+          if (Test-Path (Join-Path $targetParent 'PicotooPet.FinalVideoQa.IntegrationTests')) { throw "Unexpected overlapping target ownership" }
+          Copy-Item -LiteralPath $source -Destination $targetParent -Recurse -Force
+          Write-Host 'C010B tests copied into disposable C010A build checkout; no git operations or production edits'
+
+      - name: Setup actual desktop .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: c010a-source/windows/desktop/global.json
+
+      - name: Require native ffmpeg and ffprobe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'FFmpeg installation failed' }
+            'C:\ProgramData\chocolatey\bin' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH += ';C:\ProgramData\chocolatey\bin'
+          }
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue)) { throw 'UNVERIFIED: ffmpeg.exe unavailable' }
+          if (-not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) { throw 'UNVERIFIED: ffprobe.exe unavailable' }
+          ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          ffprobe.exe -hide_banner -version | Select-Object -First 1
+
+      - name: Run real C010A API independent C010B integration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = 'c010a-source/windows/desktop/tests/PicotooPet.FinalVideoQa.IntegrationTests/PicotooPet.FinalVideoQa.IntegrationTests.csproj'
+          $log = Join-Path $env:RUNNER_TEMP 'c010b-final-qa-integration.log'
+          & dotnet run --project $project -c Release -- --real *> $log
+          $exit = $LASTEXITCODE
+          Get-Content $log | Write-Host
+          if ($exit -ne 0) { throw "C010B QA integration returned $exit" }
+          $text = Get-Content $log -Raw
+          if ($text -notmatch 'C010B_INTEGRATION_SUMMARY=passed=15;failed=0;real=True') {
+            throw 'C010B expected independently executed integration suite did not complete'
+          }
+          if ($text -notmatch '(?m)^C010B_PASS windows-header-readable-corrupted-packets-rejected\s*$') { throw 'C010B real corrupt decode test missing' }
+          if ($text -notmatch '(?m)^C010B_PASS windows-process-timeout-and-cancel\s*$') { throw 'C010B native process termination test missing' }
+          $realCount = ([regex]::Matches($text, '(?m)^C010B_REAL_WINDOWS_PASS narration=(?:True|False) overlay=(?:True|False)\s*$')).Count
+          if ($realCount -ne 4) { throw "C010B expected 4 real Windows candidate shapes, got $realCount" }
