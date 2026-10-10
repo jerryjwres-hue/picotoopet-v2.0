@@ -46,9 +46,26 @@ internal static class RealHardening
         }
         finally
         {
-            if (Directory.Exists(root))
+            DeleteBestEffort(root);
+        }
+    }
+
+    /// <summary>测试临时目录清理：重试后仍被占用也不得掩盖真正的断言失败。</summary>
+    private static void DeleteBestEffort(string root)
+    {
+        for (var attempt = 0; attempt < 5 && Directory.Exists(root); attempt++)
+        {
+            try
             {
                 Directory.Delete(root, recursive: true);
+            }
+            catch (IOException)
+            {
+                Thread.Sleep(500);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Thread.Sleep(500);
             }
         }
     }
