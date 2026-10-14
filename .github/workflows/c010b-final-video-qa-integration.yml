@@ -73,10 +73,23 @@ jobs:
           Get-Content $log | Write-Host
           if ($exit -ne 0) { throw "C010B QA integration returned $exit" }
           $text = Get-Content $log -Raw
-          if ($text -notmatch 'C010B_INTEGRATION_SUMMARY=passed=15;failed=0;real=True') {
+          if ($text -notmatch 'C010B_INTEGRATION_SUMMARY=passed=17;failed=0;real=True') {
             throw 'C010B expected independently executed integration suite did not complete'
           }
           if ($text -notmatch '(?m)^C010B_PASS windows-header-readable-corrupted-packets-rejected\s*$') { throw 'C010B real corrupt decode test missing' }
           if ($text -notmatch '(?m)^C010B_PASS windows-process-timeout-and-cancel\s*$') { throw 'C010B native process termination test missing' }
           $realCount = ([regex]::Matches($text, '(?m)^C010B_REAL_WINDOWS_PASS narration=(?:True|False) overlay=(?:True|False)\s*$')).Count
           if ($realCount -ne 4) { throw "C010B expected 4 real Windows candidate shapes, got $realCount" }
+
+          # New G006/Issue #76 evidence: every negative is individually executed
+          # against real C009A catalog AND C010A QA, not a fake JSON oracle.
+          $negatives = ([regex]::Matches($text, '(?m)^C010B_MASTER_MANIFEST_NEGATIVE_PASS [a-z0-9-]+\s*$')).Count
+          if ($negatives -ne 17) { throw "C010B expected 17 genuine manifest negative cases, got $negatives" }
+          if ($text -notmatch 'C010B_REAL_MASTER_MANIFEST_SUMMARY=passed=17;failed=0;source=C009B_REAL') {
+            throw '17 real master manifest negatives completion marker missing'
+          }
+          $threeProfile = ([regex]::Matches($text, '(?m)^C010B_THREE_PROFILE_REAL_PASS video\.(?:landscape|vertical|square)\.v1 narration=(?:True|False) overlay=(?:True|False)\s*$')).Count
+          if ($threeProfile -ne 12) { throw "C010B expected 12 independently executed three-profile modes, got $threeProfile" }
+          if ($text -notmatch 'C010B_THREE_PROFILE_REAL_SUMMARY=passed=12;failed=0') {
+            throw 'Independent C010B three-profile completion marker missing'
+          }

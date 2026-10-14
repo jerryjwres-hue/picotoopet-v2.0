@@ -36,6 +36,8 @@ internal static class C010BIntegration
             await Case("windows-real-four-delivery-shapes", RealWindowsAsync);
             await Case("windows-header-readable-corrupted-packets-rejected", RealCorruptMediaAsync);
             await Case("windows-process-timeout-and-cancel", RealProcessBoundariesAsync);
+            await Case("windows-real-master-manifest-17-negatives", C010BRealMasterManifestNegatives.RunAsync);
+            await Case("windows-independent-three-profile-12-modes", C010BThreeProfileWindowsMedia.RunAsync);
         }
         Console.WriteLine($"C010B_INTEGRATION_SUMMARY=passed={_passed};failed={_failed};real={args.Contains("--real", StringComparer.Ordinal)}");
         return _failed == 0 ? 0 : 1;
