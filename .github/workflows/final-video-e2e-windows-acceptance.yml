@@ -94,8 +94,11 @@ jobs:
         shell: pwsh
         run: |
           $dir = Join-Path $env:RUNNER_TEMP 'final-video-e2e-fixtures'
-          & ./tests/final_video_e2e/New-DisposableFinalVideoFixtures.ps1 -OutputDirectory $dir
-          if ($LASTEXITCODE -ne 0) { throw 'Fixture generator failed' }
+          $fixtureOutput = @( & ./tests/final_video_e2e/New-DisposableFinalVideoFixtures.ps1 -OutputDirectory $dir )
+          $fixtureOutput | ForEach-Object { Write-Host $_ }
+          if ($fixtureOutput -notcontains 'FV_DISPOSABLE_FIXTURE_MUTATIONS=PASS') {
+            throw 'Fixture PASS marker missing'
+          }
           if (-not (Test-Path (Join-Path $dir 'fixture-evidence.json'))) { throw 'Fixture report missing' }
 
       - name: Run actual Windows media tests and classify all 36 scenarios
