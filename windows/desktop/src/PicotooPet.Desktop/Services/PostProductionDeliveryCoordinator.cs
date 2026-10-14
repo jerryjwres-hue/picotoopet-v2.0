@@ -147,64 +147,96 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         return CurrentSnapshot;
     }
 
+    /// <summary>Only a fresh C010A PASS receipt can authorize the one Goal Center Open action.</summary>
     public async Task<bool> OpenCurrentAsync(CancellationToken cancellationToken = default)
     {
-        GoalDeliveryCandidateV1? candidate;
+        GoalDeliveryCandidateV1 candidate;
         GoalDeliverySnapshot snapshot;
+        FinalVideoQaInputV1 approvedInput;
+        FinalVideoQaResult approvedReceipt;
+        string authorityFingerprint;
         lock (_gate)
         {
-            if (_disposed || _opening || _candidate is null || !_current.CanOpen
-                || !GoalDeliveryPolicy.IsPreQaOpenable(_current.Phase, _candidate.Kind)
+            if (_disposed || _opening || _authority is null || _verifyQa is null
+                || _candidate is null || _approvedInput is null || _approvedReceipt is null
+                || _approvedAuthorityFingerprint is null
+                || !_current.CanOpen || _current.Phase != GoalDeliveryPhase.DeliveryReady
                 || _current.ProductionJobId != _candidate.ProductionJobId
-                || !GoalDeliveryPolicy.IsAllowed(
-                    _candidate.Kind, _candidate.NarrationRequired, _candidate.OverlaysRequired))
+                || _candidate.ApprovalReceiptDigest != _approvedReceipt.Receipt.ReceiptDigest
+                || !GoalDeliveryPolicy.IsAllowed(_candidate.Kind,
+                    _candidate.NarrationRequired, _candidate.OverlaysRequired))
             {
                 return false;
             }
             candidate = _candidate;
             snapshot = _current;
+            approvedInput = _approvedInput;
+            approvedReceipt = _approvedReceipt;
+            authorityFingerprint = _approvedAuthorityFingerprint;
             _opening = true;
         }
 
         try
         {
-            return await OpenVerifiedAsync(candidate, snapshot, cancellationToken).ConfigureAwait(false);
+            return await OpenVerifiedAsync(candidate, snapshot, approvedInput,
+                approvedReceipt, authorityFingerprint, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            lock (_gate)
-            {
-                _opening = false;
-            }
+            lock (_gate) { _opening = false; }
         }
     }
 
     private async Task<bool> OpenVerifiedAsync(
-        GoalDeliveryCandidateV1 candidate,
-        GoalDeliverySnapshot snapshot,
-        CancellationToken cancellationToken)
+        GoalDeliveryCandidateV1 candidate, GoalDeliverySnapshot snapshot,
+        FinalVideoQaInputV1 approvedInput, FinalVideoQaResult approvedReceipt,
+        string authorityFingerprint, CancellationToken ct)
     {
-        bool valid;
+        bool verified;
         try
         {
-            valid = await _verifier.VerifyAtOpenAsync(candidate, cancellationToken).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            var authority = await _authority!(snapshot.GoalId!, snapshot.ProductionJobId!, ct)
+                .ConfigureAwait(false);
+            if (authority.Fingerprint() != authorityFingerprint)
+            {
+                verified = false;
+            }
+            else
+            {
+                // C010A re-verifies the exact managed candidate, provenance, full decode and
+                // immutable PASS receipt. A stale in-memory Ready snapshot has no authority.
+                var currentApproval = await _verifyQa!(approvedInput, ct).ConfigureAwait(false);
+                verified = C011QaDeliveryAuthority.Approved(candidate, approvedInput, currentApproval)
+                    && currentApproval.Receipt.QaInputDigest == approvedReceipt.Receipt.QaInputDigest
+                    && currentApproval.Receipt.ReceiptDigest == approvedReceipt.Receipt.ReceiptDigest
+                    && string.Equals(currentApproval.ReceiptPath, approvedReceipt.ReceiptPath,
+                        StringComparison.OrdinalIgnoreCase)
+                    && await _verifier.VerifyAtOpenAsync(candidate, ct).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
             return false;
         }
+        catch (Exception)
+        {
+            verified = false;
+        }
 
         lock (_gate)
         {
             if (_disposed || !ReferenceEquals(_candidate, candidate)
+                || !ReferenceEquals(_approvedInput, approvedInput)
+                || !ReferenceEquals(_approvedReceipt, approvedReceipt)
                 || _current.GoalId != snapshot.GoalId
                 || _current.ProductionJobId != snapshot.ProductionJobId
-                || !_current.CanOpen
-                || !GoalDeliveryPolicy.IsPreQaOpenable(_current.Phase, candidate.Kind))
+                || _current.Phase != GoalDeliveryPhase.DeliveryReady
+                || !_current.CanOpen)
             {
                 return false;
             }
-            if (!valid)
+            if (!verified)
             {
                 InvalidateCurrent();
                 return false;
