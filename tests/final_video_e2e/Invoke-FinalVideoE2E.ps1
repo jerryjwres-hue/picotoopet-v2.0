@@ -3,6 +3,8 @@ param(
  [Parameter(Mandatory)][string]$RepositoryRoot,
  [Parameter(Mandatory)][string]$ScenarioIndex,
  [Parameter(Mandatory)][string]$OutputDirectory,
+ [string]$AcceptedStageRoot='',
+ [string]$AcceptedCommitSha='',
  [string]$C011StageRoot='',
  [string]$C011CommitSha='',
  [string]$C011TestProject=''
@@ -23,6 +25,15 @@ $requiredSdk=(Get-Content (Join-Path $repo 'windows/desktop/global.json') -Raw|C
 Push-Location (Join-Path $repo 'windows/desktop')
 try { $actualSdk=(& dotnet --version).Trim() } finally { Pop-Location }
 if($LASTEXITCODE -ne 0 -or $actualSdk -ne $requiredSdk){throw "FV_SDK_MISMATCH expected=$requiredSdk actual=$actualSdk"}
+$upstream=$repo
+if($AcceptedStageRoot -or $AcceptedCommitSha){
+ if($AcceptedCommitSha -notmatch '^[a-f0-9]{40}$' -or -not $AcceptedStageRoot){throw 'FV_ACCEPTED_UPSTREAM_PIN_REQUIRED'}
+ $upstream=(Resolve-Path -LiteralPath $AcceptedStageRoot).Path
+ $upstreamHead=(& git -C $upstream rev-parse HEAD).Trim()
+ if($LASTEXITCODE -ne 0 -or $upstreamHead -cne $AcceptedCommitSha){throw 'FV_ACCEPTED_UPSTREAM_SHA_MISMATCH'}
+ $upstreamSdk=(Get-Content (Join-Path $upstream 'windows/desktop/global.json') -Raw|ConvertFrom-Json).sdk.version
+ if($upstreamSdk -ne $requiredSdk){throw 'FV_ACCEPTED_UPSTREAM_SDK_MISMATCH'}
+}
 $cases=[ordered]@{}
 foreach($id in $expected){
  $manual=$id -in @('FV-032','FV-033','FV-034')
@@ -65,14 +76,15 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
   # Build a disposable test-only project copy; never edit the original csproj.
   $originalXml=[IO.File]::ReadAllText($full)
   $fixedXml=$originalXml.Replace('Run: dotnet run --project','Run: dotnet run -project')
-  if($fixedXml -ceq $originalXml){throw 'FV_C009B_XML_COMMENT_NOT_FOUND'}
-  $temporaryProject=Join-Path (Split-Path $full -Parent) '__E2E_TEMP_C009B.csproj'
-  if(Test-Path -LiteralPath $temporaryProject){throw 'FV_TEMP_PROJECT_ALREADY_EXISTS'}
-  [IO.File]::WriteAllText($temporaryProject,$fixedXml)
-  $effectiveProject=$temporaryProject
+  if($fixedXml -cne $originalXml){
+   $temporaryProject=Join-Path (Split-Path $full -Parent) '__E2E_TEMP_C009B.csproj'
+   if(Test-Path -LiteralPath $temporaryProject){throw 'FV_TEMP_PROJECT_ALREADY_EXISTS'}
+   [IO.File]::WriteAllText($temporaryProject,$fixedXml)
+   $effectiveProject=$temporaryProject
+  }
  }
  $temporaryUsing=$null
- if($name -in @('C009A','C009B')){
+ if($name -eq 'C009A'){
   # Temporary test-only source in the CI checkout; never commit or modify upstream assertions.
   $temporaryUsing=Join-Path (Split-Path $full -Parent) '__E2E_TEMP_USINGS.g.cs'
   if(Test-Path -LiteralPath $temporaryUsing){throw 'FV_TEMP_USINGS_ALREADY_EXISTS'}
@@ -85,7 +97,9 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
  }
  Push-Location (Join-Path $root 'windows/desktop')
  try{
-  & dotnet build $effectiveProject -c Release --nologo --warnaserror *> $log
+  $buildArgs=@('build',$effectiveProject,'-c','Release','--nologo')
+  if($name -ne 'C009B'){$buildArgs+='--warnaserror'}
+  & dotnet @buildArgs *> $log
   if($LASTEXITCODE -ne 0){throw "FV_BUILD_FAILED=$name"}
   & dotnet run --no-build --project $effectiveProject -c Release --no-launch-profile *>> $log
   if($LASTEXITCODE -ne 0){throw "FV_TEST_FAILED=$name"}
@@ -114,14 +128,14 @@ function Add-Evidence([string[]]$matching,[string]$name,[string]$detail){
 }
 try {
  if(-not [OperatingSystem]::IsWindows()){throw 'FV_WINDOWS_REQUIRED'}
- $null=Run-RealSuite 'C009A' $repo 'windows/desktop/tests/PicotooPet.PostProductionMaster.SmokeTests/PicotooPet.PostProductionMaster.SmokeTests.csproj' @(
+ $null=Run-RealSuite 'C009A' $upstream 'windows/desktop/tests/PicotooPet.PostProductionMaster.SmokeTests/PicotooPet.PostProductionMaster.SmokeTests.csproj' @(
   'PASS first compose and exact restart','PASS lineage fails before output root',
   'PASS tampered upstream bytes fail closed','PASS partial and tampered masters conflict',
   'PASS stale wrong digest is never selected','PASS no postproduction returns C004 fallback',
   'POSTPRODUCTION_MASTER_SMOKE=PASS'
  )
  Add-Evidence @('FV-001','FV-002','FV-012','FV-015','FV-016','FV-017','FV-019','FV-021','FV-022') 'C009A' 'Immutable master tests only, not QA'
- $null=Run-RealSuite 'C009B' $repo 'windows/desktop/tests/PicotooPet.PostProductionMasterMux.SmokeTests/PicotooPet.PostProductionMasterMux.SmokeTests.csproj' @(
+ $null=Run-RealSuite 'C009B' $upstream 'windows/desktop/tests/PicotooPet.PostProductionMasterMux.SmokeTests/PicotooPet.PostProductionMasterMux.SmokeTests.csproj' @(
   'MASTER_MUX_UNIT=PASS','MASTER_MUX_REAL_LANDSCAPE=PASS','MASTER_MUX_REAL_VERTICAL=PASS',
   'MASTER_MUX_REAL_SQUARE=PASS','MASTER_MUX_REAL_ZERO_NARRATION=PASS',
   'MASTER_MUX_REAL_BOUNDED_AND_FAILURE=PASS','MASTER_MUX_REAL_WINDOWS=PASS'
