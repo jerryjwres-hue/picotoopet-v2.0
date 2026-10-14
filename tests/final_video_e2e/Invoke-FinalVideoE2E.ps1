@@ -60,7 +60,8 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
  $log=Join-Path $OutputDirectory "$name.log"
  Push-Location (Join-Path $root 'windows/desktop')
  try{
-  & dotnet build $full -c Release --nologo --warnaserror *> $log
+  # Upstream isolated test projects omit SDK implicit usings; enable only for this disposable test build.
+  & dotnet build $full -c Release --nologo --warnaserror -p:ImplicitUsings=enable *> $log
   if($LASTEXITCODE -ne 0){throw "FV_BUILD_FAILED=$name"}
   & dotnet run --no-build --project $full -c Release --no-launch-profile *>> $log
   if($LASTEXITCODE -ne 0){throw "FV_TEST_FAILED=$name"}
