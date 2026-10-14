@@ -195,12 +195,34 @@ internal static class RealHardening
         await AssertNoOrphansAsync(before, "无关异常传播后").ConfigureAwait(false);
 
         // 仅兜底路径（树终止完全未执行）：语义必须不变；仅终止根进程，后代是否残留如实记录（文档化的不可恢复限制）。
-        var fallbackOnly = new FixedMasterVideoProcessRunner(_ => throw new NotSupportedException());
+        var rootPid = -1;
+        string rootExe = "?";
+        var preSnapshot = new Dictionary<int, ProcessLineage.Entry>();
+        var fallbackOnly = new FixedMasterVideoProcessRunner(process =>
+        {
+            // 在终止前记录被测命令的根进程与当时的进程树快照（仅 PID/父 PID/文件名）。
+            rootPid = process.Id;
+            preSnapshot = ProcessLineage.Snapshot();
+            rootExe = preSnapshot.TryGetValue(rootPid, out var rootEntry) ? rootEntry.ExeName : "?";
+            throw new NotSupportedException();
+        });
         var fallbackResult = await RealWindowsAcceptance.RunAsync(fallbackOnly, "ffmpeg.exe", args, directory, TimeSpan.FromSeconds(1)).ConfigureAwait(false);
         Check.True(fallbackResult.TimedOut, "仅兜底路径不得改变超时语义");
         await Task.Delay(1000).ConfigureAwait(false);
+        var postSnapshot = ProcessLineage.Snapshot();
+        var preChildren = preSnapshot.Values.Where(e => e.ParentPid == rootPid).Select(e => $"{e.Pid}:{e.ExeName}");
+        Console.WriteLine($"MASTER_MUX_LINEAGE_ROOT pid={rootPid} exe={rootExe} children_before_kill=[{string.Join(',', preChildren)}]");
         var leftovers = Process.GetProcessesByName("ffmpeg");
+        var attributable = 0;
+        foreach (var candidate in leftovers)
+        {
+            var owned = ProcessLineage.IsDescendantOf(candidate.Id, rootPid, postSnapshot);
+            attributable += owned ? 1 : 0;
+            var parent = postSnapshot.TryGetValue(candidate.Id, out var self) ? self.ParentPid : -1;
+            Console.WriteLine($"MASTER_MUX_LINEAGE_LEFTOVER pid={candidate.Id} ppid={parent} root_alive={postSnapshot.ContainsKey(rootPid)} descendant_of_root={owned}");
+        }
         Console.WriteLine("MASTER_MUX_HARDENING_FALLBACK_ONLY_LEFTOVER_FFMPEG=" + Math.Max(0, leftovers.Length - before));
+        Console.WriteLine("MASTER_MUX_LINEAGE_ATTRIBUTABLE_TO_ROOT=" + attributable);
         foreach (var leftover in leftovers)
         {
             try
