@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace PicotooPet.Desktop.Services;
 
@@ -99,6 +101,9 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
             throw new MasterVideoComposerException(MasterVideoComposerException.FfmpegUnavailable, exception);
         }
         process.StandardInput.Close();
+        // 在子进程能够长期运行之前把它（及已出现的后代）放进 Job Object；Job 关闭即结束全部成员。
+        using var job = WindowsProcessJob.TryCreate();
+        job?.Adopt(process);
 
         var stdout = new MemoryStream();
         var stdoutTask = CopyBoundedAsync(process.StandardOutput.BaseStream, stdout);
@@ -111,7 +116,7 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
         }
         catch (OperationCanceledException)
         {
-            var terminated = Terminate(process);
+            var terminated = await TerminateAsync(process, job).ConfigureAwait(false);
             if (cancellationToken.IsCancellationRequested)
             {
                 // 取消语义优先：Kill/排空的任何已知失败都不能把取消改成别的异常。
@@ -144,7 +149,7 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
     /// 无论树终止是否失败，都会兜底终止主进程，并在无关异常传播前完成兜底。
     /// 返回 false 表示在宽限期内仍无法确认退出（不可恢复的清理限制）。
     /// </summary>
-    private bool Terminate(Process process)
+    private async Task<bool> TerminateAsync(Process process, WindowsProcessJob? job)
     {
         try
         {
@@ -174,6 +179,8 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
         }
         finally
         {
+            // Job 终止不依赖进程树枚举：即使 Kill(true) 失败，根与所有已加入的后代也会被结束。
+            job?.Terminate();
             try
             {
                 if (!process.HasExited)
@@ -194,7 +201,8 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
         try
         {
             // 同步等待有 KillGrace 上限；返回值如实反映是否确认退出。
-            return process.WaitForExit(KillGrace);
+            var rootExited = process.WaitForExit(KillGrace);
+            return rootExited && (job is null || await job.WaitUntilEmptyAsync(KillGrace).ConfigureAwait(false));
         }
         catch (InvalidOperationException)
         {
@@ -250,4 +258,309 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
             // Process 已释放。
         }
     }
+}
+
+/// <summary>
+/// Windows Job Object 保护：JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE。被测进程启动后立即加入 Job，并扫描已出现的后代
+/// 一并加入；之后新产生的后代自动继承 Job。终止/释放 Job 会结束全部成员，不依赖 Process.Kill(entireProcessTree)。
+/// 已知局限：Process.Start 不支持 CREATE_SUSPENDED，根进程在加入 Job 前的极短窗口内产生的后代只能靠随后的扫描补救。
+/// 创建/加入失败（旧系统、受限的外层 Job 禁止嵌套）时返回 null / 不加入，行为退化为原有进程树终止，不抛异常。
+/// </summary>
+internal sealed class WindowsProcessJob : IDisposable
+{
+    private const uint LimitKillOnJobClose = 0x2000;
+    private const int ExtendedLimitInformationClass = 9;
+    private const int BasicAccountingInformationClass = 1;
+    private const uint ProcessSetQuotaAndTerminate = 0x0100 | 0x0001;
+    private const uint Th32csSnapProcess = 0x2;
+
+    private readonly SafeJobHandle _job;
+
+    private WindowsProcessJob(SafeJobHandle job)
+    {
+        _job = job;
+    }
+
+    public static WindowsProcessJob? TryCreate()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+        var handle = CreateJobObject(IntPtr.Zero, null);
+        if (handle.IsInvalid)
+        {
+            handle.Dispose();
+            return null;
+        }
+        var info = new ExtendedLimitInformation();
+        info.Basic.LimitFlags = LimitKillOnJobClose;
+        var size = Marshal.SizeOf<ExtendedLimitInformation>();
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(info, buffer, false);
+            if (!SetInformationJobObject(handle, ExtendedLimitInformationClass, buffer, (uint)size))
+            {
+                handle.Dispose();
+                return null;
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+        return new WindowsProcessJob(handle);
+    }
+
+    /// <summary>加入根进程，并把已经出现的后代（根在加入前来得及产生的）也加入。返回根是否成功加入。</summary>
+    public bool Adopt(Process root)
+    {
+        try
+        {
+            if (!AssignProcessToJobObject(_job, root.SafeHandle))
+            {
+                return false;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        for (var pass = 0; pass < 3; pass++)
+        {
+            if (AdoptDescendants(root.Id) == 0)
+            {
+                break;
+            }
+        }
+        return true;
+    }
+
+    public void Terminate()
+    {
+        TerminateJobObject(_job, 1);
+    }
+
+    /// <summary>等待 Job 中没有存活进程；超时返回 false。</summary>
+    public async Task<bool> WaitUntilEmptyAsync(TimeSpan timeout)
+    {
+        var deadline = Stopwatch.StartNew();
+        while (true)
+        {
+            if (ActiveProcesses() == 0)
+            {
+                return true;
+            }
+            if (deadline.Elapsed >= timeout)
+            {
+                return false;
+            }
+            await Task.Delay(25).ConfigureAwait(false);
+        }
+    }
+
+    public void Dispose()
+    {
+        _job.Dispose();
+    }
+
+    private uint ActiveProcesses()
+    {
+        var size = Marshal.SizeOf<BasicAccounting>();
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (!QueryInformationJobObject(_job, BasicAccountingInformationClass, buffer, (uint)size, IntPtr.Zero))
+            {
+                return 0;
+            }
+            return Marshal.PtrToStructure<BasicAccounting>(buffer).ActiveProcesses;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    /// <summary>快照父子关系，把 rootPid 的所有后代加入 Job，返回新加入的数量。</summary>
+    private int AdoptDescendants(int rootPid)
+    {
+        var parents = new Dictionary<int, int>();
+        var snapshot = CreateToolhelp32Snapshot(Th32csSnapProcess, 0);
+        if (snapshot == IntPtr.Zero || snapshot == new IntPtr(-1))
+        {
+            return 0;
+        }
+        try
+        {
+            var entry = new ProcessEntry { Size = (uint)Marshal.SizeOf<ProcessEntry>() };
+            for (var ok = Process32First(snapshot, ref entry); ok; ok = Process32Next(snapshot, ref entry))
+            {
+                parents[(int)entry.ProcessId] = (int)entry.ParentProcessId;
+            }
+        }
+        finally
+        {
+            CloseHandle(snapshot);
+        }
+
+        var adopted = 0;
+        foreach (var pid in parents.Keys)
+        {
+            if (pid == rootPid || !DescendsFrom(pid, rootPid, parents))
+            {
+                continue;
+            }
+            var handle = OpenProcess(ProcessSetQuotaAndTerminate, false, (uint)pid);
+            if (handle == IntPtr.Zero)
+            {
+                continue;
+            }
+            try
+            {
+                if (IsProcessInJob(handle, _job.DangerousGetHandle(), out var inJob) && inJob)
+                {
+                    continue;
+                }
+                if (AssignProcessToJobObject(_job, new SafeProcessHandle(handle, ownsHandle: false)))
+                {
+                    adopted++;
+                }
+            }
+            finally
+            {
+                CloseHandle(handle);
+            }
+        }
+        return adopted;
+    }
+
+    private static bool DescendsFrom(int pid, int rootPid, Dictionary<int, int> parents)
+    {
+        var current = pid;
+        for (var depth = 0; depth < 32; depth++)
+        {
+            if (!parents.TryGetValue(current, out var parent))
+            {
+                return false;
+            }
+            if (parent == rootPid)
+            {
+                return true;
+            }
+            current = parent;
+        }
+        return false;
+    }
+
+    private sealed class SafeJobHandle : SafeHandleZeroOrMinusOneIsInvalid
+    {
+        public SafeJobHandle()
+            : base(ownsHandle: true)
+        {
+        }
+
+        protected override bool ReleaseHandle() => CloseHandle(handle);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BasicLimit
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ExtendedLimitInformation
+    {
+        public BasicLimit Basic;
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BasicAccounting
+    {
+        public long TotalUserTime;
+        public long TotalKernelTime;
+        public long ThisPeriodTotalUserTime;
+        public long ThisPeriodTotalKernelTime;
+        public uint TotalPageFaultCount;
+        public uint TotalProcesses;
+        public uint ActiveProcesses;
+        public uint TotalTerminatedProcesses;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ProcessEntry
+    {
+        public uint Size;
+        public uint Usage;
+        public uint ProcessId;
+        public UIntPtr DefaultHeapId;
+        public uint ModuleId;
+        public uint Threads;
+        public uint ParentProcessId;
+        public int PriorityClassBase;
+        public uint Flags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string ExeFile;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeJobHandle CreateJobObject(IntPtr attributes, string? name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetInformationJobObject(SafeJobHandle job, int informationClass, IntPtr information, uint length);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryInformationJobObject(SafeJobHandle job, int informationClass, IntPtr information, uint length, IntPtr returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AssignProcessToJobObject(SafeJobHandle job, SafeProcessHandle process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateJobObject(SafeJobHandle job, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsProcessInJob(IntPtr process, IntPtr job, [MarshalAs(UnmanagedType.Bool)] out bool result);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool Process32First(IntPtr snapshot, ref ProcessEntry entry);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry entry);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
 }
