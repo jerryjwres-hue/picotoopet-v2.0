@@ -22,12 +22,17 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private readonly Func<MasterCompositionInputV1, CancellationToken, Task<MasterCompositionResult>> _compose;
     private readonly GoalDeliveryCandidateVerifier _verifier;
     private readonly IFinalVideoLauncher _launcher;
+    private readonly Func<string, string, CancellationToken, Task<C011QaDeliveryAuthority>>? _authority;
+    private readonly Func<FinalVideoQaInputV1, CancellationToken, Task<FinalVideoQaResult>>? _verifyQa;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly HashSet<string> _running = new(StringComparer.Ordinal);
     private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
     private readonly HashSet<Task> _tasks = [];
     private GoalDeliverySnapshot _current = GoalDeliverySnapshot.Idle(null, null);
     private GoalDeliveryCandidateV1? _candidate;
+    private FinalVideoQaInputV1? _approvedInput;
+    private FinalVideoQaResult? _approvedReceipt;
+    private string? _approvedAuthorityFingerprint;
     private bool _disposed;
     private bool _opening;
 
@@ -43,7 +48,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         Func<FinalVideoArtifact, CaptionOverlayPlanResponseRecord, CancellationToken, Task<TextOverlayArtifact>> overlay,
         Func<MasterCompositionInputV1, CancellationToken, Task<MasterCompositionResult>> compose,
         GoalDeliveryCandidateVerifier verifier,
-        IFinalVideoLauncher launcher)
+        IFinalVideoLauncher launcher,
+        Func<string, string, CancellationToken, Task<C011QaDeliveryAuthority>>? authority = null,
+        Func<FinalVideoQaInputV1, CancellationToken, Task<FinalVideoQaResult>>? verifyQa = null)
     {
         _assembler = assembler ?? throw new ArgumentNullException(nameof(assembler));
         _getNarrationPlan = getNarrationPlan ?? throw new ArgumentNullException(nameof(getNarrationPlan));
@@ -53,6 +60,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         _compose = compose ?? throw new ArgumentNullException(nameof(compose));
         _verifier = verifier ?? throw new ArgumentNullException(nameof(verifier));
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
+        _authority = authority;
+        _verifyQa = verifyQa;
     }
 
     /// <summary>Composition root wires only accepted C009B composer through frozen C009A service.</summary>
@@ -64,6 +73,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         ArgumentNullException.ThrowIfNull(masterService);
         var narration = WindowsNarrationSynthesisService.CreateDefault();
         var overlays = WindowsCaptionOverlayService.Create();
+        var qa = new FinalVideoQaService();
         return new PostProductionDeliveryCoordinator(
             FinalVideoAssemblyService.Create(session),
             session.GetNarrationPlanAsync,
@@ -72,7 +82,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             overlays.ApplyAsync,
             masterService.ComposeAsync,
             GoalDeliveryCandidateVerifier.CreateDefault(),
-            new ShellFinalVideoLauncher());
+            new ShellFinalVideoLauncher(),
+            (goal, job, ct) => C011QaDeliveryAuthority.FetchAsync(session, goal, job, ct),
+            qa.VerifyAsync);
     }
 
     public GoalDeliverySnapshot CurrentSnapshot
@@ -97,6 +109,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             if (_current.GoalId != goalId || _current.ProductionJobId != jobId || !valid)
             {
                 _candidate = null;
+                _approvedInput = null;
+                _approvedReceipt = null;
+                _approvedAuthorityFingerprint = null;
                 _current = GoalDeliverySnapshot.Idle(goalId, jobId);
             }
             if (!valid || jobId is null)
