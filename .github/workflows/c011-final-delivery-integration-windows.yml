@@ -1,0 +1,115 @@
+name: C011 QA-Gated Final Video Windows Integration
+
+on:
+  push:
+    branches:
+      - integration/final-video-qa-gated-delivery-v1
+    paths:
+      - '.github/workflows/c011-final-delivery-integration-windows.yml'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/C011QaDeliveryAuthority.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/PostProductionDeliveryCoordinator.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/GoalDeliveryContracts.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/FinalVideoQa*.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/FinalArtifactReceiptStore.cs'
+      - 'windows/desktop/tests/PicotooPet.FinalDeliveryIntegration.SmokeTests/**'
+      - 'windows/desktop/tests/PicotooPet.FinalVideoQa.SmokeTests/**'
+  pull_request:
+    paths:
+      - '.github/workflows/c011-final-delivery-integration-windows.yml'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/**'
+      - 'windows/desktop/tests/PicotooPet.FinalDeliveryIntegration.SmokeTests/**'
+      - 'windows/desktop/tests/PicotooPet.FinalVideoQa.SmokeTests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-gated-integration:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows/desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Confirm exact pinned .NET SDK
+        run: |
+          $required = (Get-Content global.json -Raw | ConvertFrom-Json).sdk.version
+          $actual = (& dotnet --version).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $required) { throw "C011_SDK_MISMATCH $actual/$required" }
+          Write-Host "C011_DOTNET_SDK=$actual"
+
+      - name: Install FFmpeg and FFprobe for real C010A decode
+        run: |
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or
+              -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'C011_FFMPEG_INSTALL_FAILED' }
+            $env:PATH += ';C:\ProgramData\chocolatey\bin'
+          }
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or
+              -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            throw 'C011_FFMPEG_UNAVAILABLE'
+          }
+          & ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          & ffprobe.exe -hide_banner -version | Select-Object -First 1
+
+      - name: Build C011 independent integration suite Release
+        run: |
+          & dotnet build tests/PicotooPet.FinalDeliveryIntegration.SmokeTests/PicotooPet.FinalDeliveryIntegration.SmokeTests.csproj -c Release --nologo --warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'C011_RELEASE_BUILD_FAILED' }
+          Write-Host 'C011_RELEASE_BUILD=PASS'
+
+      - name: Execute C011 real C010A receipt and coordinator integration
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'c011-integration.log'
+          & dotnet run --no-build --project tests/PicotooPet.FinalDeliveryIntegration.SmokeTests/PicotooPet.FinalDeliveryIntegration.SmokeTests.csproj -c Release *> $log
+          $exit = $LASTEXITCODE
+          Get-Content $log | Write-Host
+          if ($exit -ne 0) { throw "C011_INTEGRATION_EXIT=$exit" }
+          $output = Get-Content $log -Raw
+          foreach ($marker in @(
+            'C011_MODE_N0_O0=PASS','C011_MODE_N1_O0=PASS',
+            'C011_MODE_N0_O1=PASS','C011_MODE_N1_O1=PASS',
+            'C011_RECEIPT_TAMPER=PASS','C011_CHANGED_PROVENANCE=PASS',
+            'C011_REQUIRED_MASTER_NO_FALLBACK=PASS','C011_MISSING_QA_GATE=PASS',
+            'C011_FULL_DECODE_REJECTION=PASS','C011_DURABLE_RESTART=PASS',
+            'C011_SINGLE_ASYNC_OPEN=PASS','C011_JOB_SWITCH=PASS',
+            'C011_CANCEL_DISPOSE=PASS','FINAL_VIDEO_QA_GATED_INTEGRATION=PASS'
+          )) {
+            if (-not $output.Contains($marker)) { throw "C011_PASS_MARKER_MISSING=$marker" }
+          }
+          Write-Host 'C011_INTEGRATION_WINDOWS=PASS'
+
+      - name: Run original C010A QA media and receipt smoke on real Windows
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'c010a-real-windows.log'
+          & dotnet run --project tests/PicotooPet.FinalVideoQa.SmokeTests/PicotooPet.FinalVideoQa.SmokeTests.csproj -c Release -- --real *> $log
+          $exit = $LASTEXITCODE
+          Get-Content $log | Write-Host
+          if ($exit -ne 0) { throw "C010A_REAL_WINDOWS_EXIT=$exit" }
+          $output = Get-Content $log -Raw
+          foreach ($marker in @('QA_MEDIA_POLICY=PASS','QA_REAL_CORRUPT_PACKET_DECODE_TIMEOUT_CANCEL=PASS')) {
+            if (-not $output.Contains($marker)) { throw "C010A_MARKER_MISSING=$marker" }
+          }
+          Write-Host 'C011_C010A_REAL_WINDOWS=PASS'
+
+      - name: Upload C011 integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c011-final-delivery-windows-evidence
+          path: |
+            ${{ runner.temp }}/c011-integration.log
+            ${{ runner.temp }}/c010a-real-windows.log
+          if-no-files-found: warn
+          retention-days: 14

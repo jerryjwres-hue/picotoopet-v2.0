@@ -22,12 +22,17 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private readonly Func<MasterCompositionInputV1, CancellationToken, Task<MasterCompositionResult>> _compose;
     private readonly GoalDeliveryCandidateVerifier _verifier;
     private readonly IFinalVideoLauncher _launcher;
+    private readonly Func<string, string, CancellationToken, Task<C011QaDeliveryAuthority>>? _authority;
+    private readonly Func<FinalVideoQaInputV1, CancellationToken, Task<FinalVideoQaResult>>? _verifyQa;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly HashSet<string> _running = new(StringComparer.Ordinal);
     private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
     private readonly HashSet<Task> _tasks = [];
     private GoalDeliverySnapshot _current = GoalDeliverySnapshot.Idle(null, null);
     private GoalDeliveryCandidateV1? _candidate;
+    private FinalVideoQaInputV1? _approvedInput;
+    private FinalVideoQaResult? _approvedReceipt;
+    private string? _approvedAuthorityFingerprint;
     private bool _disposed;
     private bool _opening;
 
@@ -43,7 +48,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         Func<FinalVideoArtifact, CaptionOverlayPlanResponseRecord, CancellationToken, Task<TextOverlayArtifact>> overlay,
         Func<MasterCompositionInputV1, CancellationToken, Task<MasterCompositionResult>> compose,
         GoalDeliveryCandidateVerifier verifier,
-        IFinalVideoLauncher launcher)
+        IFinalVideoLauncher launcher,
+        Func<string, string, CancellationToken, Task<C011QaDeliveryAuthority>>? authority = null,
+        Func<FinalVideoQaInputV1, CancellationToken, Task<FinalVideoQaResult>>? verifyQa = null)
     {
         _assembler = assembler ?? throw new ArgumentNullException(nameof(assembler));
         _getNarrationPlan = getNarrationPlan ?? throw new ArgumentNullException(nameof(getNarrationPlan));
@@ -53,6 +60,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         _compose = compose ?? throw new ArgumentNullException(nameof(compose));
         _verifier = verifier ?? throw new ArgumentNullException(nameof(verifier));
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
+        _authority = authority;
+        _verifyQa = verifyQa;
     }
 
     /// <summary>Composition root wires only accepted C009B composer through frozen C009A service.</summary>
@@ -64,6 +73,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         ArgumentNullException.ThrowIfNull(masterService);
         var narration = WindowsNarrationSynthesisService.CreateDefault();
         var overlays = WindowsCaptionOverlayService.Create();
+        var qa = new FinalVideoQaService();
         return new PostProductionDeliveryCoordinator(
             FinalVideoAssemblyService.Create(session),
             session.GetNarrationPlanAsync,
@@ -72,7 +82,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             overlays.ApplyAsync,
             masterService.ComposeAsync,
             GoalDeliveryCandidateVerifier.CreateDefault(),
-            new ShellFinalVideoLauncher());
+            new ShellFinalVideoLauncher(),
+            (goal, job, ct) => C011QaDeliveryAuthority.FetchAsync(session, goal, job, ct),
+            qa.VerifyAsync);
     }
 
     public GoalDeliverySnapshot CurrentSnapshot
@@ -97,6 +109,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             if (_current.GoalId != goalId || _current.ProductionJobId != jobId || !valid)
             {
                 _candidate = null;
+                _approvedInput = null;
+                _approvedReceipt = null;
+                _approvedAuthorityFingerprint = null;
                 _current = GoalDeliverySnapshot.Idle(goalId, jobId);
             }
             if (!valid || jobId is null)
@@ -112,7 +127,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             }
             if (_failed.Contains(key))
             {
-                _current = Failed(goalId!, jobId);
+                // Preserve a closed QA-specific failure during repeated Goal Center polling.
+                // Never reinterpret a failed receipt/decode as an ordinary pre-QA failure.
+                if (_current.Phase != GoalDeliveryPhase.QaFailed)
+                {
+                    _current = Failed(goalId!, jobId);
+                }
                 return _current;
             }
             if (_running.Contains(key))
@@ -132,64 +152,96 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         return CurrentSnapshot;
     }
 
+    /// <summary>Only a fresh C010A PASS receipt can authorize the one Goal Center Open action.</summary>
     public async Task<bool> OpenCurrentAsync(CancellationToken cancellationToken = default)
     {
-        GoalDeliveryCandidateV1? candidate;
+        GoalDeliveryCandidateV1 candidate;
         GoalDeliverySnapshot snapshot;
+        FinalVideoQaInputV1 approvedInput;
+        FinalVideoQaResult approvedReceipt;
+        string authorityFingerprint;
         lock (_gate)
         {
-            if (_disposed || _opening || _candidate is null || !_current.CanOpen
-                || !GoalDeliveryPolicy.IsPreQaOpenable(_current.Phase, _candidate.Kind)
+            if (_disposed || _opening || _authority is null || _verifyQa is null
+                || _candidate is null || _approvedInput is null || _approvedReceipt is null
+                || _approvedAuthorityFingerprint is null
+                || !_current.CanOpen || _current.Phase != GoalDeliveryPhase.DeliveryReady
                 || _current.ProductionJobId != _candidate.ProductionJobId
-                || !GoalDeliveryPolicy.IsAllowed(
-                    _candidate.Kind, _candidate.NarrationRequired, _candidate.OverlaysRequired))
+                || _candidate.ApprovalReceiptDigest != _approvedReceipt.Receipt.ReceiptDigest
+                || !GoalDeliveryPolicy.IsAllowed(_candidate.Kind,
+                    _candidate.NarrationRequired, _candidate.OverlaysRequired))
             {
                 return false;
             }
             candidate = _candidate;
             snapshot = _current;
+            approvedInput = _approvedInput;
+            approvedReceipt = _approvedReceipt;
+            authorityFingerprint = _approvedAuthorityFingerprint;
             _opening = true;
         }
 
         try
         {
-            return await OpenVerifiedAsync(candidate, snapshot, cancellationToken).ConfigureAwait(false);
+            return await OpenVerifiedAsync(candidate, snapshot, approvedInput,
+                approvedReceipt, authorityFingerprint, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            lock (_gate)
-            {
-                _opening = false;
-            }
+            lock (_gate) { _opening = false; }
         }
     }
 
     private async Task<bool> OpenVerifiedAsync(
-        GoalDeliveryCandidateV1 candidate,
-        GoalDeliverySnapshot snapshot,
-        CancellationToken cancellationToken)
+        GoalDeliveryCandidateV1 candidate, GoalDeliverySnapshot snapshot,
+        FinalVideoQaInputV1 approvedInput, FinalVideoQaResult approvedReceipt,
+        string authorityFingerprint, CancellationToken ct)
     {
-        bool valid;
+        bool verified;
         try
         {
-            valid = await _verifier.VerifyAtOpenAsync(candidate, cancellationToken).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            var authority = await _authority!(snapshot.GoalId!, snapshot.ProductionJobId!, ct)
+                .ConfigureAwait(false);
+            if (authority.Fingerprint() != authorityFingerprint)
+            {
+                verified = false;
+            }
+            else
+            {
+                // C010A re-verifies the exact managed candidate, provenance, full decode and
+                // immutable PASS receipt. A stale in-memory Ready snapshot has no authority.
+                var currentApproval = await _verifyQa!(approvedInput, ct).ConfigureAwait(false);
+                verified = C011QaDeliveryAuthority.Approved(candidate, approvedInput, currentApproval)
+                    && currentApproval.Receipt.QaInputDigest == approvedReceipt.Receipt.QaInputDigest
+                    && currentApproval.Receipt.ReceiptDigest == approvedReceipt.Receipt.ReceiptDigest
+                    && string.Equals(currentApproval.ReceiptPath, approvedReceipt.ReceiptPath,
+                        StringComparison.OrdinalIgnoreCase)
+                    && await _verifier.VerifyAtOpenAsync(candidate, ct).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
             return false;
         }
+        catch (Exception)
+        {
+            verified = false;
+        }
 
         lock (_gate)
         {
             if (_disposed || !ReferenceEquals(_candidate, candidate)
+                || !ReferenceEquals(_approvedInput, approvedInput)
+                || !ReferenceEquals(_approvedReceipt, approvedReceipt)
                 || _current.GoalId != snapshot.GoalId
                 || _current.ProductionJobId != snapshot.ProductionJobId
-                || !_current.CanOpen
-                || !GoalDeliveryPolicy.IsPreQaOpenable(_current.Phase, candidate.Kind))
+                || _current.Phase != GoalDeliveryPhase.DeliveryReady
+                || !_current.CanOpen)
             {
                 return false;
             }
-            if (!valid)
+            if (!verified)
             {
                 InvalidateCurrent();
                 return false;
@@ -270,12 +322,11 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 }
             }
 
-            var result = await _compose(
-                new MasterCompositionInputV1(c004, narrationPlan, audio, overlayPlan, visualOverlay),
-                cancellationToken).ConfigureAwait(false);
+            var masterInput = new MasterCompositionInputV1(
+                c004, narrationPlan, audio, overlayPlan, visualOverlay);
+            var result = await _compose(masterInput, cancellationToken).ConfigureAwait(false);
 
             GoalDeliveryCandidateV1 candidate;
-            GoalDeliveryPhase phase;
             if (required)
             {
                 var master = result.Artifact;
@@ -295,7 +346,6 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 }
                 candidate = await _verifier.FromMasterAsync(
                     master, narrationPlan, overlayPlan, cancellationToken).ConfigureAwait(false);
-                phase = GoalDeliveryPhase.MasteredReady;
             }
             else
             {
@@ -310,21 +360,60 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 }
                 candidate = await _verifier.FromFallbackAsync(
                     fallback, narrationPlan, overlayPlan, cancellationToken).ConfigureAwait(false);
-                phase = GoalDeliveryPhase.FallbackReady;
             }
+            // C011 fail-closed QA gate: C004 fallback and C009 master must BOTH pass
+            // the same frozen C010A production policy, media full-decode and receipt store.
+            if (_authority is null || _verifyQa is null)
+            {
+                throw new InvalidDataException("C011_QA_GATE_UNAVAILABLE");
+            }
+            PublishPhase(goalId, jobId, GoalDeliveryPhase.QualityChecking);
+            var authority = await _authority(goalId, jobId, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(authority.Goal.GoalId, goalId, StringComparison.Ordinal)
+                || !string.Equals(authority.Job.ProductionJobId, jobId, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("C011_CORE_AUTHORITY_MISMATCH");
+            }
+            var input = new FinalVideoQaInputV1(
+                authority.Goal, authority.Job, authority.Plan, authority.Package,
+                masterInput, required ? result.Artifact : null);
+            var receipt = await _verifyQa(input, cancellationToken).ConfigureAwait(false);
+            if (!C011QaDeliveryAuthority.Approved(candidate, input, receipt))
+            {
+                throw new InvalidDataException("C011_QA_RECEIPT_NOT_APPROVED");
+            }
+            candidate = candidate with { ApprovalReceiptDigest = receipt.Receipt.ReceiptDigest };
             cancellationToken.ThrowIfCancellationRequested();
             lock (_gate)
             {
                 if (!_disposed && IsCurrent(goalId, jobId))
                 {
                     _candidate = candidate;
-                    _current = Phase(goalId, jobId, phase);
+                    _approvedInput = input;
+                    _approvedReceipt = receipt;
+                    _approvedAuthorityFingerprint = authority.Fingerprint();
+                    _current = Phase(goalId, jobId, GoalDeliveryPhase.DeliveryReady);
                 }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Shutdown is not durable task failure and must never select C004.
+        }
+        catch (FinalVideoQaException)
+        {
+            lock (_gate)
+            {
+                _failed.Add(key);
+                if (!_disposed && IsCurrent(goalId, jobId))
+                {
+                    _candidate = null;
+                    _approvedInput = null;
+                    _approvedReceipt = null;
+                    _approvedAuthorityFingerprint = null;
+                    _current = Phase(goalId, jobId, GoalDeliveryPhase.QaFailed);
+                }
+            }
         }
         catch (Exception)
         {
@@ -334,6 +423,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 if (!_disposed && IsCurrent(goalId, jobId))
                 {
                     _candidate = null;
+                    _approvedInput = null;
+                    _approvedReceipt = null;
+                    _approvedAuthorityFingerprint = null;
                     _current = Failed(goalId, jobId);
                 }
             }
@@ -379,6 +471,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         {
             _failed.Add(Key(goal, job));
             _candidate = null;
+            _approvedInput = null;
+            _approvedReceipt = null;
+            _approvedAuthorityFingerprint = null;
             _current = Failed(goal, job);
         }
     }
@@ -392,9 +487,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             GoalDeliveryPhase.VisualReadyPostProcessing => "基础画面已完成，正在准备旁白/文字后期",
             GoalDeliveryPhase.PostProcessing => "正在生成最终成片",
             GoalDeliveryPhase.MasteredReady => "最终成片已就绪",
-            GoalDeliveryPhase.FallbackReady => "最终视频已就绪",
+            GoalDeliveryPhase.FallbackReady => "基础视频已就绪，等待 QA 验证",
+            GoalDeliveryPhase.QualityChecking => "正在进行最终视频媒体质量与来源校验",
+            GoalDeliveryPhase.DeliveryReady => "QA 验收通过，最终成片可打开",
+            GoalDeliveryPhase.QaFailed => "最终视频未通过 QA 验证",
             _ => null,
-        }, phase is GoalDeliveryPhase.MasteredReady or GoalDeliveryPhase.FallbackReady);
+        }, phase == GoalDeliveryPhase.DeliveryReady);
 
     private static GoalDeliverySnapshot Failed(string goal, string job) =>
         new(goal, job, GoalDeliveryPhase.Failed,
@@ -409,6 +507,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             _disposed = true;
             _lifetime.Cancel();
             _candidate = null;
+            _approvedInput = null;
+            _approvedReceipt = null;
+            _approvedAuthorityFingerprint = null;
             tasks = _tasks.ToArray();
         }
         try

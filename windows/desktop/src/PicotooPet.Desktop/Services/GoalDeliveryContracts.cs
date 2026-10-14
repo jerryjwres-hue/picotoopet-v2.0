@@ -181,7 +181,7 @@ public sealed class GoalDeliveryCandidateVerifier
                 candidate.Kind, candidate.NarrationRequired, candidate.OverlaysRequired)
                 || !HasSha(candidate.FileSha256) || !HasSha(candidate.ManifestSha256)
                 || candidate.FileBytes <= 0 || candidate.ManifestBytes is <= 0 or > MaximumManifestBytes
-                || candidate.ApprovalReceiptDigest is not null)
+                || (candidate.ApprovalReceiptDigest is not null && !HasSha(candidate.ApprovalReceiptDigest)))
             {
                 return false;
             }
