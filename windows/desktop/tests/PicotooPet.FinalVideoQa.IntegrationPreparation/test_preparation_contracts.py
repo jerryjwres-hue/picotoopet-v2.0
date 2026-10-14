@@ -79,7 +79,19 @@ class PreparationContractTests(unittest.TestCase):
         self.assertEqual(len(e2e), 23)
         self.assertEqual(sum(case["status"] == "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE" for case in e2e), 22)
         self.assertEqual(sum(case["status"] == "BLOCKED_GOAL_CENTER_OPEN_API" for case in e2e), 1)
-        self.assertEqual(self.spec["integration"]["workflow_run"], 38021044347)
+        self.assertEqual(self.spec["integration"]["workflow_run"], 38645293453)
+        statuses = {status: sum(case["status"] == status for case in self.cases)
+                    for status in {case["status"] for case in self.cases}}
+        self.assertEqual(statuses, {
+            "FIXTURE_ORACLE_READY": 20,
+            "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE": 57,
+            "BLOCKED_GOAL_CENTER_OPEN_API": 1,
+        })
+        self.assertEqual(self.spec["integration"]["native_results"]["master_manifest_negatives_passed"], 17)
+        self.assertEqual(self.spec["integration"]["native_results"]["real_three_profile_modes_passed"], 12)
+        negatives = [case for case in self.cases if case["area"] == "c009a-lineage"]
+        self.assertEqual(len(negatives), 17)
+        self.assertTrue(all(case["validation_run"] == 38645293453 for case in negatives))
         self.assertEqual(self.spec["integration"]["workflow_conclusion"], "success")
 
 

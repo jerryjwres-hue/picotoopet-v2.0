@@ -20,7 +20,7 @@ Requires Windows, pinned .NET 10, FFmpeg/ffprobe, H.264 native libraries and fon
 
 ## Actual assertions
 
-15 groups in C010BIntegration.cs use real FinalVideoQaService.VerifyAsync(FinalVideoQaInputV1):
+17 groups in C010BIntegration.cs use real FinalVideoQaService.VerifyAsync(FinalVideoQaInputV1):
 
 - four candidate selection modes and PASS-only receipt
 - missing C009 master never falls back to C004, wrong digest/wrong candidate rejected
@@ -39,9 +39,21 @@ Requires Windows, pinned .NET 10, FFmpeg/ffprobe, H.264 native libraries and fon
 
 A controlled runner proves **service/receipt contract behavior**, not actual MP4 decoding. Only native Windows real-media groups prove decode/stream acceptance.
 
-## Honest reporting
+## Issue #76: completed real master tamper and independent 3-profile media verification
 
-Actual Windows workflow **38021044347** completed SUCCESS on test commit e5969c10fe70991a525644bf443684082b36a678: 15/15 group PASS, 4/4 real media modes, corrupted-packet full decode rejected and timeout/cancel PASS. This evidence covers only the mapped group tests, not separately staged mutation cases. Existing 17 C009A manifest-mutation scenarios require a genuine master specimen and remain blocked. The Goal Center Open final-video action is owned by a later slice; no Open UI is tested here. C010B does not independently repeat every C005 profile real media case (upstream C010A Windows acceptance does).
+C010BRealMasterManifestNegatives.cs constructs an actual real C009B master (narration and overlays both enabled) using the existing C010A fixture/producer. It derives the EXACT MasterArtifactExpectation from real lineage facts. All 17 original master-manifest mutations trigger both C009A PostProductionMasterArtifactCatalog.FindVerifiedExactAsync => MASTER_ARTIFACT_CONFLICT and C010A FinalVideoQaService.VerifyAsync => FINAL_QA_ARTIFACT_INVALID. An existing immutable PASS receipt stays unchanged during each tamper; the master is then restored byte-for-byte and the original receipt must reuse successfully. No fake JSON oracle.
+
+C010BThreeProfileWindowsMedia.cs independently executes 3 C005 24fps profiles x 4 audio/overlay modes = 12 actual Windows FFmpeg/ffprobe/full-decode/receipt cases with exact video dimensions, H.264/yuv420p, AAC-LC/48k/mono iff narrated, and restart reuse without executing a process.
+
+**Run 38645293453 SUCCESS**:
+- 17/17 C010B integration groups PASS (previous 15 preserved, 2 new).
+- 17/17 individually emitted C010B_MASTER_MANIFEST_NEGATIVE_PASS markers.
+- 12/12 C010B_THREE_PROFILE_REAL_PASS native media markers.
+- No production changes; only current test project and dedicated workflow.
+
+The original 78-case matrix now counts 57 original scenarios mapped to native C010B PASS, 20 separate synthetic-media fixture oracle cases, and 1 blocked Goal Center Open receipt-gate integration. 57 is mapped case coverage, NOT 57 individually executed C# methods.
+
+The only remaining BLOCKED scenario is FVQ-R-open-reverify-exact-candidate; Goal Center Open belongs to another production owner.
 
 See docs/testing/C010B_FINAL_VIDEO_QA_INTEGRATION_MATRIX_V1.md and ../PicotooPet.FinalVideoQa.IntegrationPreparation/coverage_scenarios.json.
 

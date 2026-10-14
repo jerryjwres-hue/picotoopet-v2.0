@@ -32,8 +32,11 @@ tests use the actual FinalVideoQaService.VerifyAsync, receipt/result contracts,
 and compile-linked upstream test fixtures.
 
 The 20 synthetic-media fixture oracle cases remain separate from production QA.
-The 17 staged MasterManifest mutations still require genuine master specimens.
-See coverage_scenarios.json for per-case mapping. Native Windows C010B workflow run 38021044347 completed SUCCESS (15/15 groups, 4/4 real video modes); the 39 mapped cases are marked COVERED_BY_PASS_NATIVE_WINDOWS_SUITE. This is group coverage, not 39 independent test methods.
+The original standalone staging utility remains available, but the 17 actual negative cases are now independently executed using a REAL C009B-produced master in C010BRealMasterManifestNegatives.cs; both C009A catalog and C010A service rejection are asserted.
+See coverage_scenarios.json for per-case mapping. Native Windows C010B [workflow run 38645293453](https://github.com/jerryjwres-hue/picotoopet-v2.0/actions/runs/38645293453) completed SUCCESS:
+17/17 integration groups, 17/17 genuine C009A master negative cases, and 12/12 actual 3-profile media combinations.
+57 original scenarios are mapped to verified Windows test groups/negative cases, 20 remain separate synthetic fixture oracles, and one Goal Center Open integration is BLOCKED.
+Mapped scenarios are not misrepresented as 57 distinct test methods.
 
 Do not alter C010A production or reinterpret C009B's mux-only MasterVideoMediaProbe
 as the complete final QA probe.

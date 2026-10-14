@@ -18,18 +18,16 @@ C009B native Windows PASS: d399f720e8347488a43282722ad37c43cd3cb337 / workflow 3
 
 The actual internal dependency-injection constructor is used through C010A's existing test-friend AssemblyName; no new QA implementation/API has been created. C009 MasterInputDigest does not independently bind NarrationManifestSha256 and C008BManifestSha256, so C010A QA digest must include source manifest hashes separately.
 
-## Original 78-case coverage status
+## Original 78-case coverage status — final native Windows evidence
 
 | Status | Cases | Meaning |
 | --- | ---: | --- |
 | FIXTURE_ORACLE_READY | 20 | Standalone synthetic-media oracle, not product acceptance |
-| COVERED_BY_PASS_NATIVE_WINDOWS_SUITE | 39 | Mapped to actual C010A APIs; native Windows C010B suite 15/15 PASS, run 38021044347 |
-| STAGING_READY_REAL_MASTER_BLOCKED | 17 | Real master specimen/catalog negative scenario execution still needed |
+| COVERED_BY_PASS_NATIVE_WINDOWS_SUITE | 57 | 39 prior mappings plus 17 actual C009A master negatives and 1 independent 3-profile scenario; native Windows run 38645293453 PASS |
 | BLOCKED_GOAL_CENTER_OPEN_API | 1 | Later Goal Center Open behavior not in C010A |
-| BLOCKED_C010B_ALL_PROFILES_REAL_WINDOWS | 1 | Independent three-profile native C010B E2E not yet added |
 | TOTAL | 78 | No invented PASS |
 
-The former 35 BLOCKED_C010A_API entries are now **34 actual API-backed mappings covered by the successful native Windows suite**, plus one Goal Center Open blocker. Five additional native E2E scenario mappings are also covered by the same PASS suite. This is mapped group coverage, not 39 separately enumerated test methods.
+All 17 original real-master negative cases are independently executed against actual C009A catalog and C010A VerifyAsync, and the missing three-profile independent native scenario is now executed as 12 separate profile/mode combinations. The only remaining original blocker is Goal Center Open. The 57 mappings are coverage counts, not 57 separate C# test methods.
 
 ## Independent integration test groups
 
@@ -51,28 +49,24 @@ The former 35 BLOCKED_C010A_API entries are now **34 actual API-backed mappings 
 | windows-header-readable-corrupted-packets-rejected | real C004 path/hash/manifest updated for deliberately corrupted packet specimen, then actual C010A full decode rejects, no receipt |
 | windows-process-timeout-and-cancel | real bounded FFmpeg runner timeout/cancel termination |
 
-For the first 12 groups, controlled media facts test receipt/lineage/service policy; they do not certify synthetic fake bytes as playable media. The last three groups must run on native Windows with actual FFmpeg/ffprobe.
+For the first 12 groups, controlled media facts test receipt/lineage/service policy; they do not certify synthetic fake bytes as playable media. The last five groups run on native Windows: three preexisting real scenarios plus two new Issue #76 scenarios.
 
-## Remaining blockers / run policy
+## Issue #76 actual execution (native Windows)
 
-1. **Completed:** native Windows C010B workflow [run 38021044347](https://github.com/jerryjwres-hue/picotoopet-v2.0/actions/runs/38021044347) finished **SUCCESS**, with 15/15 integration groups and all four real-media delivery modes passing.
-2. The 17 full C009A master manifest negative staging scenarios need genuine durable master specimen plus catalog verification test adapter.
-3. Goal Center Open final-video action/receipt-gated catalog remains owned elsewhere, not C010A.
-4. C010B does not independently repeat real 480x832 and 640x640 profiles; upstream C010A real Windows CI verifies them, but does not silently count as C010B independent coverage.
+- Commit under test: 8bcbd52d59f8c66410520981cbcbc2ac060fcfaa
+- Run: [38645293453](https://github.com/jerryjwres-hue/picotoopet-v2.0/actions/runs/38645293453) — SUCCESS.
+- C010B_INTEGRATION_SUMMARY=passed=17;failed=0;real=True (previous 15 plus 2 new groups)
+- C010B_REAL_MASTER_MANIFEST_SUMMARY=passed=17;failed=0;source=C009B_REAL
+- C010B_THREE_PROFILE_REAL_SUMMARY=passed=12;failed=0
 
-GitHub Actions composes by two separate checkouts and copies only C010B test source into a disposable C010A checkout. No merge/rebase/tag/release and no production edits.
+The 17 negative IDs are: production-job-mismatch, production-package-mismatch, production-plan-mismatch, creative-package-mismatch, source-c004-mismatch, caption-plan-mismatch, narration-plan-mismatch, selected-visual-mismatch, master-input-digest-mismatch, master-output-sha-mismatch, master-output-bytes-mismatch, master-audio-flag-mismatch, narration-manifest-mismatch, overlay-manifest-mismatch, unexpected-directory-entry, missing-master-manifest, and master-media-byte-tamper.
 
-## Native Windows execution receipt
+Every one has an actual C009B durable master source, exact master identity/catalog expectation, C009A catalog rejection, C010A VerifyAsync rejection, unchanged PASS receipt during tamper, and successful post-restore exact reuse.
 
-- Workflow: C010B Independent Final Video QA Integration
-- Run: 38021044347
-- Conclusion: SUCCESS
-- Test commit: e5969c10fe70991a525644bf443684082b36a678
-- Actual C010A pinned source: b418777f1e3f72e1eb394a26a1e6202e62e718cc
-- Logs: C010B_INTEGRATION_SUMMARY=passed=15;failed=0;real=True
-- Real media: narration=False/True × overlays=False/True = 4/4 PASS
-- Header-readable corrupt-packet decode rejection: PASS
-- Real FFmpeg timeout and cancellation: PASS
-- Remaining: 17 staged master mutation tests, one Goal Center Open gate, one independent real 3-profile E2E coverage item.
+The 12 native video cases are 832x480 landscape, 480x832 vertical, and 640x640 square, each times: no narration/no overlay, narration only, overlay only, and both. All have real ffprobe and full decode, exact stream contracts and durable receipt/restart.
 
-The three earlier C010B runs failed in C010B-owned test compilation and were corrected without altering production; only the successful final native run is acceptance evidence.
+**Only remaining original BLOCKED:** FVQ-R-open-reverify-exact-candidate — Goal Center Open action and its click-time receipt gate are owned by C009C/C010B delivery wiring, not this G006 QA test-only slice. No production/UI file was touched.
+
+The old Python fixture oracle still provides 20 synthetic media fixtures independently from the native C010A suite. Do not describe that as 20 additional C010A service calls.
+
+This test branch never merges/rebases another branch. GitHub Actions composes C010B-owned tests in a disposable pinned-C010A checkout and leaves original branches intact. No merge/rebase/tag/release.

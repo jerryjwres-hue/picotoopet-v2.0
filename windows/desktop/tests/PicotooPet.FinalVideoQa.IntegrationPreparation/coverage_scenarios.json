@@ -226,138 +226,189 @@
     {
       "id": "FVQ-L-production-job-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS production-job-mismatch"
     },
     {
       "id": "FVQ-L-production-package-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS production-package-mismatch"
     },
     {
       "id": "FVQ-L-production-plan-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS production-plan-mismatch"
     },
     {
       "id": "FVQ-L-creative-package-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS creative-package-mismatch"
     },
     {
       "id": "FVQ-L-source-c004-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS source-c004-mismatch"
     },
     {
       "id": "FVQ-L-caption-plan-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS caption-plan-mismatch"
     },
     {
       "id": "FVQ-L-narration-plan-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS narration-plan-mismatch"
     },
     {
       "id": "FVQ-L-selected-visual-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS selected-visual-mismatch"
     },
     {
       "id": "FVQ-L-master-input-digest-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS master-input-digest-mismatch"
     },
     {
       "id": "FVQ-L-master-output-sha-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS master-output-sha-mismatch"
     },
     {
       "id": "FVQ-L-master-output-bytes-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS master-output-bytes-mismatch"
     },
     {
       "id": "FVQ-L-master-audio-flag-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS master-audio-flag-mismatch"
     },
     {
       "id": "FVQ-L-narration-manifest-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS narration-manifest-mismatch"
     },
     {
       "id": "FVQ-L-overlay-manifest-mismatch",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS overlay-manifest-mismatch"
     },
     {
       "id": "FVQ-L-unexpected-directory-entry",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS unexpected-directory-entry"
     },
     {
       "id": "FVQ-L-missing-master-manifest",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS missing-master-manifest"
     },
     {
       "id": "FVQ-L-master-media-byte-tamper",
       "area": "c009a-lineage",
-      "status": "STAGING_READY_REAL_MASTER_BLOCKED",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "MASTER_ARTIFACT_CONFLICT",
-      "dependency": "requires genuine C009A digest-scoped master specimen with corresponding upstream manifests and isolated catalog/QA test environment; staging != API invocation",
-      "fixture": "stage_master_manifest_mutations.py"
+      "dependency": "actual C009B real master + exact C009A FindVerifiedExactAsync and C010A VerifyAsync; restored master and receipt reuse verified",
+      "fixture": "stage_master_manifest_mutations.py",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BRealMasterManifestNegatives.cs",
+      "execution_evidence": "C010B_MASTER_MANIFEST_NEGATIVE_PASS master-media-byte-tamper"
     },
     {
       "id": "FVQ-R-pass-only-receipt",
@@ -700,26 +751,36 @@
     {
       "id": "FVQ-W-real-windows-24fps-all-profiles",
       "area": "windows-end-to-end",
-      "status": "BLOCKED_C010B_ALL_PROFILES_REAL_WINDOWS",
+      "status": "COVERED_BY_PASS_NATIVE_WINDOWS_SUITE",
       "expected_outcome": "UNVERIFIED",
-      "dependency": "C010B independent real test currently exercises 832x480 24fps; upstream C010A CI covers three profiles; independent 3-profile assertion not added",
-      "fixture": ""
+      "dependency": "C010B independent native Windows C005 landscape vertical square x narration overlay, real FFmpeg/ffprobe full decode and restart receipt reuse",
+      "fixture": "",
+      "validation_run": 38645293453,
+      "test_entrypoint": "PicotooPet.FinalVideoQa.IntegrationTests/C010BThreeProfileWindowsMedia.cs",
+      "execution_evidence": "C010B_THREE_PROFILE_REAL_SUMMARY=passed=12;failed=0"
     }
   ],
   "integration": {
     "c010a_commit": "b418777f1e3f72e1eb394a26a1e6202e62e718cc",
     "c010a_pr": 71,
     "independent_test_project": "windows/desktop/tests/PicotooPet.FinalVideoQa.IntegrationTests",
-    "execution_status": "PASS: native Windows C010B composed CI run 38021044347, 15/15 independent groups, 4/4 real media modes; zero failures",
+    "execution_status": "PASS: G006 C010B native Windows run 38645293453, 17/17 test groups, 17/17 genuine catalog+QA master-manifest negatives, 12/12 independently executed native profile/media combinations; zero failures",
     "method": "two isolated checkouts and test-only file overlay; no merge/rebase/production edit",
-    "workflow_run": 38021044347,
+    "workflow_run": 38645293453,
     "workflow_conclusion": "success",
     "native_results": {
-      "integration_groups_passed": 15,
+      "integration_groups_passed": 17,
       "integration_groups_failed": 0,
       "real_candidate_modes_passed": 4,
+      "master_manifest_negatives_passed": 17,
+      "master_manifest_negatives_failed": 0,
+      "real_three_profile_modes_passed": 12,
+      "real_three_profile_modes_failed": 0,
       "full_decode_corruption_rejected": true,
       "process_cancel_timeout_passed": true
-    }
+    },
+    "remaining_blocked": [
+      "FVQ-R-open-reverify-exact-candidate"
+    ]
   }
 }
