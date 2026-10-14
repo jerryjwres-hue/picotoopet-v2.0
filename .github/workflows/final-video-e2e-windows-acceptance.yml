@@ -36,6 +36,7 @@ jobs:
       - name: Check out E2E-only test branch
         uses: actions/checkout@v4
         with:
+          ref: test/final-video-e2e-acceptance-v1
           persist-credentials: false
 
       - name: Validate optional pinned C011 inputs
@@ -67,7 +68,8 @@ jobs:
         shell: pwsh
         run: |
           $required = (Get-Content windows/desktop/global.json -Raw | ConvertFrom-Json).sdk.version
-          $actual = (& dotnet --version).Trim()
+          Push-Location windows/desktop
+          try { $actual = (& dotnet --version).Trim() } finally { Pop-Location }
           if ($LASTEXITCODE -ne 0 -or $actual -ne $required) { throw "SDK mismatch: $required / $actual" }
           Write-Host "FV_E2E_DOTNET_SDK=$actual"
 
