@@ -194,32 +194,59 @@ internal static class RealHardening
 
         await AssertNoOrphansAsync(before, "无关异常传播后").ConfigureAwait(false);
 
-        // 仅兜底路径（树终止完全未执行）：语义必须不变；仅终止根进程，后代是否残留如实记录（文档化的不可恢复限制）。
-        var fallbackOnly = new FixedMasterVideoProcessRunner(_ => throw new NotSupportedException());
-        var fallbackResult = await RealWindowsAcceptance.RunAsync(fallbackOnly, "ffmpeg.exe", args, directory, TimeSpan.FromSeconds(1)).ConfigureAwait(false);
-        Check.True(fallbackResult.TimedOut, "仅兜底路径不得改变超时语义");
-        await Task.Delay(1000).ConfigureAwait(false);
-        var leftovers = Process.GetProcessesByName("ffmpeg");
-        Console.WriteLine("MASTER_MUX_HARDENING_FALLBACK_ONLY_LEFTOVER_FFMPEG=" + Math.Max(0, leftovers.Length - before));
-        foreach (var leftover in leftovers)
+        // 强制失败路径（进程树终止完全未生效）：Job Object 必须仍然结束根与全部后代。
+        await ForcedFailureAsync("NotSupported 抛出 / 超时", _ => throw new NotSupportedException(), cancel: false, args, directory, before).ConfigureAwait(false);
+        await ForcedFailureAsync("NotSupported 抛出 / 取消", _ => throw new NotSupportedException(), cancel: true, args, directory, before).ConfigureAwait(false);
+        await ForcedFailureAsync("空操作 killer / 超时", _ => { }, cancel: false, args, directory, before).ConfigureAwait(false);
+        await ForcedFailureAsync("空操作 killer / 取消", _ => { }, cancel: true, args, directory, before).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 树终止被强制失效，只有 Job Object（与根进程兜底）能清理。断言：取消/超时语义不变、耗时有界、
+    /// 被测根进程的后代为 0（按 PID 谱系归因，不依赖全局计数）、全局 ffmpeg 数不增。
+    /// </summary>
+    private static async Task ForcedFailureAsync(
+        string name, Action<Process> killer, bool cancel, List<string> args, string directory, int before)
+    {
+        var rootPid = -1;
+        var childrenSeen = 0;
+        var runner = new FixedMasterVideoProcessRunner(process =>
         {
+            rootPid = process.Id;
+            var snapshot = ProcessLineage.Snapshot();
+            childrenSeen = snapshot.Values.Count(e => e.ParentPid == rootPid && e.ExeName.Equals("ffmpeg.exe", StringComparison.OrdinalIgnoreCase));
+            killer(process);
+        });
+        var clock = Stopwatch.StartNew();
+        if (cancel)
+        {
+            using var source = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+            var cancelled = false;
             try
             {
-                leftover.Kill();
+                await RealWindowsAcceptance.RunAsync(runner, "ffmpeg.exe", args, directory, TimeSpan.FromMinutes(10), source.Token).ConfigureAwait(false);
             }
-            catch (InvalidOperationException)
+            catch (OperationCanceledException)
             {
-                // 已退出。
+                cancelled = true;
             }
-            catch (Win32Exception)
-            {
-                // 测试清理尽力而为。
-            }
-            finally
-            {
-                leftover.Dispose();
-            }
+            Check.True(cancelled, $"{name}：必须是取消语义");
         }
+        else
+        {
+            var result = await RealWindowsAcceptance.RunAsync(runner, "ffmpeg.exe", args, directory, TimeSpan.FromSeconds(1.5)).ConfigureAwait(false);
+            Check.True(result.TimedOut && result.ExitCode == -1, $"{name}：必须是超时语义");
+            Check.True(!result.CleanupIncomplete, $"{name}：Job 终止后清理应完成");
+        }
+        Check.True(clock.ElapsedMilliseconds <= 30000, $"{name}：必须有界 elapsedMs={clock.ElapsedMilliseconds}");
+        Check.True(rootPid > 0, $"{name}：必须走到终止路径");
+
+        await AssertNoOrphansAsync(before, name).ConfigureAwait(false);
+        var after = ProcessLineage.Snapshot();
+        var owned = after.Values.Where(e => ProcessLineage.IsDescendantOf(e.Pid, rootPid, after)).Select(e => $"{e.Pid}:{e.ExeName}").ToList();
+        Check.True(owned.Count == 0, $"{name}：不得残留被测根进程的后代 [{string.Join(',', owned)}]");
+        Check.True(!after.ContainsKey(rootPid), $"{name}：根进程必须已退出");
+        Console.WriteLine($"MASTER_MUX_LINEAGE_FORCED name={name} root={rootPid} ffmpeg_children_before_kill={childrenSeen} owned_live_descendants_after=0");
     }
 
     private static async Task AssertNoOrphansAsync(int before, string stage)
