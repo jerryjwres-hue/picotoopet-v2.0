@@ -127,7 +127,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             }
             if (_failed.Contains(key))
             {
-                _current = Failed(goalId!, jobId);
+                // Preserve a closed QA-specific failure during repeated Goal Center polling.
+                // Never reinterpret a failed receipt/decode as an ordinary pre-QA failure.
+                if (_current.Phase != GoalDeliveryPhase.QaFailed)
+                {
+                    _current = Failed(goalId!, jobId);
+                }
                 return _current;
             }
             if (_running.Contains(key))
