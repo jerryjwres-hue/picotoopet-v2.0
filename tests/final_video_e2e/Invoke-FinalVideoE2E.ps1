@@ -51,7 +51,7 @@ function Save-Report {
   fail=@($cases.Values|Where-Object {$_.status -eq 'FAIL'}).Count
   blocked=@($cases.Values|Where-Object {$_.status -eq 'BLOCKED'}).Count
   unverified=@($cases.Values|Where-Object {$_.status -eq 'UNVERIFIED'}).Count
-  qa_gated_e2e_pass=@($cases.Values|Where-Object {$_.status -eq 'PASS' -and $_.scope -eq 'FULL_QA_GATED_E2E'}).Count
+  qa_gated_e2e_pass=@($cases.Values|Where-Object {$_.status -eq 'PASS' -and $_.scope -like 'C011_*'}).Count
  }
  $report=[ordered]@{
   schema_version='1.0';source_sha=$source;c011_sha=$(if($C011CommitSha){$C011CommitSha}else{$null})
@@ -101,7 +101,11 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
   if($name -ne 'C009B'){$buildArgs+='--warnaserror'}
   & dotnet @buildArgs *> $log
   if($LASTEXITCODE -ne 0){throw "FV_BUILD_FAILED=$name"}
-  & dotnet run --no-build --project $effectiveProject -c Release --no-launch-profile *>> $log
+  if($name -eq 'G005') {
+   & dotnet run --no-build --project $effectiveProject -c Release --no-launch-profile -- --report (Join-Path $OutputDirectory 'g005-independent-36.json') *>> $log
+  } else {
+   & dotnet run --no-build --project $effectiveProject -c Release --no-launch-profile *>> $log
+  }
   if($LASTEXITCODE -ne 0){throw "FV_TEST_FAILED=$name"}
   $raw=Get-Content -LiteralPath $log -Raw
   foreach($marker in $markers){if(-not $raw.Contains($marker)){throw "FV_MARKER_MISSING=$name $marker"}}
@@ -157,17 +161,50 @@ try {
   $stageSdk=(Get-Content (Join-Path $stage 'windows/desktop/global.json') -Raw|ConvertFrom-Json).sdk.version
   if($stageSdk -ne $requiredSdk){throw 'FV_C011_SDK_MISMATCH'}
   $stageOut=Run-RealSuite 'C011' $stage $project @('FINAL_VIDEO_QA_GATED_INTEGRATION=PASS')
-  foreach($id in $expected){
-   if($id -in @('FV-032','FV-033','FV-034')){continue}
-   if($stageOut -match "(?m)^$([regex]::Escape($id))=PASS\s*$"){
-    $cases[$id].status='PASS';$cases[$id].blocker=$null;$cases[$id].scope='FULL_QA_GATED_E2E'
+  Add-Evidence @('FV-001','FV-003','FV-004','FV-005','FV-007','FV-011','FV-014',
+    'FV-018','FV-020','FV-021','FV-025','FV-027','FV-032') 'C011' 'Pinned real C011 coordinator component suite PASS; NOT scenario PASS'
+  $g005Raw=Run-RealSuite 'G005' $stage 'windows/desktop/tests/PicotooPet.G005.FinalVideoE2E.SmokeTests/PicotooPet.G005.FinalVideoE2E.SmokeTests.csproj' @(
+    'FV_G005_SUMMARY PASS=30 FAIL=0 BLOCKED=3 UNVERIFIED=3'
+  )
+  $g005File=Join-Path $OutputDirectory 'g005-independent-36.json'
+  if(-not (Test-Path -LiteralPath $g005File)){throw 'FV_G005_CASE_REPORT_MISSING'}
+  $g005=Get-Content -LiteralPath $g005File -Raw|ConvertFrom-Json
+  if($g005.schema_version -ne 'g005-independent-fv36.v1' -or
+     $g005.c011_sha -cne $C011CommitSha -or
+     $g005.counts.total -ne 36 -or @($g005.cases).Count -ne 36){throw 'FV_G005_REPORT_INVALID'}
+  foreach($case in @($g005.cases)){
+   if(-not $cases.Contains($case.id)){throw "FV_G005_UNKNOWN_CASE=$($case.id)"}
+   if($case.status -eq 'PASS'){
+    if($case.assertions -lt 1 -or $case.evidence -cne "$($case.id)=PASS" -or
+      $g005Raw -notmatch "(?m)^$([regex]::Escape($case.id))=PASS scope=[A-Z0-9_]+ assertions=[1-9][0-9]*\s*$"){
+     throw "FV_G005_MISSING_INDEPENDENT_ORACLE=$($case.id)"
+    }
+   }elseif($case.status -notin @('BLOCKED','UNVERIFIED')){
+    throw "FV_G005_TEST_NOT_PASS=$($case.id) status=$($case.status)"
    }
+   $cases[$case.id].status=$case.status
+   $cases[$case.id].scope=$case.scope
+   $cases[$case.id].blocker=$case.blocker
+   $cases[$case.id].individual_assertions=$case.assertions
+   $cases[$case.id].assertion_description=$case.assertion
+   $cases[$case.id].individual_log='G005.log'
+   $cases[$case.id].component_evidence=@($cases[$case.id].component_evidence)+@([ordered]@{
+    suite='G005';result=$case.status;scope=$case.scope
+    detail=$case.assertion;assertions=$case.assertions;evidence=$case.evidence
+   })
   }
+  foreach($manualId in @('FV-032','FV-033','FV-034')){
+   if($cases[$manualId].status -ne 'UNVERIFIED'){throw "FV_G005_GUI_NOT_PROVEN=$manualId"}
+  }
+  $g005Counts=@($cases.Values|Where-Object {$_.status -eq 'PASS'}).Count
+  if($g005Counts -ne 30){throw "FV_G005_CASE_COUNT_MISMATCH=$g005Counts"}
+  Write-Host 'FV_G005_INDIVIDUAL_36_ORACLES=PASS'
+
  }
 }catch{
  $problem=$_.Exception.Message
  Write-Host "FV_E2E_DRIVER_ERROR=$problem"
 }finally{Save-Report}
 if($problem){exit 1}
-Write-Host 'FV_E2E_DRIVER=PASS_WITH_C011_BLOCKED_CASES'
+Write-Host 'FV_E2E_DRIVER=PASS_WITH_EXPLICIT_REMAINING_BLOCKERS'
 exit 0
