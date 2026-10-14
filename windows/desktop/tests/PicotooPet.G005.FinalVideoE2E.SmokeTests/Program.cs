@@ -23,7 +23,7 @@ namespace PicotooPet.G005.FinalVideoE2E;
 internal static class Program
 {
     private static readonly List<Result> Results = new();
-    private static readonly AsyncLocal<int> Assertions = new();
+    private static int _assertions;
     private static readonly JsonSerializerOptions ReportJsonOptions = new() { WriteIndented = true };
     private const string Sha = "ec468b9975a3b1cd706e6e74223bfb05f7733a86";
     private static string _root = "";
@@ -113,24 +113,24 @@ internal static class Program
 
     private static void Check(bool ok, string reason)
     {
-        Assertions.Value++;
+        Interlocked.Increment(ref _assertions);
         if (!ok) throw new InvalidOperationException("FV_ASSERT_" + reason);
     }
 
     private static async Task Run(string id, string scope, string oracle, Func<Task> action)
     {
-        Assertions.Value = 0;
+        Interlocked.Exchange(ref _assertions, 0);
         try
         {
             await action();
-            Check(Assertions.Value > 0, "scenario needs actual independent oracle");
-            var n = Assertions.Value;
+            Check(Volatile.Read(ref _assertions) > 0, "scenario needs actual independent oracle");
+            var n = Volatile.Read(ref _assertions);
             Results.Add(new(id, "PASS", scope, oracle, n, null, null, $"{id}=PASS"));
             Console.WriteLine($"{id}=PASS scope={scope} assertions={n}");
         }
         catch (Exception error)
         {
-            Results.Add(new(id, "FAIL", scope, oracle, Assertions.Value, null,
+            Results.Add(new(id, "FAIL", scope, oracle, Volatile.Read(ref _assertions), null,
                 error.GetType().Name + ":" + error.Message, $"{id}=FAIL"));
             Console.WriteLine($"{id}=FAIL type={error.GetType().Name}");
         }
@@ -198,7 +198,7 @@ internal static class Program
             verifier, launcher,
             faults.NoQaGate ? null : (goal, job, ct) =>
                 Task.FromResult(faults.BadAuthority
-                    ? authority with { Goal = authority.Goal with { ReturnSha256 = Fixture.ShaValue("other-return") } }
+                    ? authority with { Goal = authority.Goal with { GoalId = "stale-unrelated-goal" } }
                     : authority),
             faults.NoQaGate ? null : qa.VerifyAsync);
     }
