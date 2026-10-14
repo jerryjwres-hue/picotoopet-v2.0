@@ -317,9 +317,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 }
             }
 
-            var result = await _compose(
-                new MasterCompositionInputV1(c004, narrationPlan, audio, overlayPlan, visualOverlay),
-                cancellationToken).ConfigureAwait(false);
+            var masterInput = new MasterCompositionInputV1(
+                c004, narrationPlan, audio, overlayPlan, visualOverlay);
+            var result = await _compose(masterInput, cancellationToken).ConfigureAwait(false);
 
             GoalDeliveryCandidateV1 candidate;
             GoalDeliveryPhase phase;
@@ -359,19 +359,59 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                     fallback, narrationPlan, overlayPlan, cancellationToken).ConfigureAwait(false);
                 phase = GoalDeliveryPhase.FallbackReady;
             }
+            // C011 fail-closed QA gate: C004 fallback and C009 master must BOTH pass
+            // the same frozen C010A production policy, media full-decode and receipt store.
+            if (_authority is null || _verifyQa is null)
+            {
+                throw new InvalidDataException("C011_QA_GATE_UNAVAILABLE");
+            }
+            PublishPhase(goalId, jobId, GoalDeliveryPhase.QualityChecking);
+            var authority = await _authority(goalId, jobId, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(authority.Goal.GoalId, goalId, StringComparison.Ordinal)
+                || !string.Equals(authority.Job.ProductionJobId, jobId, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("C011_CORE_AUTHORITY_MISMATCH");
+            }
+            var input = new FinalVideoQaInputV1(
+                authority.Goal, authority.Job, authority.Plan, authority.Package,
+                masterInput, required ? result.Artifact : null);
+            var receipt = await _verifyQa(input, cancellationToken).ConfigureAwait(false);
+            if (!C011QaDeliveryAuthority.Approved(candidate, input, receipt))
+            {
+                throw new InvalidDataException("C011_QA_RECEIPT_NOT_APPROVED");
+            }
+            candidate = candidate with { ApprovalReceiptDigest = receipt.Receipt.ReceiptDigest };
             cancellationToken.ThrowIfCancellationRequested();
             lock (_gate)
             {
                 if (!_disposed && IsCurrent(goalId, jobId))
                 {
                     _candidate = candidate;
-                    _current = Phase(goalId, jobId, phase);
+                    _approvedInput = input;
+                    _approvedReceipt = receipt;
+                    _approvedAuthorityFingerprint = authority.Fingerprint();
+                    _current = Phase(goalId, jobId, GoalDeliveryPhase.DeliveryReady);
                 }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Shutdown is not durable task failure and must never select C004.
+        }
+        catch (FinalVideoQaException)
+        {
+            lock (_gate)
+            {
+                _failed.Add(key);
+                if (!_disposed && IsCurrent(goalId, jobId))
+                {
+                    _candidate = null;
+                    _approvedInput = null;
+                    _approvedReceipt = null;
+                    _approvedAuthorityFingerprint = null;
+                    _current = Phase(goalId, jobId, GoalDeliveryPhase.QaFailed);
+                }
+            }
         }
         catch (Exception)
         {
@@ -381,6 +421,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 if (!_disposed && IsCurrent(goalId, jobId))
                 {
                     _candidate = null;
+                    _approvedInput = null;
+                    _approvedReceipt = null;
+                    _approvedAuthorityFingerprint = null;
                     _current = Failed(goalId, jobId);
                 }
             }
@@ -426,6 +469,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         {
             _failed.Add(Key(goal, job));
             _candidate = null;
+            _approvedInput = null;
+            _approvedReceipt = null;
+            _approvedAuthorityFingerprint = null;
             _current = Failed(goal, job);
         }
     }
@@ -439,9 +485,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             GoalDeliveryPhase.VisualReadyPostProcessing => "基础画面已完成，正在准备旁白/文字后期",
             GoalDeliveryPhase.PostProcessing => "正在生成最终成片",
             GoalDeliveryPhase.MasteredReady => "最终成片已就绪",
-            GoalDeliveryPhase.FallbackReady => "最终视频已就绪",
+            GoalDeliveryPhase.FallbackReady => "基础视频已就绪，等待 QA 验证",
+            GoalDeliveryPhase.QualityChecking => "正在进行最终视频媒体质量与来源校验",
+            GoalDeliveryPhase.DeliveryReady => "QA 验收通过，最终成片可打开",
+            GoalDeliveryPhase.QaFailed => "最终视频未通过 QA 验证",
             _ => null,
-        }, phase is GoalDeliveryPhase.MasteredReady or GoalDeliveryPhase.FallbackReady);
+        }, phase == GoalDeliveryPhase.DeliveryReady);
 
     private static GoalDeliverySnapshot Failed(string goal, string job) =>
         new(goal, job, GoalDeliveryPhase.Failed,
@@ -456,6 +505,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             _disposed = true;
             _lifetime.Cancel();
             _candidate = null;
+            _approvedInput = null;
+            _approvedReceipt = null;
+            _approvedAuthorityFingerprint = null;
             tasks = _tasks.ToArray();
         }
         try
