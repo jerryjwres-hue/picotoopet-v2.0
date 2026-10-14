@@ -58,6 +58,19 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
  $full=Join-Path $root $project
  if(-not (Test-Path -LiteralPath $full -PathType Leaf)){throw "FV_PROJECT_MISSING=$project"}
  $log=Join-Path $OutputDirectory "$name.log"
+ $effectiveProject=$full
+ $temporaryProject=$null
+ if($name -eq 'C009B'){
+  # The frozen upstream csproj has an invalid XML comment containing "--project".
+  # Build a disposable test-only project copy; never edit the original csproj.
+  $originalXml=[IO.File]::ReadAllText($full)
+  $fixedXml=$originalXml.Replace('Run: dotnet run --project','Run: dotnet run -project')
+  if($fixedXml -ceq $originalXml){throw 'FV_C009B_XML_COMMENT_NOT_FOUND'}
+  $temporaryProject=Join-Path (Split-Path $full -Parent) '__E2E_TEMP_C009B.csproj'
+  if(Test-Path -LiteralPath $temporaryProject){throw 'FV_TEMP_PROJECT_ALREADY_EXISTS'}
+  [IO.File]::WriteAllText($temporaryProject,$fixedXml)
+  $effectiveProject=$temporaryProject
+ }
  $temporaryUsing=$null
  if($name -in @('C009A','C009B')){
   # Temporary test-only source in the CI checkout; never commit or modify upstream assertions.
@@ -72,9 +85,9 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
  }
  Push-Location (Join-Path $root 'windows/desktop')
  try{
-  & dotnet build $full -c Release --nologo --warnaserror *> $log
+  & dotnet build $effectiveProject -c Release --nologo --warnaserror *> $log
   if($LASTEXITCODE -ne 0){throw "FV_BUILD_FAILED=$name"}
-  & dotnet run --no-build --project $full -c Release --no-launch-profile *>> $log
+  & dotnet run --no-build --project $effectiveProject -c Release --no-launch-profile *>> $log
   if($LASTEXITCODE -ne 0){throw "FV_TEST_FAILED=$name"}
   $raw=Get-Content -LiteralPath $log -Raw
   foreach($marker in $markers){if(-not $raw.Contains($marker)){throw "FV_MARKER_MISSING=$name $marker"}}
@@ -86,6 +99,9 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
   Pop-Location
   if($temporaryUsing -and (Test-Path -LiteralPath $temporaryUsing)){
    Remove-Item -LiteralPath $temporaryUsing -Force
+  }
+  if($temporaryProject -and (Test-Path -LiteralPath $temporaryProject)){
+   Remove-Item -LiteralPath $temporaryProject -Force
   }
  }
 }
