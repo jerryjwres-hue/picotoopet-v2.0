@@ -1,10 +1,13 @@
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using PicotooPet.Desktop.Core.Contracts;
+
+[assembly: InternalsVisibleTo("PicotooPet.FinalDeliveryIntegration.SmokeTests")]
 
 namespace PicotooPet.Desktop.Services;
 
