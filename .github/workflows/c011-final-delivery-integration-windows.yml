@@ -98,7 +98,7 @@ jobs:
           Get-Content $log | Write-Host
           if ($exit -ne 0) { throw "C010A_REAL_WINDOWS_EXIT=$exit" }
           $output = Get-Content $log -Raw
-          foreach ($marker in @('QA_MEDIA_POLICY=PASS','QA_LIFECYCLE=PASS')) {
+          foreach ($marker in @('QA_MEDIA_POLICY=PASS','QA_REAL_CORRUPT_PACKET_DECODE_TIMEOUT_CANCEL=PASS')) {
             if (-not $output.Contains($marker)) { throw "C010A_MARKER_MISSING=$marker" }
           }
           Write-Host 'C011_C010A_REAL_WINDOWS=PASS'
