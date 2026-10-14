@@ -24,6 +24,7 @@ internal static class Program
 {
     private static readonly List<Result> Results = new();
     private static readonly AsyncLocal<int> Assertions = new();
+    private static readonly JsonSerializerOptions ReportJsonOptions = new() { WriteIndented = true };
     private const string Sha = "ec468b9975a3b1cd706e6e74223bfb05f7733a86";
     private static string _root = "";
 
@@ -97,7 +98,7 @@ internal static class Program
             counts,
             cases = Results
         };
-        await File.WriteAllTextAsync(_root, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        await File.WriteAllTextAsync(_root, JsonSerializer.Serialize(report, ReportJsonOptions));
         Console.WriteLine($"FV_G005_SUMMARY PASS={counts.pass} FAIL={counts.fail} BLOCKED={counts.blocked} UNVERIFIED={counts.unverified}");
         Console.WriteLine($"FV_G005_QA_GATED_CONTROLLED_CORE_PASS={counts.qa_gated_e2e_pass}");
         return counts.fail == 0 ? 0 : 1;
@@ -245,7 +246,8 @@ internal static class Program
         Check(ready.CanOpen && ready.Phase == GoalDeliveryPhase.DeliveryReady, "receipt gated ready");
         Check(await c.OpenCurrentAsync(), "one approved open");
         Check(launcher.Calls == 1 && launcher.LastPath is not null, "single launcher invocation");
-        Check(launcher.LastPath.Contains(narration || overlay ? "master.mp4" : "final-", StringComparison.OrdinalIgnoreCase),
+        var openedPath = launcher.LastPath ?? throw new InvalidOperationException("FV_OPEN_PATH_MISSING");
+        Check(openedPath.Contains(narration || overlay ? "master.mp4" : "final-", StringComparison.OrdinalIgnoreCase),
             "correct C009 or C004 candidate");
     }
     private static async Task StaleMaster()
