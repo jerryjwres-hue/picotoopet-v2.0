@@ -1,0 +1,141 @@
+name: Final Video 36-Scenario Windows E2E Acceptance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/final-video-e2e-windows-acceptance.yml'
+      - 'tests/final_video_e2e/**'
+      - 'tests/fixtures/final_video_e2e_*.json'
+  push:
+    branches:
+      - test/final-video-e2e-acceptance-v1
+    paths:
+      - '.github/workflows/final-video-e2e-windows-acceptance.yml'
+      - 'tests/final_video_e2e/**'
+      - 'tests/fixtures/final_video_e2e_*.json'
+  workflow_dispatch:
+    inputs:
+      c011_commit_sha:
+        description: 'Exact approved C011 integration commit SHA (40 lowercase hex); blank while blocked'
+        required: false
+        type: string
+      c011_test_project:
+        description: 'C011 .csproj path under windows/desktop/tests; required with SHA'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows-e2e:
+    name: Native Windows C009A/C009B gates and strict 36-case C011 blockers
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out E2E-only test branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate optional pinned C011 inputs
+        shell: pwsh
+        env:
+          C011_SHA: ${{ inputs.c011_commit_sha }}
+          C011_PROJECT: ${{ inputs.c011_test_project }}
+        run: |
+          if ($env:C011_SHA -or $env:C011_PROJECT) {
+            if ($env:C011_SHA -cnotmatch '^[a-f0-9]{40}$' -or -not $env:C011_PROJECT) {
+              throw "C011 staging requires exact lowercase commit SHA and project"
+            }
+          }
+
+      - name: Check out pinned C011 into disposable directory
+        if: ${{ inputs.c011_commit_sha != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.c011_commit_sha }}
+          path: c011-stage
+          persist-credentials: false
+
+      - name: Install pinned Windows Desktop SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Verify exact SDK
+        shell: pwsh
+        run: |
+          $required = (Get-Content windows/desktop/global.json -Raw | ConvertFrom-Json).sdk.version
+          $actual = (& dotnet --version).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $required) { throw "SDK mismatch: $required / $actual" }
+          Write-Host "FV_E2E_DOTNET_SDK=$actual"
+
+      - name: Require native Windows FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or
+              -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'ffmpeg install failed' }
+            $env:PATH += ';C:\ProgramData\chocolatey\bin'
+          }
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or
+              -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            throw 'Native ffmpeg and ffprobe required'
+          }
+          & ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          & ffprobe.exe -hide_banner -version | Select-Object -First 1
+
+      - name: Prepare isolated tamper fixture inputs
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'final-video-e2e-fixtures'
+          & ./tests/final_video_e2e/New-DisposableFinalVideoFixtures.ps1 -OutputDirectory $dir
+          if ($LASTEXITCODE -ne 0) { throw 'Fixture generator failed' }
+          if (-not (Test-Path (Join-Path $dir 'fixture-evidence.json'))) { throw 'Fixture report missing' }
+
+      - name: Run actual Windows media tests and classify all 36 scenarios
+        shell: pwsh
+        env:
+          C011_SHA: ${{ inputs.c011_commit_sha }}
+          C011_PROJECT: ${{ inputs.c011_test_project }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'final-video-e2e-results'
+          $parameters = @{
+            RepositoryRoot = $env:GITHUB_WORKSPACE
+            ScenarioIndex = (Join-Path $env:GITHUB_WORKSPACE 'tests/fixtures/final_video_e2e_scenario_index_v1.json')
+            OutputDirectory = $dir
+          }
+          if ($env:C011_SHA) {
+            $parameters.C011CommitSha = $env:C011_SHA
+            $parameters.C011StageRoot = (Join-Path $env:GITHUB_WORKSPACE 'c011-stage')
+            $parameters.C011TestProject = $env:C011_PROJECT
+          }
+          & ./tests/final_video_e2e/Invoke-FinalVideoE2E.ps1 @parameters
+          if ($LASTEXITCODE -ne 0) { throw 'Native E2E runner failed' }
+          $report = Get-Content (Join-Path $dir 'final-video-e2e-results.json') -Raw | ConvertFrom-Json
+          $sum = $report.counts.pass + $report.counts.fail + $report.counts.blocked + $report.counts.unverified
+          if ($report.counts.total -ne 36 -or $sum -ne 36) { throw '36-case result conservation failed' }
+          if (-not $env:C011_SHA) {
+            if ($report.counts.qa_gated_e2e_pass -ne 0 -or $report.counts.pass -ne 1) {
+              throw 'Pre-C011 run may only accept FV-030 media-profile case'
+            }
+          }
+          Write-Host "FV_36_SCENARIOS_REAL_PASS=$($report.counts.pass)"
+          Write-Host "FV_36_SCENARIOS_FULL_QA_E2E_PASS=$($report.counts.qa_gated_e2e_pass)"
+          Write-Host "FV_36_SCENARIOS_BLOCKED=$($report.counts.blocked)"
+          Write-Host "FV_36_SCENARIOS_UNVERIFIED=$($report.counts.unverified)"
+
+      - name: Upload evidence even on failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-video-e2e-windows-evidence
+          path: |
+            ${{ runner.temp }}/final-video-e2e-results/*.json
+            ${{ runner.temp }}/final-video-e2e-results/*.log
+            ${{ runner.temp }}/final-video-e2e-fixtures/fixture-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
