@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>PicotooPet.FinalVideoQa.SmokeTests</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PicotooPet.Desktop/PicotooPet.Desktop.csproj" />
+    <!-- Compile-link C010A's genuine existing test fixtures from the composed checkout.
+         They are not duplicated or modified on this independent C010B branch. -->
+    <Compile Include="../PicotooPet.FinalVideoQa.SmokeTests/Fixture.cs" Link="LinkedUpstream/Fixture.cs" />
+    <Compile Include="../PicotooPet.FinalVideoQa.SmokeTests/LifecycleTests.cs" Link="LinkedUpstream/LifecycleTests.cs" />
+  </ItemGroup>
+</Project>
