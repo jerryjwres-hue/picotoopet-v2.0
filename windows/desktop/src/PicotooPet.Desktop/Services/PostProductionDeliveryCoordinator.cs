@@ -322,7 +322,6 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             var result = await _compose(masterInput, cancellationToken).ConfigureAwait(false);
 
             GoalDeliveryCandidateV1 candidate;
-            GoalDeliveryPhase phase;
             if (required)
             {
                 var master = result.Artifact;
@@ -342,7 +341,6 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 }
                 candidate = await _verifier.FromMasterAsync(
                     master, narrationPlan, overlayPlan, cancellationToken).ConfigureAwait(false);
-                phase = GoalDeliveryPhase.MasteredReady;
             }
             else
             {
@@ -357,7 +355,6 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 }
                 candidate = await _verifier.FromFallbackAsync(
                     fallback, narrationPlan, overlayPlan, cancellationToken).ConfigureAwait(false);
-                phase = GoalDeliveryPhase.FallbackReady;
             }
             // C011 fail-closed QA gate: C004 fallback and C009 master must BOTH pass
             // the same frozen C010A production policy, media full-decode and receipt store.
