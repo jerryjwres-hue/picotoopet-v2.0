@@ -58,10 +58,21 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
  $full=Join-Path $root $project
  if(-not (Test-Path -LiteralPath $full -PathType Leaf)){throw "FV_PROJECT_MISSING=$project"}
  $log=Join-Path $OutputDirectory "$name.log"
+ $temporaryUsing=$null
+ if($name -in @('C009A','C009B')){
+  # Temporary test-only source in the CI checkout; never commit or modify upstream assertions.
+  $temporaryUsing=Join-Path (Split-Path $full -Parent) '__E2E_TEMP_USINGS.g.cs'
+  if(Test-Path -LiteralPath $temporaryUsing){throw 'FV_TEMP_USINGS_ALREADY_EXISTS'}
+  @(
+   'global using System;','global using System.IO;','global using System.Linq;',
+   'global using System.Collections.Generic;','global using System.Threading;',
+   'global using System.Threading.Tasks;','global using System.Diagnostics;',
+   'global using System.Text;','global using System.Security.Cryptography;'
+  )|Set-Content -LiteralPath $temporaryUsing -Encoding utf8
+ }
  Push-Location (Join-Path $root 'windows/desktop')
  try{
-  # Upstream isolated test projects omit SDK implicit usings; enable only for this disposable test build.
-  & dotnet build $full -c Release --nologo --warnaserror -p:ImplicitUsings=enable *> $log
+  & dotnet build $full -c Release --nologo --warnaserror *> $log
   if($LASTEXITCODE -ne 0){throw "FV_BUILD_FAILED=$name"}
   & dotnet run --no-build --project $full -c Release --no-launch-profile *>> $log
   if($LASTEXITCODE -ne 0){throw "FV_TEST_FAILED=$name"}
@@ -71,7 +82,12 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
   $suites[$name]=[ordered]@{status='PASS';sha=(& git -C $root rev-parse HEAD).Trim();log="$name.log";markers=$markers}
   Write-Host "FV_REAL_SUITE_$name=PASS"
   return $raw
- }finally{Pop-Location}
+ }finally{
+  Pop-Location
+  if($temporaryUsing -and (Test-Path -LiteralPath $temporaryUsing)){
+   Remove-Item -LiteralPath $temporaryUsing -Force
+  }
+ }
 }
 function Add-Evidence([string[]]$matching,[string]$name,[string]$detail){
  foreach($id in $matching){
