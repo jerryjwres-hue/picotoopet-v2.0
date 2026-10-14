@@ -39,6 +39,13 @@ jobs:
           ref: test/final-video-e2e-acceptance-v1
           persist-credentials: false
 
+      - name: Check out the frozen C009B Windows PASS source, without composing branches
+        uses: actions/checkout@v4
+        with:
+          ref: d399f720e8347488a43282722ad37c43cd3cb337
+          path: upstream-accepted
+          persist-credentials: false
+
       - name: Validate optional pinned C011 inputs
         shell: pwsh
         env:
@@ -112,6 +119,8 @@ jobs:
             RepositoryRoot = $env:GITHUB_WORKSPACE
             ScenarioIndex = (Join-Path $env:GITHUB_WORKSPACE 'tests/fixtures/final_video_e2e_scenario_index_v1.json')
             OutputDirectory = $dir
+            AcceptedStageRoot = (Join-Path $env:GITHUB_WORKSPACE 'upstream-accepted')
+            AcceptedCommitSha = 'd399f720e8347488a43282722ad37c43cd3cb337'
           }
           if ($env:C011_SHA) {
             $parameters.C011CommitSha = $env:C011_SHA
