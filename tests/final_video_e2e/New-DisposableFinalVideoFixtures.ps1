@@ -86,5 +86,5 @@ $path=Join-Path $root 'fixture-evidence.json'
  kind='DISPOSABLE_NEGATIVE_INPUTS_NOT_PRODUCTION_ARTIFACTS'
  fixtures=$fixtures
 })|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $path -Encoding utf8
-Write-Host 'FV_DISPOSABLE_FIXTURE_MUTATIONS=PASS'
-Write-Host "FV_DISPOSABLE_FIXTURE_REPORT=$path"
+Write-Output 'FV_DISPOSABLE_FIXTURE_MUTATIONS=PASS'
+Write-Output "FV_DISPOSABLE_FIXTURE_REPORT=$path"
