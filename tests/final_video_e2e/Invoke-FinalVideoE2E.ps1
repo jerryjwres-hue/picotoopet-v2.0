@@ -20,7 +20,8 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 $source=(& git -C $repo rev-parse HEAD).Trim()
 if($LASTEXITCODE -ne 0 -or $source -notmatch '^[a-f0-9]{40}$'){throw 'FV_SOURCE_COMMIT_INVALID'}
 $requiredSdk=(Get-Content (Join-Path $repo 'windows/desktop/global.json') -Raw|ConvertFrom-Json).sdk.version
-$actualSdk=(& dotnet --version).Trim()
+Push-Location (Join-Path $repo 'windows/desktop')
+try { $actualSdk=(& dotnet --version).Trim() } finally { Pop-Location }
 if($LASTEXITCODE -ne 0 -or $actualSdk -ne $requiredSdk){throw "FV_SDK_MISMATCH expected=$requiredSdk actual=$actualSdk"}
 $cases=[ordered]@{}
 foreach($id in $expected){
@@ -57,7 +58,7 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
  $full=Join-Path $root $project
  if(-not (Test-Path -LiteralPath $full -PathType Leaf)){throw "FV_PROJECT_MISSING=$project"}
  $log=Join-Path $OutputDirectory "$name.log"
- Push-Location $root
+ Push-Location (Join-Path $root 'windows/desktop')
  try{
   & dotnet build $full -c Release --nologo --warnaserror *> $log
   if($LASTEXITCODE -ne 0){throw "FV_BUILD_FAILED=$name"}
