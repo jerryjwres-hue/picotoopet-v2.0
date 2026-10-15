@@ -33,6 +33,10 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--g005-atomic-child")
+            return await AdversarialWindowsAcceptance.AtomicChild(args[1]);
+        if (args.Length == 2 && args[0] == "--g005-missing-child")
+            return await AdversarialWindowsAcceptance.MissingBinaryChild(args[1]);
         var index = Array.IndexOf(args, "--report");
         if (index < 0 || index + 1 >= args.Length)
         {
@@ -52,7 +56,9 @@ internal static class Program
         await Run("FV-009", "C011_QA_CONTROLLED_CORE", "overlay failure and new coordinator recovery", () => FailureRecover(false, true, "overlay"));
         await Run("FV-010", "C011_QA_CONTROLLED_CORE", "composition error bounded; new coordinator retry", () => FailureRecover(true, false, "mux"));
         await Run("FV-011", "C011_QA_CONTROLLED_CORE", "C010A decode error forbids PASS receipt and launch", DecodeFailure);
-        Block("FV-012", "TRUE_PROCESS_CRASH_MID_ATOMIC_COMMIT_NOT_EXECUTED", "Requires adversarial external PID kill inside atomic C009A commit, not fixture deletion");
+        await Run("FV-012", "C009A_REAL_PROCESS_CRASH",
+            "OS-killed child PID in genuine C009A uncommitted master staging; separate-process durable atomic recovery",
+            AdversarialWindowsAcceptance.AtomicKillAndRecovery);
         await Run("FV-013", "C011_QA_CONTROLLED_CORE", "master before failed receipt then fresh coordinator completes QA", MasterBeforeQaRecovery);
         await Run("FV-014", "C011_QA_CONTROLLED_CORE", "fresh coordinator restart recovers receipt", Restart);
         await Run("FV-015", "C011_QA_CONTROLLED_CORE", "C004 content SHA tamper before postproduction", () => UpstreamTamper("c004"));
@@ -71,11 +77,15 @@ internal static class Program
         await Run("FV-028", "C011_QA_CONTROLLED_CORE", "malformed ffprobe through actual QA service denied", BadProbe);
         await Run("FV-029", "C010A_REAL_NATIVE_MEDIA", "actual header-readable corrupt video full decode rejected", RealCorruptDecode);
         await Run("FV-030", "C011_REAL_NATIVE_MEDIA_CONTROLLED_CORE", "three C005 real profile combinations QA and open", ThreeProfiles);
-        Block("FV-031", "COMPLETE_REAL_AAC_TIMELINE_CORRUPTION_NOT_TESTED", "Upstream audio policy component tests do not prove adversarial silent-interval alignment E2E");
+        await Run("FV-031", "C010A_REAL_AAC_TIMELINE",
+            "real AAC +700ms timeline displacement with independent decoded PCM voice/silence RMS and closed SHA authority",
+            AdversarialWindowsAcceptance.RealAacTimelineCorruption);
         Unverified("FV-032", "PUBLISHED_GUI_CONCURRENT_CLICK_NOT_EXECUTED");
         Unverified("FV-033", "INSTALLED_PUBLISHED_APP_FRESH_LOCALAPPDATA_NOT_EXECUTED");
         Unverified("FV-034", "ADVERSARIAL_PID_FORCE_KILL_AND_RESTART_NOT_EXECUTED");
-        Block("FV-035", "REAL_MISSING_FFMPEG_PATH_NOT_INJECTED", "A synthetic process error does not prove native missing-binary lifecycle");
+        await Run("FV-035", "C010A_REAL_WINDOWS_MISSING_TOOLS",
+            "separate PID with ffmpeg.exe/ffprobe.exe missing from restricted PATH, no receipt or artifact leak",
+            AdversarialWindowsAcceptance.RealMissingExecutables);
         await Run("FV-036", "C011_QA_CONTROLLED_CORE", "untrusted forged receipt cannot authorize Open", () => TamperAtClick("receipt-forged"));
 
         // These are independently asserted C011 coordinator integration checks,
@@ -118,7 +128,7 @@ internal static class Program
             throw new InvalidOperationException("G005_MISSING_OR_DUPLICATE_SCENARIO");
     }
 
-    private static void Check(bool ok, string reason)
+    internal static void Check(bool ok, string reason)
     {
         Interlocked.Increment(ref _assertions);
         if (!ok) throw new InvalidOperationException("FV_ASSERT_" + reason);
