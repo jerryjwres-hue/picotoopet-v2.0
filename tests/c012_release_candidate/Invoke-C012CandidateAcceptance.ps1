@@ -154,14 +154,14 @@ if(Test-Path -LiteralPath $g005ResultFile){
   $unverified=@($all36|Where-Object {$_.status -ceq 'UNVERIFIED'})
   $passEvidence=@($passCases|Where-Object {$_.assertions -ge 1 -and
     $_.evidence -ceq "$($_.id)=PASS" -and
-    $g005Raw -match "(?m)^$([regex]::Escape($_.id))=PASS scope=[A-Z0-9_]+ assertions=[1-9][0-9]*\\s*$"})
+    $g005Raw -match "(?m)^$([regex]::Escape($_.id))=PASS scope=[A-Z0-9_]+ assertions=[1-9][0-9]*\s*$"})
   $ids=@($all36|ForEach-Object {$_.id})
   $expected=@(1..36|ForEach-Object {"FV-{0:D3}" -f $_})
   $native=@('FV-012','FV-031','FV-035')
   $nativeVerified=@($native|Where-Object {
    $id=$_
    $matches=@($all36|Where-Object {$_.id -ceq $id -and $_.status -ceq 'PASS' -and $_.assertions -ge 5})
-   $matches.Count -eq 1 -and $g005Raw -match "(?m)^$([regex]::Escape($id))=PASS scope=[A-Z0-9_]+ assertions=[1-9][0-9]*\\s*$"
+   $matches.Count -eq 1 -and $g005Raw -match "(?m)^$([regex]::Escape($id))=PASS scope=[A-Z0-9_]+ assertions=[1-9][0-9]*\s*$"
   })
   $validG005=($g005Report.schema_version -ceq 'g005-independent-fv36.v1' -and
     $g005Report.c011_sha -ceq $sourceBase -and $all36.Count -eq 36 -and
