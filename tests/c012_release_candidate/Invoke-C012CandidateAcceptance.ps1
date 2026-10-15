@@ -18,7 +18,7 @@ New-Item -ItemType Directory -Force -Path $evidence|Out-Null
 $sourceBase='ec468b9975a3b1cd706e6e74223bfb05f7733a86'
 $c009b='1e75cab7daf201a1883e3e98ea5ddb8a753e8e82'
 $c010b='8c8f1d7c01dc82baf2df636ef93df5af7125cd3c'
-$g005Sha='99cccbb867c3c4d532e816907f2350a0c6d043e0'
+$g005Sha='0c92fbb5152c149e30db0e88a09b4e7eade18e02'
 function Head([string]$root){
  $v=(& git -C $root rev-parse HEAD).Trim()
  if($LASTEXITCODE -ne 0){throw "C012_GIT_REV_PARSE_ERROR=$root"}
@@ -141,24 +141,53 @@ $c011=Suite 'C011' 'windows/desktop/tests/PicotooPet.FinalDeliveryIntegration.Sm
  'FINAL_VIDEO_QA_GATED_INTEGRATION=PASS')
 $g005ResultFile=Join-Path $evidence 'g005-independent-36.json'
 $g005Raw=Suite 'G005' 'windows/desktop/tests/PicotooPet.G005.FinalVideoE2E.SmokeTests/PicotooPet.G005.FinalVideoE2E.SmokeTests.csproj' @('--','--report',$g005ResultFile) @(
- 'FV_G005_SUMMARY PASS=30 FAIL=0 BLOCKED=3 UNVERIFIED=3')
+ 'FV_G005_SUMMARY PASS=33 FAIL=0 BLOCKED=0 UNVERIFIED=3')
 $validG005=$false
+$g005Counts=[ordered]@{pass=0;fail=0;blocked=0;unverified=0;native_verified=@()}
 if(Test-Path -LiteralPath $g005ResultFile){
  try{
   $g005Report=Get-Content -LiteralPath $g005ResultFile -Raw|ConvertFrom-Json
-  $passCases=@($g005Report.cases|Where-Object {$_.status -eq 'PASS'})
   $all36=@($g005Report.cases)
-  $n=@($passCases|Where-Object {$_.assertions -ge 1 -and
-    $g005Raw.Contains("$($_.id)=PASS scope=") }).Count
-  $validG005=($g005Report.c011_sha -cne $null -and $all36.Count -eq 36 -and
-    $passCases.Count -eq 30 -and $n -eq 30 -and
-    @($all36|Where-Object {$_.status -eq 'BLOCKED'}).Count -eq 3 -and
-    @($all36|Where-Object {$_.status -eq 'UNVERIFIED'}).Count -eq 3)
- }catch{$validG005=$false}
+  $passCases=@($all36|Where-Object {$_.status -ceq 'PASS'})
+  $blocked=@($all36|Where-Object {$_.status -ceq 'BLOCKED'})
+  $failed=@($all36|Where-Object {$_.status -ceq 'FAIL'})
+  $unverified=@($all36|Where-Object {$_.status -ceq 'UNVERIFIED'})
+  $passEvidence=@($passCases|Where-Object {$_.assertions -ge 1 -and
+    $_.evidence -ceq "$($_.id)=PASS" -and
+    $g005Raw -match "(?m)^$([regex]::Escape($_.id))=PASS scope=[A-Z0-9_]+ assertions=[1-9][0-9]*\\s*$"})
+  $ids=@($all36|ForEach-Object {$_.id})
+  $expected=@(1..36|ForEach-Object {"FV-{0:D3}" -f $_})
+  $native=@('FV-012','FV-031','FV-035')
+  $nativeVerified=@($native|Where-Object {
+   $id=$_
+   $matches=@($all36|Where-Object {$_.id -ceq $id -and $_.status -ceq 'PASS' -and $_.assertions -ge 5})
+   $matches.Count -eq 1 -and $g005Raw -match "(?m)^$([regex]::Escape($id))=PASS scope=[A-Z0-9_]+ assertions=[1-9][0-9]*\\s*$"
+  })
+  $validG005=($g005Report.schema_version -ceq 'g005-independent-fv36.v1' -and
+    $g005Report.c011_sha -ceq $sourceBase -and $all36.Count -eq 36 -and
+    @($ids|Sort-Object -Unique).Count -eq 36 -and
+    @($expected|Where-Object {$_ -notin $ids}).Count -eq 0 -and
+    $passCases.Count -eq 33 -and $passEvidence.Count -eq 33 -and
+    $failed.Count -eq 0 -and $blocked.Count -eq 0 -and
+    $unverified.Count -eq 3 -and $nativeVerified.Count -eq 3 -and
+    @($unverified|Where-Object {$_.id -notin @('FV-032','FV-033','FV-034')}).Count -eq 0 -and
+    $g005Report.counts.pass -eq 33 -and $g005Report.counts.fail -eq 0 -and
+    $g005Report.counts.blocked -eq 0 -and $g005Report.counts.unverified -eq 3)
+  $g005Counts=[ordered]@{
+   pass=$passCases.Count;fail=$failed.Count;blocked=$blocked.Count
+   unverified=$unverified.Count;native_verified=$nativeVerified
+  }
+ }catch{
+  Write-Host ("C012_G005_EVIDENCE_PARSE_ERROR="+$_.Exception.Message)
+  $validG005=$false
+ }
 }
 $results['G005'].individual_case_evidence_checked=$validG005
+$results['G005'].evidence_counts=$g005Counts
+$results['G005'].frozen_owner_sha=$g005Sha
+$results['G005'].candidate_production_head=$ExpectedCandidateCommit
 if($results['G005'].status -eq 'PASS' -and -not $validG005){
- $results['G005'].status='FAIL';$results['G005'].missing_markers=@('G005_30_independent_case_oracles')
+ $results['G005'].status='FAIL';$results['G005'].missing_markers=@('G005_33_REAL_CASES_AND_3_NATIVE_ORACLES')
 }
 Write-Host "C012_G005_INDEPENDENT_CASES=$validG005"
 $scriptReport=[ordered]@{
