@@ -46,7 +46,7 @@ jobs:
       - name: Checkout G005 frozen test owner snapshot
         uses: actions/checkout@v4
         with:
-          ref: 99cccbb867c3c4d532e816907f2350a0c6d043e0
+          ref: 0c92fbb5152c149e30db0e88a09b4e7eade18e02
           path: frozen-g005-tests
           persist-credentials: false
 
@@ -117,6 +117,10 @@ jobs:
           if ($t.suites.C010A.real_profile_modes -ne 12 -or $t.suites.C010B.evidence_counts.groups -ne 17 -or $t.suites.C010B.evidence_counts.master_negative -ne 17 -or $t.suites.C010B.evidence_counts.three_profiles -ne 12 -or $t.suites.G005.individual_case_evidence_checked -ne $true) {
             throw 'C012_MISSING_INDEPENDENT_CASE_EVIDENCE'
           }
+          $g005 = $t.suites.G005.evidence_counts
+          if ($t.g005_frozen_tests -cne '0c92fbb5152c149e30db0e88a09b4e7eade18e02' -or $r.g005_tests_sha -cne '0c92fbb5152c149e30db0e88a09b4e7eade18e02' -or
+              $g005.pass -ne 33 -or $g005.fail -ne 0 -or $g005.blocked -ne 0 -or $g005.unverified -ne 3 -or
+              @($g005.native_verified).Count -ne 3 -or @(@('FV-012','FV-031','FV-035') | Where-Object { $_ -notin @($g005.native_verified) }).Count -ne 0) { throw 'C012_G005_33_NATIVE_CASE_EVIDENCE_INVALID' }
           $log=Join-Path $dir 'c012-full-release.log'
           $sha=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($sha -cne $g.log_sha256 -or $g.native_full_builder_invoked -ne $true) { throw 'C012_RELEASE_LOG_UNVERIFIED' }
@@ -126,7 +130,7 @@ jobs:
           Write-Host 'C012_C010A_REAL_3x4=PASS'
           Write-Host 'C012_C010B_GROUPS_17_NEGATIVES_17_PROFILES_12=PASS'
           Write-Host 'C012_C011_QA_GATED_OPEN=PASS'
-          Write-Host 'C012_G005_30_OF_36_CONTROLLED_CORE=PASS'
+          Write-Host 'C012_G005_33_OF_36_CONTROLLED_CORE_NATIVE=PASS'
           Write-Host 'C012_FORMAL_RELEASE=BLOCKED_MAOTAI_TORSO'
           Write-Host 'C012_LIVE_MAC_CORE=UNVERIFIED'
           Write-Host "C012_CANDIDATE_HEAD=$($r.candidate_head)"
