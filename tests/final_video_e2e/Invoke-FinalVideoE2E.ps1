@@ -171,7 +171,7 @@ try {
   Add-Evidence @('FV-001','FV-003','FV-004','FV-005','FV-007','FV-011','FV-014',
     'FV-018','FV-020','FV-021','FV-025','FV-027','FV-032') 'C011' 'Pinned real C011 coordinator component suite PASS; NOT scenario PASS'
   $g005Raw=Run-RealSuite 'G005' $stage 'windows/desktop/tests/PicotooPet.G005.FinalVideoE2E.SmokeTests/PicotooPet.G005.FinalVideoE2E.SmokeTests.csproj' @(
-    'FV_G005_SUMMARY PASS=30 FAIL=0 BLOCKED=3 UNVERIFIED=3',
+    'FV_G005_SUMMARY PASS=33 FAIL=0 BLOCKED=0 UNVERIFIED=3',
     'G005_CONTROLLED_CORE_CONCURRENT_SINGLE_OPEN=PASS',
     'G005_CONTROLLED_CORE_STALE_GOAL_JOB_SWITCH=PASS'
   )
@@ -206,7 +206,12 @@ try {
    if($cases[$manualId].status -ne 'UNVERIFIED'){throw "FV_G005_GUI_NOT_PROVEN=$manualId"}
   }
   $g005Counts=@($cases.Values|Where-Object {$_.status -eq 'PASS'}).Count
-  if($g005Counts -ne 30){throw "FV_G005_CASE_COUNT_MISMATCH=$g005Counts"}
+  if($g005Counts -ne 33){throw "FV_G005_CASE_COUNT_MISMATCH=$g005Counts"}
+  foreach($nativeId in @('FV-012','FV-031','FV-035')){
+   if($cases[$nativeId].status -ne 'PASS' -or $cases[$nativeId].individual_assertions -lt 5){
+    throw "FV_G005_NATIVE_CASE_NOT_PROVEN=$nativeId"
+   }
+  }
   Write-Host 'FV_G005_INDIVIDUAL_36_ORACLES=PASS'
 
  }
