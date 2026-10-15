@@ -25,7 +25,9 @@ $builder = Join-Path $source 'windows/desktop/scripts/Build-Phase2WindowsRelease
 if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) { throw 'FV_PUBLISHED_OFFICIAL_BUILDER_MISSING' }
 
 $session = [Diagnostics.Process]::GetCurrentProcess().SessionId
-$version = (& dotnet --version).Trim()
+Push-Location (Join-Path $source 'windows/desktop')
+try { $version = (& dotnet --version).Trim() }
+finally { Pop-Location }
 if ($LASTEXITCODE -ne 0 -or $version -cne '10.0.302') { throw "FV_PUBLISHED_SDK_INCORRECT_$version" }
 $stagedRoot = Join-Path $evidence 'official-builder-disposable'
 $versionLabel = 'g007-published-validation-' + $ExpectedCommit.Substring(0, 12)
