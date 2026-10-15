@@ -42,7 +42,7 @@ jobs:
       - name: Prepare fixed app-owned Maotai v2 asset override
         shell: powershell
         env:
-          MAOTAI_CANDIDATE_SUBDIR: ${{ inputs.candidate_subdir }}
+          MAOTAI_CANDIDATE_SUBDIR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'fix/maotai-visual-fidelity-isolated' && 'docs/art/maotai-v2/staging/issue-78' || inputs.candidate_subdir }}
         run: |
           $assetRoot = Join-Path $env:LOCALAPPDATA 'PicotooPet\ui-assets\maotai\v2'
           New-Item -ItemType Directory -Path $assetRoot -Force | Out-Null
