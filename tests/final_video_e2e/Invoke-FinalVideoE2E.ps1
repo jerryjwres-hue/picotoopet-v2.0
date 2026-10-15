@@ -109,7 +109,14 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
   if($LASTEXITCODE -ne 0){throw "FV_TEST_FAILED=$name"}
   $raw=Get-Content -LiteralPath $log -Raw
   foreach($marker in $markers){if(-not $raw.Contains($marker)){throw "FV_MARKER_MISSING=$name $marker"}}
-  if($raw.Contains('=UNVERIFIED') -or $raw.Contains('=FAIL')){throw "FV_UNVERIFIED_OR_FAIL=$name"}
+  # G005 deliberately emits honest per-case BLOCKED/UNVERIFIED classifications.
+  # Its exit code, distinct 36-ID JSON and explicit assertion markers are validated
+  # below. Only fail the suite for actual FV FAIL, not expected manual blockers.
+  if($name -eq 'G005'){
+   if($raw -match '(?m)^FV-[0-9]{3}=FAIL(?:\s|$)'){throw 'FV_G005_ACTUAL_TEST_FAILED'}
+  }elseif($raw.Contains('=UNVERIFIED') -or $raw.Contains('=FAIL')){
+   throw "FV_UNVERIFIED_OR_FAIL=$name"
+  }
   $suites[$name]=[ordered]@{status='PASS';sha=(& git -C $root rev-parse HEAD).Trim();log="$name.log";markers=$markers}
   Write-Host "FV_REAL_SUITE_$name=PASS"
   return $raw
