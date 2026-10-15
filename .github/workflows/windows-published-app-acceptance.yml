@@ -1,0 +1,121 @@
+name: G007 Windows Published-App Acceptance (Honest Gate)
+on:
+  push:
+    branches:
+      - test/windows-published-app-acceptance-v1
+    paths:
+      - '.github/workflows/windows-published-app-acceptance.yml'
+      - 'tests/windows_published_app/**'
+      - 'docs/qa/G007_WINDOWS_PUBLISHED_APP_ACCEPTANCE_V1.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  published-acceptance:
+    name: Exact C011 Full native release gate and FV-032/033/034 evidence
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+    steps:
+      - name: Checkout independent acceptance tests
+        uses: actions/checkout@v4
+        with:
+          ref: test/windows-published-app-acceptance-v1
+          path: acceptance-tests
+          persist-credentials: false
+
+      - name: Checkout frozen C011 source separately
+        uses: actions/checkout@v4
+        with:
+          ref: ec468b9975a3b1cd706e6e74223bfb05f7733a86
+          path: frozen-c011
+          persist-credentials: false
+
+      - name: Install exact original release SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: frozen-c011/windows/desktop/global.json
+
+      - name: Run original Full native release builder and classify evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'frozen-c011'
+          $test = Join-Path $env:GITHUB_WORKSPACE 'acceptance-tests/tests/windows_published_app/Invoke-PublishedAppAcceptance.ps1'
+          $evidence = Join-Path $env:RUNNER_TEMP 'g007-published-app-evidence'
+          & $test -FrozenCheckout $source -EvidenceRoot $evidence -ExpectedCommit 'ec468b9975a3b1cd706e6e74223bfb05f7733a86'
+          if (-not $?) { throw 'G007_ACCEPTANCE_DRIVER_FAILED' }
+
+      - name: Validate independent FV statuses and native source-bound builder log
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'g007-published-app-evidence'
+          $reportPath = Join-Path $dir 'published-app-acceptance.json'
+          $logPath = Join-Path $dir 'native-full-release-builder.log'
+          if (-not (Test-Path -LiteralPath $reportPath) -or -not (Test-Path -LiteralPath $logPath)) {
+            throw 'G007_NATIVE_EVIDENCE_MISSING'
+          }
+          $r = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+          if ($r.source_sha -cne 'ec468b9975a3b1cd706e6e74223bfb05f7733a86' -or
+              $r.schema_version -cne 'picotoopet.windows.published-app-acceptance.v1') {
+            throw 'G007_REPORT_SOURCE_OR_SCHEMA_INVALID'
+          }
+          $cases = @($r.cases)
+          if ($cases.Count -ne 3 -or @($cases.id | Sort-Object -Unique).Count -ne 3) {
+            throw 'G007_NOT_THREE_INDEPENDENT_CASES'
+          }
+          foreach ($id in @('FV-032','FV-033','FV-034')) {
+            if (@($cases | Where-Object { $_.id -ceq $id }).Count -ne 1) {
+              throw "G007_CASE_MISSING_$id"
+            }
+          }
+          if (($cases | Where-Object { $_.id -eq 'FV-032' }).status -cne 'UNVERIFIED' -or
+              ($cases | Where-Object { $_.id -eq 'FV-034' }).status -cne 'UNVERIFIED') {
+            throw 'G007_HEADLESS_GUI_OR_PID_PRETEND_PASS'
+          }
+          $fv33 = ($cases | Where-Object { $_.id -eq 'FV-033' }).status
+          if ($fv33 -notin @('BLOCKED','UNVERIFIED')) { throw 'G007_RELEASE_PRETEND_PASS' }
+          if ($r.live_mac_core.status -cne 'UNVERIFIED' -or
+              $r.environment.live_mac_core_connected -ne $false -or
+              $r.environment.trusted_published_interactive_desktop_proven -ne $false) {
+            throw 'G007_FAKE_CORE_OR_GUI_EVIDENCE'
+          }
+          $actualSha = (Get-FileHash -LiteralPath $logPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha -cne $r.full_release_gate.log_sha256 -or
+              $r.full_release_gate.official_builder_invoked -ne $true) {
+            throw 'G007_NATIVE_BUILD_LOG_NOT_BOUND'
+          }
+          if ($r.full_release_gate.status -ceq 'BLOCKED') {
+            $raw = Get-Content -LiteralPath $logPath -Raw
+            if (-not $raw.Contains('PHASE2_CORE_SMOKE=FAIL') -or
+                -not $raw.Contains('torso_neutral.png') -or
+                $r.full_release_gate.zip_count -ne 0 -or
+                $r.full_release_gate.builder_completed -eq $true) {
+              throw 'G007_BLOCKER_NOT_REPRODUCED_FROM_NATIVE_RELEASE_GATE'
+            }
+          } elseif ($r.full_release_gate.status -cne 'UNVERIFIED') {
+            throw 'G007_UNEXPECTED_FULL_RELEASE_GATE_STATE'
+          }
+          Write-Host 'G007_NATIVE_BUILDER_EVIDENCE=VERIFIED'
+          Write-Host 'G007_FV_032=UNVERIFIED'
+          Write-Host "G007_FV_033=$fv33"
+          Write-Host 'G007_FV_034=UNVERIFIED'
+          Write-Host 'G007_LIVE_MAC_CORE=UNVERIFIED'
+          Write-Host 'G007_RELEASE_READY=NO'
+
+      - name: Upload actual evidence but never an unapproved release ZIP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: g007-windows-published-app-acceptance
+          path: |
+            ${{ runner.temp }}/g007-published-app-evidence/published-app-acceptance.json
+            ${{ runner.temp }}/g007-published-app-evidence/native-full-release-builder.log
+          if-no-files-found: warn
+          retention-days: 21
