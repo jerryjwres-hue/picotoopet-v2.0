@@ -160,10 +160,10 @@ internal static class UnitTests
         {
             Check.True(!filter.Contains(forbidden, StringComparison.Ordinal), $"滤镜图不得含 {forbidden}");
         }
-        // 滤镜文本只由整数时间与固定结构构成。
+        // 数字统一归一化为 N（包括 c0/c1 声道索引），再校验固定滤镜结构。
         var skeleton = Regex.Replace(filter, @"\d+", "N");
         Check.True(
-            Regex.IsMatch(skeleton, @"^(\[N:a\](pan=mono\|c0=N\.N\*c0\+N\.N\*c1,)?aformat=sample_rates=N:channel_layouts=mono:sample_fmts=fltp,adelay=N:all=1\[aN\];)+(\[aN\])+amix=inputs=N:duration=longest:normalize=N,apad=whole_dur=N\.N\[aout\]$"),
+            Regex.IsMatch(skeleton, @"^(\[N:a\](pan=mono\|cN=N\.N\*cN\+N\.N\*cN,)?aformat=sample_rates=N:channel_layouts=mono:sample_fmts=fltp,adelay=N:all=N\[aN\];)+(\[aN\])+amix=inputs=N:duration=longest:normalize=N,apad=whole_dur=N\.N\[aout\]$"),
             "滤镜图只含固定结构 + 整数");
 
         var args = FixedFfmpegMasterVideoComposer.BuildMuxArguments(env.Visual.Path, env.Segments, Target, env.OutputPath);
@@ -343,6 +343,9 @@ internal sealed class FakeRunner : IMasterVideoProcessRunner
 
     public string? OutputProbe { get; set; }
 
+    /// <summary>在每次（假）进程调用时触发，此时 composer 已完成校验并持有输入句柄。</summary>
+    public Action<ProcessStartInfo>? OnProcess { get; set; }
+
     public Task<MasterVideoProcessResult> RunAsync(
         ProcessStartInfo startInfo,
         TimeSpan timeout,
@@ -350,6 +353,7 @@ internal sealed class FakeRunner : IMasterVideoProcessRunner
     {
         var arguments = startInfo.ArgumentList.ToList();
         Calls.Add((startInfo.FileName, arguments));
+        OnProcess?.Invoke(startInfo);
         if (startInfo.FileName == "ffprobe.exe")
         {
             var isOutput = Path.GetFileName(arguments[^1]) == "master.mp4";
@@ -445,9 +449,9 @@ internal sealed class TestEnv : IDisposable
 
 internal static class Env
 {
-    public static TestEnv Create(IReadOnlyList<SegSpec> specs)
+    public static TestEnv Create(IReadOnlyList<SegSpec> specs, string rootSuffix = "")
     {
-        var root = Path.Combine(Path.GetTempPath(), "picotoo-mux-smoke-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "picotoo-mux-smoke-" + Guid.NewGuid().ToString("N") + rootSuffix);
         var sources = Path.Combine(root, "sources");
         var work = Path.Combine(root, "work");
         Directory.CreateDirectory(sources);
