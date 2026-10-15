@@ -59,9 +59,9 @@ function Overlay([string]$ownerRoot,[string]$relative){
 Overlay $g006 'windows/desktop/tests/PicotooPet.FinalVideoQa.IntegrationTests'
 Overlay $g005 'windows/desktop/tests/PicotooPet.G005.FinalVideoE2E.SmokeTests'
 $results=[ordered]@{}
-function Suite([string]$name,[string]$project,[string[]]$args,[string[]]$markers){
+function Suite([string]$name,[string]$project,[string[]]$programArgs,[string[]]$markers){
  $log=Join-Path $evidence "$name.log"
- $all=@('run','--project',(Join-Path $candidate $project),'-c','Release','--no-launch-profile') + $args
+ $all=@('run','--project',(Join-Path $candidate $project),'-c','Release','--no-launch-profile') + $programArgs
  $exit=-1;$err=$null
  Push-Location (Join-Path $candidate 'windows/desktop')
  try {
