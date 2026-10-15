@@ -106,7 +106,12 @@ function Run-RealSuite([string]$name,[string]$root,[string]$project,[string[]]$m
   } else {
    & dotnet run --no-build --project $effectiveProject -c Release --no-launch-profile *>> $log
   }
-  if($LASTEXITCODE -ne 0){throw "FV_TEST_FAILED=$name"}
+  if($LASTEXITCODE -ne 0){
+   Write-Host "FV_SUITE_DIAGNOSTICS_BEGIN=$name"
+   Get-Content -LiteralPath $log -Tail 100 | ForEach-Object { Write-Host $_ }
+   Write-Host "FV_SUITE_DIAGNOSTICS_END=$name"
+   throw "FV_TEST_FAILED=$name"
+  }
   $raw=Get-Content -LiteralPath $log -Raw
   foreach($marker in $markers){if(-not $raw.Contains($marker)){throw "FV_MARKER_MISSING=$name $marker"}}
   # G005 deliberately emits honest per-case BLOCKED/UNVERIFIED classifications.
