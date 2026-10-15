@@ -130,11 +130,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native E2E runner failed' }
           $report = Get-Content (Join-Path $dir 'final-video-e2e-results.json') -Raw | ConvertFrom-Json
           if ($report.c011_sha -cne 'ec468b9975a3b1cd706e6e74223bfb05f7733a86') { throw 'G005_C011_SHA_UNPINNED' }
-          if ($report.counts.pass -ne 30 -or $report.counts.fail -ne 0 -or
-              $report.counts.blocked -ne 3 -or $report.counts.unverified -ne 3) {
+          if ($report.counts.pass -ne 33 -or $report.counts.fail -ne 0 -or
+              $report.counts.blocked -ne 0 -or $report.counts.unverified -ne 3) {
             throw "G005_RESULT_COUNT_UNEXPECTED PASS=$($report.counts.pass) FAIL=$($report.counts.fail) BLOCKED=$($report.counts.blocked) UNVERIFIED=$($report.counts.unverified)"
           }
           if (-not (Test-Path (Join-Path $dir 'g005-independent-36.json'))) { throw 'G005_SCENARIO_EVIDENCE_MISSING' }
+          $individual = Get-Content (Join-Path $dir 'g005-independent-36.json') -Raw | ConvertFrom-Json
+          foreach ($nativeId in @('FV-012', 'FV-031', 'FV-035')) {
+            $case = @($individual.cases | Where-Object { $_.id -eq $nativeId })
+            if ($case.Count -ne 1 -or $case[0].status -ne 'PASS' -or $case[0].assertions -lt 5) {
+              throw "G005_NATIVE_ORACLE_NOT_PROVEN=$nativeId"
+            }
+          }
           $sum = $report.counts.pass + $report.counts.fail + $report.counts.blocked + $report.counts.unverified
           if ($report.counts.total -ne 36 -or $sum -ne 36) { throw '36-case result conservation failed' }
           if (-not $env:C011_SHA) {
