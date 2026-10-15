@@ -242,10 +242,7 @@ internal static class RealHardening
         Check.True(rootPid > 0, $"{name}：必须走到终止路径");
 
         await AssertNoOrphansAsync(before, name).ConfigureAwait(false);
-        var after = ProcessLineage.Snapshot();
-        var owned = after.Values.Where(e => ProcessLineage.IsDescendantOf(e.Pid, rootPid, after)).Select(e => $"{e.Pid}:{e.ExeName}").ToList();
-        Check.True(owned.Count == 0, $"{name}：不得残留被测根进程的后代 [{string.Join(',', owned)}]");
-        Check.True(!after.ContainsKey(rootPid), $"{name}：根进程必须已退出");
+        await RealFailClosed.AssertNoOwnedLiveAsync(rootPid, name).ConfigureAwait(false);
         Console.WriteLine($"MASTER_MUX_LINEAGE_FORCED name={name} root={rootPid} ffmpeg_children_before_kill={childrenSeen} owned_live_descendants_after=0");
     }
 

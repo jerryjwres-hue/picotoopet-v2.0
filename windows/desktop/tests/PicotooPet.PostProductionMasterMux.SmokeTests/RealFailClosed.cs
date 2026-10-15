@@ -195,7 +195,11 @@ internal static class RealFailClosed
         Console.WriteLine("MASTER_MUX_FAILCLOSED_SUPPRESS_TERMINATION=PASS cleanup_incomplete_reported=True owned_live_after_dispose=0");
     }
 
-    private static async Task AssertNoOwnedLiveAsync(int rootPid, string stage)
+    /// <summary>
+    /// 根进程及其所有后代必须在有界时间（5 s）内全部消失。conhost.exe 是系统为控制台创建的宿主，
+    /// 在最后一个附着进程退出后异步退出，所以按谱系轮询而不是单次快照。
+    /// </summary>
+    internal static async Task AssertNoOwnedLiveAsync(int rootPid, string stage)
     {
         List<string> owned = [];
         for (var attempt = 0; attempt < 25; attempt++)
