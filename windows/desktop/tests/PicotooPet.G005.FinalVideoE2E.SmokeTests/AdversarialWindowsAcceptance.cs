@@ -31,7 +31,10 @@ internal static class AdversarialWindowsAcceptance
             WorkingDirectory = Path.GetDirectoryName(control)!,
             RedirectStandardOutput = false, RedirectStandardError = false,
         };
-        start.ArgumentList.Add(assembly);
+        // dotnet run on Windows may launch the project apphost EXE directly.
+        // Pass the DLL only for the dotnet.exe muxer host, never for an apphost.
+        if (Path.GetFileName(processExe).Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase))
+            start.ArgumentList.Add(assembly);
         start.ArgumentList.Add(mode);
         start.ArgumentList.Add(control);
         if (isolatedPath is not null)
