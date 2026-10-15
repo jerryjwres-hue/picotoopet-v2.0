@@ -608,7 +608,7 @@ internal sealed class ContainedProcess : IDisposable
     }
 
     /// <summary>按 CommandLineToArgvW 规则拼接命令行；FileName 是已校验的固定可执行文件名。</summary>
-    private static StringBuilder BuildCommandLine(ProcessStartInfo startInfo)
+    private static char[] BuildCommandLine(ProcessStartInfo startInfo)
     {
         var builder = new StringBuilder(startInfo.FileName);
         foreach (var argument in startInfo.ArgumentList)
@@ -616,7 +616,9 @@ internal sealed class ContainedProcess : IDisposable
             builder.Append(' ');
             AppendArgument(builder, argument);
         }
-        return builder;
+        // CreateProcessW 要求可写且以 NUL 结尾的缓冲区。
+        builder.Append((char)0);
+        return builder.ToString().ToCharArray();
     }
 
     private static void AppendArgument(StringBuilder builder, string argument)
@@ -802,7 +804,7 @@ internal sealed class ContainedProcess : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreateProcess(
         string? applicationName,
-        StringBuilder commandLine,
+        [In, Out] char[] commandLine,
         IntPtr processAttributes,
         IntPtr threadAttributes,
         [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
