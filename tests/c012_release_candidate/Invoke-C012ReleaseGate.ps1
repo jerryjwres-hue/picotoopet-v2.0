@@ -54,6 +54,13 @@ foreach($name in @('C009B','C010A','C010B','C011','G005')){
   $tests.suites.$name.status
  }else{'BLOCKED'}
 }
+$nativeG005Evidence=($null -ne $tests -and $null -ne $tests.suites.G005 -and
+ $tests.suites.G005.status -ceq 'PASS' -and $tests.suites.G005.individual_case_evidence_checked -eq $true -and
+ $tests.suites.G005.evidence_counts.pass -eq 33 -and
+ $tests.suites.G005.evidence_counts.fail -eq 0 -and
+ $tests.suites.G005.evidence_counts.blocked -eq 0 -and
+ $tests.suites.G005.evidence_counts.unverified -eq 3 -and
+ @($tests.suites.G005.evidence_counts.native_verified).Count -eq 3)
 $readiness=[ordered]@{
  schema_version='picotoopet.c012.release-readiness.v1'
  generated_utc=[DateTimeOffset]::UtcNow.ToString('o')
@@ -77,9 +84,9 @@ $readiness=[ordered]@{
   scope='C012_CANDIDATE_BINARY_WITH_G005_FROZEN_TESTS'
  }
  e2e_residuals=[ordered]@{
- 'FV-012'='PASS_C012_WINDOWS_REAL_C009A_PRE_COMMIT_CRASH_AND_RECOVERY'
- 'FV-031'='PASS_C012_WINDOWS_REAL_AAC_OFFSET_WITH_SHA_AUTHORITY_REJECTION'
- 'FV-035'='PASS_C012_WINDOWS_REAL_CHILD_PATH_MISSING_NATIVE_TOOLS'
+ 'FV-012'=$(if($nativeG005Evidence){'PASS_C012_WINDOWS_REAL_C009A_PRE_COMMIT_CRASH_AND_RECOVERY'}else{'BLOCKED_NO_C012_NATIVE_CRASH_EVIDENCE'})
+ 'FV-031'=$(if($nativeG005Evidence){'PASS_C012_WINDOWS_REAL_AAC_OFFSET_WITH_SHA_AUTHORITY_REJECTION'}else{'BLOCKED_NO_C012_NATIVE_AAC_EVIDENCE'})
+ 'FV-035'=$(if($nativeG005Evidence){'PASS_C012_WINDOWS_REAL_CHILD_PATH_MISSING_NATIVE_TOOLS'}else{'BLOCKED_NO_C012_NATIVE_TOOL_ABSENCE_EVIDENCE'})
  'FV-032'='UNVERIFIED_PUBLISHED_GUI_CONCURRENT_OPEN'
  'FV-033'='BLOCKED_RELEASE_ASSET_AND_UNVERIFIED_CLEAN_INSTALL'
  'FV-034'='UNVERIFIED_REAL_PUBLISHED_PID_KILL_AND_RESTART'
