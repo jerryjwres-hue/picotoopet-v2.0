@@ -1,0 +1,158 @@
+{
+  "schema_version": "1.0",
+  "description": "Non-authoritative QA scenario index; no forged production manifests, receipt types or APIs.",
+  "baseline_commit": "0271ff189f9ca184a844dbfd0a4158307986cbac",
+  "execution_status": "UNVERIFIED",
+  "scenario_groups": [
+    {
+      "name": "fallback",
+      "ids": [
+        "FV-001",
+        "FV-002"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "narration",
+      "ids": [
+        "FV-003"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "overlay_only",
+      "ids": [
+        "FV-004"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "narration_overlay",
+      "ids": [
+        "FV-005"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "unsupported_captions",
+      "ids": [
+        "FV-006"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "fail_recover",
+      "ids": [
+        "FV-007",
+        "FV-008",
+        "FV-009",
+        "FV-010",
+        "FV-011",
+        "FV-012",
+        "FV-013"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "restart",
+      "ids": [
+        "FV-014",
+        "FV-034"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "tamper",
+      "ids": [
+        "FV-015",
+        "FV-016",
+        "FV-017",
+        "FV-018",
+        "FV-019",
+        "FV-020"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "stale_lineage",
+      "ids": [
+        "FV-021",
+        "FV-022",
+        "FV-023",
+        "FV-024"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "open_revalidation",
+      "ids": [
+        "FV-025",
+        "FV-026",
+        "FV-027"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "media_policy",
+      "ids": [
+        "FV-028",
+        "FV-029",
+        "FV-030",
+        "FV-031",
+        "FV-035"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "published_windows",
+      "ids": [
+        "FV-032",
+        "FV-033"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    },
+    {
+      "name": "receipt_authority",
+      "ids": [
+        "FV-036"
+      ],
+      "default_result": "BLOCKED_OR_UNVERIFIED",
+      "execution_requires": "integrated published Windows build and actual source graph"
+    }
+  ],
+  "result_values": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "UNVERIFIED"
+  ],
+  "evidence_required": [
+    "case_id",
+    "commit_sha",
+    "windows_build",
+    "input_lineage_sha256",
+    "candidate_file_sha256",
+    "candidate_manifest_sha256",
+    "receipt_digest_if_supported",
+    "observed_outcome",
+    "log_location",
+    "operator"
+  ],
+  "notes": [
+    "CaptionsRequired=true is unsupported in C010A v1; distinguish visual text overlays.",
+    "Do not manufacture C010A public contract before implementation lands.",
+    "No synthetic PASS statuses."
+  ]
+}
