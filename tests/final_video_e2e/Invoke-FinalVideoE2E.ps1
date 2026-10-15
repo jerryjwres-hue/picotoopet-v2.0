@@ -171,7 +171,9 @@ try {
   Add-Evidence @('FV-001','FV-003','FV-004','FV-005','FV-007','FV-011','FV-014',
     'FV-018','FV-020','FV-021','FV-025','FV-027','FV-032') 'C011' 'Pinned real C011 coordinator component suite PASS; NOT scenario PASS'
   $g005Raw=Run-RealSuite 'G005' $stage 'windows/desktop/tests/PicotooPet.G005.FinalVideoE2E.SmokeTests/PicotooPet.G005.FinalVideoE2E.SmokeTests.csproj' @(
-    'FV_G005_SUMMARY PASS=30 FAIL=0 BLOCKED=3 UNVERIFIED=3'
+    'FV_G005_SUMMARY PASS=30 FAIL=0 BLOCKED=3 UNVERIFIED=3',
+    'G005_CONTROLLED_CORE_CONCURRENT_SINGLE_OPEN=PASS',
+    'G005_CONTROLLED_CORE_STALE_GOAL_JOB_SWITCH=PASS'
   )
   $g005File=Join-Path $OutputDirectory 'g005-independent-36.json'
   if(-not (Test-Path -LiteralPath $g005File)){throw 'FV_G005_CASE_REPORT_MISSING'}

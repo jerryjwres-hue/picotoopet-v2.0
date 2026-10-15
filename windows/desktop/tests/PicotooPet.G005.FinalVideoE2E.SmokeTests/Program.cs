@@ -78,6 +78,13 @@ internal static class Program
         Block("FV-035", "REAL_MISSING_FFMPEG_PATH_NOT_INJECTED", "A synthetic process error does not prove native missing-binary lifecycle");
         await Run("FV-036", "C011_QA_CONTROLLED_CORE", "untrusted forged receipt cannot authorize Open", () => TamperAtClick("receipt-forged"));
 
+        // These are independently asserted C011 coordinator integration checks,
+        // but are NOT used to mislabel published GUI FV-032 as PASS.
+        await ConcurrentOpenSupplement();
+        Console.WriteLine("G005_CONTROLLED_CORE_CONCURRENT_SINGLE_OPEN=PASS");
+        await JobSwitchSupplement();
+        Console.WriteLine("G005_CONTROLLED_CORE_STALE_GOAL_JOB_SWITCH=PASS");
+
         var count = Results.Count;
         CheckNoDuplicates(count);
         var counts = new
@@ -166,7 +173,8 @@ internal static class Program
         bool BadAuthority = false, bool NoQaGate = false);
 
     private static PostProductionDeliveryCoordinator Coordinator(Fixture f, Launcher launcher,
-        Faults? faults = null, IMasterVideoProcessRunner? runner = null)
+        Faults? faults = null, IMasterVideoProcessRunner? runner = null,
+        Func<string, string, CancellationToken, Task<C011QaDeliveryAuthority>>? authorityOverride = null)
     {
         faults ??= new Faults();
         var source = f.Input;
@@ -196,10 +204,10 @@ internal static class Program
                 return master;
             },
             verifier, launcher,
-            faults.NoQaGate ? null : (goal, job, ct) =>
+            faults.NoQaGate ? null : authorityOverride ?? ((goal, job, ct) =>
                 Task.FromResult(faults.BadAuthority
                     ? authority with { Goal = authority.Goal with { GoalId = "stale-unrelated-goal" } }
-                    : authority),
+                    : authority)),
             faults.NoQaGate ? null : qa.VerifyAsync);
     }
 
@@ -436,6 +444,44 @@ internal static class Program
     {
         await RealMedia.CorruptionAndProcessLimitsAsync();
         Check(OperatingSystem.IsWindows(), "real Windows corruption/decode fixture actually executed");
+    }
+
+    private static async Task ConcurrentOpenSupplement()
+    {
+        using var f = await Fixture.CreateAsync(false, false);
+        var baseline = LifecycleTests.Input(f, null);
+        var auth = new C011QaDeliveryAuthority(baseline.GoalContinuation,
+            baseline.ProductionJob, baseline.ProductionPlan, baseline.ProductionPackage);
+        var calls = 0;
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<C011QaDeliveryAuthority> BlockSecond(string goal, string job, CancellationToken ct)
+        {
+            if (Interlocked.Increment(ref calls) > 1) await gate.Task.WaitAsync(ct);
+            return auth;
+        }
+        var launcher = new Launcher();
+        await using var c = Coordinator(f, launcher, authorityOverride: BlockSecond);
+        Check((await Wait(f, c, GoalDeliveryPhase.DeliveryReady)).CanOpen, "concurrent prerequisite Ready");
+        var first = c.OpenCurrentAsync();
+        Check(!first.IsCompleted, "first open held at Core authority boundary");
+        Check(!await c.OpenCurrentAsync(), "second concurrent open must return false");
+        gate.SetResult(true);
+        Check(await first, "original open may proceed after current authority validated");
+        Check(launcher.Calls == 1, "at most one shell invocation under concurrent clicks");
+    }
+
+    private static async Task JobSwitchSupplement()
+    {
+        using var f = await Fixture.CreateAsync(false, false);
+        var launcher = new Launcher();
+        await using var c = Coordinator(f, launcher);
+        Check((await Wait(f, c, GoalDeliveryPhase.DeliveryReady)).CanOpen, "old Goal ready");
+        var old = LifecycleTests.Input(f, null).GoalContinuation;
+        var newer = old with { GoalId = "changed-goal", ProductionJobId = "changed-job" };
+        var changed = c.Observe("changed-goal", newer);
+        Check(!changed.CanOpen, "job switch clears old verified receipt projection");
+        Check(!await c.OpenCurrentAsync() && launcher.Calls == 0,
+            "old Goal cannot open under newly observed job");
     }
     private static async Task ThreeProfiles()
     {
