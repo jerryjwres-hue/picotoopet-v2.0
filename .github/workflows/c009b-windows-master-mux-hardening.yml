@@ -62,6 +62,12 @@ jobs:
           if ($text -notmatch 'MASTER_MUX_REAL_WINDOWS=PASS') { throw "C009B native Windows PASS missing" }
           if ($text -notmatch 'MASTER_MUX_HARDENING_UNIT=PASS') { throw "C009B hardening unit PASS missing" }
           if ($text -notmatch 'MASTER_MUX_HARDENING_REAL=PASS') { throw "C009B hardening real Windows PASS missing" }
+          if ($text -notmatch 'MASTER_MUX_FAILCLOSED_REAL=PASS') { throw "C009B fail-closed real Windows PASS missing" }
+          if ($text -notmatch 'MASTER_MUX_FAILCLOSED_UNIT_CLEANUP_INCOMPLETE=PASS') { throw "C009B fail-closed unit PASS missing" }
+          if (([regex]::Matches($text, 'MASTER_MUX_LINEAGE_FORCED .* owned_live_descendants_after=0')).Count -lt 4) { throw "C009B four-way forced-kill zero-descendant evidence missing" }
+          foreach ($p in 'ARGV_ROUNDTRIP','JOB_CREATE','ENROLL','VERIFY','SUPPRESS_TERMINATION') {
+            if ($text -notmatch "MASTER_MUX_FAILCLOSED_$p=PASS") { throw "C009B fail-closed marker $p missing" }
+          }
           foreach ($p in 'LANDSCAPE','VERTICAL','SQUARE','ZERO_NARRATION','BOUNDED_AND_FAILURE') {
             if ($text -notmatch "MASTER_MUX_REAL_$p=PASS") { throw "C009B regression marker $p missing" }
           }

@@ -16,6 +16,7 @@ internal static class HardeningTests
         await ReparseParentAndLeafRejectedAsync().ConfigureAwait(false);
         await WavBoundsAndMalformedHeadersAsync().ConfigureAwait(false);
         await HeldHandlesBlockReplacementAsync().ConfigureAwait(false);
+        await CleanupIncompleteFailsClosedAsync().ConfigureAwait(false);
         PolicyTableDirect();
     }
 
@@ -369,5 +370,19 @@ internal static class HardeningTests
             File.Move(moved, path);
         }
         Check.True(true, scenario + "句柄已释放");
+    }
+
+    /// <summary>进程树清理未确认（即使退出码为 0 且输出看似正常）也不得产出已批准的 master：封闭码 + 无输出。</summary>
+    private static async Task CleanupIncompleteFailsClosedAsync()
+    {
+        using var env = Env.Create([new SegSpec(1, 24000, 1, 24000, 0, 2000)]);
+        env.Runner.Mode = FakeMode.CleanupIncomplete;
+        await Check.ThrowsAsync(
+            () => new FixedFfmpegMasterVideoComposer(env.Runner).ComposeAsync(env.Request(), CancellationToken.None),
+            MasterVideoComposerException.ProcessContainmentFailed,
+            "清理未确认必须 fail-closed").ConfigureAwait(false);
+        Check.True(!File.Exists(env.OutputPath), "清理未确认不得留下 master 输出");
+        Check.True(File.Exists(env.Visual.Path) && File.Exists(env.Segments[0].WavPath), "来源文件绝不被删除");
+        Console.WriteLine("MASTER_MUX_FAILCLOSED_UNIT_CLEANUP_INCOMPLETE=PASS");
     }
 }
