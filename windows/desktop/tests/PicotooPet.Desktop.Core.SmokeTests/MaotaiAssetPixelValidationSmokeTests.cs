@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PicotooPet.Desktop.Views.Controls;
@@ -9,6 +11,73 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 internal static class MaotaiAssetPixelValidationSmokeTests
 {
     private static readonly Assembly DesktopAssembly = typeof(AssistantPetPanel).Assembly;
+
+    // Rejected fingerprints : real-Windows review proved these exact binaries are placeholder-quality despite passing
+    //                         generic alpha/density checks. Keep this blacklist until production replacements land.
+    private static readonly Dictionary<string, (string BlobSha1, string Reason)> RejectedAssetFingerprints =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["torso_neutral.png"] = (
+                "33c2e50e8f902a99d4d77ada619ea30e10ae0730",
+                "颈部圆环与胸前矩形白块已烘焙进像素，真实 UI 中形成机器人式 torso"),
+            ["head.png"] = (
+                "5ec9c89588035968b648cef2d3248613ea2f732d",
+                "当前 head 是扁平圆形占位壳，真实 UI 中读成独立卡通头而非阿拉斯加犬头"),
+            ["muzzle.png"] = (
+                "ea837e1c5e656380ef85a512a7b784b75d448a36",
+                "当前 muzzle 是近乎纯色矩形底图加鼻点，缺少正式口鼻毛发轮廓"),
+            ["mouth_smile.png"] = (
+                "e10f3c4a5724855ae039959b7c8a3deb6586e9da",
+                "当前 smile 是独立卡通贴纸嘴，与真实感阿拉斯加 reference 不一致"),
+            ["mouth_tired.png"] = (
+                "9035d2a69fb3033752ed79c393ed290a4371c94e",
+                "当前 tired mouth 仍属于被实机否决的卡通贴纸嘴族"),
+            ["mouth_annoyed.png"] = (
+                "d6c418bfb16024d1d304008b00fcadb7e9dea79b",
+                "当前 annoyed mouth 仍属于被实机否决的卡通贴纸嘴族"),
+            ["mouth_yawn.png"] = (
+                "c31f92a07541357de2393e80bfc749e4325448ab",
+                "当前 yawn mouth 仍属于被实机否决的卡通贴纸嘴族"),
+            ["mouth_tongue.png"] = (
+                "ffa9bdf277214769f0550fb6ccf957d972bdb6f9",
+                "当前 tongue mouth 仍属于被实机否决的卡通贴纸嘴族"),
+            ["front_left_upper.png"] = (
+                "28ae2689708af81671de554a76367f31626fca3d",
+                "当前左前腿 Upper 仍是狭长独立毛条，#278 中读成灰色柱状拼装腿"),
+            ["front_left_lower.png"] = (
+                "300ed6129048814cef6fdb7a87c35e7018df1bc9",
+                "当前左前腿 Lower 仍属于被实机否决的狭长分段腿族"),
+            ["front_left_paw.png"] = (
+                "ce49156d68cf313033c5498dec08b72dae238adf",
+                "当前左前爪仍是独立块状 paw，无法与腿根形成连续毛发 silhouette"),
+            ["front_right_upper.png"] = (
+                "3ca9b7189f7e1d52a0fae317bbaad8ba6b3e05b3",
+                "当前右前腿 Upper 仍是狭长独立毛条，#278 中读成灰色柱状拼装腿"),
+            ["front_right_lower.png"] = (
+                "4409081d059645c1993601966e75fd1ece88ee4e",
+                "当前右前腿 Lower 仍属于被实机否决的狭长分段腿族"),
+            ["front_right_paw.png"] = (
+                "ac12806022feb9826f029cf7ce4f5d11141717cb",
+                "当前右前爪仍是独立块状 paw，无法与腿根形成连续毛发 silhouette"),
+            ["hind_left_upper.png"] = (
+                "11c849e0f0dd10bdf4224ec60a67960eeec5fcd3",
+                "当前左后腿 Upper 仍属于被实机否决的柱状后景腿族"),
+            ["hind_left_lower.png"] = (
+                "a49bbcfa33b25eed20c8ced5de55600bcc8c9986",
+                "当前左后腿 Lower 仍属于被实机否决的狭长分段腿族"),
+            ["hind_left_paw.png"] = (
+                "3477c4b18e6a3fd6d169b306855cb7978f752813",
+                "当前左后爪仍是独立块状 paw，运动时只能靠降低 opacity 隐藏拼装感"),
+            ["hind_right_upper.png"] = (
+                "f4665affe6f87a07f8dbd61a643f33a10134f292",
+                "当前右后腿 Upper 仍属于被实机否决的柱状后景腿族"),
+            ["hind_right_lower.png"] = (
+                "c28e6e7836019c7caa1c4f7be07e7bab921ec30b",
+                "当前右后腿 Lower 仍属于被实机否决的狭长分段腿族"),
+            ["hind_right_paw.png"] = (
+                "f768b10e54038319fb82ba249ba9fa7b1d0c5da7",
+                "当前右后爪仍是独立块状 paw，运动时只能靠降低 opacity 隐藏拼装感"),
+        };
 
     public static void Run()
     {
@@ -47,6 +116,8 @@ internal static class MaotaiAssetPixelValidationSmokeTests
             "laptop.png", "drink.png", "shadow.png",
         ];
 
+        var rejectedAssets = new List<string>();
+
         foreach (var fileName in requiredAssets)
         {
             var path = Path.Combine(assetRoot, fileName);
@@ -59,7 +130,23 @@ internal static class MaotaiAssetPixelValidationSmokeTests
             var logicalWidth  = ReadDouble(descriptor, "Width");
             var logicalHeight = ReadDouble(descriptor, "Height");
 
+            // Known rejection     : collect every reviewed blocker in one run instead of stopping at torso_neutral.
+            // Replacement contract: only unknown/new binaries proceed to generic alpha, density and silhouette gates.
+            if (TryDescribeKnownRejectedAsset(path, fileName, out var rejection))
+            {
+                rejectedAssets.Add(rejection);
+                continue;
+            }
+
             ValidatePixels(path, fileName, logicalWidth, logicalHeight);
+        }
+
+        if (rejectedAssets.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "v2 正式素材仍包含已被实机否决的占位版本：" +
+                Environment.NewLine +
+                string.Join(Environment.NewLine, rejectedAssets.Select(item => $" - {item}")));
         }
     }
 
@@ -145,6 +232,34 @@ internal static class MaotaiAssetPixelValidationSmokeTests
         }
 
         AssertOuterBorderTransparent(pixels, converted.PixelWidth, converted.PixelHeight, stride, fileName);
+    }
+
+    private static bool TryDescribeKnownRejectedAsset(
+        string path,
+        string fileName,
+        out string description)
+    {
+        description = string.Empty;
+        if (!RejectedAssetFingerprints.TryGetValue(fileName, out var rejection))
+        {
+            return false;
+        }
+
+        var bytes  = File.ReadAllBytes(path);
+        var header = Encoding.ASCII.GetBytes($"blob {bytes.LongLength}\0");
+
+        // Git parity            : compute the exact Git blob SHA-1 so the gate keys off the reviewed binary, not a path.
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        hash.AppendData(header);
+        hash.AppendData(bytes);
+        var actualBlobSha1 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        if (!string.Equals(actualBlobSha1, rejection.BlobSha1, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        description = $"{fileName}；{rejection.Reason}；blob={actualBlobSha1}";
+        return true;
     }
 
     private static int VisibleWidthAtY(

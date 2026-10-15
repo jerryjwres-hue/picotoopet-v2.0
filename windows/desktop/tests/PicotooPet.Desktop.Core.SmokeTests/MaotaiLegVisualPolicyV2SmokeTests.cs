@@ -48,8 +48,8 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
                 $"{state} 前腿 Lower 必须收窄，禁止恢复完整块状腿");
             Assert(ReadDouble(style, "PawOpacity") >= 0.99,
                 $"{state} 前爪必须保持可见");
-            Assert(ReadDouble(style, "PawScaleX") >= 0.88,
-                $"{state} 前爪禁止再次压窄成细柱脚");
+            Assert(ReadDouble(style, "PawScaleX") >= 0.84 && ReadDouble(style, "PawScaleX") <= 0.88,
+                $"{state} 前爪应保持自然接触宽度，不能重新膨胀成独立毛球");
         }
     }
 
@@ -90,6 +90,13 @@ internal static class MaotaiLegVisualPolicyV2SmokeTests
             Assert(ReadDouble(style, "PawOpacity") >= 0.99,
                 $"{state} 脚掌仍需保留接触/打字语义");
         }
+
+        var work = Resolve("WorkTyping", isFront: true);
+        var sleep = Resolve("Sleep", isFront: true);
+        Assert(ReadDouble(work, "PawScaleX") <= 0.84,
+            "WorkTyping 前爪必须缩小，避免两只爪子盖住电脑与胸口");
+        Assert(ReadDouble(sleep, "PawScaleX") >= 0.88,
+            "Sleep 前爪应保留更完整的静态接触 silhouette");
     }
 
     private static object Resolve(string stateName, bool isFront)

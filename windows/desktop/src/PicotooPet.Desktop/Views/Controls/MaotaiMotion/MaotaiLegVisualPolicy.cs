@@ -27,39 +27,53 @@ internal static class MaotaiLegVisualPolicy
                     UpperOpacity: 1.0,
                     LowerOpacity: 0.24,
                     PawOpacity: 1.0,
-                    PawScaleX: 0.92,
+                    PawScaleX: 0.86,
                     UpperScaleX: 0.84,
                     LowerScaleX: 0.58)
                 : new MaotaiLegVisualStyle(
                     UseArticulation: false,
-                    UpperOpacity: 0.28,
+                    UpperOpacity: 0.22,
                     LowerOpacity: 0.0,
-                    PawOpacity: 0.18,
-                    PawScaleX: 0.92,
+                    PawOpacity: 0.12,
+                    PawScaleX: 0.80,
                     UpperScaleX: 0.80,
                     LowerScaleX: 0.58);
         }
 
-        var folded = state is
+        var workFolded = state is
             MaotaiMotionState.WorkSettle or
             MaotaiMotionState.WorkTyping or
             MaotaiMotionState.WorkTired or
             MaotaiMotionState.Yawn or
             MaotaiMotionState.WorkAnnoyed or
-            MaotaiMotionState.Recover or
-            MaotaiMotionState.LieDown or
-            MaotaiMotionState.Sleep or
-            MaotaiMotionState.Wake or
-            MaotaiMotionState.GetUp;
-        if (folded)
+            MaotaiMotionState.Recover;
+        if (workFolded)
         {
-            // Folded posture   : long limb silhouettes stay behind torso fur; paws remain for typing/contact semantics.
+            // Typing posture    : the paws remain readable above the laptop, but no longer dominate the face/body scale.
             return new MaotaiLegVisualStyle(
                 UseArticulation: false,
                 UpperOpacity: 0.0,
                 LowerOpacity: 0.0,
                 PawOpacity: 1.0,
-                PawScaleX: 1.0,
+                PawScaleX: 0.82,
+                UpperScaleX: 0.86,
+                LowerScaleX: 0.80);
+        }
+
+        var restFolded = state is
+            MaotaiMotionState.LieDown or
+            MaotaiMotionState.Sleep or
+            MaotaiMotionState.Wake or
+            MaotaiMotionState.GetUp;
+        if (restFolded)
+        {
+            // Rest posture      : retain slightly fuller paws so the accepted Sleep silhouette is not over-thinned.
+            return new MaotaiLegVisualStyle(
+                UseArticulation: false,
+                UpperOpacity: 0.0,
+                LowerOpacity: 0.0,
+                PawOpacity: 1.0,
+                PawScaleX: 0.90,
                 UpperScaleX: 0.86,
                 LowerScaleX: 0.80);
         }

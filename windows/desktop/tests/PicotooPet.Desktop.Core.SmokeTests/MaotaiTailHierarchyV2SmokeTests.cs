@@ -19,6 +19,11 @@ internal static class MaotaiTailHierarchyV2SmokeTests
             BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException(
                 "MaotaiRasterRenderer 缺少尾巴局部层级解析器");
+        var resolveBase = rendererType.GetMethod(
+            "ResolveTailBaseVisualPose",
+            BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException(
+                "MaotaiRasterRenderer 缺少尾巴根部视觉校准器");
         var resolveVisual = rendererType.GetMethod(
             "ResolveTailVisualChildWorldPose",
             BindingFlags.NonPublic | BindingFlags.Static)
@@ -26,6 +31,18 @@ internal static class MaotaiTailHierarchyV2SmokeTests
                 "MaotaiRasterRenderer 缺少尾巴视觉重叠解析器");
 
         var basePose = CreatePose(poseType, -20.0, -10.0, 0.0);
+        var tuckedBase = resolveBase.Invoke(null, [basePose, 1])
+            ?? throw new InvalidOperationException("TailBase 视觉校准没有返回 Pose");
+        AssertNear(ReadDouble(tuckedBase, "X"), -16.0,
+            "TailBase 正向显示锚点必须收回身体轮廓");
+        AssertNear(ReadDouble(tuckedBase, "Y"), -8.5,
+            "TailBase 显示锚点必须略向下压住根部空隙");
+
+        var mirroredBase = resolveBase.Invoke(null, [CreatePose(poseType, 20.0, -10.0, 0.0), -1])
+            ?? throw new InvalidOperationException("镜像 TailBase 视觉校准没有返回 Pose");
+        AssertNear(ReadDouble(mirroredBase, "X"), 16.0,
+            "TailBase 镜像显示锚点必须对称收回身体轮廓");
+
         var midLocal = CreatePose(poseType, -11.0, -8.0, 12.0);
         var midWorld = resolve.Invoke(null, [basePose, midLocal])
             ?? throw new InvalidOperationException("TailMid 层级解析没有返回 Pose");
