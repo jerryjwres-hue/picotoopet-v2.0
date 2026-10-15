@@ -48,6 +48,9 @@ foreach($p in @($expectedBlobs.Keys)){
   if($LASTEXITCODE -ne 0 -or $blob -cne $frozen){throw "C012_FROZEN_C011_PRODUCTION_CHANGED=$p"}
  }
 }
+Push-Location (Join-Path $candidate 'windows/desktop')
+try { $actualSdk=(& dotnet --version).Trim() } finally { Pop-Location }
+if($actualSdk -cne '10.0.302'){throw "C012_NATIVE_SDK_MISMATCH=$actualSdk"}
 Write-Host 'C012_PRODUCTION_BLOB_PINS=PASS'
 function Overlay([string]$ownerRoot,[string]$relative){
  $from=Join-Path $ownerRoot $relative
@@ -63,14 +66,35 @@ function Suite([string]$name,[string]$project,[string[]]$programArgs,[string[]]$
  $log=Join-Path $evidence "$name.log"
  $all=@('run','--project',(Join-Path $candidate $project),'-c','Release','--no-launch-profile') + $programArgs
  $exit=-1;$err=$null
- Push-Location (Join-Path $candidate 'windows/desktop')
+ # Spawn the actual candidate test process; bounded wallclock and tree cleanup.
+ $process=$null
  try {
-   & dotnet @all *> $log
-   $exit=$LASTEXITCODE
+   $info=[Diagnostics.ProcessStartInfo]::new()
+   $info.FileName=(Get-Command dotnet.exe -ErrorAction Stop).Source
+   $info.WorkingDirectory=Join-Path $candidate 'windows/desktop'
+   $info.UseShellExecute=$false
+   $info.CreateNoWindow=$true
+   $info.RedirectStandardOutput=$true
+   $info.RedirectStandardError=$true
+   foreach($a in $all){[void]$info.ArgumentList.Add([string]$a)}
+   $process=[Diagnostics.Process]::new()
+   $process.StartInfo=$info
+   if(-not $process.Start()){throw 'C012_DOTNET_PROCESS_START_FAILED'}
+   $stdout=$process.StandardOutput.ReadToEndAsync()
+   $stderr=$process.StandardError.ReadToEndAsync()
+   if(-not $process.WaitForExit(360000)){
+     try{$process.Kill($true)}catch{}
+     try{$process.WaitForExit(15000)|Out-Null}catch{}
+     $err='C012_NATIVE_SUITE_TIMEOUT_360_SECONDS'
+   }
+   $textOut=$stdout.GetAwaiter().GetResult()
+   $textErr=$stderr.GetAwaiter().GetResult()
+   [IO.File]::WriteAllText($log,$textOut+[Environment]::NewLine+$textErr)
+   if($process.HasExited){$exit=$process.ExitCode}
  } catch {
-   $err=$_.Exception.GetType().Name+':'+$_.Exception.Message
+   $err=($_.Exception.GetType().Name+':'+$_.Exception.Message)
    Add-Content -LiteralPath $log -Value "C012_SUITE_COMMAND_EXCEPTION=$err"
- } finally { Pop-Location }
+ } finally {if($null -ne $process){$process.Dispose()}}
  $raw=if(Test-Path -LiteralPath $log){Get-Content -LiteralPath $log -Raw}else{''}
  $missing=@($markers | Where-Object {-not $raw.Contains($_)})
  $status=if($exit -eq 0 -and $missing.Count -eq 0 -and $null -eq $err){'PASS'}else{'FAIL'}
@@ -145,7 +169,7 @@ $scriptReport=[ordered]@{
  c010b_frozen_tests=$c010b
  g005_frozen_tests=$g005Sha
  git_blob_pins_pass=$true
- sdk=$(& dotnet --version)
+ sdk=$actualSdk
  os=[Environment]::OSVersion.VersionString
  github_run_id=$env:GITHUB_RUN_ID
  github_run_attempt=$env:GITHUB_RUN_ATTEMPT
