@@ -32,6 +32,7 @@ public sealed class MasterVideoComposerException : Exception
     public const string FfmpegTimeout = "MASTER_MUX_FFMPEG_TIMEOUT";
     public const string RequestInvalid = "MASTER_MUX_REQUEST_INVALID";
     public const string PathInvalid = "MASTER_MUX_PATH_INVALID";
+    public const string ProcessContainmentFailed = "MASTER_MUX_PROCESS_CONTAINMENT_FAILED";
     public const string VisualInvalid = "MASTER_MUX_VISUAL_INVALID";
     public const string NarrationInvalid = "MASTER_MUX_NARRATION_INVALID";
     public const string SegmentTooLong = "MASTER_MUX_SEGMENT_TOO_LONG";
@@ -45,10 +46,38 @@ public sealed class MasterVideoComposerException : Exception
     }
 
     public string Code { get; }
+
+    /// <summary>
+    /// 仅对 <see cref="ProcessContainmentFailed"/> 有意义：true 表示清理后仍无法确认已启动的进程树全部退出
+    /// （此时调用方必须按“可能残留”处理）；false 表示已确认根进程与 Job 内全部进程都已结束，或根本没有启动进程。
+    /// </summary>
+    public bool CleanupIncomplete { get; init; }
+}
+
+/// <summary>测试接缝：强制进程收容建立阶段的失败，用于验证 fail-closed。生产代码使用 None。</summary>
+[Flags]
+public enum ProcessContainmentFaults
+{
+    None = 0,
+
+    /// <summary>Job Object 创建失败（不得启动任何进程）。</summary>
+    FailJobCreation = 1,
+
+    /// <summary>系统拒绝把新进程原子加入 Job（使用无效 Job 句柄触发真实的 CreateProcess 失败；不得启动任何进程）。</summary>
+    FailEnrollment = 2,
+
+    /// <summary>进程已启动，但入 Job 校验结果被伪造为“不在 Job 中”（必须终止已启动的进程树并失败）。</summary>
+    FailEnrollmentVerification = 4,
+
+    /// <summary>所有终止动作（树终止、Job 终止、根进程终止）都不生效，用于证明 CleanupIncomplete 如实上报。</summary>
+    SuppressTermination = 8,
 }
 
 /// <summary>
 /// 固定进程运行器：无 shell；stdout 有界；stderr 只排空；超时与取消都会结束整个进程树。
+/// 进程通过 CreateProcess + PROC_THREAD_ATTRIBUTE_JOB_LIST 在创建时原子加入 KILL_ON_JOB_CLOSE 的 Job Object，
+/// 因此不存在“已启动但尚未入 Job”的窗口。无法建立收容（Job 创建/入 Job 失败、非 Windows）时 fail-closed：
+/// 不启动进程，或终止已启动的进程，并以 <see cref="MasterVideoComposerException.ProcessContainmentFailed"/> 失败。
 /// 终止进程树时抛出的“已知可恢复”异常不会覆盖取消/超时语义；无关异常不会被吞掉。
 /// </summary>
 public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
@@ -59,16 +88,24 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
     private static readonly TimeSpan KillGrace = TimeSpan.FromSeconds(5);
 
     private readonly Action<Process> _killProcessTree;
+    private readonly ProcessContainmentFaults _faults;
 
     public FixedMasterVideoProcessRunner()
-        : this(static process => process.Kill(entireProcessTree: true))
+        : this(static process => process.Kill(entireProcessTree: true), ProcessContainmentFaults.None)
     {
     }
 
     /// <summary>测试接缝：注入进程树终止动作以模拟 Kill 失败；生产代码使用无参构造。</summary>
     public FixedMasterVideoProcessRunner(Action<Process> killProcessTree)
+        : this(killProcessTree, ProcessContainmentFaults.None)
+    {
+    }
+
+    /// <summary>测试接缝：同时注入进程树终止动作与收容阶段故障。</summary>
+    public FixedMasterVideoProcessRunner(Action<Process> killProcessTree, ProcessContainmentFaults faults)
     {
         _killProcessTree = killProcessTree ?? throw new ArgumentNullException(nameof(killProcessTree));
+        _faults = faults;
     }
 
     public async Task<MasterVideoProcessResult> RunAsync(
@@ -83,40 +120,31 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
         {
             throw new MasterVideoComposerException(MasterVideoComposerException.FfmpegUnavailable);
         }
-        startInfo.RedirectStandardOutput = true;
-        startInfo.RedirectStandardError = true;
-        startInfo.RedirectStandardInput = true;
-        startInfo.CreateNoWindow = true;
 
-        using var process = new Process { StartInfo = startInfo };
-        try
+        // Launch 要么返回已在 Job 内的进程，要么抛出封闭错误（此时没有任何进程存活或已确认终止）。
+        using var contained = ContainedProcess.Launch(startInfo, _faults);
+        if (_faults.HasFlag(ProcessContainmentFaults.FailEnrollmentVerification) || !contained.IsInJob())
         {
-            if (!process.Start())
+            // 入 Job 校验失败：不能信任收容，立刻终止已启动的进程并失败，且如实报告是否确认清理完成。
+            var confirmed = await TerminateAsync(contained).ConfigureAwait(false);
+            throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed)
             {
-                throw new MasterVideoComposerException(MasterVideoComposerException.FfmpegUnavailable);
-            }
+                CleanupIncomplete = !confirmed,
+            };
         }
-        catch (Win32Exception exception)
-        {
-            throw new MasterVideoComposerException(MasterVideoComposerException.FfmpegUnavailable, exception);
-        }
-        process.StandardInput.Close();
-        // 在子进程能够长期运行之前把它（及已出现的后代）放进 Job Object；Job 关闭即结束全部成员。
-        using var job = WindowsProcessJob.TryCreate();
-        job?.Adopt(process);
 
         var stdout = new MemoryStream();
-        var stdoutTask = CopyBoundedAsync(process.StandardOutput.BaseStream, stdout);
-        var stderrTask = DrainAsync(process.StandardError.BaseStream);
+        var stdoutTask = CopyBoundedAsync(contained.Stdout, stdout);
+        var stderrTask = DrainAsync(contained.Stderr);
         using var timeoutSource = new CancellationTokenSource(timeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
         try
         {
-            await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
+            await contained.WaitForExitAsync(linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            var terminated = await TerminateAsync(process, job).ConfigureAwait(false);
+            var terminated = await TerminateAsync(contained).ConfigureAwait(false);
             if (cancellationToken.IsCancellationRequested)
             {
                 // 取消语义优先：Kill/排空的任何已知失败都不能把取消改成别的异常。
@@ -125,8 +153,8 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
             return new MasterVideoProcessResult(-1, true, string.Empty) { CleanupIncomplete = !terminated };
         }
 
-        // 进程已退出：退出码是权威结果。管道排空超时只意味着输出可能不完整（由调用方的解析/校验兜底），
-        // 不能被误报成 mux 超时。
+        // 进程已退出：退出码是权威结果。管道排空超时意味着仍有后代持有管道（输出可能不完整），
+        // 如实标记 CleanupIncomplete，由调用方 fail-closed。
         var drainComplete = true;
         try
         {
@@ -138,7 +166,7 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
         }
         // 取消发生在排空期间：OperationCanceledException 直接传播（进程已退出）。
         return new MasterVideoProcessResult(
-            process.ExitCode, false, Encoding.UTF8.GetString(stdout.ToArray()))
+            contained.ExitCode, false, Encoding.UTF8.GetString(stdout.ToArray()))
         {
             CleanupIncomplete = !drainComplete,
         };
@@ -146,16 +174,18 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
 
     /// <summary>
     /// 结束整个进程树。只吞掉 .NET 文档化的“可恢复”失败（已退出、Win32、不支持、部分子进程失败）；
-    /// 无论树终止是否失败，都会兜底终止主进程，并在无关异常传播前完成兜底。
-    /// 返回 false 表示在宽限期内仍无法确认退出（不可恢复的清理限制）。
+    /// 无论树终止是否失败，都会终止 Job（含全部后代）与根进程，并在无关异常传播前完成。
+    /// 返回 false 表示在宽限期内仍无法确认根进程与 Job 内进程全部退出（不可恢复的清理限制）。
     /// </summary>
-    private async Task<bool> TerminateAsync(Process process, WindowsProcessJob? job)
+    private async Task<bool> TerminateAsync(ContainedProcess contained)
     {
+        var suppress = _faults.HasFlag(ProcessContainmentFaults.SuppressTermination);
         try
         {
             try
             {
-                if (!process.HasExited)
+                using var process = suppress ? null : contained.TryGetProcess();
+                if (process is not null && !contained.HasExited)
                 {
                     _killProcessTree(process);
                 }
@@ -166,48 +196,29 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
             }
             catch (Win32Exception)
             {
-                // 拒绝访问等：交给下面的单进程兜底。
+                // 拒绝访问等：交给下面的 Job / 根进程终止。
             }
             catch (NotSupportedException)
             {
-                // 平台不支持进程树终止：交给下面的单进程兜底。
+                // 平台不支持进程树终止：交给下面的 Job / 根进程终止。
             }
             catch (AggregateException)
             {
-                // Kill(true) 部分子进程无法终止：交给下面的单进程兜底。
+                // Kill(true) 部分子进程无法终止：交给下面的 Job / 根进程终止。
             }
         }
         finally
         {
-            // Job 终止不依赖进程树枚举：即使 Kill(true) 失败，根与所有已加入的后代也会被结束。
-            job?.Terminate();
-            try
+            if (!suppress)
             {
-                if (!process.HasExited)
-                {
-                    process.Kill();
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                // 进程已退出。
-            }
-            catch (Win32Exception)
-            {
-                // 无法终止：由下面的有界等待如实报告。
+                // Job 终止不依赖进程树枚举：即使 Kill(true) 失败，根与全部后代也会被结束。
+                contained.TerminateJob();
+                contained.TerminateRoot();
             }
         }
 
-        try
-        {
-            // 同步等待有 KillGrace 上限；返回值如实反映是否确认退出。
-            var rootExited = process.WaitForExit(KillGrace);
-            return rootExited && (job is null || await job.WaitUntilEmptyAsync(KillGrace).ConfigureAwait(false));
-        }
-        catch (InvalidOperationException)
-        {
-            return true;
-        }
+        var rootExited = contained.WaitForExit(KillGrace);
+        return rootExited && await contained.WaitUntilJobEmptyAsync(KillGrace).ConfigureAwait(false);
     }
 
     // 进程被终止或 Process 被释放时管道会被拆除；这属于预期的 IO 结束，不能变成未观察到的任务异常。
@@ -235,7 +246,7 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
         }
         catch (ObjectDisposedException)
         {
-            // Process 已释放。
+            // 句柄已释放。
         }
     }
 
@@ -255,38 +266,240 @@ public sealed class FixedMasterVideoProcessRunner : IMasterVideoProcessRunner
         }
         catch (ObjectDisposedException)
         {
-            // Process 已释放。
+            // 句柄已释放。
         }
     }
 }
 
 /// <summary>
-/// Windows Job Object 保护：JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE。被测进程启动后立即加入 Job，并扫描已出现的后代
-/// 一并加入；之后新产生的后代自动继承 Job。终止/释放 Job 会结束全部成员，不依赖 Process.Kill(entireProcessTree)。
-/// 已知局限：Process.Start 不支持 CREATE_SUSPENDED，根进程在加入 Job 前的极短窗口内产生的后代只能靠随后的扫描补救。
-/// 创建/加入失败（旧系统、受限的外层 Job 禁止嵌套）时返回 null / 不加入，行为退化为原有进程树终止，不抛异常。
+/// 已原子加入 KILL_ON_JOB_CLOSE Job Object 的进程：由 CreateProcess（PROC_THREAD_ATTRIBUTE_JOB_LIST）创建，
+/// 进程在执行第一条指令前就在 Job 内，它的任何后代都自动继承 Job，没有“启动后再加入”的竞争窗口。
+/// 句柄继承被 PROC_THREAD_ATTRIBUTE_HANDLE_LIST 限定为 stdin/stdout/stderr 三个句柄。
+/// 释放时先关闭 Job（结束所有残留成员）再关闭管道。
 /// </summary>
-internal sealed class WindowsProcessJob : IDisposable
+internal sealed class ContainedProcess : IDisposable
 {
     private const uint LimitKillOnJobClose = 0x2000;
     private const int ExtendedLimitInformationClass = 9;
     private const int BasicAccountingInformationClass = 1;
-    private const uint ProcessSetQuotaAndTerminate = 0x0100 | 0x0001;
-    private const uint Th32csSnapProcess = 0x2;
+    private const uint ExtendedStartupInfoPresent = 0x00080000;
+    private const uint CreateNoWindow = 0x08000000;
+    private const uint StartfUseStdHandles = 0x100;
+    private const uint ProcThreadAttributeHandleList = 0x00020002;
+    private const uint ProcThreadAttributeJobList = 0x0002000D;
+    private const int ErrorFileNotFound = 2;
+    private const int ErrorPathNotFound = 3;
+    private const uint WaitObject0 = 0;
+    private const char Quote = (char)34;
+    private const char Backslash = (char)92;
 
     private readonly SafeJobHandle _job;
+    private readonly SafeProcessHandle _process;
+    private readonly int _processId;
 
-    private WindowsProcessJob(SafeJobHandle job)
+    private ContainedProcess(
+        SafeJobHandle job,
+        SafeProcessHandle process,
+        int processId,
+        FileStream stdout,
+        FileStream stderr)
     {
         _job = job;
+        _process = process;
+        _processId = processId;
+        Stdout = stdout;
+        Stderr = stderr;
     }
 
-    public static WindowsProcessJob? TryCreate()
+    public FileStream Stdout { get; }
+
+    public FileStream Stderr { get; }
+
+    public bool HasExited => WaitForSingleObject(_process, 0) == WaitObject0;
+
+    public int ExitCode => GetExitCodeProcess(_process, out var code) ? unchecked((int)code) : -1;
+
+    /// <summary>创建 Job 并在其中原子启动进程；任何无法建立收容的情况都抛出 ProcessContainmentFailed 且不留进程。</summary>
+    public static ContainedProcess Launch(ProcessStartInfo startInfo, ProcessContainmentFaults faults)
     {
-        if (!OperatingSystem.IsWindows())
+        if (!OperatingSystem.IsWindows() || faults.HasFlag(ProcessContainmentFaults.FailJobCreation))
+        {
+            throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed);
+        }
+
+        var job = CreateKillOnCloseJob();
+        if (job is null)
+        {
+            throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed);
+        }
+
+        IntPtr stdinRead = IntPtr.Zero, stdinWrite = IntPtr.Zero;
+        IntPtr stdoutRead = IntPtr.Zero, stdoutWrite = IntPtr.Zero;
+        IntPtr stderrRead = IntPtr.Zero, stderrWrite = IntPtr.Zero;
+        try
+        {
+            var security = new SecurityAttributes { Length = Marshal.SizeOf<SecurityAttributes>(), InheritHandle = true };
+            if (!CreatePipe(out stdinRead, out stdinWrite, ref security, 0)
+                || !CreatePipe(out stdoutRead, out stdoutWrite, ref security, 0)
+                || !CreatePipe(out stderrRead, out stderrWrite, ref security, 0))
+            {
+                throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed);
+            }
+            // stdin 的写端立即关闭：子进程读到 EOF，行为等同原先的 StandardInput.Close()。
+            CloseHandle(stdinWrite);
+            stdinWrite = IntPtr.Zero;
+
+            var processHandle = StartInJob(startInfo, job, faults, stdinRead, stdoutWrite, stderrWrite, out var processId);
+
+            // 子进程端句柄已被继承；父进程必须关闭自己的副本，管道读端才能在子进程树退出后得到 EOF。
+            CloseHandle(stdinRead);
+            stdinRead = IntPtr.Zero;
+            CloseHandle(stdoutWrite);
+            stdoutWrite = IntPtr.Zero;
+            CloseHandle(stderrWrite);
+            stderrWrite = IntPtr.Zero;
+
+            var stdout = new FileStream(new SafeFileHandle(stdoutRead, ownsHandle: true), FileAccess.Read, 1, false);
+            stdoutRead = IntPtr.Zero;
+            var stderr = new FileStream(new SafeFileHandle(stderrRead, ownsHandle: true), FileAccess.Read, 1, false);
+            stderrRead = IntPtr.Zero;
+            return new ContainedProcess(job, processHandle, processId, stdout, stderr);
+        }
+        catch
+        {
+            // 关闭 Job 会结束其中已启动的任何进程（KILL_ON_JOB_CLOSE），因此失败路径不会留下进程。
+            job.Dispose();
+            throw;
+        }
+        finally
+        {
+            foreach (var handle in new[] { stdinRead, stdinWrite, stdoutRead, stdoutWrite, stderrRead, stderrWrite })
+            {
+                if (handle != IntPtr.Zero)
+                {
+                    CloseHandle(handle);
+                }
+            }
+        }
+    }
+
+    /// <summary>仅在需要时（树终止的测试接缝 / 默认 Kill(true)）才按 PID 打开 Process 对象；进程已消失返回 null。</summary>
+    public Process? TryGetProcess()
+    {
+        try
+        {
+            return Process.GetProcessById(_processId);
+        }
+        catch (ArgumentException)
         {
             return null;
         }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+        catch (Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    public Task WaitForExitAsync(CancellationToken cancellationToken)
+    {
+        return WaitCoreAsync(cancellationToken);
+    }
+
+    public bool WaitForExit(TimeSpan timeout)
+    {
+        return WaitForSingleObject(_process, (uint)Math.Min(timeout.TotalMilliseconds, int.MaxValue - 1)) == WaitObject0;
+    }
+
+    public void TerminateJob()
+    {
+        TerminateJobObject(_job, 1);
+    }
+
+    public void TerminateRoot()
+    {
+        TerminateProcess(_process, 1);
+    }
+
+    /// <summary>等待 Job 中没有存活进程；超时返回 false。</summary>
+    public async Task<bool> WaitUntilJobEmptyAsync(TimeSpan timeout)
+    {
+        var deadline = Stopwatch.StartNew();
+        while (true)
+        {
+            if (ActiveProcesses() == 0)
+            {
+                return true;
+            }
+            if (deadline.Elapsed >= timeout)
+            {
+                return false;
+            }
+            await Task.Delay(25).ConfigureAwait(false);
+        }
+    }
+
+    public void Dispose()
+    {
+        // 先关闭 Job（KILL_ON_JOB_CLOSE 结束全部残留成员，管道写端随之关闭），再关闭管道与进程句柄。
+        _job.Dispose();
+        Stdout.Dispose();
+        Stderr.Dispose();
+        _process.Dispose();
+    }
+
+    private async Task WaitCoreAsync(CancellationToken cancellationToken)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var waitHandle = new ManualResetEvent(false);
+        waitHandle.SafeWaitHandle = new SafeWaitHandle(_process.DangerousGetHandle(), ownsHandle: false);
+        var registered = ThreadPool.RegisterWaitForSingleObject(
+            waitHandle, static (state, _) => ((TaskCompletionSource)state!).TrySetResult(), completion, Timeout.Infinite, true);
+        try
+        {
+            using (cancellationToken.Register(static state => ((TaskCompletionSource)state!).TrySetCanceled(), completion))
+            {
+                await completion.Task.ConfigureAwait(false);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+        finally
+        {
+            registered.Unregister(null);
+        }
+    }
+
+    public bool IsInJob()
+    {
+        return IsProcessInJob(_process, _job, out var inJob) && inJob;
+    }
+
+    private uint ActiveProcesses()
+    {
+        var size = Marshal.SizeOf<BasicAccounting>();
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (!QueryInformationJobObject(_job, BasicAccountingInformationClass, buffer, (uint)size, IntPtr.Zero))
+            {
+                return uint.MaxValue;
+            }
+            return Marshal.PtrToStructure<BasicAccounting>(buffer).ActiveProcesses;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    private static SafeJobHandle? CreateKillOnCloseJob()
+    {
         var handle = CreateJobObject(IntPtr.Zero, null);
         if (handle.IsInvalid)
         {
@@ -310,148 +523,134 @@ internal sealed class WindowsProcessJob : IDisposable
         {
             Marshal.FreeHGlobal(buffer);
         }
-        return new WindowsProcessJob(handle);
+        return handle;
     }
 
-    /// <summary>加入根进程，并把已经出现的后代（根在加入前来得及产生的）也加入。返回根是否成功加入。</summary>
-    public bool Adopt(Process root)
+    private static SafeProcessHandle StartInJob(
+        ProcessStartInfo startInfo,
+        SafeJobHandle job,
+        ProcessContainmentFaults faults,
+        IntPtr stdin,
+        IntPtr stdout,
+        IntPtr stderr,
+        out int processId)
     {
+        // FailEnrollment：把一个绝不可能有效的句柄值放进 JOB_LIST，让系统真实地拒绝 CreateProcess。
+        var jobValue = faults.HasFlag(ProcessContainmentFaults.FailEnrollment)
+            ? new IntPtr(0x0BADF00D)
+            : job.DangerousGetHandle();
+
+        var attributeSize = IntPtr.Zero;
+        InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref attributeSize);
+        var attributeList = Marshal.AllocHGlobal(attributeSize);
+        var jobBuffer = Marshal.AllocHGlobal(IntPtr.Size);
+        var inheritBuffer = Marshal.AllocHGlobal(IntPtr.Size * 3);
+        var attributesInitialized = false;
         try
         {
-            if (!AssignProcessToJobObject(_job, root.SafeHandle))
+            if (!InitializeProcThreadAttributeList(attributeList, 2, 0, ref attributeSize))
             {
-                return false;
+                throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed);
             }
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-        for (var pass = 0; pass < 3; pass++)
-        {
-            if (AdoptDescendants(root.Id) == 0)
-            {
-                break;
-            }
-        }
-        return true;
-    }
+            attributesInitialized = true;
 
-    public void Terminate()
-    {
-        TerminateJobObject(_job, 1);
-    }
-
-    /// <summary>等待 Job 中没有存活进程；超时返回 false。</summary>
-    public async Task<bool> WaitUntilEmptyAsync(TimeSpan timeout)
-    {
-        var deadline = Stopwatch.StartNew();
-        while (true)
-        {
-            if (ActiveProcesses() == 0)
+            Marshal.WriteIntPtr(jobBuffer, jobValue);
+            if (!UpdateProcThreadAttribute(attributeList, 0, new IntPtr(ProcThreadAttributeJobList), jobBuffer, new IntPtr(IntPtr.Size), IntPtr.Zero, IntPtr.Zero))
             {
-                return true;
+                throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed);
             }
-            if (deadline.Elapsed >= timeout)
+            Marshal.WriteIntPtr(inheritBuffer, 0, stdin);
+            Marshal.WriteIntPtr(inheritBuffer, IntPtr.Size, stdout);
+            Marshal.WriteIntPtr(inheritBuffer, IntPtr.Size * 2, stderr);
+            if (!UpdateProcThreadAttribute(attributeList, 0, new IntPtr(ProcThreadAttributeHandleList), inheritBuffer, new IntPtr(IntPtr.Size * 3), IntPtr.Zero, IntPtr.Zero))
             {
-                return false;
+                throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed);
             }
-            await Task.Delay(25).ConfigureAwait(false);
-        }
-    }
 
-    public void Dispose()
-    {
-        _job.Dispose();
-    }
-
-    private uint ActiveProcesses()
-    {
-        var size = Marshal.SizeOf<BasicAccounting>();
-        var buffer = Marshal.AllocHGlobal(size);
-        try
-        {
-            if (!QueryInformationJobObject(_job, BasicAccountingInformationClass, buffer, (uint)size, IntPtr.Zero))
+            var info = new StartupInfoEx
             {
-                return 0;
+                StartupInfo = new StartupInfo
+                {
+                    Size = (uint)Marshal.SizeOf<StartupInfoEx>(),
+                    Flags = StartfUseStdHandles,
+                    StdInput = stdin,
+                    StdOutput = stdout,
+                    StdError = stderr,
+                },
+                AttributeList = attributeList,
+            };
+            var commandLine = BuildCommandLine(startInfo);
+            var workingDirectory = string.IsNullOrEmpty(startInfo.WorkingDirectory) ? null : startInfo.WorkingDirectory;
+            if (!CreateProcess(
+                    null, commandLine, IntPtr.Zero, IntPtr.Zero, true,
+                    ExtendedStartupInfoPresent | CreateNoWindow, IntPtr.Zero, workingDirectory, ref info, out var created))
+            {
+                var error = Marshal.GetLastWin32Error();
+                throw new MasterVideoComposerException(
+                    error is ErrorFileNotFound or ErrorPathNotFound
+                        ? MasterVideoComposerException.FfmpegUnavailable
+                        : MasterVideoComposerException.ProcessContainmentFailed);
             }
-            return Marshal.PtrToStructure<BasicAccounting>(buffer).ActiveProcesses;
+            CloseHandle(created.Thread);
+            processId = (int)created.ProcessId;
+            return new SafeProcessHandle(created.Process, ownsHandle: true);
         }
         finally
         {
-            Marshal.FreeHGlobal(buffer);
+            if (attributesInitialized)
+            {
+                DeleteProcThreadAttributeList(attributeList);
+            }
+            Marshal.FreeHGlobal(attributeList);
+            Marshal.FreeHGlobal(jobBuffer);
+            Marshal.FreeHGlobal(inheritBuffer);
         }
     }
 
-    /// <summary>快照父子关系，把 rootPid 的所有后代加入 Job，返回新加入的数量。</summary>
-    private int AdoptDescendants(int rootPid)
+    /// <summary>按 CommandLineToArgvW 规则拼接命令行；FileName 是已校验的固定可执行文件名。</summary>
+    private static char[] BuildCommandLine(ProcessStartInfo startInfo)
     {
-        var parents = new Dictionary<int, int>();
-        var snapshot = CreateToolhelp32Snapshot(Th32csSnapProcess, 0);
-        if (snapshot == IntPtr.Zero || snapshot == new IntPtr(-1))
+        var builder = new StringBuilder(startInfo.FileName);
+        foreach (var argument in startInfo.ArgumentList)
         {
-            return 0;
+            builder.Append(' ');
+            AppendArgument(builder, argument);
         }
-        try
-        {
-            var entry = new ProcessEntry { Size = (uint)Marshal.SizeOf<ProcessEntry>() };
-            for (var ok = Process32First(snapshot, ref entry); ok; ok = Process32Next(snapshot, ref entry))
-            {
-                parents[(int)entry.ProcessId] = (int)entry.ParentProcessId;
-            }
-        }
-        finally
-        {
-            CloseHandle(snapshot);
-        }
-
-        var adopted = 0;
-        foreach (var pid in parents.Keys)
-        {
-            if (pid == rootPid || !DescendsFrom(pid, rootPid, parents))
-            {
-                continue;
-            }
-            var handle = OpenProcess(ProcessSetQuotaAndTerminate, false, (uint)pid);
-            if (handle == IntPtr.Zero)
-            {
-                continue;
-            }
-            try
-            {
-                if (IsProcessInJob(handle, _job.DangerousGetHandle(), out var inJob) && inJob)
-                {
-                    continue;
-                }
-                if (AssignProcessToJobObject(_job, new SafeProcessHandle(handle, ownsHandle: false)))
-                {
-                    adopted++;
-                }
-            }
-            finally
-            {
-                CloseHandle(handle);
-            }
-        }
-        return adopted;
+        // CreateProcessW 要求可写且以 NUL 结尾的缓冲区。
+        builder.Append((char)0);
+        return builder.ToString().ToCharArray();
     }
 
-    private static bool DescendsFrom(int pid, int rootPid, Dictionary<int, int> parents)
+    private static void AppendArgument(StringBuilder builder, string argument)
     {
-        var current = pid;
-        for (var depth = 0; depth < 32; depth++)
+        if (argument.Length > 0 && !argument.Any(char.IsWhiteSpace) && argument.IndexOf(Quote) < 0)
         {
-            if (!parents.TryGetValue(current, out var parent))
-            {
-                return false;
-            }
-            if (parent == rootPid)
-            {
-                return true;
-            }
-            current = parent;
+            builder.Append(argument);
+            return;
         }
-        return false;
+        builder.Append(Quote);
+        var backslashes = 0;
+        foreach (var character in argument)
+        {
+            if (character == Backslash)
+            {
+                backslashes++;
+            }
+            else if (character == Quote)
+            {
+                builder.Append(Backslash, (backslashes * 2) + 1);
+                builder.Append(Quote);
+                backslashes = 0;
+            }
+            else
+            {
+                builder.Append(Backslash, backslashes);
+                backslashes = 0;
+                builder.Append(character);
+            }
+        }
+        builder.Append(Backslash, backslashes * 2);
+        builder.Append(Quote);
     }
 
     private sealed class SafeJobHandle : SafeHandleZeroOrMinusOneIsInvalid
@@ -462,6 +661,54 @@ internal sealed class WindowsProcessJob : IDisposable
         }
 
         protected override bool ReleaseHandle() => CloseHandle(handle);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityAttributes
+    {
+        public int Length;
+        public IntPtr SecurityDescriptor;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool InheritHandle;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StartupInfo
+    {
+        public uint Size;
+        public IntPtr Reserved;
+        public IntPtr Desktop;
+        public IntPtr Title;
+        public uint X;
+        public uint Y;
+        public uint XSize;
+        public uint YSize;
+        public uint XCountChars;
+        public uint YCountChars;
+        public uint FillAttribute;
+        public uint Flags;
+        public ushort ShowWindow;
+        public ushort Reserved2;
+        public IntPtr Reserved2Pointer;
+        public IntPtr StdInput;
+        public IntPtr StdOutput;
+        public IntPtr StdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StartupInfoEx
+    {
+        public StartupInfo StartupInfo;
+        public IntPtr AttributeList;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessInformation
+    {
+        public IntPtr Process;
+        public IntPtr Thread;
+        public uint ProcessId;
+        public uint ThreadId;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -507,22 +754,6 @@ internal sealed class WindowsProcessJob : IDisposable
         public uint TotalTerminatedProcesses;
     }
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct ProcessEntry
-    {
-        public uint Size;
-        public uint Usage;
-        public uint ProcessId;
-        public UIntPtr DefaultHeapId;
-        public uint ModuleId;
-        public uint Threads;
-        public uint ParentProcessId;
-        public int PriorityClassBase;
-        public uint Flags;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string ExeFile;
-    }
-
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeJobHandle CreateJobObject(IntPtr attributes, string? name);
 
@@ -536,29 +767,52 @@ internal sealed class WindowsProcessJob : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AssignProcessToJobObject(SafeJobHandle job, SafeProcessHandle process);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool TerminateJobObject(SafeJobHandle job, uint exitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsProcessInJob(IntPtr process, IntPtr job, [MarshalAs(UnmanagedType.Bool)] out bool result);
+    private static extern bool IsProcessInJob(SafeProcessHandle process, SafeJobHandle job, [MarshalAs(UnmanagedType.Bool)] out bool result);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint processId);
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateProcess(SafeProcessHandle process, uint exitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
+    private static extern uint WaitForSingleObject(SafeProcessHandle handle, uint milliseconds);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool Process32First(IntPtr snapshot, ref ProcessEntry entry);
+    private static extern bool GetExitCodeProcess(SafeProcessHandle process, out uint exitCode);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry entry);
+    private static extern bool CreatePipe(out IntPtr readPipe, out IntPtr writePipe, ref SecurityAttributes attributes, uint size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool InitializeProcThreadAttributeList(IntPtr attributeList, int attributeCount, int flags, ref IntPtr size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UpdateProcThreadAttribute(
+        IntPtr attributeList, uint flags, IntPtr attribute, IntPtr value, IntPtr size, IntPtr previousValue, IntPtr returnSize);
+
+    [DllImport("kernel32.dll")]
+    private static extern void DeleteProcThreadAttributeList(IntPtr attributeList);
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateProcess(
+        string? applicationName,
+        [In, Out] char[] commandLine,
+        IntPtr processAttributes,
+        IntPtr threadAttributes,
+        [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+        uint creationFlags,
+        IntPtr environment,
+        string? currentDirectory,
+        ref StartupInfoEx startupInfo,
+        out ProcessInformation processInformation);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
