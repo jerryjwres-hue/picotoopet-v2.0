@@ -1,0 +1,166 @@
+name: C013 Fail-Closed Final Video Release Candidate Native Windows
+
+on:
+  push:
+    branches:
+      - integration/final-video-failclosed-release-candidate-v1
+    paths:
+      - '.github/workflows/c013-final-video-release-candidate-windows.yml'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/FixedFfmpegMasterVideoComposer.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/MasterVideoMediaProbe.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Services/MasterVideoProcessRunner.cs'
+      - 'windows/desktop/tests/PicotooPet.PostProductionMasterMux.SmokeTests/**'
+      - 'tests/c013_release_candidate/**'
+      - 'docs/qa/C013_FINAL_VIDEO_RELEASE_READINESS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-candidate:
+    runs-on: windows-2025
+    timeout-minutes: 80
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      PICOTOO_SOURCE_HEAD_SHA: ${{ github.sha }}
+      PICOTOO_SOURCE_REF: integration/final-video-failclosed-release-candidate-v1
+    steps:
+      - name: Checkout actual C013 release-candidate production commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout C010B frozen test owner snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: 8c8f1d7c01dc82baf2df636ef93df5af7125cd3c
+          path: frozen-c010b-tests
+          persist-credentials: false
+
+      - name: Checkout G005 frozen test owner snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: 0c92fbb5152c149e30db0e88a09b4e7eade18e02
+          path: frozen-g005-tests
+          persist-credentials: false
+
+      - name: Install exact Desktop SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Require native Windows FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'C013_FFMPEG_INSTALL_FAILED' }
+            $env:PATH += ';C:\ProgramData\chocolatey\bin'
+          }
+          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
+            if (-not (Get-Command $name -ErrorAction SilentlyContinue)) { throw "C013_NATIVE_TOOL_MISSING=$name" }
+            & $name -hide_banner -version | Select-Object -First 1
+            if ($LASTEXITCODE -ne 0) { throw "C013_NATIVE_TOOL_BROKEN=$name" }
+          }
+
+      - name: Compile actual C013 Desktop Release with warnings-as-errors
+        shell: pwsh
+        working-directory: windows/desktop
+        run: |
+          $ErrorActionPreference='Stop'
+          & dotnet build src/PicotooPet.Desktop/PicotooPet.Desktop.csproj -c Release --nologo --warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'C013_RELEASE_BUILD_WARNASERROR_FAILED' }
+          Write-Host 'C013_RELEASE_BUILD_WARNASERROR=PASS'
+
+      - name: Run true C013 production candidate C009B C010A C010B C011 G005 regressions
+        id: regressions
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference='Stop'
+          $ev=Join-Path $env:RUNNER_TEMP 'c013-native-evidence'
+          & ./tests/c013_release_candidate/Invoke-C013CandidateAcceptance.ps1 -CandidateRoot $env:GITHUB_WORKSPACE -C010BRoot (Join-Path $env:GITHUB_WORKSPACE 'frozen-c010b-tests') -G005Root (Join-Path $env:GITHUB_WORKSPACE 'frozen-g005-tests') -EvidenceDirectory $ev -ExpectedCandidateCommit '${{ github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw 'C013_PRODUCTION_REGRESSION_FAILED' }
+
+      - name: Run original Full published Windows Release builder and Maotai gate
+        id: release_gate
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/c013_release_candidate/Invoke-C013ReleaseGate.ps1 -CandidateRoot $env:GITHUB_WORKSPACE -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'c013-native-evidence') -ExpectedCandidateCommit '${{ github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw 'C013_FULL_RELEASE_UNEXPECTED_FAILURE' }
+
+      - name: Independently validate real Windows evidence and release manifest
+        if: always()
+        shell: pwsh
+        env:
+          REGRESSION_OUTCOME: ${{ steps.regressions.outcome }}
+          RELEASE_GATE_OUTCOME: ${{ steps.release_gate.outcome }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir=Join-Path $env:RUNNER_TEMP 'c013-native-evidence'
+          $tp=Join-Path $dir 'c013-candidate-tests.json'
+          $rp=Join-Path $dir 'c013-release-readiness.json'
+          $gp=Join-Path $dir 'c013-release-gate.json'
+          foreach ($p in @($tp,$rp,$gp)) {
+            if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { throw "C013_EVIDENCE_MISSING=$p" }
+          }
+          $t=Get-Content -LiteralPath $tp -Raw|ConvertFrom-Json
+          $r=Get-Content -LiteralPath $rp -Raw|ConvertFrom-Json
+          $g=Get-Content -LiteralPath $gp -Raw|ConvertFrom-Json
+          if ($env:REGRESSION_OUTCOME -cne 'success' -or $env:RELEASE_GATE_OUTCOME -cne 'success' -or $t.github_run_id -cne $env:GITHUB_RUN_ID -or $r.native_windows_actions_run_id -cne $env:GITHUB_RUN_ID -or $t.candidate_head -cne '${{ github.sha }}' -or $r.candidate_head -cne '${{ github.sha }}') {
+            throw 'C013_ACTUAL_CANDIDATE_RUN_NOT_PROVEN'
+          }
+          if ($t.failure_count -ne 0 -or $t.git_blob_pins_pass -ne $true) { throw 'C013_FAILED_BINARY_REGRESSION' }
+          foreach ($name in @('C009B','C010A','C010B','C011','G005')) {
+            if ($t.suites.$name.status -cne 'PASS' -or $r.regression_gates.$name -cne 'PASS') { throw "C013_REGRESSION_NOT_PASS=$name" }
+          }
+          if ($t.suites.C010A.real_profile_modes -ne 12 -or $t.suites.C010B.evidence_counts.groups -ne 17 -or $t.suites.C010B.evidence_counts.master_negative -ne 17 -or $t.suites.C010B.evidence_counts.three_profiles -ne 12 -or $t.suites.G005.individual_case_evidence_checked -ne $true) {
+            throw 'C013_MISSING_INDEPENDENT_CASE_EVIDENCE'
+          }
+          $g005 = $t.suites.G005.evidence_counts
+          if ($t.g005_frozen_tests -cne '0c92fbb5152c149e30db0e88a09b4e7eade18e02' -or $r.g005_tests_sha -cne '0c92fbb5152c149e30db0e88a09b4e7eade18e02' -or
+              $g005.pass -ne 33 -or $g005.fail -ne 0 -or $g005.blocked -ne 0 -or $g005.unverified -ne 3 -or
+              @($g005.native_verified).Count -ne 3 -or @(@('FV-012','FV-031','FV-035') | Where-Object { $_ -notin @($g005.native_verified) }).Count -ne 0) { throw 'C013_G005_33_NATIVE_CASE_EVIDENCE_INVALID' }
+          $fc=$t.suites.C009B.failclosed_checks
+          if ($t.claude_pr85_frozen_source -cne '100d3788776204770d7aaff11c5c28e53ef93c41' -or
+              $r.c009b_failclosed_pr85_sha -cne '100d3788776204770d7aaff11c5c28e53ef93c41') { throw 'C013_PR85_OWNER_SHA_INCORRECT' }
+          foreach ($name in @('argv_roundtrip','job_create','enroll','verify','suppress_termination')) {
+            if ($fc.$name -cne 'PASS' -or $r.c009b_failclosed_real.$name -cne 'PASS') {
+              throw "C013_FAILCLOSED_SECURITY_NEGATIVE_NOT_PROVEN=$name"
+            }
+          }
+          $log=Join-Path $dir 'c013-full-release.log'
+          $sha=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -cne $g.log_sha256 -or $g.native_full_builder_invoked -ne $true) { throw 'C013_RELEASE_LOG_UNVERIFIED' }
+          if ($g.status -cne 'BLOCKED' -or $g.issue78_missing_asset_verified -ne $true -or $g.zip_count -ne 0 -or $r.release_ready -ne $false) { throw 'C013_RELEASE_GATE_INCORRECT' }
+          Write-Host 'C013_CANDIDATE_PRODUCTION_WINDOWS_INTEGRATION=PASS'
+          Write-Host 'C013_C009B_PR85_FAILCLOSED_JOB_OBJECT=PASS'
+          Write-Host 'C013_C009B_HARDENING=PASS'
+          Write-Host 'C013_C010A_REAL_3x4=PASS'
+          Write-Host 'C013_C010B_GROUPS_17_NEGATIVES_17_PROFILES_12=PASS'
+          Write-Host 'C013_C011_QA_GATED_OPEN=PASS'
+          Write-Host 'C013_G005_33_OF_36_CONTROLLED_CORE_NATIVE=PASS'
+          Write-Host 'C013_FORMAL_RELEASE=BLOCKED_MAOTAI_TORSO'
+          Write-Host 'C013_LIVE_MAC_CORE=UNVERIFIED'
+          Write-Host "C013_CANDIDATE_HEAD=$($r.candidate_head)"
+          Write-Host "C013_READINESS_RUN_ID=$($r.native_windows_actions_run_id)"
+
+      - name: Upload native candidate CI evidence including generated release readiness manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c013-native-release-readiness-evidence
+          path: |
+            ${{ runner.temp }}/c013-native-evidence/*.json
+            ${{ runner.temp }}/c013-native-evidence/*.log
+          if-no-files-found: warn
+          retention-days: 30
