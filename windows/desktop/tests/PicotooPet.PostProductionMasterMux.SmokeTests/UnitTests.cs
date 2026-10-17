@@ -330,6 +330,7 @@ internal enum FakeMode
     Timeout,
     Cancel,
     ExitFailure,
+    CleanupIncomplete,
 }
 
 /// <summary>假 ffmpeg/ffprobe：记录调用，按路径返回受控 ffprobe JSON，按模式产出/破坏输出。</summary>
@@ -375,6 +376,10 @@ internal sealed class FakeRunner : IMasterVideoProcessRunner
             case FakeMode.ExitFailure:
                 File.WriteAllBytes(output, [1, 2, 3]);
                 return Task.FromResult(new MasterVideoProcessResult(1, false, "SECRET-STDERR " + output));
+            case FakeMode.CleanupIncomplete:
+                // 退出码 0 且输出看似正常，但进程树清理未确认：必须 fail-closed。
+                File.WriteAllBytes(output, Encoding.ASCII.GetBytes("FAKE-MASTER-" + Guid.NewGuid().ToString("N")));
+                return Task.FromResult(new MasterVideoProcessResult(0, false, string.Empty) { CleanupIncomplete = true });
         }
         File.WriteAllBytes(output, Encoding.ASCII.GetBytes("FAKE-MASTER-" + Guid.NewGuid().ToString("N")));
         return Task.FromResult(new MasterVideoProcessResult(0, false, string.Empty));

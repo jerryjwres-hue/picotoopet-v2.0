@@ -16,6 +16,8 @@ internal static class Program
             Console.WriteLine("MASTER_MUX_HARDENING_UNIT=PASS");
             var hardening = await RealHardening.RunAsync().ConfigureAwait(false);
             Console.WriteLine("MASTER_MUX_HARDENING_REAL=" + hardening);
+            var failClosed = await RealFailClosed.RunAsync().ConfigureAwait(false);
+            Console.WriteLine("MASTER_MUX_FAILCLOSED_REAL=" + failClosed);
             return 0;
         }
         catch (Exception exception)
