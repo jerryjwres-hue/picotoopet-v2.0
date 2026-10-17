@@ -5,13 +5,13 @@ on:
     branches:
       - integration/final-video-failclosed-release-candidate-v1
     paths:
-      - '.github/workflows/c013-final-video-release-candidate-windows.yml'
+      - '.github/workflows/c013-final-video-failclosed-release-candidate-windows.yml'
       - 'windows/desktop/src/PicotooPet.Desktop/Services/FixedFfmpegMasterVideoComposer.cs'
       - 'windows/desktop/src/PicotooPet.Desktop/Services/MasterVideoMediaProbe.cs'
       - 'windows/desktop/src/PicotooPet.Desktop/Services/MasterVideoProcessRunner.cs'
       - 'windows/desktop/tests/PicotooPet.PostProductionMasterMux.SmokeTests/**'
       - 'tests/c013_release_candidate/**'
-      - 'docs/qa/C013_FINAL_VIDEO_RELEASE_READINESS.md'
+      - 'docs/qa/C013_FINAL_VIDEO_FAILCLOSED_RELEASE_READINESS.md'
   workflow_dispatch:
 
 permissions:
