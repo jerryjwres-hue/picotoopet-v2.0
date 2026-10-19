@@ -216,6 +216,9 @@ public partial class App : WpfApplication, IDisposable
     {
         try
         {
+            // ── Explicit Exit is different from normal window close-to-tray. ──
+            // ── The media process stops cooperatively after the active GPU job. ──
+            P0MediaWorkerHost.RequestExplicitStop();
             await DisposeRuntimeAsync();
         }
         catch (Exception exception)

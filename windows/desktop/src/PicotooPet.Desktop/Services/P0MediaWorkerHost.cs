@@ -17,6 +17,16 @@ public static class P0MediaWorkerHost
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan FailureBackoff = TimeSpan.FromMinutes(2);
+    private const string ExplicitStopEventName = @"Local\PicotooPetV2.P0MediaWorker.ExplicitExit";
+
+    /// <summary>Only explicit Exit stops background work; ordinary WPF close never signals.</summary>
+    public static void RequestExplicitStop()
+    {
+        // ── AutoReset signal is owned by the current user session, not a service. ──
+        using var signal = new EventWaitHandle(
+            initialState: false, mode: EventResetMode.AutoReset, name: ExplicitStopEventName);
+        signal.Set();
+    }
 
     public static async Task<int> RunAsync(CancellationToken cancellationToken)
     {
@@ -36,6 +46,9 @@ public static class P0MediaWorkerHost
         {
             return 0;
         }
+        // ── Explicit Exit is cooperative: finish any started GPU call before exiting. ──
+        using var stopSignal = new EventWaitHandle(
+            initialState: false, mode: EventResetMode.AutoReset, name: ExplicitStopEventName);
 
         var root = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -58,8 +71,14 @@ public static class P0MediaWorkerHost
                 var backoff = new System.Collections.Generic.Dictionary<string, DateTimeOffset>(
                     StringComparer.Ordinal);
                 var connected = false;
-                while (!cancellationToken.IsCancellationRequested)
+                var explicitStop = false;
+                while (!cancellationToken.IsCancellationRequested && !explicitStop)
                 {
+                    // ── A normal window close does not signal; explicit Exit does. ──
+                    if (stopSignal.WaitOne(0))
+                    {
+                        break;
+                    }
                     try
                     {
                         if (!connected)
@@ -71,6 +90,12 @@ public static class P0MediaWorkerHost
                         foreach (var goal in goals)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
+                            if (stopSignal.WaitOne(0))
+                            {
+                                // ── Stop between jobs, never revoke an in-flight Comfy prompt. ──
+                                explicitStop = true;
+                                break;
+                            }
                             if (goal.IntentType is not ("video.creative" or "product.research_to_video"))
                             {
                                 continue;
@@ -128,6 +153,10 @@ public static class P0MediaWorkerHost
                         // ── Only reinitialize after an actual Core failure; no 15s churn. ──
                         connected = false;
                         logger.Error("P0 Mac Core 检查失败", error);
+                    }
+                    if (explicitStop || stopSignal.WaitOne(0))
+                    {
+                        break;
                     }
                     await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
                 }
