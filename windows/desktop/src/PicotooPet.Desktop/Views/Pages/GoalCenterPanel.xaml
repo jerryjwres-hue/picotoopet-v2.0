@@ -150,6 +150,27 @@
                  FontSize="11"
                  ToolTip="例如：研究大型犬耐咬玩具，找消费者痛点并生成 TikTok AI 视频方案" />
 
+        <StackPanel Margin="0,0,0,8">
+          <StackPanel.Style>
+            <Style TargetType="StackPanel">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsVideoGoalSelected}" Value="True">
+                  <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </StackPanel.Style>
+          <TextBlock Text="{Binding VideoSourceStatus}" Foreground="#F4FFFFFF"
+                     TextWrapping="Wrap" FontSize="9" Margin="0,0,0,4" />
+          <ComboBox x:Name="GoalVideoSourceComboBox"
+                    ItemsSource="{Binding VideoSources, Mode=OneWay}"
+                    SelectedItem="{Binding SelectedVideoSource, Mode=TwoWay}"
+                    DisplayMemberPath="Summary"
+                    ToolTip="只能选择 Mac Core 已验证 PASS/Completed 的来源 Result Package"
+                    Height="31" Padding="8,2" />
+        </StackPanel>
+
         <ItemsControl x:Name="GoalTemplateItems"
                       ItemsSource="{Binding GoalTemplates, Mode=OneWay}"
                       Margin="0,0,0,3">
