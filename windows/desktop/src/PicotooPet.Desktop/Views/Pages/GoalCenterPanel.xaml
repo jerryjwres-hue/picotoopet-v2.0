@@ -281,6 +281,9 @@
                       IsEnabled="{Binding VideoContinuation.CanOpenFinalVideo, Mode=OneWay}"
                       Click="OpenFinalVideo_Click" />
             </StackPanel>
+            <TextBlock Text="{Binding VideoContinuation.CreativePlanText, Mode=OneWay}"
+                       Foreground="#F4FFFFFF" FontSize="8" TextWrapping="Wrap"
+                       MaxHeight="145" Margin="0,7,0,0" />
             <TextBlock Text="{Binding VideoContinuation.StatusText, Mode=OneWay}"
                        Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,6,0,0" />
           </StackPanel>
