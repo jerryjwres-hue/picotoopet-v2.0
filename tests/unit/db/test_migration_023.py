@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 def test_schema_23_makes_scan_manifest_key_primary_and_capture_content_id_repeatable(
@@ -12,7 +12,7 @@ def test_schema_23_makes_scan_manifest_key_primary_and_capture_content_id_repeat
     database.open()
     try:
         database.apply_migrations()
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
 
         columns = {
             row["name"]: row

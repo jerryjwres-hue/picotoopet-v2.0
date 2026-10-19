@@ -1,4 +1,5 @@
 from __future__ import annotations
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION
 
 from pathlib import Path
 
@@ -113,8 +114,8 @@ def test_workflow_api_materializes_only_registered_queue_contract_and_health_is_
 
         health = client.get("/api/v1/automation/health", headers=headers)
         assert health.status_code == 200
-        # Schema gate               Browser scan manifests advance Core schema to 23.
-        assert health.json()["database_schema_version"] == 23
+        # Schema gate               Browser scan manifests advance Core schema to 24.
+        assert health.json()["database_schema_version"] == CURRENT_SCHEMA_VERSION
         assert health.json()["workflow_counts"]["Running"] == 1
 
         diagnostics = client.get("/api/v1/automation/diagnostics", headers=headers)

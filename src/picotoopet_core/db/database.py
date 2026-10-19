@@ -37,6 +37,9 @@ from .schema import (
 )
 from .task_visibility_schema import TASK_VISIBILITY_SCHEMA
 
+# ── Current cumulative schema for retention tests; migrations remain immutable. ──
+CURRENT_SCHEMA_VERSION = 24
+
 
 class Database:
     """Mac Core SQLite 数据库。"""

@@ -9,7 +9,7 @@ from picotoopet_core.business.models import (
     WorkPackageManifest,
 )
 from picotoopet_core.business.repository import BusinessRepository
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 SHA_A = "a" * 64
@@ -66,8 +66,8 @@ def test_business_tables_are_retained_through_current_schema(tmp_path: Path) -> 
         "business_result_packages",
         "deep_ai_handoffs",
     } <= tables
-    # Schema retention gate      Business v1 facts survive current schema 23.
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+    # Schema retention gate      Business v1 facts survive current schema 24.
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
     database.close()
 
 

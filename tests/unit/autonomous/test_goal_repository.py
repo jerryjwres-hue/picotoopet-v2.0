@@ -11,7 +11,7 @@ from picotoopet_core.autonomous.models import (
     PriorityClass,
 )
 from picotoopet_core.autonomous.repository import AutonomousGoalRepository
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 def _open_database(tmp_path: Path) -> Database:
@@ -55,8 +55,8 @@ def test_goal_creation_is_idempotent_and_does_not_create_a_second_queue(tmp_path
     assert database.scalar("SELECT COUNT(*) FROM autonomous_goals") == 1
     assert database.scalar("SELECT COUNT(*) FROM tasks") == 0
     assert database.scalar("SELECT COUNT(*) FROM workflow_runs") == 0
-    # Schema retention gate      Goal facts survive current schema 23.
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+    # Schema retention gate      Goal facts survive current schema 24.
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
     database.close()
 
 

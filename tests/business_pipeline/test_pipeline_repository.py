@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 def _database(tmp_path: Path) -> Database:
@@ -33,8 +33,8 @@ def _models_module():  # type: ignore[no-untyped-def]
 def test_migration_14_creates_pipeline_tables(tmp_path: Path) -> None:
     database = _database(tmp_path)
     try:
-        # Schema retention gate      21.1 pipeline facts remain present through current schema 23.
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+        # Schema retention gate      21.1 pipeline facts remain present through current schema 24.
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
         tables = {
             row[0]
             for row in database.fetchall(

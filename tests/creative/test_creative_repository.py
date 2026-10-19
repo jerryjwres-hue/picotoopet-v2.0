@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from picotoopet_core.creative.models import CreativeJobCreateRequest, CreativeJobStatus
 from picotoopet_core.creative.repository import CreativeRepository
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 def _database(tmp_path: Path) -> Database:
@@ -35,8 +35,8 @@ def test_creative_tables_are_retained_through_current_schema(tmp_path: Path) -> 
             "creative_packages",
             "creative_deep_ai_handoffs",
         } <= tables
-        # Schema retention gate      Creative v1 remains durable through current schema 23.
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+        # Schema retention gate      Creative v1 remains durable through current schema 24.
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
     finally:
         database.close()
 

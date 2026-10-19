@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 REQUIRED_ARTIFACT_COLUMNS = {"return_id", "session_id", "handoff_id", "base_commit", "change_set_digest", "review_diff_digest", "changed_file_count", "payload_bytes", "artifact_status", "created_at", "preview_json"}
@@ -18,8 +18,8 @@ def test_migration_seven_creates_review_and_adoption_tables_idempotently(tmp_pat
     assert REQUIRED_ARTIFACT_COLUMNS <= _columns(database, "provider_return_artifacts")
     assert REQUIRED_DECISION_COLUMNS <= _columns(database, "provider_review_decisions")
     assert REQUIRED_CANDIDATE_COLUMNS <= _columns(database, "provider_adoption_candidates")
-    # Schema retention gate      Migration 7 remains exactly once inside cumulative schema 23.
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
+    # Schema retention gate      Migration 7 remains exactly once inside cumulative schema 24.
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 7") == 1
     database.close()
 
