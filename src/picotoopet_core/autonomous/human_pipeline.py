@@ -34,6 +34,8 @@ from .models import GoalRecord
 _DISCOVERY_STEP = "research-evidence"
 _SYNTHESIS_STEP = "evidence-synthesis"
 _HANDOFF_STEP = "web-gpt-handoff"
+_LOCAL_CREATIVE_STEP = "local-creative"
+_LOCAL_CREATIVE_RESULT_TYPE = "autonomous.goal_creative.v1"
 _DISCOVERY_RESULT_TYPE = "autonomous.discovery.v1"
 _SYNTHESIS_RESULT_TYPE = "autonomous.goal_synthesis.v1"
 _HANDOFF_RESULT_TYPE = "autonomous.goal_handoff.v1"
@@ -121,9 +123,9 @@ class HumanGoalWorkflowPlanner:
         if goal.intent_type in _VIDEO_GOAL_TYPES:
             steps.append(
                 WorkflowStepCreate(
-                    step_key=_HANDOFF_STEP,
-                    task_type=_HANDOFF_RESULT_TYPE,
-                    required_capability="local.goal.handoff",
+                    step_key=_LOCAL_CREATIVE_STEP,
+                    task_type=_LOCAL_CREATIVE_RESULT_TYPE,
+                    required_capability="local.goal.creative",
                     depends_on=[_SYNTHESIS_STEP],
                     payload={"goal_id": goal.goal_id},
                     max_attempts=2,

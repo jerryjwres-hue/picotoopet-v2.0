@@ -24,6 +24,7 @@ from .connected_evidence import ConnectedEvidenceRepository
 from .discovery import ContentDiscoveryCoordinator
 from .human_pipeline import GoalHandoffCoordinator, GoalSynthesisCoordinator
 from .local_intelligence import LocalIntelligenceCoordinator
+from .local_creative import GoalLocalCreativeCoordinator
 from .storage_worker import StorageMaintenanceCoordinator
 
 
@@ -64,6 +65,7 @@ class AutonomousBackgroundCoordinator:
         storage_maintenance_handler: WorkerHandler | None = None,
         goal_synthesis_handler: WorkerHandler | None = None,
         goal_handoff_handler: WorkerHandler | None = None,
+        goal_creative_handler: WorkerHandler | None = None,
         model_input_budget: Callable[[int], ModelInputBudget] | None = None,
         model_id: str,
         clock: Callable[[], datetime] | None = None,
@@ -83,6 +85,7 @@ class AutonomousBackgroundCoordinator:
         self.local_intelligence_handler       = local_intelligence_handler
         self.goal_synthesis_handler           = goal_synthesis_handler
         self.goal_handoff_handler             = goal_handoff_handler
+        self.goal_creative_handler            = goal_creative_handler
         self.model_input_budget               = model_input_budget
         self.model_id                         = model_id
         self._clock                           = clock or (lambda: datetime.now(UTC))
@@ -211,6 +214,29 @@ class AutonomousBackgroundCoordinator:
                     "runtime": "mac-worker",
                     "execution": "deterministic-local-packaging",
                     "external_ai_upload_requires_user_action": True,
+                },
+                heartbeat_at=self._now(),
+            )
+        )
+
+        creative_healthy = bool(local_healthy and self.goal_creative_handler is not None)
+        if creative_healthy:
+            assert self.goal_creative_handler is not None
+            self.runtime.handlers[GoalLocalCreativeCoordinator.TASK_TYPE] = (
+                self.goal_creative_handler
+            )
+        else:
+            self.runtime.handlers.pop(GoalLocalCreativeCoordinator.TASK_TYPE, None)
+        self.capability_router.register(
+            CapabilityRegistration(
+                worker_id=self.worker_id,
+                capability=GoalLocalCreativeCoordinator.CAPABILITY,
+                task_types=[GoalLocalCreativeCoordinator.TASK_TYPE] if creative_healthy else [],
+                healthy=creative_healthy,
+                metadata={
+                    "runtime": "mac-worker",
+                    "execution": "core-result-to-canonical-creative",
+                    "manual_web_gpt_required": False,
                 },
                 heartbeat_at=self._now(),
             )
