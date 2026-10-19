@@ -1,0 +1,131 @@
+name: P0 Local Goal Creative and Windows Goal Center Native
+
+on:
+  push:
+    branches:
+      - integration/win-only-real-video-p0-v1
+    paths:
+      - '.github/workflows/p0-local-goal-creative-windows-ui-native.yml'
+      - 'src/picotoopet_core/autonomous/{goal_service,video_continuation,human_pipeline}.py'
+      - 'src/picotoopet_core/api/routes/autonomous_goals.py'
+      - 'tests/unit/autonomous/test_p0_local_video_continuation.py'
+      - 'windows/desktop/src/PicotooPet.Desktop.Core/Contracts/GoalCenterContracts.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/ViewModels/{OperatorHomePageViewModel,GoalVideoContinuationViewModel}.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml'
+  pull_request:
+    paths:
+      - '.github/workflows/p0-local-goal-creative-windows-ui-native.yml'
+      - 'src/picotoopet_core/autonomous/**'
+      - 'src/picotoopet_core/api/routes/autonomous_goals.py'
+      - 'tests/unit/autonomous/test_p0_local_video_continuation.py'
+      - 'windows/desktop/src/PicotooPet.Desktop.Core/Contracts/GoalCenterContracts.cs'
+      - 'windows/desktop/src/PicotooPet.Desktop/ViewModels/**'
+      - 'windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-mac:
+    name: Native macOS canonical local Creative workflow
+    runs-on: macos-15
+    timeout-minutes: 22
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install real Core project and tests
+        run: python -m pip install -e . pytest==9.1.1 pytest-asyncio==1.4.0 ruff==0.16.1
+      - name: Verify actual native Mac source and durable Goal continuation
+        run: |
+          uname -sm
+          PYTHONPATH=.:src python -m pytest -q \
+            tests/unit/autonomous/test_p0_local_video_continuation.py \
+            tests/unit/autonomous/test_goal_video_return.py \
+            tests/unit/autonomous/test_human_goal_pipeline.py \
+            tests/unit/autonomous/test_human_goal_lifecycle.py
+          echo 'P0_MAC_LOCAL_GOAL_CREATIVE_TESTS=PASS'
+      - name: Verify Python import and formatting
+        run: |
+          python -m compileall -q src/picotoopet_core/autonomous/goal_service.py \
+            src/picotoopet_core/autonomous/video_continuation.py \
+            src/picotoopet_core/api/routes/autonomous_goals.py
+          ruff check src/picotoopet_core/autonomous/goal_service.py \
+            src/picotoopet_core/autonomous/video_continuation.py \
+            src/picotoopet_core/api/routes/autonomous_goals.py \
+            tests/unit/autonomous/test_p0_local_video_continuation.py
+          echo 'P0_MAC_LOCAL_IMPORT_LINT=PASS'
+      - name: Machine-readable Mac proof (no live Ollama claim)
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p p0-evidence
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          Path('p0-evidence/mac-local.json').write_text(json.dumps({
+            'candidate_head':os.environ['GITHUB_SHA'],
+            'run_id':os.environ['GITHUB_RUN_ID'],
+            'scope':'NATIVE_MAC_CORE_CONTRACT_NO_REAL_OLLAMA',
+            'live_mac_core':'UNVERIFIED',
+            'real_gpu_video':'UNVERIFIED'
+          },indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0-mac-local-goal-evidence
+          path: p0-evidence/mac-local.json
+          retention-days: 14
+
+  windows-goal:
+    name: Native Windows Goal UI Release compile
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Build actual Windows Goal Center production app
+        shell: pwsh
+        working-directory: windows/desktop
+        run: |
+          $sdk=(Get-Content global.json -Raw|ConvertFrom-Json).sdk.version
+          if ((dotnet --version).Trim() -ne $sdk) { throw 'P0_SDK_PIN_MISMATCH' }
+          dotnet build src/PicotooPet.Desktop/PicotooPet.Desktop.csproj -c Release --nologo --warnaserror
+          if($LASTEXITCODE -ne 0) { throw 'P0_WIN_GOAL_RELEASE_BUILD_FAILED' }
+          Write-Host 'P0_WIN_GOAL_RELEASE_BUILD=PASS'
+      - name: UI smoke from existing native harness
+        shell: pwsh
+        working-directory: windows/desktop
+        run: |
+          dotnet run --project tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj -c Release -- --ui-interaction-only
+          if ($LASTEXITCODE -ne 0) { throw 'P0_WINDOWS_EXISTING_UI_SMOKE_FAILED' }
+          Write-Host 'P0_WINDOWS_EXISTING_UI_SMOKE=PASS'
+      - name: Candidate digest and bounded scope
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force p0-evidence | Out-Null
+          [ordered]@{
+            candidate_head=$env:GITHUB_SHA
+            run_id=$env:GITHUB_RUN_ID
+            scope='NATIVE_WINDOWS_GOAL_CENTER_BUILD_AND_UI_SMOKE'
+            live_mac_core='UNVERIFIED'
+            real_comfy_gpu='UNVERIFIED'
+          } | ConvertTo-Json | Set-Content p0-evidence/windows-goal.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0-windows-goal-evidence
+          path: p0-evidence/windows-goal.json
+          retention-days: 14
