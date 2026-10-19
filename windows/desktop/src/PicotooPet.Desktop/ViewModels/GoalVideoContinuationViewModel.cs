@@ -9,6 +9,8 @@ namespace PicotooPet.Desktop.ViewModels;
 public sealed class GoalVideoContinuationViewModel : ObservableObject
 {
     private readonly IGoalVideoContinuationGateway? _gateway;
+    private readonly Func<string, CancellationToken, Task<CreativePackageRecord?>>? _creativePackage;
+    private string _creativePlanText = string.Empty;
     private readonly IGoalProductionAutopilotObserver? _autopilot;
     private readonly IPostProductionDeliveryObserver? _finalVideo;
     // Source-compatibility for the frozen C004 coordinator smoke harness only.
@@ -16,6 +18,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
     private readonly IGoalFinalVideoObserver? _legacyFinalVideo;
     private string? _goalId;
     private bool _available;
+    private bool _localGoal;
     private bool _isBusy;
     private string _errorMessage = string.Empty;
     private GoalVideoContinuationRecord? _continuation;
@@ -27,11 +30,13 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
     public GoalVideoContinuationViewModel(
         IGoalVideoContinuationGateway? gateway,
         IGoalProductionAutopilotObserver? autopilot = null,
-        IPostProductionDeliveryObserver? finalVideo = null)
+        IPostProductionDeliveryObserver? finalVideo = null,
+        Func<string, CancellationToken, Task<CreativePackageRecord?>>? creativePackage = null)
     {
         _gateway = gateway;
         _autopilot = autopilot;
         _finalVideo = finalVideo;
+        _creativePackage = creativePackage;
     }
 
     /// <summary>Compatibility only: existing C004 smoke tests still bind their original observer.</summary>
@@ -55,6 +60,8 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             {
                 if (!string.Equals(previousJobId, value?.ProductionJobId, StringComparison.Ordinal))
                 {
+                    _creativePlanText = string.Empty;
+                    RaisePropertyChanged(nameof(CreativePlanText));
                     _localProductionStatus = null;
                     _localFinalVideoStatus = null;
                     _canOpenFinalVideo = false;
@@ -91,7 +98,9 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         }
     }
 
-    public bool CanSubmit => _gateway is not null && _available && !IsBusy;
+    public string CreativePlanText => _creativePlanText;
+
+    public bool CanSubmit => _gateway is not null && _available && !_localGoal && !IsBusy;
 
     public bool CanOpenFinalVideo => _canOpenFinalVideo && Volatile.Read(ref _openingFinalVideo) == 0;
 
@@ -109,9 +118,9 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             }
             if (Continuation is null)
             {
-                return "尚未提交 Web GPT 返回";
+                return _localGoal ? "等待 Mac 本地研究/Creative Job…" : "尚未提交 Web GPT 返回";
             }
-            return $"Creative：{Continuation.CreativeStatus} · Production：{ProductionStatusText}";
+            return $"{(Continuation.ContinuationMode == "local" ? "本地" : "外部")} Creative：{Continuation.CreativeStatus} · Job：{Continuation.CreativeJobId} · Production：{ProductionStatusText}";
         }
     }
 
@@ -150,12 +159,17 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
 
     public void SetContext(HumanGoalRecord? goal, GoalHandoffMetadataRecord? handoff)
     {
-        var nextGoalId = goal is { Status: "Completed" }
-            && goal.IntentType is "video.creative" or "product.research_to_video"
-            && handoff is { HandoffReady: true }
-            && string.Equals(goal.GoalId, handoff.GoalId, StringComparison.Ordinal)
-                ? goal.GoalId
-                : null;
+        _localGoal = goal is not null
+            && goal.Constraints.ValueKind == JsonValueKind.Object
+            && goal.Constraints.TryGetProperty("local_video_preferred", out var pref)
+            && pref.ValueKind == JsonValueKind.True;
+        var nextGoalId = goal is not null
+            && goal.IntentType is ("video.creative" or "product.research_to_video")
+            && goal.Status is not ("Cancelled" or "Failed")
+            && (_localGoal || (goal.Status == "Completed"
+                && handoff is { HandoffReady: true }
+                && string.Equals(goal.GoalId, handoff.GoalId, StringComparison.Ordinal)))
+                ? goal.GoalId : null;
         if (!string.Equals(_goalId, nextGoalId, StringComparison.Ordinal))
         {
             _goalId = nextGoalId;
@@ -163,6 +177,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             ErrorMessage = string.Empty;
         }
         _available = nextGoalId is not null;
+        RaisePropertyChanged(nameof(CanSubmit));
         ObserveAutopilot();
         RaisePropertyChanged(nameof(CanSubmit));
         RaisePropertyChanged(nameof(StatusText));
@@ -187,6 +202,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
             }
             Continuation = continuation;
             ErrorMessage = string.Empty;
+            await RefreshCreativePlanAsync(goalId, continuation, cancellationToken).ConfigureAwait(false);
             ObserveAutopilot();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -319,6 +335,59 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
                 ErrorMessage = "提交结果暂时无法确认；请保留同一返回内容后重试。";
             }
         }
+    }
+
+    private async Task RefreshCreativePlanAsync(
+        string goalId, GoalVideoContinuationRecord continuation, CancellationToken ct)
+    {
+        if (_creativePackage is null || string.IsNullOrWhiteSpace(continuation.CreativePackageId))
+            return;
+        try
+        {
+            var package = await _creativePackage(continuation.CreativeJobId, ct).ConfigureAwait(false);
+            if (package is null || package.CreativePackageId != continuation.CreativePackageId
+                || package.PackageDigest != continuation.CreativePackageDigest
+                || package.Manifest.ValueKind != JsonValueKind.Object
+                || !package.Manifest.TryGetProperty("stage_results", out var stages)
+                || stages.ValueKind != JsonValueKind.Object)
+                return;
+            var lines = new List<string> {
+                $"Creative Package：{package.CreativePackageId}",
+                $"Production Job：{continuation.ProductionJobId ?? "等待脚本审核"}"
+            };
+            if (stages.TryGetProperty("script", out var script)
+                && script.ValueKind == JsonValueKind.Object)
+            {
+                if (script.TryGetProperty("title", out var title)) lines.Add("脚本：" + title.ToString());
+                if (script.TryGetProperty("beats", out var beats)
+                    && beats.ValueKind == JsonValueKind.Array)
+                    foreach (var beat in beats.EnumerateArray().Take(12))
+                    {
+                        var voice = beat.TryGetProperty("voiceover", out var v) ? v.ToString() : "";
+                        var visual = beat.TryGetProperty("visual_intent", out var t) ? t.ToString() : "";
+                        lines.Add($"脚本片段：{visual} · {voice}");
+                    }
+            }
+            if (stages.TryGetProperty("shot_plan", out var shots)
+                && shots.ValueKind == JsonValueKind.Object
+                && shots.TryGetProperty("shots", out var items)
+                && items.ValueKind == JsonValueKind.Array)
+                foreach (var shot in items.EnumerateArray().Take(12))
+                {
+                    var intent = shot.TryGetProperty("visual_prompt", out var prompt)
+                        ? prompt.ToString()
+                        : shot.TryGetProperty("visual_intent", out var visual) ? visual.ToString() : "";
+                    lines.Add("分镜：" + intent);
+                }
+            if (IsCurrentGoal(goalId) && Continuation?.CreativePackageId == package.CreativePackageId)
+            {
+                _creativePlanText = string.Join(Environment.NewLine, lines);
+                if (_creativePlanText.Length > 3500) _creativePlanText = _creativePlanText[..3500];
+                RaisePropertyChanged(nameof(CreativePlanText));
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception) { /* Projected script must be backed by real immutable package. */ }
     }
 
     private bool IsCurrentGoal(string goalId) =>
