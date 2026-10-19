@@ -28,6 +28,8 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     private GoalDepthOption _selectedGoalDepth = DepthOptions[1];
     private string _goalObjective = string.Empty;
     private string? _selectedGoalType;
+    private IReadOnlyList<CreativeEligibleSourceRecord> _videoSources = Array.Empty<CreativeEligibleSourceRecord>();
+    private CreativeEligibleSourceRecord? _selectedVideoSource;
     private HumanGoalRecord? _currentGoal;
     private GoalHandoffMetadataRecord? _currentHandoff;
     private bool _isGoalBusy;
@@ -150,9 +152,33 @@ public sealed class OperatorHomePageViewModel : PageViewModel
             {
                 RaisePropertyChanged(nameof(CanCreateGoal));
                 RaisePropertyChanged(nameof(SelectedGoalTemplateTitle));
+                RaisePropertyChanged(nameof(IsVideoGoalSelected));
             }
         }
     }
+
+    public bool IsVideoGoalSelected =>
+        SelectedGoalType is "video.creative" or "product.research_to_video";
+
+    public IReadOnlyList<CreativeEligibleSourceRecord> VideoSources
+    {
+        get => _videoSources;
+        private set => SetProperty(ref _videoSources, value);
+    }
+
+    public CreativeEligibleSourceRecord? SelectedVideoSource
+    {
+        get => _selectedVideoSource;
+        set
+        {
+            if (SetProperty(ref _selectedVideoSource, value))
+                RaisePropertyChanged(nameof(CanCreateGoal));
+        }
+    }
+
+    public string VideoSourceStatus => VideoSources.Count == 0
+        ? "没有已通过质量门禁的项目来源；请先完成一份来源 Result Package。"
+        : "选择同一项目的真实 PASS 来源，Mac 本地模型会生成脚本和分镜，无需 Web GPT 返回。";
 
     public string SelectedGoalTemplateTitle =>
         GoalTemplates.FirstOrDefault(item => string.Equals(item.GoalType, SelectedGoalType, StringComparison.Ordinal))?.Title
@@ -218,11 +244,16 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         && !IsGoalBusy
         && !string.IsNullOrWhiteSpace(SelectedGoalType)
         && !string.IsNullOrWhiteSpace(GoalObjective)
-        && GoalObjective.Trim().Length is >= 4 and <= 2000;
+        && GoalObjective.Trim().Length is >= 4 and <= 2000
+        && (!IsVideoGoalSelected || SelectedVideoSource is not null);
 
     public bool HandoffReady => CurrentHandoff?.HandoffReady == true;
 
-    public string HandoffSummary => HandoffReady
+    public string HandoffSummary => CurrentGoal?.IntentType is "video.creative" or "product.research_to_video"
+        && CurrentGoal.Constraints.ValueKind == System.Text.Json.JsonValueKind.Object
+        && CurrentGoal.Constraints.TryGetProperty("local_video_preferred", out var local)
+        && local.ValueKind == System.Text.Json.JsonValueKind.True
+        ? "Mac 本地 Creative → 脚本/分镜 → Production；Web GPT 非必需。" : HandoffReady
         ? $"交接包已就绪 · {CurrentHandoff!.PackageName} · Prompt {CurrentHandoff.PromptVersion}"
         : "视频目标完成后，Mac 会在这里提供可下载交接包和固定 GPT 提示词。";
 
@@ -320,6 +351,23 @@ public sealed class OperatorHomePageViewModel : PageViewModel
             var templates = await templatesTask.ConfigureAwait(false);
             var goals = await goalsTask.ConfigureAwait(false);
             GoalTemplates = templates;
+            try
+            {
+                var sources = await _session.GetCreativeEligibleSourcesAsync(cancellationToken).ConfigureAwait(false);
+                VideoSources = sources.OrderBy(x => x.ProjectKey, StringComparer.Ordinal)
+                    .ThenByDescending(x => x.CreatedAt).Take(100).ToArray();
+                if (SelectedVideoSource is not null &&
+                    !VideoSources.Any(x => x.ResultPackageId == SelectedVideoSource.ResultPackageId))
+                    SelectedVideoSource = null;
+                RaisePropertyChanged(nameof(VideoSourceStatus));
+            }
+            catch (ApiException)
+            {
+                // Existing Goal list must remain usable if Creative source catalog is unavailable.
+                VideoSources = Array.Empty<CreativeEligibleSourceRecord>();
+                SelectedVideoSource = null;
+                RaisePropertyChanged(nameof(VideoSourceStatus));
+            }
             if (SelectedGoalType is null || !templates.Any(item => item.GoalType == SelectedGoalType))
             {
                 SelectedGoalType = templates.FirstOrDefault()?.GoalType;
@@ -377,12 +425,15 @@ public sealed class OperatorHomePageViewModel : PageViewModel
             var request = new HumanGoalCreateRequest(
                 SelectedGoalType,
                 GoalObjective.Trim(),
-                SelectedGoalDepth.Value);
+                SelectedGoalDepth.Value,
+                IsVideoGoalSelected && SelectedVideoSource is not null
+                    ? [SelectedVideoSource.ResultPackageId] : null);
             CurrentGoal = await _session.CreateGoalAsync(
                 request,
                 $"windows-goal-{Guid.NewGuid():N}",
                 cancellationToken).ConfigureAwait(false);
             await RefreshCurrentHandoffAsync(cancellationToken).ConfigureAwait(false);
+            await VideoContinuation.RefreshAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
