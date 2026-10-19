@@ -47,11 +47,16 @@ public static class P0MediaWorkerHost
             {
                 var backoff = new System.Collections.Generic.Dictionary<string, DateTimeOffset>(
                     StringComparer.Ordinal);
+                var connected = false;
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     try
                     {
-                        await session.InitializeAsync(cancellationToken).ConfigureAwait(false);
+                        if (!connected)
+                        {
+                            await session.InitializeAsync(cancellationToken).ConfigureAwait(false);
+                            connected = true;
+                        }
                         var goals = await session.GetGoalsAsync(cancellationToken).ConfigureAwait(false);
                         foreach (var goal in goals)
                         {
@@ -110,7 +115,8 @@ public static class P0MediaWorkerHost
                     }
                     catch (Exception error)
                     {
-                        // ── Mac 短暂掉线不终止 worker；连接将在下个周期恢复。 ──
+                        // ── Only reinitialize after an actual Core failure; no 15s churn. ──
+                        connected = false;
                         logger.Error("P0 Mac Core 检查失败", error);
                     }
                     await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
