@@ -94,6 +94,8 @@ public partial class App : WpfApplication, IDisposable
 
         MainWindow = _shellWindow;
         _shellWindow.Show();
+        // ── Start even before pairing: the independent worker reconnects after Core setup. ──
+        StartP0MediaWorker(logger);
         _ = InitializeViewModelAsync(_session, _shellWindow, logger);
     }
 
@@ -157,11 +159,7 @@ public partial class App : WpfApplication, IDisposable
         try
         {
             await session.InitializeAsync(CancellationToken.None);
-            // ── 已配对用户的 GPU 执行在独立进程里运行，不继承 WPF 关闭令牌。 ──
-            if (session.Snapshot.State.Connection.State == ConnectionState.Online)
-            {
-                StartP0MediaWorker(logger);
-            }
+            // ── UI may reconnect later; media worker already has independent lifetime. ──
         }
         catch (Exception exception)
         {
