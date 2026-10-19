@@ -386,6 +386,14 @@ public sealed class FixedFfmpegMasterVideoComposer : IMasterVideoComposer
         {
             throw new MasterVideoComposerException(MasterVideoComposerException.FfmpegTimeout);
         }
+        if (result.CleanupIncomplete)
+        {
+            // 管道未排空或进程树未确认清理：输出不可信，fail-closed。
+            throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed)
+            {
+                CleanupIncomplete = true,
+            };
+        }
         if (result.ExitCode != 0)
         {
             throw new MasterVideoComposerException(MasterVideoComposerException.FfmpegFailed);

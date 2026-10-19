@@ -69,6 +69,14 @@ public sealed class MasterVideoMediaProbe
         {
             throw new MasterVideoComposerException(MasterVideoComposerException.FfmpegTimeout);
         }
+        if (result.CleanupIncomplete)
+        {
+            // 探测输出不完整或进程树未确认清理：fail-closed。
+            throw new MasterVideoComposerException(MasterVideoComposerException.ProcessContainmentFailed)
+            {
+                CleanupIncomplete = true,
+            };
+        }
         if (result.ExitCode != 0)
         {
             throw new MasterVideoComposerException(MasterVideoComposerException.ProbeInvalid);
