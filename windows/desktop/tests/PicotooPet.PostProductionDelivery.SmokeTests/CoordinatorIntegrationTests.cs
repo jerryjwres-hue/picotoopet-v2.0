@@ -400,18 +400,20 @@ internal static class CoordinatorIntegrationTests
             return new FinalVideoQaResult(receipt, receiptPath, Reused: Volatile.Read(ref _qaCalls) > 1);
         }
 
+        // Cache serializer options: the native Release build treats CA1869 as an error.
+        private static readonly JsonSerializerOptions ReceiptJsonOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
+            RespectRequiredConstructorParameters = true,
+            RespectNullableAnnotations = true,
+            MaxDepth = 32,
+        };
+
         // Same canonical rule as the production receipt digest: snake_case, minus digest and timestamp.
         private static string ReceiptDigest(FinalArtifactReceiptV1 receipt)
         {
-            var options = new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-                UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
-                RespectRequiredConstructorParameters = true,
-                RespectNullableAnnotations = true,
-                MaxDepth = 32,
-            };
-            var node = JsonSerializer.SerializeToNode(receipt, options)!.AsObject();
+            var node = JsonSerializer.SerializeToNode(receipt, ReceiptJsonOptions)!.AsObject();
             node.Remove("receipt_digest");
             node.Remove("verified_at");
             return Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(node))).ToLowerInvariant();
