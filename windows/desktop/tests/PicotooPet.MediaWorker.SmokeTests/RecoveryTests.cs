@@ -65,14 +65,16 @@ internal static class RecoveryTests
     }
     internal sealed class Fixture : IDisposable
     {
-        public string Root { get; } = Path.Combine(Path.GetTempPath(), "p0-worker-" + Guid.NewGuid().ToString("N"));
+        public string Root { get; }
         public ProductionSubmissionJournal Journal { get; }
         public FakeGateway Gateway { get; } = new();
-        public FakeComfy Comfy { get; } = new();
+        public FakeComfy Comfy { get; }
         private readonly HttpClient _http;
-        public Fixture()
+        public Fixture(string? root = null)
         {
+            Root = root ?? Path.Combine(Path.GetTempPath(), "p0-worker-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Root);
+            Comfy = new FakeComfy(Path.Combine(Root, "fake-comfy-graph.json"));
             File.WriteAllText(Path.Combine(Root, "clip.webm"), "fake offline media bytes");
             Journal = new(Path.Combine(Root, "journal"));
             _http = new(Comfy) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
@@ -80,10 +82,17 @@ internal static class RecoveryTests
         public ProductionExecutionService Executor() => new(Gateway, new ComfyProductionClient(_http), Journal,
             new ComfyPromptReconciler(_http), _ => Task.FromResult(new ProductionPreflightSnapshot(true, "fake", Root, Root, Root, Root, [])),
             TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(20));
-        public void Dispose() { _http.Dispose(); Directory.Delete(Root, true); }
+        public bool Preserve { get; init; }
+        public void Dispose() { _http.Dispose(); if (!Preserve) Directory.Delete(Root, true); }
     }
     internal sealed class FakeComfy : HttpMessageHandler
     {
+        private readonly string? _stateFile;
+        public FakeComfy(string? stateFile = null)
+        {
+            _stateFile = stateFile;
+            if (stateFile is not null && File.Exists(stateFile)) _graph = JsonNode.Parse(File.ReadAllText(stateFile));
+        }
         public bool LoseSubmitResponse { get; set; }
         public bool ForgetPrompt { get; set; }
         public bool HoldOutput { get; set; }
@@ -96,6 +105,7 @@ internal static class RecoveryTests
             if (path == "/prompt")
             {
                 Submits++; _graph = JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))!["prompt"]!.DeepClone();
+                if (_stateFile is not null) await File.WriteAllTextAsync(_stateFile, _graph!.ToJsonString(), cancellationToken);
                 Started.TrySetResult();
                 if (LoseSubmitResponse) { LoseSubmitResponse = false; throw new HttpRequestException("response lost after accepted"); }
                 return Json("{\"prompt_id\":\"prompt-1\"}");
@@ -119,6 +129,7 @@ internal static class RecoveryTests
         public int Commits { get; private set; }
         public int Heartbeats { get; private set; }
         public bool LoseBindResponse { get; set; }
+        public void RestoreReservation() => Reservations = 1;
         private string? _prompt;
         private bool _succeeded;
         private static ProductionTaskPlanRecord TaskPlan => new("task", "shot", 1, "GENERATIVE_VIDEO", "Executable", "comfy.wan22.ti2v5b.t2v.v1", "product demonstration", "wan22.safe-negative.v1", 1001, 832, 480, 24, 73, 3000, null);

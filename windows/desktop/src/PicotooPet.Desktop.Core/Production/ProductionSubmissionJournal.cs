@@ -36,6 +36,8 @@ public sealed class ProductionSubmissionJournal
     private FileStream Acquire(string name)
     {
         EnsureRoot();
+        if (File.Exists(Path.Combine(_root, name)) && (File.GetAttributes(Path.Combine(_root, name)) & FileAttributes.ReparsePoint) != 0)
+            throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
         try { return new FileStream(Path.Combine(_root, name), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
         catch (IOException) { throw new ProductionWorkerException("MEDIA_WORKER_BUSY"); }
     }

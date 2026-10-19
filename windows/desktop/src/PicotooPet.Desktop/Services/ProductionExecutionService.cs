@@ -186,7 +186,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         var preflight = await (_preflightOverride?.Invoke(cancellationToken) ?? PreflightAsync(cancellationToken)).ConfigureAwait(false);
         if (!preflight.IsReady)
         {
-            throw new InvalidOperationException($"PRODUCTION_PREFLIGHT_FAILED:{preflight.Detail}");
+            throw new ProductionWorkerException("MEDIA_PREFLIGHT_FAILED");
         }
 
         var originalPlan = await _session.GetProductionPlanAsync(productionJobId, cancellationToken).ConfigureAwait(false);

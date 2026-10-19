@@ -16,7 +16,12 @@ public sealed class MediaWorkerHost(ProductionSubmissionJournal journal, IProduc
         {
             try { await TickAsync(stop).ConfigureAwait(false); }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
-            catch (ProductionWorkerException e) { status(e.Code); }
+            catch (ProductionWorkerException e)
+            {
+                status(e.Code);
+                // A missing/pinned-hash-invalid model needs operator repair, not endless model hashing.
+                if (e.Code is "MEDIA_PREFLIGHT_FAILED" or "MEDIA_JOURNAL_INVALID") throw;
+            }
             catch (Exception) { status("MEDIA_API_OR_TOOL_UNAVAILABLE"); }
             try { await Task.Delay(TimeSpan.FromSeconds(5), stop).ConfigureAwait(false); }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
@@ -53,7 +58,7 @@ public sealed class MediaWorkerHost(ProductionSubmissionJournal journal, IProduc
         }
         var eligible = snapshot.Where(j => j.Status is "Ready" or "Claimed" or "Rendering")
             .Where(j => j.LeaseExpiresAt is null || j.LeaseExpiresAt <= DateTimeOffset.UtcNow)
-            .OrderBy(j => j.CreatedAt).FirstOrDefault();
+            .OrderBy(j => j.Status == "Ready" ? 1 : 0).ThenBy(j => j.CreatedAt).FirstOrDefault();
         if (eligible is not null) await executor.RunAsync(eligible.ProductionJobId, ct).ConfigureAwait(false);
         else status("MEDIA_IDLE");
     }

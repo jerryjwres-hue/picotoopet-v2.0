@@ -72,6 +72,7 @@ internal static class Program
     {
         "MEDIA_IDLE" => "后台媒体 Worker 已启动，等待 Core 可领取任务。关闭 GUI 不会停止本进程。",
         "MEDIA_PAIRING_REQUIRED" => "请先在现有 Windows 界面完成 Mac 配对。",
+        "MEDIA_PREFLIGHT_FAILED" => "已停止：请检查 ComfyUI core nodes，以及 pinned Wan2.2 5B / UMT5 / VAE 模型与哈希；修复后显式重启 Worker。",
         "MEDIA_SUBMISSION_UNKNOWN" or "MEDIA_PENDING_RECONCILIATION" => "已有 GPU 提交尚未对账，已阻止重复渲染；请恢复原 ComfyUI 实例/history。",
         "MEDIA_WAITING_FOR_CORE_LEASE" => "等待现有 Core lease 到期后恢复，不抢占其他 executor。",
         "MEDIA_WORKER_STOPPED" => "后台 Worker 已明确停止；已提交的 ComfyUI 作业保留供重启对账。",
