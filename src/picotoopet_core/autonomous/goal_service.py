@@ -40,6 +40,7 @@ class HumanGoalRequest(BaseModel):
     goal_type: HumanGoalType
     objective: str = Field(min_length=1, max_length=4000)
     depth: GoalDepth = GoalDepth.STANDARD
+    source_result_package_ids: list[str] = Field(default_factory=list, max_length=8)
 
 
 class GoalTemplate(BaseModel):
@@ -117,6 +118,15 @@ class HumanGoalService:
         return list(_TEMPLATES)
 
     def create(self, request: HumanGoalRequest, *, idempotency_key: str) -> GoalRecord:
+        if len(request.source_result_package_ids) != len(set(request.source_result_package_ids)) or any(
+            not isinstance(source, str) or not source or len(source) > 128
+            for source in request.source_result_package_ids
+        ):
+            raise ValueError("GOAL_VIDEO_SOURCE_IDS_INVALID")
+        if request.source_result_package_ids and request.goal_type not in {
+            HumanGoalType.VIDEO_CREATIVE, HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO
+        }:
+            raise ValueError("GOAL_SOURCE_ONLY_ALLOWED_FOR_VIDEO")
         key = idempotency_key.strip()
         if not key:
             raise ValueError("idempotency_key must not be empty")
@@ -129,6 +139,10 @@ class HumanGoalService:
                 constraints={
                     "depth": request.depth.value,
                     "external_ai_upload_requires_user_action": True,
+                    "source_result_package_ids": sorted(request.source_result_package_ids),
+                    "local_video_preferred": request.goal_type in {
+                        HumanGoalType.VIDEO_CREATIVE, HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO
+                    },
                     "read_only_research": True,
                 },
                 budget_class="local-first",
