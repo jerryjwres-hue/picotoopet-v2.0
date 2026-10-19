@@ -14,8 +14,7 @@ public sealed record GoalTemplateRecord(
 public sealed record HumanGoalCreateRequest(
     [property: JsonPropertyName("goal_type")] string GoalType,
     [property: JsonPropertyName("objective")] string Objective,
-    [property: JsonPropertyName("depth")] string Depth,
-    [property: JsonPropertyName("source_result_package_ids")] string[]? SourceResultPackageIds = null);
+    [property: JsonPropertyName("depth")] string Depth);
 
 /// <summary>Mac Core 的耐久 Goal 只读投影。</summary>
 public sealed record HumanGoalRecord(
