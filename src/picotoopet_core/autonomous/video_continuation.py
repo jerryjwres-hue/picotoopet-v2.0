@@ -106,7 +106,23 @@ class GoalVideoContinuationService:
             raise KeyError(goal_id)
         manifest = json.loads(package_row["manifest_json"])
         provenance = manifest.get("external_provenance")
-        if not isinstance(provenance, dict) or provenance.get("goal_id") != goal_id:
+        local = self.database.fetchone(
+            "SELECT * FROM creative_goal_source_sets WHERE creative_job_id=? AND goal_id=?",
+            (creative_row["creative_job_id"], goal_id),
+        )
+        if local is not None:
+            # ── Report only a real locally validated Creative package with exact lineage. ──
+            if (local["source_set_digest"] != creative_row["source_set_digest"]
+                or local["source_set_digest"] != package_row["source_set_digest"]
+                or manifest.get("source_set_digest") != local["source_set_digest"]
+                or manifest.get("project_key") != f"goal-{goal_id}"
+                or manifest.get("quality_outcome") != "PASS"):
+                raise GoalVideoContinuationStateError("GOAL_LOCAL_SOURCE_PROVENANCE_INVALID")
+            provenance = {
+                "handoff_sha256": local["discovery_result_hash"],
+                "return_sha256": local["synthesis_result_hash"],
+            }
+        elif not isinstance(provenance, dict) or provenance.get("goal_id") != goal_id:
             raise GoalVideoContinuationStateError("GOAL_CREATIVE_PROVENANCE_INVALID")
         production_row = self.database.fetchone(
             "SELECT production_job_id,status FROM production_jobs WHERE creative_package_id=?",
