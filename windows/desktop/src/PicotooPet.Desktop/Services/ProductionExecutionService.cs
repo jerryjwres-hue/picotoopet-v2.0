@@ -203,13 +203,10 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 cancellationToken).ConfigureAwait(false);
             return;
         }
-        Exception? lastRetryable = null;
-        string? lastPromptId = null;
-        for (var attempt = 1; attempt <= 2; attempt++)
+        // ── One Core reservation permits one GPU submission; never speculate about retries. ──
+        string? currentPromptId = null;
+        try
         {
-            string? currentPromptId = null;
-            try
-            {
                 var template = ComfyWorkflowCatalog.Load(task.WorkflowId!);
                 var filenamePrefix = BuildFilenamePrefix(claim.ProductionJobId, task);
                 string? trustedInput = null;
@@ -256,32 +253,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 }
                 // ── 未收到 prompt_id 也可能已被 Comfy 接受，禁止盲目重投。 ──
                 throw new InvalidOperationException("COMFY_SUBMIT_OUTCOME_UNKNOWN", exception);
-#pragma warning disable CS0162 // P0 保留既有结构以便后续限额重试策略审计
-                lastRetryable = exception;
-                lastPromptId = currentPromptId;
-                if (attempt < 2)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-                break;
             }
-        }
-
-        // ── Retry budget exhausted is a Core durable Failed state, never Cancelled ─
-        await _session.FailProductionTaskAsync(
-            claim.ProductionJobId,
-            task.ProductionTaskId,
-            new ProductionTaskFailureRequest(
-                _executorId,
-                claim.LeaseToken,
-                lastPromptId,
-                "COMFY_RETRY_BUDGET_EXHAUSTED",
-                null),
-            cancellationToken).ConfigureAwait(false);
-        throw new InvalidOperationException("COMFY_RETRY_BUDGET_EXHAUSTED", lastRetryable);
     }
-
 
     /// <summary>恢复已知 Comfy prompt，并按原有 Core QA 和 SHA 约束提交视频。</summary>
     private async Task CommitKnownPromptAsync(
