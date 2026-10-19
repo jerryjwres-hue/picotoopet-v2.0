@@ -120,45 +120,6 @@ class GoalVideoContinuationService:
             return None
         return goal
 
-    def _start_local(self, goal):
-        """Use real Goal Result Store proof and canonical PASS business sources; no WebGPT payload."""
-        if self.local_results is None:
-            raise KeyError(goal.goal_id)
-        ids = goal.constraints.get("source_result_package_ids")
-        if not isinstance(ids, list) or not ids:
-            raise GoalVideoContinuationStateError("GOAL_LOCAL_SOURCE_REQUIRED")
-        try:
-            discovery = self.local_results.step_result(
-                goal, step_key="research-evidence",
-                expected_result_type="autonomous.discovery.v1", label="discovery",
-            )
-            synthesis = self.local_results.step_result(
-                goal, step_key="evidence-synthesis",
-                expected_result_type="autonomous.goal_synthesis.v1", label="synthesis",
-            )
-        except GoalPipelineError as error:
-            raise KeyError(goal.goal_id) from error
-        if (synthesis.get("goal_id") != goal.goal_id
-            or synthesis.get("schema_version") != "1.0"
-            or not synthesis.get("evidence_ids")
-            or not discovery.get("evidence_ids")):
-            raise GoalVideoContinuationStateError("GOAL_SYNTHESIS_PROVENANCE_INVALID")
-
-        # Actual PASS/Completed business result package checks are performed in
-        # CreativeSourceNormalizer inside create_job; never fabricate a source set.
-        local_job = self.creative.create_job(
-            source_result_package_ids=ids,
-            creative_profile="creative.content_plan.v1",
-            creative_objective=goal.objective,
-            idempotency_key=self._key(goal.goal_id),
-        )
-        source_set = self.creative.source_normalizer.load_persisted_source_set(
-            local_job.creative_job_id
-        )
-        if set(source_set.result_package_ids) != set(ids):
-            raise GoalVideoContinuationStateError("GOAL_LOCAL_SOURCE_BINDING_MISMATCH")
-        return local_job
-
     def _local_status(self, goal, creative_row) -> GoalVideoContinuationRecord:
         assert self.local_results is not None
         workflow = self.local_results.workflows.get_workflow(goal.workflow_id)
@@ -178,8 +139,20 @@ class GoalVideoContinuationService:
         package = None if package_id is None else self.creative.get_package(
             creative_row["creative_job_id"]
         )
+        source = self.database.fetchone(
+            "SELECT * FROM creative_goal_source_sets WHERE creative_job_id=? AND goal_id=?",
+            (creative_row["creative_job_id"], goal.goal_id),
+        )
+        if (source is None
+            or source["source_set_digest"] != creative_row["source_set_digest"]
+            or source["discovery_result_hash"] != hashes["research-evidence"]
+            or source["synthesis_result_hash"] != hashes["evidence-synthesis"]):
+            raise GoalVideoContinuationStateError("GOAL_LOCAL_SOURCE_PROVENANCE_INVALID")
         if package_id is not None and (
             package is None or package.quality_outcome.value != "PASS"
+            or package.manifest.get("project_key") != f"goal-{goal.goal_id}"
+            or package.manifest.get("source_set_digest") != source["source_set_digest"]
+            or package.package_digest != creative_row["creative_package_digest"]
         ):
             raise GoalVideoContinuationStateError("GOAL_LOCAL_PACKAGE_NOT_PASS")
         production = None
