@@ -14,7 +14,8 @@ public sealed record GoalTemplateRecord(
 public sealed record HumanGoalCreateRequest(
     [property: JsonPropertyName("goal_type")] string GoalType,
     [property: JsonPropertyName("objective")] string Objective,
-    [property: JsonPropertyName("depth")] string Depth);
+    [property: JsonPropertyName("depth")] string Depth,
+    [property: JsonPropertyName("source_result_package_ids")] string[]? SourceResultPackageIds = null);
 
 /// <summary>Mac Core 的耐久 Goal 只读投影。</summary>
 public sealed record HumanGoalRecord(
@@ -51,11 +52,12 @@ public sealed record GoalVideoContinuationRecord(
     [property: JsonPropertyName("handoff_sha256")] string HandoffSha256,
     [property: JsonPropertyName("return_sha256")] string ReturnSha256,
     [property: JsonPropertyName("creative_job_id")] string CreativeJobId,
-    [property: JsonPropertyName("creative_package_id")] string CreativePackageId,
-    [property: JsonPropertyName("creative_package_digest")] string CreativePackageDigest,
+    [property: JsonPropertyName("creative_package_id")] string? CreativePackageId,
+    [property: JsonPropertyName("creative_package_digest")] string? CreativePackageDigest,
     [property: JsonPropertyName("creative_status")] string CreativeStatus,
     [property: JsonPropertyName("production_job_id")] string? ProductionJobId,
-    [property: JsonPropertyName("production_status")] string? ProductionStatus);
+    [property: JsonPropertyName("production_status")] string? ProductionStatus,
+    [property: JsonPropertyName("continuation_mode")] string ContinuationMode = "web_gpt");
 
 /// <summary>Windows 只提交裸 JSON 并读取 Core 投影；不复制返回语义合同。</summary>
 public interface IGoalVideoContinuationGateway
