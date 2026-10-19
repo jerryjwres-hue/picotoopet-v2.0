@@ -15,6 +15,7 @@ class Database:
     def __init__(self):
         self.created_by_worker = False
         self.package_ready = False
+        self.production_created_by_worker = False
         self.invalid_provenance = False
 
     def fetchone(self, sql, params):
@@ -36,6 +37,10 @@ class Database:
                 "discovery_result_hash": "a" * 64,
                 "synthesis_result_hash": ("f" if self.invalid_provenance else "b") * 64,
             }
+        if "FROM production_jobs" in sql:
+            assert params == ("creative-package",)
+            return ({"production_job_id": "production-persisted", "status": "Ready"}
+                    if self.production_created_by_worker else None)
         raise AssertionError(sql)
 
 
@@ -140,6 +145,11 @@ def test_native_mac_worker_job_reuses_exact_local_core_identity_for_production()
     assert waiting.production_job_id is None
     assert waiting.creative_job_id == "creative-persisted"
     db.package_ready = True
+    before_production = service.status("g-1")
+    assert before_production.production_job_id is None
+    # Actual Mac Worker wraps the four-stage Creative handler and durably
+    # creates canonical Production after a PASS package; GET never enqueues.
+    db.production_created_by_worker = True
     ready = service.status("g-1")
     assert ready.creative_package_id == "creative-package"
     assert ready.creative_package_digest == "c" * 64
@@ -147,7 +157,7 @@ def test_native_mac_worker_job_reuses_exact_local_core_identity_for_production()
     assert ready.production_status == "Ready"
     assert service.status("g-1").production_job_id == ready.production_job_id
     assert creative.calls == []
-    assert production.keys == ["goal-video:g-1", "goal-video:g-1"]
+    assert production.keys == []
 
 
 def test_mutated_synthesis_hash_closes_gate_without_creating_production():
