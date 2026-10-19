@@ -156,7 +156,11 @@ def submit_goal_video_return(
         raise ApiError(
             status_code=409,
             code="AUTONOMOUS_VIDEO_RETURN_STATE_INVALID",
-            message=str(error) if str(error).startswith("GOAL_LOCAL_") else "已采纳返回的续接状态未通过完整性检查。",
+            message=(
+                str(error)
+                if str(error).startswith("GOAL_LOCAL_")
+                else "已采纳返回的续接状态未通过完整性检查。"
+            ),
             retryable=False,
         ) from error
     except KeyError as error:
@@ -196,7 +200,11 @@ def get_goal_video_return_status(
         raise ApiError(
             status_code=409,
             code="AUTONOMOUS_VIDEO_RETURN_STATE_INVALID",
-            message=str(error) if str(error).startswith("GOAL_LOCAL_") else "已采纳返回的续接状态未通过完整性检查。",
+            message=(
+                str(error)
+                if str(error).startswith("GOAL_LOCAL_")
+                else "已采纳返回的续接状态未通过完整性检查。"
+            ),
             retryable=False,
         ) from error
 
