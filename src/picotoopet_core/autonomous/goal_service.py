@@ -40,7 +40,6 @@ class HumanGoalRequest(BaseModel):
     goal_type: HumanGoalType
     objective: str = Field(min_length=1, max_length=4000)
     depth: GoalDepth = GoalDepth.STANDARD
-    source_result_package_ids: list[str] = Field(default_factory=list, max_length=8)
 
 
 class GoalTemplate(BaseModel):
@@ -76,13 +75,13 @@ _TEMPLATES = (
     GoalTemplate(
         goal_type=HumanGoalType.VIDEO_CREATIVE,
         title="生成 AI 视频方案",
-        description="本地 AI 自动形成脚本与镜头计划，交给 Windows GPU 制作视频。",
+        description="把已有可信结论转换为视频创意 Brief 和网页 GPT 交接包。",
         example="用已有证据做一个适合 TikTok 的 30 秒 AI 视频方案。",
     ),
     GoalTemplate(
         goal_type=HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO,
         title="从产品研究到视频",
-        description="自动完成研究、补证、本地 Creative 以及 Windows 视频生产。",
+        description="自动完成研究、补证、分析、创意和 Web GPT 交接包。",
         example="研究这个产品，然后直接给我可用于 AI 视频制作的完整方案。",
     ),
 )
@@ -118,15 +117,6 @@ class HumanGoalService:
         return list(_TEMPLATES)
 
     def create(self, request: HumanGoalRequest, *, idempotency_key: str) -> GoalRecord:
-        if len(request.source_result_package_ids) != len(set(request.source_result_package_ids)) or any(
-            not isinstance(source, str) or not source or len(source) > 128
-            for source in request.source_result_package_ids
-        ):
-            raise ValueError("GOAL_VIDEO_SOURCE_IDS_INVALID")
-        if request.source_result_package_ids and request.goal_type not in {
-            HumanGoalType.VIDEO_CREATIVE, HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO
-        }:
-            raise ValueError("GOAL_SOURCE_ONLY_ALLOWED_FOR_VIDEO")
         key = idempotency_key.strip()
         if not key:
             raise ValueError("idempotency_key must not be empty")
@@ -139,7 +129,6 @@ class HumanGoalService:
                 constraints={
                     "depth": request.depth.value,
                     "external_ai_upload_requires_user_action": True,
-                    "source_result_package_ids": sorted(request.source_result_package_ids),
                     "local_video_preferred": request.goal_type in {
                         HumanGoalType.VIDEO_CREATIVE, HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO
                     },
