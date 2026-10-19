@@ -22,7 +22,17 @@ public static class P0MediaWorkerHost
     {
         // ── 同一用户会话最多一个 GPU host，杜绝多个 WPF 窗口同时发起渲染。 ──
         using var mutex = new Mutex(initiallyOwned: false, @"Local\PicotooPetV2.P0MediaWorker");
-        if (!mutex.WaitOne(TimeSpan.Zero))
+        bool acquired;
+        try
+        {
+            acquired = mutex.WaitOne(TimeSpan.Zero);
+        }
+        catch (AbandonedMutexException)
+        {
+            // ── Previous GPU host crashed; its abandoned lock must not block restart. ──
+            acquired = true;
+        }
+        if (!acquired)
         {
             return 0;
         }
