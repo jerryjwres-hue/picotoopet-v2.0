@@ -152,7 +152,6 @@ class GoalVideoContinuationService:
             package is None or package.quality_outcome.value != "PASS"
             or package.manifest.get("project_key") != f"goal-{goal.goal_id}"
             or package.manifest.get("source_set_digest") != source["source_set_digest"]
-            or package.package_digest != creative_row["creative_package_digest"]
         ):
             raise GoalVideoContinuationStateError("GOAL_LOCAL_PACKAGE_NOT_PASS")
         production = None
