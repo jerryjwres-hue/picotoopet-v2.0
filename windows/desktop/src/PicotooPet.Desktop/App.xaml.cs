@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -156,6 +157,11 @@ public partial class App : WpfApplication, IDisposable
         try
         {
             await session.InitializeAsync(CancellationToken.None);
+            // ── 已配对用户的 GPU 执行在独立进程里运行，不继承 WPF 关闭令牌。 ──
+            if (session.Snapshot.State.Connection.State == ConnectionState.Online)
+            {
+                StartP0MediaWorker(logger);
+            }
         }
         catch (Exception exception)
         {
@@ -166,6 +172,32 @@ public partial class App : WpfApplication, IDisposable
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning));
+        }
+    }
+
+    /// <summary>启动独占、无窗口的媒体子进程；它拥有自己的 Core Session 与 GPU 生命周期。</summary>
+    private static void StartP0MediaWorker(SafeFileLogger logger)
+    {
+        try
+        {
+            var executable = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(executable))
+            {
+                throw new InvalidOperationException("MEDIA_WORKER_EXECUTABLE_UNAVAILABLE");
+            }
+            var launch = new ProcessStartInfo
+            {
+                FileName = executable,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = AppContext.BaseDirectory,
+            };
+            launch.ArgumentList.Add("--p0-media-worker");
+            _ = Process.Start(launch) ?? throw new InvalidOperationException("MEDIA_WORKER_START_FAILED");
+        }
+        catch (Exception exception)
+        {
+            logger.Error("P0 无界面媒体 Worker 无法启动", exception);
         }
     }
 

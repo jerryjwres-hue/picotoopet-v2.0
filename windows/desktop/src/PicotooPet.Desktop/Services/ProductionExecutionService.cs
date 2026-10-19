@@ -154,6 +154,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             productionJobId,
             _executorId,
             cancellationToken).ConfigureAwait(false);
+        var snapshots = claim.Tasks.ToDictionary(item => item.ProductionTaskId, StringComparer.Ordinal);
         foreach (var task in claim.Plan.Tasks.OrderBy(item => item.Order))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -165,9 +166,14 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             {
                 throw new InvalidOperationException("PRODUCTION_PLAN_WORKFLOW_MISSING");
             }
+            if (!snapshots.TryGetValue(task.ProductionTaskId, out var snapshot))
+            {
+                throw new InvalidDataException("PRODUCTION_CORE_TASK_SNAPSHOT_MISSING");
+            }
             await ExecuteTaskAsync(
                 claim,
                 task,
+                snapshot,
                 preflight,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -181,9 +187,22 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private async Task ExecuteTaskAsync(
         ProductionClaimRecord claim,
         ProductionTaskPlanRecord task,
+        ProductionTaskRecord snapshot,
         ProductionPreflightSnapshot preflight,
         CancellationToken cancellationToken)
     {
+        // ── 已绑定 prompt_id 的重启恢复只能查询历史，绝不再提交相同镜头。 ──
+        if (string.Equals(snapshot.Status, "Running", StringComparison.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(snapshot.ComfyPromptId))
+            {
+                // ── HTTP submit 可能已成功但绑定丢失；未知 attempt 必须人工对账。 ──
+                throw new InvalidOperationException("COMFY_UNBOUND_ATTEMPT_REQUIRES_RECONCILIATION");
+            }
+            await CommitKnownPromptAsync(claim, task, preflight, snapshot.ComfyPromptId,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
         Exception? lastRetryable = null;
         string? lastPromptId = null;
         for (var attempt = 1; attempt <= 2; attempt++)
@@ -224,42 +243,20 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                     new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, currentPromptId),
                     cancellationToken).ConfigureAwait(false);
 
-                var historyOutput = await WaitForOutputAsync(
-                    claim,
-                    currentPromptId,
-                    cancellationToken).ConfigureAwait(false);
-                var relativeOutput = BuildRelativeOutput(historyOutput.Subfolder, historyOutput.Filename);
-                var outputPath = ResolveUnderRoot(
-                    preflight.OutputRoot!,
-                    relativeOutput,
-                    requireExistingFile: true);
-                AssertNoLinkEscape(preflight.OutputRoot!, outputPath);
-                var file = new FileInfo(outputPath);
-                if (file.Length <= 0)
-                {
-                    throw new InvalidDataException("COMFY_OUTPUT_EMPTY");
-                }
-                var sha256 = await Sha256FileAsync(outputPath, cancellationToken).ConfigureAwait(false);
-                await _session.CommitProductionResultAsync(
-                    claim.ProductionJobId,
-                    task.ProductionTaskId,
-                    new ProductionTaskCommitRequest(
-                        _executorId,
-                        claim.LeaseToken,
-                        currentPromptId,
-                        relativeOutput.Replace('\\', '/'),
-                        sha256,
-                        file.Length,
-                        "video/webm",
-                        task.Width,
-                        task.Height,
-                        task.FrameCount,
-                        task.Fps),
+                await CommitKnownPromptAsync(claim, task, preflight, currentPromptId,
                     cancellationToken).ConfigureAwait(false);
                 return;
             }
             catch (Exception exception) when (IsRetryable(exception, cancellationToken))
             {
+                // ── 网络不确定时不得启动第二个 GPU prompt；交给已绑定历史恢复或人工对账。 ──
+                if (currentPromptId is not null)
+                {
+                    throw new InvalidOperationException("COMFY_KNOWN_PROMPT_REQUIRES_RECOVERY", exception);
+                }
+                // ── 未收到 prompt_id 也可能已被 Comfy 接受，禁止盲目重投。 ──
+                throw new InvalidOperationException("COMFY_SUBMIT_OUTCOME_UNKNOWN", exception);
+#pragma warning disable CS0162 // P0 保留既有结构以便后续限额重试策略审计
                 lastRetryable = exception;
                 lastPromptId = currentPromptId;
                 if (attempt < 2)
@@ -283,6 +280,37 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 null),
             cancellationToken).ConfigureAwait(false);
         throw new InvalidOperationException("COMFY_RETRY_BUDGET_EXHAUSTED", lastRetryable);
+    }
+
+
+    /// <summary>恢复已知 Comfy prompt，并按原有 Core QA 和 SHA 约束提交视频。</summary>
+    private async Task CommitKnownPromptAsync(
+        ProductionClaimRecord claim,
+        ProductionTaskPlanRecord task,
+        ProductionPreflightSnapshot preflight,
+        string promptId,
+        CancellationToken cancellationToken)
+    {
+        var historyOutput = await WaitForOutputAsync(claim, promptId, cancellationToken)
+            .ConfigureAwait(false);
+        var relativeOutput = BuildRelativeOutput(historyOutput.Subfolder, historyOutput.Filename);
+        var outputPath = ResolveUnderRoot(
+            preflight.OutputRoot!, relativeOutput, requireExistingFile: true);
+        AssertNoLinkEscape(preflight.OutputRoot!, outputPath);
+        var file = new FileInfo(outputPath);
+        if (file.Length <= 0)
+        {
+            throw new InvalidDataException("COMFY_OUTPUT_EMPTY");
+        }
+        var sha256 = await Sha256FileAsync(outputPath, cancellationToken).ConfigureAwait(false);
+        await _session.CommitProductionResultAsync(
+            claim.ProductionJobId,
+            task.ProductionTaskId,
+            new ProductionTaskCommitRequest(
+                _executorId, claim.LeaseToken, promptId,
+                relativeOutput.Replace('\\', '/'), sha256, file.Length,
+                "video/webm", task.Width, task.Height, task.FrameCount, task.Fps),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<ComfyOutputEvidence> WaitForOutputAsync(

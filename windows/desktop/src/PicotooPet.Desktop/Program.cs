@@ -19,6 +19,12 @@ internal static class Program
             return brokerExitCode;
         }
 
+        // ── P0 媒体子进程必须在初始化任何 WPF Application 之前启动。 ──
+        if (args.Length == 1 && string.Equals(args[0], "--p0-media-worker", StringComparison.Ordinal))
+        {
+            return Services.P0MediaWorkerHost.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
+
         System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);
 
         var application = new App();
