@@ -184,10 +184,10 @@ class GoalVideoContinuationService:
             raise GoalVideoContinuationStateError("GOAL_LOCAL_PACKAGE_NOT_PASS")
         production = None
         if package is not None:
-            production = self.production.create_job(ProductionJobCreateRequest(
-                creative_package_id=package.creative_package_id,
-                idempotency_key=self._key(goal.goal_id),
-            ))
+            production = self.database.fetchone(
+                "SELECT production_job_id,status FROM production_jobs WHERE creative_package_id=?",
+                (package.creative_package_id,),
+            )
         return GoalVideoContinuationRecord(
             goal_id=goal.goal_id,
             handoff_sha256=hashes["research-evidence"],
@@ -196,15 +196,14 @@ class GoalVideoContinuationService:
             creative_package_id=None if package is None else package.creative_package_id,
             creative_package_digest=None if package is None else package.package_digest,
             creative_status=creative_row["status"],
-            production_job_id=None if production is None else production.production_job_id,
-            production_status=None if production is None else production.status.value,
+            production_job_id=None if production is None else production["production_job_id"],
+            production_status=None if production is None else production["status"],
             continuation_mode="local",
         )
 
     def status(self, goal_id: str) -> GoalVideoContinuationRecord:
         local_goal = self._local_goal(goal_id)
-        if local_goal is not None:
-            self._start_local(local_goal)
+        # ── GET is observation only; the Mac worker owns local Creative job creation. ──
         creative_row = self.database.fetchone(
             "SELECT * FROM creative_jobs WHERE idempotency_key=?",
             (self._key(goal_id),),
@@ -212,6 +211,13 @@ class GoalVideoContinuationService:
         if creative_row is None:
             raise KeyError(goal_id)
         if local_goal is not None:
+            source = self.database.fetchone(
+                "SELECT creative_job_id FROM creative_goal_source_sets "
+                "WHERE creative_job_id=? AND goal_id=?",
+                (creative_row["creative_job_id"], goal_id),
+            )
+            if source is None:
+                raise GoalVideoContinuationStateError("GOAL_LOCAL_CREATIVE_SOURCE_MISSING")
             return self._local_status(local_goal, creative_row)
         if creative_row["creative_package_id"] is None:
             raise KeyError(goal_id)
