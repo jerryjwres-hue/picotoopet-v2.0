@@ -375,7 +375,10 @@ internal static class CoordinatorIntegrationTests
                 "1.0", "final-video.qa.windows.v1", qaInput, Digest, "PASS",
                 input.GoalContinuation.GoalId, input.GoalContinuation.HandoffSha256,
                 input.GoalContinuation.ReturnSha256, input.GoalContinuation.CreativeJobId,
-                input.GoalContinuation.CreativePackageId, input.GoalContinuation.CreativePackageDigest,
+                input.GoalContinuation.CreativePackageId
+                    ?? throw new InvalidDataException("C011_QA_CREATIVE_PACKAGE_ID_MISSING"),
+                input.GoalContinuation.CreativePackageDigest
+                    ?? throw new InvalidDataException("C011_QA_CREATIVE_PACKAGE_DIGEST_MISSING"),
                 c004.ProductionJobId, narration.Plan.ProductionPlanDigest, c004.ProductionPackageId,
                 c004.ProductionPackageDigest, narration.Plan.TargetRuntimeMs, overlay.Plan.OutputProfileId,
                 narration.Plan.NarrationRequired, narration.NarrationPlanDigest, null, [],
