@@ -47,7 +47,8 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         VideoContinuation = new GoalVideoContinuationViewModel(
             session,
             session.ProductionAutopilot,
-            session.FinalVideoDelivery);
+            session.FinalVideoDelivery,
+            session.GetCreativePackageAsync);
         ApplyHealthIndicators(snapshot);
     }
 
