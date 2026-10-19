@@ -496,9 +496,11 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
         }
     }
 
-    private static string ToSafeError(Exception exception) => exception switch
+    private string ToSafeError(Exception exception) => exception switch
     {
         ApiException api when api.StatusCode is 401 or 403 => "目标中心认证失败，请重新连接 Mac Core。",
+        ApiException api when api.StatusCode == 409 && _localGoal =>
+            "Mac 本地 Creative 的来源或质量验证未通过；请检查 Goal 研究证据和 Mac Worker 状态后重试刷新。",
         ApiException api when api.StatusCode == 409 => "返回被 Core 拒绝或与已采纳返回冲突；现有结果未被修改。",
         ApiException api when api.Retryable => "目标中心暂时不可用；请保留同一返回内容后重试。",
         GoalVideoReturnParseException => "剪贴板内容不是有效的有界 GPT 返回 JSON。",
