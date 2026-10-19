@@ -317,6 +317,21 @@ class ProductionRepository:
             raise ValueError("PRODUCTION_TASK_RESULT_CONFLICT")
         if current.attempt_count < 1:
             raise ValueError("PRODUCTION_ATTEMPT_REQUIRED")
+        # ── Accept only the latest Core-bound prompt under an active lease. ──
+        bound = self.database.fetchone(
+            "SELECT comfy_prompt_id,status FROM production_attempts "
+            "WHERE production_task_id=? AND attempt_number=?",
+            (production_task_id, current.attempt_count),
+        )
+        if (
+            current.status is not ProductionTaskStatus.RUNNING
+            or not current.comfy_prompt_id
+            or current.comfy_prompt_id != request.comfy_prompt_id
+            or bound is None
+            or bound["status"] != "Running"
+            or bound["comfy_prompt_id"] != request.comfy_prompt_id
+        ):
+            raise ValueError("PRODUCTION_PROMPT_ID_CONFLICT")
 
         timestamp = _iso(_now())
         with self.database.transaction() as connection:
