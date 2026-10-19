@@ -3,9 +3,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("PicotooPet.MediaWorker.SmokeTests")]
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Production;
+
+[assembly: InternalsVisibleTo("PicotooPet.MediaWorker.SmokeTests")]
 
 namespace PicotooPet.Desktop.Services;
 
@@ -176,6 +177,12 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         // A process death releases the lock, not the submission uncertainty of a prior GPU job.
         if (_journal.Pending().Any(p => p.JobId != productionJobId))
             throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+        var existing = await _session.GetProductionPackageAsync(productionJobId, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            foreach (var pending in _journal.Pending().Where(p => p.JobId == productionJobId)) _journal.Save(pending with { Phase = "Settled" });
+            return existing;
+        }
         var preflight = await (_preflightOverride?.Invoke(cancellationToken) ?? PreflightAsync(cancellationToken)).ConfigureAwait(false);
         if (!preflight.IsReady)
         {
@@ -220,7 +227,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 while (true)
                 {
                     await Task.Delay(_heartbeatInterval, lifetime.Token).ConfigureAwait(false);
-                    await _session.HeartbeatProductionJobAsync(claim.ProductionJobId, _executorId, claim.LeaseToken, lifetime.Token).ConfigureAwait(false);
+                    using var heartbeatTimeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                    heartbeatTimeout.CancelAfter(TimeSpan.FromSeconds(15));
+                    await _session.HeartbeatProductionJobAsync(claim.ProductionJobId, _executorId, claim.LeaseToken, heartbeatTimeout.Token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }

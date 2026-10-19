@@ -35,3 +35,24 @@ jobs:
       - name: Run offline worker tests (no GPU)
         shell: pwsh
         run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release
+      - name: Existing Production and final video regressions (no Full Release Builder)
+        shell: pwsh
+        run: |
+          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --goal-production-autopilot-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --goal-final-video-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Publish headless per-user developer preview (not an installer or formal release)
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          dotnet publish windows/desktop/src/PicotooPet.MediaWorker -c Release --no-restore -o artifacts/p0-media-worker --warnaserror
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          @{ source_sha=$env:SOURCE_SHA; run_id=$env:GITHUB_RUN_ID; user_install_allowed=$false; scope='P0 developer preview; NO LIVE GPU CLAIM'; source_build_on_user_pc=$false } | ConvertTo-Json | Set-Content artifacts/p0-media-worker/p0-worker-evidence.json
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: P0-MediaWorker-DeveloperPreview-${{ github.run_id }}
+          path: artifacts/p0-media-worker
+          retention-days: 7

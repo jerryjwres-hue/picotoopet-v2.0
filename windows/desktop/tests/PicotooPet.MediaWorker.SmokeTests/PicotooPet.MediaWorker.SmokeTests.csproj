@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/PicotooPet.Desktop/PicotooPet.Desktop.csproj" />
+    <ProjectReference Include="../../src/PicotooPet.MediaWorker/PicotooPet.MediaWorker.csproj" />
   </ItemGroup>
 </Project>
