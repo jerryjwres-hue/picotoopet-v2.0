@@ -5,3 +5,4 @@ if (!typeof(ProductionExecutionService).GetConstructors().Any(c =>
         c.GetParameters().Any(p => p.ParameterType.Name == "IProductionExecutionGateway")))
     throw new InvalidOperationException("P0-B missing headless gateway: production must not depend on WPF lifetime.");
 Console.WriteLine("MEDIA_WORKER_HEADLESS_BOUNDARY=PASS");
+await PicotooPet.MediaWorker.SmokeTests.RecoveryTests.RunAsync();
