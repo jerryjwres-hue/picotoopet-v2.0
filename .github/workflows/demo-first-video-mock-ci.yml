@@ -1,0 +1,35 @@
+name: First Video Demo — Offline Local API Contract
+
+on:
+  push:
+    branches:
+      - demo/project-to-comfyui-first-video-v1
+    paths:
+      - 'scripts/demo_video/**'
+      - 'tests/demo_video/**'
+      - 'docs/demo/**'
+      - '.github/workflows/demo-first-video-mock-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-mock-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and test local API mock vertical slice
+        run: |
+          python -m py_compile scripts/demo_video/quick_video.py
+          python -m unittest discover -s tests/demo_video -v
+      - name: State actual acceptance boundary
+        run: |
+          echo 'DEMO_LOCAL_API_MOCK=PASS'
+          echo 'DEMO_REAL_OLLAMA=UNVERIFIED'
+          echo 'DEMO_REAL_COMFYUI_GPU=UNVERIFIED'
+          echo 'DEMO_REAL_FIRST_WEBM=UNVERIFIED'
