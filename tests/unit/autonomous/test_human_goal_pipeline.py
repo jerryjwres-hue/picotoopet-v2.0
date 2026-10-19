@@ -42,6 +42,7 @@ def _goal(intent_type: str = "product.research_to_video") -> GoalRecord:
             "depth": "standard",
             "external_ai_upload_requires_user_action": True,
             "read_only_research": True,
+            "local_video_preferred": intent_type in {"video.creative", "product.research_to_video"},
         },
         budget_class="local-first",
         pinned=False,

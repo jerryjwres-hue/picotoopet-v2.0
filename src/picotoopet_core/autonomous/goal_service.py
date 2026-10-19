@@ -40,6 +40,7 @@ class HumanGoalRequest(BaseModel):
     goal_type: HumanGoalType
     objective: str = Field(min_length=1, max_length=4000)
     depth: GoalDepth = GoalDepth.STANDARD
+    local_video_preferred: bool = True  # ── Default local; explicit False preserves WebGPT. ──
 
 
 class GoalTemplate(BaseModel):
@@ -75,13 +76,13 @@ _TEMPLATES = (
     GoalTemplate(
         goal_type=HumanGoalType.VIDEO_CREATIVE,
         title="生成 AI 视频方案",
-        description="把已有可信结论转换为视频创意 Brief 和网页 GPT 交接包。",
+        description="本地优先生成视频创意 Brief；可显式选择网页 GPT 交接。",
         example="用已有证据做一个适合 TikTok 的 30 秒 AI 视频方案。",
     ),
     GoalTemplate(
         goal_type=HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO,
         title="从产品研究到视频",
-        description="自动完成研究、补证、分析、创意和 Web GPT 交接包。",
+        description="自动完成研究、补证、分析与本地 Creative 生产方案。",
         example="研究这个产品，然后直接给我可用于 AI 视频制作的完整方案。",
     ),
 )
@@ -129,9 +130,13 @@ class HumanGoalService:
                 constraints={
                     "depth": request.depth.value,
                     "external_ai_upload_requires_user_action": True,
-                    "local_video_preferred": request.goal_type in {
-                        HumanGoalType.VIDEO_CREATIVE, HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO
-                    },
+                    "local_video_preferred": (
+                        request.local_video_preferred
+                        and request.goal_type in {
+                            HumanGoalType.VIDEO_CREATIVE,
+                            HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO,
+                        }
+                    ),
                     "read_only_research": True,
                 },
                 budget_class="local-first",

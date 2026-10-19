@@ -15,6 +15,7 @@ def _goal(intent_type: str) -> GoalRecord:
         intent_type=intent_type, priority_class=PriorityClass.P1,
         objective="Generate a factual pet video", constraints={
             "read_only_research": True, "depth": "quick",
+            "local_video_preferred": intent_type in {"video.creative", "product.research_to_video"},
         },
         budget_class="local-first", pinned=False, status=GoalStatus.READY,
         idempotency_key="p0-test", created_at=now, updated_at=now,
@@ -68,3 +69,18 @@ def test_goal_source_migration_is_idempotent(tmp_path) -> None:
         } <= columns
     finally:
         database.close()
+
+
+def test_persisted_legacy_and_auto_video_goals_keep_handoff_contract() -> None:
+    # ── Missing opt-in must not reinterpret already-persisted workflow intent. ─
+    from picotoopet_core.autonomous.models import GoalOrigin
+
+    legacy = _goal("product.research_to_video")
+    legacy.constraints.pop("local_video_preferred")
+    steps = HumanGoalWorkflowPlanner().plan(legacy).steps
+    assert steps[-1].step_key == "web-gpt-handoff"
+    assert steps[-1].task_type == "autonomous.goal_handoff.v1"
+    autonomous = legacy.model_copy(update={"origin": GoalOrigin.AUTONOMOUS})
+    assert HumanGoalWorkflowPlanner().plan(autonomous).steps[-1].task_type == (
+        "autonomous.goal_handoff.v1"
+    )

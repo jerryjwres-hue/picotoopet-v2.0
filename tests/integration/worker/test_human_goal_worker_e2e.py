@@ -158,6 +158,7 @@ def test_human_video_goal_runs_all_three_worker_stages_and_exposes_verified_hand
         HumanGoalRequest(
             goal_type=HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO,
             objective="研究大型犬耐咬玩具的消费者痛点，并生成 TikTok AI 视频方案",
+            local_video_preferred=False,  # ── Explicitly test the legacy handoff contract. ──
         ),
         idempotency_key="human-goal-worker-e2e",
     )

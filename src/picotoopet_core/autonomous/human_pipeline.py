@@ -121,11 +121,18 @@ class HumanGoalWorkflowPlanner:
             ),
         ]
         if goal.intent_type in _VIDEO_GOAL_TYPES:
+            # ── Persisted pre-P0 and autonomous intake Goals keep their WebGPT
+            #    handoff contract unless local Creative was explicitly opted in. ──
+            local_first = goal.constraints.get("local_video_preferred") is True
             steps.append(
                 WorkflowStepCreate(
-                    step_key=_LOCAL_CREATIVE_STEP,
-                    task_type=_LOCAL_CREATIVE_RESULT_TYPE,
-                    required_capability="local.goal.creative",
+                    step_key=_LOCAL_CREATIVE_STEP if local_first else _HANDOFF_STEP,
+                    task_type=(
+                        _LOCAL_CREATIVE_RESULT_TYPE if local_first else _HANDOFF_RESULT_TYPE
+                    ),
+                    required_capability=(
+                        "local.goal.creative" if local_first else "local.goal.handoff"
+                    ),
                     depends_on=[_SYNTHESIS_STEP],
                     payload={"goal_id": goal.goal_id},
                     max_attempts=2,
