@@ -83,6 +83,38 @@ class CreativeIntelligenceService:
         self.ensure_task(job)
         return self.repository.get_job(job.creative_job_id)
 
+    def create_goal_job(
+        self,
+        *,
+        goal_id: str,
+        source_set: NormalizedCreativeSourceSet,
+        discovery_result_hash: str,
+        synthesis_result_hash: str,
+        creative_objective: str,
+    ) -> CreativeJobRecord:
+        """Reuse the four Creative model stages and standard quality gates for local Goals."""
+
+        if source_set.result_package_ids or source_set.result_digests:
+            raise ValueError("GOAL_SOURCE_MUST_NOT_SPOOF_BUSINESS_RESULT")
+        if not source_set.findings or not source_set.evidence_ids:
+            raise ValueError("GOAL_SOURCE_EVIDENCE_REQUIRED")
+        profile = creative_profile_definition(CreativeProfile.CONTENT_PLAN_V1.value)
+        job, combined = self._create_job_from_source_set(
+            source_set=source_set,
+            profile_id=profile.profile_id,
+            creative_objective=creative_objective[:2000],
+            idempotency_key=f"goal-video:{goal_id}",
+        )
+        self.source_normalizer.persist_goal_source_set(
+            creative_job_id=job.creative_job_id,
+            goal_id=goal_id,
+            discovery_result_hash=discovery_result_hash,
+            synthesis_result_hash=synthesis_result_hash,
+            source_set=combined,
+        )
+        self.ensure_task(job)
+        return self.repository.get_job(job.creative_job_id)
+
     def _create_job_from_source_set(
         self,
         *,

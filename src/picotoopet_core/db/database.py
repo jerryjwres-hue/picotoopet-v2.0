@@ -24,6 +24,7 @@ from .migration_020 import MIGRATION_020
 from .migration_021 import MIGRATION_021
 from .migration_022 import MIGRATION_022
 from .migration_023 import MIGRATION_023
+from .migration_024 import MIGRATION_024
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -345,7 +346,18 @@ class Database:
                     (23, datetime.now(UTC).isoformat()),
                 )
 
-            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 23。 ──
+            migration_024_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 24"
+            ).fetchone()
+            if migration_024_exists is None:
+                # ── Local Goal sources are separate from canonical business result FKs. ──
+                connection.executescript(MIGRATION_024)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (24, datetime.now(UTC).isoformat()),
+                )
+
+            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 24。 ──
             connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
