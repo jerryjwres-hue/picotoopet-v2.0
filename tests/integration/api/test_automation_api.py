@@ -1,5 +1,4 @@
 from __future__ import annotations
-from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION
 
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from fastapi.testclient import TestClient
 from picotoopet_core.api.app import create_app
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION
 
 
 def make_client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
