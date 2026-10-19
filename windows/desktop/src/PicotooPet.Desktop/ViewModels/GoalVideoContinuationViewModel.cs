@@ -355,7 +355,7 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
                 $"Creative Package：{package.CreativePackageId}",
                 $"Production Job：{continuation.ProductionJobId ?? "等待脚本审核"}"
             };
-            if (stages.TryGetProperty("script", out var script)
+            if (stages.TryGetProperty("script.v1", out var script)
                 && script.ValueKind == JsonValueKind.Object)
             {
                 if (script.TryGetProperty("title", out var title)) lines.Add("脚本：" + title.ToString());
@@ -368,16 +368,18 @@ public sealed class GoalVideoContinuationViewModel : ObservableObject
                         lines.Add($"脚本片段：{visual} · {voice}");
                     }
             }
-            if (stages.TryGetProperty("shot_plan", out var shots)
+            if (stages.TryGetProperty("shot_plan.v1", out var shots)
                 && shots.ValueKind == JsonValueKind.Object
                 && shots.TryGetProperty("shots", out var items)
                 && items.ValueKind == JsonValueKind.Array)
                 foreach (var shot in items.EnumerateArray().Take(12))
                 {
-                    var intent = shot.TryGetProperty("visual_prompt", out var prompt)
-                        ? prompt.ToString()
-                        : shot.TryGetProperty("visual_intent", out var visual) ? visual.ToString() : "";
-                    lines.Add("分镜：" + intent);
+                    // ── Read the frozen ShotPlanItem fields; no synthetic visual_prompt key. ──
+                    var subject = shot.TryGetProperty("subject", out var subjectNode)
+                        ? subjectNode.ToString() : "";
+                    var action = shot.TryGetProperty("action", out var actionNode)
+                        ? actionNode.ToString() : "";
+                    lines.Add($"分镜：{subject} · {action}");
                 }
             if (IsCurrentGoal(goalId) && Continuation?.CreativePackageId == package.CreativePackageId)
             {
