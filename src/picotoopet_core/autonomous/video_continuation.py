@@ -79,6 +79,8 @@ class GoalVideoContinuationService:
         goal_id: str,
         payload: GoalVideoReturnV1,
     ) -> GoalVideoContinuationRecord:
+        if self._local_goal(goal_id) is not None:
+            raise GoalVideoContinuationStateError("GOAL_LOCAL_CANNOT_ADOPT_WEB_RETURN")
         if payload.goal_id != goal_id:
             raise ValueError("GOAL_PATH_BINDING_MISMATCH")
         context = self.handoffs.context(goal_id)
