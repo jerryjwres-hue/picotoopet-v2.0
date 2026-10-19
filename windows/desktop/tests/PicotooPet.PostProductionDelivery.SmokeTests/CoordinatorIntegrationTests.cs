@@ -2,8 +2,11 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Services;
 
@@ -40,6 +43,18 @@ internal static class CoordinatorIntegrationTests
         using (var fixture = new Fixture())
         {
             await fixture.DisposeDuringReconciliationAsync().ConfigureAwait(false);
+        }
+        using (var fixture = new Fixture())
+        {
+            await fixture.NoQaAuthorityFailsClosedAsync().ConfigureAwait(false);
+        }
+        using (var fixture = new Fixture())
+        {
+            await fixture.UnapprovedReceiptNeverReadyAsync().ConfigureAwait(false);
+        }
+        using (var fixture = new Fixture())
+        {
+            await fixture.OpenRejectsChangedAuthorityOrReceiptAsync().ConfigureAwait(false);
         }
         Console.WriteLine("POSTPRODUCTION_DELIVERY_COORDINATOR_INTEGRATION=PASS");
     }
@@ -119,6 +134,13 @@ internal static class CoordinatorIntegrationTests
         private readonly TaskCompletionSource<bool> _releaseFirst = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _assembleCallCount;
         private int _composeCalls;
+        private int _qaCalls;
+        private bool _qaWired = true;
+        private bool _qaDeny;
+        private bool _swapReceiptAtOpen;
+        private bool _authorityDrift;
+        private readonly Dictionary<string, C011QaDeliveryAuthority> _authorities = new(StringComparer.Ordinal);
+        private readonly string _receiptRoot;
 
         public Fixture()
         {
@@ -126,6 +148,8 @@ internal static class CoordinatorIntegrationTests
             _masterRoot = Path.Combine(_root, "Master", "v1");
             Directory.CreateDirectory(_finalRoot);
             Directory.CreateDirectory(_masterRoot);
+            _receiptRoot = Path.Combine(_root, "receipts");
+            Directory.CreateDirectory(_receiptRoot);
             _verifier = new GoalDeliveryCandidateVerifier(_finalRoot, _masterRoot);
         }
 
@@ -139,10 +163,12 @@ internal static class CoordinatorIntegrationTests
             {
                 coordinator.Observe(goal, continuation);
             }
-            var expected = narrationRequired || overlaysRequired
-                ? GoalDeliveryPhase.MasteredReady : GoalDeliveryPhase.FallbackReady;
-            await AwaitPhaseAsync(coordinator, goal, continuation, expected).ConfigureAwait(false);
-            Check(coordinator.CurrentSnapshot.CanOpen, "ready candidate must be openable");
+            // C011: a C004 fallback / C009 master is never final authority; only a QA-approved
+            // candidate reaches DeliveryReady, and Open requires the exact receipt below.
+            await AwaitPhaseAsync(coordinator, goal, continuation, GoalDeliveryPhase.DeliveryReady)
+                .ConfigureAwait(false);
+            Check(coordinator.CurrentSnapshot.CanOpen, "QA-approved candidate must be openable");
+            Check(_qaCalls >= 1, "QA verifier must have run before Ready");
             Check(await coordinator.OpenCurrentAsync().ConfigureAwait(false), "candidate must open");
             Check(_launcher.Opens == 1, "exactly one launcher invocation");
             Check(_composeCalls == 1, "observe must be single-flight");
@@ -177,14 +203,14 @@ internal static class CoordinatorIntegrationTests
             var c = Continuation(goal, job);
             await using (var first = NewCoordinator(false, true))
             {
-                await AwaitPhaseAsync(first, goal, c, GoalDeliveryPhase.MasteredReady).ConfigureAwait(false);
+                await AwaitPhaseAsync(first, goal, c, GoalDeliveryPhase.DeliveryReady).ConfigureAwait(false);
             }
             var previousComposes = _composeCalls;
             await using (var second = NewCoordinator(false, true))
             {
                 // The new coordinator has no candidate/running/failed memory.
                 Check(second.CurrentSnapshot.Phase == GoalDeliveryPhase.Idle, "restart starts empty");
-                await AwaitPhaseAsync(second, goal, c, GoalDeliveryPhase.MasteredReady).ConfigureAwait(false);
+                await AwaitPhaseAsync(second, goal, c, GoalDeliveryPhase.DeliveryReady).ConfigureAwait(false);
                 Check(_composeCalls == previousComposes + 1, "plans/manifests drive new reconcile");
                 Check(await second.OpenCurrentAsync().ConfigureAwait(false), "restart candidate reverified");
                 Check(_launcher.Opens == 1, "restart exact candidate opened");
@@ -209,15 +235,15 @@ internal static class CoordinatorIntegrationTests
             }
             Check(_assembleCallCount > 0, "first goal reconcile started");
             coordinator.Observe(newGoal, next);
-            await AwaitPhaseAsync(coordinator, newGoal, next, GoalDeliveryPhase.FallbackReady)
+            await AwaitPhaseAsync(coordinator, newGoal, next, GoalDeliveryPhase.DeliveryReady)
                 .ConfigureAwait(false);
             _releaseFirst.TrySetResult(true);
             await Task.Delay(100).ConfigureAwait(false);
             Check(coordinator.CurrentSnapshot.GoalId == newGoal
                 && coordinator.CurrentSnapshot.ProductionJobId == newJob,
                 "old completion must not overwrite new Goal");
-            Check(coordinator.CurrentSnapshot.Phase == GoalDeliveryPhase.FallbackReady,
-                "new Goal remains ready after stale completion");
+            Check(coordinator.CurrentSnapshot.Phase == GoalDeliveryPhase.DeliveryReady,
+                "new Goal remains QA-approved after stale completion");
             Check(await coordinator.OpenCurrentAsync().ConfigureAwait(false), "new Goal candidate opens");
             Check(_launcher.LastPath!.Contains(Sha(newJob)[..32], StringComparison.Ordinal),
                 "opened current job, not stale job");
@@ -273,7 +299,202 @@ internal static class CoordinatorIntegrationTests
                     }
                     return new MasterCompositionResult(false, input.C004, null);
                 },
-                _verifier, _launcher);
+                _verifier, _launcher,
+                _qaWired ? AuthorityAsync : null,
+                _qaWired ? VerifyQaAsync : null);
+        }
+
+        // ── Test-scoped C011 authority: contract-consistent Core facts, stable per job ──
+        private Task<C011QaDeliveryAuthority> AuthorityAsync(string goal, string job, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            var key = goal + "\u001f" + job;
+            lock (_authorities)
+            {
+                if (!_authorities.TryGetValue(key, out var authority))
+                {
+                    var created = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                    var plan = new ProductionPlanRecord("1.0", "production.comfyui.v1", job, "creative",
+                        Digest, "project", "video.square.v1", 2000,
+                        [new ProductionTaskPlanRecord("00000000-0000-0000-0000-000000000001", "shot", 1,
+                            "TEXT_CARD", "Executable", "text-card.v1", "text card", "fixed", 1, 640, 640, 24, 49, 2000, null)]);
+                    authority = new C011QaDeliveryAuthority(
+                        Continuation(goal, job),
+                        new ProductionJobRecord(job, "creative", Digest, "project", "video.square.v1", Digest,
+                            "production_ready", null, null, null, null, "idem", created, created, null),
+                        plan,
+                        new ProductionPackageRecord("package", job, "creative", Digest, Digest, "unused",
+                            JsonSerializer.SerializeToElement(new { }), "PASS", created));
+                    _authorities[key] = authority;
+                }
+                if (_authorityDrift)
+                {
+                    return Task.FromResult(authority with
+                    {
+                        Goal = authority.Goal with { ReturnSha256 = Sha("drifted-return") },
+                    });
+                }
+                return Task.FromResult(authority);
+            }
+        }
+
+        private static readonly string[] QaChecks =
+        [
+            "lineage.v1", "managed-file.v1", "sha-bytes.v1", "mp4-probe.v1", "full-decode.v1",
+            "video-stream.v1", "output-profile.v1", "runtime.v1", "audio-contract.v1",
+            "unexpected-streams.v1", "overlay-provenance.v1",
+        ];
+
+        /// <summary>
+        /// Test-scoped stand-in for C010A: it is fail-closed too. It re-hashes the selected managed file,
+        /// checks lineage against the Core authority input and only then issues a receipt whose digest
+        /// follows the same canonical rule as the production receipt. No decode/GPU is claimed here.
+        /// </summary>
+        private async Task<FinalVideoQaResult> VerifyQaAsync(FinalVideoQaInputV1 input, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _qaCalls);
+            if (_qaDeny) throw new InvalidDataException("synthetic QA denial");
+            var c004 = input.MasterInput.C004;
+            var master = input.MasterArtifact;
+            var narration = input.MasterInput.NarrationPlan;
+            var overlay = input.MasterInput.OverlayPlan;
+            var path = master?.FilePath ?? c004.FilePath;
+            var bytes = await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
+            var sha = Sha(bytes);
+            if (sha != (master?.Sha256 ?? c004.Sha256) || bytes.LongLength != (master?.Bytes ?? c004.Bytes)
+                || input.ProductionJob.ProductionJobId != c004.ProductionJobId
+                || input.GoalContinuation.ProductionJobId != c004.ProductionJobId)
+            {
+                throw new InvalidDataException("synthetic QA lineage/bytes mismatch");
+            }
+            var kind = master is null ? "c004_fallback_v1" : "c009_master_v1";
+            var qaInput = Sha(string.Join("|", kind, c004.ProductionJobId, sha, narration.NarrationPlanDigest,
+                overlay.CaptionOverlayPlanDigest, master?.MasterInputDigest ?? ""));
+            var receipt = new FinalArtifactReceiptV1(
+                "1.0", "final-video.qa.windows.v1", qaInput, Digest, "PASS",
+                input.GoalContinuation.GoalId, input.GoalContinuation.HandoffSha256,
+                input.GoalContinuation.ReturnSha256, input.GoalContinuation.CreativeJobId,
+                input.GoalContinuation.CreativePackageId, input.GoalContinuation.CreativePackageDigest,
+                c004.ProductionJobId, narration.Plan.ProductionPlanDigest, c004.ProductionPackageId,
+                c004.ProductionPackageDigest, narration.Plan.TargetRuntimeMs, overlay.Plan.OutputProfileId,
+                narration.Plan.NarrationRequired, narration.NarrationPlanDigest, null, [],
+                false, overlay.Plan.OverlaysRequired, overlay.CaptionOverlayPlanDigest,
+                null, null, null, Digest, c004.Sha256, c004.Bytes,
+                kind, "synthetic-root-v1", master is null ? "c004" : "c009",
+                sha, bytes.LongLength, null, null, null, master?.MasterInputDigest, null,
+                Path.GetFileName(path), sha, bytes.LongLength,
+                new FinalQaObservedMedia("mp4", 2_000_000, 1,
+                    new FinalQaVideoFacts(0, "h264", "yuv420p", 640, 640, 24, 1, 2_000_000, 49), null),
+                QaChecks, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+            receipt = receipt with { ReceiptDigest = ReceiptDigest(receipt) };
+            var receiptPath = Path.Combine(_receiptRoot, receipt.QaInputDigest + ".json");
+            if (!File.Exists(receiptPath))
+            {
+                await File.WriteAllTextAsync(receiptPath, receipt.ReceiptDigest, ct).ConfigureAwait(false);
+            }
+            if (_swapReceiptAtOpen && Volatile.Read(ref _qaCalls) > 1)
+            {
+                receipt = receipt with { ReceiptDigest = Sha("swapped-receipt") };
+            }
+            return new FinalVideoQaResult(receipt, receiptPath, Reused: Volatile.Read(ref _qaCalls) > 1);
+        }
+
+        // Same canonical rule as the production receipt digest: snake_case, minus digest and timestamp.
+        private static string ReceiptDigest(FinalArtifactReceiptV1 receipt)
+        {
+            var options = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+                UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
+                RespectRequiredConstructorParameters = true,
+                RespectNullableAnnotations = true,
+                MaxDepth = 32,
+            };
+            var node = JsonSerializer.SerializeToNode(receipt, options)!.AsObject();
+            node.Remove("receipt_digest");
+            node.Remove("verified_at");
+            return Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(node))).ToLowerInvariant();
+        }
+
+        // ── C011 regressions ─────────────────────────────────────────────────────────
+        public async Task NoQaAuthorityFailsClosedAsync()
+        {
+            _qaWired = false;
+            const string goal = "goal-noqa";
+            const string job = "job-noqa";
+            await using var coordinator = NewCoordinator(false, false);
+            var continuation = Continuation(goal, job);
+            await AwaitPhaseAsync(coordinator, goal, continuation, GoalDeliveryPhase.Failed).ConfigureAwait(false);
+            Check(!coordinator.CurrentSnapshot.CanOpen, "no QA authority: C004 must not be openable");
+            Check(!await coordinator.OpenCurrentAsync().ConfigureAwait(false), "no QA authority: Open refused");
+            Check(_launcher.Opens == 0, "no QA authority: nothing launched");
+            Check(_qaCalls == 0, "no QA authority: verifier never reached");
+        }
+
+        public async Task UnapprovedReceiptNeverReadyAsync()
+        {
+            _qaDeny = true;
+            const string goal = "goal-deny";
+            const string job = "job-deny";
+            await using var coordinator = NewCoordinator(false, false);
+            var continuation = Continuation(goal, job);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            while (!timeout.IsCancellationRequested)
+            {
+                var state = coordinator.Observe(goal, continuation);
+                Check(state.Phase != GoalDeliveryPhase.DeliveryReady && !state.CanOpen,
+                    "unapproved candidate must never become Ready/openable");
+                if (state.Phase is GoalDeliveryPhase.Failed or GoalDeliveryPhase.QaFailed) break;
+                await Task.Delay(20).ConfigureAwait(false);
+            }
+            Check(coordinator.CurrentSnapshot.Phase is GoalDeliveryPhase.Failed or GoalDeliveryPhase.QaFailed,
+                "QA denial must close the candidate");
+            Check(!await coordinator.OpenCurrentAsync().ConfigureAwait(false) && _launcher.Opens == 0,
+                "QA denial: Open refused, nothing launched");
+        }
+
+        public async Task OpenRejectsChangedAuthorityOrReceiptAsync()
+        {
+            const string goal = "goal-open";
+            const string job = "job-open";
+            var continuation = Continuation(goal, job);
+
+            // Receipt identity swapped by the click-time verifier -> exact receipt required.
+            _swapReceiptAtOpen = true;
+            await using (var swapped = NewCoordinator(false, false))
+            {
+                await AwaitPhaseAsync(swapped, goal, continuation, GoalDeliveryPhase.DeliveryReady).ConfigureAwait(false);
+                Check(!await swapped.OpenCurrentAsync().ConfigureAwait(false), "swapped receipt must not open");
+                Check(!swapped.CurrentSnapshot.CanOpen, "swapped receipt closes Ready");
+            }
+            _swapReceiptAtOpen = false;
+
+            // Core authority drifts after Ready -> stale in-memory Ready has no authority.
+            Interlocked.Exchange(ref _qaCalls, 0);
+            await using (var drifted = NewCoordinator(false, false))
+            {
+                await AwaitPhaseAsync(drifted, goal, continuation, GoalDeliveryPhase.DeliveryReady).ConfigureAwait(false);
+                _authorityDrift = true;
+                Check(!await drifted.OpenCurrentAsync().ConfigureAwait(false), "changed authority must not open");
+            }
+            _authorityDrift = false;
+            Check(_launcher.Opens == 0, "rejected opens never launch");
+
+            // Control: an untouched approved candidate still opens exactly once.
+            using var control = new Fixture();
+            await control.OpenOnceAsync().ConfigureAwait(false);
+        }
+
+        public async Task OpenOnceAsync()
+        {
+            const string goal = "goal-control";
+            const string job = "job-control";
+            await using var coordinator = NewCoordinator(false, false);
+            await AwaitPhaseAsync(coordinator, goal, Continuation(goal, job), GoalDeliveryPhase.DeliveryReady)
+                .ConfigureAwait(false);
+            Check(await coordinator.OpenCurrentAsync().ConfigureAwait(false), "exact receipt opens");
+            Check(_launcher.Opens == 1, "control opens exactly once");
         }
 
         private async Task<FinalVideoArtifact> MakeFallbackAsync(string job)
@@ -315,7 +536,8 @@ internal static class CoordinatorIntegrationTests
             {
                 var state = coordinator.Observe(goal, continuation);
                 if (state.Phase == expected) return;
-                if (state.Phase == GoalDeliveryPhase.Failed && expected != GoalDeliveryPhase.Failed)
+                if (state.Phase is GoalDeliveryPhase.Failed or GoalDeliveryPhase.QaFailed
+                    && expected is not (GoalDeliveryPhase.Failed or GoalDeliveryPhase.QaFailed))
                 {
                     throw new InvalidOperationException("C009C unexpected failure in " + expected);
                 }
