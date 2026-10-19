@@ -114,6 +114,7 @@ payload = {
     "EnvironmentVariables": environment,
     "RunAtLoad": True,
     "KeepAlive": True,
+    "ThrottleInterval": 30,  # ── 限制崩溃重启频率；与监督 Agent 的 30s 节流一致。 ──
     "ProcessType": "Background",
     "StandardOutPath": str(runtime_root / "logs" / "worker.stdout.log"),
     "StandardErrorPath": str(runtime_root / "logs" / "worker.stderr.log"),
