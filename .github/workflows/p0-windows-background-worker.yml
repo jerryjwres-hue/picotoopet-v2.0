@@ -1,0 +1,37 @@
+name: P0 Windows Background Media Worker
+on:
+  push:
+    branches: [feature/p0-windows-background-media-worker-v1]
+    paths:
+      - windows/desktop/**
+      - .github/workflows/p0-windows-background-worker.yml
+  pull_request:
+    paths:
+      - windows/desktop/**
+      - .github/workflows/p0-windows-background-worker.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: p0-media-worker-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Build focused harness (no official Release Builder)
+        shell: pwsh
+        run: dotnet build windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release --warnaserror
+      - name: Run offline worker tests (no GPU)
+        shell: pwsh
+        run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release
