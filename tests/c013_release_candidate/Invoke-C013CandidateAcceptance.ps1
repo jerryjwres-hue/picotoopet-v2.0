@@ -215,6 +215,12 @@ if($results['G005'].status -eq 'PASS' -and -not $validG005){
  $results['G005'].status='FAIL';$results['G005'].missing_markers=@('G005_33_REAL_CASES_AND_3_NATIVE_ORACLES')
 }
 Write-Host "C013_G005_INDEPENDENT_CASES=$validG005"
+# Security P0: test the actual C013 production runner against a benign
+# attacker-writable parent working-directory executable shadow. This MUST be
+# a real Windows process run, never a static source-only acknowledgement.
+$exeProvenance=Suite 'C013_EXECUTABLE_PROVENANCE' 'tests/c013_release_candidate/ExecutableResolution.SmokeTests/ExecutableResolution.SmokeTests.csproj' @() @(
+ 'C013_EXECUTABLE_PROVENANCE=PASS')
+Write-Host "C013_EXECUTABLE_PROVENANCE_GATE=$($results['C013_EXECUTABLE_PROVENANCE'].status)"
 $scriptReport=[ordered]@{
  schema_version='picotoopet.c013.candidate-regression.v1'
  candidate_head=$ExpectedCandidateCommit

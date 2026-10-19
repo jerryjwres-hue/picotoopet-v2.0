@@ -120,7 +120,7 @@ jobs:
             throw 'C013_ACTUAL_CANDIDATE_RUN_NOT_PROVEN'
           }
           if ($t.failure_count -ne 0 -or $t.git_blob_pins_pass -ne $true) { throw 'C013_FAILED_BINARY_REGRESSION' }
-          foreach ($name in @('C009B','C010A','C010B','C011','G005')) {
+          foreach ($name in @('C009B','C010A','C010B','C011','G005','C013_EXECUTABLE_PROVENANCE')) {
             if ($t.suites.$name.status -cne 'PASS' -or $r.regression_gates.$name -cne 'PASS') { throw "C013_REGRESSION_NOT_PASS=$name" }
           }
           if ($t.suites.C010A.real_profile_modes -ne 12 -or $t.suites.C010B.evidence_counts.groups -ne 17 -or $t.suites.C010B.evidence_counts.master_negative -ne 17 -or $t.suites.C010B.evidence_counts.three_profiles -ne 12 -or $t.suites.G005.individual_case_evidence_checked -ne $true) {

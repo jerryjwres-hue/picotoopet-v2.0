@@ -49,7 +49,7 @@ $gate | ConvertTo-Json -Depth 9 | Set-Content -LiteralPath (Join-Path $evidence 
 $testsPath=Join-Path $evidence 'c013-candidate-tests.json'
 $tests=if(Test-Path -LiteralPath $testsPath){Get-Content -LiteralPath $testsPath -Raw|ConvertFrom-Json}else{$null}
 $gateSuite=[ordered]@{}
-foreach($name in @('C009B','C010A','C010B','C011','G005')){
+foreach($name in @('C009B','C010A','C010B','C011','G005','C013_EXECUTABLE_PROVENANCE')){
  $gateSuite[$name]=if($null -ne $tests -and $null -ne $tests.suites.$name){
   $tests.suites.$name.status
  }else{'BLOCKED'}
