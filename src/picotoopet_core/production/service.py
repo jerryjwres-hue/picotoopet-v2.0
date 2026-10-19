@@ -152,11 +152,12 @@ class ProductionService:
 
     def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
         # ── Claim returns full durable snapshots plus an unfinished-only plan ─
-        claim = self.repository.claim_job(production_job_id, executor_id)
-        snapshots = {task.production_task_id: task for task in claim.tasks}
-        resume_tasks = []
-        for planned in claim.plan.tasks:
-            snapshot = snapshots.get(planned.production_task_id)
+        # ── Check recovery before claiming: rejection must not strand a new lease. ──
+        original = {task.production_task_id: task for task in self.repository.list_tasks(
+            production_job_id
+        )}
+        for planned in self.repository.plan_for(production_job_id).tasks:
+            snapshot = original.get(planned.production_task_id)
             if snapshot is None:
                 raise ValueError("PRODUCTION_TASK_SNAPSHOT_MISSING")
             if snapshot.status is ProductionTaskStatus.SUCCEEDED:
@@ -167,8 +168,35 @@ class ProductionService:
                 ProductionTaskStatus.CANCELLED,
             }:
                 raise ValueError("PRODUCTION_TASK_TERMINAL_STATE")
-            if snapshot.attempt_count >= self.repository.MAX_ATTEMPTS_PER_TASK:
+            if snapshot.status is ProductionTaskStatus.RUNNING:
+                # ── An unknown external POST is never safe to blindly resubmit. ──
+                bound = self.repository.database.fetchone(
+                    "SELECT comfy_prompt_id,status FROM production_attempts "
+                    "WHERE production_task_id=? AND attempt_number=?",
+                    (snapshot.production_task_id, snapshot.attempt_count),
+                )
+                if (
+                    not snapshot.comfy_prompt_id
+                    or bound is None
+                    or bound["status"] != "Running"
+                    or bound["comfy_prompt_id"] != snapshot.comfy_prompt_id
+                ):
+                    raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
+                # ── Bound attempt 2 is recoverable by history/commit, not a new POST. ──
+                if snapshot.attempt_count > self.repository.MAX_ATTEMPTS_PER_TASK:
+                    raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
+            elif snapshot.attempt_count >= self.repository.MAX_ATTEMPTS_PER_TASK:
                 raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
+
+        claim = self.repository.claim_job(production_job_id, executor_id)
+        snapshots = {task.production_task_id: task for task in claim.tasks}
+        resume_tasks = []
+        for planned in claim.plan.tasks:
+            snapshot = snapshots.get(planned.production_task_id)
+            if snapshot is None:
+                raise ValueError("PRODUCTION_TASK_SNAPSHOT_MISSING")
+            if snapshot.status is ProductionTaskStatus.SUCCEEDED:
+                continue
             resume_tasks.append(planned)
 
         # ── A crash may happen after final task commit but before packaging ──
