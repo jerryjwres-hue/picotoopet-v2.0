@@ -36,7 +36,8 @@ internal static class SameExeHostTests
         }
         if (!host.Contains("ProductionSubmissionJournal.DefaultRoot", StringComparison.Ordinal)
             || !host.Contains("session.GetProductionJobAsync", StringComparison.Ordinal)
-            || !host.Contains("ProductionExecutionService.Create(session)", StringComparison.Ordinal))
+            || !(host.Contains("ProductionExecutionService.Create(session)", StringComparison.Ordinal)
+                || host.Contains("ProductionExecutionService.Create(session,", StringComparison.Ordinal)))
         {
             throw new InvalidOperationException("P0_DURABLE_RECOVERY_NOT_WIRED");
         }
