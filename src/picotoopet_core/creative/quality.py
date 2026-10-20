@@ -189,6 +189,10 @@ class CreativeQualityGate:
         """Return whether a value carries forbidden execution/configuration authority."""
 
         encoded = json.dumps(value, ensure_ascii=False, sort_keys=True).lower()
+        # JSON string escaping doubles Windows path separators. Check a copy with
+        # separators decoded rather than the escaped JSON representation, or
+        # C:\\Users\\... bypasses the legacy forbidden-path marker.
+        path_text = encoded.replace("\\\\", "\\")
         markers = (
             "authorization: bearer",
             "system_prompt",
@@ -203,4 +207,4 @@ class CreativeQualityGate:
             "/users/",
             "c:\\users\\",
         )
-        return any(marker in encoded for marker in markers)
+        return any(marker in encoded or marker in path_text for marker in markers)
