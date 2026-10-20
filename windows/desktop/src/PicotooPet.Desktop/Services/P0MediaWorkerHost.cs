@@ -47,6 +47,10 @@ public static class P0MediaWorkerHost
         {
             return 0;
         }
+        // ── Optional Stage-1 acceptance is explicit and inert until an exact Core job is armed. ──
+        // ── Normal WPF auto-launch has neither variable and retains existing production behavior. ──
+        var stage1 = Stage1SingleShotGate.IsArmed();
+        var stage1TargetJobId = stage1 ? Stage1SingleShotGate.ExactTargetJobId() : null;
         // ── Explicit Exit is cooperative: finish any started GPU call before exiting. ──
         using var stopSignal = new EventWaitHandle(
             initialState: false, mode: EventResetMode.AutoReset, name: ExplicitStopEventName);
@@ -69,7 +73,9 @@ public static class P0MediaWorkerHost
             session.EnableHeadlessFinalVideoProduction();
             // ── Worker 按计划串行执行 GPU，不自建数据库或第二套 Comfy client。 ──
             await using (session)
-            await using (var executor = ProductionExecutionService.Create(session))
+            await using (var executor = stage1 && stage1TargetJobId is not null
+                ? ProductionExecutionService.CreateStage1(session, stage1TargetJobId)
+                : ProductionExecutionService.Create(session))
             {
                 // ── Durable uncertainty is consulted before all newly-discovered Goal work. ──
                 var journal = new ProductionSubmissionJournal(ProductionSubmissionJournal.DefaultRoot);
@@ -102,6 +108,8 @@ public static class P0MediaWorkerHost
                             // ── Recover exactly one known job, never enumerate fresh GPU work. ──
                             var resumeJobId = pending.RecoverableJobId;
                             if (!string.IsNullOrWhiteSpace(resumeJobId)
+                                // ── Pending reconciliation still runs FIRST; never resume an untargeted job in Stage-1. ──
+                                && (!stage1 || string.Equals(resumeJobId, stage1TargetJobId, StringComparison.Ordinal))
                                 && (!backoff.TryGetValue(resumeJobId, out var resumeAfter)
                                     || resumeAfter <= DateTimeOffset.UtcNow))
                             {
@@ -148,6 +156,12 @@ public static class P0MediaWorkerHost
                             }
 
                             var jobId = continuation.ProductionJobId;
+                            // ── In explicitly armed Stage-1, no exact target means ZERO new GPU work. ──
+                            // ── Other pending/unresolved jobs remain protected by the journal barrier. ──
+                            if (stage1 && !string.Equals(jobId, stage1TargetJobId, StringComparison.Ordinal))
+                            {
+                                continue;
+                            }
                             if (string.IsNullOrWhiteSpace(jobId))
                             {
                                 continue;
