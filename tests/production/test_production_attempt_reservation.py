@@ -285,3 +285,63 @@ def test_claim_rejects_terminal_change_before_lease_rotation(
         (job_id,),
     ) is not None
     assert first.lease_token != ""
+
+
+def test_claim_reads_resume_snapshot_inside_lease_transaction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful claim must not read its task snapshot after lease transaction COMMIT."""
+    service, repository, job_id, task_id = _service(tmp_path)
+    original_list = repository.list_tasks
+    observed_in_transaction: list[bool] = []
+
+    def checked_list(job: str):
+        # ── Actual SQLite BEGIN IMMEDIATE must still own the result snapshot. ──
+        observed_in_transaction.append(repository.database.connection.in_transaction)
+        return original_list(job)
+
+    monkeypatch.setattr(repository, "list_tasks", checked_list)
+    claim = service.claim(job_id, "gpu-new")
+    assert observed_in_transaction == [True]
+    assert len(claim.tasks) == 1
+    assert claim.tasks[0].production_task_id == task_id
+    assert claim.lease_token
+    assert repository.database.connection.in_transaction is False
+
+
+def test_bound_attempt_two_survives_repeated_expiry_without_third_submission(
+    tmp_path: Path,
+) -> None:
+    """Two successive lease reclaim cycles retain one Core-bound attempt-2 prompt."""
+    service, repository, job_id, task_id = _service(tmp_path)
+    initial = service.claim(job_id, "gpu-first")
+    service.mark_attempt(job_id, task_id, _attempt_request("gpu-first", initial.lease_token))
+    service.mark_attempt(
+        job_id, task_id, _attempt_request("gpu-first", initial.lease_token, "shot-try-1")
+    )
+    service.mark_attempt(job_id, task_id, _attempt_request("gpu-first", initial.lease_token))
+    service.mark_attempt(
+        job_id, task_id, _attempt_request("gpu-first", initial.lease_token, "shot-try-2")
+    )
+    _expire_job_lease(repository, job_id)
+    second = service.claim(job_id, "gpu-second")
+    _expire_job_lease(repository, job_id)
+    third = service.claim(job_id, "gpu-third")
+
+    # ── Only the final current lease can report exact Comfy history and commit. ──
+    assert second.lease_token != third.lease_token
+    assert third.tasks[0].attempt_count == 2
+    assert third.tasks[0].comfy_prompt_id == "shot-try-2"
+    assert [item.shot_id for item in third.plan.tasks] == ["shot-001"]
+    with pytest.raises(ValueError, match="PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED"):
+        service.mark_attempt(
+            job_id, task_id, _attempt_request("gpu-third", third.lease_token)
+        )
+    with pytest.raises(ValueError, match="PRODUCTION_LEASE_"):
+        service.mark_attempt(
+            job_id, task_id, _attempt_request("gpu-second", second.lease_token, "shot-try-2")
+        )
+    assert repository.database.scalar(
+        "SELECT COUNT(*) FROM production_attempts WHERE production_task_id=?",
+        (task_id,),
+    ) == 2

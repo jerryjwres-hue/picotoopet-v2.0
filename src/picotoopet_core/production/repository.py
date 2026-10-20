@@ -232,13 +232,17 @@ class ProductionRepository:
                     production_job_id,
                 ),
             )
+            # ── Return the same serialized lease/task snapshot used for recovery authorization. ──
+            # ── Reading tasks after COMMIT could race an independent writer or stale result. ──────
+            plan = self.plan_for(production_job_id)
+            tasks = self.list_tasks(production_job_id)
         return ProductionClaimRecord(
             production_job_id=production_job_id,
             executor_id=executor_id,
             lease_token=raw_token,
             lease_expires_at=expires,
-            plan=self.plan_for(production_job_id),
-            tasks=self.list_tasks(production_job_id),
+            plan=plan,
+            tasks=tasks,
         )
 
     def heartbeat(

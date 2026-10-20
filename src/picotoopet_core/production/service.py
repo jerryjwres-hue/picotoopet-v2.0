@@ -194,6 +194,9 @@ class ProductionService:
                         raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
                     # A bound second attempt may ONLY be recovered by history
                     # and exact commit, never by allocating a third GPU POST.
+                    if snapshot.attempt_count < 1:
+                        # ── Never recover a phantom GPU prompt without a Core reservation. ──
+                        raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
                     if snapshot.attempt_count > self.repository.MAX_ATTEMPTS_PER_TASK:
                         raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
                 elif snapshot.attempt_count >= self.repository.MAX_ATTEMPTS_PER_TASK:
