@@ -30,6 +30,8 @@ internal static class Program
         Console.WriteLine("C011_FULL_DECODE_REJECTION=PASS");
         await RestartAsync();
         Console.WriteLine("C011_DURABLE_RESTART=PASS");
+        await GuiOnlyReadsPersistedQaAsync();
+        Console.WriteLine("P0_GUI_ONLY_READS_PERSISTED_QA=PASS");
         await ConcurrentOpenAsync();
         Console.WriteLine("C011_SINGLE_ASYNC_OPEN=PASS");
         await JobSwitchAsync();
@@ -75,7 +77,9 @@ internal static class Program
         bool includeGate = true,
         bool throwOnCompose = false,
         bool returnMissingMaster = false,
-        bool decodeFailure = false)
+        bool decodeFailure = false,
+        VerifiedGoalDeliveryProjectionStore? projection = null,
+        bool backgroundProduction = true)
     {
         var source = fixture.Input;
         var baseline = LifecycleTests.Input(fixture, null);
@@ -102,7 +106,8 @@ internal static class Program
             verifier, launcher,
             includeGate ? authorityOverride ?? ((goal, job, ct) =>
                 Task.FromResult(authority)) : null,
-            includeGate ? qaOverride ?? qa.VerifyAsync : null);
+            includeGate ? qaOverride ?? qa.VerifyAsync : null,
+            durableProjection: projection, backgroundProduction: backgroundProduction);
     }
 
     private static async Task<GoalDeliverySnapshot> WaitAsync(
@@ -222,6 +227,41 @@ internal static class Program
             await WaitAsync(restored, continuation, GoalDeliveryPhase.DeliveryReady);
             Check(await restored.OpenCurrentAsync(), "RESTART_VERIFIED_RECEIPT");
             Check(launcher.Opens == 1, "RESTART_ONE_LAUNCH");
+        }
+    }
+
+
+    private static async Task GuiOnlyReadsPersistedQaAsync()
+    {
+        using var f = await Fixture.CreateAsync(false, false);
+        var original = LifecycleTests.Input(f, null).GoalContinuation;
+        var launcher = new Launcher();
+        var store = new VerifiedGoalDeliveryProjectionStore(
+            Path.Combine(f.Root, "p0-durable-delivery"));
+
+        // ── Only the headless producer assembles C004 and commits an actual C010 QA receipt. ──
+        await using (var background = Coordinator(
+            f, launcher, false, false, projection: store, backgroundProduction: true))
+        {
+            await WaitAsync(background, original, GoalDeliveryPhase.DeliveryReady);
+        }
+        var persisted = await store.ReadAsync(original.GoalId, original.ProductionJobId!);
+        Check(persisted is not null, "WORKER_DID_NOT_PERSIST_QA");
+
+        // ── WPF restore is read-only; a forbidden composer would throw immediately. ──
+        await using (var gui = Coordinator(
+            f, launcher, false, false, throwOnCompose: true,
+            projection: store, backgroundProduction: false))
+        {
+            Check(gui.CurrentSnapshot.Phase == GoalDeliveryPhase.Idle, "GUI_INITIAL_IDLE");
+            await WaitAsync(gui, original, GoalDeliveryPhase.DeliveryReady);
+            Check(await gui.OpenCurrentAsync(), "GUI_QA_RECEIPT_OPEN");
+            Check(launcher.Opens == 1, "GUI_SINGLE_OPEN");
+
+            // ── Open must rehash bytes, even when the GUI snapshot was previously Ready. ──
+            await File.AppendAllTextAsync(persisted!.Candidate.FilePath, "tampered");
+            Check(!await gui.OpenCurrentAsync(), "GUI_TAMPERED_VIDEO_REFUSED");
+            Check(launcher.Opens == 1, "GUI_TAMPER_DOES_NOT_LAUNCH");
         }
     }
 
