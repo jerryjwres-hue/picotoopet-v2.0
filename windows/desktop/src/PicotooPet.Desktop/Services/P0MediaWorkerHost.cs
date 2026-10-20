@@ -64,6 +64,8 @@ public static class P0MediaWorkerHost
                 new CapabilityStateStore(),
                 new TaskStateStore());
 
+            // ── Only this independent same-EXE host may assemble and QA final videos. ──
+            session.EnableHeadlessFinalVideoProduction();
             // ── Worker 按计划串行执行 GPU，不自建数据库或第二套 Comfy client。 ──
             await using (session)
             await using (var executor = ProductionExecutionService.Create(session))
