@@ -96,6 +96,7 @@ internal static class RecoveryTests
         public bool LoseSubmitResponse { get; set; }
         public bool ForgetPrompt { get; set; }
         public bool HoldOutput { get; set; }
+        public bool HistoryError { get; set; }
         public int Submits { get; private set; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private JsonNode? _graph;
@@ -114,6 +115,7 @@ internal static class RecoveryTests
             if (path.StartsWith("/history", StringComparison.Ordinal))
             {
                 if (ForgetPrompt || HoldOutput) return Json("{}");
+                if (HistoryError) return Json("{\"prompt-1\":{\"status\":{\"status_str\":\"error\",\"completed\":false}}}");
                 return Json(new JsonObject { ["prompt-1"] = new JsonObject { ["prompt"] = Tuple(),
                     ["status"] = new JsonObject { ["status_str"] = "success", ["completed"] = true },
                     ["outputs"] = new JsonObject { ["save"] = new JsonObject { ["images"] = new JsonArray(new JsonObject { ["filename"] = "clip.webm", ["subfolder"] = "", ["type"] = "output" }) } } } }.ToJsonString());
@@ -129,6 +131,8 @@ internal static class RecoveryTests
         public int Commits { get; private set; }
         public int Heartbeats { get; private set; }
         public bool LoseBindResponse { get; set; }
+        public bool LoseFailureResponse { get; set; }
+        public ProductionTaskFailureRequest? Failure { get; private set; }
         public void RestoreReservation() => Reservations = 1;
         private string? _prompt;
         private bool _succeeded;
@@ -148,7 +152,13 @@ internal static class RecoveryTests
         }
         public Task<ProductionTaskRecord> CommitProductionResultAsync(string job, string task, ProductionTaskCommitRequest request, CancellationToken ct)
         { Assert(request.ComfyPromptId == _prompt && request.OutputSha256.Length == 64 && request.OutputBytes > 0, "Core evidence"); Commits++; _succeeded = true; return Task.FromResult(Snapshot); }
-        public Task<ProductionTaskRecord> FailProductionTaskAsync(string job, string task, ProductionTaskFailureRequest request, CancellationToken ct) => throw new InvalidOperationException("network uncertainty must not fabricate render failure");
+        public Task<ProductionTaskRecord> FailProductionTaskAsync(string job, string task, ProductionTaskFailureRequest request, CancellationToken ct)
+        {
+            Assert(request.LeaseToken == "lease" && request.ComfyPromptId == _prompt, "failure must use bound identity and lease");
+            Failure = request;
+            if (LoseFailureResponse) { LoseFailureResponse = false; throw new HttpRequestException("failure response lost"); }
+            return Task.FromResult(Snapshot with { Status = "Failed", FailureCode = request.FailureCode });
+        }
         public Task<ProductionPackageRecord?> GetProductionPackageAsync(string job, CancellationToken ct) => Task.FromResult<ProductionPackageRecord?>(_succeeded ? new("package", job, "creative", new string('a',64), new string('b',64), "", default, "PASS", DateTimeOffset.UtcNow) : null);
     }
 }
