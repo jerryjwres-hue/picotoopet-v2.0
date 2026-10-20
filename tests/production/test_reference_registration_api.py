@@ -1,0 +1,243 @@
+"""Native Core API and SQLite durability tests; all images/approvals synthetic."""
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from picotoopet_core.api.routes import reference_registration
+from picotoopet_core.approvals.service import ApprovalError
+from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.creative.store import CreativeArtifactStore
+from picotoopet_core.db.database import Database
+from picotoopet_core.handoffs.approvals import HandoffApprovalService
+from picotoopet_core.production.reference_assets import (
+    ReferenceAssetIdentityV1, approved_reference_descriptor
+)
+from picotoopet_core.production.reference_registration import (
+    ReferenceRegistrationService, ReferenceBatchRequestV1
+)
+from picotoopet_core.security.auth import require_auth
+
+SHA = "a" * 64
+SOURCE = "b" * 64
+GOAL = str(uuid4())
+JOB = str(uuid4())
+PACKAGE = str(uuid4())
+
+
+@pytest.fixture()
+def state(tmp_path):
+    paths = RuntimePaths.from_root(tmp_path)
+    store = CreativeArtifactStore(paths)
+    database = Database(paths.database_file)
+    database.open()
+    database.apply_migrations()
+    now = datetime.now(UTC).isoformat()
+    manifest = {
+        "schema_version": "1.0",
+        "creative_package_id": PACKAGE,
+        "creative_job_id": JOB,
+        "source_set_digest": SOURCE,
+        "project_key": f"goal-{GOAL}",
+        "quality_outcome": "PASS",
+        "stage_results": {"shot_plan.v1": {"shots": [
+            {"shot_id": "shot-a", "render_intent": "IMAGE_TO_VIDEO"},
+            {"shot_id": "shot-b", "render_intent": "IMAGE_TO_VIDEO"},
+            {"shot_id": "shot-t", "render_intent": "GENERATIVE_VIDEO"},
+        ]}},
+    }
+    location, digest = store.write_creative_package(PACKAGE, manifest)
+    database.execute(
+        "INSERT INTO autonomous_goals(goal_id,origin,intent_type,priority_class,objective,"
+        "constraints_json,budget_class,status,idempotency_key,created_at,updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (GOAL, "user", "video.creative", "normal", "synthetic goal", "{}", "local",
+         "Ready", "goal-case", now, now),
+    )
+    database.execute(
+        "INSERT INTO creative_jobs(creative_job_id,project_key,creative_profile,"
+        "objective_digest,source_set_digest,status,idempotency_key,created_at,updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (JOB, f"goal-{GOAL}", "creative.content_plan.v1", SHA, SOURCE,
+         "creative_ready", "creative-case", now, now),
+    )
+    database.execute(
+        "INSERT INTO creative_goal_source_sets(creative_job_id,goal_id,discovery_result_hash,"
+        "synthesis_result_hash,source_set_digest,source_set_json,created_at)"
+        "VALUES (?,?,?,?,?,?,?)", (JOB, GOAL, SHA, SHA, SOURCE, "{}", now),
+    )
+    database.execute(
+        "INSERT INTO creative_packages(creative_package_id,creative_job_id,source_set_digest,"
+        "package_digest,package_relpath,manifest_json,quality_outcome,created_at)"
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (PACKAGE, JOB, SOURCE, digest, location, json.dumps(manifest), "PASS", now),
+    )
+    approval = HandoffApprovalService(database, None)
+    service = ReferenceRegistrationService(database, approval, store)
+    try:
+        yield database, service, approval, store, digest
+    finally:
+        database.close()
+
+
+def candidate(shot: str) -> dict:
+    return {
+        "shot_id": shot,
+        "input_relative_path": f"PicotooPet/references/{shot}.png",
+        "sha256": SHA, "bytes": 12,
+        "source_reference": "USER_SUPPLIED",
+        "source_digest": SOURCE,
+        "rights_scope": "wan22.i2v.production.v1",
+    }
+
+
+def payload(digest: str) -> dict:
+    return {
+        "schema_version": "reference_batch.v1",
+        "goal_id": GOAL,
+        "creative_package_id": PACKAGE,
+        "creative_package_digest": digest,
+        "selected_references": [candidate("shot-a"), candidate("shot-b")],
+        "user_confirms_preview_and_rights": True,
+    }
+
+
+def identity(batch, shot: str) -> ReferenceAssetIdentityV1:
+    ref = next(x for x in batch.references if x.shot_id == shot)
+    return ReferenceAssetIdentityV1(
+        schema_version="reference_asset.v1", asset_id=ref.asset_id,
+        goal_id=GOAL, creative_job_id=JOB, creative_package_id=PACKAGE,
+        production_job_id=str(uuid4()), production_task_id=str(uuid4()),
+        shot_id=shot, creative_package_digest=batch.creative_package_digest,
+        input_relative_path=ref.input_relative_path, sha256=ref.sha256,
+        bytes=ref.bytes, source_reference=ref.source_reference,
+        source_digest=ref.source_digest, rights_scope="wan22.i2v.production.v1",
+        approval_id=batch.approval_id, approval_request_digest=batch.approval_request_digest
+    )
+
+
+def test_batch_one_pending_approval_exact_two_shots_and_durable_restart(state):
+    db, service, approval, store, digest = state
+    request = ReferenceBatchRequestV1.model_validate(payload(digest))
+    first = service.register(request, idempotency_key="batch-retry-key")
+    second = ReferenceRegistrationService(db, approval, store).register(
+        request, idempotency_key="batch-retry-key")
+    assert first == second
+    assert first.status == "Pending"
+    assert len(first.references) == 2
+    assert first.references[0].asset_id != first.references[1].asset_id
+    assert first.references[0].asset_id not in (first.approval_id,)
+    assert len(db.fetchall(
+        "SELECT * FROM approvals WHERE approval_type='production.reference_asset.v1'", ()
+    )) == 1
+    assert "shot-a" in approval.get(first.approval_id).scope_summary
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        approved_reference_descriptor(db, identity(first, "shot-a"))
+
+    approval.decide_for_control_center(
+        approval_id=first.approval_id, decision="approve",
+        request_digest=first.approval_request_digest,
+        idempotency_key="explicit-real-decision-test-only",
+        resolved_by="synthetic-fixture", reason="synthetic test consent",
+    )
+    restored = ReferenceRegistrationService(db, approval, store).get(first.approval_id)
+    assert restored.status == "Approved"
+    a = identity(restored, "shot-a")
+    assert approved_reference_descriptor(db, a).asset_id == a.asset_id
+    assert approved_reference_descriptor(db, identity(restored, "shot-b")).shot_id == "shot-b"
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
+        approved_reference_descriptor(db, a.model_copy(update={"shot_id": "shot-b"}))
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
+        approved_reference_descriptor(db, a.model_copy(update={"asset_id": str(uuid4())}))
+
+    revoked = service.revoke(
+        first.approval_id, request_digest=first.approval_request_digest,
+        reason="explicit owner revoke",
+    )
+    assert revoked.status == "Revoked"
+    assert service.revoke(first.approval_id, request_digest=first.approval_request_digest,
+                          reason="repeat").status == "Revoked"
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        approved_reference_descriptor(db, a)
+    with pytest.raises(ApprovalError):
+        approval.decide_for_control_center(
+            approval_id=first.approval_id, decision="approve",
+            request_digest=first.approval_request_digest, idempotency_key="replay",
+            resolved_by="synthetic-fixture", reason="replay",
+        )
+
+
+def test_idempotency_conflict_invalid_shots_and_transaction_rollback(state):
+    db, service, approval, store, digest = state
+    base = payload(digest)
+    service.register(ReferenceBatchRequestV1.model_validate(base), idempotency_key="same-key")
+    changed = payload(digest)
+    changed["selected_references"][1]["sha256"] = "c" * 64
+    with pytest.raises(ApprovalError, match="REFERENCE_IDEMPOTENCY_CONFLICT"):
+        service.register(ReferenceBatchRequestV1.model_validate(changed), idempotency_key="same-key")
+    bad = payload(digest)
+    bad["selected_references"][1]["shot_id"] = "shot-t"
+    with pytest.raises(ApprovalError, match="REFERENCE_SHOT_NOT_I2V"):
+        service.register(ReferenceBatchRequestV1.model_validate(bad), idempotency_key="new-key")
+    assert len(db.fetchall("SELECT * FROM approvals", ())) == 1
+    with pytest.raises(ValueError):
+        ReferenceBatchRequestV1.model_validate(
+            dict(payload(digest), user_confirms_preview_and_rights=False))
+    with pytest.raises(ValueError):
+        ReferenceBatchRequestV1.model_validate(
+            dict(payload(digest), selected_references=[candidate("shot-a"), candidate("shot-a")])
+        )
+    with pytest.raises(ValueError):
+        ReferenceBatchRequestV1.model_validate(
+            dict(payload(digest), selected_references=[
+                dict(candidate("shot-a"), input_relative_path="../secrets.png")]
+            )
+        )
+    with pytest.raises(ApprovalError, match="REFERENCE_GOAL_CREATIVE_LINEAGE_MISMATCH"):
+        service.register(
+            ReferenceBatchRequestV1.model_validate(dict(payload(digest), goal_id=str(uuid4()))),
+            idempotency_key="mismatch-goal",
+        )
+
+
+def test_source_artifact_tamper_rejects_new_requests(state):
+    db, service, approval, store, digest = state
+    row = db.fetchone("SELECT package_relpath FROM creative_packages WHERE creative_package_id=?", (PACKAGE,))
+    artifact = store.resolve_managed_relative(row["package_relpath"])
+    artifact.write_bytes(b"tampered")
+    with pytest.raises(ApprovalError, match="REFERENCE_CREATIVE_ARTIFACT_MISMATCH"):
+        service.register(ReferenceBatchRequestV1.model_validate(payload(digest)), idempotency_key="bad-artifact")
+    assert len(db.fetchall("SELECT * FROM approvals", ())) == 0
+
+
+def test_authenticated_route_post_get_revoke_and_pending_not_approved(state):
+    db, service, approval, store, digest = state
+    app = FastAPI()
+    app.include_router(reference_registration.router, prefix="/api/v1")
+    app.state.services = SimpleNamespace(database=db, approvals=approval, creative_store=store)
+    app.dependency_overrides[require_auth] = lambda: None  # only local synthetic HTTP fixture
+    with TestClient(app) as client:
+        data = client.post("/api/v1/production/references/batches",
+                           json=payload(digest), headers={"Idempotency-Key": "http-test-key"})
+        assert data.status_code == 201, data.text
+        obj = data.json()
+        assert obj["status"] == "Pending"
+        assert len(obj["references"]) == 2
+        again = client.post("/api/v1/production/references/batches",
+                            json=payload(digest), headers={"Idempotency-Key": "http-test-key"})
+        assert again.status_code == 201 and again.json() == obj
+        assert client.get("/api/v1/production/references/batches/" + obj["approval_id"]).status_code == 200
+        assert client.post(
+            f'/api/v1/production/references/batches/{obj["approval_id"]}/revoke',
+            json={"request_digest": obj["approval_request_digest"], "reason": "user explicitly revoked"},
+        ).json()["status"] == "Revoked"
+        assert client.post(
+            f'/api/v1/production/references/batches/{obj["approval_id"]}/revoke',
+            json={"request_digest": "d" * 64, "reason": "forged"},
+        ).status_code == 409
