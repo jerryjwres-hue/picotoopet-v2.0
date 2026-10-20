@@ -174,10 +174,11 @@ def test_browser_bridge_intake_is_authenticated_and_persists_canonical_evidence(
         assert auto_goal["workflow_id"]
 
         workflow = client.app.state.services.workflows.get_workflow(str(auto_goal["workflow_id"]))
+        # P0: connected-intake video Goals use the same native local Creative stage as human Goals.
         assert [step.task_type for step in workflow.steps] == [
             "autonomous.discovery.v1",
             "autonomous.goal_synthesis.v1",
-            "autonomous.goal_handoff.v1",
+            "autonomous.goal_creative.v1",
         ]
         assert workflow.steps[0].payload["connected_product_keys"] == [
             created.json()["product_key"]
@@ -289,13 +290,13 @@ def test_large_legacy_import_batches_every_product_into_bounded_auto_goals(tmp_p
         assert all(goal["priority_class"] == "P2" for goal in auto_goals)
         assert all(goal["constraints"]["auto_trigger_source"] == "maotai41_import" for goal in auto_goals)
 
-        # ── Every batch must still use the frozen three-stage pipeline. ──
+        # ── Every batch still uses the frozen three-stage shape; stage 3 is native local Creative. ──
         for goal in auto_goals:
             workflow = client.app.state.services.workflows.get_workflow(str(goal["workflow_id"]))
             assert [step.task_type for step in workflow.steps] == [
                 "autonomous.discovery.v1",
                 "autonomous.goal_synthesis.v1",
-                "autonomous.goal_handoff.v1",
+                "autonomous.goal_creative.v1",
             ]
             assert workflow.steps[0].payload["connected_product_keys"] == goal["constraints"][
                 "connected_product_keys"

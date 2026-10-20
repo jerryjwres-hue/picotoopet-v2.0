@@ -73,8 +73,8 @@ def _decision(goal_id: str = "goal-frugal-persist"):
 def test_schema_21_creates_core_owned_frugal_decision_table(tmp_path: Path) -> None:
     database = _database(tmp_path)
     try:
-        # Schema retention gate      Schema 21 facts remain present through current schema 23.
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+        # Schema retention gate      Schema 21 facts remain present through current schema 24.
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 24
         columns = {
             row["name"]
             for row in database.fetchall("PRAGMA table_info(deep_ai_frugal_decisions)")

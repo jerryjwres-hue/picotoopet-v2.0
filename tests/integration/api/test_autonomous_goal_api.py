@@ -55,6 +55,8 @@ def test_goal_center_exposes_bounded_templates_and_authenticated_human_goals(
         assert goal["constraints"] == {
             "depth": "standard",
             "external_ai_upload_requires_user_action": True,
+            # P0: ordinary video Goals are routed to the native local Creative pipeline.
+            "local_video_preferred": True,
             "read_only_research": True,
         }
         assert goal["budget_class"] == "local-first"
@@ -66,13 +68,17 @@ def test_goal_center_exposes_bounded_templates_and_authenticated_human_goals(
         assert [step.step_key for step in workflow.steps] == [
             "research-evidence",
             "evidence-synthesis",
-            "web-gpt-handoff",
+            "local-creative",
         ]
         assert [step.task_type for step in workflow.steps] == [
             "autonomous.discovery.v1",
             "autonomous.goal_synthesis.v1",
-            "autonomous.goal_handoff.v1",
+            "autonomous.goal_creative.v1",
         ]
+        # A mandatory manual Web GPT upload is no longer in the ordinary video workflow;
+        # the advanced manual handoff stays covered by the legacy-workflow regression tests.
+        assert workflow.steps[-1].required_capability == "local.goal.creative"
+        assert all(step.task_type != "autonomous.goal_handoff.v1" for step in workflow.steps)
         # No fake execution: test app has no live discovery/model capability, so Core leaves
         # the first step Ready instead of materializing an impossible task.
         assert workflow.steps[0].status.value == "Ready"
@@ -131,3 +137,23 @@ def test_goal_center_rejects_unknown_goal_types_and_cannot_set_system_priority(
             },
         )
         assert injected.status_code == 422
+
+
+def test_non_video_goal_keeps_the_two_stage_workflow_and_is_not_marked_local_video(
+    tmp_path: Path,
+) -> None:
+    client, headers = make_client(tmp_path)
+    with client:
+        created = client.post(
+            "/api/v1/autonomous/goals",
+            headers={**headers, "Idempotency-Key": "research-only-1"},
+            json={"goal_type": "product.research", "objective": "研究一个产品", "depth": "quick"},
+        )
+        assert created.status_code == 201
+        goal = created.json()
+        assert goal["constraints"]["local_video_preferred"] is False
+        workflow = client.app.state.services.workflows.get_workflow(goal["workflow_id"])
+        assert [step.task_type for step in workflow.steps] == [
+            "autonomous.discovery.v1",
+            "autonomous.goal_synthesis.v1",
+        ]

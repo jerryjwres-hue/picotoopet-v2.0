@@ -12,7 +12,9 @@ def test_schema_23_makes_scan_manifest_key_primary_and_capture_content_id_repeat
     database.open()
     try:
         database.apply_migrations()
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+        # Cumulative runtime schema is now 24; migration 23 itself must still be applied exactly once.
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 24
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 23") == 1
 
         columns = {
             row["name"]: row

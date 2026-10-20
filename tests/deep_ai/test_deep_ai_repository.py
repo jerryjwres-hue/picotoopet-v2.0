@@ -53,8 +53,8 @@ def _prepare(repository, *, source_id: str, source_digest: str, job_id: str):  #
 def test_migration_15_creates_deep_ai_tables(tmp_path: Path) -> None:
     database = _database(tmp_path)
     try:
-        # Schema retention gate      Existing Deep-AI facts remain present through current schema 23.
-        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+        # Schema retention gate      Existing Deep-AI facts remain present through current schema 24.
+        assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 24
         tables = {
             row[0]
             for row in database.fetchall(
