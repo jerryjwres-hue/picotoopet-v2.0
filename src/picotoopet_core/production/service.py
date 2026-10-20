@@ -152,43 +152,56 @@ class ProductionService:
 
     def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
         # ── Claim returns full durable snapshots plus an unfinished-only plan ─
-        # ── Check recovery before claiming: rejection must not strand a new lease. ──
-        original = {task.production_task_id: task for task in self.repository.list_tasks(
-            production_job_id
-        )}
-        for planned in self.repository.plan_for(production_job_id).tasks:
-            snapshot = original.get(planned.production_task_id)
-            if snapshot is None:
-                raise ValueError("PRODUCTION_TASK_SNAPSHOT_MISSING")
-            if snapshot.status is ProductionTaskStatus.SUCCEEDED:
-                continue
-            if snapshot.status in {
-                ProductionTaskStatus.NEEDS_HUMAN,
-                ProductionTaskStatus.FAILED,
-                ProductionTaskStatus.CANCELLED,
-            }:
-                raise ValueError("PRODUCTION_TASK_TERMINAL_STATE")
-            if snapshot.status is ProductionTaskStatus.RUNNING:
-                # ── An unknown external POST is never safe to blindly resubmit. ──
-                bound = self.repository.database.fetchone(
-                    "SELECT comfy_prompt_id,status FROM production_attempts "
-                    "WHERE production_task_id=? AND attempt_number=?",
-                    (snapshot.production_task_id, snapshot.attempt_count),
-                )
-                if (
-                    not snapshot.comfy_prompt_id
-                    or bound is None
-                    or bound["status"] != "Running"
-                    or bound["comfy_prompt_id"] != snapshot.comfy_prompt_id
-                ):
-                    raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
-                # ── Bound attempt 2 is recoverable by history/commit, not a new POST. ──
-                if snapshot.attempt_count > self.repository.MAX_ATTEMPTS_PER_TASK:
-                    raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
-            elif snapshot.attempt_count >= self.repository.MAX_ATTEMPTS_PER_TASK:
-                raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
+        # Validate bound prompt recovery inside the SAME database transaction as
+        # lease rotation. Previously a separate read before claim_job allowed an
+        # intervening writer to change an authorized prompt into an unknown POST.
+        # Any failure rolls back and leaves the previous lease untouched.
+        plan = self.repository.plan_for(production_job_id)
 
-        claim = self.repository.claim_job(production_job_id, executor_id)
+        def authorize_recovery(connection) -> None:  # type: ignore[no-untyped-def]
+            rows = connection.execute(
+                "SELECT * FROM production_tasks WHERE production_job_id=?",
+                (production_job_id,),
+            ).fetchall()
+            snapshots = {
+                row["production_task_id"]: self.repository._task(row)  # noqa: SLF001
+                for row in rows
+            }
+            for planned in plan.tasks:
+                snapshot = snapshots.get(planned.production_task_id)
+                if snapshot is None:
+                    raise ValueError("PRODUCTION_TASK_SNAPSHOT_MISSING")
+                if snapshot.status is ProductionTaskStatus.SUCCEEDED:
+                    continue
+                if snapshot.status in {
+                    ProductionTaskStatus.NEEDS_HUMAN,
+                    ProductionTaskStatus.FAILED,
+                    ProductionTaskStatus.CANCELLED,
+                }:
+                    raise ValueError("PRODUCTION_TASK_TERMINAL_STATE")
+                if snapshot.status is ProductionTaskStatus.RUNNING:
+                    bound = connection.execute(
+                        "SELECT comfy_prompt_id,status FROM production_attempts "
+                        "WHERE production_task_id=? AND attempt_number=?",
+                        (snapshot.production_task_id, snapshot.attempt_count),
+                    ).fetchone()
+                    if (
+                        not snapshot.comfy_prompt_id
+                        or bound is None
+                        or bound["status"] != "Running"
+                        or bound["comfy_prompt_id"] != snapshot.comfy_prompt_id
+                    ):
+                        raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
+                    # A bound second attempt may ONLY be recovered by history
+                    # and exact commit, never by allocating a third GPU POST.
+                    if snapshot.attempt_count > self.repository.MAX_ATTEMPTS_PER_TASK:
+                        raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
+                elif snapshot.attempt_count >= self.repository.MAX_ATTEMPTS_PER_TASK:
+                    raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
+
+        claim = self.repository.claim_job(
+            production_job_id, executor_id, before_lease=authorize_recovery
+        )
         snapshots = {task.production_task_id: task for task in claim.tasks}
         resume_tasks = []
         for planned in claim.plan.tasks:
