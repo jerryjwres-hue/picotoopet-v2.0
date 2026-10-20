@@ -190,13 +190,15 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 await ReconcileTerminalSubmissionAsync(pending, cancellationToken).ConfigureAwait(false);
             return existing;
         }
+        // ── Check the entire immutable multi-shot plan BEFORE expensive model hash/preflight ──
+        // ── and before claiming a lease. One unsafe late shot must not waste earlier GPU renders. ──
+        var originalPlan = await _session.GetProductionPlanAsync(productionJobId, cancellationToken).ConfigureAwait(false);
+        ValidateMultiShotPlan(productionJobId, originalPlan);
         var preflight = await (_preflightOverride?.Invoke(cancellationToken) ?? PreflightAsync(cancellationToken)).ConfigureAwait(false);
         if (!preflight.IsReady)
         {
             throw new ProductionWorkerException("MEDIA_PREFLIGHT_FAILED");
         }
-
-        var originalPlan = await _session.GetProductionPlanAsync(productionJobId, cancellationToken).ConfigureAwait(false);
         var originalDigest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(originalPlan)!))).ToLowerInvariant();
         ProductionClaimRecord claim;
         try
@@ -257,6 +259,24 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             }
             catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
             catch (Exception exception) { leaseFailure = exception; await lifetime.CancelAsync().ConfigureAwait(false); }
+        }
+    }
+
+    /// <summary>Only Core-authorized executable workflows may enter an automatic multi-shot run.</summary>
+    private static void ValidateMultiShotPlan(string jobId, ProductionPlanRecord plan)
+    {
+        if (plan.ProductionJobId != jobId
+            || plan.SchemaVersion != "1.0"
+            || plan.ProductionProfile != "production.comfyui.v1"
+            || plan.Tasks is not { Length: > 0 }
+            || plan.Tasks.Any(task =>
+                task.ExecutionDisposition != "Executable"
+                || task.WorkflowId is not (
+                    ComfyWorkflowTemplateValidator.T2VWorkflowId
+                    or ComfyWorkflowTemplateValidator.I2VWorkflowId))
+            || plan.Tasks.Select(task => task.ProductionTaskId).Distinct(StringComparer.Ordinal).Count() != plan.Tasks.Length)
+        {
+            throw new ProductionWorkerException("PRODUCTION_PLAN_NOT_FULLY_EXECUTABLE");
         }
     }
 
