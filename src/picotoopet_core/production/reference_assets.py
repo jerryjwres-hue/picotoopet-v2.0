@@ -142,5 +142,36 @@ def verify_persisted_reference_approval(
         "source_digest": reference.source_digest,
         "rights_scope": _SCOPE,
     }
-    if scope != expected:
+    if scope == expected:
+        return  # Legacy exact per-shot approval: no batch semantics implied.
+    # One explicit batch decision still persists independent immutable shot
+    # scopes. This is NOT a blanket reusable image grant to unrelated shots.
+    if not isinstance(scope, dict) or scope.get("schema_version") != "reference_consent_batch.v1":
+        raise ValueError("REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH")
+    shared = {
+        "goal_id": reference.goal_id,
+        "creative_job_id": reference.creative_job_id,
+        "creative_package_id": reference.creative_package_id,
+        "creative_package_digest": reference.creative_package_digest,
+        "rights_scope": _SCOPE,
+    }
+    if any(scope.get(key) != value for key, value in shared.items()):
+        raise ValueError("REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH")
+    if scope.get("explicit_rights_attestation") is not True or scope.get(
+        "byte_provenance"
+    ) != "WINDOWS_CLIENT_CLAIM_NOT_CORE_HASHED":
+        raise ValueError("REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH")
+    refs = scope.get("references")
+    if not isinstance(refs, list) or not 1 <= len(refs) <= 12 or scope.get("reference_count") != len(refs):
+        raise ValueError("REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH")
+    shot_ids = [item.get("shot_id") for item in refs if isinstance(item, dict)]
+    asset_ids = [item.get("asset_id") for item in refs if isinstance(item, dict)]
+    if (len(shot_ids) != len(refs) or len(set(shot_ids)) != len(refs)
+        or len(set(asset_ids)) != len(refs)):
+        raise ValueError("REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH")
+    exact = {key: expected[key] for key in (
+        "asset_id", "shot_id", "input_relative_path", "sha256", "bytes",
+        "source_reference", "source_digest"
+    )}
+    if exact not in refs:
         raise ValueError("REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH")
