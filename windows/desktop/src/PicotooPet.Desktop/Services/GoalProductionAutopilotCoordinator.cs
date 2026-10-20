@@ -87,8 +87,8 @@ public sealed class GoalProductionAutopilotCoordinator : IGoalProductionAutopilo
     public static GoalProductionAutopilotCoordinator Create(ControlCenterSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        var executor = ProductionExecutionService.Create(session);
-        return new GoalProductionAutopilotCoordinator(executor, executor);
+        // WPF observes Core only. GPU execution belongs to the explicitly started per-user worker process.
+        return new GoalProductionAutopilotCoordinator(new BackgroundResultObserver(session));
     }
 
     public GoalProductionAutopilotSnapshot CurrentSnapshot
@@ -248,7 +248,7 @@ public sealed class GoalProductionAutopilotCoordinator : IGoalProductionAutopilo
             goalId,
             productionJobId,
             GoalProductionAutopilotPhase.Running,
-            "正在检查本地生产环境并执行固定生产计划。");
+            "正在等待独立后台媒体 Worker 执行；关闭界面不停止已启动的 Worker。");
 
     private static GoalProductionAutopilotSnapshot AwaitingCore(string goalId, string productionJobId) =>
         new(
@@ -262,7 +262,24 @@ public sealed class GoalProductionAutopilotCoordinator : IGoalProductionAutopilo
             goalId,
             productionJobId,
             GoalProductionAutopilotPhase.TemporaryFailure,
-            "本地生产暂时不可用；修复本机条件后将于后续刷新重试。");
+            "后台生产暂不可用；请显式启动预编译媒体 Worker 并检查 Mac/ComfyUI 连接。");
+
+    private sealed class BackgroundResultObserver(ControlCenterSession session) : IProductionJobExecutor
+    {
+        public async Task<ProductionPackageRecord> RunAsync(string jobId, CancellationToken cancellationToken = default)
+        {
+            while (true)
+            {
+                var package = await session.GetProductionPackageAsync(jobId, cancellationToken).ConfigureAwait(false);
+                if (package is not null) return package;
+                var jobs = await session.GetProductionJobsAsync(cancellationToken).ConfigureAwait(false);
+                var job = jobs.SingleOrDefault(j => j.ProductionJobId == jobId);
+                if (job is null || job.Status is "Failed" or "Cancelled" or "NeedsHuman")
+                    throw new InvalidOperationException("MEDIA_BACKGROUND_JOB_NOT_RUNNING");
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
