@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -187,7 +189,14 @@ class ProductionRepository:
             raise KeyError(production_task_id)
         return self._task(row)
 
-    def claim_job(self, production_job_id: str, executor_id: str, lease_seconds: int = 120) -> ProductionClaimRecord:
+    def claim_job(
+        self,
+        production_job_id: str,
+        executor_id: str,
+        lease_seconds: int = 120,
+        *,
+        before_lease: Callable[[sqlite3.Connection], None] | None = None,
+    ) -> ProductionClaimRecord:
         # ── One active executor lease per job ────────────────────────────────
         now = _now()
         expires = now + timedelta(seconds=max(30, min(lease_seconds, 600)))
@@ -206,6 +215,11 @@ class ProductionRepository:
             lease_expires = datetime.fromisoformat(row["lease_expires_at"]) if row["lease_expires_at"] else None
             if row["lease_token_digest"] and lease_expires and lease_expires > now:
                 raise ValueError("PRODUCTION_LEASE_ACTIVE")
+            # P0: recovery authorization and lease acquisition must share one
+            # BEGIN IMMEDIATE transaction. A stale preflight cannot authorize
+            # an unknown Comfy POST after another writer changes task state.
+            if before_lease is not None:
+                before_lease(connection)
             connection.execute(
                 "UPDATE production_jobs SET status=?,lease_executor_id=?,lease_token_digest=?,lease_expires_at=?,"
                 "updated_at=? WHERE production_job_id=?",
