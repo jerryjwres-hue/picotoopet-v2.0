@@ -195,7 +195,7 @@ internal static class TrustedReferenceAssetVerifierSmokeTests
     private static async Task RejectAsync(Func<Task<VerifiedReferenceAsset>> action, string message)
     {
         try { using var unexpected = await action().ConfigureAwait(false); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or ArgumentException) { return; }
+        catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException or OperationCanceledException or ArgumentException) { return; }
         throw new InvalidOperationException("Expected fail-closed rejection: " + message);
     }
 
