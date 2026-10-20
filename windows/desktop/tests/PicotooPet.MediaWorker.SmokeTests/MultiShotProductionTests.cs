@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -64,7 +65,7 @@ internal static class MultiShotProductionTests
         RecoveryTests.Assert(ffmpeg.Inputs?.Select(Path.GetFileName)
             .SequenceEqual(["shot-1.webm", "shot-2.webm", "shot-3.webm"]) == true,
             "C004 must preserve actual Core package 3-shot order");
-        RecoveryTests.Assert(File.Exists(completed.FilePath) && completed.FilePath.EndsWith(".mp4")
+        RecoveryTests.Assert(File.Exists(completed.FilePath) && completed.FilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
             && completed.Sha256.Length == 64 && ffmpeg.Calls == 1,
             "C004 must produce managed content-addressed MP4");
         var reused = await c004.AssembleAsync("job");
