@@ -56,6 +56,8 @@ jobs:
           python -m pytest -q tests/unit/autonomous/test_p0_local_video_flow.py
           python -m pytest -q tests/video_quality/test_multishot_plan_invariants.py
           python -m pytest -q tests/production/test_reference_asset_approval.py
+          python -m pytest -q tests/production/test_reference_registration_api.py
+          echo 'P0_REFERENCE_BATCH_REGISTRATION_API=PASS (synthetic approval only)'
           echo 'P0_REFERENCE_CORE_APPROVAL_SCOPE=PASS (synthetic approval only)'
           echo "P0_CLAUDE_2_STRICT_XFAIL_ASSERTIONS_NOW_PASS=PASS"
 
