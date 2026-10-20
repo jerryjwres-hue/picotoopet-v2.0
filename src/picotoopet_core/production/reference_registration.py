@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Literal
@@ -19,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from picotoopet_core.approvals.service import ApprovalError, ApprovalService
 from picotoopet_core.db.database import Database
+from picotoopet_core.creative.store import CreativeArtifactStore
 from picotoopet_core.handoffs.approvals import HandoffApprovalService
 
 _TYPE = "production.reference_asset.v1"
@@ -102,9 +104,31 @@ class ReferenceBatchReceiptV1(BaseModel):
 class ReferenceRegistrationService:
     """No new tables. One SQLite IMMEDIATE transaction -> one atomic batch grant request."""
 
-    def __init__(self, database: Database, approvals: HandoffApprovalService):
+    def __init__(
+        self, database: Database, approvals: HandoffApprovalService, artifacts: CreativeArtifactStore
+    ):
         self.database = database
         self.approvals = approvals
+        self.artifacts = artifacts
+
+    def _verify_package_artifact(self, row: object) -> dict[str, object]:
+        """Repository manifest must agree with the real frozen ZIP, not only SQL."""
+        try:
+            file = self.artifacts.resolve_managed_relative(row["package_relpath"])
+            if (not file.is_file() or file.stat().st_size > 16 * 1024 * 1024
+                or self.artifacts.sha256_file(file) != row["package_digest"]):
+                raise ApprovalError("REFERENCE_CREATIVE_ARTIFACT_MISMATCH")
+            with zipfile.ZipFile(file, "r") as archive:
+                name = f'{row["creative_package_id"]}/creative-package.json'
+                entry = archive.getinfo(name)
+                if entry.file_size > 2 * 1024 * 1024:
+                    raise ApprovalError("REFERENCE_CREATIVE_ARTIFACT_MISMATCH")
+                manifest = json.loads(archive.read(name))
+            if manifest != json.loads(row["manifest_json"]):
+                raise ApprovalError("REFERENCE_CREATIVE_ARTIFACT_MISMATCH")
+            return manifest
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
+            raise ApprovalError("REFERENCE_CREATIVE_ARTIFACT_MISMATCH") from error
 
     @staticmethod
     def _receipt(row: object) -> ReferenceBatchReceiptV1:
@@ -167,6 +191,7 @@ class ReferenceRegistrationService:
             if (package is None or package["quality_outcome"] != "PASS"
                 or package["package_digest"] != request.creative_package_digest):
                 raise ApprovalError("REFERENCE_CREATIVE_PACKAGE_NOT_FROZEN")
+            manifest = self._verify_package_artifact(package)
             lineage = connection.execute(
                 "SELECT s.goal_id,s.creative_job_id,j.project_key,j.status "
                 "FROM creative_goal_source_sets s JOIN creative_jobs j "
@@ -177,7 +202,6 @@ class ReferenceRegistrationService:
                 or lineage["status"] != "creative_ready"
                 or lineage["project_key"] != f"goal-{request.goal_id}"):
                 raise ApprovalError("REFERENCE_GOAL_CREATIVE_LINEAGE_MISMATCH")
-            manifest = json.loads(package["manifest_json"])
             if (manifest.get("creative_job_id") != lineage["creative_job_id"]
                 or manifest.get("creative_package_id") != package["creative_package_id"]
                 or manifest.get("quality_outcome") != "PASS"
