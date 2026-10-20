@@ -45,8 +45,6 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private readonly ComfyProductionClient _comfy;
     private readonly bool _ownsComfy;
     private readonly string _executorId;
-    private readonly string? _stage1TargetJobId;
-    private readonly Func<string, CancellationToken, Task<ProductionJobRecord>>? _stage1ReadCoreJob;
 
     public ProductionExecutionService(
         ControlCenterSession session,
@@ -65,12 +63,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         ControlCenterSession session,
         ComfyProductionClient comfy,
         string executorId,
-        bool ownsComfy,
-        string? stage1TargetJobId = null)
+        bool ownsComfy)
     {
         _session = new SessionGateway(session);
-        _stage1TargetJobId = stage1TargetJobId;
-        _stage1ReadCoreJob = stage1TargetJobId is null ? null : session.GetProductionJobAsync;
         _journal = new(ProductionSubmissionJournal.DefaultRoot);
         _reconciler = ComfyPromptReconciler.Create();
         _comfy = comfy;
@@ -85,14 +80,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     public ProductionExecutionService(IProductionExecutionGateway gateway, ComfyProductionClient comfy,
         ProductionSubmissionJournal journal, IComfyPromptReconciler reconciler,
         Func<CancellationToken, Task<ProductionPreflightSnapshot>>? preflight = null,
-        TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null, TimeSpan? historyTimeout = null,
-        string? stage1TargetJobId = null,
-        Func<string, CancellationToken, Task<ProductionJobRecord>>? stage1ReadCoreJob = null)
+        TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null, TimeSpan? historyTimeout = null)
     {
-        if ((stage1TargetJobId is null) != (stage1ReadCoreJob is null))
-            throw new ArgumentException("STAGE1_EXACT_CORE_JOB_READER_REQUIRED");
-        _stage1TargetJobId = stage1TargetJobId;
-        _stage1ReadCoreJob = stage1ReadCoreJob;
         _session = gateway; _comfy = comfy; _journal = journal; _reconciler = reconciler;
         _preflightOverride = preflight;
         _executorId = NormalizeExecutorId($"windows-production-{Environment.MachineName}");
@@ -110,15 +99,6 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             ComfyProductionClient.Create(),
             NormalizeExecutorId($"windows-production-{Environment.MachineName}"),
             ownsComfy: true);
-
-    /// <summary>Explicit, exact-job Stage-1 acceptance; normal Create(session) is unchanged.</summary>
-    public static ProductionExecutionService CreateStage1(ControlCenterSession session, string targetJobId) =>
-        new(
-            session,
-            ComfyProductionClient.Create(),
-            NormalizeExecutorId($"windows-production-{Environment.MachineName}"),
-            ownsComfy: true,
-            stage1TargetJobId: targetJobId);
 
     /// <summary>验证本机 ComfyUI、workflow、模型哈希和受信数据根；不提交渲染。</summary>
     public async Task<ProductionPreflightSnapshot> PreflightAsync(
@@ -217,14 +197,6 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         }
 
         var originalPlan = await _session.GetProductionPlanAsync(productionJobId, cancellationToken).ConfigureAwait(false);
-        if (_stage1TargetJobId is not null)
-        {
-            // ── Fail closed before Core claim/attempt OR new GPU POST; full Core plan, not filtered resume. ──
-            if (!string.Equals(productionJobId, _stage1TargetJobId, StringComparison.Ordinal))
-                throw new ProductionWorkerException("STAGE1_EXACT_JOB_MISMATCH");
-            var coreJob = await _stage1ReadCoreJob!(productionJobId, cancellationToken).ConfigureAwait(false);
-            Stage1SingleShotGate.Validate(originalPlan, coreJob, _stage1TargetJobId);
-        }
         var originalDigest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(originalPlan)!))).ToLowerInvariant();
         ProductionClaimRecord claim;
         try
@@ -245,11 +217,6 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 _journal.Save(new(productionJobId, task.ProductionTaskId, originalDigest, graphDigest, "Submitting", known?.PromptId));
             }
             throw new ProductionWorkerException("MEDIA_CLAIM_CONFLICT_RECONCILIATION");
-        }
-        if (_stage1TargetJobId is not null)
-        {
-            // ── A lease resume-plan may omit succeeded shots; verify complete durable task identity. ──
-            Stage1SingleShotGate.ValidateClaim(originalPlan, claim);
         }
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Exception? leaseFailure = null;
