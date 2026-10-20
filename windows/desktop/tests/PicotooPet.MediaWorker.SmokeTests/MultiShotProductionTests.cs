@@ -17,6 +17,7 @@ internal static class MultiShotProductionTests
     public static async Task RunAsync()
     {
         await RejectNonExecutableBeforePreflightOrLeaseAsync();
+        await RejectLegacyUnapprovedI2VBeforeGpuAsync();
         await RecoverMiddleShotAndAssembleThreeSourcesAsync();
         Console.WriteLine("P0_MULTISHOT_3_SHOTS_REUSE_C004_MP4=PASS (offline fake Comfy/FFmpeg)");
     }
@@ -29,6 +30,16 @@ internal static class MultiShotProductionTests
             () => fixture.Executor(_ => { preflights++; return Ready(fixture.Root); }).RunAsync("job"));
         RecoveryTests.Assert(preflights == 0 && fixture.Gateway.Claims == 0 && fixture.Comfy.Submits == 0,
             "a late NeedsHuman shot must stop the entire multi-shot job before model hash, lease or GPU");
+    }
+
+    private static async Task RejectLegacyUnapprovedI2VBeforeGpuAsync()
+    {
+        using var fixture = new Fixture(rejectLateShot: false, unapprovedReference: true);
+        var preflights = 0;
+        await RecoveryTests.ThrowsCodeAsync("I2V_REFERENCE_APPROVAL_CONTRACT_REQUIRED",
+            () => fixture.Executor(_ => { preflights++; return Ready(fixture.Root); }).RunAsync("job"));
+        RecoveryTests.Assert(preflights == 0 && fixture.Gateway.Claims == 0 && fixture.Comfy.Submits == 0,
+            "unapproved I2V reference must never reserve a lease or spend GPU");
     }
 
     private static async Task RecoverMiddleShotAndAssembleThreeSourcesAsync()
@@ -84,11 +95,11 @@ internal static class MultiShotProductionTests
         public ProductionSubmissionJournal Journal { get; }
         public Gateway Gateway { get; }
         public Comfy Comfy { get; }
-        public Fixture(bool rejectLateShot)
+        public Fixture(bool rejectLateShot, bool unapprovedReference = false)
         {
             Directory.CreateDirectory(Root);
             Journal = new(Path.Combine(Root, "journal"));
-            Gateway = new(rejectLateShot);
+            Gateway = new(rejectLateShot, unapprovedReference);
             Comfy = new(Root);
             _http = new(Comfy) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
         }
@@ -116,14 +127,18 @@ internal static class MultiShotProductionTests
         public int Completed => _results.Count(x => x is not null);
         public bool LoseSecondBindOnce { get; set; }
 
-        public Gateway(bool rejectLateShot)
+        public Gateway(bool rejectLateShot, bool unapprovedReference)
         {
             _tasks = Enumerable.Range(1, 3).Select(i => new ProductionTaskPlanRecord(
-                "task-" + i, "shot-" + i, i, "GENERATIVE_VIDEO",
+                "task-" + i, "shot-" + i, i,
+                unapprovedReference && i == 2 ? "IMAGE_TO_VIDEO" : "GENERATIVE_VIDEO",
                 rejectLateShot && i == 3 ? "NeedsHuman" : "Executable",
-                rejectLateShot && i == 3 ? null : "comfy.wan22.ti2v5b.t2v.v1",
+                rejectLateShot && i == 3 ? null
+                    : unapprovedReference && i == 2
+                        ? "comfy.wan22.ti2v5b.i2v.v1" : "comfy.wan22.ti2v5b.t2v.v1",
                 "pet product story scene " + i, "wan22.safe-negative.v1",
-                9000 + i, 832, 480, 24, 73, 3000, null)).ToArray();
+                9000 + i, 832, 480, 24, 73, 3000,
+                unapprovedReference && i == 2 ? "reference/pet.png" : null)).ToArray();
         }
 
         private ProductionPlanRecord Plan => new("1.0", "production.comfyui.v1", "job",
