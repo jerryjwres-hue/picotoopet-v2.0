@@ -47,6 +47,10 @@ class HandoffApprovalService(ApprovalService):
             "max_cost_usd",
             "policy_version",
             "sanitized_package_digest",
+            "reference_count",
+            "shot_ids",
+            "rights_scope",
+            "creative_package_id",
         }
     )
 
