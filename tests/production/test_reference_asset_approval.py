@@ -162,3 +162,11 @@ def test_pending_approval_scope_cannot_claim_future_production_identity() -> Non
     assert "asset_id" in scope and "creative_package_digest" in scope
     assert "production_job_id" not in scope and "production_task_id" not in scope
     assert scope["shot_id"] == base.shot_id
+
+
+def test_asset_uuid_must_be_distinct_from_approval_uuid() -> None:
+    original = _identity().model_dump()
+    with pytest.raises(ValidationError, match="REFERENCE_ASSET_ID_MUST_DIFFER_FROM_APPROVAL_ID"):
+        ReferenceAssetIdentityV1.model_validate(
+            dict(original, asset_id=original["approval_id"])
+        )

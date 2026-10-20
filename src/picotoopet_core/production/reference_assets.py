@@ -12,7 +12,7 @@ import json
 from typing import Literal
 from uuid import UUID
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -53,6 +53,12 @@ class ReferenceAssetIdentityV1(BaseModel):
         if str(UUID(value)) != value:
             raise ValueError("REFERENCE_ASSET_ID_NONCANONICAL")
         return value
+
+    @model_validator(mode="after")
+    def _asset_id_must_be_separate_from_approval(self) -> ReferenceAssetIdentityV1:
+        if self.asset_id == self.approval_id:
+            raise ValueError("REFERENCE_ASSET_ID_MUST_DIFFER_FROM_APPROVAL_ID")
+        return self
 
 
 class TrustedReferenceDescriptorV1(BaseModel):
