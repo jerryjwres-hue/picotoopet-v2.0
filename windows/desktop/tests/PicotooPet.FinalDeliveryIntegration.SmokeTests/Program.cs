@@ -234,14 +234,22 @@ internal static class Program
     private static async Task GuiOnlyReadsPersistedQaAsync()
     {
         using var f = await Fixture.CreateAsync(false, false);
-        var original = LifecycleTests.Input(f, null).GoalContinuation;
+        var baseline = LifecycleTests.Input(f, null);
+        var original = baseline.GoalContinuation;
         var launcher = new Launcher();
         var store = new VerifiedGoalDeliveryProjectionStore(
             Path.Combine(f.Root, "p0-durable-delivery"));
+        // ── Both processes must observe identical durable Core authority, not fixture timestamps. ──
+        var canonical = new C011QaDeliveryAuthority(
+            baseline.GoalContinuation, baseline.ProductionJob,
+            baseline.ProductionPlan, baseline.ProductionPackage);
+        Task<C011QaDeliveryAuthority> SameCore(
+            string goal, string job, CancellationToken ct) => Task.FromResult(canonical);
 
         // ── Only the headless producer assembles C004 and commits an actual C010 QA receipt. ──
         await using (var background = Coordinator(
-            f, launcher, false, false, projection: store, backgroundProduction: true))
+            f, launcher, false, false, authorityOverride: SameCore,
+            projection: store, backgroundProduction: true))
         {
             await WaitAsync(background, original, GoalDeliveryPhase.DeliveryReady);
         }
@@ -250,8 +258,8 @@ internal static class Program
 
         // ── WPF restore is read-only; a forbidden composer would throw immediately. ──
         await using (var gui = Coordinator(
-            f, launcher, false, false, throwOnCompose: true,
-            projection: store, backgroundProduction: false))
+            f, launcher, false, false, authorityOverride: SameCore,
+            throwOnCompose: true, projection: store, backgroundProduction: false))
         {
             Check(gui.CurrentSnapshot.Phase == GoalDeliveryPhase.Idle, "GUI_INITIAL_IDLE");
             await WaitAsync(gui, original, GoalDeliveryPhase.DeliveryReady);
