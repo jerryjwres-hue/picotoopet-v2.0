@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "rubric_id": "picotoopet.multishot.quality.v1",
+  "calibration_status": "UNCALIBRATED",
+  "note": "No numeric threshold is defined. Machine-advisory signals may only raise REVIEW and never produce ACCEPT. A criterion with evidence_class HUMAN_PERCEPTUAL can only be satisfied by a recorded human verdict on the exact output_sha256.",
+  "verdicts": ["ACCEPT", "REVIEW", "REGENERATE", "BLOCKED"],
+  "identity": {
+    "goal_id": "picotoopet_core.autonomous.video_continuation.GoalVideoContinuationRecord.goal_id",
+    "creative_package_digest": "picotoopet_core.production.models.ProductionPlan.creative_package_digest",
+    "production_job_id": "picotoopet_core.production.models.ProductionPlan.production_job_id",
+    "plan_digest": "picotoopet_core.production.models.ProductionJobRecord.plan_digest",
+    "shot_id": "picotoopet_core.production.models.ProductionTaskPlan.shot_id",
+    "prompt_id": "picotoopet_core.production.models.ProductionTaskRecord.comfy_prompt_id",
+    "output_sha256": "picotoopet_core.production.models.ProductionTaskRecord.output_sha256"
+  },
+  "criteria": [
+    {
+      "id": "S01_technical_decode_and_profile",
+      "scope": "shot",
+      "name": "Shot file decodes and matches the planned profile",
+      "evidence_class": "MACHINE_OBJECTIVE",
+      "covered_by": [
+        {"layer": "production_commit", "check": "ProductionQuality.validate_task_commit (dimensions, fps, frame_count, mime) compares executor-reported values with the plan; it does not open the file"},
+        {"layer": "c004_assembly", "check": "FinalVideoAssemblyService re-reads each shot file and requires path under the output root, byte count and SHA-256 equal to the Core-committed evidence, and identical width/height/fps/frame_count across shots; there is no separate shot probe or decode (an undecodable shot would only fail inside the final ffmpeg concat)"}
+      ],
+      "proves": "Each shot file is the exact file the executor committed (size and SHA-256) and the reported profile facts agree across shots.",
+      "does_not_prove": "Anything visual.",
+      "machine_pass_allowed": true,
+      "on_fail": "BLOCKED"
+    },
+    {
+      "id": "S02_subject_identity_across_shots",
+      "scope": "video",
+      "name": "Same subject/character/pet looks the same in every shot",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "covered_by": [],
+      "plan_level_precondition": "Every shot prompt carries the same continuity anchor. Today only per-shot continuity_keys reach the prompt (see QUALITY_ACCEPTANCE.md, G006 item 1).",
+      "proves": "Nothing on pixels.",
+      "does_not_prove": "Identity consistency.",
+      "machine_pass_allowed": false,
+      "on_fail": "REGENERATE"
+    },
+    {
+      "id": "S03_anatomy_and_deformation",
+      "scope": "shot",
+      "name": "No deformed bodies, faces, paws, hands or product geometry",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "covered_by": [],
+      "mitigation_only": "The fixed Wan2.2 negative prompt lists deformity terms; it reduces risk and verifies nothing.",
+      "machine_pass_allowed": false,
+      "on_fail": "REGENERATE"
+    },
+    {
+      "id": "S04_motion_naturalness",
+      "scope": "shot",
+      "name": "Motion is physically plausible and not jittery",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "covered_by": [],
+      "machine_pass_allowed": false,
+      "on_fail": "REGENERATE"
+    },
+    {
+      "id": "S05_flicker_and_instability",
+      "scope": "shot",
+      "name": "No flicker, texture boiling or unstable framing",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "advisory_machine_signal": "frame-to-frame luminance variation (candidate; not implemented, not calibrated)",
+      "covered_by": [],
+      "machine_pass_allowed": false,
+      "on_fail": "REGENERATE"
+    },
+    {
+      "id": "S06_frozen_black_or_duplicate_frames",
+      "scope": "shot",
+      "name": "No frozen, black or duplicated segments",
+      "evidence_class": "MACHINE_ADVISORY",
+      "advisory_machine_signal": "ffmpeg freezedetect / blackdetect style events (candidate; not implemented, not calibrated)",
+      "covered_by": [],
+      "machine_pass_allowed": false,
+      "on_fail": "REVIEW"
+    },
+    {
+      "id": "S07_prompt_adherence",
+      "scope": "shot",
+      "name": "Shot shows the planned subject, action, framing and required facts",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "covered_by": [],
+      "machine_pass_allowed": false,
+      "on_fail": "REGENERATE"
+    },
+    {
+      "id": "V01_cut_continuity",
+      "scope": "video",
+      "name": "Cuts between shots keep lighting, scale, direction and setting coherent",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "covered_by": [],
+      "fact": "C004 joins shots with a single ffmpeg concat (hard cuts, no transition or color matching).",
+      "machine_pass_allowed": false,
+      "on_fail": "REGENERATE"
+    },
+    {
+      "id": "V02_story_coherence",
+      "scope": "video",
+      "name": "Beats form a coherent story with a clear hook and CTA",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "covered_by": [
+        {"layer": "creative_gate", "check": "CreativeQualityGate: schema, beat coverage, known evidence ids (structure only)"}
+      ],
+      "machine_pass_allowed": false,
+      "on_fail": "REVIEW"
+    },
+    {
+      "id": "V03_claims_and_provenance",
+      "scope": "video",
+      "name": "Factual claims are traceable to supplied evidence; nothing forbidden is emitted",
+      "evidence_class": "MACHINE_OBJECTIVE",
+      "covered_by": [
+        {"layer": "creative_gate", "check": "evidence id subset checks and contains_forbidden_output"},
+        {"layer": "c011_qa", "check": "lineage.v1"}
+      ],
+      "proves": "Identifiers resolve; payload contains no forbidden markers.",
+      "does_not_prove": "That a claim is true.",
+      "machine_pass_allowed": true,
+      "on_fail": "BLOCKED"
+    },
+    {
+      "id": "V04_final_file_integrity",
+      "scope": "video",
+      "name": "Final MP4 is the selected managed artifact, fully decodable, correct profile and runtime",
+      "evidence_class": "MACHINE_OBJECTIVE",
+      "covered_by": [
+        {"layer": "c011_qa", "check": "managed-file.v1"},
+        {"layer": "c011_qa", "check": "sha-bytes.v1"},
+        {"layer": "c011_qa", "check": "mp4-probe.v1"},
+        {"layer": "c011_qa", "check": "full-decode.v1"},
+        {"layer": "c011_qa", "check": "video-stream.v1"},
+        {"layer": "c011_qa", "check": "output-profile.v1"},
+        {"layer": "c011_qa", "check": "runtime.v1"},
+        {"layer": "c011_qa", "check": "unexpected-streams.v1"}
+      ],
+      "proves": "Technical integrity only.",
+      "does_not_prove": "Picture quality.",
+      "machine_pass_allowed": true,
+      "on_fail": "BLOCKED"
+    },
+    {
+      "id": "V05_narration_audio_quality",
+      "scope": "video",
+      "name": "Narration is intelligible, correctly pronounced and fits its timing window",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "covered_by": [
+        {"layer": "c011_qa", "check": "audio-contract.v1"}
+      ],
+      "proves": "Audio stream properties and timing window only.",
+      "does_not_prove": "Speech quality.",
+      "machine_pass_allowed": false,
+      "on_fail": "REGENERATE"
+    },
+    {
+      "id": "V06_caption_overlay_quality",
+      "scope": "video",
+      "name": "Captions/overlays are legible, correctly placed and do not hide the subject",
+      "evidence_class": "HUMAN_PERCEPTUAL",
+      "covered_by": [
+        {"layer": "c011_qa", "check": "overlay-provenance.v1"}
+      ],
+      "proves": "Overlay text hashes and artifact provenance only.",
+      "does_not_prove": "Legibility or placement.",
+      "machine_pass_allowed": false,
+      "on_fail": "REGENERATE"
+    }
+  ],
+  "decision_rules": {
+    "shot": [
+      "BLOCKED if any criterion with on_fail BLOCKED fails, the plan task is NEEDS_HUMAN, identity fields do not match, or the existing GPU attempt cap is exhausted.",
+      "REGENERATE only when a recorded human verdict marks a HUMAN_PERCEPTUAL criterion with on_fail REGENERATE as failed AND a new bounded lineage is approved. Machine-advisory signals never produce REGENERATE.",
+      "REVIEW when any HUMAN_PERCEPTUAL criterion has no recorded verdict for this exact output_sha256, or a MACHINE_ADVISORY signal fired.",
+      "ACCEPT only when every criterion has passed and every HUMAN_PERCEPTUAL criterion has a recorded human ACCEPT for this exact output_sha256."
+    ],
+    "video": [
+      "BLOCKED if any shot is BLOCKED or any machine-objective video criterion fails.",
+      "REGENERATE (partial) if the failing criteria are attributable to named shots: regenerate only those shots under a new lineage, then re-run assembly and C011 QA; the previous final artifact and receipt are not reused.",
+      "REVIEW while any shot or video-level human criterion is unreviewed. A C011 PASS receipt alone is REVIEW, never ACCEPT.",
+      "ACCEPT only when all shots are ACCEPT and all video-level human criteria carry a recorded human ACCEPT bound to the exact final artifact sha256."
+    ]
+  }
+}
