@@ -121,12 +121,15 @@ def _discovery_handler(task: TaskRecord) -> HandlerResult:
     )
 
 
-def _register_capabilities(workflows: WorkflowService) -> None:
-    for capability, task_type in (
+def _register_capabilities(workflows: WorkflowService, *, creative: bool = False) -> None:
+    registrations = [
         ("content.discovery", "autonomous.discovery.v1"),
         ("local.goal.synthesis", "autonomous.goal_synthesis.v1"),
         ("local.goal.handoff", "autonomous.goal_handoff.v1"),
-    ):
+    ]
+    if creative:
+        registrations.append(("local.goal.creative", "autonomous.goal_creative.v1"))
+    for capability, task_type in registrations:
         workflows.capabilities.register(
             CapabilityRegistration(
                 worker_id="goal-e2e-worker",
@@ -249,4 +252,76 @@ def test_human_video_goal_runs_all_three_worker_stages_and_exposes_verified_hand
     assert "不要伪造来源、评论" in prompt
     assert "所有事实性结论必须能够回溯到交接包中的 evidence_id / source_id" in prompt
     assert "AI 视频" in prompt
+    database.close()
+
+
+def test_default_video_goal_schedules_native_local_creative_instead_of_manual_handoff(
+    tmp_path: Path,
+) -> None:
+    paths = RuntimePaths.from_root(tmp_path / "runtime")
+    paths.ensure()
+    database = Database(paths.database_file)
+    database.open()
+    database.apply_migrations()
+    queue = DiagnosticQueueRepository(database)
+    workflows = WorkflowService(database, queue=queue)
+    goals = AutonomousGoalRepository(database)
+    result_store = ResultStore(paths.results_dir)
+    result_records = ResultRepository(database)
+    _register_capabilities(workflows, creative=True)
+
+    goal = HumanGoalService(goals, workflows).create(
+        HumanGoalRequest(
+            goal_type=HumanGoalType.PRODUCT_RESEARCH_TO_VIDEO,
+            objective="研究大型犬耐咬玩具的消费者痛点，并生成 TikTok AI 视频方案",
+        ),
+        idempotency_key="human-goal-worker-e2e-local",
+    )
+    assert goal.constraints["local_video_preferred"] is True
+    assert goal.workflow_id is not None
+    workflow_id = goal.workflow_id
+    assert [step.step_key for step in workflows.get_workflow(workflow_id).steps] == [
+        "research-evidence",
+        "evidence-synthesis",
+        "local-creative",
+    ]
+
+    synthesis = GoalSynthesisCoordinator(
+        goals=goals,
+        workflows=workflows,
+        result_records=result_records,
+        result_store=result_store,
+        local=DeterministicLocal(),
+    )
+    runtime = WorkerRuntime(
+        queue=queue,
+        state_store=WorkerStateStore(
+            paths.state_dir / "goal-e2e-local-worker-status.json",
+            stale_after_seconds=30,
+        ),
+        worker_id="goal-e2e-worker",
+        handlers={
+            "autonomous.discovery.v1": _discovery_handler,
+            "autonomous.goal_synthesis.v1": synthesis.handler,
+        },
+        database=database,
+        result_store=result_store,
+        lease_seconds=30,
+        heartbeat_seconds=2,
+        poll_seconds=0.01,
+    )
+    for expected_task_type in ("autonomous.discovery.v1", "autonomous.goal_synthesis.v1"):
+        cycle = runtime.run_once()
+        assert cycle.succeeded is True
+        assert queue.get(cycle.task_id).task_type == expected_task_type
+        workflows.reconcile(workflow_id)
+
+    # The third stage is the Mac-native Creative handoff into canonical Creative/Production;
+    # no manual Web GPT upload task is materialized for an opted-in video Goal.
+    after = workflows.get_workflow(workflow_id)
+    assert after.steps[2].task_id is not None
+    scheduled = queue.get(after.steps[2].task_id)
+    assert scheduled.task_type == "autonomous.goal_creative.v1"
+    assert scheduled.payload == {"goal_id": goal.goal_id}
+    assert all(step.task_type != "autonomous.goal_handoff.v1" for step in after.steps)
     database.close()

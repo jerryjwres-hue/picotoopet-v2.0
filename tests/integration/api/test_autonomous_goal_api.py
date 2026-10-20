@@ -152,3 +152,23 @@ def test_explicit_legacy_video_goal_still_builds_web_gpt_handoff(tmp_path: Path)
         assert goal["constraints"]["local_video_preferred"] is False
         workflow = client.app.state.services.workflows.get_workflow(goal["workflow_id"])
         assert workflow.steps[-1].task_type == "autonomous.goal_handoff.v1"
+
+
+def test_non_video_goal_keeps_the_two_stage_workflow_and_is_not_marked_local_video(
+    tmp_path: Path,
+) -> None:
+    client, headers = make_client(tmp_path)
+    with client:
+        created = client.post(
+            "/api/v1/autonomous/goals",
+            headers={**headers, "Idempotency-Key": "research-only-1"},
+            json={"goal_type": "product.research", "objective": "研究一个产品", "depth": "quick"},
+        )
+        assert created.status_code == 201
+        goal = created.json()
+        assert goal["constraints"]["local_video_preferred"] is False
+        workflow = client.app.state.services.workflows.get_workflow(goal["workflow_id"])
+        assert [step.task_type for step in workflow.steps] == [
+            "autonomous.discovery.v1",
+            "autonomous.goal_synthesis.v1",
+        ]
