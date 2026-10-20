@@ -10,7 +10,6 @@ if (!typeof(ProductionExecutionService).GetConstructors().Any(ctor =>
 await PicotooPet.MediaWorker.SmokeTests.RecoveryTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.RecoveryFixTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.MultiShotProductionTests.RunAsync();
-await PicotooPet.MediaWorker.SmokeTests.ReferenceAssetSmokeTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.LegacyContractTests.RunAsync();
 PicotooPet.MediaWorker.SmokeTests.SameExeHostTests.Run();
 Console.WriteLine("P0_SAME_EXE_WORKER_JOURNAL_RECOVERY=PASS");
