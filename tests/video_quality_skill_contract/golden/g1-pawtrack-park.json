@@ -1,0 +1,436 @@
+{
+  "fixture_id": "g1-pawtrack-park",
+  "fixture_kind": "SYNTHETIC",
+  "note": "SYNTHETIC: fictional product and pet; not product research and not a measurement.",
+  "source_evidence": {
+    "ev:g1:1": "SYNTHETIC: product page states the tag is lightweight and clips on quickly."
+  },
+  "creative_package_manifest": {
+    "schema_version": "1.0",
+    "creative_package_id": "cfe3ddd0-d594-557b-a707-220034423a92",
+    "creative_job_id": "10afc2f2-0228-5e18-a71d-41fe1c217fc8",
+    "project_key": "goal-g1-pawtrack-park",
+    "creative_profile": "creative.content_plan.v1",
+    "source_set_digest": "618840b505785afdbc65edef2a9874a3e7c5ab64125666fa5f9c5285ed7eb4eb",
+    "quality_outcome": "PASS",
+    "stage_results": {
+      "creative_brief.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "selected_idea_id": "idea-001",
+        "target_audience": "pet owners",
+        "customer_problem": "PawTrack Mini need",
+        "value_proposition": "a lightweight tag that clips on in seconds",
+        "primary_hook": "hook",
+        "emotional_tone": "warm",
+        "content_format": "short product video",
+        "output_profile_id": "video.landscape.v1",
+        "duration_min_seconds": 3,
+        "duration_max_seconds": 60,
+        "message_hierarchy": [
+          "hook",
+          "demo",
+          "payoff"
+        ],
+        "required_source_finding_refs": [
+          "result:finding:g1-pawtrack-park"
+        ],
+        "required_source_evidence_ids": [
+          "ev:g1:1"
+        ],
+        "prohibited_claims": [
+          "medical benefit"
+        ],
+        "cta_intent": "learn more",
+        "continuity_notes": [
+          "Biscuit and the white tag look identical in every shot",
+          "Always soft morning light"
+        ],
+        "needs_deep_ai": false,
+        "needs_human": false
+      },
+      "script.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "script_id": "script-g1-pawtrack-park",
+        "title": "PawTrack Mini",
+        "target_duration_seconds": 15.0,
+        "beats": [
+          {
+            "beat_id": "b1",
+            "order": 1,
+            "duration_seconds": 3.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "dog waits",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b2",
+            "order": 2,
+            "duration_seconds": 4.0,
+            "voiceover": "A lightweight tag that clips on in seconds.",
+            "on_screen_text": null,
+            "visual_intent": "tag on collar",
+            "claim_source_evidence_ids": [
+              "ev:g1:1"
+            ],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b3",
+            "order": 3,
+            "duration_seconds": 5.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "dog runs free",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b4",
+            "order": 4,
+            "duration_seconds": 3.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "calm end",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          }
+        ],
+        "cta_beat_id": "b4",
+        "warnings": [],
+        "needs_deep_ai": false,
+        "needs_human": false
+      },
+      "shot_plan.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "shots": [
+          {
+            "shot_id": "shot-001",
+            "beat_id": "b1",
+            "order": 1,
+            "duration_seconds": 3.0,
+            "subject": "Biscuit, a cream golden retriever wearing a teal collar",
+            "environment": "sunny wooden porch with a garden behind",
+            "action": "Biscuit tilts his head and wags his tail slowly; opens on Biscuit sits on the porch looking at the camera; ends on Biscuit sits looking at the camera",
+            "framing": "medium shot, static camera",
+            "lighting_style": "soft morning sunlight",
+            "continuity_keys": [
+              "cream golden retriever",
+              "teal collar",
+              "matte-white round tag"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g1:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-002",
+            "beat_id": "b2",
+            "order": 2,
+            "duration_seconds": 4.0,
+            "subject": "Biscuit, a cream golden retriever wearing a teal collar, a small round matte-white tag clipped to the collar",
+            "environment": "sunny wooden porch with a garden behind",
+            "action": "the white tag rests on the collar as Biscuit turns his head slightly; opens on close view of the teal collar; ends on the tag sits centered on the collar",
+            "framing": "close-up, slow push-in",
+            "lighting_style": "soft morning sunlight",
+            "continuity_keys": [
+              "cream golden retriever",
+              "teal collar",
+              "matte-white round tag"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g1:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-003",
+            "beat_id": "b3",
+            "order": 3,
+            "duration_seconds": 5.0,
+            "subject": "Biscuit, a cream golden retriever wearing a teal collar",
+            "environment": "open green park with scattered trees",
+            "action": "Biscuit runs across the grass from left to right; opens on Biscuit stands at the edge of the park; ends on Biscuit slows to a trot",
+            "framing": "wide shot, side tracking shot",
+            "lighting_style": "soft morning sunlight",
+            "continuity_keys": [
+              "cream golden retriever",
+              "teal collar",
+              "matte-white round tag"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g1:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-004",
+            "beat_id": "b4",
+            "order": 4,
+            "duration_seconds": 3.0,
+            "subject": "Biscuit, a cream golden retriever wearing a teal collar, a small round matte-white tag clipped to the collar",
+            "environment": "open green park with scattered trees",
+            "action": "Biscuit sits on the grass and looks into the camera; opens on Biscuit trots toward the camera; ends on Biscuit sits with the white tag visible on the collar",
+            "framing": "medium shot, slow push-in",
+            "lighting_style": "soft morning sunlight",
+            "continuity_keys": [
+              "cream golden retriever",
+              "teal collar",
+              "matte-white round tag"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g1:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          }
+        ],
+        "warnings": [],
+        "needs_deep_ai": false,
+        "needs_human": false
+      }
+    }
+  },
+  "video_bible": {
+    "schema_version": "video_bible.v1",
+    "bible_id": "g1-pawtrack-park",
+    "goal_id": "goal-g1-pawtrack-park",
+    "source_set_digest": "618840b505785afdbc65edef2a9874a3e7c5ab64125666fa5f9c5285ed7eb4eb",
+    "selected_idea_id": "idea-001",
+    "subject": {
+      "subject_id": "biscuit",
+      "kind": "PET",
+      "species": "dog",
+      "breed_or_type": "golden retriever",
+      "coat_or_appearance": "cream coat, floppy ears",
+      "distinguishing_marks": [
+        "teal collar"
+      ],
+      "identity_phrase": "Biscuit, a cream golden retriever wearing a teal collar"
+    },
+    "product": {
+      "product_id": "pawtrack-mini",
+      "name": "PawTrack Mini",
+      "category": "pet GPS tag",
+      "shape_color_material": "small round matte-white tag clipped to the collar",
+      "identity_phrase": "a small round matte-white tag clipped to the collar",
+      "logo_policy": "NO_TEXT_OR_LOGO_IN_FRAME",
+      "claims": [
+        {
+          "claim_id": "c-light",
+          "text": "a lightweight tag that clips on in seconds",
+          "evidence_ids": [
+            "ev:g1:1"
+          ],
+          "verified": true
+        }
+      ]
+    },
+    "scenes": [
+      {
+        "scene_id": "porch",
+        "environment_phrase": "sunny wooden porch with a garden behind",
+        "lighting_phrase": "soft morning sunlight",
+        "palette": [
+          "cream",
+          "teal",
+          "green"
+        ]
+      },
+      {
+        "scene_id": "park",
+        "environment_phrase": "open green park with scattered trees",
+        "lighting_phrase": "soft morning sunlight",
+        "palette": [
+          "cream",
+          "teal",
+          "green"
+        ]
+      }
+    ],
+    "camera_rules": {
+      "screen_direction": "LEFT_TO_RIGHT",
+      "allowed_movements": [
+        "STATIC",
+        "SLOW_PUSH_IN",
+        "TRACK_SIDE"
+      ]
+    },
+    "continuity_anchors": [
+      "cream golden retriever",
+      "teal collar",
+      "matte-white round tag"
+    ],
+    "global_continuity_notes": [
+      "Biscuit and the white tag look identical in every shot",
+      "Always soft morning light"
+    ],
+    "reference": null,
+    "arc": [
+      {
+        "beat_id": "b1",
+        "role": "HOOK"
+      },
+      {
+        "beat_id": "b2",
+        "role": "DEMO"
+      },
+      {
+        "beat_id": "b3",
+        "role": "PAYOFF"
+      },
+      {
+        "beat_id": "b4",
+        "role": "CTA"
+      }
+    ],
+    "shots": [
+      {
+        "shot_id": "shot-001",
+        "beat_id": "b1",
+        "order": 1,
+        "scene_id": "porch",
+        "duration_seconds": 3.0,
+        "featured": [
+          "SUBJECT"
+        ],
+        "opening_state": "Biscuit sits on the porch looking at the camera",
+        "visible_action": "Biscuit tilts his head and wags his tail slowly",
+        "closing_state": "Biscuit sits looking at the camera",
+        "camera_framing": "medium shot",
+        "camera_movement": "STATIC",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-002",
+        "beat_id": "b2",
+        "order": 2,
+        "scene_id": "porch",
+        "duration_seconds": 4.0,
+        "featured": [
+          "SUBJECT",
+          "PRODUCT"
+        ],
+        "opening_state": "close view of the teal collar",
+        "visible_action": "the white tag rests on the collar as Biscuit turns his head slightly",
+        "closing_state": "the tag sits centered on the collar",
+        "camera_framing": "close-up",
+        "camera_movement": "SLOW_PUSH_IN",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [
+          "PRODUCT_CLOSEUP"
+        ],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-003",
+        "beat_id": "b3",
+        "order": 3,
+        "scene_id": "park",
+        "duration_seconds": 5.0,
+        "featured": [
+          "SUBJECT"
+        ],
+        "opening_state": "Biscuit stands at the edge of the park",
+        "visible_action": "Biscuit runs across the grass from left to right",
+        "closing_state": "Biscuit slows to a trot",
+        "camera_framing": "wide shot",
+        "camera_movement": "TRACK_SIDE",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [
+          "FAST_MOTION"
+        ],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-004",
+        "beat_id": "b4",
+        "order": 4,
+        "scene_id": "park",
+        "duration_seconds": 3.0,
+        "featured": [
+          "SUBJECT",
+          "PRODUCT"
+        ],
+        "opening_state": "Biscuit trots toward the camera",
+        "visible_action": "Biscuit sits on the grass and looks into the camera",
+        "closing_state": "Biscuit sits with the white tag visible on the collar",
+        "camera_framing": "medium shot",
+        "camera_movement": "SLOW_PUSH_IN",
+        "handoff_to_next": "SCENE_CHANGE",
+        "risk_flags": [],
+        "uses_reference": false
+      }
+    ],
+    "negative_concepts": [
+      "EXTRA_LIMBS",
+      "MORPHING",
+      "DUPLICATED_OBJECTS",
+      "FLICKER"
+    ],
+    "unverified_fields": [],
+    "bible_digest": "435a3e905e9529e71804fb4d2a2ac3638976723fc5da509b889099637a4a8ace"
+  },
+  "expected": {
+    "verdict": "OK",
+    "finding_codes": [],
+    "human_review_focus": [
+      "shot-002:PRODUCT_CLOSEUP",
+      "shot-003:FAST_MOTION"
+    ],
+    "visual_qa": "UNVERIFIED",
+    "production_job_id": "2b04ee8b-64fa-5d9c-bd62-4bd43ee1ff50",
+    "tasks": [
+      {
+        "shot_id": "shot-001",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 73,
+        "target_duration_ms": 3000,
+        "positive_prompt": "Biscuit, a cream golden retriever wearing a teal collar; wan22-shot-prompt-v1.1.0 story continuity: Biscuit and the white tag look identical in every shot, Always soft morning light; sunny wooden porch with a garden behind; Biscuit tilts his head and wags his tail slowly; opens on Biscuit sits on the porch looking at the camera; ends on Biscuit sits looking at the camera; medium shot, static camera; soft morning sunlight; cream golden retriever, teal collar, matte-white round tag"
+      },
+      {
+        "shot_id": "shot-002",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 97,
+        "target_duration_ms": 4000,
+        "positive_prompt": "Biscuit, a cream golden retriever wearing a teal collar, a small round matte-white tag clipped to the collar; wan22-shot-prompt-v1.1.0 story continuity: Biscuit and the white tag look identical in every shot, Always soft morning light; sunny wooden porch with a garden behind; the white tag rests on the collar as Biscuit turns his head slightly; opens on close view of the teal collar; ends on the tag sits centered on the collar; close-up, slow push-in; soft morning sunlight; cream golden retriever, teal collar, matte-white round tag"
+      },
+      {
+        "shot_id": "shot-003",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 121,
+        "target_duration_ms": 5000,
+        "positive_prompt": "Biscuit, a cream golden retriever wearing a teal collar; wan22-shot-prompt-v1.1.0 story continuity: Biscuit and the white tag look identical in every shot, Always soft morning light; open green park with scattered trees; Biscuit runs across the grass from left to right; opens on Biscuit stands at the edge of the park; ends on Biscuit slows to a trot; wide shot, side tracking shot; soft morning sunlight; cream golden retriever, teal collar, matte-white round tag"
+      },
+      {
+        "shot_id": "shot-004",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 73,
+        "target_duration_ms": 3000,
+        "positive_prompt": "Biscuit, a cream golden retriever wearing a teal collar, a small round matte-white tag clipped to the collar; wan22-shot-prompt-v1.1.0 story continuity: Biscuit and the white tag look identical in every shot, Always soft morning light; open green park with scattered trees; Biscuit sits on the grass and looks into the camera; opens on Biscuit trots toward the camera; ends on Biscuit sits with the white tag visible on the collar; medium shot, slow push-in; soft morning sunlight; cream golden retriever, teal collar, matte-white round tag"
+      }
+    ]
+  }
+}

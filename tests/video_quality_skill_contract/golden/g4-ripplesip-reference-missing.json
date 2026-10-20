@@ -1,0 +1,362 @@
+{
+  "fixture_id": "g4-ripplesip-reference-missing",
+  "fixture_kind": "SYNTHETIC",
+  "note": "SYNTHETIC: fictional product and pet; not product research and not a measurement.",
+  "source_evidence": {
+    "ev:g4:1": "SYNTHETIC: product page describes a quiet pump."
+  },
+  "creative_package_manifest": {
+    "schema_version": "1.0",
+    "creative_package_id": "c810d691-37c6-5f99-a079-47f472adc791",
+    "creative_job_id": "877be00e-4999-5195-9b55-ef40d8f406a5",
+    "project_key": "goal-g4-ripplesip-reference-missing",
+    "creative_profile": "creative.content_plan.v1",
+    "source_set_digest": "fba366dc4f41405badb603f89fbfbeadd37fac24a7581139940c9c4fe70067af",
+    "quality_outcome": "PASS",
+    "stage_results": {
+      "creative_brief.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "selected_idea_id": "idea-004",
+        "target_audience": "pet owners",
+        "customer_problem": "RippleSip Fountain need",
+        "value_proposition": "quiet running pump",
+        "primary_hook": "hook",
+        "emotional_tone": "warm",
+        "content_format": "short product video",
+        "output_profile_id": "video.landscape.v1",
+        "duration_min_seconds": 3,
+        "duration_max_seconds": 60,
+        "message_hierarchy": [
+          "hook",
+          "demo",
+          "payoff"
+        ],
+        "required_source_finding_refs": [
+          "result:finding:g4-ripplesip-reference-missing"
+        ],
+        "required_source_evidence_ids": [
+          "ev:g4:1"
+        ],
+        "prohibited_claims": [
+          "medical benefit"
+        ],
+        "cta_intent": "learn more",
+        "continuity_notes": [
+          "Same living room and rug in every shot"
+        ],
+        "needs_deep_ai": false,
+        "needs_human": false
+      },
+      "script.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "script_id": "script-g4-ripplesip-reference-missing",
+        "title": "RippleSip Fountain",
+        "target_duration_seconds": 11.0,
+        "beats": [
+          {
+            "beat_id": "b1",
+            "order": 1,
+            "duration_seconds": 3.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "cat approaches",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b2",
+            "order": 2,
+            "duration_seconds": 4.0,
+            "voiceover": "A quiet running pump.",
+            "on_screen_text": null,
+            "visual_intent": "fountain close view",
+            "claim_source_evidence_ids": [
+              "ev:g4:1"
+            ],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b3",
+            "order": 3,
+            "duration_seconds": 4.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "cat drinks",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          }
+        ],
+        "cta_beat_id": "b3",
+        "warnings": [],
+        "needs_deep_ai": false,
+        "needs_human": false
+      },
+      "shot_plan.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "shots": [
+          {
+            "shot_id": "shot-001",
+            "beat_id": "b1",
+            "order": 1,
+            "duration_seconds": 3.0,
+            "subject": "Luna, a white cat with a grey patch over her left ear",
+            "environment": "calm living room with a beige rug",
+            "action": "Luna walks toward the fountain; opens on Luna sits on the beige rug; ends on Luna stops beside the fountain",
+            "framing": "medium shot, static camera",
+            "lighting_style": "gentle late-afternoon light",
+            "continuity_keys": [
+              "white cat",
+              "grey left ear patch",
+              "frosted-blue round fountain"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g4:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-002",
+            "beat_id": "b2",
+            "order": 2,
+            "duration_seconds": 4.0,
+            "subject": "a round frosted-blue fountain with a small central spout",
+            "environment": "calm living room with a beige rug",
+            "action": "water flows gently from the central spout; opens on the fountain on the rug; ends on water flows gently from the central spout",
+            "framing": "close-up, slow push-in",
+            "lighting_style": "gentle late-afternoon light",
+            "continuity_keys": [
+              "white cat",
+              "grey left ear patch",
+              "frosted-blue round fountain"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g4:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "IMAGE_TO_VIDEO"
+          },
+          {
+            "shot_id": "shot-003",
+            "beat_id": "b3",
+            "order": 3,
+            "duration_seconds": 4.0,
+            "subject": "Luna, a white cat with a grey patch over her left ear, a round frosted-blue fountain with a small central spout",
+            "environment": "calm living room with a beige rug",
+            "action": "Luna drinks from the fountain; opens on Luna stands beside the fountain; ends on Luna lifts her head",
+            "framing": "medium shot, static camera",
+            "lighting_style": "gentle late-afternoon light",
+            "continuity_keys": [
+              "white cat",
+              "grey left ear patch",
+              "frosted-blue round fountain"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g4:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          }
+        ],
+        "warnings": [],
+        "needs_deep_ai": false,
+        "needs_human": false
+      }
+    }
+  },
+  "video_bible": {
+    "schema_version": "video_bible.v1",
+    "bible_id": "g4-ripplesip-reference-missing",
+    "goal_id": "goal-g4-ripplesip-reference-missing",
+    "source_set_digest": "fba366dc4f41405badb603f89fbfbeadd37fac24a7581139940c9c4fe70067af",
+    "selected_idea_id": "idea-004",
+    "subject": {
+      "subject_id": "luna",
+      "kind": "PET",
+      "species": "cat",
+      "breed_or_type": "domestic shorthair",
+      "coat_or_appearance": "white coat with a grey patch over the left ear",
+      "distinguishing_marks": [
+        "grey left ear patch"
+      ],
+      "identity_phrase": "Luna, a white cat with a grey patch over her left ear"
+    },
+    "product": {
+      "product_id": "ripplesip",
+      "name": "RippleSip Fountain",
+      "category": "pet water fountain",
+      "shape_color_material": "round frosted-blue fountain with a small central spout",
+      "identity_phrase": "a round frosted-blue fountain with a small central spout",
+      "logo_policy": "NO_TEXT_OR_LOGO_IN_FRAME",
+      "claims": [
+        {
+          "claim_id": "c-quiet",
+          "text": "quiet running pump",
+          "evidence_ids": [
+            "ev:g4:1"
+          ],
+          "verified": true
+        }
+      ]
+    },
+    "scenes": [
+      {
+        "scene_id": "livingroom",
+        "environment_phrase": "calm living room with a beige rug",
+        "lighting_phrase": "gentle late-afternoon light",
+        "palette": [
+          "white",
+          "frosted blue",
+          "beige"
+        ]
+      }
+    ],
+    "camera_rules": {
+      "screen_direction": "NONE",
+      "allowed_movements": [
+        "STATIC",
+        "SLOW_PUSH_IN"
+      ]
+    },
+    "continuity_anchors": [
+      "white cat",
+      "grey left ear patch",
+      "frosted-blue round fountain"
+    ],
+    "global_continuity_notes": [
+      "Same living room and rug in every shot"
+    ],
+    "reference": null,
+    "arc": [
+      {
+        "beat_id": "b1",
+        "role": "HOOK"
+      },
+      {
+        "beat_id": "b2",
+        "role": "DEMO"
+      },
+      {
+        "beat_id": "b3",
+        "role": "CTA"
+      }
+    ],
+    "shots": [
+      {
+        "shot_id": "shot-001",
+        "beat_id": "b1",
+        "order": 1,
+        "scene_id": "livingroom",
+        "duration_seconds": 3.0,
+        "featured": [
+          "SUBJECT"
+        ],
+        "opening_state": "Luna sits on the beige rug",
+        "visible_action": "Luna walks toward the fountain",
+        "closing_state": "Luna stops beside the fountain",
+        "camera_framing": "medium shot",
+        "camera_movement": "STATIC",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-002",
+        "beat_id": "b2",
+        "order": 2,
+        "scene_id": "livingroom",
+        "duration_seconds": 4.0,
+        "featured": [
+          "PRODUCT"
+        ],
+        "opening_state": "the fountain on the rug",
+        "visible_action": "water flows gently from the central spout",
+        "closing_state": "water flows gently from the central spout",
+        "camera_framing": "close-up",
+        "camera_movement": "SLOW_PUSH_IN",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [
+          "PRODUCT_CLOSEUP",
+          "LIQUID"
+        ],
+        "uses_reference": true
+      },
+      {
+        "shot_id": "shot-003",
+        "beat_id": "b3",
+        "order": 3,
+        "scene_id": "livingroom",
+        "duration_seconds": 4.0,
+        "featured": [
+          "SUBJECT",
+          "PRODUCT"
+        ],
+        "opening_state": "Luna stands beside the fountain",
+        "visible_action": "Luna drinks from the fountain",
+        "closing_state": "Luna lifts her head",
+        "camera_framing": "medium shot",
+        "camera_movement": "STATIC",
+        "handoff_to_next": "SCENE_CHANGE",
+        "risk_flags": [],
+        "uses_reference": false
+      }
+    ],
+    "negative_concepts": [
+      "EXTRA_LIMBS",
+      "MORPHING",
+      "DUPLICATED_OBJECTS",
+      "FLICKER"
+    ],
+    "unverified_fields": [
+      "reference"
+    ],
+    "bible_digest": "a68954a7c38acb4890efc24a2dba7ebb557b9bacafff0cb699c64cb0b0014fcd"
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "finding_codes": [
+      "REFERENCE_UNAVAILABLE"
+    ],
+    "human_review_focus": [
+      "shot-002:PRODUCT_CLOSEUP",
+      "shot-002:LIQUID"
+    ],
+    "visual_qa": "UNVERIFIED",
+    "production_job_id": "08dc7b84-dc11-5894-925c-6aff7256262d",
+    "tasks": [
+      {
+        "shot_id": "shot-001",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 73,
+        "target_duration_ms": 3000,
+        "positive_prompt": "Luna, a white cat with a grey patch over her left ear; wan22-shot-prompt-v1.1.0 story continuity: Same living room and rug in every shot; calm living room with a beige rug; Luna walks toward the fountain; opens on Luna sits on the beige rug; ends on Luna stops beside the fountain; medium shot, static camera; gentle late-afternoon light; white cat, grey left ear patch, frosted-blue round fountain"
+      },
+      {
+        "shot_id": "shot-002",
+        "execution_disposition": "NeedsHuman",
+        "workflow_id": null,
+        "frame_count": 97,
+        "target_duration_ms": 4000,
+        "positive_prompt": "a round frosted-blue fountain with a small central spout; wan22-shot-prompt-v1.1.0 story continuity: Same living room and rug in every shot; calm living room with a beige rug; water flows gently from the central spout; opens on the fountain on the rug; ends on water flows gently from the central spout; close-up, slow push-in; gentle late-afternoon light; white cat, grey left ear patch, frosted-blue round fountain"
+      },
+      {
+        "shot_id": "shot-003",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 97,
+        "target_duration_ms": 4000,
+        "positive_prompt": "Luna, a white cat with a grey patch over her left ear, a round frosted-blue fountain with a small central spout; wan22-shot-prompt-v1.1.0 story continuity: Same living room and rug in every shot; calm living room with a beige rug; Luna drinks from the fountain; opens on Luna stands beside the fountain; ends on Luna lifts her head; medium shot, static camera; gentle late-afternoon light; white cat, grey left ear patch, frosted-blue round fountain"
+      }
+    ]
+  }
+}

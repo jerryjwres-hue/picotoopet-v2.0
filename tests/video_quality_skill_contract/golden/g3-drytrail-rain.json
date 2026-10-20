@@ -1,0 +1,434 @@
+{
+  "fixture_id": "g3-drytrail-rain",
+  "fixture_kind": "SYNTHETIC",
+  "note": "SYNTHETIC: fictional product and pet; not product research and not a measurement.",
+  "source_evidence": {
+    "ev:g3:1": "SYNTHETIC: product page describes the fabric as water-repellent."
+  },
+  "creative_package_manifest": {
+    "schema_version": "1.0",
+    "creative_package_id": "254e1704-c607-5ef9-a1ac-ef4c2f457e7c",
+    "creative_job_id": "0b122849-3ee8-5629-a4a5-d11c78b583d3",
+    "project_key": "goal-g3-drytrail-rain",
+    "creative_profile": "creative.content_plan.v1",
+    "source_set_digest": "081cb3493b188bba05771636b003124b52b2bc893f5adb01c07ff919b917f55d",
+    "quality_outcome": "PASS",
+    "stage_results": {
+      "creative_brief.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "selected_idea_id": "idea-003",
+        "target_audience": "pet owners",
+        "customer_problem": "DryTrail Raincoat need",
+        "value_proposition": "water-repellent fabric",
+        "primary_hook": "hook",
+        "emotional_tone": "warm",
+        "content_format": "short product video",
+        "output_profile_id": "video.square.v1",
+        "duration_min_seconds": 3,
+        "duration_max_seconds": 60,
+        "message_hierarchy": [
+          "hook",
+          "demo",
+          "payoff"
+        ],
+        "required_source_finding_refs": [
+          "result:finding:g3-drytrail-rain"
+        ],
+        "required_source_evidence_ids": [
+          "ev:g3:1"
+        ],
+        "prohibited_claims": [
+          "medical benefit"
+        ],
+        "cta_intent": "learn more",
+        "continuity_notes": [
+          "Light rain and overcast sky in every shot",
+          "Pepper wears the yellow raincoat after shot 1"
+        ],
+        "needs_deep_ai": false,
+        "needs_human": false
+      },
+      "script.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "script_id": "script-g3-drytrail-rain",
+        "title": "DryTrail Raincoat",
+        "target_duration_seconds": 16.0,
+        "beats": [
+          {
+            "beat_id": "b1",
+            "order": 1,
+            "duration_seconds": 4.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "rainy walk",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b2",
+            "order": 2,
+            "duration_seconds": 4.0,
+            "voiceover": "Water-repellent fabric for rainy walks.",
+            "on_screen_text": null,
+            "visual_intent": "wearing the coat",
+            "claim_source_evidence_ids": [
+              "ev:g3:1"
+            ],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b3",
+            "order": 3,
+            "duration_seconds": 5.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "puddle run",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b4",
+            "order": 4,
+            "duration_seconds": 3.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "happy dog",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          }
+        ],
+        "cta_beat_id": "b4",
+        "warnings": [],
+        "needs_deep_ai": false,
+        "needs_human": false
+      },
+      "shot_plan.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "shots": [
+          {
+            "shot_id": "shot-001",
+            "beat_id": "b1",
+            "order": 1,
+            "duration_seconds": 4.0,
+            "subject": "Pepper, a black and white border collie with a white chest blaze",
+            "environment": "quiet neighborhood sidewalk in light rain with shallow puddles",
+            "action": "Pepper steps onto the wet sidewalk and looks up; opens on Pepper stands at a doorway looking at the rain; ends on Pepper stands on the sidewalk",
+            "framing": "medium shot, static camera",
+            "lighting_style": "soft overcast daylight",
+            "continuity_keys": [
+              "black and white border collie",
+              "bright yellow raincoat",
+              "reflective stripes"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g3:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-002",
+            "beat_id": "b2",
+            "order": 2,
+            "duration_seconds": 4.0,
+            "subject": "Pepper, a black and white border collie with a white chest blaze, a bright yellow hooded raincoat with reflective stripes",
+            "environment": "quiet neighborhood sidewalk in light rain with shallow puddles",
+            "action": "Rain beads on the yellow raincoat as Pepper stands still; opens on Pepper stands on the sidewalk in the yellow raincoat; ends on Pepper stands in the yellow raincoat",
+            "framing": "close-up, slow push-in",
+            "lighting_style": "soft overcast daylight",
+            "continuity_keys": [
+              "black and white border collie",
+              "bright yellow raincoat",
+              "reflective stripes"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g3:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-003",
+            "beat_id": "b3",
+            "order": 3,
+            "duration_seconds": 5.0,
+            "subject": "Pepper, a black and white border collie with a white chest blaze, a bright yellow hooded raincoat with reflective stripes",
+            "environment": "quiet neighborhood sidewalk in light rain with shallow puddles",
+            "action": "Pepper trots through a shallow puddle from left to right; opens on Pepper stands at the start of the sidewalk; ends on Pepper slows beyond the puddle",
+            "framing": "wide shot, side tracking shot",
+            "lighting_style": "soft overcast daylight",
+            "continuity_keys": [
+              "black and white border collie",
+              "bright yellow raincoat",
+              "reflective stripes"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g3:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-004",
+            "beat_id": "b4",
+            "order": 4,
+            "duration_seconds": 3.0,
+            "subject": "Pepper, a black and white border collie with a white chest blaze, a bright yellow hooded raincoat with reflective stripes",
+            "environment": "quiet neighborhood sidewalk in light rain with shallow puddles",
+            "action": "Pepper shakes her body once and looks at the camera; opens on Pepper slows beyond the puddle; ends on Pepper looks at the camera",
+            "framing": "medium shot, static camera",
+            "lighting_style": "soft overcast daylight",
+            "continuity_keys": [
+              "black and white border collie",
+              "bright yellow raincoat",
+              "reflective stripes"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g3:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          }
+        ],
+        "warnings": [],
+        "needs_deep_ai": false,
+        "needs_human": false
+      }
+    }
+  },
+  "video_bible": {
+    "schema_version": "video_bible.v1",
+    "bible_id": "g3-drytrail-rain",
+    "goal_id": "goal-g3-drytrail-rain",
+    "source_set_digest": "081cb3493b188bba05771636b003124b52b2bc893f5adb01c07ff919b917f55d",
+    "selected_idea_id": "idea-003",
+    "subject": {
+      "subject_id": "pepper",
+      "kind": "PET",
+      "species": "dog",
+      "breed_or_type": "border collie",
+      "coat_or_appearance": "black and white coat",
+      "distinguishing_marks": [
+        "white chest blaze"
+      ],
+      "identity_phrase": "Pepper, a black and white border collie with a white chest blaze"
+    },
+    "product": {
+      "product_id": "drytrail",
+      "name": "DryTrail Raincoat",
+      "category": "dog raincoat",
+      "shape_color_material": "bright yellow hooded raincoat with reflective stripes",
+      "identity_phrase": "a bright yellow hooded raincoat with reflective stripes",
+      "logo_policy": "NO_TEXT_OR_LOGO_IN_FRAME",
+      "claims": [
+        {
+          "claim_id": "c-water",
+          "text": "water-repellent fabric",
+          "evidence_ids": [
+            "ev:g3:1"
+          ],
+          "verified": true
+        }
+      ]
+    },
+    "scenes": [
+      {
+        "scene_id": "street",
+        "environment_phrase": "quiet neighborhood sidewalk in light rain with shallow puddles",
+        "lighting_phrase": "soft overcast daylight",
+        "palette": [
+          "yellow",
+          "grey",
+          "wet asphalt"
+        ]
+      }
+    ],
+    "camera_rules": {
+      "screen_direction": "LEFT_TO_RIGHT",
+      "allowed_movements": [
+        "STATIC",
+        "SLOW_PUSH_IN",
+        "TRACK_SIDE"
+      ]
+    },
+    "continuity_anchors": [
+      "black and white border collie",
+      "bright yellow raincoat",
+      "reflective stripes"
+    ],
+    "global_continuity_notes": [
+      "Light rain and overcast sky in every shot",
+      "Pepper wears the yellow raincoat after shot 1"
+    ],
+    "reference": null,
+    "arc": [
+      {
+        "beat_id": "b1",
+        "role": "HOOK"
+      },
+      {
+        "beat_id": "b2",
+        "role": "DEMO"
+      },
+      {
+        "beat_id": "b3",
+        "role": "PAYOFF"
+      },
+      {
+        "beat_id": "b4",
+        "role": "CTA"
+      }
+    ],
+    "shots": [
+      {
+        "shot_id": "shot-001",
+        "beat_id": "b1",
+        "order": 1,
+        "scene_id": "street",
+        "duration_seconds": 4.0,
+        "featured": [
+          "SUBJECT"
+        ],
+        "opening_state": "Pepper stands at a doorway looking at the rain",
+        "visible_action": "Pepper steps onto the wet sidewalk and looks up",
+        "closing_state": "Pepper stands on the sidewalk",
+        "camera_framing": "medium shot",
+        "camera_movement": "STATIC",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-002",
+        "beat_id": "b2",
+        "order": 2,
+        "scene_id": "street",
+        "duration_seconds": 4.0,
+        "featured": [
+          "SUBJECT",
+          "PRODUCT"
+        ],
+        "opening_state": "Pepper stands on the sidewalk in the yellow raincoat",
+        "visible_action": "Rain beads on the yellow raincoat as Pepper stands still",
+        "closing_state": "Pepper stands in the yellow raincoat",
+        "camera_framing": "close-up",
+        "camera_movement": "SLOW_PUSH_IN",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [
+          "PRODUCT_CLOSEUP",
+          "LIQUID"
+        ],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-003",
+        "beat_id": "b3",
+        "order": 3,
+        "scene_id": "street",
+        "duration_seconds": 5.0,
+        "featured": [
+          "SUBJECT",
+          "PRODUCT"
+        ],
+        "opening_state": "Pepper stands at the start of the sidewalk",
+        "visible_action": "Pepper trots through a shallow puddle from left to right",
+        "closing_state": "Pepper slows beyond the puddle",
+        "camera_framing": "wide shot",
+        "camera_movement": "TRACK_SIDE",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [
+          "FAST_MOTION",
+          "LIQUID"
+        ],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-004",
+        "beat_id": "b4",
+        "order": 4,
+        "scene_id": "street",
+        "duration_seconds": 3.0,
+        "featured": [
+          "SUBJECT",
+          "PRODUCT"
+        ],
+        "opening_state": "Pepper slows beyond the puddle",
+        "visible_action": "Pepper shakes her body once and looks at the camera",
+        "closing_state": "Pepper looks at the camera",
+        "camera_framing": "medium shot",
+        "camera_movement": "STATIC",
+        "handoff_to_next": "SCENE_CHANGE",
+        "risk_flags": [
+          "COMPLEX_ANATOMY"
+        ],
+        "uses_reference": false
+      }
+    ],
+    "negative_concepts": [
+      "EXTRA_LIMBS",
+      "MORPHING",
+      "DUPLICATED_OBJECTS",
+      "FLICKER"
+    ],
+    "unverified_fields": [],
+    "bible_digest": "ade471eda477f442e61a8125086a848e1532ad21c46ef3c926b25a1d2fe5b832"
+  },
+  "expected": {
+    "verdict": "OK",
+    "finding_codes": [],
+    "human_review_focus": [
+      "shot-002:PRODUCT_CLOSEUP",
+      "shot-002:LIQUID",
+      "shot-003:FAST_MOTION",
+      "shot-003:LIQUID",
+      "shot-004:COMPLEX_ANATOMY"
+    ],
+    "visual_qa": "UNVERIFIED",
+    "production_job_id": "e325b83e-5c5b-5b79-8e87-234f55c58bbd",
+    "tasks": [
+      {
+        "shot_id": "shot-001",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 97,
+        "target_duration_ms": 4000,
+        "positive_prompt": "Pepper, a black and white border collie with a white chest blaze; wan22-shot-prompt-v1.1.0 story continuity: Light rain and overcast sky in every shot, Pepper wears the yellow raincoat after shot 1; quiet neighborhood sidewalk in light rain with shallow puddles; Pepper steps onto the wet sidewalk and looks up; opens on Pepper stands at a doorway looking at the rain; ends on Pepper stands on the sidewalk; medium shot, static camera; soft overcast daylight; black and white border collie, bright yellow raincoat, reflective stripes"
+      },
+      {
+        "shot_id": "shot-002",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 97,
+        "target_duration_ms": 4000,
+        "positive_prompt": "Pepper, a black and white border collie with a white chest blaze, a bright yellow hooded raincoat with reflective stripes; wan22-shot-prompt-v1.1.0 story continuity: Light rain and overcast sky in every shot, Pepper wears the yellow raincoat after shot 1; quiet neighborhood sidewalk in light rain with shallow puddles; Rain beads on the yellow raincoat as Pepper stands still; opens on Pepper stands on the sidewalk in the yellow raincoat; ends on Pepper stands in the yellow raincoat; close-up, slow push-in; soft overcast daylight; black and white border collie, bright yellow raincoat, reflective stripes"
+      },
+      {
+        "shot_id": "shot-003",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 121,
+        "target_duration_ms": 5000,
+        "positive_prompt": "Pepper, a black and white border collie with a white chest blaze, a bright yellow hooded raincoat with reflective stripes; wan22-shot-prompt-v1.1.0 story continuity: Light rain and overcast sky in every shot, Pepper wears the yellow raincoat after shot 1; quiet neighborhood sidewalk in light rain with shallow puddles; Pepper trots through a shallow puddle from left to right; opens on Pepper stands at the start of the sidewalk; ends on Pepper slows beyond the puddle; wide shot, side tracking shot; soft overcast daylight; black and white border collie, bright yellow raincoat, reflective stripes"
+      },
+      {
+        "shot_id": "shot-004",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 73,
+        "target_duration_ms": 3000,
+        "positive_prompt": "Pepper, a black and white border collie with a white chest blaze, a bright yellow hooded raincoat with reflective stripes; wan22-shot-prompt-v1.1.0 story continuity: Light rain and overcast sky in every shot, Pepper wears the yellow raincoat after shot 1; quiet neighborhood sidewalk in light rain with shallow puddles; Pepper shakes her body once and looks at the camera; opens on Pepper slows beyond the puddle; ends on Pepper looks at the camera; medium shot, static camera; soft overcast daylight; black and white border collie, bright yellow raincoat, reflective stripes"
+      }
+    ]
+  }
+}
