@@ -1,0 +1,409 @@
+{
+  "fixture_id": "g2-autobowl-kitchen",
+  "fixture_kind": "SYNTHETIC",
+  "note": "SYNTHETIC: fictional product and pet; not product research and not a measurement.",
+  "source_evidence": {
+    "ev:g2:1": "SYNTHETIC: product page states the feeder supports scheduled meals."
+  },
+  "creative_package_manifest": {
+    "schema_version": "1.0",
+    "creative_package_id": "6018b57c-0630-5ed5-838c-91f6799a4e9a",
+    "creative_job_id": "d01776af-059e-568d-87fb-b32b4ff09edf",
+    "project_key": "goal-g2-autobowl-kitchen",
+    "creative_profile": "creative.content_plan.v1",
+    "source_set_digest": "100a7d1e50df59bf1940114d00485c22f5830feb0cc1991e35706e7d542e1f08",
+    "quality_outcome": "PASS",
+    "stage_results": {
+      "creative_brief.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "selected_idea_id": "idea-002",
+        "target_audience": "pet owners",
+        "customer_problem": "AutoBowl Feeder need",
+        "value_proposition": "scheduled meals while you are away",
+        "primary_hook": "hook",
+        "emotional_tone": "warm",
+        "content_format": "short product video",
+        "output_profile_id": "video.vertical.v1",
+        "duration_min_seconds": 3,
+        "duration_max_seconds": 60,
+        "message_hierarchy": [
+          "hook",
+          "demo",
+          "payoff"
+        ],
+        "required_source_finding_refs": [
+          "result:finding:g2-autobowl-kitchen"
+        ],
+        "required_source_evidence_ids": [
+          "ev:g2:1"
+        ],
+        "prohibited_claims": [
+          "medical benefit"
+        ],
+        "cta_intent": "learn more",
+        "continuity_notes": [
+          "The same kitchen corner in every shot",
+          "Mochi faces right whenever she moves"
+        ],
+        "needs_deep_ai": false,
+        "needs_human": false
+      },
+      "script.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "script_id": "script-g2-autobowl-kitchen",
+        "title": "AutoBowl Feeder",
+        "target_duration_seconds": 14.0,
+        "beats": [
+          {
+            "beat_id": "b1",
+            "order": 1,
+            "duration_seconds": 3.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "cat notices",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b2",
+            "order": 2,
+            "duration_seconds": 8.0,
+            "voiceover": "Scheduled meals while you are away.",
+            "on_screen_text": null,
+            "visual_intent": "cat approaches and eats",
+            "claim_source_evidence_ids": [
+              "ev:g2:1"
+            ],
+            "unsupported_claim": false
+          },
+          {
+            "beat_id": "b3",
+            "order": 3,
+            "duration_seconds": 3.0,
+            "voiceover": null,
+            "on_screen_text": null,
+            "visual_intent": "content cat",
+            "claim_source_evidence_ids": [],
+            "unsupported_claim": false
+          }
+        ],
+        "cta_beat_id": "b3",
+        "warnings": [],
+        "needs_deep_ai": false,
+        "needs_human": false
+      },
+      "shot_plan.v1": {
+        "schema_version": "1.0",
+        "creative_profile": "creative.content_plan.v1",
+        "shots": [
+          {
+            "shot_id": "shot-001",
+            "beat_id": "b1",
+            "order": 1,
+            "duration_seconds": 3.0,
+            "subject": "Mochi, a grey tabby cat with white front paws",
+            "environment": "tidy kitchen corner with a pale wooden floor",
+            "action": "Mochi lifts her head and looks to the right; opens on Mochi lies on the kitchen floor with ears up; ends on Mochi stands up facing the right",
+            "framing": "medium shot, static camera",
+            "lighting_style": "warm afternoon window light",
+            "continuity_keys": [
+              "grey tabby cat",
+              "white front paws",
+              "rounded white feeder"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g2:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-002",
+            "beat_id": "b2",
+            "order": 2,
+            "duration_seconds": 4.0,
+            "subject": "Mochi, a grey tabby cat with white front paws",
+            "environment": "tidy kitchen corner with a pale wooden floor",
+            "action": "Mochi walks across the floor toward the feeder; opens on Mochi stands up facing the right; ends on Mochi stands beside the feeder",
+            "framing": "medium shot, static camera",
+            "lighting_style": "warm afternoon window light",
+            "continuity_keys": [
+              "grey tabby cat",
+              "white front paws",
+              "rounded white feeder"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g2:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-003",
+            "beat_id": "b2",
+            "order": 3,
+            "duration_seconds": 4.0,
+            "subject": "Mochi, a grey tabby cat with white front paws, a rounded white feeder with a clear food hopper and a steel bowl",
+            "environment": "tidy kitchen corner with a pale wooden floor",
+            "action": "Mochi lowers her head and eats from the steel bowl; opens on Mochi stands beside the feeder; ends on Mochi lifts her head from the bowl",
+            "framing": "close-up, slow push-in",
+            "lighting_style": "warm afternoon window light",
+            "continuity_keys": [
+              "grey tabby cat",
+              "white front paws",
+              "rounded white feeder"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g2:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          },
+          {
+            "shot_id": "shot-004",
+            "beat_id": "b3",
+            "order": 4,
+            "duration_seconds": 3.0,
+            "subject": "Mochi, a grey tabby cat with white front paws, a rounded white feeder with a clear food hopper and a steel bowl",
+            "environment": "tidy kitchen corner with a pale wooden floor",
+            "action": "Mochi licks her lips and blinks slowly; opens on Mochi sits beside the feeder; ends on Mochi sits calmly beside the feeder",
+            "framing": "medium shot, slow pull-out",
+            "lighting_style": "warm afternoon window light",
+            "continuity_keys": [
+              "grey tabby cat",
+              "white front paws",
+              "rounded white feeder"
+            ],
+            "required_facts": [],
+            "source_evidence_ids": [
+              "ev:g2:1"
+            ],
+            "text_reference": null,
+            "production_notes": "renderer-neutral",
+            "render_intent": "GENERATIVE_VIDEO"
+          }
+        ],
+        "warnings": [],
+        "needs_deep_ai": false,
+        "needs_human": false
+      }
+    }
+  },
+  "video_bible": {
+    "schema_version": "video_bible.v1",
+    "bible_id": "g2-autobowl-kitchen",
+    "goal_id": "goal-g2-autobowl-kitchen",
+    "source_set_digest": "100a7d1e50df59bf1940114d00485c22f5830feb0cc1991e35706e7d542e1f08",
+    "selected_idea_id": "idea-002",
+    "subject": {
+      "subject_id": "mochi",
+      "kind": "PET",
+      "species": "cat",
+      "breed_or_type": "domestic shorthair",
+      "coat_or_appearance": "grey tabby with white front paws",
+      "distinguishing_marks": [
+        "white front paws"
+      ],
+      "identity_phrase": "Mochi, a grey tabby cat with white front paws"
+    },
+    "product": {
+      "product_id": "autobowl",
+      "name": "AutoBowl Feeder",
+      "category": "automatic pet feeder",
+      "shape_color_material": "rounded white feeder with a clear food hopper and a steel bowl",
+      "identity_phrase": "a rounded white feeder with a clear food hopper and a steel bowl",
+      "logo_policy": "NO_TEXT_OR_LOGO_IN_FRAME",
+      "claims": [
+        {
+          "claim_id": "c-timer",
+          "text": "scheduled meals while you are away",
+          "evidence_ids": [
+            "ev:g2:1"
+          ],
+          "verified": true
+        }
+      ]
+    },
+    "scenes": [
+      {
+        "scene_id": "kitchen",
+        "environment_phrase": "tidy kitchen corner with a pale wooden floor",
+        "lighting_phrase": "warm afternoon window light",
+        "palette": [
+          "white",
+          "grey",
+          "warm wood"
+        ]
+      }
+    ],
+    "camera_rules": {
+      "screen_direction": "LEFT_TO_RIGHT",
+      "allowed_movements": [
+        "STATIC",
+        "SLOW_PUSH_IN",
+        "SLOW_PULL_OUT"
+      ]
+    },
+    "continuity_anchors": [
+      "grey tabby cat",
+      "white front paws",
+      "rounded white feeder"
+    ],
+    "global_continuity_notes": [
+      "The same kitchen corner in every shot",
+      "Mochi faces right whenever she moves"
+    ],
+    "reference": null,
+    "arc": [
+      {
+        "beat_id": "b1",
+        "role": "HOOK"
+      },
+      {
+        "beat_id": "b2",
+        "role": "DEMO"
+      },
+      {
+        "beat_id": "b3",
+        "role": "CTA"
+      }
+    ],
+    "shots": [
+      {
+        "shot_id": "shot-001",
+        "beat_id": "b1",
+        "order": 1,
+        "scene_id": "kitchen",
+        "duration_seconds": 3.0,
+        "featured": [
+          "SUBJECT"
+        ],
+        "opening_state": "Mochi lies on the kitchen floor with ears up",
+        "visible_action": "Mochi lifts her head and looks to the right",
+        "closing_state": "Mochi stands up facing the right",
+        "camera_framing": "medium shot",
+        "camera_movement": "STATIC",
+        "handoff_to_next": "CONTINUOUS",
+        "risk_flags": [],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-002",
+        "beat_id": "b2",
+        "order": 2,
+        "scene_id": "kitchen",
+        "duration_seconds": 4.0,
+        "featured": [
+          "SUBJECT"
+        ],
+        "opening_state": "Mochi stands up facing the right",
+        "visible_action": "Mochi walks across the floor toward the feeder",
+        "closing_state": "Mochi stands beside the feeder",
+        "camera_framing": "medium shot",
+        "camera_movement": "STATIC",
+        "handoff_to_next": "CONTINUOUS",
+        "risk_flags": [],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-003",
+        "beat_id": "b2",
+        "order": 3,
+        "scene_id": "kitchen",
+        "duration_seconds": 4.0,
+        "featured": [
+          "SUBJECT",
+          "PRODUCT"
+        ],
+        "opening_state": "Mochi stands beside the feeder",
+        "visible_action": "Mochi lowers her head and eats from the steel bowl",
+        "closing_state": "Mochi lifts her head from the bowl",
+        "camera_framing": "close-up",
+        "camera_movement": "SLOW_PUSH_IN",
+        "handoff_to_next": "CUT_ON_ACTION",
+        "risk_flags": [
+          "PRODUCT_CLOSEUP"
+        ],
+        "uses_reference": false
+      },
+      {
+        "shot_id": "shot-004",
+        "beat_id": "b3",
+        "order": 4,
+        "scene_id": "kitchen",
+        "duration_seconds": 3.0,
+        "featured": [
+          "SUBJECT",
+          "PRODUCT"
+        ],
+        "opening_state": "Mochi sits beside the feeder",
+        "visible_action": "Mochi licks her lips and blinks slowly",
+        "closing_state": "Mochi sits calmly beside the feeder",
+        "camera_framing": "medium shot",
+        "camera_movement": "SLOW_PULL_OUT",
+        "handoff_to_next": "SCENE_CHANGE",
+        "risk_flags": [],
+        "uses_reference": false
+      }
+    ],
+    "negative_concepts": [
+      "EXTRA_LIMBS",
+      "MORPHING",
+      "DUPLICATED_OBJECTS",
+      "FLICKER"
+    ],
+    "unverified_fields": [],
+    "bible_digest": "800944a03d9d2d5fe8c3d46d7885b1de4ea33867f7c01e79d3aa98c10c158bfd"
+  },
+  "expected": {
+    "verdict": "OK",
+    "finding_codes": [],
+    "human_review_focus": [
+      "shot-003:PRODUCT_CLOSEUP"
+    ],
+    "visual_qa": "UNVERIFIED",
+    "production_job_id": "6080a1b7-79c5-5b58-9ab3-eed609e7cc18",
+    "tasks": [
+      {
+        "shot_id": "shot-001",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 73,
+        "target_duration_ms": 3000,
+        "positive_prompt": "Mochi, a grey tabby cat with white front paws; wan22-shot-prompt-v1.1.0 story continuity: The same kitchen corner in every shot, Mochi faces right whenever she moves; tidy kitchen corner with a pale wooden floor; Mochi lifts her head and looks to the right; opens on Mochi lies on the kitchen floor with ears up; ends on Mochi stands up facing the right; medium shot, static camera; warm afternoon window light; grey tabby cat, white front paws, rounded white feeder"
+      },
+      {
+        "shot_id": "shot-002",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 97,
+        "target_duration_ms": 4000,
+        "positive_prompt": "Mochi, a grey tabby cat with white front paws; wan22-shot-prompt-v1.1.0 story continuity: The same kitchen corner in every shot, Mochi faces right whenever she moves; tidy kitchen corner with a pale wooden floor; Mochi walks across the floor toward the feeder; opens on Mochi stands up facing the right; ends on Mochi stands beside the feeder; medium shot, static camera; warm afternoon window light; grey tabby cat, white front paws, rounded white feeder"
+      },
+      {
+        "shot_id": "shot-003",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 97,
+        "target_duration_ms": 4000,
+        "positive_prompt": "Mochi, a grey tabby cat with white front paws, a rounded white feeder with a clear food hopper and a steel bowl; wan22-shot-prompt-v1.1.0 story continuity: The same kitchen corner in every shot, Mochi faces right whenever she moves; tidy kitchen corner with a pale wooden floor; Mochi lowers her head and eats from the steel bowl; opens on Mochi stands beside the feeder; ends on Mochi lifts her head from the bowl; close-up, slow push-in; warm afternoon window light; grey tabby cat, white front paws, rounded white feeder"
+      },
+      {
+        "shot_id": "shot-004",
+        "execution_disposition": "Executable",
+        "workflow_id": "comfy.wan22.ti2v5b.t2v.v1",
+        "frame_count": 73,
+        "target_duration_ms": 3000,
+        "positive_prompt": "Mochi, a grey tabby cat with white front paws, a rounded white feeder with a clear food hopper and a steel bowl; wan22-shot-prompt-v1.1.0 story continuity: The same kitchen corner in every shot, Mochi faces right whenever she moves; tidy kitchen corner with a pale wooden floor; Mochi licks her lips and blinks slowly; opens on Mochi sits beside the feeder; ends on Mochi sits calmly beside the feeder; medium shot, slow pull-out; warm afternoon window light; grey tabby cat, white front paws, rounded white feeder"
+      }
+    ]
+  }
+}
