@@ -75,13 +75,31 @@ def _responses(source_ref: str) -> list[dict[str, object]]:
         ],
         "cta_beat_id": "beat-002", "warnings": [], "needs_deep_ai": False, "needs_human": False,
     }
+    # Preserve each approved six-second beat and its source evidence;
+    # split into two three-second, Wan-renderable shots per beat.
+    shots = []
+    for order, (beat_id, subject, action, facts, evidence) in enumerate(
+        [
+            ("beat-001", "wet dog", "waits", [], []),
+            ("beat-001", "wet dog", "shakes gently", [], []),
+            ("beat-002", "dog drying", "fur moves", ["drying-time relevance"], ["reviews:key:r1"]),
+            ("beat-002", "dog drying", "settles", ["drying-time relevance"], ["reviews:key:r1"]),
+        ],
+        start=1,
+    ):
+        shots.append(
+            {
+                "shot_id": f"shot-{order:03d}", "beat_id": beat_id, "order": order,
+                "duration_seconds": 3, "subject": subject, "environment": "grooming area",
+                "action": action, "framing": "medium", "lighting_style": "soft",
+                "continuity_keys": ["dog"], "required_facts": facts,
+                "source_evidence_ids": evidence, "text_reference": None,
+                "production_notes": "renderer-neutral", "render_intent": "GENERATIVE_VIDEO",
+            }
+        )
     shot = {
         "schema_version": "1.0", "creative_profile": "creative.content_plan.v1",
-        "shots": [
-            {"shot_id": "shot-001", "beat_id": "beat-001", "order": 1, "duration_seconds": 6, "subject": "wet dog", "environment": "grooming area", "action": "waits", "framing": "medium", "lighting_style": "soft", "continuity_keys": ["dog"], "required_facts": [], "source_evidence_ids": [], "text_reference": None, "production_notes": "renderer-neutral", "render_intent": "GENERATIVE_VIDEO"},
-            {"shot_id": "shot-002", "beat_id": "beat-002", "order": 2, "duration_seconds": 6, "subject": "dog drying", "environment": "grooming area", "action": "fur moves", "framing": "close", "lighting_style": "soft", "continuity_keys": ["dog"], "required_facts": ["drying-time relevance"], "source_evidence_ids": ["reviews:key:r1"], "text_reference": None, "production_notes": "renderer-neutral", "render_intent": "GENERATIVE_VIDEO"},
-        ],
-        "warnings": [], "needs_deep_ai": False, "needs_human": False,
+        "shots": shots, "warnings": [], "needs_deep_ai": False, "needs_human": False,
     }
     return [ideas, brief, script, shot]
 
