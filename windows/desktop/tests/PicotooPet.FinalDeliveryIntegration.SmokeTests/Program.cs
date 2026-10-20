@@ -245,7 +245,7 @@ internal static class Program
         {
             await WaitAsync(background, original, GoalDeliveryPhase.DeliveryReady);
         }
-        var persisted = await store.ReadAsync(original.GoalId, original.ProductionJobId!);
+        var persisted = await store.ReadAsync(original.GoalId, original.ProductionJobId!, CancellationToken.None);
         Check(persisted is not null, "WORKER_DID_NOT_PERSIST_QA");
 
         // ── WPF restore is read-only; a forbidden composer would throw immediately. ──
