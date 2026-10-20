@@ -36,14 +36,16 @@ public sealed class VerifiedReferenceAsset : IDisposable
 /// <summary>Independent integrity boundary; authenticated Core approval integration is not supplied here.</summary>
 public sealed class TrustedReferenceAssetVerifier
 {
+    private readonly string _managedRoot;
     public TrustedReferenceAssetVerifier(string managedRoot, TrustedReferenceFilePolicy policy, ITrustedReferenceApprovalSource approvals)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(managedRoot);
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(approvals);
+        _managedRoot = managedRoot;
     }
 
     public Task<VerifiedReferenceAsset> VerifyAsync(TrustedReferenceDescriptor descriptor, string expectedShotId,
         string expectedAssetId, CancellationToken cancellationToken = default) =>
-        throw new InvalidDataException("TRUSTED_REFERENCE_NOT_IMPLEMENTED_RED");
+        throw new InvalidDataException("TRUSTED_REFERENCE_NOT_IMPLEMENTED_RED:" + _managedRoot);
 }
