@@ -280,5 +280,8 @@ def test_claim_rejects_terminal_change_before_lease_rotation(
         service.claim(job_id, "gpu-new")
     assert repository.get_job(job_id).lease_executor_id == "gpu-old"
     assert repository.get_task(job_id, task_id).status.value == "Failed"
-    assert repository.get_job(job_id).lease_token_digest is not None
+    assert repository.database.scalar(
+        "SELECT lease_token_digest FROM production_jobs WHERE production_job_id=?",
+        (job_id,),
+    ) is not None
     assert first.lease_token != ""
