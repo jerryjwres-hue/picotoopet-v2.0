@@ -11,6 +11,11 @@ using PicotooPet.Desktop.Core.Production;
 
 namespace PicotooPet.Desktop.Services;
 
+/// <summary>Non-aesthetic progress observation: wall duration is NOT measured GPU busy time.</summary>
+public sealed record ProductionShotObservation(
+    string JobId, string TaskId, int AttemptCountAtClaim,
+    bool KnownPromptAtClaim, long WallElapsedMs, string ResultCode);
+
 /// <summary>2.3.20.1 Windows 本地 GPU executor；只执行 Core 已冻结的 Production Plan。</summary>
 public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncDisposable
 {
@@ -45,6 +50,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private readonly ComfyProductionClient _comfy;
     private readonly bool _ownsComfy;
     private readonly string _executorId;
+    private readonly Action<ProductionShotObservation>? _shotObserver;
 
     public ProductionExecutionService(
         ControlCenterSession session,
@@ -63,7 +69,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         ControlCenterSession session,
         ComfyProductionClient comfy,
         string executorId,
-        bool ownsComfy)
+        bool ownsComfy,
+        Action<ProductionShotObservation>? shotObserver = null)
     {
         _session = new SessionGateway(session);
         _journal = new(ProductionSubmissionJournal.DefaultRoot);
@@ -71,6 +78,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _comfy = comfy;
         _executorId = executorId;
         _ownsComfy = ownsComfy;
+        _shotObserver = shotObserver;
     }
 
     /// <summary>同一 executor 的独立用户进程组合；不创建 WPF 会话。</summary>
@@ -80,10 +88,12 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     public ProductionExecutionService(IProductionExecutionGateway gateway, ComfyProductionClient comfy,
         ProductionSubmissionJournal journal, IComfyPromptReconciler reconciler,
         Func<CancellationToken, Task<ProductionPreflightSnapshot>>? preflight = null,
-        TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null, TimeSpan? historyTimeout = null)
+        TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null, TimeSpan? historyTimeout = null,
+        Action<ProductionShotObservation>? shotObserver = null)
     {
         _session = gateway; _comfy = comfy; _journal = journal; _reconciler = reconciler;
         _preflightOverride = preflight;
+        _shotObserver = shotObserver;
         _executorId = NormalizeExecutorId($"windows-production-{Environment.MachineName}");
         _pollInterval = pollInterval ?? TimeSpan.FromSeconds(2);
         _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(30);
@@ -93,12 +103,14 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     }
 
     /// <summary>创建正式固定 loopback executor；没有 endpoint 参数。</summary>
-    public static ProductionExecutionService Create(ControlCenterSession session) =>
+    public static ProductionExecutionService Create(
+        ControlCenterSession session, Action<ProductionShotObservation>? shotObserver = null) =>
         new(
             session,
             ComfyProductionClient.Create(),
             NormalizeExecutorId($"windows-production-{Environment.MachineName}"),
-            ownsComfy: true);
+            ownsComfy: true,
+            shotObserver: shotObserver);
 
     /// <summary>验证本机 ComfyUI、workflow、模型哈希和受信数据根；不提交渲染。</summary>
     public async Task<ProductionPreflightSnapshot> PreflightAsync(
@@ -229,6 +241,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             {
                 var known = _journal.Read(productionJobId, snapshot.ProductionTaskId);
                 if (known is not null) await ReconcileTerminalSubmissionAsync(known, lifetime.Token).ConfigureAwait(false);
+                ObserveShot(new(productionJobId, snapshot.ProductionTaskId, snapshot.AttemptCount,
+                    snapshot.ComfyPromptId is not null, 0, "REUSED_CORE_SUCCEEDED"));
             }
             foreach (var task in claim.Plan.Tasks.OrderBy(item => item.Order))
             {
@@ -236,7 +250,31 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 if (task.ExecutionDisposition != "Executable" || string.IsNullOrWhiteSpace(task.WorkflowId))
                     throw new ProductionWorkerException("PRODUCTION_PLAN_CONTAINS_NEEDS_HUMAN_TASK");
                 if (!originalPlan.Tasks.Any(t => t == task)) throw new ProductionWorkerException("MEDIA_SUBMISSION_IDENTITY_CONFLICT");
-                await ExecuteTaskAsync(claim, task, originalDigest, preflight, lifetime.Token).ConfigureAwait(false);
+                var observed = claim.Tasks.Single(t => t.ProductionTaskId == task.ProductionTaskId);
+                var persisted = _journal.Read(productionJobId, task.ProductionTaskId);
+                var knownPrompt = observed.ComfyPromptId is not null || persisted?.PromptId is not null;
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    await ExecuteTaskAsync(claim, task, originalDigest, preflight, lifetime.Token)
+                        .ConfigureAwait(false);
+                    ObserveShot(new(productionJobId, task.ProductionTaskId, observed.AttemptCount,
+                        knownPrompt, timer.ElapsedMilliseconds, "CORE_COMMITTED"));
+                }
+                catch (Exception error)
+                {
+                    // ── Never turn an unknown transport outcome into a made-up GPU failure. ──
+                    var code = error switch
+                    {
+                        ProductionWorkerException failure => failure.Code,
+                        OperationCanceledException => "INTERRUPTED",
+                        HttpRequestException => "TRANSPORT_UNCERTAIN",
+                        _ => "EXECUTION_UNVERIFIED",
+                    };
+                    ObserveShot(new(productionJobId, task.ProductionTaskId, observed.AttemptCount,
+                        knownPrompt, timer.ElapsedMilliseconds, code));
+                    throw;
+                }
             }
             return await _session.GetProductionPackageAsync(productionJobId, lifetime.Token).ConfigureAwait(false)
                 ?? throw new ProductionWorkerException("PRODUCTION_PACKAGE_NOT_FINALIZED");
@@ -260,6 +298,13 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
             catch (Exception exception) { leaseFailure = exception; await lifetime.CancelAsync().ConfigureAwait(false); }
         }
+    }
+
+    // ── Telemetry never changes the Core lease, journal, GPU outcome or user workflow. ──
+    private void ObserveShot(ProductionShotObservation record)
+    {
+        try { _shotObserver?.Invoke(record); }
+        catch (Exception) { /* Metrics must never change production correctness. */ }
     }
 
     /// <summary>Only Core-authorized executable workflows may enter an automatic multi-shot run.</summary>
