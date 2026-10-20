@@ -12,6 +12,7 @@ on:
       - .github/workflows/p0-reference-asset-verify.yml
       - windows/desktop/src/PicotooPet.Desktop.Core/Production/TrustedReferenceAssetVerifier.cs
       - windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/TrustedReferenceAssetVerifierSmokeTests.cs
+      - windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs
   workflow_dispatch:
 permissions:
   contents: read

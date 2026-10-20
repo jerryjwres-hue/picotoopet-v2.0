@@ -48,7 +48,6 @@ internal static class Program
 
             if (args.Contains("--goal-production-autopilot-only", StringComparer.Ordinal))
             {
-                await TrustedReferenceAssetVerifierSmokeTests.RunAsync().ConfigureAwait(false);
                 await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
                 await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
                 ProductionPanelWpfSmokeTests.Run();
