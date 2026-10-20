@@ -69,7 +69,8 @@ public static class P0MediaWorkerHost
             session.EnableHeadlessFinalVideoProduction();
             // ── Worker 按计划串行执行 GPU，不自建数据库或第二套 Comfy client。 ──
             await using (session)
-            await using (var executor = ProductionExecutionService.Create(session))
+            await using (var executor = ProductionExecutionService.Create(session, shot =>
+                logger.Info($"P0_SHOT_METRIC job={shot.JobId} task={shot.TaskId} attempts_at_claim={shot.AttemptCountAtClaim} known_prompt={shot.KnownPromptAtClaim} wall_ms={shot.WallElapsedMs} result={shot.ResultCode} visual_quality=UNVERIFIED")))
             {
                 // ── Durable uncertainty is consulted before all newly-discovered Goal work. ──
                 var journal = new ProductionSubmissionJournal(ProductionSubmissionJournal.DefaultRoot);
