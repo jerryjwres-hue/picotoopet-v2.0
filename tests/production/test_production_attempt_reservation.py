@@ -214,3 +214,71 @@ def test_second_unbound_attempt_is_not_authorized_to_repost(tmp_path: Path) -> N
         "SELECT COUNT(*) FROM production_attempts WHERE production_task_id=?",
         (task_id,),
     ) == 2
+
+
+def test_claim_revalidates_bound_prompt_atomically_after_stale_preflight_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An intervening unknown POST must never gain a new lease through stale reads."""
+    service, repository, job_id, task_id = _service(tmp_path)
+    original = service.claim(job_id, "gpu-old")
+    service.mark_attempt(job_id, task_id, _attempt_request("gpu-old", original.lease_token))
+    service.mark_attempt(
+        job_id, task_id, _attempt_request("gpu-old", original.lease_token, "known-prompt")
+    )
+    service.mark_attempt(job_id, task_id, _attempt_request("gpu-old", original.lease_token))
+    service.mark_attempt(
+        job_id, task_id, _attempt_request("gpu-old", original.lease_token, "known-second")
+    )
+    _expire_job_lease(repository, job_id)
+    true_claim = repository.claim_job
+    injected = False
+
+    def race_then_claim(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal injected
+        if not injected:
+            injected = True
+            # Simulate durable external prompt drift between the old P0
+            # preflight read and the repository's serialized lease transaction.
+            repository.database.execute(
+                "UPDATE production_attempts SET comfy_prompt_id=? "
+                "WHERE production_task_id=? AND attempt_number=2",
+                ("unknown-post", task_id),
+            )
+        return true_claim(*args, **kwargs)
+
+    monkeypatch.setattr(repository, "claim_job", race_then_claim)
+    with pytest.raises(ValueError, match="PRODUCTION_PROMPT_RECOVERY_UNVERIFIED"):
+        service.claim(job_id, "gpu-new")
+    assert injected is True
+    assert repository.get_job(job_id).lease_executor_id == "gpu-old"
+    assert repository.get_task(job_id, task_id).comfy_prompt_id == "known-second"
+    assert repository.database.scalar(
+        "SELECT COUNT(*) FROM production_attempts WHERE production_task_id=?",
+        (task_id,),
+    ) == 2
+
+
+def test_claim_rejects_terminal_change_before_lease_rotation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Task becoming terminal at claim boundary must not lease a non-runnable job."""
+    service, repository, job_id, task_id = _service(tmp_path)
+    first = service.claim(job_id, "gpu-old")
+    _expire_job_lease(repository, job_id)
+    original = repository.claim_job
+
+    def terminal_then_claim(*args, **kwargs):  # type: ignore[no-untyped-def]
+        repository.database.execute(
+            "UPDATE production_tasks SET status='Failed' WHERE production_task_id=?",
+            (task_id,),
+        )
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(repository, "claim_job", terminal_then_claim)
+    with pytest.raises(ValueError, match="PRODUCTION_TASK_TERMINAL_STATE"):
+        service.claim(job_id, "gpu-new")
+    assert repository.get_job(job_id).lease_executor_id == "gpu-old"
+    assert repository.get_task(job_id, task_id).status.value == "Failed"
+    assert repository.get_job(job_id).lease_token_digest is not None
+    assert first.lease_token != ""
