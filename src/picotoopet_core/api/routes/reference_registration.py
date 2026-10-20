@@ -30,7 +30,7 @@ def _run(action: Callable[[], ReferenceBatchReceiptV1]) -> ReferenceBatchReceipt
 
 def _service(request: Request) -> ReferenceRegistrationService:
     services = request.app.state.services
-    return ReferenceRegistrationService(services.database, services.approvals)
+    return ReferenceRegistrationService(services.database, services.approvals, services.creative_store)
 
 
 @router.post("/production/references/batches", response_model=ReferenceBatchReceiptV1, status_code=201)
