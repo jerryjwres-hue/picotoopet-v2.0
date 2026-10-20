@@ -54,6 +54,8 @@ jobs:
           PYTHONPATH: ".:src"
         run: |
           python -m pytest -q tests/unit/autonomous/test_p0_local_video_flow.py
+          python -m pytest -q tests/video_quality/test_multishot_plan_invariants.py
+          echo "P0_CLAUDE_2_STRICT_XFAIL_ASSERTIONS_NOW_PASS=PASS"
 
       - name: Print GPU test boundary
         run: |

@@ -7,10 +7,17 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from picotoopet_core.production.profile import (
+    DEFAULT_FPS,
+    VIDEO_OUTPUT_PROFILES,
+    frame_count_for_duration,
+)
+
 from .models import (
     CreativeBriefResult,
     CreativeQualityDecision,
     CreativeQualityOutcome,
+    CreativeRenderIntent,
     CreativeScriptResult,
     CreativeStageKind,
     IdeaRankingResult,
@@ -124,6 +131,35 @@ class CreativeQualityGate:
                 return self._retry(
                     "SCRIPT_BEAT_NOT_COVERED", "Cover every validated script beat."
                 ), None
+            # Early renderer-feasibility screen for video shots. Same frozen
+            # 4n+1 frame rule and profile as the actual Production compiler.
+            # Older validated packages keep their immutable persisted plans.
+            brief_raw = previous_stages.get(CreativeStageKind.CREATIVE_BRIEF.value)
+            fps = DEFAULT_FPS
+            if brief_raw is not None:
+                try:
+                    brief = CreativeBriefResult.model_validate(brief_raw)
+                except ValidationError:
+                    return self._retry(
+                        "PRIOR_BRIEF_INVALID",
+                        "Use the previously validated creative brief and output profile.",
+                    ), None
+                fps = VIDEO_OUTPUT_PROFILES[brief.output_profile_id].fps
+            for shot in parsed.shots:
+                if shot.render_intent in {
+                    CreativeRenderIntent.GENERATIVE_VIDEO,
+                    CreativeRenderIntent.IMAGE_TO_VIDEO,
+                }:
+                    try:
+                        frame_count_for_duration(shot.duration_seconds, fps)
+                    except ValueError:
+                        return self._retry(
+                            "CREATIVE_SHOT_DURATION_UNRENDERABLE",
+                            "The Wan video renderer cannot produce this shot duration "
+                            f"for shot {shot.shot_id}. Split the beat into shorter "
+                            "ordered shots with the same approved beat and evidence IDs; "
+                            "preserve the script's target duration and factual claims.",
+                        ), None
             used = {evidence for shot in parsed.shots for evidence in shot.source_evidence_ids}
             if not used <= evidence_ids:
                 return self._retry(

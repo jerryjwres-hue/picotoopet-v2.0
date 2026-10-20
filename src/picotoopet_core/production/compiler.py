@@ -39,14 +39,28 @@ def _task_id(production_job_id: str, shot_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"picotoopet:{production_job_id}:{shot_id}"))
 
 
-def _positive_prompt(shot: dict[str, object]) -> str:
-    # ── Semantic order is frozen for reproducibility ────────────────────────
+# Controlled, source-only subset of the Shot Prompt Engineer prototype.
+# Applies ONLY when a validated CreativeBrief provides nonempty continuity notes.
+# No change to frozen task schema, seed, workflows or previously stored plans.
+SHOT_PROMPT_ADAPTER_VERSION = "wan22-shot-prompt-v1.1.0"
+
+
+def _positive_prompt(
+    shot: dict[str, object], *, brief_continuity_notes: list[str] | None = None
+) -> str:
+    # ── Legacy packages without brief notes keep EXACT former prompt bytes. ──
     continuity = ", ".join(
         str(item) for item in shot.get("continuity_keys", []) if str(item).strip()
     )
     facts = ", ".join(str(item) for item in shot.get("required_facts", []) if str(item).strip())
     segments = [
         str(shot.get("subject", "")).strip(),
+        (
+            f"{SHOT_PROMPT_ADAPTER_VERSION} story continuity: "
+            + ", ".join(note.strip() for note in (brief_continuity_notes or []) if note.strip())
+            if any(note.strip() for note in (brief_continuity_notes or []))
+            else ""
+        ),
         str(shot.get("environment", "")).strip(),
         str(shot.get("action", "")).strip(),
         str(shot.get("framing", "")).strip(),
@@ -133,6 +147,12 @@ def compile_production_plan(
             workflow_id = I2V_WORKFLOW_ID
             disposition = ProductionExecutionDisposition.EXECUTABLE
 
+        # Do not truncate an approved constraint or silently remove any source fact.
+        prompt = _positive_prompt(
+            raw, brief_continuity_notes=brief.continuity_notes
+        )
+        if len(prompt) > 5000:
+            raise ValueError("PRODUCTION_SHOT_PROMPT_TOO_LONG")
         tasks.append(
             ProductionTaskPlan(
                 production_task_id=_task_id(production_job_id, shot_id),
@@ -141,7 +161,7 @@ def compile_production_plan(
                 render_intent=render_intent,
                 execution_disposition=disposition,
                 workflow_id=workflow_id,
-                positive_prompt=_positive_prompt(raw),
+                positive_prompt=prompt,
                 negative_prompt_policy_id=NEGATIVE_PROMPT_POLICY_ID,
                 seed=_seed(production_job_id, shot_id),
                 width=output_profile.width,
