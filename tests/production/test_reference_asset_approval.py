@@ -13,6 +13,7 @@ from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.db.database import Database
 from picotoopet_core.production.reference_assets import (
     ReferenceAssetIdentityV1,
+    approved_reference_descriptor,
     verify_persisted_reference_approval,
 )
 
@@ -20,6 +21,7 @@ from picotoopet_core.production.reference_assets import (
 def _identity() -> ReferenceAssetIdentityV1:
     return ReferenceAssetIdentityV1(
         schema_version="reference_asset.v1",
+        asset_id=str(uuid4()),
         goal_id="goal-1",
         creative_job_id="creative-1",
         production_job_id="job-1",
@@ -39,6 +41,7 @@ def _identity() -> ReferenceAssetIdentityV1:
 
 def _scope(r: ReferenceAssetIdentityV1) -> dict[str, str | int]:
     return {
+        "asset_id": r.asset_id,
         "goal_id": r.goal_id,
         "creative_job_id": r.creative_job_id,
         "production_job_id": r.production_job_id,
@@ -98,9 +101,19 @@ def test_only_exact_existing_approved_reference_scope_is_accepted(tmp_path) -> N
             ("Approved", "synthetic-fixture-not-a-real-user", datetime.now(UTC).isoformat(), r.approval_id),
         )
         verify_persisted_reference_approval(db, r)
+        descriptor = approved_reference_descriptor(db, r)
+        assert descriptor.model_dump() == {
+            "approval_id": r.approval_id,
+            "shot_id": r.shot_id,
+            "asset_id": r.asset_id,
+            "relative_path": r.input_relative_path,
+            "sha256": r.sha256,
+            "byte_length": r.bytes,
+        }
 
         for update in (
             {"shot_id": "shot-different"},
+            {"asset_id": str(uuid4())},
             {"sha256": "e" * 64},
             {"source_digest": "f" * 64},
             {"bytes": 129},
@@ -120,3 +133,23 @@ def test_only_exact_existing_approved_reference_scope_is_accepted(tmp_path) -> N
 def test_plain_path_cannot_be_approved_record() -> None:
     with pytest.raises(ValidationError):
         ReferenceAssetIdentityV1.model_validate({"input_relative_path": "photos/pet.png"})
+
+
+def test_asset_id_cannot_be_a_path_hash_or_approval_id() -> None:
+    original = _identity().model_dump()
+    for malformed in ("photos/pet.png", "b" * 64, "asset-1", ""):
+        with pytest.raises(ValidationError):
+            ReferenceAssetIdentityV1.model_validate(
+                dict(original, asset_id=malformed)
+            )
+
+
+def test_descriptor_does_not_mint_grant_without_persisted_approval(tmp_path) -> None:
+    db = Database(tmp_path / "unapproved.sqlite3")
+    db.open()
+    db.apply_migrations()
+    try:
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+            approved_reference_descriptor(db, _identity())
+    finally:
+        db.close()

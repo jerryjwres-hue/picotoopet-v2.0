@@ -10,6 +10,9 @@ from __future__ import annotations
 import hmac
 import json
 from typing import Literal
+from uuid import UUID
+
+from pydantic import field_validator
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +29,7 @@ class ReferenceAssetIdentityV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["reference_asset.v1"]
+    asset_id: str = Field(min_length=36, max_length=36)
     goal_id: str = Field(min_length=1, max_length=160)
     creative_job_id: str = Field(min_length=1, max_length=160)
     production_job_id: str = Field(min_length=1, max_length=160)
@@ -40,6 +44,46 @@ class ReferenceAssetIdentityV1(BaseModel):
     rights_scope: Literal["wan22.i2v.production.v1"]
     approval_id: str = Field(min_length=1, max_length=160)
     approval_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("asset_id")
+    @classmethod
+    def _stable_uuid_asset_id(cls, value: str) -> str:
+        """Identity must originate from a Core UUID allocation, not the path or digest."""
+        if str(UUID(value)) != value:
+            raise ValueError("REFERENCE_ASSET_ID_NONCANONICAL")
+        return value
+
+
+class TrustedReferenceDescriptorV1(BaseModel):
+    """Exact six-field projection expected by Codex #107. Never authorization itself."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    approval_id: str
+    shot_id: str
+    asset_id: str
+    relative_path: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    byte_length: int = Field(gt=0)
+
+
+def approved_reference_descriptor(
+    database: Database, reference: ReferenceAssetIdentityV1
+) -> TrustedReferenceDescriptorV1:
+    """Build Codex's descriptor ONLY after exact authenticated Core approval lookup.
+
+    Caller MUST also bind the same reference to the eventual immutable v1.1
+    Production Plan before any GPU job can run; this is no plan/claim bypass.
+    """
+    verify_persisted_reference_approval(database, reference)
+    return TrustedReferenceDescriptorV1(
+        approval_id=reference.approval_id,
+        shot_id=reference.shot_id,
+        asset_id=reference.asset_id,
+        relative_path=reference.input_relative_path,
+        sha256=reference.sha256,
+        byte_length=reference.bytes,
+    )
 
 
 def verify_persisted_reference_approval(
@@ -74,6 +118,7 @@ def verify_persisted_reference_approval(
 
     # Extra scope keys are not authority. Require exact, bounded contents.
     expected = {
+        "asset_id": reference.asset_id,
         "goal_id": reference.goal_id,
         "creative_job_id": reference.creative_job_id,
         "production_job_id": reference.production_job_id,
