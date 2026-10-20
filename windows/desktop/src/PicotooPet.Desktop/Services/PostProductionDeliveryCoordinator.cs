@@ -235,6 +235,24 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         try
         {
             ct.ThrowIfCancellationRequested();
+            if (_durableProjection is not null && !_backgroundProduction)
+            {
+                // ── GUI Open must remain backed by the current durable QA index. ─────
+                // ── A deleted/replaced projection cannot authorize stale UI memory. ─
+                var stored = await _durableProjection.ReadAsync(
+                    snapshot.GoalId!, snapshot.ProductionJobId!, ct).ConfigureAwait(false);
+                if (stored is null
+                    || stored.Candidate != candidate
+                    || stored.AuthorityFingerprint != authorityFingerprint
+                    || stored.Receipt.Receipt.Outcome != "PASS"
+                    || stored.Receipt.Receipt.ReceiptDigest != approvedReceipt.Receipt.ReceiptDigest
+                    || stored.Receipt.Receipt.QaInputDigest != approvedReceipt.Receipt.QaInputDigest
+                    || !string.Equals(stored.Receipt.ReceiptPath, approvedReceipt.ReceiptPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException("GOAL_DELIVERY_PERSISTED_QA_REVOKED");
+                }
+            }
             var authority = await _authority!(snapshot.GoalId!, snapshot.ProductionJobId!, ct)
                 .ConfigureAwait(false);
             if (authority.Fingerprint() != authorityFingerprint)

@@ -32,6 +32,8 @@ internal static class Program
         Console.WriteLine("C011_DURABLE_RESTART=PASS");
         await GuiOnlyReadsPersistedQaAsync();
         Console.WriteLine("P0_GUI_ONLY_READS_PERSISTED_QA=PASS");
+        await GuiRevokedProjectionCannotOpenAsync();
+        Console.WriteLine("P0_GUI_REVOKED_QA_INDEX=PASS");
         await ConcurrentOpenAsync();
         Console.WriteLine("C011_SINGLE_ASYNC_OPEN=PASS");
         await JobSwitchAsync();
@@ -270,6 +272,44 @@ internal static class Program
             await File.AppendAllTextAsync(persisted!.Candidate.FilePath, "tampered");
             Check(!await gui.OpenCurrentAsync(), "GUI_TAMPERED_VIDEO_REFUSED");
             Check(launcher.Opens == 1, "GUI_TAMPER_DOES_NOT_LAUNCH");
+        }
+    }
+
+    private static async Task GuiRevokedProjectionCannotOpenAsync()
+    {
+        using var fixture = await Fixture.CreateAsync(false, false);
+        var baseline = LifecycleTests.Input(fixture, null);
+        var continuation = baseline.GoalContinuation;
+        var root = Path.Combine(fixture.Root, "p0-revocable-qa");
+        var store = new VerifiedGoalDeliveryProjectionStore(root);
+        var authority = new C011QaDeliveryAuthority(
+            baseline.GoalContinuation, baseline.ProductionJob,
+            baseline.ProductionPlan, baseline.ProductionPackage);
+        var launcher = new Launcher();
+
+        // ── Only the worker writes a real PASS receipt and immutable projection. ────
+        Task<C011QaDeliveryAuthority> SameCore(
+            string goal, string job, CancellationToken ct) => Task.FromResult(authority);
+        await using (var worker = Coordinator(
+            fixture, launcher, false, false, authorityOverride: SameCore,
+            projection: store, backgroundProduction: true))
+        {
+            await WaitAsync(worker, continuation, GoalDeliveryPhase.DeliveryReady);
+        }
+
+        // ── GUI restores a valid snapshot, but Open must not trust stale memory. ─
+        await using (var gui = Coordinator(
+            fixture, launcher, false, false, authorityOverride: SameCore,
+            throwOnCompose: true, projection: store, backgroundProduction: false))
+        {
+            await WaitAsync(gui, continuation, GoalDeliveryPhase.DeliveryReady);
+            var indexFiles = Directory.GetFiles(root, "*.json", SearchOption.TopDirectoryOnly);
+            Check(indexFiles.Length == 1, "GUI_REVOKED_INDEX_FIXTURE");
+            File.Delete(indexFiles[0]);
+
+            Check(!await gui.OpenCurrentAsync(), "GUI_REVOKED_INDEX_REFUSED");
+            Check(launcher.Opens == 0, "GUI_REVOKED_INDEX_NO_SHELL");
+            Check(!gui.CurrentSnapshot.CanOpen, "GUI_REVOKED_INDEX_CLOSED");
         }
     }
 
