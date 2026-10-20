@@ -8,7 +8,7 @@ namespace PicotooPet.Desktop.Core.Production;
 
 /// <summary>只记录提交不确定性，不保存 lease/token/原文，不替代 Core 成功/失败事实。</summary>
 public sealed record ProductionSubmission(string JobId, string TaskId, string PlanDigest,
-    string GraphDigest, string Phase, string? PromptId);
+    string GraphDigest, string Phase, string? PromptId, string? FailureCode = null);
 
 public sealed class ProductionWorkerException(string code) : Exception(code)
 {
@@ -60,9 +60,16 @@ public sealed class ProductionSubmissionJournal
     public IReadOnlyList<ProductionSubmission> Pending()
     {
         EnsureRoot();
-        var files = Directory.EnumerateFiles(_root, "*.submission.json").Take(1001).ToArray();
-        if (files.Length > 1000) throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
-        return files.Select(ReadFile).Where(s => s.Phase != "Settled").ToArray();
+        using var gate = Acquire("journal.lock");
+        // Validate before pruning. Never remove uncertainty, malformed files, or links.
+        var records = Directory.EnumerateFiles(_root, "*.submission.json")
+            .Select(file => (File: file, Value: ReadFile(file))).ToArray();
+        var pending = records.Where(r => r.Value.Phase != "Settled").Select(r => r.Value).ToArray();
+        if (pending.Length > 1000) throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
+        foreach (var old in records.Where(r => r.Value.Phase == "Settled")
+            .OrderByDescending(r => File.GetLastWriteTimeUtc(r.File)).ThenBy(r => r.File, StringComparer.Ordinal).Skip(128))
+            File.Delete(old.File);
+        return pending;
     }
     private ProductionSubmission ReadFile(string file)
     {
@@ -81,6 +88,7 @@ public sealed class ProductionSubmissionJournal
     public void Save(ProductionSubmission value)
     {
         Validate(value); EnsureRoot();
+        using var gate = Acquire("journal.lock");
         var target = FileFor(value.JobId, value.TaskId);
         var temporary = Path.Combine(_root, Guid.NewGuid().ToString("N") + ".tmp");
         try
@@ -98,8 +106,10 @@ public sealed class ProductionSubmissionJournal
     private static void Validate(ProductionSubmission s)
     {
         if (string.IsNullOrWhiteSpace(s.JobId) || s.JobId.Length > 160 || string.IsNullOrWhiteSpace(s.TaskId) || s.TaskId.Length > 160
-            || !Sha(s.PlanDigest) || !Sha(s.GraphDigest) || s.Phase is not ("Prepared" or "Submitting" or "Submitted" or "Settled")
-            || s.PromptId is { Length: > 200 } || s.Phase == "Submitted" && string.IsNullOrWhiteSpace(s.PromptId))
+            || !Sha(s.PlanDigest) || !Sha(s.GraphDigest) || s.Phase is not ("Prepared" or "Submitting" or "Submitted" or "FailurePending" or "Settled")
+            || s.PromptId is { Length: > 200 } || s.Phase is "Submitted" or "FailurePending" && string.IsNullOrWhiteSpace(s.PromptId)
+            || s.Phase == "FailurePending" && s.FailureCode != "COMFY_RETRY_BUDGET_EXHAUSTED"
+            || s.FailureCode is not (null or "COMFY_RETRY_BUDGET_EXHAUSTED"))
             throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
     }
     private static bool Sha(string s) => s.Length == 64 && s.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));

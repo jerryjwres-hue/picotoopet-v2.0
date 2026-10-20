@@ -1,4 +1,10 @@
 using System.IO;
+using System.Net.Http;
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Production;
 
 namespace PicotooPet.MediaWorker.SmokeTests;
@@ -8,7 +14,10 @@ internal static class RecoveryFixTests
     public static async Task RunAsync()
     {
         var errors = new List<Exception>();
-        foreach (var test in new Func<Task>[] { DurableFailureAsync, LegacyUnknownAsync, SettledCapacityAsync, InvalidOutputAsync })
+        foreach (var test in new Func<Task>[] { DurableFailureAsync, LegacyUnknownAsync, SettledCapacityAsync, InvalidOutputAsync,
+            TerminalPendingAsync, PreparedReservationAsync, MissingCoreAsync, TimeoutKeepsGpuBarrierAsync,
+            BoundSecondAttemptAsync, HistoryOfflineAsync, LostLeaseAsync, ExactTransportAsync, RejectedLegacyClaimAsync,
+            SettledDoesNotReopenAsync })
         {
             try { await test(); }
             catch (Exception e) { errors.Add(e); Console.WriteLine("RECOVERY_RED: " + e.Message); }
@@ -24,9 +33,17 @@ internal static class RecoveryFixTests
         f.Gateway.LoseFailureResponse = true;
         await RecoveryTests.ThrowsAsync<System.Net.Http.HttpRequestException>(() => f.Executor().RunAsync("job"));
         RecoveryTests.Assert(f.Journal.Pending().Single().Phase == "FailurePending", "terminal report intent must survive lost failure response");
-        await RecoveryTests.ThrowsCodeAsync("COMFY_RETRY_BUDGET_EXHAUSTED", () => f.Executor().RunAsync("job"));
+        using var http = new HttpClient(f.Comfy, false) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
+        using var reconcile = new ComfyPromptReconciler(http);
+        await new ProductionPendingRecovery(f.Journal, reconcile, (_, _) => Task.FromResult(Job("Failed"))).ReconcileAsync();
         RecoveryTests.Assert(f.Gateway.Failure?.FailureCode == "COMFY_RETRY_BUDGET_EXHAUSTED" && f.Comfy.Submits == 1
             && f.Gateway.Commits == 0 && f.Journal.Pending().Count == 0, "definite failure actually reports legacy code to Core, never resubmits");
+
+        using var acknowledged = new RecoveryTests.Fixture();
+        acknowledged.Comfy.HistoryError = true;
+        await RecoveryTests.ThrowsCodeAsync("COMFY_RETRY_BUDGET_EXHAUSTED", () => acknowledged.Executor().RunAsync("job"));
+        RecoveryTests.Assert(acknowledged.Gateway.Failure is not null && acknowledged.Journal.Pending().Count == 0,
+            "acknowledged terminal failure settles only after GPU drains");
     }
 
     private static async Task LegacyUnknownAsync()
@@ -60,5 +77,146 @@ internal static class RecoveryFixTests
         await RecoveryTests.ThrowsCodeAsync("COMFY_RETRY_BUDGET_EXHAUSTED", () => f.Executor().RunAsync("job"));
         RecoveryTests.Assert(f.Gateway.Failure?.FailureCode == "COMFY_RETRY_BUDGET_EXHAUSTED" && f.Gateway.Commits == 0,
             "invalid completed output durably fails instead of becoming Ready");
+    }
+
+    private static async Task PreparedReservationAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        f.Comfy.LoseSubmitResponse = true;
+        await RecoveryTests.ThrowsAsync<HttpRequestException>(() => f.Executor().RunAsync("job"));
+        var state = f.Journal.Pending().Single();
+        f.Journal.Save(state with { Phase = "Prepared", PromptId = null });
+        f.Comfy.ForgetPrompt = true;
+        await RecoveryTests.ThrowsCodeAsync("MEDIA_SUBMISSION_UNKNOWN", () => f.Executor().RunAsync("job"));
+        RecoveryTests.Assert(f.Comfy.Submits == 1 && f.Journal.Pending().Single().Phase == "Submitting",
+            "Prepared with existing Core reservation is not permission to POST");
+    }
+
+    private static ProductionJobRecord Job(string status) => new("job", "creative", new string('a',64), "project",
+        "production.comfyui.v1", new string('b',64), status, null, null, null, null, "key", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null);
+
+    private static async Task TerminalPendingAsync()
+    {
+        foreach (var terminal in new[] { "Cancelled", "Failed", "NeedsHuman", "production_ready" })
+        {
+            using var f = new RecoveryTests.Fixture();
+            f.Comfy.LoseSubmitResponse = true;
+            await RecoveryTests.ThrowsAsync<HttpRequestException>(() => f.Executor().RunAsync("job"));
+            using var http = new HttpClient(f.Comfy, false) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
+            using var reconcile = new ComfyPromptReconciler(http);
+            var lookups = new List<string>();
+            var recovery = new ProductionPendingRecovery(f.Journal, reconcile, (id, _) =>
+            { lookups.Add(id); return Task.FromResult(Job(terminal)); });
+            f.Comfy.HoldOutput = true;
+            await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION", () => recovery.ReconcileAsync());
+            RecoveryTests.Assert(f.Journal.Pending().Single().PromptId == "prompt-1", "persist recovered terminal prompt before drain");
+            f.Comfy.HoldOutput = false;
+            var drained = await recovery.ReconcileAsync();
+            var empty = await recovery.ReconcileAsync();
+            RecoveryTests.Assert(drained.HasPending && drained.RecoverableJobId is null && !empty.HasPending
+                && lookups.All(id => id == "job") && f.Comfy.Submits == 1 && f.Gateway.Commits == 0 && f.Gateway.Failure is null,
+                "exact-ID terminal recovery drains external prompt without execute/fail/cancel or recent list");
+        }
+    }
+
+    private static async Task MissingCoreAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        f.Journal.Save(new("job", "task", new string('a',64), new string('b',64), "Submitting", null));
+        using var http = new HttpClient(f.Comfy, false) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
+        using var reconcile = new ComfyPromptReconciler(http);
+        var recovery = new ProductionPendingRecovery(f.Journal, reconcile,
+            (_, _) => throw new HttpRequestException("offline or 404"));
+        await RecoveryTests.ThrowsAsync<HttpRequestException>(() => recovery.ReconcileAsync());
+        RecoveryTests.Assert(f.Journal.Pending().Count == 1 && f.Comfy.Submits == 0, "missing exact Core job is not terminal proof");
+    }
+
+    private static async Task TimeoutKeepsGpuBarrierAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        f.Comfy.HoldOutput = true;
+        await RecoveryTests.ThrowsCodeAsync("COMFY_RETRY_BUDGET_EXHAUSTED",
+            () => f.Executor(TimeSpan.FromMilliseconds(60)).RunAsync("job"));
+        RecoveryTests.Assert(f.Gateway.Failure is not null && f.Gateway.Commits == 0
+            && f.Journal.Pending().Single().Phase == "FailurePending", "Core timeout failure does not mean CUDA stopped");
+        await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION", () => f.Executor().RunAsync("other"));
+    }
+
+    private static async Task BoundSecondAttemptAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        f.Gateway.LoseBindResponse = true;
+        await RecoveryTests.ThrowsAsync<HttpRequestException>(() => f.Executor().RunAsync("job"));
+        f.Gateway.RestoreBoundSecondAttempt();
+        await f.Executor().RunAsync("job");
+        RecoveryTests.Assert(f.Comfy.Submits == 1 && f.Gateway.Reservations == 2 && f.Gateway.Commits == 1,
+            "bound attempt2 recovery only reads history and commits, never allocates attempt3");
+    }
+
+    private static async Task HistoryOfflineAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        f.Comfy.HistoryOffline = true;
+        await RecoveryTests.ThrowsAsync<HttpRequestException>(() => f.Executor().RunAsync("job"));
+        RecoveryTests.Assert(f.Journal.Pending().Single().Phase == "Submitted" && f.Gateway.Failure is null,
+            "history transport uncertainty is not definite render failure");
+        f.Comfy.HistoryOffline = false;
+        await f.Executor().RunAsync("job");
+        RecoveryTests.Assert(f.Comfy.Submits == 1 && f.Gateway.Commits == 1, "history reconnect resumes exact bound prompt");
+    }
+
+    private static async Task LostLeaseAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        f.Comfy.HoldOutput = true;
+        f.Gateway.LoseHeartbeat = true;
+        await RecoveryTests.ThrowsCodeAsync("PRODUCTION_LEASE_LOST", () => f.Executor().RunAsync("job"));
+        RecoveryTests.Assert(f.Journal.Pending().Count == 1 && f.Gateway.Failure is null && f.Gateway.Commits == 0,
+            "heartbeat loss preserves GPU uncertainty without terminal writes");
+    }
+
+    private static async Task ExactTransportAsync()
+    {
+        using var handler = new ExactHandler();
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9999/") };
+        await using var client = new MacCoreProductionClient(http, "offline-test-credential");
+        var job = await client.GetJobAsync("old/job");
+        RecoveryTests.Assert(job.ProductionJobId == "job" && handler.RequestPath == "/api/v1/production/jobs/old%2Fjob",
+            "exact transport escapes ID and never enumerates recent jobs");
+    }
+
+    private sealed class ExactHandler : HttpMessageHandler
+    {
+        public string? RequestPath { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestPath = request.RequestUri!.AbsolutePath;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new StringContent(JsonSerializer.Serialize(Job("Rendering")), Encoding.UTF8, "application/json") });
+        }
+    }
+
+    private static async Task RejectedLegacyClaimAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        f.Gateway.RestoreReservation();
+        f.Gateway.RejectUnboundClaim = true;
+        await RecoveryTests.ThrowsCodeAsync("MEDIA_CLAIM_CONFLICT_RECONCILIATION", () => f.Executor().RunAsync("job"));
+        RecoveryTests.Assert(f.Journal.Pending().Single().Phase == "Submitting", "Core refusal cannot erase legacy uncertainty");
+        await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION", () => f.Executor().RunAsync("other"));
+        RecoveryTests.Assert(f.Comfy.Submits == 0 && f.Gateway.Failure is null, "no lease bypass or second job after rejected legacy claim");
+    }
+
+    private static async Task SettledDoesNotReopenAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        await f.Executor().RunAsync("job");
+        var settled = f.Journal.Read("job", "task")!;
+        f.Comfy.HistoryOffline = true;
+        using var http = new HttpClient(f.Comfy, false) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
+        using var reconcile = new ComfyPromptReconciler(http);
+        using var gpu = f.Journal.AcquireGpu();
+        await ProductionPendingRecovery.ReconcileTerminalAsync(f.Journal, reconcile, settled);
+        RecoveryTests.Assert(f.Journal.Read("job", "task")!.Phase == "Settled", "settled successful shot never reopens after history eviction");
     }
 }

@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using System.Runtime.CompilerServices;
 
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Production;
 
 [assembly: InternalsVisibleTo("PicotooPet.MediaWorker.SmokeTests")]
@@ -40,6 +41,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private readonly Func<CancellationToken, Task<ProductionPreflightSnapshot>>? _preflightOverride;
     private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(2);
     private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _historyTimeout = TimeSpan.FromMinutes(20);
     private readonly ComfyProductionClient _comfy;
     private readonly bool _ownsComfy;
     private readonly string _executorId;
@@ -75,16 +77,19 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     public ProductionExecutionService(IProductionExecutionGateway gateway, ComfyProductionClient comfy)
         : this(gateway, comfy, new(ProductionSubmissionJournal.DefaultRoot), ComfyPromptReconciler.Create(), null) { }
 
-    internal ProductionExecutionService(IProductionExecutionGateway gateway, ComfyProductionClient comfy,
+    public ProductionExecutionService(IProductionExecutionGateway gateway, ComfyProductionClient comfy,
         ProductionSubmissionJournal journal, IComfyPromptReconciler reconciler,
-        Func<CancellationToken, Task<ProductionPreflightSnapshot>>? preflight,
-        TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null)
+        Func<CancellationToken, Task<ProductionPreflightSnapshot>>? preflight = null,
+        TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null, TimeSpan? historyTimeout = null)
     {
         _session = gateway; _comfy = comfy; _journal = journal; _reconciler = reconciler;
         _preflightOverride = preflight;
         _executorId = NormalizeExecutorId($"windows-production-{Environment.MachineName}");
         _pollInterval = pollInterval ?? TimeSpan.FromSeconds(2);
         _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(30);
+        _historyTimeout = historyTimeout ?? TimeSpan.FromMinutes(20);
+        if (_pollInterval <= TimeSpan.Zero || _heartbeatInterval <= TimeSpan.Zero || _historyTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(pollInterval));
     }
 
     /// <summary>创建正式固定 loopback executor；没有 endpoint 参数。</summary>
@@ -180,7 +185,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         var existing = await _session.GetProductionPackageAsync(productionJobId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
-            foreach (var pending in _journal.Pending().Where(p => p.JobId == productionJobId)) _journal.Save(pending with { Phase = "Settled" });
+            // A Core package is not proof that a different orphan GPU prompt has drained.
+            foreach (var pending in _journal.Pending().Where(p => p.JobId == productionJobId))
+                await ReconcileTerminalSubmissionAsync(pending, cancellationToken).ConfigureAwait(false);
             return existing;
         }
         var preflight = await (_preflightOverride?.Invoke(cancellationToken) ?? PreflightAsync(cancellationToken)).ConfigureAwait(false);
@@ -191,10 +198,26 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
 
         var originalPlan = await _session.GetProductionPlanAsync(productionJobId, cancellationToken).ConfigureAwait(false);
         var originalDigest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(originalPlan)!))).ToLowerInvariant();
-        var claim = await _session.ClaimProductionJobAsync(
-            productionJobId,
-            _executorId,
-            cancellationToken).ConfigureAwait(false);
+        ProductionClaimRecord claim;
+        try
+        {
+            claim = await _session.ClaimProductionJobAsync(productionJobId, _executorId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ApiException error) when (error.StatusCode == 409)
+        {
+            // Current Core correctly refuses an expired *unbound* Running attempt. A legacy
+            // worker may have POSTed it without a journal. Do not let that refusal admit job B.
+            // Transport hides the precise conflict reason, so conservatively protect all not-yet-
+            // settled executable graphs. This never invents a lease, attempt, failure or GPU POST.
+            foreach (var task in originalPlan.Tasks.Where(t => t.ExecutionDisposition == "Executable" && t.WorkflowId is not null))
+            {
+                var known = _journal.Read(productionJobId, task.ProductionTaskId);
+                if (known is not null && known.Phase != "Prepared") continue;
+                var graphDigest = ProductionSubmissionJournal.GraphDigest(BuildPrompt(productionJobId, task, preflight));
+                _journal.Save(new(productionJobId, task.ProductionTaskId, originalDigest, graphDigest, "Submitting", known?.PromptId));
+            }
+            throw new ProductionWorkerException("MEDIA_CLAIM_CONFLICT_RECONCILIATION");
+        }
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Exception? leaseFailure = null;
         var heartbeat = KeepLeaseAsync();
@@ -203,7 +226,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             foreach (var snapshot in claim.Tasks.Where(t => t.Status == "Succeeded"))
             {
                 var known = _journal.Read(productionJobId, snapshot.ProductionTaskId);
-                if (known is not null) _journal.Save(known with { Phase = "Settled" });
+                if (known is not null) await ReconcileTerminalSubmissionAsync(known, lifetime.Token).ConfigureAwait(false);
             }
             foreach (var task in claim.Plan.Tasks.OrderBy(item => item.Order))
             {
@@ -243,11 +266,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         var snapshot = claim.Tasks.SingleOrDefault(t => t.ProductionTaskId == task.ProductionTaskId)
             ?? throw new ProductionWorkerException("PRODUCTION_TASK_SNAPSHOT_MISSING");
         if (snapshot.Status == "Succeeded") return;
-        var template = ComfyWorkflowCatalog.Load(task.WorkflowId!);
-        string? trustedInput = task.WorkflowId == ComfyWorkflowTemplateValidator.I2VWorkflowId
-            ? ValidateTrustedInput(task.TrustedInputAssetRef, preflight.InputRoot!) : null;
-        var prompt = ComfyWorkflowTemplateValidator.Bind(task.WorkflowId!, template, task,
-            BuildFilenamePrefix(claim.ProductionJobId, task), trustedInput);
+        var prompt = BuildPrompt(claim.ProductionJobId, task, preflight);
         // Journal binds the full immutable plan digest, never the narrowed lease resume-plan digest.
         var graphDigest = ProductionSubmissionJournal.GraphDigest(prompt);
         var state = _journal.Read(claim.ProductionJobId, task.ProductionTaskId);
@@ -258,8 +277,16 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             throw new ProductionWorkerException("MEDIA_PROMPT_ID_CONFLICT");
         state ??= new ProductionSubmission(claim.ProductionJobId, task.ProductionTaskId, planDigest, graphDigest, "Prepared", promptId);
         if (state.Phase == "Settled") throw new ProductionWorkerException("MEDIA_CORE_RESULT_CONFLICT");
-        if (promptId is null && (state.Phase is "Submitting" or "Submitted" || snapshot.AttemptCount > 0 && _journal.Read(claim.ProductionJobId, task.ProductionTaskId) is null))
+        if (state.Phase == "FailurePending")
         {
+            await ReportFinalFailureAsync(claim, task, state, cancellationToken).ConfigureAwait(false);
+            throw new ProductionWorkerException("COMFY_RETRY_BUDGET_EXHAUSTED");
+        }
+        if (promptId is null && (state.Phase is "Submitting" or "Submitted" || snapshot.AttemptCount > 0))
+        {
+            // Legacy unbound attempts AND crash after reservation are uncertain, even if Prepared.
+            // Persist the GPU barrier before any network read that can fail or return no match.
+            state = state with { Phase = "Submitting" }; _journal.Save(state);
             promptId = await _reconciler.FindExactAsync(graphDigest, cancellationToken).ConfigureAwait(false)
                 ?? throw new ProductionWorkerException("MEDIA_SUBMISSION_UNKNOWN");
         }
@@ -276,13 +303,29 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
             new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, promptId), cancellationToken).ConfigureAwait(false);
         // No GPU retry on HTTP timeout/cancel. Restart/reconnect must reconcile this exact identity.
-        var historyOutput = await WaitForOutputAsync(claim, task, promptId, cancellationToken).ConfigureAwait(false);
-        var relativeOutput = BuildRelativeOutput(historyOutput.Subfolder, historyOutput.Filename);
-        var outputPath = ResolveUnderRoot(preflight.OutputRoot!, relativeOutput, requireExistingFile: true);
-        AssertNoLinkEscape(preflight.OutputRoot!, outputPath);
-        var file = new FileInfo(outputPath);
-        if (file.Length <= 0) throw new ProductionWorkerException("COMFY_OUTPUT_EMPTY");
-        var sha256 = await Sha256FileAsync(outputPath, cancellationToken).ConfigureAwait(false);
+        ComfyOutputEvidence historyOutput;
+        string relativeOutput, sha256;
+        FileInfo file;
+        var completedHistory = false;
+        try
+        {
+            historyOutput = await WaitForOutputAsync(promptId, cancellationToken).ConfigureAwait(false);
+            completedHistory = true;
+            relativeOutput = BuildRelativeOutput(historyOutput.Subfolder, historyOutput.Filename);
+            var outputPath = ResolveUnderRoot(preflight.OutputRoot!, relativeOutput, requireExistingFile: true);
+            AssertNoLinkEscape(preflight.OutputRoot!, outputPath);
+            file = new FileInfo(outputPath);
+            if (file.Length <= 0) throw new ProductionWorkerException("COMFY_OUTPUT_EMPTY");
+            sha256 = await Sha256FileAsync(outputPath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (completedHistory && error is (IOException or InvalidDataException or UnauthorizedAccessException)
+            || error is ProductionWorkerException worker && worker.Code is "COMFY_EXECUTION_FAILED" or "COMFY_HISTORY_TIMEOUT" or "COMFY_OUTPUT_EMPTY" or "COMFY_OUTPUT_MISSING")
+        {
+            // Only definite bound-prompt failure. Unknown POST, HTTP uncertainty and cancellation
+            // never enter this path and never authorize another GPU submission.
+            await ReportFinalFailureAsync(claim, task, state, cancellationToken).ConfigureAwait(false);
+            throw new ProductionWorkerException("COMFY_RETRY_BUDGET_EXHAUSTED");
+        }
         await _session.CommitProductionResultAsync(claim.ProductionJobId, task.ProductionTaskId,
             new ProductionTaskCommitRequest(_executorId, claim.LeaseToken, promptId,
                 relativeOutput.Replace('\\', '/'), sha256, file.Length, "video/webm",
@@ -290,23 +333,43 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _journal.Save(state with { Phase = "Settled" });
     }
 
-    private async Task<ComfyOutputEvidence> WaitForOutputAsync(ProductionClaimRecord claim,
-        ProductionTaskPlanRecord task, string promptId, CancellationToken cancellationToken)
+    private async Task ReportFinalFailureAsync(ProductionClaimRecord claim, ProductionTaskPlanRecord task,
+        ProductionSubmission state, CancellationToken ct)
     {
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(20);
-        while (DateTimeOffset.UtcNow < deadline)
+        state = state with { Phase = "FailurePending", FailureCode = "COMFY_RETRY_BUDGET_EXHAUSTED" };
+        _journal.Save(state);
+        await _session.FailProductionTaskAsync(claim.ProductionJobId, task.ProductionTaskId,
+            new ProductionTaskFailureRequest(_executorId, claim.LeaseToken, state.PromptId,
+                "COMFY_RETRY_BUDGET_EXHAUSTED", null), ct).ConfigureAwait(false);
+        // A timed-out prompt may still be on GPU. Core failure alone must not free the GPU barrier.
+        if (await _reconciler.IsFinishedAsync(state.PromptId!, ct).ConfigureAwait(false))
+            _journal.Save(state with { Phase = "Settled" });
+    }
+
+    private Task ReconcileTerminalSubmissionAsync(ProductionSubmission state, CancellationToken ct) =>
+        ProductionPendingRecovery.ReconcileTerminalAsync(_journal, _reconciler, state, ct);
+
+    private static JsonObject BuildPrompt(string jobId, ProductionTaskPlanRecord task, ProductionPreflightSnapshot preflight)
+    {
+        var template = ComfyWorkflowCatalog.Load(task.WorkflowId!);
+        string? trustedInput = task.WorkflowId == ComfyWorkflowTemplateValidator.I2VWorkflowId
+            ? ValidateTrustedInput(task.TrustedInputAssetRef, preflight.InputRoot!) : null;
+        return ComfyWorkflowTemplateValidator.Bind(task.WorkflowId!, template, task, BuildFilenamePrefix(jobId, task), trustedInput);
+    }
+
+    private async Task<ComfyOutputEvidence> WaitForOutputAsync(string promptId, CancellationToken cancellationToken)
+    {
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        while (timer.Elapsed < _historyTimeout)
         {
             var history = await _comfy.GetHistoryAsync(promptId, cancellationToken).ConfigureAwait(false);
             if (IsHistoryError(history, promptId))
-            {
-                await _session.FailProductionTaskAsync(claim.ProductionJobId, task.ProductionTaskId,
-                    new ProductionTaskFailureRequest(_executorId, claim.LeaseToken, promptId, "COMFY_EXECUTION_FAILED", null),
-                    cancellationToken).ConfigureAwait(false);
-                var state = _journal.Read(claim.ProductionJobId, task.ProductionTaskId);
-                if (state is not null) _journal.Save(state with { Phase = "Settled" });
                 throw new ProductionWorkerException("COMFY_EXECUTION_FAILED");
+            if (history[promptId]?["status"]?["completed"]?.GetValue<bool>() == true)
+            {
+                if (TryExtractOutput(history, promptId, out var output)) return output;
+                throw new ProductionWorkerException("COMFY_OUTPUT_MISSING");
             }
-            if (TryExtractOutput(history, promptId, out var output)) return output;
             await Task.Delay(_pollInterval, cancellationToken).ConfigureAwait(false);
         }
         throw new ProductionWorkerException("COMFY_HISTORY_TIMEOUT");

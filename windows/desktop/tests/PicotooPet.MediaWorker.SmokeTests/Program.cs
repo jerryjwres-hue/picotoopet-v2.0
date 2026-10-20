@@ -15,3 +15,4 @@ await PicotooPet.MediaWorker.SmokeTests.RecoveryTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.RecoveryFixTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.HostTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.ProcessTests.RunAsync();
+await PicotooPet.MediaWorker.SmokeTests.LegacyContractTests.RunAsync();

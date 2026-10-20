@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Production;
 using PicotooPet.Desktop.Services;
 
@@ -79,9 +80,9 @@ internal static class RecoveryTests
             Journal = new(Path.Combine(Root, "journal"));
             _http = new(Comfy) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
         }
-        public ProductionExecutionService Executor() => new(Gateway, new ComfyProductionClient(_http), Journal,
+        public ProductionExecutionService Executor(TimeSpan? historyTimeout = null) => new(Gateway, new ComfyProductionClient(_http), Journal,
             new ComfyPromptReconciler(_http), _ => Task.FromResult(new ProductionPreflightSnapshot(true, "fake", Root, Root, Root, Root, [])),
-            TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(20));
+            TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(20), historyTimeout);
         public bool Preserve { get; init; }
         public void Dispose() { _http.Dispose(); if (!Preserve) Directory.Delete(Root, true); }
     }
@@ -97,6 +98,7 @@ internal static class RecoveryTests
         public bool ForgetPrompt { get; set; }
         public bool HoldOutput { get; set; }
         public bool HistoryError { get; set; }
+        public bool HistoryOffline { get; set; }
         public int Submits { get; private set; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private JsonNode? _graph;
@@ -114,6 +116,7 @@ internal static class RecoveryTests
             if (path == "/queue") return Json(new JsonObject { ["queue_running"] = HoldOutput ? new JsonArray(Tuple()) : new JsonArray(), ["queue_pending"] = new JsonArray() }.ToJsonString());
             if (path.StartsWith("/history", StringComparison.Ordinal))
             {
+                if (HistoryOffline) throw new HttpRequestException("history temporarily offline");
                 if (ForgetPrompt || HoldOutput) return Json("{}");
                 if (HistoryError) return Json("{\"prompt-1\":{\"status\":{\"status_str\":\"error\",\"completed\":false}}}");
                 return Json(new JsonObject { ["prompt-1"] = new JsonObject { ["prompt"] = Tuple(),
@@ -132,8 +135,11 @@ internal static class RecoveryTests
         public int Heartbeats { get; private set; }
         public bool LoseBindResponse { get; set; }
         public bool LoseFailureResponse { get; set; }
+        public bool LoseHeartbeat { get; set; }
+        public bool RejectUnboundClaim { get; set; }
         public ProductionTaskFailureRequest? Failure { get; private set; }
         public void RestoreReservation() => Reservations = 1;
+        public void RestoreBoundSecondAttempt() { Reservations = 2; _prompt = "prompt-1"; }
         private string? _prompt;
         private bool _succeeded;
         private static ProductionTaskPlanRecord TaskPlan => new("task", "shot", 1, "GENERATIVE_VIDEO", "Executable", "comfy.wan22.ti2v5b.t2v.v1", "product demonstration", "wan22.safe-negative.v1", 1001, 832, 480, 24, 73, 3000, null);
@@ -142,8 +148,14 @@ internal static class RecoveryTests
             _succeeded ? "Succeeded" : Reservations > 0 ? "Running" : "Pending", Reservations, _prompt,
             null, null, null, null, null, null, null, null, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null);
         public Task<ProductionPlanRecord> GetProductionPlanAsync(string job, CancellationToken ct) => Task.FromResult(Plan);
-        public Task<ProductionClaimRecord> ClaimProductionJobAsync(string job, string executor, CancellationToken ct) => Task.FromResult(new ProductionClaimRecord(job, executor, "lease", DateTimeOffset.UtcNow.AddMinutes(2), Plan, [Snapshot]));
-        public Task<ProductionJobRecord> HeartbeatProductionJobAsync(string job, string executor, string lease, CancellationToken ct) { Heartbeats++; return Task.FromResult<ProductionJobRecord>(null!); }
+        public Task<ProductionClaimRecord> ClaimProductionJobAsync(string job, string executor, CancellationToken ct)
+        {
+            if (RejectUnboundClaim && Reservations > 0 && _prompt is null)
+                throw new ApiException("PRODUCTION_HTTP_ERROR", "conflict", false, null, 409);
+            return Task.FromResult(new ProductionClaimRecord(job, executor, "lease", DateTimeOffset.UtcNow.AddMinutes(2), Plan, [Snapshot]));
+        }
+        public Task<ProductionJobRecord> HeartbeatProductionJobAsync(string job, string executor, string lease, CancellationToken ct)
+        { Heartbeats++; if (LoseHeartbeat) throw new HttpRequestException("lease lost"); return Task.FromResult<ProductionJobRecord>(null!); }
         public Task<ProductionTaskRecord> MarkProductionAttemptAsync(string job, string task, ProductionTaskAttemptRequest request, CancellationToken ct)
         {
             if (request.ComfyPromptId is null) { Assert(_prompt is null, "must not reserve again after bound attempt"); Reservations = 1; }

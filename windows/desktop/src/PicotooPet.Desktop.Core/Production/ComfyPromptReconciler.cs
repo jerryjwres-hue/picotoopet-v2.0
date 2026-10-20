@@ -24,8 +24,11 @@ public sealed class ComfyPromptReconciler : IComfyPromptReconciler, IDisposable
     public static ComfyPromptReconciler Create() => new();
     public async Task<string?> FindExactAsync(string graphDigest, CancellationToken ct)
     {
-        var queue = await GetAsync("queue", ct).ConfigureAwait(false);
+        if (graphDigest.Length != 64 || !graphDigest.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')))
+            throw new ProductionWorkerException("MEDIA_COMFY_RECONCILE_INVALID");
+        // History first; no POST exists in this interface. Read both surfaces to reject duplicates.
         var history = await GetAsync("history?max_items=1000", ct).ConfigureAwait(false);
+        var queue = await GetAsync("queue", ct).ConfigureAwait(false);
         var matches = new HashSet<string>(StringComparer.Ordinal);
         foreach (var name in new[] { "queue_running", "queue_pending" })
         {
@@ -33,7 +36,12 @@ public sealed class ComfyPromptReconciler : IComfyPromptReconciler, IDisposable
             foreach (var item in items) Match(item as JsonArray, graphDigest, matches);
         }
         foreach (var entry in history)
-            if (entry.Value is JsonObject record) Match(record["prompt"] as JsonArray, graphDigest, matches);
+        {
+            if (entry.Value is not JsonObject record || record["prompt"] is not JsonArray tuple
+                || tuple.Count < 3 || tuple[1]?.GetValue<string>() != entry.Key)
+                throw new ProductionWorkerException("MEDIA_COMFY_RECONCILE_INVALID");
+            Match(tuple, graphDigest, matches);
+        }
         if (matches.Count > 1) throw new ProductionWorkerException("MEDIA_PROMPT_ID_CONFLICT");
         return matches.SingleOrDefault();
     }
@@ -49,6 +57,8 @@ public sealed class ComfyPromptReconciler : IComfyPromptReconciler, IDisposable
     }
     public async Task<bool> IsFinishedAsync(string promptId, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(promptId) || promptId.Length > 200)
+            throw new ProductionWorkerException("MEDIA_COMFY_RECONCILE_INVALID");
         var queue = await GetAsync("queue", ct).ConfigureAwait(false);
         foreach (var name in new[] { "queue_running", "queue_pending" })
         {
