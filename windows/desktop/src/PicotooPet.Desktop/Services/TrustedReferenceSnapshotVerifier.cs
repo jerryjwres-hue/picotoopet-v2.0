@@ -99,8 +99,8 @@ public static class TrustedReferenceSnapshotVerifier
             if (!ProductionLocalEnvironment.IsOrdinaryFile(path))
                 throw new InvalidDataException("I2V_REFERENCE_INVALID_FILE");
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException
-            or ArgumentException or NotSupportedException)
+        catch (Exception error) when (error is IOException or InvalidDataException
+            or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             throw new ProductionWorkerException("I2V_REFERENCE_PATH_REJECTED");
         }
