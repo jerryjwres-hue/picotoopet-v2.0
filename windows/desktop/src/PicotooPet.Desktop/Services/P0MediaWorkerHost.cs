@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using PicotooPet.Desktop.Core.Production;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Core.State;
@@ -70,6 +71,11 @@ public static class P0MediaWorkerHost
             await using (session)
             await using (var executor = ProductionExecutionService.Create(session))
             {
+                // ── Durable uncertainty is consulted before all newly-discovered Goal work. ──
+                var journal = new ProductionSubmissionJournal(ProductionSubmissionJournal.DefaultRoot);
+                using var reconciler = ComfyPromptReconciler.Create();
+                var pendingRecovery = new ProductionPendingRecovery(
+                    journal, reconciler, session.GetProductionJobAsync);
                 var backoff = new System.Collections.Generic.Dictionary<string, DateTimeOffset>(
                     StringComparer.Ordinal);
                 var connected = false;
@@ -88,6 +94,33 @@ public static class P0MediaWorkerHost
                             await session.InitializeAsync(cancellationToken).ConfigureAwait(false);
                             connected = true;
                         }
+                        // ── Fail-closed: terminal/draining/unknown GPU journal always wins. ──
+                        var pending = await pendingRecovery.ReconcileAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                        if (pending.HasPending)
+                        {
+                            // ── Recover exactly one known job, never enumerate fresh GPU work. ──
+                            var resumeJobId = pending.RecoverableJobId;
+                            if (!string.IsNullOrWhiteSpace(resumeJobId)
+                                && (!backoff.TryGetValue(resumeJobId, out var resumeAfter)
+                                    || resumeAfter <= DateTimeOffset.UtcNow))
+                            {
+                                try
+                                {
+                                    _ = await executor.RunAsync(resumeJobId, cancellationToken)
+                                        .ConfigureAwait(false);
+                                    backoff.Remove(resumeJobId);
+                                }
+                                catch (Exception error) when (!cancellationToken.IsCancellationRequested)
+                                {
+                                    // ── The unresolved journal persists; no alternate POST follows. ──
+                                    logger.Error("P0 journal 恢复失败，禁止调度新 GPU 作业", error);
+                                    backoff[resumeJobId] = DateTimeOffset.UtcNow + FailureBackoff;
+                                }
+                            }
+                        }
+                        else
+                        {
                         var goals = await session.GetGoalsAsync(cancellationToken).ConfigureAwait(false);
                         foreach (var goal in goals)
                         {
@@ -145,6 +178,7 @@ public static class P0MediaWorkerHost
                                 backoff[jobId] = DateTimeOffset.UtcNow + FailureBackoff;
                             }
                         }
+                        } // ── End fresh Goal dispatch, only allowed with zero pending journal. ──
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
