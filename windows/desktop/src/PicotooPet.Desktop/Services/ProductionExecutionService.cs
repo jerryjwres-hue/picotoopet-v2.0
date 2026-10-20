@@ -310,6 +310,16 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     /// <summary>Only Core-authorized executable workflows may enter an automatic multi-shot run.</summary>
     private static void ValidateMultiShotPlan(string jobId, ProductionPlanRecord plan)
     {
+        // The frozen v1.0 Core plan transports only a local path, NOT an authenticated
+        // SHA/byte/rights/source approval. Such an I2V task cannot be authorized for
+        // a fresh GPU POST. Do not mint consent from a filename or silently use T2V.
+        // This guard runs AFTER the journal's pending reconciliation barrier, but
+        // BEFORE expensive model preflight, Core lease reservation or Comfy submission.
+        if (plan.Tasks?.Any(t =>
+            t.WorkflowId == ComfyWorkflowTemplateValidator.I2VWorkflowId
+            || t.RenderIntent == "IMAGE_TO_VIDEO") == true)
+            throw new ProductionWorkerException("I2V_REFERENCE_APPROVAL_CONTRACT_REQUIRED");
+
         if (plan.ProductionJobId != jobId
             || plan.SchemaVersion != "1.0"
             || plan.ProductionProfile != "production.comfyui.v1"
