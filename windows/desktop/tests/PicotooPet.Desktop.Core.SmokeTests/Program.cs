@@ -15,6 +15,11 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--trusted-reference-only", StringComparer.Ordinal))
+            {
+                await TrustedReferenceAssetVerifierSmokeTests.RunAsync().ConfigureAwait(false);
+                return 0;
+            }
             if (args.Contains(
                     "--expect-task-center-legacy-binding-failure",
                     StringComparer.Ordinal))
@@ -144,6 +149,7 @@ internal static class Program
             await FinalVideoAssemblyServiceSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalFinalVideoCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
             ComfyWorkflowTemplateSmokeTests.Run();
+            await TrustedReferenceAssetVerifierSmokeTests.RunAsync().ConfigureAwait(false);
             await VerifyEmergencyLoggerAsync().ConfigureAwait(false);
             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);

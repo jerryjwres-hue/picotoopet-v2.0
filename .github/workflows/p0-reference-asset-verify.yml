@@ -1,0 +1,41 @@
+name: P0 Trusted Reference Asset Verify
+on:
+  push:
+    branches: [feature/p0-reference-asset-verifier-v1]
+    paths:
+      - .github/workflows/p0-reference-asset-verify.yml
+      - windows/desktop/src/PicotooPet.Desktop.Core/Production/TrustedReferenceAssetVerifier.cs
+      - windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/TrustedReferenceAssetVerifierSmokeTests.cs
+      - windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs
+  pull_request:
+    paths:
+      - .github/workflows/p0-reference-asset-verify.yml
+      - windows/desktop/src/PicotooPet.Desktop.Core/Production/TrustedReferenceAssetVerifier.cs
+      - windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/TrustedReferenceAssetVerifierSmokeTests.cs
+      - windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: p0-reference-verify-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Build existing smoke harness (no packaging)
+        shell: pwsh
+        run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
+      - name: Verify synthetic references and security negatives (no GPU or Comfy POST)
+        shell: pwsh
+        run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --trusted-reference-only
