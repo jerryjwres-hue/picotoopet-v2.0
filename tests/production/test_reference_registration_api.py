@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from picotoopet_core.api.routes import reference_registration
+from picotoopet_core.api.errors import install_error_handlers
 from picotoopet_core.approvals.service import ApprovalError
 from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.creative.store import CreativeArtifactStore
@@ -137,6 +138,10 @@ def test_batch_one_pending_approval_exact_two_shots_and_durable_restart(state):
         "SELECT * FROM approvals WHERE approval_type='production.reference_asset.v1'", ()
     )) == 1
     assert "shot-a" in approval.get(first.approval_id).scope_summary
+    # Fully close and reopen SQLite to prove the approval batch and AssetIds are durable.
+    db.close()
+    db.open()
+    assert ReferenceRegistrationService(db, approval, store).get(first.approval_id) == first
     with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
         approved_reference_descriptor(db, identity(first, "shot-a"))
 
@@ -219,6 +224,7 @@ def test_source_artifact_tamper_rejects_new_requests(state):
 def test_authenticated_route_post_get_revoke_and_pending_not_approved(state):
     db, service, approval, store, digest = state
     app = FastAPI()
+    install_error_handlers(app)
     app.include_router(reference_registration.router, prefix="/api/v1")
     app.state.services = SimpleNamespace(database=db, approvals=approval, creative_store=store)
     app.dependency_overrides[require_auth] = lambda: None  # only local synthetic HTTP fixture
@@ -241,3 +247,25 @@ def test_authenticated_route_post_get_revoke_and_pending_not_approved(state):
             f'/api/v1/production/references/batches/{obj["approval_id"]}/revoke',
             json={"request_digest": "d" * 64, "reason": "forged"},
         ).status_code == 409
+
+
+def test_explicit_rejection_never_grants_references(state):
+    db, service, approval, store, digest = state
+    receipt = service.register(
+        ReferenceBatchRequestV1.model_validate(payload(digest)),
+        idempotency_key="reject-test",
+    )
+    approval.decide_for_control_center(
+        approval_id=receipt.approval_id, decision="reject",
+        request_digest=receipt.approval_request_digest,
+        idempotency_key="real-review-decision-test-only",
+        resolved_by="synthetic-fixture", reason="not licensed",
+    )
+    assert service.get(receipt.approval_id).status == "Rejected"
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        approved_reference_descriptor(db, identity(receipt, "shot-a"))
+    with pytest.raises(ApprovalError, match="REFERENCE_APPROVAL_TERMINAL_CONFLICT"):
+        service.revoke(
+            receipt.approval_id, request_digest=receipt.approval_request_digest,
+            reason="cannot silently rewrite Rejected",
+        )
