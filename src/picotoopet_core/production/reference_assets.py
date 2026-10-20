@@ -32,6 +32,7 @@ class ReferenceAssetIdentityV1(BaseModel):
     asset_id: str = Field(min_length=36, max_length=36)
     goal_id: str = Field(min_length=1, max_length=160)
     creative_job_id: str = Field(min_length=1, max_length=160)
+    creative_package_id: str = Field(min_length=1, max_length=160)
     production_job_id: str = Field(min_length=1, max_length=160)
     production_task_id: str = Field(min_length=1, max_length=160)
     shot_id: str = Field(min_length=1, max_length=80)
@@ -116,13 +117,16 @@ def verify_persisted_reference_approval(
     except (ValueError, TypeError) as error:
         raise ValueError("REFERENCE_ASSET_APPROVAL_NOT_VERIFIED") from error
 
-    # Extra scope keys are not authority. Require exact, bounded contents.
+    # Approval occurs *after* Creative Package freeze, but *before* a new
+    # Production Job/Task ID exists. Scope may bind only stable source identity.
+    # Post-freeze production IDs MUST be independently checked against a
+    # durable v1.1 Plan by the future authenticated Core authorization endpoint.
+    # A bool approval result alone does NOT authorize a GPU submission.
     expected = {
         "asset_id": reference.asset_id,
         "goal_id": reference.goal_id,
         "creative_job_id": reference.creative_job_id,
-        "production_job_id": reference.production_job_id,
-        "production_task_id": reference.production_task_id,
+        "creative_package_id": reference.creative_package_id,
         "shot_id": reference.shot_id,
         "creative_package_digest": reference.creative_package_digest,
         "input_relative_path": reference.input_relative_path,

@@ -24,6 +24,7 @@ def _identity() -> ReferenceAssetIdentityV1:
         asset_id=str(uuid4()),
         goal_id="goal-1",
         creative_job_id="creative-1",
+        creative_package_id="creative-package-1",
         production_job_id="job-1",
         production_task_id="task-1",
         shot_id="shot-1",
@@ -44,8 +45,7 @@ def _scope(r: ReferenceAssetIdentityV1) -> dict[str, str | int]:
         "asset_id": r.asset_id,
         "goal_id": r.goal_id,
         "creative_job_id": r.creative_job_id,
-        "production_job_id": r.production_job_id,
-        "production_task_id": r.production_task_id,
+        "creative_package_id": r.creative_package_id,
         "shot_id": r.shot_id,
         "creative_package_digest": r.creative_package_digest,
         "input_relative_path": r.input_relative_path,
@@ -117,7 +117,7 @@ def test_only_exact_existing_approved_reference_scope_is_accepted(tmp_path) -> N
             {"sha256": "e" * 64},
             {"source_digest": "f" * 64},
             {"bytes": 129},
-            {"production_job_id": "wrong-job"},
+            {"creative_package_id": "other-creative-package"},
             {"approval_request_digest": "f" * 64},
         ):
             mismatch = r.model_copy(update=update)
@@ -153,3 +153,12 @@ def test_descriptor_does_not_mint_grant_without_persisted_approval(tmp_path) -> 
             approved_reference_descriptor(db, _identity())
     finally:
         db.close()
+
+
+def test_pending_approval_scope_cannot_claim_future_production_identity() -> None:
+    """The plan must bind future production IDs; approval is only source/shot consent."""
+    base = _identity()
+    scope = _scope(base)
+    assert "asset_id" in scope and "creative_package_digest" in scope
+    assert "production_job_id" not in scope and "production_task_id" not in scope
+    assert scope["shot_id"] == base.shot_id
