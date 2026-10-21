@@ -143,7 +143,7 @@ public sealed class ReferencePreviewSnapshotStager
     private static string LocalCanonicalPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Length > 500 || !Path.IsPathFullyQualified(path)
-            || path.StartsWith("\\\\", StringComparison.Ordinal)
+            || path.Replace('\\', '/').StartsWith("//", StringComparison.Ordinal)
             || path.Replace('\\', '/').Split('/').Skip(1).Any(segment => segment is "." or ".."
                 || segment.EndsWith('.') || segment.EndsWith(' ') || segment.Contains(':', StringComparison.Ordinal)))
             throw new InvalidDataException("REFERENCE_LOCAL_PATH_INVALID");
