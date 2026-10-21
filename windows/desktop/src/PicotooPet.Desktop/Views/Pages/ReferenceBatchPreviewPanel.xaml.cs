@@ -6,6 +6,7 @@ using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 
 namespace PicotooPet.Desktop.Views.Pages;
 
+/// <summary>预览窗口仅提交待审批请求；真实批准由现有审批中心独立执行。</summary>
 public partial class ReferenceBatchPreviewPanel : UserControl
 {
     public event EventHandler? ApprovalsRequested;

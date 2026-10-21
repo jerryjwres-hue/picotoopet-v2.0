@@ -231,7 +231,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         if (bytes.Length is <= 0 or > ReferencePreviewSnapshotStager.MaxBytes)
             throw new InvalidDataException("REFERENCE_IMAGE_SIZE_INVALID");
         if (extension.TrimStart('.').Equals("webp", StringComparison.OrdinalIgnoreCase))
-            return DecodeWebpPreview(bytes, cancellationToken);
+            return await DecodeWebpPreviewAsync(bytes, cancellationToken);
         var codec = extension.TrimStart('.').ToLowerInvariant() switch
         {
             "png" => BitmapDecoder.PngDecoderId,
@@ -269,17 +269,51 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         catch (COMException exception) { throw new InvalidDataException("REFERENCE_IMAGE_DECODE_FAILED", exception); }
     }
 
-    private static BitmapSource DecodeWebpPreview(byte[] bytes, CancellationToken cancellationToken)
+    private static async Task<BitmapSource> DecodeWebpPreviewAsync(
+        byte[] bytes, CancellationToken cancellationToken)
     {
-        // CPU-only portable WebP decoder lives in the existing shared Core library.
-        // The UI never owns a new codec package or relies on a machine-installed WIC extension.
-        var decoded = ReferenceImageWebpDecoder.Decode(bytes, cancellationToken);
-        BitmapSource preview = BitmapSource.Create(decoded.Width, decoded.Height, 96, 96,
-            PixelFormats.Pbgra32, null, decoded.Pixels, decoded.Stride);
-        var scale = Math.Min(1.0, 384.0 / Math.Max(decoded.Width, decoded.Height));
-        if (scale < 1.0) preview = new TransformedBitmap(preview, new ScaleTransform(scale, scale));
-        preview.Freeze();
-        return preview;
+        // Windows CI confirms the OS WebP WIC codec is registered. No third-party
+        // NuGet/native runtime dependency, GPU execution, or codec installation.
+        // On machines without this optional codec, reject the image safely.
+        if (!BitmapDecoder.GetDecoderInformationEnumerator()
+            .Any(codec => codec.CodecId == BitmapDecoder.WebpDecoderId))
+            throw new InvalidDataException("REFERENCE_WEBP_WIC_CODEC_UNAVAILABLE");
+        try
+        {
+            using var stream = new InMemoryRandomAccessStream();
+            using (var writer = new DataWriter(stream))
+            {
+                writer.WriteBytes(bytes);
+                await writer.StoreAsync().AsTask(cancellationToken);
+                writer.DetachStream();
+            }
+            stream.Seek(0);
+            var decoder = await BitmapDecoder.CreateAsync(BitmapDecoder.WebpDecoderId, stream)
+                .AsTask(cancellationToken);
+            if (decoder.DecoderInformation.CodecId != BitmapDecoder.WebpDecoderId
+                || decoder.FrameCount != 1
+                || decoder.PixelWidth is 0 or > 8192 || decoder.PixelHeight is 0 or > 8192
+                || (ulong)decoder.PixelWidth * decoder.PixelHeight > 16_000_000)
+                throw new InvalidDataException("REFERENCE_IMAGE_METADATA_INVALID");
+            var scale = Math.Min(1.0, 384.0 / Math.Max(decoder.PixelWidth, decoder.PixelHeight));
+            var width = Math.Max(1, (int)(decoder.PixelWidth * scale));
+            var height = Math.Max(1, (int)(decoder.PixelHeight * scale));
+            var transform = new BitmapTransform
+            {
+                ScaledWidth = (uint)width, ScaledHeight = (uint)height,
+                InterpolationMode = BitmapInterpolationMode.Fant,
+            };
+            var pixels = await decoder.GetPixelDataAsync(
+                BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
+                transform, ExifOrientationMode.IgnoreExifOrientation,
+                ColorManagementMode.DoNotColorManage).AsTask(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            var preview = BitmapSource.Create(width, height, 96, 96, PixelFormats.Pbgra32, null,
+                pixels.DetachPixelData(), checked(width * 4));
+            preview.Freeze();
+            return preview;
+        }
+        catch (COMException error) { throw new InvalidDataException("REFERENCE_IMAGE_DECODE_FAILED", error); }
     }
 
     public static async Task ValidateImageAsync(byte[] bytes, string extension, CancellationToken cancellationToken)
