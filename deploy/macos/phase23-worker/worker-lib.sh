@@ -114,6 +114,7 @@ payload = {
     "EnvironmentVariables": environment,
     "RunAtLoad": True,
     "KeepAlive": True,
+    "ThrottleInterval": 30,  # Bound LaunchAgent crash restarts; no new daemon.
     "ProcessType": "Background",
     "StandardOutPath": str(runtime_root / "logs" / "worker.stdout.log"),
     "StandardErrorPath": str(runtime_root / "logs" / "worker.stderr.log"),

@@ -42,6 +42,7 @@ jobs:
       - name: Check out source and verified baselines
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Classify affected components
@@ -87,6 +88,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
@@ -186,7 +189,7 @@ jobs:
           mkdir -p "$output"
           bash scripts/mac/phase23/Build-MacCoreSliceBDelta.sh \
             --output-root "$output" \
-            --version-label "2.3.0-slice-d-core-${{ github.run_number }}-${{ github.sha }}"
+            --version-label "2.3.0-slice-d-core-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}"
 
       - name: Verify package structure and hashes
         shell: bash
