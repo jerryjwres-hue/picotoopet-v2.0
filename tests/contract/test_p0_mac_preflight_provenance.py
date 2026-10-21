@@ -16,3 +16,11 @@ def test_worker_plist_has_bounded_crash_restart():
     assert '"KeepAlive": True' in source
     assert '"RunAtLoad": True' in source
     assert '"ThrottleInterval": 30' in source
+
+def test_authorized_video_goal_creative_is_not_rejected_as_unknown_worker_type():
+    # ── CLI registers this exact local video handler when resident model is healthy. ──
+    source = (ROOT / "deploy/macos/phase23-worker/worker-lib.sh").read_text(
+        encoding="utf-8"
+    )
+    assert source.count('"autonomous.goal_creative.v1"') == 3
+    assert "unexpected Worker task type" in source
