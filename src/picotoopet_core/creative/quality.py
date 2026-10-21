@@ -14,7 +14,14 @@ from picotoopet_core.production.profile import (
     frame_count_for_duration,
 )
 
-from .director import MAX_SHOT_SECONDS, GoalDirectives, parse_goal_directives
+from .director import (
+    MAX_SHOT_SECONDS,
+    GoalDirectives,
+    actions_too_similar,
+    negative_conflicts,
+    normalized_keys,
+    parse_goal_directives,
+)
 from .models import (
     CreativeBriefResult,
     CreativeQualityDecision,
@@ -291,6 +298,8 @@ class CreativeQualityGate:
                         )
                     problems.append(("CREATIVE_SHOT_DURATION_UNRENDERABLE", text))
                     break
+        if len(plan.shots) >= 2 and (count is not None or directives.text_to_video_only):
+            problems.extend(CreativeQualityGate._multi_shot_problems(plan))
         try:
             target = float(script_raw["target_duration_seconds"])
         except (KeyError, TypeError, ValueError):
@@ -302,6 +311,48 @@ class CreativeQualityGate:
                 f"Shot durations add up to {total:g} seconds but the script target is "
                 f"{target:g}; make them agree (within {TIMELINE_TOLERANCE_SECONDS:g} seconds, "
                 "ideally equal) without changing the approved beats.",
+            ))
+        return problems
+
+    @staticmethod
+    def _multi_shot_problems(plan: ShotPlanResult) -> list[tuple[str, str]]:
+        """Each shot becomes its own Wan prompt, so identity must be repeated, not implied."""
+
+        problems: list[tuple[str, str]] = []
+        shared = set.intersection(*(normalized_keys(s.continuity_keys) for s in plan.shots))
+        if len(shared) < 2:
+            problems.append((
+                "SHOT_IDENTITY_ANCHORS_MISSING",
+                "Every shot is rendered separately with no memory of the others. Repeat the "
+                "same 2 to 5 anchors word for word in continuity_keys of EVERY shot: pet breed "
+                "+ coat + accessory, product colour + shape + material, place, light "
+                f"(shared by all shots now: {len(shared)}).",
+            ))
+        for index, first in enumerate(plan.shots):
+            other = next(
+                (
+                    later for later in plan.shots[index + 1 :]
+                    if actions_too_similar(first.action, later.action)
+                ),
+                None,
+            )
+            if other is not None:
+                problems.append((
+                    "SHOT_ACTIONS_NOT_DISTINCT",
+                    f"Shots {first.shot_id} and {other.shot_id} describe the same action. Give "
+                    "each shot one different visible action (hook, demo, payoff).",
+                ))
+                break
+        clashing = negative_conflicts([
+            text for shot in plan.shots
+            for text in (shot.subject, shot.environment, shot.action, shot.framing,
+                         shot.lighting_style, *shot.continuity_keys, *shot.required_facts)
+        ])
+        if clashing:
+            problems.append((
+                "PROMPT_CONTRADICTS_NEGATIVE",
+                "The renderer is told to avoid these words, so do not use them in any shot "
+                "field: " + ", ".join(clashing) + ".",
             ))
         return problems
 

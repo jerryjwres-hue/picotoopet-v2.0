@@ -127,6 +127,47 @@ def parse_goal_directives(objective: str | None) -> GoalDirectives:
     return GoalDirectives(shot_count=shot_count, text_to_video_only=marked and not wants_image)
 
 
+_CJK = re.compile(r"[\u4e00-\u9fff]")
+# Words the frozen Wan negative prompt (windows/production/workflows, "静态 过曝 杂乱背景 字幕
+# 细节模糊不清 色调艳丽") asks the sampler to avoid; using them in the positive text cancels itself.
+_NEGATIVE_WORDS = re.compile(
+    r"\b(static|overexposed|cluttered|subtitles?|captions?|blurry|garish|gaudy)\b",
+    re.IGNORECASE,
+)
+ACTION_SIMILARITY_LIMIT = 0.7
+
+
+def _shingles(text: str) -> set[str]:
+    words = set(re.findall(r"[a-z0-9]+", text.casefold()))
+    han = _CJK.findall(text)
+    return words | {han[i] + han[i + 1] for i in range(len(han) - 1)}
+
+
+def actions_too_similar(first: str, second: str) -> bool:
+    """True when two shot actions are essentially the same sentence (token/bigram Jaccard)."""
+
+    a, b = _shingles(first), _shingles(second)
+    if not a or not b:
+        return a == b
+    return len(a & b) / len(a | b) >= ACTION_SIMILARITY_LIMIT
+
+
+def negative_conflicts(texts: list[str]) -> list[str]:
+    """Whole words in positive text that the fixed negative prompt tells Wan to avoid."""
+
+    found: list[str] = []
+    for text in texts:
+        for match in _NEGATIVE_WORDS.finditer(text):
+            word = match.group(1).casefold()
+            if word not in found:
+                found.append(word)
+    return found
+
+
+def normalized_keys(keys: list[str]) -> set[str]:
+    return {" ".join(key.split()).casefold() for key in keys if key.strip()}
+
+
 def director_constraints(
     brief: CreativeBriefResult,
     script: CreativeScriptResult,

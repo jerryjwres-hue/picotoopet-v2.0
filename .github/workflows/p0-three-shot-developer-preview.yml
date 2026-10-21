@@ -9,6 +9,8 @@ on:
       - "windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1"
       - "windows/desktop/src/**"
       - "src/picotoopet_core/product-version.txt"
+      - "src/picotoopet_core/creative/**"
+      - "tests/creative/**"
   workflow_dispatch:
 
 permissions:
