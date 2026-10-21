@@ -44,7 +44,10 @@ internal static class P0ThreeShotAcceptanceGate
                 || plan.Tasks.Select(task => task.ProductionTaskId).Distinct(StringComparer.Ordinal).Count() != 3
                 || plan.Tasks.Select(task => task.ShotId).Distinct(StringComparer.Ordinal).Count() != 3
                 || plan.Tasks.Any(task =>
-                    task.RenderIntent != "GENERATIVE_VIDEO"
+                    // ── 身份必须非空白；Distinct 无法拒绝单个空 ShotId/TaskId。 ──
+                    string.IsNullOrWhiteSpace(task.ProductionTaskId)
+                    || string.IsNullOrWhiteSpace(task.ShotId)
+                    || task.RenderIntent != "GENERATIVE_VIDEO"
                     || task.ExecutionDisposition != "Executable"
                     || task.WorkflowId != ComfyWorkflowTemplateValidator.T2VWorkflowId
                     || task.TrustedInputAssetRef is not null
