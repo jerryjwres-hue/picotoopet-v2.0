@@ -3,6 +3,7 @@ using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Services;
 
+/// <summary>复用现有 Core 配对凭证提交待审核参考图片；此处绝不直接批准或启动 GPU。</summary>
 public sealed partial class ControlCenterSession : IReferenceBatchGateway
 {
     public async Task<ReferenceBatchReceipt> RegisterReferenceBatchAsync(

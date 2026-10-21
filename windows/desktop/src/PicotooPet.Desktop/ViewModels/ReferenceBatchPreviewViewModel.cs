@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using SkiaSharp;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 using BitmapDecoder = Windows.Graphics.Imaging.BitmapDecoder;
@@ -272,22 +271,12 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
 
     private static BitmapSource DecodeWebpPreview(byte[] bytes, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        using var data = SKData.CreateCopy(bytes);
-        using var decoder = SKCodec.Create(data);
-        if (decoder is null || decoder.EncodedFormat != SKEncodedImageFormat.Webp || decoder.FrameCount > 1
-            || decoder.Info.Width is <= 0 or > 8192 || decoder.Info.Height is <= 0 or > 8192
-            || (long)decoder.Info.Width * decoder.Info.Height > 16_000_000)
-            throw new InvalidDataException("REFERENCE_IMAGE_METADATA_INVALID");
-        // Bounds are checked before allocating or decoding pixels. No GPU context is created.
-        var info = new SKImageInfo(decoder.Info.Width, decoder.Info.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
-        var pixels = new byte[checked(info.RowBytes * info.Height)];
-        if (decoder.GetPixels(info, pixels) != SKCodecResult.Success)
-            throw new InvalidDataException("REFERENCE_IMAGE_DECODE_FAILED");
-        cancellationToken.ThrowIfCancellationRequested();
-        BitmapSource preview = BitmapSource.Create(info.Width, info.Height, 96, 96, PixelFormats.Pbgra32, null,
-            pixels, info.RowBytes);
-        var scale = Math.Min(1.0, 384.0 / Math.Max(info.Width, info.Height));
+        // CPU-only portable WebP decoder lives in the existing shared Core library.
+        // The UI never owns a new codec package or relies on a machine-installed WIC extension.
+        var decoded = ReferenceImageWebpDecoder.Decode(bytes, cancellationToken);
+        BitmapSource preview = BitmapSource.Create(decoded.Width, decoded.Height, 96, 96,
+            PixelFormats.Pbgra32, null, decoded.Pixels, decoded.Stride);
+        var scale = Math.Min(1.0, 384.0 / Math.Max(decoded.Width, decoded.Height));
         if (scale < 1.0) preview = new TransformedBitmap(preview, new ScaleTransform(scale, scale));
         preview.Freeze();
         return preview;
