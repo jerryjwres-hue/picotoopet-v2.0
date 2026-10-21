@@ -101,6 +101,16 @@
         </DataTrigger>
       </Style.Triggers>
     </Style>
+    <Style x:Key="ReferenceBatchButtonStyle" TargetType="Button">
+      <Setter Property="Visibility" Value="Collapsed" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="FontSize" Value="9" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding VideoContinuation.Continuation.CreativeStatus, Mode=OneWay}" Value="creative_ready">
+          <Setter Property="Visibility" Value="Visible" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
   </UserControl.Resources>
 
   <Border CornerRadius="18" ClipToBounds="True">
@@ -233,6 +243,9 @@
                      VerticalAlignment="Top" />
 
           <StackPanel Grid.Row="3" Margin="0,9,0,0">
+            <Button x:Name="ReferenceBatchPreviewButton" Content="参考图 · 多镜头预览与审批"
+                    Style="{StaticResource ReferenceBatchButtonStyle}" Margin="0,0,0,6"
+                    Click="ReferenceBatchPreview_Click" />
             <TextBlock Text="{Binding HandoffSummary, Mode=OneWay}"
                        Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,0,0,6" />
             <StackPanel Orientation="Horizontal">

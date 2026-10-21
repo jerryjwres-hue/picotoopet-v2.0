@@ -15,6 +15,22 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--reference-preview-batch-only", StringComparer.Ordinal))
+            {
+                var failures = new List<Exception>();
+                foreach (var run in new Func<Task>[] { ReferenceBatchClientSmokeTests.RunAsync,
+                    ReferencePreviewSnapshotSmokeTests.RunAsync,
+                    () => { ReferenceBatchPreviewWpfSmokeTests.Run(); return Task.CompletedTask; } })
+                {
+                    try { await run().ConfigureAwait(false); }
+                    catch (Exception error) { Console.Error.WriteLine("REFERENCE_PREVIEW_RED: " + error); failures.Add(error); }
+                }
+                if (failures.Count > 0) throw new AggregateException(failures);
+                ApprovalCenterSmokeTests.Run();
+                ApprovalsPageWpfLayoutSmokeTests.Run();
+                Console.WriteLine("P0_REFERENCE_PREVIEW_BATCH=PASS; GPU_POST=0");
+                return 0;
+            }
             if (args.Contains(
                     "--expect-task-center-legacy-binding-failure",
                     StringComparer.Ordinal))

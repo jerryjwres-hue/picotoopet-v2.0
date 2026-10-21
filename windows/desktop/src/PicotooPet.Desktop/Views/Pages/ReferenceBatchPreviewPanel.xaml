@@ -1,0 +1,64 @@
+<UserControl x:Class="PicotooPet.Desktop.Views.Pages.ReferenceBatchPreviewPanel"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" MinWidth="600">
+ <ScrollViewer VerticalScrollBarVisibility="Auto">
+  <StackPanel Margin="20">
+   <TextBlock Text="参考图预览与批量审批申请" FontSize="21" FontWeight="SemiBold" />
+   <TextBlock Margin="0,8,0,14" TextWrapping="Wrap" Text="为 IMAGE_TO_VIDEO 镜头选择本地 PNG、JPEG 或 WebP，确认预览与使用权后申请审批。来源声明不等于授权；审批决定请前往现有审批中心。" />
+   <TextBlock Text="目标 ID" FontWeight="SemiBold" />
+   <TextBlock Text="{Binding GoalId}" TextWrapping="Wrap" />
+   <TextBlock Margin="0,6,0,0" Text="冻结创意包 ID / SHA-256" FontWeight="SemiBold" />
+   <TextBlock Text="{Binding CreativePackageId}" TextWrapping="Wrap" />
+   <TextBlock Text="{Binding CreativePackageDigest}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" />
+   <Grid Margin="0,16,0,0" IsEnabled="{Binding CanEdit, FallbackValue=False}">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <StackPanel Margin="0,0,10,0"><TextBlock Text="镜头"/><ComboBox x:Name="ShotComboBox" ItemsSource="{Binding EligibleShots}" MinHeight="30" /></StackPanel>
+    <StackPanel Grid.Column="1" Margin="0,0,10,0"><TextBlock Text="来源声明"/>
+     <ComboBox x:Name="SourceComboBox" SelectedIndex="0" MinHeight="30">
+      <ComboBoxItem Content="USER_SUPPLIED"/><ComboBoxItem Content="LICENSED"/>
+     </ComboBox>
+    </StackPanel>
+    <Button x:Name="ChooseReferenceButton" Grid.Column="2" Content="选择参考图…" Padding="12,6" VerticalAlignment="Bottom" Click="ChooseReference_Click" />
+   </Grid>
+   <TextBlock Margin="0,8,0,3" Text="LICENSED：请明确声明拥有本次用途许可，并输入许可/来源材料的 SHA-256。" TextWrapping="Wrap" />
+   <TextBox x:Name="SourceDigestTextBox" IsEnabled="{Binding CanEdit, FallbackValue=False}" MaxLength="64" FontFamily="Consolas" ToolTip="LICENSED 必填：64 位小写十六进制来源摘要；USER_SUPPLIED 使用快照摘要。" />
+   <ItemsControl x:Name="PreviewItems" Margin="0,16,0,0" ItemsSource="{Binding Items}">
+    <ItemsControl.ItemTemplate>
+     <DataTemplate>
+      <Border BorderBrush="#FFD4DFEB" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,0,10">
+       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border Background="#FFF0F3F8" CornerRadius="5"><Image Source="{Binding Preview}" Width="160" Height="130" Stretch="Uniform" AutomationProperties.Name="参考图像素预览" /></Border>
+        <StackPanel Grid.Column="1" Margin="12,0,0,0">
+         <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold" />
+         <TextBlock Text="{Binding SourceReference}" />
+         <TextBlock Text="{Binding Bytes, StringFormat=字节数：{0}}" />
+         <TextBlock Text="{Binding InputRelativePath}" FontSize="10" TextWrapping="Wrap" />
+         <TextBlock Text="{Binding Sha256, StringFormat=图像 SHA-256：{0}}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap" />
+         <TextBlock Text="{Binding SourceDigest, StringFormat=来源 SHA-256：{0}}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap" />
+         <Button Content="移除" Tag="{Binding ShotId}" IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=UserControl}}" HorizontalAlignment="Left" Margin="0,5,0,0" Click="RemoveReference_Click" />
+        </StackPanel>
+       </Grid>
+      </Border>
+     </DataTemplate>
+    </ItemsControl.ItemTemplate>
+   </ItemsControl>
+   <CheckBox x:Name="ConsentCheckBox" Margin="0,5,0,12" IsEnabled="{Binding CanEdit, FallbackValue=False}" IsChecked="{Binding UserConfirmsPreviewAndRights, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+    <TextBlock Text="我已逐张查看预览，确认图像与镜头对应，并拥有将这些图像用于本次视频的使用权。" TextWrapping="Wrap" />
+   </CheckBox>
+   <WrapPanel>
+    <Button x:Name="SubmitBatchButton" Content="申请参考图批量审批" Padding="12,7" Margin="0,0,8,8" IsEnabled="{Binding CanSubmit, FallbackValue=False}" Click="SubmitBatch_Click" />
+    <Button x:Name="RefreshBatchButton" Content="刷新 Core 回执" Padding="12,7" Margin="0,0,8,8" IsEnabled="{Binding CanRefresh, FallbackValue=False}" Click="RefreshBatch_Click" />
+    <Button x:Name="OpenApprovalsButton" Content="打开审批中心" Padding="12,7" Margin="0,0,0,8" Click="OpenApprovals_Click" />
+   </WrapPanel>
+   <TextBlock x:Name="OperationStatusText" Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,4,0,10" AutomationProperties.LiveSetting="Polite" />
+   <StackPanel>
+    <TextBlock Text="Core 审批回执" FontWeight="SemiBold" />
+    <TextBlock Text="{Binding Receipt.Status, StringFormat=状态：{0}}" />
+    <TextBlock Text="{Binding Receipt.ApprovalId, StringFormat=审批 ID：{0}}" TextWrapping="Wrap" />
+    <TextBlock Text="{Binding Receipt.BatchId, StringFormat=批次 ID：{0}}" TextWrapping="Wrap" />
+    <TextBlock Text="{Binding Receipt.ApprovalRequestDigest, StringFormat=审批请求 SHA-256：{0}}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11" />
+    <TextBlock Text="{Binding Receipt.ExpiresAt, StringFormat=有效期：{0:u}}" />
+   </StackPanel>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>
