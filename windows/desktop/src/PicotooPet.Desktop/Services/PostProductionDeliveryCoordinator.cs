@@ -35,6 +35,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private string? _approvedAuthorityFingerprint;
     private bool _disposed;
     private bool _opening;
+    private readonly VerifiedGoalDeliveryProjectionStore? _durableProjection;
+    private bool _backgroundProduction;
 
     /// <summary>
     /// 依赖均由调用方注入，特意不依赖未经 Windows 验收的 C009B concrete composer。
@@ -50,8 +52,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         GoalDeliveryCandidateVerifier verifier,
         IFinalVideoLauncher launcher,
         Func<string, string, CancellationToken, Task<C011QaDeliveryAuthority>>? authority = null,
-        Func<FinalVideoQaInputV1, CancellationToken, Task<FinalVideoQaResult>>? verifyQa = null)
+        Func<FinalVideoQaInputV1, CancellationToken, Task<FinalVideoQaResult>>? verifyQa = null,
+        VerifiedGoalDeliveryProjectionStore? durableProjection = null,
+        bool backgroundProduction = true)
     {
+        _durableProjection = durableProjection;
+        _backgroundProduction = backgroundProduction;
         _assembler = assembler ?? throw new ArgumentNullException(nameof(assembler));
         _getNarrationPlan = getNarrationPlan ?? throw new ArgumentNullException(nameof(getNarrationPlan));
         _getOverlayPlan = getOverlayPlan ?? throw new ArgumentNullException(nameof(getOverlayPlan));
@@ -84,7 +90,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             GoalDeliveryCandidateVerifier.CreateDefault(),
             new ShellFinalVideoLauncher(),
             (goal, job, ct) => C011QaDeliveryAuthority.FetchAsync(session, goal, job, ct),
-            qa.VerifyAsync);
+            qa.VerifyAsync,
+            durableProjection: VerifiedGoalDeliveryProjectionStore.CreateDefault(),
+            backgroundProduction: false);
     }
 
     public GoalDeliverySnapshot CurrentSnapshot
@@ -92,11 +100,26 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         get { lock (_gate) { return _current; } }
     }
 
+    /// <summary>Only the independent same-EXE background worker may enable postproduction.</summary>
+    internal void EnableBackgroundProduction()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_durableProjection is null)
+            {
+                throw new InvalidOperationException("GOAL_DELIVERY_PERSISTENCE_REQUIRED");
+            }
+            _backgroundProduction = true;
+        }
+    }
+
     public GoalDeliverySnapshot Observe(string? goalId, GoalVideoContinuationRecord? continuation)
     {
         string? startGoal = null;
         string? startJob = null;
         string? runKey = null;
+        bool runBackground = false;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -140,14 +163,25 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 return _current;
             }
             _running.Add(key);
-            _current = Phase(goalId!, jobId, GoalDeliveryPhase.VisualPreparing);
+            runBackground = _backgroundProduction;
+            // ── WPF may only read a previously approved persistent receipt. ──
+            _current = runBackground
+                ? Phase(goalId!, jobId, GoalDeliveryPhase.VisualPreparing)
+                : GoalDeliverySnapshot.Idle(goalId, jobId);
             startGoal = goalId;
             startJob = jobId;
             runKey = key;
         }
         if (startJob is not null && startGoal is not null && runKey is not null)
         {
-            StartReconciliation(startGoal, startJob, runKey);
+            if (runBackground)
+            {
+                StartReconciliation(startGoal, startJob, runKey);
+            }
+            else
+            {
+                StartReadOnlyRestore(startGoal, startJob, runKey);
+            }
         }
         return CurrentSnapshot;
     }
@@ -201,6 +235,24 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         try
         {
             ct.ThrowIfCancellationRequested();
+            if (_durableProjection is not null && !_backgroundProduction)
+            {
+                // ── GUI Open must remain backed by the current durable QA index. ─────
+                // ── A deleted/replaced projection cannot authorize stale UI memory. ─
+                var stored = await _durableProjection.ReadAsync(
+                    snapshot.GoalId!, snapshot.ProductionJobId!, ct).ConfigureAwait(false);
+                if (stored is null
+                    || stored.Candidate != candidate
+                    || stored.AuthorityFingerprint != authorityFingerprint
+                    || stored.Receipt.Receipt.Outcome != "PASS"
+                    || stored.Receipt.Receipt.ReceiptDigest != approvedReceipt.Receipt.ReceiptDigest
+                    || stored.Receipt.Receipt.QaInputDigest != approvedReceipt.Receipt.QaInputDigest
+                    || !string.Equals(stored.Receipt.ReceiptPath, approvedReceipt.ReceiptPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException("GOAL_DELIVERY_PERSISTED_QA_REVOKED");
+                }
+            }
             var authority = await _authority!(snapshot.GoalId!, snapshot.ProductionJobId!, ct)
                 .ConfigureAwait(false);
             if (authority.Fingerprint() != authorityFingerprint)
@@ -256,6 +308,102 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 InvalidateCurrent();
                 return false;
             }
+        }
+    }
+
+
+    /// <summary>Read-only GUI projection: never calls C004, ffmpeg, narration, overlay, or composer.</summary>
+    private void StartReadOnlyRestore(string goalId, string jobId, string key)
+    {
+        Task task;
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                _running.Remove(key);
+                return;
+            }
+            task = Task.Run(() => RestoreApprovedAsync(goalId, jobId, key, _lifetime.Token));
+            _tasks.Add(task);
+        }
+        _ = task.ContinueWith(
+            completed => { lock (_gate) { _tasks.Remove(completed); } },
+            CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
+    private async Task RestoreApprovedAsync(
+        string goalId, string jobId, string key, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_durableProjection is null || _authority is null || _verifyQa is null)
+            {
+                return; // ── Missing authoritative verification never grants GUI Open. ──
+            }
+            var saved = await _durableProjection.ReadAsync(goalId, jobId, cancellationToken)
+                .ConfigureAwait(false);
+            if (saved is null)
+            {
+                return; // ── Background producer has not written a QA-approved result. ──
+            }
+            var authority = await _authority(goalId, jobId, cancellationToken)
+                .ConfigureAwait(false);
+            if (!string.Equals(authority.Fingerprint(), saved.AuthorityFingerprint, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("GOAL_DELIVERY_AUTHORITY_CHANGED");
+            }
+            if (saved.Receipt.Receipt.Outcome != "PASS"
+                || !ProductionLocalEnvironment.IsOrdinaryFile(saved.Receipt.ReceiptPath)
+                || saved.Candidate.ApprovalReceiptDigest != saved.Receipt.Receipt.ReceiptDigest)
+            {
+                throw new InvalidDataException("GOAL_DELIVERY_STORED_QA_INVALID");
+            }
+            // ── C010A reopens its exact immutable receipt; no alternate QA or compositor. ──
+            var current = await _verifyQa(saved.Input, cancellationToken).ConfigureAwait(false);
+            if (!C011QaDeliveryAuthority.Approved(saved.Candidate, saved.Input, current)
+                || current.Receipt.ReceiptDigest != saved.Receipt.Receipt.ReceiptDigest
+                || current.Receipt.QaInputDigest != saved.Receipt.Receipt.QaInputDigest
+                || !string.Equals(current.ReceiptPath, saved.Receipt.ReceiptPath,
+                    StringComparison.OrdinalIgnoreCase)
+                || !await _verifier.VerifyAtOpenAsync(saved.Candidate, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                throw new InvalidDataException("GOAL_DELIVERY_STORED_QA_STALE");
+            }
+            lock (_gate)
+            {
+                if (!_disposed && IsCurrent(goalId, jobId))
+                {
+                    _candidate = saved.Candidate;
+                    _approvedInput = saved.Input;
+                    _approvedReceipt = current;
+                    _approvedAuthorityFingerprint = saved.AuthorityFingerprint;
+                    _current = Phase(goalId, jobId, GoalDeliveryPhase.DeliveryReady);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // ── Closing WPF cancels only GUI receipt observation, never producer work. ──
+        }
+        catch (Exception)
+        {
+            lock (_gate)
+            {
+                _failed.Add(key);
+                if (!_disposed && IsCurrent(goalId, jobId))
+                {
+                    _candidate = null;
+                    _approvedInput = null;
+                    _approvedReceipt = null;
+                    _approvedAuthorityFingerprint = null;
+                    _current = Phase(goalId, jobId, GoalDeliveryPhase.QaFailed);
+                }
+            }
+        }
+        finally
+        {
+            lock (_gate) { _running.Remove(key); }
         }
     }
 
@@ -384,6 +532,14 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             }
             candidate = candidate with { ApprovalReceiptDigest = receipt.Receipt.ReceiptDigest };
             cancellationToken.ThrowIfCancellationRequested();
+            // ── Publish the QA-approved projection for the GUI only AFTER durable C010 receipt. ──
+            if (_durableProjection is not null)
+            {
+                await _durableProjection.WriteAsync(
+                    new VerifiedGoalDeliveryProjection(
+                        goalId, jobId, candidate, input, receipt, authority.Fingerprint()),
+                    cancellationToken).ConfigureAwait(false);
+            }
             lock (_gate)
             {
                 if (!_disposed && IsCurrent(goalId, jobId))

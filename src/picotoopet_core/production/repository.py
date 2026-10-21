@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -21,6 +23,10 @@ from .models import (
     ProductionTaskStatus,
 )
 
+from .versioned_plan import (
+    ProductionPlanV11, ProductionTaskRecordV11, VersionedProductionPlan,
+    parse_versioned_plan,
+)
 
 def _now() -> datetime:
     # ── Single UTC clock representation ─────────────────────────────────────
@@ -104,7 +110,7 @@ class ProductionRepository:
         )
         return [self._job(row) for row in rows]
 
-    def save_plan(self, production_job_id: str, plan: ProductionPlan, plan_digest: str) -> ProductionPlan:
+    def save_plan(self, production_job_id: str, plan: VersionedProductionPlan, plan_digest: str) -> VersionedProductionPlan:
         # ── Plans are immutable once a digest is bound ──────────────────────
         job = self.get_job(production_job_id)
         if job.plan_digest is not None:
@@ -160,7 +166,7 @@ class ProductionRepository:
                 )
         return self.plan_for(production_job_id)
 
-    def plan_for(self, production_job_id: str) -> ProductionPlan:
+    def plan_for(self, production_job_id: str) -> VersionedProductionPlan:
         row = self.database.fetchone(
             "SELECT plan_json FROM production_jobs WHERE production_job_id=?",
             (production_job_id,),
@@ -169,7 +175,7 @@ class ProductionRepository:
             raise KeyError(production_job_id)
         if not row["plan_json"]:
             raise ValueError("PRODUCTION_PLAN_NOT_READY")
-        return ProductionPlan.model_validate(json.loads(row["plan_json"]))
+        return parse_versioned_plan(json.loads(row["plan_json"]))
 
     def list_tasks(self, production_job_id: str) -> list[ProductionTaskRecord]:
         rows = self.database.fetchall(
@@ -187,7 +193,14 @@ class ProductionRepository:
             raise KeyError(production_task_id)
         return self._task(row)
 
-    def claim_job(self, production_job_id: str, executor_id: str, lease_seconds: int = 120) -> ProductionClaimRecord:
+    def claim_job(
+        self,
+        production_job_id: str,
+        executor_id: str,
+        lease_seconds: int = 120,
+        *,
+        before_lease: Callable[[sqlite3.Connection], None] | None = None,
+    ) -> ProductionClaimRecord:
         # ── One active executor lease per job ────────────────────────────────
         now = _now()
         expires = now + timedelta(seconds=max(30, min(lease_seconds, 600)))
@@ -200,12 +213,21 @@ class ProductionRepository:
             ).fetchone()
             if row is None:
                 raise KeyError(production_job_id)
+            # Until authenticated Windows snapshot verification is integrated,
+            # no v1.1 lease can authorize a legacy worker to POST a reference.
+            if self.plan_for(production_job_id).schema_version == "1.1":
+                raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
             status = ProductionJobStatus(row["status"])
             if status not in {ProductionJobStatus.PLANNED, ProductionJobStatus.CLAIMED, ProductionJobStatus.RENDERING}:
                 raise ValueError("PRODUCTION_JOB_NOT_CLAIMABLE")
             lease_expires = datetime.fromisoformat(row["lease_expires_at"]) if row["lease_expires_at"] else None
             if row["lease_token_digest"] and lease_expires and lease_expires > now:
                 raise ValueError("PRODUCTION_LEASE_ACTIVE")
+            # P0: recovery authorization and lease acquisition must share one
+            # BEGIN IMMEDIATE transaction. A stale preflight cannot authorize
+            # an unknown Comfy POST after another writer changes task state.
+            if before_lease is not None:
+                before_lease(connection)
             connection.execute(
                 "UPDATE production_jobs SET status=?,lease_executor_id=?,lease_token_digest=?,lease_expires_at=?,"
                 "updated_at=? WHERE production_job_id=?",
@@ -218,13 +240,17 @@ class ProductionRepository:
                     production_job_id,
                 ),
             )
+            # ── Return the same serialized lease/task snapshot used for recovery authorization. ──
+            # ── Reading tasks after COMMIT could race an independent writer or stale result. ──────
+            plan = self.plan_for(production_job_id)
+            tasks = self.list_tasks(production_job_id)
         return ProductionClaimRecord(
             production_job_id=production_job_id,
             executor_id=executor_id,
             lease_token=raw_token,
             lease_expires_at=expires,
-            plan=self.plan_for(production_job_id),
-            tasks=self.list_tasks(production_job_id),
+            plan=plan,
+            tasks=tasks,
         )
 
     def heartbeat(
@@ -253,6 +279,8 @@ class ProductionRepository:
         comfy_prompt_id: str | None,
     ) -> ProductionTaskRecord:
         # ── Attempt budget is fixed at initial + one retry ──────────────────
+        if self.plan_for(production_job_id).schema_version == "1.1":
+            raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
         self._require_lease(production_job_id, executor_id, lease_token)
         task = self.get_task(production_job_id, production_task_id)
         if task.status is ProductionTaskStatus.SUCCEEDED:
@@ -317,6 +345,21 @@ class ProductionRepository:
             raise ValueError("PRODUCTION_TASK_RESULT_CONFLICT")
         if current.attempt_count < 1:
             raise ValueError("PRODUCTION_ATTEMPT_REQUIRED")
+        # ── Accept only the latest Core-bound prompt under an active lease. ──
+        bound = self.database.fetchone(
+            "SELECT comfy_prompt_id,status FROM production_attempts "
+            "WHERE production_task_id=? AND attempt_number=?",
+            (production_task_id, current.attempt_count),
+        )
+        if (
+            current.status is not ProductionTaskStatus.RUNNING
+            or not current.comfy_prompt_id
+            or current.comfy_prompt_id != request.comfy_prompt_id
+            or bound is None
+            or bound["status"] != "Running"
+            or bound["comfy_prompt_id"] != request.comfy_prompt_id
+        ):
+            raise ValueError("PRODUCTION_PROMPT_ID_CONFLICT")
 
         timestamp = _iso(_now())
         with self.database.transaction() as connection:
@@ -465,7 +508,12 @@ class ProductionRepository:
 
     @staticmethod
     def _task(row) -> ProductionTaskRecord:  # type: ignore[no-untyped-def]
-        return ProductionTaskRecord(
+        raw_task = json.loads(row["task_plan_json"])
+        task_record_type = (
+            ProductionTaskRecordV11 if "reference_asset" in raw_task
+            else ProductionTaskRecord
+        )
+        return task_record_type(
             production_task_id=row["production_task_id"],
             production_job_id=row["production_job_id"],
             shot_id=row["shot_id"],
@@ -473,7 +521,7 @@ class ProductionRepository:
             render_intent=row["render_intent"],
             execution_disposition=row["execution_disposition"],
             workflow_id=row["workflow_id"],
-            task_plan=json.loads(row["task_plan_json"]),
+            task_plan=raw_task,
             status=row["status"],
             attempt_count=row["attempt_count"],
             comfy_prompt_id=row["comfy_prompt_id"],

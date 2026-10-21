@@ -62,6 +62,7 @@ public sealed class GoalProductionAutopilotCoordinator : IGoalProductionAutopilo
     private readonly object _gate = new();
     private readonly IProductionJobExecutor _executor;
     private readonly IAsyncDisposable? _ownedExecutor;
+    private readonly bool _startOnObserve;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly HashSet<string> _runningJobs = new(StringComparer.Ordinal);
     private readonly HashSet<string> _completedJobs = new(StringComparer.Ordinal);
@@ -72,14 +73,16 @@ public sealed class GoalProductionAutopilotCoordinator : IGoalProductionAutopilo
     private bool _disposed;
 
     public GoalProductionAutopilotCoordinator(IProductionJobExecutor executor)
-        : this(executor, null)
+        : this(executor, null, startOnObserve: true)
     {
     }
 
     private GoalProductionAutopilotCoordinator(
         IProductionJobExecutor executor,
-        IAsyncDisposable? ownedExecutor)
+        IAsyncDisposable? ownedExecutor,
+        bool startOnObserve)
     {
+        _startOnObserve = startOnObserve;
         _executor = executor ?? throw new ArgumentNullException(nameof(executor));
         _ownedExecutor = ownedExecutor;
     }
@@ -88,7 +91,8 @@ public sealed class GoalProductionAutopilotCoordinator : IGoalProductionAutopilo
     {
         ArgumentNullException.ThrowIfNull(session);
         var executor = ProductionExecutionService.Create(session);
-        return new GoalProductionAutopilotCoordinator(executor, executor);
+        // ── 生产组合根仅读取状态，渲染由独立 P0MediaWorkerHost 调度。 ──
+        return new GoalProductionAutopilotCoordinator(executor, executor, startOnObserve: false);
     }
 
     public GoalProductionAutopilotSnapshot CurrentSnapshot
@@ -157,6 +161,13 @@ public sealed class GoalProductionAutopilotCoordinator : IGoalProductionAutopilo
                 return _current;
             }
 
+            if (!_startOnObserve)
+            {
+                // ── WPF 观察不再拥有任何 Comfy GPU 任务。 ──
+                _current = new(goalId, productionJobId, GoalProductionAutopilotPhase.Idle,
+                    "后台媒体 Worker 将独立检查并处理生产任务。");
+                return _current;
+            }
             _runningJobs.Add(productionJobId);
             _current = Running(goalId!, productionJobId);
             jobToStart = productionJobId;

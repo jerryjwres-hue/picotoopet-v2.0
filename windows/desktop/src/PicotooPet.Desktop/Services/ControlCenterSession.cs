@@ -61,6 +61,10 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
     /// <summary>会话级最终视频协调器；只保存当前进程内观察状态。</summary>
     public IPostProductionDeliveryObserver FinalVideoDelivery => _postProductionDelivery;
 
+    /// <summary>Background-host-only opt in; normal WPF sessions remain read-only QA consumers.</summary>
+    internal void EnableHeadlessFinalVideoProduction() =>
+        _postProductionDelivery.EnableBackgroundProduction();
+
     /// <summary>会话或服务端状态提交后发布完整只读快照。</summary>
     public event EventHandler<ControlCenterSessionSnapshot>? SnapshotChanged;
 

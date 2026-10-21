@@ -35,6 +35,29 @@ public sealed class OperatorHomePageViewModel : PageViewModel
 
     public GoalVideoContinuationViewModel VideoContinuation { get; }
 
+    /// <summary>Compose the existing paired session and real frozen Creative context; never expose a token.</summary>
+    public async Task<ReferenceBatchPreviewViewModel> CreateReferenceBatchPreviewAsync(CancellationToken cancellationToken = default)
+    {
+        var session = _session ?? throw new InvalidOperationException("REFERENCE_CORE_CONNECTION_REQUIRED");
+        var goalId = CurrentGoal?.GoalId ?? throw new InvalidOperationException("REFERENCE_GOAL_REQUIRED");
+        var continuation = await session.GetGoalVideoContinuationAsync(goalId, cancellationToken).ConfigureAwait(true);
+        var package = await session.GetCreativePackageAsync(continuation.CreativeJobId, cancellationToken).ConfigureAwait(true)
+            ?? throw new InvalidDataException("REFERENCE_FROZEN_PACKAGE_REQUIRED");
+        if (CurrentGoal?.GoalId != goalId || continuation.GoalId != goalId)
+            throw new InvalidDataException("REFERENCE_GOAL_CHANGED");
+        var dataRoot = ProductionLocalEnvironment.ResolveComfyDataRoot();
+        var inputRoot = Path.Combine(dataRoot, "input");
+        ProductionLocalEnvironment.AssertNoLinkEscape(dataRoot, inputRoot);
+        Directory.CreateDirectory(inputRoot);
+        ProductionLocalEnvironment.AssertNoLinkEscape(dataRoot, inputRoot);
+        var policy = new Core.Production.ReferencePreviewFilePolicy(
+            ProductionLocalEnvironment.ResolveUnderRoot, ProductionLocalEnvironment.AssertNoLinkEscape,
+            ProductionLocalEnvironment.IsOrdinaryFile, ProductionLocalEnvironment.Sha256FileAsync);
+        return new ReferenceBatchPreviewViewModel(session,
+            new Core.Production.ReferencePreviewSnapshotStager(inputRoot, policy, ReferenceBatchPreviewViewModel.ValidateImageAsync),
+            continuation, package);
+    }
+
     public OperatorHomePageViewModel(
         ControlCenterSession session,
         ControlCenterSessionSnapshot snapshot)
@@ -45,7 +68,8 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         VideoContinuation = new GoalVideoContinuationViewModel(
             session,
             session.ProductionAutopilot,
-            session.FinalVideoDelivery);
+            session.FinalVideoDelivery,
+            session.GetCreativePackageAsync);
         ApplyHealthIndicators(snapshot);
     }
 
@@ -222,7 +246,12 @@ public sealed class OperatorHomePageViewModel : PageViewModel
 
     public bool HandoffReady => CurrentHandoff?.HandoffReady == true;
 
-    public string HandoffSummary => HandoffReady
+    public string HandoffSummary => CurrentGoal?.IntentType is ("video.creative" or "product.research_to_video")
+        && CurrentGoal.Constraints.ValueKind == System.Text.Json.JsonValueKind.Object
+        && CurrentGoal.Constraints.TryGetProperty("local_video_preferred", out var local)
+        && local.ValueKind == System.Text.Json.JsonValueKind.True
+        ? "Mac 本地模型自动从真实 Goal 证据生成脚本、分镜和 Production Job；无需 Web GPT 返回。"
+        : HandoffReady
         ? $"交接包已就绪 · {CurrentHandoff!.PackageName} · Prompt {CurrentHandoff.PromptVersion}"
         : "视频目标完成后，Mac 会在这里提供可下载交接包和固定 GPT 提示词。";
 

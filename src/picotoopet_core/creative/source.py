@@ -190,7 +190,66 @@ class CreativeSourceNormalizer:
                     ),
                 )
 
+    def persist_goal_source_set(
+        self,
+        *,
+        creative_job_id: str,
+        goal_id: str,
+        discovery_result_hash: str,
+        synthesis_result_hash: str,
+        source_set: NormalizedCreativeSourceSet,
+    ) -> None:
+        """Persist legitimate Goal ResultStore provenance without inventing business packages."""
+
+        if any(len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value)
+               for value in (discovery_result_hash, synthesis_result_hash)):
+            raise CreativeSourceError("GOAL_SOURCE_RESULT_HASH_INVALID")
+        if source_set.result_package_ids or source_set.result_digests:
+            raise CreativeSourceError("GOAL_SOURCE_BUSINESS_RESULT_SPOOFING")
+        job = self.database.fetchone(
+            "SELECT source_set_digest FROM creative_jobs WHERE creative_job_id=?",
+            (creative_job_id,),
+        )
+        if job is None or job["source_set_digest"] != source_set.source_set_digest:
+            raise CreativeSourceError("GOAL_SOURCE_DIGEST_MISMATCH")
+        encoded = self._canonical(source_set.model_dump(mode="json"))
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM creative_goal_source_sets WHERE goal_id=?", (goal_id,),
+            ).fetchone()
+            if row is not None:
+                if (row["creative_job_id"] != creative_job_id
+                    or row["source_set_json"] != encoded
+                    or row["discovery_result_hash"] != discovery_result_hash
+                    or row["synthesis_result_hash"] != synthesis_result_hash):
+                    raise CreativeSourceError("GOAL_SOURCE_IMMUTABLE_CONFLICT")
+                return
+            connection.execute(
+                "INSERT INTO creative_goal_source_sets(creative_job_id,goal_id,"
+                "discovery_result_hash,synthesis_result_hash,source_set_digest,source_set_json,created_at)"
+                " VALUES (?,?,?,?,?,?,datetime('now'))",
+                (creative_job_id, goal_id, discovery_result_hash, synthesis_result_hash,
+                 source_set.source_set_digest, encoded),
+            )
+
     def load_persisted_source_set(self, creative_job_id: str) -> NormalizedCreativeSourceSet:
+        # ── Local Goal Creative keeps actual ResultStore lineage, not fake business FKs. ──
+        goal_row = self.database.fetchone(
+            "SELECT * FROM creative_goal_source_sets WHERE creative_job_id=?",
+            (creative_job_id,),
+        )
+        if goal_row is not None:
+            source = NormalizedCreativeSourceSet.model_validate_json(goal_row["source_set_json"])
+            job = self.database.fetchone(
+                "SELECT source_set_digest FROM creative_jobs WHERE creative_job_id=?",
+                (creative_job_id,),
+            )
+            if (job is None or source.source_set_digest != job["source_set_digest"]
+                or source.source_set_digest != goal_row["source_set_digest"]
+                or source.result_package_ids or source.result_digests
+                or not source.findings or not source.evidence_ids):
+                raise CreativeSourceError("GOAL_SOURCE_INTEGRITY_INVALID")
+            return source
         job = self.database.fetchone(
             "SELECT project_key,source_set_digest FROM creative_jobs WHERE creative_job_id=?",
             (creative_job_id,),

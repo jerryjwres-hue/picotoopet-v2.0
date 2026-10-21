@@ -83,6 +83,42 @@ class CreativeIntelligenceService:
         self.ensure_task(job)
         return self.repository.get_job(job.creative_job_id)
 
+    def create_goal_job(
+        self,
+        *,
+        goal_id: str,
+        source_set: NormalizedCreativeSourceSet,
+        discovery_result_hash: str,
+        synthesis_result_hash: str,
+        creative_objective: str,
+        creative_profile: str = CreativeProfile.CONTENT_PLAN_V1.value,
+    ) -> CreativeJobRecord:
+        """Reuse the Creative stages and standard quality gates for local Goals.
+
+        ``creative_profile`` defaults to v1; v2 (Video Bible) is an explicit per-call opt-in.
+        """
+
+        if source_set.result_package_ids or source_set.result_digests:
+            raise ValueError("GOAL_SOURCE_MUST_NOT_SPOOF_BUSINESS_RESULT")
+        if not source_set.findings or not source_set.evidence_ids:
+            raise ValueError("GOAL_SOURCE_EVIDENCE_REQUIRED")
+        profile = creative_profile_definition(creative_profile)
+        job, combined = self._create_job_from_source_set(
+            source_set=source_set,
+            profile_id=profile.profile_id,
+            creative_objective=creative_objective[:2000],
+            idempotency_key=f"goal-video:{goal_id}",
+        )
+        self.source_normalizer.persist_goal_source_set(
+            creative_job_id=job.creative_job_id,
+            goal_id=goal_id,
+            discovery_result_hash=discovery_result_hash,
+            synthesis_result_hash=synthesis_result_hash,
+            source_set=combined,
+        )
+        self.ensure_task(job)
+        return self.repository.get_job(job.creative_job_id)
+
     def _create_job_from_source_set(
         self,
         *,
@@ -115,7 +151,7 @@ class CreativeIntelligenceService:
         job = self.repository.create_job(
             creative_job_id=str(uuid4()),
             project_key=source_set.project_key,
-            creative_profile=CreativeProfile.CONTENT_PLAN_V1,
+            creative_profile=CreativeProfile(profile.profile_id),
             creative_objective=objective,
             objective_digest=objective_digest,
             source_set_digest=combined_source_digest,

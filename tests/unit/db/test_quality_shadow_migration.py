@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 SHADOW_TABLES = {
@@ -23,8 +23,8 @@ def test_schema_17_adds_shadow_tables_after_schema_16(tmp_path: Path) -> None:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
         }
-        # Current schema gate      Migration history advances through browser-scan schema 23.
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
+        # Current schema gate      Migration history advances through cumulative schema 24.
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
         # 24.1 schema gate         Migration 17 itself remains registered exactly once.
         assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version=17") == 1
         # 23.1 preservation gate   Offline evaluation and candidate facts remain available.
@@ -35,7 +35,7 @@ def test_schema_17_adds_shadow_tables_after_schema_16(tmp_path: Path) -> None:
         assert SHADOW_TABLES <= tables
 
         database.apply_migrations()
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
     finally:
         database.close()
 

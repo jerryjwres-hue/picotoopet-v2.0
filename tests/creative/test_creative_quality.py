@@ -163,3 +163,16 @@ def test_shot_plan_must_cover_every_script_beat() -> None:
     )
     assert decision.outcome is CreativeQualityOutcome.RETRY
     assert "SCRIPT_BEAT_NOT_COVERED" in decision.reasons
+
+
+def test_forbidden_windows_user_path_not_hidden_by_json_escape() -> None:
+    """G006 source fix for Claude #109 strict-XFAIL, retaining its original assertion."""
+    from picotoopet_core.creative.quality import CreativeQualityGate
+
+    assert CreativeQualityGate.contains_forbidden_output({"x": "from C:\\Users\\a\\dog"})
+    assert CreativeQualityGate.contains_forbidden_output(
+        {"nested": [{"text": "from c:\\users\\other\\dog.jpg"}]}
+    )
+    assert not CreativeQualityGate.contains_forbidden_output(
+        {"x": "a dog in a neighborhood user guide"}
+    )

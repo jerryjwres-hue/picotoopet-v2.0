@@ -15,7 +15,7 @@ from picotoopet_core.automation.models import (
     WorkflowStepCreate,
 )
 from picotoopet_core.automation.service import WorkflowService
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 def _open_database(tmp_path: Path) -> Database:
@@ -47,8 +47,8 @@ def test_workflow_replay_survives_restart_after_current_schema(tmp_path: Path) -
     created = service.create_workflow(request)
     assert created.status.value == "Ready"
     assert [step.step_key for step in created.steps] == ["collect", "review"]
-    # Schema retention gate: existing workflows survive current schema 23.
-    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == 23
+    # Schema retention gate: existing workflows survive current schema 24.
+    assert database.scalar("SELECT MAX(version) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
     workflow_id = created.workflow_id
     database.close()
 

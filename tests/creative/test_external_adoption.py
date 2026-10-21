@@ -111,12 +111,14 @@ def _stages(source_ref: str) -> dict[str, dict[str, object]]:
     shot = {
         "schema_version": "1.0",
         "creative_profile": "creative.content_plan.v1",
+        # Keep the 12-second approved script beat; Wan permits at most 121 frames
+        # per shot at 24 fps, so express it as three contiguous 4-second shots.
         "shots": [
             {
-                "shot_id": "shot-001",
+                "shot_id": f"shot-{index:03d}",
                 "beat_id": "beat-001",
-                "order": 1,
-                "duration_seconds": 12,
+                "order": index,
+                "duration_seconds": 4,
                 "subject": "dog",
                 "environment": "grooming room",
                 "action": "being dried",
@@ -129,6 +131,7 @@ def _stages(source_ref: str) -> dict[str, dict[str, object]]:
                 "production_notes": "renderer-neutral",
                 "render_intent": "GENERATIVE_VIDEO",
             }
+            for index in range(1, 4)
         ],
         "warnings": [],
         "needs_deep_ai": False,

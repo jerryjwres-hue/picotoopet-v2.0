@@ -20,6 +20,16 @@ public sealed partial class ControlCenterSession
         return await client.GetJobsAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>对未结算 journal 逐个精确取 Core Job；禁止使用最近 N 项列表判断终态。</summary>
+    public async Task<ProductionJobRecord> GetProductionJobAsync(
+        string productionJobId,
+        CancellationToken cancellationToken)
+    {
+        // ── Same authenticated client, same canonical Mac Core, no second database. ──
+        await using var client = CreateProductionClient();
+        return await client.GetJobAsync(productionJobId, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ProductionJobRecord> CreateProductionJobAsync(
         ProductionJobCreateRequest request,
         CancellationToken cancellationToken)

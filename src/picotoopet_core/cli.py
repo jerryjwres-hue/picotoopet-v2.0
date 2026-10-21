@@ -14,6 +14,7 @@ from threading import Event
 from picotoopet_core.api.app import create_app
 from picotoopet_core.automation.models import CapabilityRegistration
 from picotoopet_core.autonomous.background import AutonomousBackgroundCoordinator
+from picotoopet_core.autonomous.local_creative import GoalLocalCreativeCoordinator
 from picotoopet_core.autonomous.local_intelligence import (
     LocalIntelligenceCoordinator,
     build_ollama_local_intelligence_adapter,
@@ -256,6 +257,14 @@ def _run_worker(
         business_coordinator = None
         creative_coordinator = None
 
+    goal_creative_coordinator = GoalLocalCreativeCoordinator(
+        goals=services.autonomous_goals,
+        workflows=services.workflows,
+        result_records=services.result_records,
+        result_store=services.results,
+        creative=services.creative,
+    )
+
     autonomous_local_coordinator = LocalIntelligenceCoordinator(
         build_ollama_local_intelligence_adapter(
             model_name=settings.local_intelligence_model,
@@ -269,6 +278,7 @@ def _run_worker(
         runtime=runtime,
         worker_id=resolved_worker_id,
         local_intelligence_handler=autonomous_local_coordinator.handler,
+        goal_creative_handler=goal_creative_coordinator.handler,
         model_input_budget=autonomous_model_budget,
         model_id=settings.local_intelligence_model,
     )
@@ -285,7 +295,40 @@ def _run_worker(
             result_store=DeepAiProviderResultStore(settings.paths),
         )
 
+    def ensure_goal_production(creative_job_id: str) -> None:
+        # ── Canonical Production only accepts real locally validated Creative PASS. ──
+        row = services.database.fetchone(
+            "SELECT goal_id FROM creative_goal_source_sets WHERE creative_job_id=?",
+            (creative_job_id,),
+        )
+        if row is None:
+            return
+        package = services.creative_repository.package_for(creative_job_id)
+        if package is None or package.quality_outcome.value != "PASS":
+            return
+        from picotoopet_core.production.models import ProductionJobCreateRequest
+
+        services.production.create_job(ProductionJobCreateRequest(
+            creative_package_id=package.creative_package_id,
+            idempotency_key=f"goal-video:{row['goal_id']}",
+        ))
+
+    def execute_creative_with_production(task):
+        # ── Same four-stage Creative handler; only a PASS package triggers Production. ──
+        result = creative_coordinator.handler(task)
+        if result.summary.get("status") == "creative_ready":
+            ensure_goal_production(result.summary["creative_job_id"])
+        return result
+
     def enqueue_controlled_work() -> None:
+        # ── Repair the crash gap between Creative PASS and Production creation. ──
+        ready = services.database.fetchall(
+            "SELECT c.creative_job_id FROM creative_goal_source_sets AS g "
+            "JOIN creative_jobs AS c ON c.creative_job_id=g.creative_job_id "
+            "WHERE c.status='creative_ready' LIMIT 20"
+        )
+        for item in ready:
+            ensure_goal_production(item["creative_job_id"])
         if provider_coordinator is not None:
             services.coding_escalation.reconcile_pending(limit=20)
             provider_coordinator.enqueue_pending()
@@ -312,7 +355,7 @@ def _run_worker(
                 runtime.handlers.pop(BusinessLocalIntelligenceCoordinator.TASK_TYPE, None)
             if business_healthy and creative_coordinator is not None:
                 runtime.handlers[CreativeIntelligenceCoordinator.TASK_TYPE] = (
-                    creative_coordinator.handler
+                    execute_creative_with_production
                 )
             else:
                 runtime.handlers.pop(CreativeIntelligenceCoordinator.TASK_TYPE, None)

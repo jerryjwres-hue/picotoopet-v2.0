@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>PicotooPet.ReferencePreview.Codecs</RootNamespace>
+    <AssemblyName>PicotooPet.ReferencePreview.Codecs</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Isolated CPU image-preview codec; never included in Mac Core or production renderer. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+  </ItemGroup>
+</Project>

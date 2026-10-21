@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from picotoopet_core.api.app import create_app
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION
 
 
 def make_client(tmp_path: Path) -> tuple[TestClient, dict[str, str]]:
@@ -113,8 +114,8 @@ def test_workflow_api_materializes_only_registered_queue_contract_and_health_is_
 
         health = client.get("/api/v1/automation/health", headers=headers)
         assert health.status_code == 200
-        # Schema gate               Browser scan manifests advance Core schema to 23.
-        assert health.json()["database_schema_version"] == 23
+        # Schema gate               Browser scan manifests advance Core schema to 24.
+        assert health.json()["database_schema_version"] == CURRENT_SCHEMA_VERSION
         assert health.json()["workflow_counts"]["Running"] == 1
 
         diagnostics = client.get("/api/v1/automation/diagnostics", headers=headers)

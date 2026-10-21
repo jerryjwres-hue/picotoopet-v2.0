@@ -51,11 +51,12 @@ public sealed record GoalVideoContinuationRecord(
     [property: JsonPropertyName("handoff_sha256")] string HandoffSha256,
     [property: JsonPropertyName("return_sha256")] string ReturnSha256,
     [property: JsonPropertyName("creative_job_id")] string CreativeJobId,
-    [property: JsonPropertyName("creative_package_id")] string CreativePackageId,
-    [property: JsonPropertyName("creative_package_digest")] string CreativePackageDigest,
+    [property: JsonPropertyName("creative_package_id")] string? CreativePackageId,
+    [property: JsonPropertyName("creative_package_digest")] string? CreativePackageDigest,
     [property: JsonPropertyName("creative_status")] string CreativeStatus,
     [property: JsonPropertyName("production_job_id")] string? ProductionJobId,
-    [property: JsonPropertyName("production_status")] string? ProductionStatus);
+    [property: JsonPropertyName("production_status")] string? ProductionStatus,
+    [property: JsonPropertyName("continuation_mode")] string ContinuationMode = "web_gpt");
 
 /// <summary>Windows 只提交裸 JSON 并读取 Core 投影；不复制返回语义合同。</summary>
 public interface IGoalVideoContinuationGateway

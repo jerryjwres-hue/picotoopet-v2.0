@@ -22,6 +22,9 @@ from picotoopet_core.production.models import (
     ProductionTaskFailureRequest,
     ProductionTaskRecord,
 )
+from picotoopet_core.production.versioned_plan import (
+    ApprovedReferenceAuthorizationV11, ProductionJobCreateV11Request, ProductionPlanV11,
+)
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -38,6 +41,14 @@ def create_production_job(payload: ProductionJobCreateRequest, request: Request)
     return execute_production(lambda: request.app.state.services.production.create_job(payload))
 
 
+@router.post("/production/jobs/v1.1", response_model=ProductionJobRecord)
+def create_production_job_v11(
+    payload: ProductionJobCreateV11Request, request: Request
+) -> ProductionJobRecord:
+    # Only explicitly selected, already Approved Core reference scopes are used.
+    return execute_production(lambda: request.app.state.services.production.create_job_v11(payload))
+
+
 @router.get("/production/jobs", response_model=list[ProductionJobRecord])
 def list_production_jobs(
     request: Request,
@@ -51,9 +62,23 @@ def get_production_job(production_job_id: str, request: Request) -> ProductionJo
     return execute_production(lambda: request.app.state.services.production.get_job(production_job_id))
 
 
-@router.get("/production/jobs/{production_job_id}/plan", response_model=ProductionPlan)
-def get_production_plan(production_job_id: str, request: Request) -> ProductionPlan:
+@router.get("/production/jobs/{production_job_id}/plan", response_model=ProductionPlan | ProductionPlanV11)
+def get_production_plan(production_job_id: str, request: Request) -> ProductionPlan | ProductionPlanV11:
     return execute_production(lambda: request.app.state.services.production.get_plan(production_job_id))
+
+
+@router.get(
+    "/production/jobs/{production_job_id}/tasks/{production_task_id}/reference-authorization",
+    response_model=ApprovedReferenceAuthorizationV11,
+)
+def authorize_production_reference_v11(
+    production_job_id: str,
+    production_task_id: str,
+    request: Request,
+) -> ApprovedReferenceAuthorizationV11:
+    return execute_production(lambda: request.app.state.services.production.authorize_reference_v11(
+        production_job_id, production_task_id
+    ))
 
 
 @router.post("/production/jobs/{production_job_id}/claim", response_model=ProductionClaimRecord)

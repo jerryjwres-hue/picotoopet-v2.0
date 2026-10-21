@@ -42,6 +42,7 @@ def _goal(intent_type: str = "product.research_to_video") -> GoalRecord:
             "depth": "standard",
             "external_ai_upload_requires_user_action": True,
             "read_only_research": True,
+            "local_video_preferred": intent_type in {"video.creative", "product.research_to_video"},
         },
         budget_class="local-first",
         pinned=False,
@@ -176,16 +177,16 @@ def test_workflow_planner_uses_only_fixed_server_owned_steps() -> None:
     assert [step.step_key for step in plan.steps] == [
         "research-evidence",
         "evidence-synthesis",
-        "web-gpt-handoff",
+        "local-creative",
     ]
     assert [step.task_type for step in plan.steps] == [
         "autonomous.discovery.v1",
         "autonomous.goal_synthesis.v1",
-        "autonomous.goal_handoff.v1",
+        "autonomous.goal_creative.v1",
     ]
     assert plan.steps[0].required_capability == "content.discovery"
     assert plan.steps[1].required_capability == "local.goal.synthesis"
-    assert plan.steps[2].required_capability == "local.goal.handoff"
+    assert plan.steps[2].required_capability == "local.goal.creative"
     assert plan.steps[1].depends_on == ["research-evidence"]
     assert plan.steps[2].depends_on == ["evidence-synthesis"]
     assert plan.steps[1].payload == {"goal_id": "goal-123"}

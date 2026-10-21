@@ -12,6 +12,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
+    <!-- Preview-only managed CPU WebP codec: separate from zero-package Core and built-in system tray. -->
+    <ProjectReference Include="..\PicotooPet.ReferencePreview.Codecs\PicotooPet.ReferencePreview.Codecs.csproj" />
     <Resource Include="Assets\Pet\Husky\V1\*.png" />
 
     <!-- Maotai v2 art : independent transparent raster parts are copied into the published payload unchanged. -->

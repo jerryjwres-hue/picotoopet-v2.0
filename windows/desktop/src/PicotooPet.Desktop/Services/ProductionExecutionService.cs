@@ -1,10 +1,20 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Runtime.CompilerServices;
+
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Production;
 
+[assembly: InternalsVisibleTo("PicotooPet.MediaWorker.SmokeTests")]
+
 namespace PicotooPet.Desktop.Services;
+
+/// <summary>Non-aesthetic progress observation: wall duration is NOT measured GPU busy time.</summary>
+public sealed record ProductionShotObservation(
+    string JobId, string TaskId, int AttemptCountAtClaim,
+    bool KnownPromptAtClaim, long WallElapsedMs, string ResultCode);
 
 /// <summary>2.3.20.1 Windows 本地 GPU executor；只执行 Core 已冻结的 Production Plan。</summary>
 public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncDisposable
@@ -30,17 +40,26 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         "wan2.2_vae.safetensors",
     ];
 
-    private readonly ControlCenterSession _session;
+    private readonly IProductionExecutionGateway _session;
+    private readonly ProductionSubmissionJournal _journal;
+    private readonly IComfyPromptReconciler _reconciler;
+    private readonly Func<CancellationToken, Task<ProductionPreflightSnapshot>>? _preflightOverride;
+    private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(2);
+    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _historyTimeout = TimeSpan.FromMinutes(20);
     private readonly ComfyProductionClient _comfy;
     private readonly bool _ownsComfy;
     private readonly string _executorId;
+    private readonly Action<ProductionShotObservation>? _shotObserver;
 
     public ProductionExecutionService(
         ControlCenterSession session,
         ComfyProductionClient comfy,
         string? executorId = null)
     {
-        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _session = new SessionGateway(session ?? throw new ArgumentNullException(nameof(session)));
+        _journal = new(ProductionSubmissionJournal.DefaultRoot);
+        _reconciler = ComfyPromptReconciler.Create();
         _comfy = comfy ?? throw new ArgumentNullException(nameof(comfy));
         _ownsComfy = false;
         _executorId = NormalizeExecutorId(executorId ?? $"windows-production-{Environment.MachineName}");
@@ -50,21 +69,48 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         ControlCenterSession session,
         ComfyProductionClient comfy,
         string executorId,
-        bool ownsComfy)
+        bool ownsComfy,
+        Action<ProductionShotObservation>? shotObserver = null)
     {
-        _session = session;
+        _session = new SessionGateway(session);
+        _journal = new(ProductionSubmissionJournal.DefaultRoot);
+        _reconciler = ComfyPromptReconciler.Create();
         _comfy = comfy;
         _executorId = executorId;
         _ownsComfy = ownsComfy;
+        _shotObserver = shotObserver;
+    }
+
+    /// <summary>同一 executor 的独立用户进程组合；不创建 WPF 会话。</summary>
+    public ProductionExecutionService(IProductionExecutionGateway gateway, ComfyProductionClient comfy)
+        : this(gateway, comfy, new(ProductionSubmissionJournal.DefaultRoot), ComfyPromptReconciler.Create(), null) { }
+
+    public ProductionExecutionService(IProductionExecutionGateway gateway, ComfyProductionClient comfy,
+        ProductionSubmissionJournal journal, IComfyPromptReconciler reconciler,
+        Func<CancellationToken, Task<ProductionPreflightSnapshot>>? preflight = null,
+        TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null, TimeSpan? historyTimeout = null,
+        Action<ProductionShotObservation>? shotObserver = null)
+    {
+        _session = gateway; _comfy = comfy; _journal = journal; _reconciler = reconciler;
+        _preflightOverride = preflight;
+        _shotObserver = shotObserver;
+        _executorId = NormalizeExecutorId($"windows-production-{Environment.MachineName}");
+        _pollInterval = pollInterval ?? TimeSpan.FromSeconds(2);
+        _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(30);
+        _historyTimeout = historyTimeout ?? TimeSpan.FromMinutes(20);
+        if (_pollInterval <= TimeSpan.Zero || _heartbeatInterval <= TimeSpan.Zero || _historyTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(pollInterval));
     }
 
     /// <summary>创建正式固定 loopback executor；没有 endpoint 参数。</summary>
-    public static ProductionExecutionService Create(ControlCenterSession session) =>
+    public static ProductionExecutionService Create(
+        ControlCenterSession session, Action<ProductionShotObservation>? shotObserver = null) =>
         new(
             session,
             ComfyProductionClient.Create(),
             NormalizeExecutorId($"windows-production-{Environment.MachineName}"),
-            ownsComfy: true);
+            ownsComfy: true,
+            shotObserver: shotObserver);
 
     /// <summary>验证本机 ComfyUI、workflow、模型哈希和受信数据根；不提交渲染。</summary>
     public async Task<ProductionPreflightSnapshot> PreflightAsync(
@@ -144,179 +190,329 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         {
             throw new ArgumentException("Production Job ID 不能为空。", nameof(productionJobId));
         }
-        var preflight = await PreflightAsync(cancellationToken).ConfigureAwait(false);
+        using var gpu = _journal.AcquireGpu();
+        // A process death releases the lock, not the submission uncertainty of a prior GPU job.
+        if (_journal.Pending().Any(p => p.JobId != productionJobId))
+            throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+        var existing = await _session.GetProductionPackageAsync(productionJobId, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            // A Core package is not proof that a different orphan GPU prompt has drained.
+            foreach (var pending in _journal.Pending().Where(p => p.JobId == productionJobId))
+                await ReconcileTerminalSubmissionAsync(pending, cancellationToken).ConfigureAwait(false);
+            return existing;
+        }
+        // ── Check the entire immutable multi-shot plan BEFORE expensive model hash/preflight ──
+        // ── and before claiming a lease. One unsafe late shot must not waste earlier GPU renders. ──
+        var originalPlan = await _session.GetProductionPlanAsync(productionJobId, cancellationToken).ConfigureAwait(false);
+        // A v1.1 candidate may not displace recovery of its own unknown previous
+        // POST. The same-EXE Host's existing global recovery owns reconciliation;
+        // until it drains, deny preflight/lease/all fresh GPU work here as well.
+        if (originalPlan.SchemaVersion == "1.1"
+            && _journal.Pending().Any(p => p.JobId == productionJobId))
+            throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+        ValidateMultiShotPlan(productionJobId, originalPlan);
+        var preflight = await (_preflightOverride?.Invoke(cancellationToken) ?? PreflightAsync(cancellationToken)).ConfigureAwait(false);
         if (!preflight.IsReady)
         {
-            throw new InvalidOperationException($"PRODUCTION_PREFLIGHT_FAILED:{preflight.Detail}");
+            throw new ProductionWorkerException("MEDIA_PREFLIGHT_FAILED");
         }
-
-        var claim = await _session.ClaimProductionJobAsync(
-            productionJobId,
-            _executorId,
-            cancellationToken).ConfigureAwait(false);
-        foreach (var task in claim.Plan.Tasks.OrderBy(item => item.Order))
+        var originalDigest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(originalPlan)!))).ToLowerInvariant();
+        ProductionClaimRecord claim;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!string.Equals(task.ExecutionDisposition, "Executable", StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException("PRODUCTION_PLAN_CONTAINS_NEEDS_HUMAN_TASK");
-            }
-            if (string.IsNullOrWhiteSpace(task.WorkflowId))
-            {
-                throw new InvalidOperationException("PRODUCTION_PLAN_WORKFLOW_MISSING");
-            }
-            await ExecuteTaskAsync(
-                claim,
-                task,
-                preflight,
-                cancellationToken).ConfigureAwait(false);
+            claim = await _session.ClaimProductionJobAsync(productionJobId, _executorId, cancellationToken).ConfigureAwait(false);
         }
-
-        var package = await _session.GetProductionPackageAsync(
-            productionJobId,
-            cancellationToken).ConfigureAwait(false);
-        return package ?? throw new InvalidOperationException("PRODUCTION_PACKAGE_NOT_FINALIZED");
-    }
-
-    private async Task ExecuteTaskAsync(
-        ProductionClaimRecord claim,
-        ProductionTaskPlanRecord task,
-        ProductionPreflightSnapshot preflight,
-        CancellationToken cancellationToken)
-    {
-        Exception? lastRetryable = null;
-        string? lastPromptId = null;
-        for (var attempt = 1; attempt <= 2; attempt++)
+        catch (ApiException error) when (error.StatusCode == 409)
         {
-            string? currentPromptId = null;
+            // Current Core correctly refuses an expired *unbound* Running attempt. A legacy
+            // worker may have POSTed it without a journal. Do not let that refusal admit job B.
+            // Transport hides the precise conflict reason, so conservatively protect all not-yet-
+            // settled executable graphs. This never invents a lease, attempt, failure or GPU POST.
+            foreach (var task in originalPlan.Tasks.Where(t => t.ExecutionDisposition == "Executable" && t.WorkflowId is not null))
+            {
+                var known = _journal.Read(productionJobId, task.ProductionTaskId);
+                if (known is not null && known.Phase != "Prepared") continue;
+                var graphDigest = ProductionSubmissionJournal.GraphDigest(BuildPrompt(productionJobId, task, preflight));
+                _journal.Save(new(productionJobId, task.ProductionTaskId, originalDigest, graphDigest, "Submitting", known?.PromptId));
+            }
+            throw new ProductionWorkerException("MEDIA_CLAIM_CONFLICT_RECONCILIATION");
+        }
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Exception? leaseFailure = null;
+        var heartbeat = KeepLeaseAsync();
+        try
+        {
+            foreach (var snapshot in claim.Tasks.Where(t => t.Status == "Succeeded"))
+            {
+                var known = _journal.Read(productionJobId, snapshot.ProductionTaskId);
+                if (known is not null) await ReconcileTerminalSubmissionAsync(known, lifetime.Token).ConfigureAwait(false);
+                ObserveShot(new(productionJobId, snapshot.ProductionTaskId, snapshot.AttemptCount,
+                    snapshot.ComfyPromptId is not null, 0, "REUSED_CORE_SUCCEEDED"));
+            }
+            foreach (var task in claim.Plan.Tasks.OrderBy(item => item.Order))
+            {
+                lifetime.Token.ThrowIfCancellationRequested();
+                if (task.ExecutionDisposition != "Executable" || string.IsNullOrWhiteSpace(task.WorkflowId))
+                    throw new ProductionWorkerException("PRODUCTION_PLAN_CONTAINS_NEEDS_HUMAN_TASK");
+                if (!originalPlan.Tasks.Any(t => t == task)) throw new ProductionWorkerException("MEDIA_SUBMISSION_IDENTITY_CONFLICT");
+                var observed = claim.Tasks.Single(t => t.ProductionTaskId == task.ProductionTaskId);
+                var persisted = _journal.Read(productionJobId, task.ProductionTaskId);
+                var knownPrompt = observed.ComfyPromptId is not null || persisted?.PromptId is not null;
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    await ExecuteTaskAsync(claim, task, originalDigest, preflight, lifetime.Token)
+                        .ConfigureAwait(false);
+                    ObserveShot(new(productionJobId, task.ProductionTaskId, observed.AttemptCount,
+                        knownPrompt, timer.ElapsedMilliseconds, "CORE_COMMITTED"));
+                }
+                catch (Exception error)
+                {
+                    // ── Never turn an unknown transport outcome into a made-up GPU failure. ──
+                    var code = error switch
+                    {
+                        ProductionWorkerException failure => failure.Code,
+                        OperationCanceledException => "INTERRUPTED",
+                        HttpRequestException => "TRANSPORT_UNCERTAIN",
+                        _ => "EXECUTION_UNVERIFIED",
+                    };
+                    ObserveShot(new(productionJobId, task.ProductionTaskId, observed.AttemptCount,
+                        knownPrompt, timer.ElapsedMilliseconds, code));
+                    throw;
+                }
+            }
+            return await _session.GetProductionPackageAsync(productionJobId, lifetime.Token).ConfigureAwait(false)
+                ?? throw new ProductionWorkerException("PRODUCTION_PACKAGE_NOT_FINALIZED");
+        }
+        catch (OperationCanceledException) when (leaseFailure is not null && !cancellationToken.IsCancellationRequested)
+        { throw new ProductionWorkerException("PRODUCTION_LEASE_LOST"); }
+        finally { await lifetime.CancelAsync().ConfigureAwait(false); await heartbeat.ConfigureAwait(false); }
+
+        async Task KeepLeaseAsync()
+        {
             try
             {
-                var template = ComfyWorkflowCatalog.Load(task.WorkflowId!);
-                var filenamePrefix = BuildFilenamePrefix(claim.ProductionJobId, task);
-                string? trustedInput = null;
-                if (string.Equals(
-                    task.WorkflowId,
-                    ComfyWorkflowTemplateValidator.I2VWorkflowId,
-                    StringComparison.Ordinal))
+                while (true)
                 {
-                    trustedInput = ValidateTrustedInput(task.TrustedInputAssetRef, preflight.InputRoot!);
+                    await Task.Delay(_heartbeatInterval, lifetime.Token).ConfigureAwait(false);
+                    using var heartbeatTimeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                    heartbeatTimeout.CancelAfter(TimeSpan.FromSeconds(15));
+                    await _session.HeartbeatProductionJobAsync(claim.ProductionJobId, _executorId, claim.LeaseToken, heartbeatTimeout.Token).ConfigureAwait(false);
                 }
-                var prompt = ComfyWorkflowTemplateValidator.Bind(
-                    task.WorkflowId!,
-                    template,
-                    task,
-                    filenamePrefix,
-                    trustedInput);
-
-                // ── Core 必须先预留 attempt，GPU submit 才允许发生；避免孤儿任务 ──────
-                await _session.MarkProductionAttemptAsync(
-                    claim.ProductionJobId,
-                    task.ProductionTaskId,
-                    new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null),
-                    cancellationToken).ConfigureAwait(false);
-                currentPromptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken)
-                    .ConfigureAwait(false);
-
-                // ── prompt_id 只绑定刚才的 reservation，不消耗第二次 attempt ──────────
-                await _session.MarkProductionAttemptAsync(
-                    claim.ProductionJobId,
-                    task.ProductionTaskId,
-                    new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, currentPromptId),
-                    cancellationToken).ConfigureAwait(false);
-
-                var historyOutput = await WaitForOutputAsync(
-                    claim,
-                    currentPromptId,
-                    cancellationToken).ConfigureAwait(false);
-                var relativeOutput = BuildRelativeOutput(historyOutput.Subfolder, historyOutput.Filename);
-                var outputPath = ResolveUnderRoot(
-                    preflight.OutputRoot!,
-                    relativeOutput,
-                    requireExistingFile: true);
-                AssertNoLinkEscape(preflight.OutputRoot!, outputPath);
-                var file = new FileInfo(outputPath);
-                if (file.Length <= 0)
-                {
-                    throw new InvalidDataException("COMFY_OUTPUT_EMPTY");
-                }
-                var sha256 = await Sha256FileAsync(outputPath, cancellationToken).ConfigureAwait(false);
-                await _session.CommitProductionResultAsync(
-                    claim.ProductionJobId,
-                    task.ProductionTaskId,
-                    new ProductionTaskCommitRequest(
-                        _executorId,
-                        claim.LeaseToken,
-                        currentPromptId,
-                        relativeOutput.Replace('\\', '/'),
-                        sha256,
-                        file.Length,
-                        "video/webm",
-                        task.Width,
-                        task.Height,
-                        task.FrameCount,
-                        task.Fps),
-                    cancellationToken).ConfigureAwait(false);
-                return;
             }
-            catch (Exception exception) when (IsRetryable(exception, cancellationToken))
-            {
-                lastRetryable = exception;
-                lastPromptId = currentPromptId;
-                if (attempt < 2)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-                break;
-            }
+            catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+            catch (Exception exception) { leaseFailure = exception; await lifetime.CancelAsync().ConfigureAwait(false); }
         }
-
-        // ── Retry budget exhausted is a Core durable Failed state, never Cancelled ─
-        await _session.FailProductionTaskAsync(
-            claim.ProductionJobId,
-            task.ProductionTaskId,
-            new ProductionTaskFailureRequest(
-                _executorId,
-                claim.LeaseToken,
-                lastPromptId,
-                "COMFY_RETRY_BUDGET_EXHAUSTED",
-                null),
-            cancellationToken).ConfigureAwait(false);
-        throw new InvalidOperationException("COMFY_RETRY_BUDGET_EXHAUSTED", lastRetryable);
     }
 
-    private async Task<ComfyOutputEvidence> WaitForOutputAsync(
-        ProductionClaimRecord claim,
-        string promptId,
-        CancellationToken cancellationToken)
+    // ── Telemetry never changes the Core lease, journal, GPU outcome or user workflow. ──
+    private void ObserveShot(ProductionShotObservation record)
     {
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(20);
-        var nextHeartbeat = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(45);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (DateTimeOffset.UtcNow >= nextHeartbeat)
-            {
-                await _session.HeartbeatProductionJobAsync(
-                    claim.ProductionJobId,
-                    _executorId,
-                    claim.LeaseToken,
-                    cancellationToken).ConfigureAwait(false);
-                nextHeartbeat = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(45);
-            }
+        try { _shotObserver?.Invoke(record); }
+        catch (Exception) { /* Metrics must never change production correctness. */ }
+    }
 
-            var history = await _comfy.GetHistoryAsync(promptId, cancellationToken).ConfigureAwait(false);
-            if (TryExtractOutput(history, promptId, out var output))
-            {
-                return output;
-            }
-            if (IsHistoryError(history, promptId))
-            {
-                throw new InvalidDataException("COMFY_EXECUTION_FAILED");
-            }
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+    /// <summary>Only Core-authorized executable workflows may enter an automatic multi-shot run.</summary>
+    private static void ValidateMultiShotPlan(string jobId, ProductionPlanRecord plan)
+    {
+        if (plan.SchemaVersion == "1.1")
+        {
+            // Pending Journal reconciliation has priority (the Host runs its global
+            // barrier first). This validation is BEFORE preflight/claim/any GPU POST.
+            // Core's new v1.1 lease remains intentionally disabled until the
+            // persistent Comfy LoadImage snapshot lifetime is actually enforced.
+            ValidateV11FrozenReferenceIdentities(jobId, plan);
+            throw new ProductionWorkerException("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED");
         }
-        throw new TimeoutException("COMFY_HISTORY_TIMEOUT");
+        // The frozen v1.0 Core plan transports only a local path, NOT an authenticated
+        // SHA/byte/rights/source approval. Such an I2V task cannot be authorized for
+        // a fresh GPU POST. Do not mint consent from a filename or silently use T2V.
+        // This guard runs AFTER the journal's pending reconciliation barrier, but
+        // BEFORE expensive model preflight, Core lease reservation or Comfy submission.
+        if (plan.Tasks?.Any(t =>
+            t.WorkflowId == ComfyWorkflowTemplateValidator.I2VWorkflowId
+            || t.RenderIntent == "IMAGE_TO_VIDEO") == true)
+            throw new ProductionWorkerException("I2V_REFERENCE_APPROVAL_CONTRACT_REQUIRED");
+
+        if (plan.ProductionJobId != jobId
+            || plan.SchemaVersion != "1.0"
+            || plan.ProductionProfile != "production.comfyui.v1"
+            || plan.Tasks is not { Length: > 0 }
+            || plan.Tasks.Any(task =>
+                task.ExecutionDisposition != "Executable"
+                || task.WorkflowId is not (
+                    ComfyWorkflowTemplateValidator.T2VWorkflowId
+                    or ComfyWorkflowTemplateValidator.I2VWorkflowId))
+            || plan.Tasks.Select(task => task.ProductionTaskId).Distinct(StringComparer.Ordinal).Count() != plan.Tasks.Length)
+        {
+            throw new ProductionWorkerException("PRODUCTION_PLAN_NOT_FULLY_EXECUTABLE");
+        }
+    }
+
+    /// <summary>
+    /// Read-only v1.1 snapshot admission guard. Never convert a SHA or local path into
+    /// consent; that remains a fresh authenticated Core authorization plus Codex verifier.
+    /// This preserves old v1.0 T2V and rejects untrusted v1.1 before Core lease/GPU.
+    /// </summary>
+    private static void ValidateV11FrozenReferenceIdentities(string jobId, ProductionPlanRecord plan)
+    {
+        if (plan.ProductionJobId != jobId || plan.Tasks is not { Length: > 0 }
+            || plan.ProductionProfile != "production.comfyui.v1"
+            || plan.Tasks.Select(x => x.ProductionTaskId).Distinct(StringComparer.Ordinal).Count() != plan.Tasks.Length
+            || plan.Tasks.Select(x => x.ShotId).Distinct(StringComparer.Ordinal).Count() != plan.Tasks.Length)
+            throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var requiredI2V = 0;
+        foreach (var task in plan.Tasks)
+        {
+            var reference = task.ReferenceAsset;
+            if (task.RenderIntent == "GENERATIVE_VIDEO")
+            {
+                if (reference is not null || task.TrustedInputAssetRef is not null
+                    || task.WorkflowId != ComfyWorkflowTemplateValidator.T2VWorkflowId)
+                    throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+                continue;
+            }
+            if (task.RenderIntent != "IMAGE_TO_VIDEO" || task.WorkflowId != ComfyWorkflowTemplateValidator.I2VWorkflowId
+                || task.ExecutionDisposition != "Executable" || reference is null
+                || reference.SchemaVersion != "reference_asset.v1"
+                || reference.ProductionJobId != jobId || reference.ProductionTaskId != task.ProductionTaskId
+                || reference.ShotId != task.ShotId
+                || reference.CreativePackageId != plan.CreativePackageId
+                || reference.CreativePackageDigest != plan.CreativePackageDigest
+                || plan.ProjectKey != "goal-" + reference.GoalId
+                || reference.RightsScope != "wan22.i2v.production.v1"
+                || string.IsNullOrWhiteSpace(reference.ApprovalId)
+                || string.IsNullOrWhiteSpace(reference.AssetId) || !ids.Add(reference.AssetId)
+                || reference.Bytes is <= 0 or > 33554432
+                || reference.Sha256.Length != 64
+                || reference.Sha256.Any(c => c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+                || reference.InputRelativePath != task.TrustedInputAssetRef)
+                throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+            var pathParts = reference.InputRelativePath.Split('/');
+            if (pathParts.Length != 4 || pathParts[0] != "PicotooPet" || pathParts[1] != "references"
+                || pathParts[2] != reference.Sha256)
+                throw new ProductionWorkerException("I2V_V11_SNAPSHOT_NOT_CONTENT_ADDRESSED");
+            requiredI2V++;
+        }
+        if (requiredI2V == 0)
+            throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+    }
+
+    private async Task ExecuteTaskAsync(ProductionClaimRecord claim, ProductionTaskPlanRecord task, string planDigest,
+        ProductionPreflightSnapshot preflight, CancellationToken cancellationToken)
+    {
+        var snapshot = claim.Tasks.SingleOrDefault(t => t.ProductionTaskId == task.ProductionTaskId)
+            ?? throw new ProductionWorkerException("PRODUCTION_TASK_SNAPSHOT_MISSING");
+        if (snapshot.Status == "Succeeded") return;
+        var prompt = BuildPrompt(claim.ProductionJobId, task, preflight);
+        // Journal binds the full immutable plan digest, never the narrowed lease resume-plan digest.
+        var graphDigest = ProductionSubmissionJournal.GraphDigest(prompt);
+        var state = _journal.Read(claim.ProductionJobId, task.ProductionTaskId);
+        if (state is not null && (state.PlanDigest != planDigest || state.GraphDigest != graphDigest))
+            throw new ProductionWorkerException("MEDIA_SUBMISSION_IDENTITY_CONFLICT");
+        var promptId = state?.PromptId ?? snapshot.ComfyPromptId;
+        if (state?.PromptId is not null && snapshot.ComfyPromptId is not null && state.PromptId != snapshot.ComfyPromptId)
+            throw new ProductionWorkerException("MEDIA_PROMPT_ID_CONFLICT");
+        state ??= new ProductionSubmission(claim.ProductionJobId, task.ProductionTaskId, planDigest, graphDigest, "Prepared", promptId);
+        if (state.Phase == "Settled") throw new ProductionWorkerException("MEDIA_CORE_RESULT_CONFLICT");
+        if (state.Phase == "FailurePending")
+        {
+            await ReportFinalFailureAsync(claim, task, state, cancellationToken).ConfigureAwait(false);
+            throw new ProductionWorkerException("COMFY_RETRY_BUDGET_EXHAUSTED");
+        }
+        if (promptId is null && (state.Phase is "Submitting" or "Submitted" || snapshot.AttemptCount > 0))
+        {
+            // Legacy unbound attempts AND crash after reservation are uncertain, even if Prepared.
+            // Persist the GPU barrier before any network read that can fail or return no match.
+            state = state with { Phase = "Submitting" }; _journal.Save(state);
+            promptId = await _reconciler.FindExactAsync(graphDigest, cancellationToken).ConfigureAwait(false)
+                ?? throw new ProductionWorkerException("MEDIA_SUBMISSION_UNKNOWN");
+        }
+        if (promptId is null)
+        {
+            // Write intent first. An uncertain reservation is safe to replay, an uncertain POST is not.
+            _journal.Save(state);
+            await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
+                new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null), cancellationToken).ConfigureAwait(false);
+            state = state with { Phase = "Submitting" }; _journal.Save(state);
+            promptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken).ConfigureAwait(false);
+        }
+        state = state with { PromptId = promptId, Phase = "Submitted" }; _journal.Save(state);
+        await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
+            new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, promptId), cancellationToken).ConfigureAwait(false);
+        // No GPU retry on HTTP timeout/cancel. Restart/reconnect must reconcile this exact identity.
+        ComfyOutputEvidence historyOutput;
+        string relativeOutput, sha256;
+        FileInfo file;
+        var completedHistory = false;
+        try
+        {
+            historyOutput = await WaitForOutputAsync(promptId, cancellationToken).ConfigureAwait(false);
+            completedHistory = true;
+            relativeOutput = BuildRelativeOutput(historyOutput.Subfolder, historyOutput.Filename);
+            var outputPath = ResolveUnderRoot(preflight.OutputRoot!, relativeOutput, requireExistingFile: true);
+            AssertNoLinkEscape(preflight.OutputRoot!, outputPath);
+            file = new FileInfo(outputPath);
+            if (file.Length <= 0) throw new ProductionWorkerException("COMFY_OUTPUT_EMPTY");
+            sha256 = await Sha256FileAsync(outputPath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (completedHistory && error is (IOException or InvalidDataException or UnauthorizedAccessException)
+            || error is ProductionWorkerException worker && worker.Code is "COMFY_EXECUTION_FAILED" or "COMFY_HISTORY_TIMEOUT" or "COMFY_OUTPUT_EMPTY" or "COMFY_OUTPUT_MISSING")
+        {
+            // Only definite bound-prompt failure. Unknown POST, HTTP uncertainty and cancellation
+            // never enter this path and never authorize another GPU submission.
+            await ReportFinalFailureAsync(claim, task, state, cancellationToken).ConfigureAwait(false);
+            throw new ProductionWorkerException("COMFY_RETRY_BUDGET_EXHAUSTED");
+        }
+        await _session.CommitProductionResultAsync(claim.ProductionJobId, task.ProductionTaskId,
+            new ProductionTaskCommitRequest(_executorId, claim.LeaseToken, promptId,
+                relativeOutput.Replace('\\', '/'), sha256, file.Length, "video/webm",
+                task.Width, task.Height, task.FrameCount, task.Fps), cancellationToken).ConfigureAwait(false);
+        _journal.Save(state with { Phase = "Settled" });
+    }
+
+    private async Task ReportFinalFailureAsync(ProductionClaimRecord claim, ProductionTaskPlanRecord task,
+        ProductionSubmission state, CancellationToken ct)
+    {
+        state = state with { Phase = "FailurePending", FailureCode = "COMFY_RETRY_BUDGET_EXHAUSTED" };
+        _journal.Save(state);
+        await _session.FailProductionTaskAsync(claim.ProductionJobId, task.ProductionTaskId,
+            new ProductionTaskFailureRequest(_executorId, claim.LeaseToken, state.PromptId,
+                "COMFY_RETRY_BUDGET_EXHAUSTED", null), ct).ConfigureAwait(false);
+        // A timed-out prompt may still be on GPU. Core failure alone must not free the GPU barrier.
+        if (await _reconciler.IsFinishedAsync(state.PromptId!, ct).ConfigureAwait(false))
+            _journal.Save(state with { Phase = "Settled" });
+    }
+
+    private Task ReconcileTerminalSubmissionAsync(ProductionSubmission state, CancellationToken ct) =>
+        ProductionPendingRecovery.ReconcileTerminalAsync(_journal, _reconciler, state, ct);
+
+    private static JsonObject BuildPrompt(string jobId, ProductionTaskPlanRecord task, ProductionPreflightSnapshot preflight)
+    {
+        var template = ComfyWorkflowCatalog.Load(task.WorkflowId!);
+        string? trustedInput = task.WorkflowId == ComfyWorkflowTemplateValidator.I2VWorkflowId
+            ? ValidateTrustedInput(task.TrustedInputAssetRef, preflight.InputRoot!) : null;
+        return ComfyWorkflowTemplateValidator.Bind(task.WorkflowId!, template, task, BuildFilenamePrefix(jobId, task), trustedInput);
+    }
+
+    private async Task<ComfyOutputEvidence> WaitForOutputAsync(string promptId, CancellationToken cancellationToken)
+    {
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        while (timer.Elapsed < _historyTimeout)
+        {
+            var history = await _comfy.GetHistoryAsync(promptId, cancellationToken).ConfigureAwait(false);
+            if (IsHistoryError(history, promptId))
+                throw new ProductionWorkerException("COMFY_EXECUTION_FAILED");
+            if (history[promptId]?["status"]?["completed"]?.GetValue<bool>() == true)
+            {
+                if (TryExtractOutput(history, promptId, out var output)) return output;
+                throw new ProductionWorkerException("COMFY_OUTPUT_MISSING");
+            }
+            await Task.Delay(_pollInterval, cancellationToken).ConfigureAwait(false);
+        }
+        throw new ProductionWorkerException("COMFY_HISTORY_TIMEOUT");
     }
 
     private static bool TryExtractOutput(
@@ -428,11 +624,6 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         CancellationToken cancellationToken) =>
         await ProductionLocalEnvironment.Sha256FileAsync(path, cancellationToken).ConfigureAwait(false);
 
-    private static bool IsRetryable(Exception exception, CancellationToken cancellationToken) =>
-        exception is HttpRequestException
-        || exception is TimeoutException
-        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested);
-
     private static string NormalizeExecutorId(string value)
     {
         var normalized = new string(value
@@ -446,10 +637,22 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
 
     public async ValueTask DisposeAsync()
     {
+        if (_reconciler is IDisposable disposable) disposable.Dispose();
         if (_ownsComfy)
         {
             await _comfy.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    private sealed class SessionGateway(ControlCenterSession session) : IProductionExecutionGateway
+    {
+        public Task<ProductionPlanRecord> GetProductionPlanAsync(string j, CancellationToken ct) => session.GetProductionPlanAsync(j, ct);
+        public Task<ProductionClaimRecord> ClaimProductionJobAsync(string j, string e, CancellationToken ct) => session.ClaimProductionJobAsync(j, e, ct);
+        public Task<ProductionJobRecord> HeartbeatProductionJobAsync(string j, string e, string l, CancellationToken ct) => session.HeartbeatProductionJobAsync(j, e, l, ct);
+        public Task<ProductionTaskRecord> MarkProductionAttemptAsync(string j, string t, ProductionTaskAttemptRequest r, CancellationToken ct) => session.MarkProductionAttemptAsync(j, t, r, ct);
+        public Task<ProductionTaskRecord> CommitProductionResultAsync(string j, string t, ProductionTaskCommitRequest r, CancellationToken ct) => session.CommitProductionResultAsync(j, t, r, ct);
+        public Task<ProductionTaskRecord> FailProductionTaskAsync(string j, string t, ProductionTaskFailureRequest r, CancellationToken ct) => session.FailProductionTaskAsync(j, t, r, ct);
+        public Task<ProductionPackageRecord?> GetProductionPackageAsync(string j, CancellationToken ct) => session.GetProductionPackageAsync(j, ct);
     }
 
     private sealed record ComfyOutputEvidence(string Filename, string Subfolder);

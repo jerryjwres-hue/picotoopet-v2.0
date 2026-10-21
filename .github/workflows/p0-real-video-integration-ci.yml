@@ -1,0 +1,105 @@
+name: P0 Real Video Native Integration CI
+
+on:
+  pull_request:
+    branches:
+      - integration/final-video-release-candidate-v1
+    paths:
+      - "src/picotoopet_core/autonomous/**"
+      - "src/picotoopet_core/creative/**"
+      - "src/picotoopet_core/db/**"
+      - "src/picotoopet_core/cli.py"
+      - "windows/desktop/**"
+      - "tests/unit/autonomous/test_p0_local_video_flow.py"
+      - ".github/workflows/p0-real-video-integration-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-real-video-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac-goal-creative:
+    name: Native macOS local Goal and Creative contract
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out exactly the PR branch
+        uses: actions/checkout@v6
+
+      - name: Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime and focused testing
+        run: |
+          python -m pip install -e . pytest==9.1.1
+
+      - name: Compile modified Mac Core modules
+        run: |
+          python -m compileall -q \
+            src/picotoopet_core/autonomous/local_creative.py \
+            src/picotoopet_core/autonomous/human_pipeline.py \
+            src/picotoopet_core/autonomous/video_continuation.py \
+            src/picotoopet_core/creative/source.py \
+            src/picotoopet_core/creative/service.py \
+            src/picotoopet_core/cli.py
+
+      - name: Run only P0 provenance and local routing tests
+        env:
+          PYTHONPATH: ".:src"
+        run: |
+          python -m pytest -q tests/unit/autonomous/test_p0_local_video_flow.py
+          python -m pytest -q tests/video_quality/test_multishot_plan_invariants.py
+          python -m pytest -q tests/production/test_reference_asset_approval.py
+          python -m pytest -q tests/production/test_reference_registration_api.py
+          echo 'P0_REFERENCE_BATCH_REGISTRATION_API=PASS (synthetic approval only)'
+          echo 'P0_REFERENCE_CORE_APPROVAL_SCOPE=PASS (synthetic approval only)'
+          echo "P0_CLAUDE_2_STRICT_XFAIL_ASSERTIONS_NOW_PASS=PASS"
+
+      - name: Print GPU test boundary
+        run: |
+          echo "LIVE_MAC_CORE=UNVERIFIED"
+          echo "REAL_COMFY_GPU=UNVERIFIED"
+          echo "This native CI cannot substitute for dual-machine Wan rendering."
+
+  windows-headless-worker:
+    name: Native Windows headless-worker and Comfy contract
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - name: Check out exactly the PR branch
+        uses: actions/checkout@v6
+
+      - name: Install pinned SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Compile actual Windows desktop and background-worker executable
+        shell: pwsh
+        run: |
+          dotnet build windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj `
+            --configuration Release --nologo -warnaserror
+
+      - name: Exercise frozen Production observer and Comfy recovery smoke
+        shell: pwsh
+        run: |
+          dotnet run `
+            --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
+            --configuration Release -- `
+            --goal-production-autopilot-only
+
+      - name: Print no-simulated-GPU boundary
+        shell: pwsh
+        run: |
+          Write-Host "LIVE_MAC_CORE=UNVERIFIED"
+          Write-Host "REAL_COMFY_GPU=UNVERIFIED"
+          Write-Host "This focused CI never invokes the known-failing Full Release Builder."

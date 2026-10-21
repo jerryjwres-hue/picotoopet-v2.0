@@ -16,6 +16,10 @@ public partial class GoalCenterPanel : WpfUserControl
 {
     private readonly DispatcherTimer _refreshTimer;
     private bool _refreshing;
+    private ReferenceBatchPreviewViewModel? _referencePreview;
+    private string? _referencePreviewContext;
+    private Window? _referencePreviewWindow;
+    private bool _openingReferences;
 
     public GoalCenterPanel()
     {
@@ -222,4 +226,48 @@ public partial class GoalCenterPanel : WpfUserControl
 
     private void AdvancedTask_Click(object sender, RoutedEventArgs e) =>
         AdvancedTaskRequested?.Invoke(this, EventArgs.Empty);
+
+    private async void ReferenceBatchPreview_Click(object sender, RoutedEventArgs e)
+    {
+        if (_openingReferences || DataContext is not OperatorHomePageViewModel viewModel) return;
+        var context = viewModel.CurrentGoal?.GoalId + ":" + viewModel.VideoContinuation.Continuation?.CreativePackageDigest;
+        if (_referencePreviewWindow is { IsVisible: true } && context == _referencePreviewContext)
+        { _referencePreviewWindow.Activate(); return; }
+        _referencePreviewWindow?.Close();
+        _openingReferences = true;
+        try
+        {
+            if (_referencePreview is null || context != _referencePreviewContext)
+            {
+                _referencePreview = await viewModel.CreateReferenceBatchPreviewAsync().ConfigureAwait(true);
+                _referencePreviewContext = context;
+            }
+            if (!ReferenceEquals(DataContext, viewModel)) return;
+            var panel = new ReferenceBatchPreviewPanel(_referencePreview);
+            var window = new Window
+            {
+                Owner = Window.GetWindow(this), Title = "参考图 · 批量预览与审批",
+                Width = 1040, Height = 760, MinWidth = 720, MinHeight = 520, Content = panel,
+            };
+            panel.ApprovalsRequested += (_, _) =>
+            {
+                if (Window.GetWindow(this) is Views.ShellWindow shell)
+                {
+                    window.Close(); // An owned preview window otherwise stays above the existing approvals page.
+                    shell.NavigateFromOperator(Navigation.NavigationRoute.Approvals);
+                    shell.Activate();
+                }
+            };
+            window.Closed += (_, _) => _referencePreviewWindow = null;
+            _referencePreviewWindow = window;
+            window.Show(); // Non-modal: existing Approvals remains the separate human decision authority.
+        }
+        catch (Exception)
+        {
+            MessageBox.Show(Window.GetWindow(this),
+                "参考图预览暂不可用。需要已配对 Mac Core、冻结且 PASS 的 I2V 创意包，以及现有 ComfyUI 输入目录。请刷新后重试；不会启动 GPU。",
+                "参考图预览", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        finally { _openingReferences = false; }
+    }
 }

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 REQUIRED_RETURN_COLUMNS = {"return_id", "handoff_id", "status", "provider", "request_digest", "package_digest", "manifest_digest", "changed_file_count", "event_count", "validation_checks_json", "preview_json", "quarantine_code", "idempotency_key", "created_at", "updated_at"}
@@ -13,8 +13,8 @@ def test_migration_four_creates_return_fact_table_idempotently(tmp_path: Path) -
     return_columns = {row["name"] for row in database.fetchall("PRAGMA table_info(returns)")}
     assert "returns" in tables
     assert REQUIRED_RETURN_COLUMNS <= return_columns
-    # Schema retention gate      Migration 4 remains exactly once inside cumulative schema 23.
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
+    # Schema retention gate      Migration 4 remains exactly once inside cumulative schema 24.
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
     assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 4") == 1
     database.close()
 

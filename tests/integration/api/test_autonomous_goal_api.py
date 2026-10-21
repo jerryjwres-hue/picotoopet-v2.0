@@ -55,6 +55,7 @@ def test_goal_center_exposes_bounded_templates_and_authenticated_human_goals(
         assert goal["constraints"] == {
             "depth": "standard",
             "external_ai_upload_requires_user_action": True,
+            "local_video_preferred": True,
             "read_only_research": True,
         }
         assert goal["budget_class"] == "local-first"
@@ -66,12 +67,12 @@ def test_goal_center_exposes_bounded_templates_and_authenticated_human_goals(
         assert [step.step_key for step in workflow.steps] == [
             "research-evidence",
             "evidence-synthesis",
-            "web-gpt-handoff",
+            "local-creative",
         ]
         assert [step.task_type for step in workflow.steps] == [
             "autonomous.discovery.v1",
             "autonomous.goal_synthesis.v1",
-            "autonomous.goal_handoff.v1",
+            "autonomous.goal_creative.v1",
         ]
         # No fake execution: test app has no live discovery/model capability, so Core leaves
         # the first step Ready instead of materializing an impossible task.
@@ -131,3 +132,23 @@ def test_goal_center_rejects_unknown_goal_types_and_cannot_set_system_priority(
             },
         )
         assert injected.status_code == 422
+
+
+def test_explicit_legacy_video_goal_still_builds_web_gpt_handoff(tmp_path: Path) -> None:
+    # ── API opt-out remains accepted; no silent switch of historical workflows. ─
+    client, headers = make_client(tmp_path)
+    with client:
+        response = client.post(
+            "/api/v1/autonomous/goals",
+            headers={**headers, "Idempotency-Key": "legacy-video-opt-out"},
+            json={
+                "goal_type": "product.research_to_video",
+                "objective": "历史 WebGPT 人工交接视频任务",
+                "local_video_preferred": False,
+            },
+        )
+        assert response.status_code == 201
+        goal = response.json()
+        assert goal["constraints"]["local_video_preferred"] is False
+        workflow = client.app.state.services.workflows.get_workflow(goal["workflow_id"])
+        assert workflow.steps[-1].task_type == "autonomous.goal_handoff.v1"

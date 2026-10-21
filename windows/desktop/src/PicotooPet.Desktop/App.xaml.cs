@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -93,6 +94,8 @@ public partial class App : WpfApplication, IDisposable
 
         MainWindow = _shellWindow;
         _shellWindow.Show();
+        // ── Start even before pairing: the independent worker reconnects after Core setup. ──
+        StartP0MediaWorker(logger);
         _ = InitializeViewModelAsync(_session, _shellWindow, logger);
     }
 
@@ -156,6 +159,7 @@ public partial class App : WpfApplication, IDisposable
         try
         {
             await session.InitializeAsync(CancellationToken.None);
+            // ── UI may reconnect later; media worker already has independent lifetime. ──
         }
         catch (Exception exception)
         {
@@ -166,6 +170,32 @@ public partial class App : WpfApplication, IDisposable
                 "Picotoo Pet AI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning));
+        }
+    }
+
+    /// <summary>启动独占、无窗口的媒体子进程；它拥有自己的 Core Session 与 GPU 生命周期。</summary>
+    private static void StartP0MediaWorker(SafeFileLogger logger)
+    {
+        try
+        {
+            var executable = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(executable))
+            {
+                throw new InvalidOperationException("MEDIA_WORKER_EXECUTABLE_UNAVAILABLE");
+            }
+            var launch = new ProcessStartInfo
+            {
+                FileName = executable,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = AppContext.BaseDirectory,
+            };
+            launch.ArgumentList.Add("--p0-media-worker");
+            _ = Process.Start(launch) ?? throw new InvalidOperationException("MEDIA_WORKER_START_FAILED");
+        }
+        catch (Exception exception)
+        {
+            logger.Error("P0 无界面媒体 Worker 无法启动", exception);
         }
     }
 
@@ -186,6 +216,9 @@ public partial class App : WpfApplication, IDisposable
     {
         try
         {
+            // ── Explicit Exit is different from normal window close-to-tray. ──
+            // ── The media process stops cooperatively after the active GPU job. ──
+            P0MediaWorkerHost.RequestExplicitStop();
             await DisposeRuntimeAsync();
         }
         catch (Exception exception)

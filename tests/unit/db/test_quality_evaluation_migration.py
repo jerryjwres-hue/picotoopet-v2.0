@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from picotoopet_core.db.database import Database
+from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 
 
 EVALUATION_TABLES = {
@@ -26,8 +26,8 @@ def test_schema_16_adds_quality_evaluation_tables_after_schema_15(tmp_path: Path
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
         }
-        # Current schema gate      Migration history advances through browser-scan schema 23.
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
+        # Current schema gate      Migration history advances through cumulative schema 24.
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
         # 23.1 schema gate         Migration 16 itself remains registered exactly once.
         assert database.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version=16") == 1
         # 22.1 preservation gate   Existing Deep-AI / learning facts must remain present.
@@ -38,7 +38,7 @@ def test_schema_16_adds_quality_evaluation_tables_after_schema_15(tmp_path: Path
         assert EVALUATION_TABLES <= tables
 
         database.apply_migrations()
-        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 23
+        assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == CURRENT_SCHEMA_VERSION
     finally:
         database.close()
 

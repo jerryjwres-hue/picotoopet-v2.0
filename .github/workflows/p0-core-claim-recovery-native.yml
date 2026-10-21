@@ -1,0 +1,79 @@
+name: P0 Core Claim Bound Attempt Recovery Native
+
+on:
+  push:
+    branches:
+      - integration/win-only-real-video-p0-v1
+    paths:
+      - '.github/workflows/p0-core-claim-recovery-native.yml'
+      - 'src/picotoopet_core/production/service.py'
+      - 'src/picotoopet_core/production/repository.py'
+      - 'tests/production/test_production_attempt_reservation.py'
+  pull_request:
+    paths:
+      - '.github/workflows/p0-core-claim-recovery-native.yml'
+      - 'src/picotoopet_core/production/service.py'
+      - 'src/picotoopet_core/production/repository.py'
+      - 'tests/production/test_production_attempt_reservation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac-core-recovery:
+    name: macOS actual SQLite bound-prompt recovery tests
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install actual Mac Core project
+        run: python -m pip install -e . pytest==9.1.1
+      - name: Run focused durable attempt and claim regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=.:src python -m pytest -q -vv tests/production/test_production_attempt_reservation.py 2>&1 | tee p0-core-claim.log
+          grep -q '8 passed' p0-core-claim.log
+          echo 'P0_CORE_ATTEMPT2_ATOMIC_CLAIM=PASS'
+      - name: Python source compile
+        run: |
+          python -m compileall -q src/picotoopet_core/production/service.py src/picotoopet_core/production/repository.py tests/production/test_production_attempt_reservation.py
+          echo 'P0_CORE_CLAIM_COMPILE=PASS'
+      - name: Machine-readable recovery evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p p0-evidence
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          log=Path('p0-core-claim.log')
+          contents=log.read_text() if log.exists() else ''
+          passed=('8 passed' in contents and 'failed' not in contents)
+          Path('p0-evidence/claim-recovery.json').write_text(json.dumps({
+              'candidate_head':os.environ['GITHUB_SHA'],
+              'run_id':os.environ['GITHUB_RUN_ID'],
+              'suite':'REAL_SQLITE_ATOMIC_LEASE_GUARD',
+              'passed':passed,
+              'attempt2_bound_reclaim':'PASS' if passed else 'UNVERIFIED',
+              'unknown_post_race':'PASS' if passed else 'UNVERIFIED',
+              'terminal_state_race':'PASS' if passed else 'UNVERIFIED',
+              'gpu_posts_executed':0,
+              'live_mac_core':'UNVERIFIED',
+              'real_comfy_gpu':'UNVERIFIED',
+          },indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0-core-claim-recovery-evidence
+          path: |
+            p0-core-claim.log
+            p0-evidence/claim-recovery.json
+          retention-days: 14
