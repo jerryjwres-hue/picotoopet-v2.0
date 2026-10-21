@@ -19,6 +19,7 @@ internal static class MultiShotProductionTests
         await RejectNonExecutableBeforePreflightOrLeaseAsync();
         await RejectLegacyUnapprovedI2VBeforeGpuAsync();
         await RejectV11UntilProtectedSnapshotAndKnownPostReadyAsync();
+        await AcceptanceGateBoundariesAsync();
         await RecoverMiddleShotAndAssembleThreeSourcesAsync();
         Console.WriteLine("P0_MULTISHOT_3_SHOTS_REUSE_C004_MP4=PASS (offline fake Comfy/FFmpeg)");
     }
@@ -90,6 +91,64 @@ internal static class MultiShotProductionTests
         Console.WriteLine("P0_V11_GPU_POST_ZERO=PASS (offline protected snapshot pending)");
     }
 
+    private static async Task AcceptanceGateBoundariesAsync()
+    {
+        // ── HOLD admission 必须在 preflight/claim/attempt/POST 之前拦截。 ──
+        using (var fixture = new Fixture(rejectLateShot: false))
+        {
+            var preflights = 0;
+            await RecoveryTests.ThrowsCodeAsync("P0_THREE_SHOT_ACCEPTANCE_HELD",
+                () => fixture.Executor(_ => { preflights++; return Ready(fixture.Root); },
+                    acceptanceAdmission: (_, _) => Task.FromResult(false)).RunAsync("job"));
+            RecoveryTests.Assert(preflights == 0 && fixture.Gateway.Claims == 0
+                && fixture.Gateway.Attempts.All(n => n == 0) && fixture.Comfy.Submits == 0,
+                "HOLD admission cannot preflight, claim, reserve attempt or POST");
+        }
+
+        // ── HOLD 在 admission 后切换：Core claim 必须重新获取锁定许可。 ──
+        using (var fixture = new Fixture(rejectLateShot: false))
+        {
+            await RecoveryTests.ThrowsCodeAsync("P0_THREE_SHOT_ACCEPTANCE_HELD",
+                () => fixture.Executor(_ => Ready(fixture.Root),
+                    submissionPermit: (_, _) => throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD"),
+                    acceptanceAdmission: (_, _) => Task.FromResult(true)).RunAsync("job"));
+            RecoveryTests.Assert(fixture.Gateway.Claims == 0
+                && fixture.Gateway.Attempts.All(n => n == 0) && fixture.Comfy.Submits == 0,
+                "HOLD claim boundary must not write a Core claim or GPU attempt");
+        }
+
+        // ── HOLD 在 claim 后/首条任务前切换：仍不得写新 attempt/POST。 ──
+        using (var fixture = new Fixture(rejectLateShot: false))
+        {
+            var permits = 0;
+            await RecoveryTests.ThrowsCodeAsync("P0_THREE_SHOT_ACCEPTANCE_HELD",
+                () => fixture.Executor(_ => Ready(fixture.Root),
+                    submissionPermit: (_, _) =>
+                    {
+                        if (++permits == 1) return null;
+                        throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
+                    },
+                    acceptanceAdmission: (_, _) => Task.FromResult(true)).RunAsync("job"));
+            RecoveryTests.Assert(permits == 2 && fixture.Gateway.Claims == 1
+                && fixture.Gateway.Attempts.All(n => n == 0) && fixture.Comfy.Submits == 0,
+                "HOLD at POST boundary must not write attempt or send a new GPU POST");
+        }
+
+        // ── 默认/ALLOW 门禁走同一个既有 executor，精确三条 T2V 输出。 ──
+        using (var fixture = new Fixture(rejectLateShot: false))
+        {
+            var admissions = 0;
+            var permits = 0;
+            await fixture.Executor(_ => Ready(fixture.Root),
+                submissionPermit: (_, _) => { permits++; return null; },
+                acceptanceAdmission: (_, _) => { admissions++; return Task.FromResult(true); }).RunAsync("job");
+            RecoveryTests.Assert(admissions == 2 && permits == 4 && fixture.Gateway.Claims == 1
+                && fixture.Gateway.Attempts.All(n => n == 1) && fixture.Comfy.Submits == 3,
+                "exact ALLOW must permit claim + exactly three POSTs on the existing executor");
+        }
+        Console.WriteLine("P0_THREE_SHOT_ADMISSION_CLAIM_ATTEMPT_POST=PASS (offline fake Comfy)");
+    }
+
     private static async Task RecoverMiddleShotAndAssembleThreeSourcesAsync()
     {
         using var f = new Fixture(rejectLateShot: false);
@@ -154,10 +213,12 @@ internal static class MultiShotProductionTests
         }
         public ProductionExecutionService Executor(
             Func<CancellationToken, Task<ProductionPreflightSnapshot>> preflight,
-            Action<ProductionShotObservation>? observe = null) =>
+            Action<ProductionShotObservation>? observe = null,
+            Func<string, string, IDisposable?>? submissionPermit = null,
+            Func<string, CancellationToken, Task<bool>>? acceptanceAdmission = null) =>
             new(Gateway, new ComfyProductionClient(_http), Journal, new ComfyPromptReconciler(_http),
                 preflight, TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(30),
-                TimeSpan.FromSeconds(3), observe);
+                TimeSpan.FromSeconds(3), observe, submissionPermit, acceptanceAdmission);
         public void Dispose()
         {
             _http.Dispose();
