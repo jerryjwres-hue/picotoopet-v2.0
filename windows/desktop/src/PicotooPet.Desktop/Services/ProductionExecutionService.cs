@@ -97,12 +97,14 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         Func<CancellationToken, Task<ProductionPreflightSnapshot>>? preflight = null,
         TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null, TimeSpan? historyTimeout = null,
         Action<ProductionShotObservation>? shotObserver = null,
-        Func<string, string, IDisposable?>? submissionPermit = null)
+        Func<string, string, IDisposable?>? submissionPermit = null,
+        Func<string, CancellationToken, Task<bool>>? acceptanceAdmission = null)
     {
         _session = gateway; _comfy = comfy; _journal = journal; _reconciler = reconciler;
         _preflightOverride = preflight;
         _shotObserver = shotObserver;
         _submissionPermit = submissionPermit;
+        _acceptanceAdmission = acceptanceAdmission;
         _executorId = NormalizeExecutorId($"windows-production-{Environment.MachineName}");
         _pollInterval = pollInterval ?? TimeSpan.FromSeconds(2);
         _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(30);
@@ -240,6 +242,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         ProductionClaimRecord claim;
         try
         {
+            // ── 锁定当前授权至 claim 返回；切换 HOLD 不得产生新的 Core lease。 ──
+            using var claimPermit = _submissionPermit?.Invoke(productionJobId, originalDigest);
             claim = await _session.ClaimProductionJobAsync(productionJobId, _executorId, cancellationToken).ConfigureAwait(false);
         }
         catch (ApiException error) when (error.StatusCode == 409)
