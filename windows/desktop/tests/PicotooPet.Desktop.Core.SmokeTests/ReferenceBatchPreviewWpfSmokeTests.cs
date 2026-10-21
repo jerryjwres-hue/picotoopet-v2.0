@@ -102,7 +102,7 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.Equal(1, webpPreview.PixelWidth, "Actual WebP must decode through the bundled CPU codec");
         SmokeAssert.Equal(1, webpPreview.PixelHeight, "WebP fixture height changed");
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp[..20], ".webp"));
-        Console.WriteLine("REFERENCE_PREVIEW_WEBP=PASS; DECODER=NATIVE_WIC");
+        Console.WriteLine("REFERENCE_PREVIEW_WEBP=PASS; DECODER=BUNDLED_CPU");
     }
 
     private static async Task VerifyBatchStateAsync(byte[] png)
