@@ -51,6 +51,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private readonly bool _ownsComfy;
     private readonly string _executorId;
     private readonly Action<ProductionShotObservation>? _shotObserver;
+    private readonly Func<string, string, IDisposable?>? _submissionPermit;
 
     public ProductionExecutionService(
         ControlCenterSession session,
@@ -70,7 +71,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         ComfyProductionClient comfy,
         string executorId,
         bool ownsComfy,
-        Action<ProductionShotObservation>? shotObserver = null)
+        Action<ProductionShotObservation>? shotObserver = null,
+        Func<string, string, IDisposable?>? submissionPermit = null)
     {
         _session = new SessionGateway(session);
         _journal = new(ProductionSubmissionJournal.DefaultRoot);
@@ -79,6 +81,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _executorId = executorId;
         _ownsComfy = ownsComfy;
         _shotObserver = shotObserver;
+        _submissionPermit = submissionPermit;
     }
 
     /// <summary>同一 executor 的独立用户进程组合；不创建 WPF 会话。</summary>
@@ -104,13 +107,15 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
 
     /// <summary>创建正式固定 loopback executor；没有 endpoint 参数。</summary>
     public static ProductionExecutionService Create(
-        ControlCenterSession session, Action<ProductionShotObservation>? shotObserver = null) =>
+        ControlCenterSession session, Action<ProductionShotObservation>? shotObserver = null,
+        Func<string, string, IDisposable?>? submissionPermit = null) =>
         new(
             session,
             ComfyProductionClient.Create(),
             NormalizeExecutorId($"windows-production-{Environment.MachineName}"),
             ownsComfy: true,
-            shotObserver: shotObserver);
+            shotObserver: shotObserver,
+            submissionPermit: submissionPermit);
 
     /// <summary>验证本机 ComfyUI、workflow、模型哈希和受信数据根；不提交渲染。</summary>
     public async Task<ProductionPreflightSnapshot> PreflightAsync(
@@ -432,6 +437,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         }
         if (promptId is null)
         {
+            // ── Opt-in acceptance gate holds the exact authorization file through the new POST. ──
+            // ── No permit means ordinary unattended mode; a denied permit changes no attempt. ──
+            using var permit = _submissionPermit?.Invoke(claim.ProductionJobId, planDigest);
             // Write intent first. An uncertain reservation is safe to replay, an uncertain POST is not.
             _journal.Save(state);
             await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
