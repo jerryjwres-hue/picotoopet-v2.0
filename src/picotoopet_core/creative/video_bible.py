@@ -290,6 +290,7 @@ def evaluate_video_bible(
     brief: CreativeBriefResult,
     script: CreativeScriptResult,
     evidence_ids: set[str],
+    required_shot_count: int | None = None,
 ) -> list[BibleFinding]:
     findings: list[BibleFinding] = []
 
@@ -355,6 +356,11 @@ def evaluate_video_bible(
         add(
             "TIMELINE_MISMATCH",
             detail=f"shots total {total:g}s vs script {script.target_duration_seconds:g}s",
+        )
+    if required_shot_count is not None and len(shots) != required_shot_count:
+        add(
+            "SHOT_COUNT_MISMATCH",
+            detail=f"the goal requires exactly {required_shot_count} shots, got {len(shots)}",
         )
     if not any(Featured.PRODUCT in item.featured for item in shots):
         add("PRODUCT_NEVER_FEATURED", detail="at least one shot must feature the product")

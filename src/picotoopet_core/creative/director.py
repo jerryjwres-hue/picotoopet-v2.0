@@ -8,6 +8,8 @@ the allowed evidence ids and the hard constraints. Source text stays untrusted d
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import Any
 
 from picotoopet_core.production.profile import VIDEO_OUTPUT_PROFILES
@@ -19,6 +21,10 @@ from .video_bible import (
     MIN_SHOT_SECONDS,
     CameraMovement,
 )
+
+# Renderer ceiling: 121 frames at 24 fps (see production/profile.frame_count_for_duration).
+MAX_SHOT_SECONDS = 5.0
+MAX_DIRECTIVE_SHOTS = 12
 
 VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-v1.0.0"
 SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION = "shot-plan-from-bible-v1.0.0"
@@ -54,11 +60,80 @@ STORY_DIRECTOR_INSTRUCTIONS = (
 )
 
 
+@dataclass(frozen=True)
+class GoalDirectives:
+    """Hard, explicit asks found in the Goal objective. They can only tighten the gates."""
+
+    shot_count: int | None = None
+    text_to_video_only: bool = False
+
+
+_WORD_NUMBERS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+    "nine": 9, "ten": 10, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6,
+    "七": 7, "八": 8, "九": 9, "十": 10,
+}
+_COUNT = re.compile(
+    r"(?<![0-9a-z.])(?P<n>\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten"
+    r"|[一二两三四五六七八九十])\s*-?\s*(?:shots?\b|个镜头|個鏡頭|镜头|鏡頭)",
+    re.IGNORECASE,
+)
+_BEFORE = (
+    "at least", "at most", "up to", "no more than", "more than", "fewer than", "less than",
+    "minimum", "maximum", "about", "around", "approximately", "至少", "最多", "不少于",
+    "不超过", "不多于", "超过", "多于", "少于", "大约", "约",
+)
+_AFTER = ("以上", "以内", "左右", "or more", "or fewer", "or less", "+")
+_NO_REFERENCE = (
+    "no image-to-video", "no image to video", "no i2v", "without image-to-video",
+    "without i2v", "no reference images", "no reference image", "without a reference image",
+    "without reference image", "no reference", "不使用参考图", "不要参考图", "无参考图",
+    "不用参考图", "无需参考图", "不使用图生视频", "不要图生视频", "不用图生视频", "不做图生视频",
+)
+_TEXT_ONLY = (
+    "text-to-video only", "text to video only", "t2v only", "only text-to-video", "t2v",
+    "仅文生视频", "只用文生视频", "纯文生视频", "文生视频",
+)
+_IMAGE_WORDS = ("i2v", "image-to-video", "image to video", "图生视频", "reference image", "参考图")
+_NO_REFERENCE_PATTERN = re.compile(
+    "|".join(re.escape(item) for item in sorted(_NO_REFERENCE, key=len, reverse=True))
+)
+
+
+def parse_goal_directives(objective: str | None) -> GoalDirectives:
+    """Deterministically read an explicit shot count and a text-to-video-only ask."""
+
+    if not objective:
+        return GoalDirectives()
+    text = objective.casefold()
+    counts: set[int] = set()
+    ambiguous = False
+    for match in _COUNT.finditer(text):
+        before = text[max(0, match.start() - 16) : match.start()]
+        after = text[match.end() : match.end() + 10]
+        if any(token in before for token in _BEFORE) or any(t in after for t in _AFTER):
+            continue
+        raw = match.group("n")
+        value = int(raw) if raw.isdigit() else _WORD_NUMBERS[raw]
+        if 1 <= value <= MAX_DIRECTIVE_SHOTS:
+            counts.add(value)
+        else:
+            ambiguous = True  # a count outside the supported range is not a directive
+    shot_count = next(iter(counts)) if len(counts) == 1 and not ambiguous else None
+    negated = bool(_NO_REFERENCE_PATTERN.search(text))
+    remaining = _NO_REFERENCE_PATTERN.sub(" ", text)
+    wants_image = any(word in remaining for word in _IMAGE_WORDS)
+    marked = negated or any(marker in remaining for marker in _TEXT_ONLY)
+    return GoalDirectives(shot_count=shot_count, text_to_video_only=marked and not wants_image)
+
+
 def director_constraints(
-    brief: CreativeBriefResult, script: CreativeScriptResult
+    brief: CreativeBriefResult,
+    script: CreativeScriptResult,
+    directives: GoalDirectives | None = None,
 ) -> dict[str, Any]:
     spec = VIDEO_OUTPUT_PROFILES[brief.output_profile_id]
-    return {
+    constraints = {
         "output_profile_id": brief.output_profile_id.value,
         "frame_size": f"{spec.width}x{spec.height}",
         "shot_seconds": {"min": MIN_SHOT_SECONDS, "preferred": [3.0, 5.0], "max": 5.0},
@@ -72,3 +147,8 @@ def director_constraints(
         },
         "reference_images": "none: no approved image exists; do not describe or request one",
     }
+    if directives is not None and directives.shot_count is not None:
+        constraints["required_shot_count"] = directives.shot_count
+    if directives is not None and directives.text_to_video_only:
+        constraints["text_to_video_only"] = True
+    return constraints
