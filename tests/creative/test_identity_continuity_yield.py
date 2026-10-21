@@ -293,3 +293,23 @@ def test_v1_first_plan_with_drift_and_duplicate_actions_is_repaired_before_the_g
     actions = [re.search(r"(the dog [^;]+|a small white tag[^;]+)", p).group(1) for p in prompts]
     assert len(set(actions)) == 3
     assert all(EVIDENCE not in prompt for prompt in prompts)  # evidence ids never reach Wan
+
+
+# ── The recommended first real-run Goal must satisfy every deterministic gate it triggers ──
+
+FIRST_RUN_GOAL = (
+    "Exactly 3 shots, text-to-video only: no reference image, no image-to-video, no text cards. "
+    "Each shot 4.0 seconds, total 12 seconds, landscape. In continuity_keys of every shot repeat "
+    "word for word: cream golden retriever, teal collar, matte-white round tag, sunny wooden "
+    "porch, soft morning light. Shot 1 hook: the dog sits on the porch and tilts its head toward "
+    "the camera. Shot 2 demo: close view of the collar while the small round tag rests on it and "
+    "the dog turns its head slightly. Shot 3 payoff: the dog trots toward the camera and sits, "
+    "the tag visible on the collar. One action per shot; no on-screen text, no logo, no hands."
+)
+
+
+def test_first_real_run_goal_text_is_parsed_and_cannot_trip_the_negative_vocabulary() -> None:
+    directives = parse_goal_directives(FIRST_RUN_GOAL)
+    assert (directives.shot_count, directives.text_to_video_only) == (3, True)
+    assert negative_conflicts([FIRST_RUN_GOAL]) == []
+    assert len(FIRST_RUN_GOAL) < 800  # constraints come first and survive the 2000-char cut
