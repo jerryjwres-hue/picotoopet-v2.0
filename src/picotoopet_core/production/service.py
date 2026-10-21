@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.creative.models import (
     CreativeJobStatus,
     CreativePackageRecord,
@@ -38,11 +39,12 @@ from .quality import validate_task_commit
 from .repository import ProductionRepository
 from .store import ProductionArtifactStore
 from .reference_assets import (
-    ReferenceAssetIdentityV1, verify_persisted_reference_approval,
+    ReferenceAssetIdentityV1, approved_reference_descriptor,
+    verify_persisted_reference_approval,
 )
 from .versioned_plan import (
-    ProductionJobCreateV11Request, ProductionPlanV11, ProductionTaskPlanV11,
-    VersionedProductionPlan,
+    ApprovedReferenceAuthorizationV11, ProductionJobCreateV11Request,
+    ProductionPlanV11, ProductionTaskPlanV11, VersionedProductionPlan,
 )
 
 
@@ -255,9 +257,7 @@ class ProductionService:
                     source_digest=entry["source_digest"],
                     rights_scope="wan22.i2v.production.v1",
                     approval_id=row["approval_id"],
-                    approval_request_digest=__import__(
-                        "picotoopet_core.approvals.service", fromlist=["ApprovalService"]
-                    ).ApprovalService._request_digest(row),
+                    approval_request_digest=ApprovalService._request_digest(row),
                 )
                 verify_persisted_reference_approval(self.repository.database, ref)
             tasks.append(ProductionTaskPlanV11.model_validate(
@@ -280,6 +280,40 @@ class ProductionService:
         )
         self.repository.save_plan(job_id, plan, self._digest(plan.model_dump(mode="json")))
         return self.repository.get_job(job_id)
+
+    def authorize_reference_v11(
+        self, production_job_id: str, production_task_id: str
+    ) -> ApprovedReferenceAuthorizationV11:
+        """Fresh Core authority recheck for one already-frozen v1.1 task.
+
+        It does not assert Windows file bytes have been checked. A Windows
+        adapter must re-read this near POST and use the Codex byte verifier.
+        """
+        plan = self.repository.plan_for(production_job_id)
+        if not isinstance(plan, ProductionPlanV11):
+            raise ValueError("PRODUCTION_V11_REFERENCE_PLAN_REQUIRED")
+        job = self.repository.get_job(production_job_id)
+        if job.plan_digest != self._digest(plan.model_dump(mode="json")):
+            raise ValueError("PRODUCTION_V11_PLAN_DIGEST_MISMATCH")
+        task = next(
+            (item for item in plan.tasks if item.production_task_id == production_task_id),
+            None,
+        )
+        if task is None or task.reference_asset is None:
+            raise ValueError("PRODUCTION_V11_REFERENCE_TASK_NOT_FOUND")
+        stored = self.repository.get_task(production_job_id, production_task_id)
+        if stored.task_plan.model_dump(mode="json") != task.model_dump(mode="json"):
+            raise ValueError("PRODUCTION_V11_TASK_SNAPSHOT_MISMATCH")
+        ref = task.reference_asset
+        verify_persisted_reference_approval(self.repository.database, ref)
+        descriptor = approved_reference_descriptor(self.repository.database, ref)
+        return ApprovedReferenceAuthorizationV11(
+            production_job_id=production_job_id,
+            production_task_id=production_task_id,
+            plan_digest=job.plan_digest,
+            descriptor=descriptor,
+            reference_asset=ref,
+        )
 
     def get_job(self, production_job_id: str) -> ProductionJobRecord:
         return self.repository.get_job(production_job_id)
