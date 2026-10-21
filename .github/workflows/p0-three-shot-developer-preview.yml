@@ -1,0 +1,108 @@
+name: P0 Three Shot Developer Preview Windows
+
+on:
+  push:
+    branches:
+      - integration/p0-three-shot-gate-creative-candidate-v1
+    paths:
+      - ".github/workflows/p0-three-shot-developer-preview.yml"
+      - "windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1"
+      - "windows/desktop/src/**"
+      - "src/picotoopet_core/product-version.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-preview:
+    name: Build unsigned portable WPF candidate without Release Builder
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - name: Check out exact candidate source
+        uses: actions/checkout@v6
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Compile production WPF/Worker and existing native smoke
+        shell: pwsh
+        run: |
+          dotnet build windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj -c Release --nologo -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_WPF_BUILD_FAILED' }
+          dotnet run --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_GATE_NEGATIVES_FAILED' }
+
+      # Portable developer artifact only: no formal release/installer and no GUI or GPU launch.
+      - name: Publish portable Windows x64 app from exact SHA
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'p0-three-shot-preview'
+          $bundle = Join-Path $root 'bundle'
+          $app = Join-Path $bundle 'app'
+          New-Item -ItemType Directory -Force -Path $app | Out-Null
+          dotnet publish windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj -c Release -r win-x64 --self-contained true --nologo -o $app -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_PUBLISH_FAILED' }
+          foreach ($essential in @('Picotoo Pet AI.exe', 'product-version.txt')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $app $essential) -PathType Leaf)) {
+              throw "P0_PREVIEW_MISSING_REQUIRED_FILE: $essential"
+            }
+          }
+          Copy-Item -LiteralPath 'windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1' -Destination (Join-Path $bundle 'Prepare-P0ThreeShotHold.ps1')
+          @(
+            'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
+            'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'
+            'Missing Maotai v2 independent assets continue to block the formal product Release.'
+            'This ZIP does not start any GUI/Worker and does not install models or access the GPU.'
+            'Before any GUI launch on an approved Windows machine, run Prepare-P0ThreeShotHold.ps1'
+            'from the same Windows account that will launch Picotoo Pet AI.exe. It writes persistent HOLD.'
+            'Verify the PowerShell output P0_HOLD_PREPARED=PASS before opening the app.'
+            'Do NOT start an existing Worker with unknown Ready Goals or change HOLD to ALLOW until'
+            'the exact three-shot Core Job/Plan/Digest has been reviewed and GPU execution is safe.'
+            'Production Comfy/Wan, Ollama, Mac Core, FFmpeg and GPU presence are not validated here.'
+          ) | Set-Content -LiteralPath (Join-Path $bundle 'README_P0_DEVELOPER_PREVIEW.txt') -Encoding utf8
+
+          $files = @(Get-ChildItem -LiteralPath $bundle -File -Recurse | Sort-Object FullName | ForEach-Object {
+            [ordered]@{
+              path = $_.FullName.Substring($bundle.Length + 1).Replace('\', '/')
+              size_bytes = $_.Length
+              sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+          })
+          $manifest = [ordered]@{
+            schema_version = 'p0-three-shot-developer-preview.v1'
+            source_sha = $env:GITHUB_SHA
+            github_run_id = $env:GITHUB_RUN_ID
+            product_version = (Get-Content -LiteralPath (Join-Path $app 'product-version.txt') -Raw).Trim()
+            build_target = 'win-x64-self-contained'
+            artifact_kind = 'unsigned-portable-developer-preview'
+            formal_release_pass = $false
+            user_install_allowed = $false
+            executable = 'app/Picotoo Pet AI.exe'
+            hold_script = 'Prepare-P0ThreeShotHold.ps1'
+            files = $files
+          }
+          $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $bundle 'preview-manifest.json') -Encoding utf8
+          $zip = Join-Path $root "P0-ThreeShot-DeveloperPreview-$($env:GITHUB_SHA.Substring(0,12)).zip"
+          Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$sha  $([IO.Path]::GetFileName($zip))" | Set-Content -LiteralPath (Join-Path $root 'preview-sha256.txt') -Encoding ascii
+          Write-Host "P0_PREVIEW_PORTABLE_BUILD=PASS; SOURCE_SHA=$env:GITHUB_SHA; ZIP_SHA256=$sha"
+          Write-Host 'FORMAL_RELEASE=NOT_RUN; GUI_LAUNCHED=NO; REAL_GPU=UNVERIFIED'
+
+      - name: Upload internal portable developer-preview evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-P0-ThreeShot-DeveloperPreview
+          path: |
+            ${{ runner.temp }}/p0-three-shot-preview/P0-ThreeShot-DeveloperPreview-*.zip
+            ${{ runner.temp }}/p0-three-shot-preview/preview-sha256.txt
+          if-no-files-found: error
+          retention-days: 14
