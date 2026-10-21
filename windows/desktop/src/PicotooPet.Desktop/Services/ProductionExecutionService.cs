@@ -205,6 +205,12 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         // ── Check the entire immutable multi-shot plan BEFORE expensive model hash/preflight ──
         // ── and before claiming a lease. One unsafe late shot must not waste earlier GPU renders. ──
         var originalPlan = await _session.GetProductionPlanAsync(productionJobId, cancellationToken).ConfigureAwait(false);
+        // A v1.1 candidate may not displace recovery of its own unknown previous
+        // POST. The same-EXE Host's existing global recovery owns reconciliation;
+        // until it drains, deny preflight/lease/all fresh GPU work here as well.
+        if (originalPlan.SchemaVersion == "1.1"
+            && _journal.Pending().Any(p => p.JobId == productionJobId))
+            throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
         ValidateMultiShotPlan(productionJobId, originalPlan);
         var preflight = await (_preflightOverride?.Invoke(cancellationToken) ?? PreflightAsync(cancellationToken)).ConfigureAwait(false);
         if (!preflight.IsReady)
