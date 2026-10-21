@@ -52,6 +52,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private readonly string _executorId;
     private readonly Action<ProductionShotObservation>? _shotObserver;
     private readonly Func<string, string, IDisposable?>? _submissionPermit;
+    private readonly Func<string, CancellationToken, Task<bool>>? _acceptanceAdmission;
 
     public ProductionExecutionService(
         ControlCenterSession session,
@@ -64,6 +65,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _comfy = comfy ?? throw new ArgumentNullException(nameof(comfy));
         _ownsComfy = false;
         _executorId = NormalizeExecutorId(executorId ?? $"windows-production-{Environment.MachineName}");
+        _submissionPermit = P0ThreeShotAcceptanceGate.AcquireSubmissionPermit;
+        _acceptanceAdmission = (job, ct) => P0ThreeShotAcceptanceGate.AllowsJobAsync(session, job, ct);
     }
 
     private ProductionExecutionService(
@@ -81,7 +84,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _executorId = executorId;
         _ownsComfy = ownsComfy;
         _shotObserver = shotObserver;
-        _submissionPermit = submissionPermit;
+        _submissionPermit = submissionPermit ?? P0ThreeShotAcceptanceGate.AcquireSubmissionPermit;
+        _acceptanceAdmission = (job, ct) => P0ThreeShotAcceptanceGate.AllowsJobAsync(session, job, ct);
     }
 
     /// <summary>同一 executor 的独立用户进程组合；不创建 WPF 会话。</summary>
@@ -195,6 +199,10 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         {
             throw new ArgumentException("Production Job ID 不能为空。", nameof(productionJobId));
         }
+        // ── 同一真实 Session 门禁同时覆盖独立 Worker 与旧 Production Panel 手动启动。 ──
+        if (_acceptanceAdmission is not null
+            && !await _acceptanceAdmission(productionJobId, cancellationToken).ConfigureAwait(false))
+            throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
         using var gpu = _journal.AcquireGpu();
         // A process death releases the lock, not the submission uncertainty of a prior GPU job.
         if (_journal.Pending().Any(p => p.JobId != productionJobId))
@@ -223,6 +231,10 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             throw new ProductionWorkerException("MEDIA_PREFLIGHT_FAILED");
         }
         var originalDigest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(originalPlan)!))).ToLowerInvariant();
+        // ── Preflight may be slow; recheck admission immediately before claiming Core lease. ──
+        if (_acceptanceAdmission is not null
+            && !await _acceptanceAdmission(productionJobId, cancellationToken).ConfigureAwait(false))
+            throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
         ProductionClaimRecord claim;
         try
         {
