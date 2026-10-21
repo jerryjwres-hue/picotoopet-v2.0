@@ -58,7 +58,7 @@ for ($p = [IO.DirectoryInfo]::new($folder); $null -ne $p; $p = $p.Parent) {
 foreach ($p in @($gate, ($gate + '.armed'))) {
   if ((Test-Path -LiteralPath $p) -and ((Get-Item -LiteralPath $p -Force).Attributes -band ([IO.FileAttributes]::ReparsePoint -bor [IO.FileAttributes]::Directory))) { throw 'Unsafe gate/marker' }
 }
-# Marker FIRST: interruption or missing config afterwards remains HOLD.
+# Marker guards missing config. Only completed replacement revokes any existing ALLOW.
 $marker = [IO.File]::Open($gate + '.armed', [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::Write, [IO.FileShare]::Read)
 try { if ($marker.Length -eq 0) { $marker.WriteByte(1) }; $marker.Flush($true) } finally { $marker.Dispose() }
 $temp = Join-Path $folder ('.hold-' + [guid]::NewGuid().ToString('N') + '.tmp')
@@ -69,6 +69,12 @@ $config = Get-Content -LiteralPath $gate -Raw | ConvertFrom-Json
 if ($config.schema_version -ne '1.0' -or $config.mode -ne 'hold' -or -not [IO.File]::Exists($gate + '.armed')) { throw 'HOLD not verified' }
 'HOLD_READY_BEFORE_FIRST_LAUNCH'
 ```
+
+   An interrupted preparation is NOT a HOLD success: an existing ALLOW stays effective
+   until the atomic replacement completes. Do not start/login/reboot before successful
+   readback. If Startup may launch an old executable before that point, preparation is
+   BLOCKED until the authorized operator has prevented that startup; this script does not
+   disable shortcuts, revoke accepted prompts or make an old binary understand the gate.
 
 4. From the extracted package use the EXISTING scripts without interactive activation:
 

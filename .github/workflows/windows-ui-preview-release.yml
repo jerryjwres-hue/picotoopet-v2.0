@@ -87,6 +87,9 @@ jobs:
             'P0_PUBLISHED_GUI_AND_SAME_EXE_WORKER_START=PASS; REAL_GPU=UNVERIFIED'
           } finally {
             # Only these synthetic CI processes, never a user computer or broad process-name kill.
+            $workers = @(@($workers) + @(Get-CimInstance Win32_Process -Filter "Name='Picotoo Pet AI.exe'" -ErrorAction SilentlyContinue | Where-Object {
+              $_.ParentProcessId -eq $gui.Id -and $_.ExecutablePath -eq $exe -and $_.CommandLine -match '--p0-media-worker'
+            }) | Sort-Object ProcessId -Unique)
             foreach ($worker in $workers) { Stop-Process -Id $worker.ProcessId -Force -ErrorAction SilentlyContinue }
             if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force -ErrorAction SilentlyContinue }
             $gui.Dispose()
