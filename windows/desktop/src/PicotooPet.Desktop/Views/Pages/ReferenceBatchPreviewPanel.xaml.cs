@@ -23,7 +23,7 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         {
             if (ShotComboBox.SelectedItem is not string shotId
                 || SourceComboBox.SelectedItem is not ComboBoxItem { Content: string source })
-            { OperationStatusText.Text = "请先选择镜头和来源声明。"; return; }
+            { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "请先选择镜头和来源声明。"); return; }
             var picker = new Microsoft.Win32.OpenFileDialog
             {
                 Filter = "参考图 (PNG, JPEG, WebP)|*.png;*.jpg;*.jpeg;*.webp",

@@ -20,6 +20,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
 {
     private readonly IReferenceBatchGateway _gateway;
     private readonly ReferencePreviewSnapshotStager _stager;
+    private readonly HashSet<string> _eligibleShots;
     private readonly Dictionary<string, (ReferencePreviewSnapshot Snapshot, ReferencePreviewItem Item)> _snapshots = new(StringComparer.Ordinal);
     private ReferenceBatchRequest? _frozenRequest;
     private ReferenceBatchReceipt? _initialReceipt;
@@ -36,7 +37,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(continuation);
         ArgumentNullException.ThrowIfNull(package);
         if (continuation.CreativeStatus != "creative_ready" || package.QualityOutcome != "PASS"
-            || !Guid.TryParse(continuation.GoalId, out _) || !Guid.TryParse(package.CreativePackageId, out _)
+            || !IsIdentifier(continuation.GoalId) || !IsIdentifier(package.CreativePackageId)
             || !IsDigest(package.PackageDigest) || !IsDigest(package.SourceSetDigest)
             || string.IsNullOrWhiteSpace(package.CreativeJobId)
             || continuation.CreativePackageId != package.CreativePackageId
@@ -67,6 +68,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         CreativePackageId = package.CreativePackageId;
         CreativePackageDigest = package.PackageDigest;
         EligibleShots = eligible.ToArray();
+        _eligibleShots = new HashSet<string>(eligible, StringComparer.Ordinal);
     }
 
     public string GoalId { get; }
@@ -94,7 +96,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         CancellationToken cancellationToken = default)
     {
         AssertEditable();
-        if (!EligibleShots.Contains(shotId, StringComparer.Ordinal)
+        if (!_eligibleShots.Contains(shotId)
             || sourceReference is not "USER_SUPPLIED" and not "LICENSED"
             || (sourceReference == "LICENSED" && !IsDigest(sourceDigest))
             || (!_snapshots.ContainsKey(shotId) && Items.Count >= 12))
@@ -219,6 +221,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     private static string Text(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object
         && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : string.Empty;
     private static bool IsDigest(string? value) => value is { Length: 64 } && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+    private static bool IsIdentifier(string? value) => Guid.TryParseExact(value, "D", out var id) && id != Guid.Empty;
 
     public static async Task<BitmapSource> DecodePreviewAsync(byte[] bytes, string extension,
         CancellationToken cancellationToken = default)

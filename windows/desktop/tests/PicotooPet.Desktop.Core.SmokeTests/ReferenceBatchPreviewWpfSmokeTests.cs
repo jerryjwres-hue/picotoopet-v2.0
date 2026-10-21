@@ -74,13 +74,18 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.Equal(2, preview.PixelWidth, "Preview must decode real PNG pixels");
         SmokeAssert.Equal(1, preview.PixelHeight, "Preview dimensions changed");
         SmokeAssert.True(preview.IsFrozen, "Preview bitmap must be frozen for safe binding");
+        var decodedPixels = new byte[8];
+        preview.CopyPixels(decodedPixels, 8, 0);
+        SmokeAssert.Equal((byte)255, decodedPixels[2], "Preview must contain the actual red source pixel");
+        SmokeAssert.Equal((byte)255, decodedPixels[3], "Preview must retain source opacity");
         var jpeg = new JpegBitmapEncoder();
         jpeg.Frames.Add(BitmapFrame.Create(bitmap));
         using var jpegStream = new MemoryStream();
         jpeg.Save(jpegStream);
         var jpegPreview = await ReferenceBatchPreviewViewModel.DecodePreviewAsync(jpegStream.ToArray(), ".jpeg");
         SmokeAssert.Equal(2, jpegPreview.PixelWidth, "Actual JPEG must decode through its verified native codec");
-        var webp = Convert.FromBase64String("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA");
+        // Google Skia resources/images/half-transparent-white-pixel.webp (38-byte known valid fixture).
+        var webp = Convert.FromBase64String("UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAEAfQ//73v3+BiOh/AAA=");
         var webpPreview = await ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp, ".webp");
         SmokeAssert.Equal(1, webpPreview.PixelWidth, "Actual WebP must decode through its verified native codec");
         SmokeAssert.Equal(1, webpPreview.PixelHeight, "WebP fixture height changed");
@@ -132,6 +137,8 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             ((CheckBox)panel.FindName("ConsentCheckBox")).IsChecked = true;
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             SmokeAssert.True(vm.UserConfirmsPreviewAndRights, "Consent must bind from actual WPF control");
+            SmokeAssert.True(((Button)panel.FindName("SubmitBatchButton")).IsEnabled,
+                "Actual submit button must enable only after explicit consent");
             var pending = new TaskCompletionSource<ReferenceBatchReceipt>();
             gateway.Pending = pending;
             var submit = vm.SubmitAsync();

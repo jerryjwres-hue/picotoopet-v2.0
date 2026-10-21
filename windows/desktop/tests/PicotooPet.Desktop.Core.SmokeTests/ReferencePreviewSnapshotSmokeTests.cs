@@ -41,6 +41,29 @@ internal static class ReferencePreviewSnapshotSmokeTests
             SmokeAssert.True((await stager.ReadVerifiedAsync(snapshot).ConfigureAwait(false)).SequenceEqual(bytes), "original selection replacement cannot change managed preview");
             await RejectAsync(() => stager.StageAsync(source, "shot-3"), "fake PNG rejected by real decoder").ConfigureAwait(false);
             await File.WriteAllBytesAsync(source, bytes).ConfigureAwait(false);
+            using (var writer = new FileStream(source, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
+                await RejectAsync(() => stager.StageAsync(source, "shot-3"), "an existing writer must prevent a stable source lease").ConfigureAwait(false);
+            var outside = Path.Combine(workspace, "outside");
+            Directory.CreateDirectory(outside);
+            await File.WriteAllBytesAsync(Path.Combine(outside, "source.png"), bytes).ConfigureAwait(false);
+            var sourceLink = Path.Combine(workspace, "source-link");
+            await MakeJunctionAsync(sourceLink, outside).ConfigureAwait(false);
+            try
+            {
+                await RejectAsync(() => stager.StageAsync(Path.Combine(sourceLink, "source.png"), "shot-3"), "source junction rejected despite valid pixels").ConfigureAwait(false);
+            }
+            finally { Directory.Delete(sourceLink); }
+            var linkedRoot = Path.Combine(workspace, "linked-input");
+            Directory.CreateDirectory(linkedRoot);
+            var managedLink = Path.Combine(linkedRoot, "PicotooPet");
+            await MakeJunctionAsync(managedLink, outside).ConfigureAwait(false);
+            try
+            {
+                var unsafeStager = new ReferencePreviewSnapshotStager(linkedRoot, policy, ReferenceBatchPreviewViewModel.ValidateImageAsync);
+                await RejectAsync(() => unsafeStager.StageAsync(source, "shot-3"), "managed-root junction rejected before any escaped writes").ConfigureAwait(false);
+                SmokeAssert.True(!Directory.Exists(Path.Combine(outside, "references")), "no managed directories may be created through a junction");
+            }
+            finally { Directory.Delete(managedLink); }
             var huge = Path.Combine(workspace, "huge.png");
             using (var file = new FileStream(huge, FileMode.CreateNew, FileAccess.Write)) file.SetLength(ReferencePreviewSnapshotStager.MaxBytes + 1L);
             await RejectAsync(() => stager.StageAsync(huge, "shot-3"), "32MiB bound before allocation").ConfigureAwait(false);
@@ -75,6 +98,17 @@ internal static class ReferencePreviewSnapshotSmokeTests
         using var stream = new MemoryStream();
         encoder.Save(stream);
         return stream.ToArray();
+    }
+
+    private static async Task MakeJunctionAsync(string link, string target)
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
+        {
+            Arguments = $"/d /c mklink /J \"{link}\" \"{target}\"",
+            UseShellExecute = false, CreateNoWindow = true,
+        }) ?? throw new InvalidOperationException("synthetic junction probe did not start");
+        await process.WaitForExitAsync().ConfigureAwait(false);
+        SmokeAssert.Equal(0, process.ExitCode, "junction probe must not silently skip");
     }
 
     private static async Task RejectAsync<T>(Func<Task<T>> action, string reason)
