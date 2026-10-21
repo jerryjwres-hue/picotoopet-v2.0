@@ -12,6 +12,8 @@ internal static class P0ThreeShotAcceptanceGate
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "PicotooPetV2", "MediaWorker", "v1", "three-shot-acceptance.json");
 
+    // ── Worker 曾读取过门禁后，删除文件不能在同一进程内重新打开全量调度。 ──
+    private static int _observedGate;
     private enum Mode { Unattended, Hold, Allow }
     private sealed record Snapshot(Mode Mode, string? JobId = null, string? PlanDigest = null);
 
@@ -114,7 +116,13 @@ internal static class P0ThreeShotAcceptanceGate
             if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0)
                 throw new IOException("P0_ACCEPTANCE_PATH_INVALID");
         }
-        if (!File.Exists(path)) return null;
+        if (!File.Exists(path))
+        {
+            if (System.Threading.Volatile.Read(ref _observedGate) != 0)
+                throw new IOException("P0_ACCEPTANCE_FILE_MISSING");
+            return null;
+        }
+        System.Threading.Interlocked.Exchange(ref _observedGate, 1);
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
             throw new IOException("P0_ACCEPTANCE_PATH_INVALID");
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
