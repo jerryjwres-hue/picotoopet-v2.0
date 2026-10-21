@@ -203,11 +203,12 @@ internal static class MultiShotProductionTests
         public Gateway Gateway { get; }
         public Comfy Comfy { get; }
         public Fixture(bool rejectLateShot, bool unapprovedReference = false,
-            bool v11 = false, bool tamperV11 = false, bool wrongCasPath = false, string jobId = "job")
+            bool v11 = false, bool tamperV11 = false, bool wrongCasPath = false, string jobId = "job",
+            bool canonicalTaskIds = false)
         {
             Directory.CreateDirectory(Root);
             Journal = new(Path.Combine(Root, "journal"));
-            Gateway = new(rejectLateShot, unapprovedReference, v11, tamperV11, wrongCasPath, jobId);
+            Gateway = new(rejectLateShot, unapprovedReference, v11, tamperV11, wrongCasPath, jobId, canonicalTaskIds);
             Comfy = new(Root);
             _http = new(Comfy) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
         }
@@ -243,7 +244,7 @@ internal static class MultiShotProductionTests
 
         private readonly bool _v11;
         public Gateway(bool rejectLateShot, bool unapprovedReference,
-            bool v11, bool tamperV11, bool wrongCasPath, string jobId)
+            bool v11, bool tamperV11, bool wrongCasPath, string jobId, bool canonicalTaskIds)
         {
             _jobId = jobId;
             _v11 = v11;
@@ -256,7 +257,8 @@ internal static class MultiShotProductionTests
                 sha, refPath, sha, 128, "USER_SUPPLIED", new string('c', 64),
                 "wan22.i2v.production.v1", "core-approval-1", new string('d', 64));
             _tasks = Enumerable.Range(1, 3).Select(i => new ProductionTaskPlanRecord(
-                "task-" + i, "shot-" + i, i,
+                canonicalTaskIds ? "10000000-0000-4000-8000-" + i.ToString("D12", System.Globalization.CultureInfo.InvariantCulture)
+                    : "task-" + i, "shot-" + i, i,
                 (unapprovedReference || v11) && i == 2 ? "IMAGE_TO_VIDEO" : "GENERATIVE_VIDEO",
                 rejectLateShot && i == 3 ? "NeedsHuman" : "Executable",
                 rejectLateShot && i == 3 ? null

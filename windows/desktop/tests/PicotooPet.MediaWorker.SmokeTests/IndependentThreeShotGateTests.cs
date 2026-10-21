@@ -161,7 +161,7 @@ internal static class IndependentThreeShotGateTests
         Write(Allow(JobId, Digest(f.Work.Gateway.Plan)));
         await RecoveryTests.ThrowsCodeAsync(HeldCode, () => f.Executor(observe: shot =>
         {
-            if (shot.TaskId == "task-1" && shot.ResultCode == "CORE_COMMITTED") Write(Hold);
+            if (shot.TaskId == "10000000-0000-4000-8000-000000000001" && shot.ResultCode == "CORE_COMMITTED") Write(Hold);
         }).RunAsync(JobId));
         RecoveryTests.Assert(f.Work.Gateway.Claims == 1 && f.Work.Gateway.Attempts.SequenceEqual([1, 0, 0])
             && f.Work.Comfy.Submits == 1 && f.Work.Gateway.Completed == 1,
@@ -323,7 +323,7 @@ internal static class IndependentThreeShotGateTests
 
     private sealed class Fixture : IAsyncDisposable
     {
-        public MultiShotProductionTests.Fixture Work { get; } = new(false, jobId: JobId);
+        public MultiShotProductionTests.Fixture Work { get; } = new(false, jobId: JobId, canonicalTaskIds: true);
         public CoreServer Api { get; }
         public ControlCenterSession Session { get; }
         private readonly CredentialManagerTokenStore _tokens = new("PicotooPet.CI.ThreeShot/" + Guid.NewGuid().ToString("N"));
