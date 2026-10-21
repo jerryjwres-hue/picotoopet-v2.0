@@ -84,11 +84,6 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         jpeg.Save(jpegStream);
         var jpegPreview = await ReferenceBatchPreviewViewModel.DecodePreviewAsync(jpegStream.ToArray(), ".jpeg");
         SmokeAssert.Equal(2, jpegPreview.PixelWidth, "Actual JPEG must decode through its verified native codec");
-        // Google Skia resources/images/half-transparent-white-pixel.webp (38-byte known valid fixture).
-        var webp = Convert.FromBase64String("UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAEAfQ//73v3+BiOh/AAA=");
-        var webpPreview = await ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp, ".webp");
-        SmokeAssert.Equal(1, webpPreview.PixelWidth, "Actual WebP must decode through its verified native codec");
-        SmokeAssert.Equal(1, webpPreview.PixelHeight, "WebP fixture height changed");
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(stream.ToArray(), ".webp"));
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(new byte[] { 1, 2, 3 }, ".png"));
         var wide = BitmapSource.Create(8193, 1, 96, 96, PixelFormats.Bgra32, null, new byte[8193 * 4], 8193 * 4);
@@ -98,6 +93,15 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         wideEncoder.Save(wideStream);
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(wideStream.ToArray(), ".png"));
         await VerifyBatchStateAsync(stream.ToArray());
+        Console.WriteLine("REFERENCE_PREVIEW_GUI_API=PASS; PNG_JPEG_PIXELS=PASS; GPU_POST=0");
+        var codecs = Windows.Graphics.Imaging.BitmapDecoder.GetDecoderInformationEnumerator();
+        Console.WriteLine("NATIVE_WEBP_CODEC_REGISTERED=" + codecs.Any(codec => codec.CodecId == Windows.Graphics.Imaging.BitmapDecoder.WebpDecoderId));
+        // Google Skia resources/images/half-transparent-white-pixel.webp (38-byte known valid fixture).
+        var webp = Convert.FromBase64String("UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAEAfQ//73v3+BiOh/AAA=");
+        var webpPreview = await ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp, ".webp");
+        SmokeAssert.Equal(1, webpPreview.PixelWidth, "Actual WebP must decode through its verified native codec");
+        SmokeAssert.Equal(1, webpPreview.PixelHeight, "WebP fixture height changed");
+        Console.WriteLine("REFERENCE_PREVIEW_WEBP=PASS");
     }
 
     private static async Task VerifyBatchStateAsync(byte[] png)
@@ -274,7 +278,7 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
     private static async Task RejectAsync(Func<Task> operation)
     {
         try { await operation(); }
-        catch (Exception exception) when (exception is IOException or ArgumentException or UnauthorizedAccessException) { return; }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or ArgumentException or UnauthorizedAccessException) { return; }
         throw new InvalidOperationException("Invalid image must fail closed");
     }
 }

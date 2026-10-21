@@ -253,6 +253,7 @@ public partial class GoalCenterPanel : WpfUserControl
             {
                 if (Window.GetWindow(this) is Views.ShellWindow shell)
                 {
+                    window.Close(); // An owned preview window otherwise stays above the existing approvals page.
                     shell.NavigateFromOperator(Navigation.NavigationRoute.Approvals);
                     shell.Activate();
                 }

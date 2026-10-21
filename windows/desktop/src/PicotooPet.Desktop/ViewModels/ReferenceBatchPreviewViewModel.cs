@@ -247,7 +247,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 writer.DetachStream();
             }
             stream.Seek(0);
-            var decoder = await BitmapDecoder.CreateAsync(stream).AsTask(cancellationToken);
+            var decoder = await BitmapDecoder.CreateAsync(codec, stream).AsTask(cancellationToken);
             if (decoder.DecoderInformation.CodecId != codec || decoder.FrameCount != 1
                 || decoder.PixelWidth is 0 or > 8192 || decoder.PixelHeight is 0 or > 8192
                 || (ulong)decoder.PixelWidth * decoder.PixelHeight > 16_000_000)
