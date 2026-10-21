@@ -26,6 +26,8 @@ internal static class Program
                     catch (Exception error) { Console.Error.WriteLine("REFERENCE_PREVIEW_RED: " + error); failures.Add(error); }
                 }
                 if (failures.Count > 0) throw new AggregateException(failures);
+                ApprovalCenterSmokeTests.Run();
+                ApprovalsPageWpfLayoutSmokeTests.Run();
                 Console.WriteLine("P0_REFERENCE_PREVIEW_BATCH=PASS; GPU_POST=0");
                 return 0;
             }

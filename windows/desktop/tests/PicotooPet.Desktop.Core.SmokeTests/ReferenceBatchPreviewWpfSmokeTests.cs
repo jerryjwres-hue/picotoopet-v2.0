@@ -38,6 +38,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
 
     private static async Task VerifyAsync()
     {
+        var goalPanel = new GoalCenterPanel();
+        var entry = goalPanel.FindName("ReferenceBatchPreviewButton") as Button
+            ?? throw new InvalidOperationException("Goal Center reference preview entry is missing");
+        SmokeAssert.Equal(Visibility.Collapsed, entry.Visibility, "Unready Goal Center must hide reference preview entry");
         // Catches replacing the native selection/consent surface with a placeholder.
         var panel = new ReferenceBatchPreviewPanel();
         panel.Measure(new Size(1000, 700));
@@ -54,6 +58,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.True(panel.FindName("SubmitBatchButton") is Button, "Batch request action is missing");
         SmokeAssert.True(panel.FindName("RefreshBatchButton") is Button, "Receipt refresh action is missing");
         SmokeAssert.True(panel.FindName("OpenApprovalsButton") is Button, "Existing approvals navigation is missing");
+        var approvalsRequested = false;
+        panel.ApprovalsRequested += (_, _) => approvalsRequested = true;
+        ((Button)panel.FindName("OpenApprovalsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        SmokeAssert.True(approvalsRequested, "Actual approvals button must request existing approvals navigation");
 
         // Catches a decoder stub or accepting extension alone instead of actual image bytes.
         var bitmap = BitmapSource.Create(2, 1, 96, 96, PixelFormats.Bgra32, null,
@@ -66,6 +74,16 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.Equal(2, preview.PixelWidth, "Preview must decode real PNG pixels");
         SmokeAssert.Equal(1, preview.PixelHeight, "Preview dimensions changed");
         SmokeAssert.True(preview.IsFrozen, "Preview bitmap must be frozen for safe binding");
+        var jpeg = new JpegBitmapEncoder();
+        jpeg.Frames.Add(BitmapFrame.Create(bitmap));
+        using var jpegStream = new MemoryStream();
+        jpeg.Save(jpegStream);
+        var jpegPreview = await ReferenceBatchPreviewViewModel.DecodePreviewAsync(jpegStream.ToArray(), ".jpeg");
+        SmokeAssert.Equal(2, jpegPreview.PixelWidth, "Actual JPEG must decode through its verified native codec");
+        var webp = Convert.FromBase64String("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA");
+        var webpPreview = await ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp, ".webp");
+        SmokeAssert.Equal(1, webpPreview.PixelWidth, "Actual WebP must decode through its verified native codec");
+        SmokeAssert.Equal(1, webpPreview.PixelHeight, "WebP fixture height changed");
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(stream.ToArray(), ".webp"));
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(new byte[] { 1, 2, 3 }, ".png"));
         var wide = BitmapSource.Create(8193, 1, 96, 96, PixelFormats.Bgra32, null, new byte[8193 * 4], 8193 * 4);
@@ -117,15 +135,28 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             var pending = new TaskCompletionSource<ReferenceBatchReceipt>();
             gateway.Pending = pending;
             var submit = vm.SubmitAsync();
+            await gateway.RegisterEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
             await vm.SubmitAsync();
             SmokeAssert.Equal(1, gateway.RegisterCalls, "Double submit must share one in-flight request");
             await RejectAsync(() => vm.AddAsync("shot-1", source, "USER_SUPPLIED", null));
             pending.SetResult(gateway.CreateReceipt());
             await submit;
             SmokeAssert.Equal("Pending", vm.Receipt!.Status, "Core pending receipt must be rendered without autoapproval");
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            SmokeAssert.True(!((CheckBox)panel.FindName("ConsentCheckBox")).IsEnabled,
+                "Actual consent control must lock after the first request");
             await vm.SubmitAsync();
             SmokeAssert.Equal(1, gateway.RegisterCalls, "Submit after receipt must refresh rather than register again");
             SmokeAssert.Equal(1, gateway.GetCalls, "Submit after receipt must fetch the durable receipt");
+            foreach (var identity in new[] { "asset", "batch", "digest", "expiry" })
+            {
+                gateway.ChangedIdentity = identity;
+                await RejectAsync(() => vm.RefreshAsync());
+                SmokeAssert.Equal("33333333-3333-4333-8333-333333333333", vm.Receipt!.BatchId,
+                    "An untrusted refreshed identity must not replace the previously accepted receipt");
+            }
+            gateway.ChangedIdentity = null;
+            var getsBeforeTamper = gateway.GetCalls;
 
             // An unknown POST outcome locks edits and retries the exact same canonical payload/key.
             var uncertainGateway = new RecordingGateway { FailNextPost = true };
@@ -139,15 +170,35 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             await uncertain.SubmitAsync();
             SmokeAssert.Equal(originalKey, uncertainGateway.LastKey, "Ambiguous retry changed the deterministic idempotency key");
 
+            var restartedGateway = new RecordingGateway();
+            var restarted = new ReferenceBatchPreviewViewModel(restartedGateway, stager, Continuation(), Package());
+            await restarted.AddAsync("shot-1", source, "USER_SUPPLIED", null);
+            restarted.UserConfirmsPreviewAndRights = true;
+            await restarted.SubmitAsync();
+            SmokeAssert.Equal(originalKey, restartedGateway.LastKey, "The same immutable selection must retain its key across reconstruction");
+
+            var mismatchGateway = new RecordingGateway { MismatchReceipt = true };
+            var mismatched = new ReferenceBatchPreviewViewModel(mismatchGateway, stager, Continuation(), Package());
+            await mismatched.AddAsync("shot-1", source, "USER_SUPPLIED", null);
+            mismatched.UserConfirmsPreviewAndRights = true;
+            await RejectAsync(() => mismatched.SubmitAsync());
+            SmokeAssert.True(mismatched.Receipt is null, "A mismatched receipt must never be exposed as an accepted request");
+
             var staged = Path.Combine(root, vm.Items[0].InputRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            File.SetAttributes(staged, FileAttributes.Normal);
             await File.WriteAllBytesAsync(staged, new byte[] { 1, 2, 3 });
             await RejectAsync(() => vm.RefreshAsync());
-            SmokeAssert.Equal(1, gateway.GetCalls, "Changed staged bytes must prevent even receipt refresh");
+            SmokeAssert.Equal(getsBeforeTamper, gateway.GetCalls, "Changed staged bytes must prevent even receipt refresh");
             await RejectAsync(() => vm.AddAsync("text-shot", source, "USER_SUPPLIED", null));
             var bad = Package() with { QualityOutcome = "FAIL" };
             await RejectAsync(() => Task.Run(() => new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), bad)));
         }
-        finally { Directory.Delete(root, recursive: true); }
+        finally
+        {
+            foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                File.SetAttributes(file, FileAttributes.Normal);
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     private static GoalVideoContinuationRecord Continuation() => new("11111111-1111-4111-8111-111111111111", new string('a', 64),
@@ -166,6 +217,9 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         public int RegisterCalls { get; private set; }
         public int GetCalls { get; private set; }
         public bool FailNextPost { get; set; }
+        public bool MismatchReceipt { get; set; }
+        public string? ChangedIdentity { get; set; }
+        public TaskCompletionSource RegisterEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public string? LastKey { get; private set; }
         public ReferenceBatchRequest? Request { get; private set; }
         public TaskCompletionSource<ReferenceBatchReceipt>? Pending { get; set; }
@@ -176,6 +230,7 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             RegisterCalls++;
             Request = request;
             LastKey = key;
+            RegisterEntered.TrySetResult();
             if (FailNextPost)
             {
                 FailNextPost = false;
@@ -194,13 +249,15 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             var request = Request ?? throw new InvalidOperationException("No request");
             var json = JsonSerializer.Serialize(new
             {
-                schema_version = "reference_batch.v1", batch_id = "33333333-3333-4333-8333-333333333333",
+                schema_version = "reference_batch.v1", batch_id = ChangedIdentity == "batch"
+                    ? "66666666-6666-4666-8666-666666666666" : "33333333-3333-4333-8333-333333333333",
                 approval_id = "44444444-4444-4444-8444-444444444444",
-                approval_request_digest = new string('e', 64), status = "Pending",
-                expires_at = DateTimeOffset.UtcNow.AddMinutes(30), goal_id = request.GoalId,
+                approval_request_digest = new string(ChangedIdentity == "digest" ? 'f' : 'e', 64), status = "Pending",
+                expires_at = new DateTimeOffset(2030, 1, ChangedIdentity == "expiry" ? 2 : 1, 0, 0, 0, TimeSpan.Zero), goal_id = request.GoalId,
                 creative_package_id = request.CreativePackageId, creative_package_digest = request.CreativePackageDigest,
-                references = request.SelectedReferences.Select(x => new { asset_id = "55555555-5555-4555-8555-555555555555", shot_id = x.ShotId,
-                    input_relative_path = x.InputRelativePath, sha256 = x.Sha256, bytes = x.Bytes,
+                references = request.SelectedReferences.Select(x => new { asset_id = ChangedIdentity == "asset"
+                    ? "77777777-7777-4777-8777-777777777777" : "55555555-5555-4555-8555-555555555555", shot_id = x.ShotId,
+                    input_relative_path = x.InputRelativePath, sha256 = MismatchReceipt ? new string('f', 64) : x.Sha256, bytes = x.Bytes,
                     source_reference = x.SourceReference, source_digest = x.SourceDigest })
             });
             return JsonSerializer.Deserialize<ReferenceBatchReceipt>(json)!;
@@ -210,7 +267,7 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
     private static async Task RejectAsync(Func<Task> operation)
     {
         try { await operation(); }
-        catch (Exception exception) when (exception is not NotImplementedException) { return; }
+        catch (Exception exception) when (exception is IOException or ArgumentException or UnauthorizedAccessException) { return; }
         throw new InvalidOperationException("Invalid image must fail closed");
     }
 }

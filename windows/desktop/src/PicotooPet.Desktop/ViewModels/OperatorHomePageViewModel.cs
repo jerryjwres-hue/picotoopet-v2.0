@@ -35,6 +35,29 @@ public sealed class OperatorHomePageViewModel : PageViewModel
 
     public GoalVideoContinuationViewModel VideoContinuation { get; }
 
+    /// <summary>Compose the existing paired session and real frozen Creative context; never expose a token.</summary>
+    public async Task<ReferenceBatchPreviewViewModel> CreateReferenceBatchPreviewAsync(CancellationToken cancellationToken = default)
+    {
+        var session = _session ?? throw new InvalidOperationException("REFERENCE_CORE_CONNECTION_REQUIRED");
+        var goalId = CurrentGoal?.GoalId ?? throw new InvalidOperationException("REFERENCE_GOAL_REQUIRED");
+        var continuation = await session.GetGoalVideoContinuationAsync(goalId, cancellationToken).ConfigureAwait(true);
+        var package = await session.GetCreativePackageAsync(continuation.CreativeJobId, cancellationToken).ConfigureAwait(true)
+            ?? throw new InvalidDataException("REFERENCE_FROZEN_PACKAGE_REQUIRED");
+        if (CurrentGoal?.GoalId != goalId || continuation.GoalId != goalId)
+            throw new InvalidDataException("REFERENCE_GOAL_CHANGED");
+        var dataRoot = ProductionLocalEnvironment.ResolveComfyDataRoot();
+        var inputRoot = Path.Combine(dataRoot, "input");
+        ProductionLocalEnvironment.AssertNoLinkEscape(dataRoot, inputRoot);
+        Directory.CreateDirectory(inputRoot);
+        ProductionLocalEnvironment.AssertNoLinkEscape(dataRoot, inputRoot);
+        var policy = new Core.Production.ReferencePreviewFilePolicy(
+            ProductionLocalEnvironment.ResolveUnderRoot, ProductionLocalEnvironment.AssertNoLinkEscape,
+            ProductionLocalEnvironment.IsOrdinaryFile, ProductionLocalEnvironment.Sha256FileAsync);
+        return new ReferenceBatchPreviewViewModel(session,
+            new Core.Production.ReferencePreviewSnapshotStager(inputRoot, policy, ReferenceBatchPreviewViewModel.ValidateImageAsync),
+            continuation, package);
+    }
+
     public OperatorHomePageViewModel(
         ControlCenterSession session,
         ControlCenterSessionSnapshot snapshot)
