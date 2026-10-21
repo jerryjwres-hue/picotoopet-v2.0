@@ -12,8 +12,7 @@ internal static class P0ThreeShotAcceptanceGate
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "PicotooPetV2", "MediaWorker", "v1", "three-shot-acceptance.json");
 
-    // ── Worker 曾读取过门禁后，删除文件不能在同一进程内重新打开全量调度。 ──
-    private static int _observedGate;
+    // ── 首次看到验收配置就写入持久 armed 标记；进程重启不解除门禁。 ──
     private enum Mode { Unattended, Hold, Allow }
     private sealed record Snapshot(Mode Mode, string? JobId = null, string? PlanDigest = null);
 
@@ -73,12 +72,16 @@ internal static class P0ThreeShotAcceptanceGate
     /// 在每次新增 Comfy POST 的预留阶段持有只读文件句柄；
     /// Windows 写者无法在 POST 调用期间替换授权文件，已提交的 prompt 不会被撤回。
     /// </summary>
-    internal static IDisposable? AcquireSubmissionPermit(string jobId, string planDigest)
+    internal static IDisposable? AcquireSubmissionPermit(string jobId, string planDigest) =>
+        AcquireSubmissionPermitAtPath(jobId, planDigest, DefaultPath);
+
+    // ── 参数化只读入口供现有 Windows smoke 使用；正式入口仍固定 LocalAppData。 ──
+    internal static IDisposable? AcquireSubmissionPermitAtPath(string jobId, string planDigest, string path)
     {
         FileStream? stream = null;
         try
         {
-            stream = OpenGate();
+            stream = OpenGate(path);
             if (stream is null) return null; // ── 默认无人值守完全不变。 ──
             var gate = Parse(stream);
             if (gate.Mode != Mode.Allow || gate.JobId != jobId || gate.PlanDigest != planDigest)
@@ -97,7 +100,7 @@ internal static class P0ThreeShotAcceptanceGate
     {
         try
         {
-            using var stream = OpenGate();
+            using var stream = OpenGate(DefaultPath);
             return stream is null ? new(Mode.Unattended) : Parse(stream);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
@@ -106,25 +109,48 @@ internal static class P0ThreeShotAcceptanceGate
         }
     }
 
-    private static FileStream? OpenGate()
+    private static FileStream? OpenGate(string path)
     {
-        var path = DefaultPath;
-        // ── 固定本地目录及每层重解析点均不可信，不允许路径替换绕过门禁。 ──
+        // ── 既有目录的重解析点不能用于替换验收文件或 armed 标记。 ──
         for (DirectoryInfo? current = new(Path.GetDirectoryName(path)!);
             current is not null; current = current.Parent)
         {
             if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0)
                 throw new IOException("P0_ACCEPTANCE_PATH_INVALID");
         }
-        if (!File.Exists(path))
+        var markerPath = path + ".armed";
+        FileAttributes gateAttributes;
+        try
         {
-            if (System.Threading.Volatile.Read(ref _observedGate) != 0)
+            gateAttributes = File.GetAttributes(path);
+        }
+        catch (FileNotFoundException)
+        {
+            // ── 尚未启用过时维持旧无人值守；已 armed 时删除配置只能 HOLD。 ──
+            if (MarkerExists(markerPath))
                 throw new IOException("P0_ACCEPTANCE_FILE_MISSING");
             return null;
         }
-        System.Threading.Interlocked.Exchange(ref _observedGate, 1);
-        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        catch (DirectoryNotFoundException)
+        {
+            if (MarkerExists(markerPath))
+                throw new IOException("P0_ACCEPTANCE_FILE_MISSING");
+            return null;
+        }
+        if ((gateAttributes & FileAttributes.ReparsePoint) != 0)
             throw new IOException("P0_ACCEPTANCE_PATH_INVALID");
+
+        // ── 先持久化 armed，再读取 HOLD/ALLOW；写入失败不能降级无人值守。 ──
+        if (MarkerExists(markerPath) == false)
+        {
+            using var marker = new FileStream(markerPath, FileMode.OpenOrCreate, FileAccess.Write,
+                FileShare.Read, bufferSize: 8, options: FileOptions.WriteThrough);
+            if (marker.Length == 0)
+            {
+                marker.WriteByte(1);
+                marker.Flush(flushToDisk: true);
+            }
+        }
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (stream.Length is <= 0 or > 512)
         {
@@ -132,6 +158,19 @@ internal static class P0ThreeShotAcceptanceGate
             throw new IOException("P0_ACCEPTANCE_FILE_INVALID");
         }
         return stream;
+    }
+
+    private static bool MarkerExists(string markerPath)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(markerPath);
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("P0_ACCEPTANCE_MARKER_INVALID");
+            return true;
+        }
+        catch (FileNotFoundException) { return false; }
+        catch (DirectoryNotFoundException) { return false; }
     }
 
     private static Snapshot Parse(Stream stream)
