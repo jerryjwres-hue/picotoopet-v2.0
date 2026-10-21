@@ -106,9 +106,12 @@ foreach ($enum in $enumPins) {
     if ($null -ne $info) {
         try {
             $node = $info.PSObject.Properties[$enum.Node].Value
-            $required = $node.input.required.PSObject.Properties[$enum.Slot]
-            $optional = $node.input.optional.PSObject.Properties[$enum.Slot]
-            $slot = if ($null -ne $required) { $required.Value } else { $optional.Value }
+            $field = $node.input.required.PSObject.Properties[$enum.Slot]
+            if ($null -eq $field -and $null -ne $node.input.PSObject.Properties['optional']) {
+                $field = $node.input.optional.PSObject.Properties[$enum.Slot]
+            }
+            if ($null -eq $field) { throw 'Comfy enum slot missing' }
+            $slot = $field.Value
             $options = @($slot[0] | ForEach-Object { $_ })
             $status = if ($options -contains $enum.Value) { 'PASS' } else { 'BLOCKED' }
         }
