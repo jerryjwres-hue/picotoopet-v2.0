@@ -34,7 +34,7 @@ internal static class ReferenceBatchClientSmokeTests
 
     private static ReferenceBatchReceipt Receipt() => new(
         "reference_batch.v1", Batch, Approval, B, "Pending",
-        DateTimeOffset.Parse("2099-01-01T00:00:00Z"), Package, A, Goal,
+        DateTimeOffset.Parse("2099-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture), Package, A, Goal,
         [new(Asset, "shot-1", "PicotooPet/references/a.png", A, 123, "USER_SUPPLIED", B)]);
 
     private static async Task SendsExactAuthenticatedRegistrationAndReadsAsync()
