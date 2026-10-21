@@ -70,7 +70,8 @@ public static class P0MediaWorkerHost
             // ── Worker 按计划串行执行 GPU，不自建数据库或第二套 Comfy client。 ──
             await using (session)
             await using (var executor = ProductionExecutionService.Create(session, shot =>
-                logger.Info($"P0_SHOT_METRIC job={shot.JobId} task={shot.TaskId} attempts_at_claim={shot.AttemptCountAtClaim} known_prompt={shot.KnownPromptAtClaim} wall_ms={shot.WallElapsedMs} result={shot.ResultCode} visual_quality=UNVERIFIED")))
+                logger.Info($"P0_SHOT_METRIC job={shot.JobId} task={shot.TaskId} attempts_at_claim={shot.AttemptCountAtClaim} known_prompt={shot.KnownPromptAtClaim} wall_ms={shot.WallElapsedMs} result={shot.ResultCode} visual_quality=UNVERIFIED"),
+                (jobId, digest) => P0ThreeShotAcceptanceGate.AcquireSubmissionPermit(jobId, digest)))
             {
                 // ── Durable uncertainty is consulted before all newly-discovered Goal work. ──
                 var journal = new ProductionSubmissionJournal(ProductionSubmissionJournal.DefaultRoot);
@@ -103,6 +104,9 @@ public static class P0MediaWorkerHost
                             // ── Recover exactly one known job, never enumerate fresh GPU work. ──
                             var resumeJobId = pending.RecoverableJobId;
                             if (!string.IsNullOrWhiteSpace(resumeJobId)
+                                // ── 未指定放行的旧 job 只允许只读 journal 对账，不得新 POST。 ──
+                                && await P0ThreeShotAcceptanceGate.AllowsJobAsync(
+                                    session, resumeJobId, cancellationToken).ConfigureAwait(false)
                                 && (!backoff.TryGetValue(resumeJobId, out var resumeAfter)
                                     || resumeAfter <= DateTimeOffset.UtcNow))
                             {
@@ -150,6 +154,12 @@ public static class P0MediaWorkerHost
 
                             var jobId = continuation.ProductionJobId;
                             if (string.IsNullOrWhiteSpace(jobId))
+                            {
+                                continue;
+                            }
+                            // ── 默认文件不存在时沿用原调度；验收模式仅核准一个冻结三镜头 Job。 ──
+                            if (!await P0ThreeShotAcceptanceGate.AllowsJobAsync(
+                                session, jobId, cancellationToken).ConfigureAwait(false))
                             {
                                 continue;
                             }
