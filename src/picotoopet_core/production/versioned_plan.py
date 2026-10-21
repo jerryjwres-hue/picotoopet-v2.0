@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import (
     ProductionExecutionDisposition,
@@ -17,7 +17,7 @@ from .models import (
     ProductionTaskPlan,
 )
 from .profile import I2V_WORKFLOW_ID, T2V_WORKFLOW_ID
-from .reference_assets import ReferenceAssetIdentityV1
+from .reference_assets import ReferenceAssetIdentityV1, TrustedReferenceDescriptorV1
 
 
 class ProductionTaskPlanV11(ProductionTaskPlan):
@@ -109,3 +109,13 @@ class ProductionJobCreateV11Request(ProductionJobCreateRequest):
         if len(set(self.approved_reference_ids)) != len(self.approved_reference_ids):
             raise ValueError("PRODUCTION_V11_APPROVAL_DUPLICATED")
         return self
+
+
+class ApprovedReferenceAuthorizationV11(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_version: Literal["reference_authorization.v1"] = "reference_authorization.v1"
+    production_job_id: str
+    production_task_id: str
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    descriptor: TrustedReferenceDescriptorV1
+    reference_asset: ReferenceAssetIdentityV1
