@@ -100,11 +100,13 @@ internal static class RecoveryTests
         public bool HistoryError { get; set; }
         public bool HistoryOffline { get; set; }
         public int Submits { get; private set; }
+        public List<string> Requests { get; } = new();
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private JsonNode? _graph;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
+            Requests.Add(request.Method + " " + path);
             if (path == "/prompt")
             {
                 Submits++; _graph = JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))!["prompt"]!.DeepClone();

@@ -195,7 +195,7 @@ internal static class MultiShotProductionTests
     private static Task<ProductionPreflightSnapshot> Ready(string root) =>
         Task.FromResult(new ProductionPreflightSnapshot(true, "fake", root, root, root, root, []));
 
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         private readonly HttpClient _http;
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "p0-multishot-" + Guid.NewGuid().ToString("N"));
@@ -203,11 +203,12 @@ internal static class MultiShotProductionTests
         public Gateway Gateway { get; }
         public Comfy Comfy { get; }
         public Fixture(bool rejectLateShot, bool unapprovedReference = false,
-            bool v11 = false, bool tamperV11 = false, bool wrongCasPath = false)
+            bool v11 = false, bool tamperV11 = false, bool wrongCasPath = false, string jobId = "job",
+            bool canonicalTaskIds = false)
         {
             Directory.CreateDirectory(Root);
             Journal = new(Path.Combine(Root, "journal"));
-            Gateway = new(rejectLateShot, unapprovedReference, v11, tamperV11, wrongCasPath);
+            Gateway = new(rejectLateShot, unapprovedReference, v11, tamperV11, wrongCasPath, jobId, canonicalTaskIds);
             Comfy = new(Root);
             _http = new(Comfy) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
         }
@@ -215,8 +216,9 @@ internal static class MultiShotProductionTests
             Func<CancellationToken, Task<ProductionPreflightSnapshot>> preflight,
             Action<ProductionShotObservation>? observe = null,
             Func<string, string, IDisposable?>? submissionPermit = null,
-            Func<string, CancellationToken, Task<bool>>? acceptanceAdmission = null) =>
-            new(Gateway, new ComfyProductionClient(_http), Journal, new ComfyPromptReconciler(_http),
+            Func<string, CancellationToken, Task<bool>>? acceptanceAdmission = null,
+            ProductionSubmissionJournal? journal = null) =>
+            new(Gateway, new ComfyProductionClient(_http), journal ?? Journal, new ComfyPromptReconciler(_http),
                 preflight, TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(30),
                 TimeSpan.FromSeconds(3), observe, submissionPermit, acceptanceAdmission);
         public void Dispose()
@@ -226,7 +228,7 @@ internal static class MultiShotProductionTests
         }
     }
 
-    private sealed class Gateway : IProductionExecutionGateway
+    internal sealed class Gateway : IProductionExecutionGateway
     {
         private readonly ProductionTaskPlanRecord[] _tasks;
         private readonly int[] _attempts = new int[3];
@@ -236,11 +238,15 @@ internal static class MultiShotProductionTests
         public int Claims { get; private set; }
         public int Completed => _results.Count(x => x is not null);
         public bool LoseSecondBindOnce { get; set; }
+        public Func<ProductionPlanRecord, ProductionPlanRecord>? TransformPlan { get; set; }
+        public Action? OnClaim { get; set; }
+        private readonly string _jobId;
 
         private readonly bool _v11;
         public Gateway(bool rejectLateShot, bool unapprovedReference,
-            bool v11, bool tamperV11, bool wrongCasPath)
+            bool v11, bool tamperV11, bool wrongCasPath, string jobId, bool canonicalTaskIds)
         {
+            _jobId = jobId;
             _v11 = v11;
             var sha = new string('a', 64);
             var refPath = wrongCasPath ? "PicotooPet/references/legacy/shot-2.png"
@@ -251,7 +257,8 @@ internal static class MultiShotProductionTests
                 sha, refPath, sha, 128, "USER_SUPPLIED", new string('c', 64),
                 "wan22.i2v.production.v1", "core-approval-1", new string('d', 64));
             _tasks = Enumerable.Range(1, 3).Select(i => new ProductionTaskPlanRecord(
-                "task-" + i, "shot-" + i, i,
+                canonicalTaskIds ? "10000000-0000-4000-8000-" + i.ToString("D12", System.Globalization.CultureInfo.InvariantCulture)
+                    : "task-" + i, "shot-" + i, i,
                 (unapprovedReference || v11) && i == 2 ? "IMAGE_TO_VIDEO" : "GENERATIVE_VIDEO",
                 rejectLateShot && i == 3 ? "NeedsHuman" : "Executable",
                 rejectLateShot && i == 3 ? null
@@ -263,11 +270,12 @@ internal static class MultiShotProductionTests
                 v11 && i == 2 ? reference : null)).ToArray();
         }
 
-        private ProductionPlanRecord Plan => new(_v11 ? "1.1" : "1.0", "production.comfyui.v1", "job",
+        public ProductionPlanRecord Plan => TransformPlan?.Invoke(BasePlan) ?? BasePlan;
+        private ProductionPlanRecord BasePlan => new(_v11 ? "1.1" : "1.0", "production.comfyui.v1", _jobId,
             "creative", new string('a', 64), _v11 ? "goal-goal-1" : "project",
             "video.landscape.v1", 9000, _tasks);
         private ProductionTaskRecord Snapshot(int index) => new(
-            _tasks[index].ProductionTaskId, "job", _tasks[index].ShotId, index + 1,
+            _tasks[index].ProductionTaskId, _jobId, _tasks[index].ShotId, index + 1,
             _tasks[index].RenderIntent, _tasks[index].ExecutionDisposition, _tasks[index].WorkflowId,
             _tasks[index], _results[index] is not null ? "Succeeded" : _attempts[index] > 0 ? "Running" : "Pending",
             _attempts[index], _prompt[index], _results[index]?.OutputRelpath, _results[index]?.OutputSha256,
@@ -278,7 +286,9 @@ internal static class MultiShotProductionTests
             Task.FromResult(Plan);
         public Task<ProductionClaimRecord> ClaimProductionJobAsync(string job, string executor, CancellationToken ct)
         {
+            RecoveryTests.Assert(job == _jobId && !string.IsNullOrWhiteSpace(executor), "claim must target the exact configured job");
             Claims++;
+            OnClaim?.Invoke();
             return Task.FromResult(new ProductionClaimRecord(job, executor, "lease",
                 DateTimeOffset.UtcNow.AddMinutes(2), Plan,
                 Enumerable.Range(0, 3).Select(Snapshot).ToArray()));
@@ -289,7 +299,7 @@ internal static class MultiShotProductionTests
             ProductionTaskAttemptRequest request, CancellationToken ct)
         {
             var i = Array.FindIndex(_tasks, t => t.ProductionTaskId == task);
-            RecoveryTests.Assert(i >= 0 && request.LeaseToken == "lease", "unknown task/lease");
+            RecoveryTests.Assert(job == _jobId && i >= 0 && request.LeaseToken == "lease", "unknown job/task/lease");
             if (request.ComfyPromptId is null) _attempts[i]++;
             else
             {
@@ -306,7 +316,8 @@ internal static class MultiShotProductionTests
             ProductionTaskCommitRequest request, CancellationToken ct)
         {
             var i = Array.FindIndex(_tasks, t => t.ProductionTaskId == task);
-            RecoveryTests.Assert(i >= 0 && request.ComfyPromptId == _prompt[i], "wrong committed prompt");
+            RecoveryTests.Assert(job == _jobId && i >= 0 && request.LeaseToken == "lease"
+                && request.ComfyPromptId == _prompt[i], "wrong committed job/task/lease/prompt");
             _results[i] = request;
             return Task.FromResult(Snapshot(i));
         }
@@ -320,7 +331,7 @@ internal static class MultiShotProductionTests
             {
                 schema_version = "1.0",
                 production_package_id = "package",
-                production_job_id = "job",
+                production_job_id = _jobId,
                 outputs = _results.Select(result => new
                 {
                     output_relpath = result!.OutputRelpath,
@@ -337,17 +348,21 @@ internal static class MultiShotProductionTests
         }
     }
 
-    private sealed class Comfy(string root) : HttpMessageHandler
+    internal sealed class Comfy(string root) : HttpMessageHandler
     {
         private readonly Dictionary<string, JsonNode> _graphs = new(StringComparer.Ordinal);
         public int Submits { get; private set; }
+        public List<string> FilenamePrefixes { get; } = new();
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path == "/prompt")
             {
+                RecoveryTests.Assert(request.Method == HttpMethod.Post, "new Comfy prompt must use POST");
                 var graph = JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))!["prompt"]!.DeepClone();
+                FilenamePrefixes.Add(graph.AsObject().Select(node => node.Value).Single(node =>
+                    node?["class_type"]?.GetValue<string>() == "SaveWEBM")!["inputs"]!["filename_prefix"]!.GetValue<string>());
                 var number = ++Submits;
                 var id = "prompt-" + number;
                 _graphs.Add(id, graph);
@@ -355,9 +370,13 @@ internal static class MultiShotProductionTests
                 return Json(new JsonObject { ["prompt_id"] = id });
             }
             if (path == "/queue")
+            {
+                RecoveryTests.Assert(request.Method == HttpMethod.Get, "queue reconciliation must be read-only");
                 return Json(new JsonObject { ["queue_running"] = new JsonArray(), ["queue_pending"] = new JsonArray() });
+            }
             if (path.StartsWith("/history", StringComparison.Ordinal))
             {
+                RecoveryTests.Assert(request.Method == HttpMethod.Get, "history reconciliation must be read-only");
                 var id = path == "/history" ? null : Uri.UnescapeDataString(path["/history/".Length..]);
                 var selected = id is null ? _graphs.Keys : _graphs.Keys.Where(key => key == id);
                 var output = new JsonObject();
