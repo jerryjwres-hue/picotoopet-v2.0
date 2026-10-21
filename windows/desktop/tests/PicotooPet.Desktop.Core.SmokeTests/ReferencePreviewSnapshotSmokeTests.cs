@@ -24,6 +24,10 @@ internal static class ReferencePreviewSnapshotSmokeTests
         var stager = new ReferencePreviewSnapshotStager(root, policy, ReferenceBatchPreviewViewModel.ValidateImageAsync);
         try
         {
+            // Constructor-only checks: never contact a remote filesystem for these lexical negatives.
+            foreach (var remoteRoot in new[] { "//untrusted.invalid/share", @"\\untrusted.invalid\share", @"/\untrusted.invalid\share" })
+                await RejectAsync(() => Task.Run(() => new ReferencePreviewSnapshotStager(remoteRoot, policy,
+                    ReferenceBatchPreviewViewModel.ValidateImageAsync)), "UNC aliases must be rejected before filesystem access").ConfigureAwait(false);
             var snapshot = await stager.StageAsync(source, "shot-1").ConfigureAwait(false);
             var expectedSha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
             SmokeAssert.Equal(expectedSha, snapshot.Sha256, "actual image-byte SHA, not manifest SHA");
