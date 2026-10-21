@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hmac
 import json
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -110,6 +111,7 @@ def verify_persisted_reference_approval(
         or row["approval_type"] != _APPROVAL_TYPE
         or row["task_id"] is not None
         or row["status"] != "Approved"
+        or datetime.fromisoformat(row["expires_at"]) <= datetime.now(UTC)
         or not row["resolved_by"]
         or not row["resolved_at"]
         or not hmac.compare_digest(
