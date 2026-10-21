@@ -7,6 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from .director import (
+    SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION,
+    STORY_DIRECTOR_INSTRUCTIONS,
+    VIDEO_BIBLE_TEMPLATE_VERSION,
+)
 from .models import (
     CreativeBriefResult,
     CreativeScriptResult,
@@ -14,6 +19,7 @@ from .models import (
     IdeaRankingResult,
     ShotPlanResult,
 )
+from .video_bible import VideoBibleDraft
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +31,9 @@ class CreativeStageDefinition:
     max_output_tokens: int
     temperature: float
     max_model_attempts: int = 2
+    # "MODEL": the bounded local adapter produces the stage. "DERIVED": Core builds it
+    # deterministically from earlier validated stages (no model call).
+    executor: str = "MODEL"
 
     @property
     def return_schema(self) -> dict[str, Any]:
@@ -94,7 +103,40 @@ _PROFILE = CreativeProfileDefinition(
 )
 
 
+# v2 is explicit opt-in for NEW jobs. It reuses the three v1 stage definitions unchanged and
+# replaces the free-form shot-plan model call with a Video Bible stage plus a deterministic
+# derivation. The v1 profile object above is never modified, so persisted v1 jobs keep their
+# stage list, template versions, input digests and package shape.
+_PROFILE_V2 = CreativeProfileDefinition(
+    profile_id="creative.content_plan.v2",
+    stages=(
+        *_PROFILE.stages[:3],
+        CreativeStageDefinition(
+            CreativeStageKind.VIDEO_BIBLE,
+            VIDEO_BIBLE_TEMPLATE_VERSION,
+            _POLICY + STORY_DIRECTOR_INSTRUCTIONS,
+            VideoBibleDraft,
+            6500,
+            0.2,
+        ),
+        CreativeStageDefinition(
+            CreativeStageKind.SHOT_PLAN,
+            SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION,
+            "Derived by Core from the sealed video_bible.v1; no model call.",
+            ShotPlanResult,
+            0,
+            0.0,
+            max_model_attempts=0,
+            executor="DERIVED",
+        ),
+    ),
+)
+
+_PROFILES = {_PROFILE.profile_id: _PROFILE, _PROFILE_V2.profile_id: _PROFILE_V2}
+
+
 def creative_profile_definition(profile_id: str) -> CreativeProfileDefinition:
-    if profile_id != _PROFILE.profile_id:
-        raise ValueError("unsupported creative profile")
-    return _PROFILE
+    try:
+        return _PROFILES[profile_id]
+    except KeyError:
+        raise ValueError("unsupported creative profile") from None
