@@ -93,6 +93,32 @@ foreach ($pin in $pins) {
     Add-Check ('COMFY_CHOICE_' + $pin.Node) $status $detail $pin.File
 }
 
+# Check fixed enum options as well as class existence; incompatible node signatures block the exact frozen graph.
+$enumPins = @(
+    @{ Node = 'CLIPLoader'; Slot = 'type';         Value = 'wan' },
+    @{ Node = 'UNETLoader'; Slot = 'weight_dtype'; Value = 'default' },
+    @{ Node = 'KSampler';   Slot = 'sampler_name'; Value = 'uni_pc' },
+    @{ Node = 'KSampler';   Slot = 'scheduler';    Value = 'simple' },
+    @{ Node = 'SaveWEBM';   Slot = 'codec';        Value = 'vp9' }
+)
+foreach ($enum in $enumPins) {
+    $status = 'UNVERIFIED'
+    if ($null -ne $info) {
+        try {
+            $node = $info.PSObject.Properties[$enum.Node].Value
+            $required = $node.input.required.PSObject.Properties[$enum.Slot]
+            $optional = $node.input.optional.PSObject.Properties[$enum.Slot]
+            $slot = if ($null -ne $required) { $required.Value } else { $optional.Value }
+            $options = @($slot[0] | ForEach-Object { $_ })
+            $status = if ($options -contains $enum.Value) { 'PASS' } else { 'BLOCKED' }
+        }
+        catch {
+            $status = 'BLOCKED'
+        }
+    }
+    Add-Check ('COMFY_ENUM_' + $enum.Node + '_' + $enum.Slot) $status 'Exact pinned API node enum option' $enum.Value
+}
+
 # Queue/history queries do not reserve tasks, claim jobs or submit new graph work.
 try {
     $queue = Read-Comfy '/queue'
