@@ -18,6 +18,7 @@ internal static class MultiShotProductionTests
     {
         await RejectNonExecutableBeforePreflightOrLeaseAsync();
         await RejectLegacyUnapprovedI2VBeforeGpuAsync();
+        await RejectV11UntilProtectedSnapshotAndKnownPostReadyAsync();
         await RecoverMiddleShotAndAssembleThreeSourcesAsync();
         Console.WriteLine("P0_MULTISHOT_3_SHOTS_REUSE_C004_MP4=PASS (offline fake Comfy/FFmpeg)");
     }
@@ -40,6 +41,44 @@ internal static class MultiShotProductionTests
             () => fixture.Executor(_ => { preflights++; return Ready(fixture.Root); }).RunAsync("job"));
         RecoveryTests.Assert(preflights == 0 && fixture.Gateway.Claims == 0 && fixture.Comfy.Submits == 0,
             "unapproved I2V reference must never reserve a lease or spend GPU");
+    }
+
+    private static async Task RejectV11UntilProtectedSnapshotAndKnownPostReadyAsync()
+    {
+        using (var fixture = new Fixture(rejectLateShot: false, v11: true))
+        {
+            var preflights = 0;
+            await RecoveryTests.ThrowsCodeAsync("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED",
+                () => fixture.Executor(_ => { preflights++; return Ready(fixture.Root); }).RunAsync("job"));
+            RecoveryTests.Assert(preflights == 0 && fixture.Gateway.Claims == 0
+                && fixture.Gateway.Attempts.All(n => n == 0) && fixture.Comfy.Submits == 0,
+                "even exact Core v1.1 identity must not bypass crash-durable LoadImage protection");
+        }
+        using (var fixture = new Fixture(rejectLateShot: false, v11: true, tamperV11: true))
+        {
+            var preflights = 0;
+            await RecoveryTests.ThrowsCodeAsync("I2V_V11_REFERENCE_IDENTITY_INVALID",
+                () => fixture.Executor(_ => { preflights++; return Ready(fixture.Root); }).RunAsync("job"));
+            RecoveryTests.Assert(preflights == 0 && fixture.Gateway.Claims == 0 && fixture.Comfy.Submits == 0,
+                "wrong v1.1 shot identity must be rejected before GPU POST");
+        }
+        using (var fixture = new Fixture(rejectLateShot: false, v11: true, wrongCasPath: true))
+        {
+            await RecoveryTests.ThrowsCodeAsync("I2V_V11_SNAPSHOT_NOT_CONTENT_ADDRESSED",
+                () => fixture.Executor(_ => Ready(fixture.Root)).RunAsync("job"));
+            RecoveryTests.Assert(fixture.Gateway.Claims == 0 && fixture.Comfy.Submits == 0,
+                "unprotected non-CAS reference snapshot must be rejected");
+        }
+        using (var fixture = new Fixture(rejectLateShot: false, v11: true))
+        {
+            fixture.Journal.Save(new ProductionSubmission("other-job", "task-other",
+                new string('a', 64), new string('b', 64), "Submitting", null));
+            await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION",
+                () => fixture.Executor(_ => Ready(fixture.Root)).RunAsync("job"));
+            RecoveryTests.Assert(fixture.Gateway.Claims == 0 && fixture.Comfy.Submits == 0,
+                "unknown other-job POST journal must take precedence over v1.1 GPU admission");
+        }
+        Console.WriteLine("P0_V11_GPU_POST_ZERO=PASS (offline protected snapshot pending)");
     }
 
     private static async Task RecoverMiddleShotAndAssembleThreeSourcesAsync()
@@ -95,11 +134,12 @@ internal static class MultiShotProductionTests
         public ProductionSubmissionJournal Journal { get; }
         public Gateway Gateway { get; }
         public Comfy Comfy { get; }
-        public Fixture(bool rejectLateShot, bool unapprovedReference = false)
+        public Fixture(bool rejectLateShot, bool unapprovedReference = false,
+            bool v11 = false, bool tamperV11 = false, bool wrongCasPath = false)
         {
             Directory.CreateDirectory(Root);
             Journal = new(Path.Combine(Root, "journal"));
-            Gateway = new(rejectLateShot, unapprovedReference);
+            Gateway = new(rejectLateShot, unapprovedReference, v11, tamperV11, wrongCasPath);
             Comfy = new(Root);
             _http = new(Comfy) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
         }
@@ -127,22 +167,35 @@ internal static class MultiShotProductionTests
         public int Completed => _results.Count(x => x is not null);
         public bool LoseSecondBindOnce { get; set; }
 
-        public Gateway(bool rejectLateShot, bool unapprovedReference)
+        private readonly bool _v11;
+        public Gateway(bool rejectLateShot, bool unapprovedReference,
+            bool v11, bool tamperV11, bool wrongCasPath)
         {
+            _v11 = v11;
+            var sha = new string('a', 64);
+            var refPath = wrongCasPath ? "PicotooPet/references/legacy/shot-2.png"
+                : "PicotooPet/references/" + sha + "/shot-2.png";
+            var reference = new ProductionReferenceAssetV11Record(
+                "reference_asset.v1", "core-asset-1", "goal-1", "creative-job-1",
+                "creative", "job", "task-2", tamperV11 ? "wrong-shot" : "shot-2",
+                sha, refPath, sha, 128, "USER_SUPPLIED", new string('c', 64),
+                "wan22.i2v.production.v1", "core-approval-1", new string('d', 64));
             _tasks = Enumerable.Range(1, 3).Select(i => new ProductionTaskPlanRecord(
                 "task-" + i, "shot-" + i, i,
-                unapprovedReference && i == 2 ? "IMAGE_TO_VIDEO" : "GENERATIVE_VIDEO",
+                (unapprovedReference || v11) && i == 2 ? "IMAGE_TO_VIDEO" : "GENERATIVE_VIDEO",
                 rejectLateShot && i == 3 ? "NeedsHuman" : "Executable",
                 rejectLateShot && i == 3 ? null
-                    : unapprovedReference && i == 2
+                    : (unapprovedReference || v11) && i == 2
                         ? "comfy.wan22.ti2v5b.i2v.v1" : "comfy.wan22.ti2v5b.t2v.v1",
                 "pet product story scene " + i, "wan22.safe-negative.v1",
                 9000 + i, 832, 480, 24, 73, 3000,
-                unapprovedReference && i == 2 ? "reference/pet.png" : null)).ToArray();
+                v11 && i == 2 ? refPath : unapprovedReference && i == 2 ? "reference/pet.png" : null,
+                v11 && i == 2 ? reference : null)).ToArray();
         }
 
-        private ProductionPlanRecord Plan => new("1.0", "production.comfyui.v1", "job",
-            "creative", new string('a', 64), "project", "video.landscape.v1", 9000, _tasks);
+        private ProductionPlanRecord Plan => new(_v11 ? "1.1" : "1.0", "production.comfyui.v1", "job",
+            "creative", new string('a', 64), _v11 ? "goal-goal-1" : "project",
+            "video.landscape.v1", 9000, _tasks);
         private ProductionTaskRecord Snapshot(int index) => new(
             _tasks[index].ProductionTaskId, "job", _tasks[index].ShotId, index + 1,
             _tasks[index].RenderIntent, _tasks[index].ExecutionDisposition, _tasks[index].WorkflowId,
