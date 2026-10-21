@@ -194,8 +194,8 @@ internal static class P0ThreeShotAcceptanceGate
             return new(Mode.Hold);
         var jobId = job.GetString();
         var sha = digest.GetString();
-        if (!Guid.TryParseExact(jobId, "D", out _)
-            || jobId != jobId!.ToLowerInvariant()
+        if (!Guid.TryParseExact(jobId, "D", out var parsedJobId)
+            || !string.Equals(jobId, parsedJobId.ToString("D"), StringComparison.Ordinal)
             || sha is null || sha.Length != 64
             || sha.Any(c => c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
             return new(Mode.Hold);
