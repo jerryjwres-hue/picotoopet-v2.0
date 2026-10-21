@@ -11,6 +11,8 @@ from pydantic import ConfigDict, Field, model_validator
 
 from .models import (
     ProductionExecutionDisposition,
+    ProductionJobCreateRequest,
+    ProductionTaskRecord,
     ProductionPlan,
     ProductionTaskPlan,
 )
@@ -89,3 +91,21 @@ def parse_versioned_task(raw: dict[str, object]) -> ProductionTaskPlan | Product
     if "reference_asset" in raw:
         return ProductionTaskPlanV11.model_validate(raw)
     return ProductionTaskPlan.model_validate(raw)
+
+
+class ProductionTaskRecordV11(ProductionTaskRecord):
+    model_config = ConfigDict(extra="forbid")
+    task_plan: ProductionTaskPlanV11
+
+
+class ProductionJobCreateV11Request(ProductionJobCreateRequest):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1.1"] = "1.1"
+    approved_reference_ids: list[str] = Field(min_length=1, max_length=12)
+
+    @model_validator(mode="after")
+    def _unique_approval_ids(self) -> ProductionJobCreateV11Request:
+        if len(set(self.approved_reference_ids)) != len(self.approved_reference_ids):
+            raise ValueError("PRODUCTION_V11_APPROVAL_DUPLICATED")
+        return self
