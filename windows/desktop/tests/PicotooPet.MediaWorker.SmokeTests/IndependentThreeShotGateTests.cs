@@ -108,6 +108,11 @@ internal static class IndependentThreeShotGateTests
         RecoveryTests.Assert(f.Work.Gateway.Claims == 1 && f.Work.Comfy.Submits == 3
             && f.Work.Gateway.Attempts.All(x => x == 1) && f.Work.Gateway.Completed == 3,
             "exact ALLOW must complete precisely three tasks and reuse the package on repeated run");
+        RecoveryTests.Assert(f.Work.Comfy.FilenamePrefixes.SequenceEqual([
+            "PicotooPet/production/" + JobId + "/001-shot-1",
+            "PicotooPet/production/" + JobId + "/002-shot-2",
+            "PicotooPet/production/" + JobId + "/003-shot-3"]),
+            "all three submitted graphs must bind the exact allowed job and ordered shots");
         RecoveryTests.Assert(f.Api.Requests.All(x => x is "GET /api/v1/production/jobs/" + JobId
             or "GET /api/v1/production/jobs/" + JobId + "/plan"), "admission must only read the exact frozen job/plan");
     }

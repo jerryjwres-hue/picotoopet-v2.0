@@ -284,6 +284,7 @@ internal static class MultiShotProductionTests
             Task.FromResult(Plan);
         public Task<ProductionClaimRecord> ClaimProductionJobAsync(string job, string executor, CancellationToken ct)
         {
+            RecoveryTests.Assert(job == _jobId && !string.IsNullOrWhiteSpace(executor), "claim must target the exact configured job");
             Claims++;
             OnClaim?.Invoke();
             return Task.FromResult(new ProductionClaimRecord(job, executor, "lease",
@@ -296,7 +297,7 @@ internal static class MultiShotProductionTests
             ProductionTaskAttemptRequest request, CancellationToken ct)
         {
             var i = Array.FindIndex(_tasks, t => t.ProductionTaskId == task);
-            RecoveryTests.Assert(i >= 0 && request.LeaseToken == "lease", "unknown task/lease");
+            RecoveryTests.Assert(job == _jobId && i >= 0 && request.LeaseToken == "lease", "unknown job/task/lease");
             if (request.ComfyPromptId is null) _attempts[i]++;
             else
             {
@@ -313,7 +314,8 @@ internal static class MultiShotProductionTests
             ProductionTaskCommitRequest request, CancellationToken ct)
         {
             var i = Array.FindIndex(_tasks, t => t.ProductionTaskId == task);
-            RecoveryTests.Assert(i >= 0 && request.ComfyPromptId == _prompt[i], "wrong committed prompt");
+            RecoveryTests.Assert(job == _jobId && i >= 0 && request.LeaseToken == "lease"
+                && request.ComfyPromptId == _prompt[i], "wrong committed job/task/lease/prompt");
             _results[i] = request;
             return Task.FromResult(Snapshot(i));
         }
@@ -348,13 +350,17 @@ internal static class MultiShotProductionTests
     {
         private readonly Dictionary<string, JsonNode> _graphs = new(StringComparer.Ordinal);
         public int Submits { get; private set; }
+        public List<string> FilenamePrefixes { get; } = new();
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path == "/prompt")
             {
+                RecoveryTests.Assert(request.Method == HttpMethod.Post, "new Comfy prompt must use POST");
                 var graph = JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))!["prompt"]!.DeepClone();
+                FilenamePrefixes.Add(graph.AsObject().Select(node => node.Value).Single(node =>
+                    node?["class_type"]?.GetValue<string>() == "SaveWEBM")!["inputs"]!["filename_prefix"]!.GetValue<string>());
                 var number = ++Submits;
                 var id = "prompt-" + number;
                 _graphs.Add(id, graph);
@@ -362,9 +368,13 @@ internal static class MultiShotProductionTests
                 return Json(new JsonObject { ["prompt_id"] = id });
             }
             if (path == "/queue")
+            {
+                RecoveryTests.Assert(request.Method == HttpMethod.Get, "queue reconciliation must be read-only");
                 return Json(new JsonObject { ["queue_running"] = new JsonArray(), ["queue_pending"] = new JsonArray() });
+            }
             if (path.StartsWith("/history", StringComparison.Ordinal))
             {
+                RecoveryTests.Assert(request.Method == HttpMethod.Get, "history reconciliation must be read-only");
                 var id = path == "/history" ? null : Uri.UnescapeDataString(path["/history/".Length..]);
                 var selected = id is null ? _graphs.Keys : _graphs.Keys.Where(key => key == id);
                 var output = new JsonObject();
