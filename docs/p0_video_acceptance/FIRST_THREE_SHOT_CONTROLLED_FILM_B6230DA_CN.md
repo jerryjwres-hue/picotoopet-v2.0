@@ -100,13 +100,72 @@ Remove-Variable token,auth -ErrorAction SilentlyContinue
 {"schema_version":"1.0","mode":"allow","production_job_id":"<由实际认证 Core Job 取得的小写 UUID>","plan_digest":"<由实际认证 Core Job 取得的小写 64 位 hex>"}
 ```
 
-推荐由现场 operator 使用 `[IO.File]::WriteAllText(temp, json, [Text.UTF8Encoding]::new($false))` 后 `[IO.File]::Replace(temp, path, $null)`；临时文件位于**相同受信目录**，操作前再次核对 exact Job/digest，替换失败则继续 HOLD，不删除在用文件、不强杀 worker。Worker 调度周期 15 秒；ALLOWED 只针对指定 Job，**不会**自动把旧提交不确定状态清除。已有 prompt 的 history-first/read-only 对账先于新 Goal；未知 POST、无匹配 history、失去 lease、模型缺失、digest 改变均视为阻塞，而不是重复发 `POST /prompt`。
+以下代码仅供**已授权现场用户**执行；只有在§4审核、Mac/Wan预检、电气与GPU授权全部明确通过后才允许运行。变量 `$job` 与 `$plan` 必须来自上节同一次真实认证只读 GET；这一步会允许后台 Worker 发新 GPU POST，绝不可在当前源码审查阶段执行：
+
+```powershell
+# DANGER: permits GPU work. Run ONLY after explicit user + electrical clearance.
+$jobId = [string]$job.production_job_id
+$digest = [string]$job.plan_digest
+$tasks = @($plan.tasks)
+if ($jobId -cnotmatch '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' -or
+    $digest -cnotmatch '^[0-9a-f]{64}$' -or $jobId -cne $plan.production_job_id -or
+    $job.plan_digest -cne $digest -or $plan.schema_version -cne '1.0' -or
+    $plan.production_profile -cne 'production.comfyui.v1' -or
+    $job.production_profile -cne $plan.production_profile -or
+    $job.creative_package_id -cne $plan.creative_package_id -or
+    $job.creative_package_digest -cne $plan.creative_package_digest -or
+    $job.project_key -cne $plan.project_key -or $tasks.Count -ne 3) {
+    throw 'P0_ALLOW_IDENTITY_INVALID'
+}
+for ($i=0; $i -lt 3; $i++) {
+    $t = $tasks[$i]
+    if ($t.order -ne ($i+1) -or [string]::IsNullOrWhiteSpace($t.shot_id) -or
+        [string]::IsNullOrWhiteSpace($t.production_task_id) -or
+        $t.render_intent -cne 'GENERATIVE_VIDEO' -or
+        $t.execution_disposition -cne 'Executable' -or
+        $t.workflow_id -cne 'comfy.wan22.ti2v5b.t2v.v1' -or
+        $null -ne $t.trusted_input_asset_ref -or $null -ne $t.reference_asset) {
+        throw 'P0_ALLOW_T2V_PLAN_INVALID'
+    }
+}
+if (@($tasks | Select-Object -ExpandProperty shot_id -Unique).Count -ne 3 -or
+    @($tasks | Select-Object -ExpandProperty production_task_id -Unique).Count -ne 3) {
+    throw 'P0_ALLOW_DUPLICATE_ID'
+}
+$root = Join-Path $env:LOCALAPPDATA 'PicotooPetV2\MediaWorker\v1'
+$path = Join-Path $root 'three-shot-acceptance.json'
+if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+    -not (Test-Path -LiteralPath "$path.armed" -PathType Leaf)) {
+    throw 'P0_ALLOW_HOLD_NOT_ARMED'
+}
+$old = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+if ($old.schema_version -cne '1.0' -or $old.mode -cne 'hold') {
+    throw 'P0_ALLOW_NOT_STARTING_HOLD'
+}
+$json = [ordered]@{
+  schema_version='1.0'; mode='allow'
+  production_job_id=$jobId; plan_digest=$digest
+} | ConvertTo-Json -Compress
+$tmp = Join-Path $root ("three-shot-acceptance." + [Guid]::NewGuid().ToString('N') + '.tmp')
+try {
+    [IO.File]::WriteAllText($tmp, $json, [Text.UTF8Encoding]::new($false))
+    [IO.File]::Replace($tmp, $path, $null)
+} finally {
+    if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) }
+}
+$check = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+if ($check.mode -cne 'allow' -or $check.production_job_id -cne $jobId -or
+    $check.plan_digest -cne $digest) { throw 'P0_ALLOW_VERIFY_FAILED' }
+"P0_ALLOW_EXACT_JOB=$jobId"
+```
+
+**仍需**人工核实 Creative prompt 来源和旧 Journal；此代码不是质量审核的替代。若原子替换遇在用句柄失败，不强杀 Worker、不删除 .armed，重新进入 HOLD 复核。Worker 调度周期 15 秒，单 Job ALLOW 不改变 Journal 优先级；未知 POST 不能人工清除后强行重投。
 
 出现任何异常或希望暂停**新的** GPU 工作时，安全原子写回 `{"schema_version":"1.0","mode":"hold"}`。HOLD 防止**新 claim/attempt/POST**；**不会取消已经提交且正在运行的 Comfy prompt**，也不能承诺瞬间降低 GPU 或电路负载。若正在高负载渲染或出现电气危险，按现场设备与专业电气安全方案处理，不能依赖 HOLD 作为急停。保存 Core/Journal/Comfy history 原证据，不手工删除或编辑 submission 以强行重投。
 
 ## 6. 三 WebM、历史、GPU/费用与 QA/MP4 证据的**准确读取入口**
 
-1. **Core 权威成功记录**：只读 `GET /api/v1/production/jobs/{job_id}/package`。`quality_outcome=PASS` 且 `manifest.outputs` **恰为 3**，按 `order` 1→3 逐项读取实际 `production_task_id,shot_id,workflow_id,comfy_prompt_id,output_relpath,output_sha256,output_bytes,mime_type,width,height,frame_count,fps`。这来自 `production/package.py::build_production_package`，不是猜测的 JSON。核对 `package.plan_digest == job.plan_digest`，输出 `mime_type=video/webm`，三项 ID/文件/哈希真实且不同。
+1. **Core 权威成功记录**：只读 `GET /api/v1/production/jobs/{job_id}/package`。`quality_outcome=PASS` 且 `manifest.outputs` **恰为 3**，按 `order` 1→3 逐项读取实际 `production_task_id,shot_id,workflow_id,comfy_prompt_id,output_relpath,output_sha256,output_bytes,mime_type,width,height,frame_count,fps`。这来自 `production/package.py::build_production_package_payload`，不是猜测的 JSON。核对 `package.plan_digest == job.plan_digest`，输出 `mime_type=video/webm`，三项 ID/文件/哈希真实且不同。
 2. **Comfy history**：只在目标 Windows loopback 上，对 Core 返回的每一个实际 `comfy_prompt_id` 做只读 `GET http://127.0.0.1:8188/history/{prompt_id}`，检查同一键 `status.completed=true` 且无 `status.status_str=error`，在 `outputs` 的 SaveWEBM 输出里核对 `filename`、`subfolder`、`type=output`。另 `GET /queue` 核对已无该 Job 对应的在途执行；不要用空 history 猜成功，不要直接 `POST /prompt`。
 3. **WebM 实体**：`ProductionLocalEnvironment.ResolveComfyDataRoot()` 按 `%APPDATA%\ComfyUI\config.json` `basePath`、固定已知目录依次选择受信 data root；`ResolveComfyOutputRoot()` 为其 `output` 子目录。唯一真实视频路径 = 该 OutputRoot + Core `manifest.outputs[i].output_relpath`，**必须检查不会越界、不是 reparse point**。现场可只读 `Get-Item -LiteralPath $path`、`(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()`、`ffprobe -v error -show_entries format=duration:stream=codec_name,width,height,avg_frame_rate -of json -- $path`。比对 Core 原始字节数、SHA、fps、帧数；三条 WebM 各留无敏感内容截图和能播放证据。
 4. **每镜头耗时**：`%LOCALAPPDATA%\PicotooPetV2\Desktop\logs\media-worker.log` 中 `P0_SHOT_METRIC job=... task=... attempts_at_claim=... known_prompt=... wall_ms=... result=... visual_quality=UNVERIFIED`。**wall_ms 是执行器端到端等待/history/结果提交的墙钟时间，不等于 GPU kernel time**。若 Comfy history 给出 `execution_start` / `execution_success` 时间，作为近似 Comfy 执行区间另列；真实 GPU 功耗/能耗/美元单位成本须从实际可用的显卡遥测、计时与电价独立计算，无数据则写 `UNVERIFIED`，不能把 CI 或 wall_ms 当成本。
