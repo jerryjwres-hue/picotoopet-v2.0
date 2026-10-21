@@ -1,6 +1,8 @@
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
 
+#pragma warning disable CA1822 // Compile-only RED scaffold, replaced after native behavioral failure.
+
 namespace PicotooPet.Desktop.Services;
 
 public sealed partial class ControlCenterSession : IReferenceBatchGateway
