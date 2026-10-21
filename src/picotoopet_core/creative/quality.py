@@ -17,7 +17,7 @@ from picotoopet_core.production.profile import (
 from .director import (
     MAX_SHOT_SECONDS,
     GoalDirectives,
-    actions_too_similar,
+    near_duplicate_actions,
     negative_conflicts,
     normalized_keys,
     parse_goal_directives,
@@ -140,9 +140,13 @@ class CreativeQualityGate:
             ):
                 pass
             if directives.shot_count is not None:
-                bound = self._script_shot_count_problem(parsed, directives.shot_count)
-                if bound is not None:
-                    return self._retry(*bound), None
+                bounds = self._script_shot_count_problems(parsed, directives.shot_count)
+                if bounds:
+                    return CreativeQualityDecision(
+                        outcome=CreativeQualityOutcome.RETRY,
+                        reasons=[code for code, _ in bounds],
+                        correction_instruction=" ".join(text for _, text in bounds)[:2000],
+                    ), None
         elif stage_kind is CreativeStageKind.VIDEO_BIBLE:
             assert isinstance(parsed, VideoBibleDraft)
             return self._evaluate_video_bible(parsed, source_set, previous_stages, directives)
@@ -155,14 +159,21 @@ class CreativeQualityGate:
                 ), None
             script_beats = {item["beat_id"] for item in script_raw.get("beats", [])}
             shot_beats = {item.beat_id for item in parsed.shots}
+            # Structural defects join the other repairs below: the stage only gets one
+            # retry, so every defect found now must be reported in that single correction.
+            structural: list[tuple[str, str]] = []
             if not shot_beats <= script_beats:
-                return self._retry(
-                    "UNKNOWN_SCRIPT_BEAT", "Use only validated script beat IDs."
-                ), None
+                structural.append((
+                    "UNKNOWN_SCRIPT_BEAT",
+                    "Use only validated script beat IDs (unknown: "
+                    + ", ".join(sorted(shot_beats - script_beats)) + ").",
+                ))
             if script_beats - shot_beats:
-                return self._retry(
-                    "SCRIPT_BEAT_NOT_COVERED", "Cover every validated script beat."
-                ), None
+                structural.append((
+                    "SCRIPT_BEAT_NOT_COVERED",
+                    "Cover every validated script beat (missing: "
+                    + ", ".join(sorted(script_beats - shot_beats)) + ").",
+                ))
             # Early renderer-feasibility screen for video shots. Same frozen
             # 4n+1 frame rule and profile as the actual Production compiler.
             # Older validated packages keep their immutable persisted plans.
@@ -177,9 +188,17 @@ class CreativeQualityGate:
                         "Use the previously validated creative brief and output profile.",
                     ), None
                 fps = VIDEO_OUTPUT_PROFILES[brief.output_profile_id].fps
-            problems = self._shot_plan_problems(
-                parsed, script_raw, directives, fps=fps
-            )
+            problems = [
+                *structural,
+                *self._shot_plan_problems(parsed, script_raw, directives, fps=fps),
+            ]
+            used = {evidence for shot in parsed.shots for evidence in shot.source_evidence_ids}
+            if not used <= evidence_ids:
+                problems.append((
+                    "UNKNOWN_SOURCE_EVIDENCE_ID",
+                    "Use only supplied evidence IDs (unknown: "
+                    + ", ".join(sorted(used - evidence_ids)) + ").",
+                ))
             if problems:
                 return CreativeQualityDecision(
                     outcome=CreativeQualityOutcome.RETRY,
@@ -205,42 +224,38 @@ class CreativeQualityGate:
                         "SHOT_PLAN_BIBLE_MISMATCH",
                         "Shot ids, beats, order and durations must equal the video bible.",
                     ), None
-            used = {evidence for shot in parsed.shots for evidence in shot.source_evidence_ids}
-            if not used <= evidence_ids:
-                return self._retry(
-                    "UNKNOWN_SOURCE_EVIDENCE_ID", "Use only supplied evidence IDs."
-                ), None
 
         return CreativeQualityDecision(outcome=CreativeQualityOutcome.PASS), parsed
 
     @staticmethod
-    def _script_shot_count_problem(
+    def _script_shot_count_problems(
         script: CreativeScriptResult, count: int
-    ) -> tuple[str, str] | None:
+    ) -> list[tuple[str, str]]:
         """A Goal that asks for exactly N shots bounds the script before any shot exists."""
 
         ceiling = count * MAX_SHOT_SECONDS
         floor = count * MIN_SHOT_SECONDS
+        problems: list[tuple[str, str]] = []
         if len(script.beats) > count:
-            return (
+            problems.append((
                 "SCRIPT_BEATS_EXCEED_SHOT_COUNT",
                 f"The goal requires exactly {count} shots, so use at most {count} script "
                 f"beats (each beat needs at least one shot); you returned {len(script.beats)}.",
-            )
+            ))
         if script.target_duration_seconds > ceiling:
-            return (
+            problems.append((
                 "SCRIPT_TOO_LONG_FOR_SHOT_COUNT",
                 f"The goal requires exactly {count} shots and one shot can last at most "
                 f"{MAX_SHOT_SECONDS:.1f} seconds: set target_duration_seconds to at most "
                 f"{ceiling:.1f} seconds and size the beat durations to add up to it.",
-            )
-        if script.target_duration_seconds < floor:
-            return (
+            ))
+        elif script.target_duration_seconds < floor:
+            problems.append((
                 "SCRIPT_TOO_SHORT_FOR_SHOT_COUNT",
                 f"The goal requires exactly {count} shots of at least {MIN_SHOT_SECONDS:.1f} "
                 f"seconds each: set target_duration_seconds to at least {floor:.1f} seconds.",
-            )
-        return None
+            ))
+        return problems
 
     @staticmethod
     def _shot_plan_problems(
@@ -328,21 +343,14 @@ class CreativeQualityGate:
                 "+ coat + accessory, product colour + shape + material, place, light "
                 f"(shared by all shots now: {len(shared)}).",
             ))
-        for index, first in enumerate(plan.shots):
-            other = next(
-                (
-                    later for later in plan.shots[index + 1 :]
-                    if actions_too_similar(first.action, later.action)
-                ),
-                None,
-            )
-            if other is not None:
-                problems.append((
-                    "SHOT_ACTIONS_NOT_DISTINCT",
-                    f"Shots {first.shot_id} and {other.shot_id} describe the same action. Give "
-                    "each shot one different visible action (hook, demo, payoff).",
-                ))
-                break
+        pair = near_duplicate_actions([shot.action for shot in plan.shots])
+        if pair is not None:
+            first, other = plan.shots[pair[0]], plan.shots[pair[1]]
+            problems.append((
+                "SHOT_ACTIONS_NOT_DISTINCT",
+                f"Shots {first.shot_id} and {other.shot_id} describe the same action. Give "
+                "each shot one different visible action (hook, demo, payoff).",
+            ))
         clashing = negative_conflicts([
             text for shot in plan.shots
             for text in (shot.subject, shot.environment, shot.action, shot.framing,

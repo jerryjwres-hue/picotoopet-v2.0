@@ -158,14 +158,15 @@ def test_words_the_fixed_negative_prompt_forbids_are_not_allowed_in_the_positive
     word: str,
 ) -> None:
     shots = _shots(3)["shots"]
-    shots[2]["framing"] = f"medium shot, {word} background"
+    shots[2]["framing"] = f"medium shot, {word} look"
     decision = _plan(shots)
     assert decision.reasons == ["PROMPT_CONTRADICTS_NEGATIVE"]
     assert word in (decision.correction_instruction or "")
 
 
 def test_negative_conflicts_matches_whole_words_only() -> None:
-    assert negative_conflicts(["a static camera"]) == ["static"]
+    assert negative_conflicts(["a static look"]) == ["static"]
+    assert negative_conflicts(["a static camera"]) == []  # fixed-camera wording is allowed
     assert negative_conflicts(["the statically lit room", "a stately dog"]) == []
 
 

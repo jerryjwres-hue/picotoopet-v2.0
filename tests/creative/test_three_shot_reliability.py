@@ -166,8 +166,9 @@ def test_without_a_count_directive_any_count_still_passes() -> None:
     )
 
 
-def test_fewer_shots_than_beats_is_still_the_existing_coverage_error() -> None:
-    assert _plan(_shots(2)).reasons == ["SCRIPT_BEAT_NOT_COVERED"]
+def test_fewer_shots_than_beats_reports_coverage_and_count_in_one_repair() -> None:
+    assert _plan(_shots(2)).reasons == ["SCRIPT_BEAT_NOT_COVERED", "SHOT_COUNT_MISMATCH"]
+    assert _plan(_shots(2), objective=None).reasons == ["SCRIPT_BEAT_NOT_COVERED"]
 
 
 def test_unrenderable_shot_correction_keeps_the_requested_count() -> None:
