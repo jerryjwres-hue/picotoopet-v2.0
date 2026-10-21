@@ -1,0 +1,32 @@
+name: P0 Independent Three Shot Gate Windows
+on:
+  push:
+    branches: [test/p0-three-shot-acceptance-gate-windows-v1]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: independent-three-shot-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Build existing same-EXE smoke framework (no packaging)
+        shell: pwsh
+        run: dotnet build windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release --warnaserror
+      - name: G006 existing complete worker regression baseline (offline GPU)
+        shell: pwsh
+        run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release
+      - name: Independent real gate admission and durable journal tests (no GPU)
+        if: ${{ !cancelled() && success() }}
+        shell: pwsh
+        run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
