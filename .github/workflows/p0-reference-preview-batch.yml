@@ -1,0 +1,47 @@
+name: P0 Reference Preview Batch Windows
+on:
+  push:
+    branches: [feature/p0-reference-preview-batch-ui-v1]
+  pull_request:
+    paths:
+      - windows/desktop/**/ReferenceBatch*
+      - windows/desktop/**/ReferencePreview*
+      - windows/desktop/**/GoalCenterPanel.xaml*
+      - windows/desktop/**/OperatorHomePageViewModel.cs
+      - windows/desktop/**/MacCoreClient.ReferenceBatches.cs
+      - windows/desktop/**/ControlCenterSession.ReferenceBatches.cs
+      - windows/desktop/**/Program.cs
+      - .github/workflows/p0-reference-preview-batch.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: reference-preview-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Build existing native WPF smoke harness (no packaging)
+        shell: pwsh
+        run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
+      - name: Real image, GUI and API contracts (no GPU)
+        shell: pwsh
+        run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --reference-preview-batch-only
+      - name: Existing Goal and Approvals regressions
+        shell: pwsh
+        run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --goal-video-return-only
+      - name: Full existing Core smoke diagnostic (not a release gate or GPU run)
+        continue-on-error: true
+        shell: pwsh
+        run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release
