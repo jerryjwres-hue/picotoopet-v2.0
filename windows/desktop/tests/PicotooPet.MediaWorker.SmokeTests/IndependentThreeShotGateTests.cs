@@ -43,6 +43,7 @@ internal static class IndependentThreeShotGateTests
             await CaseAsync("hold_after_shot_one_no_new_attempt", ChangedBetweenShotsAsync);
             await CaseAsync("journal_unknown_post_precedes_new_job", RecoveryAsync);
             await PlanCasesAsync();
+            await CoreIdentityCasesAsync();
             if (Failures.Count != 0)
                 throw new InvalidOperationException("INDEPENDENT_THREE_SHOT_GATE=FAIL: " + string.Join("; ", Failures));
             Console.WriteLine("INDEPENDENT_THREE_SHOT_GATE=PASS; REAL_COMFY_GPU=UNVERIFIED; GPU_NETWORK=0");
@@ -186,9 +187,11 @@ internal static class IndependentThreeShotGateTests
             {
                 await using var f = await Fixture.CreateAsync();
                 var frozen = Digest(f.Work.Gateway.Plan);
-                Write(Allow(JobId, frozen));
-                f.Api.DeclaredDigest = frozen; // Core metadata still declares the frozen digest; actual body changes.
                 f.Work.Gateway.TransformPlan = item.Change;
+                // Structural cases must reject even with a matching checksum; checksum cases keep the original freeze.
+                var pinned = item.Name.EndsWith("_frozen_digest", StringComparison.Ordinal) ? frozen : Digest(f.Work.Gateway.Plan);
+                Write(Allow(JobId, pinned));
+                f.Api.DeclaredDigest = pinned;
                 await RecoveryTests.ThrowsCodeAsync(HeldCode, () => f.Executor().RunAsync(JobId));
                 f.AssertZero();
             });
@@ -203,6 +206,27 @@ internal static class IndependentThreeShotGateTests
                 var admitted = await P0ThreeShotAcceptanceGate.AllowsJobAsync(f.Session, JobId, CancellationToken.None);
                 RecoveryTests.Assert(!admitted,
                     "P0ThreeShotAcceptanceGate.AllowsJobAsync accepted illegal " + identity);
+                f.AssertZero();
+            });
+    }
+
+    private static async Task CoreIdentityCasesAsync()
+    {
+        var changes = new (string Name, Func<ProductionJobRecord, ProductionJobRecord> Change)[]
+        {
+            ("core_wrong_job", j => j with { ProductionJobId = OtherJob }),
+            ("core_wrong_digest", j => j with { PlanDigest = new string('f', 64) }),
+            ("core_wrong_creative", j => j with { CreativePackageId = "different-creative" }),
+            ("core_wrong_creative_digest", j => j with { CreativePackageDigest = new string('f', 64) }),
+            ("core_wrong_project", j => j with { ProjectKey = "different-project" }),
+        };
+        foreach (var item in changes)
+            await CaseAsync(item.Name, async () =>
+            {
+                await using var f = await Fixture.CreateAsync();
+                Write(Allow(JobId, Digest(f.Work.Gateway.Plan)));
+                f.Api.TransformJob = item.Change;
+                await RecoveryTests.ThrowsCodeAsync(HeldCode, () => f.Executor().RunAsync(JobId));
                 f.AssertZero();
             });
     }
@@ -347,8 +371,10 @@ internal static class IndependentThreeShotGateTests
         private readonly HttpListener _listener = new();
         private readonly Task _loop;
         private readonly Func<ProductionPlanRecord> _plan;
+        private volatile bool _stopping;
         public string Url { get; }
         public string? DeclaredDigest { get; set; }
+        public Func<ProductionJobRecord, ProductionJobRecord>? TransformJob { get; set; }
         public List<string> Requests { get; } = new();
         public CoreServer(Func<ProductionPlanRecord> plan)
         {
@@ -373,6 +399,7 @@ internal static class IndependentThreeShotGateTests
                     var job = new ProductionJobRecord(JobId, plan.CreativePackageId, plan.CreativePackageDigest,
                         plan.ProjectKey, plan.ProductionProfile, DeclaredDigest ?? Digest(plan), "Ready", null,
                         null, null, null, "ci", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null);
+                    job = TransformJob?.Invoke(job) ?? job;
                     object? body = request.HttpMethod != "GET" || request.Headers["Authorization"] != "Bearer offline-three-shot-test-only"
                         ? null : request.Url.AbsolutePath switch
                         {
@@ -388,9 +415,9 @@ internal static class IndependentThreeShotGateTests
                     context.Response.Close();
                 }
             }
-            catch (HttpListenerException) when (!_listener.IsListening) { }
-            catch (ObjectDisposedException) when (!_listener.IsListening) { }
+            catch (HttpListenerException error) when (_stopping && error.ErrorCode == 995) { }
+            catch (ObjectDisposedException) when (_stopping) { }
         }
-        public async ValueTask DisposeAsync() { _listener.Stop(); await _loop; _listener.Close(); }
+        public async ValueTask DisposeAsync() { _stopping = true; _listener.Stop(); await _loop; _listener.Close(); }
     }
 }

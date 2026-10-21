@@ -21,12 +21,13 @@ jobs:
         with:
           global-json-file: windows/desktop/global.json
       - name: Build existing same-EXE smoke framework (no packaging)
+        id: build
         shell: pwsh
         run: dotnet build windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release --warnaserror
       - name: G006 existing complete worker regression baseline (offline GPU)
         shell: pwsh
         run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release
       - name: Independent real gate admission and durable journal tests (no GPU)
-        if: ${{ !cancelled() && success() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
         run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
