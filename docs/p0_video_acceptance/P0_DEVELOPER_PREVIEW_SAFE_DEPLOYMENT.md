@@ -38,6 +38,12 @@ Original installer/builder/production source is unchanged.
    accepted Comfy jobs drained/accounted for. Do not force-kill active GPU work or delete
    journals. HOLD cannot cancel an accepted prompt; old binaries may ignore HOLD. Unknown
    process/task/queue state means BLOCKED, not permission to run an installer that kills them.
+   BEFORE INSTALL, also verify the current binary (automatic recovery target) and every
+   managed shortcut target recovery may restore are HOLD-aware AND honor the self-test
+   entry point. Unknown/pre-gate/unverifiable recovery targets make INSTALLATION BLOCKED:
+   activation failure can automatically execute that old binary and restore its Startup
+   shortcut, even when the new installation requested ActivationSelfTest. A clean install
+   must verify no previous activation pointer or managed shortcut recovery target exists.
 3. Under the SAME Windows account that will run the app, prepare HOLD before installation
    activation and before any login/startup shortcut. Fixed path:
    `%LOCALAPPDATA%\PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json`, NOT DesktopApp,
