@@ -11,6 +11,8 @@
     <StartupObject>PicotooPet.Desktop.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Bundled CPU WebP decoder; no OS codec installation or GPU surface. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <ProjectReference Include="..\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
     <Resource Include="Assets\Pet\Husky\V1\*.png" />
 

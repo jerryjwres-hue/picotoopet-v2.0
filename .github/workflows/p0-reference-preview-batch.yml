@@ -41,3 +41,7 @@ jobs:
       - name: Existing Goal and Approvals regressions
         shell: pwsh
         run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --goal-video-return-only
+      - name: Full existing Core smoke diagnostic (not a release gate or GPU run)
+        continue-on-error: true
+        shell: pwsh
+        run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release

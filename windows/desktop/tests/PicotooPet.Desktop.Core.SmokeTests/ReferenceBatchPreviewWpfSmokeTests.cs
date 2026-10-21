@@ -99,9 +99,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         // Google Skia resources/images/half-transparent-white-pixel.webp (38-byte known valid fixture).
         var webp = Convert.FromBase64String("UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAEAfQ//73v3+BiOh/AAA=");
         var webpPreview = await ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp, ".webp");
-        SmokeAssert.Equal(1, webpPreview.PixelWidth, "Actual WebP must decode through its verified native codec");
+        SmokeAssert.Equal(1, webpPreview.PixelWidth, "Actual WebP must decode through the bundled CPU codec");
         SmokeAssert.Equal(1, webpPreview.PixelHeight, "WebP fixture height changed");
-        Console.WriteLine("REFERENCE_PREVIEW_WEBP=PASS");
+        await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp[..20], ".webp"));
+        Console.WriteLine("REFERENCE_PREVIEW_WEBP=PASS; DECODER=BUNDLED_CPU");
     }
 
     private static async Task VerifyBatchStateAsync(byte[] png)

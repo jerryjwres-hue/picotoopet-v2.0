@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using SkiaSharp;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 using BitmapDecoder = Windows.Graphics.Imaging.BitmapDecoder;
@@ -230,11 +231,12 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(extension);
         if (bytes.Length is <= 0 or > ReferencePreviewSnapshotStager.MaxBytes)
             throw new InvalidDataException("REFERENCE_IMAGE_SIZE_INVALID");
+        if (extension.TrimStart('.').Equals("webp", StringComparison.OrdinalIgnoreCase))
+            return DecodeWebpPreview(bytes, cancellationToken);
         var codec = extension.TrimStart('.').ToLowerInvariant() switch
         {
             "png" => BitmapDecoder.PngDecoderId,
             "jpg" or "jpeg" => BitmapDecoder.JpegDecoderId,
-            "webp" => BitmapDecoder.WebpDecoderId,
             _ => throw new InvalidDataException("REFERENCE_IMAGE_FORMAT_INVALID")
         };
         try
@@ -266,6 +268,29 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             return preview;
         }
         catch (COMException exception) { throw new InvalidDataException("REFERENCE_IMAGE_DECODE_FAILED", exception); }
+    }
+
+    private static BitmapSource DecodeWebpPreview(byte[] bytes, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var data = SKData.CreateCopy(bytes);
+        using var decoder = SKCodec.Create(data);
+        if (decoder is null || decoder.EncodedFormat != SKEncodedImageFormat.Webp || decoder.FrameCount > 1
+            || decoder.Info.Width is <= 0 or > 8192 || decoder.Info.Height is <= 0 or > 8192
+            || (long)decoder.Info.Width * decoder.Info.Height > 16_000_000)
+            throw new InvalidDataException("REFERENCE_IMAGE_METADATA_INVALID");
+        // Bounds are checked before allocating or decoding pixels. No GPU context is created.
+        var info = new SKImageInfo(decoder.Info.Width, decoder.Info.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        var pixels = new byte[checked(info.RowBytes * info.Height)];
+        if (decoder.GetPixels(info, pixels) != SKCodecResult.Success)
+            throw new InvalidDataException("REFERENCE_IMAGE_DECODE_FAILED");
+        cancellationToken.ThrowIfCancellationRequested();
+        BitmapSource preview = BitmapSource.Create(info.Width, info.Height, 96, 96, PixelFormats.Pbgra32, null,
+            pixels, info.RowBytes);
+        var scale = Math.Min(1.0, 384.0 / Math.Max(info.Width, info.Height));
+        if (scale < 1.0) preview = new TransformedBitmap(preview, new ScaleTransform(scale, scale));
+        preview.Freeze();
+        return preview;
     }
 
     public static async Task ValidateImageAsync(byte[] bytes, string extension, CancellationToken cancellationToken)
