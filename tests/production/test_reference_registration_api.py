@@ -308,3 +308,176 @@ def test_explicit_rejection_never_grants_references(state):
             receipt.approval_id, request_digest=receipt.approval_request_digest,
             reason="cannot silently rewrite Rejected",
         )
+
+
+def _v11_service(state):
+    from picotoopet_core.creative.repository import CreativeRepository
+    from picotoopet_core.production.repository import ProductionRepository
+    from picotoopet_core.production.service import ProductionService
+    from picotoopet_core.production.store import ProductionArtifactStore
+
+    db, _, _, store, _ = state
+    return ProductionService(
+        repository=ProductionRepository(db),
+        creative_repository=CreativeRepository(db),
+        store=ProductionArtifactStore(store.paths),
+    )
+
+
+def _approve_batch(state):
+    db, reg, approvals, store, digest = state
+    batch = reg.register(
+        ReferenceBatchRequestV1.model_validate(payload(digest)),
+        idempotency_key="v11-batch-consent",
+    )
+    approvals.decide_for_control_center(
+        approval_id=batch.approval_id, decision="approve",
+        request_digest=batch.approval_request_digest,
+        idempotency_key="v11-explicit-approval-synthetic-test",
+        resolved_by="synthetic-fixture", reason="fixture only",
+    )
+    return reg.get(batch.approval_id)
+
+
+def test_v11_actual_job_persists_approved_two_i2v_plus_t2v_and_rechecks_revocation(state):
+    from picotoopet_core.production.versioned_plan import (
+        ProductionJobCreateV11Request, ProductionPlanV11, ProductionTaskRecordV11,
+    )
+
+    db, registration, approvals, store, digest = state
+    service = _v11_service(state)
+    batch = _approve_batch(state)
+    request = ProductionJobCreateV11Request(
+        creative_package_id=PACKAGE, schema_version="1.1",
+        idempotency_key="v11-production-idempotent",
+        approved_reference_ids=[batch.approval_id],
+    )
+    job = service.create_job_v11(request)
+    plan = service.get_plan(job.production_job_id)
+    assert isinstance(plan, ProductionPlanV11)
+    assert plan.schema_version == "1.1"
+    assert [task.shot_id for task in plan.tasks] == ["shot-a", "shot-b", "shot-t"]
+    assert [task.reference_asset is not None for task in plan.tasks] == [True, True, False]
+    assert plan.tasks[2].workflow_id == "comfy.wan22.ti2v5b.t2v.v1"
+    for task in plan.tasks[:2]:
+        ref = task.reference_asset
+        assert ref is not None
+        assert ref.production_job_id == job.production_job_id
+        assert ref.production_task_id == task.production_task_id
+        assert ref.approval_id == batch.approval_id
+        assert ref.creative_package_digest == digest
+        assert ref.goal_id == GOAL
+        response = service.authorize_reference_v11(job.production_job_id, task.production_task_id)
+        assert response.descriptor.asset_id == ref.asset_id
+        assert response.plan_digest == job.plan_digest
+        stored = service.repository.get_task(job.production_job_id, task.production_task_id)
+        assert isinstance(stored, ProductionTaskRecordV11)
+        assert stored.task_plan.reference_asset == ref
+
+    assert service.create_job_v11(request).production_job_id == job.production_job_id
+    with pytest.raises(ValueError, match="PRODUCTION_V11_WORKER_ADAPTER_REQUIRED"):
+        service.claim(job.production_job_id, "windows-executor")
+    with pytest.raises(ValueError, match="PRODUCTION_V11_WORKER_ADAPTER_REQUIRED"):
+        service.repository.claim_job(job.production_job_id, "windows-executor")
+    assert service.repository.get_job(job.production_job_id).lease_executor_id is None
+    assert all(task.attempt_count == 0 for task in service.repository.list_tasks(job.production_job_id))
+
+    raw = db.fetchone("SELECT plan_json FROM production_jobs WHERE production_job_id=?",
+                      (job.production_job_id,))["plan_json"]
+    db.close()
+    db.open()
+    assert service.get_plan(job.production_job_id) == plan
+    assert db.fetchone("SELECT plan_json FROM production_jobs WHERE production_job_id=?",
+                       (job.production_job_id,))["plan_json"] == raw
+    assert service.authorize_reference_v11(
+        job.production_job_id, plan.tasks[0].production_task_id
+    ).descriptor.approval_id == batch.approval_id
+
+    registration.revoke(batch.approval_id,
+                        request_digest=batch.approval_request_digest, reason="explicitly revoked")
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        service.authorize_reference_v11(job.production_job_id, plan.tasks[0].production_task_id)
+    with pytest.raises(ValueError, match="PRODUCTION_V11_WORKER_ADAPTER_REQUIRED"):
+        service.claim(job.production_job_id, "windows-executor")
+    assert service.get_plan(job.production_job_id) == plan  # no recompile after revoke
+
+
+def test_v11_pending_rejected_and_wrong_approval_cannot_create_job(state):
+    from picotoopet_core.production.versioned_plan import ProductionJobCreateV11Request
+    db, reg, approvals, store, digest = state
+    service = _v11_service(state)
+    pending = reg.register(
+        ReferenceBatchRequestV1.model_validate(payload(digest)), idempotency_key="v11-pending",
+    )
+    def req(key, ids):
+        return ProductionJobCreateV11Request(
+            creative_package_id=PACKAGE, idempotency_key=key, approved_reference_ids=ids
+        )
+    with pytest.raises(ValueError, match="PRODUCTION_V11_REFERENCE_NOT_APPROVED"):
+        service.create_job_v11(req("unapproved-v11", [pending.approval_id]))
+    approvals.decide_for_control_center(
+        approval_id=pending.approval_id, decision="reject",
+        request_digest=pending.approval_request_digest,
+        idempotency_key="v11-explicit-reject", resolved_by="synthetic-fixture",
+        reason="reject fixture",
+    )
+    with pytest.raises(ValueError, match="PRODUCTION_V11_REFERENCE_NOT_APPROVED"):
+        service.create_job_v11(req("rejected-v11", [pending.approval_id]))
+    assert db.fetchall("SELECT * FROM production_jobs", ()) == []
+    with pytest.raises(ValueError):
+        ProductionJobCreateV11Request(
+            creative_package_id=PACKAGE, idempotency_key="duplicate-ids",
+            approved_reference_ids=[pending.approval_id, pending.approval_id],
+        )
+
+
+def test_v11_authenticated_api_returns_exact_version_and_denies_old_worker(state):
+    from picotoopet_core.api.routes import production
+    from picotoopet_core.production.versioned_plan import ProductionPlanV11
+
+    db, _, approval, store, digest = state
+    batch = _approve_batch(state)
+    service = _v11_service(state)
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(production.router, prefix="/api/v1")
+    app.state.services = SimpleNamespace(production=service)
+    app.dependency_overrides[require_auth] = lambda: None
+    with TestClient(app) as client:
+        response = client.post("/api/v1/production/jobs/v1.1", json={
+            "schema_version": "1.1", "creative_package_id": PACKAGE,
+            "production_profile": "production.comfyui.v1", "idempotency_key": "http-v11",
+            "approved_reference_ids": [batch.approval_id],
+        })
+        assert response.status_code == 200, response.text
+        job_id = response.json()["production_job_id"]
+        result = client.get(f"/api/v1/production/jobs/{job_id}/plan")
+        assert result.status_code == 200
+        plan = ProductionPlanV11.model_validate(result.json())
+        assert plan.schema_version == "1.1"
+        task = plan.tasks[0]
+        auth = client.get(
+            f"/api/v1/production/jobs/{job_id}/tasks/{task.production_task_id}/reference-authorization"
+        )
+        assert auth.status_code == 200, auth.text
+        assert auth.json()["descriptor"]["asset_id"] == task.reference_asset.asset_id
+        assert client.post(f"/api/v1/production/jobs/{job_id}/claim",
+                           json={"executor_id": "windows-p0"}).status_code == 409
+        assert client.get(f"/api/v1/production/jobs/{job_id}/plan").json() == result.json()
+
+
+def test_v10_plan_parser_keeps_legacy_json_and_rejects_unknown_versions(state):
+    from picotoopet_core.production.compiler import compile_production_plan
+    from picotoopet_core.production.versioned_plan import parse_versioned_plan
+    from picotoopet_core.production.models import ProductionPlan
+    db, _, _, _, digest = state
+    manifest = json.loads(db.fetchone(
+        "SELECT manifest_json FROM creative_packages WHERE creative_package_id=?", (PACKAGE,)
+    )["manifest_json"])
+    legacy = compile_production_plan(str(uuid4()), manifest, digest)
+    raw = legacy.model_dump(mode="json")
+    parsed = parse_versioned_plan(raw)
+    assert type(parsed) is ProductionPlan
+    assert parsed.model_dump(mode="json") == raw
+    with pytest.raises(ValueError, match="PRODUCTION_PLAN_SCHEMA_UNSUPPORTED"):
+        parse_versioned_plan(dict(raw, schema_version="1.2"))
