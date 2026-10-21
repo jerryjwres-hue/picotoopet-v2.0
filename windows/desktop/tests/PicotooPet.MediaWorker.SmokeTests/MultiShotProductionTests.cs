@@ -71,6 +71,15 @@ internal static class MultiShotProductionTests
         }
         using (var fixture = new Fixture(rejectLateShot: false, v11: true))
         {
+            fixture.Journal.Save(new ProductionSubmission("job", "task-2",
+                new string('a', 64), new string('b', 64), "Submitting", null));
+            await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION",
+                () => fixture.Executor(_ => Ready(fixture.Root)).RunAsync("job"));
+            RecoveryTests.Assert(fixture.Gateway.Claims == 0 && fixture.Comfy.Submits == 0,
+                "same-job unknown POST must block v1.1 before snapshot preflight or Core claim");
+        }
+        using (var fixture = new Fixture(rejectLateShot: false, v11: true))
+        {
             fixture.Journal.Save(new ProductionSubmission("other-job", "task-other",
                 new string('a', 64), new string('b', 64), "Submitting", null));
             await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION",
