@@ -16,7 +16,7 @@ from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.worker.handlers import HandlerResult
 
-from .director import director_constraints
+from .director import director_constraints, parse_goal_directives
 from .models import (
     CreativeBriefResult,
     CreativeDeepAiHandoffRecord,
@@ -256,6 +256,7 @@ class CreativeIntelligenceCoordinator:
                 source_set=source_set,
                 previous=previous,
                 profile=profile,
+                objective=context.get("creative_objective"),
             )
         correction: str | None = None
         last_raw: dict[str, Any] = stage.result or {}
@@ -279,6 +280,7 @@ class CreativeIntelligenceCoordinator:
                 source_set=source_set,
                 previous_stages=previous,
                 raw_result=raw,
+                objective=context.get("creative_objective"),
             )
             digest = self._digest(raw)
             if decision.outcome is CreativeQualityOutcome.PASS and parsed is not None:
@@ -342,6 +344,7 @@ class CreativeIntelligenceCoordinator:
         source_set: NormalizedCreativeSourceSet,
         previous: dict[str, dict[str, Any]],
         profile,  # type: ignore[no-untyped-def]
+        objective: str | None = None,
     ) -> tuple[dict[str, Any] | None, CreativeQualityOutcome, dict[str, Any], list[str]]:
         """Build the shot plan from the sealed Video Bible with no model call."""
 
@@ -354,6 +357,7 @@ class CreativeIntelligenceCoordinator:
             source_set=source_set,
             previous_stages=previous,
             raw_result=raw,
+            objective=objective,
         )
         digest = self._digest(raw)
         if decision.outcome is CreativeQualityOutcome.PASS and parsed is not None:
@@ -489,6 +493,7 @@ class CreativeIntelligenceCoordinator:
             context["director_constraints"] = director_constraints(
                 CreativeBriefResult.model_validate(brief),
                 CreativeScriptResult.model_validate(script),
+                parse_goal_directives(creative_objective),
             )
         elif stage_kind is CreativeStageKind.SHOT_PLAN:
             context["creative_brief"] = previous[CreativeStageKind.CREATIVE_BRIEF.value]
