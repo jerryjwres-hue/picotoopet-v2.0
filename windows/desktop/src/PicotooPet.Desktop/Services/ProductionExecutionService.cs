@@ -310,6 +310,15 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     /// <summary>Only Core-authorized executable workflows may enter an automatic multi-shot run.</summary>
     private static void ValidateMultiShotPlan(string jobId, ProductionPlanRecord plan)
     {
+        if (plan.SchemaVersion == "1.1")
+        {
+            // Pending Journal reconciliation has priority (the Host runs its global
+            // barrier first). This validation is BEFORE preflight/claim/any GPU POST.
+            // Core's new v1.1 lease remains intentionally disabled until the
+            // persistent Comfy LoadImage snapshot lifetime is actually enforced.
+            ValidateV11FrozenReferenceIdentities(jobId, plan);
+            throw new ProductionWorkerException("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED");
+        }
         // The frozen v1.0 Core plan transports only a local path, NOT an authenticated
         // SHA/byte/rights/source approval. Such an I2V task cannot be authorized for
         // a fresh GPU POST. Do not mint consent from a filename or silently use T2V.
@@ -333,6 +342,56 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         {
             throw new ProductionWorkerException("PRODUCTION_PLAN_NOT_FULLY_EXECUTABLE");
         }
+    }
+
+    /// <summary>
+    /// Read-only v1.1 snapshot admission guard. Never convert a SHA or local path into
+    /// consent; that remains a fresh authenticated Core authorization plus Codex verifier.
+    /// This preserves old v1.0 T2V and rejects untrusted v1.1 before Core lease/GPU.
+    /// </summary>
+    private static void ValidateV11FrozenReferenceIdentities(string jobId, ProductionPlanRecord plan)
+    {
+        if (plan.ProductionJobId != jobId || plan.Tasks is not { Length: > 0 }
+            || plan.ProductionProfile != "production.comfyui.v1"
+            || plan.Tasks.Select(x => x.ProductionTaskId).Distinct(StringComparer.Ordinal).Count() != plan.Tasks.Length
+            || plan.Tasks.Select(x => x.ShotId).Distinct(StringComparer.Ordinal).Count() != plan.Tasks.Length)
+            throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var requiredI2V = 0;
+        foreach (var task in plan.Tasks)
+        {
+            var reference = task.ReferenceAsset;
+            if (task.RenderIntent == "GENERATIVE_VIDEO")
+            {
+                if (reference is not null || task.TrustedInputAssetRef is not null
+                    || task.WorkflowId != ComfyWorkflowTemplateValidator.T2VWorkflowId)
+                    throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+                continue;
+            }
+            if (task.RenderIntent != "IMAGE_TO_VIDEO" || task.WorkflowId != ComfyWorkflowTemplateValidator.I2VWorkflowId
+                || task.ExecutionDisposition != "Executable" || reference is null
+                || reference.SchemaVersion != "reference_asset.v1"
+                || reference.ProductionJobId != jobId || reference.ProductionTaskId != task.ProductionTaskId
+                || reference.ShotId != task.ShotId
+                || reference.CreativePackageId != plan.CreativePackageId
+                || reference.CreativePackageDigest != plan.CreativePackageDigest
+                || plan.ProjectKey != "goal-" + reference.GoalId
+                || reference.RightsScope != "wan22.i2v.production.v1"
+                || string.IsNullOrWhiteSpace(reference.ApprovalId)
+                || string.IsNullOrWhiteSpace(reference.AssetId) || !ids.Add(reference.AssetId)
+                || reference.Bytes is <= 0 or > 33554432
+                || reference.Sha256.Length != 64
+                || reference.Sha256.Any(c => c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+                || reference.InputRelativePath != task.TrustedInputAssetRef)
+                throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+            var pathParts = reference.InputRelativePath.Split('/');
+            if (pathParts.Length != 4 || pathParts[0] != "PicotooPet" || pathParts[1] != "references"
+                || pathParts[2] != reference.Sha256)
+                throw new ProductionWorkerException("I2V_V11_SNAPSHOT_NOT_CONTENT_ADDRESSED");
+            requiredI2V++;
+        }
+        if (requiredI2V == 0)
+            throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
     }
 
     private async Task ExecuteTaskAsync(ProductionClaimRecord claim, ProductionTaskPlanRecord task, string planDigest,
