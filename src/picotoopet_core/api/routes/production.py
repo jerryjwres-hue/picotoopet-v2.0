@@ -23,7 +23,7 @@ from picotoopet_core.production.models import (
     ProductionTaskRecord,
 )
 from picotoopet_core.production.versioned_plan import (
-    ProductionJobCreateV11Request, ProductionPlanV11,
+    ApprovedReferenceAuthorizationV11, ProductionJobCreateV11Request, ProductionPlanV11,
 )
 from picotoopet_core.security.auth import require_auth
 
@@ -65,6 +65,20 @@ def get_production_job(production_job_id: str, request: Request) -> ProductionJo
 @router.get("/production/jobs/{production_job_id}/plan", response_model=ProductionPlan | ProductionPlanV11)
 def get_production_plan(production_job_id: str, request: Request) -> ProductionPlan | ProductionPlanV11:
     return execute_production(lambda: request.app.state.services.production.get_plan(production_job_id))
+
+
+@router.get(
+    "/production/jobs/{production_job_id}/tasks/{production_task_id}/reference-authorization",
+    response_model=ApprovedReferenceAuthorizationV11,
+)
+def authorize_production_reference_v11(
+    production_job_id: str,
+    production_task_id: str,
+    request: Request,
+) -> ApprovedReferenceAuthorizationV11:
+    return execute_production(lambda: request.app.state.services.production.authorize_reference_v11(
+        production_job_id, production_task_id
+    ))
 
 
 @router.post("/production/jobs/{production_job_id}/claim", response_model=ProductionClaimRecord)
