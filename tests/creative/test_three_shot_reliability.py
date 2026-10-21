@@ -108,14 +108,26 @@ def _script(beats: int = 3, seconds: float = 4.0) -> dict:
     return out
 
 
+_ACTIONS = [
+    "the dog sits and tilts its head",
+    "a small white tag clicks onto the collar",
+    "the dog runs across the grass toward the camera",
+    "the dog lies down and rests",
+    "the dog shakes its fur",
+    "the dog jumps for a ball",
+]
+
+
 def _shots(count: int = 3, seconds: float = 4.0, intent: str = "GENERATIVE_VIDEO") -> dict:
     return {
         "schema_version": "1.0", "creative_profile": V1,
         "shots": [
             {"shot_id": f"shot-{n:03d}", "beat_id": f"beat-{min(n, 3):03d}", "order": n,
              "duration_seconds": seconds, "subject": "a golden retriever", "environment": "park",
-             "action": "waits", "framing": "medium shot", "lighting_style": "soft",
-             "continuity_keys": ["dog"], "required_facts": [], "source_evidence_ids": [],
+             "action": _ACTIONS[(n - 1) % len(_ACTIONS)], "framing": "medium shot",
+             "lighting_style": "soft",
+             "continuity_keys": ["cream golden retriever", "teal collar"],
+             "required_facts": [], "source_evidence_ids": [],
              "text_reference": None, "production_notes": "renderer-neutral",
              "render_intent": intent}
             for n in range(1, count + 1)
