@@ -96,11 +96,13 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         ProductionSubmissionJournal journal, IComfyPromptReconciler reconciler,
         Func<CancellationToken, Task<ProductionPreflightSnapshot>>? preflight = null,
         TimeSpan? pollInterval = null, TimeSpan? heartbeatInterval = null, TimeSpan? historyTimeout = null,
-        Action<ProductionShotObservation>? shotObserver = null)
+        Action<ProductionShotObservation>? shotObserver = null,
+        Func<string, string, IDisposable?>? submissionPermit = null)
     {
         _session = gateway; _comfy = comfy; _journal = journal; _reconciler = reconciler;
         _preflightOverride = preflight;
         _shotObserver = shotObserver;
+        _submissionPermit = submissionPermit;
         _executorId = NormalizeExecutorId($"windows-production-{Environment.MachineName}");
         _pollInterval = pollInterval ?? TimeSpan.FromSeconds(2);
         _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(30);
