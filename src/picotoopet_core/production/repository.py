@@ -23,6 +23,10 @@ from .models import (
     ProductionTaskStatus,
 )
 
+from .versioned_plan import (
+    ProductionPlanV11, ProductionTaskRecordV11, VersionedProductionPlan,
+    parse_versioned_plan,
+)
 
 def _now() -> datetime:
     # ── Single UTC clock representation ─────────────────────────────────────
@@ -106,7 +110,7 @@ class ProductionRepository:
         )
         return [self._job(row) for row in rows]
 
-    def save_plan(self, production_job_id: str, plan: ProductionPlan, plan_digest: str) -> ProductionPlan:
+    def save_plan(self, production_job_id: str, plan: VersionedProductionPlan, plan_digest: str) -> VersionedProductionPlan:
         # ── Plans are immutable once a digest is bound ──────────────────────
         job = self.get_job(production_job_id)
         if job.plan_digest is not None:
@@ -162,7 +166,7 @@ class ProductionRepository:
                 )
         return self.plan_for(production_job_id)
 
-    def plan_for(self, production_job_id: str) -> ProductionPlan:
+    def plan_for(self, production_job_id: str) -> VersionedProductionPlan:
         row = self.database.fetchone(
             "SELECT plan_json FROM production_jobs WHERE production_job_id=?",
             (production_job_id,),
@@ -171,7 +175,7 @@ class ProductionRepository:
             raise KeyError(production_job_id)
         if not row["plan_json"]:
             raise ValueError("PRODUCTION_PLAN_NOT_READY")
-        return ProductionPlan.model_validate(json.loads(row["plan_json"]))
+        return parse_versioned_plan(json.loads(row["plan_json"]))
 
     def list_tasks(self, production_job_id: str) -> list[ProductionTaskRecord]:
         rows = self.database.fetchall(
@@ -209,6 +213,10 @@ class ProductionRepository:
             ).fetchone()
             if row is None:
                 raise KeyError(production_job_id)
+            # Until authenticated Windows snapshot verification is integrated,
+            # no v1.1 lease can authorize a legacy worker to POST a reference.
+            if self.plan_for(production_job_id).schema_version == "1.1":
+                raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
             status = ProductionJobStatus(row["status"])
             if status not in {ProductionJobStatus.PLANNED, ProductionJobStatus.CLAIMED, ProductionJobStatus.RENDERING}:
                 raise ValueError("PRODUCTION_JOB_NOT_CLAIMABLE")
@@ -271,6 +279,8 @@ class ProductionRepository:
         comfy_prompt_id: str | None,
     ) -> ProductionTaskRecord:
         # ── Attempt budget is fixed at initial + one retry ──────────────────
+        if self.plan_for(production_job_id).schema_version == "1.1":
+            raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
         self._require_lease(production_job_id, executor_id, lease_token)
         task = self.get_task(production_job_id, production_task_id)
         if task.status is ProductionTaskStatus.SUCCEEDED:
@@ -498,7 +508,12 @@ class ProductionRepository:
 
     @staticmethod
     def _task(row) -> ProductionTaskRecord:  # type: ignore[no-untyped-def]
-        return ProductionTaskRecord(
+        raw_task = json.loads(row["task_plan_json"])
+        task_record_type = (
+            ProductionTaskRecordV11 if "reference_asset" in raw_task
+            else ProductionTaskRecord
+        )
+        return task_record_type(
             production_task_id=row["production_task_id"],
             production_job_id=row["production_job_id"],
             shot_id=row["shot_id"],
@@ -506,7 +521,7 @@ class ProductionRepository:
             render_intent=row["render_intent"],
             execution_disposition=row["execution_disposition"],
             workflow_id=row["workflow_id"],
-            task_plan=json.loads(row["task_plan_json"]),
+            task_plan=raw_task,
             status=row["status"],
             attempt_count=row["attempt_count"],
             comfy_prompt_id=row["comfy_prompt_id"],
