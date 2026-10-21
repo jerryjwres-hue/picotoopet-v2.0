@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 class CreativeProfile(StrEnum):
     CONTENT_PLAN_V1 = "creative.content_plan.v1"
+    # Explicit opt-in, new jobs only: v1 stages plus a Video Bible (Story Director) stage.
+    CONTENT_PLAN_V2 = "creative.content_plan.v2"
 
 
 class VideoOutputProfile(StrEnum):
@@ -39,6 +41,7 @@ class CreativeStageKind(StrEnum):
     IDEA_RANKING = "idea_ranking.v1"
     CREATIVE_BRIEF = "creative_brief.v1"
     SCRIPT = "script.v1"
+    VIDEO_BIBLE = "video_bible.v1"
     SHOT_PLAN = "shot_plan.v1"
 
 
@@ -71,7 +74,9 @@ class CreativeJobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     source_result_package_ids: list[str] = Field(min_length=1, max_length=8)
-    creative_profile: Literal["creative.content_plan.v1"] = "creative.content_plan.v1"
+    creative_profile: Literal["creative.content_plan.v1", "creative.content_plan.v2"] = (
+        "creative.content_plan.v1"
+    )
     creative_objective: str | None = Field(default=None, max_length=2000)
     idempotency_key: str = Field(min_length=1, max_length=200)
 

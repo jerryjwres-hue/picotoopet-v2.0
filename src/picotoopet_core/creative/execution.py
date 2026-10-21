@@ -16,11 +16,14 @@ from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.worker.handlers import HandlerResult
 
+from .director import director_constraints
 from .models import (
+    CreativeBriefResult,
     CreativeDeepAiHandoffRecord,
     CreativeJobStatus,
     CreativeProfile,
     CreativeQualityOutcome,
+    CreativeScriptResult,
     CreativeStageKind,
 )
 from .package import CreativePackageFinalizer
@@ -29,6 +32,7 @@ from .quality import CreativeQualityGate
 from .repository import CreativeRepository
 from .source import CreativeSourceNormalizer, NormalizedCreativeSourceSet
 from .store import CreativeArtifactStore
+from .video_bible import VideoBible, derive_shot_plan
 
 
 class _Adapter(Protocol):
@@ -64,7 +68,14 @@ class CreativeIntelligenceCoordinator:
         CreativeStageKind.IDEA_RANKING: CreativeJobStatus.IDEA_RANKING,
         CreativeStageKind.CREATIVE_BRIEF: CreativeJobStatus.BRIEF_GENERATION,
         CreativeStageKind.SCRIPT: CreativeJobStatus.SCRIPT_GENERATION,
+        CreativeStageKind.VIDEO_BIBLE: CreativeJobStatus.SHOT_PLANNING,
         CreativeStageKind.SHOT_PLAN: CreativeJobStatus.SHOT_PLANNING,
+    }
+    # Stages whose failure must stay local: the Deep-AI handoff/continuation path only knows
+    # the four v1 stage kinds and no hosted model may be called per video.
+    _LOCAL_ONLY_FAILURE = {
+        CreativeStageKind.VIDEO_BIBLE: "CREATIVE_VIDEO_BIBLE_UNRESOLVED",
+        CreativeStageKind.SHOT_PLAN: "CREATIVE_DERIVED_SHOT_PLAN_REJECTED",
     }
 
     def __init__(
@@ -130,7 +141,13 @@ class CreativeIntelligenceCoordinator:
         previous: dict[str, dict[str, Any]] = {}
         for stage_definition in profile.stages:
             stage_kind = stage_definition.stage_kind
-            context = self._stage_context(job.creative_objective, source_set, previous, stage_kind)
+            context = self._stage_context(
+                job.creative_objective,
+                source_set,
+                previous,
+                stage_kind,
+                profile_id=profile.profile_id,
+            )
             input_digest = self._digest(context)
             stage = self.repository.create_or_get_stage(
                 creative_job_id=job.creative_job_id,
@@ -153,6 +170,7 @@ class CreativeIntelligenceCoordinator:
                     source_set=source_set,
                     previous=previous,
                     context=context,
+                    profile=profile,
                 )
             except LocalIntelligenceError as error:
                 self.repository.update_stage(
@@ -191,6 +209,24 @@ class CreativeIntelligenceCoordinator:
                     finished=True,
                 )
                 return self._summary(job.creative_job_id, CreativeJobStatus.REJECTED)
+            local_only = self._local_only_failure(profile.profile_id, stage_kind)
+            if local_only is not None:
+                self.repository.update_stage(
+                    stage.stage_run_id,
+                    status="NeedsHuman",
+                    quality_outcome=CreativeQualityOutcome.NEEDS_HUMAN,
+                    failure_code=local_only,
+                    finished=True,
+                )
+                self.repository.transition_job(
+                    job.creative_job_id,
+                    CreativeJobStatus.NEEDS_HUMAN,
+                    current_stage=stage_kind,
+                    failure_code=local_only,
+                    error_message="Local story direction requires attention.",
+                    finished=True,
+                )
+                return self._summary(job.creative_job_id, CreativeJobStatus.NEEDS_HUMAN)
             return self._finish_deep_ai(
                 creative_job_id=job.creative_job_id,
                 stage_kind=stage_kind,
@@ -211,7 +247,16 @@ class CreativeIntelligenceCoordinator:
         source_set: NormalizedCreativeSourceSet,
         previous: dict[str, dict[str, Any]],
         context: dict[str, Any],
+        profile,  # type: ignore[no-untyped-def]
     ) -> tuple[dict[str, Any] | None, CreativeQualityOutcome, dict[str, Any], list[str]]:
+        if stage_definition.executor == "DERIVED":
+            return self._run_derived(
+                stage=stage,
+                stage_definition=stage_definition,
+                source_set=source_set,
+                previous=previous,
+                profile=profile,
+            )
         correction: str | None = None
         last_raw: dict[str, Any] = stage.result or {}
         starting_attempts = stage.model_attempts
@@ -230,7 +275,7 @@ class CreativeIntelligenceCoordinator:
             last_raw = raw
             decision, parsed = self.quality.evaluate(
                 stage_kind=stage_definition.stage_kind,
-                profile=creative_profile_definition("creative.content_plan.v1"),
+                profile=profile,
                 source_set=source_set,
                 previous_stages=previous,
                 raw_result=raw,
@@ -283,6 +328,56 @@ class CreativeIntelligenceCoordinator:
             last_raw,
             ["CREATIVE_STAGE_ATTEMPT_BUDGET_EXHAUSTED"],
         )
+
+    def _local_only_failure(self, profile_id: str, stage_kind: CreativeStageKind) -> str | None:
+        if profile_id == "creative.content_plan.v1":
+            return None
+        return self._LOCAL_ONLY_FAILURE.get(stage_kind)
+
+    def _run_derived(
+        self,
+        *,
+        stage,  # type: ignore[no-untyped-def]
+        stage_definition: CreativeStageDefinition,
+        source_set: NormalizedCreativeSourceSet,
+        previous: dict[str, dict[str, Any]],
+        profile,  # type: ignore[no-untyped-def]
+    ) -> tuple[dict[str, Any] | None, CreativeQualityOutcome, dict[str, Any], list[str]]:
+        """Build the shot plan from the sealed Video Bible with no model call."""
+
+        bible = VideoBible.model_validate(previous[CreativeStageKind.VIDEO_BIBLE.value])
+        script = CreativeScriptResult.model_validate(previous[CreativeStageKind.SCRIPT.value])
+        raw = derive_shot_plan(bible, script)
+        decision, parsed = self.quality.evaluate(
+            stage_kind=stage_definition.stage_kind,
+            profile=profile,
+            source_set=source_set,
+            previous_stages=previous,
+            raw_result=raw,
+        )
+        digest = self._digest(raw)
+        if decision.outcome is CreativeQualityOutcome.PASS and parsed is not None:
+            payload = parsed.model_dump(mode="json")
+            self.repository.update_stage(
+                stage.stage_run_id,
+                status="Completed",
+                model_attempts=0,
+                result=payload,
+                result_digest=digest,
+                quality_outcome=CreativeQualityOutcome.PASS,
+                finished=True,
+            )
+            return payload, CreativeQualityOutcome.PASS, raw, []
+        self.repository.update_stage(
+            stage.stage_run_id,
+            status="NeedsHuman",
+            model_attempts=0,
+            result=raw,
+            result_digest=digest,
+            quality_outcome=CreativeQualityOutcome.NEEDS_HUMAN,
+            finished=True,
+        )
+        return None, CreativeQualityOutcome.NEEDS_DEEP_AI, raw, decision.reasons
 
     def _finish_package(self, creative_job_id, source_set, previous, profile) -> HandlerResult:  # type: ignore[no-untyped-def]
         self.repository.transition_job(creative_job_id, CreativeJobStatus.QUALITY_CHECK)
@@ -363,6 +458,7 @@ class CreativeIntelligenceCoordinator:
         source_set: NormalizedCreativeSourceSet,
         previous: dict[str, dict[str, Any]],
         stage_kind: CreativeStageKind,
+        profile_id: str = "creative.content_plan.v1",
     ) -> dict[str, Any]:
         context: dict[str, Any] = {
             "schema_version": "1.0",
@@ -385,9 +481,22 @@ class CreativeIntelligenceCoordinator:
             context["selected_rank_1_idea"] = next(item for item in ideas if item["rank"] == 1)
         elif stage_kind is CreativeStageKind.SCRIPT:
             context["creative_brief"] = previous[CreativeStageKind.CREATIVE_BRIEF.value]
+        elif stage_kind is CreativeStageKind.VIDEO_BIBLE:
+            brief = previous[CreativeStageKind.CREATIVE_BRIEF.value]
+            script = previous[CreativeStageKind.SCRIPT.value]
+            context["creative_brief"] = brief
+            context["script"] = script
+            context["director_constraints"] = director_constraints(
+                CreativeBriefResult.model_validate(brief),
+                CreativeScriptResult.model_validate(script),
+            )
         elif stage_kind is CreativeStageKind.SHOT_PLAN:
             context["creative_brief"] = previous[CreativeStageKind.CREATIVE_BRIEF.value]
             context["script"] = previous[CreativeStageKind.SCRIPT.value]
+            if profile_id != "creative.content_plan.v1":
+                context["video_bible"] = previous[CreativeStageKind.VIDEO_BIBLE.value]
+        if profile_id != "creative.content_plan.v1":
+            context["creative_runtime"] = profile_id
         return context
 
     @staticmethod

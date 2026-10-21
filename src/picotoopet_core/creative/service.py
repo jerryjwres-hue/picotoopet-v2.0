@@ -91,14 +91,18 @@ class CreativeIntelligenceService:
         discovery_result_hash: str,
         synthesis_result_hash: str,
         creative_objective: str,
+        creative_profile: str = CreativeProfile.CONTENT_PLAN_V1.value,
     ) -> CreativeJobRecord:
-        """Reuse the four Creative model stages and standard quality gates for local Goals."""
+        """Reuse the Creative stages and standard quality gates for local Goals.
+
+        ``creative_profile`` defaults to v1; v2 (Video Bible) is an explicit per-call opt-in.
+        """
 
         if source_set.result_package_ids or source_set.result_digests:
             raise ValueError("GOAL_SOURCE_MUST_NOT_SPOOF_BUSINESS_RESULT")
         if not source_set.findings or not source_set.evidence_ids:
             raise ValueError("GOAL_SOURCE_EVIDENCE_REQUIRED")
-        profile = creative_profile_definition(CreativeProfile.CONTENT_PLAN_V1.value)
+        profile = creative_profile_definition(creative_profile)
         job, combined = self._create_job_from_source_set(
             source_set=source_set,
             profile_id=profile.profile_id,
@@ -147,7 +151,7 @@ class CreativeIntelligenceService:
         job = self.repository.create_job(
             creative_job_id=str(uuid4()),
             project_key=source_set.project_key,
-            creative_profile=CreativeProfile.CONTENT_PLAN_V1,
+            creative_profile=CreativeProfile(profile.profile_id),
             creative_objective=objective,
             objective_digest=objective_digest,
             source_set_digest=combined_source_digest,

@@ -25,6 +25,13 @@ from .models import (
 )
 from .profiles import CreativeProfileDefinition
 from .source import NormalizedCreativeSourceSet
+from .video_bible import (
+    VideoBible,
+    VideoBibleDraft,
+    correction_for,
+    evaluate_video_bible,
+    seal_bible,
+)
 
 
 class CreativeQualityGate:
@@ -32,6 +39,7 @@ class CreativeQualityGate:
         CreativeStageKind.IDEA_RANKING: IdeaRankingResult,
         CreativeStageKind.CREATIVE_BRIEF: CreativeBriefResult,
         CreativeStageKind.SCRIPT: CreativeScriptResult,
+        CreativeStageKind.VIDEO_BIBLE: VideoBibleDraft,
         CreativeStageKind.SHOT_PLAN: ShotPlanResult,
     }
 
@@ -114,6 +122,9 @@ class CreativeQualityGate:
                 for beat in parsed.beats
             ):
                 pass
+        elif stage_kind is CreativeStageKind.VIDEO_BIBLE:
+            assert isinstance(parsed, VideoBibleDraft)
+            return self._evaluate_video_bible(parsed, source_set, previous_stages)
         elif stage_kind is CreativeStageKind.SHOT_PLAN:
             assert isinstance(parsed, ShotPlanResult)
             script_raw = previous_stages.get(CreativeStageKind.SCRIPT.value)
@@ -160,6 +171,25 @@ class CreativeQualityGate:
                             "ordered shots with the same approved beat and evidence IDs; "
                             "preserve the script's target duration and factual claims.",
                         ), None
+            bible_raw = previous_stages.get(CreativeStageKind.VIDEO_BIBLE.value)
+            if bible_raw is not None:
+                try:
+                    bible = VideoBible.model_validate(bible_raw)
+                except ValidationError:
+                    return self._retry(
+                        "PRIOR_VIDEO_BIBLE_INVALID", "Use the previously validated video bible."
+                    ), None
+                if [
+                    (item.shot_id, item.beat_id, item.order, item.duration_seconds)
+                    for item in bible.shots
+                ] != [
+                    (item.shot_id, item.beat_id, item.order, item.duration_seconds)
+                    for item in parsed.shots
+                ]:
+                    return self._retry(
+                        "SHOT_PLAN_BIBLE_MISMATCH",
+                        "Shot ids, beats, order and durations must equal the video bible.",
+                    ), None
             used = {evidence for shot in parsed.shots for evidence in shot.source_evidence_ids}
             if not used <= evidence_ids:
                 return self._retry(
@@ -167,6 +197,47 @@ class CreativeQualityGate:
                 ), None
 
         return CreativeQualityDecision(outcome=CreativeQualityOutcome.PASS), parsed
+
+    def _evaluate_video_bible(
+        self,
+        draft: VideoBibleDraft,
+        source_set: NormalizedCreativeSourceSet,
+        previous_stages: dict[str, dict[str, Any]],
+    ) -> tuple[CreativeQualityDecision, BaseModel | None]:
+        brief_raw = previous_stages.get(CreativeStageKind.CREATIVE_BRIEF.value)
+        script_raw = previous_stages.get(CreativeStageKind.SCRIPT.value)
+        if not brief_raw or not script_raw:
+            return self._retry(
+                "PRIOR_STAGE_MISSING", "Reference the validated brief and script stages."
+            ), None
+        try:
+            brief = CreativeBriefResult.model_validate(brief_raw)
+            script = CreativeScriptResult.model_validate(script_raw)
+        except ValidationError:
+            return self._retry(
+                "PRIOR_STAGE_INVALID", "Use the previously validated brief and script."
+            ), None
+        findings = evaluate_video_bible(
+            draft, brief=brief, script=script, evidence_ids=set(source_set.evidence_ids)
+        )
+        if any(item.reject for item in findings):
+            return CreativeQualityDecision(
+                outcome=CreativeQualityOutcome.REJECT,
+                reasons=["CREATIVE_OUTPUT_FORBIDDEN_PAYLOAD"],
+            ), None
+        if findings:
+            return CreativeQualityDecision(
+                outcome=CreativeQualityOutcome.RETRY,
+                reasons=[item.code for item in findings][:20],
+                correction_instruction=correction_for(findings),
+            ), None
+        sealed = seal_bible(
+            draft,
+            project_key=source_set.project_key,
+            source_set_digest=source_set.source_set_digest,
+            selected_idea_id=brief.selected_idea_id,
+        )
+        return CreativeQualityDecision(outcome=CreativeQualityOutcome.PASS), sealed
 
     @staticmethod
     def _retry(code: str, correction: str) -> CreativeQualityDecision:
