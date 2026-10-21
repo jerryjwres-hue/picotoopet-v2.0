@@ -33,7 +33,47 @@ public sealed record ProductionTaskPlanRecord(
     [property: JsonPropertyName("fps")] int Fps,
     [property: JsonPropertyName("frame_count")] int FrameCount,
     [property: JsonPropertyName("target_duration_ms")] long TargetDurationMs,
-    [property: JsonPropertyName("trusted_input_asset_ref")] string? TrustedInputAssetRef);
+    [property: JsonPropertyName("trusted_input_asset_ref")] string? TrustedInputAssetRef,
+    [property: JsonPropertyName("reference_asset")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    ProductionReferenceAssetV11Record? ReferenceAsset = null);
+
+/// <summary>Core v1.1 frozen reference identity; Windows never constructs an approval from local bytes.</summary>
+public sealed record ProductionReferenceAssetV11Record(
+    [property: JsonPropertyName("schema_version")] string SchemaVersion,
+    [property: JsonPropertyName("asset_id")] string AssetId,
+    [property: JsonPropertyName("goal_id")] string GoalId,
+    [property: JsonPropertyName("creative_job_id")] string CreativeJobId,
+    [property: JsonPropertyName("creative_package_id")] string CreativePackageId,
+    [property: JsonPropertyName("production_job_id")] string ProductionJobId,
+    [property: JsonPropertyName("production_task_id")] string ProductionTaskId,
+    [property: JsonPropertyName("shot_id")] string ShotId,
+    [property: JsonPropertyName("creative_package_digest")] string CreativePackageDigest,
+    [property: JsonPropertyName("input_relative_path")] string InputRelativePath,
+    [property: JsonPropertyName("sha256")] string Sha256,
+    [property: JsonPropertyName("bytes")] long Bytes,
+    [property: JsonPropertyName("source_reference")] string SourceReference,
+    [property: JsonPropertyName("source_digest")] string SourceDigest,
+    [property: JsonPropertyName("rights_scope")] string RightsScope,
+    [property: JsonPropertyName("approval_id")] string ApprovalId,
+    [property: JsonPropertyName("approval_request_digest")] string ApprovalRequestDigest);
+
+/// <summary>Fresh authenticated Core recheck, not a GPU-post or Windows file verification.</summary>
+public sealed record ProductionReferenceAuthorizationV11Record(
+    [property: JsonPropertyName("schema_version")] string SchemaVersion,
+    [property: JsonPropertyName("production_job_id")] string ProductionJobId,
+    [property: JsonPropertyName("production_task_id")] string ProductionTaskId,
+    [property: JsonPropertyName("plan_digest")] string PlanDigest,
+    [property: JsonPropertyName("descriptor")] ProductionReferenceDescriptorV11Record Descriptor,
+    [property: JsonPropertyName("reference_asset")] ProductionReferenceAssetV11Record ReferenceAsset);
+
+public sealed record ProductionReferenceDescriptorV11Record(
+    [property: JsonPropertyName("approval_id")] string ApprovalId,
+    [property: JsonPropertyName("shot_id")] string ShotId,
+    [property: JsonPropertyName("asset_id")] string AssetId,
+    [property: JsonPropertyName("relative_path")] string RelativePath,
+    [property: JsonPropertyName("sha256")] string Sha256,
+    [property: JsonPropertyName("byte_length")] long ByteLength);
 
 /// <summary>Core 所有、Windows 只读的 Production Plan。</summary>
 public sealed record ProductionPlanRecord(
