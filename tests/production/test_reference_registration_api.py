@@ -47,11 +47,50 @@ def state(tmp_path):
         "source_set_digest": SOURCE,
         "project_key": f"goal-{GOAL}",
         "quality_outcome": "PASS",
-        "stage_results": {"shot_plan.v1": {"shots": [
-            {"shot_id": "shot-a", "render_intent": "IMAGE_TO_VIDEO"},
-            {"shot_id": "shot-b", "render_intent": "IMAGE_TO_VIDEO"},
-            {"shot_id": "shot-t", "render_intent": "GENERATIVE_VIDEO"},
-        ]}},
+        "stage_results": {
+            "creative_brief.v1": {
+                "schema_version": "1.0", "creative_profile": "creative.content_plan.v1",
+                "selected_idea_id": "idea-001", "target_audience": "pet owners",
+                "customer_problem": "drying", "value_proposition": "safer grooming",
+                "primary_hook": "Dry faster", "emotional_tone": "warm",
+                "content_format": "video", "duration_min_seconds": 3,
+                "duration_max_seconds": 20, "message_hierarchy": ["problem", "solution"],
+                "required_source_finding_refs": ["result:finding:1"],
+                "required_source_evidence_ids": ["reviews:key:r1"], "prohibited_claims": [],
+                "cta_intent": "learn more", "continuity_notes": ["same pet throughout"],
+                "needs_deep_ai": False, "needs_human": False,
+            },
+            "script.v1": {
+                "schema_version": "1.0", "creative_profile": "creative.content_plan.v1",
+                "script_id": "script-001", "title": "A short pet story",
+                "target_duration_seconds": 9,
+                "beats": [
+                    {"beat_id": f"beat-{i:03d}", "order": i, "duration_seconds": 3,
+                     "voiceover": "Gentle pet grooming.", "on_screen_text": None,
+                     "visual_intent": "pet continuity",
+                     "claim_source_evidence_ids": ["reviews:key:r1"],
+                     "unsupported_claim": False}
+                    for i in range(1, 4)
+                ],
+                "cta_beat_id": "beat-003", "warnings": [],
+                "needs_deep_ai": False, "needs_human": False,
+            },
+            "shot_plan.v1": {
+                "schema_version": "1.0", "creative_profile": "creative.content_plan.v1",
+                "shots": [
+                    {"shot_id": shot, "beat_id": f"beat-{order:03d}",
+                     "order": order, "duration_seconds": 3,
+                     "subject": "the same dog", "environment": "grooming room",
+                     "action": "gentle motion", "framing": "medium shot",
+                     "lighting_style": "soft daylight", "continuity_keys": ["same dog"],
+                     "required_facts": ["grooming"], "source_evidence_ids": ["reviews:key:r1"],
+                     "text_reference": None, "production_notes": "renderer neutral",
+                     "render_intent": "IMAGE_TO_VIDEO" if order < 3 else "GENERATIVE_VIDEO"}
+                    for order, shot in enumerate(["shot-a", "shot-b", "shot-t"], start=1)
+                ],
+                "warnings": [], "needs_deep_ai": False, "needs_human": False,
+            },
+        },
     }
     location, digest = store.write_creative_package(PACKAGE, manifest)
     database.execute(
