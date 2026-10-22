@@ -307,5 +307,5 @@ $unverified = @($checks | Where-Object { $_.Status -eq 'UNVERIFIED' }).Count
     PreflightDisposition = if ($blocked -gt 0) { 'BLOCKED' } elseif ($unverified -gt 0) { 'UNVERIFIED' } else { 'PASS_PASSIVE_ONLY' }
     LiveThreeShotRender  = 'UNVERIFIED'
     GpuBusySeconds       = 'UNVERIFIED'
-    Checks               = @($checks)
+    Checks               = $checks.ToArray()
 } | ConvertTo-Json -Depth 14
