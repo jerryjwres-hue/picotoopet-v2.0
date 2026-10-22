@@ -332,6 +332,40 @@ try {
         return
     }
 
+    if ([string]$manifest.validation_scope -eq "windows-ui-preview") {
+        # UiPreview activation launches the app; fail closed before installation if not armed.
+        $bootstrap = Join-Path $PSScriptRoot 'Prepare-P0ThreeShotHold.ps1'
+        if (-not (Test-Path -LiteralPath $bootstrap -PathType Leaf)) {
+            throw 'P0_PREVIEW_HOLD_BOOTSTRAP_MISSING'
+        }
+        if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+            throw 'P0_PREVIEW_HOLD_LOCALAPPDATA_MISSING'
+        }
+        $gateFile = Join-Path $env:LOCALAPPDATA 'PicotooPetV2\\MediaWorker\\v1\\three-shot-acceptance.json'
+        $armedFile = $gateFile + '.armed'
+        if (-not (Test-Path -LiteralPath $gateFile -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $armedFile -PathType Leaf)) {
+            throw 'P0_PREVIEW_HOLD_FIRST_REQUIRED: run Prepare-P0ThreeShotHold.ps1 before installation'
+        }
+        foreach ($file in @($gateFile, $armedFile)) {
+            if (((Get-Item -LiteralPath $file -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'P0_PREVIEW_HOLD_REPARSE_PATH'
+            }
+        }
+        try {
+            $gateConfig = Get-Content -LiteralPath $gateFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch { throw 'P0_PREVIEW_HOLD_INVALID' }
+        if ($gateConfig.schema_version -ne '1.0' -or $gateConfig.mode -ne 'hold' -or
+            [IO.File]::ReadAllBytes($armedFile).Length -lt 1) {
+            throw 'P0_PREVIEW_HOLD_NOT_ARMED'
+        }
+        if (@(Get-CimInstance Win32_Process -Filter "Name = 'Picotoo Pet AI.exe'").Count -gt 0) {
+            throw 'P0_PREVIEW_EXISTING_GUI_OR_WORKER_RUNNING'
+        }
+        Write-Host 'P0_PREVIEW_INSTALL_HOLD_FIRST=PASS; ARMED=PASS'
+    }
+
     Write-InstallProgress -Percent 20 -Stage "检查当前版本" -Detail "保存可回滚版本指针和快捷方式状态"
     if ($hadCurrentPointer) {
         $previousCurrent = Read-JsonUtf8 -Path $currentPath

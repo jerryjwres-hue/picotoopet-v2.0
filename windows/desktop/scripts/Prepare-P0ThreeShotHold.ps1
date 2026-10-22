@@ -33,6 +33,26 @@ foreach ($item in @($path, $markerPath)) {
     }
 }
 
+# Arm FIRST, before publishing any acceptance JSON. If anything after this fails,
+# the persistent marker prevents a restarted Worker from falling back to unattended mode.
+$marker = $null
+try {
+    $marker = [IO.FileStream]::new($markerPath,
+        [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::Write,
+        [IO.FileShare]::Read, 8, [IO.FileOptions]::WriteThrough)
+    if ($marker.Length -eq 0) {
+        $marker.WriteByte(1)
+    }
+    $marker.Flush($true)
+}
+finally {
+    if ($null -ne $marker) { $marker.Dispose() }
+}
+if (-not [IO.File]::Exists($markerPath) -or
+    [IO.File]::ReadAllBytes($markerPath).Length -lt 1) {
+    throw 'P0_HOLD_ARMED_MARKER_VERIFY_FAILED'
+}
+
 # Atomically publish complete UTF-8-no-BOM HOLD; never expose partially written JSON.
 $json = '{"schema_version":"1.0","mode":"hold"}' + [Environment]::NewLine
 $temp = Join-Path $directory ("three-shot-acceptance." + [Guid]::NewGuid().ToString('N') + '.tmp')
@@ -50,8 +70,13 @@ finally {
 }
 
 $actual = [IO.File]::ReadAllText($path, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
-if ($actual.schema_version -ne '1.0' -or $actual.mode -ne 'hold') {
+if ($actual.schema_version -ne '1.0' -or $actual.mode -ne 'hold' -or
+    -not [IO.File]::Exists($markerPath) -or
+    [IO.File]::ReadAllBytes($markerPath).Length -lt 1) {
     throw 'P0_HOLD_VERIFY_FAILED'
 }
-Write-Host "P0_HOLD_PREPARED=PASS; PATH=$path"
+if (@(Get-CimInstance Win32_Process -Filter "Name = 'Picotoo Pet AI.exe'").Count -gt 0) {
+    throw 'P0_HOLD_APPLICATION_STARTED_DURING_PREPARATION'
+}
+Write-Host "P0_HOLD_PREPARED=PASS; ARMED=PASS; PATH=$path"
 Write-Host 'This does not open the GUI or authorize a GPU submission.'

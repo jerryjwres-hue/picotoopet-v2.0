@@ -102,10 +102,9 @@ jobs:
           dotnet run --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
           if ($LASTEXITCODE) { throw 'P0_INDEPENDENT_GATE_FAILED' }
           if ((Test-Path -LiteralPath $gate) -or (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_INDEPENDENT_GATE_NOT_CLEAN' }
-          # From here onward, persist HOLD before *any* published GUI/Worker process starts.
-          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $gate) | Out-Null
-          [IO.File]::WriteAllBytes($gate + '.armed', [byte[]]@(1))
-          [IO.File]::WriteAllText($gate, '{"schema_version":"1.0","mode":"hold"}', [Text.UTF8Encoding]::new($false))
+          # Execute the *same* operator bootstrap shipped in the ZIP, never a CI-only substitute.
+          & windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1
+          if (-not (Test-Path -LiteralPath $gate) -or -not (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_HOLD_BOOTSTRAP_INCOMPLETE' }
           dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --three-shot-gate-probe held ('a' * 64)
           if ($LASTEXITCODE) { throw 'P0_HOLD_PROBE_FAILED' }
           Write-Host 'P0_PRELAUNCH_HOLD=PASS; GPU_NETWORK=0'
@@ -126,6 +125,23 @@ jobs:
             -Version $version `
             -ValidationScope UiPreview
 
+      - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1'
+        shell: pwsh
+        run: |
+          $zips = @(Get-ChildItem 'windows/desktop/artifacts/release' -Filter 'PicotooPet-Phase2-Windows-Prebuilt-*.zip' -File)
+          if ($zips.Count -ne 1) { throw 'P0_PREVIEW_ZIP_COUNT_INVALID' }
+          $dest = Join-Path $env:RUNNER_TEMP 'p0-packed-bootstrap-check'
+          Expand-Archive -LiteralPath $zips[0].FullName -DestinationPath $dest -Force
+          $roots = @(Get-ChildItem -LiteralPath $dest -Directory)
+          if ($roots.Count -ne 1) { throw 'P0_PREVIEW_PACKAGE_ROOT_INVALID' }
+          $script = Join-Path $roots[0].FullName 'Prepare-P0ThreeShotHold.ps1'
+          $readme = Join-Path $roots[0].FullName 'README_INSTALL_CN.txt'
+          if (-not (Test-Path -LiteralPath $script -PathType Leaf) -or -not (Test-Path -LiteralPath $readme -PathType Leaf)) { throw 'P0_PREVIEW_BOOTSTRAP_MISSING_FROM_ZIP' }
+          if ((Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath 'windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1' -Algorithm SHA256).Hash) { throw 'P0_PREVIEW_BOOTSTRAP_HASH_MISMATCH' }
+          $text = Get-Content -LiteralPath $readme -Raw
+          if (-not $text.StartsWith('P0 #91 严格三镜头开发预览') -or -not $text.Contains('P0_HOLD_PREPARED=PASS; ARMED=PASS')) { throw 'P0_PREVIEW_HOLD_FIRST_README_MISSING' }
+          Write-Host 'P0_PREVIEW_OPERATOR_BOOTSTRAP_IN_ZIP=PASS'
       - name: Verify install upgrade recovery rollback lifecycle
         shell: pwsh
         run: |
