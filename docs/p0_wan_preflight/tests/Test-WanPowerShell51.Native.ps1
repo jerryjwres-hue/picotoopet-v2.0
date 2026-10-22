@@ -209,7 +209,14 @@ try {
                         break
                     }
                     '^/history/known-prompt-id$' {
-                        $body = '{"known-prompt-id":{"status":{"completed":true},"outputs":{}}}'
+                        # ── Simulate a valid saved WebM and two terminal failure cases. ──
+                        $body = '{"known-prompt-id":{"status":{"completed":true,"status_str":"success"},"outputs":{"10":{"gifs":[{"filename":"known_00001.webm","subfolder":"","type":"output"}]}}}}'
+                        if ($mode -eq 'history_error') {
+                            $body = '{"known-prompt-id":{"status":{"completed":false,"status_str":"error"},"outputs":{}}}'
+                        }
+                        if ($mode -eq 'history_no_webm') {
+                            $body = '{"known-prompt-id":{"status":{"completed":true,"status_str":"success"},"outputs":{}}}'
+                        }
                         break
                     }
                     default { $status = 404 }
@@ -260,7 +267,14 @@ try {
     Run-Case 'invalid_vram_payload' 'bad_vram' 'UNVERIFIED' @{
         NVIDIA_GPU_INVENTORY='UNVERIFIED'; FFMPEG_LIBX264='PASS'; GPU_QUEUE_IDLE='PASS'
     }
-    Write-Host "WAN_PS51_RESULT=PASS cases=$pass/10 WindowsPowerShell=$($PSVersionTable.PSVersion)"
+    # ── Known prior prompt failure or missing WebM must not be a false PASS. ──
+    Run-Case 'history_error' 'history_error' 'BLOCKED' @{
+        PROMPT_HISTORY='BLOCKED'; GPU_QUEUE_IDLE='PASS'
+    } -ExistingHistory
+    Run-Case 'history_no_webm' 'history_no_webm' 'BLOCKED' @{
+        PROMPT_HISTORY='BLOCKED'; GPU_QUEUE_IDLE='PASS'
+    } -ExistingHistory
+    Write-Host "WAN_PS51_RESULT=PASS cases=$pass/12 WindowsPowerShell=$($PSVersionTable.PSVersion)"
 }
 finally {
     if ($null -ne $server) { Stop-Job $server -ErrorAction SilentlyContinue; Remove-Job $server -Force -ErrorAction SilentlyContinue }
