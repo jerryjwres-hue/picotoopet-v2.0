@@ -272,3 +272,34 @@ Write-Output "CAPTURED_UTC=$([DateTime]::UtcNow.ToString('o'))"
 ```
 
 **注意：** history 为 `{}`、Core 尚未绑定 prompt 或队列仍在执行，不得记为未 POST。遇 Journal 原子替换造成复制错误时只记 UNVERIFIED/重读，不为取证占 GPU/Journal 锁。若 prompt_id 带有文件名禁用字符，只转义证据副本名，不得更改 API 中的原始 ID。原 Windows `media-worker.log` 在 T1/T3/T4 一起保留现存原文及 SHA，日志异步可能丢行。
+
+
+### J-4. 完成阶段的逐层哈希核对与四类成功率
+
+**WebM x3：** 每个 `package.manifest.outputs[i]` 以 `production_task_id + shot_id + order` 匹配冻结 Plan，再核对该任务 Core attempt 的 `comfy_prompt_id`、Comfy 原始 history 的 `outputs` 所含 `filename/subfolder/type=output`，仅在经核实的本机 Comfy output root 下解析 `output_relpath`。对原文件分别执行 PowerShell `Get-FileHash -Algorithm SHA256 -LiteralPath <validated-WebM>`、`(Get-Item -LiteralPath <validated-WebM>).Length`，并以 `ffprobe.exe -v error -show_format -show_streams -of json <validated-WebM>` 保存每份**原始**探测 JSON 与采集 UTC。比对 package 的 `output_sha256/output_bytes/mime_type/width/height/frame_count/fps/workflow_id/seed`；明确分开 **Plan 计划值 / Core 声明值 / ffprobe 观测值**。文件路径越界、hash/bytes 不一致一律 `STOP-ACCEPT`，不要试图修复原 WebM。失败旧 attempt 不要求存在成功文件。
+
+**C004：** `%LOCALAPPDATA%\PicotooPet\FinalVideos\final-{SHA256(UTF8(production_job_id))前32字符}.mp4` 和相同前缀 `.final-video.json`。保存 MP4 的重算 SHA/bytes/ffprobe 和 manifest 文件自身 SHA；`manifest.source_output_sha256[]` 必须按 order 等于三份 WebM SHA，`manifest.final_sha256/final_bytes` 必须匹配 C004 MP4，且 `production_job_id/production_package_id/production_package_digest` 一致。
+
+**C009 可选：** 若选 Master，从 `%LOCALAPPDATA%\PicotooPet\PostProduction\Master\v1` 下准确 Job + Digest 子目录读取 `master.mp4` / `master-manifest.json`；其 `c004_source_sha256` 应是 **C004 MP4 SHA** 而非 WebM SHA。没有选 Master 记 `N/A`，最终视频可以直接选 C004 fallback。
+
+**C010A/C011：** 从既有受管 `final-artifact-receipt.json` 读取 `outcome=PASS`、11 项规定 `passed_check_ids`、`qa_input_digest/receipt_digest/goal_id/production_job_id/production_plan_digest/production_package_digest/c004_manifest_sha256/c004_source_sha256/candidate_kind/artifact_sha256/artifact_bytes/artifact_file_name`。最终**被选中 MP4** 的重算 SHA/bytes 必须等于 receipt 对应字段。receipt 文件的物理 SHA 和内部按规范生成的 `receipt_digest` **不同口径，不应直接比较**。只有 PASS receipt 会永久保存；若此前实际 C011 FAIL，需要失败当时独立取日志/界面证据，**不能由最新 PASS 推断首次 QA 就 PASS**。
+
+**人工：** 精确 WebM SHA 绑定每条 S 项；精确最终 `artifact_sha256` 绑定 V 项与整片 ACCEPT/REJECT、reviewer、UTC、时间码，并记录 GUI 实际播放。C011 `full-decode.v1` 不是人工审片。SHA 一旦变化，原签字不再证明新文件。
+
+| 统计列（不相互替代） | 需要什么证据 | 未满足时 |
+|---|---|---|
+| **首发镜头成功** | 冻结三个槽位各自**首次可证真实 Comfy POST**首份 WebM 的技术结果和人工判定全部已裁定；接受数 / 3 | `UNVERIFIED (coverage=n/3)`。Core `attempt_count=2` 不代表两个 POST |
+| **重试成功** | 首个已证明 GPU POST 失败，随后另一条**独立证明的真实 GPU POST** WebM 被人审接受；同一个 prompt_id 的恢复不算 | 独立 POST 无证据：`UNVERIFIED` |
+| **首发整片成功** | 首代三 WebM 未替换，第一次 C004/C011 技术尝试和第一次完整人工审核就直接 ACCEPT | 早期失败日志/初代媒体/首次审片缺失：`UNVERIFIED`，不拿最终 PASS 回推 |
+| **最终成片成功** | 最终当前被选 MP4 的真实 C011 PASS receipt 和**同 SHA 人工 ACCEPT** | 缺审为 REVIEW，冲突为 BLOCKED，画质否决为 REJECT；即使最终 ACCEPT 也不改变首发列 |
+
+**GPU 时间严格分层**：`production_attempts.finished_at-started_at` 是 Core 预留墙钟，`P0_SHOT_METRIC.wall_ms` 是 Worker 墙钟；Comfy history 同一 prompt 的 `status.messages` 存在有序 `execution_start` 与 `execution_success/error` 时间戳时，差值**仅为 execution_wall_proxy_ms**，时间缺失填 UNVERIFIED。**真实 GPU active_ms** 需要每个 prompt 可归属的设备侧 trace；本候选不保存严格的 GPU active。没有此证据，`GPU_ACTIVE_TIME` 与正式 GPU 分钟/合格视频一律 `UNVERIFIED`，可以单独报告 **Comfy execution-wall proxy** 并列出覆盖 prompt 数 / 实际 POST 数，失败/重试的耗时不能当作 0。GPU active 成本 = 同一 cohort 所有实际尝试（含失败、重试）active_ms 总和 / 60000 / 最终人工 ACCEPT 数；分母 0 或未完成审核 → `UNVERIFIED (N/A denominator)`，不是 0。
+
+### J-5. STOP 条件（严格区分影响范围）
+
+- **STOP-POST**：HOLD/.armed 不存在或不可信、实际部署 SHA/Plan Digest/三 Task 不符、存在旧未知 GPU 提交、用户设备电力/GPU 无单独授权 → **不 ALLOW，也不允许新 GPU POST**。
+- **STOP-RETRY**：Journal `Submitting` / Core Running 但真实 POST 不明、queue 中旧 prompt 未终结、history 不全或冲突 → **不人为重发 GPU**，由既有恢复器 history-first 核对。切回 HOLD 只阻止**未来** POST，**不撤销正在执行的 GPU prompt**。
+- **STOP-ACCEPT**：任一 WebM → Package → C004 → 可选 Master → C011 receipt → 选中 MP4 的身份/hash/bytes 不符，或人工拒绝 → **不签 ACCEPT/不交付**；仅缺人审填 REVIEW，不能把技术 PASS 改称画质 ACCEPT。
+- **STOP-METRIC**：首发/重试历史、不完整三镜头审核或第一轮 QA 证据缺失 → 对应首发/重试指标 **UNVERIFIED**；仅缺 GPU 设备 trace → **GPU active/cost UNVERIFIED**，不因此阻断合法技术 QA 或人工审片。
+
+**本次仍为静态源码与文档交付：真实用户 Mac/Windows、GPU、Comfy history、三 WebM、最终 MP4、人工评分与 GPU active 数据均为 UNVERIFIED。**
