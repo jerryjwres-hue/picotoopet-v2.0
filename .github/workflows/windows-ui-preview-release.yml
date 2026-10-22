@@ -97,11 +97,15 @@ jobs:
           $gate = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
           if ((Test-Path -LiteralPath $gate) -or (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_CI_GATE_NOT_EMPTY' }
           if (@(Get-CimInstance Win32_Process -Filter "Name='Picotoo Pet AI.exe'").Count -ne 0) { throw 'P0_CI_EXE_ALREADY_RUNNING' }
+          # Independent 28-case suite requires a clean disposable CI runner and exercises
+          # the legacy unconfigured mode; run it BEFORE arming HOLD, not afterward.
+          dotnet run --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
+          if ($LASTEXITCODE) { throw 'P0_INDEPENDENT_GATE_FAILED' }
+          if ((Test-Path -LiteralPath $gate) -or (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_INDEPENDENT_GATE_NOT_CLEAN' }
+          # From here onward, persist HOLD before *any* published GUI/Worker process starts.
           New-Item -ItemType Directory -Force -Path (Split-Path -Parent $gate) | Out-Null
           [IO.File]::WriteAllBytes($gate + '.armed', [byte[]]@(1))
           [IO.File]::WriteAllText($gate, '{"schema_version":"1.0","mode":"hold"}', [Text.UTF8Encoding]::new($false))
-          dotnet run --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
-          if ($LASTEXITCODE) { throw 'P0_INDEPENDENT_GATE_FAILED' }
           dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --three-shot-gate-probe held ('a' * 64)
           if ($LASTEXITCODE) { throw 'P0_HOLD_PROBE_FAILED' }
           Write-Host 'P0_PRELAUNCH_HOLD=PASS; GPU_NETWORK=0'
