@@ -291,6 +291,7 @@ def evaluate_video_bible(
     script: CreativeScriptResult,
     evidence_ids: set[str],
     required_shot_count: int | None = None,
+    required_shot_seconds: float | None = None,
 ) -> list[BibleFinding]:
     findings: list[BibleFinding] = []
 
@@ -357,6 +358,15 @@ def evaluate_video_bible(
             "TIMELINE_MISMATCH",
             detail=f"shots total {total:g}s vs script {script.target_duration_seconds:g}s",
         )
+    if required_shot_seconds is not None:
+        off = [item.shot_id for item in shots
+               if abs(item.duration_seconds - required_shot_seconds) > 0.05]
+        if off:
+            add(
+                "SHOT_DURATION_NOT_AS_REQUESTED",
+                detail=f"every shot must last exactly {required_shot_seconds:.1f} s: "
+                + ", ".join(off),
+            )
     if required_shot_count is not None and len(shots) != required_shot_count:
         add(
             "SHOT_COUNT_MISMATCH",
