@@ -38,7 +38,10 @@ class ToolStub {
                 Console.WriteLine("{\"format\":{\"duration\":\"4.04\",\"format_name\":\"matroska,webm\"}}");
             } else Console.WriteLine("ffprobe mock version");
         } else if (name == "nvidia-smi") {
-            Console.WriteLine("Mock GPU, 555.01, 16384, 14000, 2384, 0, 18.0");
+            if (Environment.GetEnvironmentVariable("WAN_TEST_GPU_INVALID") == "1")
+                Console.WriteLine("Mock GPU, 555.01, N/A, N/A, N/A, 0, 18.0");
+            else
+                Console.WriteLine("Mock GPU, 555.01, 16384, 14000, 2384, 0, 18.0");
         }
         return 0;
     }
@@ -122,6 +125,8 @@ try {
         Set-Content -LiteralPath $statePath -Value $Mode -Encoding Ascii
         Set-Content -LiteralPath $logPath -Value '' -Encoding Ascii
         $originalPath = $env:PATH
+        if ($Mode -eq 'bad_vram') { $env:WAN_TEST_GPU_INVALID = '1' }
+        else { Remove-Item Env:WAN_TEST_GPU_INVALID -ErrorAction SilentlyContinue }
         if ($Mode -eq 'ffmpeg_missing') { $env:PATH = "$gpuBin;$basePath" }
         elseif ($Mode -eq 'gpu_missing') { $env:PATH = "$avBin;$basePath" }
         else { $env:PATH = "$gpuBin;$avBin;$basePath" }
@@ -154,7 +159,10 @@ try {
             Write-Host "WAN_PS51_CASE $Name=PASS disposition=$($report.PreflightDisposition) reads=$($methods.Count)"
             $script:pass++
         }
-        finally { $env:PATH = $originalPath }
+        finally {
+            $env:PATH = $originalPath
+            Remove-Item Env:WAN_TEST_GPU_INVALID -ErrorAction SilentlyContinue
+        }
     }
 
     # Offline is tested without starting ANY listener at 8188.
@@ -249,7 +257,10 @@ try {
     Run-Case 'unknown_vram' 'gpu_missing' 'UNVERIFIED' @{
         NVIDIA_GPU_INVENTORY='UNVERIFIED'; FFMPEG_LIBX264='PASS'; GPU_QUEUE_IDLE='PASS'
     }
-    Write-Host "WAN_PS51_RESULT=PASS cases=$pass/9 WindowsPowerShell=$($PSVersionTable.PSVersion)"
+    Run-Case 'invalid_vram_payload' 'bad_vram' 'UNVERIFIED' @{
+        NVIDIA_GPU_INVENTORY='UNVERIFIED'; FFMPEG_LIBX264='PASS'; GPU_QUEUE_IDLE='PASS'
+    }
+    Write-Host "WAN_PS51_RESULT=PASS cases=$pass/10 WindowsPowerShell=$($PSVersionTable.PSVersion)"
 }
 finally {
     if ($null -ne $server) { Stop-Job $server -ErrorAction SilentlyContinue; Remove-Job $server -Force -ErrorAction SilentlyContinue }
