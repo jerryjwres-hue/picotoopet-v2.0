@@ -166,10 +166,202 @@ foreach ($promptId in $PromptIds) {
             Add-Check 'PROMPT_HISTORY' 'UNVERIFIED' 'Prompt not present in retained history' $promptId
         }
         else {
-            Add-Check 'PROMPT_HISTORY' 'PASS' 'Read-only bound prompt history; inspect status and outputs before acceptance' ([pscustomobject]@{
-                PromptId = $promptId
-                Status   = $entry.status
-                Outputs  = $entry.outputs
+            # ── History existence is not completion; error or a completed prompt without ──
+            # ── a SaveWEBM output must never look like a successful old-GPU drain.   ──
+            $statusProperty = $entry.PSObject.Properties['status']
+            $statusObject = if ($null -ne $statusProperty) { $statusProperty.Value } else { $null }
+            $statusText = ''
+            $completed = $false
+            if ($null -ne $statusObject) {
+                $textProperty = $statusObject.PSObject.Properties['status_str']
+                $doneProperty = $statusObject.PSObject.Properties['completed']
+                if ($null -ne $textProperty) { $statusText = [string]$textProperty.Value }
+                if ($null -ne $doneProperty) { $completed = ($doneProperty.Value -eq $true) }
+            }
+
+            # ── Mirror the production output evidence shape: an output .webm ──
+            # ── must carry filename and type=output, regardless of node name. ──
+            $hasWebm = $false
+            $outputsProperty = $entry.PSObject.Properties['outputs']
+            if ($null -ne $outputsProperty -and $null -ne $outputsProperty.Value) {
+                foreach ($nodeProperty in $outputsProperty.Value.PSObject.Properties) {
+                    if ($null -eq $nodeProperty.Value) { continue }
+                    foreach ($arrayProperty in $nodeProperty.Value.PSObject.Properties) {
+                        foreach ($item in @($arrayProperty.Value)) {
+                            if ($null -eq $item) { continue }
+                            $filenameProperty = $item.PSObject.Properties['filename']
+                            $typeProperty = $item.PSObject.Properties['type']
+                            if ($null -ne $filenameProperty -and $null -ne $typeProperty -and
+                                [string]$filenameProperty.Value -match '\.webm
+    }
+    catch {
+        Add-Check 'PROMPT_HISTORY' 'UNVERIFIED' 'Prompt history lookup failed' $promptId
+    }
+}
+
+# Validate exactly the THREE T2V execution models against committed SHA256 values.
+if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
+    Add-Check 'T2V_MODEL_HASHES' 'BLOCKED' 'Pinned model manifest unavailable; supply -ManifestPath for a verified checkout' $ManifestPath
+}
+else {
+    try {
+        $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+        foreach ($name in @('wan2.2_ti2v_5B_fp16.safetensors','umt5_xxl_fp8_e4m3fn_scaled.safetensors','wan2.2_vae.safetensors')) {
+            $item = @($manifest.models | Where-Object { $_.filename -ceq $name })
+            if ($item.Count -ne 1) {
+                Add-Check 'T2V_MODEL_HASH' 'BLOCKED' 'Model missing or duplicated in pinned manifest' $name
+                continue
+            }
+            $file = Join-Path (Join-Path ([string]$manifest.model_root) ([string]$item[0].destination)) $name
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+                Add-Check 'T2V_MODEL_HASH' 'BLOCKED' 'Pinned model file missing' $file
+                continue
+            }
+            if ($SkipModelHashes) {
+                Add-Check 'T2V_MODEL_HASH' 'UNVERIFIED' 'File exists but hashing deliberately skipped' $file
+                continue
+            }
+            $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            $expected = ([string]$item[0].sha256).ToLowerInvariant()
+            Add-Check 'T2V_MODEL_HASH' $(if ($actual -ceq $expected) {'PASS'} else {'BLOCKED'}) 'Exact SHA256 required (not basename/size alone)' ([pscustomobject]@{
+                Path     = $file
+                Expected = $expected
+                Actual   = $actual
+            })
+        }
+    }
+    catch {
+        Add-Check 'T2V_MODEL_HASHES' 'BLOCKED' 'Cannot parse manifest or read/hash pinned models' $null
+    }
+}
+
+# The running Comfy data root must be verified independently; no directories are created.
+if ([string]::IsNullOrWhiteSpace($ComfyDataRoot)) {
+    $config = Join-Path $env:APPDATA 'ComfyUI\config.json'
+    if (Test-Path -LiteralPath $config -PathType Leaf) {
+        try {
+            $ComfyDataRoot = [string]((Get-Content -LiteralPath $config -Raw | ConvertFrom-Json).basePath)
+        }
+        catch {
+            $ComfyDataRoot = ''
+        }
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace($ComfyDataRoot) -and (Test-Path -LiteralPath $ComfyDataRoot -PathType Container)) {
+    $outputRoot = Join-Path $ComfyDataRoot 'output'
+    Add-Check 'COMFY_DATA_ROOT' $(if (Test-Path -LiteralPath $outputRoot -PathType Container) {'PASS'} else {'BLOCKED'}) 'Confirm this is the root actually used by the running Comfy instance' $outputRoot
+}
+else {
+    Add-Check 'COMFY_DATA_ROOT' 'UNVERIFIED' 'Use -ComfyDataRoot or inspect documented ProductionLocalEnvironment fallback order' $ComfyDataRoot
+}
+
+# The NVIDIA query is a passive snapshot, NOT a measured 3-shot peak or a VRAM guarantee.
+$smi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+if ($null -ne $smi) {
+    try {
+        $gpu = @(& $smi.Source --query-gpu=name,driver_version,memory.total,memory.free,memory.used,utilization.gpu,power.draw --format=csv,noheader,nounits 2>$null)
+        # ── Exit code 0 is insufficient: nvidia-smi may print N/A or empty VRAM fields. ──
+        $validVram = ($gpu.Count -gt 0)
+        foreach ($row in $gpu) {
+            $fields = @(([string]$row).Split(','))
+            if ($fields.Count -ne 7 -or [string]::IsNullOrWhiteSpace($fields[0]) -or
+                $fields[2] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*$' -or
+                $fields[3] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*$' -or
+                $fields[4] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*$') {
+                $validVram = $false
+                break
+            }
+            if ([double]::Parse($fields[2], [Globalization.CultureInfo]::InvariantCulture) -le 0) {
+                $validVram = $false
+                break
+            }
+        }
+        Add-Check 'NVIDIA_GPU_INVENTORY' $(if ($LASTEXITCODE -eq 0 -and $validVram) {'PASS'} else {'UNVERIFIED'}) 'VRAM fields must be numeric; snapshot never proves render capacity or GPU seconds' $gpu
+    }
+    catch {
+        Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi failed' $null
+    }
+}
+else {
+    Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi not on PATH' $null
+}
+
+# ffmpeg/ffprobe help/capability commands and per-file probes do not encode media.
+$ffmpeg = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
+$ffprobe = Get-Command ffprobe.exe -ErrorAction SilentlyContinue
+if ($null -ne $ffmpeg) {
+    try {
+        $encoders = @(& $ffmpeg.Source -hide_banner -encoders 2>&1) -join [Environment]::NewLine
+        Add-Check 'FFMPEG_LIBX264' $(if ($encoders -match '(^|\s)libx264(\s|$)') {'PASS'} else {'BLOCKED'}) 'libx264 encoder capability (no encoding executed)' $ffmpeg.Source
+    }
+    catch {
+        Add-Check 'FFMPEG_LIBX264' 'BLOCKED' 'ffmpeg -encoders failed' $null
+    }
+}
+else {
+    Add-Check 'FFMPEG_LIBX264' 'BLOCKED' 'ffmpeg.exe not on PATH' $null
+}
+Add-Check 'FFPROBE_FOUND' $(if ($null -ne $ffprobe) {'PASS'} else {'BLOCKED'}) 'ffprobe needed to examine real WebM/MP4 streams' $(if ($null -ne $ffprobe) {$ffprobe.Source} else {$null})
+
+foreach ($path in $WebmPaths) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Supplied existing file missing' $path
+        continue
+    }
+    if ($null -eq $ffprobe) {
+        Add-Check 'WEBM_EVIDENCE' 'UNVERIFIED' 'ffprobe absent; do not infer codec/duration from extension' $path
+        continue
+    }
+    try {
+        $item = Get-Item -LiteralPath $path
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Reparse-point input is forbidden' $path
+            continue
+        }
+        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $probe = & $ffprobe.Source -v error -show_entries 'format=duration,size,format_name:stream=index,codec_type,codec_name,width,height,nb_frames,r_frame_rate' -of json -i $item.FullName
+        if ($LASTEXITCODE -ne 0) { throw 'ffprobe failed' }
+        Add-Check 'WEBM_EVIDENCE' 'PASS' 'Observed existing bytes/stream; still compare to exact Core task receipt' ([pscustomobject]@{
+            Path   = $item.FullName
+            Bytes  = $item.Length
+            Sha256 = $hash
+            Probe  = ($probe -join [Environment]::NewLine | ConvertFrom-Json)
+        })
+    }
+    catch {
+        Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Hash/ffprobe failed' $path
+    }
+}
+
+# Do not equate passive readiness with actual unperformed rendering or visual QA.
+$blocked = @($checks | Where-Object { $_.Status -eq 'BLOCKED' }).Count
+$unverified = @($checks | Where-Object { $_.Status -eq 'UNVERIFIED' }).Count
+[pscustomobject]@{
+    SchemaVersion        = '1.0'
+    CandidateSha         = 'b6230da62eb803e9a7be840374feeb481a657c3a'
+    Scope                = 'READ_ONLY_NO_POST_NO_GPU_INFERENCE'
+    InspectedAtUtc       = (Get-Date).ToUniversalTime().ToString('o')
+    PreflightDisposition = if ($blocked -gt 0) { 'BLOCKED' } elseif ($unverified -gt 0) { 'UNVERIFIED' } else { 'PASS_PASSIVE_ONLY' }
+    LiveThreeShotRender  = 'UNVERIFIED'
+    GpuBusySeconds       = 'UNVERIFIED'
+    Checks               = $checks.ToArray()
+} | ConvertTo-Json -Depth 14
+ -and
+                                [string]$typeProperty.Value -ieq 'output') {
+                                $hasWebm = $true
+                            }
+                        }
+                    }
+                }
+            }
+            $historyStatus = if ($statusText -eq 'error') { 'BLOCKED' }
+                             elseif (-not $completed) { 'UNVERIFIED' }
+                             elseif (-not $hasWebm) { 'BLOCKED' }
+                             else { 'PASS' }
+            Add-Check 'PROMPT_HISTORY' $historyStatus 'PASS requires completed history and an output WebM; error or missing output blocks recovery' ([pscustomobject]@{
+                PromptId    = $promptId
+                Status      = $statusObject
+                HasWebm     = $hasWebm
             })
         }
     }
