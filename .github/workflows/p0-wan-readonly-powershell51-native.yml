@@ -1,0 +1,29 @@
+name: P0 Wan Read-Only PowerShell 5.1 Native
+on:
+  push:
+    branches:
+      - test/p0-wan-readonly-ps51-native-v1
+    paths:
+      - 'docs/p0_wan_preflight/**'
+      - '.github/workflows/p0-wan-readonly-powershell51-native.yml'
+  pull_request:
+    paths:
+      - 'docs/p0_wan_preflight/**'
+      - '.github/workflows/p0-wan-readonly-powershell51-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-native:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Windows PowerShell 5.1 mock GET and zero-side-effect contract
+        shell: powershell
+        run: |
+          if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) { throw 'Expected Windows PowerShell 5.1' }
+          & .\docs\p0_wan_preflight\tests\Test-WanPowerShell51.Native.ps1
+          if ($LASTEXITCODE -ne 0) { throw "G-Wan read-only PowerShell 5.1 contract failed: $LASTEXITCODE" }
