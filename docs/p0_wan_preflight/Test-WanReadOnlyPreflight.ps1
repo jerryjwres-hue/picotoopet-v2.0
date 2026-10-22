@@ -239,7 +239,233 @@ $smi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
 if ($null -ne $smi) {
     try {
         $gpu = @(& $smi.Source --query-gpu=name,driver_version,memory.total,memory.free,memory.used,utilization.gpu,power.draw --format=csv,noheader,nounits 2>$null)
-        Add-Check 'NVIDIA_GPU_INVENTORY' $(if ($LASTEXITCODE -eq 0) {'PASS'} else {'UNVERIFIED'}) 'Snapshot only; actual Wan peak VRAM and GPU seconds remain unmeasured' $gpu
+        # ── Exit code 0 is insufficient: nvidia-smi may print N/A or empty VRAM fields. ──
+        $validVram = ($gpu.Count -gt 0)
+        foreach ($row in $gpu) {
+            $fields = @(([string]$row).Split(','))
+            if ($fields.Count -ne 7 -or [string]::IsNullOrWhiteSpace($fields[0]) -or
+                $fields[2] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*
+    }
+    catch {
+        Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi failed' $null
+    }
+}
+else {
+    Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi not on PATH' $null
+}
+
+# ffmpeg/ffprobe help/capability commands and per-file probes do not encode media.
+$ffmpeg = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
+$ffprobe = Get-Command ffprobe.exe -ErrorAction SilentlyContinue
+if ($null -ne $ffmpeg) {
+    try {
+        $encoders = @(& $ffmpeg.Source -hide_banner -encoders 2>&1) -join [Environment]::NewLine
+        Add-Check 'FFMPEG_LIBX264' $(if ($encoders -match '(^|\s)libx264(\s|$)') {'PASS'} else {'BLOCKED'}) 'libx264 encoder capability (no encoding executed)' $ffmpeg.Source
+    }
+    catch {
+        Add-Check 'FFMPEG_LIBX264' 'BLOCKED' 'ffmpeg -encoders failed' $null
+    }
+}
+else {
+    Add-Check 'FFMPEG_LIBX264' 'BLOCKED' 'ffmpeg.exe not on PATH' $null
+}
+Add-Check 'FFPROBE_FOUND' $(if ($null -ne $ffprobe) {'PASS'} else {'BLOCKED'}) 'ffprobe needed to examine real WebM/MP4 streams' $(if ($null -ne $ffprobe) {$ffprobe.Source} else {$null})
+
+foreach ($path in $WebmPaths) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Supplied existing file missing' $path
+        continue
+    }
+    if ($null -eq $ffprobe) {
+        Add-Check 'WEBM_EVIDENCE' 'UNVERIFIED' 'ffprobe absent; do not infer codec/duration from extension' $path
+        continue
+    }
+    try {
+        $item = Get-Item -LiteralPath $path
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Reparse-point input is forbidden' $path
+            continue
+        }
+        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $probe = & $ffprobe.Source -v error -show_entries 'format=duration,size,format_name:stream=index,codec_type,codec_name,width,height,nb_frames,r_frame_rate' -of json -i $item.FullName
+        if ($LASTEXITCODE -ne 0) { throw 'ffprobe failed' }
+        Add-Check 'WEBM_EVIDENCE' 'PASS' 'Observed existing bytes/stream; still compare to exact Core task receipt' ([pscustomobject]@{
+            Path   = $item.FullName
+            Bytes  = $item.Length
+            Sha256 = $hash
+            Probe  = ($probe -join [Environment]::NewLine | ConvertFrom-Json)
+        })
+    }
+    catch {
+        Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Hash/ffprobe failed' $path
+    }
+}
+
+# Do not equate passive readiness with actual unperformed rendering or visual QA.
+$blocked = @($checks | Where-Object { $_.Status -eq 'BLOCKED' }).Count
+$unverified = @($checks | Where-Object { $_.Status -eq 'UNVERIFIED' }).Count
+[pscustomobject]@{
+    SchemaVersion        = '1.0'
+    CandidateSha         = 'b6230da62eb803e9a7be840374feeb481a657c3a'
+    Scope                = 'READ_ONLY_NO_POST_NO_GPU_INFERENCE'
+    InspectedAtUtc       = (Get-Date).ToUniversalTime().ToString('o')
+    PreflightDisposition = if ($blocked -gt 0) { 'BLOCKED' } elseif ($unverified -gt 0) { 'UNVERIFIED' } else { 'PASS_PASSIVE_ONLY' }
+    LiveThreeShotRender  = 'UNVERIFIED'
+    GpuBusySeconds       = 'UNVERIFIED'
+    Checks               = $checks.ToArray()
+} | ConvertTo-Json -Depth 14
+ -or
+                $fields[3] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*
+    }
+    catch {
+        Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi failed' $null
+    }
+}
+else {
+    Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi not on PATH' $null
+}
+
+# ffmpeg/ffprobe help/capability commands and per-file probes do not encode media.
+$ffmpeg = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
+$ffprobe = Get-Command ffprobe.exe -ErrorAction SilentlyContinue
+if ($null -ne $ffmpeg) {
+    try {
+        $encoders = @(& $ffmpeg.Source -hide_banner -encoders 2>&1) -join [Environment]::NewLine
+        Add-Check 'FFMPEG_LIBX264' $(if ($encoders -match '(^|\s)libx264(\s|$)') {'PASS'} else {'BLOCKED'}) 'libx264 encoder capability (no encoding executed)' $ffmpeg.Source
+    }
+    catch {
+        Add-Check 'FFMPEG_LIBX264' 'BLOCKED' 'ffmpeg -encoders failed' $null
+    }
+}
+else {
+    Add-Check 'FFMPEG_LIBX264' 'BLOCKED' 'ffmpeg.exe not on PATH' $null
+}
+Add-Check 'FFPROBE_FOUND' $(if ($null -ne $ffprobe) {'PASS'} else {'BLOCKED'}) 'ffprobe needed to examine real WebM/MP4 streams' $(if ($null -ne $ffprobe) {$ffprobe.Source} else {$null})
+
+foreach ($path in $WebmPaths) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Supplied existing file missing' $path
+        continue
+    }
+    if ($null -eq $ffprobe) {
+        Add-Check 'WEBM_EVIDENCE' 'UNVERIFIED' 'ffprobe absent; do not infer codec/duration from extension' $path
+        continue
+    }
+    try {
+        $item = Get-Item -LiteralPath $path
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Reparse-point input is forbidden' $path
+            continue
+        }
+        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $probe = & $ffprobe.Source -v error -show_entries 'format=duration,size,format_name:stream=index,codec_type,codec_name,width,height,nb_frames,r_frame_rate' -of json -i $item.FullName
+        if ($LASTEXITCODE -ne 0) { throw 'ffprobe failed' }
+        Add-Check 'WEBM_EVIDENCE' 'PASS' 'Observed existing bytes/stream; still compare to exact Core task receipt' ([pscustomobject]@{
+            Path   = $item.FullName
+            Bytes  = $item.Length
+            Sha256 = $hash
+            Probe  = ($probe -join [Environment]::NewLine | ConvertFrom-Json)
+        })
+    }
+    catch {
+        Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Hash/ffprobe failed' $path
+    }
+}
+
+# Do not equate passive readiness with actual unperformed rendering or visual QA.
+$blocked = @($checks | Where-Object { $_.Status -eq 'BLOCKED' }).Count
+$unverified = @($checks | Where-Object { $_.Status -eq 'UNVERIFIED' }).Count
+[pscustomobject]@{
+    SchemaVersion        = '1.0'
+    CandidateSha         = 'b6230da62eb803e9a7be840374feeb481a657c3a'
+    Scope                = 'READ_ONLY_NO_POST_NO_GPU_INFERENCE'
+    InspectedAtUtc       = (Get-Date).ToUniversalTime().ToString('o')
+    PreflightDisposition = if ($blocked -gt 0) { 'BLOCKED' } elseif ($unverified -gt 0) { 'UNVERIFIED' } else { 'PASS_PASSIVE_ONLY' }
+    LiveThreeShotRender  = 'UNVERIFIED'
+    GpuBusySeconds       = 'UNVERIFIED'
+    Checks               = $checks.ToArray()
+} | ConvertTo-Json -Depth 14
+ -or
+                $fields[4] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*
+    }
+    catch {
+        Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi failed' $null
+    }
+}
+else {
+    Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi not on PATH' $null
+}
+
+# ffmpeg/ffprobe help/capability commands and per-file probes do not encode media.
+$ffmpeg = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
+$ffprobe = Get-Command ffprobe.exe -ErrorAction SilentlyContinue
+if ($null -ne $ffmpeg) {
+    try {
+        $encoders = @(& $ffmpeg.Source -hide_banner -encoders 2>&1) -join [Environment]::NewLine
+        Add-Check 'FFMPEG_LIBX264' $(if ($encoders -match '(^|\s)libx264(\s|$)') {'PASS'} else {'BLOCKED'}) 'libx264 encoder capability (no encoding executed)' $ffmpeg.Source
+    }
+    catch {
+        Add-Check 'FFMPEG_LIBX264' 'BLOCKED' 'ffmpeg -encoders failed' $null
+    }
+}
+else {
+    Add-Check 'FFMPEG_LIBX264' 'BLOCKED' 'ffmpeg.exe not on PATH' $null
+}
+Add-Check 'FFPROBE_FOUND' $(if ($null -ne $ffprobe) {'PASS'} else {'BLOCKED'}) 'ffprobe needed to examine real WebM/MP4 streams' $(if ($null -ne $ffprobe) {$ffprobe.Source} else {$null})
+
+foreach ($path in $WebmPaths) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Supplied existing file missing' $path
+        continue
+    }
+    if ($null -eq $ffprobe) {
+        Add-Check 'WEBM_EVIDENCE' 'UNVERIFIED' 'ffprobe absent; do not infer codec/duration from extension' $path
+        continue
+    }
+    try {
+        $item = Get-Item -LiteralPath $path
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Reparse-point input is forbidden' $path
+            continue
+        }
+        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $probe = & $ffprobe.Source -v error -show_entries 'format=duration,size,format_name:stream=index,codec_type,codec_name,width,height,nb_frames,r_frame_rate' -of json -i $item.FullName
+        if ($LASTEXITCODE -ne 0) { throw 'ffprobe failed' }
+        Add-Check 'WEBM_EVIDENCE' 'PASS' 'Observed existing bytes/stream; still compare to exact Core task receipt' ([pscustomobject]@{
+            Path   = $item.FullName
+            Bytes  = $item.Length
+            Sha256 = $hash
+            Probe  = ($probe -join [Environment]::NewLine | ConvertFrom-Json)
+        })
+    }
+    catch {
+        Add-Check 'WEBM_EVIDENCE' 'BLOCKED' 'Hash/ffprobe failed' $path
+    }
+}
+
+# Do not equate passive readiness with actual unperformed rendering or visual QA.
+$blocked = @($checks | Where-Object { $_.Status -eq 'BLOCKED' }).Count
+$unverified = @($checks | Where-Object { $_.Status -eq 'UNVERIFIED' }).Count
+[pscustomobject]@{
+    SchemaVersion        = '1.0'
+    CandidateSha         = 'b6230da62eb803e9a7be840374feeb481a657c3a'
+    Scope                = 'READ_ONLY_NO_POST_NO_GPU_INFERENCE'
+    InspectedAtUtc       = (Get-Date).ToUniversalTime().ToString('o')
+    PreflightDisposition = if ($blocked -gt 0) { 'BLOCKED' } elseif ($unverified -gt 0) { 'UNVERIFIED' } else { 'PASS_PASSIVE_ONLY' }
+    LiveThreeShotRender  = 'UNVERIFIED'
+    GpuBusySeconds       = 'UNVERIFIED'
+    Checks               = $checks.ToArray()
+} | ConvertTo-Json -Depth 14
+) {
+                $validVram = $false
+                break
+            }
+            if ([double]::Parse($fields[2], [Globalization.CultureInfo]::InvariantCulture) -le 0) {
+                $validVram = $false
+                break
+            }
+        }
+        Add-Check 'NVIDIA_GPU_INVENTORY' $(if ($LASTEXITCODE -eq 0 -and $validVram) {'PASS'} else {'UNVERIFIED'}) 'VRAM fields must be numeric; snapshot never proves render capacity or GPU seconds' $gpu
     }
     catch {
         Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi failed' $null
