@@ -407,21 +407,23 @@ def evaluate_video_bible(
 def _multi_shot_findings(draft: VideoBibleDraft, add) -> None:  # type: ignore[no-untyped-def]
     """Cross-shot identity and prompt hygiene for an explicit multi-shot Goal."""
 
-    from .director import actions_too_similar, negative_conflicts
+    from .director import near_duplicate_actions, negative_conflicts, normalized_keys
 
-    if len(draft.continuity_anchors) + len(draft.global_continuity_notes) < 2:
+    meaningful = normalized_keys([*draft.continuity_anchors, *draft.global_continuity_notes])
+    if len(meaningful) < 2:
         add(
             "CONTINUITY_ANCHORS_TOO_FEW",
-            detail="give at least 2 identity/scene anchors; they are repeated in every shot",
+            detail="give at least 2 distinct identity/scene anchors; they are repeated in every "
+            "shot",
         )
-    for index, first in enumerate(draft.shots):
-        for second in draft.shots[index + 1 :]:
-            if actions_too_similar(first.visible_action, second.visible_action):
-                add(
-                    "SHOT_ACTIONS_NOT_DISTINCT",
-                    first.shot_id,
-                    f"{first.shot_id} and {second.shot_id} describe the same action",
-                )
+    pair = near_duplicate_actions([item.visible_action for item in draft.shots])
+    if pair is not None:
+        first, second = draft.shots[pair[0]], draft.shots[pair[1]]
+        add(
+            "SHOT_ACTIONS_NOT_DISTINCT",
+            first.shot_id,
+            f"{first.shot_id} and {second.shot_id} describe the same action",
+        )
     texts = [
         draft.subject.identity_phrase, draft.product.identity_phrase,
         *draft.continuity_anchors, *draft.global_continuity_notes,

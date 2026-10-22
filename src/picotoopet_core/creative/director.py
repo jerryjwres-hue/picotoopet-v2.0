@@ -9,6 +9,7 @@ the allowed evidence ids and the hard constraints. Source text stays untrusted d
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -84,6 +85,15 @@ _BEFORE = (
     "不超过", "不多于", "超过", "多于", "少于", "大约", "约",
 )
 _AFTER = ("以上", "以内", "左右", "or more", "or fewer", "or less", "+")
+# "2 shots of espresso" / "flu shots" are drinks and injections, not camera shots.
+_NOT_CAMERA_BEFORE = (
+    "flu", "vaccin", "booster", "covid", "espresso", "coffee", "tequila", "vodka", "whisk",
+    "insulin",
+)
+_NOT_CAMERA_AFTER = re.compile(
+    r"^\s*(?:of\s+)?(?:espresso|coffee|tequila|vodka|whisk|rum\b|gin\b|sake|juice|vaccine|"
+    r"insulin|booster)"
+)
 _NO_REFERENCE = (
     "no image-to-video", "no image to video", "no i2v", "without image-to-video",
     "without i2v", "no reference images", "no reference image", "without a reference image",
@@ -113,6 +123,10 @@ def parse_goal_directives(objective: str | None) -> GoalDirectives:
         after = text[match.end() : match.end() + 10]
         if any(token in before for token in _BEFORE) or any(t in after for t in _AFTER):
             continue
+        if any(token in text[max(0, match.start() - 24) : match.start()]
+               for token in _NOT_CAMERA_BEFORE) or _NOT_CAMERA_AFTER.match(
+                   text[match.end() : match.end() + 24]):
+            continue
         raw = match.group("n")
         value = int(raw) if raw.isdigit() else _WORD_NUMBERS[raw]
         if 1 <= value <= MAX_DIRECTIVE_SHOTS:
@@ -128,10 +142,20 @@ def parse_goal_directives(objective: str | None) -> GoalDirectives:
 
 
 _CJK = re.compile(r"[\u4e00-\u9fff]")
-# Words the frozen Wan negative prompt (windows/production/workflows, "静态 过曝 杂乱背景 字幕
-# 细节模糊不清 色调艳丽") asks the sampler to avoid; using them in the positive text cancels itself.
+# Words the frozen Wan negative prompt (windows/production/workflows: 色调艳丽 过曝 静态
+# 细节模糊不清 字幕 杂乱背景) tells the sampler to avoid; in the positive text they cancel
+# themselves. Fixed-camera wording ("static camera", "静态镜头") and depth-of-field wording
+# ("blurry background") describe the camera, not the picture quality the negative targets, so
+# they stay allowed.
+_CAMERA_NOUNS = (
+    r"camera|cameras|shot|shots|frame|framing|tripod|angle|view|composition|lens|position|"
+    r"mount|rig|wide|medium|close-up"
+)
 _NEGATIVE_WORDS = re.compile(
-    r"\b(static|overexposed|cluttered|subtitles?|captions?|blurry|garish|gaudy)\b",
+    r"\b(?P<en>overexposed|cluttered|subtitles?|captions?|garish|gaudy"
+    rf"|static(?![\s-]+(?:{_CAMERA_NOUNS})\b)"
+    r"|blurry(?!\s+(?:background|backdrop|foreground|bokeh|scenery)\b))\b"
+    r"|(?P<zh>过曝|杂乱|字幕|色调艳丽|细节模糊|静态(?!镜头|机位|摄影|拍摄|构图|画幅))",
     re.IGNORECASE,
 )
 ACTION_SIMILARITY_LIMIT = 0.7
@@ -143,29 +167,84 @@ def _shingles(text: str) -> set[str]:
     return words | {han[i] + han[i + 1] for i in range(len(han) - 1)}
 
 
-def actions_too_similar(first: str, second: str) -> bool:
-    """True when two shot actions are essentially the same sentence (token/bigram Jaccard)."""
+def near_duplicate_actions(actions: list[str]) -> tuple[int, int] | None:
+    """First pair of shot actions that are the same sentence, or None.
 
-    a, b = _shingles(first), _shingles(second)
-    if not a or not b:
-        return a == b
-    return len(a & b) / len(a | b) >= ACTION_SIMILARITY_LIMIT
+    Words every shot shares (the pet, the place) are boilerplate and removed first, so a long
+    common scene description cannot make two different verbs look alike, while two actions that
+    differ by at most one word still count as duplicates.
+    """
+
+    sets = [_shingles(item) for item in actions]
+    if len(sets) < 2:
+        return None
+    common = set.intersection(*sets)
+    rest = [item - common for item in sets]
+    for i, first in enumerate(rest):
+        for j in range(i + 1, len(rest)):
+            second = rest[j]
+            union = first | second
+            if not union:
+                return (i, j)
+            overlap = len(first & second) / len(union)
+            contained = (first <= second or second <= first) and len(first ^ second) <= 1
+            if overlap >= ACTION_SIMILARITY_LIMIT or contained:
+                return (i, j)
+    return None
+
+
+def actions_too_similar(first: str, second: str) -> bool:
+    return near_duplicate_actions([first, second]) is not None
 
 
 def negative_conflicts(texts: list[str]) -> list[str]:
-    """Whole words in positive text that the fixed negative prompt tells Wan to avoid."""
+    """Words in positive text that the fixed negative prompt tells Wan to avoid."""
 
     found: list[str] = []
     for text in texts:
         for match in _NEGATIVE_WORDS.finditer(text):
-            word = match.group(1).casefold()
+            word = match.group(0).casefold()
             if word not in found:
                 found.append(word)
     return found
 
 
+_GENERIC_ANCHORS = frozenset({
+    "video", "shot", "shots", "scene", "scenes", "camera", "same", "consistent", "consistency",
+    "continuity", "anchor", "anchors", "style", "none", "null", "n/a", "na", "tbd", "todo",
+    "unknown", "other", "item", "thing", "stuff", "subject", "product", "background",
+    "foreground", "image", "picture", "frame",
+})
+
+
+def normalize_anchor(key: str) -> str:
+    """NFKC, case, punctuation and spacing folded so equal anchors compare equal."""
+
+    folded = unicodedata.normalize("NFKC", key).casefold()
+    kept = "".join(
+        " " if unicodedata.category(ch)[0] in {"P", "S", "Z", "C"} else ch for ch in folded
+    )
+    return " ".join(kept.split())
+
+
+def is_meaningful_anchor(normalized: str) -> bool:
+    """Reject placeholders: a shared 'a' / 'x1' / 'scene' carries no identity at all."""
+
+    if not normalized or normalized in _GENERIC_ANCHORS:
+        return False
+    if all(word in _GENERIC_ANCHORS for word in normalized.split()):
+        return False
+    han = len(_CJK.findall(normalized))
+    latin = sum(1 for ch in normalized if ch.isalpha() and not _CJK.match(ch))
+    return han >= 2 or latin >= 3
+
+
 def normalized_keys(keys: list[str]) -> set[str]:
-    return {" ".join(key.split()).casefold() for key in keys if key.strip()}
+    """The distinct, meaningful identity anchors in a list of continuity keys."""
+
+    return {
+        item for item in (normalize_anchor(key) for key in keys) if is_meaningful_anchor(item)
+    }
 
 
 def director_constraints(

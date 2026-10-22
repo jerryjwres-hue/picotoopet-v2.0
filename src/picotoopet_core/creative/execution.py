@@ -268,6 +268,19 @@ class CreativeIntelligenceCoordinator:
                 last_raw,
                 ["CREATIVE_STAGE_ATTEMPT_BUDGET_EXHAUSTED"],
             )
+        if starting_attempts > 0 and stage.status == "Retry" and stage.result:
+            # A restart between the two attempts must not make the second one blind: the
+            # repair text is a pure function of the stored output, so recompute it.
+            earlier, _ = self.quality.evaluate(
+                stage_kind=stage_definition.stage_kind,
+                profile=profile,
+                source_set=source_set,
+                previous_stages=previous,
+                raw_result=stage.result,
+                objective=context.get("creative_objective"),
+            )
+            if earlier.outcome is CreativeQualityOutcome.RETRY:
+                correction = earlier.correction_instruction
         for attempt in range(starting_attempts + 1, self.MAX_MODEL_ATTEMPTS_PER_STAGE + 1):
             self.repository.update_stage(
                 stage.stage_run_id, status="Running", model_attempts=attempt
