@@ -62,6 +62,7 @@ allowed = required | {
     "autonomous.discovery.v1",
     "autonomous.goal_synthesis.v1",
     "autonomous.goal_handoff.v1",
+    "autonomous.goal_creative.v1",
     "autonomous.storage_maintenance.v1",
     "business.local_intelligence.v1",
     "creative.content_plan.v1",

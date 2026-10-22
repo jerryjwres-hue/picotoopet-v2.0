@@ -120,3 +120,38 @@ After all three VP9 WebMs and Core commits, existing Worker/C011 handles final F
 | Completed three WebMs without QA MP4/receipt | UNVERIFIED: FINAL_VIDEO | C011/C010A existing path; don't call raw WebMs released masters |
 
 **GitHub handoff:** attach branch/PR link and this matrix to [Issue #91](https://github.com/jerryjwres-hue/picotoopet-v2.0/issues/91) for total controller/G006. No merge, rebase, tag, release, Comfy POST, model download or live GPU attempted.
+
+### Dedicated Windows PowerShell 5.1 read-only contract CI (#91)
+
+The separately owned test file `tests/Test-WanPowerShell51.Native.ps1` is run by
+`.github/workflows/p0-wan-readonly-powershell51-native.yml` on an ephemeral
+`windows-2022` GitHub-hosted runner using **Windows PowerShell 5.1**:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\docs\p0_wan_preflight\tests\Test-WanPowerShell51.Native.ps1
+```
+
+This is an **isolated mock contract**, not a live Comfy readiness result.
+It invokes the actual unmodified API/manifest preflight entry point through
+`powershell.exe -File`; a local `HttpListener` mimics only GET
+`/system_stats`, `/object_info`, `/queue`, and bounded `/history`.
+Tiny fake files test exact SHA256 checking. Ephemeral no-op executables expose
+FFmpeg/libx264, ffprobe and NVIDIA inventory queries without model/GPU activity.
+
+CI asserts all ten cases: offline 8188 BLOCKED, healthy passive snapshot
+PASS_PASSIVE_ONLY (queue empty, retained history and known ID), missing SaveWEBM
+BLOCKED, missing UNET model dropdown BLOCKED, missing VAE BLOCKED, missing
+text encoder BLOCKED, tampered model SHA BLOCKED, ffmpeg/ffprobe missing BLOCKED,
+nvidia-smi absent UNVERIFIED, and nvidia-smi returning nonnumeric/N/A VRAM
+with exit 0 UNVERIFIED. It also rejects any method other than approved GETs,
+asserts all input fixture file hashes are unchanged and asserts no production
+folder was created by the preflight process. The harness creates its own mock
+fixtures before inspection; **the preflight script never creates them**.
+
+A native CI PASS verifies PowerShell 5.1 compatibility, classification, and
+these offline no-side-effect contracts. It does **not** verify the user's real
+Comfy 8188, real Wan/UMT5/VAE hashes, genuine model-loader options, actual
+GPU/VRAM, local disk/electrical safety, persisted Core journal, the first
+three WebMs, C011 QA master MP4, or human visual acceptance. Those remain
+UNVERIFIED until individually inspected on an authorized, safe workstation.
+No script option authorizes POST /prompt or starting any production process.

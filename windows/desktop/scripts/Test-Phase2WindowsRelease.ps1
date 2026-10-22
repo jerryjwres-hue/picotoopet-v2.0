@@ -433,6 +433,55 @@ function Invoke-LifecycleFixture {
         $commonB          = Join-Path $packageB "Phase2Prebuilt.Common.ps1"
         . $commonB
 
+        # UiPreview-only fail-closed negative: a fresh isolated profile MUST reject install
+        # before creating an installed version or activation shortcut.
+        $fixtureManifest = Read-JsonUtf8 -Path (Join-Path $packageA 'release-manifest.json')
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            $refusal = Invoke-ReleaseScript -ScriptPath $installerA -Arguments @(
+                '-PackageRoot', $packageA,
+                '-DataRoot', $dataRoot,
+                '-DesktopDirectory', $DesktopDirectory,
+                '-ActivationSelfTest',
+                '-SuppressReportOpen'
+            ) -ExpectedExitCodes @(1)
+            if ($refusal.StdOut -notmatch 'P0_PREVIEW_HOLD_FIRST_REQUIRED') {
+                throw 'P0_PREVIEW_UNARMED_REFUSAL_REASON_MISSING'
+            }
+            if (Test-Path -LiteralPath (Join-Path $dataRoot 'current_version.json')) {
+                throw 'P0_PREVIEW_UNARMED_CHANGED_CURRENT_VERSION'
+            }
+            if (@(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory).Count -ne 0) {
+                throw 'P0_PREVIEW_UNARMED_CREATED_ACTIVATION_SHORTCUT'
+            }
+            Write-Host 'P0_PREVIEW_UNARMED_INSTALL_REFUSED=PASS; ACTIVATION=0'
+
+            # Test the actual packaged operator script in native Windows PowerShell 5.1
+            # with this fixture's isolated LOCALAPPDATA before the normal install.
+            $bootstrap = Join-Path $packageA 'Prepare-P0ThreeShotHold.ps1'
+            if (-not (Test-Path -LiteralPath $bootstrap -PathType Leaf)) {
+                throw 'P0_PREVIEW_FIXTURE_BOOTSTRAP_MISSING'
+            }
+            Assert-PowerShellSyntax -Path $bootstrap
+            $prepared = Invoke-CheckedProcess `
+                -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+                -Arguments @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$bootstrap)
+            if ($prepared.StdOut -notmatch 'P0_HOLD_PREPARED=PASS; ARMED=PASS') {
+                throw 'P0_PREVIEW_FIXTURE_HOLD_PREPARATION_FAILED'
+            }
+            $gate = Join-Path $localData 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
+            $marker = $gate + '.armed'
+            if (-not (Test-Path -LiteralPath $gate -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $marker -PathType Leaf) -or
+                [IO.File]::ReadAllBytes($marker).Length -lt 1) {
+                throw 'P0_PREVIEW_FIXTURE_HOLD_NOT_DURABLE'
+            }
+            $state = Get-Content -LiteralPath $gate -Raw | ConvertFrom-Json
+            if ($state.schema_version -ne '1.0' -or $state.mode -ne 'hold') {
+                throw 'P0_PREVIEW_FIXTURE_HOLD_INVALID'
+            }
+            Write-Host 'P0_PREVIEW_FIXTURE_HOLD_FIRST=PASS; ARMED=PASS'
+        }
+
         [void](Invoke-ReleaseScript -ScriptPath $installerA -Arguments @(
             "-PackageRoot", $packageA,
             "-DataRoot", $dataRoot,
