@@ -37,6 +37,10 @@ GOAL = (
 )
 
 
+# The same Goal without the per-shot length, for tests that deliberately use other durations.
+GOAL_ANY_LENGTH = GOAL.replace("Each shot 4.0 seconds, total 12 seconds, landscape. ",
+                               "Landscape. ")
+
 # ── Directive parsing (conservative: it can only tighten the gates) ────────────────────
 
 
@@ -82,7 +86,9 @@ def test_text_to_video_only_is_detected_and_never_inferred(text, t2v_only) -> No
 
 
 def test_the_recommended_goal_text_parses_to_the_intended_directives() -> None:
-    assert parse_goal_directives(GOAL) == GoalDirectives(shot_count=3, text_to_video_only=True)
+    assert parse_goal_directives(GOAL) == GoalDirectives(
+        shot_count=3, text_to_video_only=True, shot_seconds=4.0
+    )
     assert len(GOAL) < 400
 
 
@@ -154,7 +160,7 @@ def _plan(raw, script=None, objective=GOAL):  # type: ignore[no-untyped-def]
 def test_exactly_n_shots_passes_and_other_counts_are_retried_with_the_number() -> None:
     assert _plan(_shots(3)).outcome is CreativeQualityOutcome.PASS
     for wrong, seconds in ((4, 3.0), (6, 2.0)):  # same 12 s total, so only the count is wrong
-        decision = _plan(_shots(wrong, seconds))
+        decision = _plan(_shots(wrong, seconds), objective=GOAL_ANY_LENGTH)
         assert decision.outcome is CreativeQualityOutcome.RETRY, wrong
         assert decision.reasons == ["SHOT_COUNT_MISMATCH"]
         assert "exactly 3 shots" in (decision.correction_instruction or "")
@@ -172,7 +178,7 @@ def test_fewer_shots_than_beats_reports_coverage_and_count_in_one_repair() -> No
 
 
 def test_unrenderable_shot_correction_keeps_the_requested_count() -> None:
-    decision = _plan(_shots(3, seconds=8.0), script=_script(3, 8.0))
+    decision = _plan(_shots(3, seconds=8.0), script=_script(3, 8.0), objective=GOAL_ANY_LENGTH)
     assert decision.outcome is CreativeQualityOutcome.RETRY
     assert decision.reasons == ["CREATIVE_SHOT_DURATION_UNRENDERABLE"]
     text = decision.correction_instruction or ""

@@ -67,6 +67,7 @@ class GoalDirectives:
 
     shot_count: int | None = None
     text_to_video_only: bool = False
+    shot_seconds: float | None = None
 
 
 _WORD_NUMBERS = {
@@ -110,6 +111,33 @@ _NO_REFERENCE_PATTERN = re.compile(
 )
 
 
+_SECONDS = (
+    re.compile(
+        r"(?:each|every)\s+shot\s+(?:is\s+|lasts\s+|of\s+|at\s+)?"
+        r"(?P<s>\d+(?:\.\d+)?)\s*(?:seconds?|secs?)\b"
+    ),
+    re.compile(r"(?P<s>\d+(?:\.\d+)?)\s*(?:seconds?|secs?)\s+(?:per|each)\s+shot"),
+    re.compile(r"(?P<s>\d+(?:\.\d+)?)-second\s+shots?\b"),
+    re.compile(r"每(?:个)?镜头\s*(?P<s>\d+(?:\.\d+)?)\s*秒"),
+)
+_SECONDS_RANGE = (2.0, 5.0)
+
+
+def _requested_shot_seconds(text: str) -> float | None:
+    values: set[float] = set()
+    for pattern in _SECONDS:
+        for match in pattern.finditer(text):
+            before = text[max(0, match.start() - 16) : match.start()]
+            after = text[match.end() : match.end() + 10]
+            if any(token in before for token in _BEFORE) or any(t in after for t in _AFTER):
+                continue
+            values.add(float(match.group("s")))
+    if len(values) != 1:
+        return None
+    value = next(iter(values))
+    return value if _SECONDS_RANGE[0] <= value <= _SECONDS_RANGE[1] else None
+
+
 def parse_goal_directives(objective: str | None) -> GoalDirectives:
     """Deterministically read an explicit shot count and a text-to-video-only ask."""
 
@@ -138,7 +166,11 @@ def parse_goal_directives(objective: str | None) -> GoalDirectives:
     remaining = _NO_REFERENCE_PATTERN.sub(" ", text)
     wants_image = any(word in remaining for word in _IMAGE_WORDS)
     marked = negated or any(marker in remaining for marker in _TEXT_ONLY)
-    return GoalDirectives(shot_count=shot_count, text_to_video_only=marked and not wants_image)
+    return GoalDirectives(
+        shot_count=shot_count,
+        text_to_video_only=marked and not wants_image,
+        shot_seconds=_requested_shot_seconds(text),
+    )
 
 
 _CJK = re.compile(r"[\u4e00-\u9fff]")
@@ -271,4 +303,6 @@ def director_constraints(
         constraints["required_shot_count"] = directives.shot_count
     if directives is not None and directives.text_to_video_only:
         constraints["text_to_video_only"] = True
+    if directives is not None and directives.shot_seconds is not None:
+        constraints["required_shot_seconds"] = directives.shot_seconds
     return constraints

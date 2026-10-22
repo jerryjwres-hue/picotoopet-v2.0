@@ -291,6 +291,15 @@ class CreativeQualityGate:
                 f"The goal requires exactly {count} shots; return exactly {count} shots "
                 f"(you returned {len(plan.shots)}), covering every script beat in order.",
             ))
+        wanted = directives.shot_seconds
+        if wanted is not None:
+            off = [s_.shot_id for s_ in plan.shots if abs(s_.duration_seconds - wanted) > 0.05]
+            if off:
+                problems.append((
+                    "SHOT_DURATION_NOT_AS_REQUESTED",
+                    f"The goal asks for every shot to last exactly {wanted:.1f} seconds; set "
+                    "duration_seconds of " + ", ".join(off) + f" to {wanted:.1f}.",
+                ))
         for shot in plan.shots:
             if shot.render_intent in _VIDEO_INTENTS:
                 try:
@@ -390,6 +399,7 @@ class CreativeQualityGate:
             script=script,
             evidence_ids=set(source_set.evidence_ids),
             required_shot_count=None if directives is None else directives.shot_count,
+            required_shot_seconds=None if directives is None else directives.shot_seconds,
         )
         if any(item.reject for item in findings):
             return CreativeQualityDecision(
