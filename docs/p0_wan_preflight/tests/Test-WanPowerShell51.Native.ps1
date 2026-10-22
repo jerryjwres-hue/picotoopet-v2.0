@@ -74,9 +74,9 @@ $pass = 0
 try {
     function New-Fixture {
         param([string]$Name,[switch]$MissingEncoder,[switch]$MissingVae,[switch]$BadSha)
-        $home = Join-Path $root $Name
-        $modelRoot = Join-Path $home 'models'
-        $comfyRoot = Join-Path $home 'comfy'
+        $caseRoot = Join-Path $root $Name
+        $modelRoot = Join-Path $caseRoot 'models'
+        $comfyRoot = Join-Path $caseRoot 'comfy'
         foreach ($dir in @('diffusion_models','text_encoders','vae')) {
             New-Item -ItemType Directory -Path (Join-Path $modelRoot $dir) -Force | Out-Null
         }
@@ -100,14 +100,14 @@ try {
                 [IO.File]::AppendAllText($path, 'tampered')
             }
         }
-        $manifest = Join-Path $home 'manifest.json'
+        $manifest = Join-Path $caseRoot 'manifest.json'
         @{model_root=$modelRoot;models=$models} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifest -Encoding UTF8
-        return [pscustomobject]@{Home=$home; Manifest=$manifest; Comfy=$comfyRoot}
+        return [pscustomobject]@{Home=$caseRoot; Manifest=$manifest; Comfy=$comfyRoot}
     }
     function Fingerprint {
-        param([string]$Home)
-        return @((Get-ChildItem -LiteralPath $Home -Recurse -Force -File | Sort-Object FullName |
-            ForEach-Object { $_.FullName.Substring($Home.Length) + ':' + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }) -join [Environment]::NewLine)
+        param([string]$caseRoot)
+        return @((Get-ChildItem -LiteralPath $caseRoot -Recurse -Force -File | Sort-Object FullName |
+            ForEach-Object { $_.FullName.Substring($caseRoot.Length) + ':' + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }) -join [Environment]::NewLine)
     }
     function Check {
         param($Report,[string]$Name,[string]$Status)
