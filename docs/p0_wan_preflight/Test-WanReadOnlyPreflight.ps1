@@ -166,10 +166,45 @@ foreach ($promptId in $PromptIds) {
             Add-Check 'PROMPT_HISTORY' 'UNVERIFIED' 'Prompt not present in retained history' $promptId
         }
         else {
-            Add-Check 'PROMPT_HISTORY' 'PASS' 'Read-only bound prompt history; inspect status and outputs before acceptance' ([pscustomobject]@{
+            # ── A history entry alone proves neither successful execution nor output. ──
+            $statusProperty = $entry.PSObject.Properties['status']
+            $statusObject = if ($null -ne $statusProperty) { $statusProperty.Value } else { $null }
+            $statusText = ''
+            $completed = $false
+            if ($null -ne $statusObject) {
+                $textProperty = $statusObject.PSObject.Properties['status_str']
+                $doneProperty = $statusObject.PSObject.Properties['completed']
+                if ($null -ne $textProperty) { $statusText = [string]$textProperty.Value }
+                if ($null -ne $doneProperty) { $completed = ($doneProperty.Value -eq $true) }
+            }
+            # ── Match the existing executor's .webm/type=output history evidence. ──
+            $hasWebm = $false
+            $outputsProperty = $entry.PSObject.Properties['outputs']
+            if ($null -ne $outputsProperty -and $null -ne $outputsProperty.Value) {
+                foreach ($nodeProperty in $outputsProperty.Value.PSObject.Properties) {
+                    if ($null -eq $nodeProperty.Value) { continue }
+                    foreach ($arrayProperty in $nodeProperty.Value.PSObject.Properties) {
+                        foreach ($item in @($arrayProperty.Value)) {
+                            if ($null -eq $item) { continue }
+                            $filenameProperty = $item.PSObject.Properties['filename']
+                            $typeProperty = $item.PSObject.Properties['type']
+                            if ($null -ne $filenameProperty -and $null -ne $typeProperty -and
+                                [string]$filenameProperty.Value -match '\.webm$' -and
+                                [string]$typeProperty.Value -ieq 'output') {
+                                $hasWebm = $true
+                            }
+                        }
+                    }
+                }
+            }
+            $historyStatus = if ($statusText -eq 'error') { 'BLOCKED' }
+                             elseif (-not $completed) { 'UNVERIFIED' }
+                             elseif (-not $hasWebm) { 'BLOCKED' }
+                             else { 'PASS' }
+            Add-Check 'PROMPT_HISTORY' $historyStatus 'PASS requires a completed prompt with output WebM; error or missing WebM blocks' ([pscustomobject]@{
                 PromptId = $promptId
-                Status   = $entry.status
-                Outputs  = $entry.outputs
+                Status   = $statusObject
+                HasWebm  = $hasWebm
             })
         }
     }

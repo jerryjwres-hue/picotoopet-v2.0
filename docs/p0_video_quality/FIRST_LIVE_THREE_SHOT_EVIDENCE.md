@@ -175,3 +175,131 @@
 **首次三镜头完整收件次序（不进行设备操作）：** ①实际部署 SHA/产物摘要与安全准入 → ②Goal/Creative/冻结 Job/Plan/Digest 与 HOLD-first+ALLOW 审核证据 → ③Core 三 Task + 每条所有 attempts 原始只读快照 → ④Windows Journal 和 P0_SHOT_METRIC 原文 → ⑤每次可证实 GPU POST 的 Comfy history 原始 JSON / SHA / 时戳 → ⑥三份 WebM 与 Core package.outputs、文件 SHA、码流实测对应 → ⑦C004 三 source_output_sha256 + MP4/manifest → ⑧如有 C009 master/overlay/voice 来源 → ⑨C010A/C011 原 PASS receipt + 最终 MP4 hash + 首次技术失败记录（若有） → ⑩#105 三 shot 与 final human verdict、审阅人/UTC/timecode、Windows 播放 → ⑪GPU active 设备取证覆盖率、重试次数、分子/分母/UNVERIFIED 状态。
 
 **本次静态审计结论：** 上述数据形状与生产者可定位，但首次真实 Comfy/WebM/QA/人工/GPU 数值仍全部 UNVERIFIED；不得把源码具备字段写作本机实测 PASS。
+
+
+## J. 首次真实三镜头现场取证 SOP（19dcf396）
+
+**仅扩充 A–I 既有单份证据表。** 本次不运行设备，不写 Core/Worker/Comfy/C011，不发起 GPU POST。以下操作仅在另行授权实机运行后执行：原始证据应保存至生产目录之外的私有取证目录，每份记录 UTC、SHA256、对应 Job/Task/prompt_id 与来源。
+
+### J-1. 系统顺序，不等于取证能逐瞬态拍到
+
+Worker 精确 admission/claim → Journal Prepared → Core production_attempts 预留 Running、comfy_prompt_id=NULL → Journal Submitting → Comfy POST /prompt → Journal Submitted+PromptId → Core 绑定同一 attempt 的 prompt_id → GET history、WebM hash、Core commit → Journal Settled。这个次序由 ProductionExecutionService.ExecuteTaskAsync 与 production/attempts.py 确认。外部 GET/文件复制不能确保抓到毫秒级 Prepared/Running/Submitting 每个状态；Core attempt_number 或 attempt_count=2 **不等于**实际 GPU POST 次数。Journal 会覆盖相位和裁剪 Settled，只能代表现存恢复状态。
+
+### J-2. 最短检查点
+
+| 检查点 | 何时必须保存 | STOP 条件 |
+|---|---|---|
+| T0 HOLD-first（Windows GUI/Worker 之前） | 双机实际已部署 SHA，Gate HOLD 与 .armed 的文件原文/哈希，全部旧 pending Journal、Comfy queue/history 基线 | 缺 HOLD/.armed、未获设备许可或未知旧 POST → STOP-POST，不 ALLOW。无 Gate 文件是默认无人值守模式，不等于 HOLD |
+| T1 冻结 Job 仍 HOLD | Core Goal continuation、Job、Plan 原始 JSON/哈希，Mac SQLite production_jobs、三 Task 与**全部 attempts 原始行基线**，三 Journal、Worker 日志、Comfy GET /queue | 不足 3 条 distinct Executable GENERATIVE_VIDEO T2V，Job/规范 Plan Digest 不匹配，或旧提交不明 → STOP-POST |
+| T2 唯一 Job ALLOW 刚生效 | Gate ALLOW 原文/哈希/UTC，立即重取 Core Task/attempt、Journal/queue/Worker 日志 | 只能记录实际 first-seen 状态；不把 Core Running 当已发生 POST |
+| T3 每新发现真实 prompt_id | **立即** GET /history/{id} **原始响应字节**和 /queue，保存 UTC/响应 SHA；同时重取 Core attempt+Task、对应 Journal、日志 | history={} 或 Core 尚未绑定不是 POST 不存在；不以空 history 人工重发 |
+| T4 每个 prompt 终态、失败、超时及任何恢复/重试**之前** | 再保存该 ID 的 history.status/messages/outputs/error 原始字节、/queue、Core 全部 attempts、Journal/Worker 日志，保证失败旧 prompt 也有独立证据 | 未决 prompt、Journal Submitting、history/queue 不一致或是否 POST 不明 → STOP-RETRY，仍允许既有 history-first 对账 |
+| T5 三 Task Commit/Package 出现 | Core 最终 Tasks/attempts、GET /package 原始 JSON、三 WebM 文件哈希/字节/ffprobe 输出及其 history | Plan order/task_id/shot_id → attempt.prompt_id → history.outputs.filename/subfolder/type=output → 原 WebM → package.manifest.outputs[] 的 Task/Shot/prompt/sha/bytes 任一冲突 → STOP-ACCEPT |
+| T6 C004/C009/C011 | C004 MP4+final-video.json 原件 SHA/bytes；可选 master.mp4+master-manifest.json；C010A 已有 final-artifact-receipt.json 与最终选中 MP4 的重新计算 SHA/bytes、首次失败日志 | C004 source_output_sha256[] 按 order 应等于 3 WebM SHA；C009 c004_source_sha256 应等于 C004 MP4；receipt 的 plan/package/c004_manifest/c004_source/artifact_sha256/bytes 不一致，或无 PASS → STOP-ACCEPT |
+| T7 人工审片 | 三份 WebM 精确 SHA 分别绑定 S 项，最终选中 MP4 SHA 绑定 V 项；reviewer/UTC/timecode/实际 GUI Open | 技术 C011 PASS ≠ 人工 ACCEPT，缺审片为 REVIEW，hash 不符 BLOCKED |
+| T8 统计封账 | 每次有证据的真实 POST、失败与重试的 prompt_id/attempt/history、人工 verdict、GPU 时间覆盖率 | 不完整统计只填 UNVERIFIED，不能填 0 或根据最终状态回推首发 |
+
+
+### J-3. 现场最小只读查询（取证副本仅写在私有证据目录）
+
+**Mac Core attempts：** 取真实 Job UUID、已经存在的证据目录、实际 Core DB（默认 `$HOME/Library/Application Support/PicotooPetV2/database/core.db`）。每次 T1/T2/T3/T4/T5 用不同 `PHASE` 重新运行；SQLite 数据源只读，CSV 是当时行投影而非 SQLite 页面原件。裸复制 `core.db` 不包含可能存在的 WAL，不能代替此查询。
+
+```bash
+# ── 由现场填真实 Job/时点/私有证据目录。 ────────────────────
+JOB_ID='REPLACE_REAL_UUID'
+PHASE='T1_HOLD'
+EVIDENCE_DIR='/absolute/private/evidence/directory'
+DB="$HOME/Library/Application Support/PicotooPetV2/database/core.db"
+
+# ── 严格验证 Job 身份，拒绝非私有输出目标。 ──────────────────
+[[ "$JOB_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || exit 2
+[[ "$PHASE" =~ ^[A-Z0-9_]+$ ]] || exit 2
+[ -d "$EVIDENCE_DIR" ] && [ -r "$DB" ] || exit 2
+BASE="$EVIDENCE_DIR/$(date -u +%Y%m%dT%H%M%SZ)-$PHASE"
+date -u +%Y-%m-%dT%H:%M:%SZ > "$BASE.utc.txt"
+
+# ── 从既有 production_* 表只读取完整尝试事实。 ────────────────
+sqlite3 -readonly -header -csv "$DB" \
+  "SELECT production_job_id,plan_digest,status FROM production_jobs WHERE production_job_id='$JOB_ID';" > "$BASE.job.csv"
+sqlite3 -readonly -header -csv "$DB" \
+  "SELECT production_task_id,shot_id,\"order\",status,attempt_count,comfy_prompt_id,output_relpath,output_sha256,output_bytes FROM production_tasks WHERE production_job_id='$JOB_ID' ORDER BY \"order\";" > "$BASE.tasks.csv"
+sqlite3 -readonly -header -csv "$DB" \
+  "SELECT production_attempt_id,production_task_id,attempt_number,comfy_prompt_id,status,started_at,finished_at,failure_code FROM production_attempts WHERE production_job_id='$JOB_ID' ORDER BY production_task_id,attempt_number;" > "$BASE.attempts.csv"
+shasum -a 256 "$BASE".{utc.txt,job.csv,tasks.csv,attempts.csv}
+# ── 部分查询失败 → NEEDS_CAPTURE；不能报告 0 attempts。 ────
+```
+
+上述三次 SELECT 不是单一事务快照，若读到跨表瞬间冲突，重新使用一个 SQLite 只读事务包住三条 SELECT，不要修改业务数据、Checkpoint WAL、Vacuum 或停 Core。
+
+**Windows PowerShell 5.1：** 对真实三 Task 分别在 T1、T3、T4 运行；只保存现存 Journal，不能保证历史相位仍在。第一次 T1 没有 prompt_id 时，只执行前半段；取得**真实** ID 后再 GET history。每次使用新的 UTC 时间戳，禁止覆盖旧副本。
+
+```powershell
+# ── 现场填真实 Task/Job/阶段/私有证据目录。 ─────────────────
+$JobId    = 'REPLACE_REAL_JOB_UUID'
+$TaskId   = 'REPLACE_REAL_TASK_UUID'
+$Phase    = 'T3_FIRST_SEEN'
+$Ev       = 'C:\PrivateEvidence\FirstFilm'
+$Root     = Join-Path $env:LOCALAPPDATA 'PicotooPetV2\MediaWorker\v1'
+$Stamp    = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffffffZ')
+if (-not (Test-Path -LiteralPath $Ev -PathType Container)) { throw 'PRIVATE_EVIDENCE_DIR_MISSING' }
+
+# ── Journal 路径按 SHA256(UTF8(job_id + LF + task_id)) 算。 ──
+$Key      = $JobId + [char]10 + $TaskId
+$Hash     = [Security.Cryptography.SHA256]::Create()
+$Digest   = ([BitConverter]::ToString($Hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Key)))).Replace('-', '').ToLowerInvariant()
+$Source   = Join-Path $Root "$Digest.submission.json"
+$Copy     = Join-Path $Ev "$Stamp-$Phase-$TaskId-journal.json"
+if (Test-Path -LiteralPath $Source -PathType Leaf) {
+    Copy-Item -LiteralPath $Source -Destination $Copy -ErrorAction Stop
+    Get-FileHash -LiteralPath $Copy -Algorithm SHA256
+} else { Write-Output 'JOURNAL_NOT_YET_CREATED_OR_UNVERIFIED' }
+
+# ── 仅在 prompt_id 真实出现后继续；无 POST /prompt。 ────────
+$PromptId = 'REPLACE_REAL_COMFY_PROMPT_ID'
+$Encoded  = [Uri]::EscapeDataString($PromptId)
+$History  = Join-Path $Ev "$Stamp-$Phase-$TaskId-history.json"
+$Queue    = Join-Path $Ev "$Stamp-$Phase-$TaskId-queue.json"
+curl.exe --noproxy '*' --fail --silent --show-error --max-time 10 `
+    --output "$History" "http://127.0.0.1:8188/history/$Encoded"
+if ($LASTEXITCODE -ne 0) { throw 'HISTORY_GET_UNVERIFIED' }
+curl.exe --noproxy '*' --fail --silent --show-error --max-time 10 `
+    --output "$Queue" 'http://127.0.0.1:8188/queue'
+if ($LASTEXITCODE -ne 0) { throw 'QUEUE_GET_UNVERIFIED' }
+Get-FileHash -LiteralPath $History -Algorithm SHA256
+Get-FileHash -LiteralPath $Queue -Algorithm SHA256
+Write-Output "CAPTURED_UTC=$([DateTime]::UtcNow.ToString('o'))"
+# ── HTTP 200 仍需核对根键 == 真 PromptId、status 与 queue。 ──
+```
+
+**注意：** history 为 `{}`、Core 尚未绑定 prompt 或队列仍在执行，不得记为未 POST。遇 Journal 原子替换造成复制错误时只记 UNVERIFIED/重读，不为取证占 GPU/Journal 锁。若 prompt_id 带有文件名禁用字符，只转义证据副本名，不得更改 API 中的原始 ID。原 Windows `media-worker.log` 在 T1/T3/T4 一起保留现存原文及 SHA，日志异步可能丢行。
+
+
+### J-4. 完成阶段的逐层哈希核对与四类成功率
+
+**WebM x3：** 每个 `package.manifest.outputs[i]` 以 `production_task_id + shot_id + order` 匹配冻结 Plan，再核对该任务 Core attempt 的 `comfy_prompt_id`、Comfy 原始 history 的 `outputs` 所含 `filename/subfolder/type=output`，仅在经核实的本机 Comfy output root 下解析 `output_relpath`。对原文件分别执行 PowerShell `Get-FileHash -Algorithm SHA256 -LiteralPath <validated-WebM>`、`(Get-Item -LiteralPath <validated-WebM>).Length`，并以 `ffprobe.exe -v error -show_format -show_streams -of json <validated-WebM>` 保存每份**原始**探测 JSON 与采集 UTC。比对 package 的 `output_sha256/output_bytes/mime_type/width/height/frame_count/fps/workflow_id/seed`；明确分开 **Plan 计划值 / Core 声明值 / ffprobe 观测值**。文件路径越界、hash/bytes 不一致一律 `STOP-ACCEPT`，不要试图修复原 WebM。失败旧 attempt 不要求存在成功文件。
+
+**C004：** `%LOCALAPPDATA%\PicotooPet\FinalVideos\final-{SHA256(UTF8(production_job_id))前32字符}.mp4` 和相同前缀 `.final-video.json`。保存 MP4 的重算 SHA/bytes/ffprobe 和 manifest 文件自身 SHA；`manifest.source_output_sha256[]` 必须按 order 等于三份 WebM SHA，`manifest.final_sha256/final_bytes` 必须匹配 C004 MP4，且 `production_job_id/production_package_id/production_package_digest` 一致。
+
+**C009 可选：** 若选 Master，从 `%LOCALAPPDATA%\PicotooPet\PostProduction\Master\v1` 下准确 Job + Digest 子目录读取 `master.mp4` / `master-manifest.json`；其 `c004_source_sha256` 应是 **C004 MP4 SHA** 而非 WebM SHA。没有选 Master 记 `N/A`，最终视频可以直接选 C004 fallback。
+
+**C010A/C011：** 从既有受管 `final-artifact-receipt.json` 读取 `outcome=PASS`、11 项规定 `passed_check_ids`、`qa_input_digest/receipt_digest/goal_id/production_job_id/production_plan_digest/production_package_digest/c004_manifest_sha256/c004_source_sha256/candidate_kind/artifact_sha256/artifact_bytes/artifact_file_name`。最终**被选中 MP4** 的重算 SHA/bytes 必须等于 receipt 对应字段。receipt 文件的物理 SHA 和内部按规范生成的 `receipt_digest` **不同口径，不应直接比较**。只有 PASS receipt 会永久保存；若此前实际 C011 FAIL，需要失败当时独立取日志/界面证据，**不能由最新 PASS 推断首次 QA 就 PASS**。
+
+**人工：** 精确 WebM SHA 绑定每条 S 项；精确最终 `artifact_sha256` 绑定 V 项与整片 ACCEPT/REJECT、reviewer、UTC、时间码，并记录 GUI 实际播放。C011 `full-decode.v1` 不是人工审片。SHA 一旦变化，原签字不再证明新文件。
+
+| 统计列（不相互替代） | 需要什么证据 | 未满足时 |
+|---|---|---|
+| **首发镜头成功** | 冻结三个槽位各自**首次可证真实 Comfy POST**首份 WebM 的技术结果和人工判定全部已裁定；接受数 / 3 | `UNVERIFIED (coverage=n/3)`。Core `attempt_count=2` 不代表两个 POST |
+| **重试成功** | 首个已证明 GPU POST 失败，随后另一条**独立证明的真实 GPU POST** WebM 被人审接受；同一个 prompt_id 的恢复不算 | 独立 POST 无证据：`UNVERIFIED` |
+| **首发整片成功** | 首代三 WebM 未替换，第一次 C004/C011 技术尝试和第一次完整人工审核就直接 ACCEPT | 早期失败日志/初代媒体/首次审片缺失：`UNVERIFIED`，不拿最终 PASS 回推 |
+| **最终成片成功** | 最终当前被选 MP4 的真实 C011 PASS receipt 和**同 SHA 人工 ACCEPT** | 缺审为 REVIEW，冲突为 BLOCKED，画质否决为 REJECT；即使最终 ACCEPT 也不改变首发列 |
+
+**GPU 时间严格分层**：`production_attempts.finished_at-started_at` 是 Core 预留墙钟，`P0_SHOT_METRIC.wall_ms` 是 Worker 墙钟；Comfy history 同一 prompt 的 `status.messages` 存在有序 `execution_start` 与 `execution_success/error` 时间戳时，差值**仅为 execution_wall_proxy_ms**，时间缺失填 UNVERIFIED。**真实 GPU active_ms** 需要每个 prompt 可归属的设备侧 trace；本候选不保存严格的 GPU active。没有此证据，`GPU_ACTIVE_TIME` 与正式 GPU 分钟/合格视频一律 `UNVERIFIED`，可以单独报告 **Comfy execution-wall proxy** 并列出覆盖 prompt 数 / 实际 POST 数，失败/重试的耗时不能当作 0。GPU active 成本 = 同一 cohort 所有实际尝试（含失败、重试）active_ms 总和 / 60000 / 最终人工 ACCEPT 数；分母 0 或未完成审核 → `UNVERIFIED (N/A denominator)`，不是 0。
+
+### J-5. STOP 条件（严格区分影响范围）
+
+- **STOP-POST**：HOLD/.armed 不存在或不可信、实际部署 SHA/Plan Digest/三 Task 不符、存在旧未知 GPU 提交、用户设备电力/GPU 无单独授权 → **不 ALLOW，也不允许新 GPU POST**。
+- **STOP-RETRY**：Journal `Submitting` / Core Running 但真实 POST 不明、queue 中旧 prompt 未终结、history 不全或冲突 → **不人为重发 GPU**，由既有恢复器 history-first 核对。切回 HOLD 只阻止**未来** POST，**不撤销正在执行的 GPU prompt**。
+- **STOP-ACCEPT**：任一 WebM → Package → C004 → 可选 Master → C011 receipt → 选中 MP4 的身份/hash/bytes 不符，或人工拒绝 → **不签 ACCEPT/不交付**；仅缺人审填 REVIEW，不能把技术 PASS 改称画质 ACCEPT。
+- **STOP-METRIC**：首发/重试历史、不完整三镜头审核或第一轮 QA 证据缺失 → 对应首发/重试指标 **UNVERIFIED**；仅缺 GPU 设备 trace → **GPU active/cost UNVERIFIED**，不因此阻断合法技术 QA 或人工审片。
+
+**本次仍为静态源码与文档交付：真实用户 Mac/Windows、GPU、Comfy history、三 WebM、最终 MP4、人工评分与 GPU active 数据均为 UNVERIFIED。**
