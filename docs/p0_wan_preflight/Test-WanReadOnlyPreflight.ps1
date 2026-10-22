@@ -239,7 +239,23 @@ $smi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
 if ($null -ne $smi) {
     try {
         $gpu = @(& $smi.Source --query-gpu=name,driver_version,memory.total,memory.free,memory.used,utilization.gpu,power.draw --format=csv,noheader,nounits 2>$null)
-        Add-Check 'NVIDIA_GPU_INVENTORY' $(if ($LASTEXITCODE -eq 0) {'PASS'} else {'UNVERIFIED'}) 'Snapshot only; actual Wan peak VRAM and GPU seconds remain unmeasured' $gpu
+        # ── Exit code 0 is insufficient: nvidia-smi may print N/A or empty VRAM fields. ──
+        $validVram = ($gpu.Count -gt 0)
+        foreach ($row in $gpu) {
+            $fields = @(([string]$row).Split(','))
+            if ($fields.Count -ne 7 -or [string]::IsNullOrWhiteSpace($fields[0]) -or
+                $fields[2] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*$' -or
+                $fields[3] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*$' -or
+                $fields[4] -notmatch '^\s*[0-9]+(?:\.[0-9]+)?\s*$') {
+                $validVram = $false
+                break
+            }
+            if ([double]::Parse($fields[2], [Globalization.CultureInfo]::InvariantCulture) -le 0) {
+                $validVram = $false
+                break
+            }
+        }
+        Add-Check 'NVIDIA_GPU_INVENTORY' $(if ($LASTEXITCODE -eq 0 -and $validVram) {'PASS'} else {'UNVERIFIED'}) 'VRAM fields must be numeric; snapshot never proves render capacity or GPU seconds' $gpu
     }
     catch {
         Add-Check 'NVIDIA_GPU_INVENTORY' 'UNVERIFIED' 'nvidia-smi failed' $null
@@ -307,5 +323,5 @@ $unverified = @($checks | Where-Object { $_.Status -eq 'UNVERIFIED' }).Count
     PreflightDisposition = if ($blocked -gt 0) { 'BLOCKED' } elseif ($unverified -gt 0) { 'UNVERIFIED' } else { 'PASS_PASSIVE_ONLY' }
     LiveThreeShotRender  = 'UNVERIFIED'
     GpuBusySeconds       = 'UNVERIFIED'
-    Checks               = @($checks)
+    Checks               = $checks.ToArray()
 } | ConvertTo-Json -Depth 14
