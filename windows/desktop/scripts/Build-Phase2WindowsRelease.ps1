@@ -433,6 +433,35 @@ foreach ($file in $releaseFiles) {
         -Source (Join-Path $desktopRoot "release\$file") `
         -Destination (Join-Path $packageRoot $file)
 }
+if ($ValidationScope -eq "UiPreview") {
+    # Scope-specific operator bootstrap. Never alter the formal Full release package.
+    $prepSource = Join-Path $desktopRoot "scripts\\Prepare-P0ThreeShotHold.ps1"
+    Copy-ReleaseFile -Source $prepSource -Destination (Join-Path $packageRoot "Prepare-P0ThreeShotHold.ps1")
+    $readmePath = Join-Path $packageRoot "README_INSTALL_CN.txt"
+    $generic = [IO.File]::ReadAllText($readmePath, [Text.UTF8Encoding]::new($false))
+    $p0Guide = @'
+P0 #91 严格三镜头开发预览 — 首次安装前必读（不是正式 Release）
+
+【停止】本包安装器会做应用激活健康检查，绝不可先双击 INSTALL_PHASE2_WINDOWS.vbs。
+① 请先确认 Windows 供电安全，当前账户的 GUI/后台 Worker 全部已正常退出；
+   如果旧版本可能开机自启或已经有 GPU Job 运行，不可强杀或盲目安装，先由总控确认恢复方案。
+② 在解压出的同一个目录以将来运行 GUI 的同一个 Windows 账户执行：
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\Prepare-P0ThreeShotHold.ps1
+   仅运行已核验来源和 SHA 的本包脚本。必须看见 P0_HOLD_PREPARED=PASS; ARMED=PASS。
+③ 在同一账户确认 %LOCALAPPDATA%\\PicotooPetV2\\MediaWorker\\v1\\ 下同时存在
+   three-shot-acceptance.json（schema_version=1.0 / mode=hold）和 three-shot-acceptance.json.armed。
+   缺任一项：STOP，不可安装/启动 GUI/Worker。
+④ 然后才能运行 INSTALL_PHASE2_WINDOWS.vbs。UiPreview 安装器会再次核验 HOLD + .armed，
+   缺失则拒绝安装激活。安装器不会替你授权模型推理或 Comfy GPU POST。
+⑤ 保持 HOLD：只读审核 Mac Core 认证、唯一 Production Job、exactly 3 T2V Task、冻结 Plan Digest。
+   仅在另行确认电路/设备安全并得到用户明确 GPU 授权后，才设置对该 Job 的 ALLOW。
+⑥ 结束后回到 HOLD；不要删除 .armed。旧版本回滚是否遵守门禁未知，禁止自动恢复旧版本
+   并启动 Worker，须由总控单独核实。正式 Release 仍受 Maotai 真实资产门禁阻塞。
+
+===== 通用安装说明（仅在上述 P0 安全步骤全部完成后阅读）=====
+'@
+    Write-Utf8NoBom -Path $readmePath -Value ($p0Guide + [Environment]::NewLine + $generic)
+}
 
 Compress-Archive -LiteralPath $packageRoot -DestinationPath $zipPath -CompressionLevel Optimal
 $zipSha = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()

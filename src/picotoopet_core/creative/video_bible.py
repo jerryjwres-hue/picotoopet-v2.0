@@ -47,7 +47,7 @@ class CameraMovement(StrEnum):
 
 
 CAMERA_PHRASE = {
-    CameraMovement.STATIC: "static camera",
+    CameraMovement.STATIC: "locked-off tripod camera, no camera movement",
     CameraMovement.SLOW_PUSH_IN: "slow push-in",
     CameraMovement.SLOW_PULL_OUT: "slow pull-out",
     CameraMovement.PAN_LEFT: "slow pan left",
@@ -290,6 +290,8 @@ def evaluate_video_bible(
     brief: CreativeBriefResult,
     script: CreativeScriptResult,
     evidence_ids: set[str],
+    required_shot_count: int | None = None,
+    required_shot_seconds: float | None = None,
 ) -> list[BibleFinding]:
     findings: list[BibleFinding] = []
 
@@ -356,6 +358,22 @@ def evaluate_video_bible(
             "TIMELINE_MISMATCH",
             detail=f"shots total {total:g}s vs script {script.target_duration_seconds:g}s",
         )
+    if required_shot_seconds is not None:
+        off = [item.shot_id for item in shots
+               if abs(item.duration_seconds - required_shot_seconds) > 0.05]
+        if off:
+            add(
+                "SHOT_DURATION_NOT_AS_REQUESTED",
+                detail=f"every shot must last exactly {required_shot_seconds:.1f} s: "
+                + ", ".join(off),
+            )
+    if required_shot_count is not None and len(shots) != required_shot_count:
+        add(
+            "SHOT_COUNT_MISMATCH",
+            detail=f"the goal requires exactly {required_shot_count} shots, got {len(shots)}",
+        )
+    if required_shot_count is not None and required_shot_count >= 2:
+        _multi_shot_findings(draft, add)
     if not any(Featured.PRODUCT in item.featured for item in shots):
         add("PRODUCT_NEVER_FEATURED", detail="at least one shot must feature the product")
 
@@ -394,6 +412,44 @@ def evaluate_video_bible(
         if estimate > PROMPT_BUDGET_CHARS:
             add("PROMPT_TOO_LONG", sid, "shorten identity, scene and action phrases")
     return findings
+
+
+def _multi_shot_findings(draft: VideoBibleDraft, add) -> None:  # type: ignore[no-untyped-def]
+    """Cross-shot identity and prompt hygiene for an explicit multi-shot Goal."""
+
+    from .director import near_duplicate_actions, negative_conflicts, normalized_keys
+
+    meaningful = normalized_keys([*draft.continuity_anchors, *draft.global_continuity_notes])
+    if len(meaningful) < 2:
+        add(
+            "CONTINUITY_ANCHORS_TOO_FEW",
+            detail="give at least 2 distinct identity/scene anchors; they are repeated in every "
+            "shot",
+        )
+    pair = near_duplicate_actions([item.visible_action for item in draft.shots])
+    if pair is not None:
+        first, second = draft.shots[pair[0]], draft.shots[pair[1]]
+        add(
+            "SHOT_ACTIONS_NOT_DISTINCT",
+            first.shot_id,
+            f"{first.shot_id} and {second.shot_id} describe the same action",
+        )
+    texts = [
+        draft.subject.identity_phrase, draft.product.identity_phrase,
+        *draft.continuity_anchors, *draft.global_continuity_notes,
+        *(item.environment_phrase for item in draft.scenes),
+        *(item.lighting_phrase for item in draft.scenes),
+        *(item.visible_action for item in draft.shots),
+        *(item.opening_state for item in draft.shots),
+        *(item.closing_state for item in draft.shots),
+        *(item.camera_framing for item in draft.shots),
+    ]
+    clashing = negative_conflicts(texts)
+    if clashing:
+        add(
+            "PROMPT_CONTRADICTS_NEGATIVE",
+            detail="avoid these words, the sampler is told to avoid them: " + ", ".join(clashing),
+        )
 
 
 def correction_for(findings: list[BibleFinding]) -> str:

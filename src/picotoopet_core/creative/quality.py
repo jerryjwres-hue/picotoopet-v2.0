@@ -9,10 +9,19 @@ from pydantic import BaseModel, ValidationError
 
 from picotoopet_core.production.profile import (
     DEFAULT_FPS,
+    TIMELINE_TOLERANCE_SECONDS,
     VIDEO_OUTPUT_PROFILES,
     frame_count_for_duration,
 )
 
+from .director import (
+    MAX_SHOT_SECONDS,
+    GoalDirectives,
+    near_duplicate_actions,
+    negative_conflicts,
+    normalized_keys,
+    parse_goal_directives,
+)
 from .models import (
     CreativeBriefResult,
     CreativeQualityDecision,
@@ -26,11 +35,17 @@ from .models import (
 from .profiles import CreativeProfileDefinition
 from .source import NormalizedCreativeSourceSet
 from .video_bible import (
+    MIN_SHOT_SECONDS,
     VideoBible,
     VideoBibleDraft,
     correction_for,
     evaluate_video_bible,
     seal_bible,
+)
+
+# Intents that become a Wan video, so only they are held to the renderer duration limits.
+_VIDEO_INTENTS = frozenset(
+    {CreativeRenderIntent.GENERATIVE_VIDEO, CreativeRenderIntent.IMAGE_TO_VIDEO}
 )
 
 
@@ -51,7 +66,9 @@ class CreativeQualityGate:
         source_set: NormalizedCreativeSourceSet,
         previous_stages: dict[str, dict[str, Any]],
         raw_result: dict[str, Any],
+        objective: str | None = None,
     ) -> tuple[CreativeQualityDecision, BaseModel | None]:
+        directives = parse_goal_directives(objective)
         model = self._MODELS[stage_kind]
         try:
             parsed = model.model_validate(raw_result)
@@ -122,9 +139,17 @@ class CreativeQualityGate:
                 for beat in parsed.beats
             ):
                 pass
+            if directives.shot_count is not None:
+                bounds = self._script_shot_count_problems(parsed, directives.shot_count)
+                if bounds:
+                    return CreativeQualityDecision(
+                        outcome=CreativeQualityOutcome.RETRY,
+                        reasons=[code for code, _ in bounds],
+                        correction_instruction=" ".join(text for _, text in bounds)[:2000],
+                    ), None
         elif stage_kind is CreativeStageKind.VIDEO_BIBLE:
             assert isinstance(parsed, VideoBibleDraft)
-            return self._evaluate_video_bible(parsed, source_set, previous_stages)
+            return self._evaluate_video_bible(parsed, source_set, previous_stages, directives)
         elif stage_kind is CreativeStageKind.SHOT_PLAN:
             assert isinstance(parsed, ShotPlanResult)
             script_raw = previous_stages.get(CreativeStageKind.SCRIPT.value)
@@ -134,14 +159,21 @@ class CreativeQualityGate:
                 ), None
             script_beats = {item["beat_id"] for item in script_raw.get("beats", [])}
             shot_beats = {item.beat_id for item in parsed.shots}
+            # Structural defects join the other repairs below: the stage only gets one
+            # retry, so every defect found now must be reported in that single correction.
+            structural: list[tuple[str, str]] = []
             if not shot_beats <= script_beats:
-                return self._retry(
-                    "UNKNOWN_SCRIPT_BEAT", "Use only validated script beat IDs."
-                ), None
+                structural.append((
+                    "UNKNOWN_SCRIPT_BEAT",
+                    "Use only validated script beat IDs (unknown: "
+                    + ", ".join(sorted(shot_beats - script_beats)) + ").",
+                ))
             if script_beats - shot_beats:
-                return self._retry(
-                    "SCRIPT_BEAT_NOT_COVERED", "Cover every validated script beat."
-                ), None
+                structural.append((
+                    "SCRIPT_BEAT_NOT_COVERED",
+                    "Cover every validated script beat (missing: "
+                    + ", ".join(sorted(script_beats - shot_beats)) + ").",
+                ))
             # Early renderer-feasibility screen for video shots. Same frozen
             # 4n+1 frame rule and profile as the actual Production compiler.
             # Older validated packages keep their immutable persisted plans.
@@ -156,21 +188,23 @@ class CreativeQualityGate:
                         "Use the previously validated creative brief and output profile.",
                     ), None
                 fps = VIDEO_OUTPUT_PROFILES[brief.output_profile_id].fps
-            for shot in parsed.shots:
-                if shot.render_intent in {
-                    CreativeRenderIntent.GENERATIVE_VIDEO,
-                    CreativeRenderIntent.IMAGE_TO_VIDEO,
-                }:
-                    try:
-                        frame_count_for_duration(shot.duration_seconds, fps)
-                    except ValueError:
-                        return self._retry(
-                            "CREATIVE_SHOT_DURATION_UNRENDERABLE",
-                            "The Wan video renderer cannot produce this shot duration "
-                            f"for shot {shot.shot_id}. Split the beat into shorter "
-                            "ordered shots with the same approved beat and evidence IDs; "
-                            "preserve the script's target duration and factual claims.",
-                        ), None
+            problems = [
+                *structural,
+                *self._shot_plan_problems(parsed, script_raw, directives, fps=fps),
+            ]
+            used = {evidence for shot in parsed.shots for evidence in shot.source_evidence_ids}
+            if not used <= evidence_ids:
+                problems.append((
+                    "UNKNOWN_SOURCE_EVIDENCE_ID",
+                    "Use only supplied evidence IDs (unknown: "
+                    + ", ".join(sorted(used - evidence_ids)) + ").",
+                ))
+            if problems:
+                return CreativeQualityDecision(
+                    outcome=CreativeQualityOutcome.RETRY,
+                    reasons=[code for code, _ in problems],
+                    correction_instruction=" ".join(text for _, text in problems)[:2000],
+                ), None
             bible_raw = previous_stages.get(CreativeStageKind.VIDEO_BIBLE.value)
             if bible_raw is not None:
                 try:
@@ -190,19 +224,161 @@ class CreativeQualityGate:
                         "SHOT_PLAN_BIBLE_MISMATCH",
                         "Shot ids, beats, order and durations must equal the video bible.",
                     ), None
-            used = {evidence for shot in parsed.shots for evidence in shot.source_evidence_ids}
-            if not used <= evidence_ids:
-                return self._retry(
-                    "UNKNOWN_SOURCE_EVIDENCE_ID", "Use only supplied evidence IDs."
-                ), None
 
         return CreativeQualityDecision(outcome=CreativeQualityOutcome.PASS), parsed
+
+    @staticmethod
+    def _script_shot_count_problems(
+        script: CreativeScriptResult, count: int
+    ) -> list[tuple[str, str]]:
+        """A Goal that asks for exactly N shots bounds the script before any shot exists."""
+
+        ceiling = count * MAX_SHOT_SECONDS
+        floor = count * MIN_SHOT_SECONDS
+        problems: list[tuple[str, str]] = []
+        if len(script.beats) > count:
+            problems.append((
+                "SCRIPT_BEATS_EXCEED_SHOT_COUNT",
+                f"The goal requires exactly {count} shots, so use at most {count} script "
+                f"beats (each beat needs at least one shot); you returned {len(script.beats)}.",
+            ))
+        if script.target_duration_seconds > ceiling:
+            problems.append((
+                "SCRIPT_TOO_LONG_FOR_SHOT_COUNT",
+                f"The goal requires exactly {count} shots and one shot can last at most "
+                f"{MAX_SHOT_SECONDS:.1f} seconds: set target_duration_seconds to at most "
+                f"{ceiling:.1f} seconds and size the beat durations to add up to it.",
+            ))
+        elif script.target_duration_seconds < floor:
+            problems.append((
+                "SCRIPT_TOO_SHORT_FOR_SHOT_COUNT",
+                f"The goal requires exactly {count} shots of at least {MIN_SHOT_SECONDS:.1f} "
+                f"seconds each: set target_duration_seconds to at least {floor:.1f} seconds.",
+            ))
+        return problems
+
+    @staticmethod
+    def _shot_plan_problems(
+        plan: ShotPlanResult,
+        script_raw: dict[str, Any],
+        directives: GoalDirectives,
+        *,
+        fps: int,
+    ) -> list[tuple[str, str]]:
+        """Every defect Production would otherwise hit later, reported in one repair."""
+
+        problems: list[tuple[str, str]] = []
+        count = directives.shot_count
+        if directives.text_to_video_only:
+            offender = next(
+                (
+                    shot for shot in plan.shots
+                    if shot.render_intent is not CreativeRenderIntent.GENERATIVE_VIDEO
+                ),
+                None,
+            )
+            if offender is not None:
+                problems.append((
+                    "RENDER_INTENT_NOT_TEXT_TO_VIDEO",
+                    f"Shot {offender.shot_id} uses render_intent {offender.render_intent.value}, "
+                    "but the goal is text-to-video only with no reference image or text card: "
+                    "use GENERATIVE_VIDEO for every shot and put any text in the script's "
+                    "on_screen_text.",
+                ))
+        if count is not None and len(plan.shots) != count:
+            problems.append((
+                "SHOT_COUNT_MISMATCH",
+                f"The goal requires exactly {count} shots; return exactly {count} shots "
+                f"(you returned {len(plan.shots)}), covering every script beat in order.",
+            ))
+        wanted = directives.shot_seconds
+        if wanted is not None:
+            off = [s_.shot_id for s_ in plan.shots if abs(s_.duration_seconds - wanted) > 0.05]
+            if off:
+                problems.append((
+                    "SHOT_DURATION_NOT_AS_REQUESTED",
+                    f"The goal asks for every shot to last exactly {wanted:.1f} seconds; set "
+                    "duration_seconds of " + ", ".join(off) + f" to {wanted:.1f}.",
+                ))
+        for shot in plan.shots:
+            if shot.render_intent in _VIDEO_INTENTS:
+                try:
+                    frame_count_for_duration(shot.duration_seconds, fps)
+                except ValueError:
+                    if count is not None:
+                        text = (
+                            f"Shot {shot.shot_id} cannot be rendered at "
+                            f"{shot.duration_seconds:g} seconds (maximum "
+                            f"{MAX_SHOT_SECONDS:.1f}). Keep exactly {count} shots and give "
+                            f"every shot between {MIN_SHOT_SECONDS:.1f} and "
+                            f"{MAX_SHOT_SECONDS:.1f} seconds; do not add shots."
+                        )
+                    else:
+                        text = (
+                            "The Wan video renderer cannot produce this shot duration "
+                            f"for shot {shot.shot_id}. Split the beat into shorter "
+                            "ordered shots with the same approved beat and evidence IDs; "
+                            "preserve the script's target duration and factual claims."
+                        )
+                    problems.append(("CREATIVE_SHOT_DURATION_UNRENDERABLE", text))
+                    break
+        if len(plan.shots) >= 2 and (count is not None or directives.text_to_video_only):
+            problems.extend(CreativeQualityGate._multi_shot_problems(plan))
+        try:
+            target = float(script_raw["target_duration_seconds"])
+        except (KeyError, TypeError, ValueError):
+            target = None
+        total = sum(shot.duration_seconds for shot in plan.shots)
+        if target is not None and abs(total - target) > TIMELINE_TOLERANCE_SECONDS:
+            problems.append((
+                "SHOT_TIMELINE_MISMATCH",
+                f"Shot durations add up to {total:g} seconds but the script target is "
+                f"{target:g}; make them agree (within {TIMELINE_TOLERANCE_SECONDS:g} seconds, "
+                "ideally equal) without changing the approved beats.",
+            ))
+        return problems
+
+    @staticmethod
+    def _multi_shot_problems(plan: ShotPlanResult) -> list[tuple[str, str]]:
+        """Each shot becomes its own Wan prompt, so identity must be repeated, not implied."""
+
+        problems: list[tuple[str, str]] = []
+        shared = set.intersection(*(normalized_keys(s.continuity_keys) for s in plan.shots))
+        if len(shared) < 2:
+            problems.append((
+                "SHOT_IDENTITY_ANCHORS_MISSING",
+                "Every shot is rendered separately with no memory of the others. Repeat the "
+                "same 2 to 5 anchors word for word in continuity_keys of EVERY shot: pet breed "
+                "+ coat + accessory, product colour + shape + material, place, light "
+                f"(shared by all shots now: {len(shared)}).",
+            ))
+        pair = near_duplicate_actions([shot.action for shot in plan.shots])
+        if pair is not None:
+            first, other = plan.shots[pair[0]], plan.shots[pair[1]]
+            problems.append((
+                "SHOT_ACTIONS_NOT_DISTINCT",
+                f"Shots {first.shot_id} and {other.shot_id} describe the same action. Give "
+                "each shot one different visible action (hook, demo, payoff).",
+            ))
+        clashing = negative_conflicts([
+            text for shot in plan.shots
+            for text in (shot.subject, shot.environment, shot.action, shot.framing,
+                         shot.lighting_style, *shot.continuity_keys, *shot.required_facts)
+        ])
+        if clashing:
+            problems.append((
+                "PROMPT_CONTRADICTS_NEGATIVE",
+                "The renderer is told to avoid these words, so do not use them in any shot "
+                "field: " + ", ".join(clashing) + ".",
+            ))
+        return problems
 
     def _evaluate_video_bible(
         self,
         draft: VideoBibleDraft,
         source_set: NormalizedCreativeSourceSet,
         previous_stages: dict[str, dict[str, Any]],
+        directives: GoalDirectives | None = None,
     ) -> tuple[CreativeQualityDecision, BaseModel | None]:
         brief_raw = previous_stages.get(CreativeStageKind.CREATIVE_BRIEF.value)
         script_raw = previous_stages.get(CreativeStageKind.SCRIPT.value)
@@ -218,7 +394,12 @@ class CreativeQualityGate:
                 "PRIOR_STAGE_INVALID", "Use the previously validated brief and script."
             ), None
         findings = evaluate_video_bible(
-            draft, brief=brief, script=script, evidence_ids=set(source_set.evidence_ids)
+            draft,
+            brief=brief,
+            script=script,
+            evidence_ids=set(source_set.evidence_ids),
+            required_shot_count=None if directives is None else directives.shot_count,
+            required_shot_seconds=None if directives is None else directives.shot_seconds,
         )
         if any(item.reject for item in findings):
             return CreativeQualityDecision(
