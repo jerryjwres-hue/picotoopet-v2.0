@@ -198,3 +198,77 @@ Worker 精确 admission/claim → Journal Prepared → Core production_attempts 
 | T6 C004/C009/C011 | C004 MP4+final-video.json 原件 SHA/bytes；可选 master.mp4+master-manifest.json；C010A 已有 final-artifact-receipt.json 与最终选中 MP4 的重新计算 SHA/bytes、首次失败日志 | C004 source_output_sha256[] 按 order 应等于 3 WebM SHA；C009 c004_source_sha256 应等于 C004 MP4；receipt 的 plan/package/c004_manifest/c004_source/artifact_sha256/bytes 不一致，或无 PASS → STOP-ACCEPT |
 | T7 人工审片 | 三份 WebM 精确 SHA 分别绑定 S 项，最终选中 MP4 SHA 绑定 V 项；reviewer/UTC/timecode/实际 GUI Open | 技术 C011 PASS ≠ 人工 ACCEPT，缺审片为 REVIEW，hash 不符 BLOCKED |
 | T8 统计封账 | 每次有证据的真实 POST、失败与重试的 prompt_id/attempt/history、人工 verdict、GPU 时间覆盖率 | 不完整统计只填 UNVERIFIED，不能填 0 或根据最终状态回推首发 |
+
+
+### J-3. 现场最小只读查询（取证副本仅写在私有证据目录）
+
+**Mac Core attempts：** 取真实 Job UUID、已经存在的证据目录、实际 Core DB（默认 `$HOME/Library/Application Support/PicotooPetV2/database/core.db`）。每次 T1/T2/T3/T4/T5 用不同 `PHASE` 重新运行；SQLite 数据源只读，CSV 是当时行投影而非 SQLite 页面原件。裸复制 `core.db` 不包含可能存在的 WAL，不能代替此查询。
+
+```bash
+# ── 由现场填真实 Job/时点/私有证据目录。 ────────────────────
+JOB_ID='REPLACE_REAL_UUID'
+PHASE='T1_HOLD'
+EVIDENCE_DIR='/absolute/private/evidence/directory'
+DB="$HOME/Library/Application Support/PicotooPetV2/database/core.db"
+
+# ── 严格验证 Job 身份，拒绝非私有输出目标。 ──────────────────
+[[ "$JOB_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || exit 2
+[[ "$PHASE" =~ ^[A-Z0-9_]+$ ]] || exit 2
+[ -d "$EVIDENCE_DIR" ] && [ -r "$DB" ] || exit 2
+BASE="$EVIDENCE_DIR/$(date -u +%Y%m%dT%H%M%SZ)-$PHASE"
+date -u +%Y-%m-%dT%H:%M:%SZ > "$BASE.utc.txt"
+
+# ── 从既有 production_* 表只读取完整尝试事实。 ────────────────
+sqlite3 -readonly -header -csv "$DB" \
+  "SELECT production_job_id,plan_digest,status FROM production_jobs WHERE production_job_id='$JOB_ID';" > "$BASE.job.csv"
+sqlite3 -readonly -header -csv "$DB" \
+  "SELECT production_task_id,shot_id,\"order\",status,attempt_count,comfy_prompt_id,output_relpath,output_sha256,output_bytes FROM production_tasks WHERE production_job_id='$JOB_ID' ORDER BY \"order\";" > "$BASE.tasks.csv"
+sqlite3 -readonly -header -csv "$DB" \
+  "SELECT production_attempt_id,production_task_id,attempt_number,comfy_prompt_id,status,started_at,finished_at,failure_code FROM production_attempts WHERE production_job_id='$JOB_ID' ORDER BY production_task_id,attempt_number;" > "$BASE.attempts.csv"
+shasum -a 256 "$BASE".{utc.txt,job.csv,tasks.csv,attempts.csv}
+# ── 部分查询失败 → NEEDS_CAPTURE；不能报告 0 attempts。 ────
+```
+
+上述三次 SELECT 不是单一事务快照，若读到跨表瞬间冲突，重新使用一个 SQLite 只读事务包住三条 SELECT，不要修改业务数据、Checkpoint WAL、Vacuum 或停 Core。
+
+**Windows PowerShell 5.1：** 对真实三 Task 分别在 T1、T3、T4 运行；只保存现存 Journal，不能保证历史相位仍在。第一次 T1 没有 prompt_id 时，只执行前半段；取得**真实** ID 后再 GET history。每次使用新的 UTC 时间戳，禁止覆盖旧副本。
+
+```powershell
+# ── 现场填真实 Task/Job/阶段/私有证据目录。 ─────────────────
+$JobId    = 'REPLACE_REAL_JOB_UUID'
+$TaskId   = 'REPLACE_REAL_TASK_UUID'
+$Phase    = 'T3_FIRST_SEEN'
+$Ev       = 'C:\PrivateEvidence\FirstFilm'
+$Root     = Join-Path $env:LOCALAPPDATA 'PicotooPetV2\MediaWorker\v1'
+$Stamp    = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffffffZ')
+if (-not (Test-Path -LiteralPath $Ev -PathType Container)) { throw 'PRIVATE_EVIDENCE_DIR_MISSING' }
+
+# ── Journal 路径按 SHA256(UTF8(job_id + LF + task_id)) 算。 ──
+$Key      = $JobId + [char]10 + $TaskId
+$Hash     = [Security.Cryptography.SHA256]::Create()
+$Digest   = ([BitConverter]::ToString($Hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Key)))).Replace('-', '').ToLowerInvariant()
+$Source   = Join-Path $Root "$Digest.submission.json"
+$Copy     = Join-Path $Ev "$Stamp-$Phase-$TaskId-journal.json"
+if (Test-Path -LiteralPath $Source -PathType Leaf) {
+    Copy-Item -LiteralPath $Source -Destination $Copy -ErrorAction Stop
+    Get-FileHash -LiteralPath $Copy -Algorithm SHA256
+} else { Write-Output 'JOURNAL_NOT_YET_CREATED_OR_UNVERIFIED' }
+
+# ── 仅在 prompt_id 真实出现后继续；无 POST /prompt。 ────────
+$PromptId = 'REPLACE_REAL_COMFY_PROMPT_ID'
+$Encoded  = [Uri]::EscapeDataString($PromptId)
+$History  = Join-Path $Ev "$Stamp-$Phase-$TaskId-history.json"
+$Queue    = Join-Path $Ev "$Stamp-$Phase-$TaskId-queue.json"
+curl.exe --noproxy '*' --fail --silent --show-error --max-time 10 `
+    --output "$History" "http://127.0.0.1:8188/history/$Encoded"
+if ($LASTEXITCODE -ne 0) { throw 'HISTORY_GET_UNVERIFIED' }
+curl.exe --noproxy '*' --fail --silent --show-error --max-time 10 `
+    --output "$Queue" 'http://127.0.0.1:8188/queue'
+if ($LASTEXITCODE -ne 0) { throw 'QUEUE_GET_UNVERIFIED' }
+Get-FileHash -LiteralPath $History -Algorithm SHA256
+Get-FileHash -LiteralPath $Queue -Algorithm SHA256
+Write-Output "CAPTURED_UTC=$([DateTime]::UtcNow.ToString('o'))"
+# ── HTTP 200 仍需核对根键 == 真 PromptId、status 与 queue。 ──
+```
+
+**注意：** history 为 `{}`、Core 尚未绑定 prompt 或队列仍在执行，不得记为未 POST。遇 Journal 原子替换造成复制错误时只记 UNVERIFIED/重读，不为取证占 GPU/Journal 锁。若 prompt_id 带有文件名禁用字符，只转义证据副本名，不得更改 API 中的原始 ID。原 Windows `media-worker.log` 在 T1/T3/T4 一起保留现存原文及 SHA，日志异步可能丢行。
