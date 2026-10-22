@@ -208,69 +208,8 @@ try {
                         $body = '{"known-prompt-id":{"status":{"completed":true},"outputs":{}}}'
                         break
                     }
-                    '^/history/known-prompt-id
-                    default { $status = 404 }
-                }
-                $bytes = [Text.Encoding]::UTF8.GetBytes($body)
-                $context.Response.StatusCode = $status
-                $context.Response.ContentType = 'application/json'
-                $context.Response.ContentLength64 = $bytes.Length
-                $context.Response.OutputStream.Write($bytes,0,$bytes.Length)
-                $context.Response.Close()
-            }
-        }
-        finally { $listener.Stop(); $listener.Close() }
-    }
-    # Explicitly wait for local test fixture readiness, not a user service.
-    $ready = $false
-    for ($i=0;$i -lt 40;$i++) {
-        if ($server.State -eq 'Failed') { throw "Mock server failed: $(Receive-Job $server)" }
-        try {
-            $null = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:8188/queue' -TimeoutSec 1
-            $ready = $true
-            break
-        } catch { Start-Sleep -Milliseconds 250 }
-    }
-    if (-not $ready) { throw "GET-only mock listener could not bind to 8188: $(Receive-Job $server -Keep)" }
-
-    Run-Case 'healthy_mock' 'baseline' 'PASS_PASSIVE_ONLY' @{
-        COMFY_SYSTEM_STATS='PASS'; T2V_NATIVE_NODES='PASS'; COMFY_CHOICE_UNETLoader='PASS';
-        COMFY_CHOICE_CLIPLoader='PASS'; COMFY_CHOICE_VAELoader='PASS'; GPU_QUEUE_IDLE='PASS';
-        COMFY_RECENT_HISTORY='PASS'; T2V_MODEL_HASH='PASS'; NVIDIA_GPU_INVENTORY='PASS';
-        FFMPEG_LIBX264='PASS'; FFPROBE_FOUND='PASS'; PROMPT_HISTORY='PASS'
-    } -ExistingHistory
-    Run-Case 'missing_savewebm' 'missing_savewebm' 'BLOCKED' @{
-        T2V_NATIVE_NODES='BLOCKED'; COMFY_ENUM_SaveWEBM_codec='BLOCKED'
-    }
-    Run-Case 'wrong_dropdown' 'wrong_dropdown' 'BLOCKED' @{
-        T2V_NATIVE_NODES='PASS'; COMFY_CHOICE_UNETLoader='BLOCKED'
-    }
-    Run-Case 'missing_vae' 'baseline' 'BLOCKED' @{T2V_MODEL_HASH='BLOCKED'} -MissingVae
-    Run-Case 'missing_encoder' 'baseline' 'BLOCKED' @{T2V_MODEL_HASH='BLOCKED'} -MissingEncoder
-    Run-Case 'mismatched_sha' 'baseline' 'BLOCKED' @{T2V_MODEL_HASH='BLOCKED'} -BadSha
-    Run-Case 'no_libx264' 'ffmpeg_missing' 'BLOCKED' @{
-        FFMPEG_LIBX264='BLOCKED'; FFPROBE_FOUND='BLOCKED'; NVIDIA_GPU_INVENTORY='PASS'
-    }
-    Run-Case 'unknown_vram' 'gpu_missing' 'UNVERIFIED' @{
-        NVIDIA_GPU_INVENTORY='UNVERIFIED'; FFMPEG_LIBX264='PASS'; GPU_QUEUE_IDLE='PASS'
-    }
-    Run-Case 'invalid_vram_payload' 'bad_vram' 'UNVERIFIED' @{
-        NVIDIA_GPU_INVENTORY='UNVERIFIED'; FFMPEG_LIBX264='PASS'; GPU_QUEUE_IDLE='PASS'
-    }
-    # ── Confirm a known errored prompt and a WebM-less completion cannot imply GPU readiness. ──
-    Run-Case 'history_error' 'history_error' 'BLOCKED' @{
-        PROMPT_HISTORY='BLOCKED'; GPU_QUEUE_IDLE='PASS'
-    } -ExistingHistory
-    Run-Case 'history_no_webm' 'history_no_webm' 'BLOCKED' @{
-        PROMPT_HISTORY='BLOCKED'; GPU_QUEUE_IDLE='PASS'
-    } -ExistingHistory
-    Write-Host "WAN_PS51_RESULT=PASS cases=$pass/12 WindowsPowerShell=$($PSVersionTable.PSVersion)"
-}
-finally {
-    if ($null -ne $server) { Stop-Job $server -ErrorAction SilentlyContinue; Remove-Job $server -Force -ErrorAction SilentlyContinue }
-}
- {
-                        # ── Three terminal cases: actual saved WebM, error, and empty output. ──
+                    '^/history/known-prompt-id$' {
+                        # ── Simulate a valid saved WebM and two terminal failure cases. ──
                         $body = '{"known-prompt-id":{"status":{"completed":true,"status_str":"success"},"outputs":{"10":{"gifs":[{"filename":"known_00001.webm","subfolder":"","type":"output"}]}}}}'
                         if ($mode -eq 'history_error') {
                             $body = '{"known-prompt-id":{"status":{"completed":false,"status_str":"error"},"outputs":{}}}'
@@ -328,7 +267,14 @@ finally {
     Run-Case 'invalid_vram_payload' 'bad_vram' 'UNVERIFIED' @{
         NVIDIA_GPU_INVENTORY='UNVERIFIED'; FFMPEG_LIBX264='PASS'; GPU_QUEUE_IDLE='PASS'
     }
-    Write-Host "WAN_PS51_RESULT=PASS cases=$pass/10 WindowsPowerShell=$($PSVersionTable.PSVersion)"
+    # ── Known prior prompt failure or missing WebM must not be a false PASS. ──
+    Run-Case 'history_error' 'history_error' 'BLOCKED' @{
+        PROMPT_HISTORY='BLOCKED'; GPU_QUEUE_IDLE='PASS'
+    } -ExistingHistory
+    Run-Case 'history_no_webm' 'history_no_webm' 'BLOCKED' @{
+        PROMPT_HISTORY='BLOCKED'; GPU_QUEUE_IDLE='PASS'
+    } -ExistingHistory
+    Write-Host "WAN_PS51_RESULT=PASS cases=$pass/12 WindowsPowerShell=$($PSVersionTable.PSVersion)"
 }
 finally {
     if ($null -ne $server) { Stop-Job $server -ErrorAction SilentlyContinue; Remove-Job $server -Force -ErrorAction SilentlyContinue }
