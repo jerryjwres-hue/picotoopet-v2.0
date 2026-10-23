@@ -6,6 +6,7 @@ on:
       - feature/windows-ui-interaction-polish-2.3.27.1
       - feature/autonomous-intelligence-e2e-goal-center-2.3.27.1
       - integration/p0-three-shot-gate-creative-candidate-v1
+      - fix/p0-91-diagnostics-null-owner-crash-20261022
     paths:
       - ".github/workflows/windows-ui-preview-release.yml"
       - ".github/workflows/windows-control-center-ci.yml"
@@ -91,7 +92,7 @@ jobs:
 
       # Only the strict three-shot candidate needs admission before any published WPF process.
       - name: P0 strict preview prelaunch HOLD and 28 independent no-GPU cases
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1'
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022'
         shell: pwsh
         run: |
           $gate = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
@@ -126,7 +127,7 @@ jobs:
             -ValidationScope UiPreview
 
       - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1'
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022'
         shell: pwsh
         run: |
           $zips = @(Get-ChildItem 'windows/desktop/artifacts/release' -Filter 'PicotooPet-Phase2-Windows-Prebuilt-*.zip' -File)
@@ -157,7 +158,7 @@ jobs:
             -ReleaseRoot windows/desktop/artifacts/release
 
       - name: P0 launch actual published GUI and unique same-EXE Worker under HOLD
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1'
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022'
         shell: pwsh
         run: |
           if ($env:GITHUB_ACTIONS -ne 'true') { throw 'P0_CI_ONLY' }
@@ -207,7 +208,7 @@ jobs:
             [System.Text.UTF8Encoding]::new($false))
 
       - name: P0 preview package source and published EXE hash evidence
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1'
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022'
         shell: pwsh
         run: |
           $root = 'windows/desktop/artifacts/release'
