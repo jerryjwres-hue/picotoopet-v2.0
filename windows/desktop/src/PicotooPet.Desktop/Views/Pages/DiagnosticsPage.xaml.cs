@@ -50,11 +50,21 @@ public partial class DiagnosticsPage : System.Windows.Controls.UserControl
         }
     }
 
-    private void ShowSafeError() =>
+    private void ShowSafeError()
+    {
+        // An asynchronous refresh can finish after navigation detaches the page.
+        // MessageBox.Show(owner, ...) throws ArgumentNullException for a null owner.
+        var owner = Window.GetWindow(this);
+        if (owner is null)
+        {
+            return;
+        }
+
         MessageBox.Show(
-            Window.GetWindow(this),
+            owner,
             "结构化诊断事实暂时无法读取；应用不会退回到抓取日志正文或用户文件。",
             "读取诊断失败",
             MessageBoxButton.OK,
             MessageBoxImage.Error);
+    }
 }
