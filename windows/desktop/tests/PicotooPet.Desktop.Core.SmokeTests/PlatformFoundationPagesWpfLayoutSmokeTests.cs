@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Windows;
@@ -53,6 +54,14 @@ internal static class PlatformFoundationPagesWpfLayoutSmokeTests
 
     private static void RunLayout()
     {
+        // Reproduce the real crash: an async diagnostics error arrives after
+        // navigation removes the page from its owner Window.
+        var detachedDiagnostics = new DiagnosticsPage();
+        var showSafeError = typeof(DiagnosticsPage).GetMethod(
+            "ShowSafeError", BindingFlags.Instance | BindingFlags.NonPublic);
+        SmokeAssert.True(showSafeError is not null, "Diagnostics safe-error handler missing");
+        showSafeError!.Invoke(detachedDiagnostics, null);
+
         var now = DateTimeOffset.UtcNow;
         var project = new ProjectRecord(
             "project-layout", "平台项目", "automation", "PicotooPet", "INTERNAL",
