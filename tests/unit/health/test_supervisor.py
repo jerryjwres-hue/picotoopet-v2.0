@@ -16,6 +16,9 @@ class FakeResident:
         self.calls += 1
         return ResidentResult(status=self.status, model_name="gpt-oss:20b", detail="test")
 
+    def observe_available(self) -> ResidentResult:
+        return self.ensure_resident()
+
 
 def _normal_memory() -> MemoryPressureSummary:
     # ── Unit tests must not depend on the hosted runner's live memory pressure. ──
@@ -66,4 +69,28 @@ def test_supervisor_is_degraded_when_model_is_missing(tmp_path: Path) -> None:
     )
 
     assert supervisor.run_once().status == "degraded"
+    database.close()
+
+
+def test_supervisor_accepts_installed_idle_model_without_forcing_preload(tmp_path: Path) -> None:
+    """An installed on-demand 20B model is a valid standby capability, not a failure."""
+
+    paths = RuntimePaths.from_root(tmp_path / "runtime-idle")
+    paths.ensure()
+    database = Database(paths.database_file)
+    database.open()
+    database.apply_migrations()
+    resident = FakeResident(ResidentStatus.AVAILABLE)
+    supervisor = HealthSupervisor(
+        database=database,
+        paths=paths,
+        resident=resident,
+        memory_pressure=_normal_memory,
+    )
+
+    report = supervisor.run_once()
+
+    assert report.status == "ok"
+    assert report.checks["ollama_resident"].status == "ok"
+    assert resident.calls == 1
     database.close()

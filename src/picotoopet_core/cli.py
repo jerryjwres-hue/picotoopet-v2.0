@@ -60,6 +60,9 @@ class _HealthyResident:
     def __init__(self, model_name: str) -> None:
         self.model_name = model_name
 
+    def observe_available(self) -> ResidentResult:
+        return self.ensure_resident()
+
     def ensure_resident(self) -> ResidentResult:
         return ResidentResult(
             status=ResidentStatus.RESIDENT,
