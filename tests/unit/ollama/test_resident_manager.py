@@ -45,3 +45,80 @@ def test_resident_manager_reports_missing_model_without_pull() -> None:
     manager = ResidentManager(OllamaClient("http://ollama", client=http), "gpt-oss:20b")
 
     assert manager.ensure_resident().status is ResidentStatus.MODEL_MISSING
+
+
+def test_passive_probe_installed_idle_never_posts_or_preloads() -> None:
+    """Supervisor observes standby availability without pinning unified memory."""
+    requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "gpt-oss:20b"}]})
+        if request.url.path == "/api/ps":
+            return httpx.Response(200, json={"models": []})
+        raise AssertionError("passive probe must only GET")
+
+    http = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://ollama")
+    try:
+        manager = ResidentManager(OllamaClient(client=http), "gpt-oss:20b")
+        result = manager.observe_available()
+    finally:
+        http.close()
+
+    assert result.status is ResidentStatus.AVAILABLE
+    assert requests == [("GET", "/api/tags"), ("GET", "/api/ps")]
+
+
+def test_passive_probe_reports_loaded_model_without_resetting_ttl() -> None:
+    requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "gpt-oss:20b"}]})
+        if request.url.path == "/api/ps":
+            return httpx.Response(200, json={"models": [{"name": "gpt-oss:20b"}]})
+        raise AssertionError("passive probe must only GET")
+
+    http = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://ollama")
+    try:
+        manager = ResidentManager(OllamaClient(client=http), "gpt-oss:20b")
+        result = manager.observe_available()
+    finally:
+        http.close()
+
+    assert result.status is ResidentStatus.RESIDENT
+    assert requests == [("GET", "/api/tags"), ("GET", "/api/ps")]
+
+
+def test_passive_probe_missing_model_never_downloads() -> None:
+    requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        return httpx.Response(200, json={"models": []})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://ollama")
+    try:
+        manager = ResidentManager(OllamaClient(client=http), "gpt-oss:20b")
+        result = manager.observe_available()
+    finally:
+        http.close()
+
+    assert result.status is ResidentStatus.MODEL_MISSING
+    assert requests == [("GET", "/api/tags")]
+
+
+def test_passive_probe_transport_failure_reports_error_not_ready() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("unavailable")
+
+    http = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://ollama")
+    try:
+        manager = ResidentManager(OllamaClient(client=http), "gpt-oss:20b")
+        result = manager.observe_available()
+    finally:
+        http.close()
+
+    assert result.status is ResidentStatus.ERROR
