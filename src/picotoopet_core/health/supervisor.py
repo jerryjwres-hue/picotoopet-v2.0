@@ -22,8 +22,8 @@ from picotoopet_core.ollama.resident_manager import ResidentResult, ResidentStat
 class ResidentLike(Protocol):
     """健康监督器依赖的最小常驻管理接口。"""
 
-    def ensure_resident(self) -> ResidentResult:
-        """检查并恢复核心模型。"""
+    def observe_available(self) -> ResidentResult:
+        """只读检查模型是否已安装或加载，不主动唤醒空闲模型。"""
 
 
 class HealthCheck(BaseModel):
@@ -109,9 +109,15 @@ class HealthSupervisor:
                 detail="unknown",
             )
 
-        resident_result = self.resident.ensure_resident()
+        # One passive health probe must never preload a 20B model indefinitely.
+        # "available" is an honest healthy standby state, not a loaded model.
+        resident_result = self.resident.observe_available()
         checks["ollama_resident"] = HealthCheck(
-            status="ok" if resident_result.status is ResidentStatus.RESIDENT else "degraded",
+            status=(
+                "ok"
+                if resident_result.status in (ResidentStatus.RESIDENT, ResidentStatus.AVAILABLE)
+                else "degraded"
+            ),
             detail=resident_result.detail,
         )
 
