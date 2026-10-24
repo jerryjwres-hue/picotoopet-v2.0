@@ -11,6 +11,9 @@ from picotoopet_core.ollama.resident_manager import ResidentResult, ResidentStat
 
 
 class FakeResident:
+    def observe_available(self) -> ResidentResult:
+        return self.ensure_resident()
+
     def ensure_resident(self) -> ResidentResult:
         return ResidentResult(
             status=ResidentStatus.RESIDENT,
