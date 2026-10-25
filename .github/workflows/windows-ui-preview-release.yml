@@ -115,18 +115,24 @@ jobs:
           if ($LASTEXITCODE) { throw 'P0_INDEPENDENT_GATE_FAILED' }
           if ((Test-Path -LiteralPath $gate) -or (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_INDEPENDENT_GATE_NOT_CLEAN' }
           # Execute the *same* operator bootstrap shipped in the ZIP, never a CI-only substitute.
-          & windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1
+          # Match the user's Windows PowerShell 5.1, not just runner pwsh 7.
+          $ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $bootstrap = (Resolve-Path 'windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1').Path
+          & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PS51_HOLD_BOOTSTRAP_FAILED' }
           if (-not (Test-Path -LiteralPath $gate) -or -not (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_HOLD_BOOTSTRAP_INCOMPLETE' }
           # Real Windows regression: the user already had a valid, persistent HOLD.
           # Running bootstrap a second time must not rewrite or fail on File.Replace.
           $before = (Get-FileHash -LiteralPath $gate -Algorithm SHA256).Hash
-          & windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1
+          & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PS51_HOLD_RERUN_FAILED' }
           $after = (Get-FileHash -LiteralPath $gate -Algorithm SHA256).Hash
           if ($before -ne $after) { throw 'P0_HOLD_IDEMPOTENT_RERUN_MODIFIED_GATE' }
           # Exercise the real atomic File.Replace path with a safe, non-ALLOW
           # stale gate. No application or GPU process is running in CI.
           [IO.File]::WriteAllText($gate, '{"schema_version":"1.0","mode":"blocked"}', [Text.UTF8Encoding]::new($false))
-          & windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1
+          & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PS51_HOLD_RERUN_FAILED' }
           $recovered = [IO.File]::ReadAllText($gate, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
           if ($recovered.schema_version -ne '1.0' -or $recovered.mode -ne 'hold' -or
               -not (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_HOLD_ATOMIC_REPLACE_FAILED' }
