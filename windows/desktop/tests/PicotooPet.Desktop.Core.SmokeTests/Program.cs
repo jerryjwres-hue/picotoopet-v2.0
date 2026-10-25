@@ -40,6 +40,14 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--ui-snapshot-backpressure-only", StringComparer.Ordinal))
+            {
+                // Isolated no-GPU verification for bounded WPF state notifications.
+                CoalescingUiDispatcherSmokeTests.Run();
+                Console.WriteLine("WINDOWS_UI_SNAPSHOT_BACKPRESSURE=PASS");
+                return 0;
+            }
+
             if (args.Contains("--ui-interaction-only", StringComparer.Ordinal))
             {
                 await RunUiInteractionOnlyAsync().ConfigureAwait(false);
@@ -116,6 +124,7 @@ internal static class Program
             WorkerStatusSmokeTests.Run();
             StateStoreSmokeTests.Run();
             NavigationSmokeTests.Run();
+            CoalescingUiDispatcherSmokeTests.Run();
             OperatorSimpleModeSmokeTests.Run();
             GoalVideoReturnParserSmokeTests.Run();
             GoalVideoReturnPanelWpfSmokeTests.Run();
@@ -203,6 +212,7 @@ internal static class Program
     private static async Task RunUiInteractionOnlyAsync()
     {
         NavigationSmokeTests.Run();
+        CoalescingUiDispatcherSmokeTests.Run();
         OperatorSimpleModeSmokeTests.Run();
         GoalVideoReturnParserSmokeTests.Run();
         GoalVideoReturnPanelWpfSmokeTests.Run();
