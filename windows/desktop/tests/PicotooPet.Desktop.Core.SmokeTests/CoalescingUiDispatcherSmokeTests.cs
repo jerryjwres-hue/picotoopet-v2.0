@@ -5,6 +5,10 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>Bounded WPF snapshot scheduling must preserve the newest complete state.</summary>
 internal static class CoalescingUiDispatcherSmokeTests
 {
+    // Reuse immutable expected samples to satisfy native warning-as-error analyzer CA1861.
+    private static readonly string[] LatestAfterBurst = ["snapshot-9999"];
+    private static readonly string[] ReentrantOrder = ["first", "second"];
+
     public static void Run()
     {
         var manual = new ManualUiDispatcher();
@@ -18,7 +22,7 @@ internal static class CoalescingUiDispatcherSmokeTests
             SmokeAssert.True(manual.PendingCount == 1,
                 "10,000 incoming snapshots must enqueue exactly one WPF callback");
             manual.RunOne();
-            SmokeAssert.True(applied.SequenceEqual(new[] { "snapshot-9999" }),
+            SmokeAssert.True(applied.SequenceEqual(LatestAfterBurst),
                 "The newest full-state snapshot must win without stale UI replay");
             SmokeAssert.True(manual.PendingCount == 0,
                 "The queue slot must become available after successful delivery");
@@ -46,7 +50,7 @@ internal static class CoalescingUiDispatcherSmokeTests
             SmokeAssert.True(duringApply.PendingCount == 1,
                 "Arrival during UI callback must cause exactly one follow-up dispatch");
             duringApply.RunOne();
-            SmokeAssert.True(reentrantApplied.SequenceEqual(new[] { "first", "second" }),
+            SmokeAssert.True(reentrantApplied.SequenceEqual(ReentrantOrder),
                 "Arrival while applying a previous snapshot must not be lost");
             SmokeAssert.True(duringApply.PendingCount == 0,
                 "Reentrant notifications must not cause a perpetual dispatcher loop");
