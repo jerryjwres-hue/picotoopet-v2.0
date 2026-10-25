@@ -248,7 +248,9 @@
                     Click="ReferenceBatchPreview_Click" />
             <TextBlock Text="{Binding HandoffSummary, Mode=OneWay}"
                        Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,0,0,6" />
-            <StackPanel Orientation="Horizontal">
+            <!-- Wrap actions within the fixed 226px status column. Hidden actions
+                 must remain reachable when their eligibility turns true. -->
+            <WrapPanel Orientation="Horizontal">
               <Button x:Name="CopyPromptButton"
                       Content="复制 GPT 提示词"
                       Margin="0,0,5,0"
@@ -272,7 +274,7 @@
                       Style="{StaticResource GoalFinalVideoButtonStyle}"
                       IsEnabled="{Binding VideoContinuation.CanOpenFinalVideo, Mode=OneWay}"
                       Click="OpenFinalVideo_Click" />
-            </StackPanel>
+            </WrapPanel>
             <TextBlock Text="{Binding VideoContinuation.CreativePlanText, Mode=OneWay}"
                        Foreground="#F4FFFFFF" FontSize="8" TextWrapping="Wrap"
                        MaxHeight="145" Margin="0,7,0,0" />
