@@ -10,7 +10,7 @@ namespace PicotooPet.Desktop.ViewModels;
 public sealed class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly ControlCenterSession? _session;
-    private readonly IUiDispatcher? _dispatcher;
+    private readonly CoalescingUiDispatcher<ControlCenterSessionSnapshot>? _snapshotDispatcher;
     private ControlCenterSessionSnapshot? _snapshot;
     private IReadOnlyList<NavigationItem> _navigationItems;
     private NavigationItem _selectedNavigationItem;
@@ -29,7 +29,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         IUiDispatcher dispatcher)
     {
         _session    = session ?? throw new ArgumentNullException(nameof(session));
-        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        ArgumentNullException.ThrowIfNull(dispatcher);
+        _snapshotDispatcher = new CoalescingUiDispatcher<ControlCenterSessionSnapshot>(dispatcher, ApplySnapshot);
         _snapshot   = session.Snapshot;
         _navigationItems = BuildNavigation(_snapshot.State.Capabilities.Features);
         _selectedNavigationItem = FindItem(_navigationItems, NavigationRoute.OperatorHome);
@@ -396,15 +397,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         object? sender,
         ControlCenterSessionSnapshot snapshot)
     {
-        var dispatcher = _dispatcher;
-        if (dispatcher is null)
+        // A complete snapshot supersedes previous UI projections. Never enqueue
+        // unbounded WPF work while the UI thread is busy or the Mac event rate spikes.
+        if (_snapshotDispatcher is null)
         {
             ApplySnapshot(snapshot);
             return;
         }
-        _ = dispatcher.InvokeAsync(
-            () => ApplySnapshot(snapshot),
-            CancellationToken.None);
+        _snapshotDispatcher.Post(snapshot);
     }
 
     private void ApplySnapshot(ControlCenterSessionSnapshot snapshot)
@@ -506,6 +506,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
         _disposed = true;
+        _snapshotDispatcher?.Dispose();
         if (_session is not null)
         {
             _session.SnapshotChanged -= OnSessionSnapshotChanged;
