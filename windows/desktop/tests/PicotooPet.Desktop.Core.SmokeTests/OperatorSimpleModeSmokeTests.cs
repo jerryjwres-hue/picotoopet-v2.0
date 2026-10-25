@@ -146,6 +146,18 @@ internal static class OperatorSimpleModeSmokeTests
 
                 var homePage = new OperatorHomePage { DataContext = homeViewModel };
                 Layout(homePage);
+                // Regression: a narrow handoff card must wrap the Web GPT paste
+                // action instead of placing it beyond the clipped right edge.
+                var goalPanel = new GoalCenterPanel { DataContext = homeViewModel };
+                Layout(goalPanel);
+                var pasteReturn = goalPanel.FindName("PasteGoalVideoReturnButton") as Button;
+                var copyPrompt = goalPanel.FindName("CopyPromptButton") as Button;
+                var saveHandoff = goalPanel.FindName("SaveHandoffButton") as Button;
+                SmokeAssert.True(pasteReturn?.Parent is WrapPanel actions
+                    && ReferenceEquals(copyPrompt?.Parent, actions)
+                    && ReferenceEquals(saveHandoff?.Parent, actions),
+                    "The Web GPT paste action must share a wrapping container with the handoff actions");
+
                 SmokeAssert.True(homePage.FindName("GoalObjectiveTextBox") is TextBox, "首页缺少目标输入框");
                 SmokeAssert.True(homePage.FindName("GoalTemplateItems") is ItemsControl, "首页缺少建议目标模板");
                 SmokeAssert.True(homePage.FindName("GoalDepthComboBox") is ComboBox, "首页缺少研究深度选择");
