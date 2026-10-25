@@ -7,6 +7,7 @@ on:
       - feature/autonomous-intelligence-e2e-goal-center-2.3.27.1
       - integration/p0-three-shot-gate-creative-candidate-v1
       - fix/p0-91-diagnostics-null-owner-crash-20261022
+      - fix/windows-gui-snapshot-backpressure-p0-20261024
     paths:
       - ".github/workflows/windows-ui-preview-release.yml"
       - ".github/workflows/windows-control-center-ci.yml"
@@ -15,6 +16,11 @@ on:
       - "windows/desktop/**"
       - "src/picotoopet_core/product-version.txt"
       - "src/picotoopet_core/creative/**"
+  # Same-repo PR builds use strict CI HOLD and never authorize production GPU.
+  pull_request:
+    paths:
+      - ".github/workflows/windows-ui-preview-release.yml"
+      - "windows/desktop/**"
   workflow_dispatch:
 
 concurrency:
@@ -27,6 +33,8 @@ permissions:
 
 jobs:
   windows-ui-preview:
+    # Only the isolated P0 GUI-fix PR may build a preview via pull_request.
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024'
     name: Build and lifecycle-test Windows UI Preview
     runs-on: windows-2025
     timeout-minutes: 60
@@ -35,13 +43,16 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
-      PICOTOO_SOURCE_HEAD_SHA: ${{ github.sha }}
-      PICOTOO_SOURCE_REF: ${{ github.ref_name }}
+      PICOTOO_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PICOTOO_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
     steps:
       # Source -----------------------------------------------------------------
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          # Use the exact source HEAD, not the temporary pull-request merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       # Publish the run id immediately so this source commit is traceable while
       # the installer lifecycle is still running; the final step overwrites it.
@@ -52,7 +63,7 @@ jobs:
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: context.sha,
+              sha: context.payload.pull_request?.head.sha ?? context.sha,
               state: 'pending',
               context: 'windows-ui-preview-release',
               description: `Windows UI Preview run ${context.runId} started`,
@@ -92,7 +103,7 @@ jobs:
 
       # Only the strict three-shot candidate needs admission before any published WPF process.
       - name: P0 strict preview prelaunch HOLD and 28 independent no-GPU cases
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022'
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || (github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024')
         shell: pwsh
         run: |
           $gate = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
@@ -104,8 +115,28 @@ jobs:
           if ($LASTEXITCODE) { throw 'P0_INDEPENDENT_GATE_FAILED' }
           if ((Test-Path -LiteralPath $gate) -or (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_INDEPENDENT_GATE_NOT_CLEAN' }
           # Execute the *same* operator bootstrap shipped in the ZIP, never a CI-only substitute.
-          & windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1
+          # Match the user's Windows PowerShell 5.1, not just runner pwsh 7.
+          $ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $bootstrap = (Resolve-Path 'windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1').Path
+          & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PS51_HOLD_BOOTSTRAP_FAILED' }
           if (-not (Test-Path -LiteralPath $gate) -or -not (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_HOLD_BOOTSTRAP_INCOMPLETE' }
+          # Real Windows regression: the user already had a valid, persistent HOLD.
+          # Running bootstrap a second time must not rewrite or fail on File.Replace.
+          $before = (Get-FileHash -LiteralPath $gate -Algorithm SHA256).Hash
+          & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PS51_HOLD_RERUN_FAILED' }
+          $after = (Get-FileHash -LiteralPath $gate -Algorithm SHA256).Hash
+          if ($before -ne $after) { throw 'P0_HOLD_IDEMPOTENT_RERUN_MODIFIED_GATE' }
+          # Exercise the real atomic File.Replace path with a safe, non-ALLOW
+          # stale gate. No application or GPU process is running in CI.
+          [IO.File]::WriteAllText($gate, '{"schema_version":"1.0","mode":"blocked"}', [Text.UTF8Encoding]::new($false))
+          & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PS51_HOLD_RERUN_FAILED' }
+          $recovered = [IO.File]::ReadAllText($gate, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
+          if ($recovered.schema_version -ne '1.0' -or $recovered.mode -ne 'hold' -or
+              -not (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_HOLD_ATOMIC_REPLACE_FAILED' }
+          Write-Host 'P0_PS51_EXISTING_HOLD_RERUN=PASS; ATOMIC_REPLACE_RECOVERY=PASS'
           dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --three-shot-gate-probe held ('a' * 64)
           if ($LASTEXITCODE) { throw 'P0_HOLD_PROBE_FAILED' }
           Write-Host 'P0_PRELAUNCH_HOLD=PASS; GPU_NETWORK=0'
@@ -120,14 +151,14 @@ jobs:
       - name: Build installable Windows UI Preview
         shell: pwsh
         run: |
-          $shortSha = "${{ github.sha }}".Substring(0, 12)
+          $shortSha = "${{ github.event.pull_request.head.sha || github.sha }}".Substring(0, 12)
           $version  = "2.3.27.1-ui-preview-${{ github.run_number }}-$shortSha"
           & windows/desktop/scripts/Build-Phase2WindowsRelease.ps1 `
             -Version $version `
             -ValidationScope UiPreview
 
       - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022'
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || (github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024')
         shell: pwsh
         run: |
           $zips = @(Get-ChildItem 'windows/desktop/artifacts/release' -Filter 'PicotooPet-Phase2-Windows-Prebuilt-*.zip' -File)
@@ -158,7 +189,7 @@ jobs:
             -ReleaseRoot windows/desktop/artifacts/release
 
       - name: P0 launch actual published GUI and unique same-EXE Worker under HOLD
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022'
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || (github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024')
         shell: pwsh
         run: |
           if ($env:GITHUB_ACTIONS -ne 'true') { throw 'P0_CI_ONLY' }
@@ -208,7 +239,7 @@ jobs:
             [System.Text.UTF8Encoding]::new($false))
 
       - name: P0 preview package source and published EXE hash evidence
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022'
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || (github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024')
         shell: pwsh
         run: |
           $root = 'windows/desktop/artifacts/release'
@@ -258,7 +289,7 @@ jobs:
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: context.sha,
+              sha: context.payload.pull_request?.head.sha ?? context.sha,
               state,
               context: 'windows-ui-preview-release',
               description: `Windows UI Preview run ${context.runId} ${state}`,
