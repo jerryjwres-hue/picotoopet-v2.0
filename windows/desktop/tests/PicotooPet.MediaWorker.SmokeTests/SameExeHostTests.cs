@@ -1,4 +1,5 @@
 using System.IO;
+using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.MediaWorker.SmokeTests;
 
@@ -48,6 +49,19 @@ internal static class SameExeHostTests
         {
             throw new InvalidOperationException("P0_EXPLICIT_EXIT_BOUNDARY_MISSING");
         }
+        // A localized Windows COMPUTERNAME (observed: 王小安WLA) must never be
+        // submitted as a Unicode executor_id: Mac Core rejects non-ASCII with 422.
+        var localized = ProductionExecutionService.NormalizeExecutorId("windows-production-王小安WLA");
+        var ascii = ProductionExecutionService.NormalizeExecutorId("windows-production-ASCII_01");
+        var truncated = ProductionExecutionService.NormalizeExecutorId(new string('x', 140));
+        if (localized != "windows-production----WLA"
+            || ascii != "windows-production-ASCII_01"
+            || truncated.Length != 120
+            || !System.Text.RegularExpressions.Regex.IsMatch(localized, @"\A[A-Za-z0-9_.-]{1,120}\z"))
+        {
+            throw new InvalidOperationException("P0_UNICODE_EXECUTOR_ID_CONTRACT_FAILED");
+        }
+        Console.WriteLine("P0_UNICODE_EXECUTOR_ID_ASCII_CONTRACT=PASS");
         Console.WriteLine("P0_SAME_EXE_RECONCILE_BEFORE_NEW_GPU=PASS");
     }
 }
