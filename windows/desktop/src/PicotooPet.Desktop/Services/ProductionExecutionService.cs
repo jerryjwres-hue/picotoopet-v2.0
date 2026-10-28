@@ -650,10 +650,12 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         CancellationToken cancellationToken) =>
         await ProductionLocalEnvironment.Sha256FileAsync(path, cancellationToken).ConfigureAwait(false);
 
-    private static string NormalizeExecutorId(string value)
+    internal static string NormalizeExecutorId(string value)
     {
+        // Mac Core ProductionClaimRequest requires ASCII [A-Za-z0-9_.-].
+        // Windows machine names may contain Chinese or other Unicode letters.
         var normalized = new string(value
-            .Select(character => char.IsLetterOrDigit(character) || character is '_' or '-' or '.'
+            .Select(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '-' or '.'
                 ? character
                 : '-')
             .Take(120)
