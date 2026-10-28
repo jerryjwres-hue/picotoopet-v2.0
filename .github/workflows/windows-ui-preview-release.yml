@@ -33,8 +33,8 @@ permissions:
 
 jobs:
   windows-ui-preview:
-    # Only the isolated P0 GUI-fix PR may build a preview via pull_request.
-    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024'
+    # Only isolated P0 GUI-fix and localized-executor recovery PRs may build via pull_request.
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-windows-unicode-executor-20261028'
     name: Build and lifecycle-test Windows UI Preview
     runs-on: windows-2025
     timeout-minutes: 60
