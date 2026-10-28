@@ -1,4 +1,5 @@
 using System.IO;
+using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.MediaWorker.SmokeTests;
 
