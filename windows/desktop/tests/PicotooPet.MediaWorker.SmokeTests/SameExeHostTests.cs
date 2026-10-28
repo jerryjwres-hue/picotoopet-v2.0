@@ -56,7 +56,7 @@ internal static class SameExeHostTests
         if (localized != "windows-production----WLA"
             || ascii != "windows-production-ASCII_01"
             || truncated.Length != 120
-            || !System.Text.RegularExpressions.Regex.IsMatch(localized, @"\\A[A-Za-z0-9_.-]{1,120}\\z"))
+            || !System.Text.RegularExpressions.Regex.IsMatch(localized, @"\A[A-Za-z0-9_.-]{1,120}\z"))
         {
             throw new InvalidOperationException("P0_UNICODE_EXECUTOR_ID_CONTRACT_FAILED");
         }
