@@ -192,15 +192,15 @@ internal static class RecoveryFixTests
             RecoveryTests.Assert(P0LostPromptRetryApproval.IsApproved(
                 "job", "shot3-task", "prompt-lost-before-boot", new string('a', 64),
                 original, boot, now, path), "exact approved post-boot prompt");
-            RecoveryTests.Assert(!P0LostPromptRetryApproval.IsApproved(
+            awaitMustReject(() => P0LostPromptRetryApproval.IsApproved(
                 "other-job", "shot3-task", "prompt-lost-before-boot", new string('a', 64),
-                original, boot, now, path), "other job cannot inherit consent");
-            RecoveryTests.Assert(!P0LostPromptRetryApproval.IsApproved(
+                original, boot, now, path));
+            awaitMustReject(() => P0LostPromptRetryApproval.IsApproved(
                 "job", "shot3-task", "other-prompt", new string('a', 64),
-                original, boot, now, path), "other prompt cannot inherit consent");
-            RecoveryTests.Assert(!P0LostPromptRetryApproval.IsApproved(
+                original, boot, now, path));
+            awaitMustReject(() => P0LostPromptRetryApproval.IsApproved(
                 "job", "different-task", "prompt-lost-before-boot", new string('a', 64),
-                original, boot, now, path), "other task cannot inherit consent");
+                original, boot, now, path));
             awaitMustReject(() => P0LostPromptRetryApproval.IsApproved(
                 "job", "shot3-task", "prompt-lost-before-boot", new string('a', 64),
                 boot.AddMinutes(1), boot, now, path));
