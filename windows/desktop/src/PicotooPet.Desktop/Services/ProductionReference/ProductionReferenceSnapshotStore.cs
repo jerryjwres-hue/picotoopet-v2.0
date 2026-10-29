@@ -14,6 +14,29 @@ internal sealed class DurableReferenceSnapshot(string relativePath, VerifiedRefe
     VerifiedReferenceAsset snapshot, VerifiedReferenceAsset receipt, ITrustedReferenceApprovalSource approvals,
     TrustedReferenceDescriptor descriptor, ReferenceSnapshotMeasurement measurement) : IDisposable
 {
+    private volatile bool _disposed;
+    private readonly object _lifetime = new();
+    private int _witnessPins;
+    internal IDisposable RetainForWitness()
+    {
+        lock (_lifetime)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _witnessPins++;
+            return new WitnessPin(this);
+        }
+    }
+    private sealed class WitnessPin(DurableReferenceSnapshot owner) : IDisposable
+    {
+        private DurableReferenceSnapshot? _owner = owner;
+        public void Dispose()
+        {
+            var value = Interlocked.Exchange(ref _owner, null);
+            if (value is null) return;
+            lock (value._lifetime)
+                if (--value._witnessPins == 0 && value._disposed) value.ClosePins();
+        }
+    }
     public string RelativePath { get; } = relativePath;
     public ReferenceSnapshotMeasurement Measurement { get; } = measurement;
     public async Task ReauthorizeAsync(CancellationToken ct)
@@ -21,7 +44,23 @@ internal sealed class DurableReferenceSnapshot(string relativePath, VerifiedRefe
         if (!await approvals.IsApprovedAsync(descriptor, ct).ConfigureAwait(false))
             throw new ProductionWorkerException("I2V_REFERENCE_APPROVAL_REQUIRED");
     }
-    public void Dispose() { receipt.Dispose(); snapshot.Dispose(); original.Dispose(); }
+    internal async Task RecheckForWitnessAsync(CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        await ReauthorizeAsync(ct).ConfigureAwait(false);
+        foreach (var (file, hash, size) in new[] {
+            (original.FullPath, Measurement.SourceSha256, Measurement.SourceBytes),
+            (snapshot.FullPath, Measurement.SnapshotSha256, Measurement.SnapshotBytes),
+            (receipt.FullPath, Measurement.ReceiptSha256, Measurement.ReceiptBytes) })
+            if (new FileInfo(file).Length != size || await ProductionLocalEnvironment.Sha256FileAsync(file, ct).ConfigureAwait(false) != hash)
+                throw new InvalidDataException("WORKER_REFERENCE_MEASUREMENT_CHANGED");
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+    private void ClosePins() { receipt.Dispose(); snapshot.Dispose(); original.Dispose(); }
+    public void Dispose()
+    {
+        lock (_lifetime) { _disposed = true; if (_witnessPins == 0) ClosePins(); }
+    }
 }
 
 /// <summary>
