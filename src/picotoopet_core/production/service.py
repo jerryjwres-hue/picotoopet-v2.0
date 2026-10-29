@@ -16,6 +16,7 @@ from picotoopet_core.creative.models import (
     CreativeQualityOutcome,
 )
 from picotoopet_core.creative.repository import CreativeRepository
+from picotoopet_core.security.worker_pairing import PairedWorkerTrust
 
 from .attempts import reserve_or_bind_attempt
 from .compiler import compile_production_plan
@@ -516,10 +517,25 @@ class ProductionService:
             ):
                 raise ValueError("PRODUCTION_V11_WITNESS_JOURNAL_MISMATCH")
 
-            # ── Deliberately no signed-key lookup, nonce redemption or lease:
-            # ── a request-supplied key, signature, normal bearer and fake JSON
-            # ── cannot establish who inspected those Windows-local bytes.
-            raise ValueError("PRODUCTION_V11_WORKER_IDENTITY_NOT_PROVISIONED")
+            # ── An unpaired Core has NO trusted signing root. Preserve the
+            # ── existing fail-closed error contract for legacy fixtures.
+            key_count = connection.execute(
+                "SELECT COUNT(*) FROM production_worker_keys"
+            ).fetchone()[0]
+            if key_count == 0:
+                raise ValueError("PRODUCTION_V11_WORKER_IDENTITY_NOT_PROVISIONED")
+
+            # ── Ed25519 verification uses ONLY the Core-pinned active key;
+            # ── the Core-issued nonce must match exact frozen job/plan/executor.
+            # ── Preflight NEVER redeems the nonce; future trusted Claim must
+            # ── consume it atomically with the approval/lease transaction.
+            PairedWorkerTrust(self.repository.database).verify_locked(
+                connection, witness, redeem=False
+            )
+
+            # ── A paired software key still cannot prove real Windows same-EXE
+            # ── process, snapshot ACL/bytes or unknown Comfy POST clearance.
+            raise ValueError("PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED")
 
     def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
         # ── Claim returns full durable snapshots plus an unfinished-only plan ─
