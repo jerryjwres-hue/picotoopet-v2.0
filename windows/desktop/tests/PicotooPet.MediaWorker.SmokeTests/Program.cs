@@ -47,6 +47,7 @@ PicotooPet.MediaWorker.SmokeTests.ThreeShotAcceptanceGateTests.Run();
 PicotooPet.MediaWorker.SmokeTests.ReferenceV11BindingTests.Run();
 await PicotooPet.MediaWorker.SmokeTests.DurableReferenceSnapshotTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.I2VExecutorSnapshotTests.RunAsync();
+await PicotooPet.MediaWorker.SmokeTests.ShippingReferenceProofTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.LegacyContractTests.RunAsync();
 PicotooPet.MediaWorker.SmokeTests.SameExeHostTests.Run();
 Console.WriteLine("P0_SAME_EXE_WORKER_JOURNAL_RECOVERY=PASS");
