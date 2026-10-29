@@ -32,6 +32,8 @@ internal static class Program
         Console.WriteLine("C011_DURABLE_RESTART=PASS");
         await TransientPostproductionRecoveryAsync();
         Console.WriteLine("C011_TRANSIENT_POSTPRODUCTION_RETRY=PASS");
+        await InvalidDataNeverRetriesAsync();
+        Console.WriteLine("C011_INVALID_DATA_NO_RETRY=PASS");
         await GuiOnlyReadsPersistedQaAsync();
         Console.WriteLine("P0_GUI_ONLY_READS_PERSISTED_QA=PASS");
         await GuiRevokedProjectionCannotOpenAsync();
@@ -267,6 +269,26 @@ internal static class Program
         Check(coordinator.CurrentSnapshot.CanOpen, "TRANSIENT_RETRY_REQUIRES_QA");
         Check(await coordinator.OpenCurrentAsync(), "TRANSIENT_RETRY_VERIFIED_OPEN");
         Check(launcher.Opens == 1, "TRANSIENT_RETRY_ONE_OPEN");
+    }
+
+    private static async Task InvalidDataNeverRetriesAsync()
+    {
+        using var fixture = await Fixture.CreateAsync(true, false);
+        var continuation = LifecycleTests.Input(fixture, null).GoalContinuation;
+        var launcher = new Launcher();
+        var now = new DateTimeOffset(2026, 10, 29, 0, 0, 0, TimeSpan.Zero);
+        await using var coordinator = Coordinator(fixture, launcher, true, false,
+            returnMissingMaster: true, utcNow: () => now,
+            retryDelay: TimeSpan.FromMinutes(2));
+
+        // ── InvalidDataException inherits IOException but must stay permanently fail-closed. ──
+        await WaitAsync(coordinator, continuation, GoalDeliveryPhase.Failed);
+        await Task.Delay(100);
+        now = now.AddDays(1);
+        Check(coordinator.Observe(continuation.GoalId, continuation).Phase == GoalDeliveryPhase.Failed,
+            "TAMPERED_MASTER_NEVER_RETRIES");
+        Check(!coordinator.CurrentSnapshot.CanOpen && launcher.Opens == 0,
+            "TAMPERED_MASTER_NEVER_OPENS");
     }
 
     private static async Task GuiOnlyReadsPersistedQaAsync()
