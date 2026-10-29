@@ -16,6 +16,7 @@ internal static class RecoveryFixTests
         var errors = new List<Exception>();
         foreach (var test in new Func<Task>[] { DurableFailureAsync, LegacyUnknownAsync, SettledCapacityAsync, InvalidOutputAsync,
             TerminalPendingAsync, PreparedReservationAsync, MissingCoreAsync, TimeoutKeepsGpuBarrierAsync,
+            RebootLostHistoryNeverRepostsAsync,
             BoundSecondAttemptAsync, HistoryOfflineAsync, LostLeaseAsync, ExactTransportAsync, RejectedLegacyClaimAsync,
             SettledDoesNotReopenAsync })
         {
@@ -133,12 +134,37 @@ internal static class RecoveryFixTests
 
     private static async Task TimeoutKeepsGpuBarrierAsync()
     {
+        // A prompt may still be GPU-active when history polling times out.
+        // Timeout itself must never terminal-fail the whole Core job.
         using var f = new RecoveryTests.Fixture();
         f.Comfy.HoldOutput = true;
-        await RecoveryTests.ThrowsCodeAsync("COMFY_RETRY_BUDGET_EXHAUSTED",
+        await RecoveryTests.ThrowsCodeAsync("COMFY_HISTORY_TIMEOUT",
             () => f.Executor(TimeSpan.FromMilliseconds(60)).RunAsync("job"));
-        RecoveryTests.Assert(f.Gateway.Failure is not null && f.Gateway.Commits == 0
-            && f.Journal.Pending().Single().Phase == "FailurePending", "Core timeout failure does not mean CUDA stopped");
+        RecoveryTests.Assert(f.Gateway.Failure is null && f.Gateway.Commits == 0
+            && f.Comfy.Submits == 1 && f.Journal.Pending().Single().Phase == "Submitted",
+            "history timeout preserves bound prompt and blocks other GPU jobs without inventing final failure");
+        await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION", () => f.Executor().RunAsync("other"));
+    }
+
+    private static async Task RebootLostHistoryNeverRepostsAsync()
+    {
+        // Models a real Windows restart: Comfy queue is empty, old /history/{id} is {},
+        // original prompt is still bound in durable Core and local Journal.
+        // Neither a missing history entry nor a second recovery pass is a new GPU authorization.
+        using var f = new RecoveryTests.Fixture();
+        f.Comfy.ForgetPrompt = true;
+        await RecoveryTests.ThrowsCodeAsync("COMFY_HISTORY_TIMEOUT",
+            () => f.Executor(TimeSpan.FromMilliseconds(60)).RunAsync("job"));
+        var old = f.Journal.Pending().Single();
+        RecoveryTests.Assert(old.Phase == "Submitted" && old.PromptId == "prompt-1"
+            && f.Gateway.Failure is null && f.Gateway.Commits == 0 && f.Comfy.Submits == 1,
+            "reboot-lost history retains the old durable prompt and no terminal Core failure");
+
+        await RecoveryTests.ThrowsCodeAsync("COMFY_HISTORY_TIMEOUT",
+            () => f.Executor(TimeSpan.FromMilliseconds(60)).RunAsync("job"));
+        RecoveryTests.Assert(f.Comfy.Submits == 1 && f.Gateway.Failure is null
+            && f.Journal.Pending().Single().PromptId == old.PromptId,
+            "second restart/recovery pass must not rePOST or erase prompt identity");
         await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION", () => f.Executor().RunAsync("other"));
     }
 
