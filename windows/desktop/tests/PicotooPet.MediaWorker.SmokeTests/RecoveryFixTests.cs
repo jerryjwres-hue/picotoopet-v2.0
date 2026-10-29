@@ -215,7 +215,7 @@ internal static class RecoveryFixTests
         {
             try { _ = action(); }
             catch (ProductionWorkerException e) when (e.Code == "MEDIA_RECOVERY_APPROVAL_INVALID") { return; }
-            throw new Exception("Invalid reboot witness or expired operator approval must block");
+            throw new InvalidOperationException("Invalid reboot witness or expired operator approval must block");
         }
     }
 
