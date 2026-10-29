@@ -41,6 +41,7 @@ from .video_bible import (
     correction_for,
     evaluate_video_bible,
     seal_bible,
+    shot_plan_integrity_findings,
 )
 
 # Intents that become a Wan video, so only they are held to the renderer duration limits.
@@ -223,6 +224,23 @@ class CreativeQualityGate:
                     return self._retry(
                         "SHOT_PLAN_BIBLE_MISMATCH",
                         "Shot ids, beats, order and durations must equal the video bible.",
+                    ), None
+                try:
+                    script = CreativeScriptResult.model_validate(script_raw)
+                except ValidationError:
+                    return self._retry(
+                        "PRIOR_STAGE_INVALID", "Use the previously validated script."
+                    ), None
+                drift = shot_plan_integrity_findings(bible, script, parsed.model_dump(mode="json"))
+                if drift:
+                    return CreativeQualityDecision(
+                        outcome=CreativeQualityOutcome.RETRY,
+                        reasons=["SHOT_PLAN_BIBLE_TEXT_MISMATCH"],
+                        correction_instruction=(
+                            "Shot plan text differs from the sealed video bible; re-derive it "
+                            "unchanged. Differing: "
+                            + ", ".join(f"{i.shot_id}.{i.detail}" for i in drift[:12])
+                        )[:2000],
                     ), None
 
         return CreativeQualityDecision(outcome=CreativeQualityOutcome.PASS), parsed

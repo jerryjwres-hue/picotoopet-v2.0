@@ -506,6 +506,40 @@ def derive_shot_plan(bible: VideoBible, script: CreativeScriptResult) -> dict[st
     }
 
 
+# ── Sealed Bible -> shot_plan.v1 text integrity ────────────────────────────────────────
+
+# Every ShotPlanItem field derive_shot_plan writes. A v2 plan is a pure function of the sealed
+# Bible and the script, so any difference means the plan was edited, is stale or came from a
+# different Bible.
+PLAN_INTEGRITY_FIELDS = (
+    "shot_id", "beat_id", "order", "duration_seconds", "subject", "environment", "action",
+    "framing", "lighting_style", "continuity_keys", "required_facts", "source_evidence_ids",
+    "text_reference", "production_notes", "render_intent",
+)
+
+
+def shot_plan_integrity_findings(
+    bible: VideoBible, script: CreativeScriptResult, plan: dict[str, Any]
+) -> list[BibleFinding]:
+    """Exact comparison of a stored v2 shot plan with its deterministic derivation."""
+
+    expected = derive_shot_plan(bible, script)["shots"]
+    actual = plan.get("shots")
+    if not isinstance(actual, list) or len(actual) != len(expected):
+        return [BibleFinding("SHOT_PLAN_BIBLE_TEXT_MISMATCH", None, "shot count differs")]
+    findings: list[BibleFinding] = []
+    for want, got in zip(expected, actual, strict=True):
+        if not isinstance(got, dict):
+            findings.append(BibleFinding("SHOT_PLAN_BIBLE_TEXT_MISMATCH", want["shot_id"]))
+            continue
+        for name in PLAN_INTEGRITY_FIELDS:
+            if got.get(name) != want[name]:
+                findings.append(
+                    BibleFinding("SHOT_PLAN_BIBLE_TEXT_MISMATCH", want["shot_id"], name)
+                )
+    return findings
+
+
 # ── Source-grounded story gate (opt-in, text only) ─────────────────────────────────────
 #
 # These checks reject the text patterns behind the 2026-10-29 visual REJECT: a protagonist
