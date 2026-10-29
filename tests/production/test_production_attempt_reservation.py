@@ -199,6 +199,47 @@ def test_unknown_unbound_external_post_cannot_reclaim_or_leak_lease(
     assert repository.get_task(job_id, task_id).attempt_count == 1
 
 
+def test_same_executor_reclaim_only_prepost_unbound_attempt2(tmp_path: Path) -> None:
+    """Only a durable failed attempt1 + same exact executor may reclaim
+    an unbound attempt2 reservation after restart. The existing attempt2 is
+    replayed idempotently and can be bound once, never allocates attempt3."""
+    service, repository, job_id, task_id = _service(tmp_path)
+    initial = service.claim(job_id, "gpu-same")
+    service.mark_attempt(job_id, task_id, _attempt_request("gpu-same", initial.lease_token))
+    service.mark_attempt(
+        job_id, task_id, _attempt_request("gpu-same", initial.lease_token, "prompt-lost")
+    )
+    reserved = service.mark_attempt(
+        job_id, task_id, _attempt_request("gpu-same", initial.lease_token)
+    )
+    assert reserved.attempt_count == 2 and reserved.comfy_prompt_id is None
+    _expire_job_lease(repository, job_id)
+
+    reclaimed = service.claim(job_id, "gpu-same")
+    assert reclaimed.tasks[0].attempt_count == 2
+    assert reclaimed.tasks[0].comfy_prompt_id is None
+    re_reserve = service.mark_attempt(
+        job_id, task_id, _attempt_request("gpu-same", reclaimed.lease_token)
+    )
+    assert re_reserve.attempt_count == 2 and re_reserve.comfy_prompt_id is None
+    service.mark_attempt(
+        job_id, task_id, _attempt_request("gpu-same", reclaimed.lease_token, "prompt-2")
+    )
+    assert repository.database.scalar(
+        "SELECT COUNT(*) FROM production_attempts WHERE production_task_id=?",
+        (task_id,),
+    ) == 2
+    assert repository.database.scalar(
+        "SELECT failure_code FROM production_attempts "
+        "WHERE production_task_id=? AND attempt_number=1",
+        (task_id,),
+    ) == "COMFY_RETRYABLE_LOCAL_FAILURE"
+    with pytest.raises(ValueError, match="PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED"):
+        service.mark_attempt(
+            job_id, task_id, _attempt_request("gpu-same", reclaimed.lease_token)
+        )
+
+
 def test_second_unbound_attempt_is_not_authorized_to_repost(tmp_path: Path) -> None:
     service, repository, job_id, task_id = _service(tmp_path)
     first = service.claim(job_id, "gpu-old")
