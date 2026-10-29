@@ -40,6 +40,14 @@ class ProductionTaskPlanV11(ProductionTaskPlan):
                 or ref.input_relative_path != self.trusted_input_asset_ref
             ):
                 raise ValueError("PRODUCTION_V11_I2V_REFERENCE_NOT_BOUND")
+            pieces = ref.input_relative_path.split("/")
+            base, sep, suffix = pieces[-1].rpartition(".")
+            if (len(pieces) != 4
+                or pieces[:2] != ["PicotooPet", "references"]
+                or pieces[2] != ref.sha256
+                or base != self.shot_id or not sep
+                or suffix not in ("png", "jpg", "webp")):
+                raise ValueError("PRODUCTION_V11_REFERENCE_NOT_CONTENT_ADDRESSED")
         elif (
             ref is not None
             or self.trusted_input_asset_ref is not None

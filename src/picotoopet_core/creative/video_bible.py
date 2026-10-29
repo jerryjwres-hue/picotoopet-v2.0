@@ -292,6 +292,7 @@ def evaluate_video_bible(
     evidence_ids: set[str],
     required_shot_count: int | None = None,
     required_shot_seconds: float | None = None,
+    story_gate: bool = False,
 ) -> list[BibleFinding]:
     findings: list[BibleFinding] = []
 
@@ -411,6 +412,8 @@ def evaluate_video_bible(
         estimate += len(", ".join(fields["continuity_keys"])) + len(brief_notes) + 120
         if estimate > PROMPT_BUDGET_CHARS:
             add("PROMPT_TOO_LONG", sid, "shorten identity, scene and action phrases")
+    if story_gate:
+        findings.extend(evaluate_story_storyboard(draft))
     return findings
 
 
@@ -501,3 +504,327 @@ def derive_shot_plan(bible: VideoBible, script: CreativeScriptResult) -> dict[st
         "needs_deep_ai": False,
         "needs_human": False,
     }
+
+
+# ── Source-grounded story gate (opt-in, text only) ─────────────────────────────────────
+#
+# These checks reject the text patterns behind the 2026-10-29 visual REJECT: a protagonist
+# whose accessory colour changes between shots, shots set in different places, closing/opening
+# states that do not hand over, and props with no stated support. They read text only. A pass is
+# never evidence that a rendered picture is consistent.
+
+STORY_GATE_VERSION = "story-gate-v1.0.0"
+_COLOURS = frozenset({
+    "red", "orange", "yellow", "green", "teal", "blue", "navy", "purple", "violet", "pink",
+    "brown", "black", "white", "grey", "gray", "cream", "beige", "gold", "golden", "silver",
+    "charcoal", "turquoise", "cyan", "magenta", "maroon", "tan", "ginger",
+})
+_MULTIPLIED_SUBJECT = re.compile(
+    r"\b(?:another|second|third|other|two|three|several|different|new)\s+(?:\w+\s+)?"
+    r"(?:cat|cats|dog|dogs|kitten|puppy|pet|pets)\b",
+    re.IGNORECASE,
+)
+_FLOATING = re.compile(
+    r"\b(?:floating|floats|levitat\w*|hovering|hovers|suspended in (?:the )?air|weightless)\b",
+    re.IGNORECASE,
+)
+_CONTACT = re.compile(
+    r"\b(?:on|onto|in|inside|against|beside|next to|under|resting|rests|held|holds|holding|"
+    r"clipped|clips|attached|attaches|hanging from|hangs from|standing on|sits on|touching|"
+    r"touches|between|beneath|at the foot of)\b",
+    re.IGNORECASE,
+)
+
+
+def _colour_before(text: str, noun: str) -> list[str]:
+    pattern = re.compile(rf"\b(\w+)\s+{re.escape(noun)}s?\b", re.IGNORECASE)
+    found = (m.group(1).casefold() for m in pattern.finditer(text))
+    return [word for word in found if word in _COLOURS]
+
+
+def _shot_texts(shot: ShotBible) -> list[str]:
+    return [shot.opening_state, shot.visible_action, shot.closing_state]
+
+
+def evaluate_story_storyboard(draft: VideoBibleDraft) -> list[BibleFinding]:
+    """Deterministic checks for a short, single-location, causally linked multi-shot story."""
+
+    findings: list[BibleFinding] = []
+
+    def add(code: str, shot_id: str | None = None, detail: str = "", reject: bool = False) -> None:
+        findings.append(BibleFinding(code, shot_id, detail, reject))
+
+    shots = draft.shots
+    subject = draft.subject
+    identity = subject.identity_phrase.casefold()
+
+    # Identity: every distinguishing mark is part of the phrase copied into each shot.
+    for mark in subject.distinguishing_marks:
+        if mark.casefold() not in identity:
+            add("IDENTITY_MARK_NOT_IN_PHRASE", detail=mark)
+    if not subject.distinguishing_marks:
+        add("IDENTITY_MARKS_MISSING", detail="give at least one accessory or marking")
+
+    # Accessory / product colours must never change inside the story.
+    locked: dict[str, str] = {}
+    for mark in [*subject.distinguishing_marks, draft.product.shape_color_material]:
+        words = mark.casefold().split()
+        for index, word in enumerate(words):
+            if word in _COLOURS and index + 1 < len(words):
+                locked.setdefault(words[index + 1].rstrip("s"), word)
+    for shot in shots:
+        text = " ".join(_shot_texts(shot))
+        if _MULTIPLIED_SUBJECT.search(text):
+            add("SUBJECT_MULTIPLIED", shot.shot_id, "one protagonist in every shot")
+        for noun, colour in locked.items():
+            seen = _colour_before(text, noun)
+            if any(item != colour for item in seen):
+                add("IDENTITY_COLOUR_DRIFT", shot.shot_id, f"{noun} must stay {colour}")
+        if _FLOATING.search(text):
+            add("FLOATING_OBJECT_WORDING", shot.shot_id, "state what supports each object")
+        if Featured.PRODUCT in shot.featured and not _CONTACT.search(text):
+            add("PRODUCT_CONTACT_MISSING", shot.shot_id, "say what the product rests on or touches")
+
+    # One fixed place, one lighting setup.
+    if len({item.scene_id for item in shots}) > 1:
+        add("STORY_SCENE_SPLIT", detail="keep every shot of a short story in one scene")
+    if len({scene.lighting_phrase for scene in draft.scenes}) > 1:
+        add("STORY_LIGHTING_VARIES", detail="one lighting phrase for the whole story")
+    if draft.camera_rules.screen_direction == "NONE":
+        add("STORY_SCREEN_DIRECTION_UNSET", detail="fix the subject's screen direction")
+
+    # Cause and effect: each shot ends exactly where the next begins.
+    for index, shot in enumerate(shots[:-1]):
+        following = shots[index + 1]
+        if shot.handoff_to_next is not Handoff.CONTINUOUS:
+            add("STORY_HANDOFF_NOT_CONTINUOUS", shot.shot_id, "use CONTINUOUS inside a story")
+        elif _norm(shot.closing_state) == _norm(following.opening_state):
+            pass
+        else:
+            add("STORY_STATE_GAP", shot.shot_id, "closing_state must equal next opening_state")
+        if (
+            shot.camera_framing.casefold() == following.camera_framing.casefold()
+            and shot.camera_movement is following.camera_movement
+        ):
+            add("STORY_CAMERA_NO_PROGRESSION", shot.shot_id, "change framing or movement")
+    if len(shots) >= 3:
+        if Featured.PRODUCT in shots[0].featured and Featured.PRODUCT not in shots[1].featured:
+            add("STORY_PRODUCT_DISAPPEARS", shots[1].shot_id)
+        last = shots[-1]
+        if not (Featured.PRODUCT in last.featured and Featured.SUBJECT in last.featured):
+            add("STORY_PAYOFF_MISSING", last.shot_id, "final shot shows subject with product")
+        if _norm(shots[0].opening_state) == _norm(last.closing_state):
+            add("STORY_NO_CHANGE", detail="closing state must differ from the opening state")
+    return findings
+
+
+# ── Keyframe kit: three still approval points and a reference-manifest PROPOSAL ─────────
+
+KEYFRAME_KIT_SCHEMA_VERSION = "keyframe_kit.v1"
+KEYFRAME_COUNT = 3
+KIT_ASPECT = {"video.landscape.v1": "16:9", "video.vertical.v1": "9:16", "video.square.v1": "1:1"}
+# What Core must prove about an image before it may anchor a render. Mac Creative cannot
+# supply any of these: a generated still has no trusted provenance by itself.
+CORE_ENFORCEMENT_REQUIRED = (
+    "image sha256 recomputed by Core from the stored bytes",
+    "decoded width and height equal to the output profile",
+    "generation request digest and generator identity recorded outside this kit",
+    "human approval bound to keyframe_id, kit digest and image sha256",
+    "immutable trusted_local_assets[shot_id] reference minted by Core, never by Creative",
+    "explicit I2V feasibility; no silent downgrade to text-to-video",
+)
+
+
+class ApprovalStatus(StrEnum):
+    PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
+
+
+class KeyframeLocks(_Strict):
+    """The conditions that must be identical in all three stills."""
+
+    subject_id: str
+    subject_identity_phrase: str
+    distinguishing_marks: list[str]
+    product_identity_phrase: str
+    scene_id: str
+    environment_phrase: str
+    lighting_phrase: str
+    palette: list[str]
+    screen_direction: Literal["LEFT_TO_RIGHT", "RIGHT_TO_LEFT", "NONE"]
+    aspect_ratio: str
+    locks_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class KeyframeSpec(_Strict):
+    keyframe_id: str = Field(pattern=_ID, max_length=80)
+    shot_id: str = Field(pattern=_ID, max_length=80)
+    order: int = Field(ge=1, le=200)
+    role: BeatRole
+    still_prompt: str = Field(min_length=1, max_length=PROMPT_BUDGET_CHARS)
+    camera_framing: str
+    approval_status: ApprovalStatus = ApprovalStatus.PENDING_HUMAN_REVIEW
+    review_checklist: list[str]
+
+
+class ReferenceProposal(_Strict):
+    """A proposal only: no path, no digest, no trust. Core mints the real reference."""
+
+    keyframe_id: str
+    shot_id: str
+    proposed_render_intent: Literal["IMAGE_TO_VIDEO"] = "IMAGE_TO_VIDEO"
+    trust_state: Literal["UNTRUSTED_PROPOSAL"] = "UNTRUSTED_PROPOSAL"
+
+
+class KeyframeKit(_Strict):
+    schema_version: Literal["keyframe_kit.v1"] = KEYFRAME_KIT_SCHEMA_VERSION
+    story_gate_version: str = STORY_GATE_VERSION
+    kit_id: str = Field(pattern=_ID, max_length=80)
+    bible_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    locks: KeyframeLocks
+    keyframes: list[KeyframeSpec] = Field(min_length=KEYFRAME_COUNT, max_length=KEYFRAME_COUNT)
+    reference_manifest_proposal: list[ReferenceProposal]
+    core_enforcement_required: list[str]
+    kit_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _digest_matches_content(self) -> KeyframeKit:
+        if self.kit_digest != _kit_digest(self.model_dump(mode="json")):
+            raise ValueError("kit_digest does not match content")
+        return self
+
+
+def _kit_digest(payload: dict[str, Any]) -> str:
+    return compute_bible_digest({**payload, "bible_digest": None, "kit_digest": None})
+
+
+class KeyframeKitError(ValueError):
+    pass
+
+
+def build_keyframe_kit(
+    bible: VideoBible, script: CreativeScriptResult, *, output_profile_id: str
+) -> KeyframeKit:
+    """Three approval stills derived from a sealed Bible that passed the story gate."""
+
+    blocking = evaluate_story_storyboard(bible)
+    if blocking or len(bible.shots) != KEYFRAME_COUNT:
+        codes = sorted({item.code for item in blocking}) or ["SHOT_COUNT_NOT_3"]
+        raise KeyframeKitError("story gate failed: " + ", ".join(codes))
+    scene = next(item for item in bible.scenes if item.scene_id == bible.shots[0].scene_id)
+    aspect = KIT_ASPECT[output_profile_id]
+    locks_body = {
+        "subject_id": bible.subject.subject_id,
+        "subject_identity_phrase": bible.subject.identity_phrase,
+        "distinguishing_marks": list(bible.subject.distinguishing_marks),
+        "product_identity_phrase": bible.product.identity_phrase,
+        "scene_id": scene.scene_id,
+        "environment_phrase": scene.environment_phrase,
+        "lighting_phrase": scene.lighting_phrase,
+        "palette": list(scene.palette),
+        "screen_direction": bible.camera_rules.screen_direction,
+        "aspect_ratio": aspect,
+    }
+    locks = KeyframeLocks(**locks_body, locks_digest=compute_bible_digest(locks_body))
+    role_by_beat = {item.beat_id: item.role for item in bible.arc}
+    keyframes: list[KeyframeSpec] = []
+    for shot in bible.shots:
+        fields = expanded_shot_fields(bible, shot)
+        keyframes.append(
+            KeyframeSpec(
+                keyframe_id=f"kf-{shot.shot_id}",
+                shot_id=shot.shot_id,
+                order=shot.order,
+                role=role_by_beat[shot.beat_id],
+                still_prompt=(
+                    f"still frame, {fields['subject']}, {shot.opening_state}, "
+                    f"{fields['environment']}, {fields['lighting_style']}, {shot.camera_framing}"
+                ),
+                camera_framing=shot.camera_framing,
+                review_checklist=[
+                    "exactly one protagonist; same face, ears, eyes and body proportions "
+                    "as the other two stills",
+                    "scarf and product colour, shape and position match the locks",
+                    "every prop rests on a visible surface; nothing floats",
+                    "furniture layout and lighting match the other two stills",
+                    f"state matches opening_state of {shot.shot_id}",
+                ],
+            )
+        )
+    body = {
+        "schema_version": KEYFRAME_KIT_SCHEMA_VERSION,
+        "story_gate_version": STORY_GATE_VERSION,
+        "kit_id": "kk-" + hashlib.sha256(f"{bible.bible_digest}|kit".encode()).hexdigest()[:16],
+        "bible_digest": bible.bible_digest,
+        "locks": locks.model_dump(mode="json"),
+        "keyframes": [item.model_dump(mode="json") for item in keyframes],
+        "reference_manifest_proposal": [
+            ReferenceProposal(keyframe_id=item.keyframe_id, shot_id=item.shot_id).model_dump(
+                mode="json"
+            )
+            for item in keyframes
+        ],
+        "core_enforcement_required": list(CORE_ENFORCEMENT_REQUIRED),
+    }
+    body["kit_digest"] = _kit_digest(body)
+    return KeyframeKit.model_validate(body)
+
+
+class KeyframeSubmission(_Strict):
+    """Declared facts about one candidate still. Declarations are untrusted by construction."""
+
+    keyframe_id: str
+    locks_digest: str
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+    human_approved: bool = False
+    image_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class KeyframeGateOutcome(StrEnum):
+    NO_SEND = "NO_SEND"
+    AWAITING_CORE_PROVENANCE = "AWAITING_CORE_PROVENANCE"
+
+
+@dataclass(frozen=True)
+class KeyframeGateDecision:
+    outcome: KeyframeGateOutcome
+    reasons: tuple[str, ...]
+
+    @property
+    def send_allowed(self) -> bool:
+        # Creative never authorises a render; only Core can, with trusted image metadata.
+        return False
+
+
+def evaluate_keyframe_submissions(
+    kit: KeyframeKit, submissions: list[KeyframeSubmission]
+) -> KeyframeGateDecision:
+    """Fail closed on any inconsistent condition. Best case is a hand-off to Core, not a send."""
+
+    reasons: list[str] = []
+    by_id = {item.keyframe_id: item for item in submissions}
+    if len(by_id) != len(submissions):
+        reasons.append("KEYFRAME_DUPLICATE_SUBMISSION")
+    expected = {item.keyframe_id for item in kit.keyframes}
+    if set(by_id) - expected:
+        reasons.append("KEYFRAME_UNKNOWN_ID")
+    if expected - set(by_id):
+        reasons.append("KEYFRAME_MISSING")
+    width, height = (int(part) for part in kit.locks.aspect_ratio.split(":"))
+    for item in by_id.values():
+        if item.locks_digest != kit.locks.locks_digest:
+            reasons.append(f"KEYFRAME_CONDITIONS_DIFFER:{item.keyframe_id}")
+        if item.width * height != item.height * width:
+            reasons.append(f"KEYFRAME_ASPECT_DIFFERS:{item.keyframe_id}")
+        if not item.human_approved:
+            reasons.append(f"KEYFRAME_NOT_HUMAN_APPROVED:{item.keyframe_id}")
+        if item.image_sha256 is None:
+            reasons.append(f"KEYFRAME_IMAGE_DIGEST_MISSING:{item.keyframe_id}")
+    digests = [item.image_sha256 for item in by_id.values() if item.image_sha256]
+    if len(digests) != len(set(digests)):
+        reasons.append("KEYFRAMES_IDENTICAL")
+    if reasons:
+        return KeyframeGateDecision(KeyframeGateOutcome.NO_SEND, tuple(sorted(set(reasons))))
+    return KeyframeGateDecision(
+        KeyframeGateOutcome.AWAITING_CORE_PROVENANCE, ("CORE_MUST_MINT_TRUSTED_REFERENCE",)
+    )
