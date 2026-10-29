@@ -66,7 +66,7 @@ if (Test-RegularFile $manifest) {
     try {
         $record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
         Write-Output "C004_MANIFEST_JOB_MATCH=$($record.production_job_id -ceq $JobId)"
-        Write-Output "C004_MANIFEST_SHA_MATCH=$($record.artifact_sha256 -eq $(if (Test-RegularFile $finalFile) { (Get-FileHash -LiteralPath $finalFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }))"
+        Write-Output "C004_MANIFEST_SHA_MATCH=$($record.final_sha256 -eq $(if (Test-RegularFile $finalFile) { (Get-FileHash -LiteralPath $finalFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }))"
     } catch { Write-Output 'C004_MANIFEST_PARSE=FAILED' }
 }
 if (Test-RegularFile $workerLog) {
