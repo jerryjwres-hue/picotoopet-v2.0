@@ -129,7 +129,7 @@ def state(tmp_path):
 def candidate(shot: str) -> dict:
     return {
         "shot_id": shot,
-        "input_relative_path": f"PicotooPet/references/{shot}.png",
+        "input_relative_path": f"PicotooPet/references/{SHA}/{shot}.png",
         "sha256": SHA, "bytes": 12,
         "source_reference": "USER_SUPPLIED",
         "source_digest": SOURCE,
@@ -223,10 +223,12 @@ def test_idempotency_conflict_invalid_shots_and_transaction_rollback(state):
     service.register(ReferenceBatchRequestV1.model_validate(base), idempotency_key="same-key")
     changed = payload(digest)
     changed["selected_references"][1]["sha256"] = "c" * 64
+    changed["selected_references"][1]["input_relative_path"] = f"PicotooPet/references/{'c' * 64}/shot-b.png"
     with pytest.raises(ApprovalError, match="REFERENCE_IDEMPOTENCY_CONFLICT"):
         service.register(ReferenceBatchRequestV1.model_validate(changed), idempotency_key="same-key")
     bad = payload(digest)
     bad["selected_references"][1]["shot_id"] = "shot-t"
+    bad["selected_references"][1]["input_relative_path"] = f"PicotooPet/references/{SHA}/shot-t.png"
     with pytest.raises(ApprovalError, match="REFERENCE_SHOT_NOT_I2V"):
         service.register(ReferenceBatchRequestV1.model_validate(bad), idempotency_key="new-key")
     assert len(db.fetchall("SELECT * FROM approvals", ())) == 1
@@ -337,6 +339,48 @@ def _approve_batch(state):
         resolved_by="synthetic-fixture", reason="fixture only",
     )
     return reg.get(batch.approval_id)
+
+
+def test_reject_reference_not_content_addressed_before_approval(state):
+    from pydantic import ValidationError
+
+    db, reg, _, _, digest = state
+    clean = payload(digest)
+    illegal_paths = [
+        "PicotooPet/references/shot-a.png",
+        f"PicotooPet/references/{'0' * 64}/shot-a.png",
+        f"PicotooPet/references/{SHA}/shot-b.png",
+        f"PicotooPet/references/{SHA}/shot-a.jpeg",
+        f"PicotooPet/references/{SHA}/../shot-a.png",
+    ]
+    for bad in illegal_paths:
+        source = json.loads(json.dumps(clean))
+        source["selected_references"][0]["input_relative_path"] = bad
+        with pytest.raises(ValidationError, match="REFERENCE_MANAGED_PATH_INVALID"):
+            ReferenceBatchRequestV1.model_validate(source)
+    assert db.fetchall("SELECT * FROM approvals", ()) == []
+
+
+def test_v11_plan_disallows_noncanonical_approved_reference_path(state):
+    from picotoopet_core.production.versioned_plan import (
+        ProductionJobCreateV11Request, ProductionPlanV11,
+    )
+    from pydantic import ValidationError
+
+    db, _, _, _, _ = state
+    batch = _approve_batch(state)
+    service = _v11_service(state)
+    job = service.create_job_v11(ProductionJobCreateV11Request(
+        creative_package_id=PACKAGE, idempotency_key="v11-validated-reference-sha",
+        approved_reference_ids=[batch.approval_id],
+    ))
+    plan = service.get_plan(job.production_job_id)
+    assert isinstance(plan, ProductionPlanV11)
+    raw = plan.model_dump(mode="json")
+    raw["tasks"][0]["reference_asset"]["input_relative_path"] = "PicotooPet/references/shot-a.png"
+    raw["tasks"][0]["trusted_input_asset_ref"] = "PicotooPet/references/shot-a.png"
+    with pytest.raises(ValidationError, match="PRODUCTION_V11_REFERENCE_NOT_CONTENT_ADDRESSED"):
+        ProductionPlanV11.model_validate(raw)
 
 
 def test_v11_actual_job_persists_approved_two_i2v_plus_t2v_and_rechecks_revocation(state):
