@@ -30,6 +30,10 @@ internal static class Program
         Console.WriteLine("C011_FULL_DECODE_REJECTION=PASS");
         await RestartAsync();
         Console.WriteLine("C011_DURABLE_RESTART=PASS");
+        await TransientPostproductionRecoveryAsync();
+        Console.WriteLine("C011_TRANSIENT_POSTPRODUCTION_RETRY=PASS");
+        await InvalidDataNeverRetriesAsync();
+        Console.WriteLine("C011_INVALID_DATA_NO_RETRY=PASS");
         await GuiOnlyReadsPersistedQaAsync();
         Console.WriteLine("P0_GUI_ONLY_READS_PERSISTED_QA=PASS");
         await GuiRevokedProjectionCannotOpenAsync();
@@ -81,7 +85,10 @@ internal static class Program
         bool returnMissingMaster = false,
         bool decodeFailure = false,
         VerifiedGoalDeliveryProjectionStore? projection = null,
-        bool backgroundProduction = true)
+        bool backgroundProduction = true,
+        Func<bool>? transientComposeFailure = null,
+        Func<DateTimeOffset>? utcNow = null,
+        TimeSpan? retryDelay = null)
     {
         var source = fixture.Input;
         var baseline = LifecycleTests.Input(fixture, null);
@@ -101,7 +108,9 @@ internal static class Program
                 ?? throw new InvalidDataException("C011_MISSING_OVERLAY")),
             async (input, ct) =>
             {
-                if (throwOnCompose) throw new IOException("synthetic composer rejection");
+                // ── A controllable I/O outage models missing ffmpeg / temporarily missing media roots. ──
+                if (throwOnCompose || transientComposeFailure?.Invoke() == true)
+                    throw new IOException("synthetic composer rejection");
                 var result = await fixture.Service.ComposeAsync(input, ct).ConfigureAwait(false);
                 return returnMissingMaster ? new MasterCompositionResult(true, null, null) : result;
             },
@@ -109,7 +118,8 @@ internal static class Program
             includeGate ? authorityOverride ?? ((goal, job, ct) =>
                 Task.FromResult(authority)) : null,
             includeGate ? qaOverride ?? qa.VerifyAsync : null,
-            durableProjection: projection, backgroundProduction: backgroundProduction);
+            durableProjection: projection, backgroundProduction: backgroundProduction,
+            utcNow: utcNow, retryDelay: retryDelay);
     }
 
     private static async Task<GoalDeliverySnapshot> WaitAsync(
@@ -232,6 +242,54 @@ internal static class Program
         }
     }
 
+
+    private static async Task TransientPostproductionRecoveryAsync()
+    {
+        using var fixture = await Fixture.CreateAsync(false, false);
+        var continuation = LifecycleTests.Input(fixture, null).GoalContinuation;
+        var launcher = new Launcher();
+        var now = new DateTimeOffset(2026, 10, 29, 0, 0, 0, TimeSpan.Zero);
+        var unavailable = true;
+        await using var coordinator = Coordinator(fixture, launcher, false, false,
+            transientComposeFailure: () => unavailable, utcNow: () => now,
+            retryDelay: TimeSpan.FromMinutes(2));
+
+        // ── A source-backed transient outage can fail before C011 receipt exists. ──
+        await WaitAsync(coordinator, continuation, GoalDeliveryPhase.Failed);
+        Check(!coordinator.CurrentSnapshot.CanOpen && launcher.Opens == 0,
+            "TRANSIENT_FAILURE_NO_UNVERIFIED_OPEN");
+        await Task.Delay(100);
+        unavailable = false;
+        Check(coordinator.Observe(continuation.GoalId, continuation).Phase == GoalDeliveryPhase.Failed,
+            "TRANSIENT_COOLDOWN_NO_IMMEDIATE_RETRY");
+
+        // ── A later read-only observation reuses frozen sources after cooldown, no GPU path. ──
+        now = now.AddMinutes(3);
+        await WaitAsync(coordinator, continuation, GoalDeliveryPhase.DeliveryReady);
+        Check(coordinator.CurrentSnapshot.CanOpen, "TRANSIENT_RETRY_REQUIRES_QA");
+        Check(await coordinator.OpenCurrentAsync(), "TRANSIENT_RETRY_VERIFIED_OPEN");
+        Check(launcher.Opens == 1, "TRANSIENT_RETRY_ONE_OPEN");
+    }
+
+    private static async Task InvalidDataNeverRetriesAsync()
+    {
+        using var fixture = await Fixture.CreateAsync(true, false);
+        var continuation = LifecycleTests.Input(fixture, null).GoalContinuation;
+        var launcher = new Launcher();
+        var now = new DateTimeOffset(2026, 10, 29, 0, 0, 0, TimeSpan.Zero);
+        await using var coordinator = Coordinator(fixture, launcher, true, false,
+            returnMissingMaster: true, utcNow: () => now,
+            retryDelay: TimeSpan.FromMinutes(2));
+
+        // ── InvalidDataException inherits IOException but must stay permanently fail-closed. ──
+        await WaitAsync(coordinator, continuation, GoalDeliveryPhase.Failed);
+        await Task.Delay(100);
+        now = now.AddDays(1);
+        Check(coordinator.Observe(continuation.GoalId, continuation).Phase == GoalDeliveryPhase.Failed,
+            "TAMPERED_MASTER_NEVER_RETRIES");
+        Check(!coordinator.CurrentSnapshot.CanOpen && launcher.Opens == 0,
+            "TAMPERED_MASTER_NEVER_OPENS");
+    }
 
     private static async Task GuiOnlyReadsPersistedQaAsync()
     {
