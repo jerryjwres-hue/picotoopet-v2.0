@@ -1,5 +1,15 @@
 using PicotooPet.Desktop.Services;
 
+if (args.Length == 4 && args[0] == "--worker-key-probe")
+{
+    PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.Probe(args[1], args[2], bool.Parse(args[3]));
+    return;
+}
+if (args.Contains("--worker-signing-vectors-only", StringComparer.Ordinal))
+{
+    PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.Vectors();
+    return;
+}
 if (args.Length == 3 && args[0] == "--i2v-snapshot-crash-probe")
 {
     await PicotooPet.MediaWorker.SmokeTests.DurableReferenceSnapshotTests.ProbeAsync(args[1],
@@ -48,6 +58,7 @@ PicotooPet.MediaWorker.SmokeTests.ReferenceV11BindingTests.Run();
 await PicotooPet.MediaWorker.SmokeTests.DurableReferenceSnapshotTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.I2VExecutorSnapshotTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.ShippingReferenceProofTests.RunAsync();
+await PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.LegacyContractTests.RunAsync();
 PicotooPet.MediaWorker.SmokeTests.SameExeHostTests.Run();
 Console.WriteLine("P0_SAME_EXE_WORKER_JOURNAL_RECOVERY=PASS");
