@@ -27,6 +27,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private readonly CancellationTokenSource _lifetime = new();
     private readonly HashSet<string> _running = new(StringComparer.Ordinal);
     private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTimeOffset> _retryAfter = new(StringComparer.Ordinal);
+    private readonly Func<DateTimeOffset> _utcNow;
+    private readonly TimeSpan _retryDelay;
     private readonly HashSet<Task> _tasks = [];
     private GoalDeliverySnapshot _current = GoalDeliverySnapshot.Idle(null, null);
     private GoalDeliveryCandidateV1? _candidate;
@@ -54,10 +57,16 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         Func<string, string, CancellationToken, Task<C011QaDeliveryAuthority>>? authority = null,
         Func<FinalVideoQaInputV1, CancellationToken, Task<FinalVideoQaResult>>? verifyQa = null,
         VerifiedGoalDeliveryProjectionStore? durableProjection = null,
-        bool backgroundProduction = true)
+        bool backgroundProduction = true,
+        Func<DateTimeOffset>? utcNow = null,
+        TimeSpan? retryDelay = null)
     {
         _durableProjection = durableProjection;
         _backgroundProduction = backgroundProduction;
+        // ── A transient postproduction outage must not permanently poison a ready Core job. ──
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+        _retryDelay = retryDelay ?? TimeSpan.FromMinutes(2);
+        if (_retryDelay <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(retryDelay));
         _assembler = assembler ?? throw new ArgumentNullException(nameof(assembler));
         _getNarrationPlan = getNarrationPlan ?? throw new ArgumentNullException(nameof(getNarrationPlan));
         _getOverlayPlan = getOverlayPlan ?? throw new ArgumentNullException(nameof(getOverlayPlan));
@@ -157,6 +166,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                     _current = Failed(goalId!, jobId);
                 }
                 return _current;
+            }
+            // ── Retry only after cooldown; Core/GPU are never claimed or re-submitted here. ──
+            if (_retryAfter.TryGetValue(key, out var resumeAfter))
+            {
+                if (_utcNow() < resumeAfter) return _current;
+                _retryAfter.Remove(key);
             }
             if (_running.Contains(key))
             {
@@ -571,11 +586,20 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 }
             }
         }
-        catch (Exception)
+        catch (Exception error)
         {
             lock (_gate)
             {
-                _failed.Add(key);
+                // ── Missing local tools/roots and transient I/O/network failures are repairable.
+                // ── All integrity, QA, and provenance failures remain permanently fail-closed.
+                if (IsRetryablePostproductionFailure(error))
+                {
+                    _retryAfter[key] = _utcNow() + _retryDelay;
+                }
+                else
+                {
+                    _failed.Add(key);
+                }
                 if (!_disposed && IsCurrent(goalId, jobId))
                 {
                     _candidate = null;
@@ -591,6 +615,14 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             lock (_gate) { _running.Remove(key); }
         }
     }
+
+    private static bool IsRetryablePostproductionFailure(Exception error) =>
+        // ── Never retry integrity/QA decisions; only well-defined infrastructure outages.
+        error is IOException or System.Net.Http.HttpRequestException or TimeoutException
+        || (error is InvalidOperationException
+            && error.Message is "FINAL_VIDEO_PACKAGE_NOT_FOUND"
+                or "FINAL_VIDEO_FFMPEG_UNAVAILABLE"
+                or "FINAL_VIDEO_FFMPEG_START_FAILED");
 
     private static void VerifyPlanPair(
         string jobId, NarrationPlanResponseRecord narration, CaptionOverlayPlanResponseRecord overlay)
