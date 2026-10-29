@@ -359,7 +359,7 @@ class ProductionService:
                     raise ValueError("PRODUCTION_TASK_TERMINAL_STATE")
                 if snapshot.status is ProductionTaskStatus.RUNNING:
                     bound = connection.execute(
-                        "SELECT comfy_prompt_id,status FROM production_attempts "
+                        "SELECT comfy_prompt_id,status,executor_id FROM production_attempts "
                         "WHERE production_task_id=? AND attempt_number=?",
                         (snapshot.production_task_id, snapshot.attempt_count),
                     ).fetchone()
@@ -375,7 +375,8 @@ class ProductionService:
                         # permit reclaim of the unbound reservation only when
                         # attempt1 is durably recorded as the specific local retry.
                         # Windows RetryPrepared Journal is still required to post.
-                        if snapshot.attempt_count != 2 or bound["comfy_prompt_id"] is not None:
+                        if (snapshot.attempt_count != 2 or bound["comfy_prompt_id"] is not None
+                            or bound["executor_id"] != executor_id):
                             raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
                         prior = connection.execute(
                             "SELECT status,failure_code FROM production_attempts "
