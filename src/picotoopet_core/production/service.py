@@ -379,6 +379,23 @@ class ProductionService:
                         self.repository.database, planned.reference_asset
                     )
                 if task.status is ProductionTaskStatus.SUCCEEDED:
+                    # ── Completed shots remain immutable only with an exact bound result. ──
+                    succeeded = connection.execute(
+                        "SELECT * FROM production_attempts "
+                        "WHERE production_job_id=? AND production_task_id=? AND attempt_number=?",
+                        (production_job_id, task.production_task_id, task.attempt_count),
+                    ).fetchone()
+                    if (
+                        task.attempt_count < 1
+                        or not task.comfy_prompt_id
+                        or not task.output_sha256
+                        or not task.output_relpath
+                        or not task.output_bytes
+                        or succeeded is None
+                        or succeeded["status"] != "Succeeded"
+                        or succeeded["comfy_prompt_id"] != task.comfy_prompt_id
+                    ):
+                        raise ValueError("PRODUCTION_V11_SUCCEEDED_EVIDENCE_MISMATCH")
                     continue
                 if task.status in {
                     ProductionTaskStatus.NEEDS_HUMAN,
@@ -553,6 +570,8 @@ class ProductionService:
         production_task_id: str,
         request: ProductionTaskCommitRequest,
     ) -> ProductionTaskRecord:
+        # ── No legacy result path can commit v1.1 without trusted Windows proof. ──
+        self.repository._require_v11_worker_proof(production_job_id)
         # ── Validate evidence against the exact task plan before persistence ─
         task = self.repository.get_task(production_job_id, production_task_id)
         validate_task_commit(task.task_plan, request)
