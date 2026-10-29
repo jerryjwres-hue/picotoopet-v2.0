@@ -616,13 +616,17 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         }
     }
 
-    private static bool IsRetryablePostproductionFailure(Exception error) =>
-        // ── Never retry integrity/QA decisions; only well-defined infrastructure outages.
-        error is IOException or System.Net.Http.HttpRequestException or TimeoutException
-        || (error is InvalidOperationException
-            && error.Message is "FINAL_VIDEO_PACKAGE_NOT_FOUND"
-                or "FINAL_VIDEO_FFMPEG_UNAVAILABLE"
-                or "FINAL_VIDEO_FFMPEG_START_FAILED");
+    private static bool IsRetryablePostproductionFailure(Exception error)
+    {
+        // ── InvalidDataException inherits IOException; never retry tampered/provenance input.
+        if (error is InvalidDataException or FinalVideoQaException) return false;
+        // ── Only known recoverable infrastructure outages may re-observe after cooldown.
+        return error is IOException or System.Net.Http.HttpRequestException or TimeoutException
+            || (error is InvalidOperationException
+                && error.Message is "FINAL_VIDEO_PACKAGE_NOT_FOUND"
+                    or "FINAL_VIDEO_FFMPEG_UNAVAILABLE"
+                    or "FINAL_VIDEO_FFMPEG_START_FAILED");
+    }
 
     private static void VerifyPlanPair(
         string jobId, NarrationPlanResponseRecord narration, CaptionOverlayPlanResponseRecord overlay)
