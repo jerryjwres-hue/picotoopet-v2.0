@@ -19,3 +19,10 @@ The story gate is not called by `quality.py` or `director.py`, so running v2 job
 3. Human approval bound to `keyframe_id`, `kit_digest` and image sha256.
 4. Immutable `trusted_local_assets[shot_id]` reference minted by Core; I2V feasibility explicit, no silent T2V downgrade.
 5. Any visual identity/physics claim (same cat, no floating lamp) needs a human or calibrated visual review of real pixels; text checks cannot prove it.
+
+## Live Creative v2 wiring (follow-up to the controller's 6501940432)
+- Entry: `creative/execution.py::_run_stage` -> `CreativeQualityGate.evaluate` -> `quality._evaluate_video_bible` now passes `story_gate=directives.story_gate`.
+- Selection: only an explicit positive phrase in the Goal objective (`quality-first story`, `story gate`, `keyframe kit`, `质量优先故事`, `故事门禁`, `关键帧审核`; negated forms do not select). Never inferred from shot count, never for v1. Without the phrase, behavior and stage input digests are unchanged.
+- Selected jobs: the Story Director context gains `director_constraints.story_gate` (`STORY_GATE_RULES`); gate findings come back as one deterministic correction; a story that fails twice ends `NeedsHuman` / `CREATIVE_VIDEO_BIBLE_UNRESOLVED` with no package.
+- Output: for exactly three gated shots the package gets a sidecar `stage_results["keyframe_kit.v1"]`: three `PENDING_HUMAN_REVIEW` stills and `UNTRUSTED_PROPOSAL` references. It claims no generated image, hash, approval or send permission. The compiler ignores the key (same as `video_bible.v1`).
+- Core contract, not implemented here (`production/**` is not ours): to make the kit a mandatory pre-GPU review, Core must refuse to start a renderer for a package whose `stage_results` contains `keyframe_kit.v1` until it holds, per keyframe, a Core-recomputed image sha256 and a human approval bound to `keyframe_id` + `kit_digest` + that sha256, and has minted `trusted_local_assets[shot_id]` itself.

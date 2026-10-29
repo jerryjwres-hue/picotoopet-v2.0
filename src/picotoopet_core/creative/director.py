@@ -61,6 +61,17 @@ STORY_DIRECTOR_INSTRUCTIONS = (
 )
 
 
+STORY_GATE_RULES = [
+    "one protagonist in every shot; identity_phrase contains every distinguishing mark",
+    "never restate an accessory or product colour differently in any shot",
+    "one scene_id and one lighting phrase for the whole story; screen_direction not NONE",
+    "every handoff_to_next is CONTINUOUS; closing_state equals the next opening_state",
+    "adjacent shots change camera framing or movement",
+    "product shots state what the product rests on or touches; never floating or hovering",
+    "the final shot shows subject and product together in a state that differs from shot 1",
+]
+
+
 @dataclass(frozen=True)
 class GoalDirectives:
     """Hard, explicit asks found in the Goal objective. They can only tighten the gates."""
@@ -68,6 +79,8 @@ class GoalDirectives:
     shot_count: int | None = None
     text_to_video_only: bool = False
     shot_seconds: float | None = None
+    # Explicit opt-in for the quality-first story gate (video_bible.evaluate_story_storyboard).
+    story_gate: bool = False
 
 
 _WORD_NUMBERS = {
@@ -121,6 +134,12 @@ _SECONDS = (
     re.compile(r"每(?:个)?镜头\s*(?P<s>\d+(?:\.\d+)?)\s*秒"),
 )
 _SECONDS_RANGE = (2.0, 5.0)
+# Only these exact, positive phrases select the story gate; it is never inferred from a shot
+# count, so every existing Goal keeps its current gates.
+_STORY_GATE = re.compile(
+    r"(?<!no )(?<!without )(?<!not )(?<!不要)(?<!不使用)(?<!无)"
+    r"(?:quality-first story|story[- ]gate|keyframe kit|质量优先故事|故事门禁|关键帧审核)"
+)
 
 
 def _requested_shot_seconds(text: str) -> float | None:
@@ -170,6 +189,7 @@ def parse_goal_directives(objective: str | None) -> GoalDirectives:
         shot_count=shot_count,
         text_to_video_only=marked and not wants_image,
         shot_seconds=_requested_shot_seconds(text),
+        story_gate=_STORY_GATE.search(text) is not None,
     )
 
 
@@ -305,4 +325,6 @@ def director_constraints(
         constraints["text_to_video_only"] = True
     if directives is not None and directives.shot_seconds is not None:
         constraints["required_shot_seconds"] = directives.shot_seconds
+    if directives is not None and directives.story_gate:
+        constraints["story_gate"] = STORY_GATE_RULES
     return constraints
