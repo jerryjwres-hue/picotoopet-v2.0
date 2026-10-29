@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi.responses import FileResponse
 
 from picotoopet_core.api.errors import ApiError
@@ -80,6 +83,63 @@ def authorize_production_reference_v11(
     return execute_production(lambda: request.app.state.services.production.authorize_reference_v11(
         production_job_id, production_task_id
     ))
+
+
+class WorkerChallengeRequestV11(BaseModel):
+    """Scoped transport request. Bearer alone is NOT proof of a Worker identity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    worker_key_id: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
+    executor_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.-]+$")
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class WorkerChallengeResponseV11(BaseModel):
+    """One-time challenge, NOT approval, lease, executable attestation, or token."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["production.worker_challenge.v1"] = "production.worker_challenge.v1"
+    worker_key_id: str
+    executor_id: str
+    production_job_id: str
+    plan_digest: str
+    nonce: str = Field(pattern=r"^[0-9a-f]{64}$")
+    issued_at: datetime
+    expires_at: datetime
+
+
+@router.post(
+    "/production/jobs/{production_job_id}/worker-challenge",
+    response_model=WorkerChallengeResponseV11,
+)
+def issue_worker_challenge_v11(
+    production_job_id: str,
+    payload: WorkerChallengeRequestV11,
+    request: Request,
+    response: Response,
+) -> WorkerChallengeResponseV11:
+    # ── Existing require_auth is transport-only; never key enrollment, trust
+    # ── elevation, lease allocation, or permission to issue a GPU/Comfy POST.
+    # ── No GET, URL nonce or cacheable challenge. Key lookup and approval are
+    # ── Core DB facts checked atomically with the new random nonce insertion.
+    nonce, issued_at, expires_at = execute_production(
+        lambda: request.app.state.services.production.issue_worker_challenge_v11(
+            production_job_id, payload.worker_key_id, payload.executor_id, payload.plan_digest
+        )
+    )
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
+    return WorkerChallengeResponseV11(
+        worker_key_id=payload.worker_key_id,
+        executor_id=payload.executor_id,
+        production_job_id=production_job_id,
+        plan_digest=payload.plan_digest,
+        nonce=nonce,
+        issued_at=issued_at,
+        expires_at=expires_at,
+    )
 
 
 @router.post("/production/jobs/{production_job_id}/witness/preflight", status_code=204)
