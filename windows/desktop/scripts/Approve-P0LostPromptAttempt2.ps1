@@ -30,7 +30,7 @@ $gate = Join-Path $root 'three-shot-acceptance.json'
 $armed = "$gate.armed"
 $approval = Join-Path $root 'lost-prompt-attempt2-approval.json'
 foreach ($parent in @($root)) {
-    for ($p = New-Object IO.DirectoryInfo($parent); $null -ne $p; $p = $p.Parent) {
+    for ($p = [System.IO.DirectoryInfo]::new($parent); $null -ne $p; $p = $p.Parent) {
         if ($p.Exists -and (($p.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
             throw 'P0_REPARSE_ROOT_REJECTED'
         }
