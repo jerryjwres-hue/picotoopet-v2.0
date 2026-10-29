@@ -228,6 +228,7 @@ def test_idempotency_conflict_invalid_shots_and_transaction_rollback(state):
         service.register(ReferenceBatchRequestV1.model_validate(changed), idempotency_key="same-key")
     bad = payload(digest)
     bad["selected_references"][1]["shot_id"] = "shot-t"
+    bad["selected_references"][1]["input_relative_path"] = f"PicotooPet/references/{SHA}/shot-t.png"
     with pytest.raises(ApprovalError, match="REFERENCE_SHOT_NOT_I2V"):
         service.register(ReferenceBatchRequestV1.model_validate(bad), idempotency_key="new-key")
     assert len(db.fetchall("SELECT * FROM approvals", ())) == 1
