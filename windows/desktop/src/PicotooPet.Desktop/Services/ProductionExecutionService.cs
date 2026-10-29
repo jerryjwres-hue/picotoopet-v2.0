@@ -440,18 +440,89 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             throw new ProductionWorkerException("MEDIA_PROMPT_ID_CONFLICT");
         state ??= new ProductionSubmission(claim.ProductionJobId, task.ProductionTaskId, planDigest, graphDigest, "Prepared", promptId);
         if (state.Phase == "Settled") throw new ProductionWorkerException("MEDIA_CORE_RESULT_CONFLICT");
+
+        // Opt-in reboot recovery for a single explicitly approved third shot.
+        // No approval file => unchanged behavior: resume only the original prompt.
+        // Core task.updated_at is the durable pre-boot binding witness; local
+        // journal mtime is unsuitable because a reconnect may rewrite it.
+        if (state.Phase == "Submitted" && state.PromptId is not null
+            && snapshot.Status == "Running" && snapshot.AttemptCount == 1
+            && snapshot.ComfyPromptId == state.PromptId
+            && task.Order == 3 && claim.Tasks.Length == 3
+            && claim.Tasks.Count(t => t.Status == "Succeeded") == 2
+            && P0LostPromptRetryApproval.IsApproved(
+                claim.ProductionJobId, task.ProductionTaskId, state.PromptId,
+                planDigest, snapshot.UpdatedAt,
+                P0LostPromptRetryApproval.CurrentWindowsBootUtc(), DateTimeOffset.UtcNow))
+        {
+            await AssertLostPromptNoGpuAndNoOutputAsync(
+                claim.ProductionJobId, task, state.PromptId, preflight, cancellationToken)
+                .ConfigureAwait(false);
+            // Durable before Core modifies attempt1 / creates unbound attempt2.
+            state = state with
+            {
+                Phase = "RetryPrepared",
+                PreviousPromptId = state.PromptId,
+                PreviousTaskUpdatedAtUtc = snapshot.UpdatedAt,
+                PromptId = null,
+            };
+            _journal.Save(state);
+            promptId = null;
+        }
+
         if (state.Phase == "FailurePending")
         {
             await ReportFinalFailureAsync(claim, task, state, cancellationToken).ConfigureAwait(false);
             throw new ProductionWorkerException("COMFY_RETRY_BUDGET_EXHAUSTED");
         }
-        if (promptId is null && (state.Phase is "Submitting" or "Submitted" || snapshot.AttemptCount > 0))
+        if (state.Phase == "RetryPrepared")
+        {
+            // Approval persists across a crash AFTER reserving attempt2 but BEFORE
+            // submitting. In this phase no new POST has started.
+            var originalPrompt = state.PreviousPromptId
+                ?? throw new ProductionWorkerException("MEDIA_RECOVERY_APPROVAL_INVALID");
+            var previousUpdatedUtc = state.PreviousTaskUpdatedAtUtc
+                ?? throw new ProductionWorkerException("MEDIA_RECOVERY_APPROVAL_INVALID");
+            if (task.Order != 3 || claim.Tasks.Length != 3
+                || claim.Tasks.Count(t => t.Status == "Succeeded") != 2
+                || snapshot.Status != "Running"
+                || !(snapshot.AttemptCount == 1 && snapshot.ComfyPromptId == originalPrompt
+                    || snapshot.AttemptCount == 2 && snapshot.ComfyPromptId is null)
+                || !P0LostPromptRetryApproval.IsApproved(
+                    claim.ProductionJobId, task.ProductionTaskId, originalPrompt,
+                    planDigest, previousUpdatedUtc,
+                    P0LostPromptRetryApproval.CurrentWindowsBootUtc(), DateTimeOffset.UtcNow))
+                throw new ProductionWorkerException("MEDIA_RECOVERY_APPROVAL_INVALID");
+
+            await AssertLostPromptNoGpuAndNoOutputAsync(
+                claim.ProductionJobId, task, originalPrompt, preflight, cancellationToken)
+                .ConfigureAwait(false);
+            using var attempt2Permit = _submissionPermit?.Invoke(claim.ProductionJobId, planDigest);
+            // Core replays null reservation idempotently if attempt2 was already
+            // reserved before a crash. Attempt1 remains in Core audit.
+            var reserved = await _session.MarkProductionAttemptAsync(
+                claim.ProductionJobId, task.ProductionTaskId,
+                new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null),
+                cancellationToken).ConfigureAwait(false);
+            if (reserved.AttemptCount != 2 || reserved.Status != "Running"
+                || reserved.ComfyPromptId is not null)
+                throw new ProductionWorkerException("MEDIA_ATTEMPT2_RESERVATION_CONFLICT");
+            // Crash after this transition is uncertain: reconciler must find
+            // attempt2 graph before any further POST, even if history is missing.
+            state = state with { Phase = "Submitting" };
+            _journal.Save(state);
+            promptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else if (promptId is null && (state.Phase is "Submitting" or "Submitted" || snapshot.AttemptCount > 0))
         {
             // Legacy unbound attempts AND crash after reservation are uncertain, even if Prepared.
             // Persist the GPU barrier before any network read that can fail or return no match.
             state = state with { Phase = "Submitting" }; _journal.Save(state);
             promptId = await _reconciler.FindExactAsync(graphDigest, cancellationToken).ConfigureAwait(false)
                 ?? throw new ProductionWorkerException("MEDIA_SUBMISSION_UNKNOWN");
+            if (state.PreviousPromptId is not null && promptId == state.PreviousPromptId)
+                throw new ProductionWorkerException("MEDIA_SUBMISSION_UNKNOWN");
         }
         if (promptId is null)
         {
@@ -517,6 +588,25 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
 
     private Task ReconcileTerminalSubmissionAsync(ProductionSubmission state, CancellationToken ct) =>
         ProductionPendingRecovery.ReconcileTerminalAsync(_journal, _reconciler, state, ct);
+
+    /// <summary>No destructive Comfy actions; exclude active GPU and any already produced output.</summary>
+    private async Task AssertLostPromptNoGpuAndNoOutputAsync(
+        string jobId, ProductionTaskPlanRecord task, string oldPromptId,
+        ProductionPreflightSnapshot preflight, CancellationToken ct)
+    {
+        if (_reconciler is not ComfyPromptReconciler readOnly
+            || !await readOnly.IsMissingWithIdleQueueAsync(oldPromptId, ct).ConfigureAwait(false))
+            throw new ProductionWorkerException("MEDIA_RECOVERY_GPU_UNVERIFIED");
+
+        var prefix = BuildFilenamePrefix(jobId, task).Replace('/', Path.DirectorySeparatorChar);
+        var outputPrefix = Path.Combine(preflight.OutputRoot!,
+            Path.ChangeExtension(prefix, null) ?? prefix);
+        var dir = Path.GetDirectoryName(outputPrefix)!;
+        AssertNoLinkEscape(preflight.OutputRoot!, dir);
+        if (Directory.Exists(dir) && Directory.EnumerateFiles(dir,
+                Path.GetFileName(outputPrefix) + "*.webm", SearchOption.TopDirectoryOnly).Any())
+            throw new ProductionWorkerException("MEDIA_RECOVERY_OUTPUT_EXISTS");
+    }
 
     private static JsonObject BuildPrompt(string jobId, ProductionTaskPlanRecord task, ProductionPreflightSnapshot preflight)
     {

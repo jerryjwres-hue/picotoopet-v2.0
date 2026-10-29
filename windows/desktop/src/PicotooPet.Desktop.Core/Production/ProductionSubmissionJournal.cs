@@ -8,7 +8,8 @@ namespace PicotooPet.Desktop.Core.Production;
 
 /// <summary>只记录提交不确定性，不保存 lease/token/原文，不替代 Core 成功/失败事实。</summary>
 public sealed record ProductionSubmission(string JobId, string TaskId, string PlanDigest,
-    string GraphDigest, string Phase, string? PromptId, string? FailureCode = null);
+    string GraphDigest, string Phase, string? PromptId, string? FailureCode = null,
+    string? PreviousPromptId = null, DateTimeOffset? PreviousTaskUpdatedAtUtc = null);
 
 public sealed class ProductionWorkerException(string code) : Exception(code)
 {
@@ -106,8 +107,11 @@ public sealed class ProductionSubmissionJournal
     private static void Validate(ProductionSubmission s)
     {
         if (string.IsNullOrWhiteSpace(s.JobId) || s.JobId.Length > 160 || string.IsNullOrWhiteSpace(s.TaskId) || s.TaskId.Length > 160
-            || !Sha(s.PlanDigest) || !Sha(s.GraphDigest) || s.Phase is not ("Prepared" or "Submitting" or "Submitted" or "FailurePending" or "Settled")
-            || s.PromptId is { Length: > 200 } || s.Phase is "Submitted" or "FailurePending" && string.IsNullOrWhiteSpace(s.PromptId)
+            || !Sha(s.PlanDigest) || !Sha(s.GraphDigest) || s.Phase is not ("Prepared" or "RetryPrepared" or "Submitting" or "Submitted" or "FailurePending" or "Settled")
+            || s.PromptId is { Length: > 200 } || s.PreviousPromptId is { Length: > 200 } 
+            || (s.Phase == "RetryPrepared" && (s.PromptId is not null || string.IsNullOrWhiteSpace(s.PreviousPromptId)
+                || s.PreviousTaskUpdatedAtUtc is null))
+            || s.Phase is "Submitted" or "FailurePending" && string.IsNullOrWhiteSpace(s.PromptId)
             || s.Phase == "FailurePending" && s.FailureCode != "COMFY_RETRY_BUDGET_EXHAUSTED"
             || s.FailureCode is not (null or "COMFY_RETRY_BUDGET_EXHAUSTED"))
             throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");

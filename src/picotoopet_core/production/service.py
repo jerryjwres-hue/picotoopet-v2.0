@@ -359,21 +359,35 @@ class ProductionService:
                     raise ValueError("PRODUCTION_TASK_TERMINAL_STATE")
                 if snapshot.status is ProductionTaskStatus.RUNNING:
                     bound = connection.execute(
-                        "SELECT comfy_prompt_id,status FROM production_attempts "
+                        "SELECT comfy_prompt_id,status,executor_id FROM production_attempts "
                         "WHERE production_task_id=? AND attempt_number=?",
                         (snapshot.production_task_id, snapshot.attempt_count),
                     ).fetchone()
-                    if (
-                        not snapshot.comfy_prompt_id
-                        or bound is None
-                        or bound["status"] != "Running"
-                        or bound["comfy_prompt_id"] != snapshot.comfy_prompt_id
-                    ):
+                    if bound is None or bound["status"] != "Running":
                         raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
-                    # A bound second attempt may ONLY be recovered by history
-                    # and exact commit, never by allocating a third GPU POST.
+                    if snapshot.comfy_prompt_id:
+                        # Existing bound attempt: recover this exact prompt only,
+                        # never create an additional POST just because history is gone.
+                        if bound["comfy_prompt_id"] != snapshot.comfy_prompt_id:
+                            raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
+                    else:
+                        # Crash after explicit attempt2 reservation but BEFORE POST:
+                        # permit reclaim of the unbound reservation only when
+                        # attempt1 is durably recorded as the specific local retry.
+                        # Windows RetryPrepared Journal is still required to post.
+                        if (snapshot.attempt_count != 2 or bound["comfy_prompt_id"] is not None
+                            or bound["executor_id"] != executor_id):
+                            raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
+                        prior = connection.execute(
+                            "SELECT status,failure_code FROM production_attempts "
+                            "WHERE production_task_id=? AND attempt_number=1",
+                            (snapshot.production_task_id,),
+                        ).fetchone()
+                        if (prior is None or prior["status"] != "Failed"
+                            or prior["failure_code"] != "COMFY_RETRYABLE_LOCAL_FAILURE"):
+                            raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
+                    # Never exceed the existing bounded attempt budget.
                     if snapshot.attempt_count < 1:
-                        # ── Never recover a phantom GPU prompt without a Core reservation. ──
                         raise ValueError("PRODUCTION_PROMPT_RECOVERY_UNVERIFIED")
                     if snapshot.attempt_count > self.repository.MAX_ATTEMPTS_PER_TASK:
                         raise ValueError("PRODUCTION_ATTEMPT_BUDGET_EXHAUSTED")
