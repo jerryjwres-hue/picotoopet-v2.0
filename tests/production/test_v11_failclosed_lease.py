@@ -247,7 +247,7 @@ def test_forged_active_lease_cannot_reserve_bind_complete_or_fail(case):
     assert db.scalar("SELECT COUNT(*) FROM production_attempts WHERE production_job_id=?",
                      (job.production_job_id,)) == 0
     assert all(task.attempt_count == 0 for task in service.repository.list_tasks(job.production_job_id))
-    assert service.repository.get_job(job.production_job_id).status.value == "Planned"
+    assert service.repository.get_job(job.production_job_id).status == job.status
 
 
 def test_audit_observes_approvals_under_single_sqlite_immediate_transaction(case, monkeypatch):
