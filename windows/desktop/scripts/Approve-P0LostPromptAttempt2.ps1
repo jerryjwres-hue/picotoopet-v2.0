@@ -47,7 +47,7 @@ if (-not ([IO.File]::Exists($armed) -and [IO.File]::Exists($gate))) {
 }
 $g = Get-Content -LiteralPath $gate -Raw | ConvertFrom-Json
 if ($g.schema_version -ne '1.0' -or $g.mode -ne 'hold' -or
-    $g.PSObject.Properties.Count -ne 2) { throw 'P0_NOT_IN_STRICT_HOLD' }
+    @($g.PSObject.Properties | ForEach-Object { $_.Name }).Count -ne 2) { throw 'P0_NOT_IN_STRICT_HOLD' }
 if ([IO.File]::Exists($approval)) {
     throw 'P0_APPROVAL_ALREADY_EXISTS_STOP_AND_REVIEW'
 }
