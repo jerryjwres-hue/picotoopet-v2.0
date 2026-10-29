@@ -24,6 +24,7 @@ from picotoopet_core.production.models import (
 )
 from picotoopet_core.production.versioned_plan import (
     ApprovedReferenceAuthorizationV11, ProductionJobCreateV11Request, ProductionPlanV11,
+    WorkerWitnessV11,
 )
 from picotoopet_core.security.auth import require_auth
 
@@ -79,6 +80,23 @@ def authorize_production_reference_v11(
     return execute_production(lambda: request.app.state.services.production.authorize_reference_v11(
         production_job_id, production_task_id
     ))
+
+
+@router.post("/production/jobs/{production_job_id}/witness/preflight", status_code=204)
+def preflight_production_worker_witness_v11(
+    production_job_id: str,
+    payload: WorkerWitnessV11,
+    request: Request,
+) -> None:
+    # ── Strict proposal intake only, NOT a Claim or a Worker trust enrollment.
+    # ── An ordinary UI bearer is insufficient: until a separately pinned,
+    # ── revocable same-EXE key + durable nonce/Windows snapshot proof exists,
+    # ── every request must return 409, never a 204 production admission.
+    return execute_production(
+        lambda: request.app.state.services.production.inspect_worker_witness_v11(
+            production_job_id, payload
+        )
+    )
 
 
 @router.post("/production/jobs/{production_job_id}/claim", response_model=ProductionClaimRecord)

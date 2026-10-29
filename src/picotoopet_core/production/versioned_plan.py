@@ -5,6 +5,7 @@ include reference_asset fields on each task. Do not backfill frozen old plans.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -127,3 +128,92 @@ class ApprovedReferenceAuthorizationV11(BaseModel):
     plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     descriptor: TrustedReferenceDescriptorV1
     reference_asset: ReferenceAssetIdentityV1
+
+
+class WorkerReferenceSnapshotWitnessV11(BaseModel):
+    """Untrusted Windows assertion; independently checking its bytes is impossible on Mac."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    production_task_id: str = Field(min_length=1, max_length=160)
+    shot_id: str = Field(min_length=1, max_length=80)
+    asset_id: str = Field(min_length=1, max_length=160)
+    approval_id: str = Field(min_length=1, max_length=160)
+    approval_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_bytes: int = Field(gt=0, le=32 * 1024 * 1024)
+    source_relative_path: str = Field(min_length=1, max_length=300)
+    snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_bytes: int = Field(gt=0, le=32 * 1024 * 1024)
+    snapshot_receipt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    graph_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_relative_path: str = Field(min_length=1, max_length=300)
+
+
+class WorkerWitnessV11(BaseModel):
+    """Canonical signature-covered proposed claim, NOT a production credential.
+
+    Signature is intentionally only data until an independently provisioned,
+    revocable Worker public key is pinned to the paired device by Core. Current
+    API bearer is NOT an acceptable source for such a key. No nonce ledger or
+    Windows/Comfy attestation issuer exists yet: shipping Claim stays disabled.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["production.worker_witness.v1"] = "production.worker_witness.v1"
+    algorithm: Literal["ed25519"] = "ed25519"
+    worker_key_id: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
+    executor_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.-]+$")
+    production_job_id: str = Field(min_length=1, max_length=160)
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    issued_at: datetime
+    expires_at: datetime
+    nonce: str = Field(pattern=r"^[0-9a-f]{64}$")
+    worker_executable_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    journal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    journal_generation: int = Field(ge=0, strict=True)
+    journal_state: Literal["NO_PRIOR_POST", "BOUND_RECOVERY", "UNCERTAIN"]
+    references: tuple[WorkerReferenceSnapshotWitnessV11, ...] = Field(min_length=1, max_length=12)
+    signature: str = Field(pattern=r"^[0-9a-f]{128}$")
+
+    @model_validator(mode="after")
+    def _strict_witness_shape(self) -> WorkerWitnessV11:
+        from datetime import timedelta
+
+        if (
+            self.issued_at.tzinfo is None
+            or self.expires_at.tzinfo is None
+            or self.issued_at.utcoffset() != timedelta(0)
+            or self.expires_at.utcoffset() != timedelta(0)
+            or not timedelta(0) < self.expires_at - self.issued_at <= timedelta(seconds=30)
+        ):
+            raise ValueError("PRODUCTION_V11_WITNESS_WINDOW_INVALID")
+        if (
+            self.nonce == "0" * 64
+            or self.signature == "0" * 128
+            or self.worker_executable_sha256 == "0" * 64
+        ):
+            raise ValueError("PRODUCTION_V11_WITNESS_PLACEHOLDER_REJECTED")
+        ids = [item.production_task_id for item in self.references]
+        if len(ids) != len(set(ids)) or len({item.shot_id for item in self.references}) != len(ids):
+            raise ValueError("PRODUCTION_V11_WITNESS_DUPLICATE_REFERENCE")
+        return self
+
+    def signed_payload(self) -> bytes:
+        """Domain-separated canonical JSON; NEVER include or trust payload-supplied keys."""
+        import json
+
+        fields = self.model_dump(mode="json", exclude={"signature"})
+        return (
+            b"picotoopet.production.worker_witness.v1\n"
+            + json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        )
+
+    def require_fresh(self, now: datetime) -> None:
+        from datetime import timedelta
+
+        if now.tzinfo is None:
+            raise ValueError("PRODUCTION_V11_WITNESS_CLOCK_INVALID")
+        if self.issued_at > now + timedelta(seconds=5) or self.expires_at <= now:
+            raise ValueError("PRODUCTION_V11_WITNESS_STALE")
