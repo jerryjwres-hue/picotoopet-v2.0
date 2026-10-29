@@ -32,7 +32,15 @@ from .quality import CreativeQualityGate
 from .repository import CreativeRepository
 from .source import CreativeSourceNormalizer, NormalizedCreativeSourceSet
 from .store import CreativeArtifactStore
-from .video_bible import VideoBible, derive_shot_plan
+from .video_bible import (
+    KEYFRAME_KIT_SCHEMA_VERSION as KEYFRAME_KIT_STAGE_KEY,
+)
+from .video_bible import (
+    KeyframeKitError,
+    VideoBible,
+    build_keyframe_kit,
+    derive_shot_plan,
+)
 
 
 class _Adapter(Protocol):
@@ -237,7 +245,28 @@ class CreativeIntelligenceCoordinator:
                 previous=previous,
             )
 
+        self._attach_keyframe_kit(job.creative_objective, previous)
         return self._finish_package(job.creative_job_id, source_set, previous, profile)
+
+    @staticmethod
+    def _attach_keyframe_kit(objective: str | None, previous: dict[str, dict[str, Any]]) -> None:
+        """Add the untrusted keyframe_kit.v1 sidecar for an explicit story-gate Goal.
+
+        Only exactly three gated shots produce a kit. The kit is a proposal: every still is
+        PENDING_HUMAN_REVIEW and nothing here claims an image, a hash or an approval exists.
+        """
+
+        bible_raw = previous.get(CreativeStageKind.VIDEO_BIBLE.value)
+        if bible_raw is None or not parse_goal_directives(objective).story_gate:
+            return
+        bible = VideoBible.model_validate(bible_raw)
+        brief = CreativeBriefResult.model_validate(previous[CreativeStageKind.CREATIVE_BRIEF.value])
+        script = CreativeScriptResult.model_validate(previous[CreativeStageKind.SCRIPT.value])
+        try:
+            kit = build_keyframe_kit(bible, script, output_profile_id=brief.output_profile_id.value)
+        except KeyframeKitError:
+            return
+        previous[KEYFRAME_KIT_STAGE_KEY] = kit.model_dump(mode="json")
 
     def _run_stage(
         self,
