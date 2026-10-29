@@ -437,6 +437,8 @@ if ($ValidationScope -eq "UiPreview") {
     # Scope-specific operator bootstrap. Never alter the formal Full release package.
     $prepSource = Join-Path $desktopRoot "scripts\\Prepare-P0ThreeShotHold.ps1"
     Copy-ReleaseFile -Source $prepSource -Destination (Join-Path $packageRoot "Prepare-P0ThreeShotHold.ps1")
+    $retrySource = Join-Path $desktopRoot "scripts\\Approve-P0LostPromptAttempt2.ps1"
+    Copy-ReleaseFile -Source $retrySource -Destination (Join-Path $packageRoot "Approve-P0LostPromptAttempt2.ps1")
     $readmePath = Join-Path $packageRoot "README_INSTALL_CN.txt"
     $generic = [IO.File]::ReadAllText($readmePath, [Text.UTF8Encoding]::new($false))
     $p0Guide = @'
@@ -455,7 +457,7 @@ P0 #91 严格三镜头开发预览 — 首次安装前必读（不是正式 Rele
    缺失则拒绝安装激活。安装器不会替你授权模型推理或 Comfy GPU POST。
 ⑤ 保持 HOLD：只读审核 Mac Core 认证、唯一 Production Job、exactly 3 T2V Task、冻结 Plan Digest。
    仅在另行确认电路/设备安全并得到用户明确 GPU 授权后，才设置对该 Job 的 ALLOW。
-⑥ 结束后回到 HOLD；不要删除 .armed。旧版本回滚是否遵守门禁未知，禁止自动恢复旧版本
+   重启丢失历史的 attempt2 不是自动重试；只在专属受控恢复包/原生 CI PASS、\n   操作员与设备所有人再次明确授权后，使用同目录 Approve-P0LostPromptAttempt2.ps1。\n⑥ 结束后回到 HOLD；不要删除 .armed。旧版本回滚是否遵守门禁未知，禁止自动恢复旧版本
    并启动 Worker，须由总控单独核实。正式 Release 仍受 Maotai 真实资产门禁阻塞。
 
 ===== 通用安装说明（仅在上述 P0 安全步骤全部完成后阅读）=====
