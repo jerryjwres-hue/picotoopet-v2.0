@@ -55,6 +55,19 @@ public sealed class ComfyPromptReconciler : IComfyPromptReconciler, IDisposable
             matches.Add(id);
         }
     }
+    /// <summary>Read-only proof that the old prompt is absent AND the entire local queue is idle.
+    /// An absent history record alone is never authority for a new POST.</summary>
+    public async Task<bool> IsMissingWithIdleQueueAsync(string promptId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(promptId) || promptId.Length > 200)
+            throw new ProductionWorkerException("MEDIA_COMFY_RECONCILE_INVALID");
+        var queue = await GetAsync("queue", ct).ConfigureAwait(false);
+        foreach (var name in new[] { "queue_running", "queue_pending" })
+            if (queue[name] is not JsonArray array || array.Count != 0)
+                return false;
+        var history = await GetAsync("history/" + Uri.EscapeDataString(promptId), ct).ConfigureAwait(false);
+        return history.Count == 0;
+    }
     public async Task<bool> IsFinishedAsync(string promptId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(promptId) || promptId.Length > 200)
