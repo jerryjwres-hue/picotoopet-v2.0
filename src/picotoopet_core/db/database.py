@@ -25,6 +25,7 @@ from .migration_021 import MIGRATION_021
 from .migration_022 import MIGRATION_022
 from .migration_023 import MIGRATION_023
 from .migration_024 import MIGRATION_024
+from .migration_025 import MIGRATION_025
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -38,7 +39,7 @@ from .schema import (
 from .task_visibility_schema import TASK_VISIBILITY_SCHEMA
 
 # ── Current cumulative schema for retention tests; migrations remain immutable. ──
-CURRENT_SCHEMA_VERSION = 24
+CURRENT_SCHEMA_VERSION = 25
 
 
 class Database:
@@ -360,7 +361,17 @@ class Database:
                     (24, datetime.now(UTC).isoformat()),
                 )
 
-            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 24。 ──
+            migration_025_exists = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 25"
+            ).fetchone()
+            if migration_025_exists is None:
+                connection.executescript(MIGRATION_025)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (25, datetime.now(UTC).isoformat()),
+                )
+
+            # ── Operated Core database retains additive schema and legacy tables. ──
             connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
