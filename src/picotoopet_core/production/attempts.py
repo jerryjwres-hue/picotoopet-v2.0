@@ -24,6 +24,8 @@ def reserve_or_bind_attempt(
 ) -> ProductionTaskRecord:
     """Reserve GPU work before submit, then bind the returned prompt id without consuming another attempt."""
 
+    # ── No unproved v1.1 reserve, bind or retry even with a forged lease. ──
+    repository._require_v11_worker_proof(production_job_id)  # noqa: SLF001
     # ── Lease validation remains centralized in the durable repository ──────
     repository._require_lease(production_job_id, executor_id, lease_token)  # noqa: SLF001
     task = repository.get_task(production_job_id, production_task_id)
