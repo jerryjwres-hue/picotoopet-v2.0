@@ -17,6 +17,8 @@ def fail_task_durably(
 ) -> ProductionTaskRecord:
     """Converge the active task, attempt and job to Failed under one valid lease."""
 
+    # ── Unproved v1.1 cannot forge failure / terminalize immutable I2V. ──
+    repository._require_v11_worker_proof(production_job_id)  # noqa: SLF001
     # ── Failure writes require the same active lease as success commits ─────
     repository._require_lease(  # noqa: SLF001
         production_job_id,
