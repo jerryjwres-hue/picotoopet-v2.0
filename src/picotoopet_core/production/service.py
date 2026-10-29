@@ -324,6 +324,101 @@ class ProductionService:
     def get_plan(self, production_job_id: str) -> VersionedProductionPlan:
         return self.repository.plan_for(production_job_id)
 
+    def _audit_v11_core_before_lease(
+        self, production_job_id: str, executor_id: str
+    ) -> None:
+        """Offline transaction-bound Core audit; NEVER grants a GPU lease.
+
+        The current bearer API cannot prove Windows-managed bytes, a crash-durable
+        LoadImage snapshot, or a reconciled Comfy journal. Even a clean Core audit
+        is insufficient for a shipping v1.1 claim.
+        """
+        with self.repository.database.transaction() as connection:
+            job = self.repository.get_job(production_job_id)
+            plan = self.repository.plan_for(production_job_id)
+            if not isinstance(plan, ProductionPlanV11):
+                raise ValueError("PRODUCTION_V11_PLAN_REQUIRED")
+            if (
+                not job.plan_digest
+                or job.plan_digest != self._digest(plan.model_dump(mode="json"))
+                or job.production_job_id != plan.production_job_id
+                or job.creative_package_id != plan.creative_package_id
+                or job.creative_package_digest != plan.creative_package_digest
+                or job.project_key != plan.project_key
+                or job.production_profile != plan.production_profile
+            ):
+                raise ValueError("PRODUCTION_V11_PLAN_IDENTITY_MISMATCH")
+            if job.status not in {
+                ProductionJobStatus.PLANNED,
+                ProductionJobStatus.CLAIMED,
+                ProductionJobStatus.RENDERING,
+            }:
+                raise ValueError("PRODUCTION_V11_JOB_NOT_CLAIMABLE")
+
+            # ── The same IMMEDIATE transaction freezes approval/attempt reads. ──
+            rows = connection.execute(
+                "SELECT * FROM production_tasks WHERE production_job_id=?",
+                (production_job_id,),
+            ).fetchall()
+            snapshots = {row["production_task_id"]: self.repository._task(row) for row in rows}
+            if len(snapshots) != len(rows) or len(rows) != len(plan.tasks):
+                raise ValueError("PRODUCTION_V11_TASK_COVERAGE_MISMATCH")
+            for planned in plan.tasks:
+                task = snapshots.get(planned.production_task_id)
+                if (
+                    task is None
+                    or task.production_job_id != production_job_id
+                    or task.shot_id != planned.shot_id
+                    or task.order != planned.order
+                    or task.task_plan != planned
+                ):
+                    raise ValueError("PRODUCTION_V11_TASK_SNAPSHOT_MISMATCH")
+                if planned.reference_asset is not None:
+                    # ── Approval is revocable and can expire after job creation. ──
+                    verify_persisted_reference_approval(
+                        self.repository.database, planned.reference_asset
+                    )
+                if task.status is ProductionTaskStatus.SUCCEEDED:
+                    continue
+                if task.status in {
+                    ProductionTaskStatus.NEEDS_HUMAN,
+                    ProductionTaskStatus.FAILED,
+                    ProductionTaskStatus.CANCELLED,
+                }:
+                    raise ValueError("PRODUCTION_V11_TASK_TERMINAL_STATE")
+                if task.status is ProductionTaskStatus.RUNNING:
+                    attempt = connection.execute(
+                        "SELECT * FROM production_attempts "
+                        "WHERE production_job_id=? AND production_task_id=? AND attempt_number=?",
+                        (production_job_id, task.production_task_id, task.attempt_count),
+                    ).fetchone()
+                    if attempt is None or attempt["status"] != "Running":
+                        raise ValueError("PRODUCTION_V11_ATTEMPT_UNVERIFIED")
+                    if task.comfy_prompt_id is not None:
+                        if attempt["comfy_prompt_id"] != task.comfy_prompt_id:
+                            raise ValueError("PRODUCTION_V11_PROMPT_UNVERIFIED")
+                    else:
+                        # ── Unknown POST cannot be converted into a fresh attempt. ──
+                        # ── Only same-executor attempt2 with a durable failed #1
+                        # ── passes Core preflight; Windows Journal proof still required. ──
+                        prior = connection.execute(
+                            "SELECT * FROM production_attempts "
+                            "WHERE production_job_id=? AND production_task_id=? AND attempt_number=1",
+                            (production_job_id, task.production_task_id),
+                        ).fetchone()
+                        if (
+                            task.attempt_count != 2
+                            or attempt["comfy_prompt_id"] is not None
+                            or attempt["executor_id"] != executor_id
+                            or prior is None
+                            or prior["status"] != "Failed"
+                            or prior["failure_code"] != "COMFY_RETRYABLE_LOCAL_FAILURE"
+                        ):
+                            raise ValueError("PRODUCTION_V11_UNBOUND_POST_UNVERIFIED")
+                elif task.status is not ProductionTaskStatus.READY or task.attempt_count != 0:
+                    raise ValueError("PRODUCTION_V11_ATTEMPT_UNVERIFIED")
+            # ── Intentionally no token, authorization flag, or DB write. ──
+
     def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
         # ── Claim returns full durable snapshots plus an unfinished-only plan ─
         # Validate bound prompt recovery inside the SAME database transaction as
