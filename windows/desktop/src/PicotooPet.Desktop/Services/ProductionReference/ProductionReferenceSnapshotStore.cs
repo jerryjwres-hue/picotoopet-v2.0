@@ -12,9 +12,10 @@ namespace PicotooPet.Desktop.Services.ProductionReference;
 /// <summary>Disposing pins never deletes the durable copy, even after an uncertain POST.</summary>
 internal sealed class DurableReferenceSnapshot(string relativePath, VerifiedReferenceAsset original,
     VerifiedReferenceAsset snapshot, VerifiedReferenceAsset receipt, ITrustedReferenceApprovalSource approvals,
-    TrustedReferenceDescriptor descriptor) : IDisposable
+    TrustedReferenceDescriptor descriptor, ReferenceSnapshotMeasurement measurement) : IDisposable
 {
     public string RelativePath { get; } = relativePath;
+    public ReferenceSnapshotMeasurement Measurement { get; } = measurement;
     public async Task ReauthorizeAsync(CancellationToken ct)
     {
         if (!await approvals.IsApprovedAsync(descriptor, ct).ConfigureAwait(false))
@@ -144,7 +145,17 @@ internal sealed class ProductionReferenceSnapshotStore
                 AssertProtected(new FileInfo(file), FileDenial);
             }
             ct.ThrowIfCancellationRequested();
-            return new(relative, original, snapshot, receiptPin, approvals, descriptor);
+            // Read actual pinned files; never export the claimed/approved SHA as if
+            // it were a Windows byte measurement. These facts cannot authorize Core.
+            var measured = new ReferenceSnapshotMeasurement(plan.ProductionJobId, task.ProductionTaskId,
+                task.ShotId, r.AssetId, r.ApprovalId, planDigest, graphDigest, relative,
+                await ProductionLocalEnvironment.Sha256FileAsync(original.FullPath, ct).ConfigureAwait(false),
+                new FileInfo(original.FullPath).Length,
+                await ProductionLocalEnvironment.Sha256FileAsync(snapshot.FullPath, ct).ConfigureAwait(false),
+                new FileInfo(snapshot.FullPath).Length,
+                await ProductionLocalEnvironment.Sha256FileAsync(receiptPin.FullPath, ct).ConfigureAwait(false),
+                new FileInfo(receiptPin.FullPath).Length);
+            return new(relative, original, snapshot, receiptPin, approvals, descriptor, measured);
         }
         catch { receiptPin?.Dispose(); snapshot?.Dispose(); original.Dispose(); throw; }
     }

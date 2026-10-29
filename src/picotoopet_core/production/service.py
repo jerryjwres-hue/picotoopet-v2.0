@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -45,6 +46,7 @@ from .reference_assets import (
 from .versioned_plan import (
     ApprovedReferenceAuthorizationV11, ProductionJobCreateV11Request,
     ProductionPlanV11, ProductionTaskPlanV11, VersionedProductionPlan,
+    WorkerWitnessV11,
 )
 
 
@@ -325,7 +327,7 @@ class ProductionService:
         return self.repository.plan_for(production_job_id)
 
     def _audit_v11_core_before_lease(
-        self, production_job_id: str, executor_id: str
+        self, production_job_id: str, executor_id: str, *, connection=None
     ) -> None:
         """Offline transaction-bound Core audit; NEVER grants a GPU lease.
 
@@ -333,7 +335,7 @@ class ProductionService:
         LoadImage snapshot, or a reconciled Comfy journal. Even a clean Core audit
         is insufficient for a shipping v1.1 claim.
         """
-        with self.repository.database.transaction() as connection:
+        with (self.repository.database.transaction() if connection is None else nullcontext(connection)) as connection:
             job = self.repository.get_job(production_job_id)
             plan = self.repository.plan_for(production_job_id)
             if not isinstance(plan, ProductionPlanV11):
@@ -435,6 +437,89 @@ class ProductionService:
                 elif task.status is not ProductionTaskStatus.READY or task.attempt_count != 0:
                     raise ValueError("PRODUCTION_V11_ATTEMPT_UNVERIFIED")
             # ── Intentionally no token, authorization flag, or DB write. ──
+
+    def inspect_worker_witness_v11(
+        self, production_job_id: str, witness: WorkerWitnessV11
+    ) -> None:
+        """Read-only, locked witness preflight; never issues production authority.
+
+        There is no independently provisioned/revocable same-EXE Worker signing
+        key or durable spent-nonce ledger in the current Core schema, and Mac
+        cannot inspect Windows snapshot ACLs or Comfy unknown-POST state.
+        These are admission prerequisites, not boolean properties of JSON.
+        """
+        witness.require_fresh(datetime.now(UTC))
+        if witness.production_job_id != production_job_id:
+            raise ValueError("PRODUCTION_V11_WITNESS_JOB_MISMATCH")
+        with self.repository.database.transaction() as connection:
+            # ── Approval/Plan/Task/attempt reads share an IMMEDIATE lock. ────
+            self._audit_v11_core_before_lease(
+                production_job_id, witness.executor_id, connection=connection
+            )
+            job = self.repository.get_job(production_job_id)
+            plan = self.repository.plan_for(production_job_id)
+            if not isinstance(plan, ProductionPlanV11):
+                raise ValueError("PRODUCTION_V11_PLAN_REQUIRED")
+            if job.plan_digest != witness.plan_digest:
+                raise ValueError("PRODUCTION_V11_WITNESS_PLAN_MISMATCH")
+            if job.lease_expires_at and job.lease_expires_at > datetime.now(UTC):
+                raise ValueError("PRODUCTION_V11_WITNESS_LEASE_CONFLICT")
+
+            expected = {
+                task.production_task_id: task
+                for task in plan.tasks if task.reference_asset is not None
+            }
+            received = {entry.production_task_id: entry for entry in witness.references}
+            if received.keys() != expected.keys():
+                raise ValueError("PRODUCTION_V11_WITNESS_TASK_COVERAGE_INVALID")
+            for task_id, task in expected.items():
+                ref = task.reference_asset
+                entry = received[task_id]
+                if ref is None or (
+                    entry.shot_id != task.shot_id
+                    or entry.asset_id != ref.asset_id
+                    or entry.approval_id != ref.approval_id
+                    or entry.approval_request_digest != ref.approval_request_digest
+                    or entry.source_sha256 != ref.sha256
+                    or entry.source_bytes != ref.bytes
+                    or entry.source_relative_path != ref.input_relative_path
+                    or entry.snapshot_sha256 != ref.sha256
+                    or entry.snapshot_bytes != ref.bytes
+                ):
+                    raise ValueError("PRODUCTION_V11_WITNESS_ASSET_MISMATCH")
+                # ── These claimed identities are not enough to verify bytes. ──
+                if (
+                    entry.snapshot_receipt_sha256 == "0" * 64
+                    or entry.graph_digest == "0" * 64
+                    or not entry.snapshot_relative_path.startswith("PicotooPet/")
+                    or any(piece in {"", ".", ".."} for piece in entry.snapshot_relative_path.split("/"))
+                ):
+                    raise ValueError("PRODUCTION_V11_WITNESS_SNAPSHOT_INVALID")
+
+            # ── Prior prompts require bound recovery and trustworthy Comfy
+            # ── history; no claim to "clean" journal overrides Core attempts. ──
+            all_attempts = connection.execute(
+                "SELECT production_task_id,attempt_number,comfy_prompt_id,status "
+                "FROM production_attempts WHERE production_job_id=?",
+                (production_job_id,),
+            ).fetchall()
+            if witness.journal_state == "UNCERTAIN":
+                raise ValueError("PRODUCTION_V11_WITNESS_POST_UNCERTAIN")
+            if (
+                witness.journal_state == "NO_PRIOR_POST"
+                and any(row["comfy_prompt_id"] is not None for row in all_attempts)
+            ):
+                raise ValueError("PRODUCTION_V11_WITNESS_JOURNAL_MISMATCH")
+            if (
+                witness.journal_state == "BOUND_RECOVERY"
+                and not any(row["comfy_prompt_id"] is not None for row in all_attempts)
+            ):
+                raise ValueError("PRODUCTION_V11_WITNESS_JOURNAL_MISMATCH")
+
+            # ── Deliberately no signed-key lookup, nonce redemption or lease:
+            # ── a request-supplied key, signature, normal bearer and fake JSON
+            # ── cannot establish who inspected those Windows-local bytes.
+            raise ValueError("PRODUCTION_V11_WORKER_IDENTITY_NOT_PROVISIONED")
 
     def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
         # ── Claim returns full durable snapshots plus an unfinished-only plan ─

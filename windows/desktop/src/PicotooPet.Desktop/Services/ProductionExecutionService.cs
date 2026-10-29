@@ -57,6 +57,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
 
     // Dependency composition only; no public flag/environment switch can arm shipping I2V.
     internal ProductionReferenceSnapshotStore? ReferenceSnapshots { get; init; }
+    internal ShippingReferenceComposition? ShippingReferences { get; }
 
     public ProductionExecutionService(
         ControlCenterSession session,
@@ -69,6 +70,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _comfy = comfy ?? throw new ArgumentNullException(nameof(comfy));
         _ownsComfy = false;
         _executorId = NormalizeExecutorId(executorId ?? $"windows-production-{Environment.MachineName}");
+        ShippingReferences = new(session, _executorId);
         _submissionPermit = P0ThreeShotAcceptanceGate.AcquireSubmissionPermit;
         _acceptanceAdmission = (job, ct) => P0ThreeShotAcceptanceGate.AllowsJobAsync(session, job, ct);
     }
@@ -86,6 +88,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _reconciler = ComfyPromptReconciler.Create();
         _comfy = comfy;
         _executorId = executorId;
+        ShippingReferences = new(session, _executorId);
         _ownsComfy = ownsComfy;
         _shotObserver = shotObserver;
         _submissionPermit = submissionPermit ?? P0ThreeShotAcceptanceGate.AcquireSubmissionPermit;
@@ -230,10 +233,12 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         // POST. The same-EXE Host's existing global recovery owns reconciliation;
         // until it drains, deny preflight/lease/all fresh GPU work here as well.
         if (originalPlan.SchemaVersion == "1.1"
-            && ReferenceSnapshots is null
+            && (ReferenceSnapshots is null || ShippingReferences is not null)
             && _journal.Pending().Any(p => p.JobId == productionJobId))
             throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
-        ValidateMultiShotPlan(productionJobId, originalPlan, ReferenceSnapshots is not null);
+        if (originalPlan.SchemaVersion == "1.1")
+            ShippingReferences?.RequireVerifiedWorkerProof(originalPlan);
+        ValidateMultiShotPlan(productionJobId, originalPlan, ReferenceSnapshots is not null || ShippingReferences is not null);
         var preflight = await (_preflightOverride?.Invoke(cancellationToken) ?? PreflightAsync(cancellationToken)).ConfigureAwait(false);
         if (!preflight.IsReady)
         {
@@ -243,7 +248,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         using var references = new DurableReferenceSnapshotBatch();
         if (originalPlan.SchemaVersion == "1.1")
         {
-            var store = ReferenceSnapshots ?? throw new ProductionWorkerException("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED");
+            var store = ReferenceSnapshots ?? ShippingReferences?.CreateSnapshotStore(preflight.InputRoot!)
+                ?? throw new ProductionWorkerException("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED");
             store.RequireInputRoot(preflight.InputRoot);
             // Validate/stage ALL I2V shots before any lease or earlier T2V POST. No second lock:
             // the existing journal GPU exclusion already covers GUI and same-EXE Worker.
