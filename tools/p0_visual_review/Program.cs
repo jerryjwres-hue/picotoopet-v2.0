@@ -91,6 +91,8 @@ public static class ReviewPolicy
         foreach (var segment in relative.Split(['/', '\\']))
         {
             current = Path.Combine(current, segment);
+            if (!File.Exists(current) && !Directory.Exists(current))
+                throw new InvalidOperationException("SOURCE_NOT_FOUND");
             if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
                 throw new InvalidOperationException("SOURCE_REPARSE_POINT");
         }
@@ -109,6 +111,14 @@ public static class ReviewPolicy
             throw new InvalidOperationException("OUTPUT_MUST_BE_OUTSIDE_SOURCE");
         if (Directory.Exists(target) || File.Exists(target))
             throw new InvalidOperationException("OUTPUT_MUST_BE_NEW_DIRECTORY");
+        // Output junctions in existing parent directories must never redirect writes into sources.
+        for (var parent = Path.GetDirectoryName(target); parent is not null;
+             parent = Path.GetDirectoryName(parent))
+        {
+            if (Directory.Exists(parent) && (File.GetAttributes(parent) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("OUTPUT_PARENT_REPARSE_POINT");
+            if (Path.GetDirectoryName(parent) == parent) break;
+        }
     }
 
     public static string ValidateLocalEndpoint(string? value, string? model, bool approved)
@@ -366,7 +376,7 @@ public static class ReviewRunner
                     report.Status = status;
                 }
                 catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
-                    or JsonException or InvalidOperationException)
+                    or JsonException or KeyNotFoundException or InvalidOperationException)
                 {
                     report.ModelState = "UNVERIFIED_" + ex.GetType().Name;
                     report.Status = "UNVERIFIED";
@@ -375,7 +385,7 @@ public static class ReviewRunner
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException
-            or JsonException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+            or JsonException or KeyNotFoundException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
         {
             report.Status = "UNVERIFIED";
             report.Reason = ex.Message;
@@ -392,7 +402,7 @@ public static class Program
     public static async Task<int> Main(string[] args)
     {
         // Invocation       : no implicit default paths or silent LAN model enablement.
-        if (args.Length < 5 || args.Length is 6 or 7 || args.Length > 9)
+        if (args.Length != 5 && args.Length != 9)
         {
             Console.Error.WriteLine("Usage: review <manifest.json> <comfy-output-root> <new-output-dir> <ffprobe> <ffmpeg> [--allow-lan-vlm <http://PRIVATE_IPV4:11434> <installed-model>]");
             return 2;
@@ -410,7 +420,7 @@ public static class Program
             return report.Status == "UNVERIFIED" ? 2 : 0;
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
-            or UnauthorizedAccessException or ArgumentException)
+            or UnauthorizedAccessException or ArgumentException or KeyNotFoundException)
         {
             Console.Error.WriteLine("VISUAL_REVIEW=UNVERIFIED; " + ex.Message);
             return 2;
