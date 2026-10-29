@@ -22,6 +22,10 @@ What we can prove from current source:
 | Current QA tests files not semantics | C011 source rubric | false sense of success | **P0** advisory vision critic + explicit visual outcome separate from C011 |
 | Unconstrained model switching | RTX 5070 Ti 16 GB context + local Comfy | high install/OOM/licence risk | **P1** benchmark against current I2V first |
 
+### Encoding audit to avoid treating compressed file size as a generative defect
+
+Both frozen native Comfy templates `windows/production/workflows/wan22-ti2v5b-{t2v,i2v}-api-v1.json` use `SaveWEBM` with `codec=vp9`, `crf=16.111083984375`, and `KSampler steps=30, cfg=5, uni_pc/simple`. Official Comfy docs state **lower CRF = higher quality** (default SaveWEBM CRF=32). This is already a relatively high-encoding-quality setting; **300-420 KB per mostly static 4s clip alone is not proof of bad encode**. Verify real decode/bitrate separately, but do not waste GPU or engineering time merely lowering CRF or adding RIFE/ESRGAN for a wrong cat/story/floating lamp. Upstream definition: https://github.com/Comfy-Org/embedded-docs/blob/main/comfyui_embedded_docs/docs/SaveWEBM/en.md
+
 ## 3. Recommended P0 minimum workflow (reuse the same EXE and Core)
 
 1. **Freeze immutable Video Bible**: one visual identity (white cat exact ears/eyes/body/scarf), approved pet-product appearance and claims, scene prop inventory/ground contact, consistent light/color/style. Simple three-beat story: hook/problem -> visible action/product use -> resolved/payoff. Per shot: subject ID, objective, primary action, 4 sec, camera/lighting, incoming/outgoing visual state. Reuse existing Creative v2 schema; do not add unvalidated fields.
