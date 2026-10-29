@@ -26,6 +26,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Windows PowerShell 5.1 native exact lost-prompt approval (fake-only, no GPU)
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/desktop/scripts/tests/Test-P0LostPromptApproval-PS51.ps1 -ApprovalScript windows/desktop/scripts/Approve-P0LostPromptAttempt2.ps1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: windows/desktop/global.json
