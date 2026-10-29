@@ -223,6 +223,7 @@ def test_idempotency_conflict_invalid_shots_and_transaction_rollback(state):
     service.register(ReferenceBatchRequestV1.model_validate(base), idempotency_key="same-key")
     changed = payload(digest)
     changed["selected_references"][1]["sha256"] = "c" * 64
+    changed["selected_references"][1]["input_relative_path"] = f"PicotooPet/references/{'c' * 64}/shot-b.png"
     with pytest.raises(ApprovalError, match="REFERENCE_IDEMPOTENCY_CONFLICT"):
         service.register(ReferenceBatchRequestV1.model_validate(changed), idempotency_key="same-key")
     bad = payload(digest)
