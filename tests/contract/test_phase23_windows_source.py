@@ -125,7 +125,16 @@ def test_tray_uses_builtin_notify_icon_and_has_required_commands() -> None:
     assert "NotifyIcon" in service
     assert "ContextMenuStrip" in service
     assert "<UseWindowsForms>true</UseWindowsForms>" in project
-    assert "<PackageReference" not in project
+    # Built-in NotifyIcon must not acquire a UI tray package. The shipping Desktop
+    # has one separately authorized, exact-version Ed25519 cryptography dependency;
+    # all other third-party Desktop packages remain forbidden by this contract.
+    import xml.etree.ElementTree as ET
+
+    packages = [
+        (item.get("Include"), item.get("Version"))
+        for item in ET.fromstring(project).iter("PackageReference")
+    ]
+    assert packages == [("BouncyCastle.Cryptography", "[2.7.0]")]
 
 
 def test_explicit_exit_disposes_session_and_tray_before_shutdown() -> None:
