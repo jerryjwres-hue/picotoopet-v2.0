@@ -193,6 +193,16 @@ class ProductionRepository:
             raise KeyError(production_task_id)
         return self._task(row)
 
+    def _require_v11_worker_proof(self, production_job_id: str) -> None:
+        """Guard every lease/attempt/result write until trusted Windows proof exists.
+
+        The current public request models have no authenticated, fresh byte/snapshot
+        attestation. Do not convert a Core approval or a hand-written DB token
+        into shipping I2V authority.
+        """
+        if isinstance(self.plan_for(production_job_id), ProductionPlanV11):
+            raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+
     def claim_job(
         self,
         production_job_id: str,
@@ -213,10 +223,8 @@ class ProductionRepository:
             ).fetchone()
             if row is None:
                 raise KeyError(production_job_id)
-            # Until authenticated Windows snapshot verification is integrated,
-            # no v1.1 lease can authorize a legacy worker to POST a reference.
-            if self.plan_for(production_job_id).schema_version == "1.1":
-                raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+            # ── Source-built Core approval alone cannot authorize GPU work. ──
+            self._require_v11_worker_proof(production_job_id)
             status = ProductionJobStatus(row["status"])
             if status not in {ProductionJobStatus.PLANNED, ProductionJobStatus.CLAIMED, ProductionJobStatus.RENDERING}:
                 raise ValueError("PRODUCTION_JOB_NOT_CLAIMABLE")
@@ -260,7 +268,8 @@ class ProductionRepository:
         lease_token: str,
         lease_seconds: int = 120,
     ) -> ProductionJobRecord:
-        # ── Heartbeats extend only the currently valid lease ────────────────
+        # ── Even a manually planted lease cannot heartbeat an unproved v1.1 job. ──
+        self._require_v11_worker_proof(production_job_id)
         self._require_lease(production_job_id, executor_id, lease_token)
         now = _now()
         expires = now + timedelta(seconds=max(30, min(lease_seconds, 600)))
@@ -279,8 +288,7 @@ class ProductionRepository:
         comfy_prompt_id: str | None,
     ) -> ProductionTaskRecord:
         # ── Attempt budget is fixed at initial + one retry ──────────────────
-        if self.plan_for(production_job_id).schema_version == "1.1":
-            raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+        self._require_v11_worker_proof(production_job_id)
         self._require_lease(production_job_id, executor_id, lease_token)
         task = self.get_task(production_job_id, production_task_id)
         if task.status is ProductionTaskStatus.SUCCEEDED:
@@ -331,7 +339,8 @@ class ProductionRepository:
         production_task_id: str,
         request: ProductionTaskCommitRequest,
     ) -> ProductionTaskRecord:
-        # ── Successful task evidence is immutable ───────────────────────────
+        # ── A forged legacy lease cannot mint a v1.1 successful render. ───────
+        self._require_v11_worker_proof(production_job_id)
         self._require_lease(production_job_id, request.executor_id, request.lease_token)
         current = self.get_task(production_job_id, production_task_id)
         if current.status is ProductionTaskStatus.SUCCEEDED:
