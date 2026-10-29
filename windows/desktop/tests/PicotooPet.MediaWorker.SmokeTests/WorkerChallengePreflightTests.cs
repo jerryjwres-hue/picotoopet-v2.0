@@ -114,7 +114,7 @@ internal static class WorkerChallengePreflightTests
     private static async Task<Exception> DeniedAsync(Func<Task<string>> operation)
     {
         try { await operation(); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or CryptographicException or ProductionWorkerException or HttpRequestException or OperationCanceledException or JsonException) { return e; }
+        catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException or CryptographicException or ProductionWorkerException or HttpRequestException or OperationCanceledException or JsonException) { return e; }
         throw new InvalidOperationException("preflight must deny");
     }
 
