@@ -6,6 +6,7 @@ using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Production;
+using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.MediaWorker.SmokeTests;
 
@@ -16,7 +17,7 @@ internal static class RecoveryFixTests
         var errors = new List<Exception>();
         foreach (var test in new Func<Task>[] { DurableFailureAsync, LegacyUnknownAsync, SettledCapacityAsync, InvalidOutputAsync,
             TerminalPendingAsync, PreparedReservationAsync, MissingCoreAsync, TimeoutKeepsGpuBarrierAsync,
-            RebootLostHistoryNeverRepostsAsync,
+            RebootLostHistoryNeverRepostsAsync, ExplicitAttempt2ApprovalAsync, MissingHistoryRequiresIdleQueueAsync,
             BoundSecondAttemptAsync, HistoryOfflineAsync, LostLeaseAsync, ExactTransportAsync, RejectedLegacyClaimAsync,
             SettledDoesNotReopenAsync })
         {
@@ -166,6 +167,73 @@ internal static class RecoveryFixTests
             && f.Journal.Pending().Single().PromptId == old.PromptId,
             "second restart/recovery pass must not rePOST or erase prompt identity");
         await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION", () => f.Executor().RunAsync("other"));
+    }
+
+    private static Task ExplicitAttempt2ApprovalAsync()
+    {
+        // Approval is exact-ID, short-lived and *after* the Windows reboot.
+        // The original Core-bound prompt updated_at must be strictly pre-boot.
+        var path = Path.Combine(Path.GetTempPath(), "p0-approval-" + Guid.NewGuid().ToString("N") + ".json");
+        var now = DateTimeOffset.UtcNow;
+        var boot = now.AddMinutes(-10);
+        var original = boot.AddMinutes(-5);
+        var json = JsonSerializer.Serialize(new
+        {
+            schema_version = "p0.lost-prompt-attempt2.v1",
+            production_job_id = "job",
+            production_task_id = "shot3-task",
+            previous_prompt_id = "prompt-lost-before-boot",
+            plan_digest = new string('a', 64),
+            authorized_at_utc = now.ToString("O"),
+        });
+        try
+        {
+            File.WriteAllText(path, json);
+            RecoveryTests.Assert(P0LostPromptRetryApproval.IsApproved(
+                "job", "shot3-task", "prompt-lost-before-boot", new string('a', 64),
+                original, boot, now, path), "exact approved post-boot prompt");
+            RecoveryTests.Assert(!P0LostPromptRetryApproval.IsApproved(
+                "other-job", "shot3-task", "prompt-lost-before-boot", new string('a', 64),
+                original, boot, now, path), "other job cannot inherit consent");
+            RecoveryTests.Assert(!P0LostPromptRetryApproval.IsApproved(
+                "job", "shot3-task", "other-prompt", new string('a', 64),
+                original, boot, now, path), "other prompt cannot inherit consent");
+            RecoveryTests.Assert(!P0LostPromptRetryApproval.IsApproved(
+                "job", "different-task", "prompt-lost-before-boot", new string('a', 64),
+                original, boot, now, path), "other task cannot inherit consent");
+            awaitMustReject(() => P0LostPromptRetryApproval.IsApproved(
+                "job", "shot3-task", "prompt-lost-before-boot", new string('a', 64),
+                boot.AddMinutes(1), boot, now, path));
+            awaitMustReject(() => P0LostPromptRetryApproval.IsApproved(
+                "job", "shot3-task", "prompt-lost-before-boot", new string('a', 64),
+                original, boot, now.AddMinutes(31), path));
+        }
+        finally { File.Delete(path); }
+        return Task.CompletedTask;
+
+        static void awaitMustReject(Func<bool> action)
+        {
+            try { _ = action(); }
+            catch (ProductionWorkerException e) when (e.Code == "MEDIA_RECOVERY_APPROVAL_INVALID") { return; }
+            throw new Exception("Invalid reboot witness or expired operator approval must block");
+        }
+    }
+
+    private static async Task MissingHistoryRequiresIdleQueueAsync()
+    {
+        using var f = new RecoveryTests.Fixture();
+        using var http = new HttpClient(f.Comfy) { BaseAddress = ComfyProductionClient.FixedBaseAddress };
+        using var reader = new ComfyPromptReconciler(http);
+        f.Comfy.ForgetPrompt = true;
+        RecoveryTests.Assert(await reader.IsMissingWithIdleQueueAsync("prompt-1", default),
+            "history absent AND queue idle");
+        f.Comfy.HoldOutput = true;
+        RecoveryTests.Assert(!await reader.IsMissingWithIdleQueueAsync("prompt-1", default),
+            "active GPU forbids retry even when history is empty");
+        f.Comfy.HoldOutput = false;
+        f.Comfy.ForgetPrompt = false;
+        RecoveryTests.Assert(!await reader.IsMissingWithIdleQueueAsync("prompt-1", default),
+            "history present forbids retry");
     }
 
     private static async Task BoundSecondAttemptAsync()
