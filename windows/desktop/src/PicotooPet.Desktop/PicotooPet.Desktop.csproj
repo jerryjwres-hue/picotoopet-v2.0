@@ -11,6 +11,8 @@
     <StartupObject>PicotooPet.Desktop.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <!-- #162 controller exception: exact managed Ed25519 primitive; no runtime download. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="[2.7.0]" />
     <ProjectReference Include="..\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
     <!-- Preview-only managed CPU WebP codec: separate from zero-package Core and built-in system tray. -->
     <ProjectReference Include="..\PicotooPet.ReferencePreview.Codecs\PicotooPet.ReferencePreview.Codecs.csproj" />
