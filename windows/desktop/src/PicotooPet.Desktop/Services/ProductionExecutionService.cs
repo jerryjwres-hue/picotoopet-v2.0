@@ -485,7 +485,10 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             sha256 = await Sha256FileAsync(outputPath, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error) when (completedHistory && error is (IOException or InvalidDataException or UnauthorizedAccessException)
-            || error is ProductionWorkerException worker && worker.Code is "COMFY_EXECUTION_FAILED" or "COMFY_HISTORY_TIMEOUT" or "COMFY_OUTPUT_EMPTY" or "COMFY_OUTPUT_MISSING")
+            // Missing Comfy history after restart (or a still-running prompt at timeout)
+            // is uncertainty, not an observed terminal GPU failure. Preserve the
+            // bound prompt and Core attempt; never invent a failure or second POST.
+            || error is ProductionWorkerException worker && worker.Code is "COMFY_EXECUTION_FAILED" or "COMFY_OUTPUT_EMPTY" or "COMFY_OUTPUT_MISSING")
         {
             // Only definite bound-prompt failure. Unknown POST, HTTP uncertainty and cancellation
             // never enter this path and never authorize another GPU submission.
