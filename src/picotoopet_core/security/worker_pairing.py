@@ -11,7 +11,6 @@ import argparse
 import hashlib
 import json
 import os
-import pwd
 import secrets
 import stat
 import sys
@@ -82,6 +81,8 @@ def _require_local_console(database_path: Path) -> str:
         or bool(parent.st_mode & 0o022)
     ):
         raise ValueError("PRODUCTION_V11_OPERATOR_CONSOLE_REQUIRED")
+    import pwd  # macOS-only; never imported by Windows HTTP/contract runtime
+
     return pwd.getpwuid(os.geteuid()).pw_name
 
 
