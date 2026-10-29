@@ -45,7 +45,10 @@ internal sealed class ProductionReferenceSnapshotStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputRoot);
         ArgumentNullException.ThrowIfNull(approvals);
-        _inputRoot = Path.GetFullPath(inputRoot);
+        // .NET file APIs support long paths independently of the application's Win32
+        // manifest. The existing verifier also calls CreateFileW, so keep its root,
+        // publication, metadata and ACL operations in the same explicit namespace.
+        _inputRoot = NativePath(inputRoot);
         _approvals = approvals;
     }
 
@@ -60,7 +63,7 @@ internal sealed class ProductionReferenceSnapshotStore
 
     public void RequireInputRoot(string? inputRoot)
     {
-        if (inputRoot is null || !string.Equals(Path.GetFullPath(inputRoot), _inputRoot, StringComparison.OrdinalIgnoreCase))
+        if (inputRoot is null || !string.Equals(NativePath(inputRoot), _inputRoot, StringComparison.OrdinalIgnoreCase))
             throw new ProductionWorkerException("I2V_SNAPSHOT_ROOT_INVALID");
     }
 
@@ -84,7 +87,7 @@ internal sealed class ProductionReferenceSnapshotStore
         try
         {
             var relative = RelativePathFor(task, planDigest);
-            var destination = ProductionLocalEnvironment.ResolveUnderRoot(_inputRoot, relative, false);
+            var destination = ResolveManagedPath(_inputRoot, relative, false);
             var receiptPath = destination + ".snapshot.json";
             var receipt = new SnapshotReceipt("loadimage_snapshot.v1", plan.ProductionJobId,
                 task.ProductionTaskId, planDigest, graphDigest, relative, r);
@@ -147,9 +150,16 @@ internal sealed class ProductionReferenceSnapshotStore
     }
 
     private TrustedReferenceAssetVerifier CreateVerifier(ITrustedReferenceApprovalSource approvals) =>
-        new(_inputRoot, new(ProductionLocalEnvironment.ResolveUnderRoot,
+        new(_inputRoot, new(ResolveManagedPath,
             ProductionLocalEnvironment.AssertNoLinkEscape, ProductionLocalEnvironment.IsOrdinaryFile,
             ProductionLocalEnvironment.Sha256FileAsync), approvals);
+
+    private static string ResolveManagedPath(string root, string relative, bool existing) =>
+        // Extended Win32 names do not translate '/', and GetFullPath leaves them
+        // unchanged. Keep the existing bounded-root policy, adapting separators
+        // BEFORE it combines the frozen forward-slash reference with a native root.
+        NativePath(ProductionLocalEnvironment.ResolveUnderRoot(root,
+            relative.Replace('/', Path.DirectorySeparatorChar), existing));
 
     private IEnumerable<string> ManagedDirectories(string file)
     {
@@ -187,6 +197,10 @@ internal sealed class ProductionReferenceSnapshotStore
 
     private static async Task PublishAsync(string destination, byte[] bytes, CancellationToken ct)
     {
+        // FileStream can create a >MAX_PATH sibling even when raw MoveFileExW
+        // cannot name it. Normalize BOTH ends; no manifest/registry relaxation,
+        // replacement flag or copy/delete fallback is permitted.
+        destination = NativePath(destination);
         var temp = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
@@ -203,6 +217,14 @@ internal sealed class ProductionReferenceSnapshotStore
                 throw new IOException("I2V_SNAPSHOT_PUBLISH_FAILED", new Win32Exception(Marshal.GetLastWin32Error()));
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+
+    private static string NativePath(string path)
+    {
+        var full = Path.GetFullPath(OperatingSystem.IsWindows() ? path.Replace('/', '\\') : path);
+        if (!OperatingSystem.IsWindows() || full.StartsWith(@"\\?\", StringComparison.Ordinal)) return full;
+        return full.StartsWith(@"\\", StringComparison.Ordinal)
+            ? @"\\?\UNC\" + full[2..] : @"\\?\" + full;
     }
 
     private sealed record SnapshotReceipt(string SchemaVersion, string JobId, string TaskId,

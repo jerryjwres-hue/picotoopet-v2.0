@@ -16,12 +16,75 @@ internal static class DurableReferenceSnapshotTests
 {
     public static async Task RunAsync()
     {
+        await NativePublicationPathMatrixAsync();
         await PrivateCopySurvivesRestartAsync();
+        await LongRootSurvivesRestartAsync();
         await RejectedAuthorityAndOriginalAsync();
         await ReceiptAndSnapshotTamperingAsync();
         await UnsafePathAndOwnershipAsync();
         await ProcessDeathStagesAsync();
         Console.WriteLine("P0_Q2_DURABLE_REFERENCE_SNAPSHOT=PASS (fake Core/Comfy; no GPU)");
+    }
+
+    private static async Task NativePublicationPathMatrixAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "p0-q2-move-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var kind in new[] { "short", "long-temp-only", "long-both", "extended-input" })
+            {
+                var parent = Path.Combine(root, kind);
+                if (kind is "long-both" or "extended-input")
+                    parent = Path.Combine(parent, new string('a', 80), new string('b', 80), new string('c', 80));
+                Directory.CreateDirectory(parent);
+                var filename = kind == "long-temp-only"
+                    ? new string('s', 240 - parent.Length - 1 - ".bin".Length) + ".bin" : "snapshot.bin";
+                var destination = Path.GetFullPath(Path.Combine(parent, filename));
+                // The production temporary suffix is '.' + 32 hex characters + '.tmp'.
+                var tempLength = destination.Length + 37;
+                RecoveryTests.Assert(kind switch
+                {
+                    "short" => destination.Length < 260 && tempLength < 260,
+                    "long-temp-only" => destination.Length < 260 && tempLength > 260,
+                    _ => destination.Length > 260 && tempLength > 260,
+                }, "publication regression must actually cross the intended MAX_PATH boundary");
+                var supplied = kind == "extended-input" ? @"\\?\" + destination : destination;
+                // Invoke the real publication implementation, not a substitute File.Move or mock.
+                var publish = typeof(ProductionReferenceSnapshotStore).GetMethod("PublishAsync",
+                    BindingFlags.Static | BindingFlags.NonPublic) ?? throw new InvalidOperationException("publication method missing");
+                Task Publish(byte[] data) => (Task)publish.Invoke(null, [supplied, data, CancellationToken.None])!;
+                byte[] original = [1, 2, 3, 4];
+                Console.WriteLine($"P0_Q2_MOVEFILEEX_BEGIN case={kind} destination_chars={destination.Length} temp_chars={tempLength}");
+                await Publish(original);
+                RecoveryTests.Assert(File.ReadAllBytes(destination).SequenceEqual(original), "native publication must preserve exact flushed bytes");
+                await DeniedAsync(() => Publish([9, 8, 7]));
+                RecoveryTests.Assert(File.ReadAllBytes(destination).SequenceEqual(original), "existing destination must never be replaced");
+                RecoveryTests.Assert(!Directory.EnumerateFiles(parent, "*.tmp").Any(), "failed create-only move must clean only its own temporary file");
+                Console.WriteLine($"P0_Q2_MOVEFILEEX case={kind} destination_chars={destination.Length} temp_chars={tempLength} no_replace=PASS");
+            }
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private static async Task LongRootSurvivesRestartAsync()
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), "p0-q2-long-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var f = new Fixture(Path.Combine(workspace, new string('a', 80), new string('b', 80)));
+            string relative;
+            using (var lease = await f.PrepareAsync()) relative = lease.RelativePath;
+            var full = f.Full(relative);
+            RecoveryTests.Assert(full.Length > 260 && File.ReadAllBytes(full).SequenceEqual(f.Bytes),
+                "long-path publication, native verifier and ACL must refer to the same file");
+            await DeniedAsync(() => { File.WriteAllText(full, "changed"); return Task.CompletedTask; });
+            await DeniedAsync(() => { File.Delete(full); return Task.CompletedTask; });
+            using var resumed = await f.PrepareAsync();
+            RecoveryTests.Assert(resumed.RelativePath == relative, "long-path restart must reuse exact private copy");
+            RecoveryTests.Assert(f.Journal.Pending().Count == 0, "snapshot-only checks must not mint a GPU submission");
+            Console.WriteLine($"P0_Q2_LONG_PATH_RESTART destination_chars={full.Length} acl=PASS gpu_posts=0");
+        }
+        finally { if (Directory.Exists(workspace)) Directory.Delete(workspace, recursive: true); }
     }
 
     private static async Task RejectedAuthorityAndOriginalAsync()
