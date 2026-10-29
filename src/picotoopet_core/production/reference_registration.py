@@ -47,10 +47,19 @@ class ReferenceCandidateV1(BaseModel):
     def _managed_path(self) -> ReferenceCandidateV1:
         path = self.input_relative_path
         parts = path.split("/")
-        if (not path.startswith("PicotooPet/references/")
-            or "\\" in path or ":" in path or path.endswith(".")
+        # The Windows ReferencePreviewSnapshotStager writes a content-addressed
+        # four-part path: PicotooPet/references/<actual-sha256>/<shot-id>.<type>.
+        # Accepting the old three-part path here creates a frozen v1.1 Plan
+        # that the Windows P0 worker will always reject before GPU submission.
+        stem, dot, extension = parts[-1].rpartition(".")
+        if (len(parts) != 4
+            or parts[:2] != ["PicotooPet", "references"]
+            or parts[2] != self.sha256
+            or stem != self.shot_id or not dot
+            or extension not in ("png", "jpg", "webp")
+            or path != "/".join(parts)
+            or "\\" in path or ":" in path
             or any(part in ("", ".", "..") or part.endswith((" ", ".")) for part in parts)
-            or len(parts) < 3 or not path.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
             or PurePosixPath(path).is_absolute()):
             raise ValueError("REFERENCE_MANAGED_PATH_INVALID")
         return self
