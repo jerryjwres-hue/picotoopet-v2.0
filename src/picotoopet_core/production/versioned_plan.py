@@ -159,7 +159,7 @@ class WorkerWitnessV11(BaseModel):
     Windows/Comfy attestation issuer exists yet: shipping Claim stays disabled.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["production.worker_witness.v1"] = "production.worker_witness.v1"
     algorithm: Literal["ed25519"] = "ed25519"
@@ -172,7 +172,7 @@ class WorkerWitnessV11(BaseModel):
     nonce: str = Field(pattern=r"^[0-9a-f]{64}$")
     worker_executable_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     journal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    journal_generation: int = Field(ge=0)
+    journal_generation: int = Field(ge=0, strict=True)
     journal_state: Literal["NO_PRIOR_POST", "BOUND_RECOVERY", "UNCERTAIN"]
     references: tuple[WorkerReferenceSnapshotWitnessV11, ...] = Field(min_length=1, max_length=12)
     signature: str = Field(pattern=r"^[0-9a-f]{128}$")
