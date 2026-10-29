@@ -82,10 +82,11 @@ def assert_no_execution(paired):
     )["lease_token_digest"] is None
 
 
-def test_schema_25_idempotent_key_immutable_and_nonce_scoped(paired):
+def test_worker_trust_schema_idempotent_key_immutable_and_nonce_scoped(paired):
     db, _, _, job, _, _, _, key_id, trust = paired
     db.apply_migrations()
-    assert db.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version=25") == 1
+    assert db.scalar("SELECT COUNT(*) FROM schema_migrations WHERE version=25") == 0
+    assert db.scalar("SELECT MAX(version) FROM schema_migrations") == 24
     nonce = trust.issue_challenge(key_id, job.production_job_id,
                                   "windows-same-exe-worker", job.plan_digest)
     row = db.fetchone("SELECT * FROM production_worker_challenges")
@@ -214,8 +215,9 @@ def test_challenge_scope_is_exact_and_forged_nonce_cannot_redeem(paired, mutatio
 def test_nonce_timeout_and_approval_revocation_both_fail_closed(paired):
     db, registration, service, job, _, approval, _, _, trust = paired
     witness = signed(paired)
-    db.execute("UPDATE production_worker_challenges SET expires_at=?",
-               ((datetime.now(UTC) - timedelta(seconds=5)).isoformat(),))
+    db.execute("UPDATE production_worker_challenges SET issued_at=?,expires_at=?",
+               ((datetime.now(UTC) - timedelta(seconds=45)).isoformat(),
+                (datetime.now(UTC) - timedelta(seconds=5)).isoformat()))
     with pytest.raises(ValueError, match="PRODUCTION_V11_WITNESS_CHALLENGE_INVALID"):
         service.inspect_worker_witness_v11(job.production_job_id, witness)
     registration.revoke(
