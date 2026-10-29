@@ -13,7 +13,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if (-not $AuthorizeOneNewGpuPost) { throw 'P0_OPERATOR_GPU_AUTHORIZATION_REQUIRED' }
-if (-not [guid]::TryParse($ProductionJobId, [ref]([guid]::Empty))) {
+$parsedJob = [guid]::Empty
+if (-not [guid]::TryParse($ProductionJobId, [ref]$parsedJob)) {
     throw 'P0_JOB_UUID_INVALID'
 }
 if ($PlanDigest -cnotmatch '^[0-9a-f]{64}$' -or
