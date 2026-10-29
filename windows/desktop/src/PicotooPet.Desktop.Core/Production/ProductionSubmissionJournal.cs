@@ -58,13 +58,6 @@ public sealed class ProductionSubmissionJournal
         var file = FileFor(job, task);
         return File.Exists(file) ? ReadFile(file) : null;
     }
-    public DateTimeOffset LastWriteUtc(string job, string task)
-    {
-        EnsureRoot();
-        var file = FileFor(job, task);
-        _ = Read(job, task) ?? throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
-        return new DateTimeOffset(File.GetLastWriteTimeUtc(file), TimeSpan.Zero);
-    }
     public IReadOnlyList<ProductionSubmission> Pending()
     {
         EnsureRoot();
