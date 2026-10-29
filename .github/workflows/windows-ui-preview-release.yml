@@ -34,7 +34,7 @@ permissions:
 jobs:
   windows-ui-preview:
     # Only isolated P0 GUI-fix and localized-executor recovery PRs may build via pull_request.
-    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-windows-unicode-executor-20261028'
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')
     name: Build and lifecycle-test Windows UI Preview
     runs-on: windows-2025
     timeout-minutes: 60
@@ -103,7 +103,7 @@ jobs:
 
       # Only the strict three-shot candidate needs admission before any published WPF process.
       - name: P0 strict preview prelaunch HOLD and 28 independent no-GPU cases
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || github.head_ref == 'fix/p0-windows-unicode-executor-20261028')
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
         run: |
           $gate = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
@@ -158,7 +158,7 @@ jobs:
             -ValidationScope UiPreview
 
       - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || github.head_ref == 'fix/p0-windows-unicode-executor-20261028')
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
         run: |
           $zips = @(Get-ChildItem 'windows/desktop/artifacts/release' -Filter 'PicotooPet-Phase2-Windows-Prebuilt-*.zip' -File)
@@ -181,6 +181,15 @@ jobs:
           Write-Host "P0_PREVIEW_BOOTSTRAP_PACKAGED_SHA256=$actualHash; UTF8_BOM=PASS"
           $text = Get-Content -LiteralPath $readme -Raw
           if (-not $text.StartsWith('P0 #91 严格三镜头开发预览') -or -not $text.Contains('P0_HOLD_PREPARED=PASS; ARMED=PASS')) { throw 'P0_PREVIEW_HOLD_FIRST_README_MISSING' }
+          if ($env:PICOTOO_SOURCE_REF -eq 'fix/p0-reboot-explicit-attempt2-20261028') {
+            $retryScript = Join-Path $roots[0].FullName 'Approve-P0LostPromptAttempt2.ps1'
+            if (-not (Test-Path -LiteralPath $retryScript -PathType Leaf)) { throw 'P0_ATTEMPT2_SCRIPT_MISSING' }
+            $retrySource = [IO.File]::ReadAllText('windows/desktop/scripts/Approve-P0LostPromptAttempt2.ps1', [Text.UTF8Encoding]::new($false, $true))
+            [byte[]]$expectedRetry = $utf8WithBom.GetPreamble() + $utf8WithBom.GetBytes($retrySource)
+            $expectedRetryHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($expectedRetry))
+            if ((Get-FileHash -LiteralPath $retryScript -Algorithm SHA256).Hash -ne $expectedRetryHash) { throw 'P0_ATTEMPT2_SCRIPT_HASH_MISMATCH' }
+            Write-Host 'P0_EXACT_ATTEMPT2_OPERATOR_SCRIPT_PACKAGED=PASS'
+          }
           Write-Host 'P0_PREVIEW_OPERATOR_BOOTSTRAP_IN_ZIP=PASS'
       - name: Verify install upgrade recovery rollback lifecycle
         shell: pwsh
@@ -189,7 +198,7 @@ jobs:
             -ReleaseRoot windows/desktop/artifacts/release
 
       - name: P0 launch actual published GUI and unique same-EXE Worker under HOLD
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || github.head_ref == 'fix/p0-windows-unicode-executor-20261028')
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
         run: |
           if ($env:GITHUB_ACTIONS -ne 'true') { throw 'P0_CI_ONLY' }
@@ -239,7 +248,7 @@ jobs:
             [System.Text.UTF8Encoding]::new($false))
 
       - name: P0 preview package source and published EXE hash evidence
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || github.head_ref == 'fix/p0-windows-unicode-executor-20261028')
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
         run: |
           $root = 'windows/desktop/artifacts/release'
