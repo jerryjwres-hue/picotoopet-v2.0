@@ -189,11 +189,14 @@ def mutate(root: Path, action: str) -> None:
                 "SELECT * FROM production_worker_challenges WHERE production_job_id=?",
                 (manifest["job_id"],),
             )
-            assert len(rows) == 1, "one REAL Core-issued SQLite challenge expected"
-            assert rows[0]["consumed_at"] is None, "preflight cannot consume nonce"
-            assert rows[0]["key_id"] == manifest["key_id"]
-            assert rows[0]["plan_digest"] == manifest["plan_digest"]
-            assert rows[0]["executor_id"] == EXECUTOR
+            expected = int(os.environ.get("P0_CORE_INTEROP_EXPECT_CHALLENGES", "1"))
+            assert len(rows) == expected, "exact REAL Core-issued challenge count expected"
+            assert len({row["nonce_digest"] for row in rows}) == expected
+            for row in rows:
+                assert row["consumed_at"] is None, "preflight cannot consume nonce"
+                assert row["key_id"] == manifest["key_id"]
+                assert row["plan_digest"] == manifest["plan_digest"]
+                assert row["executor_id"] == EXECUTOR
             assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
             assert db.scalar(
                 "SELECT COUNT(*) FROM production_tasks WHERE attempt_count<>0 "
