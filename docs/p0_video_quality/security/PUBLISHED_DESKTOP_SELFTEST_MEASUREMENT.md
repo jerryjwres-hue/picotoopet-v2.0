@@ -61,21 +61,29 @@ evidence and SmokeTests EXE results do not satisfy this test. The source-only
 compiled-metadata preflight observed the missing opt-in method before this change;
 it is DIAGNOSTIC and does not replace Windows behavioral tests.
 
-## Discovered build blocker
+## Standard publish failure and bounded diagnostic configuration
 
-The Linux cross-publish diagnostic using the workflow's exact publish properties
+The initial Linux cross-publish using the standard single-file publish properties
 failed with IL3000 at the two existing `entry.Location` uses in frozen
 `CoreWorkerChallengeClient.CurrentImagePath`. The repository treats warnings as
-errors. This is compiler evidence, not a published Windows runtime rejection.
-The native workflow must confirm its own result and uploads `publish-result.json`
-even when the publish step fails; it cannot proceed to launch a nonexistent EXE.
+errors. Windows Run `41112584802` on
+`caca915f40d641ffa34b179648c58f005b2eb7a6` confirmed the compiler failure at lines
+179/181 and never launched the published process. That standard publish remains
+**FAIL**; this is compiler evidence, not a runtime rejection.
 
-No suppression of those frozen Core errors, `WarningsNotAsErrors`, analyzer
-disable, guard removal or alternate unbundled publish is added to obtain a green
-result. The new diagnostic locally acknowledges IL3000 only at its own intentional
-observation of `entry.Location`; it cannot suppress errors in another file. That Core source
-is outside the owner's permission. If the native compiler reports the same
-failure, the published process path, running SHA256, entry `Location` and frozen
-runtime measurement remain **BLOCKED / UNVERIFIED**, with the new runtime test
-implementation itself not accepted as proven. Resolving the original IL3000
-diagnostics requires a separate, explicitly scoped decision.
+The focused workflow now supplies `-p:WarningsNotAsErrors=IL3000` **only to the
+disposable diagnostic publish**. IL3000 remains visible in its compiler output;
+other warnings remain errors. The warning describes the exact blank-Location
+behavior Issue 173 asks to observe, and the frozen code already explicitly rejects
+it. This bounded technical build configuration allows observation without removing
+that guard or touching its source. It is not an official Release configuration or
+a repair of standard-publish compatibility. The diagnostic report explicitly
+records the exception and the failed standard run. The new diagnostic locally
+acknowledges IL3000 at its own intentional `Location` observation as well.
+
+No `NoWarn`, analyzer disable, alternate unbundled publish, production guard change
+or additional warning exception is applied. The workflow uploads
+`publish-result.json` even on failure and stops if this diagnostic publish fails;
+it cannot launch a nonexistent EXE or substitute an older build. Formal Release,
+Maotai requirements, trusted Worker identity and I2V authorization remain separate
+and unchanged. A diagnostic measurement PASS cannot imply any of those passed.
