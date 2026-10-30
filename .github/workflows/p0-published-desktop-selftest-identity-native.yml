@@ -2,15 +2,19 @@ name: P0 Published Desktop Selftest Identity Native
 
 on:
   push:
-    branches: [test/p0q2-published-desktop-selftest-process-measure-20261030]
+    branches: [test/p0q2-published-desktop-selftest-process-measure-20261030, fix/p0q2-win-singlefile-worker-image-20261030]
     paths:
       - windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs
+      - windows/desktop/src/PicotooPet.Desktop/Services/ProductionReference/CoreWorkerChallengeClient.cs
+      - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/WorkerExecutableIdentityTests.cs
       - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/PublishedDesktopSelfTestIdentityTests.cs
       - .github/workflows/p0-published-desktop-selftest-identity-native.yml
       - docs/p0_video_quality/security/**
   pull_request:
     paths:
       - windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs
+      - windows/desktop/src/PicotooPet.Desktop/Services/ProductionReference/CoreWorkerChallengeClient.cs
+      - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/WorkerExecutableIdentityTests.cs
       - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/PublishedDesktopSelfTestIdentityTests.cs
       - .github/workflows/p0-published-desktop-selftest-identity-native.yml
   workflow_dispatch:
@@ -22,7 +26,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  same-exe:
+    name: Existing Same-EXE native contracts (CPU only)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Existing same-EXE recovery, real protected signing and host refusals
+        shell: pwsh
+        run: |
+          dotnet build windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release --warnaserror
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Existing independent admission matrix and GUI GPU ownership contracts
+        shell: pwsh
+        run: |
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --goal-production-autopilot-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --goal-final-video-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
   native:
+    name: Actual strict single-file Desktop identity (read only)
     runs-on: windows-2025
     timeout-minutes: 20
     env:
@@ -72,7 +108,7 @@ jobs:
             published_process_identity = 'UNVERIFIED'
             evidence_kind = 'helper_contracts_not_published_process'
           } | ConvertTo-Json | Set-Content (Join-Path $reports 'helper-contracts.json')
-      - name: Disposable single-file diagnostic publish (IL3000 visible, not formal Release)
+      - name: Strict single-file publish (warnings as errors, not formal Release)
         shell: pwsh
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -81,8 +117,7 @@ jobs:
           $output = dotnet publish windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj `
             -c Release -r win-x64 --self-contained true -o $out `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:PublishReadyToRun=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false `
-            -p:WarningsNotAsErrors=IL3000
+            -p:PublishReadyToRun=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false --warnaserror
           $publishExit = $LASTEXITCODE
           $output | Write-Host
           $reports = Join-Path $env:RUNNER_TEMP 'published-identity-evidence'
@@ -92,8 +127,8 @@ jobs:
             publish_exit_code = $publishExit
             publish_status = $(if ($publishExit) { 'BLOCKED' } else { 'PASS' })
             il3000_observed = [bool]($output -match '(error|warning) IL3000:')
-            diagnostic_nonfatal_warning = 'IL3000'
-            standard_single_file_publish = 'FAIL_RUN_41112584802'
+            diagnostic_nonfatal_warning = $null
+            standard_single_file_publish = $(if ($publishExit) { 'BLOCKED' } else { 'PASS' })
             formal_release = 'NOT_VERIFIED'
             published_process_identity = 'UNVERIFIED_UNTIL_RUNTIME_TEST'
             executable_sha256 = $null; signed_witness = 'NOT_INVOKED'

@@ -85,8 +85,8 @@ internal static class PublishedDesktopSelfTestIdentityTests
             Require(image.GetProperty("entry_assembly_name").GetString() == "Picotoo Pet AI", "real Desktop entry assembly");
             Require(image.GetProperty("entry_assembly_location_empty").GetBoolean(), "single-file bundled entry Location is empty");
             Require(image.GetProperty("managed_dll_sha256").ValueKind == JsonValueKind.Null, "bundled DLL not misrepresented as a measured file");
-            Require(image.GetProperty("frozen_worker_measurement").GetString() == "REJECTED"
-                && image.GetProperty("frozen_worker_measurement_error").GetString() == "WORKER_EXE_HOST_UNVERIFIED", "frozen single-file incompatibility retained");
+            Require(image.GetProperty("frozen_worker_measurement").GetString() == "ACCEPTED"
+                && image.GetProperty("frozen_worker_measurement_error").ValueKind == JsonValueKind.Null, "strict single-file Worker measurement accepts actual published image");
             Require(image.GetProperty("signed_witness").GetString() == "NOT_INVOKED", "no witness claimed");
         }
         // Preserve v1 behavior and ensure an unknown lookalike flag cannot opt in.
@@ -101,10 +101,10 @@ internal static class PublishedDesktopSelfTestIdentityTests
         File.WriteAllText(Path.Combine(reports, "external-process-evidence.json"), JsonSerializer.Serialize(new
         {
             os_process_path = osPath, executable_sha256 = beforeHash, managed_build_dll_sha256 = dllHash,
-            published_process_measurement = "PASS", frozen_single_file_worker_compatibility = "REJECTED_WORKER_EXE_HOST_UNVERIFIED",
+            published_process_measurement = "PASS", frozen_single_file_worker_compatibility = "ACCEPTED",
             witness = "NOT_INVOKED", trusted_worker_attestation = "UNVERIFIED",
         }, EvidenceJson));
-        Console.WriteLine("P0_PUBLISHED_DESKTOP_PROCESS_MEASUREMENT=PASS; SINGLE_FILE_WORKER_COMPATIBILITY=REJECTED; WITNESS=NOT_INVOKED");
+        Console.WriteLine("P0_PUBLISHED_DESKTOP_PROCESS_MEASUREMENT=PASS; SINGLE_FILE_WORKER_COMPATIBILITY=ACCEPTED; WITNESS=NOT_INVOKED");
     }
 
     private static async Task<string> LaunchAsync(string exe, string report, string? extra)

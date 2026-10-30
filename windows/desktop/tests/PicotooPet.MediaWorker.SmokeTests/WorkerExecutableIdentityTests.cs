@@ -34,6 +34,20 @@ internal static class WorkerExecutableIdentityTests
         RecoveryTests.Assert(System.IO.Path.GetFileName(processPath) == "PicotooPet.MediaWorker.SmokeTests.exe"
             && image.Sha256 != await ProductionLocalEnvironment.Sha256FileAsync(typeof(ProtectedWorkerSigningKey).Assembly.Location, CancellationToken.None), "apphost EXE differs from Desktop DLL");
         await image.RequireCurrentAsync(CancellationToken.None);
+        // Private binding validator receives only runtime facts in production.
+        // Negative inputs here must not turn any entry/name/folder into an apphost.
+        var bind = typeof(CoreWorkerChallengeClient).GetMethod("RequireEntryBinding", BindingFlags.NonPublic | BindingFlags.Static);
+        RecoveryTests.Assert(bind is not null, "pinned apphost entry binding required");
+        using (var pinnedImage = new FileStream(processPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            foreach (var entry in new Assembly?[] { null, typeof(ProtectedWorkerSigningKey).Assembly, typeof(string).Assembly })
+                await DeniedAsync(() => InvokeBindingAsync(bind!, processPath, pinnedImage, entry, AppContext.BaseDirectory));
+            var memoryEntry = Assembly.Load(File.ReadAllBytes(Assembly.GetExecutingAssembly().Location));
+            RecoveryTests.Assert(string.IsNullOrEmpty(memoryEntry.Location), "memory-loaded surrogate has no assembly file");
+            await DeniedAsync(() => InvokeBindingAsync(bind!, processPath, pinnedImage, memoryEntry, AppContext.BaseDirectory));
+            await DeniedAsync(() => InvokeBindingAsync(bind!, processPath, pinnedImage, Assembly.GetEntryAssembly(), System.IO.Path.GetTempPath()));
+            await InvokeBindingAsync(bind!, processPath, pinnedImage, Assembly.GetEntryAssembly(), AppContext.BaseDirectory);
+        }
         using var f = new DurableReferenceSnapshotTests.Fixture();
         using var snapshot = await f.PrepareAsync();
         var keyRoot = System.IO.Path.Combine(f.Root, "exe-identity-key");
@@ -66,6 +80,18 @@ internal static class WorkerExecutableIdentityTests
         await DeniedAsync(async () => { await key.SignMeasuredAsync(unsigned, f.Plan, [snapshot], f.Journal, DateTimeOffset.UtcNow, CancellationToken.None); });
         RecoveryTests.Assert(Directory.GetFiles(keyRoot, "used-*").Length == 1, "replay never creates another reservation");
         var root = System.IO.Path.Combine(f.Root, "image-inputs"); Directory.CreateDirectory(root);
+        var boundHost = System.IO.Path.Combine(root, System.IO.Path.GetFileName(processPath));
+        var boundDll = System.IO.Path.Combine(root, System.IO.Path.GetFileName(Assembly.GetExecutingAssembly().Location));
+        File.Copy(processPath, boundHost); File.Copy(typeof(ProtectedWorkerSigningKey).Assembly.Location, boundDll);
+        using (var wrongDllHost = new FileStream(boundHost, FileMode.Open, FileAccess.Read, FileShare.Read))
+            await DeniedAsync(() => InvokeBindingAsync(bind!, boundHost, wrongDllHost, Assembly.GetEntryAssembly(), root));
+        File.Delete(boundDll); File.CreateSymbolicLink(boundDll, Assembly.GetExecutingAssembly().Location);
+        using (var reparseDllHost = new FileStream(boundHost, FileMode.Open, FileAccess.Read, FileShare.Read))
+            await DeniedAsync(() => InvokeBindingAsync(bind!, boundHost, reparseDllHost, Assembly.GetEntryAssembly(), root));
+        File.Delete(boundDll);
+        var misleading = System.IO.Path.Combine(root, "Picotoo Pet AI.exe"); File.Copy(processPath, misleading);
+        using (var misleadingHost = new FileStream(misleading, FileMode.Open, FileAccess.Read, FileShare.Read))
+            await DeniedAsync(() => InvokeBindingAsync(bind!, misleading, misleadingHost, typeof(ProtectedWorkerSigningKey).Assembly, root));
         foreach (var file in new[] { "missing.exe", "not-pe.exe", "fake-mz.exe", "dotnet.exe", "managed-as-exe.exe", "library.dll", "alias.exe" })
         {
             var path = System.IO.Path.Combine(root, file);
@@ -112,7 +138,7 @@ internal static class WorkerExecutableIdentityTests
         await DeniedAsync(async () => { using var unused = await OpenCandidateAsync(copy); });
         RecoveryTests.Assert(Directory.GetFiles(keyRoot, "used-*").Length == 1 && f.Journal.Pending().Count == 0, "all executable-source refusals add no nonce reservation or attempt");
         Console.WriteLine("P0_ACTUAL_SMOKE_EXE_DIGEST=PASS; CANONICAL_PAYLOAD=PASS; CORRECTED_SIGNER_INTEGRATION=PASS; NONCE=1; CLAIM=0; COMFY_POST=0");
-        Console.WriteLine("P0_PUBLISHED_DESKTOP_RUNNING_IMAGE=UNVERIFIED (no shipping EXE test entrypoint; no release attestation)");
+        Console.WriteLine("P0_PUBLISHED_DESKTOP_PROOF=SEPARATE_STRICT_SINGLE_FILE_JOB; TRUSTED_REMOTE_ATTESTATION=UNVERIFIED");
         return false;
     }
     private static async Task ProbeProcessAsync(string executable, string assembly, bool renamed)
@@ -144,6 +170,13 @@ internal static class WorkerExecutableIdentityTests
     {
         var method = typeof(CoreWorkerChallengeClient).GetMethod("OpenExecutableFileAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
         return await (Task<CoreWorkerChallengeClient.ProcessImageMeasurement>)method.Invoke(null, [path, CancellationToken.None])!;
+    }
+    private static Task InvokeBindingAsync(MethodInfo method, string path, FileStream file, Assembly? entry, string directory)
+    {
+        try { method.Invoke(null, [path, file, entry, directory]); }
+        catch (TargetInvocationException e) when (e.InnerException is not null)
+        { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerException).Throw(); }
+        return Task.CompletedTask;
     }
     private static async Task<Exception> DeniedAsync(Func<Task> action)
     {
