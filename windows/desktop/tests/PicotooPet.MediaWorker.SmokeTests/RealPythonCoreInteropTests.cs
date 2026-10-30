@@ -143,10 +143,14 @@ internal static class RealPythonCoreInteropTests
             // ── Manager token store, not a mocked production session.
             try
             {
-                await new DesktopSettingsStore(Path.Combine(root, "desktop-settings.json")).SaveAsync(
-                    new(uri), CancellationToken.None);
-                Console.WriteLine("REAL_WINDOWS_PHASE=SESSION_INITIALIZE");
-                await session.InitializeAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(12));
+                // ── CI-only endpoint configuration avoids startup health /
+                // ── event-stream pairing unrelated to the frozen production
+                // ── router. Credential Manager and every production HTTP
+                // ── transport/approval/signing implementation stay genuine.
+                var endpoint = typeof(ControlCenterSession).GetField(
+                    "_macBaseUrl", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?? throw new InvalidOperationException("CI_ENDPOINT_FIELD_NOT_FOUND");
+                endpoint.SetValue(session, uri);
                 tokenStore.Save(bearer);
                 Console.WriteLine("REAL_WINDOWS_PHASE=FETCH_REAL_PLAN");
                 using var readBudget = new CancellationTokenSource(TimeSpan.FromSeconds(12));
