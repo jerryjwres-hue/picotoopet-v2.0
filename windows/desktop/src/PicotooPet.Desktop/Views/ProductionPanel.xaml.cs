@@ -1,5 +1,6 @@
 using System.Windows;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Services.QualityObservation;
 
 namespace PicotooPet.Desktop.Views;
 
@@ -44,6 +45,32 @@ public partial class ProductionPanel : System.Windows.Controls.UserControl
 
     private async void Preflight_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.PreflightAsync(CancellationToken.None));
+
+    private async void ObserveVisuals_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ProductionPanelViewModel model) return;
+        if (model.IsObservingVisuals) { model.CancelVisualObservation(); return; }
+        await model.ObserveSelectedVisualsAsync(async (request, ct) =>
+        {
+            // The service runs on a worker thread; only this explicit click owns consent UI.
+            return await Dispatcher.InvokeAsync(() =>
+            {
+                ct.ThrowIfCancellationRequested();
+                if (DataContext != model || model.SelectedJob?.ProductionJobId != request.JobId) return new VisualReadConsent(false);
+                var sources = string.Join("\n\n", request.Sources.Select(s =>
+                    $"镜头 {s.ShotId} / 任务 {s.TaskId}\n{s.Path}\nBytes {s.Bytes} · SHA256 {s.Sha256}"));
+                var read = MessageBox.Show(Window.GetWindow(this),
+                    $"只读核对并 CPU 采样以下三段 WebM？\nJob {request.JobId}\n\n{sources}\n\n不会启动渲染、修改 C011 或生成 ACCEPT。",
+                    "确认读取精确审片来源", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+                ct.ThrowIfCancellationRequested();
+                var transfer = read && request.VlmEndpoint is not null && MessageBox.Show(Window.GetWindow(this),
+                    $"另行同意将三张缩放中间帧发送到已配置局域网模型？\n{request.VlmEndpoint}\n{request.VlmModel}\n\n不发送原视频；不下载模型；模型意见不是人工 ACCEPT。",
+                    "单独确认帧传输", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+                ct.ThrowIfCancellationRequested();
+                return new VisualReadConsent(read, transfer);
+            });
+        }, CancellationToken.None);
+    }
 
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
