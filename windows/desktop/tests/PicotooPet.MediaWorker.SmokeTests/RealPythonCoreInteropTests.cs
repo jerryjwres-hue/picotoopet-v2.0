@@ -67,6 +67,7 @@ internal static class RealPythonCoreInteropTests
             return;
         }
 
+        Console.WriteLine("REAL_WINDOWS_PHASE=MANIFEST_BEGIN");
         var manifest = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(root, "interop-fixture-public.json")));
         using (manifest)
         {
@@ -132,6 +133,7 @@ internal static class RealPythonCoreInteropTests
 
             var input = Path.Combine(root, "windows-input");
             var tokenStore = new CredentialManagerTokenStore("PicotooPet.CI.RealCore/" + Guid.NewGuid().ToString("N"));
+            Console.WriteLine("REAL_WINDOWS_PHASE=SESSION_CONSTRUCT");
             await using var session = new ControlCenterSession(
                 tokenStore,
                 new DesktopSettingsStore(Path.Combine(root, "desktop-settings.json")),
@@ -143,9 +145,13 @@ internal static class RealPythonCoreInteropTests
             {
                 await new DesktopSettingsStore(Path.Combine(root, "desktop-settings.json")).SaveAsync(
                     new(uri), CancellationToken.None);
-                await session.InitializeAsync(CancellationToken.None);
+                Console.WriteLine("REAL_WINDOWS_PHASE=SESSION_INITIALIZE");
+                await session.InitializeAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(12));
                 tokenStore.Save(bearer);
-                var plan = await session.GetProductionPlanAsync(job, CancellationToken.None);
+                Console.WriteLine("REAL_WINDOWS_PHASE=FETCH_REAL_PLAN");
+                using var readBudget = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                var plan = await session.GetProductionPlanAsync(job, readBudget.Token).WaitAsync(TimeSpan.FromSeconds(14));
+                Console.WriteLine("REAL_WINDOWS_PHASE=REAL_PLAN_RECEIVED");
                 Check(plan.SchemaVersion == "1.1" && plan.Tasks.Length == 1
                     && plan.Tasks[0].ReferenceAsset is not null, "REAL_CORE_FROZEN_PLAN");
                 Check(plan.ProductionJobId == job, "REAL_CORE_JOB_ID");
@@ -162,12 +168,14 @@ internal static class RealPythonCoreInteropTests
                 {
                     using var comfySentinel = new TcpListener(IPAddress.Loopback, 8188);
                     comfySentinel.Start();
+                    Console.WriteLine("REAL_WINDOWS_PHASE=WORKER_CLIENT_START");
                     using var client = session.CreateWorkerChallengePreflightClient();
                     var result = await client.RunExpectedDenyAsync(
                         plan, input, keyRoot, Executor,
                         publicPin.RootElement.GetProperty("fingerprint").GetString()!,
                         plan.Tasks.ToDictionary(t => t.ProductionTaskId, _ => new string('e', 64)),
-                        journal, CancellationToken.None);
+                        journal, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(40));
+                    Console.WriteLine("REAL_WINDOWS_PHASE=CORE_EXPECTED_DENIAL_RECEIVED");
                     Check(result == "PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED", "REAL_CORE_EXPECTED_409");
                     Check(!comfySentinel.Pending(), "COMFY_NETWORK_REQUEST_ZERO");
                     Check(journal.Pending().Count == 0, "COMFY_JOURNAL_ZERO");
@@ -176,6 +184,7 @@ internal static class RealPythonCoreInteropTests
             }
             finally
             {
+                Console.WriteLine("REAL_WINDOWS_PHASE=SESSION_FINALLY");
                 tokenStore.Delete();
             }
         }
