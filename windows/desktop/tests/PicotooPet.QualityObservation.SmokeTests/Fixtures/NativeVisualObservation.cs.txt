@@ -16,9 +16,10 @@ using PicotooPet.Desktop.Views;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         if (!OperatingSystem.IsWindows()) throw new InvalidOperationException("NATIVE_WINDOWS_REQUIRED");
+        if (args.Length == 5 && args[0] == "MOCK_OBSERVER_DELAY") { Thread.Sleep(30000); return 0; }
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Dispatcher.InvokeAsync(async () =>
         {
@@ -151,6 +152,18 @@ internal static class Program
         var real = (IVisualObservationRuntime)Activator.CreateInstance(runtimeType, true)!;
         var denied = false; try { using var d = real.OpenDeployment(); } catch (Exception) { denied = true; }
         Check(denied, "no embedded approved deployment means UNVERIFIED");
+        // Exercise actual Windows child cancellation, separate from fake GET cancellation.
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(250)))
+        using (var deployment = new VisualObserverDeployment(Environment.ProcessPath!, "unused-probe", "unused-ffmpeg", new string('a',64)))
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew(); var canceled = false;
+            try { await real.RunAsync(deployment, "MOCK_OBSERVER_DELAY", Path.GetTempPath(), "unused-output", false, cancellation.Token); }
+            catch (OperationCanceledException) { canceled = true; }
+            Check(canceled && timer.Elapsed < TimeSpan.FromSeconds(7), "actual observer child canceled and cleaned within bound");
+            var peers = System.Diagnostics.Process.GetProcessesByName(Path.GetFileNameWithoutExtension(Environment.ProcessPath));
+            try { Check(peers.All(p => p.Id == Environment.ProcessId || p.HasExited), "no surviving test-created observer child"); }
+            finally { foreach(var peer in peers) peer.Dispose(); }
+        }
     }
     private sealed class UnavailableObserver : IVisualObservation
     {
