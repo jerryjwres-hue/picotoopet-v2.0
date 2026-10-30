@@ -5,7 +5,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
@@ -19,7 +18,7 @@ using PicotooPet.Desktop.Services.ProductionReference;
 namespace PicotooPet.MediaWorker.SmokeTests;
 
 /// <summary>
-/// #177 test-only entry hook: no Program.cs, Worker, or shipping factory changes.
+/// #177 test-only entry hook: a single scoped test Program.cs switch; no shipping changes.
 /// Runs ONLY when a separate disposable Windows CI workflow opts in.
 /// The actual existing Windows session, DPAPI signer, snapshots and Core client
 /// exchange HTTP with the real, unmodified Python FastAPI production router.
@@ -30,21 +29,13 @@ internal static class RealPythonCoreInteropTests
     private static readonly byte[] Png = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 
-    [ModuleInitializer]
-    internal static void OptInOnly()
+    internal static async Task RunAsync(string mode)
     {
-        var mode = Environment.GetEnvironmentVariable("P0_REAL_CORE_INTEROP_ACTION");
-        if (mode is null) return;
+        // ── A normal, awaited test-entry call, not a blocking module initializer.
+        // ── This prevents CLI bootstrap and async session initialization deadlocks.
         if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("CI") != "true"
             || Environment.GetEnvironmentVariable("P0_REAL_CORE_LOCALHOST_CI_ONLY") != "1")
             throw new InvalidOperationException("REAL_CORE_INTEROP_REQUIRES_EPHEMERAL_WINDOWS_CI");
-        RunAsync(mode).GetAwaiter().GetResult();
-        // ── Isolated test-only harness, not a hook in the shipping application.
-        Environment.Exit(0);
-    }
-
-    private static async Task RunAsync(string mode)
-    {
         var root = Environment.GetEnvironmentVariable("P0_REAL_CORE_INTEROP_ROOT")
             ?? throw new InvalidOperationException("REAL_CORE_TEMP_ROOT_REQUIRED");
         if (!Path.IsPathFullyQualified(root) || !Path.GetFileName(Path.TrimEndingDirectorySeparator(root))
