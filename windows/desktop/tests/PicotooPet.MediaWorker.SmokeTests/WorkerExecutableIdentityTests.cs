@@ -1,6 +1,5 @@
 using System.IO;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -36,26 +35,23 @@ internal static class WorkerExecutableIdentityTests
         var payload = WorkerWitnessEncoding.Payload(unsigned);
         RecoveryTests.Assert(unsigned.GetProperty("worker_executable_sha256").GetString() == image.Sha256
             && Encoding.UTF8.GetString(payload).Contains("\"worker_executable_sha256\":\"" + image.Sha256 + "\"", StringComparison.Ordinal), "exact EXE digest in canonical signed bytes");
-        // Public RFC8032 TEST1 seed only: prove these bytes can be signed without
-        // pretending the unchanged production signer accepts the corrected field.
-        var seed = Convert.FromHexString("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
-        try
-        {
-            var signature = new byte[64]; var pub = new byte[32]; Ed25519.GeneratePublicKey(seed, 0, pub, 0);
-            Ed25519.Sign(seed, 0, payload, 0, payload.Length, signature, 0);
-            RecoveryTests.Assert(Ed25519.Verify(signature, 0, pub, 0, payload, 0, payload.Length), "test-only signature includes real EXE digest");
-            var changed = JsonNode.Parse(witness.ToJsonString())!;
-            changed["worker_executable_sha256"] = await ProductionLocalEnvironment.Sha256FileAsync(typeof(ProtectedWorkerSigningKey).Assembly.Location, CancellationToken.None);
-            var altered = WorkerWitnessEncoding.Payload(JsonSerializer.SerializeToElement(changed));
-            RecoveryTests.Assert(!Ed25519.Verify(signature, 0, pub, 0, altered, 0, altered.Length), "DLL substitution changes signed bytes");
-        }
-        finally { CryptographicOperations.ZeroMemory(seed); }
-        // #169 forbids editing the signer. Its DLL guard must honestly deny the
-        // corrected EXE field before reserving any nonce; no substitution/bypass.
         var key = ProtectedWorkerSigningKey.Open(keyRoot, "windows-same-exe-worker", identity.Fingerprint);
-        var guard = await DeniedAsync(async () => { await key.SignMeasuredAsync(unsigned, f.Plan, [snapshot], f.Journal, DateTimeOffset.UtcNow, CancellationToken.None); });
-        RecoveryTests.Assert(guard is InvalidDataException && guard.Message == "WORKER_WITNESS_LOCAL_SCOPE_MISMATCH", "unchanged signer still compares against DLL; do not forge a compatible signature");
-        RecoveryTests.Assert(!Directory.EnumerateFiles(keyRoot, "used-*").Any() && f.Journal.Pending().Count == 0, "signer mismatch creates no nonce marker/attempt");
+        var changed = JsonNode.Parse(witness.ToJsonString())!;
+        changed["worker_executable_sha256"] = await ProductionLocalEnvironment.Sha256FileAsync(typeof(ProtectedWorkerSigningKey).Assembly.Location, CancellationToken.None);
+        var substituted = JsonSerializer.SerializeToElement(changed);
+        await DeniedAsync(async () => { await key.SignMeasuredAsync(substituted, f.Plan, [snapshot], f.Journal, DateTimeOffset.UtcNow, CancellationToken.None); });
+        RecoveryTests.Assert(!Directory.EnumerateFiles(keyRoot, "used-*").Any(), "DLL substitution denied before nonce marker");
+        var signature = Convert.FromHexString(await key.SignMeasuredAsync(unsigned, f.Plan, [snapshot], f.Journal, DateTimeOffset.UtcNow, CancellationToken.None));
+        var pub = Convert.FromHexString(identity.PublicKeyHex);
+        RecoveryTests.Assert(Ed25519.Verify(signature, 0, pub, 0, payload, 0, payload.Length), "real DPAPI Ed25519 signature binds actual EXE canonical bytes");
+        witness["signature"] = Convert.ToHexStringLower(signature);
+        RecoveryTests.Assert(payload.SequenceEqual(WorkerWitnessEncoding.Payload(JsonSerializer.SerializeToElement(witness))), "signature field does not alter canonical signed EXE bytes");
+        var altered = WorkerWitnessEncoding.Payload(substituted);
+        RecoveryTests.Assert(!Ed25519.Verify(signature, 0, pub, 0, altered, 0, altered.Length), "DLL substitution changes signed bytes");
+        var markers = Directory.GetFiles(keyRoot, "used-*");
+        RecoveryTests.Assert(markers.Length == 1 && f.Journal.Pending().Count == 0, "one nonce reservation, no attempt");
+        await DeniedAsync(async () => { await key.SignMeasuredAsync(unsigned, f.Plan, [snapshot], f.Journal, DateTimeOffset.UtcNow, CancellationToken.None); });
+        RecoveryTests.Assert(Directory.GetFiles(keyRoot, "used-*").Length == 1, "replay never creates another reservation");
         var root = System.IO.Path.Combine(f.Root, "image-inputs"); Directory.CreateDirectory(root);
         foreach (var file in new[] { "missing.exe", "not-pe.exe", "fake-mz.exe", "dotnet.exe", "managed-as-exe.exe", "library.dll", "alias.exe" })
         {
@@ -84,7 +80,8 @@ internal static class WorkerExecutableIdentityTests
         }
         File.WriteAllBytes(copy, [0]);
         await DeniedAsync(async () => { using var unused = await OpenCandidateAsync(copy); });
-        Console.WriteLine("P0_ACTUAL_SMOKE_EXE_DIGEST=PASS; CANONICAL_PAYLOAD=PASS; CORRECTED_SIGNER_INTEGRATION=BLOCKED; NONCE=0; CLAIM=0; COMFY_POST=0");
+        RecoveryTests.Assert(Directory.GetFiles(keyRoot, "used-*").Length == 1 && f.Journal.Pending().Count == 0, "all executable-source refusals add no nonce reservation or attempt");
+        Console.WriteLine("P0_ACTUAL_SMOKE_EXE_DIGEST=PASS; CANONICAL_PAYLOAD=PASS; CORRECTED_SIGNER_INTEGRATION=PASS; NONCE=1; CLAIM=0; COMFY_POST=0");
         Console.WriteLine("P0_PUBLISHED_DESKTOP_RUNNING_IMAGE=UNVERIFIED (no shipping EXE test entrypoint; no release attestation)");
     }
     private static async Task<CoreWorkerChallengeClient.ProcessImageMeasurement> OpenCandidateAsync(string path)

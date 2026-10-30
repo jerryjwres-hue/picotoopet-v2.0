@@ -101,9 +101,11 @@ internal sealed class ProtectedWorkerSigningKey
         Match(witness, "production_job_id", plan.ProductionJobId); Match(witness, "plan_digest", planDigest);
         Match(witness, "journal_digest", Hash("[]"u8.ToArray()));
         if (witness.GetProperty("journal_generation").GetInt64() != 0 || snapshots.Count != plan.Tasks.Length) throw InvalidScope();
-        // Hash this loaded same-EXE assembly, not a caller-supplied path. This is a local
-        // software measurement, NOT a signed-process/Comfy attestation.
-        Match(witness, "worker_executable_sha256", await ProductionLocalEnvironment.Sha256FileAsync(typeof(ProtectedWorkerSigningKey).Assembly.Location, ct).ConfigureAwait(false));
+        // Reuse the OS-derived EXE measurement, never the managed DLL or caller
+        // path. Retain the file/namespace pins through nonce reservation/signing.
+        // This remains local integrity evidence, NOT remote process attestation.
+        using var executable = await CoreWorkerChallengeClient.MeasureProcessImageAsync(ct).ConfigureAwait(false);
+        Match(witness, "worker_executable_sha256", executable.Sha256);
         var references = witness.GetProperty("references").EnumerateArray().ToArray();
         if (references.Length != snapshots.Count) throw InvalidScope();
         foreach (var task in plan.Tasks)
@@ -125,8 +127,15 @@ internal sealed class ProtectedWorkerSigningKey
         }
         ct.ThrowIfCancellationRequested();
         // Use actual current UTC again after potentially slow disk/approval work.
+        await executable.RequireCurrentAsync(ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         WorkerWitnessEncoding.RequireFresh(witness, DateTimeOffset.UtcNow);
         ReserveNonce(witness.GetProperty("nonce").GetString()!);
+        // A failed recheck burns the nonce safely and emits no signature. Pins
+        // continue denying writes/deletes while DPAPI reads the protected key.
+        await executable.RequireCurrentAsync(ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        WorkerWitnessEncoding.RequireFresh(witness, DateTimeOffset.UtcNow);
         byte[]? signature = null;
         ReadKey(_root, _executor, Identity.Fingerprint, seed =>
         {

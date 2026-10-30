@@ -62,8 +62,12 @@ internal static class WorkerSignerTests
         Throws(() => ProtectedWorkerSigningKey.Open(root, "other-worker", fingerprint));
         using var lease = await f.PrepareAsync();
         var now = DateTimeOffset.UtcNow;
-        var witness = Measured(f, lease, identity, now);
+        var witness = await MeasuredAsync(f, lease, identity, now);
         var key = ProtectedWorkerSigningKey.Open(root, executor, fingerprint);
+        var dll = JsonNode.Parse(witness.GetRawText())!;
+        dll["worker_executable_sha256"] = Hash(File.ReadAllBytes(typeof(ProtectedWorkerSigningKey).Assembly.Location));
+        await DeniedAsync(() => key.SignMeasuredAsync(JsonSerializer.SerializeToElement(dll), f.Plan, [lease], f.Journal, now, CancellationToken.None));
+        Assert(!Directory.EnumerateFiles(root, "used-*").Any(), "DLL witness denied before reserving a nonce");
         var signature = await key.SignMeasuredAsync(witness, f.Plan, [lease], f.Journal, now, CancellationToken.None);
         var payload = WorkerWitnessEncoding.Payload(witness);
         Assert(Ed25519.Verify(Convert.FromHexString(signature), 0, Convert.FromHexString(identity.PublicKeyHex), 0, payload, 0, payload.Length), "real protected key signature");
@@ -85,14 +89,14 @@ internal static class WorkerSignerTests
         using (var other = new DurableReferenceSnapshotTests.Fixture())
         {
             using var disposed = await other.PrepareAsync();
-            var measured = Measured(other, disposed, identity, DateTimeOffset.UtcNow);
+            var measured = await MeasuredAsync(other, disposed, identity, DateTimeOffset.UtcNow);
             disposed.Dispose();
             await DeniedAsync(() => key.SignMeasuredAsync(measured, other.Plan, [disposed], other.Journal, DateTimeOffset.UtcNow, CancellationToken.None));
         }
         using (var concurrent = new DurableReferenceSnapshotTests.Fixture())
         {
             using var retained = await concurrent.PrepareAsync();
-            var measured = Measured(concurrent, retained, identity, DateTimeOffset.UtcNow);
+            var measured = await MeasuredAsync(concurrent, retained, identity, DateTimeOffset.UtcNow);
             concurrent.ApprovalProbe = _ =>
             {
                 retained.Dispose();
@@ -181,8 +185,9 @@ internal static class WorkerSignerTests
         Assert(process.ExitCode == 0, "restart child: " + await output + await errors);
     }
 
-    private static JsonElement Measured(DurableReferenceSnapshotTests.Fixture f, DurableReferenceSnapshot lease, WorkerPublicIdentity id, DateTimeOffset now)
+    private static async Task<JsonElement> MeasuredAsync(DurableReferenceSnapshotTests.Fixture f, DurableReferenceSnapshot lease, WorkerPublicIdentity id, DateTimeOffset now)
     {
+        using var image = await CoreWorkerChallengeClient.MeasureProcessImageAsync(CancellationToken.None);
         var m = lease.Measurement;
         return JsonSerializer.SerializeToElement(new
         {
@@ -190,7 +195,7 @@ internal static class WorkerSignerTests
             executor_id = "windows-same-exe-worker", production_job_id = m.JobId, plan_digest = m.PlanDigest,
             issued_at = now.ToString("yyyy-MM-ddTHH:mm:ss.ffffff'Z'", System.Globalization.CultureInfo.InvariantCulture),
             expires_at = now.AddSeconds(25).ToString("yyyy-MM-ddTHH:mm:ss.ffffff'Z'", System.Globalization.CultureInfo.InvariantCulture),
-            nonce = new string('2', 64), worker_executable_sha256 = Hash(File.ReadAllBytes(typeof(ProtectedWorkerSigningKey).Assembly.Location)),
+            nonce = new string('2', 64), worker_executable_sha256 = image.Sha256,
             journal_digest = Hash("[]"u8.ToArray()), journal_generation = 0, journal_state = "NO_PRIOR_POST",
             references = new[] { new { production_task_id = m.TaskId, shot_id = m.ShotId, asset_id = m.AssetId, approval_id = m.ApprovalId,
                 approval_request_digest = f.Reference.ApprovalRequestDigest, source_sha256 = m.SourceSha256, source_bytes = m.SourceBytes,
