@@ -1,0 +1,156 @@
+name: P0 Published Desktop Selftest Identity Native
+
+on:
+  push:
+    branches: [test/p0q2-published-desktop-selftest-process-measure-20261030, fix/p0q2-win-singlefile-worker-image-20261030]
+    paths:
+      - windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs
+      - windows/desktop/src/PicotooPet.Desktop/Services/ProductionReference/CoreWorkerChallengeClient.cs
+      - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/WorkerExecutableIdentityTests.cs
+      - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/PublishedDesktopSelfTestIdentityTests.cs
+      - .github/workflows/p0-published-desktop-selftest-identity-native.yml
+      - docs/p0_video_quality/security/**
+  pull_request:
+    paths:
+      - windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs
+      - windows/desktop/src/PicotooPet.Desktop/Services/ProductionReference/CoreWorkerChallengeClient.cs
+      - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/WorkerExecutableIdentityTests.cs
+      - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/PublishedDesktopSelfTestIdentityTests.cs
+      - .github/workflows/p0-published-desktop-selftest-identity-native.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: published-selftest-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  same-exe:
+    name: Existing Same-EXE native contracts (CPU only)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Existing same-EXE recovery, real protected signing and host refusals
+        shell: pwsh
+        run: |
+          dotnet build windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release --warnaserror
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Existing independent admission matrix and GUI GPU ownership contracts
+        shell: pwsh
+        run: |
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --goal-production-autopilot-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --goal-final-video-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+  native:
+    name: Actual strict single-file Desktop identity (read only)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Build disposable focused test harness (not a Worker)
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'published-identity-harness'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $project = Join-Path $env:GITHUB_WORKSPACE 'windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj'
+          $test = Join-Path $env:GITHUB_WORKSPACE 'windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/PublishedDesktopSelfTestIdentityTests.cs'
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+              <UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$project" /><Compile Include="$test" Link="IdentityTests.cs" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $root 'IdentityHarness.csproj')
+          'await PicotooPet.MediaWorker.SmokeTests.PublishedDesktopSelfTestIdentityTests.RunAsync(args);' | Set-Content (Join-Path $root 'Program.cs')
+          dotnet build (Join-Path $root 'IdentityHarness.csproj') -c Release --warnaserror
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Require opt-in and fail-closed negative contracts before publishing
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $runner = Join-Path $env:RUNNER_TEMP 'published-identity-harness/bin/Release/net10.0-windows10.0.19041.0/IdentityHarness.exe'
+          & $runner --helpers-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $reports = Join-Path $env:RUNNER_TEMP 'published-identity-evidence'
+          New-Item -ItemType Directory -Path $reports -Force | Out-Null
+          @{
+            source_sha = $env:SOURCE_SHA; run_id = $env:GITHUB_RUN_ID
+            opt_in_and_file_negatives = 'PASS'
+            published_process_identity = 'UNVERIFIED'
+            evidence_kind = 'helper_contracts_not_published_process'
+          } | ConvertTo-Json | Set-Content (Join-Path $reports 'helper-contracts.json')
+      - name: Strict single-file publish (warnings as errors, not formal Release)
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'published-desktop-identity'
+          $output = dotnet publish windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj `
+            -c Release -r win-x64 --self-contained true -o $out `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:PublishReadyToRun=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false --warnaserror
+          $publishExit = $LASTEXITCODE
+          $output | Write-Host
+          $reports = Join-Path $env:RUNNER_TEMP 'published-identity-evidence'
+          New-Item -ItemType Directory -Path $reports -Force | Out-Null
+          @{
+            source_sha = $env:SOURCE_SHA; run_id = $env:GITHUB_RUN_ID
+            publish_exit_code = $publishExit
+            publish_status = $(if ($publishExit) { 'BLOCKED' } else { 'PASS' })
+            il3000_observed = [bool]($output -match '(error|warning) IL3000:')
+            diagnostic_nonfatal_warning = $null
+            standard_single_file_publish = $(if ($publishExit) { 'BLOCKED' } else { 'PASS' })
+            formal_release = 'NOT_VERIFIED'
+            published_process_identity = 'UNVERIFIED_UNTIL_RUNTIME_TEST'
+            executable_sha256 = $null; signed_witness = 'NOT_INVOKED'
+          } | ConvertTo-Json | Set-Content (Join-Path $reports 'publish-result.json')
+          if ($publishExit) {
+            Write-Host '::error::Disposable diagnostic publish failed; runtime identity remains BLOCKED/UNVERIFIED. No further compiler exception is permitted.'
+            exit $publishExit
+          }
+      - name: Run actual published Desktop read-only identity and legacy compatibility tests
+        shell: pwsh
+        run: |
+          $runner = Join-Path $env:RUNNER_TEMP 'published-identity-harness/bin/Release/net10.0-windows10.0.19041.0/IdentityHarness.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'published-desktop-identity/Picotoo Pet AI.exe'
+          $dll = Join-Path $env:GITHUB_WORKSPACE 'windows/desktop/src/PicotooPet.Desktop/bin/Release/net10.0-windows10.0.19041.0/win-x64/Picotoo Pet AI.dll'
+          $reports = Join-Path $env:RUNNER_TEMP 'published-identity-evidence'
+          & $runner $exe $dll $reports
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Upload scoped JSON evidence only (no executable or raw stdout)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: published-desktop-identity-${{ github.run_id }}
+          path: ${{ runner.temp }}/published-identity-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7

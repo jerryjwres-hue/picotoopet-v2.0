@@ -2,6 +2,10 @@ using System.Globalization;
 using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.PortableExecutable;
+using System.Reflection.Metadata;
+using System.Buffers.Binary;
+using System.Runtime.Loader;
+using System.Text;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using System.Net;
@@ -173,21 +177,114 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         var reported = Environment.ProcessPath;
         if (reported is null || !string.Equals(osPath, CanonicalExecutablePath(reported), StringComparison.OrdinalIgnoreCase))
             throw Invalid("WORKER_EXE_PROCESS_PATH_MISMATCH");
-        // Entry assembly is used only to reject generic/renamed hosts, NEVER as
-        // the measured file. Unsupported single-file/unknown hosts fail closed.
-        var entry = Assembly.GetEntryAssembly();
-        if (entry is null || string.IsNullOrEmpty(entry.Location)
-            || !string.Equals(System.IO.Path.GetFileName(osPath), entry.GetName().Name + ".exe", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(System.IO.Path.GetDirectoryName(osPath), System.IO.Path.GetDirectoryName(entry.Location), StringComparison.OrdinalIgnoreCase))
-            throw Invalid("WORKER_EXE_HOST_UNVERIFIED");
-        // SDK apphosts copy the entry assembly's Win32 version resources. Treat
-        // missing/mismatched resources as unknown, and reject a renamed muxer.
-        // These mutable resources are a negative filter, NOT vendor attestation.
-        var original = FileVersionInfo.GetVersionInfo(osPath).OriginalFilename;
-        if (!string.Equals(original, entry.GetName().Name + ".dll", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(original, entry.GetName().Name + ".exe", StringComparison.OrdinalIgnoreCase))
-            throw Invalid("WORKER_EXE_APPHOST_BINDING_UNVERIFIED");
         return osPath;
+    }
+
+    // Both apphost forms bind the real runtime entry to bytes under the image
+    // lease. No Assembly.Location call (or reflective substitute): bundled entry
+    // modules have no such file. This is local binding, NOT remote attestation.
+    private static void RequireEntryBinding(string path, FileStream image, Assembly? entry, string baseDirectory)
+    {
+        var name = entry?.GetName().Name;
+        if (entry is null || entry.IsDynamic || name is not ("Picotoo Pet AI" or "PicotooPet.MediaWorker.SmokeTests")
+            || AssemblyLoadContext.GetLoadContext(entry) != AssemblyLoadContext.Default
+            || !string.Equals(System.IO.Path.GetFileName(path), name + ".exe", StringComparison.OrdinalIgnoreCase)
+            || !System.IO.Path.IsPathFullyQualified(baseDirectory)
+            || !string.Equals(baseDirectory, System.IO.Path.GetFullPath(baseDirectory), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(System.IO.Path.TrimEndingDirectorySeparator(baseDirectory), System.IO.Path.GetDirectoryName(path), StringComparison.OrdinalIgnoreCase))
+            throw Invalid("WORKER_EXE_HOST_UNVERIFIED");
+        // Retain the SDK Win32 resource negative filter, now under the pinned file.
+        var original = FileVersionInfo.GetVersionInfo(path).OriginalFilename;
+        if (!string.Equals(original, name + ".dll", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(original, name + ".exe", StringComparison.OrdinalIgnoreCase))
+            throw Invalid("WORKER_EXE_APPHOST_BINDING_UNVERIFIED");
+        image.Position = 0;
+        int nativeSize;
+        using (var pe = new PEReader(image, PEStreamOptions.LeaveOpen))
+        {
+            nativeSize = pe.PEHeaders.PEHeader?.SizeOfHeaders ?? 0;
+            foreach (var section in pe.PEHeaders.SectionHeaders)
+            {
+                if (section.PointerToRawData < 0 || section.SizeOfRawData < 0) throw Invalid("WORKER_EXE_APPHOST_INVALID");
+                nativeSize = Math.Max(nativeSize, checked(section.PointerToRawData + section.SizeOfRawData));
+            }
+        }
+        if (nativeSize <= 0 || nativeSize > 32 * 1024 * 1024 || nativeSize > image.Length) throw Invalid("WORKER_EXE_APPHOST_INVALID");
+        image.Position = 0; var native = new byte[nativeSize]; image.ReadExactly(native);
+        // .NET HostModel bundle marker; offset zero denotes an ordinary SDK
+        // apphost. Search only the bounded native PE, never arbitrary payloads.
+        ReadOnlySpan<byte> marker = [0x8b,0x12,0x02,0xb9,0x6a,0x61,0x20,0x38,0x72,0x7b,0x93,0x02,0x14,0xd7,0xa0,0x32,
+            0x13,0xf5,0xb9,0xe6,0xef,0xae,0x33,0x18,0xee,0x3b,0x2d,0xce,0x24,0xb3,0x6a,0xae];
+        var index = native.AsSpan().IndexOf(marker);
+        if (index < 8 || native.AsSpan(index + marker.Length).IndexOf(marker) >= 0
+            || native.AsSpan().IndexOf(Encoding.UTF8.GetBytes(name + ".dll\0")) < 0)
+            throw Invalid("WORKER_EXE_APPHOST_BINDING_UNVERIFIED");
+        var header = BinaryPrimitives.ReadInt64LittleEndian(native.AsSpan(index - 8, 8));
+        if (header == 0)
+        {
+            var dll = System.IO.Path.Combine(baseDirectory, name + ".dll");
+            ProductionLocalEnvironment.AssertNoLinkEscape(baseDirectory, dll);
+            if (!ProductionLocalEnvironment.IsOrdinaryFile(dll)) throw Invalid("WORKER_EXE_ENTRY_FILE_UNVERIFIED");
+            using var file = new FileStream(dll, FileMode.Open, FileAccess.Read, FileShare.Read);
+            RequireFinalPath(file.SafeFileHandle, dll); var before = Stamp(file.SafeFileHandle);
+            using var pe = new PEReader(file, PEStreamOptions.LeaveOpen);
+            RequireEntryMetadata(pe, entry);
+            if (before != Stamp(file.SafeFileHandle)) throw Invalid("WORKER_EXE_ENTRY_CHANGED");
+            RequireFinalPath(file.SafeFileHandle, dll);
+            return;
+        }
+        // Only the actual supported .NET v6.0, uncompressed bundle format is
+        // admitted. Unknown formats/flags fail closed, never fall back to a DLL.
+        if (header < nativeSize || header >= image.Length || image.Length - header > 1024 * 1024)
+            throw Invalid("WORKER_EXE_BUNDLE_UNVERIFIED");
+        image.Position = header; var manifest = new byte[checked((int)(image.Length - header))]; image.ReadExactly(manifest);
+        using var reader = new BinaryReader(new MemoryStream(manifest), new UTF8Encoding(false, true));
+        if (reader.ReadUInt32() != 6 || reader.ReadUInt32() != 0) throw Invalid("WORKER_EXE_BUNDLE_VERSION_UNVERIFIED");
+        var count = reader.ReadInt32();
+        if (count <= 0 || count > 4096) throw Invalid("WORKER_EXE_BUNDLE_UNVERIFIED");
+        _ = ReadBundleName(reader, 128);
+        for (var i = 0; i < 2; i++)
+        {
+            var offset = reader.ReadInt64(); var size = reader.ReadInt64();
+            if (offset < nativeSize || size <= 0 || offset > header || size > header - offset) throw Invalid("WORKER_EXE_BUNDLE_UNVERIFIED");
+        }
+        if (reader.ReadUInt64() != 0) throw Invalid("WORKER_EXE_BUNDLE_FLAGS_UNVERIFIED");
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long entryOffset = 0; var entrySize = 0;
+        for (var i = 0; i < count; i++)
+        {
+            var offset = reader.ReadInt64(); var size = reader.ReadInt64(); var compressed = reader.ReadInt64(); var type = reader.ReadByte();
+            var relative = ReadBundleName(reader, 1024);
+            if (offset < nativeSize || size <= 0 || offset > header || size > header - offset || compressed != 0 || type > 5
+                || !names.Add(relative) || relative.Contains(':', StringComparison.Ordinal) || relative.Contains('\\', StringComparison.Ordinal)
+                || relative.Split('/').Any(part => part is "" or "." or "..")) throw Invalid("WORKER_EXE_BUNDLE_UNVERIFIED");
+            if (relative == name + ".dll")
+            {
+                if (type != 1 || size > 64 * 1024 * 1024) throw Invalid("WORKER_EXE_BUNDLE_ENTRY_UNVERIFIED");
+                entryOffset = offset; entrySize = checked((int)size);
+            }
+        }
+        if (entrySize == 0) throw Invalid("WORKER_EXE_BUNDLE_ENTRY_UNVERIFIED");
+        image.Position = entryOffset; var bytes = new byte[entrySize]; image.ReadExactly(bytes);
+        using var embedded = new PEReader(new MemoryStream(bytes));
+        RequireEntryMetadata(embedded, entry);
+    }
+    private static string ReadBundleName(BinaryReader reader, int maximum)
+    {
+        var length = reader.Read7BitEncodedInt();
+        if (length <= 0 || length > maximum || length > reader.BaseStream.Length - reader.BaseStream.Position)
+            throw Invalid("WORKER_EXE_BUNDLE_STRING_UNVERIFIED");
+        return new UTF8Encoding(false, true).GetString(reader.ReadBytes(length));
+    }
+    private static void RequireEntryMetadata(PEReader pe, Assembly entry)
+    {
+        if (!pe.HasMetadata) throw Invalid("WORKER_EXE_ENTRY_METADATA_UNVERIFIED");
+        var metadata = pe.GetMetadataReader();
+        if (!metadata.IsAssembly || metadata.GetString(metadata.GetAssemblyDefinition().Name) != entry.GetName().Name
+            || metadata.GetAssemblyDefinition().Version != entry.GetName().Version
+            || metadata.GetGuid(metadata.GetModuleDefinition().Mvid) == Guid.Empty
+            || metadata.GetGuid(metadata.GetModuleDefinition().Mvid) != entry.ManifestModule.ModuleVersionId)
+            throw Invalid("WORKER_EXE_ENTRY_METADATA_UNVERIFIED");
     }
     private static string CanonicalExecutablePath(string path)
     {
@@ -249,8 +346,11 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         internal async Task RequireCurrentAsync(CancellationToken ct)
         {
             if (!string.Equals(CurrentImagePath(), Path, StringComparison.OrdinalIgnoreCase)) throw Invalid("WORKER_EXE_IDENTITY_CHANGED");
+            RequireEntryBinding(Path, file, Assembly.GetEntryAssembly(), AppContext.BaseDirectory);
             await VerifyFileAsync(ct).ConfigureAwait(false);
             if (!string.Equals(CurrentImagePath(), Path, StringComparison.OrdinalIgnoreCase)) throw Invalid("WORKER_EXE_IDENTITY_CHANGED");
+            RequireEntryBinding(Path, file, Assembly.GetEntryAssembly(), AppContext.BaseDirectory);
+            ct.ThrowIfCancellationRequested();
         }
         internal async Task VerifyFileAsync(CancellationToken ct)
         {
