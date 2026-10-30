@@ -669,6 +669,22 @@ CORE_ENFORCEMENT_REQUIRED = (
 )
 
 
+# Sidecar next to keyframe_kit.v1 so the package states plainly what does not exist yet.
+KEYFRAME_REVIEW_NOTICE_KEY = "keyframe_review_notice.v1"
+KEYFRAME_REVIEW_NOTICE: dict[str, Any] = {
+    "schema_version": KEYFRAME_REVIEW_NOTICE_KEY,
+    "images_exist": False,
+    "approval_status": "PENDING_HUMAN_REVIEW",
+    "render_authorized": False,
+    "requirement": (
+        "No keyframe image has been generated and none is approved. Before any video render, "
+        "three real stills showing the same subject, wardrobe or accessories, product and scene "
+        "as the approved story must exist, be reviewed by a human, and be registered by Core "
+        "as trusted references. This package grants none of that."
+    ),
+}
+
+
 class ApprovalStatus(StrEnum):
     PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
 
@@ -777,9 +793,9 @@ def build_keyframe_kit(
                 review_checklist=[
                     "exactly one protagonist; same face, ears, eyes and body proportions "
                     "as the other two stills",
-                    "scarf and product colour, shape and position match the locks",
+                    "accessory, wardrobe and product colour, shape and position match the locks",
                     "every prop rests on a visible surface; nothing floats",
-                    "furniture layout and lighting match the other two stills",
+                    "set layout, props and lighting match the other two stills",
                     f"state matches opening_state of {shot.shot_id}",
                 ],
             )
