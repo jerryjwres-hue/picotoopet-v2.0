@@ -378,12 +378,16 @@ class Database:
     def fetchone(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Row | None:
         """读取单行。"""
 
-        return self.execute(sql, parameters).fetchone()
+        # ── Same connection: hold the existing RLock through cursor consumption.
+        with self._lock:
+            return self.connection.execute(sql, tuple(parameters)).fetchone()
 
     def fetchall(self, sql: str, parameters: Sequence[Any] = ()) -> list[sqlite3.Row]:
         """读取全部行。"""
 
-        return list(self.execute(sql, parameters).fetchall())
+        # ── Scheduler threads must not interleave a write during cursor fetch.
+        with self._lock:
+            return list(self.connection.execute(sql, tuple(parameters)).fetchall())
 
     def scalar(self, sql: str, parameters: Sequence[Any] = ()) -> Any:
         """读取首行首列。"""
