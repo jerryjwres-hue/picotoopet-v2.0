@@ -1,5 +1,7 @@
 using PicotooPet.Desktop.Services;
 
+if (await PicotooPet.MediaWorker.SmokeTests.WorkerExecutableIdentityTests.RunAsync(args)) return;
+
 if (args.Length == 4 && args[0] == "--worker-key-probe")
 {
     PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.Probe(args[1], args[2], bool.Parse(args[3]));
@@ -59,7 +61,6 @@ await PicotooPet.MediaWorker.SmokeTests.DurableReferenceSnapshotTests.RunAsync()
 await PicotooPet.MediaWorker.SmokeTests.I2VExecutorSnapshotTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.ShippingReferenceProofTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.RunAsync();
-await PicotooPet.MediaWorker.SmokeTests.WorkerExecutableIdentityTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.WorkerChallengePreflightTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.LegacyContractTests.RunAsync();
 PicotooPet.MediaWorker.SmokeTests.SameExeHostTests.Run();

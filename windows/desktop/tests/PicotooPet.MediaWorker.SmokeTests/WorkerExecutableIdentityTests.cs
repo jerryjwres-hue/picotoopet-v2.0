@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -11,10 +12,22 @@ namespace PicotooPet.MediaWorker.SmokeTests;
 
 internal static class WorkerExecutableIdentityTests
 {
-    internal static async Task RunAsync()
+    internal static async Task<bool> RunAsync(string[] args)
     {
+        var probe = args.Length == 1 && args[0] == "--exe-identity-process-probe";
+        if (args.Length != 0 && !probe) return false;
         if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("CI") != "true")
             throw new InvalidOperationException("EXE_IDENTITY_REQUIRES_NATIVE_DISPOSABLE_CI");
+        if (probe)
+        {
+            try { using var accepted = await CoreWorkerChallengeClient.MeasureProcessImageAsync(CancellationToken.None); }
+            catch (InvalidDataException e) when (e.Message.StartsWith("WORKER_EXE_", StringComparison.Ordinal))
+            {
+                Console.WriteLine("P0_GENERIC_PROCESS_MEASUREMENT_DENIED=" + e.Message);
+                return true;
+            }
+            throw new InvalidOperationException("generic or renamed muxer was accepted as a current apphost");
+        }
         using var image = await CoreWorkerChallengeClient.MeasureProcessImageAsync(CancellationToken.None);
         var processPath = Environment.ProcessPath ?? throw new InvalidOperationException("missing smoke apphost");
         RecoveryTests.Assert(string.Equals(image.Path, processPath, StringComparison.OrdinalIgnoreCase) && image.Sha256 == await ProductionLocalEnvironment.Sha256FileAsync(processPath, CancellationToken.None), "actual Windows smoke-host EXE bytes");
@@ -63,13 +76,30 @@ internal static class WorkerExecutableIdentityTests
             if (file == "alias.exe") File.CreateSymbolicLink(path, processPath);
             await DeniedAsync(async () => { using var unused = await OpenCandidateAsync(path); });
         }
-        // Renaming a muxer must not turn it into a paired apphost. This is a
-        // negative file-source test, not a claim that metadata proves authenticity.
+        // A file-only helper cannot establish running-process role. Test the
+        // actual process entrypoint in children, including a colocated renamed
+        // muxer (same filename/directory as entry DLL, not a cosmetic path test).
         var runtime = new DirectoryInfo(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory());
-        var dotnet = System.IO.Path.Combine(runtime.Parent!.Parent!.Parent!.FullName, "dotnet.exe");
-        var renamedHost = System.IO.Path.Combine(root, "PicotooPet.MediaWorker.SmokeTests.exe");
-        File.Copy(dotnet, renamedHost);
-        await DeniedAsync(async () => { using var unused = await OpenCandidateAsync(renamedHost); });
+        var dotnetRoot = runtime.Parent!.Parent!.Parent!.FullName;
+        await ProbeProcessAsync(System.IO.Path.Combine(dotnetRoot, "dotnet.exe"), Assembly.GetExecutingAssembly().Location, false);
+        var probeRoot = System.IO.Path.Combine(root, "muxer-process"); Directory.CreateDirectory(probeRoot);
+        try
+        {
+            foreach (var input in Directory.EnumerateFiles(AppContext.BaseDirectory))
+                if (System.IO.Path.GetExtension(input) is ".dll" or ".json")
+                    File.Copy(input, System.IO.Path.Combine(probeRoot, System.IO.Path.GetFileName(input)));
+            Directory.CreateSymbolicLink(System.IO.Path.Combine(probeRoot, "host"), System.IO.Path.Combine(dotnetRoot, "host"));
+            Directory.CreateSymbolicLink(System.IO.Path.Combine(probeRoot, "shared"), System.IO.Path.Combine(dotnetRoot, "shared"));
+            var renamedHost = System.IO.Path.Combine(probeRoot, "PicotooPet.MediaWorker.SmokeTests.exe");
+            File.Copy(System.IO.Path.Combine(dotnetRoot, "dotnet.exe"), renamedHost);
+            await ProbeProcessAsync(renamedHost, System.IO.Path.Combine(probeRoot, "PicotooPet.MediaWorker.SmokeTests.dll"), true);
+        }
+        finally
+        {
+            // Delete only CI-owned directory links, never follow them into SDK.
+            foreach (var link in new[] { "host", "shared" })
+                if (Directory.Exists(System.IO.Path.Combine(probeRoot, link))) Directory.Delete(System.IO.Path.Combine(probeRoot, link));
+        }
         var copy = System.IO.Path.Combine(root, "copy.exe"); File.Copy(processPath, copy);
         using (var pinned = await OpenCandidateAsync(copy))
         {
@@ -83,7 +113,33 @@ internal static class WorkerExecutableIdentityTests
         RecoveryTests.Assert(Directory.GetFiles(keyRoot, "used-*").Length == 1 && f.Journal.Pending().Count == 0, "all executable-source refusals add no nonce reservation or attempt");
         Console.WriteLine("P0_ACTUAL_SMOKE_EXE_DIGEST=PASS; CANONICAL_PAYLOAD=PASS; CORRECTED_SIGNER_INTEGRATION=PASS; NONCE=1; CLAIM=0; COMFY_POST=0");
         Console.WriteLine("P0_PUBLISHED_DESKTOP_RUNNING_IMAGE=UNVERIFIED (no shipping EXE test entrypoint; no release attestation)");
+        return false;
     }
+    private static async Task ProbeProcessAsync(string executable, string assembly, bool renamed)
+    {
+        var info = new ProcessStartInfo(executable) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        info.ArgumentList.Add(assembly); info.ArgumentList.Add("--exe-identity-process-probe");
+        using var process = Process.Start(info) ?? throw new InvalidOperationException("could not start CI-only host probe");
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try { await process.WaitForExitAsync(deadline.Token); }
+        catch { process.Kill(entireProcessTree: true); throw; }
+        var text = await output + await errors;
+        if (process.ExitCode == 0 && text.Contains("P0_GENERIC_PROCESS_MEASUREMENT_DENIED=WORKER_EXE_", StringComparison.Ordinal))
+        {
+            Console.WriteLine(renamed ? "P0_RENAMED_MUXER_RUNNING_PROCESS=DENIED" : "P0_GENERIC_DOTNET_RUNNING_PROCESS=DENIED");
+            return;
+        }
+        // Some muxer versions themselves prohibit renaming before CLR entry.
+        // Report that distinct boundary honestly; arbitrary startup failures fail.
+        if (renamed && process.ExitCode != 0 && text.Contains("cannot execute dotnet when renamed", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("P0_RENAMED_MUXER_RUNTIME_REFUSED=PASS; MANAGED_MEASUREMENT=UNREACHED");
+            return;
+        }
+        throw new InvalidOperationException("CI process identity probe did not prove rejection: " + text);
+    }
+
     private static async Task<CoreWorkerChallengeClient.ProcessImageMeasurement> OpenCandidateAsync(string path)
     {
         var method = typeof(CoreWorkerChallengeClient).GetMethod("OpenExecutableFileAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
