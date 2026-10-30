@@ -1,6 +1,7 @@
 using PicotooPet.Desktop.Services;
 
 if (await PicotooPet.MediaWorker.SmokeTests.WorkerExecutableIdentityTests.RunAsync(args)) return;
+if (args.Length == 2 && args[0] == "--real-core-interop") { await PicotooPet.MediaWorker.SmokeTests.RealPythonCoreInteropTests.RunAsync(args[1]); return; } // #177 CI-only explicit test entry; no shipping executor
 
 if (args.Length == 4 && args[0] == "--worker-key-probe")
 {
