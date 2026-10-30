@@ -1,5 +1,7 @@
 using PicotooPet.Desktop.Services;
 
+if (await PicotooPet.MediaWorker.SmokeTests.WorkerExecutableIdentityTests.RunAsync(args)) return;
+
 if (args.Length == 4 && args[0] == "--worker-key-probe")
 {
     PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.Probe(args[1], args[2], bool.Parse(args[3]));
