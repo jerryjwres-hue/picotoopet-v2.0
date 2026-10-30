@@ -439,6 +439,70 @@ class ProductionService:
                     raise ValueError("PRODUCTION_V11_ATTEMPT_UNVERIFIED")
             # ── Intentionally no token, authorization flag, or DB write. ──
 
+    def issue_worker_challenge_v11(
+        self,
+        production_job_id: str,
+        worker_key_id: str,
+        executor_id: str,
+        plan_digest: str,
+    ) -> tuple[str, datetime, datetime]:
+        """Deliver a scoped nonce to a paired-key claimant, NOT GPU authority.
+
+        Regular LAN Bearer only authenticates the HTTP transport. Anyone holding
+        it could request this public challenge; only the independently paired
+        private key can sign a witness, and even a signed witness cannot claim.
+        Core cannot know whether Windows had an unrecorded Comfy POST: reject
+        every known old attempt; absence is NOT Windows Journal attestation.
+        """
+        try:
+            with self.repository.database.transaction() as connection:
+                # Approval, frozen plan, task identities and attempts are
+                # inspected under the *same* BEGIN IMMEDIATE as nonce issuance.
+                self._audit_v11_core_before_lease(
+                    production_job_id, executor_id, connection=connection
+                )
+                job = self.repository.get_job(production_job_id)
+                if job.plan_digest != plan_digest:
+                    raise ValueError("PRODUCTION_V11_CHALLENGE_SCOPE_INVALID")
+                if job.lease_expires_at and job.lease_expires_at > datetime.now(UTC):
+                    raise ValueError("PRODUCTION_V11_CHALLENGE_LEASE_CONFLICT")
+                # A known old attempt (bound or unbound) requires Windows-side
+                # reconciliation; a new nonce must never imply clean Comfy.
+                old = connection.execute(
+                    "SELECT 1 FROM production_attempts WHERE production_job_id=? LIMIT 1",
+                    (production_job_id,),
+                ).fetchone()
+                tasks = connection.execute(
+                    "SELECT 1 FROM production_tasks "
+                    "WHERE production_job_id=? AND (attempt_count>0 OR comfy_prompt_id IS NOT NULL) "
+                    "LIMIT 1",
+                    (production_job_id,),
+                ).fetchone()
+                if old is not None or tasks is not None:
+                    raise ValueError("PRODUCTION_V11_CHALLENGE_PRIOR_ATTEMPT_UNCERTAIN")
+                nonce = PairedWorkerTrust(self.repository.database).issue_challenge(
+                    worker_key_id, production_job_id, executor_id, plan_digest,
+                    connection=connection,
+                )
+                # Derive authoritative timestamps from the just-persisted
+                # challenge, not the client clock or an approximated delta.
+                record = connection.execute(
+                    "SELECT issued_at,expires_at FROM production_worker_challenges "
+                    "WHERE nonce_digest=?",
+                    (hashlib.sha256(nonce.encode("ascii")).hexdigest(),),
+                ).fetchone()
+                if record is None:
+                    raise ValueError("PRODUCTION_V11_CHALLENGE_UNAVAILABLE")
+                return (
+                    nonce,
+                    datetime.fromisoformat(record["issued_at"]),
+                    datetime.fromisoformat(record["expires_at"]),
+                )
+        except (KeyError, ValueError) as error:
+            # Deliberately non-enumerating HTTP failure: never disclose whether
+            # a Worker key exists, a user revoked consent, or a nonce is active.
+            raise ValueError("PRODUCTION_V11_CHALLENGE_UNAVAILABLE") from error
+
     def inspect_worker_witness_v11(
         self, production_job_id: str, witness: WorkerWitnessV11
     ) -> None:

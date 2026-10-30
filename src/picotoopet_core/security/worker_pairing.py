@@ -8,6 +8,8 @@ Nothing here authorizes I2V GPU production.
 from __future__ import annotations
 
 import argparse
+import sqlite3
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -165,19 +167,36 @@ class PairedWorkerTrust:
             if updated.rowcount != 1:
                 raise ValueError("PRODUCTION_V11_WORKER_KEY_REVOKED")
 
-    def issue_challenge(self, key_id: str, production_job_id: str, executor_id: str,
-                        plan_digest: str) -> str:
-        """Internal-only Core challenge API; no Bearer route is permitted."""
-        now = datetime.now(UTC)
-        expires = now + timedelta(seconds=self.CHALLENGE_SECONDS)
-        with self.database.transaction() as connection:
-            key = connection.execute(
+    def issue_challenge(
+        self,
+        key_id: str,
+        production_job_id: str,
+        executor_id: str,
+        plan_digest: str,
+        *,
+        connection: sqlite3.Connection | None = None,
+    ) -> str:
+        """Mint an unguessable *non-authorizing* challenge scoped to a paired key.
+
+        An HTTP caller never enrolls the key or proves possession by requesting
+        this nonce. The service must audit approvals, attempts and leases under
+        the *same* BEGIN IMMEDIATE transaction before calling with connection.
+        The legacy internal API may continue to own its own transaction.
+        """
+        if connection is not None and not connection.in_transaction:
+            raise ValueError("PRODUCTION_V11_WITNESS_TRANSACTION_REQUIRED")
+        with (
+            self.database.transaction() if connection is None else nullcontext(connection)
+        ) as locked:
+            now = datetime.now(UTC)
+            expires = now + timedelta(seconds=self.CHALLENGE_SECONDS)
+            key = locked.execute(
                 "SELECT executor_id,revoked_at FROM production_worker_keys WHERE key_id=?",
                 (key_id,),
             ).fetchone()
             if key is None or key["revoked_at"] is not None or key["executor_id"] != executor_id:
                 raise ValueError("PRODUCTION_V11_WORKER_KEY_UNTRUSTED")
-            job = connection.execute(
+            job = locked.execute(
                 "SELECT plan_digest,plan_json FROM production_jobs "
                 "WHERE production_job_id=?", (production_job_id,),
             ).fetchone()
@@ -187,26 +206,43 @@ class PairedWorkerTrust:
                 raw_plan = json.loads(job["plan_json"])
             except (ValueError, TypeError) as error:
                 raise ValueError("PRODUCTION_V11_CHALLENGE_SCOPE_INVALID") from error
-            if raw_plan.get("schema_version") != "1.1":
+            if not isinstance(raw_plan, dict) or raw_plan.get("schema_version") != "1.1":
                 raise ValueError("PRODUCTION_V11_CHALLENGE_SCOPE_INVALID")
-            canonical = json.dumps(raw_plan, sort_keys=True, separators=(",", ":"),
-                                   ensure_ascii=False).encode("utf-8")
+            canonical = json.dumps(
+                raw_plan, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode("utf-8")
             if hashlib.sha256(canonical).hexdigest() != plan_digest:
                 raise ValueError("PRODUCTION_V11_CHALLENGE_SCOPE_INVALID")
-            if connection.execute(
+            # A single active challenge per pinned key+job, and a strict per-key
+            # cap: shared Bearer traffic may not create unbounded active rows.
+            if locked.execute(
                 "SELECT 1 FROM production_worker_challenges "
                 "WHERE key_id=? AND production_job_id=? AND consumed_at IS NULL AND expires_at>?",
                 (key_id, production_job_id, _stamp(now)),
             ).fetchone() is not None:
                 raise ValueError("PRODUCTION_V11_CHALLENGE_ALREADY_ACTIVE")
+            active = locked.execute(
+                "SELECT COUNT(*) FROM production_worker_challenges "
+                "WHERE key_id=? AND consumed_at IS NULL AND expires_at>?",
+                (key_id, _stamp(now)),
+            ).fetchone()[0]
+            if active >= 3:
+                raise ValueError("PRODUCTION_V11_CHALLENGE_RATE_LIMITED")
             nonce = secrets.token_hex(32)
-            connection.execute(
-                "INSERT INTO production_worker_challenges("
-                "nonce_digest,key_id,executor_id,production_job_id,plan_digest,"
-                "issued_at,expires_at) VALUES (?,?,?,?,?,?,?)",
-                (hashlib.sha256(nonce.encode()).hexdigest(), key_id, executor_id,
-                 production_job_id, plan_digest, _stamp(now), _stamp(expires)),
-            )
+            try:
+                locked.execute(
+                    "INSERT INTO production_worker_challenges("
+                    "nonce_digest,key_id,executor_id,production_job_id,plan_digest,"
+                    "issued_at,expires_at) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        hashlib.sha256(nonce.encode("ascii")).hexdigest(),
+                        key_id, executor_id, production_job_id, plan_digest,
+                        _stamp(now), _stamp(expires),
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                # A collision must NEVER be silently replaced or reused.
+                raise ValueError("PRODUCTION_V11_CHALLENGE_COLLISION") from error
         return nonce
 
     def verify_locked(self, connection: sqlite3.Connection, witness: WorkerWitnessV11,
