@@ -146,7 +146,10 @@ internal static class PublishedDesktopSelfTestIdentityTests
     private static void RequireNoDesktop()
     {
         var peers = Process.GetProcessesByName("Picotoo Pet AI");
-        try { Require(peers.Length == 0, "no existing or surviving Desktop/Worker"); }
+        // Windows may still enumerate a signaled process object while our launch
+        // SafeHandle is open. A terminated object is not a surviving Worker.
+        // Access/query errors still fail closed; no live peer is ignored/killed.
+        try { Require(peers.All(peer => peer.HasExited), "no live existing or surviving Desktop/Worker"); }
         finally { foreach (var peer in peers) peer.Dispose(); }
     }
     private static void Require(bool condition, string message)
