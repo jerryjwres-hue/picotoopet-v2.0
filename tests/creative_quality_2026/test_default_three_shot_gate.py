@@ -8,6 +8,7 @@ model JSON is scripted. Text checks only: no image exists, nothing is approved, 
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from uuid import uuid4
 
@@ -22,7 +23,13 @@ from picotoopet_core.creative.director import (
 )
 from picotoopet_core.creative.execution import CreativeIntelligenceCoordinator
 from picotoopet_core.creative.models import CreativeJobStatus, CreativeStageKind
-from picotoopet_core.creative.video_bible import KEYFRAME_REVIEW_NOTICE_KEY, KeyframeKit
+from picotoopet_core.creative.video_bible import (
+    KEYFRAME_REVIEW_NOTICE,
+    KEYFRAME_REVIEW_NOTICE_KEY,
+    KeyframeKit,
+    VideoBibleDraft,
+    evaluate_story_storyboard,
+)
 from picotoopet_core.production.compiler import compile_production_plan
 
 PLAIN_GOAL = "Create a short, warm product video about a clip-on pet tag."  # no keyword, no count
@@ -252,3 +259,117 @@ def test_legacy_non_three_shot_v2_and_v1_goals_are_unchanged(runtime: Runtime) -
     assert set(runtime.service.get_package(v1_job.creative_job_id).manifest["stage_results"]) == {
         "idea_ranking.v1", "creative_brief.v1", "script.v1", "shot_plan.v1"
     }
+
+
+# ── The notice is subject-neutral (a dog/collar story, not the cat/scarf fixture) ──────
+
+
+def _dog_story() -> dict:
+    text = json.dumps(fx.bible())
+    for old, new in (
+        ("white short-haired cat", "cream golden retriever"),
+        ("short-haired cat", "golden retriever"),
+        ("one white cat", "one cream dog"), ("teal scarf", "teal collar"), ("scarf", "collar"),
+        ("Mochi", "Biscuit"), ("pointed upright ears", "floppy ears"), ("white coat", "cream coat"),
+    ):
+        text = text.replace(old, new)
+    story = json.loads(text)
+    story["subject"].update(species="dog", subject_id="biscuit")
+    return story
+
+
+def test_the_notice_and_kit_are_subject_neutral_for_a_dog_collar_story(runtime: Runtime) -> None:
+    job, task = _job(runtime, PLAIN_GOAL, key="dog")
+    double = OllamaDouble(_outputs(runtime, job.creative_job_id, _dog_story()))
+    assert runtime.coordinator(double.adapter).handler(task).summary["status"] == "creative_ready"
+    stages = runtime.service.get_package(job.creative_job_id).manifest["stage_results"]
+    notice = json.dumps(KEYFRAME_REVIEW_NOTICE)
+    assert stages[KEYFRAME_REVIEW_NOTICE_KEY] == KEYFRAME_REVIEW_NOTICE
+    kit = KeyframeKit.model_validate(stages["keyframe_kit.v1"])
+    assert "golden retriever" in kit.keyframes[0].still_prompt
+    forbidden = re.compile(r"\b(cat|cats|scarf|dog|collar|lamp|Mochi)\b", re.IGNORECASE)
+    assert forbidden.search(notice) is None
+    assert forbidden.search(json.dumps([k.review_checklist for k in kit.keyframes])) is None
+    enforcement = json.dumps(stages["keyframe_kit.v1"]["core_enforcement_required"])
+    assert forbidden.search(enforcement) is None
+
+
+# ── A job that was in progress before the default existed ──────────────────────────────
+
+
+def _old_behavior(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The selection rule as it was before #179: only the explicit phrase."""
+
+    import picotoopet_core.creative.director as director
+    import picotoopet_core.creative.execution as execution
+    import picotoopet_core.creative.quality as quality
+
+    def old(directives, bible_shot_count):  # type: ignore[no-untyped-def]
+        return bool(directives is not None and directives.story_gate)
+
+    for module in (director, execution, quality):
+        monkeypatch.setattr(module, "story_gate_applies", old)
+
+
+def _stage_row(rt: Runtime, job_id: str, kind: CreativeStageKind) -> dict:
+    row = rt.database.fetchone(
+        "SELECT status,input_digest,result_json,model_attempts FROM creative_stage_runs "
+        "WHERE creative_job_id=? AND stage_kind=?", (job_id, kind.value),
+    )
+    return dict(row)
+
+
+def test_a_three_shot_v2_job_in_progress_before_the_default_resumes_unchanged(
+    runtime: Runtime, monkeypatch
+) -> None:
+    import picotoopet_core.creative.execution as execution
+
+    legacy = fx.bible()  # passes the old gate, is NOT a connected single-scene story
+    legacy["scenes"].append({**legacy["scenes"][0], "scene_id": "kitchen"})
+    legacy["shots"][2]["scene_id"] = "kitchen"
+    job, task = _job(runtime, COUNT_GOAL, key="old")
+
+    with monkeypatch.context() as old_world:
+        _old_behavior(old_world)
+        old_world.setattr(
+            execution, "derive_shot_plan",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("process died after the Bible")),
+        )
+        with pytest.raises(RuntimeError):
+            runtime.coordinator(
+                OllamaDouble(_outputs(runtime, job.creative_job_id, legacy)).adapter
+            ).handler(task)
+    before = _stage_row(runtime, job.creative_job_id, CreativeStageKind.VIDEO_BIBLE)
+    assert before["status"] == "Completed"
+    assert runtime.service.get_package(job.creative_job_id) is None
+    assert evaluate_story_storyboard(VideoBibleDraft.model_validate(legacy))  # not a story
+
+    # Now the new code: default gate on. Nothing about the finished stages may change.
+    silent = OllamaDouble([])
+    summary = runtime.coordinator(silent.adapter).handler(task)
+    assert summary.summary["status"] == "creative_ready" and silent.requests == []
+    after = _stage_row(runtime, job.creative_job_id, CreativeStageKind.VIDEO_BIBLE)
+    assert after == before  # same immutable input digest, same stored result, same attempts
+    package = runtime.service.get_package(job.creative_job_id)
+    assert package is not None
+    stages = package.manifest["stage_results"]
+    assert stages["video_bible.v1"] == json.loads(before["result_json"])
+    assert "keyframe_kit.v1" not in stages and KEYFRAME_REVIEW_NOTICE_KEY not in stages
+    assert set(stages) == {"idea_ranking.v1", "creative_brief.v1", "script.v1",
+                           "video_bible.v1", "shot_plan.v1"}
+    assert runtime.repository.get_job(job.creative_job_id).status is (
+        CreativeJobStatus.CREATIVE_READY
+    )
+
+
+def test_the_digest_invariant_holds_exactly_for_the_default_rules_key() -> None:
+    base = {"director_constraints": {"required_shot_count": 3}, "stage": "video_bible.v1"}
+    with_rules = {"director_constraints": {"required_shot_count": 3,
+                                           "story_quality_rules": ["x"]},
+                  "stage": "video_bible.v1"}
+    explicit = {"director_constraints": {"required_shot_count": 3, "story_gate": ["x"]},
+                "stage": "video_bible.v1"}
+    view = CreativeIntelligenceCoordinator._digest_view
+    assert view(with_rules) == base                      # default rules never reach the digest
+    assert view(explicit) == explicit                    # explicit-phrase jobs keep theirs
+    assert view(base) is base
