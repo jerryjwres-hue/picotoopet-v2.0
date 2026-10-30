@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +16,7 @@ from picotoopet_core.creative.models import (
     CreativeQualityOutcome,
 )
 from picotoopet_core.creative.repository import CreativeRepository
+from picotoopet_core.security.worker_pairing import PairedWorkerTrust
 
 from .attempts import reserve_or_bind_attempt
 from .compiler import compile_production_plan
@@ -45,6 +47,7 @@ from .reference_assets import (
 from .versioned_plan import (
     ApprovedReferenceAuthorizationV11, ProductionJobCreateV11Request,
     ProductionPlanV11, ProductionTaskPlanV11, VersionedProductionPlan,
+    WorkerWitnessV11,
 )
 
 
@@ -324,6 +327,280 @@ class ProductionService:
     def get_plan(self, production_job_id: str) -> VersionedProductionPlan:
         return self.repository.plan_for(production_job_id)
 
+    def _audit_v11_core_before_lease(
+        self, production_job_id: str, executor_id: str, *, connection=None
+    ) -> None:
+        """Offline transaction-bound Core audit; NEVER grants a GPU lease.
+
+        The current bearer API cannot prove Windows-managed bytes, a crash-durable
+        LoadImage snapshot, or a reconciled Comfy journal. Even a clean Core audit
+        is insufficient for a shipping v1.1 claim.
+        """
+        with (self.repository.database.transaction() if connection is None else nullcontext(connection)) as connection:
+            job = self.repository.get_job(production_job_id)
+            plan = self.repository.plan_for(production_job_id)
+            if not isinstance(plan, ProductionPlanV11):
+                raise ValueError("PRODUCTION_V11_PLAN_REQUIRED")
+            if (
+                not job.plan_digest
+                or job.plan_digest != self._digest(plan.model_dump(mode="json"))
+                or job.production_job_id != plan.production_job_id
+                or job.creative_package_id != plan.creative_package_id
+                or job.creative_package_digest != plan.creative_package_digest
+                or job.project_key != plan.project_key
+                or job.production_profile != plan.production_profile
+            ):
+                raise ValueError("PRODUCTION_V11_PLAN_IDENTITY_MISMATCH")
+            if job.status not in {
+                ProductionJobStatus.PLANNED,
+                ProductionJobStatus.CLAIMED,
+                ProductionJobStatus.RENDERING,
+            }:
+                raise ValueError("PRODUCTION_V11_JOB_NOT_CLAIMABLE")
+
+            # ── The same IMMEDIATE transaction freezes approval/attempt reads. ──
+            rows = connection.execute(
+                "SELECT * FROM production_tasks WHERE production_job_id=?",
+                (production_job_id,),
+            ).fetchall()
+            snapshots = {row["production_task_id"]: self.repository._task(row) for row in rows}
+            if len(snapshots) != len(rows) or len(rows) != len(plan.tasks):
+                raise ValueError("PRODUCTION_V11_TASK_COVERAGE_MISMATCH")
+            for planned in plan.tasks:
+                task = snapshots.get(planned.production_task_id)
+                if (
+                    task is None
+                    or task.production_job_id != production_job_id
+                    or task.shot_id != planned.shot_id
+                    or task.order != planned.order
+                    or task.task_plan != planned
+                ):
+                    raise ValueError("PRODUCTION_V11_TASK_SNAPSHOT_MISMATCH")
+                if planned.reference_asset is not None:
+                    # ── Approval is revocable and can expire after job creation. ──
+                    verify_persisted_reference_approval(
+                        self.repository.database, planned.reference_asset
+                    )
+                if task.status is ProductionTaskStatus.SUCCEEDED:
+                    # ── Completed shots remain immutable only with an exact bound result. ──
+                    succeeded = connection.execute(
+                        "SELECT * FROM production_attempts "
+                        "WHERE production_job_id=? AND production_task_id=? AND attempt_number=?",
+                        (production_job_id, task.production_task_id, task.attempt_count),
+                    ).fetchone()
+                    if (
+                        task.attempt_count < 1
+                        or not task.comfy_prompt_id
+                        or not task.output_sha256
+                        or not task.output_relpath
+                        or not task.output_bytes
+                        or succeeded is None
+                        or succeeded["status"] != "Succeeded"
+                        or succeeded["comfy_prompt_id"] != task.comfy_prompt_id
+                    ):
+                        raise ValueError("PRODUCTION_V11_SUCCEEDED_EVIDENCE_MISMATCH")
+                    continue
+                if task.status in {
+                    ProductionTaskStatus.NEEDS_HUMAN,
+                    ProductionTaskStatus.FAILED,
+                    ProductionTaskStatus.CANCELLED,
+                }:
+                    raise ValueError("PRODUCTION_V11_TASK_TERMINAL_STATE")
+                if task.status is ProductionTaskStatus.RUNNING:
+                    attempt = connection.execute(
+                        "SELECT * FROM production_attempts "
+                        "WHERE production_job_id=? AND production_task_id=? AND attempt_number=?",
+                        (production_job_id, task.production_task_id, task.attempt_count),
+                    ).fetchone()
+                    if attempt is None or attempt["status"] != "Running":
+                        raise ValueError("PRODUCTION_V11_ATTEMPT_UNVERIFIED")
+                    if task.comfy_prompt_id is not None:
+                        if attempt["comfy_prompt_id"] != task.comfy_prompt_id:
+                            raise ValueError("PRODUCTION_V11_PROMPT_UNVERIFIED")
+                    else:
+                        # ── Unknown POST cannot be converted into a fresh attempt. ──
+                        # ── Only same-executor attempt2 with a durable failed #1
+                        # ── passes Core preflight; Windows Journal proof still required. ──
+                        prior = connection.execute(
+                            "SELECT * FROM production_attempts "
+                            "WHERE production_job_id=? AND production_task_id=? AND attempt_number=1",
+                            (production_job_id, task.production_task_id),
+                        ).fetchone()
+                        if (
+                            task.attempt_count != 2
+                            or attempt["comfy_prompt_id"] is not None
+                            or attempt["executor_id"] != executor_id
+                            or prior is None
+                            or prior["status"] != "Failed"
+                            or prior["failure_code"] != "COMFY_RETRYABLE_LOCAL_FAILURE"
+                        ):
+                            raise ValueError("PRODUCTION_V11_UNBOUND_POST_UNVERIFIED")
+                elif task.status is not ProductionTaskStatus.READY or task.attempt_count != 0:
+                    raise ValueError("PRODUCTION_V11_ATTEMPT_UNVERIFIED")
+            # ── Intentionally no token, authorization flag, or DB write. ──
+
+    def issue_worker_challenge_v11(
+        self,
+        production_job_id: str,
+        worker_key_id: str,
+        executor_id: str,
+        plan_digest: str,
+    ) -> tuple[str, datetime, datetime]:
+        """Deliver a scoped nonce to a paired-key claimant, NOT GPU authority.
+
+        Regular LAN Bearer only authenticates the HTTP transport. Anyone holding
+        it could request this public challenge; only the independently paired
+        private key can sign a witness, and even a signed witness cannot claim.
+        Core cannot know whether Windows had an unrecorded Comfy POST: reject
+        every known old attempt; absence is NOT Windows Journal attestation.
+        """
+        try:
+            with self.repository.database.transaction() as connection:
+                # Approval, frozen plan, task identities and attempts are
+                # inspected under the *same* BEGIN IMMEDIATE as nonce issuance.
+                self._audit_v11_core_before_lease(
+                    production_job_id, executor_id, connection=connection
+                )
+                job = self.repository.get_job(production_job_id)
+                if job.plan_digest != plan_digest:
+                    raise ValueError("PRODUCTION_V11_CHALLENGE_SCOPE_INVALID")
+                if job.lease_expires_at and job.lease_expires_at > datetime.now(UTC):
+                    raise ValueError("PRODUCTION_V11_CHALLENGE_LEASE_CONFLICT")
+                # A known old attempt (bound or unbound) requires Windows-side
+                # reconciliation; a new nonce must never imply clean Comfy.
+                old = connection.execute(
+                    "SELECT 1 FROM production_attempts WHERE production_job_id=? LIMIT 1",
+                    (production_job_id,),
+                ).fetchone()
+                tasks = connection.execute(
+                    "SELECT 1 FROM production_tasks "
+                    "WHERE production_job_id=? AND (attempt_count>0 OR comfy_prompt_id IS NOT NULL) "
+                    "LIMIT 1",
+                    (production_job_id,),
+                ).fetchone()
+                if old is not None or tasks is not None:
+                    raise ValueError("PRODUCTION_V11_CHALLENGE_PRIOR_ATTEMPT_UNCERTAIN")
+                nonce = PairedWorkerTrust(self.repository.database).issue_challenge(
+                    worker_key_id, production_job_id, executor_id, plan_digest,
+                    connection=connection,
+                )
+                # Derive authoritative timestamps from the just-persisted
+                # challenge, not the client clock or an approximated delta.
+                record = connection.execute(
+                    "SELECT issued_at,expires_at FROM production_worker_challenges "
+                    "WHERE nonce_digest=?",
+                    (hashlib.sha256(nonce.encode("ascii")).hexdigest(),),
+                ).fetchone()
+                if record is None:
+                    raise ValueError("PRODUCTION_V11_CHALLENGE_UNAVAILABLE")
+                return (
+                    nonce,
+                    datetime.fromisoformat(record["issued_at"]),
+                    datetime.fromisoformat(record["expires_at"]),
+                )
+        except (KeyError, ValueError) as error:
+            # Deliberately non-enumerating HTTP failure: never disclose whether
+            # a Worker key exists, a user revoked consent, or a nonce is active.
+            raise ValueError("PRODUCTION_V11_CHALLENGE_UNAVAILABLE") from error
+
+    def inspect_worker_witness_v11(
+        self, production_job_id: str, witness: WorkerWitnessV11
+    ) -> None:
+        """Read-only, locked witness preflight; never issues production authority.
+
+        There is no independently provisioned/revocable same-EXE Worker signing
+        key or durable spent-nonce ledger in the current Core schema, and Mac
+        cannot inspect Windows snapshot ACLs or Comfy unknown-POST state.
+        These are admission prerequisites, not boolean properties of JSON.
+        """
+        witness.require_fresh(datetime.now(UTC))
+        if witness.production_job_id != production_job_id:
+            raise ValueError("PRODUCTION_V11_WITNESS_JOB_MISMATCH")
+        with self.repository.database.transaction() as connection:
+            # ── Approval/Plan/Task/attempt reads share an IMMEDIATE lock. ────
+            self._audit_v11_core_before_lease(
+                production_job_id, witness.executor_id, connection=connection
+            )
+            job = self.repository.get_job(production_job_id)
+            plan = self.repository.plan_for(production_job_id)
+            if not isinstance(plan, ProductionPlanV11):
+                raise ValueError("PRODUCTION_V11_PLAN_REQUIRED")
+            if job.plan_digest != witness.plan_digest:
+                raise ValueError("PRODUCTION_V11_WITNESS_PLAN_MISMATCH")
+            if job.lease_expires_at and job.lease_expires_at > datetime.now(UTC):
+                raise ValueError("PRODUCTION_V11_WITNESS_LEASE_CONFLICT")
+
+            expected = {
+                task.production_task_id: task
+                for task in plan.tasks if task.reference_asset is not None
+            }
+            received = {entry.production_task_id: entry for entry in witness.references}
+            if received.keys() != expected.keys():
+                raise ValueError("PRODUCTION_V11_WITNESS_TASK_COVERAGE_INVALID")
+            for task_id, task in expected.items():
+                ref = task.reference_asset
+                entry = received[task_id]
+                if ref is None or (
+                    entry.shot_id != task.shot_id
+                    or entry.asset_id != ref.asset_id
+                    or entry.approval_id != ref.approval_id
+                    or entry.approval_request_digest != ref.approval_request_digest
+                    or entry.source_sha256 != ref.sha256
+                    or entry.source_bytes != ref.bytes
+                    or entry.source_relative_path != ref.input_relative_path
+                    or entry.snapshot_sha256 != ref.sha256
+                    or entry.snapshot_bytes != ref.bytes
+                ):
+                    raise ValueError("PRODUCTION_V11_WITNESS_ASSET_MISMATCH")
+                # ── These claimed identities are not enough to verify bytes. ──
+                if (
+                    entry.snapshot_receipt_sha256 == "0" * 64
+                    or entry.graph_digest == "0" * 64
+                    or not entry.snapshot_relative_path.startswith("PicotooPet/")
+                    or any(piece in {"", ".", ".."} for piece in entry.snapshot_relative_path.split("/"))
+                ):
+                    raise ValueError("PRODUCTION_V11_WITNESS_SNAPSHOT_INVALID")
+
+            # ── Prior prompts require bound recovery and trustworthy Comfy
+            # ── history; no claim to "clean" journal overrides Core attempts. ──
+            all_attempts = connection.execute(
+                "SELECT production_task_id,attempt_number,comfy_prompt_id,status "
+                "FROM production_attempts WHERE production_job_id=?",
+                (production_job_id,),
+            ).fetchall()
+            if witness.journal_state == "UNCERTAIN":
+                raise ValueError("PRODUCTION_V11_WITNESS_POST_UNCERTAIN")
+            if (
+                witness.journal_state == "NO_PRIOR_POST"
+                and any(row["comfy_prompt_id"] is not None for row in all_attempts)
+            ):
+                raise ValueError("PRODUCTION_V11_WITNESS_JOURNAL_MISMATCH")
+            if (
+                witness.journal_state == "BOUND_RECOVERY"
+                and not any(row["comfy_prompt_id"] is not None for row in all_attempts)
+            ):
+                raise ValueError("PRODUCTION_V11_WITNESS_JOURNAL_MISMATCH")
+
+            # ── An unpaired Core has NO trusted signing root. Preserve the
+            # ── existing fail-closed error contract for legacy fixtures.
+            key_count = connection.execute(
+                "SELECT COUNT(*) FROM production_worker_keys"
+            ).fetchone()[0]
+            if key_count == 0:
+                raise ValueError("PRODUCTION_V11_WORKER_IDENTITY_NOT_PROVISIONED")
+
+            # ── Ed25519 verification uses ONLY the Core-pinned active key;
+            # ── the Core-issued nonce must match exact frozen job/plan/executor.
+            # ── Preflight NEVER redeems the nonce; future trusted Claim must
+            # ── consume it atomically with the approval/lease transaction.
+            PairedWorkerTrust(self.repository.database).verify_locked(
+                connection, witness, redeem=False
+            )
+
+            # ── A paired software key still cannot prove real Windows same-EXE
+            # ── process, snapshot ACL/bytes or unknown Comfy POST clearance.
+            raise ValueError("PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED")
+
     def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
         # ── Claim returns full durable snapshots plus an unfinished-only plan ─
         # Validate bound prompt recovery inside the SAME database transaction as
@@ -458,6 +735,8 @@ class ProductionService:
         production_task_id: str,
         request: ProductionTaskCommitRequest,
     ) -> ProductionTaskRecord:
+        # ── No legacy result path can commit v1.1 without trusted Windows proof. ──
+        self.repository._require_v11_worker_proof(production_job_id)
         # ── Validate evidence against the exact task plan before persistence ─
         task = self.repository.get_task(production_job_id, production_task_id)
         validate_task_commit(task.task_plan, request)

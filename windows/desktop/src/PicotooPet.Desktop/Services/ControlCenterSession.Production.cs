@@ -1,5 +1,6 @@
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Services.ProductionReference;
 
 namespace PicotooPet.Desktop.Services;
 
@@ -114,7 +115,23 @@ public sealed partial class ControlCenterSession
         return await client.GetPackageAsync(productionJobId, cancellationToken).ConfigureAwait(false);
     }
 
-    private MacCoreProductionClient CreateProductionClient()
+    // Internal opt-in only. UI Bearer authenticates transport; it cannot enroll a
+    // Worker key, attest an executable, issue a lease, or enable production I2V.
+    internal CoreWorkerChallengeClient CreateWorkerChallengePreflightClient()
+    {
+        var options = ReadProductionClientOptions();
+        return new(this, options, () =>
+        {
+            var current = ReadProductionClientOptions();
+            if (current.BaseUri != options.BaseUri || current.Token != options.Token)
+                throw new PicotooPet.Desktop.Core.Production.ProductionWorkerException("CORE_CHALLENGE_SESSION_CHANGED");
+        });
+    }
+
+    private MacCoreProductionClient CreateProductionClient() =>
+        MacCoreProductionClient.Create(ReadProductionClientOptions());
+
+    private MacCoreClientOptions ReadProductionClientOptions()
     {
         ThrowIfDisposed();
         string macBaseUrl;
@@ -131,6 +148,6 @@ public sealed partial class ControlCenterSession
         {
             throw new InvalidOperationException("已保存的 Mac Core 地址无效。");
         }
-        return MacCoreProductionClient.Create(MacCoreClientOptions.CreateDefault(baseUri, token));
+        return MacCoreClientOptions.CreateDefault(baseUri, token);
     }
 }

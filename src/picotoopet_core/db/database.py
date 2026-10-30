@@ -25,6 +25,7 @@ from .migration_021 import MIGRATION_021
 from .migration_022 import MIGRATION_022
 from .migration_023 import MIGRATION_023
 from .migration_024 import MIGRATION_024
+from .worker_trust_schema import WORKER_TRUST_SCHEMA
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -360,7 +361,12 @@ class Database:
                     (24, datetime.now(UTC).isoformat()),
                 )
 
-            # ── 删除/恢复仍是操作员列表元数据；累计 Core Schema 现在推进到 24。 ──
+            # ── Additive, idempotent security tables stay outside historical
+            # ── schema-version 24 upgrades (like TASK_VISIBILITY_SCHEMA).
+            # ── No Worker trust record or grant is minted by this migration.
+            connection.executescript(WORKER_TRUST_SCHEMA)
+
+            # ── Operated Core database retains additive schema and legacy tables. ──
             connection.executescript(TASK_VISIBILITY_SCHEMA)
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
@@ -372,12 +378,16 @@ class Database:
     def fetchone(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Row | None:
         """读取单行。"""
 
-        return self.execute(sql, parameters).fetchone()
+        # ── Same connection: hold the existing RLock through cursor consumption.
+        with self._lock:
+            return self.connection.execute(sql, tuple(parameters)).fetchone()
 
     def fetchall(self, sql: str, parameters: Sequence[Any] = ()) -> list[sqlite3.Row]:
         """读取全部行。"""
 
-        return list(self.execute(sql, parameters).fetchall())
+        # ── Scheduler threads must not interleave a write during cursor fetch.
+        with self._lock:
+            return list(self.connection.execute(sql, tuple(parameters)).fetchall())
 
     def scalar(self, sql: str, parameters: Sequence[Any] = ()) -> Any:
         """读取首行首列。"""

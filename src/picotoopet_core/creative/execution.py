@@ -16,7 +16,7 @@ from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.worker.handlers import HandlerResult
 
-from .director import director_constraints, parse_goal_directives
+from .director import director_constraints, parse_goal_directives, story_gate_applies
 from .models import (
     CreativeBriefResult,
     CreativeDeepAiHandoffRecord,
@@ -32,7 +32,18 @@ from .quality import CreativeQualityGate
 from .repository import CreativeRepository
 from .source import CreativeSourceNormalizer, NormalizedCreativeSourceSet
 from .store import CreativeArtifactStore
-from .video_bible import VideoBible, derive_shot_plan
+from .video_bible import (
+    KEYFRAME_KIT_SCHEMA_VERSION as KEYFRAME_KIT_STAGE_KEY,
+)
+from .video_bible import (
+    KEYFRAME_REVIEW_NOTICE,
+    KEYFRAME_REVIEW_NOTICE_KEY,
+    KeyframeKitError,
+    VideoBible,
+    build_keyframe_kit,
+    derive_shot_plan,
+    shot_plan_integrity_findings,
+)
 
 
 class _Adapter(Protocol):
@@ -148,7 +159,7 @@ class CreativeIntelligenceCoordinator:
                 stage_kind,
                 profile_id=profile.profile_id,
             )
-            input_digest = self._digest(context)
+            input_digest = self._digest(self._digest_view(context))
             stage = self.repository.create_or_get_stage(
                 creative_job_id=job.creative_job_id,
                 stage_kind=stage_kind,
@@ -156,6 +167,11 @@ class CreativeIntelligenceCoordinator:
                 template_version=stage_definition.template_version,
             )
             if stage.status == "Completed" and stage.result is not None:
+                problem = self._completed_stage_problem(
+                    stage_kind, stage.result, previous, source_set, profile.profile_id
+                )
+                if problem is not None:
+                    return self._fail_closed_reused_stage(job.creative_job_id, stage_kind, problem)
                 previous[stage_kind.value] = stage.result
                 continue
             self.repository.transition_job(
@@ -237,7 +253,77 @@ class CreativeIntelligenceCoordinator:
                 previous=previous,
             )
 
+        self._attach_keyframe_kit(job.creative_objective, previous)
         return self._finish_package(job.creative_job_id, source_set, previous, profile)
+
+    @staticmethod
+    def _attach_keyframe_kit(objective: str | None, previous: dict[str, dict[str, Any]]) -> None:
+        """Add the untrusted keyframe_kit.v1 sidecar for a story-gated three-shot Goal.
+
+        Only exactly three gated shots produce a kit. The kit is a proposal: every still is
+        PENDING_HUMAN_REVIEW and nothing here claims an image, a hash or an approval exists.
+        """
+
+        bible_raw = previous.get(CreativeStageKind.VIDEO_BIBLE.value)
+        if bible_raw is None:
+            return
+        bible = VideoBible.model_validate(bible_raw)
+        if not story_gate_applies(parse_goal_directives(objective), len(bible.shots)):
+            return
+        brief = CreativeBriefResult.model_validate(previous[CreativeStageKind.CREATIVE_BRIEF.value])
+        script = CreativeScriptResult.model_validate(previous[CreativeStageKind.SCRIPT.value])
+        try:
+            kit = build_keyframe_kit(bible, script, output_profile_id=brief.output_profile_id.value)
+        except KeyframeKitError:
+            return
+        previous[KEYFRAME_KIT_STAGE_KEY] = kit.model_dump(mode="json")
+        previous[KEYFRAME_REVIEW_NOTICE_KEY] = dict(KEYFRAME_REVIEW_NOTICE)
+
+    @staticmethod
+    def _completed_stage_problem(
+        stage_kind: CreativeStageKind,
+        result: dict[str, Any],
+        previous: dict[str, dict[str, Any]],
+        source_set: NormalizedCreativeSourceSet,
+        profile_id: str,
+    ) -> str | None:
+        """Re-verify a persisted v2 Shot Plan against its sealed Bible before a restart reuses it.
+
+        Uses the same pure derivation that built it, so a legitimately persisted result always
+        passes and v1 jobs are never touched. A tampered Bible is already refused earlier by the
+        immutable stage input digest (``creative stage immutable input conflict``).
+        """
+
+        if profile_id == "creative.content_plan.v1":
+            return None
+        try:
+            if stage_kind is CreativeStageKind.SHOT_PLAN:
+                bible = VideoBible.model_validate(previous[CreativeStageKind.VIDEO_BIBLE.value])
+                if bible.source_set_digest != source_set.source_set_digest:
+                    return "CREATIVE_COMPLETED_BIBLE_SOURCE_MISMATCH"
+                script = CreativeScriptResult.model_validate(
+                    previous[CreativeStageKind.SCRIPT.value]
+                )
+                if shot_plan_integrity_findings(bible, script, result):
+                    return "CREATIVE_COMPLETED_SHOT_PLAN_BIBLE_MISMATCH"
+        except (ValueError, KeyError):
+            return "CREATIVE_COMPLETED_STAGE_INVALID"
+        return None
+
+    def _fail_closed_reused_stage(
+        self, creative_job_id: str, stage_kind: CreativeStageKind, code: str
+    ) -> HandlerResult:
+        # The stored stage row is left untouched as evidence; a re-run fails identically
+        # instead of silently re-deriving over it.
+        self.repository.transition_job(
+            creative_job_id,
+            CreativeJobStatus.NEEDS_HUMAN,
+            current_stage=stage_kind,
+            failure_code=code,
+            error_message="A stored creative stage no longer matches its sealed source.",
+            finished=True,
+        )
+        return self._summary(creative_job_id, CreativeJobStatus.NEEDS_HUMAN)
 
     def _run_stage(
         self,
@@ -516,6 +602,24 @@ class CreativeIntelligenceCoordinator:
         if profile_id != "creative.content_plan.v1":
             context["creative_runtime"] = profile_id
         return context
+
+    @staticmethod
+    def _digest_view(context: dict[str, Any]) -> dict[str, Any]:
+        """The context the immutable stage input digest covers.
+
+        The default story rules are model-facing only. Leaving them out keeps the digest of a
+        Bible stage persisted before the default existed unchanged, so such a job resumes.
+        """
+
+        constraints = context.get("director_constraints")
+        if not isinstance(constraints, dict) or "story_quality_rules" not in constraints:
+            return context
+        return {
+            **context,
+            "director_constraints": {
+                key: value for key, value in constraints.items() if key != "story_quality_rules"
+            },
+        }
 
     @staticmethod
     def _digest(value: object) -> str:

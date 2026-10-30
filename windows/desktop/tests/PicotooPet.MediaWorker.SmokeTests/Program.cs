@@ -1,5 +1,40 @@
 using PicotooPet.Desktop.Services;
 
+if (await PicotooPet.MediaWorker.SmokeTests.WorkerExecutableIdentityTests.RunAsync(args)) return;
+if (args.Length == 2 && args[0] == "--real-core-interop") { await PicotooPet.MediaWorker.SmokeTests.RealPythonCoreInteropTests.RunAsync(args[1]); return; } // #177 CI-only explicit test entry; no shipping executor
+
+if (args.Length == 4 && args[0] == "--worker-key-probe")
+{
+    PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.Probe(args[1], args[2], bool.Parse(args[3]));
+    return;
+}
+if (args.Contains("--worker-signing-vectors-only", StringComparer.Ordinal))
+{
+    PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.Vectors();
+    return;
+}
+if (args.Length == 3 && args[0] == "--i2v-snapshot-crash-probe")
+{
+    await PicotooPet.MediaWorker.SmokeTests.DurableReferenceSnapshotTests.ProbeAsync(args[1],
+        int.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture));
+    return;
+}
+if (args.Contains("--i2v-durable-only", StringComparer.Ordinal))
+{
+    await PicotooPet.MediaWorker.SmokeTests.DurableReferenceSnapshotTests.RunAsync();
+    return;
+}
+if (args.Contains("--i2v-executor-only", StringComparer.Ordinal))
+{
+    await PicotooPet.MediaWorker.SmokeTests.I2VExecutorSnapshotTests.RunAsync();
+    return;
+}
+if (args.Contains("--multishot-regression-only", StringComparer.Ordinal))
+{
+    await PicotooPet.MediaWorker.SmokeTests.MultiShotProductionTests.RunAsync();
+    return;
+}
+
 if (args.Contains("--three-shot-gate-probe", StringComparer.Ordinal))
 {
     PicotooPet.MediaWorker.SmokeTests.IndependentThreeShotGateTests.Probe(args);
@@ -23,6 +58,11 @@ await PicotooPet.MediaWorker.SmokeTests.RecoveryFixTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.MultiShotProductionTests.RunAsync();
 PicotooPet.MediaWorker.SmokeTests.ThreeShotAcceptanceGateTests.Run();
 PicotooPet.MediaWorker.SmokeTests.ReferenceV11BindingTests.Run();
+await PicotooPet.MediaWorker.SmokeTests.DurableReferenceSnapshotTests.RunAsync();
+await PicotooPet.MediaWorker.SmokeTests.I2VExecutorSnapshotTests.RunAsync();
+await PicotooPet.MediaWorker.SmokeTests.ShippingReferenceProofTests.RunAsync();
+await PicotooPet.MediaWorker.SmokeTests.WorkerSignerTests.RunAsync();
+await PicotooPet.MediaWorker.SmokeTests.WorkerChallengePreflightTests.RunAsync();
 await PicotooPet.MediaWorker.SmokeTests.LegacyContractTests.RunAsync();
 PicotooPet.MediaWorker.SmokeTests.SameExeHostTests.Run();
 Console.WriteLine("P0_SAME_EXE_WORKER_JOURNAL_RECOVERY=PASS");

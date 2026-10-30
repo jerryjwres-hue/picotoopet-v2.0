@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Production;
+using PicotooPet.Desktop.Services.ProductionReference;
 
 [assembly: InternalsVisibleTo("PicotooPet.MediaWorker.SmokeTests")]
 
@@ -54,6 +55,10 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     private readonly Func<string, string, IDisposable?>? _submissionPermit;
     private readonly Func<string, CancellationToken, Task<bool>>? _acceptanceAdmission;
 
+    // Dependency composition only; no public flag/environment switch can arm shipping I2V.
+    internal ProductionReferenceSnapshotStore? ReferenceSnapshots { get; init; }
+    internal ShippingReferenceComposition? ShippingReferences { get; }
+
     public ProductionExecutionService(
         ControlCenterSession session,
         ComfyProductionClient comfy,
@@ -65,6 +70,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _comfy = comfy ?? throw new ArgumentNullException(nameof(comfy));
         _ownsComfy = false;
         _executorId = NormalizeExecutorId(executorId ?? $"windows-production-{Environment.MachineName}");
+        ShippingReferences = new(session, _executorId);
         _submissionPermit = P0ThreeShotAcceptanceGate.AcquireSubmissionPermit;
         _acceptanceAdmission = (job, ct) => P0ThreeShotAcceptanceGate.AllowsJobAsync(session, job, ct);
     }
@@ -82,6 +88,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         _reconciler = ComfyPromptReconciler.Create();
         _comfy = comfy;
         _executorId = executorId;
+        ShippingReferences = new(session, _executorId);
         _ownsComfy = ownsComfy;
         _shotObserver = shotObserver;
         _submissionPermit = submissionPermit ?? P0ThreeShotAcceptanceGate.AcquireSubmissionPermit;
@@ -226,15 +233,34 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         // POST. The same-EXE Host's existing global recovery owns reconciliation;
         // until it drains, deny preflight/lease/all fresh GPU work here as well.
         if (originalPlan.SchemaVersion == "1.1"
+            && (ReferenceSnapshots is null || ShippingReferences is not null)
             && _journal.Pending().Any(p => p.JobId == productionJobId))
             throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
-        ValidateMultiShotPlan(productionJobId, originalPlan);
+        if (originalPlan.SchemaVersion == "1.1")
+            ShippingReferences?.RequireVerifiedWorkerProof(originalPlan);
+        ValidateMultiShotPlan(productionJobId, originalPlan, ReferenceSnapshots is not null || ShippingReferences is not null);
         var preflight = await (_preflightOverride?.Invoke(cancellationToken) ?? PreflightAsync(cancellationToken)).ConfigureAwait(false);
         if (!preflight.IsReady)
         {
             throw new ProductionWorkerException("MEDIA_PREFLIGHT_FAILED");
         }
         var originalDigest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(originalPlan)!))).ToLowerInvariant();
+        using var references = new DurableReferenceSnapshotBatch();
+        if (originalPlan.SchemaVersion == "1.1")
+        {
+            var store = ReferenceSnapshots ?? ShippingReferences?.CreateSnapshotStore(preflight.InputRoot!)
+                ?? throw new ProductionWorkerException("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED");
+            store.RequireInputRoot(preflight.InputRoot);
+            // Validate/stage ALL I2V shots before any lease or earlier T2V POST. No second lock:
+            // the existing journal GPU exclusion already covers GUI and same-EXE Worker.
+            foreach (var task in originalPlan.Tasks.Where(t => t.RenderIntent == "IMAGE_TO_VIDEO"))
+            {
+                var relative = ProductionReferenceSnapshotStore.RelativePathFor(task, originalDigest);
+                var graph = BuildPrompt(productionJobId, task, preflight, relative, requireInput: false);
+                references.Add(task.ProductionTaskId, await store.PrepareAsync(originalPlan, task,
+                    originalDigest, ProductionSubmissionJournal.GraphDigest(graph), _journal, cancellationToken).ConfigureAwait(false));
+            }
+        }
         // ── Preflight may be slow; recheck admission immediately before claiming Core lease. ──
         if (_acceptanceAdmission is not null
             && !await _acceptanceAdmission(productionJobId, cancellationToken).ConfigureAwait(false))
@@ -244,6 +270,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         {
             // ── 锁定当前授权至 claim 返回；切换 HOLD 不得产生新的 Core lease。 ──
             using var claimPermit = _submissionPermit?.Invoke(productionJobId, originalDigest);
+            await references.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
             claim = await _session.ClaimProductionJobAsync(productionJobId, _executorId, cancellationToken).ConfigureAwait(false);
         }
         catch (ApiException error) when (error.StatusCode == 409)
@@ -256,7 +283,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             {
                 var known = _journal.Read(productionJobId, task.ProductionTaskId);
                 if (known is not null && known.Phase != "Prepared") continue;
-                var graphDigest = ProductionSubmissionJournal.GraphDigest(BuildPrompt(productionJobId, task, preflight));
+                var graphDigest = ProductionSubmissionJournal.GraphDigest(BuildPrompt(productionJobId, task, preflight,
+                    references.Get(task.ProductionTaskId)?.RelativePath));
                 _journal.Save(new(productionJobId, task.ProductionTaskId, originalDigest, graphDigest, "Submitting", known?.PromptId));
             }
             throw new ProductionWorkerException("MEDIA_CLAIM_CONFLICT_RECONCILIATION");
@@ -285,7 +313,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 var timer = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
-                    await ExecuteTaskAsync(claim, task, originalDigest, preflight, lifetime.Token)
+                    await ExecuteTaskAsync(claim, task, originalDigest, preflight, lifetime.Token, references.Get(task.ProductionTaskId))
                         .ConfigureAwait(false);
                     ObserveShot(new(productionJobId, task.ProductionTaskId, observed.AttemptCount,
                         knownPrompt, timer.ElapsedMilliseconds, "CORE_COMMITTED"));
@@ -337,7 +365,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     }
 
     /// <summary>Only Core-authorized executable workflows may enter an automatic multi-shot run.</summary>
-    private static void ValidateMultiShotPlan(string jobId, ProductionPlanRecord plan)
+    private static void ValidateMultiShotPlan(string jobId, ProductionPlanRecord plan, bool hasDurableReferences)
     {
         if (plan.SchemaVersion == "1.1")
         {
@@ -346,7 +374,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             // Core's new v1.1 lease remains intentionally disabled until the
             // persistent Comfy LoadImage snapshot lifetime is actually enforced.
             ValidateV11FrozenReferenceIdentities(jobId, plan);
-            throw new ProductionWorkerException("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED");
+            if (!hasDurableReferences)
+                throw new ProductionWorkerException("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED");
+            return;
         }
         // The frozen v1.0 Core plan transports only a local path, NOT an authenticated
         // SHA/byte/rights/source approval. Such an I2V task cannot be authorized for
@@ -378,7 +408,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     /// consent; that remains a fresh authenticated Core authorization plus Codex verifier.
     /// This preserves old v1.0 T2V and rejects untrusted v1.1 before Core lease/GPU.
     /// </summary>
-    private static void ValidateV11FrozenReferenceIdentities(string jobId, ProductionPlanRecord plan)
+    internal static void ValidateV11FrozenReferenceIdentities(string jobId, ProductionPlanRecord plan)
     {
         if (plan.ProductionJobId != jobId || plan.Tasks is not { Length: > 0 }
             || plan.ProductionProfile != "production.comfyui.v1"
@@ -393,6 +423,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             if (task.RenderIntent == "GENERATIVE_VIDEO")
             {
                 if (reference is not null || task.TrustedInputAssetRef is not null
+                    || task.ExecutionDisposition != "Executable"
                     || task.WorkflowId != ComfyWorkflowTemplateValidator.T2VWorkflowId)
                     throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
                 continue;
@@ -424,12 +455,15 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
     }
 
     private async Task ExecuteTaskAsync(ProductionClaimRecord claim, ProductionTaskPlanRecord task, string planDigest,
-        ProductionPreflightSnapshot preflight, CancellationToken cancellationToken)
+        ProductionPreflightSnapshot preflight, CancellationToken cancellationToken,
+        DurableReferenceSnapshot? reference = null)
     {
         var snapshot = claim.Tasks.SingleOrDefault(t => t.ProductionTaskId == task.ProductionTaskId)
             ?? throw new ProductionWorkerException("PRODUCTION_TASK_SNAPSHOT_MISSING");
         if (snapshot.Status == "Succeeded") return;
-        var prompt = BuildPrompt(claim.ProductionJobId, task, preflight);
+        if (task.RenderIntent == "IMAGE_TO_VIDEO" && (reference is null || snapshot.AttemptCount > 2))
+            throw new ProductionWorkerException("I2V_V11_CRASH_DURABLE_SNAPSHOT_REQUIRED");
+        var prompt = BuildPrompt(claim.ProductionJobId, task, preflight, reference?.RelativePath);
         // Journal binds the full immutable plan digest, never the narrowed lease resume-plan digest.
         var graphDigest = ProductionSubmissionJournal.GraphDigest(prompt);
         var state = _journal.Read(claim.ProductionJobId, task.ProductionTaskId);
@@ -498,6 +532,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 claim.ProductionJobId, task, originalPrompt, preflight, cancellationToken)
                 .ConfigureAwait(false);
             using var attempt2Permit = _submissionPermit?.Invoke(claim.ProductionJobId, planDigest);
+            if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
             // Core replays null reservation idempotently if attempt2 was already
             // reserved before a crash. Attempt1 remains in Core audit.
             var reserved = await _session.MarkProductionAttemptAsync(
@@ -511,6 +546,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             // attempt2 graph before any further POST, even if history is missing.
             state = state with { Phase = "Submitting" };
             _journal.Save(state);
+            if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
             promptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -529,11 +565,13 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             // ── Opt-in acceptance gate holds the exact authorization file through the new POST. ──
             // ── No permit means ordinary unattended mode; a denied permit changes no attempt. ──
             using var permit = _submissionPermit?.Invoke(claim.ProductionJobId, planDigest);
+            if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
             // Write intent first. An uncertain reservation is safe to replay, an uncertain POST is not.
             _journal.Save(state);
             await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
                 new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null), cancellationToken).ConfigureAwait(false);
             state = state with { Phase = "Submitting" }; _journal.Save(state);
+            if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
             promptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken).ConfigureAwait(false);
         }
         state = state with { PromptId = promptId, Phase = "Submitted" }; _journal.Save(state);
@@ -608,11 +646,13 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             throw new ProductionWorkerException("MEDIA_RECOVERY_OUTPUT_EXISTS");
     }
 
-    private static JsonObject BuildPrompt(string jobId, ProductionTaskPlanRecord task, ProductionPreflightSnapshot preflight)
+    private static JsonObject BuildPrompt(string jobId, ProductionTaskPlanRecord task, ProductionPreflightSnapshot preflight,
+        string? durableInput = null, bool requireInput = true)
     {
         var template = ComfyWorkflowCatalog.Load(task.WorkflowId!);
         string? trustedInput = task.WorkflowId == ComfyWorkflowTemplateValidator.I2VWorkflowId
-            ? ValidateTrustedInput(task.TrustedInputAssetRef, preflight.InputRoot!) : null;
+            ? durableInput is not null && !requireInput ? durableInput
+                : ValidateTrustedInput(durableInput ?? task.TrustedInputAssetRef, preflight.InputRoot!) : null;
         return ComfyWorkflowTemplateValidator.Bind(task.WorkflowId!, template, task, BuildFilenamePrefix(jobId, task), trustedInput);
     }
 
