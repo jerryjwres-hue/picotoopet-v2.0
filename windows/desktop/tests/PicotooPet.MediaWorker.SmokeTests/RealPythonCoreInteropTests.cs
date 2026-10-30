@@ -53,7 +53,8 @@ internal static class RealPythonCoreInteropTests
         var keyRoot = Path.Combine(root, "dpapi-key");
         if (mode == "seed-key")
         {
-            Directory.CreateDirectory(keyRoot);
+            // ── The production DPAPI factory must exclusively create this
+            // ── directory with owner-only ACLs; pre-creating it is forbidden.
             var identity = ProtectedWorkerSigningKey.Create(keyRoot, Executor);
             // ── Public key and fingerprint ONLY, never DPAPI seed or bearer.
             File.WriteAllText(Path.Combine(root, "identity-public.json"), JsonSerializer.Serialize(new
