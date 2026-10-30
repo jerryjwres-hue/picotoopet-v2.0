@@ -1,0 +1,82 @@
+name: P0 Published Desktop Identity Readiness
+
+on:
+  push:
+    branches: [test/p0q2-win-published-apphost-identity-20261030]
+    paths:
+      - .github/workflows/p0-published-apphost-identity-native.yml
+      - docs/p0_video_quality/security/**
+  pull_request:
+    paths:
+      - .github/workflows/p0-published-apphost-identity-native.yml
+      - docs/p0_video_quality/security/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: published-identity-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  readiness:
+    name: Published process proof BLOCKED (source evidence only)
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record read-only source evidence; do not launch Desktop or Worker
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw 'Native Windows runner required' }
+          $paths = @(
+            'windows/desktop/src/PicotooPet.Desktop/Program.cs',
+            'windows/desktop/src/PicotooPet.Desktop/App.xaml.cs',
+            'windows/desktop/src/PicotooPet.Desktop/Services/AppSelfTest.cs',
+            'windows/desktop/src/PicotooPet.Desktop/Services/ProductionReference/CoreWorkerChallengeClient.cs',
+            'windows/desktop/scripts/Build-Phase2WindowsRelease.ps1'
+          )
+          $sources = @($paths | ForEach-Object {
+            @{ path = $_; source_file_sha256 = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant() }
+          })
+          $report = [ordered]@{
+            source_sha = $env:SOURCE_SHA
+            run_id = $env:GITHUB_RUN_ID
+            evidence_kind = 'source_readiness_only_not_process_identity'
+            status = 'BLOCKED'
+            reason = 'Existing self-test does not invoke executable measurement or witness signing; production entrypoint changes are not authorized by issue 171.'
+            published_desktop_running_image = 'UNVERIFIED'
+            os_process_path = $null
+            environment_process_path = $null
+            running_executable_sha256 = $null
+            signed_witness_executable_sha256 = $null
+            desktop_process_launched = $false
+            worker_process_launched = $false
+            gpu_started = $false
+            sources = $sources
+          }
+          $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath published-apphost-identity-readiness.json -Encoding utf8
+          @'
+          ## Issue 171: BLOCKED / UNVERIFIED
+          This native Windows run only records source evidence. No published Desktop process was launched, hashed or signed.
+          The existing noninteractive self-test does not expose the required identity/witness measurement.
+          SmokeTests EXE results, file-only hashes and CLR muxer refusal do not satisfy this gate.
+          No publish builder, release gate, Worker, GPU, Core endpoint or key store is invoked.
+          '@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: published-apphost-identity-readiness-${{ github.run_id }}
+          path: published-apphost-identity-readiness.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Reject acceptance without actual published process proof
+        shell: pwsh
+        run: |
+          throw 'P0_PUBLISHED_DESKTOP_RUNNING_IMAGE=UNVERIFIED; ACCEPTANCE=BLOCKED; no safe existing identity/signing diagnostic entrypoint. See issue 171 blocker document.'
