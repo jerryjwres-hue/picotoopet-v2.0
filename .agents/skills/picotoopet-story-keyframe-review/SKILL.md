@@ -8,7 +8,7 @@ Use after `build_keyframe_kit` produced a `keyframe_kit.v1`. Review-only: no ima
 
 ## Procedure
 1. Look at the three actual stills (not prompts). For each `keyframe_id` walk its `review_checklist`.
-2. Compare the three stills against each other and against `locks`: same face, ears, eyes and body proportions; same scarf and product colour, shape and position; same furniture layout and lighting; every prop visibly supported.
+2. Compare the three stills against each other and against `locks`: same subject (face or head, body proportions and marks); same accessory, wardrobe and product colour, shape and position; same set layout, props and lighting; every prop visibly supported.
 3. Record `ACCEPT-CANDIDATE`, `REVIEW` or `REJECT` per still with the defect and evidence. Uncertain means `REVIEW`. Only a human approval counts as `human_approved`.
 4. Any inconsistency among the three stills -> `REJECT` the set. Do not patch with prompts.
 

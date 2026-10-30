@@ -310,6 +310,31 @@ def test_v1_goal_without_directives_behaves_exactly_as_before(runtime: Runtime) 
     assert len(package.manifest["stage_results"]["shot_plan.v1"]["shots"]) == 5
 
 
+def _story_valid(bible: dict) -> dict:
+    """Make a three-shot fixture pass the default story gate: one porch, connected states."""
+
+    states = ["Biscuit sits on the porch", "Biscuit sits facing camera",
+              "the tag sits centered on the collar",
+              "Biscuit sits on the porch with the white tag visible on the collar"]
+    plan = [
+        ("medium shot", "STATIC", ["SUBJECT"], "Biscuit tilts his head and wags his tail slowly"),
+        ("close-up", "SLOW_PUSH_IN", ["SUBJECT", "PRODUCT"],
+         "the white tag rests on the collar as Biscuit turns his head slightly"),
+        ("wide shot", "TRACK_SIDE", ["SUBJECT", "PRODUCT"],
+         "Biscuit trots along the porch from left to right"),
+    ]
+    for index, (shot, (framing, movement, featured, action)) in enumerate(
+        zip(bible["shots"], plan, strict=True)
+    ):
+        shot.update(
+            scene_id="porch", camera_framing=framing, camera_movement=movement,
+            featured=featured, visible_action=action, opening_state=states[index],
+            closing_state=states[index + 1], risk_flags=[],
+            handoff_to_next="CONTINUOUS" if index < 2 else "CUT_ON_ACTION",
+        )
+    return bible
+
+
 def test_v2_bible_is_held_to_the_requested_shot_count(runtime: Runtime) -> None:
     job, task = _goal_job(runtime, V2, "three-v2")
     ref = runtime.source_ref_for(job.creative_job_id)
@@ -321,6 +346,7 @@ def test_v2_bible_is_held_to_the_requested_shot_count(runtime: Runtime) -> None:
                            shot_id=f"shot-{i:03d}")
                       for i, s in enumerate(wrong["shots"][:3], start=1)]
     right["shots"][2]["featured"] = ["SUBJECT", "PRODUCT"]
+    right = _story_valid(right)
     double = OllamaDouble([*_three_shot_stage_outputs(ref), wrong, right])
     summary = runtime.coordinator(double.adapter).handler(task)
     assert summary.summary["status"] == "creative_ready"

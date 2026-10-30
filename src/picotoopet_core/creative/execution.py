@@ -16,7 +16,7 @@ from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.worker.handlers import HandlerResult
 
-from .director import director_constraints, parse_goal_directives
+from .director import director_constraints, parse_goal_directives, story_gate_applies
 from .models import (
     CreativeBriefResult,
     CreativeDeepAiHandoffRecord,
@@ -36,6 +36,8 @@ from .video_bible import (
     KEYFRAME_KIT_SCHEMA_VERSION as KEYFRAME_KIT_STAGE_KEY,
 )
 from .video_bible import (
+    KEYFRAME_REVIEW_NOTICE,
+    KEYFRAME_REVIEW_NOTICE_KEY,
     KeyframeKitError,
     VideoBible,
     build_keyframe_kit,
@@ -157,7 +159,7 @@ class CreativeIntelligenceCoordinator:
                 stage_kind,
                 profile_id=profile.profile_id,
             )
-            input_digest = self._digest(context)
+            input_digest = self._digest(self._digest_view(context))
             stage = self.repository.create_or_get_stage(
                 creative_job_id=job.creative_job_id,
                 stage_kind=stage_kind,
@@ -256,16 +258,18 @@ class CreativeIntelligenceCoordinator:
 
     @staticmethod
     def _attach_keyframe_kit(objective: str | None, previous: dict[str, dict[str, Any]]) -> None:
-        """Add the untrusted keyframe_kit.v1 sidecar for an explicit story-gate Goal.
+        """Add the untrusted keyframe_kit.v1 sidecar for a story-gated three-shot Goal.
 
         Only exactly three gated shots produce a kit. The kit is a proposal: every still is
         PENDING_HUMAN_REVIEW and nothing here claims an image, a hash or an approval exists.
         """
 
         bible_raw = previous.get(CreativeStageKind.VIDEO_BIBLE.value)
-        if bible_raw is None or not parse_goal_directives(objective).story_gate:
+        if bible_raw is None:
             return
         bible = VideoBible.model_validate(bible_raw)
+        if not story_gate_applies(parse_goal_directives(objective), len(bible.shots)):
+            return
         brief = CreativeBriefResult.model_validate(previous[CreativeStageKind.CREATIVE_BRIEF.value])
         script = CreativeScriptResult.model_validate(previous[CreativeStageKind.SCRIPT.value])
         try:
@@ -273,6 +277,7 @@ class CreativeIntelligenceCoordinator:
         except KeyframeKitError:
             return
         previous[KEYFRAME_KIT_STAGE_KEY] = kit.model_dump(mode="json")
+        previous[KEYFRAME_REVIEW_NOTICE_KEY] = dict(KEYFRAME_REVIEW_NOTICE)
 
     @staticmethod
     def _completed_stage_problem(
@@ -597,6 +602,24 @@ class CreativeIntelligenceCoordinator:
         if profile_id != "creative.content_plan.v1":
             context["creative_runtime"] = profile_id
         return context
+
+    @staticmethod
+    def _digest_view(context: dict[str, Any]) -> dict[str, Any]:
+        """The context the immutable stage input digest covers.
+
+        The default story rules are model-facing only. Leaving them out keeps the digest of a
+        Bible stage persisted before the default existed unchanged, so such a job resumes.
+        """
+
+        constraints = context.get("director_constraints")
+        if not isinstance(constraints, dict) or "story_quality_rules" not in constraints:
+            return context
+        return {
+            **context,
+            "director_constraints": {
+                key: value for key, value in constraints.items() if key != "story_quality_rules"
+            },
+        }
 
     @staticmethod
     def _digest(value: object) -> str:

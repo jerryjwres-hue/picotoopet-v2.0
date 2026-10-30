@@ -21,6 +21,7 @@ from .director import (
     negative_conflicts,
     normalized_keys,
     parse_goal_directives,
+    story_gate_applies,
 )
 from .models import (
     CreativeBriefResult,
@@ -418,7 +419,7 @@ class CreativeQualityGate:
             evidence_ids=set(source_set.evidence_ids),
             required_shot_count=None if directives is None else directives.shot_count,
             required_shot_seconds=None if directives is None else directives.shot_seconds,
-            story_gate=directives is not None and directives.story_gate,
+            story_gate=story_gate_applies(directives, len(draft.shots)),
         )
         if any(item.reject for item in findings):
             return CreativeQualityDecision(
