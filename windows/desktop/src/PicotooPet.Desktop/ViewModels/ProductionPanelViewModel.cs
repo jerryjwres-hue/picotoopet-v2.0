@@ -2,6 +2,9 @@ using System.Security.Cryptography;
 using System.Text;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Services;
+using PicotooPet.Desktop.Services.QualityObservation;
+using System.IO;
+using System.Windows.Media.Imaging;
 
 namespace PicotooPet.Desktop.ViewModels;
 
@@ -21,11 +24,21 @@ public sealed class ProductionPanelViewModel : ObservableObject, IDisposable
     private string _statusMessage = "Production 只消费 creative_ready/PASS Creative Package。";
     private bool _isBusy;
     private bool _disposed;
+    private IVisualObservation? _visualObservation;
+    private CancellationTokenSource? _visualCancellation;
+    private readonly SynchronizationContext? _visualContext = SynchronizationContext.Current;
+    private int _visualRevision;
+    private bool _isObservingVisuals;
+    private string _visualVerdict = "UNVERIFIED";
+    private string _visualDetail = "尚未生成视觉证据；机器观察不代表人工 ACCEPT 或 C011。";
+    private BitmapSource? _visualContactSheet;
+    private bool _useOptionalVisualVlm;
 
     public ProductionPanelViewModel(ControlCenterSession session)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _execution = ProductionExecutionService.Create(session);
+        AttachVisualObservation(VisualReviewObservation.Create(session));
     }
 
     private ProductionPanelViewModel(
@@ -70,6 +83,7 @@ public sealed class ProductionPanelViewModel : ObservableObject, IDisposable
         {
             if (SetProperty(ref _selectedJob, value))
             {
+                InvalidateVisualObservation();
                 RaiseActions();
             }
         }
@@ -89,7 +103,7 @@ public sealed class ProductionPanelViewModel : ObservableObject, IDisposable
 
     public bool IsBusy
     {
-        get => _isBusy;
+        get => _isBusy || _isObservingVisuals;
         private set
         {
             if (SetProperty(ref _isBusy, value))
@@ -116,6 +130,79 @@ public sealed class ProductionPanelViewModel : ObservableObject, IDisposable
         !IsBusy
         && SelectedJob is not null
         && SelectedJob.Status is "Ready" or "Planned" or "Claimed" or "Rendering" or "QualityCheck";
+
+    public string VisualReviewVerdict { get => _visualVerdict; private set => SetProperty(ref _visualVerdict, value); }
+    public string VisualReviewDetail { get => _visualDetail; private set => SetProperty(ref _visualDetail, value); }
+    public BitmapSource? VisualReviewContactSheet { get => _visualContactSheet; private set => SetProperty(ref _visualContactSheet, value); }
+    public bool UseOptionalVisualVlm { get => _useOptionalVisualVlm; set => SetProperty(ref _useOptionalVisualVlm, value); }
+    public bool IsObservingVisuals => _isObservingVisuals;
+    public bool CanObserveSelectedVisuals => !_disposed && !IsBusy && !_isObservingVisuals && _visualObservation is not null
+        && SelectedJob is { Status: "production_ready" } job && VisualReviewObservation.IsSha(job.PlanDigest);
+    public bool CanUseVisualReviewButton => _isObservingVisuals || CanObserveSelectedVisuals;
+    public string VisualReviewButtonText => _isObservingVisuals ? "取消只读视觉观察" : "生成视觉证据（CPU，只读）";
+
+    public static ProductionPanelViewModel CreateForVisualObservationSmokeTest(IReadOnlyList<ProductionJobRecord> jobs, IVisualObservation observer)
+    {
+        var model = new ProductionPanelViewModel(Array.Empty<ProductionEligibleCreativeRecord>(), jobs);
+        model.AttachVisualObservation(observer); return model;
+    }
+    private void AttachVisualObservation(IVisualObservation observer)
+    { _visualObservation = observer; observer.Invalidated += VisualSessionChanged; }
+    private void VisualSessionChanged(object? sender, EventArgs e) => InvalidateVisualObservation();
+    private void InvalidateVisualObservation()
+    {
+        Interlocked.Increment(ref _visualRevision);
+        try { _visualCancellation?.Cancel(); } catch (ObjectDisposedException) { }
+        void Clear()
+        {
+            if (_disposed) return;
+            VisualReviewVerdict = "UNVERIFIED"; VisualReviewContactSheet = null;
+            VisualReviewDetail = "选中项或会话已变化；旧视觉结果已作废，需重新点击核对来源。";
+        }
+        if (_visualContext is not null && SynchronizationContext.Current != _visualContext) _visualContext.Post(_ => Clear(), null);
+        else Clear();
+    }
+    public void CancelVisualObservation()
+    { _visualCancellation?.Cancel(); }
+
+    public async Task ObserveSelectedVisualsAsync(Func<VisualReadRequest, CancellationToken, Task<VisualReadConsent>> consent,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (!CanObserveSelectedVisuals || SelectedJob is not { } selected || _visualObservation is null) return;
+        var revision = Volatile.Read(ref _visualRevision);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cancellation.CancelAfter(TimeSpan.FromMinutes(5)); _visualCancellation = cancellation;
+        _isObservingVisuals = true; IsBusy = true;
+        VisualReviewVerdict = "UNVERIFIED"; VisualReviewContactSheet = null;
+        VisualReviewDetail = "只读取选中 Job 的冻结计划和产物身份；核对三镜头后才请求文件读取同意。";
+        RaiseActions();
+        try
+        {
+            var result = await _visualObservation.ObserveAsync(selected, UseOptionalVisualVlm, consent, cancellation.Token).ConfigureAwait(true);
+            if (_disposed || revision != Volatile.Read(ref _visualRevision) || SelectedJob?.ProductionJobId != selected.ProductionJobId) return;
+            if (cancellation.IsCancellationRequested) result = VisualReviewObservation.Unverified("观察已取消或超时；不会改变生产状态。");
+            if (result.Verdict is not (VisualObservationVerdict.Review or VisualObservationVerdict.RejectSuspect or VisualObservationVerdict.Unverified))
+                result = VisualReviewObservation.Unverified("不支持的机器结论；没有人工 ACCEPT。");
+            if (result.ContactSheetPng is { Length: > 0 } png)
+            {
+                using var stream = new MemoryStream(png);
+                var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad;
+                image.StreamSource = stream; image.EndInit(); image.Freeze(); VisualReviewContactSheet = image;
+            }
+            VisualReviewVerdict = result.Verdict switch { VisualObservationVerdict.Review => "REVIEW", VisualObservationVerdict.RejectSuspect => "REJECT_SUSPECT", _ => "UNVERIFIED" }; VisualReviewDetail = result.Detail;
+        }
+        catch (Exception)
+        {
+            if (!_disposed && revision == Volatile.Read(ref _visualRevision))
+            { VisualReviewVerdict = "UNVERIFIED"; VisualReviewContactSheet = null; VisualReviewDetail = "只读观察未完成；未改变生产状态或生成任何 ACCEPT。"; }
+        }
+        finally
+        {
+            _visualCancellation = null; _isObservingVisuals = false; IsBusy = false;
+            RaisePropertyChanged(nameof(IsBusy)); RaiseActions();
+        }
+    }
 
     public static ProductionPanelViewModel CreateForSmokeTest(
         IReadOnlyList<ProductionEligibleCreativeRecord>? eligible = null,
@@ -255,6 +342,10 @@ public sealed class ProductionPanelViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(CanPreflight));
         RaisePropertyChanged(nameof(CanStart));
         RaisePropertyChanged(nameof(CanCancel));
+        RaisePropertyChanged(nameof(CanObserveSelectedVisuals));
+        RaisePropertyChanged(nameof(CanUseVisualReviewButton));
+        RaisePropertyChanged(nameof(IsObservingVisuals));
+        RaisePropertyChanged(nameof(VisualReviewButtonText));
     }
 
     private static string BuildIdempotencyKey(string creativePackageId, string packageDigest)
@@ -283,6 +374,8 @@ public sealed class ProductionPanelViewModel : ObservableObject, IDisposable
             return;
         }
         _disposed = true;
+        Interlocked.Increment(ref _visualRevision); _visualCancellation?.Cancel();
+        if (_visualObservation is not null) { _visualObservation.Invalidated -= VisualSessionChanged; _visualObservation.Dispose(); }
         if (_execution is not null)
         {
             _execution.DisposeAsync().AsTask().GetAwaiter().GetResult();
