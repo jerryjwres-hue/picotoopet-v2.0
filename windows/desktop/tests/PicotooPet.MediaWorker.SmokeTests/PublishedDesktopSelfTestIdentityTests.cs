@@ -62,6 +62,7 @@ internal static class PublishedDesktopSelfTestIdentityTests
         }
         finally { Directory.Delete(root, true); }
         Console.WriteLine("P0_IDENTITY_INVALID_FILE_NEGATIVES=PASS");
+        if (args.Length == 1 && args[0] == "--helpers-only") return;
         Require(args.Length == 3, "expected published EXE, managed build DLL, report directory");
         var exe = Path.GetFullPath(args[0]); var dll = Path.GetFullPath(args[1]); var reports = Path.GetFullPath(args[2]);
         Require(Path.GetFileName(exe) == "Picotoo Pet AI.exe" && File.Exists(exe) && File.Exists(dll), "actual published Desktop inputs");

@@ -56,12 +56,22 @@ jobs:
           'await PicotooPet.MediaWorker.SmokeTests.PublishedDesktopSelfTestIdentityTests.RunAsync(args);' | Set-Content (Join-Path $root 'Program.cs')
           dotnet build (Join-Path $root 'IdentityHarness.csproj') -c Release --warnaserror
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Require explicit two-flag opt-in before publishing
+      - name: Require opt-in and fail-closed negative contracts before publishing
         shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           $runner = Join-Path $env:RUNNER_TEMP 'published-identity-harness/bin/Release/net10.0-windows10.0.19041.0/IdentityHarness.exe'
-          & $runner --flags-only
+          & $runner --helpers-only
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $reports = Join-Path $env:RUNNER_TEMP 'published-identity-evidence'
+          New-Item -ItemType Directory -Path $reports -Force | Out-Null
+          @{
+            source_sha = $env:SOURCE_SHA; run_id = $env:GITHUB_RUN_ID
+            opt_in_and_file_negatives = 'PASS'
+            published_process_identity = 'UNVERIFIED'
+            evidence_kind = 'helper_contracts_not_published_process'
+          } | ConvertTo-Json | Set-Content (Join-Path $reports 'helper-contracts.json')
       - name: Disposable direct single-file publish (not formal Release)
         shell: pwsh
         env:
