@@ -146,7 +146,9 @@ public static class ReviewPolicy
         using var doc = JsonDocument.Parse(raw);
         if (doc.RootElement.ValueKind != JsonValueKind.Object
             || !doc.RootElement.TryGetProperty("flags", out var flags)
-            || flags.ValueKind != JsonValueKind.Array || flags.GetArrayLength() > 18)
+            || flags.ValueKind != JsonValueKind.Array || flags.GetArrayLength() > 18
+            || doc.RootElement.EnumerateObject().Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != doc.RootElement.EnumerateObject().Count()
+            || doc.RootElement.EnumerateObject().Any(p => p.Name is not ("flags" or "reviewer_disagreement")))
             throw new InvalidOperationException("VLM_RESPONSE_INVALID");
         var allowed = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -156,6 +158,9 @@ public static class ReviewPolicy
         var concerns = new List<Concern>();
         foreach (var flag in flags.EnumerateArray())
         {
+            if (flag.ValueKind != JsonValueKind.Object || flag.EnumerateObject().Count() != 6
+                || flag.EnumerateObject().Any(p => p.Name is not ("shot_order" or "category" or "severity" or "evidence_filename" or "rationale" or "confidence")))
+                throw new InvalidOperationException("VLM_RESPONSE_INVALID");
             var order = flag.GetProperty("shot_order").GetInt32();
             var category = flag.GetProperty("category").GetString() ?? "";
             var severity = flag.GetProperty("severity").GetString() ?? "";
@@ -164,7 +169,7 @@ public static class ReviewPolicy
             var confidence = flag.GetProperty("confidence").GetDouble();
             if (order is < 1 or > 3 || !allowed.Contains(category)
                 || severity is not ("low" or "medium" or "high")
-                || !frames.Contains(file) || rationale.Length > 400 || rationale.Length == 0
+                || !frames.Contains(file) || file != $"frame_{(order - 1) * 3 + 1:00}.png" || rationale.Length > 400 || rationale.Length == 0
                 || !double.IsFinite(confidence) || confidence is < 0 or > 1)
                 throw new InvalidOperationException("VLM_FLAG_NOT_GROUNDED");
             concerns.Add(new Concern(order, category, severity, file, rationale, confidence));
@@ -285,7 +290,7 @@ public static class ReviewRunner
         var raw = await response.Content.ReadAsStringAsync();
         if (raw.Length > 100_000) throw new InvalidOperationException("VLM_INFERENCE_OVERSIZED");
         using var answer = JsonDocument.Parse(raw);
-        if (answer.RootElement.TryGetProperty("done", out var done) && done.ValueKind == JsonValueKind.False)
+        if (!answer.RootElement.TryGetProperty("done", out var done) || done.ValueKind != JsonValueKind.True)
             throw new InvalidOperationException("VLM_INFERENCE_INCOMPLETE");
         return answer.RootElement.GetProperty("response").GetString() ?? throw new InvalidOperationException("VLM_EMPTY");
     }
@@ -316,7 +321,7 @@ public static class ReviewRunner
                     || new FileInfo(source).Length != shot.Bytes)
                     throw new InvalidOperationException("SOURCE_SHA256_OR_BYTES_MISMATCH");
                 var probeJson = await RunAsync(opts.Ffprobe,
-                    ["-v", "error", "-count_frames", "-select_streams", "v:0",
+                    ["-v", "error", "-protocol_whitelist", "file,pipe", "-f", "matroska", "-count_frames", "-select_streams", "v:0",
                      "-show_entries", "stream=codec_type,nb_read_frames:format=duration", "-of", "json", source],
                     TimeSpan.FromSeconds(30));
                 var (duration, count) = ParseProbe(probeJson);
@@ -332,7 +337,7 @@ public static class ReviewRunner
                     await RunAsync(opts.Ffmpeg,
                         ["-hide_banner", "-loglevel", "error", "-nostdin", "-ss",
                          (ms / 1000.0).ToString("F3", CultureInfo.InvariantCulture),
-                         "-i", source, "-frames:v", "1", "-vf",
+                         "-protocol_whitelist", "file,pipe", "-f", "matroska", "-hwaccel", "none", "-i", source, "-frames:v", "1", "-vf",
                          "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2",
                          "-y", framePath], TimeSpan.FromSeconds(40));
                     if (!File.Exists(framePath)) throw new InvalidOperationException("FRAME_NOT_EXTRACTED");
@@ -346,7 +351,7 @@ public static class ReviewRunner
             }
             var sheet = Path.Combine(opts.Output, "contact_sheet_3x3.png");
             await RunAsync(opts.Ffmpeg,
-                ["-hide_banner", "-loglevel", "error", "-nostdin", "-framerate", "1",
+                ["-hide_banner", "-loglevel", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-framerate", "1",
                  "-i", Path.Combine(framesDir, "frame_%02d.png"), "-vf",
                  "tile=3x3:padding=4:margin=4", "-frames:v", "1", "-y", sheet],
                 TimeSpan.FromSeconds(40));
