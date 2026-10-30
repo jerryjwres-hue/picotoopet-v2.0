@@ -1,4 +1,9 @@
 using System.Globalization;
+using System.Diagnostics;
+using System.Reflection;
+using System.Reflection.PortableExecutable;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -59,6 +64,7 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         if (plan.SchemaVersion != "1.1" || graphs.Count != plan.Tasks.Length
             || plan.Tasks.Any(t => !graphs.TryGetValue(t.ProductionTaskId, out var graph) || !IsHash(graph) || graph.All(c => c == '0')))
             throw Invalid("CORE_CHALLENGE_GRAPH_SCOPE_INVALID");
+        using var executable = await MeasureProcessImageAsync(ct).ConfigureAwait(false);
         var key = ProtectedWorkerSigningKey.Open(keyRoot, executorId, expectedFingerprint);
         _requireCurrentSession();
         using (journal.AcquireGpu()) RequireCleanJournal(journal, plan);
@@ -89,8 +95,9 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
             }
             _requireCurrentSession();
             ValidateChallenge(challenge, key.Identity, executorId, plan.ProductionJobId, digest);
-            var witness = await BuildWitnessAsync(plan, digest, executorId, key.Identity.KeyId, challenge, snapshots, token).ConfigureAwait(false);
+            var witness = await BuildWitnessAsync(plan, digest, executorId, key.Identity.KeyId, challenge, snapshots, executable, token).ConfigureAwait(false);
             _requireCurrentSession();
+            await executable.RequireCurrentAsync(token).ConfigureAwait(false);
             var unsigned = JsonSerializer.SerializeToElement(witness);
             // Existing signer owns its existing GPU lock, actual file/approval
             // rechecks, DPAPI access and durable spent-nonce marker. Never retry.
@@ -101,6 +108,7 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
                 RequireCleanJournal(journal, plan);
                 ValidateChallenge(challenge, key.Identity, executorId, plan.ProductionJobId, digest);
                 foreach (var snapshot in snapshots) await snapshot.RecheckForWitnessAsync(token).ConfigureAwait(false);
+                await executable.RequireCurrentAsync(token).ConfigureAwait(false);
                 ValidateChallenge(challenge, key.Identity, executorId, plan.ProductionJobId, digest);
                 // Retain snapshots + GPU lock through expected-deny POST. Neither
                 // this response nor a software signature authorizes production.
@@ -120,7 +128,7 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
     }
 
     private static async Task<JsonObject> BuildWitnessAsync(ProductionPlanRecord plan, string digest, string executor,
-        string keyId, JsonElement challenge, IReadOnlyList<DurableReferenceSnapshot> snapshots, CancellationToken ct)
+        string keyId, JsonElement challenge, IReadOnlyList<DurableReferenceSnapshot> snapshots, ProcessImageMeasurement image, CancellationToken ct)
     {
         var references = plan.Tasks.Select(task =>
         {
@@ -131,7 +139,8 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
                 source_relative_path = r.InputRelativePath, snapshot_sha256 = m.SnapshotSha256, snapshot_bytes = m.SnapshotBytes,
                 snapshot_receipt_sha256 = m.ReceiptSha256, graph_digest = m.GraphDigest, snapshot_relative_path = m.SnapshotRelativePath };
         }).ToArray();
-        var executable = await ProductionLocalEnvironment.Sha256FileAsync(typeof(ProtectedWorkerSigningKey).Assembly.Location, ct).ConfigureAwait(false);
+        await image.RequireCurrentAsync(ct).ConfigureAwait(false);
+        var executable = image.Sha256;
         return JsonSerializer.SerializeToNode(new
         {
             schema_version = "production.worker_witness.v1", algorithm = "ed25519", worker_key_id = keyId, executor_id = executor,
@@ -142,6 +151,157 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
             journal_state = "NO_PRIOR_POST", references, signature = new string('a', 128),
         })!.AsObject();
     }
+
+
+    // A local integrity measurement, never a vendor signature or remote attestation.
+    // No caller-provided path/hash is accepted by this production entrypoint.
+    internal static async Task<ProcessImageMeasurement> MeasureProcessImageAsync(CancellationToken ct)
+    {
+        var path = CurrentImagePath();
+        var image = await OpenExecutableFileAsync(path, ct).ConfigureAwait(false);
+        try { await image.RequireCurrentAsync(ct).ConfigureAwait(false); return image; }
+        catch { image.Dispose(); throw; }
+    }
+
+    private static string CurrentImagePath()
+    {
+        if (!OperatingSystem.IsWindows()) throw Invalid("WORKER_EXE_WINDOWS_REQUIRED");
+        using var process = Process.GetCurrentProcess();
+        var buffer = new char[32768]; var size = buffer.Length;
+        if (!QueryFullProcessImageNameW(process.SafeHandle, 0, buffer, ref size) || size <= 0 || size > buffer.Length) throw Invalid("WORKER_EXE_OS_PATH_UNVERIFIED");
+        var osPath = CanonicalExecutablePath(new string(buffer, 0, size));
+        var reported = Environment.ProcessPath;
+        if (reported is null || !string.Equals(osPath, CanonicalExecutablePath(reported), StringComparison.OrdinalIgnoreCase))
+            throw Invalid("WORKER_EXE_PROCESS_PATH_MISMATCH");
+        // Entry assembly is used only to reject generic/renamed hosts, NEVER as
+        // the measured file. Unsupported single-file/unknown hosts fail closed.
+        var entry = Assembly.GetEntryAssembly();
+        if (entry is null || string.IsNullOrEmpty(entry.Location)
+            || !string.Equals(System.IO.Path.GetFileName(osPath), entry.GetName().Name + ".exe", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(System.IO.Path.GetDirectoryName(osPath), System.IO.Path.GetDirectoryName(entry.Location), StringComparison.OrdinalIgnoreCase))
+            throw Invalid("WORKER_EXE_HOST_UNVERIFIED");
+        // SDK apphosts copy the entry assembly's Win32 version resources. Treat
+        // missing/mismatched resources as unknown, and reject a renamed muxer.
+        // These mutable resources are a negative filter, NOT vendor attestation.
+        var original = FileVersionInfo.GetVersionInfo(osPath).OriginalFilename;
+        if (!string.Equals(original, entry.GetName().Name + ".dll", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(original, entry.GetName().Name + ".exe", StringComparison.OrdinalIgnoreCase))
+            throw Invalid("WORKER_EXE_APPHOST_BINDING_UNVERIFIED");
+        return osPath;
+    }
+    private static string CanonicalExecutablePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !System.IO.Path.IsPathFullyQualified(path)
+            || path.StartsWith(@"\\", StringComparison.Ordinal) || path.Contains('/', StringComparison.Ordinal)
+            || path.Length < 4 || path[1] != ':' || path[2] != '\\' || path[3..].Contains(':', StringComparison.Ordinal)
+            || !string.Equals(path, System.IO.Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(System.IO.Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(System.IO.Path.GetFileName(path), "dotnet.exe", StringComparison.OrdinalIgnoreCase))
+            throw Invalid("WORKER_EXE_PATH_UNVERIFIED");
+        var root = System.IO.Path.GetPathRoot(path)!;
+        var drive = new DriveInfo(root);
+        // This bounded implementation relies on local NTFS file identity/sharing.
+        if (drive.DriveType != DriveType.Fixed || drive.DriveFormat != "NTFS") throw Invalid("WORKER_EXE_FILESYSTEM_UNVERIFIED");
+        ProductionLocalEnvironment.AssertNoLinkEscape(root, path);
+        if (!ProductionLocalEnvironment.IsOrdinaryFile(path)) throw Invalid("WORKER_EXE_NOT_ORDINARY");
+        return path;
+    }
+    private static async Task<ProcessImageMeasurement> OpenExecutableFileAsync(string path, CancellationToken ct)
+    {
+        path = CanonicalExecutablePath(path);
+        var parents = new WorkerKeyNamespace(System.IO.Path.GetDirectoryName(path)!);
+        FileStream? file = null;
+        try
+        {
+            // Read-only sharing denies writers/deletion while the existing path
+            // hasher opens its own read handle. Parent pins deny namespace rename.
+            file = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            RequireFinalPath(file.SafeFileHandle, path);
+            var before = Stamp(file.SafeFileHandle);
+            using (var pe = new PEReader(file, PEStreamOptions.LeaveOpen))
+            {
+                var header = pe.PEHeaders;
+                var machine = RuntimeInformation.ProcessArchitecture switch
+                {
+                    Architecture.X64 => Machine.Amd64, Architecture.X86 => Machine.I386,
+                    Architecture.Arm64 => Machine.Arm64, _ => throw Invalid("WORKER_EXE_ARCH_UNSUPPORTED"),
+                };
+                if (pe.HasMetadata || header.PEHeader is null || header.CoffHeader.Machine != machine
+                    || (header.CoffHeader.Characteristics & Characteristics.ExecutableImage) == 0
+                    || (header.CoffHeader.Characteristics & Characteristics.Dll) != 0
+                    || header.PEHeader.AddressOfEntryPoint <= 0 || header.PEHeader.SizeOfImage <= 0)
+                    throw Invalid("WORKER_EXE_NOT_PE_EXECUTABLE");
+            }
+            if (string.Equals(FileVersionInfo.GetVersionInfo(path).OriginalFilename, "dotnet.exe", StringComparison.OrdinalIgnoreCase))
+                throw Invalid("WORKER_EXE_GENERIC_HOST_DENIED");
+            var digest = await ProductionLocalEnvironment.Sha256FileAsync(path, ct).ConfigureAwait(false);
+            if (before != Stamp(file.SafeFileHandle)) throw Invalid("WORKER_EXE_CHANGED");
+            RequireFinalPath(file.SafeFileHandle, path);
+            return new(path, digest, file, parents, before);
+        }
+        catch { file?.Dispose(); parents.Dispose(); throw; }
+    }
+
+    internal sealed class ProcessImageMeasurement(string path, string digest, FileStream file, WorkerKeyNamespace parents, ImageStamp stamp) : IDisposable
+    {
+        internal string Path { get; } = path;
+        internal string Sha256 { get; } = digest;
+        internal async Task RequireCurrentAsync(CancellationToken ct)
+        {
+            if (!string.Equals(CurrentImagePath(), Path, StringComparison.OrdinalIgnoreCase)) throw Invalid("WORKER_EXE_IDENTITY_CHANGED");
+            await VerifyFileAsync(ct).ConfigureAwait(false);
+            if (!string.Equals(CurrentImagePath(), Path, StringComparison.OrdinalIgnoreCase)) throw Invalid("WORKER_EXE_IDENTITY_CHANGED");
+        }
+        internal async Task VerifyFileAsync(CancellationToken ct)
+        {
+            CanonicalExecutablePath(Path);
+            RequireFinalPath(file.SafeFileHandle, Path);
+            if (stamp != Stamp(file.SafeFileHandle)
+                || await ProductionLocalEnvironment.Sha256FileAsync(Path, ct).ConfigureAwait(false) != Sha256
+                || stamp != Stamp(file.SafeFileHandle)) throw Invalid("WORKER_EXE_CHANGED");
+        }
+        public void Dispose() { file.Dispose(); parents.Dispose(); }
+    }
+    internal readonly record struct ImageStamp(uint Volume, uint IdHigh, uint IdLow, uint SizeHigh, uint SizeLow,
+        uint CreatedHigh, uint CreatedLow, uint WrittenHigh, uint WrittenLow);
+    private static ImageStamp Stamp(SafeFileHandle handle)
+    {
+        if (!GetFileInformationByHandle(handle, out var info) || info.Links != 1
+            || (info.Attributes & 0x410) != 0 || (info.SizeHigh == 0 && info.SizeLow == 0)
+            || (info.IdHigh == 0 && info.IdLow == 0)) throw Invalid("WORKER_EXE_FILE_ID_UNVERIFIED");
+        return new(info.Volume, info.IdHigh, info.IdLow, info.SizeHigh, info.SizeLow,
+            info.Created.High, info.Created.Low, info.Written.High, info.Written.Low);
+    }
+    private static void RequireFinalPath(SafeFileHandle handle, string expected)
+    {
+        var name = new char[32768];
+        var length = GetFinalPathNameByHandleW(handle, name, (uint)name.Length, 0);
+        if (length == 0 || length >= name.Length) throw Invalid("WORKER_EXE_FINAL_PATH_UNVERIFIED");
+        var actual = new string(name, 0, checked((int)length));
+        if (!actual.StartsWith(@"\\?\", StringComparison.Ordinal)
+            || !string.Equals(actual[4..], expected, StringComparison.OrdinalIgnoreCase)) throw Invalid("WORKER_EXE_ALIAS_DENIED");
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeTime { internal uint Low; internal uint High; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeFileInfo
+    {
+        internal uint Attributes; internal NativeTime Created; internal NativeTime Accessed; internal NativeTime Written;
+        internal uint Volume; internal uint SizeHigh; internal uint SizeLow; internal uint Links; internal uint IdHigh; internal uint IdLow;
+    }
+#pragma warning disable SYSLIB1054
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageNameW(SafeProcessHandle process, uint flags, [Out] char[] name, ref int size);
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(SafeFileHandle file, out NativeFileInfo info);
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandleW(SafeFileHandle file, [Out] char[] name, uint size, uint flags);
+#pragma warning restore SYSLIB1054
 
     private static void RequireCleanJournal(ProductionSubmissionJournal journal, ProductionPlanRecord plan)
     {
