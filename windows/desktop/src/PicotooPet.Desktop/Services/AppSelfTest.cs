@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Reflection;
+using System.Reflection.PortableExecutable;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
 using System.Windows;
@@ -11,6 +14,8 @@ using PicotooPet.Desktop.Core.DevBroker;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.State;
+using PicotooPet.Desktop.Services.ProductionReference;
+using Microsoft.Win32.SafeHandles;
 using PicotooPet.Desktop.Navigation;
 using PicotooPet.Desktop.Versioning;
 using PicotooPet.Desktop.ViewModels;
@@ -34,6 +39,9 @@ internal static class AppSelfTest
             ?? Path.Combine(
                 Path.GetTempPath(),
                 $"picotoo-desktop-self-test-{Guid.NewGuid():N}.json");
+        // Explicit read-only diagnostic only; do not enter normal self-test
+        // fixtures, Mock Broker, session, signing or Worker composition.
+        if (IsExeIdentityRequested(args)) return RunExeIdentity(outputPath);
         var report = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["schema_version"]          = "2.3.0",
@@ -466,6 +474,186 @@ internal static class AppSelfTest
         }
         return matches;
     }
+
+    private static bool IsExeIdentityRequested(string[] args) =>
+        args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)
+        && args.Contains("--self-test-exe-identity", StringComparer.Ordinal);
+
+    private static int RunExeIdentity(string outputPath)
+    {
+        var image = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["status"] = "UNVERIFIED", ["os_process_path"] = null, ["environment_process_path"] = null,
+            ["executable_sha256"] = null, ["entry_assembly_name"] = null,
+            ["entry_assembly_location_empty"] = null, ["managed_dll_sha256"] = null,
+            ["managed_dll_reason"] = "UNVERIFIED", ["frozen_worker_measurement"] = "UNVERIFIED",
+            ["frozen_worker_measurement_error"] = null, ["signed_witness"] = "NOT_INVOKED",
+            ["trusted_worker_attestation"] = "UNVERIFIED", ["error"] = null,
+        };
+        var report = new Dictionary<string, object?>(StringComparer.Ordinal)
+        { ["schema_version"] = "2.3.0", ["status"] = "fail", ["exe_identity"] = image };
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var token = deadline.Token;
+            var path = IdentityProcessPath();
+            var reported = Environment.ProcessPath;
+            image["os_process_path"] = path; image["environment_process_path"] = reported;
+            if (!string.Equals(path, reported, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("EXE_IDENTITY_PATH_MISMATCH");
+            ValidateIdentityPath(path);
+            // Keep the namespace and exact file pinned throughout both the
+            // diagnostic digest and frozen measurement. No write/delete sharing.
+            using var parents = new WorkerKeyNamespace(Path.GetDirectoryName(path)!);
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            RequireIdentityFinalPath(file.SafeFileHandle, path);
+            var before = IdentityStamp(file.SafeFileHandle);
+            var digest = HashIdentityFileAsync(path, token).GetAwaiter().GetResult();
+            var entry = Assembly.GetEntryAssembly() ?? throw new InvalidDataException("EXE_IDENTITY_ENTRY_UNVERIFIED");
+            var entryName = entry.GetName().Name;
+            if (string.IsNullOrWhiteSpace(entryName)) throw new InvalidDataException("EXE_IDENTITY_ENTRY_UNVERIFIED");
+            image["entry_assembly_name"] = entryName;
+            // Single-file Location is intentionally observed, never used as an
+            // EXE fallback and never passed into the frozen Worker measurement.
+#pragma warning disable IL3000
+            var location = entry.Location;
+#pragma warning restore IL3000
+            image["entry_assembly_location_empty"] = string.IsNullOrEmpty(location);
+            if (string.IsNullOrEmpty(location)) image["managed_dll_reason"] = "BUNDLED_ASSEMBLY_LOCATION_EMPTY";
+            else
+            {
+                if (!Path.IsPathFullyQualified(location) || !File.Exists(location)
+                    || !string.Equals(Path.GetExtension(location), ".dll", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("EXE_IDENTITY_MANAGED_FILE_UNVERIFIED");
+                ProductionLocalEnvironment.AssertNoLinkEscape(Path.GetPathRoot(location)!, location);
+                if (!ProductionLocalEnvironment.IsOrdinaryFile(location)) throw new InvalidDataException("EXE_IDENTITY_MANAGED_FILE_UNVERIFIED");
+                image["managed_dll_sha256"] = ProductionLocalEnvironment.Sha256FileAsync(location, token).GetAwaiter().GetResult();
+                image["managed_dll_reason"] = "MEASURED_SEPARATE_ENTRY_DLL";
+                if (Equals(image["managed_dll_sha256"], digest)) throw new InvalidDataException("EXE_IDENTITY_DLL_SUBSTITUTION");
+            }
+            try
+            {
+                // Measurement only: does not construct a client or access a key,
+                // challenge, witness, approval, Journal, nonce, Core or Comfy.
+                using var frozen = CoreWorkerChallengeClient.MeasureProcessImageAsync(token).GetAwaiter().GetResult();
+                frozen.RequireCurrentAsync(token).GetAwaiter().GetResult();
+                if (frozen.Sha256 != digest || !string.Equals(frozen.Path, path, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("EXE_IDENTITY_FROZEN_MISMATCH");
+                image["frozen_worker_measurement"] = "ACCEPTED";
+            }
+            catch (InvalidDataException e) when (e.Message == "WORKER_EXE_HOST_UNVERIFIED")
+            {
+                image["frozen_worker_measurement"] = "REJECTED";
+                image["frozen_worker_measurement_error"] = e.Message;
+            }
+            token.ThrowIfCancellationRequested();
+            if (!string.Equals(IdentityProcessPath(), path, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(Environment.ProcessPath, path, StringComparison.OrdinalIgnoreCase)
+                || before != IdentityStamp(file.SafeFileHandle)) throw new InvalidDataException("EXE_IDENTITY_CHANGED");
+            RequireIdentityFinalPath(file.SafeFileHandle, path);
+            image["executable_sha256"] = digest; image["status"] = "PASS"; report["status"] = "pass";
+        }
+        catch (Exception e)
+        {
+            // Fixed privacy-safe codes; never serialize exception/path/log bodies.
+            image["error"] = e is OperationCanceledException ? "EXE_IDENTITY_TIMEOUT" : "EXE_IDENTITY_UNVERIFIED";
+        }
+        try { WriteReport(outputPath, report); }
+        catch (Exception) { Console.Error.WriteLine("P0_DESKTOP_EXE_IDENTITY=UNVERIFIED; REPORT_WRITE_FAILED"); return 1; }
+        var passed = Equals(image["status"], "PASS");
+        Console.WriteLine(passed ? "P0_DESKTOP_EXE_IDENTITY=PASS; WITNESS=NOT_INVOKED" : "P0_DESKTOP_EXE_IDENTITY=UNVERIFIED");
+        return passed ? 0 : 1;
+    }
+
+    private static string IdentityProcessPath()
+    {
+        if (!OperatingSystem.IsWindows()) throw new InvalidDataException("EXE_IDENTITY_WINDOWS_REQUIRED");
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var buffer = new char[32768]; var size = buffer.Length;
+        if (!QueryFullProcessImageNameW(process.SafeHandle, 0, buffer, ref size) || size <= 0 || size > buffer.Length)
+            throw new InvalidDataException("EXE_IDENTITY_OS_PATH_UNVERIFIED");
+        return new string(buffer, 0, size);
+    }
+
+    private static void ValidateIdentityPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path) || path.Length < 4
+            || path[1] != ':' || path[2] != '\\' || path.Contains('/', StringComparison.Ordinal)
+            || path[3..].Contains(':', StringComparison.Ordinal) || path.StartsWith(@"\\", StringComparison.Ordinal)
+            || !string.Equals(path, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("EXE_IDENTITY_PATH_UNVERIFIED");
+        var root = Path.GetPathRoot(path)!; var drive = new DriveInfo(root);
+        if (drive.DriveType != DriveType.Fixed || drive.DriveFormat != "NTFS") throw new InvalidDataException("EXE_IDENTITY_FILESYSTEM_UNVERIFIED");
+        ProductionLocalEnvironment.AssertNoLinkEscape(root, path);
+        if (!ProductionLocalEnvironment.IsOrdinaryFile(path)) throw new InvalidDataException("EXE_IDENTITY_FILE_UNVERIFIED");
+    }
+
+    private static async Task<string> HashIdentityFileAsync(string path, CancellationToken token)
+    {
+        ValidateIdentityPath(path);
+        using var parents = new WorkerKeyNamespace(Path.GetDirectoryName(path)!);
+        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        RequireIdentityFinalPath(file.SafeFileHandle, path);
+        var before = IdentityStamp(file.SafeFileHandle);
+        using (var pe = new PEReader(file, PEStreamOptions.LeaveOpen))
+        {
+            var headers = pe.PEHeaders;
+            var machine = RuntimeInformation.ProcessArchitecture switch
+            { Architecture.X64 => Machine.Amd64, Architecture.Arm64 => Machine.Arm64, Architecture.X86 => Machine.I386, _ => (Machine)0 };
+            if (pe.HasMetadata || headers.PEHeader is null || machine == 0 || headers.CoffHeader.Machine != machine
+                || (headers.CoffHeader.Characteristics & Characteristics.ExecutableImage) == 0
+                || (headers.CoffHeader.Characteristics & Characteristics.Dll) != 0
+                || headers.PEHeader.AddressOfEntryPoint <= 0 || headers.PEHeader.SizeOfImage <= 0)
+                throw new InvalidDataException("EXE_IDENTITY_PE_UNVERIFIED");
+        }
+        file.Position = 0;
+        var digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, token).ConfigureAwait(false));
+        token.ThrowIfCancellationRequested();
+        RequireIdentityFinalPath(file.SafeFileHandle, path);
+        ValidateIdentityPath(path);
+        if (before != IdentityStamp(file.SafeFileHandle)) throw new InvalidDataException("EXE_IDENTITY_CHANGED");
+        return digest;
+    }
+
+    private static void RequireIdentityFinalPath(SafeFileHandle file, string path)
+    {
+        var buffer = new char[32768]; var size = GetFinalPathNameByHandleW(file, buffer, buffer.Length, 0);
+        if (size <= 0 || size >= buffer.Length
+            || !string.Equals(new string(buffer, 0, size), @"\\?\" + path, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("EXE_IDENTITY_FINAL_PATH_UNVERIFIED");
+    }
+    private static (uint Volume, uint High, uint Low, ulong Size, long Created, long Written) IdentityStamp(SafeFileHandle file)
+    {
+        if (!GetFileInformationByHandle(file, out var info) || (info.Attributes & 0x410) != 0
+            || info.Links != 1 || (info.IndexHigh == 0 && info.IndexLow == 0)
+            || info.SizeHigh != 0 || info.SizeLow == 0 || info.SizeLow > 1024 * 1024 * 1024)
+            throw new InvalidDataException("EXE_IDENTITY_FILE_ID_UNVERIFIED");
+        return (info.Volume, info.IndexHigh, info.IndexLow, info.SizeLow,
+            ((long)(uint)info.Created.dwHighDateTime << 32) | (uint)info.Created.dwLowDateTime,
+            ((long)(uint)info.Written.dwHighDateTime << 32) | (uint)info.Written.dwLowDateTime);
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IdentityFileInfo
+    {
+        public uint Attributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME Created, Accessed, Written;
+        public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+    }
+#pragma warning disable SYSLIB1054
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageNameW(SafeProcessHandle process, int flags, [Out] char[] path, ref int size);
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    private static extern int GetFinalPathNameByHandleW(SafeFileHandle file, [Out] char[] path, int size, int flags);
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(SafeFileHandle file, out IdentityFileInfo info);
+#pragma warning restore SYSLIB1054
 
     private static string? GetArgumentValue(string[] args, string name)
     {

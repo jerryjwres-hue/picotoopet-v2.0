@@ -52,8 +52,30 @@ raw exception/stdout bodies. A timeout terminates only the test-created process
 tree. Peer-process polling provides bounded observation, not comprehensive remote
 process attestation. No GPU absence claim is derived merely from that polling.
 
-## Native result
+## Native evidence
 
-Pending actual Windows execution. Until a matching-SHA native run completes,
+The focused workflow's per-run JSON artifacts and matching checkout SHA are the
+authority for each native result. Until a matching-SHA native run completes,
 published process identity remains **UNVERIFIED**. Historical #171/#172 source-only
-evidence and SmokeTests EXE results do not satisfy this test.
+evidence and SmokeTests EXE results do not satisfy this test. The source-only
+compiled-metadata preflight observed the missing opt-in method before this change;
+it is DIAGNOSTIC and does not replace Windows behavioral tests.
+
+## Discovered build blocker
+
+The Linux cross-publish diagnostic using the workflow's exact publish properties
+failed with IL3000 at the two existing `entry.Location` uses in frozen
+`CoreWorkerChallengeClient.CurrentImagePath`. The repository treats warnings as
+errors. This is compiler evidence, not a published Windows runtime rejection.
+The native workflow must confirm its own result and uploads `publish-result.json`
+even when the publish step fails; it cannot proceed to launch a nonexistent EXE.
+
+No suppression of those frozen Core errors, `WarningsNotAsErrors`, analyzer
+disable, guard removal or alternate unbundled publish is added to obtain a green
+result. The new diagnostic locally acknowledges IL3000 only at its own intentional
+observation of `entry.Location`; it cannot suppress errors in another file. That Core source
+is outside the owner's permission. If the native compiler reports the same
+failure, the published process path, running SHA256, entry `Location` and frozen
+runtime measurement remain **BLOCKED / UNVERIFIED**, with the new runtime test
+implementation itself not accepted as proven. Resolving the original IL3000
+diagnostics requires a separate, explicitly scoped decision.

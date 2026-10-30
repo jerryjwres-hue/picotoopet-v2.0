@@ -11,6 +11,8 @@ namespace PicotooPet.MediaWorker.SmokeTests;
 // Invoked only by the focused workflow's disposable test project. This is not a Worker.
 internal static class PublishedDesktopSelfTestIdentityTests
 {
+    private static readonly string[] ExplicitFlags = ["--self-test", "--self-test-exe-identity"];
+    private static readonly JsonSerializerOptions EvidenceJson = new() { WriteIndented = true };
     internal static async Task RunAsync(string[] args)
     {
         var selfTest = Assembly.Load("Picotoo Pet AI").GetType("PicotooPet.Desktop.Services.AppSelfTest", true)!;
@@ -19,7 +21,7 @@ internal static class PublishedDesktopSelfTestIdentityTests
         foreach (var input in new[] { Array.Empty<string>(), new[] { "--self-test" },
             new[] { "--self-test-exe-identity" }, new[] { "--self-test", "--self-test-exe-identity-unknown" } })
             Require(!(bool)flag!.Invoke(null, [input])!, "unknown/absent flags cannot enable diagnostic");
-        Require((bool)flag!.Invoke(null, [new[] { "--self-test", "--self-test-exe-identity" }])!, "both explicit flags enable diagnostic");
+        Require((bool)flag!.Invoke(null, [ExplicitFlags])!, "both explicit flags enable diagnostic");
         Console.WriteLine("P0_IDENTITY_FLAG_CONTRACT=PASS");
         if (args.Length == 1 && args[0] == "--flags-only") return;
         Require(OperatingSystem.IsWindows() && Environment.GetEnvironmentVariable("CI") == "true", "native disposable Windows CI required");
@@ -38,10 +40,25 @@ internal static class PublishedDesktopSelfTestIdentityTests
             {
                 var denied = false;
                 try { await (Task<string>)hash!.Invoke(null, [path, CancellationToken.None])!; }
-                catch (TargetInvocationException e) when (e.InnerException is IOException or UnauthorizedAccessException or ArgumentException) { denied = true; }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { denied = true; }
+                catch (TargetInvocationException e) when (e.InnerException is IOException or InvalidDataException or BadImageFormatException or UnauthorizedAccessException or ArgumentException) { denied = true; }
+                catch (Exception e) when (e is IOException or InvalidDataException or BadImageFormatException or UnauthorizedAccessException or ArgumentException) { denied = true; }
                 Require(denied, "missing/invalid/managed/reparse image must be rejected");
             }
+            var valid = Path.Combine(root, "native.exe"); File.Copy(Environment.ProcessPath!, valid);
+            var baseline = await (Task<string>)hash!.Invoke(null, [valid, CancellationToken.None])!;
+            Require(baseline == Digest(valid), "pinned candidate reads exact native PE bytes");
+            using (var writer = new FileStream(valid, FileMode.Open, FileAccess.Write, FileShare.Read))
+            {
+                var denied = false;
+                try { await (Task<string>)hash.Invoke(null, [valid, CancellationToken.None])!; }
+                catch (IOException) { denied = true; }
+                Require(denied, "existing writer prevents a stable measurement");
+            }
+            using var canceled = new CancellationTokenSource(); canceled.Cancel();
+            var refusedCancellation = false;
+            try { await (Task<string>)hash.Invoke(null, [valid, canceled.Token])!; }
+            catch (OperationCanceledException) { refusedCancellation = true; }
+            Require(refusedCancellation, "canceled read cannot produce a digest");
         }
         finally { Directory.Delete(root, true); }
         Console.WriteLine("P0_IDENTITY_INVALID_FILE_NEGATIVES=PASS");
@@ -51,7 +68,7 @@ internal static class PublishedDesktopSelfTestIdentityTests
         Directory.CreateDirectory(reports);
         var beforeHash = Digest(exe); var dllHash = Digest(dll);
         Require(beforeHash != dllHash, "published native EXE differs from managed DLL");
-        Require(Process.GetProcessesByName("Picotoo Pet AI").Length == 0, "runner has no existing Desktop/Worker");
+        RequireNoDesktop();
         var identityReport = Path.Combine(reports, "published-identity.json");
         var osPath = await LaunchAsync(exe, identityReport, "--self-test-exe-identity");
         using (var document = JsonDocument.Parse(File.ReadAllText(identityReport)))
@@ -85,7 +102,7 @@ internal static class PublishedDesktopSelfTestIdentityTests
             os_process_path = osPath, executable_sha256 = beforeHash, managed_build_dll_sha256 = dllHash,
             published_process_measurement = "PASS", frozen_single_file_worker_compatibility = "REJECTED_WORKER_EXE_HOST_UNVERIFIED",
             witness = "NOT_INVOKED", trusted_worker_attestation = "UNVERIFIED",
-        }, new JsonSerializerOptions { WriteIndented = true }));
+        }, EvidenceJson));
         Console.WriteLine("P0_PUBLISHED_DESKTOP_PROCESS_MEASUREMENT=PASS; SINGLE_FILE_WORKER_COMPATIBILITY=REJECTED; WITNESS=NOT_INVOKED");
     }
 
@@ -106,21 +123,38 @@ internal static class PublishedDesktopSelfTestIdentityTests
             var osPath = new string(path, 0, length);
             while (!process.HasExited)
             {
-                var peers = Process.GetProcessesByName("Picotoo Pet AI");
-                try { Require(peers.All(p => p.Id == process.Id), "unexpected Desktop/Worker process"); }
-                finally { foreach (var peer in peers) peer.Dispose(); }
+                // Legacy self-test legitimately invokes a fixed Mock Broker child.
+                // The identity-only route must never create any same-EXE child.
+                if (extra == "--self-test-exe-identity")
+                {
+                    var peers = Process.GetProcessesByName("Picotoo Pet AI");
+                    try { Require(peers.All(p => p.Id == process.Id), "unexpected Desktop/Worker process"); }
+                    finally { foreach (var peer in peers) peer.Dispose(); }
+                }
                 await Task.Delay(20, deadline.Token);
             }
             await process.WaitForExitAsync(deadline.Token);
             await Task.WhenAll(stdout, stderr).WaitAsync(deadline.Token);
             Require(process.ExitCode == 0 && File.Exists(report), "published self-test failed; inspect scoped JSON (raw stdout withheld)");
-            Require(Process.GetProcessesByName("Picotoo Pet AI").Length == 0, "no surviving Desktop/Worker");
+            RequireNoDesktop();
             return osPath;
         }
         finally { if (!process.HasExited) { process.Kill(true); await process.WaitForExitAsync(); } }
     }
     private static string Digest(string path) { using var file = File.OpenRead(path); return Convert.ToHexStringLower(SHA256.HashData(file)); }
-    private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+    private static void RequireNoDesktop()
+    {
+        var peers = Process.GetProcessesByName("Picotoo Pet AI");
+        try { Require(peers.Length == 0, "no existing or surviving Desktop/Worker"); }
+        finally { foreach (var peer in peers) peer.Dispose(); }
+    }
+    private static void Require(bool condition, string message)
+    {
+        if (condition) return;
+        // Only caller-owned fixed assertion text, never a raw exception/stdout body.
+        Console.WriteLine("::error::" + message);
+        throw new InvalidOperationException(message);
+    }
 #pragma warning disable SYSLIB1054
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
