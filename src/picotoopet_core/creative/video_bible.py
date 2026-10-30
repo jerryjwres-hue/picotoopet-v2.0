@@ -669,6 +669,22 @@ CORE_ENFORCEMENT_REQUIRED = (
 )
 
 
+# Sidecar next to keyframe_kit.v1 so the package states plainly what does not exist yet.
+KEYFRAME_REVIEW_NOTICE_KEY = "keyframe_review_notice.v1"
+KEYFRAME_REVIEW_NOTICE: dict[str, Any] = {
+    "schema_version": KEYFRAME_REVIEW_NOTICE_KEY,
+    "images_exist": False,
+    "approval_status": "PENDING_HUMAN_REVIEW",
+    "render_authorized": False,
+    "requirement": (
+        "No keyframe image has been generated and none is approved. Before any video render, "
+        "three real stills of the same cat, scarf, product and scene must exist, be reviewed by "
+        "a human, and be registered by Core as trusted references. This package grants none "
+        "of that."
+    ),
+}
+
+
 class ApprovalStatus(StrEnum):
     PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
 

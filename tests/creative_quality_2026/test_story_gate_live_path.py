@@ -6,7 +6,6 @@ JSON is scripted. Nothing here looks at a picture or measures visual quality.
 
 from __future__ import annotations
 
-from copy import deepcopy
 from uuid import uuid4
 
 import pytest
@@ -83,14 +82,15 @@ def test_story_gate_is_selected_only_by_an_explicit_positive_phrase(text, expect
     assert parse_goal_directives(text).story_gate is expected
 
 
-def test_gate_rules_reach_the_model_only_for_a_gated_goal() -> None:
+def test_explicit_phrase_keeps_its_own_key_and_the_default_uses_a_separate_one() -> None:
     brief = CreativeBriefResult.model_validate(fx.brief())
     script = CreativeScriptResult.model_validate(fx.script())
-    plain = director_constraints(brief, script, parse_goal_directives(BASE_GOAL))
+    default = director_constraints(brief, script, parse_goal_directives(BASE_GOAL))
     gated = director_constraints(brief, script, parse_goal_directives(GATED_GOAL))
-    assert "story_gate" not in plain
-    assert gated["story_gate"] == STORY_GATE_RULES
-    assert {k: v for k, v in gated.items() if k != "story_gate"} == plain
+    none = director_constraints(brief, script, parse_goal_directives("a short video"))
+    assert default["story_quality_rules"] == STORY_GATE_RULES and "story_gate" not in default
+    assert gated["story_gate"] == STORY_GATE_RULES and "story_quality_rules" not in gated
+    assert "story_gate" not in none and "story_quality_rules" not in none
 
 
 # ── Real coordinator path ──────────────────────────────────────────────────────────────
@@ -149,17 +149,17 @@ def test_story_that_stays_malformed_is_rejected_with_no_package_and_no_kit(
     assert runtime.service.get_package(job.creative_job_id) is None
 
 
-def test_the_same_story_without_the_phrase_keeps_the_legacy_gate_and_gets_no_kit(
+def test_a_non_three_shot_bible_without_directive_keeps_the_legacy_gate_and_gets_no_kit(
     runtime: Runtime,
 ) -> None:
-    job, task = _job(runtime, BASE_GOAL, key="legacy")
-    legacy_ok = deepcopy(fx.bible())
-    legacy_ok["scenes"].append({**legacy_ok["scenes"][0], "scene_id": "kitchen"})
-    legacy_ok["shots"][2]["scene_id"] = "kitchen"  # fails the story gate, passes the old gate
-    double = OllamaDouble([*_outputs(runtime, job.creative_job_id), legacy_ok])
+    job, task = _job(runtime, "Create a short product education video.", key="legacy")
+    ref = runtime.source_ref_for(job.creative_job_id)
+    parts = stage_outputs(ref)  # 3 beats, 4-shot porch/park Bible that is not a causal story
+    double = OllamaDouble([parts["idea"], parts["brief"], parts["script"], parts["bible"]])
     summary = runtime.coordinator(double.adapter).handler(task)
     assert summary.summary["status"] == "creative_ready" and len(double.requests) == 4
-    assert "story_gate" not in double.data(3)["director_constraints"]
+    constraints = double.data(3)["director_constraints"]
+    assert "story_gate" not in constraints and "story_quality_rules" not in constraints
     package = runtime.service.get_package(job.creative_job_id)
     assert package is not None and "keyframe_kit.v1" not in package.manifest["stage_results"]
 

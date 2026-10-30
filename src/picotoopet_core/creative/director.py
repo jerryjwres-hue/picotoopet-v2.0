@@ -72,6 +72,26 @@ STORY_GATE_RULES = [
 ]
 
 
+STORY_GATE_SHOT_COUNT = 3
+
+
+def story_gate_applies(directives: GoalDirectives | None, bible_shot_count: int | None) -> bool:
+    """Whether the quality-first story gate governs a v2 Video Bible.
+
+    Automatic for three-shot work, from typed facts only: an exact shot-count directive of 3, or,
+    with no shot-count directive, a Bible that has exactly three shots. An explicit phrase still
+    selects it for any size. Only the v2 profile has a Bible stage, so v1 never reaches this.
+    """
+
+    if directives is None:
+        directives = GoalDirectives()
+    if directives.story_gate:
+        return True
+    if directives.shot_count is not None:
+        return directives.shot_count == STORY_GATE_SHOT_COUNT
+    return bible_shot_count == STORY_GATE_SHOT_COUNT
+
+
 @dataclass(frozen=True)
 class GoalDirectives:
     """Hard, explicit asks found in the Goal objective. They can only tighten the gates."""
@@ -327,4 +347,8 @@ def director_constraints(
         constraints["required_shot_seconds"] = directives.shot_seconds
     if directives is not None and directives.story_gate:
         constraints["story_gate"] = STORY_GATE_RULES
+    elif directives is not None and story_gate_applies(directives, None):
+        # Model-facing only: excluded from the stage input digest (see execution._digest_view)
+        # so a Bible stage persisted before this default keeps its immutable input.
+        constraints["story_quality_rules"] = STORY_GATE_RULES
     return constraints
