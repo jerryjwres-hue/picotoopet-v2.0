@@ -32,8 +32,12 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <!-- Receipt authority : desktop assembly contains the exact frozen audit-pinned hashes, not a replaceable sidecar. -->
-    <EmbeddedResource Update="Services\QualityObservation\ObserverDeployment.resx">
+    <!-- Fail-closed default : ordinary builds retain the original no-deployment negative tests. -->
+    <EmbeddedResource Remove="Services\QualityObservation\ObserverDeployment.resx"
+                      Condition="'$(P0Q2_OBSERVER_TOOL_ROOT)' == ''" />
+    <!-- Receipt authority : only explicit pinned internal packaging embeds the assembly-bound hashes. -->
+    <EmbeddedResource Update="Services\QualityObservation\ObserverDeployment.resx"
+                      Condition="'$(P0Q2_OBSERVER_TOOL_ROOT)' != ''">
       <LogicalName>PicotooPet.Desktop.Services.QualityObservation.ObserverDeployment.resources</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
