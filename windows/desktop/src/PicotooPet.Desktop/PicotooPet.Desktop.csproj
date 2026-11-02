@@ -31,4 +31,18 @@
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <!-- Receipt authority : desktop assembly contains the exact frozen audit-pinned hashes, not a replaceable sidecar. -->
+    <EmbeddedResource Update="Services\QualityObservation\ObserverDeployment.resx">
+      <LogicalName>PicotooPet.Desktop.Services.QualityObservation.ObserverDeployment.resources</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup Condition="'$(P0Q2_OBSERVER_TOOL_ROOT)' != ''">
+    <!-- Internal staging : CI supplies byte-checked exact three EXEs; ordinary app builds ship none. -->
+    <Content Include="$(P0Q2_OBSERVER_TOOL_ROOT)\PicotooPet.VisualReview.exe;$(P0Q2_OBSERVER_TOOL_ROOT)\ffmpeg.exe;$(P0Q2_OBSERVER_TOOL_ROOT)\ffprobe.exe">
+      <Link>tools\p0_visual_review\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
