@@ -1,0 +1,181 @@
+name: P0-Q2 Observer Supply Chain Audit (NO DEPLOYMENT)
+on:
+  pull_request:
+    branches:
+      - integration/p0q2-quality-staged-20261029
+    paths:
+      - ".github/workflows/p0q2-observer-supply-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Frozen BtbN LGPL static + local observer build / review evidence
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      FROZEN_SOURCE_SHA: "23d067cf84dba4dda9b130272b2c098f2b0e6d24"
+      BUNDLE_TAG: "autobuild-2026-11-01-12-49"
+      BUNDLE_NAME: "ffmpeg-n8.1.3-29-gad3b795b72-win64-lgpl-8.1.zip"
+      BUNDLE_BYTES: "167778412"
+      BUNDLE_SHA256: "a152a35aacfe7972dce74f1e1d2a1cfaabc8daa7bf8632e9473f70ad18c6c5d4"
+    steps:
+      - name: Checkout exactly the PR source (no credentials)
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Freeze scope before any network download
+        shell: pwsh
+        run: |
+          # Product and quality-runtime source must remain byte-for-byte frozen.
+          if ('${{ github.event.pull_request.base.sha }}' -ne $env:FROZEN_SOURCE_SHA) {
+            throw 'AUDIT_BASE_MOVED_STOP'
+          }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha }}') {
+            throw 'AUDIT_CHECKOUT_MISMATCH'
+          }
+          $changed = @(git diff --name-only $env:FROZEN_SOURCE_SHA HEAD)
+          if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 1 -or
+              $changed[0] -ne '.github/workflows/p0q2-observer-supply-audit.yml') {
+            throw 'AUDIT_SCOPE_EXCEEDED_STOP'
+          }
+          Write-Host 'AUDIT_FROZEN_PRODUCT_SOURCE=PASS; PRODUCTION_CHANGES=0; GPU=0'
+
+      - name: Install repository-locked .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Download fixed upstream LGPL static archive and verify publisher digest
+        shell: pwsh
+        run: |
+          # Never use /latest, PATH-resolved tools, mutable package managers or unpinned input.
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'p0q2-observer-supply'
+          $candidate = Join-Path $root 'candidate'
+          $expanded = Join-Path $root 'upstream-expanded'
+          New-Item -ItemType Directory -Path $candidate,$expanded -Force | Out-Null
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/$env:BUNDLE_TAG/$env:BUNDLE_NAME"
+          $archive = Join-Path $root $env:BUNDLE_NAME
+          & curl.exe --fail --location --retry 3 --retry-delay 3 --silent --show-error --output $archive $url
+          if ($LASTEXITCODE -ne 0) { throw 'UPSTREAM_DOWNLOAD_STOP' }
+          if ((Get-Item -LiteralPath $archive).Length -ne [long]$env:BUNDLE_BYTES) {
+            throw 'UPSTREAM_ARCHIVE_SIZE_MISMATCH_STOP'
+          }
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:BUNDLE_SHA256) { throw 'UPSTREAM_ARCHIVE_DIGEST_MISMATCH_STOP' }
+          Write-Host "UPSTREAM_ARCHIVE_PIN=PASS; SHA256=$actual"
+          Expand-Archive -LiteralPath $archive -DestinationPath $expanded
+          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
+            $found = @(Get-ChildItem -LiteralPath $expanded -Recurse -File -Filter $name)
+            if ($found.Count -ne 1 -or $found[0].Length -le 0) {
+              throw "UPSTREAM_EXACT_EXECUTABLE_MISSING_$name"
+            }
+            Copy-Item -LiteralPath $found[0].FullName -Destination (Join-Path $candidate $name)
+          }
+          $licenses = @(Get-ChildItem -LiteralPath $expanded -Recurse -File |
+            Where-Object { $_.Name -match '^(license|copying|readme|buildconf|version)' })
+          $licenses | Select-Object -ExpandProperty FullName |
+            ForEach-Object { $_.Substring($expanded.Length + 1).Replace('\','/') } |
+            Set-Content -LiteralPath (Join-Path $root 'upstream-license-inventory.txt') -Encoding utf8
+          if ($licenses.Count -eq 0) { throw 'UPSTREAM_LICENSE_NOTICE_MISSING_STOP' }
+
+          # Version strings are observational; do not infer legal redistribution approval.
+          $ffmpeg = Join-Path $candidate 'ffmpeg.exe'
+          $ffprobe = Join-Path $candidate 'ffprobe.exe'
+          $ffmpegVersion = & $ffmpeg -hide_banner -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFMPEG_VERSION_FAILED' }
+          $ffprobeVersion = & $ffprobe -hide_banner -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFPROBE_VERSION_FAILED' }
+          $version = ($ffmpegVersion | Out-String)
+          if ($version -match '(--enable-gpl|--enable-nonfree)') {
+            throw 'UPSTREAM_LICENSE_CONFIGURATION_STOP'
+          }
+          $ffmpegVersion | Set-Content (Join-Path $root 'ffmpeg-version.txt') -Encoding utf8
+          $ffprobeVersion | Set-Content (Join-Path $root 'ffprobe-version.txt') -Encoding utf8
+          Write-Host 'LGPL_STATIC_CANDIDATE_VERSION_READ=PASS; NOT_LEGAL_APPROVAL'
+
+      - name: Compile frozen VisualReview CLI and create immutable three-tool inventory
+        shell: pwsh
+        run: |
+          # Source digest binds precisely the existing observer source inputs.
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'p0q2-observer-supply'
+          $candidate = Join-Path $root 'candidate'
+          $publish = Join-Path $root 'published'
+          $sources = @(
+            'tools/p0_visual_review/PicotooPet.VisualReview.csproj',
+            'tools/p0_visual_review/Program.cs'
+          )
+          $lines = @($sources | ForEach-Object {
+            $digest = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+            $_ + [char]9 + $digest
+          })
+          $sourceContent = ($lines -join [char]10) + [char]10
+          $sourceHash = [Convert]::ToHexString(
+            [Security.Cryptography.SHA256]::HashData(
+              [Text.Encoding]::UTF8.GetBytes($sourceContent))).ToLowerInvariant()
+          $lines | Set-Content (Join-Path $root 'observer-source-inventory.txt') -Encoding utf8
+          & dotnet publish tools/p0_visual_review/PicotooPet.VisualReview.csproj --configuration Release --runtime win-x64 --self-contained true --output $publish --nologo -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) { throw 'OBSERVER_NATIVE_PUBLISH_FAILED' }
+          $exe = Join-Path $publish 'PicotooPet.VisualReview.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw 'OBSERVER_SINGLE_FILE_MISSING'
+          }
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $candidate 'PicotooPet.VisualReview.exe')
+          $fileRecords = @('PicotooPet.VisualReview.exe','ffmpeg.exe','ffprobe.exe') | ForEach-Object {
+            $item = Get-Item -LiteralPath (Join-Path $candidate $_)
+            [ordered]@{
+              name = $_
+              sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              bytes = $item.Length
+            }
+          }
+          $record = [ordered]@{
+            schema_version = 'p0q2.supply.audit.v1'
+            approval_state = 'UNAPPROVED_CANDIDATE'
+            source_head = $env:FROZEN_SOURCE_SHA
+            build_head = '${{ github.event.pull_request.head.sha }}'
+            windows_run_id = $env:GITHUB_RUN_ID
+            upstream_publisher = 'BtbN/FFmpeg-Builds'
+            upstream_release_tag = $env:BUNDLE_TAG
+            upstream_asset = $env:BUNDLE_NAME
+            upstream_archive_sha256 = $env:BUNDLE_SHA256
+            upstream_archive_bytes = [long]$env:BUNDLE_BYTES
+            declared_build_flavor = 'win64-lgpl-static'
+            observer_source_sha256 = $sourceHash
+            observer_publish = 'win-x64 self-contained single-file; net10.0; untrimmed'
+            files = @($fileRecords)
+            licensing_decision = 'PENDING_INDEPENDENT_REVIEW'
+            bundled_into_desktop = $false
+            user_install_allowed = $false
+            real_visual_accuracy = 'UNVERIFIED'
+            gpu_posts = 0
+          }
+          $record | ConvertTo-Json -Depth 9 |
+            Set-Content -LiteralPath (Join-Path $root 'supply-audit.json') -Encoding utf8
+          if (@($fileRecords).Count -ne 3 -or @($fileRecords | Where-Object { $_.bytes -le 0 }).Count) {
+            throw 'THREE_TOOL_INVENTORY_INCOMPLETE'
+          }
+          Write-Host "SUPPLY_AUDIT_HASHES=PASS; OBSERVER_SOURCE_SHA256=$sourceHash; APPROVAL=REQUIRED"
+
+      - name: Upload restricted, unapproved supply evidence and candidate bytes
+        uses: actions/upload-artifact@v7
+        with:
+          name: P0Q2-UNAPPROVED-Observer-Supply-Candidate-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/p0q2-observer-supply/candidate/*.exe
+            ${{ runner.temp }}/p0q2-observer-supply/supply-audit.json
+            ${{ runner.temp }}/p0q2-observer-supply/observer-source-inventory.txt
+            ${{ runner.temp }}/p0q2-observer-supply/upstream-license-inventory.txt
+            ${{ runner.temp }}/p0q2-observer-supply/ffmpeg-version.txt
+            ${{ runner.temp }}/p0q2-observer-supply/ffprobe-version.txt
+          if-no-files-found: error
+          retention-days: 7
