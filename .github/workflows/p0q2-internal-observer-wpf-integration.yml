@@ -163,10 +163,15 @@ jobs:
         run: |
           # This is pure managed resource introspection, not a GUI or Worker launch.
           $ErrorActionPreference = 'Stop'
-          $base = 'windows/desktop/src/PicotooPet.Desktop/obj/Release'
+          $base = 'windows/desktop/src/PicotooPet.Desktop/bin/Release'
           $assemblies = @(Get-ChildItem -LiteralPath $base -Recurse -File -Filter 'Picotoo Pet AI.dll' |
             Where-Object { $_.FullName -match '[\\/]win-x64[\\/]' -and $_.FullName -notmatch '[\\/]ref(int)?[\\/]' })
-          if ($assemblies.Count -ne 1) { throw 'INTERNAL_MANAGED_ASSEMBLY_NOT_UNIQUE' }
+          if ($assemblies.Count -ne 1) {
+            # Fail with a bounded, read-only inventory rather than guessing a stale assembly.
+            Get-ChildItem -LiteralPath $base -Recurse -File -Filter 'Picotoo Pet AI.dll' |
+              Select-Object -ExpandProperty FullName | ForEach-Object { Write-Host "ASSEMBLY_CANDIDATE=$_" }
+            throw 'INTERNAL_MANAGED_ASSEMBLY_NOT_UNIQUE'
+          }
           $tmp = Join-Path $env:RUNNER_TEMP 'p0q2-embedded-receipt-check'
           New-Item -ItemType Directory -Force -Path $tmp | Out-Null
           @'
