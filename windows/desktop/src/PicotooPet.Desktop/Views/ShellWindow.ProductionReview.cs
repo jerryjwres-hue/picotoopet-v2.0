@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Interop;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Views;
@@ -28,14 +29,21 @@ public partial class ShellWindow
             var window = new Window
             {
                 Title                 = "PicotooPet · 本地生产与只读视觉审片",
-                Owner                 = this,
                 Width                 = 1120,
                 Height                = 800,
                 MinWidth              = 940,
                 MinHeight             = 650,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 Content               = panel,
             };
+
+            // Owner 安全    : WPF 对从未显示（无 HWND）的窗口设置 Owner 会抛 InvalidOperationException，
+            //                 旧实现随后弹出模态 MessageBox，造成 STA/Dispatcher 死锁。仅在 Shell 已有 HWND 时绑定 Owner。
+            if (new WindowInteropHelper(this).Handle != IntPtr.Zero)
+            {
+                window.Owner = this;
+                window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            }
 
             var ownedModel = model;
             window.Closed += (_, _) =>

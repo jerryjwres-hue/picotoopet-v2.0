@@ -66,6 +66,9 @@ internal static class ProductionShellEntryWpfSmokeTests
             shell.Measure(new Size(1280, 840));
             shell.Arrange(new Rect(0, 0, 1280, 840));
             shell.UpdateLayout();
+            // 真实显示      : Owner 绑定要求 Shell 已有 HWND；不激活以避免抢焦点。
+            shell.ShowActivated = false;
+            shell.Show();
             shell.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
 
             // 可达性入口    : 必须是实际 ShellWindow 的具名按钮，非孤立面板测试替身。
