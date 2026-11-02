@@ -41,23 +41,11 @@
       <LogicalName>PicotooPet.Desktop.Services.QualityObservation.ObserverDeployment.resources</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
-  <ItemGroup Condition="'$(P0Q2_OBSERVER_TOOL_ROOT)' != ''">
-    <!-- Internal staging : CI supplies byte-checked exact three EXEs; ordinary app builds ship none. -->
-    <!-- Explicit per-file Publish link prevents ambiguous shared item-metadata expansion. -->
-    <Content Include="$(P0Q2_OBSERVER_TOOL_ROOT)\PicotooPet.VisualReview.exe">
-      <Link>tools\p0_visual_review\PicotooPet.VisualReview.exe</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    </Content>
-    <Content Include="$(P0Q2_OBSERVER_TOOL_ROOT)\ffmpeg.exe">
-      <Link>tools\p0_visual_review\ffmpeg.exe</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    </Content>
-    <Content Include="$(P0Q2_OBSERVER_TOOL_ROOT)\ffprobe.exe">
-      <Link>tools\p0_visual_review\ffprobe.exe</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    </Content>
-  </ItemGroup>
+  <Target Name="P0Q2CopyAuditedObserverAfterPublish" AfterTargets="Publish"
+          Condition="'$(P0Q2_OBSERVER_TOOL_ROOT)' != ''">
+    <!-- Isolated Preview : Source files were independently hash-pinned before MSBuild runs. -->
+    <!-- Publish layout  : Copy all three exact bytes only after the WPF single-file bundle exists. -->
+    <Copy SourceFiles="$(P0Q2_OBSERVER_TOOL_ROOT)\PicotooPet.VisualReview.exe;$(P0Q2_OBSERVER_TOOL_ROOT)\ffmpeg.exe;$(P0Q2_OBSERVER_TOOL_ROOT)\ffprobe.exe"
+          DestinationFiles="$(PublishDir)tools\p0_visual_review\PicotooPet.VisualReview.exe;$(PublishDir)tools\p0_visual_review\ffmpeg.exe;$(PublishDir)tools\p0_visual_review\ffprobe.exe" />
+  </Target>
 </Project>
