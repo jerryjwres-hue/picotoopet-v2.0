@@ -210,8 +210,43 @@ jobs:
               root.GetProperty("vlm_model").ValueKind != JsonValueKind.Null)
               throw new InvalidOperationException("EMBEDDED_OBSERVER_RECEIPT_INVALID");
           Console.WriteLine("COMPILED_WPF_EMBEDDED_RECEIPT=PASS; AUTHORITY=INTERNAL_ONLY");
+          // Exact archive input : disposable test directory, no app or Worker is ever started.
+          var testRoot = Path.Combine(AppContext.BaseDirectory, "tools", "p0_visual_review");
+          Directory.CreateDirectory(testRoot);
+          var expectedTools = new[] { "PicotooPet.VisualReview.exe", "ffmpeg.exe", "ffprobe.exe" };
+          foreach (var name in expectedTools)
+              File.Copy(Path.Combine(args[2], name), Path.Combine(testRoot, name), true);
+          // Runtime authority   : call the production OpenDeployment method, not a test replica.
+          var runtimeType = assembly.GetType("PicotooPet.Desktop.Services.QualityObservation.DeployedVisualObservationRuntime", true)!;
+          var runtime = Activator.CreateInstance(runtimeType, nonPublic: true)!;
+          var open = runtimeType.GetMethod("OpenDeployment", BindingFlags.Public | BindingFlags.Instance)
+                     ?? throw new InvalidOperationException("REAL_OPEN_DEPLOYMENT_METHOD_MISSING");
+          var deployment = open.Invoke(runtime, null) as IDisposable
+                           ?? throw new InvalidOperationException("REAL_OPEN_DEPLOYMENT_RETURNED_NULL");
+          deployment.Dispose();
+          Console.WriteLine("REAL_WPF_OPEN_DEPLOYMENT=PASS; THREE_PINNED_TOOLS=PASS; GUI=0; GPU=0");
+          // Tamper negative      : same byte length but different contents must be rejected.
+          var tamper = Path.Combine(testRoot, "ffprobe.exe");
+          using (var stream = File.Open(tamper, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+          {
+              var old = stream.ReadByte();
+              if (old < 0) throw new InvalidOperationException("TAMPER_TARGET_EMPTY");
+              stream.Position = 0;
+              stream.WriteByte((byte)(old ^ 1));
+          }
+          var rejected = false;
+          try
+          {
+              using var unexpected = open.Invoke(runtime, null) as IDisposable;
+          }
+          catch (TargetInvocationException ex) when (ex.InnerException?.Message == "OBSERVER_NOT_DEPLOYED")
+          {
+              rejected = true;
+          }
+          if (!rejected) throw new InvalidOperationException("TAMPER_WAS_NOT_REJECTED");
+          Console.WriteLine("REAL_WPF_OPEN_DEPLOYMENT_TAMPER=UNVERIFIED; POST=0; GPU=0");
           '@ | Set-Content -LiteralPath (Join-Path $tmp 'Program.cs') -Encoding utf8
-          & dotnet run --project (Join-Path $tmp 'ReceiptCheck.csproj') -c Release -- $assemblies[0].FullName $env:P0_OBSERVER_SOURCE
+          & dotnet run --project (Join-Path $tmp 'ReceiptCheck.csproj') -c Release -- $assemblies[0].FullName $env:P0_OBSERVER_SOURCE (Join-Path $env:RUNNER_TEMP 'p0q2-audited-trio/candidate')
           if ($LASTEXITCODE -ne 0) { throw 'COMPILED_RECEIPT_READBACK_FAILED' }
 
       - name: Upload audit-only provenance, no EXE or installer
