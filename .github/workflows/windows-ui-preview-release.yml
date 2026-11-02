@@ -53,6 +53,7 @@ jobs:
         with:
           # Use the exact source HEAD, not the temporary pull-request merge commit.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: P0-Q2 exact-source safety and isolated workflow ownership
         shell: pwsh
