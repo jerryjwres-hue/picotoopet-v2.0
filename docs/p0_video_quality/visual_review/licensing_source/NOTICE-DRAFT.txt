@@ -1,0 +1,49 @@
+DRAFT — INCOMPLETE / NOT A SHIPPABLE THIRD-PARTY NOTICE
+Issue #191; locked BtbN win64-lgpl-8.1 build, source provenance review only.
+
+The separately invoked FFmpeg and FFprobe tools contain code from the FFmpeg
+project (https://ffmpeg.org/), licensed for this selected build under the GNU
+Lesser General Public License version 3, incorporating the GNU General Public
+License version 3. Copyright belongs to the respective FFmpeg contributors as
+recorded in the corresponding source files. See licenses/FFmpeg--COPYING.LGPLv3,
+licenses/FFmpeg--COPYING.GPLv3 and licenses/FFmpeg--LICENSE.md.
+
+FFmpeg source revision: ad3b795b72388fbb2b216e1e6fd38fba994e1df0.
+Build-script source revision: 5ece62897c650b863c1ddda7b6964845344aef2d,
+BtbN/FFmpeg-Builds. Its MIT copyright/permission/disclaimer is reproduced verbatim
+in licenses/BtbN--LICENSE; that license covers the scripts, not all linked code.
+
+This software is based in part on the work of the Independent JPEG Group.
+FFmpeg's exact source LICENSE.md identifies IJG-derived files and requires
+modification accounting; the actual build's modifications remain to be supplied.
+
+Other library copyright notices and conditions are retained in the verbatim
+source texts under licenses/, with exact upstream URLs/digests in
+source-notice-manifest.json. These are PARTIAL REVIEW MATERIAL, not a claim that
+all listed projects are linked or that all included components are listed.
+In particular: libass has an ISC notice; Chromaprint's own MIT code also includes
+LGPL2.1 FFmpeg material and a bundled FFT implementation needing its own notice;
+SRT and ZeroMQ have MPL2 terms; JPEG XL includes BSD3 and PATENTS texts; OpenSSL
+has Apache2 terms. Do not erase these distinctions with one LGPL-only label.
+FFTW's GPL text is included solely as excluded-dependency risk evidence, not a
+statement that FFTW is shipped. Source per-file copyright and bundled third-party
+license notices must still be reconciled against the actual binaries.
+
+UNRESOLVED BEFORE THIS NOTICE CAN SHIP:
+- Identify all actually linked/transitively included components and copyright
+  holders, exact revisions, license choices, full text and any required NOTICEs.
+- Supply an exact matching source kit (FFmpeg, dependencies, recursive sources,
+  modifications and build/relink instructions). The manifest's upstream source
+  links do not themselves constitute that complete kit or a written source offer.
+- Replace this paragraph with reviewed, concrete recipient source-access
+  instructions: exact source-kit filename/SHA256, delivery location, responsible
+  distributor/contact and selected license-compliant source delivery mechanism.
+  No source URL/offer/contact has been invented by this task.
+- Account for MPL covered Source Code Form availability, Apache NOTICEs if any,
+  permissive/IJG acknowledgements and applicable static-library relink provisions.
+- Review any applicable EULA/reverse-engineering and installation-information
+  requirements, and separately assess codec patents/trademark rights in the
+  intended distribution jurisdictions. No patent/commercial clearance is given.
+
+This documentation bundle includes no executables, source fulfilment promise,
+installation permission, final licensing approval or change to product gates.
