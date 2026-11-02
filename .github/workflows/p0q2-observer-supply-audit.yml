@@ -86,6 +86,10 @@ jobs:
             ForEach-Object { $_.Substring($expanded.Length + 1).Replace('\','/') } |
             Set-Content -LiteralPath (Join-Path $root 'upstream-license-inventory.txt') -Encoding utf8
           if ($licenses.Count -eq 0) { throw 'UPSTREAM_LICENSE_NOTICE_MISSING_STOP' }
+          # Preserve the source archive license bytes for independent legal review.
+          $licenseText = @(Get-ChildItem -LiteralPath $expanded -Recurse -File -Filter 'LICENSE.txt')
+          if ($licenseText.Count -ne 1) { throw 'UPSTREAM_LICENSE_TEXT_AMBIGUOUS_STOP' }
+          Copy-Item -LiteralPath $licenseText[0].FullName -Destination (Join-Path $root 'UPSTREAM_FFMPEG_LICENSE.txt')
 
           # Version strings are observational; do not infer legal redistribution approval.
           $ffmpeg = Join-Path $candidate 'ffmpeg.exe'
@@ -175,6 +179,7 @@ jobs:
             ${{ runner.temp }}/p0q2-observer-supply/supply-audit.json
             ${{ runner.temp }}/p0q2-observer-supply/observer-source-inventory.txt
             ${{ runner.temp }}/p0q2-observer-supply/upstream-license-inventory.txt
+            ${{ runner.temp }}/p0q2-observer-supply/UPSTREAM_FFMPEG_LICENSE.txt
             ${{ runner.temp }}/p0q2-observer-supply/ffmpeg-version.txt
             ${{ runner.temp }}/p0q2-observer-supply/ffprobe-version.txt
           if-no-files-found: error
