@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- Source authority : Only internal Preview CI may provide the frozen, E2E-tested candidate bytes. -->
+  <!-- Supply evidence  : GitHub Actions Run 41496240941 / artifact 13165574216; no release or install approval. -->
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Receipt" xml:space="preserve">
+    <value>{"schema_version":"visual_review.deployment.v1","source_sha256":"91c9c0d8a27e0a6d4fdc9ba0e66ab7a7cfdd23db09b38074049e33adb83e5497","self_contained_single_file":true,"files":[{"name":"PicotooPet.VisualReview.exe","sha256":"d056787891d8de249bc7c7f66faf8c7607f5b61f4ad19288bba9286ad5929ab4","bytes":83537462},{"name":"ffmpeg.exe","sha256":"896537df94a49decaab75e9d5c9e19fdf1e8335f7f8e2f719cb917132063e06c","bytes":131782656},{"name":"ffprobe.exe","sha256":"d07d1cd9b883f7bfa4e6e7c801633190a26fb3e11a9e4374ddc8c261ca201f0c","bytes":131577856}],"vlm_endpoint":null,"vlm_model":null}</value>
+  </data>
+</root>
