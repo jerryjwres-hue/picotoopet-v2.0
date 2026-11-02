@@ -69,12 +69,13 @@ static libgcc/libstdc++ and the cross compiler; `generate.sh` traverses
 selected FFmpeg license to `LICENSE.txt`; this is **not** a full dependency NOTICE
 collection or corresponding-source kit.
 
-**Exact archive's full `ffmpeg -version`/`-buildconf` output is unavailable in this
-scope.** Issue #191 attests version3, x264/x265 disabled, and no enable-gpl/nonfree;
-it does not provide the full configure string. No binary was fetched or executed
-to fill that gap. Preserve the controller's existing native artifact and request
-its exact stdout/config log, rather than label a reconstructed command "actual".
-`recipe-inventory.tsv` records source expressions, not that missing build log.
+**Actual FFmpeg version/configuration recovered from the pre-existing pinned native artifact:**
+[the exact 100-argument configuration and authenticated artifact entry hashes](ACTUAL_FFMPEG_CONFIG.md).
+The controller read the retained `ffmpeg-version.txt` from native Run `41496240941`
+without downloading or executing another program. This closes only the missing
+actual *configuration-string* evidence, not the original `config.h/config.log`,
+resolved linker inventory or matching recursive dependency source. The BtbN
+`recipe-inventory.tsv` remains a source-expression index, not an actual link map.
 `build.sh`'s clone of a branch, mutable `:latest` build images, tag-valued recipes
 and toolchain inputs mean the two commits alone do not prove byte reproduction.
 
