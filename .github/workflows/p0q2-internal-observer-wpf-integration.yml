@@ -187,6 +187,7 @@ jobs:
           '@ | Set-Content -LiteralPath (Join-Path $tmp 'ReceiptCheck.csproj') -Encoding utf8
           @'
           using System.Globalization;
+          using System.IO;
           using System.Reflection;
           using System.Resources;
           using System.Text.Json;
