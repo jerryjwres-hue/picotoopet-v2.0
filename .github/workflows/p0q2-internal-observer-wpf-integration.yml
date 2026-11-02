@@ -1,0 +1,169 @@
+name: P0-Q2 Internal Visual Observer WPF Package Admission (NOT INSTALLABLE)
+on:
+  pull_request:
+    branches:
+      - integration/p0q2-quality-staged-20261029
+    paths:
+      - ".github/workflows/p0q2-internal-observer-wpf-integration.yml"
+      - "windows/desktop/src/PicotooPet.Desktop/Services/QualityObservation/ObserverDeployment.resx"
+      - "windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  frozen-internal-windows:
+    name: Native Windows source-pinned resource plus three EXEs / NO INSTALLER
+    runs-on: windows-2025
+    timeout-minutes: 55
+    env:
+      CI: "true"
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      P0_FROZEN_STAGE: "23d067cf84dba4dda9b130272b2c098f2b0e6d24"
+      P0_OBSERVER_SOURCE: "91c9c0d8a27e0a6d4fdc9ba0e66ab7a7cfdd23db09b38074049e33adb83e5497"
+      P0_OBSERVER_SHA: "d056787891d8de249bc7c7f66faf8c7607f5b61f4ad19288bba9286ad5929ab4"
+      P0_FFMPEG_SHA: "896537df94a49decaab75e9d5c9e19fdf1e8335f7f8e2f719cb917132063e06c"
+      P0_FFPROBE_SHA: "d07d1cd9b883f7bfa4e6e7c801633190a26fb3e11a9e4374ddc8c261ca201f0c"
+    steps:
+      - name: Checkout exact head with full history
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Freeze changed files and forbid release code
+        shell: pwsh
+        run: |
+          # No production authorization, builder, Worker, Comfy, C011 or Full release touched.
+          if ('${{ github.event.pull_request.base.sha }}' -ne $env:P0_FROZEN_STAGE -or
+              (git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha }}') {
+            throw 'INTERNAL_OBSERVER_BASE_OR_HEAD_MOVED_STOP'
+          }
+          $files = @(git diff --name-only $env:P0_FROZEN_STAGE HEAD)
+          $approved = @(
+            '.github/workflows/p0q2-internal-observer-wpf-integration.yml',
+            'windows/desktop/src/PicotooPet.Desktop/Services/QualityObservation/ObserverDeployment.resx',
+            'windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj'
+          )
+          if ($LASTEXITCODE -ne 0 -or $files.Count -ne 3 -or
+              @($files | Where-Object { $approved -notcontains $_ }).Count -ne 0) {
+            throw 'INTERNAL_OBSERVER_SCOPE_EXCEEDED'
+          }
+          Write-Host 'INTERNAL_OBSERVER_FROZEN_SOURCE=PASS; RELEASE_BUILDER_CHANGES=0; GPU=0'
+
+      - name: Download exact previously audited native Windows candidate, not a rebuild
+        uses: actions/download-artifact@v7
+        with:
+          run-id: 41496240941
+          repository: jerryjwres-hue/picotoopet-v2.0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: P0Q2-UNAPPROVED-Observer-Supply-Candidate-3
+          path: ${{ runner.temp }}/p0q2-audited-trio
+
+      - name: Verify exact three binaries and resource pins BEFORE product build
+        shell: pwsh
+        run: |
+          # Fixture package is not a new trust root: compare original exact audit Run, source and independent pins.
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'p0q2-audited-trio'
+          $audit = Get-Content -LiteralPath (Join-Path $root 'supply-audit.json') -Raw | ConvertFrom-Json
+          if ($audit.windows_run_id -ne '41496240941' -or
+              $audit.source_head -ne $env:P0_FROZEN_STAGE -or
+              $audit.observer_source_sha256 -ne $env:P0_OBSERVER_SOURCE -or
+              $audit.approval_state -ne 'UNAPPROVED_CANDIDATE' -or
+              [bool]$audit.user_install_allowed -or $audit.files.Count -ne 3) {
+            throw 'INTERNAL_AUDIT_IDENTITY_STOP'
+          }
+          $pins = @{
+            'PicotooPet.VisualReview.exe' = @{ sha=$env:P0_OBSERVER_SHA; bytes=83537462 }
+            'ffmpeg.exe'                 = @{ sha=$env:P0_FFMPEG_SHA; bytes=131782656 }
+            'ffprobe.exe'                = @{ sha=$env:P0_FFPROBE_SHA; bytes=131577856 }
+          }
+          $actualNames = @(Get-ChildItem -LiteralPath (Join-Path $root 'candidate') -File -Filter '*.exe' | Select-Object -ExpandProperty Name)
+          if ($actualNames.Count -ne 3) { throw 'INTERNAL_BINARY_COUNT_STOP' }
+          foreach ($name in $pins.Keys) {
+            $rec = @($audit.files | Where-Object { $_.name -ceq $name })
+            $file = Join-Path $root "candidate/$name"
+            if ($rec.Count -ne 1 -or -not (Test-Path -LiteralPath $file -PathType Leaf) -or
+                (Get-Item -LiteralPath $file).Length -ne $pins[$name].bytes -or
+                [long]$rec[0].bytes -ne $pins[$name].bytes -or $rec[0].sha256 -cne $pins[$name].sha -or
+                (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne $pins[$name].sha) {
+              throw "INTERNAL_BINARY_PIN_STOP_$name"
+            }
+          }
+          [xml]$resx = Get-Content -LiteralPath 'windows/desktop/src/PicotooPet.Desktop/Services/QualityObservation/ObserverDeployment.resx' -Raw
+          $receipt = ($resx.root.data | Where-Object { $_.name -eq 'Receipt' }).value | ConvertFrom-Json
+          if ($receipt.schema_version -ne 'visual_review.deployment.v1' -or
+              $receipt.source_sha256 -ne $env:P0_OBSERVER_SOURCE -or -not $receipt.self_contained_single_file -or
+              $receipt.files.Count -ne 3 -or $null -ne $receipt.vlm_endpoint -or $null -ne $receipt.vlm_model) {
+            throw 'INTERNAL_RECEIPT_IDENTITY_STOP'
+          }
+          foreach ($pin in @($receipt.files)) {
+            if (-not $pins.ContainsKey($pin.name) -or
+                $pin.sha256 -cne $pins[$pin.name].sha -or [long]$pin.bytes -ne $pins[$pin.name].bytes) {
+              throw 'INTERNAL_RECEIPT_PIN_MISMATCH'
+            }
+          }
+          "P0Q2_OBSERVER_TOOL_ROOT=$root\candidate" | Out-File -Append -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          Write-Host 'INTERNAL_EXACT_THREE_BINARY_PINS=PASS; RECEIPT_SOURCE=PASS; DEPLOYMENT_AUTHORITY=NONE'
+
+      - name: Install frozen .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Build WPF and existing synthetic control/observation smoke
+        shell: pwsh
+        run: |
+          # No GPU, network Core/Comfy or real user media: test-only Windows runner.
+          dotnet restore windows/desktop/PicotooPet.Desktop.sln --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'DESKTOP_RESTORE_FAILED' }
+          dotnet build windows/desktop/PicotooPet.Desktop.sln -c Release --no-restore --nologo -p:ContinuousIntegrationBuild=true -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'DESKTOP_NATIVE_BUILD_FAILED' }
+          dotnet run --project windows/desktop/tests/PicotooPet.QualityObservation.SmokeTests -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'EXISTING_VISUAL_SMOKE_FAILED' }
+          Write-Host 'INTERNAL_WPF_NATIVE_BUILD=PASS; NO_GPU=PASS'
+
+      - name: Publish actual self-contained Desktop and check candidate file pins
+        shell: pwsh
+        run: |
+          # Publish preview layout only; do NOT run official installer, set install_allowed or create release ZIP.
+          $ErrorActionPreference = 'Stop'
+          $app = 'windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj'
+          $out = Join-Path $env:RUNNER_TEMP 'p0q2-internal-desktop-publish'
+          dotnet restore $app --runtime win-x64 --nologo -p:PublishReadyToRun=true
+          if ($LASTEXITCODE -ne 0) { throw 'INTERNAL_PUBLISH_RESTORE_FAILED' }
+          dotnet publish $app -c Release -r win-x64 --self-contained true --output $out --no-restore --nologo -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) { throw 'INTERNAL_PUBLISH_FAILED' }
+          $receipt = (Get-Content 'windows/desktop/src/PicotooPet.Desktop/Services/QualityObservation/ObserverDeployment.resx' -Raw)
+          foreach ($rec in @(
+            @{name='PicotooPet.VisualReview.exe';sha=$env:P0_OBSERVER_SHA;bytes=83537462},
+            @{name='ffmpeg.exe';sha=$env:P0_FFMPEG_SHA;bytes=131782656},
+            @{name='ffprobe.exe';sha=$env:P0_FFPROBE_SHA;bytes=131577856}
+          )) {
+            $path = Join-Path $out "tools/p0_visual_review/$($rec.name)"
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+                (Get-Item -LiteralPath $path).Length -ne $rec.bytes -or
+                (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $rec.sha) {
+              throw "INTERNAL_PUBLISHED_TOOL_PIN_STOP_$($rec.name)"
+            }
+          }
+          $exe = Join-Path $out 'Picotoo Pet AI.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'INTERNAL_WPF_EXE_MISSING' }
+          # Do not activate the GUI or Worker, even under HOLD, in this supply-staging stage.
+          Write-Host 'INTERNAL_PUBLISHED_THREE_TOOLS=PASS; WPF_EXE_PRESENT=PASS; NOT_USER_INSTALLABLE=TRUE'
+
+      - name: Upload audit-only provenance, no EXE or installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: P0Q2-Internal-Observer-Integration-Evidence-${{ github.run_number }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/p0q2-audited-trio/supply-audit.json
+            ${{ runner.temp }}/p0q2-audited-trio/UPSTREAM_FFMPEG_LICENSE.txt
+            ${{ runner.temp }}/p0q2-audited-trio/ffmpeg-version.txt
+            ${{ runner.temp }}/p0q2-audited-trio/ffprobe-version.txt
