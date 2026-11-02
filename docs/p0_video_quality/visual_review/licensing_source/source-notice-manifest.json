@@ -1,0 +1,199 @@
+{
+  "purpose": "Documentation-only source/notice review evidence; not an installable receipt, source offer, SBOM certification or redistribution approval.",
+  "status": "BLOCKED",
+  "frozen_picotoopet_source": "587dfee76d8778e6bda97d340621ed9d63a193a0",
+  "binary_facts_authority": "Issue #191; binary archives/executables NOT downloaded or independently measured in this task",
+  "upstream_binary": {
+    "release": "autobuild-2026-11-01-12-49",
+    "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-01-12-49/ffmpeg-n8.1.3-29-gad3b795b72-win64-lgpl-8.1.zip",
+    "bytes": 167778412,
+    "sha256": "a152a35aacfe7972dce74f1e1d2a1cfaabc8daa7bf8632e9473f70ad18c6c5d4",
+    "files": [
+      {
+        "name": "ffmpeg.exe",
+        "bytes": 131782656,
+        "sha256": "896537df94a49decaab75e9d5c9e19fdf1e8335f7f8e2f719cb917132063e06c"
+      },
+      {
+        "name": "ffprobe.exe",
+        "bytes": 131577856,
+        "sha256": "d07d1cd9b883f7bfa4e6e7c801633190a26fb3e11a9e4374ddc8c261ca201f0c"
+      }
+    ]
+  },
+  "source_archives": [
+    {
+      "repository": "BtbN/FFmpeg-Builds",
+      "commit": "5ece62897c650b863c1ddda7b6964845344aef2d",
+      "url": "https://codeload.github.com/BtbN/FFmpeg-Builds/tar.gz/5ece62897c650b863c1ddda7b6964845344aef2d",
+      "bytes": 118158,
+      "sha256": "3399050a6fb3d93fffb6e6a565889ff02c483fe7b8aea09e95a777043309b1af",
+      "status": "retrieved_and_hashed_not_vendored_not_complete_recursive_source",
+      "archive_type": "GitHub auto-generated source snapshot; git metadata/submodule contents absent"
+    },
+    {
+      "repository": "FFmpeg/FFmpeg",
+      "commit": "ad3b795b72388fbb2b216e1e6fd38fba994e1df0",
+      "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/ad3b795b72388fbb2b216e1e6fd38fba994e1df0",
+      "bytes": 16923819,
+      "sha256": "b6031e41f717bf7b2c3addb5a88f2cb7f9d86dceca35d48ad45db93033f06d79",
+      "status": "retrieved_and_hashed_not_vendored_not_complete_recursive_source",
+      "archive_type": "GitHub auto-generated source snapshot; git metadata/submodule contents absent"
+    }
+  ],
+  "licenses": [
+    {
+      "file": "licenses/FFmpeg--COPYING.LGPLv3",
+      "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/COPYING.LGPLv3",
+      "bytes": 7651,
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "file": "licenses/FFmpeg--COPYING.GPLv3",
+      "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/COPYING.GPLv3",
+      "bytes": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "file": "licenses/FFmpeg--COPYING.LGPLv2.1",
+      "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/COPYING.LGPLv2.1",
+      "bytes": 26517,
+      "sha256": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30"
+    },
+    {
+      "file": "licenses/FFmpeg--LICENSE.md",
+      "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/LICENSE.md",
+      "bytes": 4346,
+      "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af"
+    },
+    {
+      "file": "licenses/chromaprint--LICENSE.md",
+      "url": "https://raw.githubusercontent.com/acoustid/chromaprint/3b38c100022bdfb49be7797c4828a476f1621d55/LICENSE.md",
+      "revision": "3b38c100022bdfb49be7797c4828a476f1621d55",
+      "bytes": 1801,
+      "sha256": "562cfe59627e0c4e8e3b066f3ff2e9736f83811ffe4c6c2c7796595aa7595ebd"
+    },
+    {
+      "file": "licenses/libass--COPYING",
+      "url": "https://raw.githubusercontent.com/libass/libass/f61db567e6593df3470e91594bcd4ad2d0473aff/COPYING",
+      "revision": "f61db567e6593df3470e91594bcd4ad2d0473aff",
+      "bytes": 755,
+      "sha256": "f7e30699d02798351e7f839e3d3bfeb29ce65e44efa7735c225464c4fd7dfe9c"
+    },
+    {
+      "file": "licenses/fribidi--COPYING",
+      "url": "https://raw.githubusercontent.com/fribidi/fribidi/d2f3e1f4946e7cef9789e1c3ebdb4a60d4314c7f/COPYING",
+      "revision": "d2f3e1f4946e7cef9789e1c3ebdb4a60d4314c7f",
+      "bytes": 26419,
+      "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+    },
+    {
+      "file": "licenses/gmp--COPYING.LESSERv3",
+      "url": "https://raw.githubusercontent.com/BtbN/gmplib/5c3e9a9d52b697cab7b7d26a53972a3bf922d59a/COPYING.LESSERv3",
+      "revision": "5c3e9a9d52b697cab7b7d26a53972a3bf922d59a",
+      "bytes": 7639,
+      "sha256": "a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c"
+    },
+    {
+      "file": "licenses/gmp--COPYINGv3",
+      "url": "https://raw.githubusercontent.com/BtbN/gmplib/5c3e9a9d52b697cab7b7d26a53972a3bf922d59a/COPYINGv3",
+      "revision": "5c3e9a9d52b697cab7b7d26a53972a3bf922d59a",
+      "bytes": 35150,
+      "sha256": "e6037104443f9a7829b2aa7c5370d0789a7bda3ca65a0b904cdc0c2e285d9195"
+    },
+    {
+      "file": "licenses/openal--COPYING",
+      "url": "https://raw.githubusercontent.com/kcat/openal-soft/4a52288b772d1722713675f71bb30f321e78fd80/COPYING",
+      "revision": "4a52288b772d1722713675f71bb30f321e78fd80",
+      "bytes": 23330,
+      "sha256": "d808ce217e5b611854da622b57ec29fe545584c48bc5352fae72a4b6e5074a15"
+    },
+    {
+      "file": "licenses/libzmq--LICENSE",
+      "url": "https://raw.githubusercontent.com/zeromq/libzmq/46493370217ac135246617fa2f6ac819d8b61bfc/LICENSE",
+      "revision": "46493370217ac135246617fa2f6ac819d8b61bfc",
+      "bytes": 16725,
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+    },
+    {
+      "file": "licenses/srt--LICENSE",
+      "url": "https://raw.githubusercontent.com/Haivision/srt/9f2390232a8256ed4c72a5418c2b2777c49ad737/LICENSE",
+      "revision": "9f2390232a8256ed4c72a5418c2b2777c49ad737",
+      "bytes": 16726,
+      "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+    },
+    {
+      "file": "licenses/libjxl--LICENSE",
+      "url": "https://raw.githubusercontent.com/libjxl/libjxl/e47d2a2b5bb418f2947ce07f36cb048861db3820/LICENSE",
+      "revision": "e47d2a2b5bb418f2947ce07f36cb048861db3820",
+      "bytes": 1508,
+      "sha256": "8405932022a556380c2d8c272eff154a923feb197233f348ce5f7334fb0a5ede"
+    },
+    {
+      "file": "licenses/libjxl--PATENTS",
+      "url": "https://raw.githubusercontent.com/libjxl/libjxl/e47d2a2b5bb418f2947ce07f36cb048861db3820/PATENTS",
+      "revision": "e47d2a2b5bb418f2947ce07f36cb048861db3820",
+      "bytes": 1333,
+      "sha256": "91915f8ae056a68a3c5bdf05d9f6f78bb6903e27a8ca3a8434c9e4ac87300575"
+    },
+    {
+      "file": "licenses/librsvg--COPYING.LIB",
+      "url": "https://raw.githubusercontent.com/GNOME/librsvg/0c074d0a25adefd65843067306f9bc1fb609f68f/COPYING.LIB",
+      "revision": "0c074d0a25adefd65843067306f9bc1fb609f68f",
+      "bytes": 26530,
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    {
+      "file": "licenses/openh264--LICENSE",
+      "url": "https://raw.githubusercontent.com/cisco/openh264/1bca62311e447fd9c39fc93de2c4b96cd5ce971c/LICENSE",
+      "revision": "1bca62311e447fd9c39fc93de2c4b96cd5ce971c",
+      "bytes": 1295,
+      "sha256": "dd5c1c9668512530fa5a96e4c29ac4033d70a7eeb0eed7a42fddb6dd794ebdbb"
+    },
+    {
+      "file": "licenses/fftw--COPYING",
+      "url": "https://raw.githubusercontent.com/FFTW/fftw3/a7b679c528330cf6258253d6dcf5ec90552e6c93/COPYING",
+      "revision": "a7b679c528330cf6258253d6dcf5ec90552e6c93",
+      "bytes": 18002,
+      "sha256": "231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c"
+    },
+    {
+      "file": "licenses/zlib--LICENSE",
+      "url": "https://raw.githubusercontent.com/madler/zlib/9d314c341b2ce16e01ae44e27ec3dd2f32aa58fd/LICENSE",
+      "revision": "9d314c341b2ce16e01ae44e27ec3dd2f32aa58fd",
+      "bytes": 1002,
+      "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+    },
+    {
+      "file": "licenses/openssl--LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/openssl/openssl/c8bd5a57108599ac650bbae77fcabe3109dab2e8/LICENSE.txt",
+      "revision": "c8bd5a57108599ac650bbae77fcabe3109dab2e8",
+      "bytes": 10175,
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
+      "recipe_tag": "openssl-3.6.5",
+      "tag_resolution_status": "observed peeled tag now; actual upstream build inputs still require reconciliation"
+    },
+    {
+      "file": "licenses/BtbN--LICENSE",
+      "url": "https://raw.githubusercontent.com/BtbN/FFmpeg-Builds/5ece62897c650b863c1ddda7b6964845344aef2d/LICENSE",
+      "revision": "5ece62897c650b863c1ddda7b6964845344aef2d",
+      "bytes": 1064,
+      "sha256": "c1b3cc7eec42bd9c4f6247169bb887b4a9bc904abfd2a7f7f9231ed357844993"
+    }
+  ],
+  "official_legal_guidance": {
+    "url": "https://ffmpeg.org/legal.html",
+    "direct_fetch": "HTTP 403 in this environment",
+    "official_website_source": "https://github.com/FFmpeg/web/blob/2d2f5f72996cdbc9420a5f0dc9c22a97d54871ae/src/legal",
+    "bytes": 7003,
+    "sha256": "98e5606cf275d375d61ea921f2b775154cb4e778231f812fc9add1067325f7a8"
+  },
+  "recipe_inventory": {
+    "file": "recipe-inventory.tsv",
+    "rows": 127,
+    "bytes": 35501,
+    "sha256": "c8c895be6ffc76b23ccd273de560bc4ea9a979a73aabd0963aeb4f1d80ccab9b",
+    "status": "Text extracted from pinned scripts.d recipes; candidate inventory, NOT actual linked BOM; enabled predicate does not imply reachable dependency.",
+    "recipe_url_prefix": "https://github.com/BtbN/FFmpeg-Builds/blob/5ece62897c650b863c1ddda7b6964845344aef2d/"
+  }
+}
