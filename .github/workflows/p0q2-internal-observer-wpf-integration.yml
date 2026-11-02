@@ -170,42 +170,42 @@ jobs:
           $tmp = Join-Path $env:RUNNER_TEMP 'p0q2-embedded-receipt-check'
           New-Item -ItemType Directory -Force -Path $tmp | Out-Null
           @'
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <UseWPF>true</UseWPF>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-</Project>
-'@ | Set-Content -LiteralPath (Join-Path $tmp 'ReceiptCheck.csproj') -Encoding utf8
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <Nullable>enable</Nullable>
+              <ImplicitUsings>enable</ImplicitUsings>
+            </PropertyGroup>
+          </Project>
+          '@ | Set-Content -LiteralPath (Join-Path $tmp 'ReceiptCheck.csproj') -Encoding utf8
           @'
-using System.Globalization;
-using System.Reflection;
-using System.Resources;
-using System.Text.Json;
-
-// Load-only            : do not call the WPF entrypoint, initialize App or launch Worker.
-var assembly = Assembly.LoadFrom(args[0]);
-var identity = "PicotooPet.Desktop.Services.QualityObservation.ObserverDeployment";
-var expected = identity + ".resources";
-if (!assembly.GetManifestResourceNames().Contains(expected, StringComparer.Ordinal))
-    throw new InvalidOperationException("EMBEDDED_OBSERVER_RECEIPT_MISSING");
-var manager = new ResourceManager(identity, assembly);
-var raw = manager.GetString("Receipt", CultureInfo.InvariantCulture)
-          ?? throw new InvalidOperationException("EMBEDDED_OBSERVER_RECEIPT_EMPTY");
-using var doc = JsonDocument.Parse(raw);
-var root = doc.RootElement;
-if (root.GetProperty("schema_version").GetString() != "visual_review.deployment.v1" ||
-    root.GetProperty("source_sha256").GetString() != args[1] ||
-    !root.GetProperty("self_contained_single_file").GetBoolean() ||
-    root.GetProperty("files").GetArrayLength() != 3 ||
-    root.GetProperty("vlm_endpoint").ValueKind != JsonValueKind.Null ||
-    root.GetProperty("vlm_model").ValueKind != JsonValueKind.Null)
-    throw new InvalidOperationException("EMBEDDED_OBSERVER_RECEIPT_INVALID");
-Console.WriteLine("COMPILED_WPF_EMBEDDED_RECEIPT=PASS; AUTHORITY=INTERNAL_ONLY");
-'@ | Set-Content -LiteralPath (Join-Path $tmp 'Program.cs') -Encoding utf8
+          using System.Globalization;
+          using System.Reflection;
+          using System.Resources;
+          using System.Text.Json;
+          
+          // Load-only            : do not call the WPF entrypoint, initialize App or launch Worker.
+          var assembly = Assembly.LoadFrom(args[0]);
+          var identity = "PicotooPet.Desktop.Services.QualityObservation.ObserverDeployment";
+          var expected = identity + ".resources";
+          if (!assembly.GetManifestResourceNames().Contains(expected, StringComparer.Ordinal))
+              throw new InvalidOperationException("EMBEDDED_OBSERVER_RECEIPT_MISSING");
+          var manager = new ResourceManager(identity, assembly);
+          var raw = manager.GetString("Receipt", CultureInfo.InvariantCulture)
+                    ?? throw new InvalidOperationException("EMBEDDED_OBSERVER_RECEIPT_EMPTY");
+          using var doc = JsonDocument.Parse(raw);
+          var root = doc.RootElement;
+          if (root.GetProperty("schema_version").GetString() != "visual_review.deployment.v1" ||
+              root.GetProperty("source_sha256").GetString() != args[1] ||
+              !root.GetProperty("self_contained_single_file").GetBoolean() ||
+              root.GetProperty("files").GetArrayLength() != 3 ||
+              root.GetProperty("vlm_endpoint").ValueKind != JsonValueKind.Null ||
+              root.GetProperty("vlm_model").ValueKind != JsonValueKind.Null)
+              throw new InvalidOperationException("EMBEDDED_OBSERVER_RECEIPT_INVALID");
+          Console.WriteLine("COMPILED_WPF_EMBEDDED_RECEIPT=PASS; AUTHORITY=INTERNAL_ONLY");
+          '@ | Set-Content -LiteralPath (Join-Path $tmp 'Program.cs') -Encoding utf8
           & dotnet run --project (Join-Path $tmp 'ReceiptCheck.csproj') -c Release -- $assemblies[0].FullName $env:P0_OBSERVER_SOURCE
           if ($LASTEXITCODE -ne 0) { throw 'COMPILED_RECEIPT_READBACK_FAILED' }
 
