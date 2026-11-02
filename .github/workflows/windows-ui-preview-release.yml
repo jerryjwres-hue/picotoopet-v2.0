@@ -34,7 +34,7 @@ permissions:
 jobs:
   windows-ui-preview:
     # Only isolated P0 GUI-fix and localized-executor recovery PRs may build via pull_request.
-    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028') || github.head_ref == 'test/p0q2-shell-ui-only-install-20261102'
     name: Build and lifecycle-test Windows UI Preview
     runs-on: windows-2025
     timeout-minutes: 60
@@ -53,6 +53,19 @@ jobs:
         with:
           # Use the exact source HEAD, not the temporary pull-request merge commit.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: P0-Q2 exact-source safety and isolated workflow ownership
+        shell: pwsh
+        run: |
+          # Freeze the production tree; only this single original CI workflow may change.
+          # PR base may move while Claude fixes the UI; this lane freezes actual product bytes independently.
+          if ('${{ github.event_name }}' -ne 'pull_request' -or
+              '${{ github.head_ref }}' -ne 'test/p0q2-shell-ui-only-install-20261102') { throw 'P0Q2_PREVIEW_UNEXPECTED_REF' }
+          if ((git rev-parse HEAD).Trim() -ne $env:PICOTOO_SOURCE_HEAD_SHA) { throw 'P0Q2_PREVIEW_CHECKOUT_MISMATCH' }
+          $changes = @(git diff --name-only '621ba51719bca2dd5739c9f003ff0808e0abd852' HEAD)
+          if ($changes.Count -ne 1 -or $changes[0] -ne '.github/workflows/windows-ui-preview-release.yml') { throw 'P0Q2_PREVIEW_SOURCE_SCOPE_EXCEEDED' }
+          Write-Host 'P0Q2_SHELL_SOURCE_IDENTICAL=PASS; PRODUCTION_FILES_CHANGED=0'
 
       # Publish the run id immediately so this source commit is traceable while
       # the installer lifecycle is still running; the final step overwrites it.
@@ -103,7 +116,7 @@ jobs:
 
       # Only the strict three-shot candidate needs admission before any published WPF process.
       - name: P0 strict preview prelaunch HOLD and 28 independent no-GPU cases
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')) || github.head_ref == 'test/p0q2-shell-ui-only-install-20261102'
         shell: pwsh
         run: |
           $gate = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
@@ -157,8 +170,38 @@ jobs:
             -Version $version `
             -ValidationScope UiPreview
 
+      - name: Verify shipped package is strictly UI-only, no unapproved observer binaries
+        shell: pwsh
+        run: |
+          # Exact scope        : This preapproved UI-only testing lane cannot redistribute audited candidate tools.
+          # GPU authority     : No installed model, Core claim or GPU POST is authorized by packaging.
+          $ErrorActionPreference = 'Stop'
+          if (-not [string]::IsNullOrWhiteSpace($env:P0Q2_OBSERVER_TOOL_ROOT)) { throw 'UI_ONLY_HAS_OBSERVER_BUILD_INPUT' }
+          $payload = 'windows/desktop/artifacts/release/work/payload'
+          if (-not (Test-Path -LiteralPath $payload -PathType Container)) { throw 'UI_ONLY_PAYLOAD_MISSING' }
+          $prohibited = @('PicotooPet.VisualReview.exe', 'ffmpeg.exe', 'ffprobe.exe')
+          $violations = @(Get-ChildItem -LiteralPath $payload -Recurse -File | Where-Object { $prohibited -contains $_.Name })
+          if ($violations.Count -ne 0) { throw 'UI_ONLY_UNAPPROVED_OBSERVER_BINARY_LEAK' }
+          $manifest = Get-Content -LiteralPath 'windows/desktop/artifacts/release/work/release-manifest.json' -Raw | ConvertFrom-Json
+          if ($manifest.validation_scope -ne 'windows-ui-preview' -or $manifest.full_release -or
+              $manifest.source_head -ne $env:PICOTOO_SOURCE_HEAD_SHA) { throw 'UI_ONLY_PREVIEW_MANIFEST_IDENTITY_MISMATCH' }
+          $evidence = [ordered]@{
+            schema_version = 'p0q2.ui_only_preview.v1'
+            source_sha = $env:PICOTOO_SOURCE_HEAD_SHA
+            workflow_run = $env:GITHUB_RUN_ID
+            ui_entry_name = '本地生产与审片'
+            observer_binaries_in_payload = 0
+            deployed_visual_review = 'UNVERIFIED_NOT_SHIPPED'
+            cpu_review_usable = $false
+            formal_release_pass = $false
+            ffmpeg_redistribution_approved = $false
+            gpu_posts_authorized = 0
+          }
+          $evidence | ConvertTo-Json -Depth 6 | Set-Content 'windows/desktop/artifacts/release/p0q2-ui-only-evidence.json' -Encoding utf8
+          Write-Host 'P0Q2_UI_ONLY_THREE_OBSERVER_BINARY_ABSENT=PASS; REVIEW_FUNCTION_NOT_DEPLOYED; GPU=0'
+
       - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')) || github.head_ref == 'test/p0q2-shell-ui-only-install-20261102'
         shell: pwsh
         run: |
           $zips = @(Get-ChildItem 'windows/desktop/artifacts/release' -Filter 'PicotooPet-Phase2-Windows-Prebuilt-*.zip' -File)
@@ -198,7 +241,7 @@ jobs:
             -ReleaseRoot windows/desktop/artifacts/release
 
       - name: P0 launch actual published GUI and unique same-EXE Worker under HOLD
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')) || github.head_ref == 'test/p0q2-shell-ui-only-install-20261102'
         shell: pwsh
         run: |
           if ($env:GITHUB_ACTIONS -ne 'true') { throw 'P0_CI_ONLY' }
@@ -248,7 +291,7 @@ jobs:
             [System.Text.UTF8Encoding]::new($false))
 
       - name: P0 preview package source and published EXE hash evidence
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')) || github.head_ref == 'test/p0q2-shell-ui-only-install-20261102'
         shell: pwsh
         run: |
           $root = 'windows/desktop/artifacts/release'
@@ -282,6 +325,7 @@ jobs:
             windows/desktop/artifacts/release/windows-build-report.json
             windows/desktop/artifacts/release/p0-preview-lifecycle-evidence.json
             windows/desktop/artifacts/release/release-manifest.json
+            windows/desktop/artifacts/release/p0q2-ui-only-evidence.json
             windows/desktop/artifacts/release/fixture-evidence/**
           if-no-files-found: error
           retention-days: 14
