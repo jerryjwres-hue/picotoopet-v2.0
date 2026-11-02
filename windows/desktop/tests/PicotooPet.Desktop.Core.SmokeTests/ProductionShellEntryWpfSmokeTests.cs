@@ -27,9 +27,14 @@ internal static class ProductionShellEntryWpfSmokeTests
             try { VerifyRealEntryOnSta(); }
             catch (Exception ex) { error = ex; }
         });
+        // Test bound       : a modal dialog or off-thread WPF failure must not hang hosted CI.
+        thread.IsBackground = true;
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        thread.Join();
+        if (!thread.Join(TimeSpan.FromSeconds(20)))
+        {
+            throw new TimeoutException("真实高级审片按钮的 STA 测试超时；可能存在阻塞对话框或 UI Dispatcher 死锁。");
+        }
         if (error is not null) ExceptionDispatchInfo.Capture(error).Throw();
     }
 
