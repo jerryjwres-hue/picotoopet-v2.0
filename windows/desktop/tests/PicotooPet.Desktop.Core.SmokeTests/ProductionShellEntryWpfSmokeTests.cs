@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using PicotooPet.Desktop;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
