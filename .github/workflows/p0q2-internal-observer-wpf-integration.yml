@@ -107,7 +107,7 @@ jobs:
               throw 'INTERNAL_RECEIPT_PIN_MISMATCH'
             }
           }
-          "P0Q2_OBSERVER_TOOL_ROOT=$root\candidate" | Out-File -Append -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          # Keep the default WPF build unbundled so original fail-closed smoke remains authoritative.
           Write-Host 'INTERNAL_EXACT_THREE_BINARY_PINS=PASS; RECEIPT_SOURCE=PASS; DEPLOYMENT_AUTHORITY=NONE'
 
       - name: Install frozen .NET SDK
@@ -132,6 +132,8 @@ jobs:
         run: |
           # Publish preview layout only; do NOT run official installer, set install_allowed or create release ZIP.
           $ErrorActionPreference = 'Stop'
+          # Only the isolated publish explicitly imports the independently pinned three-tool bytes.
+          $env:P0Q2_OBSERVER_TOOL_ROOT = Join-Path $env:RUNNER_TEMP 'p0q2-audited-trio/candidate'
           $app = 'windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj'
           $out = Join-Path $env:RUNNER_TEMP 'p0q2-internal-desktop-publish'
           dotnet restore $app --runtime win-x64 --nologo -p:PublishReadyToRun=true
