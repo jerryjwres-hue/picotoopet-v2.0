@@ -79,8 +79,9 @@ internal static class ProductionShellEntryWpfSmokeTests
             shell.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
 
             // 真实面板      : 点击必须打开既有 ProductionPanel，不允许构造替代生产执行器。
-            var panels = Application.Current.Windows.Cast<Window>()
-                .Where(w => ReferenceEquals(w.Owner, shell) && w.Content is ProductionPanel)
+            // OwnedWindows  : 与 Shell 同线程；Application.Current 可能由先前测试的其他 STA 线程持有。
+            var panels = shell.OwnedWindows.Cast<Window>()
+                .Where(w => w.Content is ProductionPanel)
                 .ToArray();
             SmokeAssert.True(panels.Length == 1, "真实高级按钮未打开唯一的 ProductionPanel");
             var panel = (ProductionPanel)panels[0].Content;
@@ -92,8 +93,8 @@ internal static class ProductionShellEntryWpfSmokeTests
 
             // 重复点击      : 必须激活原窗口而非创建新的生产服务及 Window。
             entry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, entry));
-            SmokeAssert.True(Application.Current.Windows.Cast<Window>()
-                .Count(w => ReferenceEquals(w.Owner, shell) && w.Content is ProductionPanel) == 1,
+            SmokeAssert.True(shell.OwnedWindows.Cast<Window>()
+                .Count(w => w.Content is ProductionPanel) == 1,
                 "重复点击错误创建第二套生产面板");
             panels[0].Close();
             shell.AllowExplicitClose();
