@@ -325,6 +325,52 @@ class CreativeIntelligenceCoordinator:
         )
         return self._summary(creative_job_id, CreativeJobStatus.NEEDS_HUMAN)
 
+    @staticmethod
+    def _completed_stage_problem(
+        stage_kind: CreativeStageKind,
+        result: dict[str, Any],
+        previous: dict[str, dict[str, Any]],
+        source_set: NormalizedCreativeSourceSet,
+        profile_id: str,
+    ) -> str | None:
+        """Re-verify a persisted v2 Shot Plan against its sealed Bible before a restart reuses it.
+
+        Uses the same pure derivation that built it, so a legitimately persisted result always
+        passes and v1 jobs are never touched. A tampered Bible is already refused earlier by the
+        immutable stage input digest (``creative stage immutable input conflict``).
+        """
+
+        if profile_id == "creative.content_plan.v1":
+            return None
+        try:
+            if stage_kind is CreativeStageKind.SHOT_PLAN:
+                bible = VideoBible.model_validate(previous[CreativeStageKind.VIDEO_BIBLE.value])
+                if bible.source_set_digest != source_set.source_set_digest:
+                    return "CREATIVE_COMPLETED_BIBLE_SOURCE_MISMATCH"
+                script = CreativeScriptResult.model_validate(
+                    previous[CreativeStageKind.SCRIPT.value]
+                )
+                if shot_plan_integrity_findings(bible, script, result):
+                    return "CREATIVE_COMPLETED_SHOT_PLAN_BIBLE_MISMATCH"
+        except (ValueError, KeyError):
+            return "CREATIVE_COMPLETED_STAGE_INVALID"
+        return None
+
+    def _fail_closed_reused_stage(
+        self, creative_job_id: str, stage_kind: CreativeStageKind, code: str
+    ) -> HandlerResult:
+        # The stored stage row is left untouched as evidence; a re-run fails identically
+        # instead of silently re-deriving over it.
+        self.repository.transition_job(
+            creative_job_id,
+            CreativeJobStatus.NEEDS_HUMAN,
+            current_stage=stage_kind,
+            failure_code=code,
+            error_message="A stored creative stage no longer matches its sealed source.",
+            finished=True,
+        )
+        return self._summary(creative_job_id, CreativeJobStatus.NEEDS_HUMAN)
+
     def _run_stage(
         self,
         *,
