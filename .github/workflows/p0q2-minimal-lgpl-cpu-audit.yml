@@ -1,0 +1,168 @@
+name: P0Q2 Minimal LGPL CPU Candidate Audit
+on:
+  push:
+    branches: [test/p0q2-minimal-lgpl-ffmpeg-cpu-20261102]
+    paths:
+      - .github/workflows/p0q2-minimal-lgpl-cpu-audit.yml
+      - tests/video_quality/minimal_ffmpeg_compat/**
+      - docs/p0_video_quality/visual_review/minimal_lgpl/**
+  pull_request:
+    paths:
+      - .github/workflows/p0q2-minimal-lgpl-cpu-audit.yml
+      - tests/video_quality/minimal_ffmpeg_compat/**
+      - docs/p0_video_quality/visual_review/minimal_lgpl/**
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: minimal-lgpl-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Fetch and hash fixed source and build-only tool inputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'minimal-lgpl'
+          "AUDIT_ROOT=$root" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force "$root/evidence", "$root/input", "$root/prefix", "$root/build" | Out-Null
+          @{
+            source_sha = (git rev-parse HEAD)
+            technical_status = 'UNVERIFIED'
+            compliance = 'BLOCKED'
+            user_install_allowed = $false
+            note = 'Transient CPU candidate; build tools not redistributed. No release or legal approval.'
+          } | ConvertTo-Json | Set-Content "$root/evidence/status.json"
+          $inputs = @(
+            @{name='ffmpeg.tar.gz'; url='https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/ad3b795b72388fbb2b216e1e6fd38fba994e1df0'; sha='b6031e41f717bf7b2c3addb5a88f2cb7f9d86dceca35d48ad45db93033f06d79'},
+            @{name='zlib.tar.gz'; url='https://codeload.github.com/madler/zlib/tar.gz/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf'; sha='d9e270d46252734aa49770fbc544125391617956266f220bd63216c834f3a522'},
+            @{name='llvm.zip'; url='https://github.com/mstorsjo/llvm-mingw/releases/download/20241217/llvm-mingw-20241217-ucrt-x86_64.zip'; sha='f4f3ad8616c4183ce7b0d72df634400945b41ea9816145fc2430df6003455db7'},
+            @{name='msys.tar.xz'; url='https://github.com/msys2/msys2-installer/releases/download/2025-02-21/msys2-base-x86_64-20250221.tar.xz'; sha='850589091e731d14b234447084737ca62aee1cc1e3c10be62fcdc12b8263d70b'}
+          )
+          foreach ($i in $inputs) {
+            $p = "$root/input/$($i.name)"
+            curl.exe -fsSL --retry 2 --max-time 300 $i.url -o $p
+            if ($LASTEXITCODE) { throw "INPUT_DOWNLOAD_FAILED_$($i.name)" }
+            if ((Get-FileHash $p -Algorithm SHA256).Hash.ToLowerInvariant() -cne $i.sha) { throw "INPUT_HASH_MISMATCH_$($i.name)" }
+            $i.bytes = (Get-Item $p).Length
+          }
+          $inputs | ConvertTo-Json -Depth 4 | Set-Content "$root/evidence/inputs.json"
+          Expand-Archive "$root/input/llvm.zip" "$root/toolchain"
+          tar -xf "$root/input/msys.tar.xz" -C $root
+          if ($LASTEXITCODE) { throw 'MSYS_EXTRACTION_FAILED' }
+          foreach ($n in 'ffmpeg','zlib') {
+            New-Item -ItemType Directory "$root/$n" | Out-Null
+            tar -xzf "$root/input/$n.tar.gz" -C "$root/$n" --strip-components=1
+            if ($LASTEXITCODE) { throw "SOURCE_EXTRACTION_FAILED_$n" }
+          }
+          Copy-Item "$root/ffmpeg/COPYING*", "$root/ffmpeg/LICENSE.md", "$root/zlib/LICENSE" "$root/evidence"
+          Copy-Item "$root/ffmpeg/configure", "$root/zlib/win32/Makefile.gcc" "$root/evidence"
+      - name: Native Win64 source build with a single explicit external library
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:AUDIT_ROOT
+          $script = @'
+          set -euo pipefail
+          export LC_ALL=C
+          root=$(cygpath -m "$AUDIT_ROOT")
+          tools="$root/toolchain/llvm-mingw-20241217-ucrt-x86_64/bin"
+          export PATH="$(cygpath -u "$tools"):/usr/bin:/bin"
+          export PKG_CONFIG_LIBDIR="$root/no-pkg-config"
+          unset PKG_CONFIG_PATH CFLAGS CXXFLAGS LDFLAGS
+          command -v x86_64-w64-mingw32-clang > "$root/evidence/compiler-path.txt"
+          make="$tools/mingw32-make.exe"
+          shell=$(cygpath -m /usr/bin/sh.exe)
+          "$tools/x86_64-w64-mingw32-clang.exe" --version > "$root/evidence/compiler.txt"
+          "$make" --version > "$root/evidence/make.txt"
+          cd "$root/zlib"
+          "$make" -f win32/Makefile.gcc -j2 libz.a SHELL="$shell" PREFIX=x86_64-w64-mingw32- V=1 2>&1 | tee "$root/evidence/zlib-build.log"
+          mkdir -p "$root/prefix/lib" "$root/prefix/include"
+          cp libz.a "$root/prefix/lib/"
+          cp zlib.h zconf.h "$root/prefix/include/"
+          cd "$root/ffmpeg"
+          flags=(
+            --target-os=mingw32 --arch=x86_64 --cc=x86_64-w64-mingw32-clang
+            --cxx=x86_64-w64-mingw32-clang++ --ar=llvm-ar --ranlib=llvm-ranlib
+            --nm=llvm-nm --strip=llvm-strip --windres=llvm-windres
+            --disable-everything --disable-autodetect --disable-network
+            --disable-x86asm --disable-doc --disable-debug --disable-shared --enable-static
+            --disable-programs --enable-ffmpeg --enable-ffprobe
+            --disable-avdevice --disable-swresample --disable-hwaccels
+            --disable-gpl --disable-nonfree --enable-version3 --enable-w32threads
+            --enable-decoder=vp8,vp9,png --enable-encoder=png
+            --enable-demuxer=matroska,image2 --enable-muxer=image2
+            --enable-parser=vp8,vp9,png --enable-protocol=file,pipe
+            --enable-filter=scale,pad,tile,format,null,buffer,buffersink,trim,setpts
+            --enable-zlib "--extra-cflags=-I$root/prefix/include"
+            "--extra-ldflags=-L$root/prefix/lib" --prefix="$root/candidate"
+          )
+          printf '%q ' "$root/ffmpeg/configure" "${flags[@]}" > "$root/evidence/configure-command.txt"
+          printf '\n' >> "$root/evidence/configure-command.txt"
+          "$root/ffmpeg/configure" "${flags[@]}" 2>&1 | tee "$root/evidence/configure.log"
+          "$make" -j2 V=1 SHELL="$shell" "LDFLAGS-ffmpeg=-Wl,-Map,$root/evidence/ffmpeg.map" "LDFLAGS-ffprobe=-Wl,-Map,$root/evidence/ffprobe.map" ffmpeg.exe ffprobe.exe 2>&1 | tee "$root/evidence/ffmpeg-build.log"
+          for name in ffmpeg ffprobe; do
+            "./$name.exe" -version > "$root/evidence/$name-version.txt"
+            "./$name.exe" -buildconf > "$root/evidence/$name-buildconf.txt" 2>&1
+            "$tools/llvm-readobj.exe" --coff-imports "./$name.exe" > "$root/evidence/$name-imports.txt"
+          done
+          ./ffmpeg.exe -hide_banner -decoders > "$root/evidence/decoders.txt" 2>&1
+          ./ffmpeg.exe -hide_banner -encoders > "$root/evidence/encoders.txt" 2>&1
+          ./ffmpeg.exe -hide_banner -protocols > "$root/evidence/protocols.txt" 2>&1
+          ./ffmpeg.exe -hide_banner -filters > "$root/evidence/filters.txt" 2>&1
+          '@
+          [IO.File]::WriteAllText("$root/build.sh", $script.Replace("`r`n","`n"))
+          & "$root/msys64/usr/bin/bash.exe" --noprofile --norc "$root/build.sh"
+          if ($LASTEXITCODE) {
+            if (Test-Path "$root/ffmpeg/ffbuild/config.log") {
+              $detail = (Get-Content "$root/ffmpeg/ffbuild/config.log" -Tail 35) -join ' | '
+              Write-Host "::error::FFMPEG_COMPILER_CONFIG_DETAIL $detail"
+            }
+            foreach ($log in 'ffmpeg-build.log','configure.log','zlib-build.log') {
+              if (Test-Path "$root/evidence/$log") {
+                $tail = (Get-Content "$root/evidence/$log" -Tail 12) -join ' | '
+                Write-Host "::error::NATIVE_SOURCE_BUILD_FAILED $log $tail"
+                break
+              }
+            }
+            throw 'NATIVE_SOURCE_BUILD_FAILED_SEE_EXACT_LOG'
+          }
+      - name: Run unchanged VisualReview with actual candidate pair
+        shell: pwsh
+        run: |
+          & ./tests/video_quality/minimal_ffmpeg_compat/Assert-Candidate.ps1 -Root $env:AUDIT_ROOT
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Retain failure evidence and source-only build kit
+        if: always()
+        shell: pwsh
+        run: |
+          $root = $env:AUDIT_ROOT
+          foreach ($p in 'ffbuild/config.log','ffbuild/config.mak','config.h','config_components.h') {
+            if (Test-Path "$root/ffmpeg/$p") { Copy-Item "$root/ffmpeg/$p" "$root/evidence/$(Split-Path $p -Leaf)" }
+          }
+          if (Test-Path "$root/evidence") {
+            # Explicit source and report list only. Never upload build/input/toolchain/candidate directories.
+            foreach ($n in 'ffmpeg','zlib') {
+              if (Test-Path "$root/input/$n.tar.gz") { Copy-Item "$root/input/$n.tar.gz" "$root/evidence/" }
+            }
+            if (@(Get-ChildItem "$root/evidence" -Recurse -File | Where-Object Extension -in '.exe','.dll','.a','.o','.zip').Count) { throw 'BINARY_UPLOAD_FORBIDDEN' }
+          }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: minimal-lgpl-source-and-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/minimal-lgpl/evidence/
+          if-no-files-found: warn
+          retention-days: 7
