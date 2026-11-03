@@ -79,9 +79,10 @@ jobs:
           export LC_ALL=C
           root=$(cygpath -m "$AUDIT_ROOT")
           tools="$root/toolchain/llvm-mingw-20241217-ucrt-x86_64/bin"
-          export PATH="$tools:/usr/bin:/bin"
+          export PATH="$(cygpath -u "$tools"):/usr/bin:/bin"
           export PKG_CONFIG_LIBDIR="$root/no-pkg-config"
           unset PKG_CONFIG_PATH CFLAGS CXXFLAGS LDFLAGS
+          command -v x86_64-w64-mingw32-clang > "$root/evidence/compiler-path.txt"
           make="$tools/mingw32-make.exe"
           shell=$(cygpath -m /usr/bin/sh.exe)
           "$tools/x86_64-w64-mingw32-clang.exe" --version > "$root/evidence/compiler.txt"
