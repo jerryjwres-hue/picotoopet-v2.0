@@ -125,6 +125,10 @@ jobs:
           [IO.File]::WriteAllText("$root/build.sh", $script.Replace("`r`n","`n"))
           & "$root/msys64/usr/bin/bash.exe" --noprofile --norc "$root/build.sh"
           if ($LASTEXITCODE) {
+            if (Test-Path "$root/build/ffbuild/config.log") {
+              $detail = (Get-Content "$root/build/ffbuild/config.log" -Tail 35) -join ' | '
+              Write-Host "::error::FFMPEG_COMPILER_CONFIG_DETAIL $detail"
+            }
             foreach ($log in 'ffmpeg-build.log','configure.log','zlib-build.log') {
               if (Test-Path "$root/evidence/$log") {
                 $tail = (Get-Content "$root/evidence/$log" -Tail 12) -join ' | '
