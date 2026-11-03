@@ -48,7 +48,9 @@ internal static class SameExeHostTests
         var ready = host.IndexOf("if (continuation.ProductionStatus is \"production_ready\")", StringComparison.Ordinal);
         var finalizer = host.IndexOf("session.FinalVideoDelivery.Observe(goal.GoalId, continuation)", StringComparison.Ordinal);
         var gpuStatus = host.IndexOf("if (continuation.ProductionStatus is not (\"Ready\" or \"Claimed\" or \"Rendering\"))", StringComparison.Ordinal);
-        var acceptance = host.IndexOf("P0ThreeShotAcceptanceGate.AllowsJobAsync(", StringComparison.Ordinal);
+        // ── The first gate belongs to pending-Journal recovery; inspect fresh-job dispatch. ──
+        var acceptance = gpuStatus < 0 ? -1 : host.IndexOf(
+            "P0ThreeShotAcceptanceGate.AllowsJobAsync(", gpuStatus, StringComparison.Ordinal);
         var newGpu = host.IndexOf("executor.RunAsync(jobId,", StringComparison.Ordinal);
         if (ready < fresh || finalizer < ready || gpuStatus < finalizer
             || acceptance < gpuStatus || newGpu < acceptance)
