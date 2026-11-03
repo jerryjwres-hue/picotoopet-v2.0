@@ -92,7 +92,7 @@ jobs:
           mkdir -p "$root/prefix/lib" "$root/prefix/include"
           cp libz.a "$root/prefix/lib/"
           cp zlib.h zconf.h "$root/prefix/include/"
-          cd "$root/build"
+          cd "$root/ffmpeg"
           flags=(
             --target-os=mingw32 --arch=x86_64 --cc=x86_64-w64-mingw32-clang
             --cxx=x86_64-w64-mingw32-clang++ --ar=llvm-ar --ranlib=llvm-ranlib
@@ -126,8 +126,8 @@ jobs:
           [IO.File]::WriteAllText("$root/build.sh", $script.Replace("`r`n","`n"))
           & "$root/msys64/usr/bin/bash.exe" --noprofile --norc "$root/build.sh"
           if ($LASTEXITCODE) {
-            if (Test-Path "$root/build/ffbuild/config.log") {
-              $detail = (Get-Content "$root/build/ffbuild/config.log" -Tail 35) -join ' | '
+            if (Test-Path "$root/ffmpeg/ffbuild/config.log") {
+              $detail = (Get-Content "$root/ffmpeg/ffbuild/config.log" -Tail 35) -join ' | '
               Write-Host "::error::FFMPEG_COMPILER_CONFIG_DETAIL $detail"
             }
             foreach ($log in 'ffmpeg-build.log','configure.log','zlib-build.log') {
@@ -150,7 +150,7 @@ jobs:
         run: |
           $root = $env:AUDIT_ROOT
           foreach ($p in 'ffbuild/config.log','ffbuild/config.mak','config.h','config_components.h') {
-            if (Test-Path "$root/build/$p") { Copy-Item "$root/build/$p" "$root/evidence/$(Split-Path $p -Leaf)" }
+            if (Test-Path "$root/ffmpeg/$p") { Copy-Item "$root/ffmpeg/$p" "$root/evidence/$(Split-Path $p -Leaf)" }
           }
           if (Test-Path "$root/evidence") {
             # Explicit source and report list only. Never upload build/input/toolchain/candidate directories.

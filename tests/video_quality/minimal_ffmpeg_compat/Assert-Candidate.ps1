@@ -11,11 +11,11 @@ function PngSize([string]$Path) {
     $h = [byte[]]$b[20..23]; [Array]::Reverse($h)
     @([BitConverter]::ToUInt32($w,0), [BitConverter]::ToUInt32($h,0))
 }
-$ffmpeg = "$Root/build/ffmpeg.exe"
-$ffprobe = "$Root/build/ffprobe.exe"
+$ffmpeg = "$Root/ffmpeg/ffmpeg.exe"
+$ffprobe = "$Root/ffmpeg/ffprobe.exe"
 $fixture = Get-Content "$PSScriptRoot/fixtures.json" -Raw | ConvertFrom-Json
 $evidence = "$Root/evidence"
-$config = Get-Content "$Root/build/config.h" -Raw
+$config = Get-Content "$Root/ffmpeg/config.h" -Raw
 foreach ($key in 'CONFIG_GPL','CONFIG_NONFREE','CONFIG_NETWORK') {
     Require ($config -match "(?m)^#define $key 0\s*$") "FORBIDDEN_BUILD_FEATURE_$key"
 }

@@ -34,7 +34,8 @@ supplies the build shell/utilities. They are build inputs, not upload payloads.
 The hosted runner OS/.NET bootstrap remains separately recorded by Actions; one
 successful run cannot establish a reproducible toolchain or complete runtime source.
 
-Native source build selects static zlib only as an explicit external library,
+Native build stays in the extracted FFmpeg source directory (relative source
+paths avoid native GNU make/MSYS out-of-tree path incompatibility). It selects static zlib only as an explicit external library,
 using its original `win32/Makefile.gcc` static target. FFmpeg uses built-in VP8,
 VP9 and PNG decoders, PNG encoder, Matroska/image2, file/pipe, swscale and the
 scale/pad/tile/format/buffer/sink/null/trim/setpts filters needed by the CLI.
