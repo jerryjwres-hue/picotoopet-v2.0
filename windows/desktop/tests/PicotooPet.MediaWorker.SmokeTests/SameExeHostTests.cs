@@ -43,6 +43,20 @@ internal static class SameExeHostTests
             throw new InvalidOperationException("P0_DURABLE_RECOVERY_NOT_WIRED");
         }
 
+        // ── HOLD protects NEW GPU work, not CPU finalization of committed WebMs. ──
+        // ── The original global Journal barrier remains ahead of both operations. ──
+        var ready = host.IndexOf("if (continuation.ProductionStatus is \"production_ready\")", StringComparison.Ordinal);
+        var finalizer = host.IndexOf("session.FinalVideoDelivery.Observe(goal.GoalId, continuation)", StringComparison.Ordinal);
+        var gpuStatus = host.IndexOf("if (continuation.ProductionStatus is not (\"Ready\" or \"Claimed\" or \"Rendering\"))", StringComparison.Ordinal);
+        var acceptance = host.IndexOf("P0ThreeShotAcceptanceGate.AllowsJobAsync(", StringComparison.Ordinal);
+        var newGpu = host.IndexOf("executor.RunAsync(jobId,", StringComparison.Ordinal);
+        if (ready < fresh || finalizer < ready || gpuStatus < finalizer
+            || acceptance < gpuStatus || newGpu < acceptance)
+        {
+            throw new InvalidOperationException("P0_COMPLETED_MEDIA_GPU_HOLD_ORDER_INVALID");
+        }
+        Console.WriteLine("P0_COMPLETED_WEBM_CPU_FINALIZER_BEFORE_GPU_HOLD=PASS; GPU_POST=0");
+
         // ── GUI ordinary close must not revoke leases; explicit Exit cooperatively stops. ──
         if (!gui.Contains("P0MediaWorkerHost.RequestExplicitStop()", StringComparison.Ordinal)
             || !host.Contains("stopSignal.WaitOne(0)", StringComparison.Ordinal))

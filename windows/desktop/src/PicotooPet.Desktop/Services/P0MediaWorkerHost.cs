@@ -157,19 +157,20 @@ public static class P0MediaWorkerHost
                             {
                                 continue;
                             }
-                            // ── 默认文件不存在时沿用原调度；验收模式仅核准一个冻结三镜头 Job。 ──
-                            if (!await P0ThreeShotAcceptanceGate.AllowsJobAsync(
-                                session, jobId, cancellationToken).ConfigureAwait(false))
-                            {
-                                continue;
-                            }
                             if (continuation.ProductionStatus is "production_ready")
                             {
-                                // ── 已完成镜头走冻结 C009/C010/C011 合成与 QA 流。 ──
+                                // ── CPU-only C004/C011 completion must not be suppressed by GPU HOLD. ──
+                                // ── Journal recovery above still runs first; this never claims or POSTs. ──
                                 _ = session.FinalVideoDelivery.Observe(goal.GoalId, continuation);
                                 continue;
                             }
                             if (continuation.ProductionStatus is not ("Ready" or "Claimed" or "Rendering"))
+                            {
+                                continue;
+                            }
+                            // ── HOLD/ALLOW applies only to fresh/recovered GPU claim and Comfy POST. ──
+                            if (!await P0ThreeShotAcceptanceGate.AllowsJobAsync(
+                                session, jobId, cancellationToken).ConfigureAwait(false))
                             {
                                 continue;
                             }
