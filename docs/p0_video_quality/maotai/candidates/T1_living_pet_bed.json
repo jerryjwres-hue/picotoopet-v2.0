@@ -1,0 +1,136 @@
+{
+  "schema_version": "video_bible.v1",
+  "subject": {
+    "subject_id": "maotai",
+    "kind": "PET",
+    "species": "dog",
+    "breed_or_type": "Alaskan Malamute",
+    "coat_or_appearance": "large fluffy {{COAT}} double coat, erect triangular ears, dark almond eyes",
+    "distinguishing_marks": [
+      "erect triangular ears",
+      "dark almond eyes",
+      "plumed tail curled over its back"
+    ],
+    "identity_phrase": "Maotai, a large fluffy {{COAT}} Alaskan Malamute with erect triangular ears, dark almond eyes and a plumed tail curled over its back"
+  },
+  "product": {
+    "product_id": "product-main",
+    "name": "{{PRODUCT_NAME}}",
+    "category": "pet bed",
+    "shape_color_material": "round {{PRODUCT_COLOUR}} padded pet bed with a raised rim, no text or logo",
+    "identity_phrase": "a round {{PRODUCT_COLOUR}} padded pet bed with a raised rim resting on the wooden floor",
+    "logo_policy": "NO_TEXT_OR_LOGO_IN_FRAME",
+    "claims": []
+  },
+  "scenes": [
+    {
+      "scene_id": "scene_main",
+      "environment_phrase": "bright tidy living room, a wide window at screen left, the pet bed resting on the wooden floor at screen right, a light grey sofa against the back wall",
+      "lighting_phrase": "soft natural daylight from the window at screen left",
+      "palette": [
+        "white",
+        "grey",
+        "{{PRODUCT_COLOUR}}",
+        "warm wood"
+      ]
+    }
+  ],
+  "camera_rules": {
+    "screen_direction": "LEFT_TO_RIGHT",
+    "allowed_movements": [
+      "STATIC",
+      "SLOW_PUSH_IN",
+      "TRACK_SIDE"
+    ]
+  },
+  "continuity_anchors": [
+    "one Alaskan Malamute named Maotai",
+    "the pet bed resting on the wooden floor at screen right"
+  ],
+  "global_continuity_notes": [
+    "Maotai and the pet bed look identical in every shot"
+  ],
+  "arc": [
+    {
+      "beat_id": "beat-001",
+      "role": "HOOK"
+    },
+    {
+      "beat_id": "beat-002",
+      "role": "DEMO"
+    },
+    {
+      "beat_id": "beat-003",
+      "role": "CTA"
+    }
+  ],
+  "shots": [
+    {
+      "shot_id": "shot-001",
+      "beat_id": "beat-001",
+      "order": 1,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai stands on the wooden floor beside the pet bed",
+      "visible_action": "Maotai blinks slowly and his tail sways gently",
+      "closing_state": "Maotai stands on the wooden floor looking down at the pet bed",
+      "camera_framing": "medium shot",
+      "camera_movement": "STATIC",
+      "handoff_to_next": "CONTINUOUS",
+      "risk_flags": []
+    },
+    {
+      "shot_id": "shot-002",
+      "beat_id": "beat-002",
+      "order": 2,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai stands on the wooden floor looking down at the pet bed",
+      "visible_action": "Maotai steps onto the pet bed and sits down on it",
+      "closing_state": "Maotai sits on the pet bed facing the camera",
+      "camera_framing": "medium close-up",
+      "camera_movement": "SLOW_PUSH_IN",
+      "handoff_to_next": "CONTINUOUS",
+      "risk_flags": [
+        "PRODUCT_CLOSEUP"
+      ]
+    },
+    {
+      "shot_id": "shot-003",
+      "beat_id": "beat-003",
+      "order": 3,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai sits on the pet bed facing the camera",
+      "visible_action": "Maotai breathes calmly and blinks while sitting on the pet bed",
+      "closing_state": "Maotai sits relaxed on the pet bed, the bed resting on the wooden floor",
+      "camera_framing": "wide shot",
+      "camera_movement": "STATIC",
+      "handoff_to_next": "CUT_ON_ACTION",
+      "risk_flags": []
+    }
+  ],
+  "negative_concepts": [
+    "EXTRA_LIMBS",
+    "MORPHING",
+    "DUPLICATED_OBJECTS",
+    "FLICKER"
+  ],
+  "unverified_fields": [
+    "reference_image"
+  ],
+  "needs_deep_ai": false,
+  "needs_human": false
+}
