@@ -60,22 +60,22 @@ Animate the owner-approved original IMG_3576 photograph of the same real adult A
 Animate the approved IMG_3576 owner photo of the real Maotai, with his distinctive pink-and-black mottled nose, cream brows, translucent recovery cone and bright green triangular bib. Keep his existing front-facing half-body pose. Over four seconds he blinks gently once and breathes naturally with a tiny gaze adjustment. Locked camera, original lighting, framing, dog anatomy, accessories and background, with no new objects.
 ```
 
-中文意思：茅台自然站立，缓慢转头看镜头并眨眼一次，耳朵轻动、呼吸起伏、毛发和尾巴轻摆；固定机位，柔和日光，写实，只有一只狗，无文字无 Logo。
+中文意思：首镜从真实 IMG_3576 正面半身照片出发，保持恢复圈、绿巾、粉黑鼻和全部可见外观。茅台只轻眨一次眼、微微调整眼神并自然呼吸；固定摄像机，不凭空移动尾巴或换姿势。
 
-**映射到 Video Bible（这才是实际要填的）：** 就是 `candidates/T1_living_pet_bed.json` 的第 1 镜或 `T4_product_collar_tag.json` 的第 1 镜：`featured=[SUBJECT]`（或带产品）、`opening_state` = 首帧参考图的真实状态、`visible_action` = 上面那一个动作、`camera_framing = medium shot`、`camera_movement = STATIC`。
+**映射到 Video Bible（实际仍由现有 Core 生成/审核）：** 首条不能直接从 T1 宠物床或 T4 项圈/影棚示例复制，因为真实 IMG_3576 不含那些产品场景。应使用 `featured=[SUBJECT]`、`opening_state`=IMG_3576 经批准首帧的真实姿态、`visible_action`=一次自然眨眼与微呼吸、`camera_framing`=保持原半身构图、`camera_movement=STATIC`。若原三镜头 sealed Bible 不能合法表达这一首帧，则先修改未冻结的候选 Bible 并重新通过原 Story Gate，不得改已冻结生产 Plan。
 
-**两个必须先回答的开放问题（不要猜）：**
+**首镜入口已核定；剩余实际准入在实机部署、源图授权和 GPU 预算：**
 - “首条 4 秒视频”已由 #219 的 `pilot_first_shot` 路径实现：验证完整 sealed Story Bible/Keyframe，仅给第一张经正式批准的图创建新的单镜头 I2V Job/Plan。正式三镜头全覆盖仍保留。上面的 Prompt 对两种路径都适用（它就是三镜头链里的第 1 镜）。
-- `{{SURFACE}}` 与 `{{COAT}}` 必须来自你的私有参考图清单（见 §3）。
+- 首镜 IMG_3576 不使用这套抽象 `{{SURFACE}}`/`{{COAT}}` 占位，因为已有受控私有照片清单。其他 T1–T4 候选在输入真实产品前仍保留占位。
 
 ## 3. 茅台身份锁与参考图选用
 
-**身份短语（≤240 字符，门禁要求每个 distinguishing mark 都已出现在短语里）：**
+**后续 T1–T4 模板使用的身份短语（≤240 字符，门禁要求每个 distinguishing mark 都已出现在短语里；仍须参考真实茅台花鼻/奶油眉纹）：**
 
 ```text
 Maotai, a large fluffy {{COAT}} Alaskan Malamute with erect triangular ears, dark almond eyes and a plumed tail curled over its back
 ```
-`{{COAT}}` 填**你的参考图里能一眼看出的毛色/面部花纹**（例如“grey-and-white with a darker face mask”这类描述必须以参考图为准，本文不替你编）。如果茅台有固定配饰（项圈/围巾/背带），把“颜色+品类”加进短语并在三镜头里**每次同一个颜色词**；没有固定配饰就不要加（越少属性，越少漂移）。
+`{{COAT}}` 应填写已核实的真实黑褐毛色与奶油色眉纹、粉黑斑驳鼻，不能用泛泛灰白狗替代；现有 JSON 仅为未填充的结构示例，尚不符合茅台最终身份锁。如果茅台有固定配饰（项圈/围巾/背带），把“颜色+品类”加进短语并在三镜头里**每次同一个颜色词**；没有固定配饰就不要加（越少属性，越少漂移）。
 
 **选图规则（逐项勾选，全部为“是”才进入候选）：**
 
