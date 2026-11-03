@@ -124,6 +124,11 @@ def seed(root: Path, identity_file: Path) -> None:
                 "CI_FIXTURE_NOT_OPERATOR", "a" * 64, datetime.now(UTC).isoformat(),
             ),
         )
+        if os.environ.get("P0_OPERATOR_TRUSTED_PILOT_CI_ONLY") == "1":
+            # #152 accepted B is seeded ONLY in this guarded disposable fixture.
+            # It never enrolls a key on an owner host or exposes HTTP enrollment.
+            db.execute("UPDATE production_worker_keys SET trust_model=? WHERE key_id=?",
+                       ("OPERATOR_TRUSTED_PRIVATE_HOST_V1", key_id))
         (root / MANIFEST).write_text(
             json.dumps({
                 "job_id": job.production_job_id,
@@ -168,12 +173,16 @@ def serve(root: Path, port: int) -> None:
         # #152: retain the actual Windows-signed public wire proposal in this
         # disposable fixture ONLY. No Authorization header/key seed is stored.
         # Do not overwrite it when the negative probes replay or alter it.
-        if request.url.path.endswith("/witness/preflight"):
+        if request.url.path.endswith("/witness/preflight") or (
+            os.environ.get("P0_OPERATOR_TRUSTED_PILOT_CI_ONLY") == "1"
+            and request.url.path.endswith("/claim")
+        ):
             body = await request.body()
             target = root / "windows-witness-public.json"
             if not target.exists():
                 assert len(body) < 65536
-                target.write_bytes(body)
+                raw = json.loads(body)
+                target.write_text(json.dumps(raw.get("worker_witness", raw)), encoding="utf-8")
         return await call_next(request)
     app.state.services = SimpleNamespace(
         production=service,
@@ -187,7 +196,21 @@ def mutate(root: Path, action: str) -> None:
     db = db_at(root)
     try:
         manifest = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
-        if action == "revoke":
+        if action == "assert-pilot":
+            assert os.environ.get("P0_OPERATOR_TRUSTED_PILOT_CI_ONLY") == "1"
+            row = db.fetchone("SELECT * FROM production_worker_challenges WHERE production_job_id=?",
+                              (manifest["job_id"],))
+            job = db.fetchone("SELECT * FROM production_jobs WHERE production_job_id=?", (manifest["job_id"],))
+            assert db.scalar("SELECT COUNT(*) FROM production_worker_challenges") == 1
+            assert row["consumed_at"] is not None
+            assert row["admitted_lease_token_digest"] == job["lease_token_digest"]
+            assert row["admitted_witness_sha256"] and row["admitted_witness_json"]
+            assert job["plan_digest"] == manifest["plan_digest"]
+            assert job["lease_executor_id"] == EXECUTOR and job["lease_token_digest"]
+            assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
+            assert db.scalar("SELECT COUNT(*) FROM production_tasks WHERE attempt_count<>0 OR comfy_prompt_id IS NOT NULL") == 0
+            print("REAL_B_ATOMIC_SQLITE=PASS; NONCE=CONSUMED_ONCE; LEASE=1; ATTEMPT=0; COMFY_POST=0")
+        elif action == "revoke":
             db.execute(
                 "UPDATE approvals SET status='Rejected' WHERE approval_id=?",
                 (manifest["approval_id"],),
@@ -245,7 +268,7 @@ def mutate(root: Path, action: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("seed", "serve", "assert", "revoke", "expire"))
+    parser.add_argument("action", choices=("seed", "serve", "assert", "assert-pilot", "revoke", "expire"))
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--identity", type=Path)
     parser.add_argument("--port", type=int)

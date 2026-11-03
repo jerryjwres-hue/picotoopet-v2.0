@@ -25,7 +25,7 @@ from .migration_021 import MIGRATION_021
 from .migration_022 import MIGRATION_022
 from .migration_023 import MIGRATION_023
 from .migration_024 import MIGRATION_024
-from .worker_trust_schema import WORKER_TRUST_SCHEMA
+from .worker_trust_schema import WORKER_TRUST_SCHEMA, upgrade_worker_trust_columns
 from .schema import (
     MIGRATION_001,
     MIGRATION_002,
@@ -365,6 +365,7 @@ class Database:
             # ── schema-version 24 upgrades (like TASK_VISIBILITY_SCHEMA).
             # ── No Worker trust record or grant is minted by this migration.
             connection.executescript(WORKER_TRUST_SCHEMA)
+            upgrade_worker_trust_columns(connection)
 
             # ── Operated Core database retains additive schema and legacy tables. ──
             connection.executescript(TASK_VISIBILITY_SCHEMA)

@@ -204,7 +204,7 @@ internal static class I2VExecutorSnapshotTests
         {
             if (r.ComfyPromptId is null)
             {
-                Attempts++;
+                if (Attempts == 0) Attempts++; // Core null reservation is idempotent while Running/unbound.
                 if (LoseReservation) { LoseReservation = false; throw new HttpRequestException("lost reservation ack"); }
             }
             else

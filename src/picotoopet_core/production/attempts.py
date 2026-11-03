@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 
 from .models import ProductionTaskRecord, ProductionTaskStatus
 from .repository import ProductionRepository
+from .operator_trusted_host import pilot_atomic
+from .versioned_plan import ProductionPlanV11
 
 
 def _now() -> str:
@@ -13,6 +15,7 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+@pilot_atomic
 def reserve_or_bind_attempt(
     repository: ProductionRepository,
     *,
@@ -49,7 +52,7 @@ def reserve_or_bind_attempt(
                 # ── Retried HTTP reservation is idempotent ──────────────────
                 return task
             timestamp = _now()
-            with repository.database.transaction() as connection:
+            with repository._write_transaction(production_job_id) as connection:
                 connection.execute(
                     "UPDATE production_attempts SET comfy_prompt_id=? "
                     "WHERE production_task_id=? AND attempt_number=? AND comfy_prompt_id IS NULL",
@@ -66,6 +69,10 @@ def reserve_or_bind_attempt(
             return task
         if comfy_prompt_id is not None:
             raise ValueError("PRODUCTION_PROMPT_ID_CONFLICT")
+
+        if isinstance(repository.plan_for(production_job_id), ProductionPlanV11):
+            # The pilot does not automatically retry a known/ambiguous POST.
+            raise ValueError("PRODUCTION_V11_WITNESS_POST_UNCERTAIN")
 
         # ── A new null reservation after a bound Running attempt means the
         #    prior local render failed retryably. Close it before retry #2. ──

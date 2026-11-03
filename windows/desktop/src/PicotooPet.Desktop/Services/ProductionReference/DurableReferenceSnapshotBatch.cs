@@ -6,6 +6,7 @@ internal sealed class DurableReferenceSnapshotBatch : IDisposable
     private readonly Dictionary<string, DurableReferenceSnapshot> _items = new(StringComparer.Ordinal);
     public void Add(string taskId, DurableReferenceSnapshot item) => _items.Add(taskId, item);
     public DurableReferenceSnapshot? Get(string taskId) => _items.GetValueOrDefault(taskId);
+    internal IReadOnlyList<DurableReferenceSnapshot> Snapshots => _items.Values.ToArray();
     public async Task ReauthorizeAsync(CancellationToken ct)
     {
         foreach (var item in _items.Values) await item.ReauthorizeAsync(ct).ConfigureAwait(false);

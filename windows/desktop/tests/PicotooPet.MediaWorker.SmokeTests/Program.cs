@@ -1,5 +1,23 @@
 using PicotooPet.Desktop.Services;
 
+if (args.Contains("--operator-trusted-prepost-only", StringComparer.Ordinal))
+{
+    await PicotooPet.MediaWorker.SmokeTests.OperatorTrustedHostPilotTests.RevokedAfterReservationStopsBeforePostAsync();
+    return;
+}
+
+if (args.Contains("--operator-trusted-host-pilot-gate-only", StringComparer.Ordinal))
+{
+    await PicotooPet.MediaWorker.SmokeTests.OperatorTrustedPilotGateTests.RunAsync();
+    return;
+}
+
+if (args.Contains("--operator-trusted-host-pilot-only", StringComparer.Ordinal))
+{
+    await PicotooPet.MediaWorker.SmokeTests.OperatorTrustedHostPilotTests.RunAsync();
+    return;
+}
+
 if (await PicotooPet.MediaWorker.SmokeTests.WorkerExecutableIdentityTests.RunAsync(args)) return;
 if (args.Length == 2 && args[0] == "--real-core-interop") { await PicotooPet.MediaWorker.SmokeTests.RealPythonCoreInteropTests.RunAsync(args[1]); return; } // #177 CI-only explicit test entry; no shipping executor
 

@@ -42,6 +42,7 @@ public sealed partial class MacCoreProductionClient : IAsyncDisposable
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
             ConnectTimeout = options.ConnectTimeout,
             MaxConnectionsPerServer = 4,
+            AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
         };
         var client = new HttpClient(handler, disposeHandler: true)
@@ -77,6 +78,19 @@ public sealed partial class MacCoreProductionClient : IAsyncDisposable
             payload,
             cancellationToken);
 
+    public Task<ProductionJobRecord> CreateFirstShotPilotV11Async(ProductionJobCreateRequest request,
+        string approvedReferenceId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(approvedReferenceId);
+        return SendJsonAsync<ProductionJobRecord>(HttpMethod.Post, "api/v1/production/jobs/v1.1", new
+        {
+            schema_version = "1.1", creative_package_id = request.CreativePackageId,
+            production_profile = request.ProductionProfile, idempotency_key = request.IdempotencyKey,
+            approved_reference_ids = new[] { approvedReferenceId }, pilot_first_shot = true,
+        }, cancellationToken);
+    }
+
     public Task<ProductionPlanRecord> GetPlanAsync(
         string productionJobId,
         CancellationToken cancellationToken = default) =>
@@ -95,6 +109,13 @@ public sealed partial class MacCoreProductionClient : IAsyncDisposable
             $"api/v1/production/jobs/{Escape(productionJobId)}/claim",
             new { executor_id = executorId },
             cancellationToken);
+
+    /// <summary>Existing claim, carrying the canonical same-EXE witness; Core chooses the enrolled policy.</summary>
+    public Task<ProductionClaimRecord> ClaimWithWorkerWitnessAsync(string productionJobId, string executorId,
+        JsonElement workerWitness, CancellationToken cancellationToken = default) =>
+        SendJsonAsync<ProductionClaimRecord>(HttpMethod.Post,
+            $"api/v1/production/jobs/{Escape(productionJobId)}/claim",
+            new { executor_id = executorId, worker_witness = workerWitness }, cancellationToken);
 
     public Task<ProductionJobRecord> HeartbeatAsync(
         string productionJobId,

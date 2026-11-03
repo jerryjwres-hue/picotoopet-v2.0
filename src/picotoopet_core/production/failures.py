@@ -6,8 +6,10 @@ from datetime import UTC, datetime
 
 from .models import ProductionTaskFailureRequest, ProductionTaskRecord, ProductionTaskStatus
 from .repository import ProductionRepository
+from .operator_trusted_host import pilot_atomic
 
 
+@pilot_atomic
 def fail_task_durably(
     repository: ProductionRepository,
     *,
@@ -38,7 +40,7 @@ def fail_task_durably(
         raise ValueError("PRODUCTION_PROMPT_ID_CONFLICT")
 
     timestamp = datetime.now(UTC).isoformat()
-    with repository.database.transaction() as connection:
+    with repository._write_transaction(production_job_id) as connection:
         # ── The current attempt carries the same terminal failure evidence ──
         connection.execute(
             "UPDATE production_attempts SET status='Failed',comfy_prompt_id=COALESCE(comfy_prompt_id,?),"

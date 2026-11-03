@@ -19,6 +19,7 @@ from picotoopet_core.creative.repository import CreativeRepository
 from picotoopet_core.security.worker_pairing import PairedWorkerTrust
 
 from .attempts import reserve_or_bind_attempt
+from .operator_trusted_host import pilot_atomic
 from .compiler import compile_production_plan
 from .failures import fail_task_durably
 from .models import (
@@ -155,13 +156,15 @@ class ProductionService:
 
     @staticmethod
     def _bridge_sealed_v2_manifest(
-        manifest: dict[str, object], creative_job, approved_shots: set[str]
+        manifest: dict[str, object], creative_job, approved_shots: set[str], *,
+        pilot_first_shot: bool = False,
     ) -> dict[str, object]:
         """Return a COPY whose shots are IMAGE_TO_VIDEO, only for a genuinely sealed v2 package.
 
         Fail closed unless the package is the exact deterministic product of its sealed Video
         Bible (same check Creative used), every shot is still GENERATIVE_VIDEO, and explicit
-        approvals cover every shot. Never mixes intents and never mutates the stored package.
+        approvals cover every shot, or exactly the first shot for the explicit
+        pilot projection. Never mutates the stored package.
         """
         from copy import deepcopy
 
@@ -180,6 +183,8 @@ class ProductionService:
             or not all(k in stages for k in
                        ("video_bible.v1", "keyframe_kit.v1", "script.v1", "shot_plan.v1"))
         ):
+            if pilot_first_shot:
+                raise ValueError(not_sealed)
             return manifest  # v1 / unsealed packages keep the original coverage rule
         try:
             bible = VideoBible.model_validate(stages["video_bible.v1"])
@@ -198,19 +203,24 @@ class ProductionService:
             or {item["shot_id"] for item in shots} != {k.shot_id for k in kit.keyframes}
         ):
             raise ValueError(not_sealed)
-        if approved_shots != {item["shot_id"] for item in shots}:
-            raise ValueError("PRODUCTION_V11_BRIDGE_FULL_COVERAGE_REQUIRED")
+        if not shots:
+            raise ValueError(not_sealed)
+        required = {shots[0]["shot_id"]} if pilot_first_shot else {item["shot_id"] for item in shots}
+        if approved_shots != required:
+            raise ValueError("PRODUCTION_V11_PILOT_FIRST_SHOT_COVERAGE_REQUIRED" if pilot_first_shot
+                             else "PRODUCTION_V11_BRIDGE_FULL_COVERAGE_REQUIRED")
         bridged = deepcopy(manifest)
         for item in bridged["stage_results"]["shot_plan.v1"]["shots"]:  # type: ignore[index]
-            item["render_intent"] = "IMAGE_TO_VIDEO"
+            if item["shot_id"] in required:
+                item["render_intent"] = "IMAGE_TO_VIDEO"
         return bridged
 
     def create_job_v11(self, request: ProductionJobCreateV11Request) -> ProductionJobRecord:
         """New opt-in job only. Never upgrade any frozen v1.0 job/plan.
 
         The Windows-reported SHA is an exact consent claim here, not proof that
-        Mac saw those bytes. A future authenticated Windows adapter must verify
-        them before new GPU POST; v1.1 claim stays disabled until then.
+        Mac saw those bytes. The paired operator-trusted Windows adapter must
+        verify them before new GPU POST; creating a Job grants no lease.
         """
         from .compiler import _task_id  # deterministic Core-owned shot identity
         from .profile import I2V_WORKFLOW_ID
@@ -265,19 +275,6 @@ class ProductionService:
             (request.idempotency_key,),
         )
         job_id = existing["production_job_id"] if existing is not None else str(uuid4())
-        if existing is not None:
-            old = self.repository.get_job(job_id)
-            if old.plan_digest is not None:
-                persisted = self.repository.plan_for(job_id)
-                if not isinstance(persisted, ProductionPlanV11) or (
-                    {t.reference_asset.approval_id for t in persisted.tasks
-                     if t.reference_asset is not None}
-                    != set(request.approved_reference_ids)
-                ):
-                    raise ValueError("PRODUCTION_V11_IDEMPOTENCY_CONFLICT")
-                if old.creative_package_id != package.creative_package_id:
-                    raise ValueError("PRODUCTION_V11_IDEMPOTENCY_CONFLICT")
-                return old
 
         # Never trust legacy Creative manifest paths for v1.1: only approved
         # per-shot managed refs can drive I2V workflow selection.
@@ -286,6 +283,13 @@ class ProductionService:
             shot: entry["input_relative_path"]
             for shot, (entry, _) in source_by_shot.items()
         }
+        if request.pilot_first_shot:
+            # Validate the entire sealed source before selecting the first
+            # task. Unselected shots retain their original T2V intent in this
+            # deep copy, and the stored Creative/old Jobs remain untouched.
+            sanitized_manifest = self._bridge_sealed_v2_manifest(
+                sanitized_manifest, creative_job, set(source_by_shot), pilot_first_shot=True
+            )
         base_plan = compile_production_plan(job_id, sanitized_manifest, package.package_digest)
         required = {task.shot_id for task in base_plan.tasks
                     if task.render_intent == "IMAGE_TO_VIDEO"}
@@ -301,6 +305,16 @@ class ProductionService:
                         if task.render_intent == "IMAGE_TO_VIDEO"}
         if not required or required != set(source_by_shot):
             raise ValueError("PRODUCTION_V11_REFERENCE_SHOT_COVERAGE_INVALID")
+
+        if request.pilot_first_shot:
+            first = base_plan.tasks[0]
+            if first.render_intent != "IMAGE_TO_VIDEO" or first.workflow_id != I2V_WORKFLOW_ID:
+                raise ValueError("PRODUCTION_V11_PILOT_FIRST_SHOT_INVALID")
+            if (first.execution_disposition.value != "Executable" or first.frame_count != 97
+                or first.fps != 24 or first.target_duration_ms != 4000):
+                raise ValueError("PRODUCTION_V11_PILOT_FIRST_SHOT_INVALID")
+            base_plan = base_plan.model_copy(update={"tasks": [first],
+                                                    "target_runtime_ms": first.target_duration_ms})
 
         tasks = []
         for task in base_plan.tasks:
@@ -334,6 +348,22 @@ class ProductionService:
             "schema_version": "1.1",
             "tasks": [task.model_dump(mode="json") for task in tasks],
         })
+        candidate_digest = self._digest(plan.model_dump(mode="json"))
+        if existing is not None:
+            old = self.repository.get_job(job_id)
+            if old.plan_digest is not None:
+                # Fully validate the requested source, consent and selection
+                # before replay. Task count alone cannot distinguish a normal
+                # one-shot package from a sealed-v2 first-shot pilot.
+                persisted = self.repository.plan_for(job_id)
+                if (not isinstance(persisted, ProductionPlanV11)
+                    or old.creative_package_id != package.creative_package_id
+                    or old.creative_package_digest != package.package_digest
+                    or old.production_profile != request.production_profile
+                    or old.plan_digest != candidate_digest
+                    or self._digest(persisted.model_dump(mode="json")) != candidate_digest):
+                    raise ValueError("PRODUCTION_V11_IDEMPOTENCY_CONFLICT")
+                return old
         # Retain the *same* v1.0 repository table and immutable canonical digest.
         self.repository.create_job(
             production_job_id=job_id,
@@ -343,7 +373,7 @@ class ProductionService:
             production_profile=request.production_profile,
             idempotency_key=request.idempotency_key,
         )
-        self.repository.save_plan(job_id, plan, self._digest(plan.model_dump(mode="json")))
+        self.repository.save_plan(job_id, plan, candidate_digest)
         return self.repository.get_job(job_id)
 
     def authorize_reference_v11(
@@ -663,7 +693,8 @@ class ProductionService:
             # ── process, snapshot ACL/bytes or unknown Comfy POST clearance.
             raise ValueError("PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED")
 
-    def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
+    def claim(self, production_job_id: str, executor_id: str, *,
+              worker_witness: WorkerWitnessV11 | None = None) -> ProductionClaimRecord:
         # ── Claim returns full durable snapshots plus an unfinished-only plan ─
         # Validate bound prompt recovery inside the SAME database transaction as
         # lease rotation. Previously a separate read before claim_job allowed an
@@ -671,9 +702,12 @@ class ProductionService:
         # Any failure rolls back and leaves the previous lease untouched.
         plan = self.repository.plan_for(production_job_id)
         if isinstance(plan, ProductionPlanV11):
-            # No GPU lease until exact Core approval + Codex Windows byte
-            # verifier and crash-durable Comfy snapshot are connected.
-            raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+            if worker_witness is None:
+                raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+            return self.repository.claim_job(production_job_id, executor_id,
+                                              worker_witness=worker_witness)
+        if worker_witness is not None:
+            raise ValueError("PRODUCTION_V11_PLAN_REQUIRED")
 
         def authorize_recovery(connection) -> None:  # type: ignore[no-untyped-def]
             rows = connection.execute(
@@ -791,6 +825,7 @@ class ProductionService:
             request=request,
         )
 
+    @pilot_atomic
     def commit_task(
         self,
         production_job_id: str,

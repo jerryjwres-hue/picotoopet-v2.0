@@ -1,0 +1,138 @@
+name: P0-Q2 Operator Trusted Private Host Pilot
+on:
+  push:
+    branches: [fix/p0q2-v11-operator-trusted-host-pilot-20261103]
+    paths:
+      - src/picotoopet_core/**
+      - tests/production/test_operator_trusted_host_pilot.py
+      - tests/integration/real_core_worker_http_server.py
+      - windows/desktop/**
+      - .github/workflows/p0q2-operator-trusted-host-pilot.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: owner-pilot-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-mac-core-pilot:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e . pytest cryptography
+      - name: Atomic B claim and revocation replay concurrency on actual Mac
+        run: python -m pytest tests/production/test_operator_trusted_host_pilot.py tests/creative_quality_2026/test_v2_reference_registration_end_to_end.py -v
+  native-windows-pilot:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Existing Python Core for real cross-language HTTP fixture
+        run: python -m pip install -e . pytest cryptography
+      - name: Build existing Windows same EXE test host
+        id: build
+        shell: pwsh
+        run: |
+          dotnet build windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release --warnaserror
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native Windows B execution and recovery tests CPU only
+        shell: pwsh
+        run: |
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --operator-trusted-host-pilot-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exact existing HOLD ALLOW binds one four second I2V plan
+        if: always() && steps.build.outcome == 'success'
+        shell: pwsh
+        run: |
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --operator-trusted-host-pilot-gate-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Revocation or cancellation after reservation prevents POST
+        if: always() && steps.build.outcome == 'success'
+        shell: pwsh
+        run: |
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --operator-trusted-prepost-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Affected I2V executor fake submit and lost acknowledgement recovery
+        if: always() && steps.build.outcome == 'success'
+        shell: pwsh
+        run: |
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --i2v-executor-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Real protected Windows signer to existing FastAPI atomic B Claim CPU only
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          P0_REAL_CORE_LOCALHOST_CI_ONLY: '1'
+          P0_OPERATOR_TRUSTED_PILOT_CI_ONLY: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP ('p0-real-core-interop-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $root | Out-Null
+          $env:P0_REAL_CORE_INTEROP_ROOT = $root
+          $env:P0_CORE_INTEROP_BEARER = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
+          $exe = Join-Path $pwd 'windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/bin/Release/net10.0-windows10.0.19041.0/PicotooPet.MediaWorker.SmokeTests.exe'
+          $server = $null
+          function Invoke-Phase([string]$phase) {
+            & $exe --real-core-interop $phase
+            if ($LASTEXITCODE -ne 0) { throw ('PILOT_PHASE_FAILED=' + $phase) }
+          }
+          function Start-Fixture {
+            $script:server = Start-Process -FilePath (Get-Command python).Source -ArgumentList @(
+              '-u', 'tests/integration/real_core_worker_http_server.py', 'serve', '--root', $root, '--port', "$port"
+            ) -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $root 'stdout.txt') -RedirectStandardError (Join-Path $root 'stderr.txt')
+            for ($i=0; $i -lt 40; $i++) {
+              if ($script:server.HasExited) { throw 'CORE_FIXTURE_EXITED' }
+              try {
+                $ready = Invoke-WebRequest ($env:P0_REAL_CORE_URL + 'api/v1/production/jobs/' + $manifest.job_id) -Headers @{Authorization=('Bearer ' + $env:P0_CORE_INTEROP_BEARER)} -TimeoutSec 2
+                if ($ready.StatusCode -eq 200) { return }
+              } catch { Start-Sleep -Milliseconds 250 }
+            }
+            throw 'CORE_FIXTURE_TIMEOUT'
+          }
+          try {
+            Invoke-Phase 'seed-key'
+            python tests/integration/real_core_worker_http_server.py seed --root $root --identity (Join-Path $root 'identity-public.json')
+            if ($LASTEXITCODE -ne 0) { throw 'B_FIXTURE_SEED_FAILED' }
+            $manifest = Get-Content -LiteralPath (Join-Path $root 'interop-fixture-public.json') -Raw | ConvertFrom-Json
+            $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0)
+            $listener.Start()
+            $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
+            $listener.Stop()
+            $env:P0_REAL_CORE_URL = "http://127.0.0.1:$port/"
+            Start-Fixture
+            Invoke-Phase 'pilot'
+            python tests/integration/real_core_worker_http_server.py assert-pilot --root $root
+            if ($LASTEXITCODE -ne 0) { throw 'B_ATOMIC_SQLITE_ASSERT_FAILED' }
+            python tests/integration/real_core_worker_http_server.py revoke --root $root
+            if ($LASTEXITCODE -ne 0) { throw 'B_FIXTURE_REVOKE_FAILED' }
+            Invoke-Phase 'pilot-after-revoke'
+            # Only the disposable test server restarts. No owner device is accessed.
+            Stop-Process -Id $server.Id -Force
+            $server.WaitForExit(10000) | Out-Null
+            Start-Fixture
+            Invoke-Phase 'pilot-after-revoke'
+            python tests/integration/real_core_worker_http_server.py assert-pilot --root $root
+            if ($LASTEXITCODE -ne 0) { throw 'B_RESTART_SQLITE_ASSERT_FAILED' }
+            Write-Output 'REAL_B_OWNER_PILOT_HTTP=PASS; LEASE=ONE; REPLAY=DENIED; REVOCATION=DENIED; RESTART=DENIED; COMFY_POST=0; HARDWARE_ATTESTATION=NO'
+          }
+          finally {
+            if ($server -and !$server.HasExited) { Stop-Process -Id $server.Id -Force; $server.WaitForExit(10000) | Out-Null }
+            Remove-Item Env:P0_CORE_INTEROP_BEARER -ErrorAction SilentlyContinue
+            $resolved = [IO.Path]::GetFullPath($root)
+            $prefix = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
+            if (!$resolved.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or ![IO.Path]::GetFileName($resolved).StartsWith('p0-real-core-interop-', [StringComparison]::Ordinal)) { throw 'REFUSE_OUTSIDE_RUNNER_CLEANUP' }
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+          }

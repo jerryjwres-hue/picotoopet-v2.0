@@ -74,6 +74,7 @@ class ProductionClaimRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     executor_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.-]+$")
+    worker_witness: WorkerWitnessV11 | None = None
 
 
 class ProductionHeartbeatRequest(BaseModel):
@@ -308,8 +309,8 @@ class ProductionClaimRecord(BaseModel):
     executor_id: str
     lease_token: str
     lease_expires_at: datetime
-    plan: ProductionPlan
-    tasks: list[ProductionTaskRecord]
+    plan: ProductionPlan | ProductionPlanV11
+    tasks: list[ProductionTaskRecord | ProductionTaskRecordV11]
 
 
 class ProductionEligibleCreativeRecord(BaseModel):
@@ -334,3 +335,8 @@ class ProductionPackageRecord(BaseModel):
     manifest: dict[str, object]
     quality_outcome: Literal["PASS"]
     created_at: datetime
+
+
+# Resolve versioned Claim annotations for callers importing this module alone.
+# When versioned_plan imports us first, its final rebuild runs on return.
+from . import versioned_plan as _versioned_plan  # noqa: E402,F401

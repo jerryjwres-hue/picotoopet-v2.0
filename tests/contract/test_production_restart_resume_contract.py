@@ -54,8 +54,10 @@ def test_hidden_autonomous_goal_ready_package_uses_only_existing_cpu_delivery() 
     ready_jobs = source.index("var readyJobs = await session.GetProductionJobsAsync", visible)
     recovery = source.index("session.FinalVideoDelivery.Observe(hiddenGoalId, hiddenContinuation)", ready_jobs)
     end = source.index("} // ── End fresh Goal dispatch", recovery)
-    assert journal < visible < ready_jobs < recovery < end
-    guarded = source[ready_jobs:recovery]
+    # ── Historical CPU-only block starts AFTER the separately gated B pilot.
+    hidden_start = source.index("foreach (var completedJob in readyJobs)", ready_jobs)
+    assert journal < visible < ready_jobs < hidden_start < recovery < end
+    guarded = source[hidden_start:recovery]
     for requirement in (
         'completedJob.Status != "production_ready"',
         '"autonomous-goal:"',
@@ -68,9 +70,10 @@ def test_hidden_autonomous_goal_ready_package_uses_only_existing_cpu_delivery() 
         "completedPackage.PlanDigest != completedJob.PlanDigest",
     ):
         assert requirement in guarded
-    assert "executor.RunAsync" not in source[ready_jobs:end]
-    assert "ClaimProductionJobAsync" not in source[ready_jobs:end]
-    assert "ComfyProductionClient" not in source[ready_jobs:end]
+    # ── Hidden completed Goals retain a strict CPU-only recovery boundary.
+    assert "executor.RunAsync" not in source[hidden_start:end]
+    assert "ClaimProductionJobAsync" not in source[hidden_start:end]
+    assert "ComfyProductionClient" not in source[hidden_start:end]
 
 
 def test_headless_postproduction_failure_has_redacted_diagnostic() -> None:

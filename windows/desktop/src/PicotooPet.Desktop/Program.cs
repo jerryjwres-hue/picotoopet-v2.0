@@ -10,6 +10,18 @@ internal static class Program
     public static int Main(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
+        // Explicit local key lifecycle only. This never enrolls Core or releases GPU HOLD.
+        if (args.Length == 1 && args[0] == "--p0-worker-key-init")
+        {
+            var identity = Services.ProductionReference.WorkerLocalPairing.Initialize(WorkerExecutorId());
+            Console.Out.WriteLine(System.Text.Json.JsonSerializer.Serialize(identity));
+            return 0;
+        }
+        if (args.Length == 2 && args[0] == "--p0-worker-key-bind")
+        {
+            Services.ProductionReference.WorkerLocalPairing.Bind(WorkerExecutorId(), args[1]);
+            return 0;
+        }
         if (MockProviderChild.TryRun(
                 args,
                 Console.Out,
@@ -31,4 +43,6 @@ internal static class Program
         application.InitializeComponent();
         return application.Run();
     }
+
+    private static string WorkerExecutorId() => Services.ProductionExecutionService.NormalizeExecutorId($"windows-production-{Environment.MachineName}");
 }

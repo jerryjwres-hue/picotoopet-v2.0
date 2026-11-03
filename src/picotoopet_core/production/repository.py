@@ -7,6 +7,7 @@ import json
 import secrets
 import sqlite3
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -25,8 +26,9 @@ from .models import (
 
 from .versioned_plan import (
     ProductionPlanV11, ProductionTaskRecordV11, VersionedProductionPlan,
-    parse_versioned_plan,
+    parse_versioned_plan, WorkerWitnessV11,
 )
+from .operator_trusted_host import admit_claim_locked, pilot_atomic, require_admitted_lease_locked
 
 def _now() -> datetime:
     # ── Single UTC clock representation ─────────────────────────────────────
@@ -194,14 +196,15 @@ class ProductionRepository:
         return self._task(row)
 
     def _require_v11_worker_proof(self, production_job_id: str) -> None:
-        """Guard every lease/attempt/result write until trusted Windows proof exists.
-
-        The current public request models have no authenticated, fresh byte/snapshot
-        attestation. Do not convert a Core approval or a hand-written DB token
-        into shipping I2V authority.
-        """
+        """Require the current B-admitted lease, pinned active key and approval."""
         if isinstance(self.plan_for(production_job_id), ProductionPlanV11):
-            raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+            require_admitted_lease_locked(self, production_job_id)
+
+    def _write_transaction(self, production_job_id: str):
+        # pilot_atomic already owns the lock + BEGIN IMMEDIATE for v1.1.
+        if isinstance(self.plan_for(production_job_id), ProductionPlanV11) and self.database.connection.in_transaction:
+            return nullcontext(self.database.connection)
+        return self.database.transaction()
 
     def claim_job(
         self,
@@ -210,6 +213,7 @@ class ProductionRepository:
         lease_seconds: int = 120,
         *,
         before_lease: Callable[[sqlite3.Connection], None] | None = None,
+        worker_witness: WorkerWitnessV11 | None = None,
     ) -> ProductionClaimRecord:
         # ── One active executor lease per job ────────────────────────────────
         now = _now()
@@ -224,7 +228,11 @@ class ProductionRepository:
             if row is None:
                 raise KeyError(production_job_id)
             # ── Source-built Core approval alone cannot authorize GPU work. ──
-            self._require_v11_worker_proof(production_job_id)
+            pilot = isinstance(self.plan_for(production_job_id), ProductionPlanV11)
+            if pilot and worker_witness is None:
+                raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+            if not pilot and worker_witness is not None:
+                raise ValueError("PRODUCTION_V11_PLAN_REQUIRED")
             status = ProductionJobStatus(row["status"])
             if status not in {ProductionJobStatus.PLANNED, ProductionJobStatus.CLAIMED, ProductionJobStatus.RENDERING}:
                 raise ValueError("PRODUCTION_JOB_NOT_CLAIMABLE")
@@ -236,6 +244,9 @@ class ProductionRepository:
             # an unknown Comfy POST after another writer changes task state.
             if before_lease is not None:
                 before_lease(connection)
+            admitted_payload = None
+            if pilot:
+                admitted_payload = admit_claim_locked(self, production_job_id, executor_id, worker_witness)
             connection.execute(
                 "UPDATE production_jobs SET status=?,lease_executor_id=?,lease_token_digest=?,lease_expires_at=?,"
                 "updated_at=? WHERE production_job_id=?",
@@ -248,6 +259,16 @@ class ProductionRepository:
                     production_job_id,
                 ),
             )
+            if admitted_payload is not None:
+                updated = connection.execute(
+                    "UPDATE production_worker_challenges SET admitted_lease_token_digest=?,"
+                    "admitted_witness_sha256=?,admitted_witness_json=? "
+                    "WHERE nonce_digest=? AND consumed_at IS NOT NULL AND admitted_lease_token_digest IS NULL",
+                    (digest, hashlib.sha256(admitted_payload.encode()).hexdigest(), admitted_payload,
+                     hashlib.sha256(worker_witness.nonce.encode()).hexdigest()),
+                )
+                if updated.rowcount != 1:
+                    raise ValueError("PRODUCTION_V11_WITNESS_REPLAY")
             # ── Return the same serialized lease/task snapshot used for recovery authorization. ──
             # ── Reading tasks after COMMIT could race an independent writer or stale result. ──────
             plan = self.plan_for(production_job_id)
@@ -261,6 +282,7 @@ class ProductionRepository:
             tasks=tasks,
         )
 
+    @pilot_atomic
     def heartbeat(
         self,
         production_job_id: str,
@@ -279,6 +301,7 @@ class ProductionRepository:
         )
         return self.get_job(production_job_id)
 
+    @pilot_atomic
     def mark_task_attempt(
         self,
         production_job_id: str,
@@ -291,6 +314,11 @@ class ProductionRepository:
         self._require_v11_worker_proof(production_job_id)
         self._require_lease(production_job_id, executor_id, lease_token)
         task = self.get_task(production_job_id, production_task_id)
+        if isinstance(self.plan_for(production_job_id), ProductionPlanV11):
+            if task.attempt_count != 0 or task.status is not ProductionTaskStatus.READY:
+                raise ValueError("PRODUCTION_V11_WITNESS_POST_UNCERTAIN")
+            if comfy_prompt_id is not None:
+                raise ValueError("PRODUCTION_ATTEMPT_RESERVATION_REQUIRED")
         if task.status is ProductionTaskStatus.SUCCEEDED:
             return task
         if task.execution_disposition.value != "Executable":
@@ -300,7 +328,7 @@ class ProductionRepository:
 
         attempt_number = task.attempt_count + 1
         timestamp = _iso(_now())
-        with self.database.transaction() as connection:
+        with self._write_transaction(production_job_id) as connection:
             connection.execute(
                 "INSERT INTO production_attempts("
                 "production_attempt_id,production_job_id,production_task_id,attempt_number,executor_id,"
@@ -333,6 +361,7 @@ class ProductionRepository:
             )
         return self.get_task(production_job_id, production_task_id)
 
+    @pilot_atomic
     def commit_task_result(
         self,
         production_job_id: str,
@@ -343,6 +372,9 @@ class ProductionRepository:
         self._require_v11_worker_proof(production_job_id)
         self._require_lease(production_job_id, request.executor_id, request.lease_token)
         current = self.get_task(production_job_id, production_task_id)
+        if isinstance(self.plan_for(production_job_id), ProductionPlanV11):
+            from .quality import validate_task_commit
+            validate_task_commit(current.task_plan, request)
         if current.status is ProductionTaskStatus.SUCCEEDED:
             if (
                 current.output_sha256 == request.output_sha256
@@ -371,7 +403,7 @@ class ProductionRepository:
             raise ValueError("PRODUCTION_PROMPT_ID_CONFLICT")
 
         timestamp = _iso(_now())
-        with self.database.transaction() as connection:
+        with self._write_transaction(production_job_id) as connection:
             connection.execute(
                 "UPDATE production_tasks SET status=?,comfy_prompt_id=?,output_relpath=?,output_sha256=?,"
                 "output_bytes=?,output_mime_type=?,output_width=?,output_height=?,output_frame_count=?,output_fps=?,"

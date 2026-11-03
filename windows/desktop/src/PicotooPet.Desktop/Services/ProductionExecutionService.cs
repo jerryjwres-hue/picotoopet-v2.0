@@ -246,6 +246,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         }
         var originalDigest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(originalPlan)!))).ToLowerInvariant();
         using var references = new DurableReferenceSnapshotBatch();
+        var preparedGraphs = new Dictionary<string, string>(StringComparer.Ordinal);
         if (originalPlan.SchemaVersion == "1.1")
         {
             var store = ReferenceSnapshots ?? ShippingReferences?.CreateSnapshotStore(preflight.InputRoot!)
@@ -260,6 +261,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 references.Add(task.ProductionTaskId, await store.PrepareAsync(originalPlan, task,
                     originalDigest, ProductionSubmissionJournal.GraphDigest(graph), _journal, cancellationToken).ConfigureAwait(false));
             }
+            foreach (var task in originalPlan.Tasks)
+                preparedGraphs.Add(task.ProductionTaskId, ProductionSubmissionJournal.GraphDigest(
+                    BuildPrompt(productionJobId, task, preflight, references.Get(task.ProductionTaskId)?.RelativePath)));
         }
         // ── Preflight may be slow; recheck admission immediately before claiming Core lease. ──
         if (_acceptanceAdmission is not null
@@ -269,11 +273,17 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         try
         {
             // ── 锁定当前授权至 claim 返回；切换 HOLD 不得产生新的 Core lease。 ──
-            using var claimPermit = _submissionPermit?.Invoke(productionJobId, originalDigest);
+            using var claimPermit = originalPlan.SchemaVersion == "1.1" && ShippingReferences is not null
+                ? P0ThreeShotAcceptanceGate.AcquireSubmissionPermit(productionJobId, originalDigest)
+                : _submissionPermit?.Invoke(productionJobId, originalDigest);
+            if (originalPlan.SchemaVersion == "1.1" && ShippingReferences is not null && claimPermit is null)
+                throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
             await references.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
-            claim = await _session.ClaimProductionJobAsync(productionJobId, _executorId, cancellationToken).ConfigureAwait(false);
+            claim = originalPlan.SchemaVersion == "1.1" && ShippingReferences is not null
+                ? await ShippingReferences.ClaimAsync(originalPlan, references.Snapshots, preparedGraphs, _journal, gpu, cancellationToken).ConfigureAwait(false)
+                : await _session.ClaimProductionJobAsync(productionJobId, _executorId, cancellationToken).ConfigureAwait(false);
         }
-        catch (ApiException error) when (error.StatusCode == 409)
+        catch (ApiException error) when (error.StatusCode == 409 && originalPlan.SchemaVersion != "1.1")
         {
             // Current Core correctly refuses an expired *unbound* Running attempt. A legacy
             // worker may have POSTed it without a journal. Do not let that refusal admit job B.
@@ -313,7 +323,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 var timer = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
-                    await ExecuteTaskAsync(claim, task, originalDigest, preflight, lifetime.Token, references.Get(task.ProductionTaskId))
+                    await ExecuteTaskAsync(claim, task, originalDigest, preflight, lifetime.Token, references.Get(task.ProductionTaskId),
+                        preparedGraphs.GetValueOrDefault(task.ProductionTaskId))
                         .ConfigureAwait(false);
                     ObserveShot(new(productionJobId, task.ProductionTaskId, observed.AttemptCount,
                         knownPrompt, timer.ElapsedMilliseconds, "CORE_COMMITTED"));
@@ -456,7 +467,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
 
     private async Task ExecuteTaskAsync(ProductionClaimRecord claim, ProductionTaskPlanRecord task, string planDigest,
         ProductionPreflightSnapshot preflight, CancellationToken cancellationToken,
-        DurableReferenceSnapshot? reference = null)
+        DurableReferenceSnapshot? reference = null, string? preparedGraphDigest = null)
     {
         var snapshot = claim.Tasks.SingleOrDefault(t => t.ProductionTaskId == task.ProductionTaskId)
             ?? throw new ProductionWorkerException("PRODUCTION_TASK_SNAPSHOT_MISSING");
@@ -466,6 +477,8 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         var prompt = BuildPrompt(claim.ProductionJobId, task, preflight, reference?.RelativePath);
         // Journal binds the full immutable plan digest, never the narrowed lease resume-plan digest.
         var graphDigest = ProductionSubmissionJournal.GraphDigest(prompt);
+        if (preparedGraphDigest is not null && graphDigest != preparedGraphDigest)
+            throw new ProductionWorkerException("MEDIA_SUBMISSION_IDENTITY_CONFLICT");
         var state = _journal.Read(claim.ProductionJobId, task.ProductionTaskId);
         if (state is not null && (state.PlanDigest != planDigest || state.GraphDigest != graphDigest))
             throw new ProductionWorkerException("MEDIA_SUBMISSION_IDENTITY_CONFLICT");
@@ -479,7 +492,7 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         // No approval file => unchanged behavior: resume only the original prompt.
         // Core task.updated_at is the durable pre-boot binding witness; local
         // journal mtime is unsuitable because a reconnect may rewrite it.
-        if (state.Phase == "Submitted" && state.PromptId is not null
+        if (claim.Plan.SchemaVersion != "1.1" && state.Phase == "Submitted" && state.PromptId is not null
             && snapshot.Status == "Running" && snapshot.AttemptCount == 1
             && snapshot.ComfyPromptId == state.PromptId
             && task.Order == 3 && claim.Tasks.Length == 3
@@ -564,14 +577,42 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         {
             // ── Opt-in acceptance gate holds the exact authorization file through the new POST. ──
             // ── No permit means ordinary unattended mode; a denied permit changes no attempt. ──
-            using var permit = _submissionPermit?.Invoke(claim.ProductionJobId, planDigest);
+            using var permit = claim.Plan.SchemaVersion == "1.1" && ShippingReferences is not null
+                ? P0ThreeShotAcceptanceGate.AcquireSubmissionPermit(claim.ProductionJobId, planDigest)
+                : _submissionPermit?.Invoke(claim.ProductionJobId, planDigest);
+            if (claim.Plan.SchemaVersion == "1.1" && ShippingReferences is not null && permit is null)
+                throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
             if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
+            if (claim.Plan.SchemaVersion == "1.1") await RecheckBeforePostAsync(state, expectedJournal: null).ConfigureAwait(false);
             // Write intent first. An uncertain reservation is safe to replay, an uncertain POST is not.
             _journal.Save(state);
-            await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
+            var reserved = await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
                 new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null), cancellationToken).ConfigureAwait(false);
-            state = state with { Phase = "Submitting" }; _journal.Save(state);
-            if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
+            if (claim.Plan.SchemaVersion == "1.1" && (reserved.ProductionJobId != claim.ProductionJobId
+                || reserved.ProductionTaskId != task.ProductionTaskId || reserved.TaskPlan != task
+                || reserved.Status != "Running" || reserved.AttemptCount != 1 || reserved.ComfyPromptId is not null))
+                throw new ProductionWorkerException("MEDIA_ATTEMPT_RESERVATION_CONFLICT");
+            if (claim.Plan.SchemaVersion == "1.1")
+            {
+                await RecheckBeforePostAsync(state, state).ConfigureAwait(false);
+                // Final awaited Core operation: the existing idempotent null
+                // reservation revalidates the admitted lease, active key, task
+                // and current approval AFTER every slow file/approval read.
+                var current = await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
+                    new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null), cancellationToken).ConfigureAwait(false);
+                if (current.ProductionJobId != claim.ProductionJobId || current.ProductionTaskId != task.ProductionTaskId
+                    || current.TaskPlan != task || current.Status != "Running" || current.AttemptCount != 1 || current.ComfyPromptId is not null)
+                    throw new ProductionWorkerException("MEDIA_ATTEMPT_RESERVATION_CONFLICT");
+                if (_journal.Read(state.JobId, state.TaskId) != state
+                    || _journal.Pending().Any(p => p.JobId != state.JobId || p.TaskId != state.TaskId))
+                    throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+                state = state with { Phase = "Submitting" }; _journal.Save(state);
+            }
+            else
+            {
+                state = state with { Phase = "Submitting" }; _journal.Save(state);
+                if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
+            }
             promptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken).ConfigureAwait(false);
         }
         state = state with { PromptId = promptId, Phase = "Submitted" }; _journal.Save(state);
@@ -609,6 +650,25 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 relativeOutput.Replace('\\', '/'), sha256, file.Length, "video/webm",
                 task.Width, task.Height, task.FrameCount, task.Fps), cancellationToken).ConfigureAwait(false);
         _journal.Save(state with { Phase = "Settled" });
+
+        async Task RecheckBeforePostAsync(ProductionSubmission expected, ProductionSubmission? expectedJournal)
+        {
+            // Existing single GPU lock stays held. A new unknown intent anywhere
+            // on this owner host must stop even after a successful admission.
+            if (_journal.Pending().Any(p => p.JobId != expected.JobId || p.TaskId != expected.TaskId)
+                || _journal.Read(expected.JobId, expected.TaskId) != expectedJournal)
+                throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+            var currentPlan = await _session.GetProductionPlanAsync(claim.ProductionJobId, cancellationToken).ConfigureAwait(false);
+            var currentDigest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(currentPlan)!))).ToLowerInvariant();
+            if (currentDigest != planDigest || !currentPlan.Tasks.Any(t => t == task)
+                || ProductionSubmissionJournal.GraphDigest(BuildPrompt(claim.ProductionJobId, task, preflight, reference?.RelativePath)) != graphDigest
+                || reference is not null && reference.Measurement.GraphDigest != graphDigest)
+                throw new ProductionWorkerException("MEDIA_SUBMISSION_IDENTITY_CONFLICT");
+            if (reference is not null) await reference.RecheckForWitnessAsync(cancellationToken).ConfigureAwait(false);
+            if (_journal.Read(expected.JobId, expected.TaskId) != expectedJournal
+                || _journal.Pending().Any(p => p.JobId != expected.JobId || p.TaskId != expected.TaskId))
+                throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+        }
     }
 
     private async Task ReportFinalFailureAsync(ProductionClaimRecord claim, ProductionTaskPlanRecord task,
