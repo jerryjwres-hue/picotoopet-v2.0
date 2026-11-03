@@ -1,0 +1,44 @@
+name: P0-Q2 Operator Trusted Private Host Pilot
+on:
+  push:
+    branches: [fix/p0q2-v11-operator-trusted-host-pilot-20261103]
+    paths:
+      - src/picotoopet_core/**
+      - tests/production/test_operator_trusted_host_pilot.py
+      - tests/integration/real_core_worker_http_server.py
+      - windows/desktop/**
+      - .github/workflows/p0q2-operator-trusted-host-pilot.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: owner-pilot-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-mac-core-pilot:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e . pytest cryptography
+      - name: Atomic B claim and revocation replay concurrency on actual Mac
+        run: python -m pytest tests/production/test_operator_trusted_host_pilot.py -v
+  native-windows-pilot:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Native Windows B execution and recovery tests CPU only
+        shell: pwsh
+        run: |
+          dotnet run --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --operator-trusted-host-pilot-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
