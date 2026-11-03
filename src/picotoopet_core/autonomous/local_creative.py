@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+from picotoopet_core.creative.director import parse_goal_directives
+from picotoopet_core.creative.models import CreativeProfile
 from picotoopet_core.creative.service import CreativeIntelligenceService
 from picotoopet_core.creative.source import CreativeSourceFinding, NormalizedCreativeSourceSet
 from picotoopet_core.domain.models import TaskRecord
@@ -42,6 +44,24 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
         return hashlib.sha256(json.dumps(
             document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")).hexdigest()
+
+    def _profile_for_goal(self, goal) -> str:
+        """Select the existing immutable job profile, then opt fresh three-shot Goals into v2."""
+        directives = parse_goal_directives(goal.objective)
+        if not (directives.shot_count == 3 or directives.story_gate):
+            return CreativeProfile.CONTENT_PLAN_V1.value
+
+        # Durable replay   : existing Goal idempotency keys must never change their profile.
+        # Fresh 3-shot Goal: v2 is required before its Story Bible/text-continuity gate can run.
+        existing = self.creative.repository.database.fetchone(
+            "SELECT creative_profile FROM creative_jobs WHERE idempotency_key=?",
+            (f"goal-video:{goal.goal_id}",),
+        )
+        return (
+            existing["creative_profile"]
+            if existing is not None
+            else CreativeProfile.CONTENT_PLAN_V2.value
+        )
 
     def _hash_for_step(self, goal, step_key: str, expected_type: str) -> str:
         # ── ResultStore identities come from Core workflow facts, not model output. ──
@@ -123,6 +143,7 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
             discovery_result_hash=discovery_hash,
             synthesis_result_hash=synthesis_hash,
             creative_objective=goal.objective,
+            creative_profile=self._profile_for_goal(goal),
         )
         return HandlerResult(
             summary={"goal_id": goal.goal_id, "creative_job_id": job.creative_job_id},
