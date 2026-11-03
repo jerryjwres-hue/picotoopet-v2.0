@@ -157,16 +157,18 @@ public static class P0MediaWorkerHost
                             {
                                 continue;
                             }
-                            // ── 默认文件不存在时沿用原调度；验收模式仅核准一个冻结三镜头 Job。 ──
+                            if (continuation.ProductionStatus is "production_ready")
+                            {
+                                // ── HOLD denies NEW GPU POST, not immutable-package C004/C011 QA.
+                                // ── Journal recovery has already won above; this path never claims a lease.
+                                _ = session.FinalVideoDelivery.Observe(goal.GoalId, continuation);
+                                continue;
+                            }
+                            // ── New GPU work still needs the exact frozen three-shot ALLOW.
+                            // ── Never move the permit behind executor.RunAsync.
                             if (!await P0ThreeShotAcceptanceGate.AllowsJobAsync(
                                 session, jobId, cancellationToken).ConfigureAwait(false))
                             {
-                                continue;
-                            }
-                            if (continuation.ProductionStatus is "production_ready")
-                            {
-                                // ── 已完成镜头走冻结 C009/C010/C011 合成与 QA 流。 ──
-                                _ = session.FinalVideoDelivery.Observe(goal.GoalId, continuation);
                                 continue;
                             }
                             if (continuation.ProductionStatus is not ("Ready" or "Claimed" or "Rendering"))
