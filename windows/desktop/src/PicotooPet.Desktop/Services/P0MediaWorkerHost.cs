@@ -191,6 +191,63 @@ public static class P0MediaWorkerHost
                                 backoff[jobId] = DateTimeOffset.UtcNow + FailureBackoff;
                             }
                         }
+
+                        // ── CPU-only recovery for a frozen, already-passed autonomous Goal package. ──
+                        // ── Historical autonomous video Goals may be hidden from the GUI's 200-Goal
+                        // ── list. Their Core continuation and Production Package still bind an exact
+                        // ── identity; never treat this recovery as permission to Claim or POST GPU.
+                        var readyJobs = await session.GetProductionJobsAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                        foreach (var completedJob in readyJobs)
+                        {
+                            if (completedJob.Status != "production_ready"
+                                || !completedJob.ProjectKey.StartsWith(
+                                    "autonomous-goal:", StringComparison.Ordinal))
+                            {
+                                continue;
+                            }
+                            var hiddenGoalId = completedJob.ProjectKey["autonomous-goal:".Length..];
+                            if (!Guid.TryParseExact(hiddenGoalId, "D", out var parsedGoal)
+                                || !string.Equals(hiddenGoalId, parsedGoal.ToString("D"),
+                                    StringComparison.Ordinal)
+                                || goals.Any(item => item.GoalId == hiddenGoalId))
+                            {
+                                continue;
+                            }
+                            PicotooPet.Desktop.Core.Contracts.GoalVideoContinuationRecord hiddenContinuation;
+                            try
+                            {
+                                hiddenContinuation = await session.GetGoalVideoContinuationAsync(
+                                    hiddenGoalId, cancellationToken).ConfigureAwait(false);
+                            }
+                            catch (PicotooPet.Desktop.Core.Networking.ApiException ex)
+                                when (ex.StatusCode == 404)
+                            {
+                                // ── No trusted Core continuation, no CPU recovery. ──
+                                continue;
+                            }
+                            if (hiddenContinuation.GoalId != hiddenGoalId
+                                || hiddenContinuation.ProductionJobId != completedJob.ProductionJobId
+                                || hiddenContinuation.ProductionStatus != "production_ready"
+                                || hiddenContinuation.CreativePackageId != completedJob.CreativePackageId
+                                || hiddenContinuation.CreativePackageDigest != completedJob.CreativePackageDigest
+                                || hiddenContinuation.ProductionStatus != completedJob.Status)
+                            {
+                                continue;
+                            }
+                            var completedPackage = await session.GetProductionPackageAsync(
+                                completedJob.ProductionJobId, cancellationToken).ConfigureAwait(false);
+                            if (completedPackage is null
+                                || completedPackage.QualityOutcome != "PASS"
+                                || completedPackage.ProductionJobId != completedJob.ProductionJobId
+                                || completedPackage.CreativePackageId != completedJob.CreativePackageId
+                                || completedPackage.PlanDigest != completedJob.PlanDigest)
+                            {
+                                continue;
+                            }
+                            // ── Reuse the sole existing C004/C009/C011 coordinator; not an executor.
+                            _ = session.FinalVideoDelivery.Observe(hiddenGoalId, hiddenContinuation);
+                        }
                         } // ── End fresh Goal dispatch, only allowed with zero pending journal. ──
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

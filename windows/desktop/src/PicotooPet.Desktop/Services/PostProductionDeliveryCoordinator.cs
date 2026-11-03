@@ -28,6 +28,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private readonly HashSet<string> _running = new(StringComparer.Ordinal);
     private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _retryAfter = new(StringComparer.Ordinal);
+    private readonly Action<string, string, string, Exception>? _failureReporter;
     private readonly Func<DateTimeOffset> _utcNow;
     private readonly TimeSpan _retryDelay;
     private readonly HashSet<Task> _tasks = [];
@@ -59,10 +60,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         VerifiedGoalDeliveryProjectionStore? durableProjection = null,
         bool backgroundProduction = true,
         Func<DateTimeOffset>? utcNow = null,
-        TimeSpan? retryDelay = null)
+        TimeSpan? retryDelay = null,
+        Action<string, string, string, Exception>? failureReporter = null)
     {
         _durableProjection = durableProjection;
         _backgroundProduction = backgroundProduction;
+        _failureReporter = failureReporter;
         // ── A transient postproduction outage must not permanently poison a ready Core job. ──
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         _retryDelay = retryDelay ?? TimeSpan.FromMinutes(2);
@@ -101,7 +104,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             (goal, job, ct) => C011QaDeliveryAuthority.FetchAsync(session, goal, job, ct),
             qa.VerifyAsync,
             durableProjection: VerifiedGoalDeliveryProjectionStore.CreateDefault(),
-            backgroundProduction: false);
+            backgroundProduction: false,
+            failureReporter: session.LogPostProductionFailure);
     }
 
     public GoalDeliverySnapshot CurrentSnapshot
@@ -445,6 +449,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private async Task ReconcileAsync(
         string goalId, string jobId, string key, CancellationToken cancellationToken)
     {
+        // ── Report the exact last entered CPU-only stage, never a user-authored path.
+        var stage = "PLAN_FETCH";
         try
         {
             // Requirements come from immutable Core plans; never infer them from available files.
@@ -453,6 +459,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             await Task.WhenAll(narrationTask, overlayTask).ConfigureAwait(false);
             var narrationPlan = await narrationTask.ConfigureAwait(false);
             var overlayPlan = await overlayTask.ConfigureAwait(false);
+            stage = "PLAN_VALIDATE";
             NarrationPlanContract.Validate(narrationPlan);
             CaptionOverlayPlanParser.Validate(overlayPlan);
             VerifyPlanPair(jobId, narrationPlan, overlayPlan);
@@ -460,6 +467,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
 
             var required = GoalDeliveryPolicy.IsPostProductionRequired(
                 narrationPlan.Plan.NarrationRequired, overlayPlan.Plan.OverlaysRequired);
+            stage = "C004_ASSEMBLE";
             var c004 = await _assembler.AssembleAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (c004.ProductionJobId != jobId)
             {
@@ -473,10 +481,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 PublishPhase(goalId, jobId, GoalDeliveryPhase.PostProcessing);
                 if (narrationPlan.Plan.NarrationRequired)
                 {
+                    stage = "NARRATION_SYNTHESIZE";
                     audio = await _narration(narrationPlan, cancellationToken).ConfigureAwait(false);
                 }
                 if (overlayPlan.Plan.OverlaysRequired)
                 {
+                    stage = "OVERLAY_RENDER";
                     visualOverlay = await _overlay(c004, overlayPlan, cancellationToken).ConfigureAwait(false);
                     if (visualOverlay.Passthrough)
                     {
@@ -487,6 +497,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
 
             var masterInput = new MasterCompositionInputV1(
                 c004, narrationPlan, audio, overlayPlan, visualOverlay);
+            stage = "C009_MASTER";
             var result = await _compose(masterInput, cancellationToken).ConfigureAwait(false);
 
             GoalDeliveryCandidateV1 candidate;
@@ -531,6 +542,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
                 throw new InvalidDataException("C011_QA_GATE_UNAVAILABLE");
             }
             PublishPhase(goalId, jobId, GoalDeliveryPhase.QualityChecking);
+            stage = "C011_AUTHORITY";
             var authority = await _authority(goalId, jobId, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(authority.Goal.GoalId, goalId, StringComparison.Ordinal)
                 || !string.Equals(authority.Job.ProductionJobId, jobId, StringComparison.Ordinal))
@@ -540,6 +552,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             var input = new FinalVideoQaInputV1(
                 authority.Goal, authority.Job, authority.Plan, authority.Package,
                 masterInput, required ? result.Artifact : null);
+            stage = "C011_VERIFY";
             var receipt = await _verifyQa(input, cancellationToken).ConfigureAwait(false);
             if (!C011QaDeliveryAuthority.Approved(candidate, input, receipt))
             {
@@ -550,6 +563,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             // ── Publish the QA-approved projection for the GUI only AFTER durable C010 receipt. ──
             if (_durableProjection is not null)
             {
+                stage = "C011_PERSIST";
                 await _durableProjection.WriteAsync(
                     new VerifiedGoalDeliveryProjection(
                         goalId, jobId, candidate, input, receipt, authority.Fingerprint()),
@@ -571,8 +585,10 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         {
             // Shutdown is not durable task failure and must never select C004.
         }
-        catch (FinalVideoQaException)
+        catch (FinalVideoQaException error)
         {
+            // ── Log only a redacted, bounded failure type/code, never authored text.
+            _failureReporter?.Invoke(goalId, jobId, stage, error);
             lock (_gate)
             {
                 _failed.Add(key);
@@ -588,6 +604,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         }
         catch (Exception error)
         {
+            // ── Persist a safe failure code so a live Worker can be diagnosed.
+            _failureReporter?.Invoke(goalId, jobId, stage, error);
             lock (_gate)
             {
                 // ── Missing local tools/roots and transient I/O/network failures are repairable.
@@ -620,6 +638,9 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     {
         // ── InvalidDataException inherits IOException; never retry tampered/provenance input.
         if (error is InvalidDataException or FinalVideoQaException) return false;
+        // ── A Core 500 can be transient; a 401/403/422 or identity failure remains closed.
+        if (error is PicotooPet.Desktop.Core.Networking.ApiException api)
+            return api.StatusCode is 408 or 429 or >= 500 and <= 599;
         // ── Only known recoverable infrastructure outages may re-observe after cooldown.
         return error is IOException or System.Net.Http.HttpRequestException or TimeoutException
             || (error is InvalidOperationException
