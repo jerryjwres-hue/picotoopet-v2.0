@@ -23,7 +23,6 @@ jobs:
     timeout-minutes: 45
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
-      AUDIT_ROOT: ${{ runner.temp }}/minimal-lgpl
     steps:
       - uses: actions/checkout@v6
         with:
@@ -36,7 +35,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $root = $env:AUDIT_ROOT
+          $root = Join-Path $env:RUNNER_TEMP 'minimal-lgpl'
+          "AUDIT_ROOT=$root" >> $env:GITHUB_ENV
           New-Item -ItemType Directory -Force "$root/evidence", "$root/input", "$root/prefix", "$root/build" | Out-Null
           @{
             source_sha = (git rev-parse HEAD)
@@ -124,7 +124,16 @@ jobs:
           '@
           [IO.File]::WriteAllText("$root/build.sh", $script.Replace("`r`n","`n"))
           & "$root/msys64/usr/bin/bash.exe" --noprofile --norc "$root/build.sh"
-          if ($LASTEXITCODE) { throw 'NATIVE_SOURCE_BUILD_FAILED_SEE_EXACT_LOG' }
+          if ($LASTEXITCODE) {
+            foreach ($log in 'ffmpeg-build.log','configure.log','zlib-build.log') {
+              if (Test-Path "$root/evidence/$log") {
+                $tail = (Get-Content "$root/evidence/$log" -Tail 12) -join ' | '
+                Write-Host "::error::NATIVE_SOURCE_BUILD_FAILED $log $tail"
+                break
+              }
+            }
+            throw 'NATIVE_SOURCE_BUILD_FAILED_SEE_EXACT_LOG'
+          }
       - name: Run unchanged VisualReview with actual candidate pair
         shell: pwsh
         run: |
