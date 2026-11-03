@@ -89,3 +89,30 @@ No relink was performed by this amendment. It supplies a concrete draft route;
 the original artifact, full linked-file reconciliation and a complete available
 source kit/delivery mechanism are still required before the owner can approve
 source/notice closure. No legal, patent or distribution PASS is claimed.
+
+
+## Concrete delivery route to prepare, not an asserted existing service
+
+For a future authorized **digital** binary delivery, the narrow proposed route is
+GPLv3 §6(d) direct corresponding-source access at the binary's designated download
+place (or an equivalently accessible source service clearly identified there),
+with equivalent access and no additional charge. Include LGPLv3 §4(d)(0)
+application source/build/relink materials and applicable notices. This proposal is
+not selection or fulfilment of a written offer; no offer is made by this document.
+
+After the two remaining input/license reconciliations, assemble a source-only
+versioned archive tied to **both exact candidate EXE SHA256s** in REPORT.md, containing
+all required original/modified/generated sources or generators/configuration,
+recipe/log provenance, final notices and sufficient rebuild/relink material. Verify
+its archive member inventory, hashes and available source contents. Do not insert
+an EXE, toolchain binary ZIP or installable payload into that source archive.
+
+Before calling delivery complete, record the actual source archive filename,
+length/SHA256, recipient-readable location, complete source manifest, terms
+permitting the required modification/relink/debugging, and responsible distributor
+availability/maintenance arrangement. Verify recipient access and continued
+availability under the chosen conveyance conditions. Do not rely on the Actions
+artifact's seven-day retention or a local workspace file as the lasting fulfilment
+mechanism. No target hosting location/terms have been approved or published here.
+A concrete source-only review kit can be staged for owner review once its contents
+are complete; this task does not authorize public release or binary distribution.

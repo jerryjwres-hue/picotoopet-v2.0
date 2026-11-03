@@ -195,3 +195,56 @@ matching sources/notices/recipes with hashes, verify recipient availability and
 have the owner review the applicable obligations. Patent and
 trademark questions remain separate. No `user_install_allowed=true`, legal approval,
 production receipt replacement or full-release/Maotai gate change follows here.
+
+
+## Three remaining closure questions (after 9623d731)
+
+The [controller intake](https://github.com/jerryjwres-hue/picotoopet-v2.0/pull/198#issuecomment-6594146093)
+accepts the existing 57-member/3-startup/9-zlib evidence. Do not reopen those lists
+or repeat VP8/VP9 tests. Only the following evidence gaps remain:
+
+1. **Complete runtime/import/header reconciliation — BLOCKED.** Obtain the existing
+   source/audit ZIP `13198256716`, not a new run. Verify its SHA256 and the two map
+   hashes in SOURCE-EVIDENCE.json before reading. Required existing files are
+   `ffmpeg.map`, `ffprobe.map`, `ffmpeg-build.log`, `config.log`, `config.mak`,
+   `config.h`, `config_components.h`, `configure-command.txt`, the two `*-imports.txt`
+   reports and compiler/buildconf records. Enumerate every linked code/data input,
+   including `.obj`, short-import and section labels; compare actual archive/member
+   and symbol provenance to the pinned MinGW/LLVM sources. A driver default selects
+   an archive; it does not prove extraction. Distinguish OS DLL implementations,
+   import thunks and the already-confirmed six MinGW UCRT wrappers. Retain relevant
+   source/header terms. If the audit lacks dependency/header or expanded driver
+   information, identify those precise absent records rather than silently treat
+   an incomplete map or zero literal-name matches as absence of code. Current
+   limitation: both the artifact-list download route and a single direct authenticated
+   request to the owner's official ZIP endpoint returned `Forbidden`:
+   `https://api.github.com/repos/jerryjwres-hue/picotoopet-v2.0/actions/artifacts/13198256716/zip`.
+   No valid ZIP was received, so its digest/content was not independently checked
+   in this continuation. The owner reconfirmed that the artifact exists and is
+   unexpired (expected expiry 2026-11-10); **this is download authorization blocking,
+   not evidence of deletion, expiry or missing build output**. Public comments
+   contain the 57-member subset and search result, not complete raw inputs. No
+   member names or absence conclusions are fabricated to fill that access gap.
+   Per owner instruction, stop API retries/writes and do not create replacement
+   artifacts; do not rebuild to compensate for access denial.
+2. **Actual FFmpeg file/NOTICE reconciliation — BLOCKED.** The 21 inspected files
+   remain source examples, not all final input translation units. Use the same
+   native map/config/build records to enumerate the actual FFmpeg units, generated
+   units and relevant included headers; bind each to the pinned unmodified source
+   or its original generator/config. Reconcile all embedded permission/copyright
+   statements, not only first comments or LGPL root texts. Finish the notice from
+   that ledger, accounting for the existing Boost/BSD/PD/IJG dispositions only
+   where applicable. The draft must retain its name/status until this is done.
+3. **Recipient-available matching-source delivery — BLOCKED.** REBUILD-RELINK.md
+   specifies the kit inputs and proposed direct-source delivery route. No completed
+   source-kit archive/hash, recipient download location, or reviewed delivery terms
+   exist in this PR. The GitHub source URLs, local measured archives and 7-day
+   Actions audit artifact are evidence inputs, not an available complete distributor
+   source kit or written offer. Do not replace this gap with a placeholder URL.
+
+Next useful action is access to the existing **source-only audit ZIP**, through
+restoring existing GitHub artifact-read access (expected digest is recorded above), followed
+by these exact reconciliations. No source build, GPU, model, user device, release,
+new audit framework or production receipt change is needed to read that evidence.
+Until the three rows have concrete outputs, independent distribution review is
+**not requested** and COMPLIANCE remains BLOCKED.
