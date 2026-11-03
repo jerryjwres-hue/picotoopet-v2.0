@@ -751,6 +751,62 @@ class KeyframeKitError(ValueError):
     pass
 
 
+STILL_PROMPT_TARGET_CHARS = 1800
+
+
+def _still_prompt(bible: VideoBible, shot: ShotBible, locks: KeyframeLocks) -> str:
+    """Deterministic still prompt: identical identity/set locks, per-shot state and framing.
+
+    Subject and product are named only when the shot features them; an off-frame one is stated
+    as absent and never described, so no prop is forced into a still. The product is described
+    by its geometry/colour only: its identity phrase may carry a *later* state ("clipped to the
+    scarf") that would contradict this shot's ``opening_state``. Optional clauses (cross-still reminder,
+    screen direction, palette) are dropped last-first to stay near the target length; the hard budget still fails closed.
+    """
+
+    subject, product = bible.subject, bible.product
+    required: list[str] = ["still frame"]
+    if Featured.SUBJECT in shot.featured:
+        # The story gate already requires every distinguishing mark to be in this phrase.
+        required.append(locks.subject_identity_phrase)
+        required.append(f"exactly one {subject.species}, same face and body proportions")
+    else:
+        required.append(f"no {subject.species} visible in this frame")
+    if Featured.PRODUCT in shot.featured:
+        logo = (
+            ", no text or logo"
+            if product.logo_policy == "NO_TEXT_OR_LOGO_IN_FRAME" else ""
+        )
+        required.append(f"{product.shape_color_material}{logo}, same shape and colour in every still")
+    else:
+        required.append(f"{product.category} not visible in this frame")
+    required += [
+        f"state: {shot.opening_state}",
+        f"set: {locks.environment_phrase}",
+        f"lighting: {locks.lighting_phrase}",
+        f"framing: {shot.camera_framing}",
+        # Physical support is the defect behind the human-rejected video: never dropped.
+        "every object rests on a visible surface, nothing floats",
+    ]
+    # Dropped last-first: the cross-still reminder goes first, then screen direction, then palette.
+    optional = [
+        f"palette: {', '.join(locks.palette)}",
+        *(
+            [f"screen direction {locks.screen_direction.replace('_', ' ').lower()}"]
+            if locks.screen_direction != "NONE" else []
+        ),
+        "same set layout, palette and lighting as the other two stills",
+    ]
+    while True:
+        prompt = "; ".join([*required, *optional])
+        if len(prompt) <= STILL_PROMPT_TARGET_CHARS or not optional:
+            break
+        optional.pop()
+    if len(prompt) > PROMPT_BUDGET_CHARS:
+        raise KeyframeKitError(f"still prompt over budget for {shot.shot_id}")
+    return prompt
+
+
 def build_keyframe_kit(
     bible: VideoBible, script: CreativeScriptResult, *, output_profile_id: str
 ) -> KeyframeKit:
@@ -785,10 +841,7 @@ def build_keyframe_kit(
                 shot_id=shot.shot_id,
                 order=shot.order,
                 role=role_by_beat[shot.beat_id],
-                still_prompt=(
-                    f"still frame, {fields['subject']}, {shot.opening_state}, "
-                    f"{fields['environment']}, {fields['lighting_style']}, {shot.camera_framing}"
-                ),
+                still_prompt=_still_prompt(bible, shot, locks),
                 camera_framing=shot.camera_framing,
                 review_checklist=[
                     "exactly one protagonist; same face, ears, eyes and body proportions "
