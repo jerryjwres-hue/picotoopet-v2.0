@@ -29,7 +29,8 @@ try {
     if ($CoreUrl -ne 'http://192.168.68.70:8766') {
         throw 'STOP_CORE_ADDRESS_NOT_PINNED'
     }
-    if (-not [guid]::TryParse($ProductionJobId, [ref]([guid]::Empty))) {
+    $parsedJobId = [guid]::Empty
+    if (-not [guid]::TryParse($ProductionJobId, [ref]$parsedJobId)) {
         throw 'STOP_INVALID_JOB_ID'
     }
 
