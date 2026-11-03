@@ -34,7 +34,10 @@ def test_finished_package_finalization_is_not_blocked_by_gpu_hold() -> None:
     execute = source.index("await executor.RunAsync(jobId", allow)
     assert start < ready < observe < allow < execute
     # ── No new executor/Claim/Comfy path can enter the ready branch.
-    ready_branch = source[ready:allow]
+    # ── Ignore comment text when checking for executable renderer calls.
+    ready_branch = "\n".join(
+        line.split("//", 1)[0] for line in source[ready:allow].splitlines()
+    )
     assert "executor.RunAsync" not in ready_branch
     assert "ClaimProductionJobAsync" not in ready_branch
     assert "ComfyProductionClient" not in ready_branch
