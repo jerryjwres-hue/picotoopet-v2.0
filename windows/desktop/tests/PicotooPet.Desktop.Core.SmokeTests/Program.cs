@@ -235,6 +235,7 @@ internal static class Program
         BusinessPipelinePanelWpfSmokeTests.Run();
         CreativeIntelligenceWpfSmokeTests.Run();
         ProductionPanelWpfSmokeTests.Run();
+        ProductionShellEntryWpfSmokeTests.Run();
         await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
         await FinalVideoAssemblyServiceSmokeTests.RunAsync().ConfigureAwait(false);
         await GoalFinalVideoCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);

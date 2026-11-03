@@ -354,6 +354,8 @@
           <WrapPanel Margin="0,0,0,20">
             <Button Content="项目" Tag="Projects" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
             <Button Content="任务中心" Tag="TaskCenter" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <!-- Visual review entry : opens existing ProductionPanel; navigation itself never invokes render or GPU. -->
+            <Button x:Name="OpenProductionPanelButton" Content="本地生产与审片" Click="OpenProductionPanel_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
             <Button Content="结果" Tag="Results" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
             <Button Content="业务自动化" Tag="BusinessAutomation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
             <Button Content="自动化" Tag="Automation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
