@@ -34,16 +34,30 @@ The 6 UCRT-extra mapped sources are MinGW wrappers, not Windows DLL source.
 CRT-MEMBERS.tsv accounts for those and the 51 MinGW members with individual
 terms including Lucent/David M. Gay, Keith Marshall, explicit ZPL2.1 and PD.
 
-If compiler-rt code or other licensed wrapper/import code is included, reconcile its
-exact member/source license. The precise LLVM version's Apache2/LLVM-exceptions
-text is provided in licenses/compiler-rt-LICENSE.txt as review material; inclusion
-of that license is not evidence proving linked builtins presence or absence.
+Original native maps CONFIRM chkstk.S.obj / ___chkstk_ms is incorporated in both
+executables. Corresponding x86_64 compiler-rt source at LLVM commit
+e21dc4bd5474d04b8e62d7331362edcc5648d7e5 declares Apache-2.0 WITH LLVM-exception.
+The pinned x64 archive's unique matching member, symbol, 48-byte text size and
+driver configuration corroborate source/archive binding; original expanded linker
+arguments and final text bytes are not retained for independent exact attestation.
+Keep licenses/compiler-rt-LICENSE.txt and applicable assembly/header terms.
+
+Two independently mapped FFmpeg source contributions have MIT terms:
+- libavutil/avsscanf.c, Copyright (c) 2005-2014 Rich Felker, et al.
+- libavformat/oggparsevorbis.c, Copyright (C) 2005 Michael Ahlberg, Måns Rullgård.
+Their full copyright/permission/disclaimer text is reproduced in
+licenses/FFmpeg-linked-permissive-notices.txt, with the known Boost/origin passages.
+The actual compile/resource ledger is FFMPEG-LINKED-SOURCES.tsv; it replaces the
+earlier sample-only coverage. Native import declarations are in NATIVE-IMPORTS.tsv.
+These ledgers do not establish active transitive-header license closure.
 
 STILL REQUIRED BEFORE THIS NOTICE CAN BE FINAL:
 - Retain the completed 51 MinGW + 6 UCRT wrapper and three startup source ledger
   and selected-file notice text; finish remaining transitive header, compiler
   runtime/import-code and FFmpeg source/header notice reconciliation.
-- Add any further required per-file copyright/permission/disclaimer/NOTICE text.
+- Finish active transitive header/template/generated-source and resource-scope
+  review; the original audit ZIP retains no native .d dependency records. Preserve
+  remaining applicable per-file copyright/permission/disclaimer/NOTICE text.
 - Provide concrete recipient matching-source bundle name/SHA256 and source-access
   instructions, including build/modify/relink materials and the reviewed delivery
   or source-offer mechanism. No endpoint, contact or offer has been invented here.

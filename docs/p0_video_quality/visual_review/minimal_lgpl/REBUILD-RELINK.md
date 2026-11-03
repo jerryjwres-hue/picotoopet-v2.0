@@ -24,7 +24,11 @@ A recipient-ready kit must include:
    `9e6a469d70c142853b4089d107e8791f0d7ce61a`; no live branch substitution.
    Include original configure argv/config.log/config.mak/config_components.h,
    verbose build/link logs, real maps/imports, tool versions and fixed input hashes.
-   These records must come from artifact 13198256716, not a reconstructed success.
+   These records now come from the independently SHA256/CRC-verified original
+   attachment (artifact 13198256716), not a reconstructed success. Full config,
+   maps and compile commands are present; active .d dependencies and expanded final
+   linker/response records are not retained. Do not list those absent records as
+   files supplied by this source kit.
 4. Documentation identifying source changes. This candidate uses unpatched pinned
    FFmpeg/zlib source; future changes must be dated/described and supplied. Preserve
    MinGW/LLVM upstream build transformations rather than asserting no toolchain
@@ -32,8 +36,11 @@ A recipient-ready kit must include:
 5. Final per-file NOTICE ledger, source-kit manifest and reviewed recipient access
    directions. A manifest URL alone is not a fulfilled source delivery or written
    offer. CRT-MEMBERS.tsv now binds all 51 MinGW and six UCRT-extra members to source;
-   the three startup mappings are in SOURCE-EVIDENCE.json. Remaining compiler/
-   header/FFmpeg input coverage and final recipient delivery still need review.
+   the three startup mappings and confirmed chkstk source/member binding are in
+   SOURCE-EVIDENCE.json. FFMPEG-LINKED-SOURCES.tsv and NATIVE-IMPORTS.tsv now cover
+   mapped compile/resource inputs and observed DLL symbols. Active transitive
+   header/generated-input coverage, the exact-provenance limitation and final
+   recipient delivery still need review.
 
 The toolchain ZIP/MSYS2 base hashes remain in the original workflow; supply them
 only through an authorized build-input route, with their own terms reviewed.
@@ -86,8 +93,9 @@ assessed separately from MinGW wrappers/compiler runtime code incorporated into
 the executable.
 
 No relink was performed by this amendment. It supplies a concrete draft route;
-the original artifact, full linked-file reconciliation and a complete available
-source kit/delivery mechanism are still required before the owner can approve
+the original artifact is now available, but active header/generated-input
+reconciliation and a complete recipient source kit/delivery mechanism are still
+required before the owner can approve
 source/notice closure. No legal, patent or distribution PASS is claimed.
 
 
@@ -116,3 +124,21 @@ artifact's seven-day retention or a local workspace file as the lasting fulfilme
 mechanism. No target hosting location/terms have been approved or published here.
 A concrete source-only review kit can be staged for owner review once its contents
 are complete; this task does not authorize public release or binary distribution.
+
+
+## Incorporation of chkstk in the review source kit
+
+Include `compiler-rt/lib/builtins/x86_64/chkstk.S`, its `../assembly.h` and relevant
+conditional helpers from the exact LLVM source record, with complete Apache2/LLVM
+exceptions and any applicable file terms. The mapped `___chkstk_ms` is an actual
+incorporated stack probe, not an optional unverified runtime scenario. Preserve the
+full component source and build context rather than copy a three-line symbol match.
+The observed member/archive hashes and driver-selection evidence are in
+SOURCE-EVIDENCE.json; no second build or final-EXE byte comparison was performed.
+
+The supplied original native ZIP can now be used directly as hashed audit evidence.
+It has FFmpeg/zlib snapshots but does not contain a complete MinGW/LLVM source kit,
+native dependency files or final distributor access arrangement. Until those
+remaining kit contents/conditions are reconciled, do not call an assembly of these
+partial materials a complete recipient source delivery or final NOTICE. No new
+native audit artifact is generated to replace the original attachment.
