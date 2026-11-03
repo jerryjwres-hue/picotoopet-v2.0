@@ -220,6 +220,28 @@ class ReferenceRegistrationService:
             shots = plan.get("shots", []) if isinstance(plan, dict) else []
             eligible = {item.get("shot_id") for item in shots
                         if isinstance(item, dict) and item.get("render_intent") == "IMAGE_TO_VIDEO"}
+            if not eligible:
+                # ── Sealed v2 consent: reuse the exact #204 new-plan bridge validator. ──
+                # ── No image bytes are trusted and no production plan is created here. ──
+                from picotoopet_core.creative.repository import CreativeRepository
+                from picotoopet_core.production.service import ProductionService
+
+                creative_job = CreativeRepository(self.database).get_job(lineage["creative_job_id"])
+                try:
+                    bridged = ProductionService._bridge_sealed_v2_manifest(
+                        manifest, creative_job,
+                        {item.shot_id for item in request.selected_references},
+                    )
+                except ValueError as error:
+                    # ── Preserve fail-closed validation as an authenticated API 409. ──
+                    raise ApprovalError(str(error)) from error
+                bridged_plan = bridged.get("stage_results", {}).get("shot_plan.v1", {})
+                bridged_shots = (
+                    bridged_plan.get("shots", []) if isinstance(bridged_plan, dict) else []
+                )
+                eligible = {item.get("shot_id") for item in bridged_shots
+                            if isinstance(item, dict)
+                            and item.get("render_intent") == "IMAGE_TO_VIDEO"}
             if any(item.shot_id not in eligible for item in request.selected_references):
                 raise ApprovalError("REFERENCE_SHOT_NOT_I2V_OR_NOT_IN_PACKAGE")
 
