@@ -760,8 +760,8 @@ def _still_prompt(bible: VideoBible, shot: ShotBible, locks: KeyframeLocks) -> s
     Subject and product are named only when the shot features them; an off-frame one is stated
     as absent and never described, so no prop is forced into a still. The product is described
     by its geometry/colour only: its identity phrase may carry a *later* state ("clipped to the
-    scarf") that would contradict this shot's ``opening_state``. Optional clauses are dropped
-    last-first to stay near the target length; the hard budget still fails closed.
+    scarf") that would contradict this shot's ``opening_state``. Optional clauses (cross-still reminder,
+    screen direction, palette) are dropped last-first to stay near the target length; the hard budget still fails closed.
     """
 
     subject, product = bible.subject, bible.product
@@ -785,14 +785,16 @@ def _still_prompt(bible: VideoBible, shot: ShotBible, locks: KeyframeLocks) -> s
         f"set: {locks.environment_phrase}",
         f"lighting: {locks.lighting_phrase}",
         f"framing: {shot.camera_framing}",
+        # Physical support is the defect behind the human-rejected video: never dropped.
+        "every object rests on a visible surface, nothing floats",
     ]
+    # Dropped last-first: the cross-still reminder goes first, then screen direction, then palette.
     optional = [
         f"palette: {', '.join(locks.palette)}",
         *(
             [f"screen direction {locks.screen_direction.replace('_', ' ').lower()}"]
             if locks.screen_direction != "NONE" else []
         ),
-        "every object rests on a visible surface, nothing floats",
         "same set layout, palette and lighting as the other two stills",
     ]
     while True:

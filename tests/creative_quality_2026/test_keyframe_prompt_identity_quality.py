@@ -116,15 +116,30 @@ def test_unrelated_extra_subject_in_a_bible_is_rejected_before_any_prompt_exists
         _kit(data)
 
 
-def test_prompt_is_bounded_even_for_maximum_size_bible_fields() -> None:
+def test_long_prompt_sheds_optional_clauses_but_always_keeps_physical_support() -> None:
     data = fx.bible()
-    data["subject"]["identity_phrase"] = fx.SUBJECT_PHRASE + " " + "x" * (240 - len(fx.SUBJECT_PHRASE) - 1)
-    data["scenes"][0]["environment_phrase"] = data["scenes"][0]["environment_phrase"][:20] + " e" * 140
+    data["subject"]["identity_phrase"] = (
+        fx.SUBJECT_PHRASE + " " + "x" * (240 - len(fx.SUBJECT_PHRASE) - 1))
+    data["scenes"][0]["environment_phrase"] = (
+        data["scenes"][0]["environment_phrase"][:20] + " e" * 140)
     data["scenes"][0]["lighting_phrase"] = "l " * 98 + "end"
+    data["scenes"][0]["palette"] = [f"colour{i} " + "c" * 90 for i in range(6)]
+    data["product"]["shape_color_material"] = "small round matte-charcoal tag " + "s " * 100
     prompts = _prompts(_kit(data))
-    assert max(map(len, prompts)) <= PROMPT_BUDGET_CHARS
-    assert all(len(p) <= STILL_PROMPT_TARGET_CHARS or "palette:" not in p for p in prompts)
-    assert all("state:" in p and "framing:" in p for p in prompts)  # required clauses survive
+    for prompt in prompts:
+        assert len(prompt) <= STILL_PROMPT_TARGET_CHARS <= PROMPT_BUDGET_CHARS
+        # Lowest-value optional clauses go first; physical support and per-shot state never do.
+        assert "palette:" not in prompt and "same set layout" not in prompt
+        assert "every object rests on a visible surface, nothing floats" in prompt
+        assert "state:" in prompt and "framing:" in prompt and "lighting:" in prompt
+
+
+def test_short_prompt_keeps_every_clause_including_support_last_to_go() -> None:
+    prompt = _prompts(_kit())[0]
+    assert len(prompt) < STILL_PROMPT_TARGET_CHARS
+    for clause in ("palette:", "screen direction", "nothing floats", "same set layout"):
+        assert clause in prompt
+    assert prompt.index("nothing floats") < prompt.index("palette:")  # support is a core clause
 
 
 def test_build_is_deterministic_and_digests_are_stable_and_content_bound() -> None:
