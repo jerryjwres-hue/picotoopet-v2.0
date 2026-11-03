@@ -3,7 +3,25 @@
 **性质：** 文档与候选 Prompt。不含任何生产代码改动，不启动 GPU/Comfy，不批准任何图片，不写入或覆盖任何冻结素材。
 **目标：** 提高真实视频首次良品率，降低 GPU 返工。所有“良率”判断均为方法与假设，**本管线实测良率 = UNVERIFIED**（唯一的真实证据是此前被人工 REJECT 的 3 条 T2V WebM）。
 
-## 0. 先说清楚：我读到了什么、没读到什么
+## 0. 总控最新核定：身份与首条真实单图试产（2026-11-03）
+
+> 本节由总控根据私有云端 GOV-2.0 / MAOTAI-P0 / PROMPT-P0 和 GitHub #219 独立补充。Claude 原先在代码仓库中找不到这些私有资料是合理的，但“仓库没有”不等于“角色未知”。原照片和照片授权信息不得上传公开 GitHub。
+
+**真实身份已经确定：** 这次是照片级、成年阿拉斯加犬 Maotai，不是 Q 版桌宠。身份锁：标志性不规则粉黑鼻、奶油色左右眉纹、黑褐色厚重毛、暖棕颈鬃毛、奶油色脸颊胸爪、棕色眼睛、深色立耳；浅色蓬松卷尾只有原图可见时才表现。私有资产已有 9 JPEG + 1 MP4 与机器可读清单。
+
+**首镜参考图：** `IMG_3576.jpeg`，真实正面半身照片，带透明伊丽莎白圈与亮绿色三角颈巾（恢复期场景变体，非固定生理特征）。第一条镜头应该保持照片原有姿态和配饰，只做一次轻微眨眼、极小眼神变化和自然呼吸；不能凭空要求站立、尾巴摇摆、新项圈、影棚或换景。原图未在本文提交至 Core，因此尚未获得正式溯源/批准。
+
+**执行路径已确认：** GitHub PR #219 已实现 `pilot_first_shot`，验证完整 sealed Story Bible / Keyframe 后，仅需第一张真实获批参考图即可创建**新的单镜头** 4 秒/97帧/24fps/832×480 冻结 v1.1 I2V Job/Plan。它不改变正式三镜头全覆盖要求。代码专项原生 CI PASS，不等于 Mac/Windows 已实机部署或 GPU 已授权；GPU HOLD 仍保持。首试产单次预算：**最多 1 次 Comfy POST，零自动重试**。
+
+**推荐的单镜头动作短句（仅为待映射到 Video Bible 的草稿）：**
+
+```text
+Animate the owner-approved original IMG_3576 photograph of the same real adult Alaskan Malamute Maotai. Preserve the pink-and-black mottled nose, cream brow patches, existing front-facing half-body pose, translucent recovery cone and bright green triangular bib. Over four seconds, Maotai blinks gently once, makes only a tiny natural gaze adjustment, and breathes quietly. Keep the camera locked and preserve the original lighting, framing, fur, accessories and background with no new props or pose change.
+```
+
+**四套 T1–T4 JSON 是创意占位示例，不是已获批的产品素材或可执行 Job。** 宠物床、背带、慢食碗、项圈吊牌、灰色影棚和对应颜色/品牌均缺少用户实物来源与授权；`needs_human=false` 只代表示例文本的结构标志，不代表产品真实或图片审批完成。先从 IMG_3576 轻动作拿到实际画质证据，后续再考虑生活、户外、真实用品、复杂嘴部动作，不能把 T4 作为首次 GPU 试产。
+
+## 0A. Claude 原研究的可见性边界
 
 | 需求中提到的材料 | 状态 |
 |---|---|
@@ -11,12 +29,12 @@
 | 茅台私有参考图清单 | **不在仓库、我也无权访问你的设备**。因此本文不挑选具体图片，只给出选图规则与逐项勾选表；毛色、花纹、配饰一律用 `{{占位}}`，不编造。 |
 | 仓库内关于“茅台”的唯一事实 | `docs/superpowers/specs/2026-08-15-maotai-natural-motion-v2-design.md`：茅台 = Q 版**阿拉斯加雪橇犬（Alaskan Malamute）**桌宠，不得标成哈士奇。 |
 
-**需你确认（会改变 Prompt 的风格词）：** 视频主角是 (A) 真实茅台的照片级形象，还是 (B) Q 版插画桌宠？本文默认 **(A) 照片级**；若是 (B)，把 Prompt 里的 `realistic` 换成 `stylized 3D cartoon, Q-version`，并按 B 重新做参考图。
+**总控已确认：此次视频使用真实茅台的照片级形象；Q 版桌宠是另一条产品线，不适用于当前 I2V。**
 
 ## 1. 已按源码核实的冻结事实（不要为了“试试”去改）
 
 - 工作流：`comfy.wan22.ti2v5b.i2v.v1`（Wan2.2 TI2V-5B），`windows/production/workflows/wan22-ti2v5b-i2v-api-v1.json`。**只有 `start_image`（首帧）**，没有尾帧。KSampler 固定 steps=30、cfg=5.0、uni_pc、simple、denoise=1.0。
-- 横屏档 832×480，24 fps，4 秒 = **97 帧**（4×24+1）≈ 4.04 s。每镜头最多 2 次技术尝试（`MAX_COMFY_ATTEMPTS=2`）。seed 由 job/shot 确定性派生，**不能自选 seed**：重跑意味着新 Job，不是“换个 seed 抽卡”。
+- 横屏档 832×480，24 fps，4 秒 = **97 帧**（4×24+1）≈ 4.04 s。源码可能允许常规镜头最多 2 次技术尝试（`MAX_COMFY_ATTEMPTS=2`），但此次 #219 单图试产只允许最多一次 POST，零自动重试。seed 由 job/shot 确定性派生，**不能自选 seed**：重跑意味着新 Job，不是“换个 seed 抽卡”。
 - **负面提示词是写死在图里的固定字符串**（策略 id `wan22.safe-negative.v1`），任务计划里没有负面文本字段：
 
   ```
@@ -39,7 +57,7 @@
 **直接可用的整段版本（单镜头验证用）**
 
 ```text
-Maotai, a large fluffy {{COAT}} Alaskan Malamute with erect triangular ears, dark almond eyes and a plumed tail curled over its back, stands calmly on {{SURFACE}}. He slowly turns his head toward the camera and blinks once; his ears twitch slightly, his chest rises with a gentle breath, and the fur and tail sway softly. Medium shot, locked-off tripod camera, no camera movement, soft natural daylight, realistic, smooth natural motion, consistent appearance, a single dog, no text or logo.
+Animate the approved IMG_3576 owner photo of the real Maotai, with his distinctive pink-and-black mottled nose, cream brows, translucent recovery cone and bright green triangular bib. Keep his existing front-facing half-body pose. Over four seconds he blinks gently once and breathes naturally with a tiny gaze adjustment. Locked camera, original lighting, framing, dog anatomy, accessories and background, with no new objects.
 ```
 
 中文意思：茅台自然站立，缓慢转头看镜头并眨眼一次，耳朵轻动、呼吸起伏、毛发和尾巴轻摆；固定机位，柔和日光，写实，只有一只狗，无文字无 Logo。
@@ -47,7 +65,7 @@ Maotai, a large fluffy {{COAT}} Alaskan Malamute with erect triangular ears, dar
 **映射到 Video Bible（这才是实际要填的）：** 就是 `candidates/T1_living_pet_bed.json` 的第 1 镜或 `T4_product_collar_tag.json` 的第 1 镜：`featured=[SUBJECT]`（或带产品）、`opening_state` = 首帧参考图的真实状态、`visible_action` = 上面那一个动作、`camera_framing = medium shot`、`camera_movement = STATIC`。
 
 **两个必须先回答的开放问题（不要猜）：**
-- “首条 4 秒视频”走哪条路径？当前 v1.1 桥接（#204）要求**三镜头全覆盖审批**；单镜头路径需要原始包里该镜头本来就是 `IMAGE_TO_VIDEO`。我没有读到 Codex #219 的执行入口，**未验证**，请总控确认。上面的 Prompt 对两种路径都适用（它就是三镜头链里的第 1 镜）。
+- “首条 4 秒视频”已由 #219 的 `pilot_first_shot` 路径实现：验证完整 sealed Story Bible/Keyframe，仅给第一张经正式批准的图创建新的单镜头 I2V Job/Plan。正式三镜头全覆盖仍保留。上面的 Prompt 对两种路径都适用（它就是三镜头链里的第 1 镜）。
 - `{{SURFACE}}` 与 `{{COAT}}` 必须来自你的私有参考图清单（见 §3）。
 
 ## 3. 茅台身份锁与参考图选用
@@ -91,7 +109,7 @@ Maotai, a large fluffy {{COAT}} Alaskan Malamute with erect triangular ears, dar
 - **产品要么穿戴、要么静止，绝不让产品被“施加”。** 不出现人手，不出现爪子摆弄小物件，避开 `HAND_OBJECT` 与产品形变风险。
 - **单场景。** 门禁强制一个 `scene_id`；“出行/饮食”因此被收敛成“玄关/厨房一角”，不做跨场景转场。
 - **`claims` 留空。** 不写任何产品功效宣称，避免证据绑定与合规风险。
-- **首次建议顺序：T4 → T1 → T2 → T3。** T4 动作最小；T2/T3 含走路/进食，只在 T4/T1 良品后再上。
+- **真实首试产优先级：IMG_3576 原场景轻动作 → 简化生活 → 户外轻动作 → 用户提供真实产品时的用品 → 复杂饮食。** T4 的假定吊牌和影棚当前不能用于第一条。
 
 **已做的只读校验（本地 CPU，未联网未渲染）：** 用样例值替换占位符后，四个模板均通过 `evaluate_video_bible(story_gate=True)`（0 条 finding）、`evaluate_story_storyboard`，并能 `build_keyframe_kit` 生成 3 张待审关键帧。**这只证明文本合规，不证明画面。**
 
@@ -160,6 +178,6 @@ Maotai, a large fluffy {{COAT}} Alaskan Malamute with erect triangular ears, dar
 
 ## 8. 未验证 / 阻塞清单
 
-- **UNVERIFIED：** 任何一条 Prompt 的真实出片效果；本管线首次良率；茅台具体毛色/配饰；产品是什么；风格是照片级还是 Q 版；单镜头路径入口；权利与来源。
-- **BLOCKED（不在本任务范围）：** v1.1 I2V 出货仍被设计性阻塞（`claim()` 拒绝、Windows 证明未验证）；GPU 与电气前置条件未解除；Windows 正式发布 gate 被 Maotai 美术资产缺失阻塞。
+- **UNVERIFIED：** 真实茅台出片质量及良率、T1–T4 产品事实与审批、IMG_3576 在实机 Core 中的可信登记与授权、单镜头 GPU 渲染结果。茅台身份和首镜代码路径已由总控核实。
+- **BLOCKED（不在本任务范围）：** #219 代码可供受控私有试产，但实际双端部署、带外配对、IMG_3576 人工/核心审批和 GPU 授权尚未完成；正式 Windows 发布另外受 `torso_neutral.png` 真实美术资源缺失阻塞。
 - **本文没有做：** 没有改任何生产代码，没有启动 GPU/Comfy，没有下载模型，没有访问你的设备，没有批准或登记任何图片。
