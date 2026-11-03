@@ -18,6 +18,8 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>冻结 2.3.27.1 六入口导航、目标中心、任务可恢复隐藏投影和 STA WPF 布局。</summary>
 internal static class OperatorSimpleModeSmokeTests
 {
+    // 静态断言基准 : 避免测试循环中反复分配相同数组（CA1861）。
+    private static readonly string[] MaotaiPresetKeys = ["MAOTAI_LIFE", "MAOTAI_OUTING", "MAOTAI_MEAL", "MAOTAI_PRODUCT"];
     private static readonly string[] ReviewTaskIds = new[] { "review" };
     private static readonly string[] InProgressTaskIds = new[] { "running" };
     private static readonly string[] CompletedTaskIds = new[] { "done" };
@@ -134,8 +136,7 @@ internal static class OperatorSimpleModeSmokeTests
         var home = OperatorHomePageViewModel.CreateForSmokeTest(Snapshot());
         var presets = OperatorHomePageViewModel.MaotaiContentPresets;
         SmokeAssert.True(
-            presets.Select(p => p.Key).SequenceEqual(
-                new[] { "MAOTAI_LIFE", "MAOTAI_OUTING", "MAOTAI_MEAL", "MAOTAI_PRODUCT" }),
+            presets.Select(p => p.Key).SequenceEqual(MaotaiPresetKeys),
             "茅台四类内容必须稳定、不可重排");
         foreach (var preset in presets)
         {
