@@ -81,3 +81,20 @@ def test_headless_postproduction_failure_has_redacted_diagnostic() -> None:
     assert coordinator.count("_failureReporter?.Invoke(goalId, jobId, error)") == 2
     assert "P0_POSTPRODUCTION_FAILED" in session
     assert '"UNCLASSIFIED"' in session
+
+
+def test_headless_postproduction_reports_typed_api_status_by_stage_and_retries_5xx_only() -> None:
+    # ── 500 retry is CPU-only and cannot loosen the upstream exact GPU HOLD gate.
+    # ── The authenticated HTTP response body and user-authored text never enter logs.
+    coordinator = (ROOT / "windows/desktop/src/PicotooPet.Desktop/Services/PostProductionDeliveryCoordinator.cs").read_text(encoding="utf-8")
+    session = (ROOT / "windows/desktop/src/PicotooPet.Desktop/Services/ControlCenterSession.cs").read_text(encoding="utf-8")
+    for stage in ("PLAN_FETCH", "PLAN_VALIDATE", "C004_ASSEMBLE",
+                  "NARRATION_SYNTHESIZE", "OVERLAY_RENDER", "C009_MASTER",
+                  "C011_AUTHORITY", "C011_VERIFY", "C011_PERSIST"):
+        assert f'stage = "{stage}"' in coordinator
+    assert coordinator.count("_failureReporter?.Invoke(goalId, jobId, stage, error)") == 2
+    assert "api.StatusCode is 408 or 429 or >= 500 and <= 599" in coordinator
+    assert "api?.Code ?? error.Message" in session
+    assert "api?.StatusCode ?? 0" in session
+    assert "http_status={status} code={code}" in session
+    assert "stage={stage} exception_type=" in session
