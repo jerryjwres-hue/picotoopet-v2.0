@@ -38,10 +38,28 @@ internal static class OperatorTrustedHostPilotTests
         using var wrongGpu = other.Journal.AcquireGpu();
         await DeniedAsync(() => InvokeAsync(wrongGpu));
         RecoveryTests.Assert(f.Journal.Pending().Count == 0, "signing allocates no attempt or GPU submission");
+        await ChangedJournalStopsBeforePostAsync();
         Console.WriteLine("P0_OPERATOR_TRUSTED_HOST_OWNED_LOCK=PASS; GPU_POSTS=0");
 
         Task<string> InvokeAsync(object lease) => (Task<string>)underLock!.Invoke(key,
             [witness, f.Plan, new[] { snapshot }, f.Journal, lease, now, CancellationToken.None])!;
+    }
+
+    private static async Task ChangedJournalStopsBeforePostAsync()
+    {
+        using var f = new I2VExecutorSnapshotTests.Fixture();
+        var permits = 0;
+        await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION", () => f.Executor(
+            permit: (_, _) =>
+            {
+                if (++permits == 2)
+                    f.Reference.Journal.Save(new("orphan", "old-task", new string('a', 64), new string('b', 64), "Submitting", null));
+                return null;
+            }).RunAsync("job"));
+        RecoveryTests.Assert(f.Claims == 1 && f.Attempts == 0 && f.Transport.Posts == 0,
+            "new unresolved journal state immediately before durable intent must STOP without a reservation/POST");
+        await RecoveryTests.ThrowsCodeAsync("MEDIA_PENDING_RECONCILIATION", () => f.Executor().RunAsync("job"));
+        RecoveryTests.Assert(f.Transport.Posts == 0, "restart cannot clear another unknown POST or duplicate submit");
     }
 
     private static async Task DeniedAsync(Func<Task<string>> action)

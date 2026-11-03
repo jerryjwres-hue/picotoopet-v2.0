@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS production_worker_keys (
     enrolled_at TEXT NOT NULL,
     revoked_at TEXT,
     revoked_reason TEXT,
+    trust_model TEXT NOT NULL DEFAULT 'STRICT_UNVERIFIED',
     CHECK (length(key_id) BETWEEN 16 AND 128)
 );
 CREATE INDEX IF NOT EXISTS idx_worker_keys_active
@@ -29,8 +30,32 @@ CREATE TABLE IF NOT EXISTS production_worker_challenges (
     issued_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     consumed_at TEXT,
+    admitted_lease_token_digest TEXT,
+    admitted_witness_sha256 TEXT,
+    admitted_witness_json TEXT,
     CHECK (issued_at < expires_at)
 );
 CREATE INDEX IF NOT EXISTS idx_worker_challenges_key_job
     ON production_worker_challenges(key_id, production_job_id, expires_at);
 """
+
+
+def upgrade_worker_trust_columns(connection) -> None:
+    """Upgrade already-existing trust tables without granting existing keys B."""
+    for table, additions in {
+        "production_worker_keys": {"trust_model": "TEXT NOT NULL DEFAULT 'STRICT_UNVERIFIED'"},
+        "production_worker_challenges": {
+            "admitted_lease_token_digest": "TEXT",
+            "admitted_witness_sha256": "TEXT",
+            "admitted_witness_json": "TEXT",
+        },
+    }.items():
+        existing = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+        for name, declaration in additions.items():
+            if name not in existing:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_challenge_admitted_lease "
+        "ON production_worker_challenges(admitted_lease_token_digest) "
+        "WHERE admitted_lease_token_digest IS NOT NULL"
+    )

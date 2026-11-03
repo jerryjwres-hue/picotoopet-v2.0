@@ -79,6 +79,19 @@ internal static class RealPythonCoreInteropTests
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
             var route = "api/v1/production/jobs/" + Uri.EscapeDataString(job);
             var exact = new { worker_key_id = keyId, executor_id = Executor, plan_digest = digest };
+            if (mode == "pilot-after-revoke")
+            {
+                using var leaseDoc = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(root, "pilot-lease-ci-only.json")));
+                var authority = new { executor_id = Executor, lease_token = leaseDoc.RootElement.GetProperty("lease_token").GetString() };
+                using var heartbeat = await http.PostAsJsonAsync(route + "/heartbeat", authority);
+                Check(heartbeat.StatusCode == HttpStatusCode.Conflict, "B_REVOKED_LEASE_HEARTBEAT_DENIED");
+                var taskId = leaseDoc.RootElement.GetProperty("task_id").GetString();
+                using var attempt = await http.PostAsJsonAsync(route + "/tasks/" + taskId + "/attempt",
+                    new { authority.executor_id, authority.lease_token, comfy_prompt_id = (string?)null });
+                Check(attempt.StatusCode == HttpStatusCode.Conflict, "B_REVOKED_LEASE_ATTEMPT_DENIED");
+                Console.WriteLine("REAL_B_REVOKED_AFTER_CLAIM=DENIED; ATTEMPT=0; COMFY_POST=0");
+                return;
+            }
             if (mode == "negatives")
             {
                 // ── True real-Core network errors, not .NET fake HTTP responses.
@@ -121,7 +134,7 @@ internal static class RealPythonCoreInteropTests
                 Console.WriteLine("REAL_CORE_REVOKED_BETWEEN_CHALLENGE_AND_SIGNING=DENIED");
                 return;
             }
-            if (mode != "run") throw new InvalidOperationException("UNKNOWN_CI_ONLY_MODE");
+            if (mode is not ("run" or "pilot")) throw new InvalidOperationException("UNKNOWN_CI_ONLY_MODE");
 
             var input = Path.Combine(root, "windows-input");
             var tokenStore = new CredentialManagerTokenStore("PicotooPet.CI.RealCore/" + Guid.NewGuid().ToString("N"));
@@ -166,6 +179,34 @@ internal static class RealPythonCoreInteropTests
                     comfySentinel.Start();
                     Console.WriteLine("REAL_WINDOWS_PHASE=WORKER_CLIENT_START");
                     using var client = session.CreateWorkerChallengePreflightClient();
+                    if (mode == "pilot")
+                    {
+                        Check(Environment.GetEnvironmentVariable("P0_OPERATOR_TRUSTED_PILOT_CI_ONLY") == "1", "B_FIXTURE_EXPLICIT_POLICY");
+                        var snapshots = new List<DurableReferenceSnapshot>();
+                        try
+                        {
+                            using var gpu = journal.AcquireGpu();
+                            var store = new ProductionReferenceSnapshotStore(input, (p, t, d) =>
+                                new CoreReferenceApprovalSource(session, p.ProductionJobId, t.ProductionTaskId, d));
+                            var graphs = plan.Tasks.ToDictionary(t => t.ProductionTaskId, _ => new string('e', 64));
+                            foreach (var task in plan.Tasks)
+                                snapshots.Add(await store.PrepareAsync(plan, task, digest, graphs[task.ProductionTaskId], journal, CancellationToken.None));
+                            var admitted = await client.ClaimPreparedAsync(plan, keyRoot, Executor,
+                                publicPin.RootElement.GetProperty("fingerprint").GetString()!, snapshots, graphs, journal, gpu,
+                                CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(40));
+                            Check(admitted.ProductionJobId == job && admitted.Plan.SchemaVersion == "1.1"
+                                && admitted.ExecutorId == Executor && !string.IsNullOrWhiteSpace(admitted.LeaseToken), "B_REAL_CLAIM_RESPONSE");
+                            File.WriteAllText(Path.Combine(root, "pilot-lease-ci-only.json"), JsonSerializer.Serialize(new {
+                                lease_token = admitted.LeaseToken, task_id = plan.Tasks[0].ProductionTaskId }));
+                            var wire = JsonNode.Parse(File.ReadAllText(Path.Combine(root, "windows-witness-public.json")));
+                            using var replay = await http.PostAsJsonAsync(route + "/claim", new { executor_id = Executor, worker_witness = wire });
+                            Check(replay.StatusCode == HttpStatusCode.Conflict, "B_SIGNED_CLAIM_REPLAY_DENIED");
+                            Check(journal.Pending().Count == 0 && !comfySentinel.Pending(), "B_CLAIM_NEVER_POSTS_COMFY");
+                            Console.WriteLine("REAL_B_WINDOWS_DPAPI_FASTAPI_CLAIM=PASS; REPLAY=409; TRUST=OPERATOR_PRIVATE_HOST; HARDWARE_ATTESTATION=NO; COMFY_POST=0");
+                        }
+                        finally { for (var i = snapshots.Count - 1; i >= 0; i--) snapshots[i].Dispose(); }
+                        return;
+                    }
                     var result = await client.RunExpectedDenyAsync(
                         plan, input, keyRoot, Executor,
                         publicPin.RootElement.GetProperty("fingerprint").GetString()!,

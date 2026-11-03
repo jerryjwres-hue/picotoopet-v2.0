@@ -13,10 +13,10 @@ namespace PicotooPet.Desktop.Services.ProductionReference;
 internal sealed record WorkerPublicIdentity(string PublicKeyHex, string Fingerprint, string KeyId);
 
 /// <summary>
-/// Internal-only measured signer. Not connected to shipping claim or an HTTP endpoint.
+/// Same-EXE measured signer for explicitly enrolled operator-trusted private hosts.
 /// DPAPI protects at rest against other accounts, not malware running as this user.
-/// Core local operator enrollment, authenticated challenge transport and EXE attestation
-/// are still absent; no caller may interpret this signature as production authority.
+/// Key possession and local image integrity are not hardware or remote attestation.
+/// Only Core's explicitly enrolled trust policy may admit the signed claim.
 /// </summary>
 internal sealed class ProtectedWorkerSigningKey
 {
@@ -87,10 +87,18 @@ internal sealed class ProtectedWorkerSigningKey
         IReadOnlyList<DurableReferenceSnapshot> snapshots, ProductionSubmissionJournal journal,
         DateTimeOffset now, CancellationToken ct)
     {
+        using var gpu = journal.AcquireGpu();
+        return await SignMeasuredUnderLockAsync(witness, plan, snapshots, journal, gpu, now, ct).ConfigureAwait(false);
+    }
+
+    internal async Task<string> SignMeasuredUnderLockAsync(JsonElement witness, ProductionPlanRecord plan,
+        IReadOnlyList<DurableReferenceSnapshot> snapshots, ProductionSubmissionJournal journal,
+        ProductionSubmissionJournal.GpuLease gpu, DateTimeOffset now, CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
         ct.ThrowIfCancellationRequested();
         var payload = WorkerWitnessEncoding.Payload(witness);
         WorkerWitnessEncoding.RequireFresh(witness, now);
-        using var gpu = journal.AcquireGpu(); // existing sole Worker lock, never a new executor
         snapshots = snapshots.ToArray();
         using var witnessPins = new SnapshotPins(snapshots);
         if (journal.Pending().Count != 0 || plan.Tasks.Any(t => journal.Read(plan.ProductionJobId, t.ProductionTaskId) is not null))
@@ -100,7 +108,8 @@ internal sealed class ProtectedWorkerSigningKey
         Match(witness, "executor_id", _executor); Match(witness, "worker_key_id", Identity.KeyId);
         Match(witness, "production_job_id", plan.ProductionJobId); Match(witness, "plan_digest", planDigest);
         Match(witness, "journal_digest", Hash("[]"u8.ToArray()));
-        if (witness.GetProperty("journal_generation").GetInt64() != 0 || snapshots.Count != plan.Tasks.Length) throw InvalidScope();
+        var referenceTasks = plan.Tasks.Where(t => t.RenderIntent == "IMAGE_TO_VIDEO").ToArray();
+        if (witness.GetProperty("journal_generation").GetInt64() != 0 || snapshots.Count != referenceTasks.Length) throw InvalidScope();
         // Reuse the OS-derived EXE measurement, never the managed DLL or caller
         // path. Retain the file/namespace pins through nonce reservation/signing.
         // This remains local integrity evidence, NOT remote process attestation.
@@ -108,7 +117,7 @@ internal sealed class ProtectedWorkerSigningKey
         Match(witness, "worker_executable_sha256", executable.Sha256);
         var references = witness.GetProperty("references").EnumerateArray().ToArray();
         if (references.Length != snapshots.Count) throw InvalidScope();
-        foreach (var task in plan.Tasks)
+        foreach (var task in referenceTasks)
         {
             var lease = snapshots.SingleOrDefault(s => s.Measurement.TaskId == task.ProductionTaskId) ?? throw InvalidScope();
             await lease.RecheckForWitnessAsync(ct).ConfigureAwait(false);
@@ -130,12 +139,14 @@ internal sealed class ProtectedWorkerSigningKey
         await executable.RequireCurrentAsync(ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         WorkerWitnessEncoding.RequireFresh(witness, DateTimeOffset.UtcNow);
+        gpu.RequireOwnedBy(journal);
         ReserveNonce(witness.GetProperty("nonce").GetString()!);
         // A failed recheck burns the nonce safely and emits no signature. Pins
         // continue denying writes/deletes while DPAPI reads the protected key.
         await executable.RequireCurrentAsync(ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         WorkerWitnessEncoding.RequireFresh(witness, DateTimeOffset.UtcNow);
+        gpu.RequireOwnedBy(journal);
         byte[]? signature = null;
         ReadKey(_root, _executor, Identity.Fingerprint, seed =>
         {

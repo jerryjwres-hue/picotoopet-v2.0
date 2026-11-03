@@ -89,17 +89,23 @@ def _require_local_console(database_path: Path) -> str:
 
 
 class PairedWorkerTrust:
+    STRICT_UNVERIFIED = "STRICT_UNVERIFIED"
+    OPERATOR_TRUSTED_PRIVATE_HOST_V1 = "OPERATOR_TRUSTED_PRIVATE_HOST_V1"
     MAX_ACTIVE_KEYS_PER_EXECUTOR = 2
     CHALLENGE_SECONDS = 30
 
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    def enroll_from_local_console(self, executor_id: str, public_key_hex: str) -> str:
+    def enroll_from_local_console(
+        self, executor_id: str, public_key_hex: str, *, trust_model: str = STRICT_UNVERIFIED
+    ) -> str:
         """Explicit operator-pinned key; never exposed via FastAPI."""
         import re
 
         operator = _require_local_console(self.database.path)
+        if trust_model not in {self.STRICT_UNVERIFIED, self.OPERATOR_TRUSTED_PRIVATE_HOST_V1}:
+            raise ValueError("PRODUCTION_V11_WORKER_TRUST_MODEL_INVALID")
         if re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", executor_id) is None:
             raise ValueError("PRODUCTION_V11_EXECUTOR_ID_INVALID")
         if re.fullmatch(r"[0-9a-f]{64}", public_key_hex) is None:
@@ -110,13 +116,17 @@ class PairedWorkerTrust:
         fingerprint = _key_fingerprint(public_bytes)
         key_id = "wk-" + fingerprint[:40]
         confirmation = f"ENROLL {executor_id} {fingerprint[:16]}"
+        if trust_model == self.OPERATOR_TRUSTED_PRIVATE_HOST_V1:
+            confirmation += f" {trust_model}"
+            print("Trust private Windows OS/account, snapshots, GPU lock, Journal and Comfy; "
+                  "this is operator trust, not hardware execution attestation.")
         print(f"Windows Worker: {executor_id}\nEd25519 public-key SHA256: {fingerprint}")
         if input(f"Type exactly [{confirmation}] to enroll: ").strip() != confirmation:
             raise ValueError("PRODUCTION_V11_OPERATOR_CONFIRMATION_REQUIRED")
         now = _stamp(datetime.now(UTC))
         receipt = hashlib.sha256(
             json.dumps(
-                [key_id, executor_id, fingerprint, operator, now, secrets.token_hex(16)],
+                [key_id, executor_id, fingerprint, operator, now, trust_model, secrets.token_hex(16)],
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
@@ -138,8 +148,8 @@ class PairedWorkerTrust:
             connection.execute(
                 "INSERT INTO production_worker_keys("
                 "key_id,executor_id,public_key_hex,key_fingerprint,registered_by,"
-                "operator_receipt_sha256,enrolled_at) VALUES (?,?,?,?,?,?,?)",
-                (key_id, executor_id, public_key_hex, fingerprint, operator, receipt, now),
+                "operator_receipt_sha256,enrolled_at,trust_model) VALUES (?,?,?,?,?,?,?,?)",
+                (key_id, executor_id, public_key_hex, fingerprint, operator, receipt, now, trust_model),
             )
         return key_id
 
@@ -299,6 +309,9 @@ def main() -> None:
     enroll = sub.add_parser("enroll")
     enroll.add_argument("--executor-id", required=True)
     enroll.add_argument("--public-key-hex", required=True)
+    enroll.add_argument("--trust-model", default=PairedWorkerTrust.STRICT_UNVERIFIED,
+                        choices=[PairedWorkerTrust.STRICT_UNVERIFIED,
+                                 PairedWorkerTrust.OPERATOR_TRUSTED_PRIVATE_HOST_V1])
     revoke = sub.add_parser("revoke")
     revoke.add_argument("--key-id", required=True)
     args = parser.parse_args()
@@ -310,7 +323,8 @@ def main() -> None:
         db.apply_migrations()
         trust = PairedWorkerTrust(db)
         if args.action == "enroll":
-            print(trust.enroll_from_local_console(args.executor_id, args.public_key_hex))
+            print(trust.enroll_from_local_console(args.executor_id, args.public_key_hex,
+                                                 trust_model=args.trust_model))
         else:
             trust.revoke_from_local_console(args.key_id)
             print("Worker key revoked.")

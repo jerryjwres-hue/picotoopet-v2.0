@@ -32,7 +32,20 @@ public sealed class ProductionSubmissionJournal
         if (!Path.IsPathFullyQualified(root)) throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
         _root = Path.GetFullPath(root);
     }
-    public IDisposable AcquireGpu() => Acquire("gpu.lock");
+    public GpuLease AcquireGpu() => new(this, Acquire("gpu.lock"));
+    /// <summary>Evidence of the actual held file lock, scoped to this journal instance.</summary>
+    public sealed class GpuLease : IDisposable
+    {
+        private readonly ProductionSubmissionJournal _owner;
+        private FileStream? _file;
+        internal GpuLease(ProductionSubmissionJournal owner, FileStream file) { _owner = owner; _file = file; }
+        public void RequireOwnedBy(ProductionSubmissionJournal journal)
+        {
+            if (!ReferenceEquals(_owner, journal)) throw new ProductionWorkerException("MEDIA_GPU_LOCK_SCOPE_MISMATCH");
+            ObjectDisposedException.ThrowIf(_file is null || _file.SafeFileHandle.IsClosed, this);
+        }
+        public void Dispose() => Interlocked.Exchange(ref _file, null)?.Dispose();
+    }
     public IDisposable AcquireRuntime() => Acquire("runtime.lock");
     private FileStream Acquire(string name)
     {

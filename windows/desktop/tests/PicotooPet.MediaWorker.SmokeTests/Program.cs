@@ -1,5 +1,11 @@
 using PicotooPet.Desktop.Services;
 
+if (args.Contains("--operator-trusted-host-pilot-gate-only", StringComparer.Ordinal))
+{
+    await PicotooPet.MediaWorker.SmokeTests.OperatorTrustedPilotGateTests.RunAsync();
+    return;
+}
+
 if (args.Contains("--operator-trusted-host-pilot-only", StringComparer.Ordinal))
 {
     await PicotooPet.MediaWorker.SmokeTests.OperatorTrustedHostPilotTests.RunAsync();

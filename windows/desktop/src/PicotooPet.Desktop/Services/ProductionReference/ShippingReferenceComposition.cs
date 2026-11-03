@@ -5,23 +5,36 @@ namespace PicotooPet.Desktop.Services.ProductionReference;
 
 /// <summary>
 /// Formal same-EXE composition of paired Core authority and the existing snapshot store.
-/// An authenticated reference read and measured bytes are NOT independently verified
-/// Worker proof. Controller #152/PR #154 has not frozen identity/key/nonce/transaction
-/// validation, so no caller-provided flag, environment switch or local measurement
-/// can enable this production boundary. There is deliberately no proof issuer here.
+/// Owner-paired private Windows OS/account + Journal/Comfy is the explicit B trust
+/// foundation. DPAPI/Ed25519 and image measurements do not provide remote attestation.
+/// Core's local-console enrollment and current HOLD remain independent requirements.
 /// </summary>
 internal sealed class ShippingReferenceComposition(ControlCenterSession session, string executorId)
 {
+    private Action? _sessionGuard;
+    private Action SessionGuard => _sessionGuard ??= session.CreateProductionSessionGuard();
     public ProductionReferenceSnapshotStore CreateSnapshotStore(string inputRoot) =>
-        new(inputRoot, (plan, task, digest) => new CoreReferenceApprovalSource(
-            session, plan.ProductionJobId, task.ProductionTaskId, digest));
+        new(inputRoot, (plan, task, digest) => new CoreWorkerChallengeClient.SessionBoundApproval(new CoreReferenceApprovalSource(
+            session, plan.ProductionJobId, task.ProductionTaskId, digest), SessionGuard));
 
     public void RequireVerifiedWorkerProof(ProductionPlanRecord plan)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executorId);
         ProductionExecutionService.ValidateV11FrozenReferenceIdentities(plan.ProductionJobId, plan);
-        // Do not invent a device identity from executorId/machine name, sign with the
-        // shared UI bearer, or infer a Core one-use admission from successful GETs.
-        throw new ProductionWorkerException("I2V_CROSS_ENDPOINT_WORKER_PROOF_REQUIRED");
+        _ = WorkerLocalPairing.Require(executorId);
+        SessionGuard();
+    }
+
+    internal async Task<ProductionClaimRecord> ClaimAsync(ProductionPlanRecord plan,
+        IReadOnlyList<DurableReferenceSnapshot> snapshots, IReadOnlyDictionary<string, string> graphs,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu, CancellationToken ct)
+    {
+        var pairing = WorkerLocalPairing.Require(executorId);
+        SessionGuard();
+        using var client = session.CreateWorkerChallengePreflightClient();
+        var claim = await client.ClaimPreparedAsync(plan, WorkerLocalPairing.KeyRoot, executorId, pairing.Fingerprint,
+            snapshots, graphs, journal, gpu, ct).ConfigureAwait(false);
+        SessionGuard();
+        return claim;
     }
 }

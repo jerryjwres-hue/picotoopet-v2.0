@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import (
+    ProductionClaimRecord,
+    ProductionClaimRequest,
     ProductionExecutionDisposition,
     ProductionJobCreateRequest,
     ProductionTaskRecord,
@@ -217,3 +219,9 @@ class WorkerWitnessV11(BaseModel):
             raise ValueError("PRODUCTION_V11_WITNESS_CLOCK_INVALID")
         if self.issued_at > now + timedelta(seconds=5) or self.expires_at <= now:
             raise ValueError("PRODUCTION_V11_WITNESS_STALE")
+
+
+# The versioned subclasses depend on legacy models. Resolve only these two
+# forward references once both modules' complete contracts are available.
+ProductionClaimRequest.model_rebuild(_types_namespace=globals())
+ProductionClaimRecord.model_rebuild(_types_namespace=globals())

@@ -25,7 +25,8 @@ namespace PicotooPet.Desktop.Services.ProductionReference;
 /// #164 phase-1 internal preflight ONLY, in the existing same EXE. This transports
 /// assertions, not executable attestation. A Core-issued nonce and ordinary UI
 /// Bearer are NOT enrollment, Worker identity, a Claim or GPU authorization.
-/// No shipping factory call site: its unconditional proof-required hold remains.
+/// B admission reuses the prepared shipping snapshots and held GPU lease. Core's
+/// explicitly enrolled operator-trusted policy is the admission authority.
 /// </summary>
 internal sealed class CoreWorkerChallengeClient : IDisposable
 {
@@ -131,10 +132,70 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         finally { for (var i = snapshots.Count - 1; i >= 0; i--) snapshots[i].Dispose(); }
     }
 
+    internal async Task<ProductionClaimRecord> ClaimPreparedAsync(ProductionPlanRecord frozenPlan,
+        string keyRoot, string executorId, string expectedFingerprint, IReadOnlyList<DurableReferenceSnapshot> preparedSnapshots,
+        IReadOnlyDictionary<string, string> graphDigests, ProductionSubmissionJournal journal,
+        ProductionSubmissionJournal.GpuLease gpu, CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        var plan = JsonSerializer.Deserialize<ProductionPlanRecord>(JsonSerializer.Serialize(frozenPlan))
+            ?? throw Invalid("CORE_CHALLENGE_PLAN_INVALID");
+        ProductionExecutionService.ValidateV11FrozenReferenceIdentities(plan.ProductionJobId, plan);
+        var digest = Hash(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(plan)!));
+        var graphs = graphDigests.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+        var snapshots = preparedSnapshots.ToArray();
+        if (plan.SchemaVersion != "1.1" || graphs.Count != plan.Tasks.Length
+            || plan.Tasks.Any(t => !graphs.TryGetValue(t.ProductionTaskId, out var graph) || !IsHash(graph) || graph.All(c => c == '0'))
+            || snapshots.Length != plan.Tasks.Count(t => t.RenderIntent == "IMAGE_TO_VIDEO")
+            || snapshots.Any(s => !graphs.TryGetValue(s.Measurement.TaskId, out var graph) || graph != s.Measurement.GraphDigest))
+            throw Invalid("CORE_CHALLENGE_GRAPH_SCOPE_INVALID");
+        var pins = new List<IDisposable>();
+        try
+        {
+            foreach (var snapshot in snapshots) pins.Add(snapshot.RetainForWitness());
+            using var executable = await MeasureProcessImageAsync(ct).ConfigureAwait(false);
+            var key = ProtectedWorkerSigningKey.Open(keyRoot, executorId, expectedFingerprint);
+            _requireCurrentSession();
+            RequireCleanJournal(journal, plan);
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(TimeSpan.FromSeconds(30));
+            var token = budget.Token;
+            var route = "api/v1/production/jobs/" + Uri.EscapeDataString(plan.ProductionJobId);
+            using var challengeDocument = await PostAsync(route + "/worker-challenge", new
+            { worker_key_id = key.Identity.KeyId, executor_id = executorId, plan_digest = digest }, HttpStatusCode.OK, token).ConfigureAwait(false);
+            var challenge = challengeDocument.RootElement;
+            ValidateChallenge(challenge, key.Identity, executorId, plan.ProductionJobId, digest);
+            var witness = await BuildWitnessAsync(plan, digest, executorId, key.Identity.KeyId, challenge, snapshots, executable, token).ConfigureAwait(false);
+            witness["signature"] = await key.SignMeasuredUnderLockAsync(JsonSerializer.SerializeToElement(witness), plan,
+                snapshots, journal, gpu, DateTimeOffset.UtcNow, token).ConfigureAwait(false);
+            _requireCurrentSession();
+            gpu.RequireOwnedBy(journal);
+            RequireCleanJournal(journal, plan);
+            foreach (var snapshot in snapshots) await snapshot.RecheckForWitnessAsync(token).ConfigureAwait(false);
+            await executable.RequireCurrentAsync(token).ConfigureAwait(false);
+            ValidateChallenge(challenge, key.Identity, executorId, plan.ProductionJobId, digest);
+            _requireCurrentSession();
+            var claim = await _session.ClaimProductionJobWithWorkerWitnessAsync(plan.ProductionJobId, executorId,
+                JsonSerializer.SerializeToElement(witness), token).ConfigureAwait(false);
+            _requireCurrentSession();
+            gpu.RequireOwnedBy(journal);
+            if (claim.ProductionJobId != plan.ProductionJobId || claim.ExecutorId != executorId
+                || string.IsNullOrWhiteSpace(claim.LeaseToken) || claim.LeaseExpiresAt <= DateTimeOffset.UtcNow
+                || claim.Tasks.Length != plan.Tasks.Length || claim.Plan.Tasks.Length != plan.Tasks.Length
+                || claim.Tasks.Any(t => t.ProductionJobId != plan.ProductionJobId || t.Status != "Pending"
+                    || t.AttemptCount != 0 || t.ComfyPromptId is not null
+                    || !plan.Tasks.Any(p => p.ProductionTaskId == t.ProductionTaskId && p == t.TaskPlan))
+                || Hash(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(claim.Plan)!)) != digest)
+                throw Invalid("CORE_PILOT_CLAIM_SCOPE_INVALID");
+            return claim;
+        }
+        finally { for (var i = pins.Count - 1; i >= 0; i--) pins[i].Dispose(); }
+    }
+
     private static async Task<JsonObject> BuildWitnessAsync(ProductionPlanRecord plan, string digest, string executor,
         string keyId, JsonElement challenge, IReadOnlyList<DurableReferenceSnapshot> snapshots, ProcessImageMeasurement image, CancellationToken ct)
     {
-        var references = plan.Tasks.Select(task =>
+        var references = plan.Tasks.Where(t => t.RenderIntent == "IMAGE_TO_VIDEO").Select(task =>
         {
             var m = snapshots.Single(s => s.Measurement.TaskId == task.ProductionTaskId).Measurement;
             var r = task.ReferenceAsset ?? throw Invalid("CORE_CHALLENGE_REFERENCE_REQUIRED");
@@ -410,7 +471,7 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
     }
     // Preserve the existing approval authority, but abort if session configuration
     // changes during any of its network awaits, including inside the reused signer.
-    private sealed class SessionBoundApproval(ITrustedReferenceApprovalSource source, Action requireCurrent) : ITrustedReferenceApprovalSource
+    internal sealed class SessionBoundApproval(ITrustedReferenceApprovalSource source, Action requireCurrent) : ITrustedReferenceApprovalSource
     {
         public async Task<bool> IsApprovedAsync(TrustedReferenceDescriptor descriptor, CancellationToken ct)
         {

@@ -57,6 +57,13 @@ public sealed partial class ControlCenterSession
         return await client.ClaimAsync(productionJobId, executorId, cancellationToken).ConfigureAwait(false);
     }
 
+    internal async Task<ProductionClaimRecord> ClaimProductionJobWithWorkerWitnessAsync(
+        string productionJobId, string executorId, System.Text.Json.JsonElement witness, CancellationToken cancellationToken)
+    {
+        await using var client = CreateProductionClient();
+        return await client.ClaimWithWorkerWitnessAsync(productionJobId, executorId, witness, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ProductionJobRecord> HeartbeatProductionJobAsync(
         string productionJobId,
         string executorId,
@@ -120,13 +127,17 @@ public sealed partial class ControlCenterSession
     internal CoreWorkerChallengeClient CreateWorkerChallengePreflightClient()
     {
         var options = ReadProductionClientOptions();
-        return new(this, options, () =>
+        return new(this, options, CreateProductionSessionGuard(options));
+    }
+
+    internal Action CreateProductionSessionGuard() => CreateProductionSessionGuard(ReadProductionClientOptions());
+
+    private Action CreateProductionSessionGuard(MacCoreClientOptions options) => () =>
         {
             var current = ReadProductionClientOptions();
             if (current.BaseUri != options.BaseUri || current.Token != options.Token)
                 throw new PicotooPet.Desktop.Core.Production.ProductionWorkerException("CORE_CHALLENGE_SESSION_CHANGED");
-        });
-    }
+        };
 
     private MacCoreProductionClient CreateProductionClient() =>
         MacCoreProductionClient.Create(ReadProductionClientOptions());

@@ -166,7 +166,9 @@ def claim_production_job(
     request: Request,
 ) -> ProductionClaimRecord:
     return execute_production(
-        lambda: request.app.state.services.production.claim(production_job_id, payload.executor_id)
+        lambda: request.app.state.services.production.claim(
+            production_job_id, payload.executor_id, worker_witness=payload.worker_witness
+        )
     )
 
 

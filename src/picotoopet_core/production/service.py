@@ -19,6 +19,7 @@ from picotoopet_core.creative.repository import CreativeRepository
 from picotoopet_core.security.worker_pairing import PairedWorkerTrust
 
 from .attempts import reserve_or_bind_attempt
+from .operator_trusted_host import pilot_atomic
 from .compiler import compile_production_plan
 from .failures import fail_task_durably
 from .models import (
@@ -663,7 +664,8 @@ class ProductionService:
             # ── process, snapshot ACL/bytes or unknown Comfy POST clearance.
             raise ValueError("PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED")
 
-    def claim(self, production_job_id: str, executor_id: str) -> ProductionClaimRecord:
+    def claim(self, production_job_id: str, executor_id: str, *,
+              worker_witness: WorkerWitnessV11 | None = None) -> ProductionClaimRecord:
         # ── Claim returns full durable snapshots plus an unfinished-only plan ─
         # Validate bound prompt recovery inside the SAME database transaction as
         # lease rotation. Previously a separate read before claim_job allowed an
@@ -671,9 +673,12 @@ class ProductionService:
         # Any failure rolls back and leaves the previous lease untouched.
         plan = self.repository.plan_for(production_job_id)
         if isinstance(plan, ProductionPlanV11):
-            # No GPU lease until exact Core approval + Codex Windows byte
-            # verifier and crash-durable Comfy snapshot are connected.
-            raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+            if worker_witness is None:
+                raise ValueError("PRODUCTION_V11_WORKER_ADAPTER_REQUIRED")
+            return self.repository.claim_job(production_job_id, executor_id,
+                                              worker_witness=worker_witness)
+        if worker_witness is not None:
+            raise ValueError("PRODUCTION_V11_PLAN_REQUIRED")
 
         def authorize_recovery(connection) -> None:  # type: ignore[no-untyped-def]
             rows = connection.execute(
@@ -791,6 +796,7 @@ class ProductionService:
             request=request,
         )
 
+    @pilot_atomic
     def commit_task(
         self,
         production_job_id: str,
