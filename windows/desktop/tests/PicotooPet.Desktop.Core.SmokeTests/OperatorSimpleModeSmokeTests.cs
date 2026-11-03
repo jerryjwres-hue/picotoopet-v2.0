@@ -132,7 +132,7 @@ internal static class OperatorSimpleModeSmokeTests
     private static void VerifyMaotaiPresets()
     {
         var home = OperatorHomePageViewModel.CreateForSmokeTest(Snapshot());
-        var presets = home.MaotaiContentPresets;
+        var presets = OperatorHomePageViewModel.MaotaiContentPresets;
         SmokeAssert.True(
             presets.Select(p => p.Key).SequenceEqual(
                 new[] { "MAOTAI_LIFE", "MAOTAI_OUTING", "MAOTAI_MEAL", "MAOTAI_PRODUCT" }),
