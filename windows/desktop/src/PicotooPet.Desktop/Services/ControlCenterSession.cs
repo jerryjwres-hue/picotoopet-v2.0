@@ -14,6 +14,21 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
     private readonly CredentialManagerTokenStore _tokenStore;
     private readonly DesktopSettingsStore _settingsStore;
     private readonly SafeFileLogger _logger;
+
+    /// <summary>Safe headless post-production diagnostic; never log bearer or authored text.</summary>
+    internal void LogPostProductionFailure(string goalId, string jobId, Exception error)
+    {
+        // ── Emit only closed uppercase error codes, not arbitrary exception messages.
+        var raw = error.Message;
+        var code = raw.Length is >= 5 and <= 120
+            && raw.All(character => character is (>= 'A' and <= 'Z')
+                or (>= '0' and <= '9') or '_')
+            ? raw : "UNCLASSIFIED";
+        _logger.Info($"P0_POSTPRODUCTION_FAILED goal={goalId} job={jobId} " +
+            $"exception_type={error.GetType().Name} code={code}");
+    }
+
+
     private readonly AppStateStore _stateStore;
     private readonly LatencyRecorder _restLatency = new();
     private readonly LatencyRecorder _socketLatency = new();

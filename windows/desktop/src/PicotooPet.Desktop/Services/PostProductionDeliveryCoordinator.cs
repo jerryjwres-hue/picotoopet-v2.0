@@ -28,6 +28,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private readonly HashSet<string> _running = new(StringComparer.Ordinal);
     private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _retryAfter = new(StringComparer.Ordinal);
+    private readonly Action<string, string, Exception>? _failureReporter;
     private readonly Func<DateTimeOffset> _utcNow;
     private readonly TimeSpan _retryDelay;
     private readonly HashSet<Task> _tasks = [];
@@ -59,10 +60,12 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         VerifiedGoalDeliveryProjectionStore? durableProjection = null,
         bool backgroundProduction = true,
         Func<DateTimeOffset>? utcNow = null,
-        TimeSpan? retryDelay = null)
+        TimeSpan? retryDelay = null,
+        Action<string, string, Exception>? failureReporter = null)
     {
         _durableProjection = durableProjection;
         _backgroundProduction = backgroundProduction;
+        _failureReporter = failureReporter;
         // ── A transient postproduction outage must not permanently poison a ready Core job. ──
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         _retryDelay = retryDelay ?? TimeSpan.FromMinutes(2);
@@ -101,7 +104,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             (goal, job, ct) => C011QaDeliveryAuthority.FetchAsync(session, goal, job, ct),
             qa.VerifyAsync,
             durableProjection: VerifiedGoalDeliveryProjectionStore.CreateDefault(),
-            backgroundProduction: false);
+            backgroundProduction: false,
+            failureReporter: session.LogPostProductionFailure);
     }
 
     public GoalDeliverySnapshot CurrentSnapshot
@@ -571,8 +575,10 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         {
             // Shutdown is not durable task failure and must never select C004.
         }
-        catch (FinalVideoQaException)
+        catch (FinalVideoQaException error)
         {
+            // ── Log only a redacted, bounded failure type/code, never authored text.
+            _failureReporter?.Invoke(goalId, jobId, error);
             lock (_gate)
             {
                 _failed.Add(key);
@@ -588,6 +594,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         }
         catch (Exception error)
         {
+            // ── Persist a safe failure code so a live Worker can be diagnosed.
+            _failureReporter?.Invoke(goalId, jobId, error);
             lock (_gate)
             {
                 // ── Missing local tools/roots and transient I/O/network failures are repairable.
