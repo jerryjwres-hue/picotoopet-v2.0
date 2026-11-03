@@ -125,8 +125,6 @@ jobs:
             if (!$ready) { throw 'REAL_FASTAPI_NOT_READY_ON_LOCALHOST' }
 
             Invoke-RealWorkerPhase 'run'
-            python tests/integration/real_core_worker_http_server.py wire-negatives --root $root
-            if ($LASTEXITCODE -ne 0) { throw 'REAL_WINDOWS_SIGNED_WIRE_NEGATIVES_FAILED' }
             Invoke-RealWorkerPhase 'negatives'
             python tests/integration/real_core_worker_http_server.py assert --root $root
             if ($LASTEXITCODE -ne 0) { throw 'REAL_CORE_SQLITE_0_LEASE_ATTEMPT_FAILED' }

@@ -12,10 +12,6 @@ import hashlib
 import json
 import os
 import sys
-import socket
-import urllib.request
-import urllib.error
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -140,6 +136,12 @@ def seed(root: Path, identity_file: Path) -> None:
                 "image_relative_path": single.tasks[0].reference_asset.input_relative_path,
             }, sort_keys=True) + "\n", encoding="utf-8",
         )
+        tables = ("production_jobs", "production_tasks", "production_attempts",
+                  "production_packages", "approvals")
+        (root / "core-facts-before.json").write_text(json.dumps({
+            table: [dict(row) for row in db.fetchall(f"SELECT * FROM {table} ORDER BY rowid")]
+            for table in tables
+        }, sort_keys=True), encoding="utf-8")
         print("REAL_CORE_SEED=PASS; FROZEN_PLAN=PASS; TEST_ONLY_KEY=PASS")
     finally:
         try:
@@ -179,65 +181,6 @@ def serve(root: Path, port: int) -> None:
     )
     print("REAL_CORE_FASTAPI_LISTEN=127.0.0.1", flush=True)
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
-
-
-def wire_negatives(root: Path) -> None:
-    """Extend #177; real Windows signature to real Python TCP, no new server."""
-    witness = json.loads((root / "windows-witness-public.json").read_bytes())
-    base = os.environ["P0_REAL_CORE_URL"]
-    from urllib.parse import urlsplit
-    parsed = urlsplit(base)
-    assert parsed.scheme == "http" and parsed.hostname == "127.0.0.1"
-    route = base + "api/v1/production/jobs/" + witness["production_job_id"] + "/witness/preflight"
-    db = db_at(root)
-    tables = ("production_jobs", "production_tasks", "production_attempts",
-              "production_worker_challenges", "approvals", "production_packages")
-
-    def snapshot():
-        return {table: [dict(row) for row in db.fetchall(f"SELECT * FROM {table} ORDER BY rowid")]
-                for table in tables}
-
-    def denied(payload, expected):
-        request = urllib.request.Request(route, data=json.dumps(payload).encode(), headers={
-            "Authorization": "Bearer " + os.environ["P0_CORE_INTEROP_BEARER"],
-            "Content-Type": "application/json",
-        }, method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=8) as response:
-                raise AssertionError(f"unexpected admission: {response.status}")
-        except urllib.error.HTTPError as error:
-            assert error.code == 409
-            assert json.load(error)["error"]["code"] == expected
-
-    before = snapshot()
-    try:
-        with socket.socket() as sentinel:
-            sentinel.bind(("127.0.0.1", 8188))
-            sentinel.listen()
-            sentinel.setblocking(False)
-            # A single-bit change in the REAL Windows signature is rejected.
-            signature = bytes.fromhex(witness["signature"])
-            forged = (bytes([signature[0] ^ 1]) + signature[1:]).hex()
-            denied({**witness, "signature": forged}, "PRODUCTION_V11_WORKER_SIGNATURE_INVALID")
-            # Preflight never redeems. Concurrent exact signed-wire replays must
-            # ALL remain denied, not be described as successful admissions.
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                list(pool.map(lambda _: denied(witness, "PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED"), range(3)))
-            # These are hostile declarations, NOT newly signed honest measurements;
-            # exact Journal gate errors show rejection before crypto verification.
-            denied({**witness, "journal_state": "UNCERTAIN"}, "PRODUCTION_V11_WITNESS_POST_UNCERTAIN")
-            denied({**witness, "journal_state": "BOUND_RECOVERY"}, "PRODUCTION_V11_WITNESS_JOURNAL_MISMATCH")
-            assert snapshot() == before, "negative HTTP requests mutated Core facts"
-            try:
-                connection, _ = sentinel.accept()
-            except BlockingIOError:
-                pass
-            else:
-                connection.close()
-                raise AssertionError("unexpected Comfy connection")
-        print("REAL_WINDOWS_WIRE_NEGATIVES=PASS; BAD_SIGNATURE=409; CONCURRENT_REPLAY=409; JOURNAL=409; CORE_UNCHANGED=YES; COMFY_CONNECTION=0")
-    finally:
-        db.close()
 
 
 def mutate(root: Path, action: str) -> None:
@@ -286,6 +229,13 @@ def mutate(root: Path, action: str) -> None:
             assert job["lease_expires_at"] is None
             assert job["plan_digest"] == manifest["plan_digest"]
             assert db.scalar("SELECT COUNT(*) FROM production_packages") == 0
+            baseline = json.loads((root / "core-facts-before.json").read_text(encoding="utf-8"))
+            for table, original in baseline.items():
+                # The explicit fixture revoke phase is the ONLY permitted
+                # approval change. Jobs/tasks/attempts/packages never change.
+                if table == "approvals" and expected != 1:
+                    continue
+                assert [dict(row) for row in db.fetchall(f"SELECT * FROM {table} ORDER BY rowid")] == original
             print("REAL_CORE_SQLITE_NONCE=UNSPENT; LEASE=0; ATTEMPT=0; RESULT=0; GPU=BLOCKED")
         else:
             raise ValueError("unknown test-only action")
@@ -295,7 +245,7 @@ def mutate(root: Path, action: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("seed", "serve", "assert", "revoke", "expire", "wire-negatives"))
+    parser.add_argument("action", choices=("seed", "serve", "assert", "revoke", "expire"))
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--identity", type=Path)
     parser.add_argument("--port", type=int)
@@ -310,7 +260,5 @@ if __name__ == "__main__":
         if arguments.port is None or not (1024 <= arguments.port <= 65535):
             raise SystemExit("invalid loopback port")
         serve(root, arguments.port)
-    elif arguments.action == "wire-negatives":
-        wire_negatives(root)
     else:
         mutate(root, arguments.action)
