@@ -1,5 +1,11 @@
 using PicotooPet.Desktop.Services;
 
+if (args.Contains("--operator-trusted-prepost-only", StringComparer.Ordinal))
+{
+    await PicotooPet.MediaWorker.SmokeTests.OperatorTrustedHostPilotTests.RevokedAfterReservationStopsBeforePostAsync();
+    return;
+}
+
 if (args.Contains("--operator-trusted-host-pilot-gate-only", StringComparer.Ordinal))
 {
     await PicotooPet.MediaWorker.SmokeTests.OperatorTrustedPilotGateTests.RunAsync();

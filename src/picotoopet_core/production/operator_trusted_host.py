@@ -95,6 +95,18 @@ def admit_claim_locked(repository, production_job_id: str, executor_id: str,
     if witness.plan_digest != job.plan_digest:
         raise ValueError("PRODUCTION_V11_WITNESS_PLAN_MISMATCH")
     require_b_key_locked(connection, witness.worker_key_id, executor_id)
+    # Different job challenges may be signed concurrently by the same private
+    # host. Serialize admission under this BEGIN IMMEDIATE, independently of
+    # the Windows exclusive GPU lock. Strict/v1.0 leases stay unchanged.
+    if connection.execute(
+        "SELECT 1 FROM production_jobs j JOIN production_worker_challenges c "
+        "ON c.production_job_id=j.production_job_id "
+        "AND c.admitted_lease_token_digest=j.lease_token_digest "
+        "WHERE j.production_job_id<>? AND j.lease_executor_id=? "
+        "AND j.lease_expires_at>? AND c.consumed_at IS NOT NULL LIMIT 1",
+        (production_job_id, executor_id, datetime.now(UTC).isoformat()),
+    ).fetchone() is not None:
+        raise ValueError("PRODUCTION_V11_WORKER_LEASE_ACTIVE")
     # First pilot requires every shot to be untouched. A known old POST or even
     # an unbound reservation must stop for reconciliation, never create retry.
     if (witness.journal_state != "NO_PRIOR_POST"

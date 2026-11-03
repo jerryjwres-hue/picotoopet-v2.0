@@ -114,6 +114,7 @@ class ProductionJobCreateV11Request(ProductionJobCreateRequest):
 
     schema_version: Literal["1.1"] = "1.1"
     approved_reference_ids: list[str] = Field(min_length=1, max_length=12)
+    pilot_first_shot: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def _unique_approval_ids(self) -> ProductionJobCreateV11Request:
@@ -157,8 +158,9 @@ class WorkerWitnessV11(BaseModel):
 
     Signature is intentionally only data until an independently provisioned,
     revocable Worker public key is pinned to the paired device by Core. Current
-    API bearer is NOT an acceptable source for such a key. No nonce ledger or
-    Windows/Comfy attestation issuer exists yet: shipping Claim stays disabled.
+    API bearer is NOT an acceptable source for such a key. Only the explicit
+    operator-trusted private-host policy admits this witness through Claim;
+    this never represents hardware or independent execution attestation.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

@@ -22,7 +22,7 @@ using PicotooPet.Desktop.Core.Production;
 namespace PicotooPet.Desktop.Services.ProductionReference;
 
 /// <summary>
-/// #164 phase-1 internal preflight ONLY, in the existing same EXE. This transports
+/// Existing same-EXE challenge transport and preserved expected-deny preflight. This transports
 /// assertions, not executable attestation. A Core-issued nonce and ordinary UI
 /// Bearer are NOT enrollment, Worker identity, a Claim or GPU authorization.
 /// B admission reuses the prepared shipping snapshots and held GPU lease. Core's

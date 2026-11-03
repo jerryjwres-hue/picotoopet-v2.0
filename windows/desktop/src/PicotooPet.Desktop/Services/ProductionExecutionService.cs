@@ -273,7 +273,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         try
         {
             // ── 锁定当前授权至 claim 返回；切换 HOLD 不得产生新的 Core lease。 ──
-            using var claimPermit = _submissionPermit?.Invoke(productionJobId, originalDigest);
+            using var claimPermit = originalPlan.SchemaVersion == "1.1" && ShippingReferences is not null
+                ? P0ThreeShotAcceptanceGate.AcquireSubmissionPermit(productionJobId, originalDigest)
+                : _submissionPermit?.Invoke(productionJobId, originalDigest);
             if (originalPlan.SchemaVersion == "1.1" && ShippingReferences is not null && claimPermit is null)
                 throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
             await references.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
@@ -575,7 +577,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
         {
             // ── Opt-in acceptance gate holds the exact authorization file through the new POST. ──
             // ── No permit means ordinary unattended mode; a denied permit changes no attempt. ──
-            using var permit = _submissionPermit?.Invoke(claim.ProductionJobId, planDigest);
+            using var permit = claim.Plan.SchemaVersion == "1.1" && ShippingReferences is not null
+                ? P0ThreeShotAcceptanceGate.AcquireSubmissionPermit(claim.ProductionJobId, planDigest)
+                : _submissionPermit?.Invoke(claim.ProductionJobId, planDigest);
             if (claim.Plan.SchemaVersion == "1.1" && ShippingReferences is not null && permit is null)
                 throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
             if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);

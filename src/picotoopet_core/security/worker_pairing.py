@@ -3,7 +3,8 @@
 Enrolment/revocation are ONLY local interactive macOS console operations, not
 HTTP/Bearer endpoints. A paired software key proves possession by that account,
 NOT that an untrusted same-user process is the actual signed Windows EXE.
-Nothing here authorizes I2V GPU production.
+Strict/default keys grant no GPU authority. Explicit B policy is usable only by
+the transaction-bound production Claim and its revocable admitted lease.
 """
 from __future__ import annotations
 
@@ -260,8 +261,8 @@ class PairedWorkerTrust:
         """Check real pinned key/signature + Core nonce; caller owns BEGIN IMMEDIATE.
 
         Redeem=True writes one-use consumption in the SAME transaction as caller's
-        future claim, never in a separate preflight. Current production claim
-        paths still deny unconditionally, even if this verifier succeeds.
+        production Claim, never in a separate preflight. A successful verifier
+        alone does not select B policy or allocate a production lease.
         """
         if not connection.in_transaction:
             raise ValueError("PRODUCTION_V11_WITNESS_TRANSACTION_REQUIRED")
