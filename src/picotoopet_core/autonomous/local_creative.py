@@ -47,21 +47,21 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
 
     def _profile_for_goal(self, goal) -> str:
         """Select the existing immutable job profile, then opt fresh three-shot Goals into v2."""
-        directives = parse_goal_directives(goal.objective)
-        if not (directives.shot_count == 3 or directives.story_gate):
-            return CreativeProfile.CONTENT_PLAN_V1.value
-
-        # Durable replay   : existing Goal idempotency keys must never change their profile.
-        # Fresh 3-shot Goal: v2 is required before its Story Bible/text-continuity gate can run.
+        # Durable replay  : restore the stored profile before interpreting fresh directives.
+        # Identity binding: the Goal-to-Creative idempotency key is immutable across restarts.
         existing = self.creative.repository.database.fetchone(
             "SELECT creative_profile FROM creative_jobs WHERE idempotency_key=?",
             (f"goal-video:{goal.goal_id}",),
         )
-        return (
-            existing["creative_profile"]
-            if existing is not None
-            else CreativeProfile.CONTENT_PLAN_V2.value
-        )
+        if existing is not None:
+            return existing["creative_profile"]
+
+        # Fresh Goal      : explicit three-shot / affirmative Story Gate selects existing v2.
+        # Legacy default  : other new Goals retain the existing v1 Creative pipeline.
+        directives = parse_goal_directives(goal.objective)
+        if directives.shot_count == 3 or directives.story_gate:
+            return CreativeProfile.CONTENT_PLAN_V2.value
+        return CreativeProfile.CONTENT_PLAN_V1.value
 
     def _hash_for_step(self, goal, step_key: str, expected_type: str) -> str:
         # ── ResultStore identities come from Core workflow facts, not model output. ──
