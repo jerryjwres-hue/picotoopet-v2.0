@@ -1,0 +1,136 @@
+{
+  "schema_version": "video_bible.v1",
+  "subject": {
+    "subject_id": "maotai",
+    "kind": "PET",
+    "species": "dog",
+    "breed_or_type": "Alaskan Malamute",
+    "coat_or_appearance": "large fluffy {{COAT}} double coat, erect triangular ears, dark almond eyes",
+    "distinguishing_marks": [
+      "erect triangular ears",
+      "dark almond eyes",
+      "plumed tail curled over its back"
+    ],
+    "identity_phrase": "Maotai, a large fluffy {{COAT}} Alaskan Malamute with erect triangular ears, dark almond eyes and a plumed tail curled over its back"
+  },
+  "product": {
+    "product_id": "product-main",
+    "name": "{{PRODUCT_NAME}}",
+    "category": "slow-feeder bowl",
+    "shape_color_material": "round {{PRODUCT_COLOUR}} slow-feeder bowl with a raised maze pattern, no text or logo",
+    "identity_phrase": "a round {{PRODUCT_COLOUR}} slow-feeder bowl resting on a non-slip mat on the tiled floor",
+    "logo_policy": "NO_TEXT_OR_LOGO_IN_FRAME",
+    "claims": []
+  },
+  "scenes": [
+    {
+      "scene_id": "scene_main",
+      "environment_phrase": "tidy kitchen corner, a wooden cabinet at screen left, the slow-feeder bowl resting on a non-slip mat at screen right, a tiled floor",
+      "lighting_phrase": "soft natural daylight from a window at screen left",
+      "palette": [
+        "white",
+        "grey",
+        "{{PRODUCT_COLOUR}}",
+        "warm wood"
+      ]
+    }
+  ],
+  "camera_rules": {
+    "screen_direction": "LEFT_TO_RIGHT",
+    "allowed_movements": [
+      "STATIC",
+      "SLOW_PUSH_IN",
+      "TRACK_SIDE"
+    ]
+  },
+  "continuity_anchors": [
+    "one Alaskan Malamute named Maotai",
+    "the slow-feeder bowl resting on the non-slip mat at screen right"
+  ],
+  "global_continuity_notes": [
+    "Maotai and the slow-feeder bowl look identical in every shot"
+  ],
+  "arc": [
+    {
+      "beat_id": "beat-001",
+      "role": "HOOK"
+    },
+    {
+      "beat_id": "beat-002",
+      "role": "DEMO"
+    },
+    {
+      "beat_id": "beat-003",
+      "role": "CTA"
+    }
+  ],
+  "shots": [
+    {
+      "shot_id": "shot-001",
+      "beat_id": "beat-001",
+      "order": 1,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai sits on the non-slip mat beside the slow-feeder bowl",
+      "visible_action": "Maotai blinks and looks at the slow-feeder bowl",
+      "closing_state": "Maotai sits on the non-slip mat looking at the slow-feeder bowl",
+      "camera_framing": "medium shot",
+      "camera_movement": "STATIC",
+      "handoff_to_next": "CONTINUOUS",
+      "risk_flags": []
+    },
+    {
+      "shot_id": "shot-002",
+      "beat_id": "beat-002",
+      "order": 2,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai sits on the non-slip mat looking at the slow-feeder bowl",
+      "visible_action": "Maotai lowers his head and eats from the slow-feeder bowl",
+      "closing_state": "Maotai stands on the non-slip mat with his head above the slow-feeder bowl",
+      "camera_framing": "close-up",
+      "camera_movement": "SLOW_PUSH_IN",
+      "handoff_to_next": "CONTINUOUS",
+      "risk_flags": [
+        "PRODUCT_CLOSEUP"
+      ]
+    },
+    {
+      "shot_id": "shot-003",
+      "beat_id": "beat-003",
+      "order": 3,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai stands on the non-slip mat with his head above the slow-feeder bowl",
+      "visible_action": "Maotai lifts his head and looks calmly at the camera",
+      "closing_state": "Maotai stands on the non-slip mat facing the camera, the slow-feeder bowl beside him",
+      "camera_framing": "wide shot",
+      "camera_movement": "STATIC",
+      "handoff_to_next": "CUT_ON_ACTION",
+      "risk_flags": []
+    }
+  ],
+  "negative_concepts": [
+    "EXTRA_LIMBS",
+    "MORPHING",
+    "DUPLICATED_OBJECTS",
+    "FLICKER"
+  ],
+  "unverified_fields": [
+    "reference_image"
+  ],
+  "needs_deep_ai": false,
+  "needs_human": false
+}

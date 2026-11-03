@@ -1,0 +1,136 @@
+{
+  "schema_version": "video_bible.v1",
+  "subject": {
+    "subject_id": "maotai",
+    "kind": "PET",
+    "species": "dog",
+    "breed_or_type": "Alaskan Malamute",
+    "coat_or_appearance": "large fluffy {{COAT}} double coat, erect triangular ears, dark almond eyes",
+    "distinguishing_marks": [
+      "erect triangular ears",
+      "dark almond eyes",
+      "plumed tail curled over its back"
+    ],
+    "identity_phrase": "Maotai, a large fluffy {{COAT}} Alaskan Malamute with erect triangular ears, dark almond eyes and a plumed tail curled over its back"
+  },
+  "product": {
+    "product_id": "product-main",
+    "name": "{{PRODUCT_NAME}}",
+    "category": "collar tag",
+    "shape_color_material": "small round {{PRODUCT_COLOUR}} collar tag on a {{PRODUCT_COLOUR}} collar, no text or logo",
+    "identity_phrase": "a small round {{PRODUCT_COLOUR}} tag hanging from a {{PRODUCT_COLOUR}} collar worn around Maotai's neck",
+    "logo_policy": "NO_TEXT_OR_LOGO_IN_FRAME",
+    "claims": []
+  },
+  "scenes": [
+    {
+      "scene_id": "scene_main",
+      "environment_phrase": "clean light grey studio backdrop, a low wooden platform at screen centre, a smooth floor",
+      "lighting_phrase": "soft even studio light from the front left",
+      "palette": [
+        "white",
+        "grey",
+        "{{PRODUCT_COLOUR}}",
+        "warm wood"
+      ]
+    }
+  ],
+  "camera_rules": {
+    "screen_direction": "LEFT_TO_RIGHT",
+    "allowed_movements": [
+      "STATIC",
+      "SLOW_PUSH_IN",
+      "TRACK_SIDE"
+    ]
+  },
+  "continuity_anchors": [
+    "one Alaskan Malamute named Maotai wearing the collar and tag",
+    "the low wooden platform at screen centre"
+  ],
+  "global_continuity_notes": [
+    "Maotai and the collar tag look identical in every shot"
+  ],
+  "arc": [
+    {
+      "beat_id": "beat-001",
+      "role": "HOOK"
+    },
+    {
+      "beat_id": "beat-002",
+      "role": "DEMO"
+    },
+    {
+      "beat_id": "beat-003",
+      "role": "CTA"
+    }
+  ],
+  "shots": [
+    {
+      "shot_id": "shot-001",
+      "beat_id": "beat-001",
+      "order": 1,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai stands on the low wooden platform with the collar tag on his neck",
+      "visible_action": "Maotai turns his head slowly toward the camera",
+      "closing_state": "Maotai stands on the low wooden platform looking at the camera",
+      "camera_framing": "medium shot",
+      "camera_movement": "STATIC",
+      "handoff_to_next": "CONTINUOUS",
+      "risk_flags": []
+    },
+    {
+      "shot_id": "shot-002",
+      "beat_id": "beat-002",
+      "order": 2,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai stands on the low wooden platform looking at the camera",
+      "visible_action": "Maotai's chest rises with a slow breath and the collar tag shifts slightly",
+      "closing_state": "Maotai stands on the low wooden platform, the collar tag resting on his chest",
+      "camera_framing": "close-up",
+      "camera_movement": "SLOW_PUSH_IN",
+      "handoff_to_next": "CONTINUOUS",
+      "risk_flags": [
+        "PRODUCT_CLOSEUP"
+      ]
+    },
+    {
+      "shot_id": "shot-003",
+      "beat_id": "beat-003",
+      "order": 3,
+      "scene_id": "scene_main",
+      "duration_seconds": 4.0,
+      "featured": [
+        "SUBJECT",
+        "PRODUCT"
+      ],
+      "opening_state": "Maotai stands on the low wooden platform, the collar tag resting on his chest",
+      "visible_action": "Maotai blinks and his tail sways gently",
+      "closing_state": "Maotai stands on the low wooden platform with the collar tag resting on his chest",
+      "camera_framing": "wide shot",
+      "camera_movement": "STATIC",
+      "handoff_to_next": "CUT_ON_ACTION",
+      "risk_flags": []
+    }
+  ],
+  "negative_concepts": [
+    "EXTRA_LIMBS",
+    "MORPHING",
+    "DUPLICATED_OBJECTS",
+    "FLICKER"
+  ],
+  "unverified_fields": [
+    "reference_image"
+  ],
+  "needs_deep_ai": false,
+  "needs_human": false
+}
