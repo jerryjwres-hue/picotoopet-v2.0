@@ -22,6 +22,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     private readonly IReferenceBatchGateway _gateway;
     private readonly ReferencePreviewSnapshotStager _stager;
     private readonly HashSet<string> _eligibleShots;
+    private readonly bool _requiresFullV2Batch;
     private readonly Dictionary<string, (ReferencePreviewSnapshot Snapshot, ReferencePreviewItem Item)> _snapshots = new(StringComparer.Ordinal);
     private ReferenceBatchRequest? _frozenRequest;
     private ReferenceBatchReceipt? _initialReceipt;
@@ -63,6 +64,18 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 || !seen.Add(id)) throw new InvalidDataException("REFERENCE_PLAN_SHOT_INVALID");
             if (Text(shot, "render_intent") == "IMAGE_TO_VIDEO") eligible.Add(id);
         }
+        // ── UI candidate only: real Bible/kit/rights and full coverage are verified by Mac Core.
+        // ── Never rewrite a frozen Creative Package or silently include mixed legacy shots.
+        var v2Candidate = eligible.Count == 0 && shots.GetArrayLength() == 3
+            && stages.TryGetProperty("video_bible.v1", out var bible) && bible.ValueKind == JsonValueKind.Object
+            && stages.TryGetProperty("keyframe_kit.v1", out var kit) && kit.ValueKind == JsonValueKind.Object
+            && stages.TryGetProperty("script.v1", out var script) && script.ValueKind == JsonValueKind.Object
+            && shots.EnumerateArray().All(shot => Text(shot, "render_intent") == "GENERATIVE_VIDEO");
+        if (v2Candidate)
+        {
+            eligible.AddRange(shots.EnumerateArray().Select(shot => Text(shot, "shot_id")));
+        }
+        _requiresFullV2Batch = v2Candidate;
         _gateway = gateway;
         _stager = stager;
         GoalId = continuation.GoalId;
@@ -88,7 +101,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     }
     public bool IsBusy => Volatile.Read(ref _operation) != 0;
     public bool CanEdit => !IsBusy && _frozenRequest is null;
-    public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0;
+    public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
+        && (!_requiresFullV2Batch || Items.Count == _eligibleShots.Count);
     public bool CanRefresh => !IsBusy && _initialReceipt is not null;
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
     public ReferenceBatchReceipt? Receipt { get => _receipt; private set => SetProperty(ref _receipt, value); }
@@ -137,6 +151,9 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         try
         {
             if (!_consent) throw new InvalidDataException("REFERENCE_EXPLICIT_CONSENT_REQUIRED");
+            // ── The new v2 Core contract requires all three trusted shot/image claims.
+            if (_requiresFullV2Batch && Items.Count != _eligibleShots.Count)
+                throw new InvalidDataException("REFERENCE_V2_FULL_COVERAGE_REQUIRED");
             var request = _frozenRequest ?? BuildRequest();
             ReferenceBatchValidation.ValidateRequest(request);
             await VerifySnapshotsAsync(request, cancellationToken);
