@@ -78,7 +78,7 @@ def test_headless_postproduction_failure_has_redacted_diagnostic() -> None:
     coordinator = (ROOT / "windows/desktop/src/PicotooPet.Desktop/Services/PostProductionDeliveryCoordinator.cs").read_text(encoding="utf-8")
     session = (ROOT / "windows/desktop/src/PicotooPet.Desktop/Services/ControlCenterSession.cs").read_text(encoding="utf-8")
     assert "failureReporter: session.LogPostProductionFailure" in coordinator
-    assert coordinator.count("_failureReporter?.Invoke(goalId, jobId, error)") == 2
+    assert coordinator.count("_failureReporter?.Invoke(goalId, jobId, stage, error)") == 2
     assert "P0_POSTPRODUCTION_FAILED" in session
     assert '"UNCLASSIFIED"' in session
 
