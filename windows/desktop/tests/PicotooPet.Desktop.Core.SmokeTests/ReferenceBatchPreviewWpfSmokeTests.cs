@@ -93,6 +93,7 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         wideEncoder.Save(wideStream);
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(wideStream.ToArray(), ".png"));
         await VerifyBatchStateAsync(stream.ToArray());
+        await VerifySealedV2SelectionAsync(stream.ToArray());
         Console.WriteLine("REFERENCE_PREVIEW_GUI_API=PASS; PNG_JPEG_PIXELS=PASS; GPU_POST=0");
         var codecs = Windows.Graphics.Imaging.BitmapDecoder.GetDecoderInformationEnumerator();
         Console.WriteLine("NATIVE_WEBP_CODEC_REGISTERED=" + codecs.Any(codec => codec.CodecId == Windows.Graphics.Imaging.BitmapDecoder.WebpDecoderId));
@@ -212,6 +213,90 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+
+    private static async Task VerifySealedV2SelectionAsync(byte[] png)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "reference-v2-preview-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            // ── These are client-side candidates only; Mac Core validates the actual seal.
+            var source = Path.Combine(root, "source.png");
+            await File.WriteAllBytesAsync(source, png);
+            var policy = new ReferencePreviewFilePolicy(ProductionLocalEnvironment.ResolveUnderRoot,
+                ProductionLocalEnvironment.AssertNoLinkEscape, ProductionLocalEnvironment.IsOrdinaryFile,
+                ProductionLocalEnvironment.Sha256FileAsync);
+            var stager = new ReferencePreviewSnapshotStager(root, policy, ReferenceBatchPreviewViewModel.ValidateImageAsync);
+            var gateway = new RecordingGateway { FailNextPost = true };
+            var vm = new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), V2CandidatePackage());
+
+            SmokeAssert.Equal(3, vm.EligibleShots.Length, "Sealed-v2 candidate must expose exactly three shot ids");
+            SmokeAssert.True(vm.EligibleShots.SequenceEqual(new[] { "shot-1", "shot-2", "shot-3" }),
+                "The v2 candidate shot order/identity changed");
+            await vm.AddAsync("shot-1", source, "USER_SUPPLIED", null);
+            vm.UserConfirmsPreviewAndRights = true;
+            SmokeAssert.True(!vm.CanSubmit, "One v2 still must not enable request submission");
+            await RejectAsync(() => vm.SubmitAsync());
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Partial v2 reference must not POST to Core");
+
+            await vm.AddAsync("shot-2", source, "USER_SUPPLIED", null);
+            vm.UserConfirmsPreviewAndRights = true;
+            SmokeAssert.True(!vm.CanSubmit, "Two v2 stills must not enable request submission");
+            await RejectAsync(() => vm.SubmitAsync());
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Two-shot v2 request must not POST to Core");
+
+            await vm.AddAsync("shot-3", source, "USER_SUPPLIED", null);
+            SmokeAssert.True(!vm.CanSubmit, "All three images still require fresh rights consent");
+            vm.UserConfirmsPreviewAndRights = true;
+            SmokeAssert.True(vm.CanSubmit, "All three snapshots plus explicit consent must enable submission");
+            await RejectAsync(() => vm.SubmitAsync()); // Synthetic unknown network outcome only.
+            SmokeAssert.Equal(1, gateway.RegisterCalls, "Complete v2 batch must make one request");
+            SmokeAssert.Equal(3, gateway.Request!.SelectedReferences.Length,
+                "Actual v2 request must bind exactly three staged images");
+            SmokeAssert.True(!vm.CanEdit, "Ambiguous v2 POST must freeze the exact image selection");
+            await RejectAsync(() => vm.AddAsync("shot-2", source, "USER_SUPPLIED", null));
+
+            // ── Missing v2 markers and unrelated legacy T2V stay unselectable.
+            var legacy = new ReferenceBatchPreviewViewModel(
+                new RecordingGateway(), stager, Continuation(), V1TextCandidatePackage());
+            SmokeAssert.Equal(0, legacy.EligibleShots.Length,
+                "Legacy all-T2V packages must not become image-approval candidates");
+            await RejectAsync(() => legacy.AddAsync("shot-1", source, "USER_SUPPLIED", null));
+            Console.WriteLine("REFERENCE_V2_THREE_SHOT_PREVIEW=PASS; PENDING_ONLY=TRUE; POST_BEFORE_FULL_CONSENT=0; GPU_POST=0");
+        }
+        finally
+        {
+            foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                File.SetAttributes(path, FileAttributes.Normal);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static CreativePackageRecord V2CandidatePackage() => Package() with
+    {
+        Manifest = JsonDocument.Parse("""
+        {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1",
+         "quality_outcome":"PASS","source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+         "stage_results":{"video_bible.v1":{},"keyframe_kit.v1":{},"script.v1":{},
+           "shot_plan.v1":{"shots":[
+             {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO"},
+             {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO"},
+             {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO"}]}}}
+        """).RootElement.Clone(),
+    };
+
+    private static CreativePackageRecord V1TextCandidatePackage() => Package() with
+    {
+        Manifest = JsonDocument.Parse("""
+        {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1",
+         "quality_outcome":"PASS","source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+         "stage_results":{"shot_plan.v1":{"shots":[
+             {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO"},
+             {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO"},
+             {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO"}]}}}
+        """).RootElement.Clone(),
+    };
 
     private static GoalVideoContinuationRecord Continuation() => new("11111111-1111-4111-8111-111111111111", new string('a', 64),
         new string('b', 64), "job-1", "22222222-2222-4222-8222-222222222222", new string('c', 64), "creative_ready", null, null);
