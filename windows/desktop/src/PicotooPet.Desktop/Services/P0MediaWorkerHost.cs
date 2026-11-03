@@ -157,16 +157,18 @@ public static class P0MediaWorkerHost
                             {
                                 continue;
                             }
-                            // ── 默认文件不存在时沿用原调度；验收模式仅核准一个冻结三镜头 Job。 ──
+                            if (continuation.ProductionStatus is "production_ready")
+                            {
+                                // ── HOLD denies NEW GPU POST, not immutable-package C004/C011 QA.
+                                // ── Journal recovery has already won above; this path never claims a lease.
+                                _ = session.FinalVideoDelivery.Observe(goal.GoalId, continuation);
+                                continue;
+                            }
+                            // ── New GPU work still needs the exact frozen three-shot ALLOW.
+                            // ── Never move the permit behind executor.RunAsync.
                             if (!await P0ThreeShotAcceptanceGate.AllowsJobAsync(
                                 session, jobId, cancellationToken).ConfigureAwait(false))
                             {
-                                continue;
-                            }
-                            if (continuation.ProductionStatus is "production_ready")
-                            {
-                                // ── 已完成镜头走冻结 C009/C010/C011 合成与 QA 流。 ──
-                                _ = session.FinalVideoDelivery.Observe(goal.GoalId, continuation);
                                 continue;
                             }
                             if (continuation.ProductionStatus is not ("Ready" or "Claimed" or "Rendering"))
@@ -188,6 +190,63 @@ public static class P0MediaWorkerHost
                                 logger.Error("P0 生产工作失败，已实施有界退避", error);
                                 backoff[jobId] = DateTimeOffset.UtcNow + FailureBackoff;
                             }
+                        }
+
+                        // ── CPU-only recovery for a frozen, already-passed autonomous Goal package. ──
+                        // ── Historical autonomous video Goals may be hidden from the GUI's 200-Goal
+                        // ── list. Their Core continuation and Production Package still bind an exact
+                        // ── identity; never treat this recovery as permission to Claim or POST GPU.
+                        var readyJobs = await session.GetProductionJobsAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                        foreach (var completedJob in readyJobs)
+                        {
+                            if (completedJob.Status != "production_ready"
+                                || !completedJob.ProjectKey.StartsWith(
+                                    "autonomous-goal:", StringComparison.Ordinal))
+                            {
+                                continue;
+                            }
+                            var hiddenGoalId = completedJob.ProjectKey["autonomous-goal:".Length..];
+                            if (!Guid.TryParseExact(hiddenGoalId, "D", out var parsedGoal)
+                                || !string.Equals(hiddenGoalId, parsedGoal.ToString("D"),
+                                    StringComparison.Ordinal)
+                                || goals.Any(item => item.GoalId == hiddenGoalId))
+                            {
+                                continue;
+                            }
+                            PicotooPet.Desktop.Core.Contracts.GoalVideoContinuationRecord hiddenContinuation;
+                            try
+                            {
+                                hiddenContinuation = await session.GetGoalVideoContinuationAsync(
+                                    hiddenGoalId, cancellationToken).ConfigureAwait(false);
+                            }
+                            catch (PicotooPet.Desktop.Core.Networking.ApiException ex)
+                                when (ex.StatusCode == 404)
+                            {
+                                // ── No trusted Core continuation, no CPU recovery. ──
+                                continue;
+                            }
+                            if (hiddenContinuation.GoalId != hiddenGoalId
+                                || hiddenContinuation.ProductionJobId != completedJob.ProductionJobId
+                                || hiddenContinuation.ProductionStatus != "production_ready"
+                                || hiddenContinuation.CreativePackageId != completedJob.CreativePackageId
+                                || hiddenContinuation.CreativePackageDigest != completedJob.CreativePackageDigest
+                                || hiddenContinuation.ProductionStatus != completedJob.Status)
+                            {
+                                continue;
+                            }
+                            var completedPackage = await session.GetProductionPackageAsync(
+                                completedJob.ProductionJobId, cancellationToken).ConfigureAwait(false);
+                            if (completedPackage is null
+                                || completedPackage.QualityOutcome != "PASS"
+                                || completedPackage.ProductionJobId != completedJob.ProductionJobId
+                                || completedPackage.CreativePackageId != completedJob.CreativePackageId
+                                || completedPackage.PlanDigest != completedJob.PlanDigest)
+                            {
+                                continue;
+                            }
+                            // ── Reuse the sole existing C004/C009/C011 coordinator; not an executor.
+                            _ = session.FinalVideoDelivery.Observe(hiddenGoalId, hiddenContinuation);
                         }
                         } // ── End fresh Goal dispatch, only allowed with zero pending journal. ──
                     }

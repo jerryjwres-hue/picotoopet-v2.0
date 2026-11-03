@@ -136,6 +136,12 @@ def seed(root: Path, identity_file: Path) -> None:
                 "image_relative_path": single.tasks[0].reference_asset.input_relative_path,
             }, sort_keys=True) + "\n", encoding="utf-8",
         )
+        tables = ("production_jobs", "production_tasks", "production_attempts",
+                  "production_packages", "approvals")
+        (root / "core-facts-before.json").write_text(json.dumps({
+            table: [dict(row) for row in db.fetchall(f"SELECT * FROM {table} ORDER BY rowid")]
+            for table in tables
+        }, sort_keys=True), encoding="utf-8")
         print("REAL_CORE_SEED=PASS; FROZEN_PLAN=PASS; TEST_ONLY_KEY=PASS")
     finally:
         try:
@@ -157,6 +163,18 @@ def serve(root: Path, port: int) -> None:
     app = FastAPI()
     install_error_handlers(app)
     app.include_router(production.router, prefix="/api/v1")
+    @app.middleware("http")
+    async def retain_first_test_witness(request, call_next):
+        # #152: retain the actual Windows-signed public wire proposal in this
+        # disposable fixture ONLY. No Authorization header/key seed is stored.
+        # Do not overwrite it when the negative probes replay or alter it.
+        if request.url.path.endswith("/witness/preflight"):
+            body = await request.body()
+            target = root / "windows-witness-public.json"
+            if not target.exists():
+                assert len(body) < 65536
+                target.write_bytes(body)
+        return await call_next(request)
     app.state.services = SimpleNamespace(
         production=service,
         settings=SimpleNamespace(api_token=os.environ["P0_CORE_INTEROP_BEARER"]),
@@ -211,6 +229,13 @@ def mutate(root: Path, action: str) -> None:
             assert job["lease_expires_at"] is None
             assert job["plan_digest"] == manifest["plan_digest"]
             assert db.scalar("SELECT COUNT(*) FROM production_packages") == 0
+            baseline = json.loads((root / "core-facts-before.json").read_text(encoding="utf-8"))
+            for table, original in baseline.items():
+                # The explicit fixture revoke phase is the ONLY permitted
+                # approval change. Jobs/tasks/attempts/packages never change.
+                if table == "approvals" and expected != 1:
+                    continue
+                assert [dict(row) for row in db.fetchall(f"SELECT * FROM {table} ORDER BY rowid")] == original
             print("REAL_CORE_SQLITE_NONCE=UNSPENT; LEASE=0; ATTEMPT=0; RESULT=0; GPU=BLOCKED")
         else:
             raise ValueError("unknown test-only action")

@@ -5,12 +5,14 @@ on:
       - test/p0q2-real-core-worker-http-interop-20261030
     paths:
       - tests/integration/real_core_worker_http_server.py
+      - tests/production/test_v11_admission_tcp_negatives.py
       - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/RealPythonCoreInteropTests.cs
       - .github/workflows/p0q2-real-core-worker-http-interop-windows.yml
       - docs/p0_video_quality/security/REAL_CORE_WORKER_HTTP_INTEROP.md
   pull_request:
     paths:
       - tests/integration/real_core_worker_http_server.py
+      - tests/production/test_v11_admission_tcp_negatives.py
       - windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests/RealPythonCoreInteropTests.cs
       - .github/workflows/p0q2-real-core-worker-http-interop-windows.yml
   workflow_dispatch:
@@ -23,6 +25,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-mac-http-negatives:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install existing Core for focused native TCP rejection tests
+        run: python -m pip install -e . pytest cryptography
+      - name: Actual Mac TCP HTTP negatives, real-clock expiry, no GPU
+        run: python -m pytest tests/production/test_v11_admission_tcp_negatives.py -v
   native-cpu-only:
     runs-on: windows-2025
     timeout-minutes: 25
@@ -135,5 +151,11 @@ jobs:
               $server.WaitForExit(10000) | Out-Null
             }
             Remove-Item Env:P0_CORE_INTEROP_BEARER -ErrorAction SilentlyContinue
+            $resolvedRoot = [IO.Path]::GetFullPath($root)
+            $tempPrefix = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
+            if (!$resolvedRoot.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+                ![IO.Path]::GetFileName($resolvedRoot).StartsWith('p0-real-core-interop-', [StringComparison]::Ordinal)) {
+              throw 'REFUSE_INTEROP_TEMP_CLEANUP_OUTSIDE_RUNNER'
+            }
             Remove-Item -LiteralPath $root -Force -Recurse -ErrorAction SilentlyContinue
           }

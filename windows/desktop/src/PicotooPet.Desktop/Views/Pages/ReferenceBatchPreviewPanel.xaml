@@ -4,7 +4,7 @@
  <ScrollViewer VerticalScrollBarVisibility="Auto">
   <StackPanel Margin="20">
    <TextBlock Text="参考图预览与批量审批申请" FontSize="21" FontWeight="SemiBold" />
-   <TextBlock Margin="0,8,0,14" TextWrapping="Wrap" Text="为 IMAGE_TO_VIDEO 镜头选择本地 PNG、JPEG 或 WebP，确认预览与使用权后申请审批。来源声明不等于授权；审批决定请前往现有审批中心。" />
+   <TextBlock Margin="0,8,0,14" TextWrapping="Wrap" Text="为 I2V 镜头或封存 v2 三镜头候选选择本地 PNG、JPEG 或 WebP。必须逐张确认预览与使用权；只有 Mac Core 可以核验封存来源并批准，预览不是渲染授权。" />
    <TextBlock Text="目标 ID" FontWeight="SemiBold" />
    <TextBlock Text="{Binding GoalId}" TextWrapping="Wrap" />
    <TextBlock Margin="0,6,0,0" Text="冻结创意包 ID / SHA-256" FontWeight="SemiBold" />

@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Production;
@@ -174,6 +175,30 @@ internal static class RealPythonCoreInteropTests
                     Check(result == "PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED", "REAL_CORE_EXPECTED_409");
                     Check(!comfySentinel.Pending(), "COMFY_NETWORK_REQUEST_ZERO");
                     Check(journal.Pending().Count == 0, "COMFY_JOURNAL_ZERO");
+                    // Probe immediately while the original signer phase and
+                    // Comfy sentinel are active; do not spend the 30s lifetime
+                    // on another process/EXE measurement before these checks.
+                    await SignedWireNegativesAsync(http, route, root);
+                    Check(!comfySentinel.Pending(), "SIGNED_WIRE_COMFY_ZERO");
+                    // #152: a real, durable unresolved local intent must stop
+                    // the existing client BEFORE another challenge or signature.
+                    // Preserve it; never clear it as a way to regain admission.
+                    var oldJournal = new ProductionSubmissionJournal(Path.Combine(root, "old-windows-journal"));
+                    var oldIntent = new ProductionSubmission(job, plan.Tasks[0].ProductionTaskId,
+                        digest, new string('e', 64), "Submitting", null);
+                    oldJournal.Save(oldIntent);
+                    try
+                    {
+                        await client.RunExpectedDenyAsync(plan, input, keyRoot, Executor,
+                            publicPin.RootElement.GetProperty("fingerprint").GetString()!,
+                            plan.Tasks.ToDictionary(t => t.ProductionTaskId, _ => new string('e', 64)),
+                            oldJournal, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+                        throw new InvalidOperationException("OLD_JOURNAL_MUST_DENY");
+                    }
+                    catch (ProductionWorkerException error) when (error.Code == "MEDIA_PENDING_RECONCILIATION") { }
+                    Check(oldJournal.Read(job, plan.Tasks[0].ProductionTaskId) == oldIntent, "OLD_JOURNAL_PRESERVED");
+                    Check(!comfySentinel.Pending(), "OLD_JOURNAL_COMFY_ZERO");
+                    Console.WriteLine("REAL_WINDOWS_OLD_JOURNAL=DENIED_BEFORE_CHALLENGE; INTENT=PRESERVED; COMFY_POST=0");
                 }
                 Console.WriteLine("REAL_MAC_CORE_FASTAPI_WIN_DPAPI_ED25519_HTTP=PASS; PREFLIGHT=409; COMFY_POST=0");
             }
@@ -192,6 +217,34 @@ internal static class RealPythonCoreInteropTests
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Check(body.RootElement.GetProperty("error").GetProperty("code").GetString() == code,
             "EXPECTED_ERROR_" + code);
+    }
+
+    private static async Task SignedWireNegativesAsync(HttpClient http, string route, string root)
+    {
+        var wire = File.ReadAllText(Path.Combine(root, "windows-witness-public.json"));
+        var witness = JsonNode.Parse(wire)!.AsObject();
+        var signature = Convert.FromHexString(witness["signature"]!.GetValue<string>());
+        signature[0] ^= 1;
+        witness["signature"] = Convert.ToHexStringLower(signature);
+        using (var bad = await http.PostAsJsonAsync(route + "/witness/preflight", witness))
+            await ExactErrorAsync(bad, HttpStatusCode.Conflict, "PRODUCTION_V11_WORKER_SIGNATURE_INVALID");
+        await Task.WhenAll(Enumerable.Range(0, 3).Select(async _ =>
+        {
+            using var replay = await http.PostAsJsonAsync(route + "/witness/preflight", JsonNode.Parse(wire));
+            await ExactErrorAsync(replay, HttpStatusCode.Conflict, "PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED");
+        }));
+        // Hostile altered declarations, not newly signed honest measurements.
+        // Exact early Journal errors demonstrate rejection before verification.
+        foreach (var (state, code) in new[] {
+            ("UNCERTAIN", "PRODUCTION_V11_WITNESS_POST_UNCERTAIN"),
+            ("BOUND_RECOVERY", "PRODUCTION_V11_WITNESS_JOURNAL_MISMATCH") })
+        {
+            witness = JsonNode.Parse(wire)!.AsObject();
+            witness["journal_state"] = state;
+            using var denied = await http.PostAsJsonAsync(route + "/witness/preflight", witness);
+            await ExactErrorAsync(denied, HttpStatusCode.Conflict, code);
+        }
+        Console.WriteLine("REAL_WINDOWS_WIRE_NEGATIVES=PASS; BAD_SIGNATURE=409; CONCURRENT_REPLAY=409; JOURNAL=409");
     }
 
     private static void Check(bool accepted, string reason)

@@ -33,6 +33,20 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: windows/desktop/global.json
+      - name: Parse one-command operator script using Windows PowerShell 5.1; deny without HOLD
+        shell: pwsh
+        run: |
+          $script = 'tools/p0_visual_review/Invoke-ExactProductionReview.ps1'
+          $parseTokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $script).Path, [ref]$parseTokens, [ref]$parseErrors)
+          if ($parseErrors.Count -ne 0) { throw 'P0Q2_OPERATOR_SCRIPT_SYNTAX_INVALID' }
+          $result = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
+          if ($result -notcontains 'CPU_VISUAL_EVIDENCE=STOP_GPU_HOLD_NOT_CONFIRMED') {
+            throw 'P0Q2_OPERATOR_SCRIPT_DID_NOT_FAIL_CLOSED'
+          }
+          Write-Host 'P0_Q2_OPERATOR_PS51_PARSE=PASS; WITHOUT_HOLD=BLOCKED; GPU_POST=0'
       - name: Build focused tool and execute contract negatives (no GPU)
         shell: pwsh
         run: |
