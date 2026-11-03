@@ -209,8 +209,14 @@ public static class P0MediaWorkerHost
                         {
                             try
                             {
-                                _ = await executor.RunAsync(pilotJob, cancellationToken).ConfigureAwait(false);
-                                backoff.Remove(pilotJob);
+                                // Discovery awaits can outlive an Exit signal;
+                                // preserve the same stop-between-jobs boundary.
+                                if (explicitStop || stopSignal.WaitOne(0)) explicitStop = true;
+                                else
+                                {
+                                    _ = await executor.RunAsync(pilotJob, cancellationToken).ConfigureAwait(false);
+                                    backoff.Remove(pilotJob);
+                                }
                             }
                             catch (Exception error) when (!cancellationToken.IsCancellationRequested)
                             {
