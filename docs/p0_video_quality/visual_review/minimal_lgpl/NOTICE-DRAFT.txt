@@ -1,0 +1,55 @@
+DRAFT / INCOMPLETE — SOURCE REVIEW MATERIAL, NOT REDISTRIBUTION APPROVAL
+Applies only to candidate source build 9e6a469d70c142853b4089d107e8791f0d7ce61a,
+native Run 41562913955. No executable is supplied with this document.
+
+The separately invoked FFmpeg/FFprobe tools use code from the FFmpeg project
+(https://ffmpeg.org/). This selected build uses GNU Lesser General Public License
+version 3, incorporating GNU General Public License version 3. Respective authors
+retain the copyrights in the original source files. Full license texts are in
+licenses/FFmpeg-LGPLv3.txt and FFmpeg-GPLv3.txt. Preserve the source's own notices,
+including permissive contributions; those are not all replaced by LGPL terms.
+
+Confirmed zlib code: Copyright (C) 1995-2022 Jean-loup Gailly and Mark Adler.
+The original zlib notice and conditions are reproduced in licenses/zlib-LICENSE.txt;
+retain per-file notices and original zlib.h. Source modifications, if any, must be
+plainly marked and the origin must not be misrepresented. This documentation task
+made no changes to the pinned FFmpeg or zlib sources.
+
+These tools statically include MinGW-w64 CRT code. See the full original runtime
+notices in licenses/MinGW-runtime.txt, the default/exception explanations in
+MinGW-COPYING.txt and MinGW-project.txt, MinGW-DISCLAIMER.PD.txt and the exact
+selected-file notices in MinGW-selected-file-notices.txt. Preserve the
+applicable individual file/header notices; no public-domain-only designation is
+made for all runtime code. Attribution does not imply upstream endorsement.
+
+Source contains Boost Software License 1.0 passages (libavutil/mathematics.c and
+libm.h), public-domain/BSD origin credits in sha.c and public-domain origin text
+in compat/getopt.c. Preserve their full original statements in the matching source.
+If IJG-derived code is linked, include the required acknowledgment:
+  This software is based in part on the work of the Independent JPEG Group.
+Its exact source/changes conditions must also be retained. This draft does not
+assert that IJG objects are present merely because their source files exist.
+
+The 6 UCRT-extra mapped sources are MinGW wrappers, not Windows DLL source.
+CRT-MEMBERS.tsv accounts for those and the 51 MinGW members with individual
+terms including Lucent/David M. Gay, Keith Marshall, explicit ZPL2.1 and PD.
+
+If compiler-rt code or other licensed wrapper/import code is included, reconcile its
+exact member/source license. The precise LLVM version's Apache2/LLVM-exceptions
+text is provided in licenses/compiler-rt-LICENSE.txt as review material; inclusion
+of that license is not evidence proving linked builtins presence or absence.
+
+STILL REQUIRED BEFORE THIS NOTICE CAN BE FINAL:
+- Retain the completed 51 MinGW + 6 UCRT wrapper and three startup source ledger
+  and selected-file notice text; finish remaining transitive header, compiler
+  runtime/import-code and FFmpeg source/header notice reconciliation.
+- Add any further required per-file copyright/permission/disclaimer/NOTICE text.
+- Provide concrete recipient matching-source bundle name/SHA256 and source-access
+  instructions, including build/modify/relink materials and the reviewed delivery
+  or source-offer mechanism. No endpoint, contact or offer has been invented here.
+- Review distribution terms permitting the required library modification and
+  reverse engineering for debugging modifications, Installation Information where
+  applicable, and independent patent/trademark questions.
+
+Standalone program aggregation does not cancel FFmpeg's own source obligations.
+Private testing and a technical PASS do not themselves grant release clearance.

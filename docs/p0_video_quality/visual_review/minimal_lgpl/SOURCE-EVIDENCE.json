@@ -1,0 +1,533 @@
+{
+  "status": "COMPLIANCE_BLOCKED",
+  "native_source_sha": "9e6a469d70c142853b4089d107e8791f0d7ce61a",
+  "native_run": 41562913955,
+  "native_artifact": 13198256716,
+  "artifact_sha256": "3187d488a360fc854ef27b693b3f9517cf1f49890d06bd208fc529a24d4677e1",
+  "review": "https://github.com/jerryjwres-hue/picotoopet-v2.0/pull/198#pullrequestreview-5746413698",
+  "evidence_boundary": "Native labels/counts/hashes are controller original-artifact facts, supplied through PR comments. Exact 57-source mappings, source hashes and license text inspected independently; no artifact retry or build.",
+  "object_counts": {
+    "ffmpeg": 299,
+    "ffprobe": 283,
+    "mingw32": 19,
+    "mingwex": 32,
+    "startup": 3,
+    "zlib": 9,
+    "count_scope": "distinct .o labels reported by reviewer; not all possible import/builtin/section input kinds",
+    "ucrt_extra": 6
+  },
+  "archives": [
+    {
+      "component": "FFmpeg",
+      "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/ad3b795b72388fbb2b216e1e6fd38fba994e1df0",
+      "revision": "ad3b795b72388fbb2b216e1e6fd38fba994e1df0",
+      "bytes": 16923819,
+      "sha256": "b6031e41f717bf7b2c3addb5a88f2cb7f9d86dceca35d48ad45db93033f06d79",
+      "status": "same snapshot pinned in native workflow",
+      "storage": "source-only archive measured locally; retrievable by URL; not vendored in PR"
+    },
+    {
+      "component": "zlib",
+      "url": "https://codeload.github.com/madler/zlib/tar.gz/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "revision": "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "bytes": 1572004,
+      "sha256": "d9e270d46252734aa49770fbc544125391617956266f220bd63216c834f3a522",
+      "status": "same snapshot pinned in native workflow",
+      "storage": "source-only archive measured locally; retrievable by URL; not vendored in PR"
+    },
+    {
+      "component": "LLVM-MinGW scripts",
+      "url": "https://codeload.github.com/mstorsjo/llvm-mingw/tar.gz/8400557f2b489b1bf1ed29e0e90eb9c27b19688f",
+      "revision": "8400557f2b489b1bf1ed29e0e90eb9c27b19688f",
+      "bytes": 61877,
+      "sha256": "c1ed7910102174c9457474f9d7703d5b3b14115e55307b7ea308d41c8dd6aa6b",
+      "status": "declared release build recipe; no new build",
+      "storage": "source-only archive measured locally; retrievable by URL; not vendored in PR"
+    },
+    {
+      "component": "MinGW-w64 CRT",
+      "url": "https://codeload.github.com/mingw-w64/mingw-w64/tar.gz/d2ee971046e625c35e8818ac1634b00384342249",
+      "revision": "d2ee971046e625c35e8818ac1634b00384342249",
+      "bytes": 15128992,
+      "sha256": "ecdfdb80244c9bc9c786447cb43613158eac373effbda82a19dc32aa5ab48b61",
+      "status": "recipe-declared CRT revision; full 51-member identity reconciliation unavailable",
+      "storage": "source-only archive measured locally; retrievable by URL; not vendored in PR"
+    },
+    {
+      "component": "compiler-rt component",
+      "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.6/compiler-rt-19.1.6.src.tar.xz",
+      "revision": "e21dc4bd5474d04b8e62d7331362edcc5648d7e5",
+      "bytes": 2531460,
+      "sha256": "0d4f312e1419152282c267e6b6a1fa5914a7a0c753a5e926bee1c8c28e614ae4",
+      "status": "component license matches immutable commit; actual linked builtins inventory unverified",
+      "storage": "source-only archive measured locally; retrievable by URL; not vendored in PR"
+    }
+  ],
+  "licenses": [
+    {
+      "file": "licenses/FFmpeg-LGPLv3.txt",
+      "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/COPYING.LGPLv3",
+      "bytes": 7651,
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "file": "licenses/FFmpeg-GPLv3.txt",
+      "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/COPYING.GPLv3",
+      "bytes": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "file": "licenses/FFmpeg-LGPLv2.1.txt",
+      "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/COPYING.LGPLv2.1",
+      "bytes": 26517,
+      "sha256": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30"
+    },
+    {
+      "file": "licenses/FFmpeg-LICENSE.md",
+      "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/LICENSE.md",
+      "bytes": 4346,
+      "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af"
+    },
+    {
+      "file": "licenses/zlib-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/madler/zlib/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/LICENSE",
+      "bytes": 1002,
+      "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243"
+    },
+    {
+      "file": "licenses/MinGW-COPYING.txt",
+      "url": "https://raw.githubusercontent.com/mingw-w64/mingw-w64/d2ee971046e625c35e8818ac1634b00384342249/COPYING",
+      "bytes": 2326,
+      "sha256": "99a69660981156c21336fdb5661f89341b013c94e4bf9e1c7467b4745718397f"
+    },
+    {
+      "file": "licenses/MinGW-runtime.txt",
+      "url": "https://raw.githubusercontent.com/mingw-w64/mingw-w64/d2ee971046e625c35e8818ac1634b00384342249/COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt",
+      "bytes": 10936,
+      "sha256": "e9b2dc02451ea29092a1f25fa0f3c07207ed421f1807dffb0c4e6dce69dee7bd"
+    },
+    {
+      "file": "licenses/MinGW-project.txt",
+      "url": "https://raw.githubusercontent.com/mingw-w64/mingw-w64/d2ee971046e625c35e8818ac1634b00384342249/COPYING.MinGW-w64/COPYING.MinGW-w64.txt",
+      "bytes": 5905,
+      "sha256": "f38e6194bd3bfa1b654f118e5acefe0aead437bbe669eee43957ccc65a7127f1"
+    },
+    {
+      "file": "licenses/MinGW-DISCLAIMER.PD.txt",
+      "url": "https://raw.githubusercontent.com/mingw-w64/mingw-w64/d2ee971046e625c35e8818ac1634b00384342249/DISCLAIMER.PD",
+      "bytes": 454,
+      "sha256": "87f33608570312a0f2a9745edcb2527275df813b13982e8c3b3f893d88a4141a"
+    },
+    {
+      "file": "licenses/compiler-rt-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/e21dc4bd5474d04b8e62d7331362edcc5648d7e5/compiler-rt/LICENSE.TXT",
+      "bytes": 16708,
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+    },
+    {
+      "file": "licenses/MinGW-selected-file-notices.txt",
+      "source": "exact 57 source prologues plus project-default dispositions; see CRT-MEMBERS.tsv",
+      "bytes": 51460,
+      "sha256": "3abeb046d8d222f66a156ca1daa75b43398e46f050b667bb382939ad0a8e725b"
+    },
+    {
+      "file": "licenses/FFmpeg-source-notices.txt",
+      "source": "exact comment blocks in 21 inspected source files; not a complete linked input ledger",
+      "bytes": 30826,
+      "sha256": "86aac9d08ec97babfacc914c383eef96c6c53edae68eae2e8c3b4bbca93adeca"
+    }
+  ],
+  "zlib_objects": [
+    {
+      "linked_object": "inflate.o",
+      "source": "inflate.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/inflate.c",
+      "bytes": 55519,
+      "sha256": "34c998ce0037c0537c04b03b276f680b945f9b2c9d1e01b287605bd6879f7fd2",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    },
+    {
+      "linked_object": "adler32.o",
+      "source": "adler32.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/adler32.c",
+      "bytes": 4964,
+      "sha256": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    },
+    {
+      "linked_object": "zutil.o",
+      "source": "zutil.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/zutil.c",
+      "bytes": 7179,
+      "sha256": "8ced40d8c88588811edd2bdb35b7439983d5e1f8e9e32b8a3b244731f3c317b7",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    },
+    {
+      "linked_object": "inffast.o",
+      "source": "inffast.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/inffast.c",
+      "bytes": 12924,
+      "sha256": "e6ef64ce5dc0a4cd5c7ad08ceeb2b2a698b8447f6bd156057caeb2edab68c0cb",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    },
+    {
+      "linked_object": "crc32.o",
+      "source": "crc32.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/crc32.c",
+      "bytes": 31605,
+      "sha256": "8fd16f0a7714d51c89c2eb37eb98ec15e8a4dc57ba343e7b7398b19144039fda",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    },
+    {
+      "linked_object": "inftrees.o",
+      "source": "inftrees.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/inftrees.c",
+      "bytes": 13024,
+      "sha256": "5d4f335221d2dc76f17abd2577d92c2d7baf68fa6d7f23373b360830493d1563",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    },
+    {
+      "linked_object": "uncompr.o",
+      "source": "uncompr.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/uncompr.c",
+      "bytes": 2911,
+      "sha256": "04dca5e31b3b8a17d1806426f66f0c539f4184d657e149d40be07070c6227b52",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    },
+    {
+      "linked_object": "deflate.o",
+      "source": "deflate.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/deflate.c",
+      "bytes": 81731,
+      "sha256": "3b956337350f94c34987750f785587ef33d9c89ceaebb7c2afb189c956360cbe",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    },
+    {
+      "linked_object": "trees.o",
+      "source": "trees.c",
+      "url": "https://github.com/madler/zlib/blob/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf/trees.c",
+      "bytes": 40937,
+      "sha256": "f63c68c16c05fcd196050529d1a0e7657960e4136b9987d90a6ac3e58a964b0f",
+      "link_evidence": "controller original-map review #198; source bytes independently checked"
+    }
+  ],
+  "crt_startup": [
+    {
+      "object": "crt2.o",
+      "source": "mingw-w64-crt/crt/crtexe.c",
+      "url": "https://github.com/mingw-w64/mingw-w64/blob/d2ee971046e625c35e8818ac1634b00384342249/mingw-w64-crt/crt/crtexe.c",
+      "source_license": "public domain with DISCLAIMER.PD; preserve included-header notices",
+      "bytes": 8521,
+      "sha256": "6cb5a1379a56201bea09f0c6a29f7b0aeb7708c7c75dda73eb0850f010f3e497",
+      "binary_input": {
+        "bytes": 24346,
+        "sha256": "840a06aa7f731af45a9dc30be37e90bada76d70bf6f854ee6437133395688217"
+      }
+    },
+    {
+      "object": "crtbegin.o",
+      "source": "mingw-w64-crt/crt/crtbegin.c",
+      "url": "https://github.com/mingw-w64/mingw-w64/blob/d2ee971046e625c35e8818ac1634b00384342249/mingw-w64-crt/crt/crtbegin.c",
+      "source_license": "public domain with DISCLAIMER.PD; preserve included-header notices",
+      "bytes": 217,
+      "sha256": "692fdc825a472b8dfda48e65eace55caf5396c8536236b814b967007c978a8b0",
+      "binary_input": {
+        "bytes": 396,
+        "sha256": "65656113c599c276597e9fbe2b40e34357ba812d98bcabd03b226f864eb473a1"
+      }
+    },
+    {
+      "object": "crtend.o",
+      "source": "mingw-w64-crt/crt/crtend.c",
+      "url": "https://github.com/mingw-w64/mingw-w64/blob/d2ee971046e625c35e8818ac1634b00384342249/mingw-w64-crt/crt/crtend.c",
+      "source_license": "public domain with DISCLAIMER.PD; preserve included-header notices",
+      "bytes": 217,
+      "sha256": "692fdc825a472b8dfda48e65eace55caf5396c8536236b814b967007c978a8b0",
+      "binary_input": {
+        "bytes": 396,
+        "sha256": "08193d6de599e87c0077e8af75f44255c9c0ae2fe4429d66afe6bbcc051b5dbb"
+      }
+    }
+  ],
+  "mingw_archive_families": [
+    {
+      "archive": "libmingw32.a",
+      "toolchain_member": "llvm-mingw-20241217-ucrt-x86_64/x86_64-w64-mingw32/lib/libmingw32.a",
+      "bytes": 124208,
+      "sha256": "16c06ccba9ddf064d12c960e5e9f81556bc815c40fda0a0815e5855191037965",
+      "recipe_commit": "d2ee971046e625c35e8818ac1634b00384342249",
+      "license": "MinGW-runtime.txt plus selected source/header terms; not a blanket GPL or public-domain-only claim",
+      "selected_members": "19",
+      "member_names": "controller exact names reconciled in CRT-MEMBERS.tsv; source version is release-recipe declared, not byte-reproducibility proof"
+    },
+    {
+      "archive": "libmingwex.a",
+      "toolchain_member": "llvm-mingw-20241217-ucrt-x86_64/x86_64-w64-mingw32/lib/libmingwex.a",
+      "bytes": 1656654,
+      "sha256": "ba579aeaeb76b7b7e7c19cb233a9188944e4bec84802490163c469f2169a9d63",
+      "recipe_commit": "d2ee971046e625c35e8818ac1634b00384342249",
+      "license": "MinGW-runtime.txt plus selected source/header terms; not a blanket GPL or public-domain-only claim",
+      "selected_members": "32",
+      "member_names": "controller exact names reconciled in CRT-MEMBERS.tsv; source version is release-recipe declared, not byte-reproducibility proof"
+    },
+    {
+      "archive": "libucrt.a",
+      "toolchain_member": "llvm-mingw-20241217-ucrt-x86_64/x86_64-w64-mingw32/lib/libucrt.a",
+      "bytes": 747106,
+      "sha256": "14fb9e2634dfcb8ef478b54322a0b71b7af5e69af3683729ca5a39b5f638e9f1",
+      "recipe_commit": "d2ee971046e625c35e8818ac1634b00384342249",
+      "selected_members": 6,
+      "member_names": "controller 6 UCRT-extra labels; found in combined UCRT import archive per lib-common/ucrt.mri; source mapping in CRT-MEMBERS.tsv"
+    }
+  ],
+  "ffmpeg_source_notice_checks": [
+    {
+      "source": "fftools/ffmpeg.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/fftools/ffmpeg.c",
+      "bytes": 31504,
+      "sha256": "35c7594ebc71119f0bd1c8ea9490905be5b80afc1bb10a41bc0a6dd9defe5cb7",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "fftools/ffprobe.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/fftools/ffprobe.c",
+      "bytes": 147327,
+      "sha256": "87b5adef8d9998510966b6f6227112a50f6d618b1ef11bdbbc59d37dcd36d286",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavcodec/vp8.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavcodec/vp8.c",
+      "bytes": 109472,
+      "sha256": "9e658a7d78853d44ab8d7a59cb09e199e12e12ee67254f9366c1eb130e71da63",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavcodec/vp9.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavcodec/vp9.c",
+      "bytes": 77669,
+      "sha256": "907f7135f6b59d707a73e82c63f1640f38a71db7f5a689397ca873e6d21a359c",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavcodec/pngenc.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavcodec/pngenc.c",
+      "bytes": 46317,
+      "sha256": "0ddc4e5c10c14c12c5ac2552f269660d2e0a2eb4b69a0b20a9bd9c9591559c2a",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavcodec/pngdec.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavcodec/pngdec.c",
+      "bytes": 72624,
+      "sha256": "d9f88ec0e45b01c63add7e6031b066e447a232b166f346e3c1a9eb2c01b3ba0f",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavcodec/zlib_wrapper.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavcodec/zlib_wrapper.c",
+      "bytes": 2579,
+      "sha256": "9e3685838faaabaa557fb1638fc252b25c0dc891cbe549eba3aba9f6726f2ce6",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavformat/matroskadec.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavformat/matroskadec.c",
+      "bytes": 184905,
+      "sha256": "5618a5e3539f0575efb14ac5b45b17dec4cb29ab1d8fb25a5a50214f24687a50",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavformat/img2dec.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavformat/img2dec.c",
+      "bytes": 38635,
+      "sha256": "356794fa81d7ac0ad914e4fc6a7bd45876df981e40b1e7036de9d24461db2175",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavformat/img2enc.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavformat/img2enc.c",
+      "bytes": 11487,
+      "sha256": "b39ab0cc458ed5204df48bdb46a8c41c056daf9be19541a9ce2d342481313eb0",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavfilter/vf_scale.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavfilter/vf_scale.c",
+      "bytes": 50802,
+      "sha256": "ac34086a804207bd0223c14482d50eea5a61371294a4d272e58b579e1595f266",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavfilter/vf_pad.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavfilter/vf_pad.c",
+      "bytes": 17063,
+      "sha256": "c0f39b79559450408bbad1895389b6734cce8fcb09d08e6c8104662a3a53b996",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavfilter/vf_tile.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavfilter/vf_tile.c",
+      "bytes": 10246,
+      "sha256": "df46a9bc4a3ac52f61f5d065ff5968460a20fb659c0f019fca27c7fce3af723b",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libswscale/swscale.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libswscale/swscale.c",
+      "bytes": 56774,
+      "sha256": "25a4e3d4de22c3424fc6cd41df3b8b72272bb05f90d8b574627fb939cde4a9a3",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavutil/mathematics.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavutil/mathematics.c",
+      "bytes": 10002,
+      "sha256": "c38b36d09a886b8a0471fa1c8f0174a1a852f437011d818569ece3824b1d4b6b",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavutil/libm.h",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavutil/libm.h",
+      "bytes": 14360,
+      "sha256": "e7f4417fba09554b12fb0cdb36ce72b7d24b2d2bfb9865b2bde1056ad0f72131",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavutil/sha.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavutil/sha.c",
+      "bytes": 10597,
+      "sha256": "a1e25a92ea7902c3c6eb92ee4ada0ab6749695bae2026b7528c267f94ff11837",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "compat/getopt.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/compat/getopt.c",
+      "bytes": 2476,
+      "sha256": "c9b32f48b42992718066018ed2e2dfc9b2feb2d178f624cb66d49ca19a82d5ef",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavcodec/jfdctfst.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavcodec/jfdctfst.c",
+      "bytes": 11232,
+      "sha256": "ead72c605ae80a82034ed59f84f41c7b501968798c9f0b4b39161c31a0c01deb",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavcodec/jfdctint_template.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavcodec/jfdctint_template.c",
+      "bytes": 15669,
+      "sha256": "09920f49711889af8d0ae166c57b22b9451985e619ae887c72fae22df105bd99",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    },
+    {
+      "source": "libavcodec/jrevdct.c",
+      "url": "https://github.com/FFmpeg/FFmpeg/blob/ad3b795b72388fbb2b216e1e6fd38fba994e1df0/libavcodec/jrevdct.c",
+      "bytes": 44399,
+      "sha256": "7e8d6215664de8f620e94a7d6304f19675bc5174a9db4cb86611749e188c35bc",
+      "status": "source/notice inspection; not a complete actual-linked translation-unit ledger"
+    }
+  ],
+  "remaining": [
+    "compiler-default archive selection vs actual pulled members/import thunk/header exceptions: no absence inference from zero literal-name matches",
+    "complete actual FFmpeg translation-unit/header exception reconciliation against native source inputs",
+    "recipient-ready full source kit and reviewed source-delivery/relink/modification terms"
+  ],
+  "controller_object_comments": [
+    {
+      "url": "https://github.com/jerryjwres-hue/picotoopet-v2.0/pull/198#issuecomment-6593944728",
+      "objects": [
+        "lib64_libmingw32_a-CRT_fp10.o",
+        "lib64_libmingw32_a-_newmode.o",
+        "lib64_libmingw32_a-cinitexe.o",
+        "lib64_libmingw32_a-crt_handler.o",
+        "lib64_libmingw32_a-dllargv.o",
+        "lib64_libmingw32_a-gccmain.o",
+        "lib64_libmingw32_a-merr.o",
+        "lib64_libmingw32_a-mingw_helpers.o",
+        "lib64_libmingw32_a-natstart.o",
+        "lib64_libmingw32_a-pesect.o",
+        "lib64_libmingw32_a-pseudo-reloc-list.o",
+        "lib64_libmingw32_a-pseudo-reloc.o",
+        "lib64_libmingw32_a-tlsmcrt.o",
+        "lib64_libmingw32_a-tlssup.o",
+        "lib64_libmingw32_a-tlsthrd.o",
+        "lib64_libmingw32_a-usermatherr.o",
+        "lib64_libmingw32_a-wildcard.o",
+        "lib64_libmingw32_a-xncommod.o",
+        "lib64_libmingw32_a-xtxtmode.o"
+      ]
+    },
+    {
+      "url": "https://github.com/jerryjwres-hue/picotoopet-v2.0/pull/198#issuecomment-6593948295",
+      "objects": [
+        "lib64_libmingwex_a-cossin.o",
+        "lib64_libmingwex_a-dmisc.o",
+        "lib64_libmingwex_a-g__fmt.o",
+        "lib64_libmingwex_a-gdtoa.o",
+        "lib64_libmingwex_a-gethex.o",
+        "lib64_libmingwex_a-gettimeofday.o",
+        "lib64_libmingwex_a-gmisc.o",
+        "lib64_libmingwex_a-hd_init.o",
+        "lib64_libmingwex_a-hexnan.o",
+        "lib64_libmingwex_a-mingw_cfguard_loadcfg.o",
+        "lib64_libmingwex_a-mingw_cfguard_support.o",
+        "lib64_libmingwex_a-mingw_fprintf.o",
+        "lib64_libmingwex_a-mingw_matherr.o",
+        "lib64_libmingwex_a-mingw_pformat.o",
+        "lib64_libmingwex_a-mingw_printf.o",
+        "lib64_libmingwex_a-mingw_sformat.o",
+        "lib64_libmingwex_a-mingw_snprintf.o",
+        "lib64_libmingwex_a-mingw_sscanf.o",
+        "lib64_libmingwex_a-mingw_usleep.o",
+        "lib64_libmingwex_a-mingw_vfprintf.o",
+        "lib64_libmingwex_a-mingw_vprintf.o",
+        "lib64_libmingwex_a-mingw_vsnprintf.o",
+        "lib64_libmingwex_a-mingw_vsscanf.o",
+        "lib64_libmingwex_a-misc.o",
+        "lib64_libmingwex_a-mkstemp.o",
+        "lib64_libmingwex_a-scalbn.o",
+        "lib64_libmingwex_a-smisc.o",
+        "lib64_libmingwex_a-strtodg.o",
+        "lib64_libmingwex_a-strtodnrp.o",
+        "lib64_libmingwex_a-strtof.o",
+        "lib64_libmingwex_a-strtopx.o",
+        "lib64_libmingwex_a-sum.o"
+      ]
+    },
+    {
+      "url": "https://github.com/jerryjwres-hue/picotoopet-v2.0/pull/198#issuecomment-6593952369",
+      "objects": [
+        "lib64_libucrt_extra_a-__initenv.o",
+        "lib64_libucrt_extra_a-__p___initenv.o",
+        "lib64_libucrt_extra_a-ucrt__getmainargs.o",
+        "lib64_libucrt_extra_a-ucrt_amsg_exit.o",
+        "lib64_libucrt_extra_a-ucrt_fprintf.o",
+        "lib64_libucrt_extra_a-ucrt_vfprintf.o"
+      ]
+    }
+  ],
+  "native_map_sha256": {
+    "ffmpeg.map": "0e9f9821ba5f29a221a791bb84479493ebb7b8bd3a0510bc43739cf9294fed23",
+    "ffprobe.map": "d0ee7a783aabd2538a210b5dafeeeeb945bfd0e0064b362951c3dce7ab85696c"
+  },
+  "crt_member_ledger": {
+    "file": "CRT-MEMBERS.tsv",
+    "rows": 57,
+    "bytes": 28092,
+    "sha256": "b45351296874ea0aebe08e8f6727c2a1c004a5a86cf0f3c95325115643d6de6c",
+    "source_revision": "d2ee971046e625c35e8818ac1634b00384342249",
+    "member_check": "All 57 exact labels exist once in pinned x86_64 archive; raw member bytes independently hashed, not compared to final executable sections."
+  },
+  "runtime_driver_evidence": {
+    "llvm_mingw_source_commit": "8400557f2b489b1bf1ed29e0e90eb9c27b19688f",
+    "common_config_url": "https://github.com/mstorsjo/llvm-mingw/blob/8400557f2b489b1bf1ed29e0e90eb9c27b19688f/wrappers/mingw32-common.cfg",
+    "common_config": "-rtlib=compiler-rt\n-unwindlib=libunwind\n-stdlib=libc++\n-fuse-ld=lld\n",
+    "actual_zip_common_config_matches_source": true,
+    "driver_source": "https://github.com/llvm/llvm-project/blob/e21dc4bd5474d04b8e62d7331362edcc5648d7e5/clang/lib/Driver/ToolChains/MinGW.cpp",
+    "driver_sha256": "90e181c52286ada8045c4022cccb717ef5ae51cbbff8f43d300f130311b45f5b",
+    "finding": "MinGW Linker::AddLibGCC selects compiler runtime via AddRunTimeLibs for non-libgcc runtime, plus MinGW32/MinGWex and CRT inputs. Default selection is not proof of extracted member count.",
+    "controller_search": "zero explicit compiler-rt/builtins/libgcc/libunwind/libatomic names in maps/build/config logs; not proof code absent"
+  }
+}
