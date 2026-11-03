@@ -154,7 +154,7 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     }
 
     /// <summary>四种固定的茅台创作方向；仅是本地可编辑文本，不代表 Core 批准素材。</summary>
-    public IReadOnlyList<MaotaiContentPreset> MaotaiContentPresets => MaotaiPresets;
+    public static IReadOnlyList<MaotaiContentPreset> MaotaiContentPresets => MaotaiPresets;
 
     /// <summary>仅展示 Mac Core 当前实际支持的 Goal 类型，绝不猜测服务器能力。</summary>
     public IReadOnlyList<MaotaiContentPreset> AvailableMaotaiContentPresets =>
