@@ -227,10 +227,21 @@ class ReferenceRegistrationService:
                 from picotoopet_core.production.service import ProductionService
 
                 creative_job = CreativeRepository(self.database).get_job(lineage["creative_job_id"])
+                selected_shots = {item.shot_id for item in request.selected_references}
+                first_shot = shots[0].get("shot_id") if shots and isinstance(shots[0], dict) else None
+                # A sealed v2 package can approve exactly its first image for
+                # the bounded first-shot pilot. The shared bridge still checks
+                # the entire Bible/Kit/Script/shot plan. Other partial selections
+                # retain the full-coverage denial; a grant authorizes only the
+                # selected image and never allocates a production lease.
+                first_only = (
+                    creative_job.creative_profile.value == "creative.content_plan.v2"
+                    and first_shot is not None and selected_shots == {first_shot}
+                )
                 try:
                     bridged = ProductionService._bridge_sealed_v2_manifest(
                         manifest, creative_job,
-                        {item.shot_id for item in request.selected_references},
+                        selected_shots, pilot_first_shot=first_only,
                     )
                 except ValueError as error:
                     # ── Preserve fail-closed validation as an authenticated API 409. ──

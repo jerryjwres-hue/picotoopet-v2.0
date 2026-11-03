@@ -25,7 +25,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e . pytest cryptography
       - name: Atomic B claim and revocation replay concurrency on actual Mac
-        run: python -m pytest tests/production/test_operator_trusted_host_pilot.py -v
+        run: python -m pytest tests/production/test_operator_trusted_host_pilot.py tests/creative_quality_2026/test_v2_reference_registration_end_to_end.py -v
   native-windows-pilot:
     runs-on: windows-2025
     timeout-minutes: 20
@@ -64,6 +64,12 @@ jobs:
         shell: pwsh
         run: |
           dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --operator-trusted-prepost-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Affected I2V executor fake submit and lost acknowledgement recovery
+        if: always() && steps.build.outcome == 'success'
+        shell: pwsh
+        run: |
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --i2v-executor-only
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Real protected Windows signer to existing FastAPI atomic B Claim CPU only
         timeout-minutes: 5

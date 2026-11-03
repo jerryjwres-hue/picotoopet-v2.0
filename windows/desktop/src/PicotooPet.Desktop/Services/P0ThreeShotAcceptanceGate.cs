@@ -16,6 +16,14 @@ internal static class P0ThreeShotAcceptanceGate
     private enum Mode { Unattended, Hold, Allow }
     private sealed record Snapshot(Mode Mode, string? JobId = null, string? PlanDigest = null);
 
+    // Candidate lookup only; execution still rechecks the Plan and retains
+    // the exact existing permit. Unattended never selects a B pilot.
+    internal static bool HasExplicitAllowFor(string jobId)
+    {
+        var gate = Read();
+        return gate.Mode == Mode.Allow && gate.JobId == jobId;
+    }
+
     /// <summary>只读 Core 的不可变 Plan 和真实 digest；失败时不领取 lease 或启动 GPU。</summary>
     internal static async Task<bool> AllowsJobAsync(
         ControlCenterSession session, string jobId, CancellationToken cancellationToken)

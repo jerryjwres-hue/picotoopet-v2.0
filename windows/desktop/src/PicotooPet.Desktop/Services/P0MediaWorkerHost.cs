@@ -7,6 +7,7 @@ using PicotooPet.Desktop.Core.Production;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Core.State;
+using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.Services;
 
@@ -198,6 +199,25 @@ public static class P0MediaWorkerHost
                         // ── identity; never treat this recovery as permission to Claim or POST GPU.
                         var readyJobs = await session.GetProductionJobsAsync(cancellationToken)
                             .ConfigureAwait(false);
+                        // A new B pilot can share a Creative Package with an
+                        // older Goal continuation. Reuse this existing poll,
+                        // sole executor and exact ALLOW, never another queue.
+                        var pilotJob = await FindExplicitPilotJobAsync(session, readyJobs, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (pilotJob is not null && (!backoff.TryGetValue(pilotJob, out var pilotAfter)
+                            || pilotAfter <= DateTimeOffset.UtcNow))
+                        {
+                            try
+                            {
+                                _ = await executor.RunAsync(pilotJob, cancellationToken).ConfigureAwait(false);
+                                backoff.Remove(pilotJob);
+                            }
+                            catch (Exception error) when (!cancellationToken.IsCancellationRequested)
+                            {
+                                logger.Error("P0 私有 I2V 样片暂停，保留原门禁与 Journal", error);
+                                backoff[pilotJob] = DateTimeOffset.UtcNow + FailureBackoff;
+                            }
+                        }
                         foreach (var completedJob in readyJobs)
                         {
                             if (completedJob.Status != "production_ready"
@@ -278,5 +298,20 @@ public static class P0MediaWorkerHost
         {
             await logger.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    internal static async Task<string?> FindExplicitPilotJobAsync(ControlCenterSession session,
+        System.Collections.Generic.IReadOnlyList<ProductionJobRecord> jobs, CancellationToken ct)
+    {
+        foreach (var job in jobs)
+        {
+            if (job.Status is not ("Ready" or "Claimed")
+                || !P0ThreeShotAcceptanceGate.HasExplicitAllowFor(job.ProductionJobId)) continue;
+            var plan = await session.GetProductionPlanAsync(job.ProductionJobId, ct).ConfigureAwait(false);
+            if (plan.SchemaVersion == "1.1"
+                && await P0ThreeShotAcceptanceGate.AllowsJobAsync(session, job.ProductionJobId, ct).ConfigureAwait(false))
+                return job.ProductionJobId;
+        }
+        return null;
     }
 }

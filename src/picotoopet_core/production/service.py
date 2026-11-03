@@ -275,23 +275,6 @@ class ProductionService:
             (request.idempotency_key,),
         )
         job_id = existing["production_job_id"] if existing is not None else str(uuid4())
-        if existing is not None:
-            old = self.repository.get_job(job_id)
-            if old.plan_digest is not None:
-                persisted = self.repository.plan_for(job_id)
-                if not isinstance(persisted, ProductionPlanV11) or (
-                    {t.reference_asset.approval_id for t in persisted.tasks
-                     if t.reference_asset is not None}
-                    != set(request.approved_reference_ids)
-                ):
-                    raise ValueError("PRODUCTION_V11_IDEMPOTENCY_CONFLICT")
-                if old.creative_package_id != package.creative_package_id:
-                    raise ValueError("PRODUCTION_V11_IDEMPOTENCY_CONFLICT")
-                if request.pilot_first_shot != (len(persisted.tasks) == 1):
-                    # The frozen pilot uses one task; toggling selection may
-                    # never reuse the idempotency key of a full multi-shot Job.
-                    raise ValueError("PRODUCTION_V11_IDEMPOTENCY_CONFLICT")
-                return old
 
         # Never trust legacy Creative manifest paths for v1.1: only approved
         # per-shot managed refs can drive I2V workflow selection.
@@ -365,6 +348,22 @@ class ProductionService:
             "schema_version": "1.1",
             "tasks": [task.model_dump(mode="json") for task in tasks],
         })
+        candidate_digest = self._digest(plan.model_dump(mode="json"))
+        if existing is not None:
+            old = self.repository.get_job(job_id)
+            if old.plan_digest is not None:
+                # Fully validate the requested source, consent and selection
+                # before replay. Task count alone cannot distinguish a normal
+                # one-shot package from a sealed-v2 first-shot pilot.
+                persisted = self.repository.plan_for(job_id)
+                if (not isinstance(persisted, ProductionPlanV11)
+                    or old.creative_package_id != package.creative_package_id
+                    or old.creative_package_digest != package.package_digest
+                    or old.production_profile != request.production_profile
+                    or old.plan_digest != candidate_digest
+                    or self._digest(persisted.model_dump(mode="json")) != candidate_digest):
+                    raise ValueError("PRODUCTION_V11_IDEMPOTENCY_CONFLICT")
+                return old
         # Retain the *same* v1.0 repository table and immutable canonical digest.
         self.repository.create_job(
             production_job_id=job_id,
@@ -374,7 +373,7 @@ class ProductionService:
             production_profile=request.production_profile,
             idempotency_key=request.idempotency_key,
         )
-        self.repository.save_plan(job_id, plan, self._digest(plan.model_dump(mode="json")))
+        self.repository.save_plan(job_id, plan, candidate_digest)
         return self.repository.get_job(job_id)
 
     def authorize_reference_v11(

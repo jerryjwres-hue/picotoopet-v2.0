@@ -145,7 +145,7 @@ def test_incomplete_or_foreign_v2_refs_fail_before_writing_approval(live) -> Non
     case, _, register, _ = live
     for bad_shots in (
         case.shots[:2],
-        case.shots[:1],
+        case.shots[1:2],
         [*case.shots[:2], "foreign-shot"],
     ):
         request = ReferenceBatchRequestV1.model_validate(_payload(case, bad_shots))
