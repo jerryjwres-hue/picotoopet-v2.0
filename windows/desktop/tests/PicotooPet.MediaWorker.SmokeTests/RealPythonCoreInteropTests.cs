@@ -174,6 +174,25 @@ internal static class RealPythonCoreInteropTests
                     Check(result == "PRODUCTION_V11_WINDOWS_ATTESTATION_UNVERIFIED", "REAL_CORE_EXPECTED_409");
                     Check(!comfySentinel.Pending(), "COMFY_NETWORK_REQUEST_ZERO");
                     Check(journal.Pending().Count == 0, "COMFY_JOURNAL_ZERO");
+                    // #152: a real, durable unresolved local intent must stop
+                    // the existing client BEFORE another challenge or signature.
+                    // Preserve it; never clear it as a way to regain admission.
+                    var oldJournal = new ProductionSubmissionJournal(Path.Combine(root, "old-windows-journal"));
+                    var oldIntent = new ProductionSubmission(job, plan.Tasks[0].ProductionTaskId,
+                        digest, new string('e', 64), "Submitting", null);
+                    oldJournal.Save(oldIntent);
+                    try
+                    {
+                        await client.RunExpectedDenyAsync(plan, input, keyRoot, Executor,
+                            publicPin.RootElement.GetProperty("fingerprint").GetString()!,
+                            plan.Tasks.ToDictionary(t => t.ProductionTaskId, _ => new string('e', 64)),
+                            oldJournal, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+                        throw new InvalidOperationException("OLD_JOURNAL_MUST_DENY");
+                    }
+                    catch (ProductionWorkerException error) when (error.Code == "MEDIA_PENDING_RECONCILIATION") { }
+                    Check(oldJournal.Read(job, plan.Tasks[0].ProductionTaskId) == oldIntent, "OLD_JOURNAL_PRESERVED");
+                    Check(!comfySentinel.Pending(), "OLD_JOURNAL_COMFY_ZERO");
+                    Console.WriteLine("REAL_WINDOWS_OLD_JOURNAL=DENIED_BEFORE_CHALLENGE; INTENT=PRESERVED; COMFY_POST=0");
                 }
                 Console.WriteLine("REAL_MAC_CORE_FASTAPI_WIN_DPAPI_ED25519_HTTP=PASS; PREFLIGHT=409; COMFY_POST=0");
             }
