@@ -178,6 +178,28 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
+        <!-- 茅台快捷项 : 只填充现有 Goal 输入框，不上传私人图片、不创建执行任务。 -->
+        <StackPanel Margin="0,2,0,6">
+          <TextBlock Text="茅台内容 · 选择题材后仍可修改脚本目标"
+                     Foreground="White" FontSize="9" Margin="0,0,0,3" />
+          <ItemsControl x:Name="MaotaiPresetItems"
+                        ItemsSource="{Binding AvailableMaotaiContentPresets, Mode=OneWay}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Content="{Binding Title}"
+                        ToolTip="填写茅台三镜头目标草稿；只有发送目标才会调用 Mac Core"
+                        Style="{StaticResource GoalChipButtonStyle}"
+                        Click="MaotaiPreset_Click" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="190" />

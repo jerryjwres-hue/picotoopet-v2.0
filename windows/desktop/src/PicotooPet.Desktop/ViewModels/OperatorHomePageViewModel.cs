@@ -15,6 +15,20 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         new("深入", "deep", "更多只读研究与证据筛选"),
     ];
 
+    // 茅台内容入口 : 仅提供用户可编辑的 Goal 草稿；图片权利与实际生产仍由 Core 判断。
+    // 原有 Goal 类型 : 必须从 Core 返回的已支持模板中选择，绝不创建第二套工作流。
+    private static readonly IReadOnlyList<MaotaiContentPreset> MaotaiPresets =
+    [
+        new("生活日常", "MAOTAI_LIFE", "video.creative",
+            "请围绕真实成年阿拉斯加犬茅台，制作恰好3个镜头、每镜头约4秒的室内生活短视频脚本：先趴卧休息，再轻微眨眼抬头，最后安静望向镜头。必须保持花鼻、奶油色眉纹、浓密黑棕毛、体型和同一室内光线一致；一个镜头一个动作，按起因→行动→结果推进，禁止物体悬浮和宠物变形。角色图片必须来自用户真正批准的参考素材；若缺照片、权利或审批，则标为待人工补齐，不得伪称已取得。"),
+        new("出行旅游", "MAOTAI_OUTING", "video.creative",
+            "请围绕真实成年阿拉斯加犬茅台，制作恰好3个镜头、每镜头约4秒的平静出行短视频脚本：在同一真实码头或散步环境中停步望远、缓慢转头、回望镜头。保持茅台花鼻、眉纹、卷尾、牵引绳、地面支撑、背景与光线稳定；每镜头一个自然动作，前后姿态连续，不新增宠物或凭空切换地点。使用用户已批准的真实素材；缺少可核验的场景或身份参考图时必须标记待人工补齐。"),
+        new("等饭日常", "MAOTAI_MEAL", "video.creative",
+            "请围绕真实成年阿拉斯加犬茅台，制作恰好3个镜头、每镜头约4秒的等饭日常短视频脚本：茅台看固定饭盆、轻微低头闻一闻、抬眼露出满足表情。保持花鼻、眉纹、厚重毛量、餐碗位置、接地关系与室内场景一致，避免夸张咀嚼、额外肢体、未知食品品牌、疗效或安全宣称。仅使用用户已批准的真实茅台参考素材，缺审批时保留待人工处理状态。"),
+        new("宠物用品", "MAOTAI_PRODUCT", "product.research_to_video",
+            "请围绕真实成年阿拉斯加犬茅台与用户实际提供的一个宠物用品，制作恰好3个镜头、每镜头约4秒的短视频脚本：用品在可见表面自然展示、茅台缓慢接近或嗅闻、茅台与同一用品自然同框收尾。保持真实茅台花鼻/脸纹/体型、产品外形颜色、场景和物理接触关系一致；禁止编造品牌、价格、功效、测试结果或包装文字。若缺实际产品图片、权利证明或用户批准的茅台照片，必须等待人工补齐，不能虚构来源。"),
+    ];
+
     private readonly ControlCenterSession? _session;
     private readonly IReadOnlyList<GoalDepthOption> _goalDepthOptions = DepthOptions;
     private OperatorProjection _projection;
@@ -138,6 +152,14 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         get => _goalTemplates;
         private set => SetProperty(ref _goalTemplates, value);
     }
+
+    /// <summary>四种固定的茅台创作方向；仅是本地可编辑文本，不代表 Core 批准素材。</summary>
+    public static IReadOnlyList<MaotaiContentPreset> MaotaiContentPresets => MaotaiPresets;
+
+    /// <summary>仅展示 Mac Core 当前实际支持的 Goal 类型，绝不猜测服务器能力。</summary>
+    public IReadOnlyList<MaotaiContentPreset> AvailableMaotaiContentPresets =>
+        MaotaiPresets.Where(preset => GoalTemplates.Any(template =>
+            string.Equals(template.GoalType, preset.GoalType, StringComparison.Ordinal))).ToArray();
 
     public IReadOnlyList<GoalDepthOption> GoalDepthOptions => _goalDepthOptions;
 
@@ -349,6 +371,7 @@ public sealed class OperatorHomePageViewModel : PageViewModel
             var templates = await templatesTask.ConfigureAwait(false);
             var goals = await goalsTask.ConfigureAwait(false);
             GoalTemplates = templates;
+            RaisePropertyChanged(nameof(AvailableMaotaiContentPresets));
             if (SelectedGoalType is null || !templates.Any(item => item.GoalType == SelectedGoalType))
             {
                 SelectedGoalType = templates.FirstOrDefault()?.GoalType;
@@ -388,6 +411,23 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         {
             GoalObjective = template.Example;
         }
+    }
+
+    /// <summary>在已支持的 Core Goal 类型上填入茅台故事草稿，点击不创建 Job 或触发 GPU。</summary>
+    public void SelectMaotaiContentPreset(MaotaiContentPreset preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        // 来源防护 : 只能选内置分类，且目标类型必须由当前 Mac Core 宣告可用。
+        if (!MaotaiPresets.Contains(preset)
+            || !GoalTemplates.Any(template =>
+                string.Equals(template.GoalType, preset.GoalType, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        // 用户行为 : 明确点击才替换编辑框内容；仍需手动点击已有的“发送目标”。
+        SelectedGoalType = preset.GoalType;
+        GoalObjective = preset.Objective;
     }
 
     /// <summary>创建一个高层 Goal；Windows 不传 task type、priority、model、prompt 或 workflow。</summary>
@@ -551,6 +591,9 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         RaisePropertyChanged(nameof(SystemSummary));
     }
 }
+
+/// <summary>茅台创作快捷项；只是 UI 目标草稿，不承诺参考图或视频已获生产批准。</summary>
+public sealed record MaotaiContentPreset(string Title, string Key, string GoalType, string Objective);
 
 /// <summary>固定研究深度展示项；值与 Mac Core 的 quick/standard/deep 合同一一对应。</summary>
 public sealed record GoalDepthOption(string Title, string Value, string Description)

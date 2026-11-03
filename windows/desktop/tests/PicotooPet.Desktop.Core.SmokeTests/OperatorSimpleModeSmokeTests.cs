@@ -18,6 +18,8 @@ namespace PicotooPet.Desktop.Core.SmokeTests;
 /// <summary>冻结 2.3.27.1 六入口导航、目标中心、任务可恢复隐藏投影和 STA WPF 布局。</summary>
 internal static class OperatorSimpleModeSmokeTests
 {
+    // 静态断言基准 : 避免测试循环中反复分配相同数组（CA1861）。
+    private static readonly string[] MaotaiPresetKeys = ["MAOTAI_LIFE", "MAOTAI_OUTING", "MAOTAI_MEAL", "MAOTAI_PRODUCT"];
     private static readonly string[] ReviewTaskIds = new[] { "review" };
     private static readonly string[] InProgressTaskIds = new[] { "running" };
     private static readonly string[] CompletedTaskIds = new[] { "done" };
@@ -35,6 +37,7 @@ internal static class OperatorSimpleModeSmokeTests
         VerifyNavigation();
         VerifyProjectionAndWizard();
         VerifyGoalCenterClientContract();
+        VerifyMaotaiPresets();
         VerifyWpfLayout();
     }
 
@@ -128,6 +131,32 @@ internal static class OperatorSimpleModeSmokeTests
         }
     }
 
+    private static void VerifyMaotaiPresets()
+    {
+        var home = OperatorHomePageViewModel.CreateForSmokeTest(Snapshot());
+        var presets = OperatorHomePageViewModel.MaotaiContentPresets;
+        SmokeAssert.True(
+            presets.Select(p => p.Key).SequenceEqual(MaotaiPresetKeys),
+            "茅台四类内容必须稳定、不可重排");
+        foreach (var preset in presets)
+        {
+            // 内容来源 : 用户真实茅台；这只是 Goal 草稿，不是已批准的视觉资产。
+            SmokeAssert.True(preset.Objective.Contains("茅台", StringComparison.Ordinal)
+                && preset.Objective.Contains("3个镜头", StringComparison.Ordinal)
+                && preset.Objective.Contains("批准", StringComparison.Ordinal)
+                && preset.Objective.Length <= 2000,
+                "茅台内容模板缺身份/三镜头/真实审批约束或超出输入预算");
+            SmokeAssert.True(preset.GoalType is "video.creative" or "product.research_to_video",
+                "茅台快捷分类不得创建新的 Goal 类型");
+        }
+        // 离线防护 : Mac Core 未返回实际 Goal 类型前不能填入可提交的目标。
+        home.SelectMaotaiContentPreset(presets[0]);
+        SmokeAssert.True(home.AvailableMaotaiContentPresets.Count == 0
+            && string.IsNullOrEmpty(home.GoalObjective)
+            && !home.CanCreateGoal,
+            "离线模板不得模拟 Mac Core 已支持分类或自动提交");
+    }
+
     private static void VerifyWpfLayout()
     {
         Exception? failure = null;
@@ -160,6 +189,8 @@ internal static class OperatorSimpleModeSmokeTests
 
                 SmokeAssert.True(homePage.FindName("GoalObjectiveTextBox") is TextBox, "首页缺少目标输入框");
                 SmokeAssert.True(homePage.FindName("GoalTemplateItems") is ItemsControl, "首页缺少建议目标模板");
+                SmokeAssert.True(goalPanel.FindName("MaotaiPresetItems") is ItemsControl,
+                    "Goal Center 缺少独立茅台内容分类快捷入口");
                 SmokeAssert.True(homePage.FindName("GoalDepthComboBox") is ComboBox, "首页缺少研究深度选择");
                 SmokeAssert.True(homePage.FindName("CreateGoalButton") is Button, "首页缺少发送目标按钮");
                 SmokeAssert.True(homePage.FindName("GoalStatusCard") is FrameworkElement, "首页缺少目标自动执行状态区");
