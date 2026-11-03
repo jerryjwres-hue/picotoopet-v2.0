@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +26,8 @@ from picotoopet_core.security.auth import require_auth
 from picotoopet_core.security import worker_pairing
 from test_reference_registration_api import state as reference_state
 from test_v11_paired_worker_nonce import paired, signed
+from test_reference_registration_api import PACKAGE, _v11_service, payload as batch_payload
+from picotoopet_core.production.reference_registration import ReferenceBatchRequestV1
 
 # Reuse the sealed-v2 integration fixture and scripted provider transport; no
 # provider/live host calls. This focused file also runs without collecting that
@@ -439,3 +442,115 @@ def test_pilot_first_shot_checks_entire_sealed_bible_even_for_unselected_shots(s
     with pytest.raises(ValueError, match="PRODUCTION_V11_BRIDGE_PACKAGE_NOT_SEALED_V2"):
         c.service.create_job_v11(request)
     assert c.counts() == (0, 0)
+
+
+@pytest.fixture()
+def legitimate_one_shot(reference_state):
+    db, registration, approvals, store, _ = reference_state
+    row = db.fetchone("SELECT * FROM creative_packages WHERE creative_package_id=?", (PACKAGE,))
+    manifest = json.loads(row["manifest_json"])
+    package_id = str(uuid4())
+    manifest["creative_package_id"] = package_id
+    stages = manifest["stage_results"]
+    script = stages["script.v1"]
+    script["beats"] = script["beats"][:1]
+    script["target_duration_seconds"] = 3
+    script["cta_beat_id"] = script["beats"][0]["beat_id"]
+    stages["shot_plan.v1"]["shots"] = stages["shot_plan.v1"]["shots"][:1]
+    location, digest = store.write_creative_package(package_id, manifest)
+    # This is a new one-shot fixture artifact, before any consent/production
+    # facts. Keep the original on-disk artifact immutable.
+    db.execute("UPDATE creative_packages SET creative_package_id=?,package_digest=?,"
+               "package_relpath=?,manifest_json=? WHERE creative_package_id=?",
+               (package_id, digest, location, json.dumps(manifest), PACKAGE))
+    body = batch_payload(digest)
+    body["creative_package_id"] = package_id
+    body["selected_references"] = body["selected_references"][:1]
+    batch = registration.register(ReferenceBatchRequestV1.model_validate(body),
+                                  idempotency_key="one-shot-real-registration")
+    approvals.decide_for_control_center(
+        approval_id=batch.approval_id, decision="approve", request_digest=batch.approval_request_digest,
+        idempotency_key="one-shot-fixture-decision", resolved_by="RUNNER_FIXTURE_ONLY", reason="test consent")
+    return _v11_service(reference_state), ProductionJobCreateV11Request(
+        creative_package_id=package_id, idempotency_key="legitimate-one-shot-full-mode",
+        approved_reference_ids=[batch.approval_id])
+
+
+def test_nonpilot_one_shot_v11_replays_without_inventing_pilot_mode(legitimate_one_shot):
+    service, request = legitimate_one_shot
+    job = service.create_job_v11(request)
+    assert len(service.get_plan(job.production_job_id).tasks) == 1
+    assert request.pilot_first_shot is False
+    assert service.create_job_v11(request).production_job_id == job.production_job_id
+
+
+def test_pilot_true_cannot_reuse_unsealed_one_shot_to_bypass_pilot_validation(legitimate_one_shot):
+    service, request = legitimate_one_shot
+    job = service.create_job_v11(request)
+    before = service.get_plan(job.production_job_id).model_dump(mode="json")
+    with pytest.raises(ValueError, match="PRODUCTION_V11_BRIDGE_PACKAGE_NOT_SEALED_V2"):
+        service.create_job_v11(request.model_copy(update={"pilot_first_shot": True}))
+    assert service.get_plan(job.production_job_id).model_dump(mode="json") == before
+
+
+def register_sealed_references(c, shots):
+    from picotoopet_core.handoffs.approvals import HandoffApprovalService
+    from picotoopet_core.production.reference_registration import ReferenceRegistrationService
+
+    approvals = HandoffApprovalService(c.rt.database, None)
+    registration = ReferenceRegistrationService(c.rt.database, approvals, c.rt.store)
+    body = {
+        "schema_version": "reference_batch.v1", "goal_id": c.goal_id,
+        "creative_package_id": c.package.creative_package_id,
+        "creative_package_digest": c.package.package_digest,
+        "selected_references": [{
+            "shot_id": shot, "input_relative_path": f"PicotooPet/references/{'a' * 64}/{shot}.png",
+            "sha256": "a" * 64, "bytes": 12, "source_reference": "USER_SUPPLIED",
+            "source_digest": c.package.source_set_digest, "rights_scope": "wan22.i2v.production.v1",
+        } for shot in shots],
+        "user_confirms_preview_and_rights": True,
+    }
+    batch = registration.register(ReferenceBatchRequestV1.model_validate(body),
+                                  idempotency_key="sealed-real-image-registration")
+    return registration, approvals, batch
+
+
+def test_real_first_image_registration_approval_and_one_shot_pilot_pipeline(sealed_case):
+    c = sealed_case
+    before = c.stored_package()
+    registration, approvals, batch = register_sealed_references(c, c.shots[:1])
+    assert batch.status == "Pending"
+    assert len(batch.references) == 1
+    approvals.decide_for_control_center(
+        approval_id=batch.approval_id, decision="approve", request_digest=batch.approval_request_digest,
+        idempotency_key="first-image-real-decision", resolved_by="RUNNER_FIXTURE_ONLY", reason="test consent")
+    assert registration.get(batch.approval_id).status == "Approved"
+    request = c.request([batch.approval_id], key="first-image-real-pilot").model_copy(
+        update={"pilot_first_shot": True})
+    job = c.service.create_job_v11(request)
+    plan = c.service.get_plan(job.production_job_id)
+    assert len(plan.tasks) == 1
+    assert plan.tasks[0].shot_id == c.shots[0]
+    assert (plan.tasks[0].frame_count, plan.tasks[0].fps, plan.target_runtime_ms) == (97, 24, 4000)
+    assert plan.tasks[0].reference_asset.asset_id == batch.references[0].asset_id
+    assert c.service.create_job_v11(request).production_job_id == job.production_job_id
+    assert c.stored_package() == before
+
+
+@pytest.mark.parametrize("selected", ["nonfirst", "partial_two"])
+def test_real_sealed_registration_still_rejects_nonfirst_and_partial_two(sealed_case, selected):
+    from picotoopet_core.approvals.service import ApprovalError
+
+    c = sealed_case
+    shots = c.shots[1:2] if selected == "nonfirst" else c.shots[:2]
+    with pytest.raises(ApprovalError, match="PRODUCTION_V11_BRIDGE_FULL_COVERAGE_REQUIRED"):
+        register_sealed_references(c, shots)
+    assert c.rt.database.scalar("SELECT COUNT(*) FROM approvals WHERE approval_type='production.reference_asset.v1'") == 0
+    assert c.counts() == (0, 0)
+
+
+def test_real_sealed_registration_full_image_coverage_remains_allowed(sealed_case):
+    c = sealed_case
+    _, _, batch = register_sealed_references(c, c.shots)
+    assert batch.status == "Pending"
+    assert {reference.shot_id for reference in batch.references} == set(c.shots)

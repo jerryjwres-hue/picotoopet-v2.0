@@ -592,9 +592,27 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
                 || reserved.ProductionTaskId != task.ProductionTaskId || reserved.TaskPlan != task
                 || reserved.Status != "Running" || reserved.AttemptCount != 1 || reserved.ComfyPromptId is not null))
                 throw new ProductionWorkerException("MEDIA_ATTEMPT_RESERVATION_CONFLICT");
-            state = state with { Phase = "Submitting" }; _journal.Save(state);
-            if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
-            if (claim.Plan.SchemaVersion == "1.1") await RecheckBeforePostAsync(state, state).ConfigureAwait(false);
+            if (claim.Plan.SchemaVersion == "1.1")
+            {
+                await RecheckBeforePostAsync(state, state).ConfigureAwait(false);
+                // Final awaited Core operation: the existing idempotent null
+                // reservation revalidates the admitted lease, active key, task
+                // and current approval AFTER every slow file/approval read.
+                var current = await _session.MarkProductionAttemptAsync(claim.ProductionJobId, task.ProductionTaskId,
+                    new ProductionTaskAttemptRequest(_executorId, claim.LeaseToken, null), cancellationToken).ConfigureAwait(false);
+                if (current.ProductionJobId != claim.ProductionJobId || current.ProductionTaskId != task.ProductionTaskId
+                    || current.TaskPlan != task || current.Status != "Running" || current.AttemptCount != 1 || current.ComfyPromptId is not null)
+                    throw new ProductionWorkerException("MEDIA_ATTEMPT_RESERVATION_CONFLICT");
+                if (_journal.Read(state.JobId, state.TaskId) != state
+                    || _journal.Pending().Any(p => p.JobId != state.JobId || p.TaskId != state.TaskId))
+                    throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+                state = state with { Phase = "Submitting" }; _journal.Save(state);
+            }
+            else
+            {
+                state = state with { Phase = "Submitting" }; _journal.Save(state);
+                if (reference is not null) await reference.ReauthorizeAsync(cancellationToken).ConfigureAwait(false);
+            }
             promptId = await _comfy.SubmitPromptAsync(prompt, cancellationToken).ConfigureAwait(false);
         }
         state = state with { PromptId = promptId, Phase = "Submitted" }; _journal.Save(state);

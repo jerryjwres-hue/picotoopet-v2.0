@@ -15,7 +15,7 @@ internal sealed record WorkerLocalPairing(string Fingerprint)
         var identity = ProtectedWorkerSigningKey.Create(KeyRoot, executor);
         using var file = new FileStream(Path.Combine(KeyRoot, "public-identity.json"), FileMode.CreateNew,
             FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough);
-        file.Write(JsonSerializer.SerializeToUtf8Bytes(identity));
+        file.Write(JsonSerializer.SerializeToUtf8Bytes(new { ExecutorId = executor, identity.PublicKeyHex, identity.Fingerprint, identity.KeyId }));
         file.Flush(true);
         return identity;
     }

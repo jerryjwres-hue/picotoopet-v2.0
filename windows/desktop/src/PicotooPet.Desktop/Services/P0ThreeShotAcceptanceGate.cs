@@ -31,6 +31,22 @@ internal static class P0ThreeShotAcceptanceGate
             await Task.WhenAll(jobTask, planTask).ConfigureAwait(false);
             var job = await jobTask.ConfigureAwait(false);
             var plan = await planTask.ConfigureAwait(false);
+            if (plan.SchemaVersion == "1.1")
+            {
+                // The first B pilot is one sealed four-second I2V shot. Reuse the
+                // same exact ALLOW/armed-marker/held-file permit and Core facts.
+                if (job.ProductionJobId != jobId || plan.ProductionJobId != jobId
+                    || job.PlanDigest != gate.PlanDigest || plan.CreativePackageId != job.CreativePackageId
+                    || plan.CreativePackageDigest != job.CreativePackageDigest || plan.ProjectKey != job.ProjectKey
+                    || plan.ProductionProfile != "production.comfyui.v1" || plan.TargetRuntimeMs != 4000
+                    || plan.Tasks is not { Length: 1 }) return false;
+                ProductionExecutionService.ValidateV11FrozenReferenceIdentities(jobId, plan);
+                var pilot = plan.Tasks[0];
+                if (string.IsNullOrWhiteSpace(pilot.ProductionTaskId) || string.IsNullOrWhiteSpace(pilot.ShotId)
+                    || pilot.Order != 1 || pilot.RenderIntent != "IMAGE_TO_VIDEO" || pilot.TargetDurationMs != 4000
+                    || pilot.FrameCount != 97 || pilot.Fps != 24 || pilot.Width != 832 || pilot.Height != 480) return false;
+                return Convert.ToHexStringLower(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(plan)!))) == gate.PlanDigest;
+            }
             if (job.ProductionJobId != jobId
                 || plan.ProductionJobId != jobId
                 || job.PlanDigest != gate.PlanDigest

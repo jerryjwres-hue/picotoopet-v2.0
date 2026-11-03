@@ -40,6 +40,13 @@ public sealed partial class ControlCenterSession
         return await client.CreateJobAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
+    internal async Task<ProductionJobRecord> CreateFirstShotPilotV11Async(ProductionJobCreateRequest request,
+        string approvedReferenceId, CancellationToken cancellationToken)
+    {
+        await using var client = CreateProductionClient();
+        return await client.CreateFirstShotPilotV11Async(request, approvedReferenceId, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ProductionPlanRecord> GetProductionPlanAsync(
         string productionJobId,
         CancellationToken cancellationToken)

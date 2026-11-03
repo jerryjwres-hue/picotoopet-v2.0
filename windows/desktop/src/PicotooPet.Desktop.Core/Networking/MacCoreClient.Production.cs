@@ -78,6 +78,19 @@ public sealed partial class MacCoreProductionClient : IAsyncDisposable
             payload,
             cancellationToken);
 
+    public Task<ProductionJobRecord> CreateFirstShotPilotV11Async(ProductionJobCreateRequest request,
+        string approvedReferenceId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(approvedReferenceId);
+        return SendJsonAsync<ProductionJobRecord>(HttpMethod.Post, "api/v1/production/jobs/v1.1", new
+        {
+            schema_version = "1.1", creative_package_id = request.CreativePackageId,
+            production_profile = request.ProductionProfile, idempotency_key = request.IdempotencyKey,
+            approved_reference_ids = new[] { approvedReferenceId }, pilot_first_shot = true,
+        }, cancellationToken);
+    }
+
     public Task<ProductionPlanRecord> GetPlanAsync(
         string productionJobId,
         CancellationToken cancellationToken = default) =>

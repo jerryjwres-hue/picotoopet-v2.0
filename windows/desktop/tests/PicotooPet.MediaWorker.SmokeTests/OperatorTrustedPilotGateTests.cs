@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
@@ -40,6 +41,14 @@ internal static class OperatorTrustedPilotGateTests
                 "existing exact ALLOW must admit the frozen single four-second v1.1 I2V pilot");
             using (var permit = P0ThreeShotAcceptanceGate.AcquireSubmissionPermit(jobId, Digest(plan)))
                 RecoveryTests.Assert(permit is not null, "B requires the real existing permit");
+            // A historical v1.0 Goal continuation must not hide the exact new
+            // B Job from the existing sole host's already-present job poll.
+            var find = typeof(P0MediaWorkerHost).GetMethod("FindExplicitPilotJobAsync", BindingFlags.Static | BindingFlags.NonPublic);
+            RecoveryTests.Assert(find is not null, "same EXE host must discover the exact allowed pilot independently of a stale Goal continuation");
+            var pilotJob = await session.GetProductionJobAsync(jobId, CancellationToken.None);
+            var oldJob = pilotJob with { ProductionJobId = "bbad8d1e-4f83-48bd-88f5-3a1d7fa6b352" };
+            var found = await (Task<string?>)find!.Invoke(null, [session, new[] { oldJob, pilotJob }, CancellationToken.None])!;
+            RecoveryTests.Assert(found == jobId, "sole host finds only explicitly allowed B Job, not historical row");
             File.WriteAllText(path, Allow(new string('b', 64)));
             RecoveryTests.Assert(!await P0ThreeShotAcceptanceGate.AllowsJobAsync(session, jobId, CancellationToken.None), "wrong digest denies");
             plan = plan with { Tasks = [task with { ReferenceAsset = reference with { ShotId = "wrong" } }] };
@@ -47,6 +56,8 @@ internal static class OperatorTrustedPilotGateTests
             RecoveryTests.Assert(!await P0ThreeShotAcceptanceGate.AllowsJobAsync(session, jobId, CancellationToken.None), "wrong reference identity denies even with matching digest");
             File.WriteAllText(path, "{\"schema_version\":\"1.0\",\"mode\":\"hold\"}");
             RecoveryTests.Assert(!await P0ThreeShotAcceptanceGate.AllowsJobAsync(session, jobId, CancellationToken.None), "HOLD denies");
+            found = await (Task<string?>)find!.Invoke(null, [session, new[] { oldJob, pilotJob }, CancellationToken.None])!;
+            RecoveryTests.Assert(found is null, "HOLD blocks host candidate discovery too");
             Console.WriteLine("P0_OPERATOR_TRUSTED_PILOT_EXISTING_GATE=PASS; GPU_POSTS=0");
         }
         finally { tokens.Delete(); File.Delete(path); File.Delete(path + ".armed"); }
