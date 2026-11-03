@@ -125,7 +125,8 @@ public static class PicotooQualityCredential
         if (Test-Path -LiteralPath $configPath -PathType Leaf) {
             try {
                 $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-                if (-not [string]::IsNullOrWhiteSpace([string]$config.basePath)) {
+                if (($config.PSObject.Properties.Name -contains 'basePath') -and
+                    -not [string]::IsNullOrWhiteSpace([string]$config.basePath)) {
                     $candidates.Add([Environment]::ExpandEnvironmentVariables([string]$config.basePath))
                 }
             }
