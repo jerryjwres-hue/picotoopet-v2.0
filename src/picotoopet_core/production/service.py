@@ -153,6 +153,58 @@ class ProductionService:
         self.repository.save_plan(job.production_job_id, plan, plan_digest)
         return self.repository.get_job(job.production_job_id)
 
+    @staticmethod
+    def _bridge_sealed_v2_manifest(
+        manifest: dict[str, object], creative_job, approved_shots: set[str]
+    ) -> dict[str, object]:
+        """Return a COPY whose shots are IMAGE_TO_VIDEO, only for a genuinely sealed v2 package.
+
+        Fail closed unless the package is the exact deterministic product of its sealed Video
+        Bible (same check Creative used), every shot is still GENERATIVE_VIDEO, and explicit
+        approvals cover every shot. Never mixes intents and never mutates the stored package.
+        """
+        from copy import deepcopy
+
+        from picotoopet_core.creative.models import CreativeProfile, CreativeScriptResult
+        from picotoopet_core.creative.video_bible import (
+            KeyframeKit,
+            VideoBible,
+            shot_plan_integrity_findings,
+        )
+
+        not_sealed = "PRODUCTION_V11_BRIDGE_PACKAGE_NOT_SEALED_V2"
+        stages = manifest.get("stage_results")
+        if (
+            creative_job.creative_profile is not CreativeProfile.CONTENT_PLAN_V2
+            or not isinstance(stages, dict)
+            or not all(k in stages for k in
+                       ("video_bible.v1", "keyframe_kit.v1", "script.v1", "shot_plan.v1"))
+        ):
+            return manifest  # v1 / unsealed packages keep the original coverage rule
+        try:
+            bible = VideoBible.model_validate(stages["video_bible.v1"])
+            kit = KeyframeKit.model_validate(stages["keyframe_kit.v1"])
+            script = CreativeScriptResult.model_validate(stages["script.v1"])
+        except ValueError as error:
+            raise ValueError(not_sealed) from error
+        plan = stages["shot_plan.v1"]
+        shots = plan.get("shots") if isinstance(plan, dict) else None
+        if (
+            not isinstance(shots, list)
+            or kit.bible_digest != bible.bible_digest
+            or shot_plan_integrity_findings(bible, script, plan)
+            or any(not isinstance(item, dict) or item.get("render_intent") != "GENERATIVE_VIDEO"
+                   for item in shots)
+            or {item["shot_id"] for item in shots} != {k.shot_id for k in kit.keyframes}
+        ):
+            raise ValueError(not_sealed)
+        if approved_shots != {item["shot_id"] for item in shots}:
+            raise ValueError("PRODUCTION_V11_BRIDGE_FULL_COVERAGE_REQUIRED")
+        bridged = deepcopy(manifest)
+        for item in bridged["stage_results"]["shot_plan.v1"]["shots"]:  # type: ignore[index]
+            item["render_intent"] = "IMAGE_TO_VIDEO"
+        return bridged
+
     def create_job_v11(self, request: ProductionJobCreateV11Request) -> ProductionJobRecord:
         """New opt-in job only. Never upgrade any frozen v1.0 job/plan.
 
@@ -237,6 +289,16 @@ class ProductionService:
         base_plan = compile_production_plan(job_id, sanitized_manifest, package.package_digest)
         required = {task.shot_id for task in base_plan.tasks
                     if task.render_intent == "IMAGE_TO_VIDEO"}
+        if not required and source_by_shot:
+            # ── New-job-only v2 bridge: a sealed Creative v2 package has no trusted image, so
+            #    every derived shot is GENERATIVE_VIDEO. Explicit per-shot human approvals may
+            #    promote an in-memory copy for this NEW plan only; the stored package is untouched.
+            sanitized_manifest = self._bridge_sealed_v2_manifest(
+                sanitized_manifest, creative_job, set(source_by_shot)
+            )
+            base_plan = compile_production_plan(job_id, sanitized_manifest, package.package_digest)
+            required = {task.shot_id for task in base_plan.tasks
+                        if task.render_intent == "IMAGE_TO_VIDEO"}
         if not required or required != set(source_by_shot):
             raise ValueError("PRODUCTION_V11_REFERENCE_SHOT_COVERAGE_INVALID")
 
