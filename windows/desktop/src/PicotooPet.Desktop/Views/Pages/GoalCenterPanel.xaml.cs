@@ -76,6 +76,18 @@ public partial class GoalCenterPanel : WpfUserControl
         }
     }
 
+    private void MaotaiPreset_Click(object sender, RoutedEventArgs e)
+    {
+        // 明确点击才填充目标 : 不调用 Mac API、不生成 Job、更不解除 GPU HOLD。
+        if (DataContext is OperatorHomePageViewModel viewModel
+            && sender is System.Windows.Controls.Button { DataContext: MaotaiContentPreset preset })
+        {
+            viewModel.SelectMaotaiContentPreset(preset);
+            GoalObjectiveTextBox.Focus();
+            GoalObjectiveTextBox.CaretIndex = GoalObjectiveTextBox.Text.Length;
+        }
+    }
+
     private async void CreateGoal_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not OperatorHomePageViewModel viewModel)
