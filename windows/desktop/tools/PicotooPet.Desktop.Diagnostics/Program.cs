@@ -39,6 +39,7 @@ internal static class Program
             var token = new CredentialManagerTokenStore().Read();
             if (string.IsNullOrWhiteSpace(token))
             {
+                failureContext.EnterStage("report_write");
                 return await WriteReportAsync(
                     options.OutputPath,
                     DiagnosticReport.Incomplete(options, "Windows Credential Manager 中尚无设备令牌。"));
@@ -429,6 +430,7 @@ internal sealed record DiagnosticReport(
 /// <summary>Bounded sidecar evidence only; legacy performance_report_v2 stays unchanged.</summary>
 internal sealed class DiagnosticFailureContext
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly Uri _baseUri;
     private readonly long _started = Stopwatch.GetTimestamp();
     private readonly Dictionary<string, double> _durations = new(StringComparer.Ordinal);
@@ -502,8 +504,7 @@ internal sealed class DiagnosticFailureContext
                 exceptions = ExceptionEvidence(exception),
                 websocket_exceptions = ExceptionEvidence(Volatile.Read(ref _streamFailure)),
             };
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(payload,
-                new JsonSerializerOptions { WriteIndented = true });
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions);
             if (bytes.Length > 16 * 1024)
             {
                 throw new InvalidDataException("Diagnostic sidecar exceeds bounded evidence size.");

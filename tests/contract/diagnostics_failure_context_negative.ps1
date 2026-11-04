@@ -7,6 +7,7 @@ $contextSource = $source.Substring($source.IndexOf($marker, [StringComparison]::
 $apiSource = Get-Content (Join-Path $RepoRoot 'windows/desktop/src/PicotooPet.Desktop.Core/Networking/ApiException.cs') -Raw
 $apiSource = $apiSource.Replace('namespace PicotooPet.Desktop.Core.Networking;', '')
 $usings = @'
+#nullable enable
 using System;
 using System.IO;
 using System.Linq;
