@@ -32,6 +32,8 @@ internal static class Program
 
         var options = DiagnosticOptions.Parse(args);
         Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath) ?? ".");
+        var failureContext = new DiagnosticFailureContext(options.BaseUri);
+        failureContext.EnterStage("credential_read");
         try
         {
             var token = new CredentialManagerTokenStore().Read();
@@ -42,11 +44,15 @@ internal static class Program
                     DiagnosticReport.Incomplete(options, "Windows Credential Manager 中尚无设备令牌。"));
             }
 
-            var report = await RunAsync(options, token).ConfigureAwait(false);
+            failureContext.SetCredentialToken(token);
+            var report = await RunAsync(options, token, failureContext).ConfigureAwait(false);
+            failureContext.EnterStage("report_write");
             return await WriteReportAsync(options.OutputPath, report).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
+            // ── Sidecar evidence never changes the legacy report, exception or exit path.
+            await failureContext.TryWriteAsync(options.OutputPath, exception).ConfigureAwait(false);
             var report = DiagnosticReport.Failed(
                 options,
                 "DIAGNOSTIC_UNHANDLED",
@@ -58,7 +64,8 @@ internal static class Program
 
     private static async Task<DiagnosticReport> RunAsync(
         DiagnosticOptions options,
-        string token)
+        string token,
+        DiagnosticFailureContext failureContext)
     {
         using var overallTimeout = new CancellationTokenSource(options.TotalTimeout);
         var cancellationToken    = overallTimeout.Token;
@@ -83,6 +90,7 @@ internal static class Program
             MacCoreClientOptions.CreateDefault(options.BaseUri, token));
         for (var index = 0; index < options.RestSamples; index++)
         {
+            failureContext.EnterStage("rest_health", index);
             var started = Stopwatch.GetTimestamp();
             var health  = await client.GetHealthAsync(cancellationToken).ConfigureAwait(false);
             healthLatency.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
@@ -90,8 +98,10 @@ internal static class Program
             {
                 throw new InvalidOperationException($"Mac Core 健康状态为 {health.Status}。");
             }
+            failureContext.RecordHealth();
         }
 
+        failureContext.EnterStage("websocket_connect");
         await using var eventStream = new EventStreamClient(
             options.BaseUri,
             token,
@@ -106,7 +116,10 @@ internal static class Program
             }
         };
         eventStream.SocketMeasured += (_, measurement) =>
+        {
             socketLatency.Add(measurement.DurationMilliseconds);
+            failureContext.RecordPing();
+        };
 
         using var streamCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var streamTask = Task.Run(async () =>
@@ -130,6 +143,7 @@ internal static class Program
             }
             catch (Exception exception)
             {
+                failureContext.RecordStreamFailure(exception);
                 streamErrors.Enqueue($"{exception.GetType().Name}: {exception.Message}");
                 connectionReady.TrySetException(exception);
             }
@@ -145,6 +159,7 @@ internal static class Program
                 .ConfigureAwait(false);
             for (var index = 0; index < options.TaskSamples; index++)
             {
+                failureContext.EnterStage("cpu_task_submit", index);
                 var endToEndStarted = Stopwatch.GetTimestamp();
                 var submitStarted   = Stopwatch.GetTimestamp();
                 var task = await client.CreateTaskAsync(
@@ -164,7 +179,9 @@ internal static class Program
                     Stopwatch.GetElapsedTime(submitStarted).TotalMilliseconds);
                 firstTaskId ??= task.TaskId;
                 lastTaskId    = task.TaskId;
+                failureContext.RecordTaskSubmitted(task.TaskId);
 
+                failureContext.EnterStage("cpu_task_event_wait", index);
                 var eventMilliseconds = await WaitForTaskEventAsync(
                     task.TaskId,
                     endToEndStarted,
@@ -172,8 +189,10 @@ internal static class Program
                     options.EventTimeout,
                     cancellationToken).ConfigureAwait(false);
                 taskEventLatency.Add(eventMilliseconds);
+                failureContext.RecordTaskEvent();
             }
 
+            failureContext.EnterStage("websocket_ping");
             await WaitForSocketSamplesAsync(
                 socketLatency,
                 options.SocketSamples,
@@ -405,4 +424,169 @@ internal sealed record DiagnosticReport(
         null,
         null,
         new[] { $"{code} | {type}: {message}" });
+}
+
+/// <summary>Bounded sidecar evidence only; legacy performance_report_v2 stays unchanged.</summary>
+internal sealed class DiagnosticFailureContext
+{
+    private readonly Uri _baseUri;
+    private readonly long _started = Stopwatch.GetTimestamp();
+    private readonly Dictionary<string, double> _durations = new(StringComparer.Ordinal);
+    private long _stageStarted = Stopwatch.GetTimestamp();
+    private string _stage = "credential_read";
+    private int? _sampleIndex;
+    private int _health;
+    private int _submitted;
+    private int _events;
+    private long _pings;
+    private string? _firstTaskId;
+    private string? _lastTaskId;
+    private string? _credentialToken;
+    private Exception? _streamFailure;
+
+    public DiagnosticFailureContext(Uri baseUri) => _baseUri = baseUri;
+
+    public void SetCredentialToken(string token) => _credentialToken = token;
+
+    public void EnterStage(string stage, int? sampleIndex = null)
+    {
+        // ── Timings are observational; no cancellation, retry or transport changes.
+        _durations[_stage] = _durations.GetValueOrDefault(_stage)
+            + Stopwatch.GetElapsedTime(_stageStarted).TotalMilliseconds;
+        _stage = stage is "credential_read" or "rest_health" or "websocket_connect"
+            or "cpu_task_submit" or "cpu_task_event_wait" or "websocket_ping" or "report_write"
+            ? stage : "unknown";
+        _sampleIndex = sampleIndex;
+        _stageStarted = Stopwatch.GetTimestamp();
+    }
+
+    public void RecordHealth() => _health++;
+    public void RecordTaskEvent() => _events++;
+    public void RecordPing() => Interlocked.Increment(ref _pings);
+
+    public void RecordTaskSubmitted(string taskId)
+    {
+        _submitted++;
+        var safeId = Guid.TryParseExact(taskId, "D", out var parsed) && !ContainsCredential(taskId)
+            ? parsed.ToString("D") : null;
+        _firstTaskId ??= safeId;
+        _lastTaskId = safeId;
+    }
+
+    public void RecordStreamFailure(Exception exception) =>
+        Interlocked.CompareExchange(ref _streamFailure, exception, null);
+
+    public async Task TryWriteAsync(string outputPath, Exception exception)
+    {
+        try
+        {
+            var stageElapsed = Stopwatch.GetElapsedTime(_stageStarted).TotalMilliseconds;
+            var durations = new Dictionary<string, double>(_durations, StringComparer.Ordinal);
+            durations[_stage] = durations.GetValueOrDefault(_stage) + stageElapsed;
+            var payload = new
+            {
+                schema_version = "diagnostic_failure_context.v1",
+                generated_at = DateTimeOffset.UtcNow,
+                stage = _stage,
+                sample_index_zero_based = _sampleIndex,
+                elapsed_ms = Stopwatch.GetElapsedTime(_started).TotalMilliseconds,
+                stage_elapsed_ms = stageElapsed,
+                stage_durations_ms = durations,
+                request_uri = SafeRequestUri(),
+                completed_health_samples = _health,
+                submitted_cpu_tasks = _submitted,
+                completed_cpu_events = _events,
+                websocket_ping_samples = Volatile.Read(ref _pings),
+                first_task_id = _firstTaskId,
+                last_task_id = _lastTaskId,
+                exceptions = ExceptionEvidence(exception),
+                websocket_exceptions = ExceptionEvidence(Volatile.Read(ref _streamFailure)),
+            };
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(payload,
+                new JsonSerializerOptions { WriteIndented = true });
+            if (bytes.Length > 16 * 1024)
+            {
+                throw new InvalidDataException("Diagnostic sidecar exceeds bounded evidence size.");
+            }
+            // ── Preserve every original entry-point attempt; never overwrite earlier evidence.
+            var path = outputPath + $".failure-context.{Guid.NewGuid():N}.json";
+            await using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write,
+                FileShare.Read, 4096, FileOptions.Asynchronous);
+            await stream.WriteAsync(bytes).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // ── Evidence I/O failure must not suppress or replace the original outcome.
+            Console.Error.WriteLine("DIAGNOSTIC_FAILURE_CONTEXT_WRITE=FAILED");
+        }
+    }
+
+    private List<Dictionary<string, object?>> ExceptionEvidence(Exception? exception)
+    {
+        var result = new List<Dictionary<string, object?>>();
+        for (var current = exception; current is not null && result.Count < 8;
+             current = current.InnerException)
+        {
+            // ── Do not serialize Message, StackTrace, Data, headers or arbitrary ToString().
+            var type = current.GetType().FullName ?? nameof(Exception);
+            var item = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["type"] = type.Length <= 256 && !ContainsCredential(type) ? type : "Exception",
+                ["hresult"] = current.HResult,
+            };
+            if (current is ApiException api)
+            {
+                item["api_code"] = SafeIdentifier(api.Code, trace: false);
+                item["http_status"] = api.StatusCode;
+                item["retryable"] = api.Retryable;
+                item["trace_id"] = SafeIdentifier(api.TraceId, trace: true);
+            }
+            if (current is System.Net.Http.HttpRequestException http)
+            {
+                item["http_request_error"] = http.HttpRequestError.ToString();
+                item["http_status"] = http.StatusCode is null ? 0 : (int)http.StatusCode.Value;
+            }
+            if (current is System.Net.Sockets.SocketException socket)
+            {
+                item["socket_error_code"] = socket.SocketErrorCode.ToString();
+                item["native_error_code"] = socket.NativeErrorCode;
+            }
+            result.Add(item);
+        }
+        return result;
+    }
+
+    private bool ContainsCredential(string value) => !string.IsNullOrEmpty(_credentialToken)
+        && value.Contains(_credentialToken, StringComparison.Ordinal);
+
+    private string? SafeIdentifier(string? value, bool trace)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length > 80 || ContainsCredential(value))
+        {
+            return null;
+        }
+        return value.All(character => trace
+            ? Uri.IsHexDigit(character) || character == '-'
+            : character is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_') ? value : null;
+    }
+
+    private string? SafeRequestUri()
+    {
+        var relative = _stage switch
+        {
+            "rest_health" => "api/v1/health",
+            "cpu_task_submit" => "api/v1/tasks",
+            "websocket_connect" or "cpu_task_event_wait" or "websocket_ping" => "api/v1/events",
+            _ => null,
+        };
+        if (relative is null) return null;
+        var target = new Uri(new Uri(_baseUri.AbsoluteUri.TrimEnd('/') + "/"), relative);
+        var safe = new UriBuilder(target) { UserName = "", Password = "", Query = "", Fragment = "" };
+        if (_stage is "websocket_connect" or "cpu_task_event_wait" or "websocket_ping")
+        {
+            safe.Scheme = _baseUri.Scheme == "https" ? "wss" : "ws";
+        }
+        var text = safe.Uri.AbsoluteUri;
+        return text.Length <= 512 && !ContainsCredential(text) ? text : null;
+    }
 }
