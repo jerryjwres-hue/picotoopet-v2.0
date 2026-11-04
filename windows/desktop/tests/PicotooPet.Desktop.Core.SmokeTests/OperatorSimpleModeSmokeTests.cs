@@ -35,6 +35,7 @@ internal static class OperatorSimpleModeSmokeTests
         VerifyNavigation();
         VerifyProjectionAndWizard();
         VerifyGoalCenterClientContract();
+        VerifyMoutaiSceneGoalAssistance();
         VerifyWpfLayout();
     }
 
@@ -158,6 +159,8 @@ internal static class OperatorSimpleModeSmokeTests
                     && ReferenceEquals(saveHandoff?.Parent, actions),
                     "The Web GPT paste action must share a wrapping container with the handoff actions");
 
+                SmokeAssert.True(goalPanel.FindName("MoutaiSceneSection") is FrameworkElement, "GoalCenterPanel 缺少茅台场景创作区");
+                SmokeAssert.True(goalPanel.FindName("MoutaiSceneItems") is ItemsControl, "GoalCenterPanel 缺少茅台场景选择控件");
                 SmokeAssert.True(homePage.FindName("GoalObjectiveTextBox") is TextBox, "首页缺少目标输入框");
                 SmokeAssert.True(homePage.FindName("GoalTemplateItems") is ItemsControl, "首页缺少建议目标模板");
                 SmokeAssert.True(homePage.FindName("GoalDepthComboBox") is ComboBox, "首页缺少研究深度选择");
@@ -258,6 +261,115 @@ internal static class OperatorSimpleModeSmokeTests
             null,
             resultId,
             isHidden);
+    }
+
+    public static void RunMoutaiSceneOnly()
+    {
+        VerifyMoutaiSceneGoalAssistance();
+        VerifyMoutaiSceneWpfLayout();
+    }
+
+    private static void VerifyMoutaiSceneGoalAssistance()
+    {
+        var snapshot = Snapshot();
+        var homeViewModel = OperatorHomePageViewModel.CreateForSmokeTest(snapshot);
+
+        // 1. 验证四种预设场景
+        var scenes = homeViewModel.MoutaiScenes;
+        SmokeAssert.True(scenes.Count == 4, "茅台场景预设必须恰好四项");
+        var expectedTitles = new[] { "日常生活", "出行旅游", "饮食生活", "宠物用品" };
+        var expectedKeys = new[] { "DailyLife", "Travel", "Dining", "Supplies" };
+        SmokeAssert.True(scenes.Select(s => s.Title).SequenceEqual(expectedTitles), "场景中文标题不匹配");
+        SmokeAssert.True(scenes.Select(s => s.Key).SequenceEqual(expectedKeys), "场景键名不匹配");
+
+        // 2. 检查草稿内容规范性
+        foreach (var scene in scenes)
+        {
+            SmokeAssert.True(!string.IsNullOrWhiteSpace(scene.Description), $"{scene.Title} 缺少描述");
+            SmokeAssert.True(scene.DraftObjective.Contains("茅台", StringComparison.Ordinal), $"{scene.Title} 未明确主角茅台");
+            SmokeAssert.True(scene.DraftObjective.Contains("鼻纹", StringComparison.Ordinal), $"{scene.Title} 未强调独特鼻纹特征");
+            SmokeAssert.True(scene.DraftObjective.Contains("HOOK", StringComparison.Ordinal)
+                && scene.DraftObjective.Contains("ACTION", StringComparison.Ordinal)
+                && scene.DraftObjective.Contains("PAYOFF", StringComparison.Ordinal),
+                $"{scene.Title} 未遵循 HOOK → ACTION → PAYOFF 剧情结构");
+            SmokeAssert.True(scene.DraftObjective.Contains("镜头1")
+                && scene.DraftObjective.Contains("镜头2")
+                && scene.DraftObjective.Contains("镜头3"),
+                $"{scene.Title} 未包含推荐的三镜头规划");
+            SmokeAssert.True(scene.DraftObjective.Length >= 4 && scene.DraftObjective.Length <= 2000,
+                $"{scene.Title} 草稿长度超出边界");
+
+            // 规则6：透明恢复圈、绿色围巾不得默认强制佩戴
+            SmokeAssert.True(scene.DraftObjective.Contains("无伊丽莎白圈") || scene.DraftObjective.Contains("无临时"),
+                $"{scene.Title} 必须明确无临时项圈或围巾佩戴要求");
+        }
+
+        // 宠物用品场景质控：不能编造品牌、材质、功能或营销宣称
+        var suppliesScene = scenes.Single(s => s.Key == "Supplies");
+        SmokeAssert.True(suppliesScene.DraftObjective.Contains("严禁虚构品牌")
+            && suppliesScene.DraftObjective.Contains("营销宣称"),
+            "宠物用品草稿必须明确禁止编造虚假品牌与营销宣称");
+
+        // 3. 选择场景只更新草稿，不自造 Goal、不自动提交、不触发忙状态
+        var daily = scenes.Single(s => s.Key == "DailyLife");
+        homeViewModel.SelectMoutaiScene(daily);
+        SmokeAssert.True(homeViewModel.SelectedMoutaiScene?.Key == "DailyLife", "选中场景状态未记录");
+        SmokeAssert.True(homeViewModel.GoalObjective == daily.DraftObjective, "选择场景未填入对应草稿");
+        SmokeAssert.True(!homeViewModel.IsGoalBusy, "选择场景不得自动触发提交或忙状态");
+        SmokeAssert.True(homeViewModel.CurrentGoal is null, "选择场景不得自动生成服务端目标");
+        SmokeAssert.True(homeViewModel.SelectedGoalType == "video.creative", "选择场景必须对齐 Mac Core 视频模板");
+
+        // 4. 用户手动自由编辑，内容不被意外覆盖
+        var customEdited = "【茅台自定镜头】1. 茅台在草地上抬头看云；2. 茅台小跑；3. 茅台开心坐下。保持黑白灰毛色与鼻纹一致。";
+        homeViewModel.GoalObjective = customEdited;
+        SmokeAssert.True(homeViewModel.GoalObjective == customEdited, "用户编辑内容丢失");
+        SmokeAssert.True(!string.IsNullOrWhiteSpace(homeViewModel.SelectedGoalType) && homeViewModel.GoalObjective.Trim().Length is >= 4 and <= 2000, "合法自定义编辑后草稿与模板校验应通过");
+
+        // 刷新快照不得覆盖用户正在编辑的草稿
+        var refreshed = Snapshot(Task("running", "creative.content_plan.v1", "Running", DateTimeOffset.UtcNow));
+        homeViewModel.UpdateSnapshot(refreshed);
+        SmokeAssert.True(homeViewModel.GoalObjective == customEdited, "快照刷新意外覆盖了用户的编辑内容");
+
+        // 5. 切换到其他场景正常更新草稿
+        var travel = scenes.Single(s => s.Key == "Travel");
+        homeViewModel.SelectMoutaiScene(travel);
+        SmokeAssert.True(homeViewModel.GoalObjective == travel.DraftObjective, "切换场景未更新草稿");
+        SmokeAssert.True(homeViewModel.SelectedMoutaiScene?.Key == "Travel", "切换场景未更新选中态");
+    }
+
+    private static void VerifyMoutaiSceneWpfLayout()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var snapshot = Snapshot();
+                var homeViewModel = OperatorHomePageViewModel.CreateForSmokeTest(snapshot);
+                var goalPanel = new GoalCenterPanel { DataContext = homeViewModel };
+                Layout(goalPanel);
+
+                SmokeAssert.True(goalPanel.FindName("MoutaiSceneSection") is FrameworkElement, "GoalCenterPanel 缺少茅台场景创作区");
+                SmokeAssert.True(goalPanel.FindName("MoutaiSceneItems") is ItemsControl, "GoalCenterPanel 缺少茅台场景 ItemsControl");
+
+                var homePage = new OperatorHomePage { DataContext = homeViewModel };
+                Layout(homePage);
+                var embedded = (homePage.FindName("HeroCard") as Border)?.Child as GoalCenterPanel;
+                SmokeAssert.True(embedded?.FindName("MoutaiSceneSection") is FrameworkElement, "首页嵌入的 GoalCenterPanel 缺少茅台场景创作区");
+                SmokeAssert.True(embedded?.FindName("MoutaiSceneItems") is ItemsControl, "首页嵌入的 GoalCenterPanel 缺少茅台场景 ItemsControl");
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
     }
 
     private static ControlCenterCapabilities FullCapabilities() => new(

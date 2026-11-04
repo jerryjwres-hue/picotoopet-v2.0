@@ -48,6 +48,20 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--maotai-scene-goal-only", StringComparer.Ordinal))
+            {
+                OperatorSimpleModeSmokeTests.RunMoutaiSceneOnly();
+                Console.WriteLine("MAOTAI_SCENE_GOAL_SMOKE=PASS");
+                return 0;
+            }
+
+            if (args.Contains("--operator-simple-mode-only", StringComparer.Ordinal))
+            {
+                OperatorSimpleModeSmokeTests.Run();
+                Console.WriteLine("OPERATOR_SIMPLE_MODE_SMOKE=PASS");
+                return 0;
+            }
+
             if (args.Contains("--ui-interaction-only", StringComparer.Ordinal))
             {
                 await RunUiInteractionOnlyAsync().ConfigureAwait(false);

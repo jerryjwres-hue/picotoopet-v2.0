@@ -5,9 +5,41 @@ using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
+
+/// <summary>茅台视频场景创作预设：提供高层创作目标草稿与对齐建议，不自造 API 或不可变 Plan。</summary>
+public sealed record MoutaiSceneOption(
+    string Key,
+    string Title,
+    string Description,
+    string DraftObjective);
+
 /// <summary>简单模式首页：目标中心提交高层意图；任务、状态和交接事实继续来自 Mac Core。</summary>
 public sealed class OperatorHomePageViewModel : PageViewModel
 {
+    private static readonly IReadOnlyList<MoutaiSceneOption> DefaultMoutaiScenes =
+    [
+        new MoutaiSceneOption(
+            "DailyLife",
+            "日常生活",
+            "茅台居家自然生活片段，遵循 HOOK → ACTION → PAYOFF 三镜头",
+            "【茅台视频创作 · 日常生活】\r\n主角设定：用户真实阿拉斯加犬“茅台”（标准黑白灰长毛、黑鼻头独特鼻纹、面部对称花纹；无伊丽莎白圈、无围巾等临时装饰）。\r\n分镜规划（HOOK → ACTION → PAYOFF）：\r\n- 镜头1（HOOK）：茅台在地毯上舒展身姿打哈欠，双耳灵动竖起，好奇地看向镜头。\r\n- 镜头2（ACTION）：茅台迈着轻快自然的步态走向阳光斜照的垫子，低头轻嗅熟悉的地面。\r\n- 镜头3（PAYOFF）：茅台惬意地在温暖阳光中趴下，下巴枕在前爪上，轻摇尾巴，神态温顺放松。\r\n质控约束：单犬出镜，严禁出现第二只狗；动作连贯符合大犬物理规律，杜绝悬浮道具与突兀跳切。"),
+        new MoutaiSceneOption(
+            "Travel",
+            "出行旅游",
+            "茅台户外漫步与风景探索，展现开阔自然状态",
+            "【茅台视频创作 · 出行旅游】\r\n主角设定：用户真实阿拉斯加犬“茅台”（体型健硕匀称、黑白灰双层长毛、独特鼻纹；天然毛色，无临时项圈与围巾）。\r\n分镜规划（HOOK → ACTION → PAYOFF）：\r\n- 镜头1（HOOK）：开阔绿地边缘微风拂过，茅台端坐凝望远方风景，蓬松胸毛随风轻拂。\r\n- 镜头2（ACTION）：茅台沿着平坦草径向前轻快小跑，步伐稳健着地，充满大犬的沉稳活力。\r\n- 镜头3（PAYOFF）：茅台来到绿树阴凉处驻足回眸，微微张嘴吐舌哈气，眼神清澈欢快。\r\n质控约束：严格遵守户外重力与地形接触，单犬镜头无因果关联切镜，杜绝肢体悬空与滑步。"),
+        new MoutaiSceneOption(
+            "Dining",
+            "饮食生活",
+            "茅台沉稳斯文的用餐与餐后满足神态",
+            "【茅台视频创作 · 饮食生活】\r\n主角设定：用户真实阿拉斯加犬“茅台”（黑白灰长毛大犬、独特鼻纹、眼神温顺专注；无临时佩戴物）。\r\n分镜规划（HOOK → ACTION → PAYOFF）：\r\n- 镜头1（HOOK）：茅台规矩地坐在整洁地面上，双耳竖直，专注且期待地注视食盆方向。\r\n- 镜头2（ACTION）：食盆平稳放置于地，茅台低头沉稳进食，动作斯文自然，符合大犬咀嚼舔舐特征。\r\n- 镜头3（PAYOFF）：茅台食毕抬头，满足地舔了舔黑鼻头与嘴角，向镜头轻轻摇摆尾巴。\r\n质控约束：餐具与食物全程紧贴地面无漂浮；单犬出镜，无多余虚构动作，画面平稳因果连贯。"),
+        new MoutaiSceneOption(
+            "Supplies",
+            "宠物用品",
+            "茅台与日常宠物用品的真实自然互动，不编造品牌与营销虚假宣称",
+            "【茅台视频创作 · 宠物用品】\r\n主角设定：用户真实阿拉斯加犬“茅台”（标志性黑白灰毛色、独特鼻纹与体貌特征；无临时装饰道具）。\r\n分镜规划（HOOK → ACTION → PAYOFF）：\r\n- 镜头1（HOOK）：地面上放置一件实用宠物日用品，茅台从侧方缓步走近，微侧脑袋好奇观察。\r\n- 镜头2（ACTION）：茅台低头轻嗅并用前爪轻触用品互动，展现大犬自然的探索本能与日常习惯。\r\n- 镜头3（PAYOFF）：茅台在用品旁舒适卧伏，神态安心舒缓，自然融入居家环境。\r\n质控约束：客观展示真实互动，严禁虚构品牌、材质成分、医学功能或夸大营销宣称；道具着地稳固，杜绝物理漂浮。"),
+    ];
+
     private static readonly IReadOnlyList<GoalDepthOption> DepthOptions =
     [
         new("快速", "quick", "较少检索，适合先判断方向"),
@@ -16,6 +48,7 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     ];
 
     private readonly ControlCenterSession? _session;
+    private readonly IReadOnlyList<MoutaiSceneOption> _moutaiScenes = DefaultMoutaiScenes;
     private readonly IReadOnlyList<GoalDepthOption> _goalDepthOptions = DepthOptions;
     private OperatorProjection _projection;
     private AssistantPetIndicator _coreIndicator;
@@ -32,6 +65,7 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     private GoalHandoffMetadataRecord? _currentHandoff;
     private bool _isGoalBusy;
     private string _goalError = string.Empty;
+    private MoutaiSceneOption? _selectedMoutaiScene;
 
     public GoalVideoContinuationViewModel VideoContinuation { get; }
 
@@ -181,6 +215,22 @@ public sealed class OperatorHomePageViewModel : PageViewModel
     public string SelectedGoalTemplateTitle =>
         GoalTemplates.FirstOrDefault(item => string.Equals(item.GoalType, SelectedGoalType, StringComparison.Ordinal))?.Title
         ?? "选择目标类型";
+
+    public IReadOnlyList<MoutaiSceneOption> MoutaiScenes => _moutaiScenes;
+
+    public MoutaiSceneOption? SelectedMoutaiScene
+    {
+        get => _selectedMoutaiScene;
+        private set
+        {
+            if (SetProperty(ref _selectedMoutaiScene, value))
+            {
+                RaisePropertyChanged(nameof(SelectedMoutaiSceneTitle));
+            }
+        }
+    }
+
+    public string SelectedMoutaiSceneTitle => SelectedMoutaiScene?.Title ?? string.Empty;
 
     public HumanGoalRecord? CurrentGoal
     {
@@ -387,6 +437,36 @@ public sealed class OperatorHomePageViewModel : PageViewModel
         if (string.IsNullOrWhiteSpace(GoalObjective))
         {
             GoalObjective = template.Example;
+        }
+    }
+
+    /// <summary>选择茅台视频场景：填入创作目标草稿并对齐视频模板，不自动创建或提交目标。</summary>
+    public void SelectMoutaiScene(MoutaiSceneOption scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        SelectedMoutaiScene = scene;
+        GoalObjective = scene.DraftObjective;
+
+        // 优先将 GoalType 对齐到 Mac Core 提供的视频创作模板
+        var videoTemplate = GoalTemplates.FirstOrDefault(item => string.Equals(item.GoalType, "video.creative", StringComparison.Ordinal))
+            ?? GoalTemplates.FirstOrDefault(item => string.Equals(item.GoalType, "product.research_to_video", StringComparison.Ordinal))
+            ?? GoalTemplates.FirstOrDefault(item => item.GoalType.Contains("video", StringComparison.OrdinalIgnoreCase));
+        if (videoTemplate is not null)
+        {
+            SelectedGoalType = videoTemplate.GoalType;
+        }
+        else if (string.IsNullOrWhiteSpace(SelectedGoalType))
+        {
+            SelectedGoalType = "video.creative";
+        }
+    }
+
+    public void SelectMoutaiScene(string sceneKey)
+    {
+        var scene = DefaultMoutaiScenes.FirstOrDefault(item => string.Equals(item.Key, sceneKey, StringComparison.OrdinalIgnoreCase));
+        if (scene is not null)
+        {
+            SelectMoutaiScene(scene);
         }
     }
 
