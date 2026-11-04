@@ -83,6 +83,9 @@ internal static class Program
         });
         var connectionReady = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        var responsive = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var probeId = Guid.NewGuid().ToString("N");
         var streamErrors = new ConcurrentQueue<string>();
         string? firstTaskId = null;
         string? lastTaskId  = null;
@@ -120,6 +123,7 @@ internal static class Program
         {
             socketLatency.Add(measurement.DurationMilliseconds);
             failureContext.RecordPing();
+            responsive.TrySetResult(true);
         };
 
         using var streamCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -130,7 +134,9 @@ internal static class Program
                 await eventStream.RunAsync(
                     async (envelope, tokenForEvent) =>
                     {
-                        if (envelope.TryGetTask(JsonOptions, out var task) && task is not null)
+                        // ── Replay still advances normally; only this probe's events need buffering.
+                        if (DiagnosticTaskScope.BelongsToProbe(envelope.Payload, probeId)
+                            && envelope.TryGetTask(JsonOptions, out var task) && task is not null)
                         {
                             await taskEvents.Writer.WriteAsync(task, tokenForEvent)
                                 .ConfigureAwait(false);
@@ -158,6 +164,8 @@ internal static class Program
         {
             await connectionReady.Task.WaitAsync(options.ConnectTimeout, cancellationToken)
                 .ConfigureAwait(false);
+            await responsive.Task.WaitAsync(options.ConnectTimeout, cancellationToken)
+                .ConfigureAwait(false);
             for (var index = 0; index < options.TaskSamples; index++)
             {
                 failureContext.EnterStage("cpu_task_submit", index);
@@ -172,6 +180,7 @@ internal static class Program
                             ["machine"]      = Environment.MachineName,
                             ["sample_index"] = index,
                             ["created_at"]   = DateTimeOffset.UtcNow,
+                            ["diagnostic_run_id"] = probeId,
                         },
                         ResourceTag: "phase2-diagnostic"),
                     $"phase2-diagnostic-{Guid.NewGuid():N}",
@@ -425,6 +434,23 @@ internal sealed record DiagnosticReport(
         null,
         null,
         new[] { $"{code} | {type}: {message}" });
+}
+
+/// <summary>Keep unrelated historical tasks out of this probe's bounded event channel.</summary>
+internal static class DiagnosticTaskScope
+{
+    public static bool BelongsToProbe(JsonElement task, string probeId) =>
+        task.ValueKind == JsonValueKind.Object
+        && HasString(task, "task_type", "phase2.link.acceptance")
+        && HasString(task, "resource_tag", "phase2-diagnostic")
+        && task.TryGetProperty("payload", out var payload)
+        && payload.ValueKind == JsonValueKind.Object
+        && HasString(payload, "diagnostic_run_id", probeId);
+
+    private static bool HasString(JsonElement value, string name, string expected) =>
+        value.TryGetProperty(name, out var property)
+        && property.ValueKind == JsonValueKind.String
+        && string.Equals(property.GetString(), expected, StringComparison.Ordinal);
 }
 
 /// <summary>Bounded sidecar evidence only; legacy performance_report_v2 stays unchanged.</summary>
