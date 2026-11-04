@@ -174,7 +174,7 @@ internal static class Program
                             ["created_at"]   = DateTimeOffset.UtcNow,
                         },
                         ResourceTag: "phase2-diagnostic"),
-                    $"phase2-diagnostic-{Environment.MachineName}-{Guid.NewGuid():N}",
+                    $"phase2-diagnostic-{Guid.NewGuid():N}",
                     cancellationToken).ConfigureAwait(false);
                 taskSubmitLatency.Add(
                     Stopwatch.GetElapsedTime(submitStarted).TotalMilliseconds);
