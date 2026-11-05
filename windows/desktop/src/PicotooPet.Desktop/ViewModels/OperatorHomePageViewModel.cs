@@ -431,7 +431,11 @@ public sealed class OperatorHomePageViewModel : PageViewModel
                 .OrderByDescending(item => item.UpdatedAt)
                 .ThenByDescending(item => item.CreatedAt)
                 .FirstOrDefault();
-            GoalError = string.Empty;
+            // 保留“视频模板缺失”状态，避免刷新成功反而清空用户必须看到的错误提示。
+            if (GoalError != VideoCreativeTemplateUnavailableError)
+            {
+                GoalError = string.Empty;
+            }
             await RefreshCurrentHandoffAsync(cancellationToken).ConfigureAwait(false);
             await VideoContinuation.RefreshAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -454,10 +458,18 @@ public sealed class OperatorHomePageViewModel : PageViewModel
             return;
         }
 
+        // 离开茅台场景时解除视频模板锁定；仅替换未被用户修改的场景草稿。
+        var replaceUneditedSceneDraft = SelectedMoutaiScene is { } selected
+            && string.Equals(GoalObjective, selected.DraftObjective, StringComparison.Ordinal);
+        SelectedMoutaiScene = null;
         SelectedGoalType = template.GoalType;
-        if (string.IsNullOrWhiteSpace(GoalObjective))
+        if (replaceUneditedSceneDraft || string.IsNullOrWhiteSpace(GoalObjective))
         {
             GoalObjective = template.Example;
+        }
+        if (GoalError == VideoCreativeTemplateUnavailableError)
+        {
+            GoalError = string.Empty;
         }
     }
 
