@@ -27,7 +27,9 @@ from .models import (
     CreativeStageKind,
 )
 from .package import CreativePackageFinalizer
-from .profiles import CreativeStageDefinition, creative_profile_definition
+from .profiles import (
+    CreativeStageDefinition, creative_profile_definition, pet_only_video_bible_stage,
+)
 from .quality import CreativeQualityGate
 from .repository import CreativeRepository
 from .source import CreativeSourceNormalizer, NormalizedCreativeSourceSet
@@ -152,6 +154,10 @@ class CreativeIntelligenceCoordinator:
         previous: dict[str, dict[str, Any]] = {}
         for stage_definition in profile.stages:
             stage_kind = stage_definition.stage_kind
+            if (stage_kind is CreativeStageKind.VIDEO_BIBLE
+                    and parse_goal_directives(job.creative_objective).pet_only):
+                # Goal-owned opt-in selects a separate contract; the model cannot waive product checks.
+                stage_definition = pet_only_video_bible_stage(stage_definition)
             context = self._stage_context(
                 job.creative_objective,
                 source_set,

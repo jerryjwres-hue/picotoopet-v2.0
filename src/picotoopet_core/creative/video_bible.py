@@ -184,9 +184,17 @@ class VideoBibleDraft(_Strict):
     needs_human: bool = False
 
 
+class PetOnlyVideoBibleDraft(VideoBibleDraft):
+    """Separate non-commercial model schema: no product can be fabricated or featured."""
+
+    product: None = None
+
+
 class VideoBible(VideoBibleDraft):
     """Sealed, source-bound Bible persisted as ``stage_results["video_bible.v1"]``."""
 
+    # Legacy product narratives retain their exact bytes; the new pet-only mode seals null.
+    product: ProductIdentity | None = None
     bible_id: str = Field(pattern=_ID, max_length=80)
     goal_id: str = Field(min_length=1, max_length=120)
     source_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -271,6 +279,8 @@ def expanded_shot_fields(bible: VideoBibleDraft, shot: ShotBible) -> dict[str, A
     if Featured.SUBJECT in shot.featured:
         featured.append(bible.subject.identity_phrase)
     if Featured.PRODUCT in shot.featured:
+        if bible.product is None:
+            raise ValueError("PRODUCT_FEATURED_WITHOUT_IDENTITY")
         featured.append(bible.product.identity_phrase)
     return {
         "subject": ", ".join(featured),
@@ -293,6 +303,7 @@ def evaluate_video_bible(
     required_shot_count: int | None = None,
     required_shot_seconds: float | None = None,
     story_gate: bool = False,
+    pet_only: bool = False,
 ) -> list[BibleFinding]:
     findings: list[BibleFinding] = []
 
@@ -326,12 +337,20 @@ def evaluate_video_bible(
     phrase = subject.identity_phrase.casefold()
     if subject.breed_or_type.casefold() not in phrase and subject.species.casefold() not in phrase:
         add("IDENTITY_PHRASE_OFF_SUBJECT", detail="must name the species or breed")
-    if len(draft.product.identity_phrase.split()) < 4:
+    # Non-commercial pet-only mode is an explicit trusted Goal choice, not a model escape hatch.
+    if pet_only:
+        if draft.product is not None:
+            add("PET_ONLY_PRODUCT_FORBIDDEN", detail="do not invent a product")
+        if any(Featured.PRODUCT in shot.featured for shot in draft.shots):
+            add("PET_ONLY_PRODUCT_SHOT", detail="only SUBJECT may be featured")
+    elif draft.product is None:
+        add("PRODUCT_IDENTITY_REQUIRED", detail="product video needs a real product")
+    elif len(draft.product.identity_phrase.split()) < 4:
         add("IDENTITY_PHRASE_TOO_VAGUE", detail="product.identity_phrase")
 
-    # Claims: evidence must exist and unverified claims may never be spoken.
+    # Product claim evidence remains mandatory for every actual product narrative.
     spoken = " ".join(_norm(beat.voiceover) for beat in script.beats if beat.voiceover)
-    for claim in draft.product.claims:
+    for claim in draft.product.claims if draft.product is not None else []:
         if not set(claim.evidence_ids) <= evidence_ids:
             add("CLAIM_UNKNOWN_EVIDENCE", detail=claim.claim_id)
         if not claim.verified and _norm(claim.text) in spoken:
@@ -375,7 +394,7 @@ def evaluate_video_bible(
         )
     if required_shot_count is not None and required_shot_count >= 2:
         _multi_shot_findings(draft, add)
-    if not any(Featured.PRODUCT in item.featured for item in shots):
+    if not pet_only and not any(Featured.PRODUCT in item.featured for item in shots):
         add("PRODUCT_NEVER_FEATURED", detail="at least one shot must feature the product")
 
     brief_notes = ", ".join(brief.continuity_notes)
@@ -397,6 +416,7 @@ def evaluate_video_bible(
             add("ACTION_MULTI_STEP", sid, "one dominant action; split into adjacent shots")
         if (
             RiskFlag.TEXT_IN_FRAME in shot.risk_flags
+            and draft.product is not None
             and draft.product.logo_policy == "NO_TEXT_OR_LOGO_IN_FRAME"
         ):
             add("TEXT_IN_FRAME_CONTRADICTION", sid)
@@ -413,7 +433,7 @@ def evaluate_video_bible(
         if estimate > PROMPT_BUDGET_CHARS:
             add("PROMPT_TOO_LONG", sid, "shorten identity, scene and action phrases")
     if story_gate:
-        findings.extend(evaluate_story_storyboard(draft))
+        findings.extend(evaluate_story_storyboard(draft, product_required=not pet_only))
     return findings
 
 
@@ -438,7 +458,8 @@ def _multi_shot_findings(draft: VideoBibleDraft, add) -> None:  # type: ignore[n
             f"{first.shot_id} and {second.shot_id} describe the same action",
         )
     texts = [
-        draft.subject.identity_phrase, draft.product.identity_phrase,
+        draft.subject.identity_phrase,
+        *([draft.product.identity_phrase] if draft.product is not None else []),
         *draft.continuity_anchors, *draft.global_continuity_notes,
         *(item.environment_phrase for item in draft.scenes),
         *(item.lighting_phrase for item in draft.scenes),
@@ -580,7 +601,9 @@ def _shot_texts(shot: ShotBible) -> list[str]:
     return [shot.opening_state, shot.visible_action, shot.closing_state]
 
 
-def evaluate_story_storyboard(draft: VideoBibleDraft) -> list[BibleFinding]:
+def evaluate_story_storyboard(
+    draft: VideoBibleDraft, *, product_required: bool = True
+) -> list[BibleFinding]:
     """Deterministic checks for a short, single-location, causally linked multi-shot story."""
 
     findings: list[BibleFinding] = []
@@ -601,7 +624,10 @@ def evaluate_story_storyboard(draft: VideoBibleDraft) -> list[BibleFinding]:
 
     # Accessory / product colours must never change inside the story.
     locked: dict[str, str] = {}
-    for mark in [*subject.distinguishing_marks, draft.product.shape_color_material]:
+    for mark in [
+        *subject.distinguishing_marks,
+        *([draft.product.shape_color_material] if product_required and draft.product is not None else []),
+    ]:
         words = mark.casefold().split()
         for index, word in enumerate(words):
             if word in _COLOURS and index + 1 < len(words):
@@ -616,7 +642,7 @@ def evaluate_story_storyboard(draft: VideoBibleDraft) -> list[BibleFinding]:
                 add("IDENTITY_COLOUR_DRIFT", shot.shot_id, f"{noun} must stay {colour}")
         if _FLOATING.search(text):
             add("FLOATING_OBJECT_WORDING", shot.shot_id, "state what supports each object")
-        if Featured.PRODUCT in shot.featured and not _CONTACT.search(text):
+        if product_required and Featured.PRODUCT in shot.featured and not _CONTACT.search(text):
             add("PRODUCT_CONTACT_MISSING", shot.shot_id, "say what the product rests on or touches")
 
     # One fixed place, one lighting setup.
@@ -642,11 +668,15 @@ def evaluate_story_storyboard(draft: VideoBibleDraft) -> list[BibleFinding]:
         ):
             add("STORY_CAMERA_NO_PROGRESSION", shot.shot_id, "change framing or movement")
     if len(shots) >= 3:
-        if Featured.PRODUCT in shots[0].featured and Featured.PRODUCT not in shots[1].featured:
+        if product_required and Featured.PRODUCT in shots[0].featured and Featured.PRODUCT not in shots[1].featured:
             add("STORY_PRODUCT_DISAPPEARS", shots[1].shot_id)
         last = shots[-1]
-        if not (Featured.PRODUCT in last.featured and Featured.SUBJECT in last.featured):
+        if product_required and not (
+            Featured.PRODUCT in last.featured and Featured.SUBJECT in last.featured
+        ):
             add("STORY_PAYOFF_MISSING", last.shot_id, "final shot shows subject with product")
+        if not product_required and Featured.SUBJECT not in last.featured:
+            add("STORY_PAYOFF_MISSING", last.shot_id, "final shot must still feature the pet")
         if _norm(shots[0].opening_state) == _norm(last.closing_state):
             add("STORY_NO_CHANGE", detail="closing state must differ from the opening state")
     return findings
@@ -695,7 +725,7 @@ class KeyframeLocks(_Strict):
     subject_id: str
     subject_identity_phrase: str
     distinguishing_marks: list[str]
-    product_identity_phrase: str
+    product_identity_phrase: str | None = None
     scene_id: str
     environment_phrase: str
     lighting_phrase: str
@@ -772,7 +802,10 @@ def _still_prompt(bible: VideoBible, shot: ShotBible, locks: KeyframeLocks) -> s
         required.append(f"exactly one {subject.species}, same face and body proportions")
     else:
         required.append(f"no {subject.species} visible in this frame")
-    if Featured.PRODUCT in shot.featured:
+    if product is None:
+        if Featured.PRODUCT in shot.featured:
+            raise KeyframeKitError("PRODUCT_FEATURED_WITHOUT_IDENTITY")
+    elif Featured.PRODUCT in shot.featured:
         logo = (
             ", no text or logo"
             if product.logo_policy == "NO_TEXT_OR_LOGO_IN_FRAME" else ""
@@ -812,7 +845,7 @@ def build_keyframe_kit(
 ) -> KeyframeKit:
     """Three approval stills derived from a sealed Bible that passed the story gate."""
 
-    blocking = evaluate_story_storyboard(bible)
+    blocking = evaluate_story_storyboard(bible, product_required=bible.product is not None)
     if blocking or len(bible.shots) != KEYFRAME_COUNT:
         codes = sorted({item.code for item in blocking}) or ["SHOT_COUNT_NOT_3"]
         raise KeyframeKitError("story gate failed: " + ", ".join(codes))
@@ -822,7 +855,7 @@ def build_keyframe_kit(
         "subject_id": bible.subject.subject_id,
         "subject_identity_phrase": bible.subject.identity_phrase,
         "distinguishing_marks": list(bible.subject.distinguishing_marks),
-        "product_identity_phrase": bible.product.identity_phrase,
+        "product_identity_phrase": bible.product.identity_phrase if bible.product is not None else None,
         "scene_id": scene.scene_id,
         "environment_phrase": scene.environment_phrase,
         "lighting_phrase": scene.lighting_phrase,
@@ -846,7 +879,9 @@ def build_keyframe_kit(
                 review_checklist=[
                     "exactly one protagonist; same face, ears, eyes and body proportions "
                     "as the other two stills",
-                    "accessory, wardrobe and product colour, shape and position match the locks",
+                    ("accessory and wardrobe appearance match the locks"
+                     if bible.product is None
+                     else "accessory, wardrobe and product colour, shape and position match the locks"),
                     "every prop rests on a visible surface; nothing floats",
                     "set layout, props and lighting match the other two stills",
                     f"state matches opening_state of {shot.shot_id}",

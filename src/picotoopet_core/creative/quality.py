@@ -36,9 +36,11 @@ from .models import (
 from .profiles import CreativeProfileDefinition
 from .source import NormalizedCreativeSourceSet
 from .video_bible import (
+    BeatRole,
     MIN_SHOT_SECONDS,
     VideoBible,
     VideoBibleDraft,
+    PetOnlyVideoBibleDraft,
     correction_for,
     evaluate_video_bible,
     seal_bible,
@@ -71,7 +73,12 @@ class CreativeQualityGate:
         objective: str | None = None,
     ) -> tuple[CreativeQualityDecision, BaseModel | None]:
         directives = parse_goal_directives(objective)
-        model = self._MODELS[stage_kind]
+        # A pet-only draft is legal solely under the explicit original Goal directive.
+        model = (
+            PetOnlyVideoBibleDraft
+            if stage_kind is CreativeStageKind.VIDEO_BIBLE and directives.pet_only
+            else self._MODELS[stage_kind]
+        )
         try:
             parsed = model.model_validate(raw_result)
         except ValidationError as error:
@@ -420,6 +427,7 @@ class CreativeQualityGate:
             required_shot_count=None if directives is None else directives.shot_count,
             required_shot_seconds=None if directives is None else directives.shot_seconds,
             story_gate=story_gate_applies(directives, len(draft.shots)),
+            pet_only=bool(directives is not None and directives.pet_only),
         )
         if any(item.reject for item in findings):
             return CreativeQualityDecision(
@@ -450,11 +458,30 @@ class CreativeQualityGate:
 
     @staticmethod
     def _validation_correction(error: ValidationError) -> str:
+        violations = error.errors(include_url=False)
         locations = [
             ".".join(str(part) for part in item.get("loc", ()))
-            for item in error.errors(include_url=False)[:10]
+            for item in violations[:10]
         ]
-        return "Repair only the strict JSON schema fields: " + ", ".join(filter(None, locations))
+        correction = "Repair only the strict JSON schema fields: " + ", ".join(
+            filter(None, locations)
+        )
+        if any(
+            len(item.get("loc", ())) == 3
+            and item["loc"][0] == "arc"
+            and item["loc"][2] == "role"
+            and item.get("type") == "enum"
+            for item in violations
+        ):
+            # Keep model output strict: name legal roles rather than coercing an unknown value.
+            allowed = ", ".join(role.value for role in BeatRole)
+            correction += (
+                f". Every arc[*].role must be exactly one of: {allowed}. "
+                "Use HOOK for the first script beat and CTA only for the last script CTA beat; "
+                "for exactly three beats use HOOK, DEMO, CTA. "
+                "Preserve all beat_ids, their order, and unchanged fields."
+            )
+        return correction[:2000]
 
     @staticmethod
     def contains_forbidden_output(value: object) -> bool:
