@@ -28,6 +28,7 @@ MAX_SHOT_SECONDS = 5.0
 MAX_DIRECTIVE_SHOTS = 12
 
 VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-v1.0.0"
+PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-pet-only-v1.0.0"
 SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION = "shot-plan-from-bible-v1.0.0"
 
 STORY_DIRECTOR_INSTRUCTIONS = (
@@ -59,6 +60,31 @@ STORY_DIRECTOR_INSTRUCTIONS = (
     "(8) If the evidence cannot support a coherent video, set needs_human to true instead of "
     "inventing facts."
 )
+
+
+PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS = (
+    " You are the Story Director for a single-pet story, not a product advertisement. "
+    "Return exactly one video_bible.v1 JSON object using the supplied schema and "
+    "validated script beats. The product field is null: do not invent, feature, claim, "
+    "name or advertise a product. Every shot features SUBJECT only, with the same exact "
+    "subject identity phrase, distinguishing marks, place and lighting. "
+    "One dominant physical action per shot, continuous opening/closing states, "
+    "distinct camera framings, and exactly the requested shot count and duration. "
+    "The final CTA-labelled beat is a visual emotional payoff, not a commercial claim. "
+    "Every object must have visible physical support. Avoid URLs, filenames, paths, "
+    "logos, hype, unsupported facts and any reference-image assertions. "
+    "If the input cannot support a truthful consistent story, set needs_human=true."
+)
+
+PET_ONLY_STORY_GATE_RULES = [
+    "one real protagonist with stable identity_phrase and every distinguishing mark",
+    "no merchandise, product fields or PRODUCT-featured shots; product must be null",
+    "one scene_id and one lighting phrase; screen_direction not NONE",
+    "every handoff_to_next is CONTINUOUS; closing_state equals next opening_state",
+    "adjacent shots change camera framing or movement",
+    "the final shot preserves the subject and provides a changed emotional payoff",
+    "every prop rests on a visible surface; never floating or hovering",
+]
 
 
 STORY_GATE_RULES = [
@@ -101,6 +127,7 @@ class GoalDirectives:
     shot_seconds: float | None = None
     # Explicit opt-in for the quality-first story gate (video_bible.evaluate_story_storyboard).
     story_gate: bool = False
+    pet_only: bool = False  # Explicit non-commercial single-pet creative; never inferred.
 
 
 _WORD_NUMBERS = {
@@ -162,6 +189,12 @@ _STORY_GATE = re.compile(
 )
 
 
+_PET_ONLY = re.compile(
+    r"(?<!not )(?<!no )(?<!without )(?:pet[- ]only (?:story|video)|纯宠物视频|非商品宠物视频)",
+    re.IGNORECASE,
+)
+
+
 def _requested_shot_seconds(text: str) -> float | None:
     values: set[float] = set()
     for pattern in _SECONDS:
@@ -210,6 +243,7 @@ def parse_goal_directives(objective: str | None) -> GoalDirectives:
         text_to_video_only=marked and not wants_image,
         shot_seconds=_requested_shot_seconds(text),
         story_gate=_STORY_GATE.search(text) is not None,
+        pet_only=_PET_ONLY.search(text) is not None,
     )
 
 
@@ -345,10 +379,16 @@ def director_constraints(
         constraints["text_to_video_only"] = True
     if directives is not None and directives.shot_seconds is not None:
         constraints["required_shot_seconds"] = directives.shot_seconds
+    if directives is not None and directives.pet_only:
+        constraints["pet_only"] = True  # Explicit Goal opt-in; never selected by model output.
+    rules = (
+        PET_ONLY_STORY_GATE_RULES
+        if directives is not None and directives.pet_only
+        else STORY_GATE_RULES
+    )
     if directives is not None and directives.story_gate:
-        constraints["story_gate"] = STORY_GATE_RULES
+        constraints["story_gate"] = rules
     elif directives is not None and story_gate_applies(directives, None):
-        # Model-facing only: excluded from the stage input digest (see execution._digest_view)
-        # so a Bible stage persisted before this default keeps its immutable input.
-        constraints["story_quality_rules"] = STORY_GATE_RULES
+        # Model-facing only: preserve the legacy stage-digest exclusion.
+        constraints["story_quality_rules"] = rules
     return constraints

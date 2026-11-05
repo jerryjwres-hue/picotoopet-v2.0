@@ -39,6 +39,7 @@ from .video_bible import (
     MIN_SHOT_SECONDS,
     VideoBible,
     VideoBibleDraft,
+    PetOnlyVideoBibleDraft,
     correction_for,
     evaluate_video_bible,
     seal_bible,
@@ -71,7 +72,12 @@ class CreativeQualityGate:
         objective: str | None = None,
     ) -> tuple[CreativeQualityDecision, BaseModel | None]:
         directives = parse_goal_directives(objective)
-        model = self._MODELS[stage_kind]
+        # A pet-only draft is legal solely under the explicit original Goal directive.
+        model = (
+            PetOnlyVideoBibleDraft
+            if stage_kind is CreativeStageKind.VIDEO_BIBLE and directives.pet_only
+            else self._MODELS[stage_kind]
+        )
         try:
             parsed = model.model_validate(raw_result)
         except ValidationError as error:
@@ -420,6 +426,7 @@ class CreativeQualityGate:
             required_shot_count=None if directives is None else directives.shot_count,
             required_shot_seconds=None if directives is None else directives.shot_seconds,
             story_gate=story_gate_applies(directives, len(draft.shots)),
+            pet_only=bool(directives is not None and directives.pet_only),
         )
         if any(item.reject for item in findings):
             return CreativeQualityDecision(

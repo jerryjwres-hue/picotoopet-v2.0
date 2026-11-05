@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from pydantic import BaseModel
@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from .director import (
     SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION,
     STORY_DIRECTOR_INSTRUCTIONS,
+    PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS,
+    PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION,
     VIDEO_BIBLE_TEMPLATE_VERSION,
 )
 from .models import (
@@ -19,7 +21,7 @@ from .models import (
     IdeaRankingResult,
     ShotPlanResult,
 )
-from .video_bible import VideoBibleDraft
+from .video_bible import PetOnlyVideoBibleDraft, VideoBibleDraft
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,3 +142,16 @@ def creative_profile_definition(profile_id: str) -> CreativeProfileDefinition:
         return _PROFILES[profile_id]
     except KeyError:
         raise ValueError("unsupported creative profile") from None
+
+
+
+def pet_only_video_bible_stage(stage: CreativeStageDefinition) -> CreativeStageDefinition:
+    """Create a dedicated strict PET_ONLY schema without changing the legacy v2 profile."""
+    if stage.stage_kind is not CreativeStageKind.VIDEO_BIBLE:
+        raise ValueError("PET_ONLY_STAGE_NOT_VIDEO_BIBLE")
+    return replace(
+        stage,
+        template_version=PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION,
+        system_prompt=_POLICY + PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS,
+        result_model=PetOnlyVideoBibleDraft,
+    )
