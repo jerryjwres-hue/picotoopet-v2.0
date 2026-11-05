@@ -36,6 +36,41 @@
       </Setter>
     </Style>
 
+    <Style x:Key="MoutaiSceneChipButtonStyle" TargetType="Button">
+      <Setter Property="Background" Value="#33FFFFFF" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="#70FFFFFF" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="Margin" Value="0,0,6,5" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FontSize" Value="9.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ChipBorder"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="9"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ChipBorder" Property="Background" Value="#52FFFFFF" />
+                <Setter TargetName="ChipBorder" Property="BorderBrush" Value="#AAFFFFFF" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="ChipBorder" Property="Opacity" Value="0.78" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="GoalPrimaryButtonStyle" TargetType="Button">
       <Setter Property="Background" Value="White" />
       <Setter Property="Foreground" Value="#FF1769DE" />
@@ -142,6 +177,38 @@
             <TextBlock Text="Windows 只发送目标；Mac 自动研究、筛选、分析并生成结果。"
                        Margin="0,2,0,0" Foreground="#E8FFFFFF" FontSize="9.5" />
           </StackPanel>
+        </StackPanel>
+
+        <StackPanel x:Name="MoutaiSceneSection" Margin="0,8,0,0">
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+            <TextBlock Text="✦ 茅台场景创作"
+                       Foreground="#EEFFFFFF"
+                       FontSize="9.5"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center" />
+            <TextBlock Text="（精选三镜头视频创作目标草稿，点击填入后可自由编辑）"
+                       Foreground="#C8FFFFFF"
+                       FontSize="8.5"
+                       VerticalAlignment="Center"
+                       Margin="4,0,0,0" />
+          </StackPanel>
+          <ItemsControl x:Name="MoutaiSceneItems"
+                        ItemsSource="{Binding MoutaiScenes, Mode=OneWay}"
+                        Margin="0,0,0,0">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Content="{Binding Title}"
+                        ToolTip="{Binding Description}"
+                        Style="{StaticResource MoutaiSceneChipButtonStyle}"
+                        Click="MoutaiScene_Click" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </StackPanel>
 
         <TextBox x:Name="GoalObjectiveTextBox"

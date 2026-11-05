@@ -35,6 +35,7 @@ internal static class OperatorSimpleModeSmokeTests
         VerifyNavigation();
         VerifyProjectionAndWizard();
         VerifyGoalCenterClientContract();
+        VerifyMoutaiSceneGoalAssistance();
         VerifyWpfLayout();
     }
 
@@ -158,6 +159,8 @@ internal static class OperatorSimpleModeSmokeTests
                     && ReferenceEquals(saveHandoff?.Parent, actions),
                     "The Web GPT paste action must share a wrapping container with the handoff actions");
 
+                SmokeAssert.True(goalPanel.FindName("MoutaiSceneSection") is FrameworkElement, "GoalCenterPanel 缺少茅台场景创作区");
+                SmokeAssert.True(goalPanel.FindName("MoutaiSceneItems") is ItemsControl, "GoalCenterPanel 缺少茅台场景选择控件");
                 SmokeAssert.True(homePage.FindName("GoalObjectiveTextBox") is TextBox, "首页缺少目标输入框");
                 SmokeAssert.True(homePage.FindName("GoalTemplateItems") is ItemsControl, "首页缺少建议目标模板");
                 SmokeAssert.True(homePage.FindName("GoalDepthComboBox") is ComboBox, "首页缺少研究深度选择");
@@ -258,6 +261,185 @@ internal static class OperatorSimpleModeSmokeTests
             null,
             resultId,
             isHidden);
+    }
+
+    public static void RunMoutaiSceneOnly()
+    {
+        VerifyMoutaiSceneGoalAssistance();
+        VerifyMoutaiSceneWpfLayout();
+    }
+
+    private static void VerifyMoutaiSceneGoalAssistance()
+    {
+        var snapshot = Snapshot();
+
+        // 1. 验证四种预设场景
+        var mockCoreTemplates = new[]
+        {
+            new GoalTemplateRecord("product.research", "研究一个产品", "公开资料与证据分析", "示例1"),
+            new GoalTemplateRecord("video.creative", "生成 AI 视频方案", "本地视频创意方案", "示例2"),
+        };
+        var homeViewModel = OperatorHomePageViewModel.CreateForSmokeTest(snapshot, mockCoreTemplates);
+
+        var scenes = homeViewModel.MoutaiScenes;
+        SmokeAssert.True(scenes.Count == 4, "茅台场景预设必须恰好四项");
+        var expectedTitles = new[] { "日常生活", "出行旅游", "饮食生活", "宠物用品" };
+        var expectedKeys = new[] { "DailyLife", "Travel", "Dining", "Supplies" };
+        SmokeAssert.True(scenes.Select(s => s.Title).SequenceEqual(expectedTitles), "场景中文标题不匹配");
+        SmokeAssert.True(scenes.Select(s => s.Key).SequenceEqual(expectedKeys), "场景键名不匹配");
+
+        // 2. 检查草稿内容规范性：真实茅台身份特征与 Core 指令
+        foreach (var scene in scenes)
+        {
+            SmokeAssert.True(!string.IsNullOrWhiteSpace(scene.Description), $"{scene.Title} 缺少描述");
+            SmokeAssert.True(scene.DraftObjective.Contains("成年阿拉斯加犬“茅台”", StringComparison.Ordinal), $"{scene.Title} 未明确主角为成年阿拉斯加犬茅台");
+            SmokeAssert.True(scene.DraftObjective.Contains("深棕黑背毛", StringComparison.Ordinal)
+                && scene.DraftObjective.Contains("焦糖棕颈毛", StringComparison.Ordinal)
+                && scene.DraftObjective.Contains("奶油色眉纹", StringComparison.Ordinal)
+                && scene.DraftObjective.Contains("粉黑斑驳鼻纹", StringComparison.Ordinal),
+                $"{scene.Title} 缺少真实毛色（深棕黑背毛、焦糖棕颈毛、奶油色、粉黑斑驳鼻纹）特征");
+
+            // 配饰按真实批准的参考照片决定，不默认添加，也不强制移除
+            SmokeAssert.True(scene.DraftObjective.Contains("配饰按批准的参考照片决定，不默认添加亦不强制移除", StringComparison.Ordinal),
+                $"{scene.Title} 必须明确配饰由批准照片决定，不得强制添加或移除");
+
+            // 严禁旧的错误描述
+            SmokeAssert.True(!scene.DraftObjective.Contains("标准黑白灰", StringComparison.Ordinal), $"{scene.Title} 禁止写“标准黑白灰”");
+            SmokeAssert.True(!scene.DraftObjective.Contains("纯黑鼻头", StringComparison.Ordinal), $"{scene.Title} 禁止写“纯黑鼻头”");
+            SmokeAssert.True(!scene.DraftObjective.Contains("对称面纹", StringComparison.Ordinal), $"{scene.Title} 禁止写“对称面纹”");
+
+            // 结构必须包含 HOOK → ACTION → PAYOFF
+            SmokeAssert.True(scene.DraftObjective.Contains("HOOK", StringComparison.Ordinal)
+                && scene.DraftObjective.Contains("ACTION", StringComparison.Ordinal)
+                && scene.DraftObjective.Contains("PAYOFF", StringComparison.Ordinal),
+                $"{scene.Title} 未遵循 HOOK → ACTION → PAYOFF 剧情结构");
+
+            // 必须包含 Core 支持的指令：exactly 3 shots. Each shot 4 seconds. quality-first story.
+            SmokeAssert.True(scene.DraftObjective.Contains("exactly 3 shots. Each shot 4 seconds. quality-first story.", StringComparison.Ordinal),
+                $"{scene.Title} 缺少 Core 支持的精确三镜头质量指令");
+
+            // 针对性测试：模拟 Mac Core parse_goal_directives 与 local_creative 判定
+            var text = scene.DraftObjective;
+            var hasExactThreeShots = System.Text.RegularExpressions.Regex.IsMatch(text, @"\b(?i:exactly 3 shots|3\s*-?\s*shots?)\b");
+            var hasFourSeconds = System.Text.RegularExpressions.Regex.IsMatch(text, @"(?i:each\s+shot\s+4(?:\.0)?\s*seconds?)");
+            var hasQualityFirstStory = text.Contains("quality-first story", StringComparison.OrdinalIgnoreCase);
+
+            SmokeAssert.True(hasExactThreeShots, $"{scene.Title} 未被识别为 exact 3 shots 指令");
+            SmokeAssert.True(hasFourSeconds, $"{scene.Title} 未被识别为 4 seconds per shot 指令");
+            SmokeAssert.True(hasQualityFirstStory, $"{scene.Title} 未开启 quality-first story gate");
+
+            // Core 真实选择逻辑：directives.shot_count == 3 || directives.story_gate => 选 CONTENT_PLAN_V2
+            var coreWillSelectV2 = hasExactThreeShots || hasQualityFirstStory;
+            SmokeAssert.True(coreWillSelectV2, $"{scene.Title} 无法触发 Mac Core Creative v2 故事门禁选择逻辑");
+
+            SmokeAssert.True(scene.DraftObjective.Length >= 4 && scene.DraftObjective.Length <= 2000,
+                $"{scene.Title} 草稿长度超出边界");
+        }
+
+        // 宠物用品场景质控：不能编造品牌、材质、功能或营销宣称
+        var suppliesScene = scenes.Single(s => s.Key == "Supplies");
+        SmokeAssert.True(suppliesScene.DraftObjective.Contains("严禁虚构品牌")
+            && suppliesScene.DraftObjective.Contains("营销宣称"),
+            "宠物用品草稿必须明确禁止编造虚假品牌与营销宣称");
+
+        // 3. 正常绑定：Mac Core 存在 video.creative 时正确绑定
+        var daily = scenes.Single(s => s.Key == "DailyLife");
+        homeViewModel.SelectMoutaiScene(daily);
+        SmokeAssert.True(homeViewModel.SelectedMoutaiScene?.Key == "DailyLife", "选中场景状态未记录");
+        SmokeAssert.True(homeViewModel.GoalObjective == daily.DraftObjective, "选择场景未填入对应草稿");
+        SmokeAssert.True(!homeViewModel.IsGoalBusy, "选择场景不得自动触发提交或忙状态");
+        SmokeAssert.True(homeViewModel.CurrentGoal is null, "选择场景不得自动生成服务端目标");
+        SmokeAssert.True(homeViewModel.SelectedGoalType == "video.creative", "选择场景必须精确对齐 Mac Core video.creative 模板");
+        SmokeAssert.True(!homeViewModel.HasGoalError, "存在 video.creative 时不得产生错误状态");
+
+        // 4. 异常隔离：Mac Core 缺失 video.creative 模板时给出明确不可用状态，严禁静默回退
+        var invalidTemplates = new[]
+        {
+            new GoalTemplateRecord("product.research", "研究产品", "描述", "示例"),
+            new GoalTemplateRecord("product.research_to_video", "从研究到视频", "描述", "示例"),
+        };
+        var vmMissing = OperatorHomePageViewModel.CreateForSmokeTest(snapshot, invalidTemplates);
+        vmMissing.SelectMoutaiScene(daily);
+        SmokeAssert.True(vmMissing.SelectedGoalType is null, "缺失 video.creative 时 SelectedGoalType 必须置空，严禁回退");
+        SmokeAssert.True(vmMissing.SelectedGoalType != "product.research_to_video", "严禁静默回退到 product.research_to_video");
+        SmokeAssert.True(vmMissing.HasGoalError, "缺失 video.creative 时必须置为不可用错误状态");
+        SmokeAssert.True(vmMissing.GoalError == OperatorHomePageViewModel.VideoCreativeTemplateUnavailableError,
+            "不可用状态信息不匹配");
+        SmokeAssert.True(!vmMissing.CanCreateGoal, "模板不可用时必须禁止提交");
+
+        // 切回普通 Goal 模板必须解除场景锁定，并清除旧的模板缺失告警。
+        vmMissing.SelectGoalTemplate(invalidTemplates[0]);
+        SmokeAssert.True(vmMissing.SelectedMoutaiScene is null, "切回普通模板后仍被茅台场景锁定");
+        SmokeAssert.True(vmMissing.SelectedGoalType == "product.research", "普通 Goal 模板切换后类型应保持不变");
+        SmokeAssert.True(vmMissing.GoalObjective == invalidTemplates[0].Example, "未编辑的场景草稿应被普通模板示例替换");
+        SmokeAssert.True(!vmMissing.HasGoalError, "切回普通模板后旧视频模板告警未清除");
+
+        // 5. 用户手动自由编辑，内容不被意外覆盖
+        homeViewModel.SelectMoutaiScene(daily);
+        var customEdited = "【茅台自定镜头】exactly 3 shots. Each shot 4 seconds. quality-first story. 1. 茅台小跑；2. 茅台坐下；3. 茅台摇尾巴。";
+        homeViewModel.GoalObjective = customEdited;
+        SmokeAssert.True(homeViewModel.GoalObjective == customEdited, "用户编辑内容丢失");
+        SmokeAssert.True(!string.IsNullOrWhiteSpace(homeViewModel.SelectedGoalType) && homeViewModel.GoalObjective.Trim().Length is >= 4 and <= 2000, "合法自定义编辑后草稿与模板校验应通过");
+
+        // 刷新快照不得覆盖用户正在编辑的草稿
+        var refreshed = Snapshot(Task("running", "creative.content_plan.v1", "Running", DateTimeOffset.UtcNow));
+        homeViewModel.UpdateSnapshot(refreshed);
+        SmokeAssert.True(homeViewModel.GoalObjective == customEdited, "快照刷新意外覆盖了用户的编辑内容");
+
+        // 6. 切换到其他场景正常更新草稿
+        var travel = scenes.Single(s => s.Key == "Travel");
+        homeViewModel.SelectMoutaiScene(travel);
+        SmokeAssert.True(homeViewModel.GoalObjective == travel.DraftObjective, "切换场景未更新草稿");
+        SmokeAssert.True(homeViewModel.SelectedMoutaiScene?.Key == "Travel", "切换场景未更新选中态");
+        SmokeAssert.True(homeViewModel.SelectedGoalType == "video.creative", "切换场景依然对齐 video.creative");
+
+        // 若用户主动选择普通模板，之后刷新不能再被遗留的场景状态强制改回 video.creative。
+        homeViewModel.SelectGoalTemplate(mockCoreTemplates[0]);
+        SmokeAssert.True(homeViewModel.SelectedMoutaiScene is null, "选择普通模板后应清空旧茅台场景选中态");
+        SmokeAssert.True(homeViewModel.SelectedGoalType == "product.research", "切换普通模板时被强制保留视频 GoalType");
+        SmokeAssert.True(homeViewModel.GoalObjective == mockCoreTemplates[0].Example, "未编辑场景草稿切换普通模板时未更新为正常示例");
+
+        // 用户自行编辑的目标不能因之后切换普通模板而被预设示例覆盖。
+        homeViewModel.SelectMoutaiScene(daily);
+        var editedScene = "用户自行修改的茅台创作目标，保留用户的文字与上下文。";
+        homeViewModel.GoalObjective = editedScene;
+        homeViewModel.SelectGoalTemplate(mockCoreTemplates[0]);
+        SmokeAssert.True(homeViewModel.GoalObjective == editedScene, "切换普通模板覆盖了用户自行编辑的内容");
+    }
+
+    private static void VerifyMoutaiSceneWpfLayout()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var snapshot = Snapshot();
+                var homeViewModel = OperatorHomePageViewModel.CreateForSmokeTest(snapshot);
+                var goalPanel = new GoalCenterPanel { DataContext = homeViewModel };
+                Layout(goalPanel);
+
+                SmokeAssert.True(goalPanel.FindName("MoutaiSceneSection") is FrameworkElement, "GoalCenterPanel 缺少茅台场景创作区");
+                SmokeAssert.True(goalPanel.FindName("MoutaiSceneItems") is ItemsControl, "GoalCenterPanel 缺少茅台场景 ItemsControl");
+
+                var homePage = new OperatorHomePage { DataContext = homeViewModel };
+                Layout(homePage);
+                var embedded = (homePage.FindName("HeroCard") as Border)?.Child as GoalCenterPanel;
+                SmokeAssert.True(embedded?.FindName("MoutaiSceneSection") is FrameworkElement, "首页嵌入的 GoalCenterPanel 缺少茅台场景创作区");
+                SmokeAssert.True(embedded?.FindName("MoutaiSceneItems") is ItemsControl, "首页嵌入的 GoalCenterPanel 缺少茅台场景 ItemsControl");
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
     }
 
     private static ControlCenterCapabilities FullCapabilities() => new(

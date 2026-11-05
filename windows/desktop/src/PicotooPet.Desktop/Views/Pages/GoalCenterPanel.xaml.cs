@@ -65,6 +65,17 @@ public partial class GoalCenterPanel : WpfUserControl
         }
     }
 
+    private void MoutaiScene_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OperatorHomePageViewModel viewModel
+            && sender is System.Windows.Controls.Button { DataContext: MoutaiSceneOption scene })
+        {
+            viewModel.SelectMoutaiScene(scene);
+            GoalObjectiveTextBox.Focus();
+            GoalObjectiveTextBox.CaretIndex = GoalObjectiveTextBox.Text.Length;
+        }
+    }
+
     private void GoalTemplate_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is OperatorHomePageViewModel viewModel
