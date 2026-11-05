@@ -28,7 +28,7 @@ MAX_SHOT_SECONDS = 5.0
 MAX_DIRECTIVE_SHOTS = 12
 
 VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-v1.0.0"
-PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-pet-only-v1.0.0"
+PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-pet-only-v1.0.1"
 SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION = "shot-plan-from-bible-v1.0.0"
 
 STORY_DIRECTOR_INSTRUCTIONS = (
@@ -70,6 +70,10 @@ PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS = (
     "subject identity phrase, distinguishing marks, place and lighting. "
     "One dominant physical action per shot, continuous opening/closing states, "
     "distinct camera framings, and exactly the requested shot count and duration. "
+    "In arc, copy the supplied script beat_ids exactly and in order. Each arc[*].role "
+    "MUST be exactly one of HOOK, DEMO, PAYOFF, CTA, BRIDGE (uppercase). "
+    "Never use ACTION, INTRO, CLIMAX, RESOLUTION, or other invented role values. "
+    "For exactly three script beats use arc roles HOOK, DEMO, CTA in that order. "
     "The final CTA-labelled beat is a visual emotional payoff, not a commercial claim. "
     "Every object must have visible physical support. Avoid URLs, filenames, paths, "
     "logos, hype, unsupported facts and any reference-image assertions. "
