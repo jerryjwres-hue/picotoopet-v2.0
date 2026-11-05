@@ -187,3 +187,63 @@ def test_real_creative_coordinator_selects_pet_only_stage_and_persists_package(t
         assert package.manifest["stage_results"]["keyframe_kit.v1"]["locks"]["product_identity_phrase"] is None
     finally:
         runtime.database.close()
+
+
+@pytest.mark.parametrize("second_role_valid", [True, False])
+def test_pet_only_arc_role_invalid_enum_retries_once_without_coercion(
+    tmp_path, second_role_valid: bool
+) -> None:
+    """Reproduce the real arc[1].role defect using only synthetic local model replies."""
+    runtime = open_runtime(tmp_path)
+    try:
+        job = runtime.service.create_job(
+            source_result_package_ids=[runtime.result_id],
+            creative_profile=V2,
+            creative_objective=PET_GOAL,
+            idempotency_key=f"synthetic-invalid-arc-{second_role_valid}",
+        )
+        task = next(
+            item for item in runtime.queue.list(limit=50)
+            if item.resource_tag == f"creative:{job.creative_job_id}"
+        )
+        source_ref = runtime.source_ref_for(job.creative_job_id)
+        prior = stage_outputs(source_ref)
+        brief = {**fx.brief(), "required_source_finding_refs": [source_ref]}
+        invalid = pet_bible()
+        invalid["arc"][1]["role"] = "ACTION"
+
+        # Unknown role values must fail the strict enum, never become a silent alias.
+        with pytest.raises(ValidationError):
+            PetOnlyVideoBibleDraft.model_validate(invalid)
+
+        responses = [
+            prior["idea"], brief, pet_script(), invalid,
+            pet_bible() if second_role_valid else invalid,
+        ]
+        double = OllamaDouble(responses)
+        summary = runtime.coordinator(double.adapter).handler(task)
+
+        # Retry one existing Job only; the targeted repair uses actual enum values.
+        assert len(double.requests) == 5
+        retry_prompt = double.requests[4]["user"]
+        assert "arc.1.role" in retry_prompt
+        assert "HOOK, DEMO, PAYOFF, CTA, BRIDGE" in retry_prompt
+        assert "for exactly three beats use HOOK, DEMO, CTA" in retry_prompt
+        stage = runtime.repository.get_stage(job.creative_job_id, CreativeStageKind.VIDEO_BIBLE)
+        assert stage is not None
+        assert stage.model_attempts == 2
+        assert stage.template_version == "video-bible-pet-only-v1.0.1"
+        package = runtime.service.get_package(job.creative_job_id)
+        if second_role_valid:
+            assert summary.summary["status"] == "creative_ready"
+            assert stage.status == "Completed"
+            assert package is not None
+            assert package.quality_outcome.value == "PASS"
+        else:
+            assert summary.summary["status"] == "needs_human"
+            assert stage.status == "NeedsHuman"
+            assert stage.result is not None
+            assert stage.result["arc"][1]["role"] == "ACTION"
+            assert package is None
+    finally:
+        runtime.database.close()
