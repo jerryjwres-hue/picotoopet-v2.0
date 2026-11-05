@@ -367,6 +367,13 @@ internal static class OperatorSimpleModeSmokeTests
             "不可用状态信息不匹配");
         SmokeAssert.True(!vmMissing.CanCreateGoal, "模板不可用时必须禁止提交");
 
+        // 切回普通 Goal 模板必须解除场景锁定，并清除旧的模板缺失告警。
+        vmMissing.SelectGoalTemplate(invalidTemplates[0]);
+        SmokeAssert.True(vmMissing.SelectedMoutaiScene is null, "切回普通模板后仍被茅台场景锁定");
+        SmokeAssert.True(vmMissing.SelectedGoalType == "product.research", "普通 Goal 模板切换后类型应保持不变");
+        SmokeAssert.True(vmMissing.GoalObjective == invalidTemplates[0].Example, "未编辑的场景草稿应被普通模板示例替换");
+        SmokeAssert.True(!vmMissing.HasGoalError, "切回普通模板后旧视频模板告警未清除");
+
         // 5. 用户手动自由编辑，内容不被意外覆盖
         homeViewModel.SelectMoutaiScene(daily);
         var customEdited = "【茅台自定镜头】exactly 3 shots. Each shot 4 seconds. quality-first story. 1. 茅台小跑；2. 茅台坐下；3. 茅台摇尾巴。";
@@ -385,6 +392,19 @@ internal static class OperatorSimpleModeSmokeTests
         SmokeAssert.True(homeViewModel.GoalObjective == travel.DraftObjective, "切换场景未更新草稿");
         SmokeAssert.True(homeViewModel.SelectedMoutaiScene?.Key == "Travel", "切换场景未更新选中态");
         SmokeAssert.True(homeViewModel.SelectedGoalType == "video.creative", "切换场景依然对齐 video.creative");
+
+        // 若用户主动选择普通模板，之后刷新不能再被遗留的场景状态强制改回 video.creative。
+        homeViewModel.SelectGoalTemplate(mockCoreTemplates[0]);
+        SmokeAssert.True(homeViewModel.SelectedMoutaiScene is null, "选择普通模板后应清空旧茅台场景选中态");
+        SmokeAssert.True(homeViewModel.SelectedGoalType == "product.research", "切换普通模板时被强制保留视频 GoalType");
+        SmokeAssert.True(homeViewModel.GoalObjective == mockCoreTemplates[0].Example, "未编辑场景草稿切换普通模板时未更新为正常示例");
+
+        // 用户自行编辑的目标不能因之后切换普通模板而被预设示例覆盖。
+        homeViewModel.SelectMoutaiScene(daily);
+        var editedScene = "用户自行修改的茅台创作目标，保留用户的文字与上下文。";
+        homeViewModel.GoalObjective = editedScene;
+        homeViewModel.SelectGoalTemplate(mockCoreTemplates[0]);
+        SmokeAssert.True(homeViewModel.GoalObjective == editedScene, "切换普通模板覆盖了用户自行编辑的内容");
     }
 
     private static void VerifyMoutaiSceneWpfLayout()
