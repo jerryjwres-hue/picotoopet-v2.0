@@ -243,7 +243,14 @@ def parse_goal_directives(objective: str | None) -> GoalDirectives:
         text_to_video_only=marked and not wants_image,
         shot_seconds=_requested_shot_seconds(text),
         story_gate=_STORY_GATE.search(text) is not None,
-        pet_only=_PET_ONLY.search(text) is not None,
+        pet_only=any(
+            not re.search(
+                r"\\b(?:not|no|without|never|don't|do not)\\b(?:\\W+\\w+){0,4}\\W*$"
+                r"|(?:不要|不做|不是)\\S{0,12}$",
+                text[max(0, match.start() - 50):match.start()],
+            )
+            for match in _PET_ONLY.finditer(text)
+        ),
     )
 
 
