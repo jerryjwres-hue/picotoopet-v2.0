@@ -240,7 +240,7 @@ def test_pet_only_arc_role_invalid_enum_retries_once_without_coercion(
             assert package is not None
             assert package.quality_outcome.value == "PASS"
         else:
-            assert summary.summary["status"] == "needs_human"
+            assert summary.summary["status"] == "NeedsHuman"
             assert stage.status == "NeedsHuman"
             assert stage.result is not None
             assert stage.result["arc"][1]["role"] == "ACTION"
