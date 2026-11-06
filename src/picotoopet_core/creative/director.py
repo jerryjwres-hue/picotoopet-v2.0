@@ -28,7 +28,7 @@ MAX_SHOT_SECONDS = 5.0
 MAX_DIRECTIVE_SHOTS = 12
 
 VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-v1.0.0"
-PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-pet-only-v1.0.1"
+PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-pet-only-v1.0.2"
 SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION = "shot-plan-from-bible-v1.0.0"
 
 STORY_DIRECTOR_INSTRUCTIONS = (
@@ -68,6 +68,11 @@ PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS = (
     "validated script beats. The product field is null: do not invent, feature, claim, "
     "name or advertise a product. Every shot features SUBJECT only, with the same exact "
     "subject identity phrase, distinguishing marks, place and lighting. "
+    "For subject.subject_id, use one stable ASCII slug for the pet, such as maotai. "
+    "It MUST match ^[A-Za-z0-9_.-]+$ and be no longer than 80 characters; "
+    "do not use spaces, non-ASCII characters, or owner subject keys with colons "
+    "(pet:maotai is NOT a valid subject_id). The subject_id is an identifier, "
+    "not a substitute for the evidence-grounded identity_phrase. "
     "One dominant physical action per shot, continuous opening/closing states, "
     "distinct camera framings, and exactly the requested shot count and duration. "
     "In arc, copy the supplied script beat_ids exactly and in order. Each arc[*].role "
