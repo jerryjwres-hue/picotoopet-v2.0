@@ -17,9 +17,14 @@ _MAX_RESPONSE_BYTES = 256 * 1024
 
 
 class LocalIntelligenceError(RuntimeError):
-    def __init__(self, code: str, message: str | None = None) -> None:
+    def __init__(
+        self, code: str, message: str | None = None,
+        *, diagnostics: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message or code)
         self.code = code
+        # Diagnostic metadata : bounded scalar counters only; no prompts or model output.
+        self.diagnostics = diagnostics or {}
 
 
 class LocalIntelligenceConfig(BaseModel):
@@ -144,10 +149,47 @@ class OpenAiCompatibleLocalIntelligenceAdapter:
         encoded = content.encode("utf-8")
         if len(encoded) > _MAX_RESPONSE_BYTES:
             raise LocalIntelligenceError("LOCAL_MODEL_RESPONSE_TOO_LARGE")
+        # Safe diagnostic fields : neither original content nor prompt enters exceptions.
+        choice = payload["choices"][0]
+        raw_finish = choice.get("finish_reason")
+        finish_reason = (
+            raw_finish
+            if raw_finish in {"stop", "length", "tool_calls", "content_filter", "function_call"}
+            else "unknown"
+        )
+        raw_usage = payload.get("usage")
+        usage = (
+            {
+                key: value
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+                if (value := raw_usage.get(key)) is not None
+                and type(value) is int and 0 <= value <= 1_000_000_000
+            }
+            if isinstance(raw_usage, dict) else {}
+        )
+        diagnostics = {
+            "finish_reason": finish_reason,
+            "usage": usage,
+            "content_bytes": len(encoded),
+        }
         try:
             result = json.loads(content)
         except json.JSONDecodeError as error:
-            raise LocalIntelligenceError("LOCAL_MODEL_JSON_INVALID") from error
+            raise LocalIntelligenceError(
+                "LOCAL_MODEL_JSON_INVALID",
+                diagnostics={
+                    **diagnostics,
+                    "json_error_kind": "syntax",
+                    "json_error_position": error.pos,
+                },
+            ) from error
         if not isinstance(result, dict):
-            raise LocalIntelligenceError("LOCAL_MODEL_JSON_INVALID")
+            raise LocalIntelligenceError(
+                "LOCAL_MODEL_JSON_INVALID",
+                diagnostics={
+                    **diagnostics,
+                    "json_error_kind": "top_level_non_object",
+                    "json_error_position": None,
+                },
+            )
         return result
