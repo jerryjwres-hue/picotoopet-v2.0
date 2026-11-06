@@ -154,7 +154,8 @@ class OpenAiCompatibleLocalIntelligenceAdapter:
         raw_finish = choice.get("finish_reason")
         finish_reason = (
             raw_finish
-            if raw_finish in {"stop", "length", "tool_calls", "content_filter", "function_call"}
+            if isinstance(raw_finish, str)
+            and raw_finish in {"stop", "length", "tool_calls", "content_filter", "function_call"}
             else "unknown"
         )
         raw_usage = payload.get("usage")
