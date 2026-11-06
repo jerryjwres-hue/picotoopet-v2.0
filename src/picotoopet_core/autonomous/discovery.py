@@ -452,6 +452,7 @@ class ContentDiscoveryCoordinator:
         if self.owner_evidence is None:
             raise ContentDiscoveryError("OWNER_SUBJECT_EVIDENCE_BACKEND_MISSING")
         selected: list[dict[str, object]] = []
+        reviewed_packet: str | None = None
         for record in self.owner_evidence.list(
             subject_key=subject_key, limit=_MAX_CONNECTED_EVIDENCE
         ):
@@ -474,6 +475,11 @@ class ContentDiscoveryCoordinator:
             if not isinstance(packet_digest, str) or not re.fullmatch(
                 r"[0-9a-f]{64}", packet_digest
             ):
+                continue
+            if reviewed_packet is None:
+                reviewed_packet = packet_digest
+            if packet_digest != reviewed_packet:
+                # Never splice separate owner reviews into one fictional scene.
                 continue
             selected.append({
                 "evidence_id": record.evidence_id,
