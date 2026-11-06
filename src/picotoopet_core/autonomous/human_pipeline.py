@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from picotoopet_core.automation.models import WorkflowCreate, WorkflowStepCreate
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.creative.director import parse_goal_directives
 from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.ollama.budget import ModelInputBudget
 from picotoopet_core.progress.models import ProgressUpdate
@@ -96,6 +97,13 @@ class HumanGoalWorkflowPlanner:
             raise GoalPipelineError("unsupported goal depth")
         if goal.constraints.get("read_only_research") is not True:
             raise GoalPipelineError("human research goal must remain read-only")
+        owner_subject_key = goal.constraints.get("owner_subject_key")
+        if owner_subject_key is not None and (
+            goal.intent_type != "video.creative"
+            or not isinstance(owner_subject_key, str)
+            or not parse_goal_directives(goal.objective).pet_only
+        ):
+            raise GoalPipelineError("OWNER_SUBJECT_GOAL_SCOPE_INVALID")
 
         steps = [
             WorkflowStepCreate(
@@ -106,6 +114,11 @@ class HumanGoalWorkflowPlanner:
                     "objective": goal.objective,
                     "read_only": True,
                     "max_candidates": self._MAX_CANDIDATES_BY_DEPTH[depth],
+                    **(
+                        {"owner_subject_key": owner_subject_key}
+                        if owner_subject_key is not None
+                        else {}
+                    ),
                 },
                 max_attempts=2,
                 timeout_seconds={"quick": 420, "standard": 900, "deep": 1800}[depth],
@@ -700,17 +713,35 @@ def _handoff_evidence(
                 continue
             seen.add(evidence_id)
             source_id = evidence_id
+            owner_subject = item.get("subject_key")
+            is_owner = (
+                isinstance(owner_subject, str)
+                and owner_subject.startswith("pet:")
+                and item.get("source") == "owner_attestation"
+                and item.get("photo_bytes_verified") is False
+                and item.get("origin") == "manual"
+            )
             source = {
                 "source_id": source_id,
-                "source_type": "canonical_connected_evidence",
-                "product_key": _bounded_text(item.get("product_key"), 240),
+                "source_type": (
+                    "owner_subject_attestation" if is_owner
+                    else "canonical_connected_evidence"
+                ),
+                **(
+                    {"subject_key": _bounded_text(owner_subject, 68)}
+                    if is_owner
+                    else {"product_key": _bounded_text(item.get("product_key"), 240)}
+                ),
                 "evidence_type": _bounded_text(item.get("evidence_type"), 120),
                 "source": _bounded_text(item.get("source"), 120),
                 "platform": _bounded_text(item.get("platform"), 120),
                 "trust_level": _bounded_text(item.get("trust_level"), 40),
                 "captured_at": _bounded_text(item.get("captured_at"), 100),
                 "origin": _bounded_text(item.get("origin"), 120),
-                "provenance": "Mac Core canonical evidence",
+                "provenance": (
+                    "Owner-attested fact, photo bytes not verified"
+                    if is_owner else "Mac Core canonical evidence"
+                ),
             }
             confidence = item.get("confidence")
             if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):

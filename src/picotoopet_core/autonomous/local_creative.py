@@ -100,6 +100,52 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
             or not isinstance(findings_raw, list) or not findings_raw):
             raise GoalPipelineError("GOAL_CREATIVE_EVIDENCE_INSUFFICIENT")
 
+        owner_key = goal.constraints.get("owner_subject_key")
+        owner_statements: list[dict[str, object]] = []
+        if owner_key is not None:
+            # Never infer ownership from a product, a free-text prompt, or model output.
+            if (
+                goal.intent_type != "video.creative"
+                or not isinstance(owner_key, str)
+                or not parse_goal_directives(goal.objective).pet_only
+            ):
+                raise GoalPipelineError("OWNER_SUBJECT_GOAL_SCOPE_INVALID")
+            for item in discovery.get("connected_evidence", []):
+                if not isinstance(item, dict) or item.get("subject_key") != owner_key:
+                    continue
+                evidence_id = item.get("evidence_id")
+                evidence_type = item.get("evidence_type")
+                packet_digest = item.get("reviewed_packet_sha256")
+                if (
+                    not isinstance(evidence_id, str)
+                    or evidence_id not in allowed
+                    or item.get("source") != "owner_attestation"
+                    or item.get("origin") != "manual"
+                    or item.get("photo_bytes_verified") is not False
+                    or item.get("trust_level") not in {"D", "E"}
+                    or not isinstance(packet_digest, str)
+                    or len(packet_digest) != 64
+                    or not all(ch in "0123456789abcdef" for ch in packet_digest)
+                    or evidence_type not in {
+                        "pet.owner.visible_identity",
+                        "pet.owner.visible_scene",
+                        "pet.owner.creative_intent",
+                    }
+                    or not isinstance(item.get("text_excerpt"), str)
+                    or not item["text_excerpt"].strip()
+                ):
+                    continue
+                owner_statements.append(item)
+            if len({item["reviewed_packet_sha256"] for item in owner_statements}) != 1:
+                raise GoalPipelineError("OWNER_SUBJECT_REVIEW_PACKET_MIXED")
+            supported = {item["evidence_type"] for item in owner_statements}
+            if not {
+                "pet.owner.visible_identity",
+                "pet.owner.visible_scene",
+                "pet.owner.creative_intent",
+            }.issubset(supported):
+                raise GoalPipelineError("OWNER_SUBJECT_EVIDENCE_NOT_SYNTHESIZED")
+
         discovery_hash = self._hash_for_step(goal, _DISCOVERY_STEP, _DISCOVERY_RESULT_TYPE)
         synthesis_hash = self._hash_for_step(goal, _SYNTHESIS_STEP, _SYNTHESIS_RESULT_TYPE)
         source_identity = f"goal-synthesis:{synthesis_hash}"
@@ -123,18 +169,48 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
                 finding=item,
                 evidence_ids=used,
             ))
+        for owner in owner_statements:
+            # Owner-attested identity/scene and intended motions are separate,
+            # citable statements, never magically promoted model inferences.
+            rank = len(findings) + 1
+            evidence_id = str(owner["evidence_id"])
+            intent = owner["evidence_type"] == "pet.owner.creative_intent"
+            item = {
+                "rank": rank,
+                "claim_status": "creative_intent" if intent else "owner_attested",
+                "owner_statement": str(owner["text_excerpt"])[:600],
+                "subject_key": owner_key,
+                "evidence_ids": [evidence_id],
+                "source_type": "owner_subject_attestation",
+                "reviewed_packet_sha256": owner["reviewed_packet_sha256"],
+                "photo_bytes_verified": False,
+            }
+            findings.append(CreativeSourceFinding(
+                source_finding_ref=f"goal-discovery:{discovery_hash}:owner:{evidence_id}",
+                result_package_id=f"goal-discovery:{discovery_hash}",
+                result_digest=discovery_hash,
+                work_package_id=f"goal:{goal.goal_id}",
+                finding_rank=rank,
+                finding_digest=self._digest(item),
+                finding=item,
+                evidence_ids=[evidence_id],
+            ))
         source = NormalizedCreativeSourceSet(
             project_key=f"goal-{goal.goal_id}",
             result_package_ids=[],
             result_digests=[],
             findings=findings,
-            evidence_ids=sorted(set(used)),
+            evidence_ids=sorted(
+                set(used) | {str(item["evidence_id"]) for item in owner_statements}
+            ),
             source_set_digest=self._digest({
                 "goal_id": goal.goal_id,
                 "discovery_result_hash": discovery_hash,
                 "synthesis_result_hash": synthesis_hash,
                 "findings": [item.finding_digest for item in findings],
-                "evidence_ids": sorted(set(used)),
+                "evidence_ids": sorted(
+                    set(used) | {str(item["evidence_id"]) for item in owner_statements}
+                ),
             }),
         )
         job = self.creative.create_goal_job(

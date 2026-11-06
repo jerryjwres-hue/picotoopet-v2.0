@@ -16,7 +16,13 @@ from picotoopet_core.autonomous.connected_evidence import (
     Legacy41Importer,
     LegacyImportRecord,
 )
+from picotoopet_core.autonomous.evidence_ledger import CanonicalEvidenceLedger
 from picotoopet_core.autonomous.intake_autopilot import ConnectedIntakeAutopilot
+from picotoopet_core.autonomous.owner_subject_evidence import (
+    OwnerSubjectEvidenceIntake,
+    OwnerSubjectEvidencePacket,
+    OwnerSubjectReview,
+)
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -185,3 +191,49 @@ async def import_legacy_41_database(
             staging_root.rmdir()
         except OSError:
             pass
+
+
+@router.post("/autonomous/owner-subject-evidence/preview")
+def preview_owner_subject_evidence(
+    packet: OwnerSubjectEvidencePacket,
+) -> dict[str, object]:
+    """Read-only packet digest for an explicit owner confirmation before any write."""
+
+    return OwnerSubjectEvidenceIntake.preview(packet)
+
+
+@router.post("/autonomous/owner-subject-evidence/commit", status_code=status.HTTP_201_CREATED)
+def commit_owner_subject_evidence(
+    payload: OwnerSubjectReview,
+    request: Request,
+) -> dict[str, object]:
+    """Ingest only an exact digest-reviewed owner statement into existing Core evidence.
+
+    This is not automatic image verification or production reference approval.
+    It does not schedule a Goal or grant a Comfy/GPU lease.
+    """
+
+    ledger = CanonicalEvidenceLedger(request.app.state.services.database)
+    try:
+        records = OwnerSubjectEvidenceIntake(ledger).ingest(payload)
+    except ValueError as error:
+        reason = str(error)
+        raise ApiError(
+            status_code=409,
+            code=(
+                "OWNER_SUBJECT_REVIEW_MISMATCH"
+                if "DIGEST_MISMATCH" in reason
+                else "OWNER_SUBJECT_EVIDENCE_CONFLICT"
+            ),
+            message="提交的宠物事实表与已核准摘要冲突，或原证据已存在不同内容。",
+            retryable=False,
+        ) from error
+    return {
+        "subject_key": payload.packet.subject_key,
+        "packet_digest": payload.reviewed_digest,
+        "evidence_ids": [item.evidence_id for item in records],
+        "claim_count": len(records),
+        "photo_bytes_verified": False,
+        "production_approval_granted": False,
+        "goal_created": False,
+    }

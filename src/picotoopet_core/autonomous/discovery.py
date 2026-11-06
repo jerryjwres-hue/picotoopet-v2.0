@@ -9,6 +9,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from picotoopet_core.creative.director import parse_goal_directives
 from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.progress.models import ProgressUpdate
 from picotoopet_core.progress.reporter import ProgressReporter
@@ -24,6 +25,7 @@ from .content_radar import (
     normalize_candidates,
     score_candidate,
 )
+from .evidence_ledger import CanonicalEvidenceLedger, EvidenceOrigin, EvidenceTrust
 from .legacy_acquisition import build_discovery_queries
 from .local_intelligence import (
     LocalAnalysisRequest,
@@ -49,6 +51,9 @@ class ContentDiscoveryRequest(BaseModel):
     read_only: bool = True
     max_candidates: int = Field(default=20, ge=1, le=50)
     connected_product_keys: tuple[str, ...] = Field(default=(), max_length=8)
+    owner_subject_key: str | None = Field(
+        default=None, max_length=68, pattern=r"^pet:[a-z0-9][a-z0-9-]{1,63}$"
+    )
 
     @model_validator(mode="after")
     def _require_safe_scope(self) -> ContentDiscoveryRequest:
@@ -56,6 +61,11 @@ class ContentDiscoveryRequest(BaseModel):
             raise ValueError("autonomous discovery must remain read-only")
         if len(set(self.connected_product_keys)) != len(self.connected_product_keys):
             raise ValueError("connected_product_keys must be unique")
+        if self.owner_subject_key is not None and (
+            self.connected_product_keys
+            or not parse_goal_directives(self.objective).pet_only
+        ):
+            raise ValueError("OWNER_SUBJECT_PET_ONLY_SCOPE_INVALID")
         for key in self.connected_product_keys:
             if not key or key != key.strip() or len(key) > 200:
                 raise ValueError("connected_product_keys must contain bounded canonical keys")
@@ -128,6 +138,7 @@ class ContentDiscoveryCoordinator:
         local: LocalIntelligenceAdapter,
         seed_queries: tuple[str, ...] | None = None,
         connected_evidence: _ConnectedEvidenceReader | None = None,
+        owner_evidence: CanonicalEvidenceLedger | None = None,
         progress: ProgressReporter | None = None,
     ) -> None:
         normalized: tuple[str, ...] | None = None
@@ -142,6 +153,7 @@ class ContentDiscoveryCoordinator:
         self.search              = search
         self.local               = local
         self.connected_evidence  = connected_evidence
+        self.owner_evidence      = owner_evidence
         self.progress            = progress
         # ── Explicit seeds remain only a deterministic fixture/manual override. ──
         self.seed_queries        = normalized
@@ -162,7 +174,12 @@ class ContentDiscoveryCoordinator:
             message="正在准备研究目标和已有证据。",
             component="worker",
         )
-        if request.connected_product_keys:
+        if request.owner_subject_key is not None:
+            # Only exact owner-selected pets; never broaden into product matching or web guessing.
+            connected = self._owner_evidence_for_subject(request.owner_subject_key)
+            if not connected:
+                raise ContentDiscoveryError("OWNER_SUBJECT_GROUNDING_MISSING")
+        elif request.connected_product_keys:
             connected = self._connected_evidence_for_keys(request.connected_product_keys)
         else:
             connected = self._connected_evidence_for_objective(request.objective)
@@ -428,6 +445,69 @@ class ContentDiscoveryCoordinator:
             return self.seed_queries
         return build_discovery_queries(objective)
 
+    def _owner_evidence_for_subject(self, subject_key: str) -> list[dict[str, object]]:
+        """Project only explicitly owner-reviewed manual facts from the canonical ledger."""
+
+        if self.owner_evidence is None:
+            raise ContentDiscoveryError("OWNER_SUBJECT_EVIDENCE_BACKEND_MISSING")
+        selected: list[dict[str, object]] = []
+        reviewed_packet: str | None = None
+        for record in self.owner_evidence.list(
+            subject_key=subject_key, limit=_MAX_CONNECTED_EVIDENCE
+        ):
+            if (
+                record.subject_key != subject_key
+                or record.origin_kind is not EvidenceOrigin.MANUAL
+                or record.source != "owner_attestation"
+                or record.trust_level not in {EvidenceTrust.D, EvidenceTrust.E}
+                or record.provenance.get("owner_reviewed") is not True
+                or record.provenance.get("photo_bytes_verified") is not False
+                or record.evidence_type
+                not in {
+                    "pet.owner.visible_identity",
+                    "pet.owner.visible_scene",
+                    "pet.owner.creative_intent",
+                }
+            ):
+                continue
+            packet_digest = record.provenance.get("reviewed_packet_sha256")
+            if not isinstance(packet_digest, str) or not re.fullmatch(
+                r"[0-9a-f]{64}", packet_digest
+            ):
+                continue
+            if reviewed_packet is None:
+                reviewed_packet = packet_digest
+            if packet_digest != reviewed_packet:
+                # Never splice separate owner reviews into one fictional scene.
+                continue
+            selected.append({
+                "evidence_id": record.evidence_id,
+                "subject_key": subject_key,
+                "evidence_type": record.evidence_type,
+                "source": "owner_attestation",
+                "platform": "private_mac_core",
+                "source_url": "",
+                "text_excerpt": _truncate_text(
+                    record.text_value.strip(), _MAX_CONNECTED_TEXT_CHARS
+                ),
+                "numeric_value": None,
+                "trust_level": record.trust_level.value,
+                "confidence": record.confidence,
+                "captured_at": record.captured_at.isoformat(),
+                "origin": record.origin_kind.value,
+                "claim_kind": record.value.get("claim_kind"),
+                "reviewed_packet_sha256": packet_digest,
+                "photo_bytes_verified": False,
+            })
+        kinds = {item["claim_kind"] for item in selected}
+        if not {
+            "visible_identity", "visible_scene", "creative_intent"
+        }.issubset(kinds):
+            # A subject without identity, scene and an explicitly proposed action
+            # cannot become a new Creative Goal on incomplete source evidence.
+            return []
+        return selected
+
     def _connected_evidence_for_keys(
         self,
         product_keys: tuple[str, ...],
@@ -623,7 +703,11 @@ def _render_combined_scout_input(
                 [
                     "",
                     f"Evidence ID: {item['evidence_id']}",
-                    f"Product: {item['product_key']}",
+                    (
+                        f"Owner subject: {item['subject_key']} (owner statement, not photo-verified)"
+                        if "subject_key" in item
+                        else f"Product: {item['product_key']}"
+                    ),
                     f"Source: {item['source']} / {item['platform']}",
                     f"Trust: {item['trust_level']}",
                     f"Confidence: {item['confidence']}",

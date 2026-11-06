@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from picotoopet_core.automation.models import WorkflowStatus
 from picotoopet_core.automation.service import WorkflowService
+from picotoopet_core.creative.director import parse_goal_directives
 
 from .human_pipeline import HumanGoalWorkflowPlanner
 from .models import GoalCreate, GoalOrigin, GoalRecord, GoalStatus, PriorityClass
@@ -41,6 +42,20 @@ class HumanGoalRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=4000)
     depth: GoalDepth = GoalDepth.STANDARD
     local_video_preferred: bool = True  # ── Default local; explicit False preserves WebGPT. ──
+    owner_subject_key: str | None = Field(
+        default=None, max_length=68, pattern=r"^pet:[a-z0-9][a-z0-9-]{1,63}$"
+    )
+
+    @model_validator(mode="after")
+    def restrict_owner_subject_to_pet_story(self) -> HumanGoalRequest:
+        # The subject scope is opt-in: no legacy commercial or autonomous Goal changes.
+        if self.owner_subject_key is not None and (
+            self.goal_type is not HumanGoalType.VIDEO_CREATIVE
+            or not self.local_video_preferred
+            or not parse_goal_directives(self.objective).pet_only
+        ):
+            raise ValueError("OWNER_SUBJECT_SCOPE_REQUIRES_LOCAL_PET_ONLY_VIDEO")
+        return self
 
 
 class GoalTemplate(BaseModel):
@@ -138,6 +153,11 @@ class HumanGoalService:
                         }
                     ),
                     "read_only_research": True,
+                    **(
+                        {"owner_subject_key": request.owner_subject_key}
+                        if request.owner_subject_key is not None
+                        else {}
+                    ),
                 },
                 budget_class="local-first",
                 idempotency_key=f"human:{key}",

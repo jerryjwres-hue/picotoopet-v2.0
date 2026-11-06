@@ -21,6 +21,7 @@ from picotoopet_core.results.repository import ResultRepository
 from picotoopet_core.worker.handlers import WorkerHandler
 
 from .connected_evidence import ConnectedEvidenceRepository
+from .evidence_ledger import CanonicalEvidenceLedger
 from .discovery import ContentDiscoveryCoordinator
 from .human_pipeline import GoalHandoffCoordinator, GoalSynthesisCoordinator
 from .local_intelligence import LocalIntelligenceCoordinator
@@ -107,6 +108,7 @@ class AutonomousBackgroundCoordinator:
                 local=handler_owner.adapter,
                 # ── The model receives only bounded evidence records, never a DB handle. ──
                 connected_evidence=self._connected_evidence_from_manager_database(),
+                owner_evidence=self._owner_evidence_from_manager_database(),
                 progress=progress_reporter,
             ).handler
             if research_probe is None:
@@ -411,6 +413,23 @@ class AutonomousBackgroundCoordinator:
             return None
         try:
             return ConnectedEvidenceRepository(database)
+        except (TypeError, ValueError):
+            return None
+
+    def _owner_evidence_from_manager_database(self) -> CanonicalEvidenceLedger | None:
+        """Read private subject facts only from the existing managed Core database."""
+
+        database = getattr(self.manager, "database", None)
+        database_path = getattr(database, "path", None)
+        if not isinstance(database_path, Path):
+            return None
+        resolved = database_path.expanduser().resolve()
+        if resolved.name != "core.db" or resolved.parent.name != "database":
+            return None
+        if RuntimePaths.from_root(resolved.parent.parent).database_file != resolved:
+            return None
+        try:
+            return CanonicalEvidenceLedger(database)
         except (TypeError, ValueError):
             return None
 
