@@ -302,3 +302,46 @@ def test_creative_preserves_owner_statement_vs_proposed_motion() -> None:
         "owner_attested", "creative_intent",
     }
     assert all(x["photo_bytes_verified"] is False for x in items[1:])
+
+
+def test_authenticated_owner_review_intake_is_separate_from_goal_and_gpu(
+    tmp_path: Path,
+) -> None:
+    """The API previews first; even a reviewed commit creates no Goal or approval."""
+    from fastapi.testclient import TestClient
+    from picotoopet_core.api.app import create_app
+    from picotoopet_core.config.models import AppSettings
+    from picotoopet_core.config.paths import RuntimePaths
+
+    token = "0123456789abcdef0123456789abcdef"
+    app = create_app(AppSettings(
+        paths=RuntimePaths.from_root(tmp_path / "api-runtime"), api_token=token,
+    ))
+    client = TestClient(app)
+    packet = _packet().model_dump(mode="json")
+    route = "/api/v1/autonomous/owner-subject-evidence"
+    assert client.post(route + "/preview", json=packet).status_code == 401
+
+    authorized = {"Authorization": f"Bearer {token}"}
+    preview = client.post(route + "/preview", json=packet, headers=authorized)
+    assert preview.status_code == 200
+    digest = preview.json()["packet_digest"]
+    assert preview.json()["photo_bytes_verified"] is False
+
+    denied = client.post(route + "/commit", headers=authorized, json={
+        "packet": packet, "reviewed_digest": "f" * 64, "owner_confirmed": True,
+    })
+    assert denied.status_code == 409
+    accepted = client.post(route + "/commit", headers=authorized, json={
+        "packet": packet, "reviewed_digest": digest, "owner_confirmed": True,
+    })
+    assert accepted.status_code == 201
+    assert accepted.json()["goal_created"] is False
+    assert accepted.json()["production_approval_granted"] is False
+    assert len(accepted.json()["evidence_ids"]) == 3
+
+    replay = client.post(route + "/commit", headers=authorized, json={
+        "packet": packet, "reviewed_digest": digest, "owner_confirmed": True,
+    })
+    assert replay.status_code == 201
+    assert replay.json()["evidence_ids"] == accepted.json()["evidence_ids"]
