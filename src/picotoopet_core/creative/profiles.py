@@ -36,6 +36,8 @@ class CreativeStageDefinition:
     # "MODEL": the bounded local adapter produces the stage. "DERIVED": Core builds it
     # deterministically from earlier validated stages (no model call).
     executor: str = "MODEL"
+    # Narrow repair-only switch : native Ollama JSON Schema output for pet-only Bible.
+    schema_enforced_on_correction: bool = False
 
     @property
     def return_schema(self) -> dict[str, Any]:
@@ -154,4 +156,5 @@ def pet_only_video_bible_stage(stage: CreativeStageDefinition) -> CreativeStageD
         template_version=PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION,
         system_prompt=_POLICY + PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS,
         result_model=PetOnlyVideoBibleDraft,
+        schema_enforced_on_correction=True,
     )
