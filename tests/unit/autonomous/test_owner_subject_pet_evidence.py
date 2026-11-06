@@ -275,9 +275,14 @@ def test_creative_preserves_owner_statement_vs_proposed_motion() -> None:
         objective=OBJECTIVE,
     )
     captured = {}
-    service = SimpleNamespace(create_goal_job=lambda **kw: (
-        captured.update(kw) or SimpleNamespace(creative_job_id="created-1")
-    ))
+    service = SimpleNamespace(
+        repository=SimpleNamespace(
+            database=SimpleNamespace(fetchone=lambda *_args: None)
+        ),
+        create_goal_job=lambda **kw: (
+            captured.update(kw) or SimpleNamespace(creative_job_id="created-1")
+        ),
+    )
     coordinator = GoalLocalCreativeCoordinator.__new__(GoalLocalCreativeCoordinator)
     coordinator.creative = service
     coordinator.goal = lambda goal_id: goal
@@ -285,7 +290,7 @@ def test_creative_preserves_owner_statement_vs_proposed_motion() -> None:
         discovery if kw["label"] == "discovery" else synthesis
     )
     coordinator._hash_for_step = lambda *a, **kw: (
-        "d" * 64 if kw["label"] == "discovery" else "e" * 64
+        "d" * 64 if a[1] == "research-evidence" else "e" * 64
     )
     result = coordinator.handler(_task("autonomous.goal_creative.v1", {
         "goal_id": "goal-owner-1",
