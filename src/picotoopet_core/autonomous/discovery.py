@@ -9,10 +9,8 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.creative.director import parse_goal_directives
-
-from .evidence_ledger import CanonicalEvidenceLedger, EvidenceOrigin, EvidenceTrust
+from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.progress.models import ProgressUpdate
 from picotoopet_core.progress.reporter import ProgressReporter
 from picotoopet_core.research.execution import ResearchGatewayExecutionError
@@ -27,6 +25,7 @@ from .content_radar import (
     normalize_candidates,
     score_candidate,
 )
+from .evidence_ledger import CanonicalEvidenceLedger, EvidenceOrigin, EvidenceTrust
 from .legacy_acquisition import build_discovery_queries
 from .local_intelligence import (
     LocalAnalysisRequest,

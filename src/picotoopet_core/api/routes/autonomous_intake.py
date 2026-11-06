@@ -16,8 +16,8 @@ from picotoopet_core.autonomous.connected_evidence import (
     Legacy41Importer,
     LegacyImportRecord,
 )
-from picotoopet_core.autonomous.intake_autopilot import ConnectedIntakeAutopilot
 from picotoopet_core.autonomous.evidence_ledger import CanonicalEvidenceLedger
+from picotoopet_core.autonomous.intake_autopilot import ConnectedIntakeAutopilot
 from picotoopet_core.autonomous.owner_subject_evidence import (
     OwnerSubjectEvidenceIntake,
     OwnerSubjectEvidencePacket,

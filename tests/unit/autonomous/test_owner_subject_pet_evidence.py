@@ -225,6 +225,7 @@ def test_explicit_owner_subject_scope_is_in_frozen_discovery_plan() -> None:
             "local_video_preferred": True, "owner_subject_key": "pet:maotai",
         },
         budget_class="local-first",
+        pinned=False,
         status=GoalStatus.READY,
         idempotency_key="owner-pet-test",
         created_at=now,
@@ -265,7 +266,7 @@ def test_creative_preserves_owner_statement_vs_proposed_motion() -> None:
     }
     synthesis = {
         "goal_id": "goal-owner-1",
-        "evidence_ids": expected,
+        "evidence_ids": [expected[0]],
         "findings": ["An unverified analysis inference unrelated to owner testimony."],
     }
     goal = SimpleNamespace(
@@ -302,6 +303,7 @@ def test_creative_preserves_owner_statement_vs_proposed_motion() -> None:
         "owner_attested", "creative_intent",
     }
     assert all(x["photo_bytes_verified"] is False for x in items[1:])
+    assert set(expected) == set(captured["source_set"].evidence_ids)
 
 
 def test_authenticated_owner_review_intake_is_separate_from_goal_and_gpu(

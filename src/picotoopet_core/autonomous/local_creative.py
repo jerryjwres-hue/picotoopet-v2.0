@@ -118,7 +118,7 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
                 packet_digest = item.get("reviewed_packet_sha256")
                 if (
                     not isinstance(evidence_id, str)
-                    or evidence_id not in used
+                    or evidence_id not in allowed
                     or item.get("source") != "owner_attestation"
                     or item.get("origin") != "manual"
                     or item.get("photo_bytes_verified") is not False
@@ -136,6 +136,8 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
                 ):
                     continue
                 owner_statements.append(item)
+            if len({item["reviewed_packet_sha256"] for item in owner_statements}) != 1:
+                raise GoalPipelineError("OWNER_SUBJECT_REVIEW_PACKET_MIXED")
             supported = {item["evidence_type"] for item in owner_statements}
             if not {
                 "pet.owner.visible_identity",
@@ -198,13 +200,17 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
             result_package_ids=[],
             result_digests=[],
             findings=findings,
-            evidence_ids=sorted(set(used)),
+            evidence_ids=sorted(
+                set(used) | {str(item["evidence_id"]) for item in owner_statements}
+            ),
             source_set_digest=self._digest({
                 "goal_id": goal.goal_id,
                 "discovery_result_hash": discovery_hash,
                 "synthesis_result_hash": synthesis_hash,
                 "findings": [item.finding_digest for item in findings],
-                "evidence_ids": sorted(set(used)),
+                "evidence_ids": sorted(
+                    set(used) | {str(item["evidence_id"]) for item in owner_statements}
+                ),
             }),
         )
         job = self.creative.create_goal_job(

@@ -28,7 +28,9 @@ visible-scene and action-intent evidence. Do not retry or alter the terminal Job
 - Existing Synthesis and Creative consume real Discovery/ResultStore hashes.
   Synthesized text remains `unverified_inference`; individual reviewed owner
   statements become `owner_attested` or `creative_intent` with their *own*
-  evidence IDs and digests. A synthesis that drops any required type fails closed.
+  evidence IDs and digests, even when the model omits some owner evidence IDs from
+  its analysis. The direct Discovery identity remains bound to the original
+  ResultStore hash; no additional untrusted inference is promoted.
 
 ## Human review and privacy
 

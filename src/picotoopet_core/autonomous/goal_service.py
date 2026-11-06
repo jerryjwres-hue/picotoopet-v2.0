@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from picotoopet_core.automation.models import WorkflowStatus
 from picotoopet_core.automation.service import WorkflowService
-
 from picotoopet_core.creative.director import parse_goal_directives
 
 from .human_pipeline import HumanGoalWorkflowPlanner
