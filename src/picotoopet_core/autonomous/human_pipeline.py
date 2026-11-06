@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from picotoopet_core.automation.models import WorkflowCreate, WorkflowStepCreate
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.creative.director import parse_goal_directives
 from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.ollama.budget import ModelInputBudget
 from picotoopet_core.progress.models import ProgressUpdate
@@ -96,6 +97,13 @@ class HumanGoalWorkflowPlanner:
             raise GoalPipelineError("unsupported goal depth")
         if goal.constraints.get("read_only_research") is not True:
             raise GoalPipelineError("human research goal must remain read-only")
+        owner_subject_key = goal.constraints.get("owner_subject_key")
+        if owner_subject_key is not None and (
+            goal.intent_type != "video.creative"
+            or not isinstance(owner_subject_key, str)
+            or not parse_goal_directives(goal.objective).pet_only
+        ):
+            raise GoalPipelineError("OWNER_SUBJECT_GOAL_SCOPE_INVALID")
 
         steps = [
             WorkflowStepCreate(
@@ -106,6 +114,11 @@ class HumanGoalWorkflowPlanner:
                     "objective": goal.objective,
                     "read_only": True,
                     "max_candidates": self._MAX_CANDIDATES_BY_DEPTH[depth],
+                    **(
+                        {"owner_subject_key": owner_subject_key}
+                        if owner_subject_key is not None
+                        else {}
+                    ),
                 },
                 max_attempts=2,
                 timeout_seconds={"quick": 420, "standard": 900, "deep": 1800}[depth],
