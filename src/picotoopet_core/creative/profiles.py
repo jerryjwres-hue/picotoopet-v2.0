@@ -36,7 +36,8 @@ class CreativeStageDefinition:
     # "MODEL": the bounded local adapter produces the stage. "DERIVED": Core builds it
     # deterministically from earlier validated stages (no model call).
     executor: str = "MODEL"
-    # Narrow repair-only switch : native Ollama JSON Schema output for pet-only Bible.
+    # Production defaults     : preserve legacy JSON-object behavior for every old profile.
+    schema_enforced_on_first_attempt: bool = False
     schema_enforced_on_correction: bool = False
 
     @property
@@ -156,5 +157,30 @@ def pet_only_video_bible_stage(stage: CreativeStageDefinition) -> CreativeStageD
         template_version=PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION,
         system_prompt=_POLICY + PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS,
         result_model=PetOnlyVideoBibleDraft,
+        schema_enforced_on_first_attempt=True,
+        schema_enforced_on_correction=True,
+    )
+
+
+# Only opt-in pet-only v2 Goals select new schema-first contracts; v1/v2 product stages
+# retain their original template IDs and model-output semantics.
+_PET_ONLY_STAGE_TEMPLATES = {
+    CreativeStageKind.IDEA_RANKING: "idea-ranking-pet-only-v1.0.0",
+    CreativeStageKind.CREATIVE_BRIEF: "creative-brief-pet-only-v1.0.0",
+    CreativeStageKind.SCRIPT: "creative-script-pet-only-v1.0.0",
+}
+
+
+def pet_only_creative_stage(stage: CreativeStageDefinition) -> CreativeStageDefinition:
+    """Opt in to schema-first output only for a NEW pet-only v2 Creative Job."""
+    if stage.stage_kind is CreativeStageKind.VIDEO_BIBLE:
+        return pet_only_video_bible_stage(stage)
+    version = _PET_ONLY_STAGE_TEMPLATES.get(stage.stage_kind)
+    if version is None:
+        return stage  # Derived shot plan has no model call; old profile remains unchanged.
+    return replace(
+        stage,
+        template_version=version,
+        schema_enforced_on_first_attempt=True,
         schema_enforced_on_correction=True,
     )

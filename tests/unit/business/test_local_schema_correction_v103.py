@@ -16,6 +16,7 @@ from picotoopet_core.business.local_intelligence import (
 from picotoopet_core.creative.models import CreativeStageKind
 from picotoopet_core.creative.profiles import (
     creative_profile_definition,
+    pet_only_creative_stage,
     pet_only_video_bible_stage,
 )
 
@@ -75,13 +76,13 @@ def _stages() -> tuple[Any, Any]:
     return base, pet_only_video_bible_stage(base)
 
 
-def test_pet_only_first_attempt_keeps_original_json_object() -> None:
+def test_pet_only_first_attempt_is_schema_constrained() -> None:
     _, pet_only = _stages()
     request, output = _capture_call(pet_only, correction=None)
 
-    # First attempt stays fixed : only the second quality-repair call gets schema mode.
-    assert pet_only.template_version == "video-bible-pet-only-v1.0.3"
-    assert request["response_format"] == {"type": "json_object"}
+    # First-attempt policy    : all new pet-only v2 model stages use strict output.
+    assert pet_only.template_version == "video-bible-pet-only-v1.0.4"
+    assert request["response_format"]["type"] == "json_schema"
     assert output == {"synthetic": True}
 
 
@@ -132,3 +133,44 @@ def test_malformed_stop_response_remains_fail_closed_even_with_schema() -> None:
     assert output.diagnostics["json_error_kind"] == "syntax"
     assert output.diagnostics["json_error_position"] == len(invalid)
     assert "synthetic" not in str(output)
+
+
+def test_every_pet_only_v2_model_stage_is_schema_first() -> None:
+    profile = creative_profile_definition("creative.content_plan.v2")
+    expected_versions = {
+        CreativeStageKind.IDEA_RANKING: "idea-ranking-pet-only-v1.0.0",
+        CreativeStageKind.CREATIVE_BRIEF: "creative-brief-pet-only-v1.0.0",
+        CreativeStageKind.SCRIPT: "creative-script-pet-only-v1.0.0",
+        CreativeStageKind.VIDEO_BIBLE: "video-bible-pet-only-v1.0.4",
+    }
+    for kind, version in expected_versions.items():
+        base = profile.stage(kind)
+        opt_in = pet_only_creative_stage(base)
+        assert opt_in.template_version == version
+        assert opt_in.result_model is (
+            base.result_model if kind is not CreativeStageKind.VIDEO_BIBLE
+            else pet_only_video_bible_stage(base).result_model
+        )
+        assert opt_in.schema_enforced_on_first_attempt is True
+        assert opt_in.schema_enforced_on_correction is True
+        for correction in (None, "Synthetic quality repair only."):
+            request, output = _capture_call(opt_in, correction=correction)
+            data = request["response_format"]
+            assert data["type"] == "json_schema"
+            assert data["json_schema"]["schema"] == opt_in.return_schema
+            assert data["json_schema"]["strict"] is True
+            assert data["json_schema"]["name"] == (
+                "pet_only_video_bible" if kind is CreativeStageKind.VIDEO_BIBLE
+                else f"pet_only_{kind.value.replace('.', '_')}"
+            )
+            assert output == {"synthetic": True}
+
+        # Legacy v2 product stages : no schema enforcement, even with a correction.
+        request, output = _capture_call(base, correction="Synthetic correction only.")
+        assert request["response_format"] == {"type": "json_object"}
+        assert output == {"synthetic": True}
+
+    # Deterministic stage     : never ask the model to generate a shot plan.
+    derived = profile.stage(CreativeStageKind.SHOT_PLAN)
+    assert pet_only_creative_stage(derived) is derived
+    assert derived.executor == "DERIVED"

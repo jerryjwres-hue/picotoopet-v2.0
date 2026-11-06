@@ -28,7 +28,7 @@ from .models import (
 )
 from .package import CreativePackageFinalizer
 from .profiles import (
-    CreativeStageDefinition, creative_profile_definition, pet_only_video_bible_stage,
+    CreativeStageDefinition, creative_profile_definition, pet_only_creative_stage,
 )
 from .quality import CreativeQualityGate
 from .repository import CreativeRepository
@@ -151,13 +151,17 @@ class CreativeIntelligenceCoordinator:
         if source_set.source_set_digest != job.source_set_digest:
             raise ValueError("CREATIVE_SOURCE_SET_DIGEST_MISMATCH")
         profile = creative_profile_definition(job.creative_profile.value)
+        # Explicit pet-only v2 Goals select schema-first model stages without affecting
+        # old commercial/v1 jobs or the deterministic derived shot-plan stage.
+        pet_only_v2 = (
+            profile.profile_id == "creative.content_plan.v2"
+            and parse_goal_directives(job.creative_objective).pet_only
+        )
         previous: dict[str, dict[str, Any]] = {}
         for stage_definition in profile.stages:
             stage_kind = stage_definition.stage_kind
-            if (stage_kind is CreativeStageKind.VIDEO_BIBLE
-                    and parse_goal_directives(job.creative_objective).pet_only):
-                # Goal-owned opt-in selects a separate contract; the model cannot waive product checks.
-                stage_definition = pet_only_video_bible_stage(stage_definition)
+            if pet_only_v2:
+                stage_definition = pet_only_creative_stage(stage_definition)
             context = self._stage_context(
                 job.creative_objective,
                 source_set,

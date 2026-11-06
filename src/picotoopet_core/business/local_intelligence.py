@@ -120,15 +120,26 @@ class OpenAiCompatibleLocalIntelligenceAdapter:
         )
         if correction:
             instructions += " Correction for this one retry only: " + correction[:2000]
-        # Default behavior       : keep all other stages on the existing JSON-object path.
+        # Legacy default       : product/v1/business stages retain JSON-object generation.
         response_format: dict[str, Any] = {"type": "json_object"}
-        if correction and getattr(profile, "schema_enforced_on_correction", False) is True:
-            # Pet-only correction : constrain JSON syntax/shape at generation time;
-            #                        strict Pydantic validation still runs after parsing.
+        schema_first = getattr(profile, "schema_enforced_on_first_attempt", False) is True
+        schema_repair = (
+            bool(correction)
+            and getattr(profile, "schema_enforced_on_correction", False) is True
+        )
+        if schema_first or schema_repair:
+            # Trusted opt-in    : bind real output schema on the first pet-only model call.
+            #                     The downstream quality gate still checks source grounding.
+            stage_kind = getattr(profile, "stage_kind", None)
+            stage_name = getattr(stage_kind, "value", "")
+            schema_name = (
+                "pet_only_video_bible" if stage_name == "video_bible.v1"
+                else f"pet_only_{stage_name.replace('.', '_')}"
+            )
             response_format = {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "pet_only_video_bible",
+                    "name": schema_name,
                     "schema": profile.return_schema,
                     "strict": True,
                 },
