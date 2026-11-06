@@ -28,7 +28,7 @@ MAX_SHOT_SECONDS = 5.0
 MAX_DIRECTIVE_SHOTS = 12
 
 VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-v1.0.0"
-PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-pet-only-v1.0.4"
+PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION = "video-bible-pet-only-v1.0.5"
 SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION = "shot-plan-from-bible-v1.0.0"
 
 STORY_DIRECTOR_INSTRUCTIONS = (
@@ -73,8 +73,19 @@ PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS = (
     "do not use spaces, non-ASCII characters, or owner subject keys with colons "
     "(pet:maotai is NOT a valid subject_id). The subject_id is an identifier, "
     "not a substitute for the evidence-grounded identity_phrase. "
-    "One dominant physical action per shot, continuous opening/closing states, "
-    "distinct camera framings, and exactly the requested shot count and duration. "
+    "Every full distinguishing_marks string MUST occur verbatim (case-insensitive) "
+    "inside subject.identity_phrase; preserve all source-supported marks, do not "
+    "drop or paraphrase them to bypass a quality check. "
+    "For three consecutive shots, draft the state handoffs FIRST: "
+    "shots[0].closing_state MUST equal shots[1].opening_state character-for-character "
+    "and shots[1].closing_state MUST equal shots[2].opening_state character-for-character; "
+    "set the first two handoff_to_next values to CONTINUOUS. "
+    "Keep fixed body pose, physical accessories, scene and lighting; static camera "
+    "may use different framings without camera movement. "
+    "The final closing_state must differ visibly and truthfully from the first "
+    "opening_state through the already permitted subtle emotional/eye expression, "
+    "not head turns, new poses, props, or unsupported actions. "
+    "One dominant physical action per shot and exactly the requested shot count and duration. "
     "In arc, copy the supplied script beat_ids exactly and in order. Each arc[*].role "
     "MUST be exactly one of HOOK, DEMO, PAYOFF, CTA, BRIDGE (uppercase). "
     "Never use ACTION, INTRO, CLIMAX, RESOLUTION, or other invented role values. "

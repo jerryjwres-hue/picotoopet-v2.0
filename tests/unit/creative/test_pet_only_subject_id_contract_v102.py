@@ -54,7 +54,7 @@ def test_pet_only_model_prompt_contract_matches_schema() -> None:
     # Versioned model contract : new Goals use v1.0.2; legacy profile is untouched.
     assert base.template_version == VIDEO_BIBLE_TEMPLATE_VERSION
     assert pet_only.template_version == PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION
-    assert pet_only.template_version == "video-bible-pet-only-v1.0.4"
+    assert pet_only.template_version == "video-bible-pet-only-v1.0.5"
     assert pet_only.result_model is PetOnlyVideoBibleDraft
     assert pet_only.max_output_tokens == base.max_output_tokens
     assert pet_only.max_model_attempts == base.max_model_attempts

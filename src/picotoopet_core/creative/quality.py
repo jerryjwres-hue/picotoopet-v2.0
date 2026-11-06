@@ -438,7 +438,9 @@ class CreativeQualityGate:
             return CreativeQualityDecision(
                 outcome=CreativeQualityOutcome.RETRY,
                 reasons=[item.code for item in findings][:20],
-                correction_instruction=correction_for(findings),
+                correction_instruction=correction_for(
+                    findings, pet_only=bool(directives is not None and directives.pet_only)
+                ),
             ), None
         sealed = seal_bible(
             draft,
