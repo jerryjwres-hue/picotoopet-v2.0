@@ -81,7 +81,7 @@ def test_pet_only_first_attempt_is_schema_constrained() -> None:
     request, output = _capture_call(pet_only, correction=None)
 
     # First-attempt policy    : all new pet-only v2 model stages use strict output.
-    assert pet_only.template_version == "video-bible-pet-only-v1.0.4"
+    assert pet_only.template_version == "video-bible-pet-only-v1.0.5"
     assert request["response_format"]["type"] == "json_schema"
     assert output == {"synthetic": True}
 
@@ -141,7 +141,7 @@ def test_every_pet_only_v2_model_stage_is_schema_first() -> None:
         CreativeStageKind.IDEA_RANKING: "idea-ranking-pet-only-v1.0.0",
         CreativeStageKind.CREATIVE_BRIEF: "creative-brief-pet-only-v1.0.0",
         CreativeStageKind.SCRIPT: "creative-script-pet-only-v1.0.0",
-        CreativeStageKind.VIDEO_BIBLE: "video-bible-pet-only-v1.0.4",
+        CreativeStageKind.VIDEO_BIBLE: "video-bible-pet-only-v1.0.5",
     }
     for kind, version in expected_versions.items():
         base = profile.stage(kind)
