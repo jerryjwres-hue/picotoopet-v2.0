@@ -120,6 +120,19 @@ class OpenAiCompatibleLocalIntelligenceAdapter:
         )
         if correction:
             instructions += " Correction for this one retry only: " + correction[:2000]
+        # Default behavior       : keep all other stages on the existing JSON-object path.
+        response_format: dict[str, Any] = {"type": "json_object"}
+        if correction and getattr(profile, "schema_enforced_on_correction", False) is True:
+            # Pet-only correction : constrain JSON syntax/shape at generation time;
+            #                        strict Pydantic validation still runs after parsing.
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "pet_only_video_bible",
+                    "schema": profile.return_schema,
+                    "strict": True,
+                },
+            }
         request = {
             "model": self.config.model_id,
             "messages": [
@@ -129,7 +142,7 @@ class OpenAiCompatibleLocalIntelligenceAdapter:
             "temperature": profile.temperature,
             "max_tokens": profile.max_output_tokens,
             "stream": False,
-            "response_format": {"type": "json_object"},
+            "response_format": response_format,
         }
         try:
             response = self.client.post("chat/completions", json=request)
