@@ -713,17 +713,35 @@ def _handoff_evidence(
                 continue
             seen.add(evidence_id)
             source_id = evidence_id
+            owner_subject = item.get("subject_key")
+            is_owner = (
+                isinstance(owner_subject, str)
+                and owner_subject.startswith("pet:")
+                and item.get("source") == "owner_attestation"
+                and item.get("photo_bytes_verified") is False
+                and item.get("origin") == "manual"
+            )
             source = {
                 "source_id": source_id,
-                "source_type": "canonical_connected_evidence",
-                "product_key": _bounded_text(item.get("product_key"), 240),
+                "source_type": (
+                    "owner_subject_attestation" if is_owner
+                    else "canonical_connected_evidence"
+                ),
+                **(
+                    {"subject_key": _bounded_text(owner_subject, 68)}
+                    if is_owner
+                    else {"product_key": _bounded_text(item.get("product_key"), 240)}
+                ),
                 "evidence_type": _bounded_text(item.get("evidence_type"), 120),
                 "source": _bounded_text(item.get("source"), 120),
                 "platform": _bounded_text(item.get("platform"), 120),
                 "trust_level": _bounded_text(item.get("trust_level"), 40),
                 "captured_at": _bounded_text(item.get("captured_at"), 100),
                 "origin": _bounded_text(item.get("origin"), 120),
-                "provenance": "Mac Core canonical evidence",
+                "provenance": (
+                    "Owner-attested fact, photo bytes not verified"
+                    if is_owner else "Mac Core canonical evidence"
+                ),
             }
             confidence = item.get("confidence")
             if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
