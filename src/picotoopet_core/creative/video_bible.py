@@ -476,7 +476,9 @@ def _multi_shot_findings(draft: VideoBibleDraft, add) -> None:  # type: ignore[n
         )
 
 
-def correction_for(findings: list[BibleFinding]) -> str:
+def correction_for(
+    findings: list[BibleFinding], *, pet_only: bool = False
+) -> str:
     """Bounded repair instruction for the single local retry (adapter caps it at 2000)."""
 
     parts = [
@@ -484,7 +486,37 @@ def correction_for(findings: list[BibleFinding]) -> str:
         + (f": {item.detail}" if item.detail else "")
         for item in findings[:12]
     ]
-    return "Repair only these video_bible.v1 defects and keep everything else: " + "; ".join(parts)
+    original = "Repair only these video_bible.v1 defects and keep everything else: " + "; ".join(parts)
+    if not pet_only:
+        return original  # Legacy product/video retry text is byte-identical.
+
+    codes = {item.code for item in findings}
+    guidance: list[str] = []
+    if "IDENTITY_MARK_NOT_IN_PHRASE" in codes:
+        guidance.append(
+            "Copy EACH full distinguishing_marks entry exactly into subject.identity_phrase "
+            "(case-insensitive substring); do not delete or weaken source-backed marks."
+        )
+    if {"HANDOFF_BROKEN", "STORY_STATE_GAP", "STORY_HANDOFF_NOT_CONTINUOUS"} & codes:
+        guidance.append(
+            "Make shots[0].closing_state IDENTICAL to shots[1].opening_state and "
+            "shots[1].closing_state IDENTICAL to shots[2].opening_state, exactly; "
+            "set both handoff_to_next to CONTINUOUS, not approximate paraphrases."
+        )
+    if "STORY_NO_CHANGE" in codes:
+        guidance.append(
+            "Make final closing_state visibly different from first opening_state using "
+            "only an already allowed subtle eye/emotional change; preserve the fixed pose, "
+            "scene, and accessories; invent no new action."
+        )
+    if not guidance:
+        return original
+    # Front-load operational instructions : the adapter truncates corrections at 2000.
+    return (
+        "Repair only the listed video_bible.v1 defects; no invented evidence. "
+        + " ".join(guidance)
+        + " Exact findings: " + "; ".join(parts)
+    )[:2000]
 
 
 # ── Deterministic derivation of the existing shot_plan.v1 ──────────────────────────────
