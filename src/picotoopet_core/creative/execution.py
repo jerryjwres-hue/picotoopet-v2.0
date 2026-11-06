@@ -195,11 +195,18 @@ class CreativeIntelligenceCoordinator:
                     profile=profile,
                 )
             except LocalIntelligenceError as error:
+                # Audit-only metadata   : persist fixed-field diagnostics, never raw response.
+                diagnostic_json = (
+                    json.dumps(error.diagnostics, sort_keys=True, separators=(",", ":"))
+                    if error.code == "LOCAL_MODEL_JSON_INVALID" and error.diagnostics
+                    else None
+                )
                 self.repository.update_stage(
                     stage.stage_run_id,
                     status="NeedsHuman",
                     quality_outcome=CreativeQualityOutcome.NEEDS_HUMAN,
                     failure_code=error.code,
+                    error_message=diagnostic_json,
                     finished=True,
                 )
                 self.repository.transition_job(
