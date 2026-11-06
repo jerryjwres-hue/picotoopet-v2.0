@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import httpx
-import pytest
 
 from picotoopet_core.business.local_intelligence import (
     LocalIntelligenceConfig,
