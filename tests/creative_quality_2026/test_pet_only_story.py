@@ -233,7 +233,7 @@ def test_pet_only_arc_role_invalid_enum_retries_once_without_coercion(
         assert stage is not None
         assert stage.model_attempts == 2
         # New Goal contract : the strict pet-only template now carries the slug requirement.
-        assert stage.template_version == "video-bible-pet-only-v1.0.4"
+        assert stage.template_version == "video-bible-pet-only-v1.0.5"
         package = runtime.service.get_package(job.creative_job_id)
         if second_role_valid:
             assert summary.summary["status"] == "creative_ready"
