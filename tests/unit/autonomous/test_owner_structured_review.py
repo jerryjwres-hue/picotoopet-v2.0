@@ -336,6 +336,81 @@ def test_preview_rejects_actor_mismatch_and_duplicate_or_poisoned_fields(
         )
 
 
+def test_static_story_opt_in_is_explicit_digest_bound_and_replay_safe(
+    review_database: Database,
+) -> None:
+    """Policy acceptance requires an owner's explicit typed choice in this review."""
+
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    base_request, legacy_preview = _preview_request(service, principal)
+    selected_request = base_request.model_copy(
+        update={"story_policy_opt_in": "static-pet-story-v1.0.0"}
+    )
+    selected_preview = service.preview(selected_request, principal)
+
+    # Consent is independent : permitted blink/breathing does not auto-select policy.
+    assert legacy_preview.story_policy_opt_in is None
+    assert selected_preview.outcome == "READY"
+    assert selected_preview.story_policy_opt_in == "static-pet-story-v1.0.0"
+    assert selected_preview.review_digest != legacy_preview.review_digest
+    assert selected_preview.preview_digest != legacy_preview.preview_digest
+
+    committed_request = OwnerStructuredReviewCommitRequest(
+        preview_request=selected_request,
+        source_revision_digest=selected_preview.source_revision_digest,
+        review_digest=selected_preview.review_digest,
+        preview_digest=selected_preview.preview_digest,
+    )
+    committed = service.commit(
+        committed_request, principal, idempotency_key="synthetic-static-policy-opt-in"
+    )
+    assert committed.story_policy_opt_in == "static-pet-story-v1.0.0"
+    assert (
+        service.commit(
+            committed_request, principal, idempotency_key="synthetic-static-policy-opt-in"
+        )
+        == committed
+    )
+
+    # A caller cannot replay the same approval with a policy choice silently changed.
+    tampered = committed_request.model_copy(
+        update={"preview_request": base_request}
+    )
+    with pytest.raises(OwnerStructuredReviewError) as denied:
+        service.commit(tampered, principal, idempotency_key="synthetic-static-policy-opt-in")
+    assert denied.value.status_code == 409
+    assert denied.value.code == "OWNER_REVIEW_IDEMPOTENCY_CONFLICT"
+
+
+def test_static_story_opt_in_rejects_missing_temporal_or_framing_support(
+    review_database: Database,
+) -> None:
+    """Policy opt-in is not ready without both source-authorized events and framings."""
+
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    base_request, _ = _preview_request(service, principal)
+    for field, rejected in (
+        ("allowed_events", ["SUBTLE_BREATHING"]),
+        ("camera_lock.allowed_framings", ["locked medium shot"]),
+    ):
+        revised = [
+            item.model_copy(update={"corrected_value": rejected})
+            if item.field_path == field else item
+            for item in base_request.decisions
+        ]
+        selected = base_request.model_copy(
+            update={
+                "story_policy_opt_in": "static-pet-story-v1.0.0",
+                "decisions": revised,
+            }
+        )
+        result = service.preview(selected, principal)
+        assert result.outcome == "NEEDS_HUMAN"
+        assert "OWNER_REVIEW_STATIC_POLICY_PREREQUISITES_INVALID" in result.reason_codes
+        assert result.state_facts is None
+
 def test_commit_is_atomic_source_bound_and_exactly_replay_safe(
     review_database: Database,
 ) -> None:

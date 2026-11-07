@@ -20,6 +20,7 @@ from picotoopet_core.autonomous.evidence_ledger import (
 from picotoopet_core.creative.director import parse_goal_directives
 from picotoopet_core.creative.source import NormalizedCreativeSourceSet
 from picotoopet_core.creative.state_spine import (
+    AllowedEvent,
     AuthorityKind,
     StateFactsV1,
     canonical_sha256,
@@ -122,6 +123,7 @@ class OwnerStructuredReviewPreviewRequest(_Strict):
     review_actor_id: str = Field(min_length=1, max_length=80)
     proposal_digest: str = Field(pattern=_DIGEST)
     decisions: list[OwnerStructuredFieldDecision] = Field(max_length=64)
+    story_policy_opt_in: Literal["static-pet-story-v1.0.0"] | None = None
 
     @model_validator(mode="after")
     def unique_fields(self) -> OwnerStructuredReviewPreviewRequest:
@@ -183,6 +185,7 @@ class OwnerStructuredReviewPreview(_Strict):
     reason_codes: tuple[str, ...]
     state_facts: StateFactsV1 | None
     model_calls: Literal[0] = 0
+    story_policy_opt_in: Literal["static-pet-story-v1.0.0"] | None = None
 
 
 class OwnerStructuredReviewCommitRequest(_Strict):
@@ -226,6 +229,7 @@ class OwnerStructuredReviewCommit(_Strict):
     preview_digest: str = Field(pattern=_DIGEST)
     facts_id: str
     facts_digest: str = Field(pattern=_DIGEST)
+    story_policy_opt_in: Literal["static-pet-story-v1.0.0"] | None = None
 
 
 class _EvidenceCandidate(_Strict):
@@ -299,6 +303,8 @@ class OwnerStructuredReviewService:
             "proposal_digest": proposal.proposal_digest,
             "source_revision_digest": proposal.source_revision_digest,
             "decisions": [decisions[path].model_dump(mode="json") for path in sorted(decisions)],
+            # The owner must opt in explicitly; permission to blink alone is not opt-in.
+            "story_policy_opt_in": request.story_policy_opt_in,
         }
         review_digest = canonical_sha256(review_document)
         values: dict[str, JsonValue] = {}
@@ -355,6 +361,7 @@ class OwnerStructuredReviewService:
                 outcome="NEEDS_HUMAN",
                 reasons=tuple(sorted(reasons)),
                 state_facts=None,
+                story_policy_opt_in=request.story_policy_opt_in,
             )
 
         state_facts = self._assemble_state_facts(
@@ -371,13 +378,30 @@ class OwnerStructuredReviewService:
                 outcome="NEEDS_HUMAN",
                 reasons=("OWNER_REVIEW_STATE_FACTS_INVALID",),
                 state_facts=None,
+                story_policy_opt_in=request.story_policy_opt_in,
             )
+        # The special policy never follows automatically from the allowed event list.
+        if request.story_policy_opt_in is not None:
+            if (
+                set(state_facts.allowed_events)
+                != {AllowedEvent.BLINK_AND_REOPEN, AllowedEvent.SUBTLE_BREATHING}
+                or len(state_facts.camera_lock.allowed_framings) < 2
+            ):
+                return self._preview_result(
+                    proposal=proposal,
+                    review_digest=review_digest,
+                    outcome="NEEDS_HUMAN",
+                    reasons=("OWNER_REVIEW_STATIC_POLICY_PREREQUISITES_INVALID",),
+                    state_facts=None,
+                    story_policy_opt_in=request.story_policy_opt_in,
+                )
         return self._preview_result(
             proposal=proposal,
             review_digest=review_digest,
             outcome="READY",
             reasons=(),
             state_facts=state_facts,
+            story_policy_opt_in=request.story_policy_opt_in,
         )
 
     def commit(
@@ -591,6 +615,7 @@ class OwnerStructuredReviewService:
                 "proposal_digest": preview.proposal_digest,
                 "review_digest": preview.review_digest,
                 "preview_digest": preview.preview_digest,
+                "story_policy_opt_in": preview.story_policy_opt_in,
                 "state_facts": facts.model_dump(mode="json"),
             },
             trust_level=EvidenceTrust.D,
@@ -706,6 +731,7 @@ class OwnerStructuredReviewService:
                 preview_digest=value["preview_digest"],
                 facts_id=facts.facts_id,
                 facts_digest=facts.facts_digest,
+                story_policy_opt_in=value.get("story_policy_opt_in"),
             )
         except (KeyError, TypeError, ValidationError, ValueError) as error:
             raise OwnerStructuredReviewError(409, "OWNER_REVIEW_COMMIT_RECORD_INVALID") from error
@@ -1147,6 +1173,7 @@ class OwnerStructuredReviewService:
         outcome: Literal["READY", "NEEDS_HUMAN"],
         reasons: tuple[str, ...],
         state_facts: StateFactsV1 | None,
+        story_policy_opt_in: Literal["static-pet-story-v1.0.0"] | None,
     ) -> OwnerStructuredReviewPreview:
         document: dict[str, object] = {
             "schema_version": "owner_structured_review.preview.v1",
@@ -1160,6 +1187,7 @@ class OwnerStructuredReviewService:
             "reason_codes": reasons,
             "state_facts": (None if state_facts is None else state_facts.model_dump(mode="json")),
             "model_calls": 0,
+            "story_policy_opt_in": story_policy_opt_in,
         }
         document["preview_digest"] = canonical_sha256(document)
         return OwnerStructuredReviewPreview.model_validate(document)
