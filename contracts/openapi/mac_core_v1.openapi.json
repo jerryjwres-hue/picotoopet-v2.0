@@ -1,6 +1,14 @@
 {
   "components": {
     "schemas": {
+      "AllowedEvent": {
+        "enum": [
+          "BLINK_AND_REOPEN",
+          "SUBTLE_BREATHING"
+        ],
+        "title": "AllowedEvent",
+        "type": "string"
+      },
       "ApprovalDecisionBody": {
         "description": "人工批准参数。",
         "properties": {
@@ -173,6 +181,57 @@
         "title": "ApprovalRequestBody",
         "type": "object"
       },
+      "AuthorityKind": {
+        "enum": [
+          "OWNER_ATTESTATION",
+          "APPROVED_REFERENCE",
+          "OWNER_CREATIVE_INTENT"
+        ],
+        "title": "AuthorityKind",
+        "type": "string"
+      },
+      "CameraLockV1": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_framings": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Allowed Framings",
+            "type": "array"
+          },
+          "camera_lock_id": {
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Camera Lock Id",
+            "type": "string"
+          },
+          "evidence_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceBindingV1"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Evidence Bindings",
+            "type": "array"
+          },
+          "movement": {
+            "const": "STATIC",
+            "title": "Movement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_bindings",
+          "camera_lock_id",
+          "movement",
+          "allowed_framings"
+        ],
+        "title": "CameraLockV1",
+        "type": "object"
+      },
       "CapabilitiesResponse": {
         "additionalProperties": false,
         "description": "新旧客户端都可读取的能力和冻结合同版本快照。",
@@ -336,6 +395,51 @@
         "title": "ControlCenterCapabilities",
         "type": "object"
       },
+      "EvidenceBindingV1": {
+        "additionalProperties": false,
+        "properties": {
+          "authority_kind": {
+            "$ref": "#/components/schemas/AuthorityKind"
+          },
+          "evidence_id": {
+            "maxLength": 160,
+            "minLength": 3,
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "field_path": {
+            "maxLength": 160,
+            "minLength": 3,
+            "title": "Field Path",
+            "type": "string"
+          },
+          "owner_confirmed": {
+            "const": true,
+            "title": "Owner Confirmed",
+            "type": "boolean"
+          },
+          "review_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Review Digest",
+            "type": "string"
+          },
+          "value_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Value Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field_path",
+          "evidence_id",
+          "authority_kind",
+          "owner_confirmed",
+          "review_digest",
+          "value_digest"
+        ],
+        "title": "EvidenceBindingV1",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -347,6 +451,578 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "OwnerEvidenceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "authority_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthorityKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_id": {
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "evidence_type": {
+            "title": "Evidence Type",
+            "type": "string"
+          },
+          "photo_bytes_verified": {
+            "title": "Photo Bytes Verified",
+            "type": "boolean"
+          },
+          "raw_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Raw Hash",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "trust_level": {
+            "title": "Trust Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "evidence_type",
+          "source",
+          "trust_level",
+          "raw_hash",
+          "photo_bytes_verified"
+        ],
+        "title": "OwnerEvidenceSummary",
+        "type": "object"
+      },
+      "OwnerStructuredFieldDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "corrected_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ReviewDecision"
+          },
+          "field_path": {
+            "title": "Field Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field_path",
+          "decision"
+        ],
+        "title": "OwnerStructuredFieldDecision",
+        "type": "object"
+      },
+      "OwnerStructuredFieldProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "authority_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthorityKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
+          "field_path": {
+            "title": "Field Path",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalFieldStatus"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Digest"
+          }
+        },
+        "required": [
+          "field_path",
+          "status"
+        ],
+        "title": "OwnerStructuredFieldProposal",
+        "type": "object"
+      },
+      "OwnerStructuredReviewCommit": {
+        "additionalProperties": false,
+        "properties": {
+          "commitment_id": {
+            "title": "Commitment Id",
+            "type": "string"
+          },
+          "facts_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Facts Digest",
+            "type": "string"
+          },
+          "facts_id": {
+            "title": "Facts Id",
+            "type": "string"
+          },
+          "goal_id": {
+            "title": "Goal Id",
+            "type": "string"
+          },
+          "preview_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Digest",
+            "type": "string"
+          },
+          "proposal_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposal Digest",
+            "type": "string"
+          },
+          "review_actor_id": {
+            "title": "Review Actor Id",
+            "type": "string"
+          },
+          "review_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Review Digest",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "owner_structured_review.commit.v1",
+            "default": "owner_structured_review.commit.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_revision_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Revision Digest",
+            "type": "string"
+          },
+          "story_policy_opt_in": {
+            "anyOf": [
+              {
+                "const": "static-pet-story-v1.0.0",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Story Policy Opt In"
+          },
+          "subject_key": {
+            "title": "Subject Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "commitment_id",
+          "goal_id",
+          "subject_key",
+          "review_actor_id",
+          "source_revision_digest",
+          "proposal_digest",
+          "review_digest",
+          "preview_digest",
+          "facts_id",
+          "facts_digest"
+        ],
+        "title": "OwnerStructuredReviewCommit",
+        "type": "object"
+      },
+      "OwnerStructuredReviewCommitRequest": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "preview_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "preview_request": {
+              "decisions": [],
+              "goal_id": "goal-example",
+              "proposal_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "review_actor_id": "owner-local"
+            },
+            "review_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_revision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ],
+        "properties": {
+          "preview_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Digest",
+            "type": "string"
+          },
+          "preview_request": {
+            "$ref": "#/components/schemas/OwnerStructuredReviewPreviewRequest"
+          },
+          "review_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Review Digest",
+            "type": "string"
+          },
+          "source_revision_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Revision Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preview_request",
+          "source_revision_digest",
+          "review_digest",
+          "preview_digest"
+        ],
+        "title": "OwnerStructuredReviewCommitRequest",
+        "type": "object"
+      },
+      "OwnerStructuredReviewPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "goal_id": {
+            "title": "Goal Id",
+            "type": "string"
+          },
+          "model_calls": {
+            "const": 0,
+            "default": 0,
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "READY",
+              "NEEDS_HUMAN"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "preview_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Digest",
+            "type": "string"
+          },
+          "proposal_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposal Digest",
+            "type": "string"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "review_actor_id": {
+            "title": "Review Actor Id",
+            "type": "string"
+          },
+          "review_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Review Digest",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "owner_structured_review.preview.v1",
+            "default": "owner_structured_review.preview.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_revision_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Revision Digest",
+            "type": "string"
+          },
+          "state_facts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StateFactsV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "story_policy_opt_in": {
+            "anyOf": [
+              {
+                "const": "static-pet-story-v1.0.0",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Story Policy Opt In"
+          },
+          "subject_key": {
+            "title": "Subject Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "goal_id",
+          "subject_key",
+          "review_actor_id",
+          "proposal_digest",
+          "source_revision_digest",
+          "review_digest",
+          "preview_digest",
+          "outcome",
+          "reason_codes",
+          "state_facts"
+        ],
+        "title": "OwnerStructuredReviewPreview",
+        "type": "object"
+      },
+      "OwnerStructuredReviewPreviewRequest": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "decisions": [
+              {
+                "corrected_value": "cat",
+                "decision": "CORRECT",
+                "field_path": "subject_lock.species"
+              }
+            ],
+            "goal_id": "goal-example",
+            "proposal_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "review_actor_id": "owner-local"
+          }
+        ],
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerStructuredFieldDecision"
+            },
+            "maxItems": 64,
+            "title": "Decisions",
+            "type": "array"
+          },
+          "goal_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Goal Id",
+            "type": "string"
+          },
+          "proposal_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposal Digest",
+            "type": "string"
+          },
+          "review_actor_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Review Actor Id",
+            "type": "string"
+          },
+          "story_policy_opt_in": {
+            "anyOf": [
+              {
+                "const": "static-pet-story-v1.0.0",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Story Policy Opt In"
+          }
+        },
+        "required": [
+          "goal_id",
+          "review_actor_id",
+          "proposal_digest",
+          "decisions"
+        ],
+        "title": "OwnerStructuredReviewPreviewRequest",
+        "type": "object"
+      },
+      "OwnerStructuredReviewProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "creative_job_id": {
+            "title": "Creative Job Id",
+            "type": "string"
+          },
+          "creative_profile": {
+            "const": "creative.content_plan.v2",
+            "title": "Creative Profile",
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OwnerStructuredFieldProposal"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "goal_id": {
+            "title": "Goal Id",
+            "type": "string"
+          },
+          "objective_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Objective Digest",
+            "type": "string"
+          },
+          "proposal_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposal Digest",
+            "type": "string"
+          },
+          "registry_revision": {
+            "title": "Registry Revision",
+            "type": "integer"
+          },
+          "review_actor_id": {
+            "title": "Review Actor Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "owner_structured_review.proposal.v1",
+            "default": "owner_structured_review.proposal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerEvidenceSummary"
+            },
+            "title": "Source Evidence",
+            "type": "array"
+          },
+          "source_revision_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Revision Digest",
+            "type": "string"
+          },
+          "source_set_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Set Digest",
+            "type": "string"
+          },
+          "subject_key": {
+            "title": "Subject Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "goal_id",
+          "creative_job_id",
+          "review_actor_id",
+          "registry_revision",
+          "subject_key",
+          "creative_profile",
+          "source_set_digest",
+          "objective_digest",
+          "source_revision_digest",
+          "source_evidence",
+          "fields",
+          "proposal_digest"
+        ],
+        "title": "OwnerStructuredReviewProposal",
+        "type": "object"
+      },
+      "PoseLockV1": {
+        "additionalProperties": false,
+        "properties": {
+          "body_pose": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Body Pose",
+            "type": "string"
+          },
+          "evidence_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceBindingV1"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Evidence Bindings",
+            "type": "array"
+          },
+          "fixed": {
+            "const": true,
+            "title": "Fixed",
+            "type": "boolean"
+          },
+          "head_direction": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Head Direction",
+            "type": "string"
+          },
+          "pose_lock_id": {
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Pose Lock Id",
+            "type": "string"
+          },
+          "support_surface": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Support Surface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_bindings",
+          "pose_lock_id",
+          "body_pose",
+          "head_direction",
+          "support_surface",
+          "fixed"
+        ],
+        "title": "PoseLockV1",
         "type": "object"
       },
       "ProjectCreate": {
@@ -457,6 +1133,224 @@
           "updated_at"
         ],
         "title": "ProjectRecord",
+        "type": "object"
+      },
+      "ProposalFieldStatus": {
+        "enum": [
+          "EXPLICIT",
+          "UNKNOWN",
+          "CONFLICT"
+        ],
+        "title": "ProposalFieldStatus",
+        "type": "string"
+      },
+      "ReviewDecision": {
+        "enum": [
+          "CONFIRM",
+          "CORRECT",
+          "UNKNOWN"
+        ],
+        "title": "ReviewDecision",
+        "type": "string"
+      },
+      "SceneLockV1": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Environment",
+            "type": "string"
+          },
+          "evidence_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceBindingV1"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Evidence Bindings",
+            "type": "array"
+          },
+          "lighting": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Lighting",
+            "type": "string"
+          },
+          "scene_lock_id": {
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Scene Lock Id",
+            "type": "string"
+          },
+          "temporary_accessories": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Temporary Accessories",
+            "type": "array"
+          }
+        },
+        "required": [
+          "evidence_bindings",
+          "scene_lock_id",
+          "environment",
+          "lighting"
+        ],
+        "title": "SceneLockV1",
+        "type": "object"
+      },
+      "StateFactsV1": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_events": {
+            "items": {
+              "$ref": "#/components/schemas/AllowedEvent"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Allowed Events",
+            "type": "array"
+          },
+          "camera_lock": {
+            "$ref": "#/components/schemas/CameraLockV1"
+          },
+          "creative_profile": {
+            "const": "creative.content_plan.v2",
+            "title": "Creative Profile",
+            "type": "string"
+          },
+          "facts_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Facts Digest",
+            "type": "string"
+          },
+          "facts_id": {
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Facts Id",
+            "type": "string"
+          },
+          "facts_version": {
+            "minimum": 1.0,
+            "title": "Facts Version",
+            "type": "integer"
+          },
+          "new_job_only": {
+            "const": true,
+            "title": "New Job Only",
+            "type": "boolean"
+          },
+          "objective_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Objective Digest",
+            "type": "string"
+          },
+          "pet_only": {
+            "const": true,
+            "title": "Pet Only",
+            "type": "boolean"
+          },
+          "pose_lock": {
+            "$ref": "#/components/schemas/PoseLockV1"
+          },
+          "scene_lock": {
+            "$ref": "#/components/schemas/SceneLockV1"
+          },
+          "schema_version": {
+            "const": "state_facts.v1",
+            "default": "state_facts.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_set_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Set Digest",
+            "type": "string"
+          },
+          "subject_key": {
+            "maxLength": 68,
+            "pattern": "^pet:[a-z0-9][a-z0-9-]{1,63}$",
+            "title": "Subject Key",
+            "type": "string"
+          },
+          "subject_lock": {
+            "$ref": "#/components/schemas/SubjectLockV1"
+          }
+        },
+        "required": [
+          "facts_id",
+          "facts_version",
+          "creative_profile",
+          "pet_only",
+          "new_job_only",
+          "subject_key",
+          "source_set_digest",
+          "objective_digest",
+          "subject_lock",
+          "pose_lock",
+          "scene_lock",
+          "camera_lock",
+          "allowed_events",
+          "facts_digest"
+        ],
+        "title": "StateFactsV1",
+        "type": "object"
+      },
+      "SubjectLockV1": {
+        "additionalProperties": false,
+        "properties": {
+          "breed_or_type": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Breed Or Type",
+            "type": "string"
+          },
+          "coat_or_appearance": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Coat Or Appearance",
+            "type": "string"
+          },
+          "distinguishing_marks": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Distinguishing Marks",
+            "type": "array"
+          },
+          "evidence_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceBindingV1"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Evidence Bindings",
+            "type": "array"
+          },
+          "species": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Species",
+            "type": "string"
+          },
+          "subject_id": {
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Subject Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_bindings",
+          "subject_id",
+          "species",
+          "breed_or_type",
+          "coat_or_appearance"
+        ],
+        "title": "SubjectLockV1",
         "type": "object"
       },
       "TaskCreate": {
@@ -1089,6 +1983,161 @@
         "summary": "Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/owner-structured-reviews/commit": {
+      "post": {
+        "description": "Atomically persist one exact, fresh and explicitly authorized preview.",
+        "operationId": "commit_owner_structured_review_api_v1_owner_structured_reviews_commit_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerStructuredReviewCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerStructuredReviewCommit"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Commit Owner Structured Review",
+        "tags": [
+          "owner-structured-reviews"
+        ]
+      }
+    },
+    "/api/v1/owner-structured-reviews/goals/{goal_id}/proposal": {
+      "get": {
+        "description": "Return a read-only, source-derived typed proposal without evidence body text.",
+        "operationId": "get_owner_structured_review_proposal_api_v1_owner_structured_reviews_goals__goal_id__proposal_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "goal_id",
+            "required": true,
+            "schema": {
+              "title": "Goal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerStructuredReviewProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Owner Structured Review Proposal",
+        "tags": [
+          "owner-structured-reviews"
+        ]
+      }
+    },
+    "/api/v1/owner-structured-reviews/preview": {
+      "post": {
+        "description": "Apply field decisions and calculate digests without any database write.",
+        "operationId": "preview_owner_structured_review_api_v1_owner_structured_reviews_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerStructuredReviewPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerStructuredReviewPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Owner Structured Review",
+        "tags": [
+          "owner-structured-reviews"
         ]
       }
     },
