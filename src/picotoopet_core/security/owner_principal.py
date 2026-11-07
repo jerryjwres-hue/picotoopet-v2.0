@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -35,7 +36,7 @@ class OwnerCredentialConfig(BaseModel):
     @model_validator(mode="after")
     def _validate_grant(self) -> OwnerCredentialConfig:
         if any(
-            not __import__("re").fullmatch(_SUBJECT_PATTERN, key)
+            not re.fullmatch(_SUBJECT_PATTERN, key)
             for key in self.subject_keys
         ) or len(set(self.subject_keys)) != len(self.subject_keys):
             raise ValueError("OWNER_REVIEW_SUBJECT_SCOPE_INVALID")
