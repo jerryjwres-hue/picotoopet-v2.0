@@ -31,6 +31,8 @@ internal static class Program
             ("http_negative_401_403_409_422", HttpNegativeAsync),
             ("missing_credential_never_calls_http", MissingCredentialAsync),
             ("no_default_confirm_and_unknown_blocks", DraftRulesAsync),
+            ("unknown_and_empty_list_corrections_have_canonical_types", UnknownListTypesAsync),
+            ("static_story_requires_separate_owner_opt_in", StaticOptInAsync),
             ("preview_writes_nothing_and_commit_is_explicit", FlowAsync),
             ("idempotent_replay_uses_same_key_and_body", ReplayAsync),
             ("stale_409_forces_reload_never_overwrites", StaleAsync),
@@ -123,16 +125,26 @@ internal static class Program
         var path = FindRepoFile(Path.Combine("contracts", "openapi", "mac_core_v1.openapi.json"));
         // Windows checkout 可能把 LF 转成 CRLF（core.autocrlf）；摘要按冻结的 LF 字节计算。
         var bytes = File.ReadAllBytes(path).Where(b => b != 0x0D).ToArray();
-        // 冻结摘要只作信息项：CI 会把本 PR 与已前进的 #235 合并，文件可能合法地更新；
-        // 真正的断言是下面的路径与 schema 形状一致性，漂移到不兼容时会在此失败。
+        // The review contract is pinned to PR #235's latest approved source bytes.
+        // A future drift must trigger explicit re-review, never a silent informational PASS.
         var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        Console.WriteLine("OPENAPI_SHA256=" + digest + " FROZEN_MATCH=" + (digest == OwnerReviewWire.FrozenOpenApiSha256));
+        Eq(OwnerReviewWire.FrozenOpenApiSha256, digest, "Core OpenAPI digest must be explicitly reapproved");
         var api = JsonNode.Parse(bytes)!;
         var paths = api["paths"]!.AsObject();
         True(paths.ContainsKey("/api/v1/owner-structured-reviews/goals/{goal_id}/proposal"), "proposal path");
         True(paths.ContainsKey("/api/v1/owner-structured-reviews/preview"), "preview path");
         True(paths.ContainsKey("/api/v1/owner-structured-reviews/commit"), "commit path");
         var schemas = api["components"]!["schemas"]!.AsObject();
+        foreach (var name in new[] { "OwnerStructuredReviewPreviewRequest", "OwnerStructuredReviewPreview", "OwnerStructuredReviewCommit" })
+        {
+            var schema = schemas[name]!;
+            True(schema["properties"]!.AsObject().ContainsKey("story_policy_opt_in"), name + ": explicit opt-in field missing");
+            True(!schema["required"]!.AsArray().Any(x => x!.GetValue<string>() == "story_policy_opt_in"),
+                name + ": opt-in must remain optional/default-off");
+            True(schema["properties"]!["story_policy_opt_in"]!.ToJsonString().Contains(
+                OwnerReviewWire.StaticPetStoryPolicy, StringComparison.Ordinal),
+                name + ": opt-in policy identifier mismatch");
+        }
 
         void Subset(object sample, string schema)
         {
@@ -345,7 +357,9 @@ internal static class Program
         True(draft.FirstValidationProblem() is not null, "undecided fields block preview (no default confirm)");
         True(Throws<InvalidOperationException>(() => draft.BuildPreviewRequest()), "cannot build request while undecided");
         // 身份事实 与 创作意图 分组。
-        True(draft.Group(OwnerReviewFieldGroup.CreativeIntent).Select(f => f.Proposal.FieldPath).SequenceEqual(["allowed_events"]), "intent group");
+        True(draft.Group(OwnerReviewFieldGroup.CreativeIntent).Select(f => f.Proposal.FieldPath)
+                .OrderBy(x => x).SequenceEqual(new[] { "allowed_events", "pose_lock.head_direction", "scene_lock.lighting" }.OrderBy(x => x)),
+            "pose/scene and events are creative intent even when Core source is UNKNOWN");
         True(!draft.Group(OwnerReviewFieldGroup.IdentityAndSceneFacts).Any(f => f.Proposal.FieldPath == "allowed_events"), "identity group excludes intent");
         // UNKNOWN / CONFLICT 来源不可直接 CONFIRM。
         foreach (var f in draft.Fields) draft.SetDecision(f.Proposal.FieldPath, "UNKNOWN");
@@ -373,6 +387,80 @@ internal static class Program
         draft.AcceptPreview(JsonSerializer.Deserialize<OwnerReviewPreview>(MockOwnerReviewCore.Preview(needsHuman: true).ToJsonString(), Web)!);
         Eq(OwnerReviewCommitBlock.NeedsHuman, draft.CommitBlock(), "NEEDS_HUMAN blocks commit");
         return Task.CompletedTask;
+    }
+
+    private static Task UnknownListTypesAsync()
+    {
+        var proposal = JsonSerializer.Deserialize<OwnerReviewProposal>(
+            MockOwnerReviewCore.Proposal().ToJsonString(), Web)!;
+        var fields = proposal.Fields.ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (var path in new[]
+        {
+            "subject_lock.distinguishing_marks",
+            "scene_lock.temporary_accessories",
+            "camera_lock.allowed_framings",
+            "allowed_events",
+        })
+        {
+            fields[path] = new OwnerFieldProposal(path, OwnerReviewWire.StatusUnknown);
+        }
+        var draft = new OwnerReviewDraft(proposal with { Fields = fields });
+        foreach (var field in draft.Fields)
+        {
+            var path = field.Proposal.FieldPath;
+            if (path == "subject_lock.distinguishing_marks" || path == "scene_lock.temporary_accessories")
+                draft.SetDecision(path, OwnerReviewWire.DecisionCorrect, "");
+            else if (path == "camera_lock.allowed_framings")
+                draft.SetDecision(path, OwnerReviewWire.DecisionCorrect, "locked medium shot；locked close-up");
+            else if (path == "allowed_events")
+                draft.SetDecision(path, OwnerReviewWire.DecisionCorrect, "BLINK_AND_REOPEN；SUBTLE_BREATHING");
+            else
+                draft.SetDecision(path, field.CanConfirm ? OwnerReviewWire.DecisionConfirm : OwnerReviewWire.DecisionUnknown);
+        }
+        True(draft.FirstValidationProblem() is null, "optional empty arrays are a deliberate correction");
+        var decisions = draft.BuildPreviewRequest().Decisions;
+        foreach (var path in new[]
+        {
+            "subject_lock.distinguishing_marks", "scene_lock.temporary_accessories",
+            "camera_lock.allowed_framings", "allowed_events",
+        })
+        {
+            var value = decisions.Single(x => x.FieldPath == path).CorrectedValue!.Value;
+            Eq(JsonValueKind.Array, value.ValueKind, path + " UNKNOWN correction must be a JSON array");
+            Eq(path is "subject_lock.distinguishing_marks" or "scene_lock.temporary_accessories" ? 0 : 2,
+               value.GetArrayLength(), path + " must preserve empty/nonempty list cardinality");
+        }
+        return Task.CompletedTask;
+    }
+
+    private static async Task StaticOptInAsync()
+    {
+        var (client, core, store) = NewClient();
+        using (client)
+        {
+            var vm = new OwnerReviewViewModel(client, store) { GoalId = MockOwnerReviewCore.Goal };
+            await Run(vm, vm.LoadProposalCommand).ConfigureAwait(false);
+            DecideAllReady(vm);
+            True(!vm.StaticPetStorySelected, "no implicit policy selection");
+            vm.StaticPetStorySelected = true;
+            await Run(vm, vm.PreviewCommand).ConfigureAwait(false);
+            var requested = core.Requests.Last(x => x.Path.EndsWith("/preview", StringComparison.Ordinal));
+            Eq(OwnerReviewWire.StaticPetStoryPolicy,
+               JsonNode.Parse(requested.Body)!["story_policy_opt_in"]!.GetValue<string>(),
+               "explicit policy must be sent to Core Preview");
+            True(vm.PreviewSummary.Contains(OwnerReviewWire.StaticPetStoryPolicy, StringComparison.Ordinal),
+                "only a Core-echoed policy is displayed");
+            vm.OwnerConfirmed = true;
+            vm.StaticPetStorySelected = false;
+            True(!vm.OwnerConfirmed && !vm.CommitCommand.CanExecute(null),
+                "changing policy revokes prior preview and owner consent");
+            await Run(vm, vm.PreviewCommand).ConfigureAwait(false);
+            vm.OwnerConfirmed = true;
+            await Run(vm, vm.CommitCommand).ConfigureAwait(false);
+            var committed = core.Requests.Last(x => x.Path.EndsWith("/commit", StringComparison.Ordinal));
+            True(JsonNode.Parse(committed.Body)!["preview_request"]!["story_policy_opt_in"] is null,
+                "an unselected policy must NOT be stored in the frozen commit");
+        }
     }
 
     private static async Task FlowAsync()
@@ -458,17 +546,23 @@ internal static class Program
             await Run(vm, vm.CommitCommand).ConfigureAwait(false);
             True(vm.ErrorText.Contains("重新加载", StringComparison.Ordinal), "409 asks for safe reload");
             True(!vm.OwnerConfirmed && vm.PreviewSummary.Length == 0, "409 clears explicit confirmation and preview");
-            True(vm.Draft!.Committed is null, "nothing committed");
+            True(vm.Draft is null && !vm.HasProposal, "409 destroys the actual draft");
+            True(!vm.CommitCommand.CanExecute(null), "old commit must remain impossible even if re-checked");
+            vm.OwnerConfirmed = true;
+            True(!vm.CommitCommand.CanExecute(null), "re-checked consent cannot resurrect stale preview");
             Eq(1, core.CountPath("/commit"), "no automatic force/retry after 409");
-            // 修改任一决定 → 预览失效、确认清除、幂等键更换。
+            // A NEW Core proposal is mandatory before a fresh Preview and Idempotency-Key.
             core.Override = null;
+            await Run(vm, vm.LoadProposalCommand).ConfigureAwait(false);
+            DecideAllReady(vm);
             await Run(vm, vm.PreviewCommand).ConfigureAwait(false);
             var keyBefore = vm.IdempotencyKey;
             vm.OwnerConfirmed = true;
             var row = vm.IdentityFields.First(f => f.CanConfirm);
             row.IsUnknown = true;
             True(!vm.OwnerConfirmed, "changing a decision clears explicit confirmation");
-            True(vm.Draft.CommitBlock() is OwnerReviewCommitBlock.NoPreview or OwnerReviewCommitBlock.PreviewStale, "preview invalidated by change");
+            True(vm.Draft!.CommitBlock() is OwnerReviewCommitBlock.NoPreview or OwnerReviewCommitBlock.PreviewStale,
+                "preview invalidated by change");
             await Run(vm, vm.PreviewCommand).ConfigureAwait(false);
             True(vm.IdempotencyKey != keyBefore, "new preview gets a new Idempotency-Key");
         }
@@ -530,10 +624,12 @@ internal static class Program
             var identity = (ItemsControl)Find(panel, "OwnerReviewIdentityFields");
             var intent = (ItemsControl)Find(panel, "OwnerReviewIntentFields");
             Eq(vm.IdentityFields.Count, identity.Items.Count, "identity list bound");
-            Eq(1, intent.Items.Count, "intent list bound separately");
+            Eq(3, intent.Items.Count, "UNKNOWN pose/scene are correctly grouped as creative intent");
             var banner = (TextBlock)Find(panel, "OwnerReviewTransportBanner");
             True(banner.Text.Contains("TRANSPORT_SECURITY=BLOCKED", StringComparison.Ordinal), "banner shows blocked transport");
             Find(panel, "OwnerReviewPreview"); Find(panel, "OwnerReviewConfirm"); Find(panel, "OwnerReviewCommit"); Find(panel, "OwnerReviewCancel");
+            var policy = (CheckBox)Find(panel, "OwnerReviewStaticStoryOptIn");
+            True(policy.IsChecked != true, "static story is never selected by default");
             var confirm = (CheckBox)Find(panel, "OwnerReviewConfirm");
             True(confirm.IsChecked != true, "confirmation checkbox is never pre-checked");
             Eq(0, core.CountPath("/preview") + core.CountPath("/commit"), "rendering the panel performs no write");
