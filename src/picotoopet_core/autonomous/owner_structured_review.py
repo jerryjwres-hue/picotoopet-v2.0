@@ -20,6 +20,7 @@ from picotoopet_core.autonomous.evidence_ledger import (
 from picotoopet_core.creative.director import parse_goal_directives
 from picotoopet_core.creative.source import NormalizedCreativeSourceSet
 from picotoopet_core.creative.state_spine import (
+    AllowedEvent,
     AuthorityKind,
     StateFactsV1,
     canonical_sha256,
@@ -381,8 +382,6 @@ class OwnerStructuredReviewService:
             )
         # The special policy never follows automatically from the allowed event list.
         if request.story_policy_opt_in is not None:
-            from picotoopet_core.creative.state_spine import AllowedEvent
-
             if (
                 set(state_facts.allowed_events)
                 != {AllowedEvent.BLINK_AND_REOPEN, AllowedEvent.SUBTLE_BREATHING}
