@@ -51,9 +51,10 @@ def test_canonical_evidence_is_replay_safe_traceable_and_goal_scoped(tmp_path: P
     first = ledger.ingest(request)
     replay = ledger.ingest(request)
     assert replay.evidence_id == first.evidence_id
-    assert first.raw_hash == hashlib.sha256(
-        b'Large dog destroyed it after repeated chewing.'
-    ).hexdigest()
+    assert (
+        first.raw_hash
+        == hashlib.sha256(b"Large dog destroyed it after repeated chewing.").hexdigest()
+    )
     assert first.origin_kind is EvidenceOrigin.LEGACY_4_1
     assert first.origin_ref == "consumer_signals:R-001"
     assert first.subject_key == "asin:B076F7HM8T"
@@ -63,7 +64,51 @@ def test_canonical_evidence_is_replay_safe_traceable_and_goal_scoped(tmp_path: P
     conflicting = request.model_copy(update={"text_value": "silently changed evidence"})
     with pytest.raises(ValueError, match="origin_ref"):
         ledger.ingest(conflicting)
-    database.close()
+        database.close()
+
+
+def test_canonical_evidence_batch_rolls_back_when_late_item_conflicts(tmp_path: Path) -> None:
+    database = Database(tmp_path / "core.sqlite3")
+    database.open()
+    database.apply_migrations()
+    try:
+        ledger = CanonicalEvidenceLedger(database)
+        existing = CanonicalEvidenceCreate(
+            subject_key="pet:synthetic-mochi",
+            evidence_type="pet.owner.visible_identity",
+            source="owner_attestation",
+            platform="private_mac_core",
+            text_value="Original synthetic evidence statement.",
+            trust_level=EvidenceTrust.D,
+            confidence=0.8,
+            captured_at=datetime.now(UTC),
+            origin_kind=EvidenceOrigin.MANUAL,
+            origin_ref="batch-conflict",
+        )
+        ledger.ingest(existing)
+        before = database.scalar("SELECT COUNT(*) FROM canonical_evidence")
+        new_item = existing.model_copy(
+            update={
+                "text_value": "A distinct first batch item.",
+                "origin_ref": "batch-new-item",
+            }
+        )
+        conflicting_item = existing.model_copy(
+            update={"text_value": "Mutated content for an occupied origin."}
+        )
+
+        with pytest.raises(ValueError, match="origin_ref already exists"):
+            ledger.ingest_batch([new_item, conflicting_item])
+
+        assert database.scalar("SELECT COUNT(*) FROM canonical_evidence") == before
+        assert (
+            database.fetchone(
+                "SELECT evidence_id FROM canonical_evidence WHERE origin_ref='batch-new-item'"
+            )
+            is None
+        )
+    finally:
+        database.close()
 
 
 def test_legacy_4_1_import_is_read_only_idempotent_and_skips_machine_predictions(
