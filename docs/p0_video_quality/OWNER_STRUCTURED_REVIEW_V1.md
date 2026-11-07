@@ -15,6 +15,21 @@ Proposal never accepts evidence IDs from the caller and never returns evidence t
 Legacy free text remains `UNKNOWN` unless a prior committed structured review contains the exact
 field/value binding.
 
+## Explicit static story opt-in (default OFF)
+
+The optional `story_policy_opt_in` field on Preview request is either `null` (default)
+or `"static-pet-story-v1.0.0"`. The latter is an **explicit owner choice** to request
+source-bound static pet story semantics, NOT authority to start the Creative/Comfy/GPU path.
+Having `BLINK_AND_REOPEN` in `allowed_events` alone must NOT auto-select the policy.
+
+Core checks that the confirmed facts allow both blink-and-reopen and subtle breathing and
+at least two static camera framings before returning READY with that selected policy.
+The choice is included in the Core-calculated review/preview digests, canonical immutable
+Commit value and Commit response. Omitted or null retains the old general Story Gate.
+A mismatch, changed selection or altered idempotent replay receives a conflict, not silent
+upgrade. This is a *selection and audit contract only*; actual Story Gate adaptation and
+rendered-video acceptance remain separate and inactive.
+
 ## Field decisions
 
 Every owner-facing field is one of:
