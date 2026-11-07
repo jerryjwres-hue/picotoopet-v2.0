@@ -294,6 +294,7 @@ class OwnerStructuredReviewService:
         review_document = {
             "goal_id": request.goal_id,
             "review_actor_id": principal.actor_id,
+            "credential_id": principal.credential_id,
             "registry_revision": principal.registry_revision,
             "proposal_digest": proposal.proposal_digest,
             "source_revision_digest": proposal.source_revision_digest,
@@ -395,6 +396,7 @@ class OwnerStructuredReviewService:
         request_fingerprint = canonical_sha256(
             {
                 "actor_id": principal.actor_id,
+                "credential_id": principal.credential_id,
                 "registry_revision": principal.registry_revision,
                 "request": request.model_dump(mode="json"),
             }
@@ -403,6 +405,8 @@ class OwnerStructuredReviewService:
         ledger = CanonicalEvidenceLedger(self.database)
         existing = ledger.find_by_origin(EvidenceOrigin.MANUAL, origin_ref)
         if existing is not None:
+            # Replays must recheck CURRENT authority; an old grant is not reusable.
+            self._authorize_subject(principal, existing.subject_key)
             return self._replay_commit(existing, request_fingerprint)
 
         current = self.proposal(request.preview_request.goal_id, principal)
@@ -431,7 +435,10 @@ class OwnerStructuredReviewService:
                     (EvidenceOrigin.MANUAL.value, origin_ref),
                 ).fetchone()
                 if raced is not None:
-                    return self._replay_commit(ledger._row(raced), request_fingerprint)
+                    # Concurrent idempotent replay has the same scoped auth requirement.
+                    record = ledger._row(raced)
+                    self._authorize_subject(principal, record.subject_key)
+                    return self._replay_commit(record, request_fingerprint)
                 locked_snapshot = self._snapshot(request.preview_request.goal_id)
                 if locked_snapshot.source_revision_digest != request.source_revision_digest:
                     raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
