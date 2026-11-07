@@ -493,7 +493,7 @@ internal static class Program
             await Run(vm, vm.LoadProposalCommand).ConfigureAwait(false);
             True(vm.HasProposal, "proposal loaded");
             Eq(2, vm.IdentityFields.Count, "only subject_lock.* is identity; pose/scene are intent");
-            Eq(1, vm.IntentFields.Count, "one intent row");
+            Eq(3, vm.IntentFields.Count, "pose, scene and allowed events are creative intent");
             // 空决定：预览被拒绝，Core 未被调用。
             await Run(vm, vm.PreviewCommand).ConfigureAwait(false);
             True(vm.ErrorText.Contains("尚未决定", StringComparison.Ordinal), "undecided message");
