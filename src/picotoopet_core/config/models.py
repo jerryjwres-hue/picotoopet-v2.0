@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from picotoopet_core.security.owner_principal import OwnerReviewRegistry
+
 from .paths import RuntimePaths
 
 
@@ -16,6 +18,7 @@ class AppSettings(BaseModel):
 
     paths: RuntimePaths
     api_token: str = Field(min_length=16)
+    owner_review_registry: OwnerReviewRegistry = Field(default_factory=OwnerReviewRegistry)
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8765, ge=1, le=65535)
     ollama_base_url: str = "http://127.0.0.1:11434"
@@ -70,6 +73,11 @@ class AppSettings(BaseModel):
         payload = self.model_dump(mode="python")
         payload["paths"] = {"root": str(self.paths.root)}
         payload["api_token"] = "***REDACTED***"
+        # Never expose secret fingerprints, actor identifiers or granted subjects.
+        payload["owner_review_registry"] = {
+            "configured": len(self.owner_review_registry.credentials),
+            "enabled": sum(credential.enabled for credential in self.owner_review_registry.credentials),
+        }
         payload["provider_repository"] = (
             "configured" if self.provider_repository is not None else "disabled"
         )
