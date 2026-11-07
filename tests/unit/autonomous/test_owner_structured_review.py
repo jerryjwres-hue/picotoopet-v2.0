@@ -15,6 +15,7 @@ from picotoopet_core.autonomous.evidence_ledger import (
 )
 from picotoopet_core.autonomous.owner_structured_review import (
     OwnerStructuredFieldDecision,
+    OwnerStructuredReviewCommitRequest,
     OwnerStructuredReviewError,
     OwnerStructuredReviewPreviewRequest,
     OwnerStructuredReviewService,
@@ -206,6 +207,17 @@ def _corrections() -> list[OwnerStructuredFieldDecision]:
     ]
 
 
+def _preview_request(service: OwnerStructuredReviewService, principal: OwnerPrincipal):
+    proposal = service.proposal(GOAL_ID, principal)
+    request = OwnerStructuredReviewPreviewRequest(
+        goal_id=GOAL_ID,
+        review_actor_id=principal.actor_id,
+        proposal_digest=proposal.proposal_digest,
+        decisions=_corrections(),
+    )
+    return request, service.preview(request, principal)
+
+
 def test_proposal_is_deterministic_and_does_not_promote_legacy_free_text(
     review_database: Database,
 ) -> None:
@@ -322,3 +334,145 @@ def test_preview_rejects_actor_mismatch_and_duplicate_or_poisoned_fields(
             decision=ReviewDecision.CORRECT,
             corrected_value="poison",
         )
+
+
+def test_commit_is_atomic_source_bound_and_exactly_replay_safe(
+    review_database: Database,
+) -> None:
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    preview_request, preview = _preview_request(service, principal)
+    legacy = review_database.fetchone(
+        "SELECT evidence_id,raw_hash,value_json,provenance_json FROM canonical_evidence"
+    )
+    before = review_database.scalar("SELECT COUNT(*) FROM canonical_evidence")
+    request = OwnerStructuredReviewCommitRequest(
+        preview_request=preview_request,
+        source_revision_digest=preview.source_revision_digest,
+        review_digest=preview.review_digest,
+        preview_digest=preview.preview_digest,
+    )
+
+    first = service.commit(request, principal, idempotency_key="synthetic-commit-one")
+    after_first = review_database.scalar("SELECT COUNT(*) FROM canonical_evidence")
+    second = service.commit(request, principal, idempotency_key="synthetic-commit-one")
+
+    assert first == second
+    assert first.facts_digest == preview.state_facts.facts_digest
+    assert first.preview_digest == preview.preview_digest
+    assert after_first > before
+    assert review_database.scalar("SELECT COUNT(*) FROM canonical_evidence") == after_first
+    assert (
+        review_database.fetchone(
+            "SELECT evidence_id,raw_hash,value_json,provenance_json FROM canonical_evidence "
+            "WHERE evidence_id=?",
+            (legacy["evidence_id"],),
+        )
+        == legacy
+    )
+
+    facts = preview.state_facts
+    bindings = (
+        facts.subject_lock.evidence_bindings
+        + facts.pose_lock.evidence_bindings
+        + facts.scene_lock.evidence_bindings
+        + facts.camera_lock.evidence_bindings
+    )
+    assert all(
+        review_database.fetchone(
+            "SELECT evidence_id FROM canonical_evidence WHERE evidence_id=?",
+            (binding.evidence_id,),
+        )
+        is not None
+        for binding in bindings
+    )
+
+
+def test_commit_rejects_idempotency_mutation_and_stale_source(
+    review_database: Database,
+) -> None:
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    preview_request, preview = _preview_request(service, principal)
+    request = OwnerStructuredReviewCommitRequest(
+        preview_request=preview_request,
+        source_revision_digest=preview.source_revision_digest,
+        review_digest=preview.review_digest,
+        preview_digest=preview.preview_digest,
+    )
+    service.commit(request, principal, idempotency_key="synthetic-replay-conflict")
+    mutated = request.model_copy(update={"preview_digest": "f" * 64})
+
+    with pytest.raises(OwnerStructuredReviewError) as replay:
+        service.commit(mutated, principal, idempotency_key="synthetic-replay-conflict")
+    assert replay.value.status_code == 409
+    assert replay.value.code == "OWNER_REVIEW_IDEMPOTENCY_CONFLICT"
+
+    # Create a fresh preview, then change the subject's evidence revision before commit.
+    fresh_request, fresh_preview = _preview_request(service, principal)
+    stale_commit = OwnerStructuredReviewCommitRequest(
+        preview_request=fresh_request,
+        source_revision_digest=fresh_preview.source_revision_digest,
+        review_digest=fresh_preview.review_digest,
+        preview_digest=fresh_preview.preview_digest,
+    )
+    CanonicalEvidenceLedger(review_database).ingest(
+        CanonicalEvidenceCreate(
+            subject_key=SUBJECT,
+            evidence_type="pet.owner.visible_scene",
+            source="owner_attestation",
+            platform="private_mac_core",
+            text_value="A new synthetic owner statement changes the source revision.",
+            value={"claim_kind": "visible_scene"},
+            trust_level=EvidenceTrust.D,
+            confidence=0.8,
+            captured_at=datetime.now(UTC),
+            provenance={"owner_reviewed": True, "photo_bytes_verified": False},
+            origin_kind=EvidenceOrigin.MANUAL,
+            origin_ref="synthetic-source-revision-change",
+        )
+    )
+    before = review_database.scalar("SELECT COUNT(*) FROM canonical_evidence")
+
+    with pytest.raises(OwnerStructuredReviewError) as stale:
+        service.commit(stale_commit, principal, idempotency_key="synthetic-stale")
+    assert stale.value.status_code == 409
+    assert stale.value.code == "OWNER_REVIEW_SOURCE_STALE"
+    assert review_database.scalar("SELECT COUNT(*) FROM canonical_evidence") == before
+
+
+def test_proposal_rejects_typed_evidence_without_an_actual_committed_review(
+    review_database: Database,
+) -> None:
+    rogue_review = "a" * 64
+    CanonicalEvidenceLedger(review_database).ingest(
+        CanonicalEvidenceCreate(
+            goal_id=GOAL_ID,
+            subject_key=SUBJECT,
+            evidence_type="pet.owner.state_field.v1",
+            source="owner_structured_review",
+            platform="private_mac_core",
+            value={
+                "actor_id": "owner-local",
+                "authority_kind": "OWNER_ATTESTATION",
+                "field_path": "subject_lock.species",
+                "field_value": "cat",
+                "review_digest": rogue_review,
+            },
+            trust_level=EvidenceTrust.D,
+            confidence=1.0,
+            captured_at=datetime.now(UTC),
+            provenance={
+                "actor_id": "owner-local",
+                "owner_reviewed": True,
+                "review_digest": rogue_review,
+                "photo_bytes_verified": False,
+            },
+            origin_kind=EvidenceOrigin.MANUAL,
+            origin_ref="rogue-uncommitted-typed-field",
+        )
+    )
+
+    proposal = OwnerStructuredReviewService(review_database).proposal(GOAL_ID, _principal())
+
+    assert proposal.fields["subject_lock.species"].status == "UNKNOWN"

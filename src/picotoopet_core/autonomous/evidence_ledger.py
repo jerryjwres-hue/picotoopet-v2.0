@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -11,7 +12,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from picotoopet_core.db.database import Database
-
 
 _SCHEMA_020 = """
 CREATE TABLE IF NOT EXISTS canonical_evidence (
@@ -116,11 +116,42 @@ class CanonicalEvidenceLedger:
             )
 
     def ingest(self, request: CanonicalEvidenceCreate) -> CanonicalEvidenceRecord:
+        with self.database.transaction() as connection:
+            return self.ingest_in_transaction(connection, request)
+
+    def ingest_batch(
+        self, requests: list[CanonicalEvidenceCreate]
+    ) -> list[CanonicalEvidenceRecord]:
+        """Ingest a bounded batch atomically; one conflict rolls back every new row."""
+
+        if not 1 <= len(requests) <= 64:
+            raise ValueError("evidence batch size out of bounds")
+        with self.database.transaction() as connection:
+            return self.ingest_batch_in_transaction(connection, requests)
+
+    def ingest_batch_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        requests: list[CanonicalEvidenceCreate],
+    ) -> list[CanonicalEvidenceRecord]:
+        """Use an already-owned Core transaction for a batch of canonical evidence."""
+
+        if not 1 <= len(requests) <= 64:
+            raise ValueError("evidence batch size out of bounds")
+        return [self.ingest_in_transaction(connection, request) for request in requests]
+
+    def ingest_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        request: CanonicalEvidenceCreate,
+    ) -> CanonicalEvidenceRecord:
+        """Insert or exactly replay one record without opening a nested transaction."""
+
         raw_hash = self._raw_hash(request)
-        existing = self.database.fetchone(
+        existing = connection.execute(
             "SELECT * FROM canonical_evidence WHERE origin_kind = ? AND origin_ref = ?",
             (request.origin_kind.value, request.origin_ref),
-        )
+        ).fetchone()
         if existing is not None:
             record = self._row(existing)
             if record.raw_hash != raw_hash:
@@ -128,7 +159,7 @@ class CanonicalEvidenceLedger:
             return record
 
         stable_id = hashlib.sha256(
-            f"{request.origin_kind.value}\0{request.origin_ref}\0{raw_hash}".encode("utf-8")
+            f"{request.origin_kind.value}\0{request.origin_ref}\0{raw_hash}".encode()
         ).hexdigest()[:24]
         evidence_id = f"evidence-{stable_id}"
         created_at = datetime.now(UTC)
@@ -144,44 +175,59 @@ class CanonicalEvidenceLedger:
             sort_keys=True,
             separators=(",", ":"),
         )
-        with self.database.transaction() as connection:
-            connection.execute(
-                """
-                INSERT INTO canonical_evidence(
-                    evidence_id, goal_id, subject_key, evidence_type, source, platform,
-                    source_url, source_entity_id, text_value, numeric_value, value_json,
-                    raw_hash, trust_level, confidence, captured_at, source_updated_at,
-                    provenance_json, origin_kind, origin_ref, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+        connection.execute(
+            """
+            INSERT INTO canonical_evidence(
+                evidence_id, goal_id, subject_key, evidence_type, source, platform,
+                source_url, source_entity_id, text_value, numeric_value, value_json,
+                raw_hash, trust_level, confidence, captured_at, source_updated_at,
+                provenance_json, origin_kind, origin_ref, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                evidence_id,
+                request.goal_id,
+                request.subject_key,
+                request.evidence_type,
+                request.source,
+                request.platform,
+                request.source_url,
+                request.source_entity_id,
+                request.text_value,
+                request.numeric_value,
+                value_json,
+                raw_hash,
+                request.trust_level.value,
+                request.confidence,
+                request.captured_at.astimezone(UTC).isoformat(),
                 (
-                    evidence_id,
-                    request.goal_id,
-                    request.subject_key,
-                    request.evidence_type,
-                    request.source,
-                    request.platform,
-                    request.source_url,
-                    request.source_entity_id,
-                    request.text_value,
-                    request.numeric_value,
-                    value_json,
-                    raw_hash,
-                    request.trust_level.value,
-                    request.confidence,
-                    request.captured_at.astimezone(UTC).isoformat(),
-                    (
-                        request.source_updated_at.astimezone(UTC).isoformat()
-                        if request.source_updated_at is not None
-                        else None
-                    ),
-                    provenance_json,
-                    request.origin_kind.value,
-                    request.origin_ref,
-                    created_at.isoformat(),
+                    request.source_updated_at.astimezone(UTC).isoformat()
+                    if request.source_updated_at is not None
+                    else None
                 ),
-            )
-        return self.get(evidence_id)
+                provenance_json,
+                request.origin_kind.value,
+                request.origin_ref,
+                created_at.isoformat(),
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM canonical_evidence WHERE evidence_id = ?", (evidence_id,)
+        ).fetchone()
+        if row is None:  # pragma: no cover - SQLite insert/read invariant
+            raise RuntimeError("canonical evidence insert was not readable")
+        return self._row(row)
+
+    def find_by_origin(
+        self,
+        origin_kind: EvidenceOrigin,
+        origin_ref: str,
+    ) -> CanonicalEvidenceRecord | None:
+        row = self.database.fetchone(
+            "SELECT * FROM canonical_evidence WHERE origin_kind=? AND origin_ref=?",
+            (origin_kind.value, origin_ref),
+        )
+        return None if row is None else self._row(row)
 
     def get(self, evidence_id: str) -> CanonicalEvidenceRecord:
         row = self.database.fetchone(
@@ -212,7 +258,8 @@ class CanonicalEvidenceLedger:
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         parameters.append(limit)
         rows = self.database.fetchall(
-            f"SELECT * FROM canonical_evidence{where} ORDER BY captured_at DESC, evidence_id LIMIT ?",
+            f"SELECT * FROM canonical_evidence{where} "
+            "ORDER BY captured_at DESC, evidence_id LIMIT ?",
             parameters,
         )
         return [self._row(row) for row in rows]

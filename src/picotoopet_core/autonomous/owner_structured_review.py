@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 
+from picotoopet_core.autonomous.evidence_ledger import (
+    CanonicalEvidenceCreate,
+    CanonicalEvidenceLedger,
+    CanonicalEvidenceRecord,
+    EvidenceOrigin,
+    EvidenceTrust,
+)
 from picotoopet_core.creative.director import parse_goal_directives
 from picotoopet_core.creative.source import NormalizedCreativeSourceSet
 from picotoopet_core.creative.state_spine import (
@@ -154,6 +162,29 @@ class OwnerStructuredReviewPreview(_Strict):
     reason_codes: tuple[str, ...]
     state_facts: StateFactsV1 | None
     model_calls: Literal[0] = 0
+
+
+class OwnerStructuredReviewCommitRequest(_Strict):
+    preview_request: OwnerStructuredReviewPreviewRequest
+    source_revision_digest: str = Field(pattern=_DIGEST)
+    review_digest: str = Field(pattern=_DIGEST)
+    preview_digest: str = Field(pattern=_DIGEST)
+
+
+class OwnerStructuredReviewCommit(_Strict):
+    schema_version: Literal["owner_structured_review.commit.v1"] = (
+        "owner_structured_review.commit.v1"
+    )
+    commitment_id: str
+    goal_id: str
+    subject_key: str
+    review_actor_id: str
+    source_revision_digest: str = Field(pattern=_DIGEST)
+    proposal_digest: str = Field(pattern=_DIGEST)
+    review_digest: str = Field(pattern=_DIGEST)
+    preview_digest: str = Field(pattern=_DIGEST)
+    facts_id: str
+    facts_digest: str = Field(pattern=_DIGEST)
 
 
 class _EvidenceCandidate(_Strict):
@@ -307,6 +338,325 @@ class OwnerStructuredReviewService:
             state_facts=state_facts,
         )
 
+    def commit(
+        self,
+        request: OwnerStructuredReviewCommitRequest,
+        principal: OwnerPrincipal,
+        *,
+        idempotency_key: str,
+    ) -> OwnerStructuredReviewCommit:
+        """Atomically persist the exact READY preview and every new field binding."""
+
+        key = idempotency_key.strip()
+        if not key or len(key) > 200:
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_IDEMPOTENCY_KEY_INVALID")
+        self._authorize_actor(principal, request.preview_request.review_actor_id)
+        request_fingerprint = canonical_sha256(
+            {
+                "actor_id": principal.actor_id,
+                "registry_revision": principal.registry_revision,
+                "request": request.model_dump(mode="json"),
+            }
+        )
+        origin_ref = f"owner-structured-review:commit:{hashlib.sha256(key.encode()).hexdigest()}"
+        ledger = CanonicalEvidenceLedger(self.database)
+        existing = ledger.find_by_origin(EvidenceOrigin.MANUAL, origin_ref)
+        if existing is not None:
+            return self._replay_commit(existing, request_fingerprint)
+
+        current = self.proposal(request.preview_request.goal_id, principal)
+        if current.source_revision_digest != request.source_revision_digest:
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
+        preview = self.preview(request.preview_request, principal)
+        if (
+            preview.outcome != "READY"
+            or preview.state_facts is None
+            or preview.review_digest != request.review_digest
+            or preview.preview_digest != request.preview_digest
+        ):
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_PREVIEW_MISMATCH")
+
+        new_evidence = self._new_binding_evidence(preview, principal)
+        final_request = self._commit_evidence_request(
+            preview=preview,
+            principal=principal,
+            request_fingerprint=request_fingerprint,
+            origin_ref=origin_ref,
+        )
+        with self.database.transaction() as connection:
+            raced = connection.execute(
+                "SELECT * FROM canonical_evidence WHERE origin_kind=? AND origin_ref=?",
+                (EvidenceOrigin.MANUAL.value, origin_ref),
+            ).fetchone()
+            if raced is not None:
+                return self._replay_commit(ledger._row(raced), request_fingerprint)
+            locked_snapshot = self._snapshot(request.preview_request.goal_id)
+            if locked_snapshot.source_revision_digest != request.source_revision_digest:
+                raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
+            self._verify_or_stage_bindings(
+                connection=connection,
+                preview=preview,
+                pending=new_evidence,
+            )
+            records = ledger.ingest_batch_in_transaction(
+                connection,
+                [*new_evidence.values(), final_request],
+            )
+            commitment = records[-1]
+        return self._commit_response(commitment)
+
+    def _new_binding_evidence(
+        self,
+        preview: OwnerStructuredReviewPreview,
+        principal: OwnerPrincipal,
+    ) -> dict[str, CanonicalEvidenceCreate]:
+        facts = preview.state_facts
+        if facts is None:  # guarded by commit, retained as a local invariant
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_PREVIEW_MISMATCH")
+        document = facts.model_dump(mode="json")
+        requests: dict[str, CanonicalEvidenceCreate] = {}
+        binding_groups = (
+            facts.subject_lock.evidence_bindings,
+            facts.pose_lock.evidence_bindings,
+            facts.scene_lock.evidence_bindings,
+            facts.camera_lock.evidence_bindings,
+        )
+        for binding in (item for group in binding_groups for item in group):
+            if (
+                self.database.fetchone(
+                    "SELECT evidence_id FROM canonical_evidence WHERE evidence_id=?",
+                    (binding.evidence_id,),
+                )
+                is not None
+            ):
+                continue
+            value = self._value_at_path(document, binding.field_path)
+            request = self._field_evidence_request(
+                preview=preview,
+                principal=principal,
+                path=binding.field_path,
+                value=value,
+                authority=binding.authority_kind,
+            )
+            predicted = self._predicted_evidence_id(
+                path=binding.field_path,
+                value=value,
+                authority=binding.authority_kind,
+                review_digest=preview.review_digest,
+                actor_id=principal.actor_id,
+            )
+            if predicted != binding.evidence_id:
+                raise OwnerStructuredReviewError(409, "OWNER_REVIEW_EVIDENCE_BINDING_INVALID")
+            requests[predicted] = request
+
+        events_request = self._field_evidence_request(
+            preview=preview,
+            principal=principal,
+            path="allowed_events",
+            value=document["allowed_events"],
+            authority=AuthorityKind.OWNER_CREATIVE_INTENT,
+        )
+        events_id = self._predicted_evidence_id(
+            path="allowed_events",
+            value=document["allowed_events"],
+            authority=AuthorityKind.OWNER_CREATIVE_INTENT,
+            review_digest=preview.review_digest,
+            actor_id=principal.actor_id,
+        )
+        if (
+            self.database.fetchone(
+                "SELECT evidence_id FROM canonical_evidence WHERE evidence_id=?", (events_id,)
+            )
+            is None
+        ):
+            requests[events_id] = events_request
+        return requests
+
+    @classmethod
+    def _field_evidence_request(
+        cls,
+        *,
+        preview: OwnerStructuredReviewPreview,
+        principal: OwnerPrincipal,
+        path: str,
+        value: JsonValue,
+        authority: AuthorityKind,
+    ) -> CanonicalEvidenceCreate:
+        trust = EvidenceTrust.D if authority is AuthorityKind.OWNER_ATTESTATION else EvidenceTrust.E
+        return CanonicalEvidenceCreate(
+            goal_id=preview.goal_id,
+            subject_key=preview.subject_key,
+            evidence_type="pet.owner.state_field.v1",
+            source="owner_structured_review",
+            platform="private_mac_core",
+            value=cls._correction_value(
+                path=path,
+                value=value,
+                authority=authority,
+                review_digest=preview.review_digest,
+                actor_id=principal.actor_id,
+            ),
+            trust_level=trust,
+            confidence=1.0,
+            captured_at=datetime.now(UTC),
+            provenance={
+                "actor_id": principal.actor_id,
+                "credential_id": principal.credential_id,
+                "owner_reviewed": True,
+                "photo_bytes_verified": False,
+                "proposal_digest": preview.proposal_digest,
+                "preview_digest": preview.preview_digest,
+                "review_digest": preview.review_digest,
+                "registry_revision": principal.registry_revision,
+            },
+            origin_kind=EvidenceOrigin.MANUAL,
+            origin_ref=(f"owner-structured-review:{preview.review_digest}:field:{path}"),
+        )
+
+    @staticmethod
+    def _commit_evidence_request(
+        *,
+        preview: OwnerStructuredReviewPreview,
+        principal: OwnerPrincipal,
+        request_fingerprint: str,
+        origin_ref: str,
+    ) -> CanonicalEvidenceCreate:
+        facts = preview.state_facts
+        if facts is None:
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_PREVIEW_MISMATCH")
+        return CanonicalEvidenceCreate(
+            goal_id=preview.goal_id,
+            subject_key=preview.subject_key,
+            evidence_type="pet.owner.state_facts.v1",
+            source="owner_structured_review",
+            platform="private_mac_core",
+            value={
+                "record_kind": "owner_structured_review_commit.v1",
+                "request_fingerprint": request_fingerprint,
+                "review_actor_id": principal.actor_id,
+                "source_revision_digest": preview.source_revision_digest,
+                "proposal_digest": preview.proposal_digest,
+                "review_digest": preview.review_digest,
+                "preview_digest": preview.preview_digest,
+                "state_facts": facts.model_dump(mode="json"),
+            },
+            trust_level=EvidenceTrust.D,
+            confidence=1.0,
+            captured_at=datetime.now(UTC),
+            provenance={
+                "actor_id": principal.actor_id,
+                "credential_id": principal.credential_id,
+                "owner_reviewed": True,
+                "photo_bytes_verified": False,
+                "proposal_digest": preview.proposal_digest,
+                "preview_digest": preview.preview_digest,
+                "review_digest": preview.review_digest,
+                "registry_revision": principal.registry_revision,
+            },
+            origin_kind=EvidenceOrigin.MANUAL,
+            origin_ref=origin_ref,
+        )
+
+    def _verify_or_stage_bindings(
+        self,
+        *,
+        connection: Any,
+        preview: OwnerStructuredReviewPreview,
+        pending: dict[str, CanonicalEvidenceCreate],
+    ) -> None:
+        facts = preview.state_facts
+        if facts is None:
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_PREVIEW_MISMATCH")
+        document = facts.model_dump(mode="json")
+        binding_groups = (
+            facts.subject_lock.evidence_bindings,
+            facts.pose_lock.evidence_bindings,
+            facts.scene_lock.evidence_bindings,
+            facts.camera_lock.evidence_bindings,
+        )
+        for binding in (item for group in binding_groups for item in group):
+            if binding.review_digest != preview.review_digest:
+                raise OwnerStructuredReviewError(409, "OWNER_REVIEW_EVIDENCE_BINDING_INVALID")
+            expected_value = self._value_at_path(document, binding.field_path)
+            row = connection.execute(
+                "SELECT * FROM canonical_evidence WHERE evidence_id=?",
+                (binding.evidence_id,),
+            ).fetchone()
+            if row is None:
+                request = pending.get(binding.evidence_id)
+                if (
+                    request is None
+                    or request.subject_key != preview.subject_key
+                    or request.value.get("field_path") != binding.field_path
+                    or canonical_sha256(request.value.get("field_value")) != binding.value_digest
+                    or request.value.get("authority_kind") != binding.authority_kind.value
+                ):
+                    raise OwnerStructuredReviewError(409, "OWNER_REVIEW_EVIDENCE_BINDING_INVALID")
+                continue
+            try:
+                value = json.loads(row["value_json"])
+                persisted_value = value["field_value"]
+                persisted_path = value["field_path"]
+                persisted_authority = AuthorityKind(value["authority_kind"])
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                raise OwnerStructuredReviewError(
+                    409, "OWNER_REVIEW_EVIDENCE_BINDING_INVALID"
+                ) from error
+            expected_trust = (
+                "D" if binding.authority_kind is AuthorityKind.OWNER_ATTESTATION else "E"
+            )
+            if (
+                row["subject_key"] != preview.subject_key
+                or persisted_path != binding.field_path
+                or persisted_authority is not binding.authority_kind
+                or row["trust_level"] != expected_trust
+                or canonical_sha256(persisted_value) != canonical_sha256(expected_value)
+                or canonical_sha256(persisted_value) != binding.value_digest
+            ):
+                raise OwnerStructuredReviewError(409, "OWNER_REVIEW_EVIDENCE_BINDING_INVALID")
+
+    @staticmethod
+    def _value_at_path(document: dict[str, Any], field_path: str) -> JsonValue:
+        current: Any = document
+        for part in field_path.split("."):
+            if not isinstance(current, dict) or part not in current:
+                raise OwnerStructuredReviewError(409, "OWNER_REVIEW_EVIDENCE_BINDING_INVALID")
+            current = current[part]
+        return current
+
+    @staticmethod
+    def _replay_commit(
+        record: CanonicalEvidenceRecord,
+        request_fingerprint: str,
+    ) -> OwnerStructuredReviewCommit:
+        if (
+            record.evidence_type != "pet.owner.state_facts.v1"
+            or record.source != "owner_structured_review"
+            or record.value.get("request_fingerprint") != request_fingerprint
+        ):
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_IDEMPOTENCY_CONFLICT")
+        return OwnerStructuredReviewService._commit_response(record)
+
+    @staticmethod
+    def _commit_response(record: CanonicalEvidenceRecord) -> OwnerStructuredReviewCommit:
+        try:
+            value = record.value
+            facts = StateFactsV1.model_validate(value["state_facts"])
+            return OwnerStructuredReviewCommit(
+                commitment_id=record.evidence_id,
+                goal_id=record.goal_id or "",
+                subject_key=record.subject_key,
+                review_actor_id=value["review_actor_id"],
+                source_revision_digest=value["source_revision_digest"],
+                proposal_digest=value["proposal_digest"],
+                review_digest=value["review_digest"],
+                preview_digest=value["preview_digest"],
+                facts_id=facts.facts_id,
+                facts_digest=facts.facts_digest,
+            )
+        except (KeyError, TypeError, ValidationError, ValueError) as error:
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_COMMIT_RECORD_INVALID") from error
+
     def _snapshot(self, goal_id: str) -> _Snapshot:
         row = self.database.fetchone(
             "SELECT g.*,s.creative_job_id,s.discovery_result_hash,s.synthesis_result_hash,"
@@ -363,10 +713,27 @@ class OwnerStructuredReviewService:
             raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_EVIDENCE_MISSING")
 
         summaries = tuple(self._evidence_summary(item) for item in subject_rows)
-        candidates = tuple(
+        raw_candidates = tuple(
             candidate
             for item in subject_rows
             if (candidate := self._typed_candidate(item)) is not None
+        )
+        approved = self._approved_candidate_keys(
+            subject_rows,
+            goal_id=row["goal_id"],
+            subject_key=subject_key,
+        )
+        candidates = tuple(
+            candidate
+            for candidate in raw_candidates
+            if (
+                candidate.review_digest,
+                candidate.evidence_id,
+                candidate.field_path,
+                canonical_sha256(candidate.value),
+                candidate.authority_kind.value,
+            )
+            in approved
         )
         revision = canonical_sha256(
             {
@@ -476,6 +843,68 @@ class OwnerStructuredReviewService:
             trust_level=row["trust_level"],
             review_digest=review_digest,
         )
+
+    @classmethod
+    def _approved_candidate_keys(
+        cls,
+        rows: list[Any],
+        *,
+        goal_id: str,
+        subject_key: str,
+    ) -> set[tuple[str, str, str, str, str]]:
+        approved: set[tuple[str, str, str, str, str]] = set()
+        for row in rows:
+            if (
+                row["goal_id"] != goal_id
+                or row["subject_key"] != subject_key
+                or row["evidence_type"] != "pet.owner.state_facts.v1"
+                or row["source"] != "owner_structured_review"
+            ):
+                continue
+            try:
+                value = json.loads(row["value_json"])
+                if value["record_kind"] != "owner_structured_review_commit.v1":
+                    continue
+                review_digest = value["review_digest"]
+                actor_id = value["review_actor_id"]
+                facts = StateFactsV1.model_validate(value["state_facts"])
+            except (KeyError, TypeError, ValueError, ValidationError, json.JSONDecodeError):
+                continue
+            groups = (
+                facts.subject_lock.evidence_bindings,
+                facts.pose_lock.evidence_bindings,
+                facts.scene_lock.evidence_bindings,
+                facts.camera_lock.evidence_bindings,
+            )
+            for binding in (item for group in groups for item in group):
+                if binding.review_digest == review_digest:
+                    approved.add(
+                        (
+                            review_digest,
+                            binding.evidence_id,
+                            binding.field_path,
+                            binding.value_digest,
+                            binding.authority_kind.value,
+                        )
+                    )
+            events = facts.model_dump(mode="json")["allowed_events"]
+            events_id = cls._predicted_evidence_id(
+                path="allowed_events",
+                value=events,
+                authority=AuthorityKind.OWNER_CREATIVE_INTENT,
+                review_digest=review_digest,
+                actor_id=actor_id,
+            )
+            approved.add(
+                (
+                    review_digest,
+                    events_id,
+                    "allowed_events",
+                    canonical_sha256(events),
+                    AuthorityKind.OWNER_CREATIVE_INTENT.value,
+                )
+            )
+        return approved
 
     @staticmethod
     def _proposal_fields(
