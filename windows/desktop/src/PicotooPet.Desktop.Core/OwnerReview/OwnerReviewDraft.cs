@@ -16,10 +16,11 @@ public sealed class OwnerReviewFieldState
     public OwnerReviewFieldState(OwnerFieldProposal proposal)
     {
         Proposal = proposal;
-        Group = proposal.AuthorityKind == OwnerReviewWire.AuthorityCreativeIntent
-                || proposal.FieldPath.StartsWith("allowed_events", StringComparison.Ordinal)
-            ? OwnerReviewFieldGroup.CreativeIntent
-            : OwnerReviewFieldGroup.IdentityAndSceneFacts;
+        // UNKNOWN fields have no authority hint; group by the Core field contract.
+        // Identity describes observed/owner-attested facts; pose/scene/camera are intent.
+        Group = proposal.FieldPath.StartsWith("subject_lock.", StringComparison.Ordinal)
+            ? OwnerReviewFieldGroup.IdentityAndSceneFacts
+            : OwnerReviewFieldGroup.CreativeIntent;
     }
 
     public OwnerFieldProposal Proposal { get; }
@@ -51,6 +52,7 @@ public sealed class OwnerReviewDraft
     private static readonly char[] SplitChars = ['\n', '\r', ';', '；'];
     private readonly Dictionary<string, OwnerReviewFieldState> _fields;
     private string? _previewedFingerprint;
+    private bool _staticPetStorySelected;
 
     public OwnerReviewDraft(OwnerReviewProposal proposal)
     {
@@ -65,6 +67,18 @@ public sealed class OwnerReviewDraft
     public OwnerReviewPreview? Preview { get; private set; }
     public OwnerReviewCommit? Committed { get; private set; }
     public bool OwnerExplicitlyConfirmed { get; set; }
+
+    /// <summary>Separate explicit owner selection; this policy is NEVER auto-enabled.</summary>
+    public bool StaticPetStorySelected
+    {
+        get => _staticPetStorySelected;
+        set
+        {
+            if (_staticPetStorySelected == value) return;
+            _staticPetStorySelected = value;
+            InvalidatePreview();
+        }
+    }
 
     /// <summary>当前预览对应的幂等键；同一预览的重试复用同一键，新预览换新键。</summary>
     public string? IdempotencyKey { get; private set; }
@@ -120,17 +134,21 @@ public sealed class OwnerReviewDraft
             .Select(field => new OwnerFieldDecision(
                 field.Proposal.FieldPath,
                 field.Decision!,
-                field.Decision == OwnerReviewWire.DecisionCorrect ? ToJson(field.CorrectedText, field.Proposal.Value) : null))
+                field.Decision == OwnerReviewWire.DecisionCorrect
+                    ? ToJson(field.CorrectedText, field.Proposal.FieldPath) : null))
             .ToList();
         return new OwnerReviewPreviewRequest(
-            Proposal.GoalId, Proposal.ReviewActorId, Proposal.ProposalDigest, decisions);
+            Proposal.GoalId, Proposal.ReviewActorId, Proposal.ProposalDigest, decisions,
+            StaticPetStorySelected ? OwnerReviewWire.StaticPetStoryPolicy : null);
     }
 
     /// <summary>接受 Core 返回的预览，并为这一预览分配新的幂等键。</summary>
     public void AcceptPreview(OwnerReviewPreview preview)
     {
         ArgumentNullException.ThrowIfNull(preview);
-        if (preview.ProposalDigest != Proposal.ProposalDigest || preview.GoalId != Proposal.GoalId)
+        if (preview.ProposalDigest != Proposal.ProposalDigest
+            || preview.GoalId != Proposal.GoalId
+            || preview.StoryPolicyOptIn != (StaticPetStorySelected ? OwnerReviewWire.StaticPetStoryPolicy : null))
         {
             throw new OwnerReviewException(OwnerReviewFailureKind.Conflict, 409, "OWNER_REVIEW_PREVIEW_MISMATCH");
         }
@@ -176,6 +194,9 @@ public sealed class OwnerReviewDraft
 
     public void MarkCommitted(OwnerReviewCommit commit) => Committed = commit;
 
+    /// <summary>After any 409 the old Core preview, consent and replay key are invalid.</summary>
+    public void DiscardPreviewAfterConflict() => InvalidatePreview();
+
     private void InvalidatePreview()
     {
         Preview = null;
@@ -188,17 +209,23 @@ public sealed class OwnerReviewDraft
     {
         var text = string.Join(
             "\n",
-            _fields.Values.Select(f => $"{f.Proposal.FieldPath}\u001f{f.Decision}\u001f{f.CorrectedText}"));
+            _fields.Values.Select(f => $"{f.Proposal.FieldPath}\u001f{f.Decision}\u001f{f.CorrectedText}"))
+            + "\u001fstatic-policy=" + _staticPetStorySelected;
         return Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
     }
 
     /// <summary>
-    /// 更正值按提案值类型发送：列表字段按行/分号拆分为字符串数组，其余为字符串。
+    /// 更正值按冻结字段合同类型发送：首次 UNKNOWN 时也能正确提交列表。
     /// Core 对类型和证据绑定拥有最终裁决权。
     /// </summary>
-    private static JsonElement ToJson(string text, JsonElement? proposed)
+    private static JsonElement ToJson(string text, string fieldPath)
     {
-        object payload = proposed is { ValueKind: JsonValueKind.Array }
+        // Do not use a proposed value's type: all FIRST-TIME Core fields can be UNKNOWN.
+        var isList = fieldPath is "subject_lock.distinguishing_marks"
+            or "scene_lock.temporary_accessories"
+            or "camera_lock.allowed_framings"
+            or "allowed_events";
+        object payload = isList
             ? text.Split(SplitChars, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : text.Trim();
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
