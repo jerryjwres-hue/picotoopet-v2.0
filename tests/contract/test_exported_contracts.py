@@ -41,6 +41,8 @@ def test_openapi_and_mcp_contracts_match_phase_one_surface() -> None:
     assert "/api/v1/health" in openapi["paths"]
     assert "/api/v1/tasks" in openapi["paths"]
     assert "/api/v1/events" in openapi["paths"]
+    assert "/api/v1/owner-structured-reviews/preview" in openapi["paths"]
+    assert "/api/v1/owner-structured-reviews/commit" in openapi["paths"]
     assert len(tools["tools"]) == 21
     assert {tool["name"] for tool in tools["tools"]} >= {
         "submit_video_generation",

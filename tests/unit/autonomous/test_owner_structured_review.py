@@ -476,3 +476,48 @@ def test_proposal_rejects_typed_evidence_without_an_actual_committed_review(
     proposal = OwnerStructuredReviewService(review_database).proposal(GOAL_ID, _principal())
 
     assert proposal.fields["subject_lock.species"].status == "UNKNOWN"
+
+
+def test_commit_maps_late_origin_conflict_to_409_and_rolls_back(
+    review_database: Database,
+) -> None:
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    preview_request, preview = _preview_request(service, principal)
+    conflicting_path = "camera_lock.allowed_framings"
+    CanonicalEvidenceLedger(review_database).ingest(
+        CanonicalEvidenceCreate(
+            goal_id="unrelated-goal",
+            subject_key="pet:unrelated-subject",
+            evidence_type="synthetic.conflict",
+            source="owner_structured_review",
+            platform="private_mac_core",
+            text_value="Occupy the later origin with different synthetic content.",
+            trust_level=EvidenceTrust.E,
+            confidence=1.0,
+            captured_at=datetime.now(UTC),
+            provenance={"synthetic_conflict": True},
+            origin_kind=EvidenceOrigin.MANUAL,
+            origin_ref=(
+                f"owner-structured-review:{preview.review_digest}:field:{conflicting_path}"
+            ),
+        )
+    )
+    before = review_database.scalar("SELECT COUNT(*) FROM canonical_evidence")
+    request = OwnerStructuredReviewCommitRequest(
+        preview_request=preview_request,
+        source_revision_digest=preview.source_revision_digest,
+        review_digest=preview.review_digest,
+        preview_digest=preview.preview_digest,
+    )
+
+    with pytest.raises(OwnerStructuredReviewError) as conflict:
+        service.commit(request, principal, idempotency_key="synthetic-late-conflict")
+
+    assert conflict.value.status_code == 409
+    assert conflict.value.code == "OWNER_REVIEW_EVIDENCE_CONFLICT"
+    assert review_database.scalar("SELECT COUNT(*) FROM canonical_evidence") == before
+    assert review_database.scalar(
+        "SELECT COUNT(*) FROM canonical_evidence WHERE subject_key=?",
+        (SUBJECT,),
+    ) == 1

@@ -97,6 +97,27 @@ class OwnerStructuredFieldDecision(_Strict):
 
 
 class OwnerStructuredReviewPreviewRequest(_Strict):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "goal_id": "goal-example",
+                    "review_actor_id": "owner-local",
+                    "proposal_digest": "a" * 64,
+                    "decisions": [
+                        {
+                            "field_path": "subject_lock.species",
+                            "decision": "CORRECT",
+                            "corrected_value": "cat",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
     goal_id: str = Field(min_length=1, max_length=128)
     review_actor_id: str = Field(min_length=1, max_length=80)
     proposal_digest: str = Field(pattern=_DIGEST)
@@ -165,6 +186,26 @@ class OwnerStructuredReviewPreview(_Strict):
 
 
 class OwnerStructuredReviewCommitRequest(_Strict):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "preview_request": {
+                        "goal_id": "goal-example",
+                        "review_actor_id": "owner-local",
+                        "proposal_digest": "a" * 64,
+                        "decisions": [],
+                    },
+                    "source_revision_digest": "b" * 64,
+                    "review_digest": "c" * 64,
+                    "preview_digest": "d" * 64,
+                }
+            ]
+        },
+    )
+
     preview_request: OwnerStructuredReviewPreviewRequest
     source_revision_digest: str = Field(pattern=_DIGEST)
     review_digest: str = Field(pattern=_DIGEST)
@@ -383,26 +424,31 @@ class OwnerStructuredReviewService:
             request_fingerprint=request_fingerprint,
             origin_ref=origin_ref,
         )
-        with self.database.transaction() as connection:
-            raced = connection.execute(
-                "SELECT * FROM canonical_evidence WHERE origin_kind=? AND origin_ref=?",
-                (EvidenceOrigin.MANUAL.value, origin_ref),
-            ).fetchone()
-            if raced is not None:
-                return self._replay_commit(ledger._row(raced), request_fingerprint)
-            locked_snapshot = self._snapshot(request.preview_request.goal_id)
-            if locked_snapshot.source_revision_digest != request.source_revision_digest:
-                raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
-            self._verify_or_stage_bindings(
-                connection=connection,
-                preview=preview,
-                pending=new_evidence,
-            )
-            records = ledger.ingest_batch_in_transaction(
-                connection,
-                [*new_evidence.values(), final_request],
-            )
-            commitment = records[-1]
+        try:
+            with self.database.transaction() as connection:
+                raced = connection.execute(
+                    "SELECT * FROM canonical_evidence WHERE origin_kind=? AND origin_ref=?",
+                    (EvidenceOrigin.MANUAL.value, origin_ref),
+                ).fetchone()
+                if raced is not None:
+                    return self._replay_commit(ledger._row(raced), request_fingerprint)
+                locked_snapshot = self._snapshot(request.preview_request.goal_id)
+                if locked_snapshot.source_revision_digest != request.source_revision_digest:
+                    raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
+                self._verify_or_stage_bindings(
+                    connection=connection,
+                    preview=preview,
+                    pending=new_evidence,
+                )
+                records = ledger.ingest_batch_in_transaction(
+                    connection,
+                    [*new_evidence.values(), final_request],
+                )
+                commitment = records[-1]
+        except ValueError as error:
+            raise OwnerStructuredReviewError(
+                409, "OWNER_REVIEW_EVIDENCE_CONFLICT"
+            ) from error
         return self._commit_response(commitment)
 
     def _new_binding_evidence(

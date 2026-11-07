@@ -29,9 +29,9 @@ from .routes import (
     frugal_escalation,
     handoffs,
     health,
+    owner_structured_reviews,
     postproduction,
     production,
-    reference_registration,
     progress,
     projects,
     provider_commits,
@@ -39,6 +39,7 @@ from .routes import (
     provider_reviews,
     provider_sessions,
     quality_promotion,
+    reference_registration,
     results,
     returns,
     status,
@@ -61,7 +62,9 @@ def create_app(settings: AppSettings) -> FastAPI:
             except Exception:
                 logger.exception("workflow scheduler reconciliation failed")
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=settings.workflow_reconcile_seconds)
+                await asyncio.wait_for(
+                    stop_event.wait(), timeout=settings.workflow_reconcile_seconds
+                )
             except TimeoutError:
                 continue
 
@@ -73,7 +76,9 @@ def create_app(settings: AppSettings) -> FastAPI:
             except Exception:
                 logger.exception("business pipeline scheduler reconciliation failed")
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=settings.workflow_reconcile_seconds)
+                await asyncio.wait_for(
+                    stop_event.wait(), timeout=settings.workflow_reconcile_seconds
+                )
             except TimeoutError:
                 continue
 
@@ -87,7 +92,9 @@ def create_app(settings: AppSettings) -> FastAPI:
             except Exception:
                 logger.exception("deep-ai result reconciliation failed")
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=settings.workflow_reconcile_seconds)
+                await asyncio.wait_for(
+                    stop_event.wait(), timeout=settings.workflow_reconcile_seconds
+                )
             except TimeoutError:
                 continue
 
@@ -134,6 +141,11 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(automation.router, prefix=prefix, tags=["automation"])
     app.include_router(autonomous_goals.router, prefix=prefix, tags=["autonomous-goals"])
     app.include_router(autonomous_intake.router, prefix=prefix, tags=["autonomous-intake"])
+    app.include_router(
+        owner_structured_reviews.router,
+        prefix=prefix,
+        tags=["owner-structured-reviews"],
+    )
     app.include_router(business_automation.router, prefix=prefix, tags=["business-automation"])
     app.include_router(business_pipeline.router, prefix=prefix, tags=["business-pipeline"])
     app.include_router(creative_intelligence.router, prefix=prefix, tags=["creative-intelligence"])
