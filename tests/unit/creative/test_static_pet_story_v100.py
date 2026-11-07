@@ -135,7 +135,9 @@ def test_wrong_typed_event_or_only_breathing_is_rejected(index: int, bad_event: 
         opt_in=opt_in, verify_owner_commitment=lambda record: True,
     )
     assert result.outcome == "NEEDS_HUMAN"
-    assert any(code.startswith("STATIC_STORY_SHOT_OR_EVENT_INVALID") for code in result.reason_codes)
+    assert any(
+        code.startswith("STATIC_STORY_SHOT_OR_EVENT_INVALID") for code in result.reason_codes
+    )
 
 
 def test_no_progress_in_framing_is_not_a_story_payoff() -> None:
