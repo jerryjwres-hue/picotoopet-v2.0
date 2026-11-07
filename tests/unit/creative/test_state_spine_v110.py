@@ -79,9 +79,10 @@ def test_state_spine_rejects_an_event_not_authorized_by_owner_facts() -> None:
         build_state_spine(facts, ["BLINK_AND_REOPEN", "HEAD_TURN", "SUBTLE_BREATHING"])
 
 
-def test_model_contract_cannot_contain_or_rewrite_locked_fields() -> None:
+@pytest.mark.parametrize("field", ["subject", "pose_lock"])
+def test_model_contract_cannot_contain_or_rewrite_locked_fields(field: str) -> None:
     proposal = _proposal()
-    proposal["subject"] = {"species": "dog"}
+    proposal[field] = {"species": "dog"} if field == "subject" else {"body_pose": "standing"}
 
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         UnlockedVideoBibleProposalV1.model_validate(proposal)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal
@@ -188,7 +189,15 @@ class StateFactsV1(_Strict):
 
 
 def seal_state_facts(payload: dict[str, Any]) -> StateFactsV1:
-    document = {key: value for key, value in payload.items() if key != "facts_digest"}
+    document = deepcopy({key: value for key, value in payload.items() if key != "facts_digest"})
+    for lock_name in ("subject_lock", "pose_lock", "scene_lock", "camera_lock"):
+        lock = document.get(lock_name)
+        if isinstance(lock, dict) and isinstance(lock.get("evidence_bindings"), list):
+            lock["evidence_bindings"] = sorted(
+                lock["evidence_bindings"], key=lambda item: str(item.get("field_path", ""))
+            )
+    if isinstance(document.get("allowed_events"), list):
+        document["allowed_events"] = sorted(document["allowed_events"])
     document["facts_digest"] = canonical_sha256(document)
     return StateFactsV1.model_validate(document)
 
@@ -369,7 +378,7 @@ def _continuity_anchors(facts: StateFactsV1) -> list[str]:
         f"fixed head direction: {pose.head_direction}",
         f"fixed support surface: {pose.support_surface}",
         f"fixed temporary accessories: {accessories}",
-        f"fixed camera: STATIC; allowed framings: {framings}",
+        f"fixed camera: locked-off tripod, no movement; allowed framings: {framings}",
     ]
 
 
@@ -463,7 +472,7 @@ def bind_pet_only_video_bible(
             )
         ],
         camera_rules=CameraRules(
-            screen_direction="NONE", allowed_movements=[CameraMovement.STATIC]
+            screen_direction="LEFT_TO_RIGHT", allowed_movements=[CameraMovement.STATIC]
         ),
         continuity_anchors=_continuity_anchors(facts),
         global_continuity_notes=[

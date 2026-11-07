@@ -89,7 +89,10 @@ def state_facts_payload() -> dict:
 def test_state_facts_canonical_digest_is_stable_and_self_verified() -> None:
     payload = state_facts_payload()
     first = seal_state_facts(payload)
-    second = seal_state_facts(dict(reversed(list(payload.items()))))
+    reordered = dict(reversed(list(payload.items())))
+    reordered["subject_lock"]["evidence_bindings"].reverse()
+    reordered["allowed_events"].reverse()
+    second = seal_state_facts(reordered)
 
     assert first == second
     assert first.facts_digest == canonical_sha256(first.model_dump(mode="json"), "facts_digest")

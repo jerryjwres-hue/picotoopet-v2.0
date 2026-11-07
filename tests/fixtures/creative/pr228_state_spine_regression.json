@@ -1,0 +1,31 @@
+{
+  "schema_version": "state_spine_regression.v1",
+  "baseline_id": "pr228-v105-new-synthetic-mochi-fixed-pose-v1",
+  "baseline_type": "NEW_SYNTHETIC",
+  "combined_baseline_sha256": "ea9ef7ab7c85857e79660c041846531e9115681facf9b9d3bd50dcae015272fc",
+  "verified_file_sha256": {
+    "source-set.json": "c9e25ca6d47966e19918318ea2f0e676c02d7787272bfdc7365a19605cef9656",
+    "objective.json": "0a3893224681003b1665629c6783c386be246183ee7299c7fbafa7b58eac1293",
+    "attempt-1.output.json": "cd3eed25c712146be946bf9a6f6082ce7b34afb6fe0f1b0c9ceb748e722a5da7",
+    "attempt-2.output.json": "09aeed758373517b7897afc6378c1b5dc743d3ff4bc609c69ab3797fe146c608"
+  },
+  "source_taxonomy": {
+    "species": "cat",
+    "breed_or_type": "white short-haired cat"
+  },
+  "attempt_2_taxonomy": {
+    "species": "Felis catus",
+    "breed_or_type": "cat"
+  },
+  "source_pose": {
+    "body_pose": "sphinx pose",
+    "support_surface": "wooden living-room floor",
+    "head_direction_present": false
+  },
+  "source_camera": {
+    "movement": "STATIC",
+    "explicit_allowed_framings_present": false
+  },
+  "fixture_scope_note": "The source explicitly authorizes softly half-closed eyes; it is not the real Maotai objective and cannot authorize that state for another subject.",
+  "fixture_digest": "1e1e8d785f7ed7895fff23604ea2abe102ba9009839281d7cbb1550960802e1b"
+}
