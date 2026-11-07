@@ -51,14 +51,17 @@
             <TextBlock Text="{Binding ProposalHeader}" Margin="0,8,0,0" FontWeight="SemiBold"/>
             <TextBlock Text="{Binding EvidenceNotice}" TextWrapping="Wrap" Foreground="#FF8A5A00"/>
 
-            <TextBlock Text="一、身份与场景事实（来自照片/主人声明，不是创作意图）" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+            <TextBlock Text="一、身份事实（主人确认的宠物身份，不是创作意图）" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <ItemsControl ItemsSource="{Binding IdentityFields}" ItemTemplate="{StaticResource FieldRowTemplate}"
                           AutomationProperties.AutomationId="OwnerReviewIdentityFields"/>
 
-            <TextBlock Text="二、创作意图（主人想要的动作，不是已验证事实）" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+            <TextBlock Text="二、姿势／场景／创作意图（只授权设计，不证明照片中的真实状态）" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <ItemsControl ItemsSource="{Binding IntentFields}" ItemTemplate="{StaticResource FieldRowTemplate}"
                           AutomationProperties.AutomationId="OwnerReviewIntentFields"/>
 
+            <CheckBox Content="单独授权静态宠物故事策略：首镜眨眼后睁眼，后两镜仅轻微呼吸（不自动启用）"
+                      IsChecked="{Binding StaticPetStorySelected, Mode=TwoWay}" IsEnabled="{Binding HasProposal}"
+                      Margin="0,8,0,0" AutomationProperties.AutomationId="OwnerReviewStaticStoryOptIn"/>
             <Button Content="2. 生成预览（不写入）" Command="{Binding PreviewCommand}" Margin="0,8,0,0" HorizontalAlignment="Left"
                     AutomationProperties.AutomationId="OwnerReviewPreview"/>
             <TextBox Text="{Binding PreviewSummary, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Margin="0,8,0,0"
