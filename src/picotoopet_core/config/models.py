@@ -76,7 +76,9 @@ class AppSettings(BaseModel):
         # Never expose secret fingerprints, actor identifiers or granted subjects.
         payload["owner_review_registry"] = {
             "configured": len(self.owner_review_registry.credentials),
-            "enabled": sum(credential.enabled for credential in self.owner_review_registry.credentials),
+            "enabled": sum(
+                credential.enabled for credential in self.owner_review_registry.credentials
+            ),
         }
         payload["provider_repository"] = (
             "configured" if self.provider_repository is not None else "disabled"
