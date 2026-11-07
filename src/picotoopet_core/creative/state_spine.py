@@ -15,6 +15,22 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from .models import CreativeScriptResult
+from .video_bible import (
+    ArcBeat,
+    BeatRole,
+    CameraMovement,
+    CameraRules,
+    Featured,
+    Handoff,
+    NegativeConcept,
+    PetOnlyVideoBibleDraft,
+    SceneSpec,
+    ShotBible,
+    SubjectIdentity,
+    expanded_shot_fields,
+)
+
 STATE_FACTS_SCHEMA_VERSION = "state_facts.v1"
 STATE_SPINE_TEMPLATE_VERSION = "video-bible-pet-only-v1.1.0"
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
@@ -200,3 +216,294 @@ def state_facts_readiness(payload: StateFactsV1 | dict[str, Any] | None) -> Stat
         "NEEDS_HUMAN", ("STATE_FACTS_INVALID",)
     )
 
+
+class EyeState(StrEnum):
+    OPEN = "OPEN"
+
+
+class BreathingState(StrEnum):
+    RESTING = "RESTING"
+    SUBTLE = "SUBTLE"
+
+
+class SpineStateV1(_Strict):
+    state_id: Literal["S0", "S1", "S2", "S3"]
+    subject_lock_id: str = Field(pattern=_ID_PATTERN, max_length=80)
+    pose_lock_id: str = Field(pattern=_ID_PATTERN, max_length=80)
+    scene_lock_id: str = Field(pattern=_ID_PATTERN, max_length=80)
+    camera_lock_id: str = Field(pattern=_ID_PATTERN, max_length=80)
+    eye_state: EyeState
+    breathing_state: BreathingState
+    completed_events: tuple[AllowedEvent, ...] = Field(max_length=3)
+
+
+class StateTransitionV1(_Strict):
+    shot_id: str = Field(pattern=_ID_PATTERN, max_length=80)
+    opening_state_id: Literal["S0", "S1", "S2"]
+    closing_state_id: Literal["S1", "S2", "S3"]
+    event: AllowedEvent
+
+
+class StateSpineV1(_Strict):
+    schema_version: Literal["state_spine.v1"] = "state_spine.v1"
+    facts_digest: str = Field(pattern=_DIGEST_PATTERN)
+    states: tuple[SpineStateV1, ...] = Field(min_length=4, max_length=4)
+    transitions: tuple[StateTransitionV1, ...] = Field(min_length=3, max_length=3)
+    story_change_authorized: bool
+    reason_codes: tuple[str, ...] = Field(max_length=8)
+    spine_digest: str = Field(pattern=_DIGEST_PATTERN)
+
+    @model_validator(mode="after")
+    def _integrity(self) -> StateSpineV1:
+        if [item.state_id for item in self.states] != ["S0", "S1", "S2", "S3"]:
+            raise ValueError("STATE_SPINE_STATE_ORDER_INVALID")
+        handoffs = [
+            (item.opening_state_id, item.closing_state_id) for item in self.transitions
+        ]
+        if handoffs != [("S0", "S1"), ("S1", "S2"), ("S2", "S3")]:
+            raise ValueError("STATE_SPINE_HANDOFF_INVALID")
+        if self.spine_digest != canonical_sha256(
+            self.model_dump(mode="json"), "spine_digest"
+        ):
+            raise ValueError("STATE_SPINE_DIGEST_MISMATCH")
+        return self
+
+
+def build_state_spine(
+    facts: StateFactsV1, events: list[AllowedEvent | str]
+) -> StateSpineV1:
+    """Build S0→S3 without asking a model to restate any locked state."""
+
+    if len(events) != 3:
+        raise ValueError("STATE_SPINE_REQUIRES_THREE_EVENTS")
+    try:
+        typed_events = tuple(AllowedEvent(item) for item in events)
+    except ValueError as exc:
+        raise ValueError("STATE_SPINE_EVENT_NOT_AUTHORIZED") from exc
+    if any(item not in facts.allowed_events for item in typed_events):
+        raise ValueError("STATE_SPINE_EVENT_NOT_AUTHORIZED")
+
+    states: list[SpineStateV1] = []
+    breathing = BreathingState.RESTING
+    completed: list[AllowedEvent] = []
+    for index in range(4):
+        states.append(
+            SpineStateV1(
+                state_id=f"S{index}",
+                subject_lock_id=facts.subject_lock.subject_id,
+                pose_lock_id=facts.pose_lock.pose_lock_id,
+                scene_lock_id=facts.scene_lock.scene_lock_id,
+                camera_lock_id=facts.camera_lock.camera_lock_id,
+                eye_state=EyeState.OPEN,
+                breathing_state=breathing,
+                completed_events=tuple(completed),
+            )
+        )
+        if index < 3:
+            event = typed_events[index]
+            completed.append(event)
+            if event is AllowedEvent.SUBTLE_BREATHING:
+                breathing = BreathingState.SUBTLE
+
+    transitions = tuple(
+        StateTransitionV1(
+            shot_id=f"shot-{index + 1:03d}",
+            opening_state_id=f"S{index}",
+            closing_state_id=f"S{index + 1}",
+            event=event,
+        )
+        for index, event in enumerate(typed_events)
+    )
+    # Both approved events are reversible micro-motion.  Neither authorizes Core to invent a
+    # persistent payoff such as half-closed eyes, a head turn, or a new body pose.
+    body: dict[str, Any] = {
+        "schema_version": "state_spine.v1",
+        "facts_digest": facts.facts_digest,
+        "states": [item.model_dump(mode="json") for item in states],
+        "transitions": [item.model_dump(mode="json") for item in transitions],
+        "story_change_authorized": False,
+        "reason_codes": ["STATE_SPINE_STORY_NO_CHANGE_CONFLICT"],
+    }
+    body["spine_digest"] = canonical_sha256(body)
+    return StateSpineV1.model_validate(body)
+
+
+class CreativeEmphasis(StrEnum):
+    CALM_OBSERVATIONAL = "CALM_OBSERVATIONAL"
+    DETAIL = "DETAIL"
+
+
+class UnlockedShotProposalV1(_Strict):
+    shot_id: str = Field(pattern=_ID_PATTERN, max_length=80)
+    beat_id: str = Field(pattern=_ID_PATTERN, max_length=80)
+    # The event is an echo of the Core-owned transition and must match exactly.
+    event: AllowedEvent
+    creative_emphasis: CreativeEmphasis
+    camera_framing: str = Field(min_length=1, max_length=120)
+
+
+class UnlockedVideoBibleProposalV1(_Strict):
+    schema_version: Literal["state_spine_proposal.v1"] = "state_spine_proposal.v1"
+    shots: tuple[UnlockedShotProposalV1, ...] = Field(min_length=3, max_length=3)
+    needs_deep_ai: bool = False
+    needs_human: bool = False
+
+
+def _identity_phrase(facts: StateFactsV1) -> str:
+    lock = facts.subject_lock
+    marks = ", ".join(lock.distinguishing_marks) or "no additional distinguishing marks"
+    return (
+        f"{lock.subject_id}, {lock.breed_or_type} {lock.species}, "
+        f"{lock.coat_or_appearance}, distinguishing marks: {marks}"
+    )
+
+
+def _continuity_anchors(facts: StateFactsV1) -> list[str]:
+    pose = facts.pose_lock
+    scene = facts.scene_lock
+    camera = facts.camera_lock
+    accessories = ", ".join(scene.temporary_accessories) or "none"
+    framings = ", ".join(camera.allowed_framings)
+    return [
+        f"fixed body pose: {pose.body_pose}",
+        f"fixed head direction: {pose.head_direction}",
+        f"fixed support surface: {pose.support_surface}",
+        f"fixed temporary accessories: {accessories}",
+        f"fixed camera: STATIC; allowed framings: {framings}",
+    ]
+
+
+def _visible_action(event: AllowedEvent, emphasis: CreativeEmphasis) -> str:
+    suffix = (
+        ", calm observational emphasis"
+        if emphasis is CreativeEmphasis.CALM_OBSERVATIONAL
+        else ", detail emphasis"
+    )
+    if event is AllowedEvent.BLINK_AND_REOPEN:
+        action = "the subject holds the fixed pose, makes one brief blink, and reopens both eyes"
+    else:
+        action = "the subject holds the fixed pose with only subtle breathing visible"
+    return action + suffix
+
+
+def bind_pet_only_video_bible(
+    facts: StateFactsV1,
+    spine: StateSpineV1,
+    proposal: UnlockedVideoBibleProposalV1,
+    script: CreativeScriptResult,
+    *,
+    require_story_payoff: bool = True,
+) -> PetOnlyVideoBibleDraft:
+    """Bind unlocked choices into the existing Bible contract without silent correction."""
+
+    if spine.facts_digest != facts.facts_digest:
+        raise ValueError("STATE_SPINE_FACTS_DIGEST_MISMATCH")
+    if require_story_payoff and not spine.story_change_authorized:
+        raise ValueError("STATE_SPINE_STORY_NO_CHANGE_CONFLICT")
+    if len(script.beats) != 3:
+        raise ValueError("STATE_SPINE_SCRIPT_REQUIRES_THREE_BEATS")
+    if proposal.needs_human or proposal.needs_deep_ai:
+        raise ValueError("STATE_SPINE_MODEL_DECLARED_REVIEW")
+
+    transitions = {item.shot_id: item for item in spine.transitions}
+    script_ids = [item.beat_id for item in script.beats]
+    if [item.beat_id for item in proposal.shots] != script_ids:
+        raise ValueError("STATE_SPINE_BEAT_CONFLICT")
+    if [item.shot_id for item in proposal.shots] != list(transitions):
+        raise ValueError("STATE_SPINE_SHOT_ORDER_CONFLICT")
+
+    shots: list[ShotBible] = []
+    for index, item in enumerate(proposal.shots):
+        transition = transitions[item.shot_id]
+        if item.event is not transition.event:
+            raise ValueError(f"STATE_SPINE_EVENT_CONFLICT:{item.shot_id}")
+        if item.camera_framing not in facts.camera_lock.allowed_framings:
+            raise ValueError(f"STATE_SPINE_CAMERA_FRAMING_CONFLICT:{item.shot_id}")
+        shots.append(
+            ShotBible(
+                shot_id=item.shot_id,
+                beat_id=item.beat_id,
+                order=index + 1,
+                scene_id=facts.scene_lock.scene_lock_id,
+                duration_seconds=script.beats[index].duration_seconds,
+                featured=[Featured.SUBJECT],
+                opening_state=(
+                    f"state_ref={transition.opening_state_id};"
+                    f"pose_lock_id={facts.pose_lock.pose_lock_id}"
+                ),
+                visible_action=_visible_action(transition.event, item.creative_emphasis),
+                closing_state=(
+                    f"state_ref={transition.closing_state_id};"
+                    f"pose_lock_id={facts.pose_lock.pose_lock_id}"
+                ),
+                camera_framing=item.camera_framing,
+                camera_movement=CameraMovement.STATIC,
+                handoff_to_next=Handoff.CONTINUOUS,
+                risk_flags=[],
+            )
+        )
+
+    roles = [BeatRole.HOOK, BeatRole.DEMO, BeatRole.CTA]
+    return PetOnlyVideoBibleDraft(
+        subject=SubjectIdentity(
+            subject_id=facts.subject_lock.subject_id,
+            kind="PET",
+            species=facts.subject_lock.species,
+            breed_or_type=facts.subject_lock.breed_or_type,
+            coat_or_appearance=facts.subject_lock.coat_or_appearance,
+            distinguishing_marks=facts.subject_lock.distinguishing_marks,
+            identity_phrase=_identity_phrase(facts),
+        ),
+        scenes=[
+            SceneSpec(
+                scene_id=facts.scene_lock.scene_lock_id,
+                environment_phrase=facts.scene_lock.environment,
+                lighting_phrase=facts.scene_lock.lighting,
+                palette=["source-locked"],
+            )
+        ],
+        camera_rules=CameraRules(
+            screen_direction="NONE", allowed_movements=[CameraMovement.STATIC]
+        ),
+        continuity_anchors=_continuity_anchors(facts),
+        global_continuity_notes=[
+            f"state_facts_digest={facts.facts_digest}",
+            f"state_spine_digest={spine.spine_digest}",
+        ],
+        arc=[
+            ArcBeat(beat_id=beat.beat_id, role=role)
+            for beat, role in zip(script.beats, roles, strict=True)
+        ],
+        shots=shots,
+        negative_concepts=[NegativeConcept.EXTRA_LIMBS, NegativeConcept.MORPHING],
+        unverified_fields=[],
+        needs_deep_ai=False,
+        needs_human=False,
+    )
+
+
+def verify_compiled_shot_locks(
+    bible: PetOnlyVideoBibleDraft, shot: ShotBible, facts: StateFactsV1
+) -> tuple[str, ...]:
+    """Verify the existing compiler projection contains every lock atom verbatim."""
+
+    fields = expanded_shot_fields(bible, shot)
+    flattened = canonical_json(fields).decode("utf-8")
+    required = {
+        "SUBJECT_ID": facts.subject_lock.subject_id,
+        "SPECIES": facts.subject_lock.species,
+        "BREED_OR_TYPE": facts.subject_lock.breed_or_type,
+        "COAT_OR_APPEARANCE": facts.subject_lock.coat_or_appearance,
+        "BODY_POSE": facts.pose_lock.body_pose,
+        "HEAD_DIRECTION": facts.pose_lock.head_direction,
+        "SUPPORT_SURFACE": facts.pose_lock.support_surface,
+        "ENVIRONMENT": facts.scene_lock.environment,
+        "LIGHTING": facts.scene_lock.lighting,
+        "CAMERA_MOVEMENT": "locked-off tripod camera, no camera movement",
+        "ALLOWED_FRAMINGS": ", ".join(facts.camera_lock.allowed_framings),
+    }
+    for index, mark in enumerate(facts.subject_lock.distinguishing_marks):
+        required[f"DISTINGUISHING_MARK_{index}"] = mark
+    for index, accessory in enumerate(facts.scene_lock.temporary_accessories):
+        required[f"TEMPORARY_ACCESSORY_{index}"] = accessory
+    return tuple(code for code, phrase in required.items() if phrase not in flattened)
