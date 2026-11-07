@@ -171,7 +171,8 @@ public static class OwnerReviewSshStdioCandidate
         public override ValueTask DisposeAsync()
         {
             Dispose();
-            return ValueTask.CompletedTask;
+            // CA2215: 即使已关闭 SSH 管道，仍须执行 Stream 基类释放逻辑。
+            return base.DisposeAsync();
         }
     }
 }
