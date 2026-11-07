@@ -643,6 +643,19 @@
             "title": "Source Revision Digest",
             "type": "string"
           },
+          "story_policy_opt_in": {
+            "anyOf": [
+              {
+                "const": "static-pet-story-v1.0.0",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Story Policy Opt In"
+          },
           "subject_key": {
             "title": "Subject Key",
             "type": "string"
@@ -775,6 +788,19 @@
               }
             ]
           },
+          "story_policy_opt_in": {
+            "anyOf": [
+              {
+                "const": "static-pet-story-v1.0.0",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Story Policy Opt In"
+          },
           "subject_key": {
             "title": "Subject Key",
             "type": "string"
@@ -836,6 +862,19 @@
             "minLength": 1,
             "title": "Review Actor Id",
             "type": "string"
+          },
+          "story_policy_opt_in": {
+            "anyOf": [
+              {
+                "const": "static-pet-story-v1.0.0",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Story Policy Opt In"
           }
         },
         "required": [
