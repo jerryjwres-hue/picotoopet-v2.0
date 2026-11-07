@@ -6,8 +6,9 @@ namespace PicotooPet.Desktop.Core.OwnerReview;
 /// <summary>冻结 OpenAPI mac_core_v1 中主人结构化审核常量的客户端镜像。</summary>
 public static class OwnerReviewWire
 {
-    public const string FrozenCoreSha = "66c01c8e61e795982008c763ab2448e02c081831";
-    public const string FrozenOpenApiSha256 = "33f90374747d15d43522a1ad4e1dbe411fa2c38ad21d163ca0fdd36985bf6bc6";
+    public const string FrozenCoreSha = "5c51fdb31e3cd65c170c4a3f84b1bb0037817b43";
+    public const string FrozenOpenApiSha256 = "cb8ef58c1cecbdaaeca0cb05a62922d0420e282b42815be5b46d246b85b306c6";
+    public const string StaticPetStoryPolicy = "static-pet-story-v1.0.0";
     public const string ProposalSchema = "owner_structured_review.proposal.v1";
     public const string PreviewSchema = "owner_structured_review.preview.v1";
     public const string CommitSchema = "owner_structured_review.commit.v1";
@@ -75,7 +76,8 @@ public sealed record OwnerReviewPreviewRequest(
     [property: JsonPropertyName("goal_id")] string GoalId,
     [property: JsonPropertyName("review_actor_id")] string ReviewActorId,
     [property: JsonPropertyName("proposal_digest")] string ProposalDigest,
-    [property: JsonPropertyName("decisions")] IReadOnlyList<OwnerFieldDecision> Decisions);
+    [property: JsonPropertyName("decisions")] IReadOnlyList<OwnerFieldDecision> Decisions,
+    [property: JsonPropertyName("story_policy_opt_in")] string? StoryPolicyOptIn = null);
 
 /// <summary>POST preview 响应；state_facts 仅作展示，客户端从不计算权威摘要。</summary>
 public sealed record OwnerReviewPreview(
@@ -90,7 +92,8 @@ public sealed record OwnerReviewPreview(
     [property: JsonPropertyName("reason_codes")] IReadOnlyList<string> ReasonCodes,
     [property: JsonPropertyName("state_facts")] JsonElement? StateFacts,
     [property: JsonPropertyName("model_calls")] int ModelCalls = 0,
-    [property: JsonPropertyName("schema_version")] string SchemaVersion = OwnerReviewWire.PreviewSchema);
+    [property: JsonPropertyName("schema_version")] string SchemaVersion = OwnerReviewWire.PreviewSchema,
+    [property: JsonPropertyName("story_policy_opt_in")] string? StoryPolicyOptIn = null);
 
 /// <summary>POST commit 请求。</summary>
 public sealed record OwnerReviewCommitRequest(
@@ -111,4 +114,5 @@ public sealed record OwnerReviewCommit(
     [property: JsonPropertyName("preview_digest")] string PreviewDigest,
     [property: JsonPropertyName("facts_id")] string FactsId,
     [property: JsonPropertyName("facts_digest")] string FactsDigest,
-    [property: JsonPropertyName("schema_version")] string SchemaVersion = OwnerReviewWire.CommitSchema);
+    [property: JsonPropertyName("schema_version")] string SchemaVersion = OwnerReviewWire.CommitSchema,
+    [property: JsonPropertyName("story_policy_opt_in")] string? StoryPolicyOptIn = null);
