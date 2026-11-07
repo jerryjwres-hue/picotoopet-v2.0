@@ -388,6 +388,56 @@ def test_commit_is_atomic_source_bound_and_exactly_replay_safe(
     )
 
 
+def test_exact_replay_rechecks_current_subject_scope_and_credential(
+    review_database: Database,
+) -> None:
+    """An old idempotency key must not outlive the current subject or credential grant."""
+
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    preview_request, preview = _preview_request(service, principal)
+    request = OwnerStructuredReviewCommitRequest(
+        preview_request=preview_request,
+        source_revision_digest=preview.source_revision_digest,
+        review_digest=preview.review_digest,
+        preview_digest=preview.preview_digest,
+    )
+    key = "synthetic-replay-current-authority"
+    first = service.commit(request, principal, idempotency_key=key)
+    assert service.commit(request, principal, idempotency_key=key) == first
+
+    # Revoked subject scope : same valid actor and exact payload must get 403, not old data.
+    revoked = principal.model_copy(update={"subject_keys": ("pet:another-pet",)})
+    with pytest.raises(OwnerStructuredReviewError) as denied:
+        service.commit(request, revoked, idempotency_key=key)
+    assert denied.value.status_code == 403
+
+    # Rotated credential    : a different valid credential for the same actor is not
+    #                         the same approval identity or idempotent replay.
+    rotated = principal.model_copy(update={"credential_id": "credential-rotated"})
+    with pytest.raises(OwnerStructuredReviewError) as mismatch:
+        service.commit(request, rotated, idempotency_key=key)
+    assert mismatch.value.status_code == 409
+    assert mismatch.value.code == "OWNER_REVIEW_IDEMPOTENCY_CONFLICT"
+
+
+def test_preview_digest_is_bound_to_credential_identity(
+    review_database: Database,
+) -> None:
+    """A second credential sharing an actor must obtain a new preview for its own decision."""
+
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    preview_request, original = _preview_request(service, principal)
+    same_actor_other_credential = principal.model_copy(
+        update={"credential_id": "credential-rotated"}
+    )
+    rotated = service.preview(preview_request, same_actor_other_credential)
+    assert rotated.proposal_digest == original.proposal_digest
+    assert rotated.review_digest != original.review_digest
+    assert rotated.preview_digest != original.preview_digest
+
+
 def test_commit_rejects_idempotency_mutation_and_stale_source(
     review_database: Database,
 ) -> None:
