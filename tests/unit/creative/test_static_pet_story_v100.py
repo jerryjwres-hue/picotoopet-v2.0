@@ -9,6 +9,8 @@ from pydantic import ValidationError
 
 from picotoopet_core.creative.models import CreativeScriptResult
 from picotoopet_core.creative.state_spine import (
+    BreathingState,
+    SpineStateV1,
     UnlockedVideoBibleProposalV1,
     build_state_spine,
     canonical_sha256,
@@ -174,16 +176,25 @@ def test_unknown_camera_or_model_locked_identity_cannot_pass() -> None:
 
 def test_state_ids_do_not_fake_visual_state_change() -> None:
     facts, spine, proposal, script, opt_in = _case()
-    malformed_states = [state.model_copy(update={"eye_state": "HALF_CLOSED"})
-                        for state in spine.states]
-    corrupted = spine.model_copy(update={"states": tuple(malformed_states)})
+
+    # An invented half-closed eye is invalid at the Pydantic type boundary.
+    invalid_eye = spine.states[-1].model_dump(mode="json")
+    invalid_eye["eye_state"] = "HALF_CLOSED"
+    with pytest.raises(ValidationError):
+        SpineStateV1.model_validate(invalid_eye)
+
+    # A type-valid terminal mutation is still rejected by the typed spine digest.
+    different_terminal = spine.states[-1].model_copy(
+        update={"breathing_state": BreathingState.RESTING}
+    )
+    corrupted = spine.model_copy(update={"states": (*spine.states[:-1], different_terminal)})
     result = evaluate_static_pet_story(
         facts=facts, spine=corrupted, proposal=proposal, script=script,
         opt_in=opt_in, verify_owner_commitment=lambda record: True,
     )
     assert result.outcome == "NEEDS_HUMAN"
     assert "STATIC_STORY_STATE_SPINE_DRIFT" in result.reason_codes
-    assert "STATIC_STORY_POSE_IDENTITY_OR_EYES_DRIFT" in result.reason_codes
+    assert "STATIC_STORY_BREATHING_STATE_INVALID" in result.reason_codes
     assert canonical_sha256(corrupted.model_dump(mode="json"), "spine_digest") != (
         corrupted.spine_digest
     )
