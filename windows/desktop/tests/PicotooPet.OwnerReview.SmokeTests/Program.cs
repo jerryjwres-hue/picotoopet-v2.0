@@ -357,8 +357,12 @@ internal static class Program
         True(draft.FirstValidationProblem() is not null, "undecided fields block preview (no default confirm)");
         True(Throws<InvalidOperationException>(() => draft.BuildPreviewRequest()), "cannot build request while undecided");
         // 身份事实 与 创作意图 分组。
-        True(draft.Group(OwnerReviewFieldGroup.CreativeIntent).Select(f => f.Proposal.FieldPath)
-                .OrderBy(x => x).SequenceEqual(new[] { "allowed_events", "pose_lock.head_direction", "scene_lock.lighting" }.OrderBy(x => x)),
+        var intentPaths = draft.Group(OwnerReviewFieldGroup.CreativeIntent)
+            .Select(f => f.Proposal.FieldPath).ToHashSet(StringComparer.Ordinal);
+        True(intentPaths.Count == 3
+                && intentPaths.Contains("allowed_events")
+                && intentPaths.Contains("pose_lock.head_direction")
+                && intentPaths.Contains("scene_lock.lighting"),
             "pose/scene and events are creative intent even when Core source is UNKNOWN");
         True(!draft.Group(OwnerReviewFieldGroup.IdentityAndSceneFacts).Any(f => f.Proposal.FieldPath == "allowed_events"), "identity group excludes intent");
         // UNKNOWN / CONFLICT 来源不可直接 CONFIRM。
