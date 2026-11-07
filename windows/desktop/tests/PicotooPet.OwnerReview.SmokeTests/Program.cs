@@ -123,9 +123,25 @@ internal static class Program
     private static Task OpenApiShapeAsync()
     {
         var path = FindRepoFile(Path.Combine("contracts", "openapi", "mac_core_v1.openapi.json"));
-        // Windows checkout 可能把 LF 转成 CRLF（core.autocrlf）；摘要按冻结的 LF 字节计算。
-        var bytes = File.ReadAllBytes(path).Where(b => b != 0x0D).ToArray();
-        // The review contract is pinned to PR #235's latest approved source bytes.
+        // Windows may checkout transformed text. Hash the EXACT committed Git blob bytes;
+        // never treat a transformed working-tree copy as the frozen Core wire contract.
+        var start = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = Path.GetDirectoryName(path)!,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        start.ArgumentList.Add("show");
+        start.ArgumentList.Add("HEAD:contracts/openapi/mac_core_v1.openapi.json");
+        using var process = System.Diagnostics.Process.Start(start)
+            ?? throw new InvalidOperationException("Cannot read frozen Git OpenAPI blob");
+        using var output = new MemoryStream();
+        process.StandardOutput.BaseStream.CopyTo(output);
+        process.WaitForExit();
+        True(process.ExitCode == 0, "frozen OpenAPI Git blob must be readable");
+        var bytes = output.ToArray();
         // A future drift must trigger explicit re-review, never a silent informational PASS.
         var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         Eq(OwnerReviewWire.FrozenOpenApiSha256, digest, "Core OpenAPI digest must be explicitly reapproved");
@@ -476,7 +492,7 @@ internal static class Program
             Eq("主人审核凭据：已保存（专用 DPAPI 存储，不显示明文）", vm.CredentialStatus, "credential status");
             await Run(vm, vm.LoadProposalCommand).ConfigureAwait(false);
             True(vm.HasProposal, "proposal loaded");
-            Eq(4, vm.IdentityFields.Count, "identity rows");
+            Eq(2, vm.IdentityFields.Count, "only subject_lock.* is identity; pose/scene are intent");
             Eq(1, vm.IntentFields.Count, "one intent row");
             // 空决定：预览被拒绝，Core 未被调用。
             await Run(vm, vm.PreviewCommand).ConfigureAwait(false);
