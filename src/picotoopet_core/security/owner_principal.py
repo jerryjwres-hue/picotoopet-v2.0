@@ -98,14 +98,16 @@ def resolve_owner_principal(
 ) -> OwnerPrincipal:
     """Recognize only a separate owner credential; never promote the device token."""
 
-    if supplied_token is None or len(supplied_token) < 43 or len(supplied_token) > 256:
+    if supplied_token is None:
+        raise OwnerAuthFailure(401, "OWNER_REVIEW_AUTHENTICATION_REQUIRED")
+    if hmac.compare_digest(supplied_token, device_token):
+        raise OwnerAuthFailure(403, "OWNER_REVIEW_DEVICE_TOKEN_FORBIDDEN")
+    if len(supplied_token) < 43 or len(supplied_token) > 256:
         raise OwnerAuthFailure(401, "OWNER_REVIEW_AUTHENTICATION_REQUIRED")
     if not supplied_token.isascii() or not all(
         character.isalnum() or character in "-_" for character in supplied_token
     ):
         raise OwnerAuthFailure(401, "OWNER_REVIEW_AUTHENTICATION_REQUIRED")
-    if hmac.compare_digest(supplied_token, device_token):
-        raise OwnerAuthFailure(403, "OWNER_REVIEW_DEVICE_TOKEN_FORBIDDEN")
 
     fingerprint = owner_token_fingerprint(supplied_token)
     matches = [
