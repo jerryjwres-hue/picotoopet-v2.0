@@ -116,7 +116,10 @@ public sealed class OwnerReviewDraft
                 return $"字段 {field.Proposal.FieldPath} 来源未知或冲突，不能直接确认，请更正或标记未知。";
             }
             if (field.Decision == OwnerReviewWire.DecisionCorrect
-                && string.IsNullOrWhiteSpace(field.CorrectedText))
+                && string.IsNullOrWhiteSpace(field.CorrectedText)
+                // Owner can explicitly attest "none" for these optional ARRAY facts.
+                && field.Proposal.FieldPath is not (
+                    "subject_lock.distinguishing_marks" or "scene_lock.temporary_accessories"))
             {
                 return $"字段 {field.Proposal.FieldPath} 选择了更正，必须填写更正值。";
             }
