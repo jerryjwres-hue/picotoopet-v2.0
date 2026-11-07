@@ -54,13 +54,17 @@ internal sealed class MockOwnerReviewCore : HttpMessageHandler
         }
         if (request.Path.EndsWith("/preview", StringComparison.Ordinal))
         {
-            var decisions = JsonNode.Parse(request.Body)!["decisions"]!.AsArray();
+            var body = JsonNode.Parse(request.Body)!;
+            var decisions = body["decisions"]!.AsArray();
             var unknown = decisions.Any(d => d!["decision"]!.GetValue<string>() == "UNKNOWN");
-            return (200, Preview(unknown).ToJsonString());
+            var policy = body["story_policy_opt_in"]?.GetValue<string>();
+            return (200, Preview(unknown, policy).ToJsonString());
         }
         if (request.Path.EndsWith("/commit", StringComparison.Ordinal))
         {
-            return (201, Commit().ToJsonString());
+            var body = JsonNode.Parse(request.Body)!;
+            var policy = body["preview_request"]?["story_policy_opt_in"]?.GetValue<string>();
+            return (201, Commit(policy).ToJsonString());
         }
         return (404, Error("NOT_FOUND"));
     }
@@ -115,7 +119,7 @@ internal sealed class MockOwnerReviewCore : HttpMessageHandler
         ["value_digest"] = value is null ? null : new string('5', 64),
     };
 
-    public static JsonObject Preview(bool needsHuman) => new()
+    public static JsonObject Preview(bool needsHuman, string? storyPolicy = null) => new()
     {
         ["schema_version"] = "owner_structured_review.preview.v1",
         ["goal_id"] = Goal,
@@ -129,9 +133,10 @@ internal sealed class MockOwnerReviewCore : HttpMessageHandler
         ["reason_codes"] = needsHuman ? new JsonArray("OWNER_REVIEW_FIELD_UNKNOWN") : new JsonArray(),
         ["state_facts"] = needsHuman ? null : new JsonObject { ["schema_version"] = "state_facts.v1", ["facts_digest"] = new string('8', 64) },
         ["model_calls"] = 0,
+        ["story_policy_opt_in"] = storyPolicy,
     };
 
-    public static JsonObject Commit() => new()
+    public static JsonObject Commit(string? storyPolicy = null) => new()
     {
         ["schema_version"] = "owner_structured_review.commit.v1",
         ["commitment_id"] = "commit-synthetic-1",
@@ -144,6 +149,7 @@ internal sealed class MockOwnerReviewCore : HttpMessageHandler
         ["preview_digest"] = new string('7', 64),
         ["facts_id"] = "facts-synthetic",
         ["facts_digest"] = new string('8', 64),
+        ["story_policy_opt_in"] = storyPolicy,
     };
 
     public static JsonElement ParseElement(string json)
