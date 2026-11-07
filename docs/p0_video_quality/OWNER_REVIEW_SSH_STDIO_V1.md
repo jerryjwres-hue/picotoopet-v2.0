@@ -1,0 +1,82 @@
+# P0 #237 · Owner Review SSH stdio transport candidate
+
+**Status: CODE CANDIDATE ONLY / TRANSPORT_SECURITY=BLOCKED / NOT DEPLOYED**
+
+## Why stdio forwarding instead of a Windows listening port
+
+The old proposed `ssh -L 127.0.0.1:<port>:127.0.0.1:8765` exposes a local
+listener and leaves a same-host port-rebinding risk when an SSH process exits.
+An HTTP client that accepts any Windows loopback endpoint cannot verify that the
+listener is the authenticated Mac SSH tunnel.
+
+OpenSSH `ssh -W 127.0.0.1:<actual Core port>` forwards stdin/stdout directly
+inside the authenticated SSH channel, with **no localhost port listener**.
+The .NET `SocketsHttpHandler.ConnectCallback` candidate supplies this SSH
+process stream as the HTTP connection. Its internal `.invalid` authority is
+never resolved by DNS and is not an alternative network destination.
+
+## Local, fail-closed contract
+
+Added isolated code (not yet called by the production OwnerReviewClient):
+
+- `OwnerReviewSshStdioProfileVerifier`: validates absolute protected file
+  paths, one exact ED25519 host key alias, and a separately approved expected
+  SHA256 host-key fingerprint. Rejects unknown aliases, wildcard/extra keys,
+  malformed keys, missing keys and fingerprint mismatches.
+- Uses system `%WINDIR%\System32\OpenSSH\ssh.exe` only, not PATH or a
+  shell. `ProcessStartInfo.ArgumentList` prevents parameter injection;
+  user SSH config and ProxyCommand/ProxyJump are disabled; host key updates
+  and passwords are forbidden; no interactive prompts, `-L`, `-R` or
+  `-D` listeners.
+- `OwnerReviewSshStdioCandidate`: no proxy or redirect. A custom .NET
+  `ConnectCallback` rejects endpoints other than the internal synthetic
+  authority and transfers each HTTP connection through a scoped `ssh -W`
+  process stream. Exit or teardown destroys the pipes; there is **no**
+  automatic fallback to local TCP or LAN HTTP.
+- Does not create a real `OwnerReviewClient`, read a DPAPI Bearer, change
+  the existing device token, modify Core/Worker/GPU or activate a UI. The
+  existing production security gate `EncryptedMacTransportAccepted=false`
+  and locked Goal Center preview remain unchanged.
+
+## Before ANY live owner credential can be used
+
+**Not performed by this PR. Requires explicit operator approval and device evidence.**
+
+1. Read-only verify Windows system OpenSSH binary/version and actual Mac Core
+   port (source default 8765; runtime `PICOTOO_API_PORT` can override it).
+2. Determine whether macOS Remote Login / sshd is already enabled. Do not
+   silently enable it or open a firewall.
+3. The owner must verify the Mac SSH ED25519 host-key fingerprint **out of
+   band on the Mac itself**. A value from `ssh-keyscan` alone is not proof.
+   Save the exact approved public key in a protected one-line known-hosts
+   file matching alias `picotoopet-owner-review-mac`.
+4. Explicitly provision a restricted SSH identity on Windows and verify
+   the Mac sshd allows only the required `direct-tcpip` forwarding to
+   Core loopback. Prefer a dedicated non-admin SSH account and SSH server
+   restrictions. Ensure host-key and identity files have user-only ACLs.
+5. Prove real pinned-host handshake, authenticated SSH user, fresh
+   connection, no local port listener, and read-only Core health/Proposal.
+   Confirm Core sees a genuine loopback peer. An HTTP success alone is not
+   proof of SSH authentication without the exact process/host-key evidence.
+6. Independently provision the separate Core `OwnerPrincipal` registry
+   grant and Windows DPAPI Owner Review Bearer, with exact subject scope,
+   explicit permission and revocation mechanism.
+7. Review and approve a **separate production factory wiring PR** that
+   uses the authenticated process stream, not arbitrary
+   `http://127.0.0.1` and not the existing `LoopbackOnly` mode. Only then
+   may owner-specific, read-only Proposal be tested. Preview/Commit require
+   an additional explicit owner approval. No automatic Commit.
+
+## CI acceptance and limitations
+
+Synthetic Windows native smoke verifies the SSH command shape, pinned
+host-key calculation and negative cases (wrong key, alias injection,
+missing files, no listener, no proxy/redirect). **No SSH session is
+established in CI and no real Mac access occurs**. Thus it cannot
+establish Windows→Mac authentication, runtime Core port, SSH server
+restrictions, trusted device configuration or Owner Review production
+readiness.
+
+The macOS Core, Windows same-EXE Worker, existing production QA and
+static pet story policy are unchanged. All resulting PRs stay Draft;
+no Goal, Ollama, model token or GPU use.
