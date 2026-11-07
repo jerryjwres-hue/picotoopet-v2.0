@@ -7,6 +7,8 @@ on:
       - "windows/desktop/src/PicotooPet.Desktop.Core/OwnerReview/**"
       - "windows/desktop/src/PicotooPet.Desktop/ViewModels/OwnerReviewViewModel.cs"
       - "windows/desktop/src/PicotooPet.Desktop/Views/Pages/OwnerReviewPanel.*"
+      - "windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml"
+      - "windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml.cs"
       - "windows/desktop/tests/PicotooPet.OwnerReview.SmokeTests/**"
       - "contracts/openapi/mac_core_v1.openapi.json"
   workflow_dispatch:
