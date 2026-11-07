@@ -165,7 +165,7 @@ public static class OwnerReviewSshStdioCandidate
                     process.Dispose();
                 }
             }
-            base.Dispose(disposing);
+            base.Dispose(disposing: disposing);
         }
 
         public override ValueTask DisposeAsync()
