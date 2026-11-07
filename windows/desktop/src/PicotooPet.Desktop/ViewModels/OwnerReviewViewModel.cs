@@ -156,6 +156,7 @@ public sealed class OwnerReviewViewModel : ObservableObject
     private string _previewSummary = string.Empty;
     private string _commitSummary = string.Empty;
     private bool _ownerConfirmed;
+    private bool _staticPetStorySelected;
     private bool _busy;
 
     public OwnerReviewViewModel(OwnerReviewClient client, IOwnerReviewCredentialStore credentials)
@@ -205,6 +206,20 @@ public sealed class OwnerReviewViewModel : ObservableObject
     public bool Busy { get => _busy; private set => SetProperty(ref _busy, value); }
 
     /// <summary>主人必须显式勾选；预览变化后自动清除，绝无默认确认。</summary>
+    /// <summary>Optional static-story authorization is a distinct user decision.</summary>
+    public bool StaticPetStorySelected
+    {
+        get => _staticPetStorySelected;
+        set
+        {
+            if (!SetProperty(ref _staticPetStorySelected, value)) return;
+            if (_draft is not null) _draft.StaticPetStorySelected = value;
+            PreviewSummary = string.Empty;
+            OwnerConfirmed = false;
+            CommitCommand.NotifyCanExecuteChanged();
+        }
+    }
+
     public bool OwnerConfirmed
     {
         get => _ownerConfirmed;
@@ -344,7 +359,9 @@ public sealed class OwnerReviewViewModel : ObservableObject
         PreviewSummary = string.Empty;
         CommitSummary = string.Empty;
         _ownerConfirmed = false;
+        _staticPetStorySelected = false;
         RaisePropertyChanged(nameof(OwnerConfirmed));
+        RaisePropertyChanged(nameof(StaticPetStorySelected));
         ProposalHeader = $"Goal {proposal.GoalId} · 主体 {proposal.SubjectKey} · 审核人 {proposal.ReviewActorId}";
         EvidenceNotice = proposal.SourceEvidence.Any(item => !item.PhotoBytesVerified)
             ? "注意：照片字节未经 Core 校验，所有身份事实均为主人声明；文字审核本身不授权 I2V。"
@@ -374,6 +391,7 @@ public sealed class OwnerReviewViewModel : ObservableObject
         + $"source_revision_digest={preview.SourceRevisionDigest}\n"
         + $"review_digest={preview.ReviewDigest}\n"
         + $"preview_digest={preview.PreviewDigest}\n"
+        + $"静态故事策略：{preview.StoryPolicyOptIn ?? "未选择（保持原验收规则）"}\n"
         + "（以上摘要全部由 Core 计算，Windows 不生成替代摘要。）";
 
     private void ShowError(Exception error)
@@ -384,10 +402,17 @@ public sealed class OwnerReviewViewModel : ObservableObject
                 ErrorText = known.ChineseMessage;
                 if (known.RequiresReload)
                 {
-                    // 409：绝不强制覆盖；使预览失效，等待主人重新加载。
+                    // 409 must invalidate the ACTUAL draft, not only its displayed text.
+                    _draft?.DiscardPreviewAfterConflict();
+                    _draft = null;
+                    IdentityFields.Clear();
+                    IntentFields.Clear();
                     PreviewSummary = string.Empty;
+                    CommitSummary = string.Empty;
                     OwnerConfirmed = false;
-                    StatusText = "数据已过期，请重新加载提案。";
+                    RaisePropertyChanged(nameof(HasProposal));
+                    PreviewCommand.NotifyCanExecuteChanged();
+                    StatusText = "数据已过期，必须重新加载提案才能再次预览或提交。";
                 }
                 break;
             case ArgumentException:
