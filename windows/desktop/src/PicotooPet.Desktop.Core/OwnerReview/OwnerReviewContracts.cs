@@ -7,7 +7,7 @@ namespace PicotooPet.Desktop.Core.OwnerReview;
 public static class OwnerReviewWire
 {
     public const string FrozenCoreSha = "5c51fdb31e3cd65c170c4a3f84b1bb0037817b43";
-    public const string FrozenOpenApiSha256 = "cb8ef58c1cecbdaaeca0cb05a62922d0420e282b42815be5b46d246b85b306c6";
+    public const string FrozenOpenApiSha256 = "bfcbb89952e0755085597880098ae727600deea141a191df22085aba07e7789a";
     public const string StaticPetStoryPolicy = "static-pet-story-v1.0.0";
     public const string ProposalSchema = "owner_structured_review.proposal.v1";
     public const string PreviewSchema = "owner_structured_review.preview.v1";
