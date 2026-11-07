@@ -38,6 +38,7 @@ internal static class Program
             ("stale_409_forces_reload_never_overwrites", StaleAsync),
             ("cancel_and_restart_resume_are_side_effect_free", CancelResumeAsync),
             ("wpf_panel_binds_and_separates_identity_from_intent", () => OnSta(WpfPanel)),
+            ("goal_center_opens_only_locked_owner_review_without_http", () => OnSta(GoalCenterLockedNavigation)),
         };
         foreach (var (name, run) in tests)
         {
@@ -626,6 +627,55 @@ internal static class Program
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         return done.Task;
+    }
+
+    private static void GoalCenterLockedNavigation()
+    {
+        // The real Goal Center exposes the actual Owner Review control, but the
+        // transport/credential/commit capability is intentionally absent.
+        var goalCenter = new GoalCenterPanel();
+        var host = new System.Windows.Window
+        {
+            Title = "Synthetic Goal Center navigation gate",
+            Width = 1180,
+            Height = 820,
+            Content = goalCenter,
+        };
+        try
+        {
+            host.Show();
+            var open = (Button)Find(goalCenter, "OwnerReviewLockedPreviewButton");
+            True(open.IsEnabled, "locked review preview entry is discoverable");
+            open.RaiseEvent(new System.Windows.RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, open));
+            Eq(1, host.OwnedWindows.Count, "one owned locked review window");
+            var window = host.OwnedWindows[0];
+            True(window.Title.Contains("安全连接未开放", StringComparison.Ordinal),
+                "review window is clearly identified as locked");
+            var content = (DockPanel)window.Content;
+            var warning = content.Children.OfType<TextBlock>().Single();
+            True(warning.Text.Contains("不能填写真实凭据", StringComparison.Ordinal),
+                "notice expressly prohibits real credential enrollment");
+            var panel = content.Children.OfType<OwnerReviewPanel>().Single();
+            True(!panel.IsEnabled && panel.DataContext is not OwnerReviewViewModel,
+                "real review control has no live viewmodel and is disabled");
+            True(!((PasswordBox)Find(panel, "OwnerReviewCredentialBox")).IsEnabled,
+                "owner credential input is disabled");
+            True(!((Button)Find(panel, "OwnerReviewPreview")).IsEnabled,
+                "owner preview action is disabled");
+            True(!((Button)Find(panel, "OwnerReviewCommit")).IsEnabled,
+                "owner commit action is disabled");
+
+            // Reopening from the same Goal Center activates the existing window.
+            open.RaiseEvent(new System.Windows.RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, open));
+            Eq(1, host.OwnedWindows.Count, "reopening does not duplicate review windows");
+        }
+        finally
+        {
+            host.Close();
+        }
+        Eq(0, host.OwnedWindows.Count, "host close releases locked owner review window");
     }
 
     private static void WpfPanel()
