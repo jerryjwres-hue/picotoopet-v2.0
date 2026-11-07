@@ -154,6 +154,15 @@ def test_owner_principal_missing_bad_disabled_expired_and_limited_grants(tmp_pat
     assert error.value.status_code == 403
 
 
+def test_malformed_non_ascii_bearer_returns_401_not_server_error(tmp_path: Path) -> None:
+    # Invalid Unicode must not cause hmac.compare_digest to raise TypeError.
+    token = secrets.token_urlsafe(32)
+    request = _request(_registry(token), tmp_path=tmp_path)
+    with pytest.raises(ApiError) as error:
+        require_owner_principal(request, _bearer("㊙️" * 22))
+    assert error.value.status_code == 401
+
+
 def test_rejects_unknown_subject_and_duplicate_credentials() -> None:
     token = secrets.token_urlsafe(32)
     with pytest.raises(ValidationError):
