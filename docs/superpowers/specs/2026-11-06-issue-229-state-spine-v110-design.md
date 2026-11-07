@@ -50,4 +50,3 @@ Activation requires a minimal authenticated review contract which:
 - If the objective permits only blink-and-reopen followed by subtle breathing while the current
   Story Gate demands a terminal state change, return the explicit
   `STATE_SPINE_STORY_NO_CHANGE_CONFLICT`. Do not invent half-closed eyes or relax the gate.
-

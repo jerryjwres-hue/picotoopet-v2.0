@@ -32,4 +32,3 @@
   unchanged machine-specific baseline failures from new failures.
 - Review the diff for scope/security violations, commit the final result, and report the owner UI
   activation blocker.
-

@@ -135,4 +135,3 @@ def test_new_contract_is_not_activated_for_legacy_or_existing_pet_only_jobs() ->
     assert PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION == "video-bible-pet-only-v1.0.4"
     assert existing_pet_only.template_version == PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION
     assert STATE_SPINE_TEMPLATE_VERSION == "video-bible-pet-only-v1.1.0"
-
