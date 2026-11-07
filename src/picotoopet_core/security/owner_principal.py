@@ -100,7 +100,7 @@ def resolve_owner_principal(
 
     if supplied_token is None:
         raise OwnerAuthFailure(401, "OWNER_REVIEW_AUTHENTICATION_REQUIRED")
-    if hmac.compare_digest(supplied_token, device_token):
+    if hmac.compare_digest(supplied_token.encode("utf-8"), device_token.encode("utf-8")):
         raise OwnerAuthFailure(403, "OWNER_REVIEW_DEVICE_TOKEN_FORBIDDEN")
     if len(supplied_token) < 43 or len(supplied_token) > 256:
         raise OwnerAuthFailure(401, "OWNER_REVIEW_AUTHENTICATION_REQUIRED")
