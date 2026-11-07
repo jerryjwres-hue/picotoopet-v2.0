@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .keychain import read_api_token_from_keychain
 from .models import AppSettings
+from .owner_registry import load_owner_review_registry
 from .paths import RuntimePaths
 
 
@@ -42,6 +43,10 @@ def load_settings() -> AppSettings:
     return AppSettings(
         paths=RuntimePaths.from_root(runtime_root),
         api_token=api_token,
+        # An unset, unsafe or unprovisioned registry is always disabled.
+        owner_review_registry=load_owner_review_registry(
+            os.getenv("PICOTOO_OWNER_REVIEW_REGISTRY_FILE")
+        ),
         api_host=os.getenv("PICOTOO_API_HOST", "0.0.0.0"),
         api_port=int(os.getenv("PICOTOO_API_PORT", "8765")),
         ollama_base_url=ollama_base_url,
