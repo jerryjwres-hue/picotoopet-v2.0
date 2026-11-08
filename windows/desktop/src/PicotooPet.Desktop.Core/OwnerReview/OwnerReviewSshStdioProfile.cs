@@ -53,6 +53,8 @@ public static partial class OwnerReviewSshStdioProfileVerifier
 
         RequireRegularAbsoluteFile(profile.PrivateKeyFile);
         RequireRegularAbsoluteFile(profile.PinnedKnownHostsFile);
+        RequireProtectedAcl(profile.PrivateKeyFile);
+        RequireProtectedAcl(profile.PinnedKnownHostsFile);
         RequireExactPinnedHost(profile.PinnedKnownHostsFile, profile.ExpectedHostKeyFingerprint);
 
         // 唯一允许的可执行文件：Windows 系统 OpenSSH；禁止 PATH/工作目录劫持。
@@ -120,7 +122,40 @@ public static partial class OwnerReviewSshStdioProfileVerifier
         start.ArgumentList.Add("127.0.0.1:" + profile.CorePort.ToString(
             System.Globalization.CultureInfo.InvariantCulture));
         start.ArgumentList.Add(profile.MacHost);
+        RequireUniqueOptions(start.ArgumentList);
         return start;
+    }
+
+    /// <summary>
+    /// OpenSSH keeps the FIRST value of a repeated -o option, so a later duplicate would be
+    /// silently ignored (this masked a wrong-alias test on 2026-11-08). Every option must be unique.
+    /// </summary>
+    internal static void RequireUniqueOptions(IEnumerable<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        var list = arguments.ToArray();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < list.Length - 1; i++)
+        {
+            if (list[i] != "-o")
+            {
+                continue;
+            }
+            var name = list[i + 1].Split('=', 2)[0];
+            if (!seen.Add(name))
+            {
+                throw Blocked("OWNER_REVIEW_SSH_DUPLICATE_OPTION");
+            }
+        }
+    }
+
+    private static void RequireProtectedAcl(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw Blocked(OwnerReviewProtectedFileAclCodes.Unverified);
+        }
+        OwnerReviewProtectedFileAcl.Require(path);
     }
 
     private static void RequireRegularAbsoluteFile(string path)

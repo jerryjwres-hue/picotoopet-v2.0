@@ -40,6 +40,8 @@ internal static class Program
             ("wpf_panel_binds_and_separates_identity_from_intent", () => OnSta(WpfPanel)),
             ("goal_center_opens_only_locked_owner_review_without_http", () => OnSta(GoalCenterLockedNavigation)),
             ("ssh_stdio_pinned_host_no_listener_candidate", SshStdioContractAsync),
+            ("ssh_stdio_protected_file_ntfs_acl_gate", SshStdioFactoryTests.AclGateAsync),
+            ("ssh_stdio_typed_factory_locked_fail_closed", SshStdioFactoryTests.FactoryAsync),
         };
         foreach (var (name, run) in tests)
         {
@@ -635,6 +637,7 @@ internal static class Program
         // 全部为合成公钥与假私钥路径，绝不启动 SSH 或接触真实主人凭据。
         var root = Path.Combine(Path.GetTempPath(), "owner-review-ssh-mock-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        SshStdioFactoryTests.ProtectDirectory(root);
         var knownHosts = Path.Combine(root, "approved-known-hosts");
         var identity = Path.Combine(root, "synthetic-key-not-valid");
         try

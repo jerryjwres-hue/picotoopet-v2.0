@@ -108,3 +108,30 @@ readiness.
 The macOS Core, Windows same-EXE Worker, existing production QA and
 static pet story policy are unchanged. All resulting PRs stay Draft;
 no Goal, Ollama, model token or GPU use.
+
+## Typed pinned-SSH-stdio client factory and NTFS ACL gate (code-only, default locked)
+
+Added after the accepted live transport candidate (`TRANSPORT_SECURITY=PASS_CANDIDATE`). This is
+**not** a production activation: `EncryptedMacTransportAccepted` and the new
+`PinnedSshStdioActivated` stay `false`, the Goal Center review stays locked, and no owner
+Bearer/DPAPI credential is read anywhere in construction.
+
+- `OwnerReviewTransportMode.PinnedSshStdio` is distinct from `Mock`, `LoopbackOnly` and
+  `VerifiedEncrypted`. The gate accepts only the fixed synthetic authority
+  `http://owner-review-ssh-stdio.invalid/` (never resolved by DNS).
+- `OwnerReviewClient.CreatePinnedSshStdio(profile, credentials, activation)` is the only way to build
+  it. It accepts no handler and no base URI, always uses
+  `OwnerReviewSshStdioCandidate.CreateIsolatedHandler`, and needs an
+  `OwnerReviewSshStdioActivation` token that production cannot obtain while the gate is locked.
+  The public constructor refuses this mode (with or without an injected handler).
+- `OwnerReviewProtectedFileAcl` verifies the effective NTFS owner and DACL of the private key,
+  the pinned known_hosts and their immediate parent directory: owner and every allow ACE must be
+  the current user, SYSTEM or Administrators; Everyone/Users/other principals or a null DACL fail
+  closed (`..._ACL_TOO_BROAD`); unreadable/missing/reparse/relative paths and non-Windows hosts fail
+  closed (`..._ACL_UNVERIFIED`). It reads descriptors only and never file contents.
+- `BuildPinnedCommand` rejects duplicated `-o` option names (OpenSSH keeps the first value of a
+  repeated option, which hid a wrong-alias test on 2026-11-08).
+- Still required before any live owner session: a single read-only binding of the Mac Core PID/executable
+  SHA to the authenticated health/trace response (`CORE_RUNTIME_IDENTITY=CONSISTENT_NOT_PROVEN` today),
+  a separate OwnerPrincipal grant, a separate DPAPI owner credential and a separately reviewed UI
+  activation. Preview/Commit need explicit owner approval.

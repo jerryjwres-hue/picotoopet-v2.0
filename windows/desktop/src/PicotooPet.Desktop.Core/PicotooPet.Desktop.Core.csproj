@@ -12,4 +12,7 @@
     <EmbeddedResource Include="../../../bootstrap/model_manifest.json"
                       LogicalName="PicotooPet.Desktop.Core.Production.Resources.model_manifest.json" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PicotooPet.OwnerReview.SmokeTests" />
+  </ItemGroup>
 </Project>
