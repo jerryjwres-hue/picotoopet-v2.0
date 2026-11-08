@@ -39,6 +39,9 @@ internal static class Program
             ("cancel_and_restart_resume_are_side_effect_free", CancelResumeAsync),
             ("wpf_panel_binds_and_separates_identity_from_intent", () => OnSta(WpfPanel)),
             ("goal_center_opens_only_locked_owner_review_without_http", () => OnSta(GoalCenterLockedNavigation)),
+            ("ssh_stdio_pinned_host_no_listener_candidate", SshStdioContractAsync),
+            ("ssh_stdio_protected_file_ntfs_acl_gate", SshStdioFactoryTests.AclGateAsync),
+            ("ssh_stdio_typed_factory_locked_fail_closed", SshStdioFactoryTests.FactoryAsync),
         };
         foreach (var (name, run) in tests)
         {
@@ -627,6 +630,86 @@ internal static class Program
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         return done.Task;
+    }
+
+    private static Task SshStdioContractAsync()
+    {
+        // 全部为合成公钥与假私钥路径，绝不启动 SSH 或接触真实主人凭据。
+        var root = Path.Combine(Path.GetTempPath(), "owner-review-ssh-mock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        SshStdioFactoryTests.ProtectDirectory(root);
+        var knownHosts = Path.Combine(root, "approved-known-hosts");
+        var identity = Path.Combine(root, "synthetic-key-not-valid");
+        try
+        {
+            File.WriteAllText(identity, "not-a-real-private-key");
+            var keyBlob = new byte[51];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(keyBlob.AsSpan(0, 4), 11);
+            System.Text.Encoding.ASCII.GetBytes("ssh-ed25519").CopyTo(keyBlob, 4);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(keyBlob.AsSpan(15, 4), 32);
+            for (var i = 0; i < 32; i++) keyBlob[i + 19] = (byte)(i + 1);
+            File.WriteAllText(
+                knownHosts,
+                OwnerReviewSshStdioProfileVerifier.PinnedHostAlias
+                + " ssh-ed25519 " + Convert.ToBase64String(keyBlob) + Environment.NewLine);
+            var fingerprint = "SHA256:" + Convert.ToBase64String(
+                SHA256.HashData(keyBlob)).TrimEnd('=');
+            var profile = new OwnerReviewSshStdioProfile(
+                "synthetic-mac.example.invalid", "owner", 22, 8765,
+                knownHosts, fingerprint, identity);
+            var start = OwnerReviewSshStdioProfileVerifier.BuildPinnedCommand(profile);
+            var args = start.ArgumentList.ToArray();
+            True(Path.IsPathFullyQualified(start.FileName)
+                && start.FileName.EndsWith(@"\System32\OpenSSH\ssh.exe", StringComparison.OrdinalIgnoreCase),
+                "system OpenSSH binary must be selected without PATH lookup");
+            True(args.Contains("-F") && args.Contains("none"), "user SSH config must be disabled");
+            True(args.Contains("-W") && args.Contains("127.0.0.1:8765"),
+                "remote Mac Core must be contacted via direct SSH stdio, no local listener");
+            True(args.Contains("StrictHostKeyChecking=yes")
+                && args.Contains("HostKeyAlias=" + OwnerReviewSshStdioProfileVerifier.PinnedHostAlias)
+                && args.Contains("UpdateHostKeys=no")
+                && args.Contains("ProxyCommand=none")
+                && args.Contains("GlobalKnownHostsFile=none")
+                && args.Contains("BatchMode=yes")
+                && args.Contains("PasswordAuthentication=no")
+                && args.Contains("IdentitiesOnly=yes"),
+                "host trust/SSH authentication must be strictly pinned and unattended");
+            True(!args.Contains("-L") && !args.Contains("-R") && !args.Contains("-D")
+                && args.All(arg => !arg.Contains(Cred, StringComparison.Ordinal)
+                    && !arg.Contains("StrictHostKeyChecking=no", StringComparison.Ordinal)
+                    && !arg.Contains("accept-new", StringComparison.Ordinal)),
+                "no listening port, plaintext fallback, owner bearer or automatic trust");
+            using (var handler = OwnerReviewSshStdioCandidate.CreateIsolatedHandler(profile))
+            {
+                True(!handler.UseProxy && !handler.AllowAutoRedirect
+                    && handler.ConnectCallback is not null,
+                    "HTTP handler must avoid system proxy/redirect and route only through SSH stream");
+            }
+
+            // Host-key mismatch / alias changes / missing pin must fail before any process.
+            True(Throws<OwnerReviewException>(() =>
+                OwnerReviewSshStdioProfileVerifier.BuildPinnedCommand(
+                    profile with { ExpectedHostKeyFingerprint = "SHA256:" + Convert.ToBase64String(
+                        new byte[32]).TrimEnd('=') })),
+                "wrong host-key fingerprint must fail closed");
+            True(Throws<OwnerReviewException>(() =>
+                OwnerReviewSshStdioProfileVerifier.BuildPinnedCommand(
+                    profile with { MacHost = "-oProxyCommand=evil" })),
+                "SSH host must never become a command-line option");
+            File.WriteAllText(knownHosts, "untrusted-host ssh-ed25519 " + Convert.ToBase64String(keyBlob));
+            True(Throws<OwnerReviewException>(() =>
+                OwnerReviewSshStdioProfileVerifier.BuildPinnedCommand(profile)),
+                "unknown host alias must not be silently trusted");
+            File.Delete(knownHosts);
+            True(Throws<OwnerReviewException>(() =>
+                OwnerReviewSshStdioProfileVerifier.BuildPinnedCommand(profile)),
+                "missing pin must fail closed");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        return Task.CompletedTask;
     }
 
     private static void GoalCenterLockedNavigation()

@@ -25,6 +25,13 @@ public sealed class OwnerReviewClient : IDisposable
     {
         ArgumentNullException.ThrowIfNull(baseAddress);
         ArgumentNullException.ThrowIfNull(credentials);
+        if (mode == OwnerReviewTransportMode.PinnedSshStdio)
+        {
+            // A default HttpClientHandler would speak plain direct HTTP to the synthetic authority,
+            // and an injected handler is unauthorized. Only the typed factory may build this mode.
+            throw new ArgumentException(
+                "PinnedSshStdio 只能通过 CreatePinnedSshStdio 构造。", nameof(mode));
+        }
         OwnerReviewTransportGate.Require(mode, baseAddress);
         if (mode == OwnerReviewTransportMode.Mock && handler is null)
         {
@@ -41,6 +48,59 @@ public sealed class OwnerReviewClient : IDisposable
         _ownsHttp = true;
         _http.BaseAddress = new Uri(baseAddress.GetLeftPart(UriPartial.Authority) + "/");
         _http.Timeout = TimeSpan.FromSeconds(20);
+    }
+
+    private OwnerReviewClient(HttpClient http, IOwnerReviewCredentialStore credentials)
+    {
+        _http = http;
+        _credentials = credentials;
+        _ownsHttp = true;
+    }
+
+    /// <summary>
+    /// The only way to build a live-capable client: HTTP is carried by the pinned SSH stdio
+    /// handler of <see cref="OwnerReviewSshStdioCandidate"/> and nothing else. No handler or base
+    /// URI is accepted, the profile (pinned host key, protected NTFS key/known_hosts) is verified
+    /// before any process exists, and no credential is read here. Requires an activation token that
+    /// production cannot obtain while the gate is locked.
+    /// </summary>
+    public static OwnerReviewClient CreatePinnedSshStdio(
+        OwnerReviewSshStdioProfile profile,
+        IOwnerReviewCredentialStore credentials,
+        OwnerReviewSshStdioActivation? activation)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(credentials);
+        if (activation is null)
+        {
+            throw new OwnerReviewException(
+                OwnerReviewFailureKind.TransportBlocked, 0, "OWNER_REVIEW_SSH_STDIO_NOT_ACTIVATED");
+        }
+        var address = OwnerReviewSshStdioCandidate.SyntheticAuthority;
+        OwnerReviewTransportGate.Require(OwnerReviewTransportMode.PinnedSshStdio, address);
+        var handler = OwnerReviewSshStdioCandidate.CreateIsolatedHandler(profile);
+        HttpClient? http = null;
+        try
+        {
+            http = new HttpClient(handler, disposeHandler: true)
+            {
+                BaseAddress = address,
+                Timeout = TimeSpan.FromSeconds(20),
+            };
+            return new OwnerReviewClient(http, credentials);
+        }
+        catch
+        {
+            if (http is null)
+            {
+                handler.Dispose();
+            }
+            else
+            {
+                http.Dispose();
+            }
+            throw;
+        }
     }
 
     public Task<OwnerReviewProposal> GetProposalAsync(string goalId, CancellationToken cancellationToken)
