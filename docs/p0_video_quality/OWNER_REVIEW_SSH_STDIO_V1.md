@@ -38,6 +38,34 @@ Added isolated code (not yet called by the production OwnerReviewClient):
   existing production security gate `EncryptedMacTransportAccepted=false`
   and locked Goal Center preview remain unchanged.
 
+## Device-side read-only preflight (OPTIONAL, no live connection)
+
+These small scripts **are not device authorization** and have never run on the
+owner's Mac or Windows. GitHub CI only parses their syntax; a CI Runner is not
+a substitute for the user's devices. They must be run only after explicit
+permission for the specific device check.
+
+- Mac: `sh scripts/owner_review/readonly_mac_ssh_preflight.sh`.
+  Checks local SSH ED25519 **public** host-key fingerprint (no private key),
+  launchctl policy hint, and socket presence on SSH 22 / Core 8765 / 8766.
+  None of these prove actual sshd authorization or Core identity.
+- Windows PowerShell: `powershell -NoProfile -File scripts/owner_review/readonly_windows_ssh_preflight.ps1`.
+  Checks built-in system OpenSSH executable and version. Does **not** inspect
+  any real owner credential, DPAPI data, private SSH identity, known_hosts,
+  Mac IP/DNS address or endpoint.
+
+For auditing, preserve only the explicit `CHECK_SCHEMA=...` and
+`DEVICE_ROLE=...` key-value results; **do not paste full local terminal
+history, IPs, passwords, SSH private keys or bearer tokens** in PR comments.
+If Mac SSH host fingerprint is available, the owner should verify it locally
+and use it only inside the protected provisioning process.
+
+Statuses such as `NOT_OBSERVED_NOT_PROOF_OF_DISABLEMENT` or
+`UNVERIFIED` mean STOP for that dimension, not FAIL for the device.
+A local listener at 8765/8766 is **not** authenticated evidence that the
+listening process is PicotooPet Core. Its source default is 8765, but runtime
+may override it. A verified real Core health/identity call is still required.
+
 ## Before ANY live owner credential can be used
 
 **Not performed by this PR. Requires explicit operator approval and device evidence.**
