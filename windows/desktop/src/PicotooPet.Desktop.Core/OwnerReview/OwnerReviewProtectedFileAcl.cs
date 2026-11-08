@@ -63,7 +63,7 @@ public static class OwnerReviewProtectedFileAcl
         }
     }
 
-    private static void RequireProtected(FileSystemSecurity security, SecurityIdentifier currentUser)
+    internal static void RequireProtected(FileSystemSecurity security, SecurityIdentifier currentUser)
     {
         if (security.GetOwner(typeof(SecurityIdentifier)) is not SecurityIdentifier owner
             || !IsAllowedPrincipal(owner, currentUser))
@@ -72,8 +72,13 @@ public static class OwnerReviewProtectedFileAcl
         }
 
         var descriptor = new RawSecurityDescriptor(security.GetSecurityDescriptorBinaryForm(), 0);
-        // A missing (null) DACL grants everyone full access.
+        // A null DACL grants all access; a present zero-ACE DACL denies all access.
+        // Neither is a verified, usable SSH client ACL, so both must fail closed.
         var dacl = descriptor.DiscretionaryAcl ?? throw Blocked(OwnerReviewProtectedFileAclCodes.TooBroad);
+        if (dacl.Count == 0)
+        {
+            throw Blocked(OwnerReviewProtectedFileAclCodes.Unverified);
+        }
         foreach (var ace in dacl)
         {
             if (ace is not QualifiedAce qualified)

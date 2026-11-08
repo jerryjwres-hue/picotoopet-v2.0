@@ -179,6 +179,22 @@ internal static class SshStdioFactoryTests
                 == OwnerReviewProtectedFileAclCodes.TooBroad,
                 "a null DACL (everyone full control) must fail closed");
         }
+        {
+            // Distinguish a present zero-ACE (deny-all) DACL from a null (allow-all) DACL.
+            // Both fail closed; use a synthetic descriptor so no on-disk ACL is changed.
+            var currentUser = WindowsIdentity.GetCurrent().User!;
+            var raw = new RawSecurityDescriptor(
+                ControlFlags.DiscretionaryAclPresent | ControlFlags.SelfRelative,
+                currentUser, currentUser, null, new RawAcl(2, 0));
+            var bytes = new byte[raw.BinaryLength];
+            raw.GetBinaryForm(bytes, 0);
+            var security = new FileSecurity();
+            security.SetSecurityDescriptorBinaryForm(
+                bytes, AccessControlSections.Owner | AccessControlSections.Access);
+            True(CodeOf(() => OwnerReviewProtectedFileAcl.RequireProtected(security, currentUser))
+                == OwnerReviewProtectedFileAclCodes.Unverified,
+                "a present zero-ACE DACL must fail closed as unusable");
+        }
         using (var good = new Fixture())
         {
             True(CodeOf(() => OwnerReviewProtectedFileAcl.Require(good.Identity + ".missing"))
