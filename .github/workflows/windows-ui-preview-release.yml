@@ -34,7 +34,8 @@ permissions:
 jobs:
   windows-ui-preview:
     # Only isolated P0 GUI-fix and localized-executor recovery PRs may build via pull_request.
-    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')
+    # This single-purpose PR permits one isolated preview from frozen P0 #244 source, not formal release.
+    if: github.event_name != 'pull_request' || github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')
     name: Build and lifecycle-test Windows UI Preview
     runs-on: windows-2025
     timeout-minutes: 60
@@ -43,8 +44,8 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
-      PICOTOO_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      PICOTOO_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+      PICOTOO_SOURCE_HEAD_SHA: ${{ github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' && 'b70b0aaa6c0643af8141ebdd34a232f8bf78d2a8' || (github.event.pull_request.head.sha || github.sha) }}
+      PICOTOO_SOURCE_REF: ${{ github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' && 'integration/p0-maotai-owner-creative-locked-20261109' || (github.event.pull_request.head.ref || github.ref_name) }}
 
     steps:
       # Source -----------------------------------------------------------------
@@ -52,7 +53,17 @@ jobs:
         uses: actions/checkout@v6
         with:
           # Use the exact source HEAD, not the temporary pull-request merge commit.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' && 'b70b0aaa6c0643af8141ebdd34a232f8bf78d2a8' || (github.event.pull_request.head.sha || github.sha) }}
+
+      - name: Verify frozen P0 244 source in isolated preview runner
+        if: github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109'
+        shell: pwsh
+        run: |
+          # CI-only wrapper: never build the wrapper commit's application source.
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne 'b70b0aaa6c0643af8141ebdd34a232f8bf78d2a8') { throw 'CI_PINNED_SOURCE_SHA_MISMATCH' }
+          if ($env:PICOTOO_SOURCE_HEAD_SHA -ne $actual) { throw 'CI_SOURCE_MANIFEST_SHA_MISMATCH' }
+          Write-Host "PINNED_P0_244_SOURCE=PASS; SOURCE_SHA=$actual; GPU_AUTHORIZATION=NONE"
 
       # Publish the run id immediately so this source commit is traceable while
       # the installer lifecycle is still running; the final step overwrites it.
@@ -151,7 +162,7 @@ jobs:
       - name: Build installable Windows UI Preview
         shell: pwsh
         run: |
-          $shortSha = "${{ github.event.pull_request.head.sha || github.sha }}".Substring(0, 12)
+          $shortSha = $env:PICOTOO_SOURCE_HEAD_SHA.Substring(0, 12)
           $version  = "2.3.27.1-ui-preview-${{ github.run_number }}-$shortSha"
           & windows/desktop/scripts/Build-Phase2WindowsRelease.ps1 `
             -Version $version `
