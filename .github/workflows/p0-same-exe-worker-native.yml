@@ -45,6 +45,12 @@ jobs:
         run: |
           dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --independent-three-shot-gate-only
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      # ── Same runner, real frozen Plan digest and exact HOLD/ALLOW negative cases. ──
+      - name: v1.1 portrait pilot admission and HOLD negatives (CPU only)
+        shell: pwsh
+        run: |
+          dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --operator-trusted-host-pilot-gate-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Existing GUI must not own GPU, QA receipt remains authoritative
         shell: pwsh
         run: |
