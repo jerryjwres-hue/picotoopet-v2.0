@@ -34,8 +34,8 @@ permissions:
 jobs:
   windows-ui-preview:
     # Only isolated P0 GUI-fix and localized-executor recovery PRs may build via pull_request.
-    # This single-purpose PR permits one isolated preview from frozen P0 #244 source, not formal release.
-    if: github.event_name != 'pull_request' || github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')
+    # This CI-only PR has finished the exact-source Windows preview; disable redundant rebuilds while Mac bundles are checked.
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')
     name: Build and lifecycle-test Windows UI Preview
     runs-on: windows-2025
     timeout-minutes: 60
