@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.queue.repository import QueueRepository
 
+from .director import parse_goal_directives
 from .models import (
     CreativeDeepAiHandoffRecord,
     CreativeJobRecord,
@@ -38,6 +40,68 @@ _TERMINAL = {
     CreativeJobStatus.FAILED,
     CreativeJobStatus.CANCELLED,
 }
+
+
+def creative_task_request(job: CreativeJobRecord) -> TaskCreate:
+    """The one Creative task spec (idempotent per job) shared by every scheduling path."""
+
+    return TaskCreate(
+        task_type=CREATIVE_TASK_TYPE,
+        payload={
+            "creative_job_id": job.creative_job_id,
+            "source_set_digest": job.source_set_digest,
+            "creative_profile": job.creative_profile.value,
+        },
+        priority=100,
+        resource_tag=f"creative:{job.creative_job_id}",
+        idempotency_key=f"creative:{job.creative_job_id}:content-plan:v1",
+        max_attempts=2,
+        timeout_seconds=3600,
+    )
+
+
+def awaits_owner_commit(profile_id: str, objective: str | None) -> bool:
+    """True only for new Goal-backed pet-only v2 jobs; v1 and non-Goal v2 are unaffected."""
+
+    return (
+        profile_id == CreativeProfile.CONTENT_PLAN_V2.value
+        and parse_goal_directives(objective).pet_only
+    )
+
+
+def schedule_after_owner_commit(database: Database, creative_job_id: str) -> bool:
+    """Create the single Creative task iff the latest matching owner commit verifies.
+
+    Idempotent (task idempotency key) and fail-closed: any missing, stale, wrong-policy,
+    superseded or forged commit returns False and enqueues nothing. The handler re-verifies at
+    run time, so this gate is an extra layer, not the only one.
+    """
+
+    from .execution import (  # local import: execution is heavy and never imports service
+        TrustedPetCreativeBindingError,
+        load_trusted_pet_creative_binding,
+        verify_owner_commitment_in_ledger,
+    )
+
+    repository = CreativeRepository(database)
+    try:
+        job = repository.get_job(creative_job_id)
+    except (KeyError, ValueError):
+        return False
+    if (
+        job.status is not CreativeJobStatus.READY
+        or not job.project_key.startswith("goal-")
+        or not awaits_owner_commit(job.creative_profile.value, job.creative_objective)
+    ):
+        return False
+    try:
+        binding = load_trusted_pet_creative_binding(database, job)
+    except TrustedPetCreativeBindingError:
+        return False
+    if not verify_owner_commitment_in_ledger(database, binding.opt_in()):
+        return False
+    QueueRepository(database).create(creative_task_request(job))
+    return True
 
 
 class CreativeIntelligenceService:
@@ -116,7 +180,11 @@ class CreativeIntelligenceService:
             synthesis_result_hash=synthesis_result_hash,
             source_set=combined,
         )
-        self.ensure_task(job)
+        if not awaits_owner_commit(profile.profile_id, job.creative_objective):
+            self.ensure_task(job)
+        # A Goal-backed pet-only v2 job stays Queued WITHOUT a task: the Goal, source set and
+        # job must exist first so the owner can review them, and ``schedule_after_owner_commit``
+        # creates the single task only once the latest matching owner commit verifies.
         return self.repository.get_job(job.creative_job_id)
 
     def _create_job_from_source_set(
@@ -250,21 +318,7 @@ class CreativeIntelligenceService:
         return saved
 
     def ensure_task(self, job: CreativeJobRecord) -> TaskRecord:
-        return self.queue.create(
-            TaskCreate(
-                task_type=CREATIVE_TASK_TYPE,
-                payload={
-                    "creative_job_id": job.creative_job_id,
-                    "source_set_digest": job.source_set_digest,
-                    "creative_profile": job.creative_profile.value,
-                },
-                priority=100,
-                resource_tag=f"creative:{job.creative_job_id}",
-                idempotency_key=f"creative:{job.creative_job_id}:content-plan:v1",
-                max_attempts=2,
-                timeout_seconds=3600,
-            )
-        )
+        return self.queue.create(creative_task_request(job))
 
     def list_eligible_sources(self):  # type: ignore[no-untyped-def]
         return self.source_normalizer.list_eligible_sources()

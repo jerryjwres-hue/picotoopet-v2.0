@@ -99,7 +99,7 @@ def _seed_goal(database: Database) -> str:
                 OBJECTIVE,
                 objective_digest,
                 SOURCE_DIGEST,
-                "Queued",
+                "Ready",
                 None,
                 None,
                 None,
