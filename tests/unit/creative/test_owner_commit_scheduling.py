@@ -178,3 +178,70 @@ def test_create_goal_job_holds_new_pet_v2_but_not_v1_or_non_pet_v2(
         )
         assert _tasks(review_database) - before == expected_new_tasks, goal_id
         assert job.status.value == "Ready"
+
+
+def test_raced_replay_heals_a_commit_interrupted_before_enqueue(
+    review_database: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same Idempotency-Key racing past the early lookup must still reach scheduling."""
+
+    from picotoopet_core.autonomous.evidence_ledger import CanonicalEvidenceLedger
+
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    request, _ = _preview_request(service, principal)
+    request = request.model_copy(update={"story_policy_opt_in": STATIC_PET_STORY_POLICY})
+    old_proposal = service.proposal(request.goal_id, principal)
+    old_preview = service.preview(request, principal)
+    commit_request = OwnerStructuredReviewCommitRequest(
+        preview_request=request,
+        source_revision_digest=old_preview.source_revision_digest,
+        review_digest=old_preview.review_digest,
+        preview_digest=old_preview.preview_digest,
+    )
+    first = service.commit(commit_request, principal, idempotency_key="raced")
+    assert _tasks(review_database) == 1
+
+    # Simulate the first request dying after the durable commit but before enqueue.
+    review_database.execute("DELETE FROM tasks")
+    assert _tasks(review_database) == 0
+
+    # The second request passed its pre-transaction checks before the first committed, so it
+    # misses the early lookup and only sees the row INSIDE the transaction (`raced` branch).
+    monkeypatch.setattr(CanonicalEvidenceLedger, "find_by_origin", lambda *a, **k: None)
+    monkeypatch.setattr(service, "proposal", lambda *a, **k: old_proposal)
+    monkeypatch.setattr(service, "preview", lambda *a, **k: old_preview)
+
+    second = service.commit(commit_request, principal, idempotency_key="raced")
+
+    assert second == first
+    assert _tasks(review_database) == 1  # compensating enqueue happened, exactly once
+    service.commit(commit_request, principal, idempotency_key="raced")
+    assert _tasks(review_database) == 1
+
+
+def test_raced_replay_with_withdrawn_policy_still_schedules_nothing(
+    review_database: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from picotoopet_core.autonomous.evidence_ledger import CanonicalEvidenceLedger
+
+    service = OwnerStructuredReviewService(review_database)
+    principal = _principal()
+    request, _ = _preview_request(service, principal)
+    request = request.model_copy(update={"story_policy_opt_in": None})
+    old_proposal = service.proposal(request.goal_id, principal)
+    old_preview = service.preview(request, principal)
+    commit_request = OwnerStructuredReviewCommitRequest(
+        preview_request=request,
+        source_revision_digest=old_preview.source_revision_digest,
+        review_digest=old_preview.review_digest,
+        preview_digest=old_preview.preview_digest,
+    )
+    service.commit(commit_request, principal, idempotency_key="raced-none")
+    monkeypatch.setattr(CanonicalEvidenceLedger, "find_by_origin", lambda *a, **k: None)
+    monkeypatch.setattr(service, "proposal", lambda *a, **k: old_proposal)
+    monkeypatch.setattr(service, "preview", lambda *a, **k: old_preview)
+
+    service.commit(commit_request, principal, idempotency_key="raced-none")
+
+    assert _tasks(review_database) == 0

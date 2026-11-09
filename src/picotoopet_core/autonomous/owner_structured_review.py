@@ -455,6 +455,7 @@ class OwnerStructuredReviewService:
             request_fingerprint=request_fingerprint,
             origin_ref=origin_ref,
         )
+        raced_replay: OwnerStructuredReviewCommit | None = None
         try:
             with self.database.transaction() as connection:
                 raced = connection.execute(
@@ -465,25 +466,30 @@ class OwnerStructuredReviewService:
                     # Concurrent idempotent replay has the same scoped auth requirement.
                     record = ledger._row(raced)
                     self._authorize_subject(principal, record.subject_key)
-                    # Not scheduled inside an open transaction; any later replay schedules.
-                    return self._replay_commit(record, request_fingerprint)
-                locked_snapshot = self._snapshot(request.preview_request.goal_id)
-                if locked_snapshot.source_revision_digest != request.source_revision_digest:
-                    raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
-                self._verify_or_stage_bindings(
-                    connection=connection,
-                    preview=preview,
-                    pending=new_evidence,
-                )
-                records = ledger.ingest_batch_in_transaction(
-                    connection,
-                    [*new_evidence.values(), final_request],
-                )
-                commitment = records[-1]
+                    # Scheduling must not run inside this open transaction; it runs right
+                    # after release so a first request interrupted before enqueue is healed.
+                    raced_replay = self._replay_commit(record, request_fingerprint)
+                else:
+                    locked_snapshot = self._snapshot(request.preview_request.goal_id)
+                    if locked_snapshot.source_revision_digest != request.source_revision_digest:
+                        raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
+                    self._verify_or_stage_bindings(
+                        connection=connection,
+                        preview=preview,
+                        pending=new_evidence,
+                    )
+                    records = ledger.ingest_batch_in_transaction(
+                        connection,
+                        [*new_evidence.values(), final_request],
+                    )
+                    commitment = records[-1]
         except ValueError as error:
             raise OwnerStructuredReviewError(
                 409, "OWNER_REVIEW_EVIDENCE_CONFLICT"
             ) from error
+        if raced_replay is not None:
+            self._schedule_creative(request.preview_request.goal_id)
+            return raced_replay
         committed = self._commit_response(commitment)
         self._schedule_creative(request.preview_request.goal_id)
         return committed
