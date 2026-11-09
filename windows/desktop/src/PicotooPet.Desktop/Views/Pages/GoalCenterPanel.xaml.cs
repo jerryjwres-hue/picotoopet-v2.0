@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Core.OwnerReview;
 using PicotooPet.Desktop.ViewModels;
 using WpfClipboard = System.Windows.Clipboard;
 using WpfTextDataFormat = System.Windows.TextDataFormat;
@@ -246,12 +247,21 @@ public partial class GoalCenterPanel : WpfUserControl
             return;
         }
 
-        // This window is an intentionally noninteractive preview of the actual WPF
-        // control. Only #237 verified transport plus explicit owner enrollment may
-        // authorize a future production client, never the device Bearer token.
+        // Default (and the only reachable state while PinnedSshStdioActivated is false): the
+        // noninteractive preview below. Live wiring needs the separately reviewed activation gate,
+        // an owner-authored protected SSH profile and the typed pinned factory; it never uses the
+        // device Bearer token, a Worker identity, Mock or plain HTTP. Nothing runs at startup.
+        var credentials = new DpapiOwnerReviewCredentialStore();
+        var live = OwnerReviewLiveWiring.TryOpen(credentials);
+        if (live.IsOpen)
+        {
+            ShowLiveOwnerReview(live.Client!, credentials);
+            return;
+        }
+
         var warning = new TextBlock
         {
-            Text = "安全门禁：Windows→Mac 加密审核通道与主人凭据尚未验收。此窗口仅展示界面，不能填写真实凭据、加载资料、预览或提交。生产 Core、Goal、Ollama 和 GPU 均不会被访问。",
+            Text = "安全门禁：Windows→Mac 加密审核通道与主人凭据尚未验收。此窗口仅展示界面，不能填写真实凭据、加载资料、预览或提交。生产 Core、Goal、Ollama 和 GPU 均不会被访问。（" + live.LockCode + "）",
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
@@ -275,6 +285,32 @@ public partial class GoalCenterPanel : WpfUserControl
         };
         window.Closed += (_, _) =>
         {
+            if (ReferenceEquals(_ownerReviewLockedWindow, window))
+            {
+                _ownerReviewLockedWindow = null;
+            }
+        };
+        _ownerReviewLockedWindow = window;
+        window.Show();
+    }
+
+    /// <summary>Interactive window over a pinned-SSH-stdio client; the client dies with the window.</summary>
+    private void ShowLiveOwnerReview(OwnerReviewClient client, IOwnerReviewCredentialStore credentials)
+    {
+        var viewModel = new OwnerReviewViewModel(client, credentials, livePinnedSsh: true);
+        var window = new Window
+        {
+            Owner = Window.GetWindow(this),
+            Title = "主人资料审核 · 固定主机密钥的 SSH 安全通道",
+            Width = 980,
+            Height = 740,
+            MinWidth = 720,
+            MinHeight = 520,
+            Content = new OwnerReviewPanel { DataContext = viewModel },
+        };
+        window.Closed += (_, _) =>
+        {
+            client.Dispose();
             if (ReferenceEquals(_ownerReviewLockedWindow, window))
             {
                 _ownerReviewLockedWindow = null;

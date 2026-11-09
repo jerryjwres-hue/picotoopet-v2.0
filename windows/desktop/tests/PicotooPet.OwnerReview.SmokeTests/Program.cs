@@ -42,6 +42,8 @@ internal static class Program
             ("ssh_stdio_pinned_host_no_listener_candidate", SshStdioContractAsync),
             ("ssh_stdio_protected_file_ntfs_acl_gate", SshStdioFactoryTests.AclGateAsync),
             ("ssh_stdio_typed_factory_locked_fail_closed", SshStdioFactoryTests.FactoryAsync),
+            ("owner_review_live_wiring_locked_by_default", LiveWiringTests.LockedByDefaultAsync),
+            ("owner_review_live_wiring_profile_and_acl_gate", LiveWiringTests.ProfileGateAsync),
         };
         foreach (var (name, run) in tests)
         {

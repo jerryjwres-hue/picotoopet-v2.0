@@ -16,7 +16,7 @@ namespace PicotooPet.OwnerReview.SmokeTests;
 /// </summary>
 internal static class SshStdioFactoryTests
 {
-    private sealed class CountingStore : IOwnerReviewCredentialStore
+    internal sealed class CountingStore : IOwnerReviewCredentialStore
     {
         public int Reads { get; private set; }
 
@@ -35,7 +35,7 @@ internal static class SshStdioFactoryTests
         }
     }
 
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         public Fixture()
         {
@@ -90,7 +90,7 @@ internal static class SshStdioFactoryTests
         new DirectoryInfo(directory).SetAccessControl(security);
     }
 
-    private static void GrantEveryoneRead(string path, bool directory)
+    internal static void GrantEveryoneRead(string path, bool directory)
     {
         var everyone = new SecurityIdentifier(WellKnownSidType.WorldSid, null);
         if (directory)
