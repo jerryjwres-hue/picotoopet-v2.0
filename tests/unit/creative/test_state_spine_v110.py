@@ -5,13 +5,12 @@ from pydantic import ValidationError
 
 from picotoopet_core.creative.models import CreativeScriptResult
 from picotoopet_core.creative.state_spine import (
-    STATIC_PET_STORY_POLICY,
     UnlockedVideoBibleProposalV1,
     bind_pet_only_video_bible,
+    bound_bible_integrity_findings,
     build_state_spine,
     canonical_json,
     seal_state_facts,
-    static_pet_story_findings,
     verify_compiled_shot_locks,
     verify_shot_plan_prompt_locks,
 )
@@ -177,43 +176,31 @@ def test_current_blink_and_breathing_only_story_gate_conflict_stops_binding() ->
         )
 
 
-def test_owner_opted_static_story_uses_semantic_events_not_state_id_text() -> None:
+_EVENTS = ["BLINK_AND_REOPEN", "SUBTLE_BREATHING", "SUBTLE_BREATHING"]
+
+
+def test_generic_spine_never_self_declares_a_story_payoff_for_static_events() -> None:
+    """#236 contract: the spine flag stays False; opt-in acceptance is a separate verifier."""
+
     facts = seal_state_facts(state_facts_payload())
-    spine = build_state_spine(
-        facts,
-        ["BLINK_AND_REOPEN", "SUBTLE_BREATHING", "SUBTLE_BREATHING"],
-        story_policy_opt_in=STATIC_PET_STORY_POLICY,
-    )
+    spine = build_state_spine(facts, _EVENTS)
+
+    assert spine.story_change_authorized is False
+    assert spine.reason_codes == ("STATE_SPINE_STORY_NO_CHANGE_CONFLICT",)
+
+
+def test_bound_bible_integrity_rejects_wrong_action_and_handoff() -> None:
+    facts = seal_state_facts(state_facts_payload())
+    spine = build_state_spine(facts, _EVENTS)
     draft = bind_pet_only_video_bible(
         facts,
         spine,
         UnlockedVideoBibleProposalV1.model_validate(_proposal()),
         _script(),
+        require_story_payoff=False,
     )
+    assert bound_bible_integrity_findings(draft, facts, spine) == ()
 
-    assert spine.story_change_authorized is True
-    assert spine.reason_codes == ()
-    assert static_pet_story_findings(draft, facts, spine) == ()
-    assert draft.shots[0].opening_state != draft.shots[-1].closing_state
-    assert spine.states[0].eye_state == spine.states[-1].eye_state == "OPEN"
-
-
-def test_static_story_rejects_missing_framing_progression_and_wrong_action() -> None:
-    facts = seal_state_facts(state_facts_payload())
-    spine = build_state_spine(
-        facts,
-        ["BLINK_AND_REOPEN", "SUBTLE_BREATHING", "SUBTLE_BREATHING"],
-        story_policy_opt_in=STATIC_PET_STORY_POLICY,
-    )
-    proposal = _proposal()
-    for shot in proposal["shots"]:
-        shot["camera_framing"] = "locked medium shot"
-    draft = bind_pet_only_video_bible(
-        facts,
-        spine,
-        UnlockedVideoBibleProposalV1.model_validate(proposal),
-        _script(),
-    )
     corrupted = draft.model_copy(
         update={
             "shots": [
@@ -222,26 +209,20 @@ def test_static_story_rejects_missing_framing_progression_and_wrong_action() -> 
             ]
         }
     )
-
-    assert static_pet_story_findings(corrupted, facts, spine) == (
-        "STATIC_STORY_ACTION_MISMATCH:shot-001",
-        "STATIC_STORY_CAMERA_NO_PROGRESSION:shot-001",
-        "STATIC_STORY_CAMERA_NO_PROGRESSION:shot-002",
+    assert bound_bible_integrity_findings(corrupted, facts, spine) == (
+        "BOUND_BIBLE_ACTION_MISMATCH:shot-001",
     )
 
 
 def test_derived_prompt_projection_rejects_any_missing_lock() -> None:
     facts = seal_state_facts(state_facts_payload())
-    spine = build_state_spine(
-        facts,
-        ["BLINK_AND_REOPEN", "SUBTLE_BREATHING", "SUBTLE_BREATHING"],
-        story_policy_opt_in=STATIC_PET_STORY_POLICY,
-    )
+    spine = build_state_spine(facts, _EVENTS)
     draft = bind_pet_only_video_bible(
         facts,
         spine,
         UnlockedVideoBibleProposalV1.model_validate(_proposal()),
         _script(),
+        require_story_payoff=False,
     )
     bible = seal_bible(
         draft,

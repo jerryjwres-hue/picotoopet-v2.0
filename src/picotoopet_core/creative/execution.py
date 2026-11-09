@@ -44,11 +44,12 @@ from .state_spine import (
     StateFactsV1,
     UnlockedVideoBibleProposalV1,
     bind_pet_only_video_bible,
+    bound_bible_integrity_findings,
     build_state_spine,
     canonical_sha256,
-    static_pet_story_findings,
     verify_shot_plan_prompt_locks,
 )
+from .static_pet_story import StaticPetStoryOptInV1, evaluate_static_pet_story
 from .store import CreativeArtifactStore
 from .video_bible import (
     KEYFRAME_KIT_SCHEMA_VERSION as KEYFRAME_KIT_STAGE_KEY,
@@ -101,8 +102,60 @@ class TrustedPetCreativeBinding:
     commitment_id: str
     goal_id: str
     review_digest: str
+    review_actor_id: str
+    subject_key: str
     story_policy_opt_in: str
     facts: StateFactsV1
+
+    def opt_in(self) -> StaticPetStoryOptInV1:
+        """Typed reference consumed by the single pure static-story policy (#236)."""
+
+        return StaticPetStoryOptInV1(
+            goal_id=self.goal_id,
+            review_actor_id=self.review_actor_id,
+            commitment_id=self.commitment_id,
+            review_digest=self.review_digest,
+            subject_key=self.subject_key,
+            source_set_digest=self.facts.source_set_digest,
+            objective_digest=self.facts.objective_digest,
+            facts_digest=self.facts.facts_digest,
+        )
+
+
+def verify_owner_commitment_in_ledger(
+    database: Database, opt_in: StaticPetStoryOptInV1
+) -> bool:
+    """Trusted callback: the opt-in must still be the owner's LATEST committed review.
+
+    A later commit without the policy (the owner's withdrawal/supersession) makes this False.
+    The canonical ledger has no revoke/expiry columns, so supersession is the only revocation.
+    """
+
+    row = database.fetchone(
+        "SELECT evidence_id,goal_id,value_json,provenance_json FROM canonical_evidence "
+        "WHERE goal_id=? AND subject_key=? AND evidence_type='pet.owner.state_facts.v1' "
+        "AND source='owner_structured_review' AND origin_kind='manual' "
+        "ORDER BY captured_at DESC,evidence_id DESC LIMIT 1",
+        (opt_in.goal_id, opt_in.subject_key),
+    )
+    if row is None or row["evidence_id"] != opt_in.commitment_id:
+        return False
+    try:
+        value = json.loads(row["value_json"])
+        provenance = json.loads(row["provenance_json"])
+        facts = StateFactsV1.model_validate(value["state_facts"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        isinstance(value, dict)
+        and isinstance(provenance, dict)
+        and value.get("story_policy_opt_in") == STATIC_PET_STORY_POLICY
+        and value.get("review_actor_id") == opt_in.review_actor_id
+        and value.get("review_digest") == opt_in.review_digest
+        and provenance.get("owner_reviewed") is True
+        and provenance.get("actor_id") == opt_in.review_actor_id
+        and facts.facts_digest == opt_in.facts_digest
+    )
 
 
 def _json_row(value: object, code: str) -> dict[str, Any]:
@@ -282,6 +335,8 @@ def load_trusted_pet_creative_binding(
         commitment_id=row["evidence_id"],
         goal_id=snapshot["goal_id"],
         review_digest=review_digest,
+        review_actor_id=actor_id,
+        subject_key=subject_key,
         story_policy_opt_in=story_policy,
         facts=facts,
     )
@@ -362,6 +417,26 @@ class CreativeIntelligenceCoordinator:
             )
             return self._summary(job.creative_job_id, CreativeJobStatus.NEEDS_DEEP_AI)
 
+        if (
+            job.creative_profile is CreativeProfile.CONTENT_PLAN_V2
+            and parse_goal_directives(job.creative_objective).pet_only
+            and job.project_key.startswith("goal-")
+            and self.database.fetchone(
+                "SELECT goal_id FROM creative_goal_source_sets WHERE creative_job_id=?",
+                (job.creative_job_id,),
+            )
+            is None
+        ):
+            # A Goal-created v2 job without its immutable Goal snapshot is never a legacy job.
+            self.repository.transition_job(
+                job.creative_job_id,
+                CreativeJobStatus.NEEDS_HUMAN,
+                failure_code="TRUSTED_STATE_FACTS_GOAL_LINK_MISSING",
+                error_message="Owner-confirmed pet Creative facts require attention.",
+                finished=True,
+            )
+            return self._summary(job.creative_job_id, CreativeJobStatus.NEEDS_HUMAN)
+
         source_set = self.source_normalizer.load_persisted_source_set(job.creative_job_id)
         if source_set.source_set_digest != job.source_set_digest:
             raise ValueError("CREATIVE_SOURCE_SET_DIGEST_MISMATCH")
@@ -373,10 +448,17 @@ class CreativeIntelligenceCoordinator:
             and parse_goal_directives(job.creative_objective).pet_only
         )
         trusted_pet: TrustedPetCreativeBinding | None = None
-        goal_backed_pet_v2 = pet_only_v2 and self.database.fetchone(
-            "SELECT goal_id FROM creative_goal_source_sets WHERE creative_job_id=?",
-            (job.creative_job_id,),
-        ) is not None
+        # A job created by the Goal pipeline always carries project_key "goal-<goal_id>". Such a
+        # job whose Goal source snapshot is missing must stop here; only a genuinely non-Goal
+        # historical pet-only job may keep the legacy path. Legacy v1 never reaches this branch.
+        goal_backed_pet_v2 = pet_only_v2 and (
+            job.project_key.startswith("goal-")
+            or self.database.fetchone(
+                "SELECT goal_id FROM creative_goal_source_sets WHERE creative_job_id=?",
+                (job.creative_job_id,),
+            )
+            is not None
+        )
         if goal_backed_pet_v2:
             try:
                 trusted_pet = load_trusted_pet_creative_binding(self.database, job)
@@ -410,7 +492,6 @@ class CreativeIntelligenceCoordinator:
                 spine = build_state_spine(
                     trusted_pet.facts,
                     ["BLINK_AND_REOPEN", "SUBTLE_BREATHING", "SUBTLE_BREATHING"],
-                    story_policy_opt_in=trusted_pet.story_policy_opt_in,
                 )
                 context["trusted_state_spine"] = {
                     "commitment_id": trusted_pet.commitment_id,
@@ -489,10 +570,12 @@ class CreativeIntelligenceCoordinator:
                 previous[stage_kind.value] = result
                 continue
             if outcome is CreativeQualityOutcome.NEEDS_HUMAN:
+                prompt_lock = bool(reasons) and reasons[0].startswith("PROMPT_LOCK_")
                 self.repository.transition_job(
                     job.creative_job_id,
                     CreativeJobStatus.NEEDS_HUMAN,
                     current_stage=stage_kind,
+                    failure_code="CREATIVE_PROMPT_LOCK_MISSING" if prompt_lock else None,
                     finished=True,
                 )
                 return self._summary(job.creative_job_id, CreativeJobStatus.NEEDS_HUMAN)
@@ -848,14 +931,51 @@ class CreativeIntelligenceCoordinator:
             spine = build_state_spine(
                 trusted_pet.facts,
                 ["BLINK_AND_REOPEN", "SUBTLE_BREATHING", "SUBTLE_BREATHING"],
-                story_policy_opt_in=trusted_pet.story_policy_opt_in,
             )
+            # The generic spine flag stays False; acceptance is the single #236 policy below,
+            # run against a ledger-verified owner opt-in.
             draft = bind_pet_only_video_bible(
                 trusted_pet.facts,
                 spine,
                 proposal,
                 script,
+                require_story_payoff=False,
             )
+            decision_story = evaluate_static_pet_story(
+                facts=trusted_pet.facts,
+                spine=spine,
+                proposal=proposal,
+                script=script,
+                opt_in=trusted_pet.opt_in(),
+                verify_owner_commitment=lambda item: verify_owner_commitment_in_ledger(
+                    self.database, item
+                ),
+            )
+            if decision_story.outcome != "ACCEPT":
+                # Owner-consent / ledger failures are not model-fixable.
+                if any(
+                    code.startswith(
+                        (
+                            "STATIC_STORY_EXPLICIT_OPT_IN",
+                            "STATIC_STORY_OWNER_REVIEW",
+                            "STATIC_STORY_SCOPE",
+                            "STATIC_STORY_LEGACY",
+                            "STATIC_STORY_LOCK",
+                            "STATIC_STORY_EVENTS",
+                            "STATIC_STORY_STATE_SPINE",
+                            "STATIC_STORY_SPINE",
+                            "STATIC_STORY_POSE",
+                            "STATIC_STORY_BREATHING",
+                        )
+                    )
+                    for code in decision_story.reason_codes
+                ):
+                    return (
+                        CreativeQualityOutcome.NEEDS_HUMAN,
+                        None,
+                        list(decision_story.reason_codes)[:20],
+                    )
+                return CreativeQualityOutcome.RETRY, None, list(decision_story.reason_codes)[:20]
         except (KeyError, ValidationError, ValueError) as error:
             code = str(error).split("\n", 1)[0]
             return CreativeQualityOutcome.RETRY, None, [code[:160]]
@@ -870,7 +990,7 @@ class CreativeIntelligenceCoordinator:
         )
         if decision.outcome is not CreativeQualityOutcome.PASS or parsed is None:
             return decision.outcome, None, decision.reasons
-        findings = list(static_pet_story_findings(draft, trusted_pet.facts, spine))
+        findings = list(bound_bible_integrity_findings(draft, trusted_pet.facts, spine))
         if findings:
             return CreativeQualityOutcome.RETRY, None, findings[:20]
         return CreativeQualityOutcome.PASS, parsed.model_dump(mode="json"), []
@@ -917,9 +1037,11 @@ class CreativeIntelligenceCoordinator:
                     failure_code="CREATIVE_PROMPT_LOCK_MISSING",
                     finished=True,
                 )
+                # Fail closed and consistent with the NeedsHuman stage row: no Deep AI handoff,
+                # no Package, no further model call.
                 return (
                     None,
-                    CreativeQualityOutcome.NEEDS_DEEP_AI,
+                    CreativeQualityOutcome.NEEDS_HUMAN,
                     raw,
                     list(lock_findings)[:20],
                 )

@@ -282,8 +282,6 @@ class StateSpineV1(_Strict):
 def build_state_spine(
     facts: StateFactsV1,
     events: list[AllowedEvent | str],
-    *,
-    story_policy_opt_in: str | None = None,
 ) -> StateSpineV1:
     """Build S0→S3 without asking a model to restate any locked state."""
 
@@ -327,30 +325,17 @@ def build_state_spine(
         )
         for index, event in enumerate(typed_events)
     )
-    expected_static_story = (
-        AllowedEvent.BLINK_AND_REOPEN,
-        AllowedEvent.SUBTLE_BREATHING,
-        AllowedEvent.SUBTLE_BREATHING,
-    )
-    policy_selected = story_policy_opt_in == STATIC_PET_STORY_POLICY
-    semantic_story = policy_selected and typed_events == expected_static_story
-    if story_policy_opt_in is not None and not policy_selected:
-        reason_codes = ["STATE_SPINE_STORY_POLICY_UNSUPPORTED"]
-    elif policy_selected and not semantic_story:
-        reason_codes = ["STATIC_STORY_EVENT_SEQUENCE_INVALID"]
-    elif semantic_story:
-        reason_codes = []
-    else:
-        # Both approved events are reversible micro-motion. Without the versioned owner opt-in,
-        # neither authorizes Core to reinterpret state-ref text as a story payoff.
-        reason_codes = ["STATE_SPINE_STORY_NO_CHANGE_CONFLICT"]
+    # Both approved events are reversible micro-motion.  The spine NEVER self-declares a story
+    # payoff: a persistent-change flag cannot be faked.  Opted-in static stories are accepted only
+    # by the separate pure verifier ``static_pet_story.evaluate_static_pet_story`` after Core
+    # re-verifies the owner's committed policy selection in the canonical ledger.
     body: dict[str, Any] = {
         "schema_version": "state_spine.v1",
         "facts_digest": facts.facts_digest,
         "states": [item.model_dump(mode="json") for item in states],
         "transitions": [item.model_dump(mode="json") for item in transitions],
-        "story_change_authorized": semantic_story,
-        "reason_codes": reason_codes,
+        "story_change_authorized": False,
+        "reason_codes": ["STATE_SPINE_STORY_NO_CHANGE_CONFLICT"],
     }
     body["spine_digest"] = canonical_sha256(body)
     return StateSpineV1.model_validate(body)
@@ -575,29 +560,22 @@ def verify_shot_plan_prompt_locks(
     return tuple(findings)
 
 
-def static_pet_story_findings(
+def bound_bible_integrity_findings(
     bible: PetOnlyVideoBibleDraft,
     facts: StateFactsV1,
     spine: StateSpineV1,
 ) -> tuple[str, ...]:
-    """Validate the opted-in three-shot story by semantics, not changing state-ref text.
+    """Check the *bound* Bible still carries the spine's actions, handoffs and prompt locks.
 
-    This is additive to the existing Video Bible Story Gate. It recognizes only the exact
-    owner-authorized blink/breathing sequence and never grants a general STORY_NO_CHANGE bypass.
+    Story acceptance (event sequence, framing progression, opt-in) is NOT decided here; that is
+    the single policy in ``static_pet_story.evaluate_static_pet_story``.
     """
 
     findings: list[str] = []
     if spine.facts_digest != facts.facts_digest:
-        return ("STATIC_STORY_FACTS_DIGEST_MISMATCH",)
-    expected_events = (
-        AllowedEvent.BLINK_AND_REOPEN,
-        AllowedEvent.SUBTLE_BREATHING,
-        AllowedEvent.SUBTLE_BREATHING,
-    )
-    if tuple(item.event for item in spine.transitions) != expected_events:
-        findings.append("STATIC_STORY_EVENT_SEQUENCE_INVALID")
+        return ("BOUND_BIBLE_FACTS_DIGEST_MISMATCH",)
     if len(bible.shots) != 3:
-        return (*findings, "STATIC_STORY_SHOT_COUNT_INVALID")
+        return (*findings, "BOUND_BIBLE_SHOT_COUNT_INVALID")
 
     expected_action_phrases = (
         "makes one brief blink, and reopens both eyes",
@@ -612,7 +590,7 @@ def static_pet_story_findings(
             or phrase not in shot.visible_action
             or shot.duration_seconds != 4.0
         ):
-            findings.append(f"STATIC_STORY_ACTION_MISMATCH:{shot.shot_id}")
+            findings.append(f"BOUND_BIBLE_ACTION_MISMATCH:{shot.shot_id}")
         expected_opening = (
             f"state_ref={transition.opening_state_id};"
             f"pose_lock_id={facts.pose_lock.pose_lock_id}"
@@ -622,14 +600,10 @@ def static_pet_story_findings(
             f"pose_lock_id={facts.pose_lock.pose_lock_id}"
         )
         if shot.opening_state != expected_opening or shot.closing_state != expected_closing:
-            findings.append(f"STATIC_STORY_STATE_HANDOFF_MISMATCH:{shot.shot_id}")
+            findings.append(f"BOUND_BIBLE_STATE_HANDOFF_MISMATCH:{shot.shot_id}")
         if missing := verify_compiled_shot_locks(bible, shot, facts):
             findings.extend(
-                f"STATIC_STORY_PROMPT_LOCK_MISSING:{shot.shot_id}:{code}"
+                f"BOUND_BIBLE_PROMPT_LOCK_MISSING:{shot.shot_id}:{code}"
                 for code in missing
             )
-
-    for current, following in zip(bible.shots, bible.shots[1:], strict=False):
-        if current.camera_framing.casefold() == following.camera_framing.casefold():
-            findings.append(f"STATIC_STORY_CAMERA_NO_PROGRESSION:{current.shot_id}")
     return tuple(findings)

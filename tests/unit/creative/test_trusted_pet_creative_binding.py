@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,11 +12,13 @@ from picotoopet_core.autonomous.owner_structured_review import (
     OwnerStructuredReviewService,
 )
 from picotoopet_core.config.paths import RuntimePaths
+from picotoopet_core.creative import execution as execution_module
 from picotoopet_core.creative.execution import (
     CreativeIntelligenceCoordinator,
     CreativeTaskPayload,
     TrustedPetCreativeBindingError,
     load_trusted_pet_creative_binding,
+    verify_owner_commitment_in_ledger,
 )
 from picotoopet_core.creative.repository import CreativeRepository
 from picotoopet_core.creative.source import CreativeSourceNormalizer
@@ -38,14 +38,24 @@ from tests.unit.autonomous.test_owner_structured_review import (
 pytest_plugins = ("tests.unit.autonomous.test_owner_structured_review",)
 
 
-def _commit_with_policy(database: Database, policy: str = STATIC_PET_STORY_POLICY) -> str:
+def _commit_with_policy(
+    database: Database,
+    policy: str | None = STATIC_PET_STORY_POLICY,
+    *,
+    key: str = "trusted-pet-creative-binding",
+) -> str:
+    """Commit through the REAL owner-review service; the policy is the owner's typed choice."""
+
     database.execute(
         "UPDATE creative_jobs SET status='Ready' WHERE creative_job_id=?",
         (JOB_ID,),
     )
     service = OwnerStructuredReviewService(database)
     principal = _principal()
-    preview_request, preview = _preview_request(service, principal)
+    preview_request, _ = _preview_request(service, principal)
+    preview_request = preview_request.model_copy(update={"story_policy_opt_in": policy})
+    preview = service.preview(preview_request, principal)
+    assert preview.outcome == "READY"
     commit = service.commit(
         OwnerStructuredReviewCommitRequest(
             preview_request=preview_request,
@@ -54,27 +64,7 @@ def _commit_with_policy(database: Database, policy: str = STATIC_PET_STORY_POLIC
             preview_digest=preview.preview_digest,
         ),
         principal,
-        idempotency_key="trusted-pet-creative-binding",
-    )
-    row = database.fetchone(
-        "SELECT value_json,numeric_value FROM canonical_evidence WHERE evidence_id=?",
-        (commit.commitment_id,),
-    )
-    assert row is not None
-    value = json.loads(row["value_json"])
-    value["story_policy_opt_in"] = policy
-    value_json = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    raw_hash = hashlib.sha256(
-        json.dumps(
-            {"numeric_value": row["numeric_value"], "value": value},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
-    database.execute(
-        "UPDATE canonical_evidence SET value_json=?,raw_hash=? WHERE evidence_id=?",
-        (value_json, raw_hash, commit.commitment_id),
+        idempotency_key=key,
     )
     return commit.commitment_id
 
@@ -109,7 +99,7 @@ def test_binding_fails_closed_for_policy_identity_and_staleness(
 ) -> None:
     commitment_id = _commit_with_policy(
         review_database,
-        "unapproved-policy" if mutation == "wrong-policy" else STATIC_PET_STORY_POLICY,
+        None if mutation == "wrong-policy" else STATIC_PET_STORY_POLICY,
     )
     if mutation == "wrong-subject":
         review_database.execute(
@@ -196,11 +186,11 @@ def test_missing_commitment_needs_human_before_any_model_call(
     ) == 0
 
 
-def test_trusted_path_binds_unlocked_bible_and_compiles_three_locked_prompts(
+def _run_full(
     review_database: Database,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+):
     _commit_with_policy(review_database)
     repository = CreativeRepository(review_database)
     job = repository.get_job(JOB_ID)
@@ -358,6 +348,15 @@ def test_trusted_path_binds_unlocked_bible_and_compiles_three_locked_prompts(
         )
     )
 
+    return adapter, result, repository
+
+
+def test_trusted_path_binds_unlocked_bible_and_compiles_three_locked_prompts(
+    review_database: Database,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter, result, repository = _run_full(review_database, tmp_path, monkeypatch)
     assert result.summary["status"] == "creative_ready"
     assert adapter.calls == 4
     assert adapter.profiles[-1].result_model is not adapter.profiles[0].result_model
@@ -384,3 +383,134 @@ def test_trusted_path_binds_unlocked_bible_and_compiles_three_locked_prompts(
     ]
     for task in plan.tasks:
         assert all(value in task.positive_prompt for value in required)
+
+
+def test_prompt_lock_loss_fails_closed_without_package_handoff_or_extra_model_call(
+    review_database: Database,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real = execution_module.derive_shot_plan
+
+    def lossy(bible, script):  # type: ignore[no-untyped-def]
+        plan = real(bible, script)
+        plan["shots"][1]["subject"] = "generic pet"
+        return plan
+
+    monkeypatch.setattr(execution_module, "derive_shot_plan", lossy)
+
+    adapter, result, repository = _run_full(review_database, tmp_path, monkeypatch)
+
+    assert result.summary["status"] == "NeedsHuman"
+    assert adapter.calls == 4  # the 4 pre-existing model stages only; derived stage adds none
+    assert repository.package_for(JOB_ID) is None
+    assert repository.handoff_for(JOB_ID) is None
+    job = repository.get_job(JOB_ID)
+    assert job.status.value == "NeedsHuman"
+    assert job.failure_code == "CREATIVE_PROMPT_LOCK_MISSING"
+    stage = review_database.fetchone(
+        "SELECT status,quality_outcome,failure_code FROM creative_stage_runs "
+        "WHERE creative_job_id=? AND stage_kind='shot_plan.v1'",
+        (JOB_ID,),
+    )
+    assert stage is not None
+    assert (stage["status"], stage["quality_outcome"], stage["failure_code"]) == (
+        "NeedsHuman",
+        "NEEDS_HUMAN",
+        "CREATIVE_PROMPT_LOCK_MISSING",
+    )
+
+
+def test_goal_job_missing_goal_snapshot_stops_before_any_model_call(
+    review_database: Database,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _commit_with_policy(review_database)
+    review_database.execute(
+        "DELETE FROM creative_goal_source_sets WHERE creative_job_id=?", (JOB_ID,)
+    )
+    job = CreativeRepository(review_database).get_job(JOB_ID)
+    assert job.project_key.startswith("goal-")
+    payload = SimpleNamespace(
+        creative_job_id=JOB_ID,
+        source_set_digest=job.source_set_digest,
+        creative_profile=job.creative_profile,
+    )
+    monkeypatch.setattr(CreativeTaskPayload, "from_task", classmethod(lambda cls, task: payload))
+
+    class NoCallAdapter:
+        calls = 0
+
+        def run(self, profile, context, *, correction=None):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            raise AssertionError("model must not run for an unmapped Goal job")
+
+    adapter = NoCallAdapter()
+    coordinator = CreativeIntelligenceCoordinator(
+        database=review_database,
+        queue=DiagnosticQueueRepository(review_database),
+        repository=CreativeRepository(review_database),
+        source_normalizer=CreativeSourceNormalizer(review_database),
+        store=CreativeArtifactStore(RuntimePaths.from_root(tmp_path / "runtime")),
+        adapter=adapter,
+        configured_model_id="synthetic:no-call",
+    )
+    now = datetime.now(UTC)
+    result = coordinator.handler(
+        TaskRecord(
+            task_id="synthetic-unmapped",
+            task_type=coordinator.TASK_TYPE,
+            status=TaskStatus.RUNNING,
+            priority=0,
+            payload={},
+            attempt_count=1,
+            max_attempts=1,
+            timeout_seconds=60,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    assert result.summary["status"] == "NeedsHuman"
+    assert adapter.calls == 0
+    final = CreativeRepository(review_database).get_job(JOB_ID)
+    assert final.failure_code == "TRUSTED_STATE_FACTS_GOAL_LINK_MISSING"
+    assert review_database.scalar(
+        "SELECT COUNT(*) FROM creative_stage_runs WHERE creative_job_id=?", (JOB_ID,)
+    ) == 0
+
+
+def test_later_commit_without_policy_supersedes_the_opt_in(
+    review_database: Database,
+) -> None:
+    """The ledger has no revoke/expiry column; a newer owner commit is the only withdrawal."""
+
+    first = _commit_with_policy(review_database)
+    job = CreativeRepository(review_database).get_job(JOB_ID)
+    opt_in = load_trusted_pet_creative_binding(review_database, job).opt_in()
+    assert verify_owner_commitment_in_ledger(review_database, opt_in) is True
+
+    # Forge-resistance: any digest, actor or commitment drift is refused by the callback.
+    assert not verify_owner_commitment_in_ledger(
+        review_database, opt_in.model_copy(update={"review_digest": "e" * 64})
+    )
+    assert not verify_owner_commitment_in_ledger(
+        review_database, opt_in.model_copy(update={"review_actor_id": "someone-else"})
+    )
+    assert not verify_owner_commitment_in_ledger(
+        review_database, opt_in.model_copy(update={"commitment_id": "missing"})
+    )
+
+    review_database.execute(
+        "UPDATE canonical_evidence SET captured_at='2000-01-01T00:00:00+00:00' "
+        "WHERE evidence_id=?",
+        (first,),
+    )
+    later = _commit_with_policy(review_database, None, key="owner-withdraws-policy")
+    assert later != first
+    assert verify_owner_commitment_in_ledger(review_database, opt_in) is False
+    with pytest.raises(TrustedPetCreativeBindingError, match="TRUSTED_STORY_POLICY_NOT_SELECTED"):
+        load_trusted_pet_creative_binding(
+            review_database, CreativeRepository(review_database).get_job(JOB_ID)
+        )
