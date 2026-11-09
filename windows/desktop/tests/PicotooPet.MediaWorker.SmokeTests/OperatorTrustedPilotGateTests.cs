@@ -41,6 +41,18 @@ internal static class OperatorTrustedPilotGateTests
                 "existing exact ALLOW must admit the frozen single four-second v1.1 I2V pilot");
             using (var permit = P0ThreeShotAcceptanceGate.AcquireSubmissionPermit(jobId, Digest(plan)))
                 RecoveryTests.Assert(permit is not null, "B requires the real existing permit");
+            // Verify the already-supported Core portrait output profile is admitted only in
+            // the same sealed v1.1 pilot, without relaxing arbitrary renderer dimensions.
+            plan = plan with { Tasks = [task with { Width = 480, Height = 832 }] };
+            File.WriteAllText(path, Allow(Digest(plan)));
+            RecoveryTests.Assert(await P0ThreeShotAcceptanceGate.AllowsJobAsync(session, jobId, CancellationToken.None),
+                "owner-allowed 480x832 v1.1 pilot must pass the same exact digest and reference gates");
+            plan = plan with { Tasks = [task with { Width = 640, Height = 640 }] };
+            File.WriteAllText(path, Allow(Digest(plan)));
+            RecoveryTests.Assert(!await P0ThreeShotAcceptanceGate.AllowsJobAsync(session, jobId, CancellationToken.None),
+                "unapproved 640x640 v1.1 pilot remains held even with a matching digest");
+            plan = plan with { Tasks = [task] };
+            File.WriteAllText(path, Allow(Digest(plan)));
             // A historical v1.0 Goal continuation must not hide the exact new
             // B Job from the existing sole host's already-present job poll.
             var find = typeof(P0MediaWorkerHost).GetMethod("FindExplicitPilotJobAsync", BindingFlags.Static | BindingFlags.NonPublic);
