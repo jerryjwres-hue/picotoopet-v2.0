@@ -52,7 +52,11 @@ internal static class P0ThreeShotAcceptanceGate
                 var pilot = plan.Tasks[0];
                 if (string.IsNullOrWhiteSpace(pilot.ProductionTaskId) || string.IsNullOrWhiteSpace(pilot.ShotId)
                     || pilot.Order != 1 || pilot.RenderIntent != "IMAGE_TO_VIDEO" || pilot.TargetDurationMs != 4000
-                    || pilot.FrameCount != 97 || pilot.Fps != 24 || pilot.Width != 832 || pilot.Height != 480) return false;
+                    || pilot.FrameCount != 97 || pilot.Fps != 24
+                    // Existing signed v1.1 pilot can use either frozen Core output profile;
+                    // v1.0 three-shot approval rules and every other permit check stay unchanged.
+                    || !((pilot.Width == 832 && pilot.Height == 480)
+                        || (pilot.Width == 480 && pilot.Height == 832))) return false;
                 return Convert.ToHexStringLower(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(plan)!))) == gate.PlanDigest;
             }
             if (job.ProductionJobId != jobId
