@@ -159,10 +159,16 @@ public sealed class OwnerReviewViewModel : ObservableObject
     private bool _staticPetStorySelected;
     private bool _busy;
 
-    public OwnerReviewViewModel(OwnerReviewClient client, IOwnerReviewCredentialStore credentials)
+    private readonly bool _livePinnedSsh;
+
+    public OwnerReviewViewModel(
+        OwnerReviewClient client,
+        IOwnerReviewCredentialStore credentials,
+        bool livePinnedSsh = false)
     {
         _client = client;
         _credentials = credentials;
+        _livePinnedSsh = livePinnedSsh;
         LoadProposalCommand = new AsyncRelayCommand(LoadAsync, ShowError, () => !string.IsNullOrWhiteSpace(GoalId));
         PreviewCommand = new AsyncRelayCommand(PreviewAsync, ShowError, () => _draft is not null && _draft.Committed is null);
         CommitCommand = new AsyncRelayCommand(CommitAsync, ShowError, () => _draft?.CommitBlock() == OwnerReviewCommitBlock.None);
@@ -170,10 +176,9 @@ public sealed class OwnerReviewViewModel : ObservableObject
         RefreshCredentialStatus();
     }
 
-#pragma warning disable CA1822 // WPF 绑定需要实例属性。
-    public string TransportBanner =>
-        "加密传输尚未验收（" + OwnerReviewTransportGate.StatusLabel + "）：当前版本仅用合成资料与 Mock 验证，不会明文调用真实 Core。";
-#pragma warning restore CA1822
+    public string TransportBanner => _livePinnedSsh
+        ? "已通过固定主机密钥的 SSH 标准输入/输出通道连接 Mac Core（无本地监听端口、无明文回退）。需要主人专用凭据；设备令牌与 Worker 身份不会被使用。"
+        : "加密传输尚未验收（" + OwnerReviewTransportGate.StatusLabel + "）：当前版本仅用合成资料与 Mock 验证，不会明文调用真实 Core。";
 
     public AsyncRelayCommand LoadProposalCommand { get; }
     public AsyncRelayCommand PreviewCommand { get; }

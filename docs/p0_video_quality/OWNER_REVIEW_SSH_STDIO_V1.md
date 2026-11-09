@@ -135,3 +135,25 @@ Bearer/DPAPI credential is read anywhere in construction.
   SHA to the authenticated health/trace response (`CORE_RUNTIME_IDENTITY=CONSISTENT_NOT_PROVEN` today),
   a separate OwnerPrincipal grant, a separate DPAPI owner credential and a separately reviewed UI
   activation. Preview/Commit need explicit owner approval.
+## Production wiring (default locked; explicit authorization required)
+
+`OwnerReviewLiveWiring.TryOpen` is the only path from the Goal Center "Owner Review" button to a live
+client. It runs only on that click (never at startup, never creates a Goal, Worker or task) and stays
+locked while `OwnerReviewTransportGate.PinnedSshStdioActivated` is `false` (nothing on disk is read).
+With the gate open it additionally requires an owner-authored, NTFS-protected
+`%LOCALAPPDATA%\PicotooPet\OwnerReviewSsh\owner_review_live_profile.json` (strict
+`owner_review_live_profile.v1`: `mac_host`, `mac_user`, `ssh_port`, `core_port`,
+`expected_host_key_fingerprint`; the key and pinned known_hosts are fixed file names beside it) and
+then builds the client only through `OwnerReviewClient.CreatePinnedSshStdio`. Mock, plain HTTP and
+injected handlers are unreachable. The OwnerPrincipal credential is read per request from the dedicated
+DPAPI store; a missing credential refuses every operation, and the device token / Worker Ed25519 or DPAPI
+identity is never used.
+
+Wire contract: all request/response fields of proposal, preview and commit match Mac Core
+`5c51fdb3` (frozen OpenAPI blob sha256 `bfcbb899…7789a`, checked by the existing smoke test).
+
+Minimal authorization to activate (all separate decisions, none made by this change):
+1. Deploy a Mac Core containing #235 (and #242 for Creative scheduling) and an OwnerPrincipal grant for the pet subject.
+2. Owner enrolls the OwnerPrincipal credential in the panel (dedicated DPAPI store).
+3. Owner writes the protected profile file above (host, user, ports, host-key fingerprint).
+4. A reviewed PR flips `PinnedSshStdioActivated` to `true`, then a new Windows build is installed.
