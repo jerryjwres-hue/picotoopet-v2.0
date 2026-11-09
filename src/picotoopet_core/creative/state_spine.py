@@ -34,6 +34,7 @@ from .video_bible import (
 
 STATE_FACTS_SCHEMA_VERSION = "state_facts.v1"
 STATE_SPINE_TEMPLATE_VERSION = "video-bible-pet-only-v1.1.0"
+STATIC_PET_STORY_POLICY = "static-pet-story-v1.0.0"
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
 _ID_PATTERN = r"^[A-Za-z0-9_.-]+$"
 
@@ -279,7 +280,10 @@ class StateSpineV1(_Strict):
 
 
 def build_state_spine(
-    facts: StateFactsV1, events: list[AllowedEvent | str]
+    facts: StateFactsV1,
+    events: list[AllowedEvent | str],
+    *,
+    story_policy_opt_in: str | None = None,
 ) -> StateSpineV1:
     """Build S0→S3 without asking a model to restate any locked state."""
 
@@ -323,15 +327,30 @@ def build_state_spine(
         )
         for index, event in enumerate(typed_events)
     )
-    # Both approved events are reversible micro-motion.  Neither authorizes Core to invent a
-    # persistent payoff such as half-closed eyes, a head turn, or a new body pose.
+    expected_static_story = (
+        AllowedEvent.BLINK_AND_REOPEN,
+        AllowedEvent.SUBTLE_BREATHING,
+        AllowedEvent.SUBTLE_BREATHING,
+    )
+    policy_selected = story_policy_opt_in == STATIC_PET_STORY_POLICY
+    semantic_story = policy_selected and typed_events == expected_static_story
+    if story_policy_opt_in is not None and not policy_selected:
+        reason_codes = ["STATE_SPINE_STORY_POLICY_UNSUPPORTED"]
+    elif policy_selected and not semantic_story:
+        reason_codes = ["STATIC_STORY_EVENT_SEQUENCE_INVALID"]
+    elif semantic_story:
+        reason_codes = []
+    else:
+        # Both approved events are reversible micro-motion. Without the versioned owner opt-in,
+        # neither authorizes Core to reinterpret state-ref text as a story payoff.
+        reason_codes = ["STATE_SPINE_STORY_NO_CHANGE_CONFLICT"]
     body: dict[str, Any] = {
         "schema_version": "state_spine.v1",
         "facts_digest": facts.facts_digest,
         "states": [item.model_dump(mode="json") for item in states],
         "transitions": [item.model_dump(mode="json") for item in transitions],
-        "story_change_authorized": False,
-        "reason_codes": ["STATE_SPINE_STORY_NO_CHANGE_CONFLICT"],
+        "story_change_authorized": semantic_story,
+        "reason_codes": reason_codes,
     }
     body["spine_digest"] = canonical_sha256(body)
     return StateSpineV1.model_validate(body)
@@ -498,6 +517,11 @@ def verify_compiled_shot_locks(
 
     fields = expanded_shot_fields(bible, shot)
     flattened = canonical_json(fields).decode("utf-8")
+    required = _required_lock_atoms(facts)
+    return tuple(code for code, phrase in required.items() if phrase not in flattened)
+
+
+def _required_lock_atoms(facts: StateFactsV1) -> dict[str, str]:
     required = {
         "SUBJECT_ID": facts.subject_lock.subject_id,
         "SPECIES": facts.subject_lock.species,
@@ -515,4 +539,97 @@ def verify_compiled_shot_locks(
         required[f"DISTINGUISHING_MARK_{index}"] = mark
     for index, accessory in enumerate(facts.scene_lock.temporary_accessories):
         required[f"TEMPORARY_ACCESSORY_{index}"] = accessory
-    return tuple(code for code, phrase in required.items() if phrase not in flattened)
+    return required
+
+
+def verify_shot_plan_prompt_locks(
+    shot_plan: dict[str, Any], facts: StateFactsV1
+) -> tuple[str, ...]:
+    """Check every field consumed by the unchanged production positive-prompt compiler."""
+
+    shots = shot_plan.get("shots")
+    if not isinstance(shots, list) or len(shots) != 3:
+        return ("PROMPT_LOCK_SHOT_PLAN_INVALID",)
+    required = _required_lock_atoms(facts)
+    findings: list[str] = []
+    compiler_fields = (
+        "subject",
+        "environment",
+        "action",
+        "framing",
+        "lighting_style",
+        "continuity_keys",
+        "required_facts",
+    )
+    for shot in shots:
+        if not isinstance(shot, dict) or not isinstance(shot.get("shot_id"), str):
+            return ("PROMPT_LOCK_SHOT_PLAN_INVALID",)
+        flattened = canonical_json(
+            {name: shot.get(name) for name in compiler_fields}
+        ).decode("utf-8")
+        findings.extend(
+            f"PROMPT_LOCK_MISSING:{shot['shot_id']}:{code}"
+            for code, phrase in required.items()
+            if phrase not in flattened
+        )
+    return tuple(findings)
+
+
+def static_pet_story_findings(
+    bible: PetOnlyVideoBibleDraft,
+    facts: StateFactsV1,
+    spine: StateSpineV1,
+) -> tuple[str, ...]:
+    """Validate the opted-in three-shot story by semantics, not changing state-ref text.
+
+    This is additive to the existing Video Bible Story Gate. It recognizes only the exact
+    owner-authorized blink/breathing sequence and never grants a general STORY_NO_CHANGE bypass.
+    """
+
+    findings: list[str] = []
+    if spine.facts_digest != facts.facts_digest:
+        return ("STATIC_STORY_FACTS_DIGEST_MISMATCH",)
+    expected_events = (
+        AllowedEvent.BLINK_AND_REOPEN,
+        AllowedEvent.SUBTLE_BREATHING,
+        AllowedEvent.SUBTLE_BREATHING,
+    )
+    if tuple(item.event for item in spine.transitions) != expected_events:
+        findings.append("STATIC_STORY_EVENT_SEQUENCE_INVALID")
+    if len(bible.shots) != 3:
+        return (*findings, "STATIC_STORY_SHOT_COUNT_INVALID")
+
+    expected_action_phrases = (
+        "makes one brief blink, and reopens both eyes",
+        "only subtle breathing visible",
+        "only subtle breathing visible",
+    )
+    for shot, transition, phrase in zip(
+        bible.shots, spine.transitions, expected_action_phrases, strict=True
+    ):
+        if (
+            shot.shot_id != transition.shot_id
+            or phrase not in shot.visible_action
+            or shot.duration_seconds != 4.0
+        ):
+            findings.append(f"STATIC_STORY_ACTION_MISMATCH:{shot.shot_id}")
+        expected_opening = (
+            f"state_ref={transition.opening_state_id};"
+            f"pose_lock_id={facts.pose_lock.pose_lock_id}"
+        )
+        expected_closing = (
+            f"state_ref={transition.closing_state_id};"
+            f"pose_lock_id={facts.pose_lock.pose_lock_id}"
+        )
+        if shot.opening_state != expected_opening or shot.closing_state != expected_closing:
+            findings.append(f"STATIC_STORY_STATE_HANDOFF_MISMATCH:{shot.shot_id}")
+        if missing := verify_compiled_shot_locks(bible, shot, facts):
+            findings.extend(
+                f"STATIC_STORY_PROMPT_LOCK_MISSING:{shot.shot_id}:{code}"
+                for code in missing
+            )
+
+    for current, following in zip(bible.shots, bible.shots[1:], strict=False):
+        if current.camera_framing.casefold() == following.camera_framing.casefold():
+            findings.append(f"STATIC_STORY_CAMERA_NO_PROGRESSION:{current.shot_id}")
+    return tuple(findings)
