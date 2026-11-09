@@ -42,16 +42,16 @@ jobs:
       - name: Check out source and verified baselines
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' && 'df1d2e2fe89f065ad0eed9ce5e39778b4ba424ed' || (github.event.pull_request.head.sha || github.sha) }}
           fetch-depth: 0
 
       - name: Classify affected components
         id: detect
         shell: bash
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_SHA: ${{ github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' && 'df1d2e2fe89f065ad0eed9ce5e39778b4ba424ed' || (github.event.pull_request.head.sha || github.sha) }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.head_ref }}" == "ci/p0-244-preview-pinned-b70-20261109" ]]; then
             python scripts/detect_component_impact.py \
               --baselines contracts/release/component-baselines.json \
               --head "$HEAD_SHA" \
@@ -89,7 +89,16 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' && 'df1d2e2fe89f065ad0eed9ce5e39778b4ba424ed' || (github.event.pull_request.head.sha || github.sha) }}
+
+      # CI-only pinned source; the wrapper SHA must never be packaged as app source.
+      - name: Verify immutable portrait pilot application source
+        if: github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109'
+        shell: bash
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != 'df1d2e2fe89f065ad0eed9ce5e39778b4ba424ed' ]]; then echo 'MAC_PINNED_SOURCE_MISMATCH' >&2; exit 1; fi
+          echo "MAC_PINNED_P0_246_SOURCE=PASS; SOURCE_SHA=$actual; GPU_AUTHORIZATION=NONE"
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
@@ -189,7 +198,7 @@ jobs:
           mkdir -p "$output"
           bash scripts/mac/phase23/Build-MacCoreSliceBDelta.sh \
             --output-root "$output" \
-            --version-label "2.3.0-slice-d-core-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}"
+            --version-label "2.3.0-slice-d-core-${{ github.run_number }}-${{ github.head_ref == 'ci/p0-244-preview-pinned-b70-20261109' && 'df1d2e2fe89f065ad0eed9ce5e39778b4ba424ed' || (github.event.pull_request.head.sha || github.sha) }}"
 
       - name: Verify package structure and hashes
         shell: bash
