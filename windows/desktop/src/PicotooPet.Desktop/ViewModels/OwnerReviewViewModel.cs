@@ -177,7 +177,7 @@ public sealed class OwnerReviewViewModel : ObservableObject
     }
 
     public string TransportBanner => _livePinnedSsh
-        ? "已通过固定主机密钥的 SSH 标准输入/输出通道连接 Mac Core（无本地监听端口、无明文回退）。需要主人专用凭据；设备令牌与 Worker 身份不会被使用。"
+        ? "安全通道已配置，尚未连接：只有在你加载提案、预览或提交时，才会经固定主机密钥的 SSH 标准输入/输出通道连接 Mac Core（无本地监听端口、无明文回退）。打开面板时仅在本机检查主人专用凭据是否存在，凭据只在发出请求时随请求发送；设备令牌与 Worker 身份不会被使用。"
         : "加密传输尚未验收（" + OwnerReviewTransportGate.StatusLabel + "）：当前版本仅用合成资料与 Mock 验证，不会明文调用真实 Core。";
 
     public AsyncRelayCommand LoadProposalCommand { get; }

@@ -34,6 +34,7 @@ public static class OwnerReviewLiveWiring
     public const string NotWindowsCode = "OWNER_REVIEW_LIVE_PLATFORM_UNSUPPORTED";
     public const string ProfileInvalidCode = "OWNER_REVIEW_LIVE_PROFILE_INVALID";
     public const string ProfileMissingCode = "OWNER_REVIEW_LIVE_PROFILE_MISSING";
+    public const string ProfileUnreadableCode = "OWNER_REVIEW_LIVE_PROFILE_UNREADABLE";
 
     private const int MaxProfileBytes = 4096;
 
@@ -80,6 +81,16 @@ public static class OwnerReviewLiveWiring
         catch (OwnerReviewException error)
         {
             return OwnerReviewLiveResult.Locked(error.Code);
+        }
+        catch (Exception error) when (error is IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException
+            or NotSupportedException
+            or ArgumentException
+            or InvalidOperationException)
+        {
+            // Protected-file I/O must never escape into the UI click path.
+            return OwnerReviewLiveResult.Locked(ProfileUnreadableCode);
         }
     }
 

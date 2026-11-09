@@ -113,6 +113,28 @@ internal static class LiveWiringTests
             SshStdioFactoryTests.GrantEveryoneRead(Path.Combine(open, OwnerReviewLiveWiring.ProfileFileName), directory: false);
             Check(Code(() => OwnerReviewLiveWiring.TryOpen(token, open, store), out _) == OwnerReviewProtectedFileAclCodes.TooBroad, "over-broad profile ACL");
 
+            // I/O failure on the protected profile (held open exclusively) is a stable lock, never a throw.
+            var held = Make();
+            using (new FileStream(
+                Path.Combine(held, OwnerReviewLiveWiring.ProfileFileName),
+                FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                OwnerReviewLiveResult heldResult;
+                try
+                {
+                    heldResult = OwnerReviewLiveWiring.TryOpen(token, held, store);
+                }
+                catch (Exception error)
+                {
+                    throw new InvalidOperationException("profile I/O error escaped TryOpen: " + error.GetType().Name);
+                }
+                Check(!heldResult.IsOpen, "unreadable profile must not open");
+                Check(
+                    heldResult.LockCode is OwnerReviewLiveWiring.ProfileUnreadableCode
+                        or OwnerReviewProtectedFileAclCodes.Unverified,
+                    "stable lock code for I/O failure: " + heldResult.LockCode);
+            }
+
             // Good profile + token: the typed pinned client, no process, no credential read.
             var good = Make();
             var before = Process.GetProcessesByName("ssh").Length;
