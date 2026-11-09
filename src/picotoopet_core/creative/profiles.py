@@ -8,10 +8,10 @@ from typing import Any
 from pydantic import BaseModel
 
 from .director import (
-    SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION,
-    STORY_DIRECTOR_INSTRUCTIONS,
     PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS,
     PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION,
+    SHOT_PLAN_FROM_BIBLE_TEMPLATE_VERSION,
+    STORY_DIRECTOR_INSTRUCTIONS,
     VIDEO_BIBLE_TEMPLATE_VERSION,
 )
 from .models import (
@@ -21,6 +21,7 @@ from .models import (
     IdeaRankingResult,
     ShotPlanResult,
 )
+from .state_spine import STATE_SPINE_TEMPLATE_VERSION, UnlockedVideoBibleProposalV1
 from .video_bible import PetOnlyVideoBibleDraft, VideoBibleDraft
 
 
@@ -157,6 +158,30 @@ def pet_only_video_bible_stage(stage: CreativeStageDefinition) -> CreativeStageD
         template_version=PET_ONLY_VIDEO_BIBLE_TEMPLATE_VERSION,
         system_prompt=_POLICY + PET_ONLY_STORY_DIRECTOR_INSTRUCTIONS,
         result_model=PetOnlyVideoBibleDraft,
+        schema_enforced_on_first_attempt=True,
+        schema_enforced_on_correction=True,
+    )
+
+
+def trusted_pet_only_video_bible_stage(
+    stage: CreativeStageDefinition,
+) -> CreativeStageDefinition:
+    """Restrict the trusted pet path model to non-locking narrative suggestions."""
+
+    if stage.stage_kind is not CreativeStageKind.VIDEO_BIBLE:
+        raise ValueError("TRUSTED_PET_STAGE_NOT_VIDEO_BIBLE")
+    return replace(
+        stage,
+        template_version=STATE_SPINE_TEMPLATE_VERSION,
+        system_prompt=(
+            _POLICY
+            + " Return only the three requested unlocked shot suggestions. Echo each supplied "
+            "shot_id, beat_id and authorized event exactly. Choose creative_emphasis and one "
+            "camera_framing from the supplied allowed list. Never emit or restate subject, "
+            "identity, appearance, pose, scene, action wording, duration, camera movement, "
+            "state, evidence, or continuity locks; Core owns and binds those fields."
+        ),
+        result_model=UnlockedVideoBibleProposalV1,
         schema_enforced_on_first_attempt=True,
         schema_enforced_on_correction=True,
     )

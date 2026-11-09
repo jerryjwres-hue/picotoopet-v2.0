@@ -18,6 +18,11 @@ from picotoopet_core.creative.profiles import (
     creative_profile_definition,
     pet_only_creative_stage,
     pet_only_video_bible_stage,
+    trusted_pet_only_video_bible_stage,
+)
+from picotoopet_core.creative.state_spine import (
+    STATE_SPINE_TEMPLATE_VERSION,
+    UnlockedVideoBibleProposalV1,
 )
 
 
@@ -174,3 +179,17 @@ def test_every_pet_only_v2_model_stage_is_schema_first() -> None:
     derived = profile.stage(CreativeStageKind.SHOT_PLAN)
     assert pet_only_creative_stage(derived) is derived
     assert derived.executor == "DERIVED"
+
+
+def test_trusted_pet_video_bible_model_can_only_return_unlocked_fields() -> None:
+    profile = creative_profile_definition("creative.content_plan.v2")
+    selected = trusted_pet_only_video_bible_stage(
+        profile.stage(CreativeStageKind.VIDEO_BIBLE)
+    )
+
+    assert selected.template_version == STATE_SPINE_TEMPLATE_VERSION
+    assert selected.result_model is UnlockedVideoBibleProposalV1
+    assert selected.schema_enforced_on_first_attempt is True
+    assert selected.schema_enforced_on_correction is True
+    assert "subject" not in selected.return_schema["properties"]
+    assert "pose_lock" not in selected.return_schema["properties"]
