@@ -18,6 +18,7 @@ from picotoopet_core.autonomous.evidence_ledger import (
     EvidenceTrust,
 )
 from picotoopet_core.creative.director import parse_goal_directives
+from picotoopet_core.creative.service import schedule_after_owner_commit
 from picotoopet_core.creative.source import NormalizedCreativeSourceSet
 from picotoopet_core.creative.state_spine import (
     AllowedEvent,
@@ -431,7 +432,9 @@ class OwnerStructuredReviewService:
         if existing is not None:
             # Replays must recheck CURRENT authority; an old grant is not reusable.
             self._authorize_subject(principal, existing.subject_key)
-            return self._replay_commit(existing, request_fingerprint)
+            replayed = self._replay_commit(existing, request_fingerprint)
+            self._schedule_creative(request.preview_request.goal_id)
+            return replayed
 
         current = self.proposal(request.preview_request.goal_id, principal)
         if current.source_revision_digest != request.source_revision_digest:
@@ -452,6 +455,7 @@ class OwnerStructuredReviewService:
             request_fingerprint=request_fingerprint,
             origin_ref=origin_ref,
         )
+        raced_replay: OwnerStructuredReviewCommit | None = None
         try:
             with self.database.transaction() as connection:
                 raced = connection.execute(
@@ -462,25 +466,46 @@ class OwnerStructuredReviewService:
                     # Concurrent idempotent replay has the same scoped auth requirement.
                     record = ledger._row(raced)
                     self._authorize_subject(principal, record.subject_key)
-                    return self._replay_commit(record, request_fingerprint)
-                locked_snapshot = self._snapshot(request.preview_request.goal_id)
-                if locked_snapshot.source_revision_digest != request.source_revision_digest:
-                    raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
-                self._verify_or_stage_bindings(
-                    connection=connection,
-                    preview=preview,
-                    pending=new_evidence,
-                )
-                records = ledger.ingest_batch_in_transaction(
-                    connection,
-                    [*new_evidence.values(), final_request],
-                )
-                commitment = records[-1]
+                    # Scheduling must not run inside this open transaction; it runs right
+                    # after release so a first request interrupted before enqueue is healed.
+                    raced_replay = self._replay_commit(record, request_fingerprint)
+                else:
+                    locked_snapshot = self._snapshot(request.preview_request.goal_id)
+                    if locked_snapshot.source_revision_digest != request.source_revision_digest:
+                        raise OwnerStructuredReviewError(409, "OWNER_REVIEW_SOURCE_STALE")
+                    self._verify_or_stage_bindings(
+                        connection=connection,
+                        preview=preview,
+                        pending=new_evidence,
+                    )
+                    records = ledger.ingest_batch_in_transaction(
+                        connection,
+                        [*new_evidence.values(), final_request],
+                    )
+                    commitment = records[-1]
         except ValueError as error:
             raise OwnerStructuredReviewError(
                 409, "OWNER_REVIEW_EVIDENCE_CONFLICT"
             ) from error
-        return self._commit_response(commitment)
+        if raced_replay is not None:
+            self._schedule_creative(request.preview_request.goal_id)
+            return raced_replay
+        committed = self._commit_response(commitment)
+        self._schedule_creative(request.preview_request.goal_id)
+        return committed
+
+    def _schedule_creative(self, goal_id: str) -> None:
+        """After the commit is durable, enqueue the held Creative task iff it now verifies.
+
+        The commit stays valid if scheduling does not happen; a replay retries it.
+        """
+
+        row = self.database.fetchone(
+            "SELECT creative_job_id FROM creative_goal_source_sets WHERE goal_id=?",
+            (goal_id,),
+        )
+        if row is not None:
+            schedule_after_owner_commit(self.database, row["creative_job_id"])
 
     def _new_binding_evidence(
         self,

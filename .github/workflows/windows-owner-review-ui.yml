@@ -1,0 +1,82 @@
+name: Windows Owner Review UI (mock only)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/windows-owner-review-ui.yml"
+      - "windows/desktop/src/PicotooPet.Desktop.Core/OwnerReview/**"
+      - "windows/desktop/src/PicotooPet.Desktop/ViewModels/OwnerReviewViewModel.cs"
+      - "windows/desktop/src/PicotooPet.Desktop/Views/Pages/OwnerReviewPanel.*"
+      - "windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml"
+      - "windows/desktop/src/PicotooPet.Desktop/Views/Pages/GoalCenterPanel.xaml.cs"
+      - "windows/desktop/tests/PicotooPet.OwnerReview.SmokeTests/**"
+      - "contracts/openapi/mac_core_v1.openapi.json"
+      - "scripts/owner_review/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-owner-review-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-review-ui:
+    name: Native Windows Owner Review UI smoke (synthetic data, Mock HTTP)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install exact .NET SDK from global.json
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Parse Windows read-only preflight without executing it
+        shell: powershell
+        run: |
+          $file = Join-Path $env:GITHUB_WORKSPACE "scripts/owner_review/readonly_windows_ssh_preflight.ps1"
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $file, [ref] $tokens, [ref] $parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            throw "Windows preflight parse failed."
+          }
+          Write-Host "WINDOWS_READONLY_PREFLIGHT_SYNTAX=PASS; EXECUTED=FALSE"
+
+      - name: Parse Mac read-only preflight without executing it
+        shell: bash
+        run: |
+          sh -n scripts/owner_review/readonly_mac_ssh_preflight.sh
+          echo "MAC_READONLY_PREFLIGHT_SYNTAX=PASS; EXECUTED=FALSE"
+
+      - name: Run Owner Review UI and client smoke (no network, no Core, no GPU)
+        shell: powershell
+        env:
+          OWNER_REVIEW_SCREENSHOT_DIR: ${{ github.workspace }}\windows\desktop\artifacts\owner-review
+        run: |
+          $output = dotnet run `
+            --project windows/desktop/tests/PicotooPet.OwnerReview.SmokeTests/PicotooPet.OwnerReview.SmokeTests.csproj `
+            --configuration Release
+          $output | Write-Host
+          if (-not ($output -match "OWNER_REVIEW_UI_SMOKE=PASS")) {
+            throw "Owner Review UI smoke marker missing."
+          }
+
+      - name: Upload synthetic UI screenshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-Owner-Review-UI-Synthetic-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 7
+          path: windows/desktop/artifacts/owner-review/owner-review-panel-synthetic.png

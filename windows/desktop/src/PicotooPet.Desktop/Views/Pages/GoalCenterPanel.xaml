@@ -246,6 +246,14 @@
             <Button x:Name="ReferenceBatchPreviewButton" Content="参考图 · 多镜头预览与审批"
                     Style="{StaticResource ReferenceBatchButtonStyle}" Margin="0,0,0,6"
                     Click="ReferenceBatchPreview_Click" />
+            <!-- P0 owner facts review is visible but cannot accept credentials until
+                 an authenticated encrypted Windows→Mac tunnel has been verified. -->
+            <Button x:Name="OwnerReviewLockedPreviewButton"
+                    Content="主人资料审核 · 待安全连接"
+                    AutomationProperties.AutomationId="OwnerReviewLockedPreviewButton"
+                    ToolTip="仅查看主人审核界面；真实凭据、提交、Mac 连接和 GPU 均未开放。"
+                    Padding="8,5" FontSize="9" Margin="0,0,0,6"
+                    Click="OwnerReviewLockedPreview_Click" />
             <TextBlock Text="{Binding HandoffSummary, Mode=OneWay}"
                        Foreground="#D8FFFFFF" FontSize="8" TextWrapping="Wrap" Margin="0,0,0,6" />
             <!-- Wrap actions within the fixed 226px status column. Hidden actions
