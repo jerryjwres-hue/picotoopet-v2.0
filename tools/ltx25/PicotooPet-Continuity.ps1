@@ -216,12 +216,12 @@ function Get-IngredientsReadiness {
     if ($matches.Count -ne 1) { throw 'STOP=INGREDIENTS_NOT_IN_LOCAL_CATALOG' }
     $ingredient = $matches[0]
     $versionReady = @($ingredient.downloaded_variant_ids) -contains 'ltx-2.5__ingredients'
-    Write-Output ('INGREDIENTS_25_DOWNLOADED=' + $versionReady)
-    if (!$versionReady) { Write-Output 'NEXT=LTX Desktop > Settings > Models > IC-LoRAs > Ingredients > LTX-2.5 Download' }
+    Write-Host ('INGREDIENTS_25_DOWNLOADED=' + $versionReady)
+    if (!$versionReady) { Write-Host 'NEXT=LTX Desktop > Settings > Models > IC-LoRAs > Ingredients > LTX-2.5 Download' }
 
     $queue = Api 'GET' '/api/generation-queue'
     $busy = ($null -ne $queue.active) -or (@($queue.queued).Count -gt 0)
-    Write-Output ('LTX_QUEUE_BUSY=' + $busy)
+    Write-Host ('LTX_QUEUE_BUSY=' + $busy)
 
     return @{ modelReady=$versionReady; queueBusy=$busy }
 }
@@ -231,16 +231,16 @@ function Upload-Image([string]$path) {
     Add-Type -AssemblyName System.Net.Http
     $handler = New-Object Net.Http.HttpClientHandler
     $handler.UseProxy = $false
-    $client = New-Object Net.Http.HttpClient($handler)
+    $client = [Net.Http.HttpClient]::new($handler)
     $client.Timeout = [TimeSpan]::FromSeconds(90)
-    $client.DefaultRequestHeaders.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue('Bearer',$script:ltxToken)
+    $client.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer',$script:ltxToken)
     $stream = $null
     $form = $null
     try {
         $stream = [IO.File]::OpenRead($path)
-        $part = New-Object Net.Http.StreamContent($stream)
-        $part.Headers.ContentType = New-Object Net.Http.Headers.MediaTypeHeaderValue('image/jpeg')
-        $form = New-Object Net.Http.MultipartFormDataContent
+        $part = [Net.Http.StreamContent]::new($stream)
+        $part.Headers.ContentType = [Net.Http.Headers.MediaTypeHeaderValue]::new('image/jpeg')
+        $form = [Net.Http.MultipartFormDataContent]::new()
         $form.Add($part,'file',[IO.Path]::GetFileName($path))
         $resp = $client.PostAsync(($apiBase+'/api/assets/upload'),$form).GetAwaiter().GetResult()
         $raw = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
