@@ -1,0 +1,39 @@
+name: LTX25 Continuity Windows PowerShell Parse
+
+on:
+  push:
+    branches:
+      - test/ltx25-ingredients-continuity-pilot-20261110
+    paths:
+      - 'tools/ltx25/**'
+      - '.github/workflows/ltx25-continuity-parser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-powershell-51-parse:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native Windows PowerShell 5.1 AST parse
+        shell: powershell
+        run: |
+          # 文件身份        ：严格读取该独立工作流中的实际脚本。
+          $file = "tools\ltx25\PicotooPet-Continuity.ps1"
+          if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "MISSING_LTX_SCRIPT" }
+          # 原生解析        ：禁止仅凭括号计数宣称 PowerShell 可运行。
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $file).Path, [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if (@($errors).Count -gt 0) {
+              $errors | Format-List
+              throw "LTX_POWERSHELL_PARSER_FAIL"
+          }
+          Write-Output "PS51_NATIVE_PARSE=PASS"
+          Write-Output "ACTUAL_SOURCE_SHA=$env:GITHUB_SHA"
+          Write-Output "GPU_POST=0"
