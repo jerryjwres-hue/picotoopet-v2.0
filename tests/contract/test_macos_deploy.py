@@ -1,9 +1,18 @@
+import os
 import plistlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy" / "macos"
 SCRIPTS = ROOT / "scripts" / "mac"
+
+
+def test_finder_entry_points_have_a_unix_shebang_and_execute_permission() -> None:
+    """跨机器拷贝后的 Mac 双击入口应保留可执行权限和 Unix 首行。"""
+    for command in [*SCRIPTS.glob("*.command"), ROOT / "VERIFY_RELEASE.command"]:
+        assert command.read_bytes().split(b"\n", 1)[0] == b"#!/bin/bash", command.name
+        if os.name == "posix":
+            assert os.access(command, os.X_OK), command.name
 
 
 def test_launchd_plists_start_core_and_health_supervisor() -> None:
