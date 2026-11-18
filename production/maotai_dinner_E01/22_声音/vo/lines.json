@@ -1,0 +1,100 @@
+[
+ {
+  "voice": "am_michael",
+  "shot": "S1",
+  "text": "It's almost dinnertime.",
+  "file": "am_michael_S1.wav",
+  "sec": 2.4
+ },
+ {
+  "voice": "am_michael",
+  "shot": "S2",
+  "text": "Maotai knows that sound.",
+  "file": "am_michael_S2.wav",
+  "sec": 2.45
+ },
+ {
+  "voice": "am_michael",
+  "shot": "S3",
+  "text": "But there's still a little waiting.",
+  "file": "am_michael_S3.wav",
+  "sec": 2.5
+ },
+ {
+  "voice": "am_michael",
+  "shot": "S4",
+  "text": "Some things are worth getting up for.",
+  "file": "am_michael_S4.wav",
+  "sec": 2.95
+ },
+ {
+  "voice": "am_michael",
+  "shot": "S5",
+  "text": "One sleepy step at a time.",
+  "file": "am_michael_S5.wav",
+  "sec": 2.7
+ },
+ {
+  "voice": "am_michael",
+  "shot": "S6",
+  "text": "Finally. The first bite.",
+  "file": "am_michael_S6.wav",
+  "sec": 2.4
+ },
+ {
+  "voice": "am_michael",
+  "shot": "S7",
+  "text": "Worth every little step.",
+  "file": "am_michael_S7.wav",
+  "sec": 2.5
+ },
+ {
+  "voice": "af_heart",
+  "shot": "S1",
+  "text": "It's almost dinnertime.",
+  "file": "af_heart_S1.wav",
+  "sec": 2.0
+ },
+ {
+  "voice": "af_heart",
+  "shot": "S2",
+  "text": "Maotai knows that sound.",
+  "file": "af_heart_S2.wav",
+  "sec": 2.08
+ },
+ {
+  "voice": "af_heart",
+  "shot": "S3",
+  "text": "But there's still a little waiting.",
+  "file": "af_heart_S3.wav",
+  "sec": 2.05
+ },
+ {
+  "voice": "af_heart",
+  "shot": "S4",
+  "text": "Some things are worth getting up for.",
+  "file": "af_heart_S4.wav",
+  "sec": 2.45
+ },
+ {
+  "voice": "af_heart",
+  "shot": "S5",
+  "text": "One sleepy step at a time.",
+  "file": "af_heart_S5.wav",
+  "sec": 2.25
+ },
+ {
+  "voice": "af_heart",
+  "shot": "S6",
+  "text": "Finally. The first bite.",
+  "file": "af_heart_S6.wav",
+  "sec": 2.17
+ },
+ {
+  "voice": "af_heart",
+  "shot": "S7",
+  "text": "Worth every little step.",
+  "file": "af_heart_S7.wav",
+  "sec": 2.15
+ }
+]

@@ -1,0 +1,98 @@
+{
+ "out": "../24_场景包/flux_out",
+ "jobs": [
+  {
+   "id": "PL2_B1_fence_corridor",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3778.jpg"
+   ],
+   "seeds": [
+    2026113801,
+    2026113802
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Light warm beige oak wide-plank wood floor exactly the color of image 1 (not grey, not white), warm white walls and white baseboards, black metal fence panels, white cabinets. Soft neutral-white ceiling light with warm bounce from the wood floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL2_B1_wide_mahjong",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3774.jpg"
+   ],
+   "seeds": [
+    2026113811,
+    2026113812
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Light warm beige oak wide-plank wood floor exactly the color of image 1 (not grey, not white), warm white walls and white baseboards, black metal fence panels, white cabinets. Soft neutral-white ceiling light with warm bounce from the wood floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL2_B1_wetbar_fence",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3773.jpg"
+   ],
+   "seeds": [
+    2026113821,
+    2026113822
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Light warm beige oak wide-plank wood floor exactly the color of image 1 (not grey, not white), warm white walls and white baseboards, black metal fence panels, white cabinets. Soft neutral-white ceiling light with warm bounce from the wood floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL2_B1_wetbar_front",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3785.jpg"
+   ],
+   "seeds": [
+    2026113831,
+    2026113832
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Light warm beige oak wide-plank wood floor exactly the color of image 1 (not grey, not white), warm white walls and white baseboards, black metal fence panels, white cabinets. Soft neutral-white ceiling light with warm bounce from the wood floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL2_B1_stairs",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3786.jpg"
+   ],
+   "seeds": [
+    2026113841,
+    2026113842
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Light warm beige oak wide-plank wood floor exactly the color of image 1 (not grey, not white), warm white walls and white baseboards, black metal fence panels, white cabinets. Soft neutral-white ceiling light with warm bounce from the wood floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL2_B1_corner",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3780.jpg"
+   ],
+   "seeds": [
+    2026113851,
+    2026113852
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Light warm beige oak wide-plank wood floor exactly the color of image 1 (not grey, not white), warm white walls and white baseboards, black metal fence panels, white cabinets. Soft neutral-white ceiling light with warm bounce from the wood floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "CUT2_B1",
+   "refs": [
+    "../24_场景包/flux_out/CUT_B1_v2.png",
+    "../24_场景包/real_photos/IMG_3774.jpg"
+   ],
+   "seeds": [
+    2026113001,
+    2026113002,
+    2026113003
+   ],
+   "w": 1152,
+   "h": 864,
+   "prompt": "Edit image 1. Keep the same isometric cutaway dollhouse view, layout, furniture and 3D animation style. Changes only: remove the tall stainless refrigerator completely and continue the white cabinets and wall there (the only fridge is the small glass-door wine fridge under the counter); make the floor a light warm beige oak wide-plank wood like image 2, not grey; walls warm white. No people, no animals, no text."
+  }
+ ]
+}

@@ -1,0 +1,100 @@
+{
+ "out": "../24_场景包/flux_out",
+ "jobs": [
+  {
+   "id": "PL_B1_fence_corridor",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3778.jpg"
+   ],
+   "seeds": [
+    2026112801,
+    2026112802
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Pale grey-white wide-plank wood floor, white walls and baseboards, black metal fence panels, white cabinets. Soft cool-white ceiling light with gentle warm bounce from the floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL_B1_wide_mahjong",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3774.jpg"
+   ],
+   "seeds": [
+    2026112811,
+    2026112812
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Pale grey-white wide-plank wood floor, white walls and baseboards, black metal fence panels, white cabinets. Soft cool-white ceiling light with gentle warm bounce from the floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL_B1_wetbar_fence",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3773.jpg"
+   ],
+   "seeds": [
+    2026112821,
+    2026112822
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Pale grey-white wide-plank wood floor, white walls and baseboards, black metal fence panels, white cabinets. Soft cool-white ceiling light with gentle warm bounce from the floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL_B1_wetbar_front",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3783.jpg"
+   ],
+   "seeds": [
+    2026112831,
+    2026112832
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Pale grey-white wide-plank wood floor, white walls and baseboards, black metal fence panels, white cabinets. Soft cool-white ceiling light with gentle warm bounce from the floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL_B1_stairs",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3786.jpg"
+   ],
+   "seeds": [
+    2026112841,
+    2026112842
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Pale grey-white wide-plank wood floor, white walls and baseboards, black metal fence panels, white cabinets. Soft cool-white ceiling light with gentle warm bounce from the floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "PL_B1_corner",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3780.jpg"
+   ],
+   "seeds": [
+    2026112851,
+    2026112852
+   ],
+   "prompt": "Turn image 1 into a clean, polished 3D family-animation film background plate (stylized 3D, soft materials, like a modern animated feature). Keep exactly the same room layout, camera angle, perspective, walls, doors, windows, fences, cabinets, furniture positions and real-world proportions as image 1. Tidy the room: remove plastic bags, bottles, cleaning products, papers, cables, trash bins and small clutter; keep the large furniture. Pale grey-white wide-plank wood floor, white walls and baseboards, black metal fence panels, white cabinets. Soft cool-white ceiling light with gentle warm bounce from the floor. No people, no animals, no text, no logos, no dog bowls.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "CUT_B1",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3773.jpg",
+    "../24_场景包/real_photos/IMG_3774.jpg",
+    "../24_场景包/real_photos/IMG_3778.jpg"
+   ],
+   "seeds": [
+    2026112901,
+    2026112902,
+    2026112903,
+    2026112904
+   ],
+   "prompt": "Isometric three-quarter cutaway dollhouse view of the basement shown in the reference photos, as a polished 3D family-animation film set: the ceiling removed and two walls cut away so the whole floor is visible from above at about 45 degrees. Layout from the photos: along the back wall a white wet bar with upper cabinets, an X-shaped wine rack, white quartz counter, small sink and a stainless wine fridge; in the middle a square mahjong table with four black chairs and two small round marble stools; to the right a fenced dog area made of black metal fence panels with a gate, inside it a long empty pale floor; on the far right wall a grey-green sofa under two framed ink paintings; a white staircase with wooden treads and black balusters in one corner. Pale grey-white wide-plank wood floor, white walls, soft even light. Clean and tidy, no people, no animals, no text, no labels.",
+   "w": 1152,
+   "h": 864
+  }
+ ]
+}

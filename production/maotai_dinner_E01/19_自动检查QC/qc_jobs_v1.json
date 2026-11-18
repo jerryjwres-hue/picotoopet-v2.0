@@ -1,0 +1,101 @@
+{
+ "shots": [
+  {
+   "id": "S1",
+   "keyframe": "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\17_静态首帧板V2\\PICKS_选定首帧\\S1_pour.png",
+   "expect": {
+    "hand": 1,
+    "bowl": 1
+   },
+   "takes": [
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S1\\S1_take1.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S1\\S1_take2.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S1\\S1_take3.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S1\\S1_take4.mp4"
+   ]
+  },
+  {
+   "id": "S2",
+   "keyframe": "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\17_静态首帧板V2\\PICKS_选定首帧\\S2_listen.png",
+   "expect": {
+    "dog": 1
+   },
+   "takes": [
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S2\\S2_take1_BEST.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S2\\S2_take2.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S2\\S2_take3.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S2\\S2_take4.mp4"
+   ]
+  },
+  {
+   "id": "S3",
+   "keyframe": "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\17_静态首帧板V2\\PICKS_选定首帧\\S3_lift.png",
+   "expect": {
+    "hand": 1,
+    "bowl": 1
+   },
+   "takes": [
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S3\\S3_take1.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S3\\S3_take2.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S3\\S3_take3.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S3\\S3_take4.mp4"
+   ]
+  },
+  {
+   "id": "S4",
+   "keyframe": "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\17_静态首帧板V2\\PICKS_选定首帧\\S4_place.png",
+   "expect": {
+    "dog": 1,
+    "hand": 1,
+    "bowl": 1
+   },
+   "takes": [
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S4\\S4_take1.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S4\\S4_take2.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S4\\S4_take3.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S4\\S4_take4.mp4"
+   ]
+  },
+  {
+   "id": "S5",
+   "keyframe": "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\17_静态首帧板V2\\PICKS_选定首帧\\S5_walk.png",
+   "expect": {
+    "dog": 1,
+    "bowl": 1
+   },
+   "takes": [
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S5\\S5_take1.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S5\\S5_take2.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S5\\S5_take3.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S5\\S5_take4.mp4"
+   ]
+  },
+  {
+   "id": "S6",
+   "keyframe": "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\17_静态首帧板V2\\PICKS_选定首帧\\S6_eat.png",
+   "expect": {
+    "dog": 1,
+    "bowl": 1
+   },
+   "takes": [
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S6\\S6_take1.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S6\\S6_take2.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S6\\S6_take3.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S6\\S6_take4.mp4"
+   ]
+  },
+  {
+   "id": "S7",
+   "keyframe": "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\17_静态首帧板V2\\PICKS_选定首帧\\S7_content.png",
+   "expect": {
+    "dog": 1
+   },
+   "takes": [
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S7\\S7_take1.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S7\\S7_take2.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S7\\S7_take3.mp4",
+    "D:\\opc in D\\LTX\\电影项目\\茅台晚餐_连续性V2\\18_LTX视频镜头\\S7\\S7_take4.mp4"
+   ]
+  }
+ ]
+}

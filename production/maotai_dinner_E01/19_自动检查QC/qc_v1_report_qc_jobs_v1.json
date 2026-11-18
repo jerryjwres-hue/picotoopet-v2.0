@@ -1,0 +1,468 @@
+[
+ {
+  "shot": "S1",
+  "take": "S1_take4.mp4",
+  "id_min": 0.73,
+  "adj_min": 0.924,
+  "cam_pct": 1.56,
+  "max_counts": {
+   "dog": 0,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.827
+ },
+ {
+  "shot": "S1",
+  "take": "S1_take2.mp4",
+  "id_min": 0.79,
+  "adj_min": 0.935,
+  "cam_pct": 22.66,
+  "max_counts": {
+   "dog": 0,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [
+   "camera_moved(22.7%)"
+  ],
+  "score": 0.763
+ },
+ {
+  "shot": "S1",
+  "take": "S1_take3.mp4",
+  "id_min": 0.791,
+  "adj_min": 0.922,
+  "cam_pct": 21.09,
+  "max_counts": {
+   "dog": 0,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [
+   "camera_moved(21.1%)"
+  ],
+  "score": 0.757
+ },
+ {
+  "shot": "S1",
+  "take": "S1_take1.mp4",
+  "id_min": 0.762,
+  "adj_min": 0.91,
+  "cam_pct": 13.67,
+  "max_counts": {
+   "dog": 0,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [
+   "camera_moved(13.7%)"
+  ],
+  "score": 0.736
+ },
+ {
+  "shot": "S2",
+  "take": "S2_take1_BEST.mp4",
+  "id_min": 0.934,
+  "adj_min": 0.97,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 0,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.952
+ },
+ {
+  "shot": "S2",
+  "take": "S2_take3.mp4",
+  "id_min": 0.909,
+  "adj_min": 0.976,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 0,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.943
+ },
+ {
+  "shot": "S2",
+  "take": "S2_take2.mp4",
+  "id_min": 0.909,
+  "adj_min": 0.975,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 0,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.942
+ },
+ {
+  "shot": "S2",
+  "take": "S2_take4.mp4",
+  "id_min": 0.921,
+  "adj_min": 0.936,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 0,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.929
+ },
+ {
+  "shot": "S3",
+  "take": "S3_take2.mp4",
+  "id_min": 0.385,
+  "adj_min": 0.793,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 0,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [
+   "sudden_change(0.79)"
+  ],
+  "score": 0.489
+ },
+ {
+  "shot": "S3",
+  "take": "S3_take4.mp4",
+  "id_min": 0.337,
+  "adj_min": 0.783,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 0,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [
+   "sudden_change(0.78)"
+  ],
+  "score": 0.46
+ },
+ {
+  "shot": "S3",
+  "take": "S3_take3.mp4",
+  "id_min": 0.071,
+  "adj_min": 0.653,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 0,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [
+   "sudden_change(0.65)"
+  ],
+  "score": 0.262
+ },
+ {
+  "shot": "S3",
+  "take": "S3_take1.mp4",
+  "id_min": 0.059,
+  "adj_min": 0.55,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 0,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [
+   "sudden_change(0.55)"
+  ],
+  "score": 0.204
+ },
+ {
+  "shot": "S4",
+  "take": "S4_take2.mp4",
+  "id_min": 0.882,
+  "adj_min": 0.959,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.921
+ },
+ {
+  "shot": "S4",
+  "take": "S4_take3.mp4",
+  "id_min": 0.843,
+  "adj_min": 0.964,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.903
+ },
+ {
+  "shot": "S4",
+  "take": "S4_take4.mp4",
+  "id_min": 0.817,
+  "adj_min": 0.974,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.895
+ },
+ {
+  "shot": "S4",
+  "take": "S4_take1.mp4",
+  "id_min": 0.759,
+  "adj_min": 0.956,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 1,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.857
+ },
+ {
+  "shot": "S5",
+  "take": "S5_take2.mp4",
+  "id_min": 0.807,
+  "adj_min": 0.955,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.881
+ },
+ {
+  "shot": "S5",
+  "take": "S5_take1.mp4",
+  "id_min": 0.801,
+  "adj_min": 0.949,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.875
+ },
+ {
+  "shot": "S5",
+  "take": "S5_take3.mp4",
+  "id_min": 0.705,
+  "adj_min": 0.939,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.822
+ },
+ {
+  "shot": "S5",
+  "take": "S5_take4.mp4",
+  "id_min": 0.685,
+  "adj_min": 0.906,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.796
+ },
+ {
+  "shot": "S6",
+  "take": "S6_take3.mp4",
+  "id_min": 0.927,
+  "adj_min": 0.978,
+  "cam_pct": 0.78,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.952
+ },
+ {
+  "shot": "S6",
+  "take": "S6_take1.mp4",
+  "id_min": 0.927,
+  "adj_min": 0.974,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.95
+ },
+ {
+  "shot": "S6",
+  "take": "S6_take2.mp4",
+  "id_min": 0.92,
+  "adj_min": 0.946,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.933
+ },
+ {
+  "shot": "S6",
+  "take": "S6_take4.mp4",
+  "id_min": 0.885,
+  "adj_min": 0.967,
+  "cam_pct": 29.69,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 1,
+   "plate": 0
+  },
+  "flags": [
+   "camera_moved(29.7%)"
+  ],
+  "score": 0.826
+ },
+ {
+  "shot": "S7",
+  "take": "S7_take3.mp4",
+  "id_min": 0.94,
+  "adj_min": 0.952,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 0,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.946
+ },
+ {
+  "shot": "S7",
+  "take": "S7_take1.mp4",
+  "id_min": 0.878,
+  "adj_min": 0.945,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 0,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.911
+ },
+ {
+  "shot": "S7",
+  "take": "S7_take2.mp4",
+  "id_min": 0.873,
+  "adj_min": 0.948,
+  "cam_pct": 0.0,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 0,
+   "plate": 0
+  },
+  "flags": [],
+  "score": 0.911
+ },
+ {
+  "shot": "S7",
+  "take": "S7_take4.mp4",
+  "id_min": 0.917,
+  "adj_min": 0.966,
+  "cam_pct": 3.12,
+  "max_counts": {
+   "dog": 1,
+   "face": 0,
+   "hand": 0,
+   "bowl": 0,
+   "plate": 1
+  },
+  "flags": [
+   "plate>0(1)"
+  ],
+  "score": 0.842
+ }
+]

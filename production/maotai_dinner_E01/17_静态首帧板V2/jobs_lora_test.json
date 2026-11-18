@@ -1,0 +1,123 @@
+{
+ "out": "lora_test_out",
+ "jobs": [
+  {
+   "id": "T_S5_noLoRA",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "Low camera close to the pale oak plank floor of the room in image 2. An adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1, walks calmly from the left toward the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes. The bowl stands on the floor in the right foreground and is full: every piece of small round brown dry kibble is inside the bowl, heaped slightly above the rim. The floor around the bowl is completely clean, nothing spilled, no kibble on the floor. Mid-stride, ears forward, eyes on the bowl. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. Exactly one dog, one bowl. No text."
+  },
+  {
+   "id": "T_S5_LoRA",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "mtai_dog, Low camera close to the pale oak plank floor of the room in image 2. An adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1, walks calmly from the left toward the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes. The bowl stands on the floor in the right foreground and is full: every piece of small round brown dry kibble is inside the bowl, heaped slightly above the rim. The floor around the bowl is completely clean, nothing spilled, no kibble on the floor. Mid-stride, ears forward, eyes on the bowl. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. Exactly one dog, one bowl. No text.",
+   "lora": {
+    "name": "maotai_lora_v1.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "T_S6_noLoRA",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "Close-up at floor level on the pale oak plank floor of the room in image 2. an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1 has his muzzle in the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes and is happily eating the small round brown dry kibble; a few pieces rest in the bowl, eyes half closed with pleasure. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl."
+  },
+  {
+   "id": "T_S6_LoRA",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "mtai_dog, Close-up at floor level on the pale oak plank floor of the room in image 2. an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1 has his muzzle in the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes and is happily eating the small round brown dry kibble; a few pieces rest in the bowl, eyes half closed with pleasure. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl.",
+   "lora": {
+    "name": "maotai_lora_v1.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "T_S2_noLoRA",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult head-to-body proportions and the same polished 3D family-animation style. Change his pose: he lies on his belly on the pale oak plank floor of the room in image 2, front paws stretched forward, head lifted, both ears perked up and turned to the right, looking toward the right edge of the frame as if he just heard a sound. Low camera close to the floor, medium shot, the dog fills the left half of the frame. Behind him the white wall and, softly out of focus on the right, the white wet-bar cabinets from image 2. Warm evening light from the left, soft contact shadow. Dog and room in the same 3D rendering style. No other animals, no people, no bowl, no text."
+  },
+  {
+   "id": "T_S2_LoRA",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "mtai_dog, Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult head-to-body proportions and the same polished 3D family-animation style. Change his pose: he lies on his belly on the pale oak plank floor of the room in image 2, front paws stretched forward, head lifted, both ears perked up and turned to the right, looking toward the right edge of the frame as if he just heard a sound. Low camera close to the floor, medium shot, the dog fills the left half of the frame. Behind him the white wall and, softly out of focus on the right, the white wet-bar cabinets from image 2. Warm evening light from the left, soft contact shadow. Dog and room in the same 3D rendering style. No other animals, no people, no bowl, no text.",
+   "lora": {
+    "name": "maotai_lora_v1.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "T_S4_noLoRA",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "Low camera close to the pale oak plank floor of the room in image 2. In the right foreground, one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) sets the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes, full of small round brown dry kibble, down on the floor. In the left background, softly out of focus, an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1 lies on the floor with his head raised, looking toward the bowl. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl, one hand."
+  },
+  {
+   "id": "T_S4_LoRA",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "mtai_dog, Low camera close to the pale oak plank floor of the room in image 2. In the right foreground, one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) sets the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes, full of small round brown dry kibble, down on the floor. In the left background, softly out of focus, an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1 lies on the floor with his head raised, looking toward the bowl. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl, one hand.",
+   "lora": {
+    "name": "maotai_lora_v1.safetensors",
+    "strength": 0.9
+   }
+  }
+ ]
+}

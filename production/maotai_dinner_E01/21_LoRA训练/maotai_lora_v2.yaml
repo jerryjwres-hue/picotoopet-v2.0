@@ -1,0 +1,52 @@
+# Maotai character LoRA v1 for FLUX.2 Klein 4B (ai-toolkit). Dataset: curated stills of the C8B_v1 master look (real-photo identity lock).
+job: extension
+config:
+  name: "maotai_lora_v2"
+  process:
+    - type: "sd_trainer"
+      training_folder: "D:/opc in D/LTX/电影项目/茅台晚餐_连续性V2/21_LoRA训练/output"
+      device: cuda:0
+      trigger_word: "mtai_dog"
+      network:
+        type: "lora"
+        linear: 16
+        linear_alpha: 16
+      save:
+        dtype: float16
+        save_every: 250
+        max_step_saves_to_keep: 6
+      datasets:
+        - folder_path: "D:/opc in D/LTX/电影项目/茅台晚餐_连续性V2/21_LoRA训练/dataset_v2"
+          caption_ext: "txt"
+          caption_dropout_rate: 0.05
+          cache_latents_to_disk: true
+          resolution: [512, 768, 1024]
+      train:
+        batch_size: 1
+        steps: 1500
+        gradient_accumulation_steps: 1
+        train_unet: true
+        train_text_encoder: false
+        gradient_checkpointing: true
+        noise_scheduler: "flowmatch"
+        timestep_type: "weighted"
+        optimizer: "adamw8bit"
+        lr: 1e-4
+        dtype: bf16
+      model:
+        name_or_path: "black-forest-labs/FLUX.2-klein-base-4B"
+        arch: "flux2_klein_4b"
+        quantize: true
+        qtype: "qfloat8"
+        quantize_te: true
+        low_vram: true
+      sample:
+        sampler: "flowmatch"
+        sample_every: 250
+        width: 768
+        height: 1024
+        seed: 42
+        prompts:
+          - "mtai_dog eating chicken from a steel bowl on a wooden floor, 3D family animation style"
+          - "mtai_dog walking to the right, side view, 3D family animation style"
+          - "mtai_dog close-up portrait, happy smile, 3D family animation style"

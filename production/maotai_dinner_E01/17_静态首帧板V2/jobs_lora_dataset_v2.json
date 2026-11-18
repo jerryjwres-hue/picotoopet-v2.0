@@ -1,0 +1,284 @@
+{
+ "out": "lora_dataset_raw_v2",
+ "jobs": [
+  {
+   "id": "LD2_front_stand",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112101,
+    2026112102
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he stands facing the camera, full body visible, front view. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_threequarter_stand",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112111,
+    2026112112
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he stands in a three-quarter front view, full body visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_side_right",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112121,
+    2026112122
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he stands in a clean side profile facing right, full body and curled tail visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_side_left",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112131,
+    2026112132
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he stands in a clean side profile facing left, full body and curled tail visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_back_view",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112141,
+    2026112142
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: back view, he stands facing away from the camera, curled tail and bandana knot visible, full body. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_sit_front",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112151,
+    2026112152
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he sits upright facing the camera, full body visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_lie_headup",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112161,
+    2026112162
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he lies on his belly, front paws stretched forward, head raised, full body visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_lie_sleep",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112171,
+    2026112172
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he lies curled up asleep with his chin resting on his paws, eyes closed. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_walk_right",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112181,
+    2026112182
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he walks to the right, mid-stride, side view, full body. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_trot_front",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112191,
+    2026112192
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he trots happily toward the camera, full body. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_head_smile",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112201,
+    2026112202
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the framing: close-up portrait of his head and shoulders, happy open-mouth smile, front view. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_head_calm",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112211,
+    2026112212
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the framing: close-up portrait of his head, mouth closed, calm, ears perked up. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_head_tilt",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112221,
+    2026112222
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the framing: close-up portrait of his head in three-quarter view, curious head tilt. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_head_content",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112231,
+    2026112232
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the framing: close-up portrait of his head, eyes half closed, content and relaxed. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_low_hero",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112241,
+    2026112242
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the camera: low-angle shot, he stands proudly, full body. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_room_sit",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112251,
+    2026112252
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he sits upright on the floor looking up toward the upper right. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_room_lie_side",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112261,
+    2026112262
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he lies on his side on the floor, relaxed, full body. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_room_walk",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112271,
+    2026112272
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose: he walks across the floor toward the camera, full body. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_eat_34",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112301,
+    2026112302
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose and setting: he stands with all four paws on the floor and eats cooked chicken pieces from a stainless steel dog bowl with black bone prints, head lowered, three-quarter front view, short broad muzzle. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_eat_side",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112311,
+    2026112312
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose and setting: he stands beside a stainless steel dog bowl with black bone prints full of cooked chicken pieces and sniffs it happily, side view facing right, short broad muzzle. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD2_look_bowl",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112321,
+    2026112322
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is in image 1: an adult wooly long-coat Alaskan Malamute, not a puppy, with the same face fur markings (solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle), the same two-tone nose (pink center band, black around the nostrils and on the sides), the same small triangular ears with rounded tips and cream-tan inner fur, the same warm brown eyes, the same thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, the same lime-green triangular bandana with a small white tag at the tip, the same adult proportions and the same polished 3D family-animation style. No glasses, no hat, no collar, no cone. Change only the pose and setting: he sits next to a stainless steel dog bowl full of cooked chicken pieces and looks up at the camera hopefully, front view. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  }
+ ]
+}

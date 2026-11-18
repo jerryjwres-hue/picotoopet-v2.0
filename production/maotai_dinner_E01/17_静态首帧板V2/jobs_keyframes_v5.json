@@ -1,0 +1,24 @@
+{
+ "out": "keyframes_v4_out",
+ "jobs": [
+  {
+   "id": "V5_S6_eat",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112601,
+    2026112602,
+    2026112603,
+    2026112604
+   ],
+   "prompt": "mtai_dog, Medium shot at the dog's chest height, three-quarter front view on the pale oak plank floor of the room in image 2. an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy has his muzzle in the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes and is happily eating the pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones); some chicken is left in the bowl, eyes half closed with pleasure. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl. Scale: he is a very large heavy adult dog, about 75 cm tall at the shoulder; the single bowl is small, about 20 cm across, less than half the width of his head, placed on the floor just in front of his front paws. There is only one bowl in the whole image, no second bowl. Long-lens look, no wide-angle distortion.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  }
+ ]
+}

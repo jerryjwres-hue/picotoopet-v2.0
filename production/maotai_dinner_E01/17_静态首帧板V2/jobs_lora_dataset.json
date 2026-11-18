@@ -1,0 +1,236 @@
+{
+ "out": "lora_dataset_raw",
+ "jobs": [
+  {
+   "id": "LD_front_stand",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111901,
+    2026111902
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he stands facing the camera, full body visible, front view. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_threequarter_stand",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111911,
+    2026111912
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he stands in a three-quarter front view, full body visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_side_right",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111921,
+    2026111922
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he stands in a clean side profile facing right, full body and curled tail visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_side_left",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111931,
+    2026111932
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he stands in a clean side profile facing left, full body and curled tail visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_back_view",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111941,
+    2026111942
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: back view, he stands facing away from the camera, curled tail and bandana knot visible, full body. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_sit_front",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111951,
+    2026111952
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he sits upright facing the camera, full body visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_lie_headup",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111961,
+    2026111962
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he lies on his belly, front paws stretched forward, head raised, full body visible. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_lie_sleep",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111971,
+    2026111972
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he lies curled up asleep with his chin resting on his paws, eyes closed. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_walk_right",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111981,
+    2026111982
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he walks to the right, mid-stride, side view, full body. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_trot_front",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026111991,
+    2026111992
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he trots happily toward the camera, full body. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_head_smile",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026112001,
+    2026112002
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the framing: close-up portrait of his head and shoulders, happy open-mouth smile, front view. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_head_calm",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026112011,
+    2026112012
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the framing: close-up portrait of his head, mouth closed, calm, ears perked up. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_head_tilt",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026112021,
+    2026112022
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the framing: close-up portrait of his head in three-quarter view, curious head tilt. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_head_content",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026112031,
+    2026112032
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the framing: close-up portrait of his head, eyes half closed, content and relaxed. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_low_hero",
+   "w": 1024,
+   "h": 1024,
+   "refs": [
+    "refs/ref_dog_c001.png"
+   ],
+   "seeds": [
+    2026112041,
+    2026112042
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the camera: low-angle shot, he stands proudly, full body. Plain soft warm light-gray studio backdrop, soft even lighting, soft contact shadow. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_room_sit",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026111990,
+    2026111991
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he sits upright on the floor looking up toward the upper right. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_room_lie_side",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026111993,
+    2026111994
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he lies on his side on the floor, relaxed, full body. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  },
+  {
+   "id": "LD_room_walk",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026111996,
+    2026111997
+   ],
+   "prompt": "Edit image 1. Keep the dog exactly as he is: an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail, lime-green bandana, the same adult proportions and the same polished 3D family-animation style. Change only the pose: he walks across the floor toward the camera, full body. Setting: the pale oak floor of the room in image 2, warm evening light from the left. Only this one dog, no people, no text."
+  }
+ ]
+}

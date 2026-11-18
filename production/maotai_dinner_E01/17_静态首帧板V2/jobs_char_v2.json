@@ -1,0 +1,33 @@
+{
+ "out": "char_v10_out",
+ "jobs": [
+  {
+   "id": "C10A_ears",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026111791,
+    2026111792,
+    2026111793
+   ],
+   "prompt": "Edit image 1. Keep image 1 exactly the same: same dog, same pose, same camera angle, same face markings, same eyes, same pink-and-black nose, same golden cheeks, same fur, same lime-green bandana with its white tag, same body, legs and background, same lighting and 3D animation style. Change only the size of the ears: make both ears about 20 percent smaller while keeping exactly the same triangular shape, same softly rounded tips, same angle and position, same dark outside and cream-tan inner fur. Do not make them round. No other changes.",
+   "w": 864,
+   "h": 1152
+  },
+  {
+   "id": "C10B_ears",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026111791,
+    2026111792,
+    2026111793
+   ],
+   "prompt": "Edit image 1. Keep image 1 exactly the same: same dog, same pose, same camera angle, same face markings, same eyes, same pink-and-black nose, same golden cheeks, same fur, same lime-green bandana with its white tag, same body, legs and background, same lighting and 3D animation style. Change only the ears: make both ears slightly shorter and slightly narrower, about 15 percent smaller, same triangular shape with softly rounded tips, same position, same colors. Not round. No other changes.",
+   "w": 864,
+   "h": 1152
+  }
+ ]
+}

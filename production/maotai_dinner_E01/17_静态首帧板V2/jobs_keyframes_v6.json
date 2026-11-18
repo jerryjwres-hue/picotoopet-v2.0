@@ -1,0 +1,119 @@
+{
+ "out": "keyframes_v6_out",
+ "jobs": [
+  {
+   "id": "V6_S1_pour",
+   "refs": [
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112701,
+    2026112702,
+    2026112703
+   ],
+   "prompt": "Close-up insert shot at counter height on the white wet-bar counter of the room in image 1. The counter top is clean and clear, no towel, no cloth, no bottles. On it stands the exact stainless steel dog bowl from image 2, with its dark charcoal rubber base ring and embossed bone shapes. From the top right of the frame, one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) holds a small white plate tilted over the bowl, and pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones) are sliding from the plate into the bowl, which is half full. Locked camera, the bowl in the lower centre of a vertical frame, softly blurred white cabinets behind. Polished 3D family-animation film style, warm evening light from the left. Exactly one bowl, one small plate, one hand. No animals, no text. Real-world scale: a normal-sized adult hand; the steel bowl is a normal 20 cm dog bowl, about as wide as the hand is long, so the hand looks natural next to the bowl. "
+  },
+  {
+   "id": "V6_S3_lift",
+   "refs": [
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112711,
+    2026112712,
+    2026112713
+   ],
+   "prompt": "Medium close shot at counter height beside the white wet-bar counter of the room in image 1. one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) has picked up the exact stainless steel dog bowl from image 2, with its dark charcoal rubber base ring and embossed bone shapes, now full of pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones), and lifts it off the clean white counter, holding it securely from below. The counter top is clear, no towel, no cloth. Softly blurred white cabinets behind. Polished 3D family-animation film style, warm evening light from the left. Exactly one bowl, one hand. No animals, no text. Real-world scale: a normal-sized adult hand; the steel bowl is a normal 20 cm dog bowl, about as wide as the hand is long, so the hand looks natural next to the bowl. "
+  },
+  {
+   "id": "V6_S2_listen",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112721,
+    2026112722,
+    2026112723
+   ],
+   "prompt": "mtai_dog, Edit image 1. Keep the dog exactly as he is: an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy, the same adult proportions and the same polished 3D family-animation style. Change his pose: he lies on his belly on the pale oak plank floor of the room in image 2, front paws stretched forward, head lifted, both ears perked up and turned to the right, looking toward the right edge of the frame as if he just heard a sound. Camera at the dog's chest height, medium shot, the dog fills the left half of the frame. Behind him the white wall and, softly out of focus on the right, the white wet-bar cabinets from image 2. Warm evening light from the left, soft contact shadow. Dog and room in the same 3D rendering style. No other animals, no people, no bowl, no text. Real-world scale: the room has a normal 2.5 m ceiling and a normal 90 cm high kitchen counter. He is a large adult dog about 70 cm tall at the shoulder; even sitting, the top of his head only reaches about the height of the counter top, the wall cabinets and the ceiling are far above his head.  Natural 50 mm lens look, eye-level with the dog, no wide-angle distortion.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "V6_S7_content",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112731,
+    2026112732,
+    2026112733
+   ],
+   "prompt": "mtai_dog, Edit image 1. Keep the dog exactly as he is: an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy, the same adult proportions and the same polished 3D family-animation style. Change the shot: a close-up of his head and shoulders, he sits on the pale oak floor of the room in image 2, mouth closed in a soft satisfied smile, eyes half-relaxed and lifted, looking up toward the upper right of the frame at someone just out of view. Camera at his eye line. Background softly blurred white wall and white wet-bar cabinets from image 2. Warm evening light from the left. No other animals, no people, no bowl, no text. Real-world scale: the room has a normal 2.5 m ceiling and a normal 90 cm high kitchen counter. He is a large adult dog about 70 cm tall at the shoulder; even sitting, the top of his head only reaches about the height of the counter top, the wall cabinets and the ceiling are far above his head.  Natural 50 mm lens look, eye-level with the dog, no wide-angle distortion.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "V6_S4_place",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112741,
+    2026112742,
+    2026112743
+   ],
+   "prompt": "mtai_dog, Camera at the dog's eye level, looking across the pale oak plank floor of the room in image 2. In the right foreground, one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) sets the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes, full of pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones), down on the floor. In the left background, softly out of focus, an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy lies on the floor with his head raised, looking toward the bowl. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl, one hand. Real-world scale: the room has a normal 2.5 m ceiling and a normal 90 cm high kitchen counter. He is a large adult dog about 70 cm tall at the shoulder; even sitting, the top of his head only reaches about the height of the counter top, the wall cabinets and the ceiling are far above his head.  The steel bowl is a normal 20 cm dog bowl, about as wide as an adult hand is long, clearly much smaller than his head. There is only one bowl in the whole image.  Real-world scale: a normal-sized adult hand; the steel bowl is a normal 20 cm dog bowl, about as wide as the hand is long, so the hand looks natural next to the bowl.  Natural 50 mm lens look, eye-level with the dog, no wide-angle distortion.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "V6_S5_walk",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112751,
+    2026112752,
+    2026112753
+   ],
+   "prompt": "mtai_dog, Camera at the dog's eye level, looking across the pale oak plank floor of the room in image 2. An adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy, walks calmly from the left toward the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes. The bowl stands on the floor in the right foreground and is full: every piece of pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones) is inside the bowl, heaped slightly above the rim. The floor around the bowl is completely clean, nothing spilled, no food on the floor. Mid-stride, ears forward, eyes on the bowl. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. Exactly one dog, one bowl. No text. Real-world scale: the room has a normal 2.5 m ceiling and a normal 90 cm high kitchen counter. He is a large adult dog about 70 cm tall at the shoulder; even sitting, the top of his head only reaches about the height of the counter top, the wall cabinets and the ceiling are far above his head.  The steel bowl is a normal 20 cm dog bowl, about as wide as an adult hand is long, clearly much smaller than his head. There is only one bowl in the whole image.  Natural 50 mm lens look, eye-level with the dog, no wide-angle distortion.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "V6_S6_eat",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112761,
+    2026112762,
+    2026112763
+   ],
+   "prompt": "mtai_dog, Medium shot at the dog's chest height, three-quarter front view on the pale oak plank floor of the room in image 2. an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy has his muzzle in the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes and is happily eating the pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones); some chicken is left in the bowl, eyes half closed with pleasure. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl. Real-world scale: the room has a normal 2.5 m ceiling and a normal 90 cm high kitchen counter. He is a large adult dog about 70 cm tall at the shoulder; even sitting, the top of his head only reaches about the height of the counter top, the wall cabinets and the ceiling are far above his head.  The steel bowl is a normal 20 cm dog bowl, about as wide as an adult hand is long, clearly much smaller than his head. There is only one bowl in the whole image.  Natural 50 mm lens look, eye-level with the dog, no wide-angle distortion.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  }
+ ]
+}

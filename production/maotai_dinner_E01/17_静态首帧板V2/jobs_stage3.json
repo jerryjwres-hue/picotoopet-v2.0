@@ -1,0 +1,20 @@
+{
+ "out": "stage3_out",
+ "jobs": [
+  {
+   "id": "S5_walk_fix",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026111851,
+    2026111852,
+    2026111853,
+    2026111854
+   ],
+   "prompt": "Low camera close to the pale oak plank floor of the room in image 2. An adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1, walks calmly from the left toward the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes. The bowl stands on the floor in the right foreground and is full: every piece of small round brown dry kibble is inside the bowl, heaped slightly above the rim. The floor around the bowl is completely clean, nothing spilled, no kibble on the floor. Mid-stride, ears forward, eyes on the bowl. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. Exactly one dog, one bowl. No text."
+  }
+ ]
+}

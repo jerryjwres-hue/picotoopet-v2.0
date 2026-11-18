@@ -1,0 +1,31 @@
+{
+ "out": "keyframes_v6_out",
+ "jobs": [
+  {
+   "id": "V7_S1_pour",
+   "refs": [
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112801,
+    2026112802,
+    2026112803
+   ],
+   "prompt": "Close-up insert shot at counter height on the white wet-bar counter of the room in image 1. The counter top is clean and clear, no towel, no cloth, no bottles. On it stands the exact stainless steel dog bowl from image 2, with its dark charcoal rubber base ring and embossed bone shapes. From the top right of the frame, one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) holds a small white plate tilted over the bowl, and pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones) are sliding from the plate into the bowl, which is half full. Locked camera, the bowl in the lower centre of a vertical frame, softly blurred white cabinets behind. Polished 3D family-animation film style, warm evening light from the left. Exactly one bowl, one small plate, one hand. No animals, no text. Real-world scale: a small 16 cm steel dog bowl and a normal adult hand: the hand with fingers is about as long as the bowl is wide, the bowl is not bigger than the hand. Normal 50 mm lens, no wide-angle distortion, the hand is not farther from the camera than the bowl."
+  },
+  {
+   "id": "V7_S3_lift",
+   "refs": [
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112811,
+    2026112812,
+    2026112813
+   ],
+   "prompt": "Medium close shot at counter height beside the white wet-bar counter of the room in image 1. two adult hands and forearms in a navy blue knit sweater sleeve (no face, no body visible) has picked up the exact stainless steel dog bowl from image 2, with its dark charcoal rubber base ring and embossed bone shapes, now full of pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones), and lifts it off the clean white counter, holding it from both sides. The counter top is clear, no towel, no cloth. Softly blurred white cabinets behind. Polished 3D family-animation film style, warm evening light from the left. Exactly one bowl, two hands of the same person. No animals, no text. Real-world scale: a small 16 cm steel dog bowl and a normal adult hand: the hand with fingers is about as long as the bowl is wide, the bowl is not bigger than the hand. Normal 50 mm lens, no wide-angle distortion, the hand is not farther from the camera than the bowl."
+  }
+ ]
+}

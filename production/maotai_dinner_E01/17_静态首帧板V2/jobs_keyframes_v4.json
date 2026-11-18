@@ -1,0 +1,93 @@
+{
+ "out": "keyframes_v4_out",
+ "jobs": [
+  {
+   "id": "V4_S2_listen",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112521,
+    2026112522,
+    2026112523
+   ],
+   "prompt": "mtai_dog, Edit image 1. Keep the dog exactly as he is: an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy, the same adult proportions and the same polished 3D family-animation style. Change his pose: he lies on his belly on the pale oak plank floor of the room in image 2, front paws stretched forward, head lifted, both ears perked up and turned to the right, looking toward the right edge of the frame as if he just heard a sound. Camera at the dog's chest height, medium shot, the dog fills the left half of the frame. Behind him the white wall and, softly out of focus on the right, the white wet-bar cabinets from image 2. Warm evening light from the left, soft contact shadow. Dog and room in the same 3D rendering style. No other animals, no people, no bowl, no text. Scale is important: he is a very large heavy adult dog, about 75 cm tall at the shoulder and 45 kg, big relative to the room and furniture, never puppy-sized. Long-lens look from a few meters away, no wide-angle distortion.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "V4_S7_content",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png"
+   ],
+   "seeds": [
+    2026112571,
+    2026112572,
+    2026112573
+   ],
+   "prompt": "mtai_dog, Edit image 1. Keep the dog exactly as he is: an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy, the same adult proportions and the same polished 3D family-animation style. Change the shot: a close-up of his head and shoulders, he sits on the pale oak floor of the room in image 2, mouth closed in a soft satisfied smile, eyes half-relaxed and lifted, looking up toward the upper right of the frame at someone just out of view. Camera at his eye line. Background softly blurred white wall and white wet-bar cabinets from image 2. Warm evening light from the left. No other animals, no people, no bowl, no text. Scale is important: he is a very large heavy adult dog, about 75 cm tall at the shoulder and 45 kg, big relative to the room and furniture, never puppy-sized. Long-lens look from a few meters away, no wide-angle distortion.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "V4_S4_place",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112541,
+    2026112542,
+    2026112543
+   ],
+   "prompt": "mtai_dog, Camera at the dog's chest height a few meters away, looking across the pale oak plank floor of the room in image 2. In the right foreground, one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) sets the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes, full of pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones), down on the floor. In the left background, softly out of focus, an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy lies on the floor with his head raised, looking toward the bowl. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl, one hand. Scale is important: he is a very large heavy adult dog, about 75 cm tall at the shoulder and 45 kg, with long sturdy legs. The stainless steel bowl is small next to him, only about 20 cm across: the bowl is less than half as wide as his head and far below his chest. Long-lens look from a few meters away, no wide-angle distortion; the bowl is at about the same distance from the camera as the dog, not in the extreme foreground. The human hand and forearm are small compared with the big dog.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "V4_S5_walk",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112551,
+    2026112552,
+    2026112553
+   ],
+   "prompt": "mtai_dog, Camera at the dog's chest height a few meters away, looking across the pale oak plank floor of the room in image 2. An adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy, walks calmly from the left toward the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes. The bowl stands on the floor in the right foreground and is full: every piece of pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones) is inside the bowl, heaped slightly above the rim. The floor around the bowl is completely clean, nothing spilled, no food on the floor. Mid-stride, ears forward, eyes on the bowl. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. Exactly one dog, one bowl. No text. Scale is important: he is a very large heavy adult dog, about 75 cm tall at the shoulder and 45 kg, with long sturdy legs. The stainless steel bowl is small next to him, only about 20 cm across: the bowl is less than half as wide as his head and far below his chest. Long-lens look from a few meters away, no wide-angle distortion; the bowl is at about the same distance from the camera as the dog, not in the extreme foreground.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  },
+  {
+   "id": "V4_S6_eat",
+   "refs": [
+    "refs_real/MASTER_body_C8B_v1.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026112561,
+    2026112562,
+    2026112563
+   ],
+   "prompt": "mtai_dog, Medium shot at the dog's chest height, three-quarter front view on the pale oak plank floor of the room in image 2. an adult wooly long-coat Alaskan Malamute exactly like image 1: solid dark forehead with no white line, dark fur around the eyes, two separate cream eyebrow spots, golden-tan cheeks, white muzzle, two-tone nose with a pink center band and black around the nostrils and sides, small triangular ears with rounded tips and cream-tan inner fur, warm brown eyes, thick frosted dark brown, black and grey-brown coat, white chest, legs and paws, fluffy curled tail, lime-green triangular bandana with a small white tag at the tip; short broad rounded muzzle; not a wolf, not a husky, not a puppy has his muzzle in the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes and is happily eating the pieces of plain cooked shredded chicken meat (pale cooked meat, no live chicks, no bones); some chicken is left in the bowl, eyes half closed with pleasure. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl. Scale is important: he is a very large heavy adult dog, about 75 cm tall at the shoulder and 45 kg, with long sturdy legs. The stainless steel bowl is small next to him, only about 20 cm across: the bowl is less than half as wide as his head and far below his chest. Long-lens look from a few meters away, no wide-angle distortion; the bowl is at about the same distance from the camera as the dog, not in the extreme foreground.",
+   "lora": {
+    "name": "maotai_lora_v2.safetensors",
+    "strength": 0.9
+   }
+  }
+ ]
+}

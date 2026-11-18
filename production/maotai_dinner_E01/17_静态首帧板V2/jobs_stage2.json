@@ -1,0 +1,73 @@
+{
+ "out": "stage2_out",
+ "jobs": [
+  {
+   "id": "S1_pour",
+   "refs": [
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026111801,
+    2026111802,
+    2026111803
+   ],
+   "prompt": "Close-up insert shot at counter height on the white wet-bar counter of the room in image 1. The counter top is clean and clear, no towel, no cloth, no bottles. On it stands the exact stainless steel dog bowl from image 2, with its dark charcoal rubber base ring and embossed bone shapes. From the top right of the frame, one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) holds a small steel scoop tilted over the bowl, and a stream of small round brown dry kibble is falling from the scoop into the bowl, which is half full. Locked camera, the bowl in the lower centre of a vertical frame, softly blurred white cabinets behind. Polished 3D family-animation film style, warm evening light from the left. Exactly one bowl, one scoop, one hand. No animals, no text."
+  },
+  {
+   "id": "S3_lift",
+   "refs": [
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026111811,
+    2026111812,
+    2026111813
+   ],
+   "prompt": "Medium close shot at counter height beside the white wet-bar counter of the room in image 1. one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) has picked up the exact stainless steel dog bowl from image 2, with its dark charcoal rubber base ring and embossed bone shapes, now full of small round brown dry kibble, and lifts it off the clean white counter, holding it securely from below. The counter top is clear, no towel, no cloth. Softly blurred white cabinets behind. Polished 3D family-animation film style, warm evening light from the left. Exactly one bowl, one hand. No animals, no text."
+  },
+  {
+   "id": "S4_place",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026111821,
+    2026111822,
+    2026111823
+   ],
+   "prompt": "Low camera close to the pale oak plank floor of the room in image 2. In the right foreground, one adult hand and forearm in a navy blue knit sweater sleeve (no face, no body visible) sets the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes, full of small round brown dry kibble, down on the floor. In the left background, softly out of focus, an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1 lies on the floor with his head raised, looking toward the bowl. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl, one hand."
+  },
+  {
+   "id": "S5_walk",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026111831,
+    2026111832,
+    2026111833
+   ],
+   "prompt": "Low camera close to the pale oak plank floor of the room in image 2. an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1 walks eagerly from the left toward the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes, which stands full of small round brown dry kibble on the floor in the right foreground. Mid-stride, tail up, ears forward, eyes on the bowl. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl."
+  },
+  {
+   "id": "S6_eat",
+   "refs": [
+    "refs/ref_dog_c001.png",
+    "refs/ref_room_A1.png",
+    "refs/ref_bowl_v1.png"
+   ],
+   "seeds": [
+    2026111841,
+    2026111842,
+    2026111843
+   ],
+   "prompt": "Close-up at floor level on the pale oak plank floor of the room in image 2. an adult Alaskan Malamute, not a puppy, with the same face, warm brown eyes, cream eyebrow patches, pink nose with black edges, thick plush black and cream fur, fluffy curled tail and lime-green bandana as in image 1 has his muzzle in the exact stainless steel dog bowl from image 3, with its dark charcoal rubber base ring and embossed bone shapes and is happily eating the small round brown dry kibble; a few pieces rest in the bowl, eyes half closed with pleasure. No people. Polished 3D family-animation film style matching image 1, warm evening light from the left. No text. Exactly one dog, one bowl."
+  }
+ ]
+}

@@ -1,0 +1,46 @@
+[
+ {
+  "shot": "S2",
+  "take": "S2_take1_BEST.mp4",
+  "frames": 17,
+  "id_min": 0.934,
+  "id_end": 0.941,
+  "adj_min": 0.97,
+  "cam_shift_pct": 0.0,
+  "flicker": 0.27,
+  "score": 0.948
+ },
+ {
+  "shot": "S2",
+  "take": "S2_take3.mp4",
+  "frames": 17,
+  "id_min": 0.909,
+  "id_end": 0.952,
+  "adj_min": 0.976,
+  "cam_shift_pct": 0.0,
+  "flicker": 0.12,
+  "score": 0.936
+ },
+ {
+  "shot": "S2",
+  "take": "S2_take2.mp4",
+  "frames": 17,
+  "id_min": 0.909,
+  "id_end": 0.943,
+  "adj_min": 0.975,
+  "cam_shift_pct": 0.0,
+  "flicker": 0.2,
+  "score": 0.935
+ },
+ {
+  "shot": "S2",
+  "take": "S2_take4.mp4",
+  "frames": 17,
+  "id_min": 0.921,
+  "id_end": 0.921,
+  "adj_min": 0.936,
+  "cam_shift_pct": 0.0,
+  "flicker": 0.23,
+  "score": 0.927
+ }
+]
