@@ -130,6 +130,33 @@ def test_offline_playback_and_export_roundtrip(tmp_path):
         note.fill("载入后再编辑")
         page.reload()
         assert note.input_value() == "载入后再编辑"
+
+        picks = page.get_by_role("button", name="选用", exact=True)
+        picks.last.click()
+        candidates[0].update(decision="pick", note="外部审片选用了第一条")
+        write_review_page(manifest, board)
+        page.reload()
+        assert [picks.nth(i).get_attribute("aria-pressed") for i in range(2)] == ["true", "false"]
+        assert note.input_value() == "载入后再编辑"
+        picks.last.click()
+        page.reload()
+        assert [picks.nth(i).get_attribute("aria-pressed") for i in range(2)] == ["false", "true"]
+
+        # Two previously saved picks remain visible until the viewer resolves them.
+        page.evaluate(
+            """() => {
+                const candidate = data.candidates[0], key = draftKey(keyOf(candidate));
+                const saved = JSON.parse(localStorage.getItem(key));
+                localStorage.setItem(key, JSON.stringify({...saved, decision:"pick"}));
+            }"""
+        )
+        page.reload()
+        assert page.get_by_text("选用冲突：S01。", exact=False).is_visible()
+        assert page.get_by_role("button", name="导出审片记录").is_disabled()
+        assert [picks.nth(i).get_attribute("aria-pressed") for i in range(2)] == ["true", "true"]
+        picks.last.click()
+        assert not page.get_by_text("选用冲突：S01。", exact=False).is_visible()
+        assert page.get_by_role("button", name="导出审片记录").is_enabled()
         assert not errors
         assert not remote
         browser.close()

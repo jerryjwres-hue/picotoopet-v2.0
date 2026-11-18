@@ -28,7 +28,7 @@ textarea{margin:5px 0 0;resize:vertical;padding:8px;min-height:52px;border:1px s
 <div class="controls"><button id="play">同步播放</button><button id="back" aria-label="上一帧">−1 帧</button><button id="forward" aria-label="下一帧">+1 帧</button>
 <input id="time" type="range" min="0" max="1" value="0" step="any" aria-label="播放位置"><output id="clock">0.00 秒</output>
 <label>速度 <select id="rate"><option value="0.5">0.5×</option><option value="1" selected>1×</option></select></label></div>
-<p id="status" role="status"></p><small>浏览器保存本机草稿。导出的 JSON 可随同一批完成回执导入 Mac。</small>
+<p id="draft-conflicts" role="status" hidden></p><p id="status" role="status"></p><small>浏览器保存本机草稿。导出的 JSON 可随同一批完成回执导入 Mac。</small>
 </section></main>
 <template id="card"><article class="card"><label class="picker">候选 <select></select></label><video playsinline preload="metadata"></video>
 <div class="actions"><button data-choice="pick">选用</button><button data-choice="reject">不要</button><button data-choice="">清除决定</button></div>
@@ -45,6 +45,7 @@ const keyOf = c => JSON.stringify([c.shot_id,c.take,c.sha256,c.source_id]);
 const oldPrefix = "picotoopet.review.v1." + data.episode_id + ".";
 const draftKey = key => "picotoopet.candidate.v2." + data.episode_id + "." + key;
 const byKey = new Map(data.candidates.map(c => [keyOf(c),c]));
+const newPicks = new Map();
 for (const c of data.candidates) {
   if(c.note || c.decision) drafts.set(keyOf(c),{note:c.note || "",decision:c.decision || null});
 }
@@ -60,7 +61,9 @@ try {
     const saved=JSON.parse(localStorage.getItem(draftKey(key)));
     if(revision && (!valid(saved) || saved.import_revision!==revision)) {
       const imported={decision:c.decision || null,note:c.note || "",import_revision:revision};
-      drafts.set(key,imported);localStorage.setItem(draftKey(key),JSON.stringify(imported));
+      drafts.set(key,imported);
+      if(imported.decision==="pick") newPicks.set(c.shot_id,key);
+      persist(key);
     } else if(valid(saved)) drafts.set(key,saved);
   }
 } catch { status("浏览器草稿不可用。请在关闭之前导出记录。"); }
@@ -68,21 +71,37 @@ function persist(key) {
   try { localStorage.setItem(draftKey(key),JSON.stringify(drafts.get(key))); }
   catch { status("草稿保存失败。请导出审片记录。"); }
 }
+function clearOtherPicks(shot, selected) {
+  for(const c of data.candidates) {
+    const key=keyOf(c), draft=drafts.get(key);
+    if(c.shot_id===shot && key!==selected && draft?.decision==="pick") {
+      drafts.set(key,{...draft,decision:null});
+      persist(key);
+    }
+  }
+}
+for(const [shot,key] of newPicks) clearOtherPicks(shot,key);
 let activeShot, cards=[], current=[], playing=false, playbackRun=0;
 const videos = () => cards.map(c => c.querySelector("video"));
 function timelineVideo() {
   return videos().reduce((longest,v)=>!longest || (v.duration||0)>(longest.duration||0)?v:longest,null);
 }
-function isPicked(shot) {
-  return data.candidates.some(c => c.shot_id===shot && drafts.get(keyOf(c))?.decision==="pick");
-}
 function refreshNav() {
+  const pickCounts=new Map();
+  for(const c of data.candidates) {
+    if(drafts.get(keyOf(c))?.decision==="pick") pickCounts.set(c.shot_id,(pickCounts.get(c.shot_id)||0)+1);
+  }
+  const conflicts=data.shots.filter(id=>(pickCounts.get(id)||0)>1);
+  const warning=byId("draft-conflicts");
+  warning.hidden=!conflicts.length;
+  warning.textContent=conflicts.length?"选用冲突："+conflicts.join("、")+"。请每镜只选用一条，再导出记录。":"";
+  byId("export").disabled=Boolean(conflicts.length);
   for(const b of byId("shots").children) {
-    const id=b.dataset.shot;
-    b.textContent=id+(isPicked(id)?" ✓":"");
+    const id=b.dataset.shot, picks=pickCounts.get(id);
+    b.textContent=id+(picks>1?" · 选用冲突":picks===1?" ✓":"");
     b.setAttribute("aria-pressed",String(id===activeShot));
   }
-  byId("summary").textContent=data.shots.length+" 镜 · "+data.candidates.length+" 条候选 · 已选 "+data.shots.filter(isPicked).length+" 镜";
+  byId("summary").textContent=data.shots.length+" 镜 · "+data.candidates.length+" 条候选 · 已选 "+data.shots.filter(id=>pickCounts.get(id)===1).length+" 镜";
 }
 function pause() {
   playbackRun++;playing=false;
@@ -141,10 +160,7 @@ function openShot(id) {
     };
     for(const b of card.querySelectorAll("[data-choice]")) b.onclick=()=>{
       const c=current[i], key=keyOf(c), decision=b.dataset.choice || null;
-      if(decision==="pick") for(const other of choices) {
-        const k=keyOf(other), d=drafts.get(k);
-        if(k!==key && d?.decision==="pick") {drafts.set(k,{...d,decision:null});persist(k);}
-      }
+      if(decision==="pick") clearOtherPicks(c.shot_id,key);
       drafts.set(key,{...drafts.get(key),decision,note:drafts.get(key)?.note || ""});
       persist(key);cards.forEach((_,idx)=>refreshCard(idx,false));refreshNav();
     };
