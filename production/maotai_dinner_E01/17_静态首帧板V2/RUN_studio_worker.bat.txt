@@ -1,0 +1,6 @@
+@echo off
+title PicotooPet Studio Worker
+cd /d "%~dp0"
+set "PYTHONPATH=D:\opc in D\AI\ComfyUI\ComfyUI\.venv\Lib\site-packages"
+"D:\opc in D\AI\ComfyUI\standalone-env\python.exe" studio_worker.py
+pause

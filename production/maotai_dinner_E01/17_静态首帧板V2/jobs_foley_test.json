@@ -1,0 +1,29 @@
+{
+ "out": "../24_场景包/foley_test",
+ "jobs": [
+  {
+   "id": "F_S01",
+   "video": "../24_场景包/video_v1/V1_S01_v1.mp4",
+   "seeds": [
+    1
+   ],
+   "prompt": "A fluffy puppy presses his face against metal fence bars and gives a tiny soft whimper. Quiet indoor room tone."
+  },
+  {
+   "id": "F_S07",
+   "video": "../24_场景包/video_v1/V1_S07_v1.mp4",
+   "seeds": [
+    1
+   ],
+   "prompt": "A puppy lifts his head and lets out a long dramatic howl, awoo. Quiet basement room tone."
+  },
+  {
+   "id": "F_S09",
+   "video": "../24_场景包/video_v1/V1_S09_v1.mp4",
+   "seeds": [
+    1
+   ],
+   "prompt": "A puppy eagerly eats chicken from a steel bowl: munching, chewing, the bowl clinking on a wooden floor."
+  }
+ ]
+}

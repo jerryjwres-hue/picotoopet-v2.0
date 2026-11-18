@@ -139,3 +139,13 @@
 - 剪辑：`25_粗剪/cut.py`（容器里 ffmpeg：放大到 1080×1920、Poppins Bold 英文字幕、音频淡入淡出、-14 LUFS）。成片 `25_粗剪/Maotai_Dinner_E01_roughcut_v3.mp4`，34.3 秒。
 - 声音全部是 LTX 同步生成的，尚未人工听审；音乐建议上传时用 TikTok/IG 站内热门音乐。
 - 下一步候选：选定镜头用同 seed 出 720×1280 高清版；声音精修；主人反馈。
+
+## 11. 系统化改造（2026-11-18 16:30）—— 先读这一节
+- **设计文档**：《PicotooPet 自动化生产系统 v1》https://claude.ai/artifact/AUQw7RCw1yE8mgMBC4fxq1 。原则：LLM 只写 `episode.yaml` + 复盘失败镜头；生成/质检/合成都由本地程序执行；主人在关卡确认。
+- **E01 V2 剧本方案**在剧本文档顶部（球→无聊→开门声→假希望（主人抱洗衣篮路过）→失落→香气→主人摸头喂食→球滚回循环），待主人确认 + 主人照片。
+- **队列 Worker（不要再用鼠标双击 .bat）**：`17_静态首帧板V2/studio_worker.py`（v2，薄循环）+ `worker_tasks.py`（每个任务前热加载，改它不用重启）。启动：`RUN_studio_worker.bat`。
+  - 投任务：往 `_queue/inbox/` 放 JSON：`{"runner":"run_ltx_flf.py","jobs":"jobs_xxx.json","note":"..."}`（runner = 本文件夹里任意 .py；可加 `"args":[...]`）。
+  - 结果：`_queue/done|failed/<task>.result.json`（ok、秒数、失败行、输出列表）+ `<task>.sheet.jpg` 联系表。心跳：`_queue/worker_heartbeat.txt`（v2 会写 " v2"）。停止：放一个 `_queue/STOP` 文件。
+  - ⚠️ 当前机器上跑的还是 v1（只支持 qwen/ltx 两个 runner）。主人关掉标题为 "PicotooPet Studio Worker" 的窗口后重新双击 `RUN_studio_worker.bat` 即升级为 v2。
+- **音效**：HunyuanVideo-Foley 已部署（phazei 节点 @afd2960，已做代码审查；权重 fp8 safetensors 在 `ComfyUI/models/foley/`；SigLIP2/CLAP 首次自动下载到 HF 缓存）。`run_foley.py jobs.json`：视频进 → 同步音效出（mp4 + flac），约 25–35 秒/条。测试：`24_场景包/foley_test/`。许可：Tencent Hunyuan Community License（美国可用）。
+- 下一步（P1 剩余）：episode.yaml 格式 + 校验器；自动质检 v2（人脸/人体、狗/碗计数、相邻镜头亮度色温跳变）。P2：配乐模型、剪辑程序支持 J/L 切/形状匹配/甩镜/变速。P4：Studio 网页（建议 Codex 用 Gradio 开发，局域网手机可用）。
