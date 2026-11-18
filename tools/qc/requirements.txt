@@ -1,0 +1,14 @@
+# Quality Check Tool Dependencies (Strictly Permissive Commercial Licenses: MIT / Apache-2.0 / BSD)
+# NO AGPL (No ultralytics)
+numpy>=1.26.0,<3.0.0
+opencv-python-headless>=4.9.0.80
+pillow>=10.0.0
+scipy>=1.12.0
+pyloudnorm>=0.1.1
+pydantic>=2.5.0
+pytest>=8.0.0
+av>=12.0.0
+torch>=2.2.0
+torchvision>=0.17.0
+transformers>=4.40.0
+timm>=0.9.0

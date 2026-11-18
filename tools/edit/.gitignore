@@ -1,0 +1,39 @@
+# Virtualenv
+.venv/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.coverage
+htmlcov/
+
+# Media files & Output assets (Repository is public, NO media files committed)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.flac
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.ttf
+*.otf
+
+# Assembly outputs & scratch
+final.mp4
+edl.txt
+strip.jpg
+mock_*
+*.tmp
+temp_*
