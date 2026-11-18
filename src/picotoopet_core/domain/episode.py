@@ -12,6 +12,7 @@ from picotoopet_core.domain.models import TaskRecord
 Text = Annotated[str, Field(min_length=1)]
 Seconds = Annotated[StrictFloat, Field(gt=0)]
 JsonObject = dict[str, Any]
+ShotId = Annotated[str, Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")]
 
 
 class Camera(ExecutorModel):
@@ -28,7 +29,10 @@ class Frame(ExecutorModel):
 class Video(ExecutorModel):
     prompt: Text
     negative: str
-    seeds: list[Annotated[StrictInt, Field(ge=0, le=2**63 - 1)]] = Field(min_length=1)
+    seeds: list[Annotated[StrictInt, Field(ge=0, le=2**63 - 1)]] = Field(
+        min_length=1,
+        max_length=48,
+    )
 
 
 class Audio(ExecutorModel):
@@ -43,7 +47,7 @@ class Transition(ExecutorModel):
 
 
 class Shot(ExecutorModel):
-    shot_id: Identifier
+    shot_id: ShotId
     seconds: Seconds
     beat: Text
     emotion: Text

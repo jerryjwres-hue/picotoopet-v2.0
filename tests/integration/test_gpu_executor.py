@@ -232,6 +232,38 @@ def test_episode_validation_reports_field(api):
     assert "shots[0].camera.lens" in response.json()["error"]["message"]
 
 
+def test_manual_stage_retry_preserves_lineage_and_unblocks_descendants(api):
+    response = api.post("/api/v1/episodes", json=episode_spec())
+    first, video, _, _ = response.json()["tasks"]
+    lease = {"worker_id": "bridge", "resource_tags": ["gpu-5070ti"], "lease_seconds": 60}
+    url = "/api/v1/executors/lease"
+    complete = {"worker_id": "bridge", "artifacts": [], "qc": {}, "metrics": {"seconds": 0}}
+    assert api.post(url, json=lease).json()["task_id"] == first["task_id"]
+    assert api.post(f"/api/v1/tasks/{first['task_id']}/complete", json=complete).status_code == 200
+    assert api.post(url, json=lease).json()["task_id"] == video["task_id"]
+    endpoint = f"/api/v1/tasks/{video['task_id']}"
+    assert (
+        api.post(
+            endpoint + "/fail",
+            json={
+                "worker_id": "bridge",
+                "error": "test failure",
+                "retryable": False,
+            },
+        ).json()["status"]
+        == "Failed"
+    )
+    retry = api.post(endpoint + "/retry").json()
+    assert retry["parent_task_id"] == video["task_id"]
+    assert api.post(url, json=lease).json()["task_id"] == retry["task_id"]
+    retried_url = f"/api/v1/tasks/{retry['task_id']}"
+    assert api.get(retried_url + "/artifacts").json()["upstream_task_id"] == first["task_id"]
+    assert api.post(retried_url + "/complete", json=complete).status_code == 200
+    foley = api.post(url, json=lease).json()
+    assert foley["task_type"] == "gen.foley"
+    assert foley["parent_task_id"] == retry["task_id"]
+
+
 def test_episode_cli_reports_validation_field(tmp_path, capsys):
     path = tmp_path / "episode.yaml"
     spec = episode_spec()

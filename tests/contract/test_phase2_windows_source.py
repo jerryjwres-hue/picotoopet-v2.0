@@ -23,6 +23,7 @@ def test_windows_core_targets_current_lts_without_third_party_packages() -> None
     assert "<TargetFramework>net10.0</TargetFramework>" in project
     assert "<PackageReference" not in project
     assert '"version": "10.0.302"' in global_json
+    assert '"rollForward": "disable"' in global_json
 
 
 def test_network_clients_use_pooling_bounded_channel_and_resume_sequence() -> None:

@@ -210,7 +210,12 @@ class Bridge:
     def _parent(self, task):
         if not task.get("parent_task_id"):
             return []
-        response = self._request("GET", f"/tasks/{task['parent_task_id']}/artifacts")
+        response = self._request("GET", f"/tasks/{task['task_id']}/artifacts")
+        response.raise_for_status()
+        upstream = response.json().get("upstream_task_id")
+        if upstream is None:
+            return []
+        response = self._request("GET", f"/tasks/{upstream}/artifacts")
         response.raise_for_status()
         return response.json()["artifacts"]
 
@@ -379,6 +384,8 @@ class Bridge:
         sheet = result.get("sheet")
         if sheet and self._safe_path(sheet).is_file():
             entries.append((sheet, True))
+        if len(entries) > 256:
+            raise JobError("本地回执的产物超过 256 项，请减少单任务候选数。")
         artifacts, previews = [], []
         for index, (name, is_sheet) in enumerate(entries, 1):
             path = self._safe_path(name)
@@ -455,6 +462,14 @@ class Bridge:
             response = self._request("POST", endpoint + "/" + action, json=body)
             if response.status_code == 409:
                 return False
+            if response.status_code == 422 and action == "complete":
+                state["report"] = {
+                    "error": "Mac Core 拒绝不符合契约的本地产物回报。",
+                    "retryable": False,
+                }
+                state["previews"] = []
+                atomic_json(self.journal, state)
+                return self._send_report(state)
             response.raise_for_status()
         else:
             if not self._heartbeat(state, 0.9):

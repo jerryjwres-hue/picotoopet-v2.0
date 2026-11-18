@@ -131,6 +131,18 @@
       ],
       "default": null,
       "title": "Sheet Thumbnail Id"
+    },
+    "upstream_task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Upstream Task Id"
     }
   },
   "title": "ArtifactList",

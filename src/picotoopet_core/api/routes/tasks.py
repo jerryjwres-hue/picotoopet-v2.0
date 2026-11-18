@@ -88,7 +88,10 @@ def list_tasks(
 def retry_task(task_id: str, request: Request) -> TaskRecord:
     """创建新的子任务，不重新打开原终态任务。"""
 
-    return request.app.state.services.queue.retry(
+    services = request.app.state.services
+    if services.queue.get(task_id).task_type in TASK_RUNNERS:
+        return services.executor.retry(task_id, request.state.trace_id)
+    return services.queue.retry(
         task_id,
         trace_id=request.state.trace_id,
     )

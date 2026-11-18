@@ -85,6 +85,7 @@ class ReviewedArtifact(ExecutorArtifact):
 
 class ArtifactList(ExecutorModel):
     result_id: str | None = None
+    upstream_task_id: str | None = None
     artifacts: list[ReviewedArtifact] = Field(default_factory=list)
     qc: dict[str, Any] = Field(default_factory=dict)
     sheet_thumbnail_id: str | None = None

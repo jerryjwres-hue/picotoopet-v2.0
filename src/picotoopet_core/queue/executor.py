@@ -282,6 +282,11 @@ class ExecutorService:
             "SELECT manifest_json FROM results WHERE result_id = ? AND result_type = 'executor'",
             (result_id,),
         ).fetchone()
+        dependency = db.execute(
+            """SELECT depends_on_task_id FROM task_dependencies
+               WHERE task_id = ? ORDER BY rowid LIMIT 1""",
+            (task_id,),
+        ).fetchone()
         thumbnails = {
             row["artifact_sha256"]: row["thumbnail_id"]
             for row in db.execute(
@@ -307,6 +312,7 @@ class ExecutorService:
             )
         return ArtifactList(
             result_id=result_id,
+            upstream_task_id=dependency["depends_on_task_id"] if dependency else None,
             artifacts=artifacts,
             sheet_thumbnail_id=thumbnails.get(None),
             qc=json.loads(result["manifest_json"])["qc"] if result else {},
@@ -389,8 +395,33 @@ class ExecutorService:
                 if item.artifact_id == artifact_id
             )
 
+    def retry(self, task_id: str, trace_id: str) -> TaskRecord:
+        with self.queue.database.transaction() as db:
+            task = self._task(db, task_id)
+            if task["status"] not in {TaskStatus.FAILED.value, TaskStatus.CANCELLED.value}:
+                raise InvalidTransitionError("只有 Failed 或 Cancelled 任务可以重试。")
+            new_task = self._clone(db, task, task_id, self._dependencies(db, task_id), trace_id)
+            self._clone_children(db, task_id, new_task.task_id, trace_id)
+            return new_task
+
+    @staticmethod
+    def _dependencies(db: Connection, task_id: str) -> tuple[str, ...]:
+        return tuple(
+            row["depends_on_task_id"]
+            for row in db.execute(
+                "SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?",
+                (task_id,),
+            )
+        )
+
     def _redo(self, db: Connection, task, trace_id: str):
-        new_task = self._clone(db, task, task["parent_task_id"], trace_id)
+        new_task = self._clone(
+            db,
+            task,
+            task["parent_task_id"],
+            self._dependencies(db, task["task_id"]),
+            trace_id,
+        )
         db.execute(
             "INSERT INTO executor_redos(task_id, source_task_id) VALUES (?, ?)",
             (new_task.task_id, task["task_id"]),
@@ -410,10 +441,17 @@ class ExecutorService:
             if child["task_type"] in copied:
                 continue
             copied.add(child["task_type"])
-            clone = self._clone(db, child, new_id, trace_id)
+            clone = self._clone(db, child, new_id, (new_id,), trace_id)
             self._clone_children(db, child["task_id"], clone.task_id, trace_id)
 
-    def _clone(self, db: Connection, task, parent_id: str | None, trace_id: str) -> TaskRecord:
+    def _clone(
+        self,
+        db: Connection,
+        task,
+        parent_id: str | None,
+        dependencies: tuple[str, ...],
+        trace_id: str,
+    ) -> TaskRecord:
         original = self.queue._row_to_record(task)
         payload = original.payload
         if original.task_type.startswith("gen."):
@@ -432,11 +470,10 @@ class ExecutorService:
             parent_task_id=parent_id,
             trace_id=trace_id,
         )
-        if parent_id is not None:
-            db.execute(
-                "INSERT INTO task_dependencies(task_id, depends_on_task_id) VALUES (?, ?)",
-                (new_task.task_id, parent_id),
-            )
+        db.executemany(
+            "INSERT INTO task_dependencies(task_id, depends_on_task_id) VALUES (?, ?)",
+            ((new_task.task_id, dependency) for dependency in dependencies),
+        )
         return new_task
 
     def _audit(self, db: Connection, trace_id: str, action: str, task_id: str, worker_id: str):

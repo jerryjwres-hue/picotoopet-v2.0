@@ -181,7 +181,13 @@ class ProductionService:
             lists = [(row, self.executor.artifacts_in_transaction(db, row)) for row in rows]
             for row, result in lists:
                 if row["task_type"] == "qc.check":
-                    qc_by_hash.update(result.qc.get("by_sha256", {}))
+                    checks = result.qc.get("by_sha256")
+                    if isinstance(checks, dict):
+                        qc_by_hash.update(
+                            (digest, check)
+                            for digest, check in checks.items()
+                            if isinstance(check, dict)
+                        )
             for row, result in lists:
                 for item in result.artifacts:
                     if item.kind == "sheet":

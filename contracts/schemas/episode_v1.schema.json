@@ -214,7 +214,7 @@
           "type": "number"
         },
         "shot_id": {
-          "maxLength": 100,
+          "maxLength": 80,
           "minLength": 1,
           "pattern": "^[A-Za-z0-9_-]+$",
           "title": "Shot Id",
@@ -286,6 +286,7 @@
             "minimum": 0,
             "type": "integer"
           },
+          "maxItems": 48,
           "minItems": 1,
           "title": "Seeds",
           "type": "array"
