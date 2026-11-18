@@ -636,6 +636,8 @@ class Bridge:
             names.append(f"file {name}\n")
         (folder / "concat.txt").write_text("".join(names), encoding="ascii")
         output = folder / "episode.mp4"
+        # 静音片段低于响度门限，部分 FFmpeg 版本会产生非有限采样值。
+        finite_audio = "aeval='if(isnan(val(ch))+isinf(val(ch)),0,val(ch))':c=same"
         result = self._media(
             state,
             [
@@ -651,7 +653,7 @@ class Bridge:
                 "-c:v",
                 "copy",
                 "-af",
-                f"loudnorm=I={edit['loudness_lufs']}:TP=-1.5:LRA=11",
+                f"loudnorm=I={edit['loudness_lufs']}:TP=-1.5:LRA=11,{finite_audio}",
                 "-c:a",
                 "aac",
                 "-ar",

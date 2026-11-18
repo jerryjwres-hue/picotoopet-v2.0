@@ -83,6 +83,7 @@ def test_release_builder_generates_manifest_and_zip() -> None:
     assert "release-manifest.json" in builder
     assert "Compress-Archive" in builder
     assert "PicotooPet-Phase2-Windows-Prebuilt" in builder
+    assert "$startInfo.WorkingDirectory       = $desktopRoot" in builder
     assert "--self-test" in builder
 
 

@@ -2,7 +2,9 @@ import hashlib
 import io
 import json
 import secrets
+import shutil
 import socket
+import subprocess
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -274,6 +276,67 @@ def test_episode_cli_reports_validation_field(tmp_path, capsys):
     path.write_text(yaml.safe_dump(spec, allow_unicode=True), encoding="utf-8")
     assert main(["episode", "validate", str(path)]) == 2
     assert "shots[1].shot_id" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+    reason="本机未安装 FFmpeg / ffprobe",
+)
+def test_qc_and_hard_cut_silent_color_clip(tmp_path):
+    path = tmp_path / "color.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=teal:s=96x64:r=24",
+            "-t",
+            "1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        check=True,
+        timeout=15,
+    )
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    state = {
+        "stem": "demo",
+        "task": {
+            "timeout_seconds": 30,
+            "payload": {
+                "jobs": {"shot": {"seconds": 1}},
+            },
+        },
+    }
+    with Session() as session:
+        bridge = Bridge(BridgeConfig("http://localhost", "fixture", tmp_path), session)
+        bridge.next_heartbeat = float("inf")
+        result = bridge._qc(state, [{"kind": "video", "path": str(path), "sha256": digest}])
+        assert result["qc"]["by_sha256"][digest]["通过"] is True
+        state["task"]["payload"]["jobs"] = {
+            "edit": {"size": [96, 64], "fps": 24, "loudness_lufs": -14},
+            "shots": [
+                {
+                    "path": str(path),
+                    "sha256": digest,
+                    "seconds": 1,
+                    "shot_id": "S01",
+                    "transition_out": {"type": "cut", "offset_s": 0},
+                    "caption": None,
+                    "audio": {},
+                }
+            ],
+        }
+        (output,) = bridge._assemble(state)["outputs"]
+        streams = bridge._probe(state, output)["streams"]
+        assert {stream["codec_type"] for stream in streams} == {"video", "audio"}
 
 
 def test_expired_attempt_is_fenced_and_terminal_fail_cannot_be_leased(api):

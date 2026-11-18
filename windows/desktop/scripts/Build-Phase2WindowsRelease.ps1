@@ -40,6 +40,8 @@ function Invoke-NativeCommand {
     $startInfo                        = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName               = $FilePath
     $startInfo.Arguments              = $argumentLine
+    # dotnet 从进程工作目录查找 global.json，从仓库根目录启动时也必须使用固定 SDK。
+    $startInfo.WorkingDirectory       = $desktopRoot
     $startInfo.UseShellExecute        = $false
     $startInfo.CreateNoWindow         = $true
     $startInfo.RedirectStandardOutput = $true

@@ -70,7 +70,11 @@ def test_wpf_task_list_enables_virtualization_and_recycling() -> None:
 def test_csharp_sources_have_chinese_comments_and_no_obvious_sync_over_async() -> None:
     """C# 文件必须包含中文说明，并禁止明显同步阻塞异步调用。"""
 
-    sources = list((DESKTOP / "src").rglob("*.cs"))
+    source_root = DESKTOP / "src"
+    sources = [
+        source for source in source_root.rglob("*.cs")
+        if {"bin", "obj"}.isdisjoint(source.relative_to(source_root).parts)
+    ]
     assert len(sources) >= 12
     for source in sources:
         text = source.read_text(encoding="utf-8")
