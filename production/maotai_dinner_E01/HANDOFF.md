@@ -85,7 +85,8 @@
 
 ## 7. Blender layout（2026-11-18 进度）
 - ✅ 已完成：`24_场景包/blender/build_b1_layout.py`（本目录有备份）导入扫描、只留地下室、补栏杆/水盆/16cm 碗/肩高 0.7m 茅台占位/1.70m 人，渲染 `B1_cutaway_realscale.png`、`B1_topdown_realscale.png`，存 `B1_layout_v1.blend`。运行：`17_静态首帧板V2/RUN_keyframes_v4.bat`（当前内容=调用 Blender 5.3 后台跑该脚本，日志 `24_场景包/blender/build_log.txt`）。
-- ⏳ 等主人确认白模布局后，再做下面第 4 步（镜头相机 + 深度图）。
+- ✅ v2（2026-11-18）：主人指出 v1 多墙/栏杆不到头/马桶前白线 → 改为**手写程序化场景** `24_场景包/blender/build_b1_set_v2.py`（不再导入扫描，只借扫描尺寸；约 1200 sqft；办公区与主厅之间无墙、乒乓球桌后无墙、卫生间为门、栏杆 x=2.4 墙到墙）。输出 `24_场景包/blender/v2/`：A 俯视、B/B2 两角度剖面、C–G 五个 9:16 机位，`B1_set_v2.blend`。运行同一个 `RUN_keyframes_v4.bat`（GBK+CRLF；仓库里是 .txt 的 UTF-8 副本）。
+- ⏳ 等主人确认 v2 布局后，再做下面第 4 步（每个镜头 S2–S7 的相机 + 深度图 → FLUX+LoRA v2 关键帧）。
 
 ### 原计划步骤
 1. Blender 导入 `scan_B1_1F_2026-11-17.glb`。注意：扫描把一楼家具也叠进来了，且抬高 0.67m —— **只保留 y_min < 0.3m 的物体**（地下室）。坐标：x 西→东、z 北→南、单位米。

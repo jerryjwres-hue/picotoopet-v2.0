@@ -1,0 +1,7 @@
+@echo off
+set "BD=%~dp0..\24_场景包\blender"
+set "BL="
+for /d %%D in ("C:\Program Files\Blender Foundation\Blender*") do if exist "%%D\blender.exe" set "BL=%%D\blender.exe"
+echo BLENDER=%BL% > "%BD%\build_log.txt"
+"%BL%" -b --factory-startup -P "%BD%\build_b1_set_v2.py" >> "%BD%\build_log.txt" 2>&1
+echo BUILD_EXIT %errorlevel% >> "%BD%\build_log.txt"
