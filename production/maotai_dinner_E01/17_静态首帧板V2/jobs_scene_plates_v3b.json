@@ -1,0 +1,47 @@
+{
+ "out": "../24_场景包/flux_out_v3",
+ "jobs": [
+  {
+   "id": "PL3b_E_dogeye_in_strip",
+   "refs": [
+    "../24_场景包/blender/v2/clean/E_dogeye_in_strip.png"
+   ],
+   "seeds": [
+    20261118201,
+    20261118202,
+    20261118203
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light, cozy warm evening 3200K). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, every wall, opening, window, fence panel and object in the same position and size. Do not add any furniture or objects that are not in image 1. Materials: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, matte black metal fence panels. No people, no animals, no text, no logos. This is a low view inside a narrow empty dog area: a black metal fence along the left side, a plain white wall on the right, a plain white wall at the far end. The only objects inside the fenced area are a stainless steel dog bowl and a shallow rectangular steel water tray on the floor. NO sofa, NO table, NO chairs, NO cabinets inside the fenced area. Beyond the fence on the left, only a soft, distant glimpse of the main room.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3b_F_low_at_fence",
+   "refs": [
+    "../24_场景包/blender/v2/clean/F_low_at_fence.png"
+   ],
+   "seeds": [
+    20261118211,
+    20261118212,
+    20261118213
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light, cozy warm evening 3200K). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, every wall, opening, window, fence panel and object in the same position and size. Do not add any furniture or objects that are not in image 1. Materials: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, matte black metal fence panels. No people, no animals, no text, no logos. This is a low view from the main room looking at a long black metal fence that runs from wall to wall. Behind the fence is only a narrow empty strip of wood floor, a plain white wall with a small high basement window and, at the right, the opening to a short corridor with a white back door that has a small pet flap. NO kitchen, NO cabinets, NO sofa, NO tables behind the fence. A dark wood desk edge may appear at the right edge of the frame in front of the fence.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3b_G_high_over_fence",
+   "refs": [
+    "../24_场景包/blender/v2/clean/G_high_over_fence.png"
+   ],
+   "seeds": [
+    20261118221,
+    20261118222,
+    20261118223
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light, cozy warm evening 3200K). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, every wall, opening, window, fence panel and object in the same position and size. Do not add any furniture or objects that are not in image 1. Materials: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, matte black metal fence panels. No people, no animals, no text, no logos. This is a high view looking over a black metal fence down into a narrow empty dog area of wood floor along a plain white wall, with a stainless steel dog bowl, a round steel water bowl and a short corridor leading to a white back door with a small pet flap. NO kitchen, NO cabinets, NO sofa, NO tables inside the fenced area. On the near side of the fence, a dark wood printer desk and a dark wood chair at the right edge, exactly as in image 1.",
+   "w": 864,
+   "h": 1536
+  }
+ ]
+}

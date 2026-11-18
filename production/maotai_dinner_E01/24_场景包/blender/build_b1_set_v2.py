@@ -14,7 +14,7 @@ def mat(name, rgb, rough=0.55, metal=0.0, emit=None):
         b.inputs["Emission Color"].default_value = (*emit, 1); b.inputs["Emission Strength"].default_value = 8.0
     return m
 M = dict(
-    floor=mat("floor", (0.56, 0.40, 0.25), 0.4), tile=mat("tile", (0.85, 0.85, 0.85), 0.3),
+    floor=mat("floor", (0.66, 0.52, 0.36), 0.4), tile=mat("tile", (0.85, 0.85, 0.85), 0.3),
     wall=mat("wall", (0.80, 0.78, 0.74), 0.8), ceil=mat("ceil", (0.85, 0.84, 0.82), 0.9),
     base=mat("base", (0.96, 0.96, 0.95), 0.5), white=mat("white", (0.93, 0.93, 0.92), 0.4),
     quartz=mat("quartz", (0.95, 0.95, 0.94), 0.15), black=mat("black", (0.03, 0.03, 0.03), 0.4),
@@ -248,7 +248,7 @@ except Exception: pass
 scn.view_settings.view_transform = 'AgX'; scn.view_settings.look = 'AgX - Medium High Contrast'
 def show(grp, on):
     for o in GROUP[grp]: o.hide_render = not on
-def cam(name, loc, target, lens, w, h, ortho=None):
+def cam(name, loc, target, lens, w, h, ortho=None, clean=True):
     bpy.ops.object.camera_add(location=loc); c = bpy.context.object; c.name = name
     if ortho: c.data.type = 'ORTHO'; c.data.ortho_scale = ortho; c.rotation_euler = (0, 0, 0)
     else:
@@ -256,11 +256,13 @@ def cam(name, loc, target, lens, w, h, ortho=None):
     c.data.lens = lens; c.data.clip_end = 100
     scn.camera = c; scn.render.resolution_x, scn.render.resolution_y = w, h
     scn.render.filepath = os.path.join(OUT, name + ".png"); bpy.ops.render.render(write_still=True)
+    if clean:  # same shot without the dog/person proxies -> background plate guide
+        show("proxy", False); scn.render.filepath = os.path.join(OUT, "clean", name + ".png"); bpy.ops.render.render(write_still=True); show("proxy", True)
 # A/B overview: no ceiling, labels on, south+west walls cut for the 3/4 view
 show("ceiling", False); show("label", True); show("proxy", True)
 for L in LIGHTS: L.data.energy = 30
 bpy.context.scene.world.node_tree.nodes["Background"].inputs[1].default_value = 0.8
-cam("A_topdown", (0.05, 0.45, 25), None, 50, 1800, 1300, ortho=13.8)
+cam("A_topdown", (0.05, 0.45, 25), None, 50, 1800, 1300, ortho=13.8, clean=False)
 show("label", False)
 show("cutwall", False)
 cam("B_cutaway_34", (-7.5, -12.5, 10.5), (0.0, 0.3, 0.3), 30, 1800, 1200)

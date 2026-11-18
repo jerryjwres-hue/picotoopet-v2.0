@@ -1,0 +1,187 @@
+{
+ "out": "../24_场景包/flux_out_v3",
+ "jobs": [
+  {
+   "id": "PL3_C_front_from_office_2ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/C_front_from_office.png",
+    "../24_场景包/PICKS_B1/B1_wide_mahjong.png"
+   ],
+   "seeds": [
+    20261118001,
+    20261118002
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. Use image 2 only as the reference for materials, colors, furniture design details and lighting mood, NOT for layout or camera.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_C_front_from_office_1ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/C_front_from_office.png"
+   ],
+   "seeds": [
+    20261118003
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_D_side_from_sofa_2ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/D_side_from_sofa.png",
+    "../24_场景包/PICKS_B1/B1_wetbar_front.png"
+   ],
+   "seeds": [
+    20261118011,
+    20261118012
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. Use image 2 only as the reference for materials, colors, furniture design details and lighting mood, NOT for layout or camera.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_D_side_from_sofa_1ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/D_side_from_sofa.png"
+   ],
+   "seeds": [
+    20261118013
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_E_dogeye_in_strip_2ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/E_dogeye_in_strip.png",
+    "../24_场景包/PICKS_B1/B1_fence_corridor.png"
+   ],
+   "seeds": [
+    20261118021,
+    20261118022
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. Use image 2 only as the reference for materials, colors, furniture design details and lighting mood, NOT for layout or camera.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_E_dogeye_in_strip_1ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/E_dogeye_in_strip.png"
+   ],
+   "seeds": [
+    20261118023
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_F_low_at_fence_2ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/F_low_at_fence.png",
+    "../24_场景包/PICKS_B1/B1_corner.png"
+   ],
+   "seeds": [
+    20261118031,
+    20261118032
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. Use image 2 only as the reference for materials, colors, furniture design details and lighting mood, NOT for layout or camera.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_F_low_at_fence_1ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/F_low_at_fence.png"
+   ],
+   "seeds": [
+    20261118033
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_G_high_over_fence_2ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/G_high_over_fence.png",
+    "../24_场景包/PICKS_B1/B1_corner.png"
+   ],
+   "seeds": [
+    20261118041,
+    20261118042
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. Use image 2 only as the reference for materials, colors, furniture design details and lighting mood, NOT for layout or camera.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_G_high_over_fence_1ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/G_high_over_fence.png"
+   ],
+   "seeds": [
+    20261118043
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos.",
+   "w": 864,
+   "h": 1536
+  },
+  {
+   "id": "PL3_B_cutaway_34_2ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/B_cutaway_34.png",
+    "../24_场景包/PICKS_B1/B1_cutaway.png"
+   ],
+   "seeds": [
+    20261118051,
+    20261118052
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. This is a 3/4 cutaway dollhouse view of the basement floor on a plain light grey background; keep the cut walls and the empty grey background. Use image 2 only as the reference for materials, colors, furniture design details and lighting mood, NOT for layout or camera.",
+   "w": 1536,
+   "h": 1024
+  },
+  {
+   "id": "PL3_B_cutaway_34_1ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/B_cutaway_34.png"
+   ],
+   "seeds": [
+    20261118053
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. This is a 3/4 cutaway dollhouse view of the basement floor on a plain light grey background; keep the cut walls and the empty grey background.",
+   "w": 1536,
+   "h": 1024
+  },
+  {
+   "id": "PL3_B2_cutaway_from_SE_2ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/B2_cutaway_from_SE.png",
+    "../24_场景包/PICKS_B1/B1_cutaway.png"
+   ],
+   "seeds": [
+    20261118061,
+    20261118062
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. This is a 3/4 cutaway dollhouse view of the basement floor on a plain light grey background; keep the cut walls and the empty grey background. Use image 2 only as the reference for materials, colors, furniture design details and lighting mood, NOT for layout or camera.",
+   "w": 1536,
+   "h": 1024
+  },
+  {
+   "id": "PL3_B2_cutaway_from_SE_1ref",
+   "refs": [
+    "../24_场景包/blender/v2/clean/B2_cutaway_from_SE.png"
+   ],
+   "seeds": [
+    20261118063
+   ],
+   "prompt": "Re-render image 1 as a finished, polished 3D animated feature film interior background (stylized realism like a modern family animated movie, soft global illumination, gentle bounce light). Image 1 is a grey-box layout render: keep EXACTLY its camera angle, lens, perspective, horizon height, wall positions, door openings, ceiling height, and every furniture item's position, size and silhouette. Do not add, move, enlarge, shrink or remove any furniture, walls, doors or fences. Materials and mood: pale warm beige oak wide-plank floor (light, not orange, not grey), warm white walls and ceiling with small recessed round downlights, white baseboards, white shaker cabinets with white quartz countertop and a glass-door wine fridge, matte black metal fence panels, black dining chairs, grey-green sofa with a light grey cover, mahjong table with green felt top and pink border. Clean, tidy, cozy evening basement lighting, warm 3200K. No people, no animals, no text, no labels, no logos. This is a 3/4 cutaway dollhouse view of the basement floor on a plain light grey background; keep the cut walls and the empty grey background.",
+   "w": 1536,
+   "h": 1024
+  }
+ ]
+}
