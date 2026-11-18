@@ -1,0 +1,181 @@
+{
+ "out": "../24_场景包/qwen_out_v1",
+ "jobs": [
+  {
+   "id": "QE1_IMG_3773_ani",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3773.jpg"
+   ],
+   "seeds": [
+    2026111900
+   ],
+   "prompt": "Convert this photo into a still frame from a high-end 3D animated feature film (Pixar / Disney Animation quality stylized 3D rendering). Keep exactly the same camera angle, lens, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Clean stylized materials with fine detail, pale warm beige oak plank floor, warm white walls, soft cinematic global illumination, cozy warm evening light. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3773_real",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3773.jpg"
+   ],
+   "seeds": [
+    2026111950
+   ],
+   "prompt": "Turn this phone snapshot into a clean, high-end cinematic photograph of the same room, like a professional interior photo or a film still. Keep exactly the same camera angle, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Correct white balance, natural soft warm evening light, realistic materials, sharp detail. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3774_ani",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3774.jpg"
+   ],
+   "seeds": [
+    2026111901
+   ],
+   "prompt": "Convert this photo into a still frame from a high-end 3D animated feature film (Pixar / Disney Animation quality stylized 3D rendering). Keep exactly the same camera angle, lens, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Clean stylized materials with fine detail, pale warm beige oak plank floor, warm white walls, soft cinematic global illumination, cozy warm evening light. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3774_real",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3774.jpg"
+   ],
+   "seeds": [
+    2026111951
+   ],
+   "prompt": "Turn this phone snapshot into a clean, high-end cinematic photograph of the same room, like a professional interior photo or a film still. Keep exactly the same camera angle, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Correct white balance, natural soft warm evening light, realistic materials, sharp detail. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3775_ani",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3775.jpg"
+   ],
+   "seeds": [
+    2026111902
+   ],
+   "prompt": "Convert this photo into a still frame from a high-end 3D animated feature film (Pixar / Disney Animation quality stylized 3D rendering). Keep exactly the same camera angle, lens, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Clean stylized materials with fine detail, pale warm beige oak plank floor, warm white walls, soft cinematic global illumination, cozy warm evening light. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3775_real",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3775.jpg"
+   ],
+   "seeds": [
+    2026111952
+   ],
+   "prompt": "Turn this phone snapshot into a clean, high-end cinematic photograph of the same room, like a professional interior photo or a film still. Keep exactly the same camera angle, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Correct white balance, natural soft warm evening light, realistic materials, sharp detail. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3778_ani",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3778.jpg"
+   ],
+   "seeds": [
+    2026111903
+   ],
+   "prompt": "Convert this photo into a still frame from a high-end 3D animated feature film (Pixar / Disney Animation quality stylized 3D rendering). Keep exactly the same camera angle, lens, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Clean stylized materials with fine detail, pale warm beige oak plank floor, warm white walls, soft cinematic global illumination, cozy warm evening light. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3778_real",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3778.jpg"
+   ],
+   "seeds": [
+    2026111953
+   ],
+   "prompt": "Turn this phone snapshot into a clean, high-end cinematic photograph of the same room, like a professional interior photo or a film still. Keep exactly the same camera angle, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Correct white balance, natural soft warm evening light, realistic materials, sharp detail. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3780_ani",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3780.jpg"
+   ],
+   "seeds": [
+    2026111904
+   ],
+   "prompt": "Convert this photo into a still frame from a high-end 3D animated feature film (Pixar / Disney Animation quality stylized 3D rendering). Keep exactly the same camera angle, lens, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Clean stylized materials with fine detail, pale warm beige oak plank floor, warm white walls, soft cinematic global illumination, cozy warm evening light. No people, no animals, no text. Keep the stainless steel dog bowls and the steel water tray on the floor.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3780_real",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3780.jpg"
+   ],
+   "seeds": [
+    2026111954
+   ],
+   "prompt": "Turn this phone snapshot into a clean, high-end cinematic photograph of the same room, like a professional interior photo or a film still. Keep exactly the same camera angle, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Correct white balance, natural soft warm evening light, realistic materials, sharp detail. No people, no animals, no text. Keep the stainless steel dog bowls and the steel water tray on the floor.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3784_ani",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3784.jpg"
+   ],
+   "seeds": [
+    2026111905
+   ],
+   "prompt": "Convert this photo into a still frame from a high-end 3D animated feature film (Pixar / Disney Animation quality stylized 3D rendering). Keep exactly the same camera angle, lens, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Clean stylized materials with fine detail, pale warm beige oak plank floor, warm white walls, soft cinematic global illumination, cozy warm evening light. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3784_real",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3784.jpg"
+   ],
+   "seeds": [
+    2026111955
+   ],
+   "prompt": "Turn this phone snapshot into a clean, high-end cinematic photograph of the same room, like a professional interior photo or a film still. Keep exactly the same camera angle, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Correct white balance, natural soft warm evening light, realistic materials, sharp detail. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3785_ani",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3785.jpg"
+   ],
+   "seeds": [
+    2026111906
+   ],
+   "prompt": "Convert this photo into a still frame from a high-end 3D animated feature film (Pixar / Disney Animation quality stylized 3D rendering). Keep exactly the same camera angle, lens, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Clean stylized materials with fine detail, pale warm beige oak plank floor, warm white walls, soft cinematic global illumination, cozy warm evening light. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3785_real",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3785.jpg"
+   ],
+   "seeds": [
+    2026111956
+   ],
+   "prompt": "Turn this phone snapshot into a clean, high-end cinematic photograph of the same room, like a professional interior photo or a film still. Keep exactly the same camera angle, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Correct white balance, natural soft warm evening light, realistic materials, sharp detail. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3786_ani",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3786.jpg"
+   ],
+   "seeds": [
+    2026111907
+   ],
+   "prompt": "Convert this photo into a still frame from a high-end 3D animated feature film (Pixar / Disney Animation quality stylized 3D rendering). Keep exactly the same camera angle, lens, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Clean stylized materials with fine detail, pale warm beige oak plank floor, warm white walls, soft cinematic global illumination, cozy warm evening light. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  },
+  {
+   "id": "QE1_IMG_3786_real",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3786.jpg"
+   ],
+   "seeds": [
+    2026111957
+   ],
+   "prompt": "Turn this phone snapshot into a clean, high-end cinematic photograph of the same room, like a professional interior photo or a film still. Keep exactly the same camera angle, composition and room layout: every wall, door, window, ceiling light, cabinet, fence, stair and furniture item stays in the same place with the same size and shape. Tidy the room: remove plastic bags, bottles, boxes, cables, papers, trash cans, clothes and small clutter; keep the large furniture. Correct white balance, natural soft warm evening light, realistic materials, sharp detail. No people, no animals, no text.",
+   "negative": "blurry, low quality, distorted perspective, extra furniture, clutter, people, animals, text, watermark"
+  }
+ ]
+}

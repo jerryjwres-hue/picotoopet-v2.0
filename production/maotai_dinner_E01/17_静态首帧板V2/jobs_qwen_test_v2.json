@@ -1,0 +1,173 @@
+{
+ "out": "../24_场景包/qwen_out_v1",
+ "jobs": [
+  {
+   "id": "QE2_IMG_3773_pixar",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3773.jpg"
+   ],
+   "seeds": [
+    2026112000
+   ],
+   "prompt": "Re-render this entire photo as a frame from a 3D animated feature film in Pixar style: stylized CGI, clean simplified shapes with softly rounded edges, smooth hand-crafted materials, warm saturated storybook color palette, soft bounce lighting and gentle ambient occlusion, everything looks computer-animated and toy-like, NOT a photograph. Keep the same camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Pale warm oak floor, warm white walls, cozy evening light. No people, no animals, no text."
+  },
+  {
+   "id": "QE2_IMG_3773_c8bstyle",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3773.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112050
+   ],
+   "prompt": "Re-render image 1 as a frame from the same 3D animated feature film as image 2: match image 2's CGI rendering style, materials, softness, color palette and lighting quality exactly. Stylized Pixar-like CGI, clean simplified shapes with softly rounded edges, NOT a photograph. Keep image 1's camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Do NOT include the dog from image 2 or any animal; image 2 is only a style reference. No people, no text."
+  },
+  {
+   "id": "QE2_IMG_3774_pixar",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3774.jpg"
+   ],
+   "seeds": [
+    2026112001
+   ],
+   "prompt": "Re-render this entire photo as a frame from a 3D animated feature film in Pixar style: stylized CGI, clean simplified shapes with softly rounded edges, smooth hand-crafted materials, warm saturated storybook color palette, soft bounce lighting and gentle ambient occlusion, everything looks computer-animated and toy-like, NOT a photograph. Keep the same camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Pale warm oak floor, warm white walls, cozy evening light. No people, no animals, no text."
+  },
+  {
+   "id": "QE2_IMG_3774_c8bstyle",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3774.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112051
+   ],
+   "prompt": "Re-render image 1 as a frame from the same 3D animated feature film as image 2: match image 2's CGI rendering style, materials, softness, color palette and lighting quality exactly. Stylized Pixar-like CGI, clean simplified shapes with softly rounded edges, NOT a photograph. Keep image 1's camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Do NOT include the dog from image 2 or any animal; image 2 is only a style reference. No people, no text."
+  },
+  {
+   "id": "QE2_IMG_3775_pixar",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3775.jpg"
+   ],
+   "seeds": [
+    2026112002
+   ],
+   "prompt": "Re-render this entire photo as a frame from a 3D animated feature film in Pixar style: stylized CGI, clean simplified shapes with softly rounded edges, smooth hand-crafted materials, warm saturated storybook color palette, soft bounce lighting and gentle ambient occlusion, everything looks computer-animated and toy-like, NOT a photograph. Keep the same camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Pale warm oak floor, warm white walls, cozy evening light. No people, no animals, no text."
+  },
+  {
+   "id": "QE2_IMG_3775_c8bstyle",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3775.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112052
+   ],
+   "prompt": "Re-render image 1 as a frame from the same 3D animated feature film as image 2: match image 2's CGI rendering style, materials, softness, color palette and lighting quality exactly. Stylized Pixar-like CGI, clean simplified shapes with softly rounded edges, NOT a photograph. Keep image 1's camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Do NOT include the dog from image 2 or any animal; image 2 is only a style reference. No people, no text."
+  },
+  {
+   "id": "QE2_IMG_3778_pixar",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3778.jpg"
+   ],
+   "seeds": [
+    2026112003
+   ],
+   "prompt": "Re-render this entire photo as a frame from a 3D animated feature film in Pixar style: stylized CGI, clean simplified shapes with softly rounded edges, smooth hand-crafted materials, warm saturated storybook color palette, soft bounce lighting and gentle ambient occlusion, everything looks computer-animated and toy-like, NOT a photograph. Keep the same camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Pale warm oak floor, warm white walls, cozy evening light. No people, no animals, no text."
+  },
+  {
+   "id": "QE2_IMG_3778_c8bstyle",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3778.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112053
+   ],
+   "prompt": "Re-render image 1 as a frame from the same 3D animated feature film as image 2: match image 2's CGI rendering style, materials, softness, color palette and lighting quality exactly. Stylized Pixar-like CGI, clean simplified shapes with softly rounded edges, NOT a photograph. Keep image 1's camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Do NOT include the dog from image 2 or any animal; image 2 is only a style reference. No people, no text."
+  },
+  {
+   "id": "QE2_IMG_3780_pixar",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3780.jpg"
+   ],
+   "seeds": [
+    2026112004
+   ],
+   "prompt": "Re-render this entire photo as a frame from a 3D animated feature film in Pixar style: stylized CGI, clean simplified shapes with softly rounded edges, smooth hand-crafted materials, warm saturated storybook color palette, soft bounce lighting and gentle ambient occlusion, everything looks computer-animated and toy-like, NOT a photograph. Keep the same camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Pale warm oak floor, warm white walls, cozy evening light. No people, no animals, no text. Keep the stainless steel dog bowls and the steel water tray on the floor."
+  },
+  {
+   "id": "QE2_IMG_3780_c8bstyle",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3780.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112054
+   ],
+   "prompt": "Re-render image 1 as a frame from the same 3D animated feature film as image 2: match image 2's CGI rendering style, materials, softness, color palette and lighting quality exactly. Stylized Pixar-like CGI, clean simplified shapes with softly rounded edges, NOT a photograph. Keep image 1's camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Do NOT include the dog from image 2 or any animal; image 2 is only a style reference. No people, no text. Keep the stainless steel dog bowls and the steel water tray on the floor."
+  },
+  {
+   "id": "QE2_IMG_3784_pixar",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3784.jpg"
+   ],
+   "seeds": [
+    2026112005
+   ],
+   "prompt": "Re-render this entire photo as a frame from a 3D animated feature film in Pixar style: stylized CGI, clean simplified shapes with softly rounded edges, smooth hand-crafted materials, warm saturated storybook color palette, soft bounce lighting and gentle ambient occlusion, everything looks computer-animated and toy-like, NOT a photograph. Keep the same camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Pale warm oak floor, warm white walls, cozy evening light. No people, no animals, no text."
+  },
+  {
+   "id": "QE2_IMG_3784_c8bstyle",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3784.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112055
+   ],
+   "prompt": "Re-render image 1 as a frame from the same 3D animated feature film as image 2: match image 2's CGI rendering style, materials, softness, color palette and lighting quality exactly. Stylized Pixar-like CGI, clean simplified shapes with softly rounded edges, NOT a photograph. Keep image 1's camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Do NOT include the dog from image 2 or any animal; image 2 is only a style reference. No people, no text."
+  },
+  {
+   "id": "QE2_IMG_3785_pixar",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3785.jpg"
+   ],
+   "seeds": [
+    2026112006
+   ],
+   "prompt": "Re-render this entire photo as a frame from a 3D animated feature film in Pixar style: stylized CGI, clean simplified shapes with softly rounded edges, smooth hand-crafted materials, warm saturated storybook color palette, soft bounce lighting and gentle ambient occlusion, everything looks computer-animated and toy-like, NOT a photograph. Keep the same camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Pale warm oak floor, warm white walls, cozy evening light. No people, no animals, no text."
+  },
+  {
+   "id": "QE2_IMG_3785_c8bstyle",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3785.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112056
+   ],
+   "prompt": "Re-render image 1 as a frame from the same 3D animated feature film as image 2: match image 2's CGI rendering style, materials, softness, color palette and lighting quality exactly. Stylized Pixar-like CGI, clean simplified shapes with softly rounded edges, NOT a photograph. Keep image 1's camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Do NOT include the dog from image 2 or any animal; image 2 is only a style reference. No people, no text."
+  },
+  {
+   "id": "QE2_IMG_3786_pixar",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3786.jpg"
+   ],
+   "seeds": [
+    2026112007
+   ],
+   "prompt": "Re-render this entire photo as a frame from a 3D animated feature film in Pixar style: stylized CGI, clean simplified shapes with softly rounded edges, smooth hand-crafted materials, warm saturated storybook color palette, soft bounce lighting and gentle ambient occlusion, everything looks computer-animated and toy-like, NOT a photograph. Keep the same camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Pale warm oak floor, warm white walls, cozy evening light. No people, no animals, no text."
+  },
+  {
+   "id": "QE2_IMG_3786_c8bstyle",
+   "refs": [
+    "../24_场景包/real_photos/IMG_3786.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    2026112057
+   ],
+   "prompt": "Re-render image 1 as a frame from the same 3D animated feature film as image 2: match image 2's CGI rendering style, materials, softness, color palette and lighting quality exactly. Stylized Pixar-like CGI, clean simplified shapes with softly rounded edges, NOT a photograph. Keep image 1's camera angle, perspective, room layout, and the same furniture in the same places and sizes. Remove clutter (bags, bottles, cables, papers, trash cans). Do NOT include the dog from image 2 or any animal; image 2 is only a style reference. No people, no text."
+  }
+ ]
+}

@@ -103,3 +103,17 @@
 - Hugging Face 在云端容器被墙，模型下载都通过 Windows 本地 bat 完成。
 - LTX Ingredients 模式不吃首帧，不适合；Keyframes 是实验功能。
 - 4B 小模型画手弱：手部镜头只拍袖口+局部手，或用订阅的 ChatGPT/Gemini 出图。
+
+## 8. 场景改走"实景照片 → AI 直接转换"（2026-11-18 下午）
+- 主人反馈：白模重绘仍太粗糙，要求直接用 AI 把实景照片渲染成写实/精美动画。
+- 新装 **Qwen-Image-Edit-2511**（Apache-2.0）到本地 ComfyUI（0.29.0）：`setup_qwen_edit.py` 从官方 HF 源下载
+  - diffusion_models: `qwen_image_edit_2511_fp8mixed`（20.5GB）
+  - text_encoders: `qwen_2.5_vl_7b_fp8_scaled`
+  - vae: `qwen_image_vae`
+  - loras: `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16`、`qwen-image-edit-2511-multiple-angles-lora`
+- 跑图：`run_qwen_edit.py jobs_xxx.json`（格式同 run_flux_board；自动加 Lightning LoRA、AuraFlow shift 3.1、CFGNorm、index_timestep_zero）。16GB 卡约 14–30 秒/张。启动器仍是 `RUN_keyframes_v4.bat`（每次改内容）。
+- 结果 `24_场景包/qwen_out_v1/`：
+  - 写实/清理杂物效果很好，比例细节全保留（例外：IMG_3780 写实版乱编了墙窗，作废）；
+  - 纯提示词做不出强卡通化，Qwen 偏保真；
+  - 加 C8B 做图2风格参考 → 背景变柔和 3D 风，且 IMG_3784 意外把茅台放进实景、比例合理 → **关键帧可走"实景照片 + C8B 参考"直接合成**。
+- 待主人选背景风格（写实 / C8B 柔和 3D / 更强卡通）。
