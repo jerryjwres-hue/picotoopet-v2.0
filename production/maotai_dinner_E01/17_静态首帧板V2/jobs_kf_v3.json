@@ -1,0 +1,29 @@
+{
+ "out": "../24_场景包/kf_v1",
+ "jobs": [
+  {
+   "id": "K06b_S6_lie",
+   "refs": [
+    "../24_场景包/PICKS_KF_v1/S06_first.png"
+   ],
+   "seeds": [
+    621,
+    622,
+    623
+   ],
+   "prompt": "Edit only the dog's pose: the dog now lies flat on the floor in the same spot, his chin resting on the rim of the empty steel bowl, ears drooped down, sad eyes looking up. Keep the same dog identity, lime-green bandana, room, fence, bowl position, camera angle and cool night lighting exactly the same. Exactly one dog, no people, no text."
+  },
+  {
+   "id": "K10b_S10_eyes",
+   "refs": [
+    "../24_场景包/PICKS_KF_v1/S10_first.png"
+   ],
+   "seeds": [
+    1021,
+    1022,
+    1023
+   ],
+   "prompt": "Edit only the dog's expression: the dog closes his mouth (no tongue) and looks up into the camera with big glossy pleading puppy eyes, inner eyebrows raised, ears slightly back. Keep the same dog identity, lime-green bandana, pose, room, camera angle and warm golden lighting exactly the same. Exactly one dog, no people, no text."
+  }
+ ]
+}

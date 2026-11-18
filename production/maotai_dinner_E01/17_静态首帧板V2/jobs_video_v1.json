@@ -1,0 +1,127 @@
+{
+ "out": "../24_场景包/video_v1",
+ "jobs": [
+  {
+   "id": "V1_S01",
+   "first": "../24_场景包/PICKS_KF_v1/S01_first.png",
+   "prompt": "Extreme close-up, static locked camera. A fluffy Alaskan Malamute puppy with a lime-green bandana presses his face between black fence bars, big glossy eyes looking up at the camera. He slowly blinks once and gives a tiny whimper. Cool blue night light in a clean home basement. Quiet room tone.",
+   "seconds": 3,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    101,
+    102
+   ]
+  },
+  {
+   "id": "V1_S02",
+   "first": "../24_场景包/PICKS_KF_v1/S02_first.png",
+   "prompt": "High wide shot, static locked camera. A fluffy Alaskan Malamute puppy with a lime-green bandana lies alone on the floor beside an empty steel bowl. He stays still; only his eyes move, glancing to the side. Cool blue night light in a clean home basement. A clock ticks softly.",
+   "seconds": 3,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    201,
+    202
+   ]
+  },
+  {
+   "id": "V1_S03",
+   "first": "../24_场景包/PICKS_KF_v1/S03_first.png",
+   "prompt": "Close-up, static locked camera. A hand in a navy knit sleeve spoons pieces of steaming cooked chicken into a steel dog bowl on a white marble kitchen island, then lifts the spoon away. Steam rises. Warm amber light. Soft clink of spoon on bowl.",
+   "seconds": 4,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    301,
+    302
+   ]
+  },
+  {
+   "id": "V1_S04",
+   "first": "../24_场景包/PICKS_KF_v1/S04_first.png",
+   "prompt": "Medium shot, static locked camera. A fluffy Alaskan Malamute puppy with a lime-green bandana sitting on the floor suddenly perks his ears straight up and tilts his head to one side, listening. Cool blue night light in a clean home basement. A door opens upstairs, footsteps on stairs.",
+   "seconds": 3,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    401,
+    402
+   ]
+  },
+  {
+   "id": "V1_S05",
+   "first": "../24_场景包/PICKS_KF_v1/S05_first.png",
+   "prompt": "Static locked camera. Seen from behind, A fluffy Alaskan Malamute puppy with a lime-green bandana wags his big fluffy curled tail fast with excitement, body wiggling, facing away from the camera. Cool blue night light in a clean home basement. Footsteps coming closer.",
+   "seconds": 3,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    501,
+    502
+   ]
+  },
+  {
+   "id": "V1_S06",
+   "first": "../24_场景包/PICKS_KF_v1/S06_first.png",
+   "prompt": "Medium shot, static locked camera. A fluffy Alaskan Malamute puppy with a lime-green bandana sitting by an empty steel bowl droops his ears and slowly lies down flat on the floor, chin beside the bowl, sad eyes looking up. Footsteps fade away, a door closes upstairs, he sighs. Cool blue night light in a clean home basement.",
+   "seconds": 4,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    601,
+    602
+   ],
+   "last": "../24_场景包/PICKS_KF_v1/S06_last.png"
+  },
+  {
+   "id": "V1_S07",
+   "first": "../24_场景包/PICKS_KF_v1/S07_first.png",
+   "prompt": "Close-up, static locked camera. A fluffy Alaskan Malamute puppy with a lime-green bandana lying on the floor lifts his head and lets out a long dramatic awoo howl, mouth rounded, then lowers his head. Cool blue night light in a clean home basement.",
+   "seconds": 3,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    701,
+    702
+   ]
+  },
+  {
+   "id": "V1_S08",
+   "first": "../24_场景包/PICKS_KF_v1/S08_first.png",
+   "prompt": "Medium shot, static locked camera. A hand in a navy sleeve lowers a steaming bowl of chicken down onto the floor inside the black fence and pulls back out of frame. A fluffy Alaskan Malamute puppy with a lime-green bandana lifts his head, eyes wide with joy. Warm golden light. Upbeat music starts.",
+   "seconds": 4,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    801,
+    802
+   ]
+  },
+  {
+   "id": "V1_S09",
+   "first": "../24_场景包/PICKS_KF_v1/S09_first.png",
+   "prompt": "Medium close-up, static locked camera. A fluffy Alaskan Malamute puppy with a lime-green bandana happily eats chicken from the steel bowl on the floor, chewing with his eyes half closed, tail wagging. Warm golden light. Munching sounds.",
+   "seconds": 4,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    901,
+    902
+   ]
+  },
+  {
+   "id": "V1_S10",
+   "first": "../24_场景包/PICKS_KF_v1/S10_first.png",
+   "prompt": "Close-up, static locked camera. A fluffy Alaskan Malamute puppy with a lime-green bandana licks his lips once, closes his mouth and looks up into the camera with big glossy eyes. Warm golden light. Soft happy music.",
+   "seconds": 3,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    1001,
+    1002
+   ],
+   "last": "../24_场景包/PICKS_KF_v1/S10_last.png"
+  }
+ ]
+}

@@ -1,0 +1,29 @@
+{
+ "out": "../24_场景包/video_v1",
+ "jobs": [
+  {
+   "id": "V2_S08_k1",
+   "first": "../24_场景包/kf_v1/K08b_S8_nohand_v1.png",
+   "prompt": "Medium shot, static locked camera. Warm golden light floods in. A fluffy Alaskan Malamute puppy with a lime-green bandana lying on the floor sees the steaming bowl of chicken in front of him, his eyes go wide, he jumps up happily with his mouth open and tail wagging. No people. Upbeat music starts, a bowl clinks on the floor.",
+   "seconds": 4,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    812,
+    822
+   ]
+  },
+  {
+   "id": "V2_S08_k2",
+   "first": "../24_场景包/kf_v1/K08b_S8_nohand_v2.png",
+   "prompt": "Medium shot, static locked camera. Warm golden light floods in. A fluffy Alaskan Malamute puppy with a lime-green bandana lying on the floor sees the steaming bowl of chicken in front of him, his eyes go wide, he jumps up happily with his mouth open and tail wagging. No people. Upbeat music starts, a bowl clinks on the floor.",
+   "seconds": 4,
+   "w": 544,
+   "h": 960,
+   "seeds": [
+    813,
+    823
+   ]
+  }
+ ]
+}

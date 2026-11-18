@@ -1,0 +1,18 @@
+{
+ "out": "../24_场景包/kf_v1",
+ "jobs": [
+  {
+   "id": "K06b_S6_lie2",
+   "refs": [
+    "../24_场景包/PICKS_KF_v1/S06_first.png"
+   ],
+   "seeds": [
+    631,
+    632,
+    633,
+    634
+   ],
+   "prompt": "Edit only the dog's pose: the dog lies down flat on the floor in the same place where he was sitting, his chin resting on the floor right beside the existing steel bowl, ears drooped down, sad eyes looking up. Do not add another bowl: there is exactly one steel bowl in the image, in the same position as before. Keep the same dog identity, lime-green bandana, room, fence, camera angle and cool night lighting exactly the same. Exactly one dog, no people, no text."
+  }
+ ]
+}

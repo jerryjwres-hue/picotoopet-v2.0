@@ -1,0 +1,84 @@
+{
+ "out": "../24_场景包/kf_v1",
+ "jobs": [
+  {
+   "id": "K01_S1_bars",
+   "refs": [
+    "../24_场景包/plates916/A_fence_closeup.png",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    111,
+    112,
+    113
+   ],
+   "prompt": "Re-render image 1 as a frame from the same soft 3D animated feature film as image 2: match image 2's rendering style, fur detail, softness and color quality. Keep image 1's camera angle, perspective and room exactly: the same clean modern home basement with smooth white walls, white baseboards, pale light-oak plank floor and small round recessed ceiling lights. Do not add pipes, concrete, dirt, stains, extra walls or extra fences. The dog is the exact character from image 2: a fluffy Alaskan Malamute puppy with a pink-and-black snow nose, solid dark forehead, dark eye mask, two separate cream eyebrow spots, golden-tan cheeks, short white muzzle, warm brown eyes, small triangular ears with rounded tips, frosted dark coat, white legs, curled fluffy tail, lime-green triangular bandana with a small white tag. Extreme close-up: the dog presses his face between two black metal fence bars in the foreground and looks up into the camera with big glossy pleading eyes, inner eyebrows raised, ears flattened back. Night time: the lighting has a soft cool blue-white tint and gentle shadows, but the room stays clean, tidy and cozy. Exactly one dog. No people, no text, no extra toys, balls or paddles."
+  },
+  {
+   "id": "K02_S2_wide",
+   "refs": [
+    "../24_场景包/plates916/B_bowls_high.png",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    211,
+    212,
+    213
+   ],
+   "prompt": "Re-render image 1 as a frame from the same soft 3D animated feature film as image 2: match image 2's rendering style, fur detail, softness and color quality. Keep image 1's camera angle, perspective and room exactly: the same clean modern home basement with smooth white walls, white baseboards, pale light-oak plank floor and small round recessed ceiling lights. Do not add pipes, concrete, dirt, stains, extra walls or extra fences. The dog is the exact character from image 2: a fluffy Alaskan Malamute puppy with a pink-and-black snow nose, solid dark forehead, dark eye mask, two separate cream eyebrow spots, golden-tan cheeks, short white muzzle, warm brown eyes, small triangular ears with rounded tips, frosted dark coat, white legs, curled fluffy tail, lime-green triangular bandana with a small white tag. He is small relative to the room: standing, the top of his head would reach only about two-thirds of the black fence height, and the steel bowl is narrower than his head. High-angle wide shot: the small dog lies alone on the floor beside the empty steel bowl, chin resting on his front paws, eyes glancing sideways. Remove the red slow-feeder bowl; keep the empty steel bowl and the rectangular steel water tray. Night time: the lighting has a soft cool blue-white tint and gentle shadows, but the room stays clean, tidy and cozy. Exactly one dog. No people, no text, no extra toys, balls or paddles."
+  },
+  {
+   "id": "K04_S4_perk",
+   "refs": [
+    "../24_场景包/plates916/D_strip_mid.png",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    411,
+    412,
+    413
+   ],
+   "prompt": "Re-render image 1 as a frame from the same soft 3D animated feature film as image 2: match image 2's rendering style, fur detail, softness and color quality. Keep image 1's camera angle, perspective and room exactly: the same clean modern home basement with smooth white walls, white baseboards, pale light-oak plank floor and small round recessed ceiling lights. Do not add pipes, concrete, dirt, stains, extra walls or extra fences. The dog is the exact character from image 2: a fluffy Alaskan Malamute puppy with a pink-and-black snow nose, solid dark forehead, dark eye mask, two separate cream eyebrow spots, golden-tan cheeks, short white muzzle, warm brown eyes, small triangular ears with rounded tips, frosted dark coat, white legs, curled fluffy tail, lime-green triangular bandana with a small white tag. He is small relative to the room: standing, the top of his head would reach only about two-thirds of the black fence height, and the steel bowl is narrower than his head. Medium close-up: the dog sits on the floor in the left half of the frame, ears suddenly perked straight up, head tilted to one side, alert and listening. Night time: the lighting has a soft cool blue-white tint and gentle shadows, but the room stays clean, tidy and cozy. Exactly one dog. No people, no text, no extra toys, balls or paddles."
+  },
+  {
+   "id": "K05_S5_tail",
+   "refs": [
+    "../24_场景包/plates916/E_strip_bowl.png",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    511,
+    512,
+    513
+   ],
+   "prompt": "Re-render image 1 as a frame from the same soft 3D animated feature film as image 2: match image 2's rendering style, fur detail, softness and color quality. Keep image 1's camera angle, perspective and room exactly: the same clean modern home basement with smooth white walls, white baseboards, pale light-oak plank floor and small round recessed ceiling lights. Do not add pipes, concrete, dirt, stains, extra walls or extra fences. The dog is the exact character from image 2: a fluffy Alaskan Malamute puppy with a pink-and-black snow nose, solid dark forehead, dark eye mask, two separate cream eyebrow spots, golden-tan cheeks, short white muzzle, warm brown eyes, small triangular ears with rounded tips, frosted dark coat, white legs, curled fluffy tail, lime-green triangular bandana with a small white tag. He is small relative to the room: standing, the top of his head would reach only about two-thirds of the black fence height, and the steel bowl is narrower than his head. Rear view: the dog stands with his back and his big curled fluffy tail toward the camera, facing away toward the far wall, tail raised and wagging with excitement; we cannot see his face. Keep the black fence on the right edge and the steel bowl. Night time: the lighting has a soft cool blue-white tint and gentle shadows, but the room stays clean, tidy and cozy. Exactly one dog. No people, no text, no extra toys, balls or paddles."
+  },
+  {
+   "id": "K06a_S6_sit",
+   "refs": [
+    "../24_场景包/plates916/E_strip_bowl.png",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    611,
+    612,
+    613
+   ],
+   "prompt": "Re-render image 1 as a frame from the same soft 3D animated feature film as image 2: match image 2's rendering style, fur detail, softness and color quality. Keep image 1's camera angle, perspective and room exactly: the same clean modern home basement with smooth white walls, white baseboards, pale light-oak plank floor and small round recessed ceiling lights. Do not add pipes, concrete, dirt, stains, extra walls or extra fences. The dog is the exact character from image 2: a fluffy Alaskan Malamute puppy with a pink-and-black snow nose, solid dark forehead, dark eye mask, two separate cream eyebrow spots, golden-tan cheeks, short white muzzle, warm brown eyes, small triangular ears with rounded tips, frosted dark coat, white legs, curled fluffy tail, lime-green triangular bandana with a small white tag. He is small relative to the room: standing, the top of his head would reach only about two-thirds of the black fence height, and the steel bowl is narrower than his head. Medium shot: the dog sits upright on the floor just left of the empty steel bowl, ears up, hopeful eyes looking toward the right. Keep the black fence on the right edge. Night time: the lighting has a soft cool blue-white tint and gentle shadows, but the room stays clean, tidy and cozy. Exactly one dog. No people, no text, no extra toys, balls or paddles."
+  },
+  {
+   "id": "K03_S3_kitchen",
+   "refs": [
+    "../24_场景包/plates916/C_kitchen_island.png",
+    "../24_场景包/real_photos/IMG_3803.jpg",
+    "refs_real/MASTER_body_C8B_v1.png"
+   ],
+   "seeds": [
+    311,
+    312,
+    313
+   ],
+   "prompt": "Re-render image 1 as a frame from the same soft 3D animated feature film as image 3 (image 3 is only a style reference, do NOT include any dog). Keep image 1's kitchen layout and white marble island. Close-up on the island: a stainless steel dog bowl like image 2 (black bone prints, black rubber base) sits on the island counter; a hand in a navy knit sweater sleeve spoons small bite-sized pieces of cooked white chicken breast into the bowl. Soft wisps of steam rise. Warm amber kitchen light. Only one hand, no face, no dog, no text, no noodles."
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "out": "../24_场景包/kf_v1",
+ "jobs": [
+  {
+   "id": "K08b_S8_nohand",
+   "refs": [
+    "../24_场景包/PICKS_KF_v1/S08_first.png"
+   ],
+   "seeds": [
+    841,
+    842
+   ],
+   "prompt": "Remove the hand, the arm and the sleeve completely. The steel bowl heaped with steaming shredded chicken now sits on the floor just inside the black fence, in front of the dog, on the right side of the frame. Keep the dog, his pose and expression, the room, the fence, the camera angle and the warm golden light exactly the same. Exactly one dog, no people, no hands, no text."
+  }
+ ]
+}
