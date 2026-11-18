@@ -120,3 +120,12 @@
 - **2026-11-18 13:45 决定**：背景风格 = C8B 柔和 3D（实景照片 + C8B 图2 风格参考）。
 - **茅台比例新标准**：站立头顶 ≈ 球桌面 0.76 m + 2–3 cm ≈ 0.79 m（见 MAOTAI_IDENTITY_LOCK_v2.md 第 4 次修订）。
 - **茅台进场景的做法**：C8B 抠图按已知尺寸物体换算像素大小贴入 → `run_qwen_edit.py` 的 `mask` + `denoise 0.5–0.65`、`steps 8` 只在遮罩内融合。整图重绘/把 C8B 当图2 → 会多出第二只狗或球拍，禁止。样例 `jobs_qwen_dog_3784b.json`。
+
+## 9. 剧本 + 本地视频生成链（2026-11-18 下午）
+- 主人决定：回到"实景照片 + C8B 参考让 Qwen 直接出带茅台的画面"，不再抠图贴图。
+- **剧本 V1**（Claude Doc）：https://claude.ai/artifact/5fj9kFaMzW6xB7A4BX8zm6 —《茅台以为主人忘了开饭》，10 镜 34 秒，TikTok/IG 美国观众，可爱→可怜（假希望再落空）→反转→happy end，结尾与开头同表情可循环。每镜含首帧做法、LTX 英文提示词、难度。
+- **ComfyUI 升级** v0.29.0 → **v0.45.6**（`setup_ltx25.py`；torch 2.10.0+cu130 保持不变；回退：`git -C ComfyUI checkout v0.29.0`）。注意 `.venv\Scripts\python.exe` 是坏的，依赖用 `uv pip install --python ..\standalone-env\python.exe --target .venv\Lib\site-packages`。
+- **LTX-2.5 本地**：`extra_model_paths.yaml` 直接引用 LTX Desktop 的模型目录 `D:\opc in D\AI\LTX25\models`（bf16 distilled 22B + gemma4-12b，加载时转 fp8），不重复下载。`run_ltx_flf.py`（照官方 video_ltx2_5_flf2v 模板，关闭提示词增强，自写负面词）：有 `last` = 首尾帧，否则 I2V。实测 576×768、3 秒约 80 秒，含同步音频。
+- 升级后 Qwen-Image-Edit 回归测试通过（34 秒/张）。
+- 生成规则已写成 skill 提案 `maotai-shot-generation`（主人确认保存后 Claude 可用；Codex 请直接读本节 + 剧本文档）。
+- 下一步：主人确认剧本 → 10 镜首帧（Qwen）→ 每镜 4 条视频（LTX）→ 剪辑配乐字幕。

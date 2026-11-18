@@ -1,0 +1,16 @@
+{
+ "out": "../24_场景包/ltx_test",
+ "jobs": [
+  {
+   "id": "T1_pingpong_i2v",
+   "first": "../24_场景包/qwen_out_v1/QE5_3784_blend_d50_v1.png",
+   "seconds": 3,
+   "w": 576,
+   "h": 768,
+   "seeds": [
+    11
+   ],
+   "prompt": "Static locked camera. A fluffy Alaskan Malamute puppy with a lime-green bandana stands next to a ping-pong table, wags his curled tail and tilts his head to one side, ears perked. Soft warm basement light. Quiet room tone, a soft happy whine."
+  }
+ ]
+}
