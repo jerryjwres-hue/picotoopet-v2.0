@@ -32,7 +32,7 @@ def test_registry_contains_exact_frozen_tool_contract() -> None:
     registry = build_registry()
 
     assert set(FROZEN_TOOL_NAMES) == EXPECTED
-    assert set(registry) == EXPECTED
+    assert set(registry) == EXPECTED | {"list_artifacts", "decide_artifact"}
     assert "shell" not in registry
     assert "read_file" not in registry
     assert "write_file" not in registry
@@ -46,6 +46,7 @@ def test_every_tool_has_closed_input_schema_and_permission_policy() -> None:
     for spec in registry.values():
         assert spec.input_schema["type"] == "object"
         assert spec.input_schema["additionalProperties"] is False
-        assert "project_id" in spec.input_schema["properties"] or spec.name == "create_project"
+        if spec.name in EXPECTED - {"create_project"}:
+            assert "project_id" in spec.input_schema["properties"]
         assert spec.permission_operation
         assert spec.timeout_seconds > 0

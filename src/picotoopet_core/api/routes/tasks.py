@@ -1,8 +1,11 @@
 """任务 REST 路由。"""
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
+from pydantic import ValidationError
 
-from picotoopet_core.domain.enums import TaskStatus
+from picotoopet_core.api.errors import ApiError
+from picotoopet_core.domain.enums import CloudPolicy, TaskStatus
+from picotoopet_core.domain.executor import GPU_TAG, TASK_RUNNERS, ExecutorPayload
 from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.security.auth import require_auth
 
@@ -19,6 +22,29 @@ def create_task(
 
     if idempotency_key:
         payload = payload.model_copy(update={"idempotency_key": idempotency_key})
+    if payload.task_type in TASK_RUNNERS:
+        try:
+            body = ExecutorPayload.model_validate(payload.payload)
+        except ValidationError as exc:
+            fields = "、".join(".".join(map(str, item["loc"])) for item in exc.errors())
+            raise ApiError(
+                status_code=422, code="VALIDATION_ERROR", retryable=False,
+                message=f"执行任务 payload 字段无效：{fields}。",
+            ) from exc
+        if (
+            body.runner != TASK_RUNNERS[payload.task_type]
+            or payload.cloud_policy is not CloudPolicy.LOCAL_ONLY
+        ):
+            raise ApiError(status_code=422, code="VALIDATION_ERROR",
+                           message="执行任务须使用对应的本地 runner。", retryable=False)
+        if payload.task_type == "edit.assemble":
+            return request.app.state.services.production.assemble(
+                body.episode_id, request.state.trace_id,
+            )
+        payload = payload.model_copy(update={
+            "resource_tag": payload.resource_tag or GPU_TAG,
+            "payload": body.model_dump(mode="json"),
+        })
     return request.app.state.services.queue.create(
         payload,
         trace_id=request.state.trace_id,

@@ -17,6 +17,18 @@ from picotoopet_core.domain.contracts import (
     ResultContract,
     TaskContract,
 )
+from picotoopet_core.domain.episode import Episode
+from picotoopet_core.domain.executor import (
+    TASK_RUNNERS,
+    ArtifactDecision,
+    ArtifactList,
+    ExecutorArtifact,
+    ExecutorComplete,
+    ExecutorFail,
+    ExecutorHeartbeat,
+    ExecutorLease,
+    ExecutorPayload,
+)
 from picotoopet_core.mcp.registry import build_registry
 
 
@@ -43,10 +55,22 @@ def export_schemas() -> None:
         "result_v2.schema.json": ResultContract,
         "approval_v2.schema.json": ApprovalContract,
         "connector_event_v2.schema.json": ConnectorEventContract,
+        "episode_v1.schema.json": Episode,
+        "artifact_decision_v1.schema.json": ArtifactDecision,
+        "executor_artifact_v1.schema.json": ExecutorArtifact,
+        "executor_artifact_list_v1.schema.json": ArtifactList,
+        "executor_complete_v1.schema.json": ExecutorComplete,
+        "executor_fail_v1.schema.json": ExecutorFail,
+        "executor_heartbeat_v1.schema.json": ExecutorHeartbeat,
+        "executor_lease_v1.schema.json": ExecutorLease,
+        "executor_payload_v1.schema.json": ExecutorPayload,
     }
     for filename, model in models.items():
         schema = model.model_json_schema(mode="validation")
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+        if model is TaskContract:
+            schema["x-executor-task-types"] = list(TASK_RUNNERS)
+            schema["x-executor-payload"] = "executor_payload_v1.schema.json"
         _write_json(ROOT / "contracts" / "schemas" / filename, schema)
 
 
@@ -63,12 +87,11 @@ def export_openapi() -> None:
             schema = app.openapi()
             schema.setdefault("paths", {})["/api/v1/events"] = {
                 "x-websocket": True,
-                "summary": "认证后的任务与健康事件流",
+                "summary": "认证、可续传的任务事件流",
+                "x-application-ping-pong": True,
+                "x-resume-query": "after_sequence",
             }
-            _write_json(
-                ROOT / "contracts" / "openapi" / "mac_core_v1.openapi.json",
-                schema,
-            )
+            _write_json(ROOT / "contracts" / "openapi" / "mac_core_v1.openapi.json", schema)
         finally:
             app.state.services.close()
 

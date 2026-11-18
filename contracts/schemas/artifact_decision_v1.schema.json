@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "enum": [
+        "pick",
+        "reject",
+        "redo"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "note": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision"
+  ],
+  "title": "ArtifactDecision",
+  "type": "object"
+}

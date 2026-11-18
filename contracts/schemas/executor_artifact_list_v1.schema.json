@@ -1,0 +1,138 @@
+{
+  "$defs": {
+    "ReviewedArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "pick",
+                "reject",
+                "redo"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision"
+        },
+        "kind": {
+          "enum": [
+            "image",
+            "video",
+            "audio",
+            "sheet"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "shot_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "take": {
+          "minimum": 1,
+          "title": "Take",
+          "type": "integer"
+        },
+        "thumbnail_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Id"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "sha256",
+        "bytes",
+        "shot_id",
+        "take",
+        "artifact_id"
+      ],
+      "title": "ReviewedArtifact",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/ReviewedArtifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "qc": {
+      "additionalProperties": true,
+      "title": "Qc",
+      "type": "object"
+    },
+    "result_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Id"
+    },
+    "sheet_thumbnail_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sheet Thumbnail Id"
+    }
+  },
+  "title": "ArtifactList",
+  "type": "object"
+}

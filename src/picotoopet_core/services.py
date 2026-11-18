@@ -14,6 +14,8 @@ from picotoopet_core.events.outbox import EventOutbox
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import ResidentManager
 from picotoopet_core.projects.repository import ProjectRepository
+from picotoopet_core.queue.executor import ExecutorService
+from picotoopet_core.queue.production import ProductionService
 from picotoopet_core.queue.repository import QueueRepository
 from picotoopet_core.results.store import ResultStore
 
@@ -26,6 +28,8 @@ class Services:
     database: Database
     projects: ProjectRepository
     queue: QueueRepository
+    executor: ExecutorService
+    production: ProductionService
     approvals: ApprovalService
     audit: AuditWriter
     results: ResultStore
@@ -53,6 +57,8 @@ def build_services(settings: AppSettings) -> Services:
     broker    = EventBroker()
     dispatcher = OutboxDispatcher(outbox, broker)
     queue     = QueueRepository(database, outbox=outbox)
+    audit     = AuditWriter(database)
+    executor  = ExecutorService(queue, audit)
     ollama = OllamaClient(settings.ollama_base_url, timeout_seconds=2.0)
     return Services(
         settings=settings,
@@ -60,7 +66,9 @@ def build_services(settings: AppSettings) -> Services:
         projects=ProjectRepository(database),
         queue=queue,
         approvals=ApprovalService(database, queue),
-        audit=AuditWriter(database),
+        audit=audit,
+        executor=executor,
+        production=ProductionService(executor),
         results=ResultStore(settings.paths.results_dir),
         outbox=outbox,
         broker=broker,

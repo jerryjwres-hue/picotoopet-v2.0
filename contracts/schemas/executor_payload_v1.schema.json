@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Args",
+      "type": "array"
+    },
+    "episode_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "jobs": {
+      "additionalProperties": true,
+      "title": "Jobs",
+      "type": "object"
+    },
+    "runner": {
+      "enum": [
+        "run_qwen_edit.py",
+        "run_ltx_flf.py",
+        "run_foley.py",
+        "qc.check",
+        "edit.assemble"
+      ],
+      "title": "Runner",
+      "type": "string"
+    },
+    "shot_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "title": "Shot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "episode_id",
+    "shot_id",
+    "runner",
+    "jobs"
+  ],
+  "title": "ExecutorPayload",
+  "type": "object"
+}

@@ -8,6 +8,7 @@ V2.2 Phase 0/1 独立仓库：Mac Core、SQLite 耐久队列、权限门、审�
 - Windows 安装/修复：双击 `windows/bootstrap/RUN_WINDOWS_SETUP.vbs`。
 - Windows 只读检测：双击 `windows/bootstrap/VERIFY_WINDOWS_SETUP.vbs`。
 - 源码验证：双击 `VERIFY_RELEASE.command`，或运行 `PYTHONPATH=src pytest -q`。
+- 本地 GPU 执行桥、剧集导入和桌面审片见 [本地 GPU 执行和审片](docs/gpu-executor.md)。
 
 ## 冻结边界
 

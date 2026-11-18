@@ -17,6 +17,9 @@ def test_exported_json_schemas_are_valid_and_complete() -> None:
         "result_v2.schema.json",
         "approval_v2.schema.json",
         "connector_event_v2.schema.json",
+        "episode_v1.schema.json",
+        "artifact_decision_v1.schema.json",
+        "executor_lease_v1.schema.json",
     }
     assert required <= {path.name for path in SCHEMAS.glob("*.json")}
     for name in required:
@@ -41,11 +44,13 @@ def test_openapi_and_mcp_contracts_match_phase_one_surface() -> None:
     assert "/api/v1/health" in openapi["paths"]
     assert "/api/v1/tasks" in openapi["paths"]
     assert "/api/v1/events" in openapi["paths"]
-    assert len(tools["tools"]) == 21
+    assert len(tools["tools"]) == 23
     assert {tool["name"] for tool in tools["tools"]} >= {
         "submit_video_generation",
         "submit_video_edit",
         "request_human_approval",
+        "list_artifacts",
+        "decide_artifact",
     }
 
 

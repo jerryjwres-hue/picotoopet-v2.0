@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "ExecutorArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "image",
+            "video",
+            "audio",
+            "sheet"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "shot_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "take": {
+          "minimum": 1,
+          "title": "Take",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "sha256",
+        "bytes",
+        "shot_id",
+        "take"
+      ],
+      "title": "ExecutorArtifact",
+      "type": "object"
+    },
+    "ExecutorMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "seconds"
+      ],
+      "title": "ExecutorMetrics",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/ExecutorArtifact"
+      },
+      "maxItems": 256,
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "attempt_count": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt Count"
+    },
+    "metrics": {
+      "$ref": "#/$defs/ExecutorMetrics"
+    },
+    "qc": {
+      "additionalProperties": true,
+      "title": "Qc",
+      "type": "object"
+    },
+    "worker_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "title": "Worker Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "worker_id",
+    "artifacts",
+    "qc",
+    "metrics"
+  ],
+  "title": "ExecutorComplete",
+  "type": "object"
+}

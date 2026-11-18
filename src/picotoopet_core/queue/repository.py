@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from sqlite3 import Connection, Row
 from uuid import uuid4
@@ -13,7 +14,6 @@ from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.events.outbox import EventOutbox
 
 from .state_machine import InvalidTransitionError, ensure_transition
-
 
 _ACTIVE_DEDUPE_STATUSES = (
     TaskStatus.CREATED,
@@ -205,21 +205,37 @@ class QueueRepository:
         lease_seconds: int = 60,
         *,
         trace_id: str | None = None,
+        resource_tags: tuple[str, ...] | None = None,
+        task_types: tuple[str, ...] | None = None,
+        task_id: str | None = None,
+        connection: Connection | None = None,
     ) -> TaskRecord | None:
         """按优先级领取一个任务，并写入可恢复租约和状态事件。"""
 
         now          = datetime.now(UTC)
         lease_expiry = now + timedelta(seconds=lease_seconds)
-        with self.database.transaction() as connection:
+        filters, parameters = self._lease_filters(resource_tags, task_types, task_id)
+        if task_types is not None:
+            filters += """
+              AND NOT EXISTS (
+                SELECT 1 FROM task_dependencies AS dep
+                JOIN tasks AS parent ON parent.task_id = dep.depends_on_task_id
+                WHERE dep.task_id = tasks.task_id AND parent.status <> ?
+              )
+            """
+            parameters += (TaskStatus.COMPLETED.value,)
+        transaction = self.database.transaction() if connection is None else nullcontext(connection)
+        with transaction as connection:
             row = connection.execute(
-                """
+                f"""
                 SELECT * FROM tasks
                 WHERE status = ?
                   AND (not_before IS NULL OR not_before <= ?)
+                  {filters}
                 ORDER BY priority ASC, created_at ASC
                 LIMIT 1
                 """,
-                (TaskStatus.QUEUED.value, now.isoformat()),
+                (TaskStatus.QUEUED.value, now.isoformat(), *parameters),
             ).fetchone()
             if row is None:
                 return None
@@ -268,19 +284,41 @@ class QueueRepository:
             )
             return record
 
-    def recover_expired_leases(self, now: datetime | None = None) -> list[str]:
+    @staticmethod
+    def _lease_filters(resource_tags, task_types, task_id=None):
+        clauses = []
+        parameters = []
+        for column, values in (("resource_tag", resource_tags), ("task_type", task_types)):
+            if values is not None:
+                placeholders = ",".join("?" for _ in values)
+                clauses.append(f" AND {column} IN ({placeholders})")
+                parameters.extend(values)
+        if task_id is not None:
+            clauses.append(" AND tasks.task_id = ?")
+            parameters.append(task_id)
+        return "".join(clauses), tuple(parameters)
+
+    def recover_expired_leases(
+        self,
+        now: datetime | None = None,
+        *,
+        resource_tags: tuple[str, ...] | None = None,
+        task_types: tuple[str, ...] | None = None,
+    ) -> list[str]:
         """恢复租约过期任务；达到重试上限时转为失败。"""
 
         checked_at = now or datetime.now(UTC)
         recovered: list[str] = []
+        filters, parameters = self._lease_filters(resource_tags, task_types)
         with self.database.transaction() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT * FROM tasks
                 WHERE status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?
+                {filters}
                 ORDER BY lease_expires_at ASC
                 """,
-                (TaskStatus.RUNNING.value, checked_at.isoformat()),
+                (TaskStatus.RUNNING.value, checked_at.isoformat(), *parameters),
             ).fetchall()
             for row in rows:
                 old_status = TaskStatus(row["status"])

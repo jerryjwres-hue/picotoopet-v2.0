@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import nullcontext
 from datetime import UTC, datetime
+from sqlite3 import Connection
 from typing import Any
 from uuid import uuid4
 
@@ -54,6 +56,7 @@ class AuditWriter:
         decision: str,
         reason_code: str | None,
         details: dict[str, Any],
+        connection: Connection | None = None,
     ) -> str:
         """追加事件并返回审计 ID。"""
 
@@ -62,7 +65,8 @@ class AuditWriter:
         redacted       = redact_details(details)
         details_json   = json.dumps(redacted, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
-        with self.database.transaction() as connection:
+        transaction = self.database.transaction() if connection is None else nullcontext(connection)
+        with transaction as connection:
             previous_row = connection.execute(
                 "SELECT event_hash FROM audit_events ORDER BY rowid DESC LIMIT 1"
             ).fetchone()

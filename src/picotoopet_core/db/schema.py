@@ -1,5 +1,39 @@
 """Phase 1 SQLite 数据库结构。"""
 
+MIGRATION_002 = (
+    """CREATE TABLE executor_leases (
+        task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+        lease_seconds INTEGER NOT NULL,
+        reported_attempt INTEGER,
+        report_hash TEXT,
+        report_json TEXT
+    )""",
+    """CREATE TABLE executor_artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(task_id),
+        metadata_json TEXT NOT NULL,
+        decision TEXT,
+        note TEXT NOT NULL DEFAULT ''
+    )""",
+    "CREATE INDEX executor_artifacts_task ON executor_artifacts(task_id)",
+    """CREATE TABLE executor_thumbnails (
+        thumbnail_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(task_id),
+        attempt INTEGER NOT NULL,
+        artifact_sha256 TEXT,
+        jpeg BLOB NOT NULL
+    )""",
+    "CREATE INDEX executor_thumbnails_task ON executor_thumbnails(task_id, attempt)",
+    """CREATE TABLE production_episodes (
+        episode_id TEXT PRIMARY KEY,
+        spec_json TEXT NOT NULL
+    )""",
+    """CREATE TABLE executor_redos (
+        task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+        source_task_id TEXT NOT NULL REFERENCES tasks(task_id)
+    )""",
+)
+
 MIGRATION_001 = r"""
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version       INTEGER PRIMARY KEY,

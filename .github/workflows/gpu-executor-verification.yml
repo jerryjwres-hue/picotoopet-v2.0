@@ -1,0 +1,59 @@
+name: GPU executor verification
+
+on:
+  pull_request:
+    paths:
+      - "src/picotoopet_core/**"
+      - "contracts/**"
+      - "scripts/windows/**"
+      - "tests/**"
+      - "windows/desktop/**"
+      - "pyproject.toml"
+      - ".github/workflows/gpu-executor-verification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac-core:
+    name: Full Python suite on macOS
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install project and test dependencies
+        run: python -m pip install -e . pytest pytest-asyncio pytest-cov requests
+      - name: Run Python tests
+        run: python -m pytest -q
+
+  production-page:
+    name: WPF production page with synthetic data
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    defaults:
+      run:
+        working-directory: windows/desktop
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Run WPF smoke test and render the production page
+        shell: pwsh
+        run: |
+          dotnet run --project tests/PicotooPet.Desktop.Production.SmokeTests -- "$env:RUNNER_TEMP/production.png"
+      - name: Upload synthetic screenshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-page-synthetic
+          path: ${{ runner.temp }}/production.png
+          if-no-files-found: error
+          retention-days: 30

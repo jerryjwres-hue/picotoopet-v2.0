@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from collections.abc import Sequence
+from pathlib import Path
 
 from picotoopet_core.api.app import create_app
 from picotoopet_core.config.loader import load_settings
 from picotoopet_core.config.models import AppSettings
+from picotoopet_core.domain.episode import EpisodeValidationError, load_episode
 from picotoopet_core.health.supervisor import HealthSupervisor
 from picotoopet_core.ollama.client import OllamaClient
 from picotoopet_core.ollama.resident_manager import (
@@ -59,6 +62,9 @@ def _parser() -> argparse.ArgumentParser:
 
     supervise = commands.add_parser("supervise", help="持续执行健康监督")
     supervise.add_argument("--loop", action="store_true")
+    episode = commands.add_parser("episode", help="检查剧集文件")
+    validate = episode.add_subparsers(dest="episode_command", required=True).add_parser("validate")
+    validate.add_argument("file", type=Path)
 
     return parser
 
@@ -108,6 +114,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     """解析参数并返回进程退出码。"""
 
     arguments = _parser().parse_args(argv)
+    if arguments.command == "episode":
+        try:
+            episode = load_episode(arguments.file.read_bytes(), as_yaml=True)
+        except (EpisodeValidationError, OSError) as exc:
+            message = str(exc) if isinstance(exc, EpisodeValidationError) else "无法读取文件。"
+            print(f"剧集校验失败：{message}", file=sys.stderr)
+            return 2
+        print(f"剧集 {episode.episode_id} 校验通过（{len(episode.shots)} 个分镜）。")
+        return 0
     settings  = load_settings()
     if arguments.command == "serve":
         import uvicorn
