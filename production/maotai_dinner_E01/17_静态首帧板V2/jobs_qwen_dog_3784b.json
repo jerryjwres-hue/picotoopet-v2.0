@@ -1,0 +1,47 @@
+{
+ "out": "../24_场景包/qwen_out_v1",
+ "jobs": [
+  {
+   "id": "QE5_3784_blend_d35",
+   "refs": [
+    "../24_场景包/comp/comp_3784_v1.png"
+   ],
+   "mask": "../24_场景包/comp/mask_3784_v1.png",
+   "seeds": [
+    2026112301,
+    2026112302
+   ],
+   "prompt": "Blend the pasted 3D animated dog naturally into this room so it looks like one frame of the same 3D animated film: match the room's warm light direction, color and soft shading on its fur, soft natural contact shadow under its paws on the wood floor. Keep the dog exactly the same size, position, pose and coat colors (black, cream-tan and white, lime-green bandana). Do not add anything: no second dog, no ping-pong paddle, no ball. No text.",
+   "denoise": 0.35,
+   "steps": 8
+  },
+  {
+   "id": "QE5_3784_blend_d50",
+   "refs": [
+    "../24_场景包/comp/comp_3784_v1.png"
+   ],
+   "mask": "../24_场景包/comp/mask_3784_v1.png",
+   "seeds": [
+    2026112301,
+    2026112302
+   ],
+   "prompt": "Blend the pasted 3D animated dog naturally into this room so it looks like one frame of the same 3D animated film: match the room's warm light direction, color and soft shading on its fur, soft natural contact shadow under its paws on the wood floor. Keep the dog exactly the same size, position, pose and coat colors (black, cream-tan and white, lime-green bandana). Do not add anything: no second dog, no ping-pong paddle, no ball. No text.",
+   "denoise": 0.5,
+   "steps": 8
+  },
+  {
+   "id": "QE5_3784_blend_d65",
+   "refs": [
+    "../24_场景包/comp/comp_3784_v1.png"
+   ],
+   "mask": "../24_场景包/comp/mask_3784_v1.png",
+   "seeds": [
+    2026112301,
+    2026112302
+   ],
+   "prompt": "Blend the pasted 3D animated dog naturally into this room so it looks like one frame of the same 3D animated film: match the room's warm light direction, color and soft shading on its fur, soft natural contact shadow under its paws on the wood floor. Keep the dog exactly the same size, position, pose and coat colors (black, cream-tan and white, lime-green bandana). Do not add anything: no second dog, no ping-pong paddle, no ball. No text.",
+   "denoise": 0.65,
+   "steps": 8
+  }
+ ]
+}

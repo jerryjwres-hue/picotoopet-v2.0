@@ -45,8 +45,13 @@ def build(job, seed, refs, OI):
         g["7"] = {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": neg, "reference_latents_method": "index_timestep_zero"}}
         pos, neg = ["6", 0], ["7", 0]
     g["20"] = {"class_type": "VAEEncode", "inputs": {"pixels": imgs["image1"], "vae": ["3", 0]}}
+    lat = ["20", 0]
+    if job.get("mask"):  # only re-render the masked area (white = change), e.g. blend a pasted character
+        g["21"] = {"class_type": "LoadImageMask", "inputs": {"image": job["_mask_name"], "channel": "red"}}
+        g["22"] = {"class_type": "SetLatentNoiseMask", "inputs": {"samples": lat, "mask": ["21", 0]}}
+        lat = ["22", 0]
     g["25"] = {"class_type": "KSampler", "inputs": {"model": m, "seed": seed, "steps": job.get("steps", 4), "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple",
-                                                    "positive": pos, "negative": neg, "latent_image": ["20", 0], "denoise": 1.0}}
+                                                    "positive": pos, "negative": neg, "latent_image": lat, "denoise": job.get("denoise", 1.0)}}
     g["26"] = {"class_type": "VAEDecode", "inputs": {"samples": ["25", 0], "vae": ["3", 0]}}
     g["27"] = {"class_type": "SaveImage", "inputs": {"images": ["26", 0], "filename_prefix": "QE_" + job["id"]}}
     return g
@@ -74,6 +79,8 @@ def main():
             refs = []
             for r in job["refs"]:
                 src = (HERE / r).resolve(); name = "QE_" + src.name; shutil.copyfile(src, inp / name); refs.append(name)
+            if job.get("mask"):
+                src = (HERE / job["mask"]).resolve(); job["_mask_name"] = "QE_" + src.name; shutil.copyfile(src, inp / job["_mask_name"])
             for k, seed in enumerate(job["seeds"]):
                 pid = post("/prompt", {"prompt": build(job, seed, refs, OI)})["prompt_id"]; t0 = time.time()
                 while True:
