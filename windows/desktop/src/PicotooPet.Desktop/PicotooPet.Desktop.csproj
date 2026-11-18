@@ -9,5 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
+    <Content Include="..\..\..\..\scripts\windows\import_video_candidates.py;..\..\..\..\scripts\windows\review_board.py;..\..\..\..\scripts\windows\review_board.html;..\..\..\..\scripts\windows\media_probe.py"
+             Link="ReviewTools\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

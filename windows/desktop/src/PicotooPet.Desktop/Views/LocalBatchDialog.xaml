@@ -1,0 +1,68 @@
+<Window x:Class="PicotooPet.Desktop.Views.LocalBatchDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="打开本地批次" Width="590" Height="570" MinWidth="470" MinHeight="340"
+        FontFamily="Microsoft YaHei UI" WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <Style TargetType="Button"><Setter Property="Padding" Value="10,5"/><Setter Property="Margin" Value="3"/></Style>
+    <Style TargetType="TextBox"><Setter Property="Padding" Value="6,4"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+    <Style TargetType="TextBlock"><Setter Property="Margin" Value="0,8,0,4"/></Style>
+  </Window.Resources>
+  <Grid Margin="20,8,20,14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,4">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button Content="打开配置…" Click="LoadProfile"/>
+        <Button Content="保存配置…" Click="SaveProfile"/>
+      </StackPanel>
+      <TextBlock Text="已完成的视频批次" FontSize="18" FontWeight="SemiBold"/>
+    </DockPanel>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="0,0,8,0">
+    <TextBlock Text="完成回执（_queue\done 下的 .result.json）"/>
+    <DockPanel><Button DockPanel.Dock="Right" Click="BrowseReceipt" Content="选择回执…"/>
+      <TextBox x:Name="Receipt" AutomationProperties.Name="完成回执"/></DockPanel>
+    <TextBlock Text="剧集编号"/>
+    <TextBox x:Name="EpisodeId" MaxLength="100" AutomationProperties.Name="剧集编号"
+             ToolTip="英文字母、数字、下划线或短横线。与同一批次的离线记录保持一致。"/>
+    <TextBlock Text="离线审片记录（可选）"/>
+    <DockPanel><Button DockPanel.Dock="Right" Click="BrowseDecisions" Content="选择 JSON…"/>
+      <TextBox x:Name="Decisions" AutomationProperties.Name="离线审片记录"/></DockPanel>
+    <TextBlock Text="重拍回执映射（可选）"/>
+    <DockPanel><Button DockPanel.Dock="Right" Click="BrowseRetakes" Content="选择映射…"/>
+      <TextBox x:Name="Retakes" AutomationProperties.Name="重拍回执映射"/></DockPanel>
+    <Expander Header="剧集和预览设置" Margin="0,10">
+      <StackPanel Margin="6,0">
+        <TextBlock Text="剧集标题（默认使用编号）"/><TextBox x:Name="EpisodeTitle"/>
+        <TextBlock Text="需要从镜号中移除的前缀（可选）"/><TextBox x:Name="ShotPrefix"/>
+        <TextBlock Text="已有完整剧集清单（可替代编号与标题）"/>
+        <DockPanel><Button DockPanel.Dock="Right" Click="BrowseEpisode" Content="选择清单…"/>
+          <TextBox x:Name="EpisodeFile" AutomationProperties.Name="完整剧集清单"/></DockPanel>
+        <TextBlock Text="剪辑清单（仅离线页，可选）"/>
+        <DockPanel><Button DockPanel.Dock="Right" Click="BrowseCutPlan" Content="选择清单…"/>
+          <TextBox x:Name="CutPlan" AutomationProperties.Name="剪辑清单"/></DockPanel>
+        <TextBlock Text="粗剪视频（仅离线页，可选）"/>
+        <DockPanel><Button DockPanel.Dock="Right" Click="BrowseCutVideo" Content="选择视频…"/>
+          <TextBox x:Name="CutVideo" AutomationProperties.Name="粗剪视频"/></DockPanel>
+        <CheckBox x:Name="Thumbnail" Content="为 Mac 生成 JPEG 预览（FFmpeg）" IsChecked="True"
+                  Margin="0,8,0,4"/>
+        <CheckBox x:Name="Probe" Content="读取时长、帧率和音轨（FFprobe）" IsChecked="True"/>
+      </StackPanel>
+    </Expander>
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="2" Margin="0,6,0,0">
+      <TextBlock x:Name="Hint" TextWrapping="Wrap" Foreground="#47586B"
+                 AutomationProperties.LiveSetting="Polite"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Content="取消" IsCancel="True"/>
+        <Button Content="生成离线审片页" Click="CreatePage"/>
+        <Button x:Name="Upload" Content="导入到 Mac" Click="ImportToMac" FontWeight="SemiBold"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

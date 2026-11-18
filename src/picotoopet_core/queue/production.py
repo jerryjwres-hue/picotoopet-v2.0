@@ -17,7 +17,12 @@ from picotoopet_core.domain.episode import (
     Shot,
     ShotReview,
 )
-from picotoopet_core.domain.executor import GPU_TAG, TASK_RUNNERS, ExecutorPayload
+from picotoopet_core.domain.executor import (
+    GPU_TAG,
+    IMPORTED_TASK_TYPE,
+    TASK_RUNNERS,
+    ExecutorPayload,
+)
 from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.queue.executor import ExecutorService
 from picotoopet_core.queue.state_machine import InvalidTransitionError
@@ -155,14 +160,15 @@ class ProductionService:
         return Episode.model_validate_json(row["spec_json"])
 
     @staticmethod
-    def _tasks(db: Connection, episode_id: str):
+    def _tasks(db: Connection, episode_id: str, *, include_history: bool = False):
         return db.execute(
             """SELECT tasks.*, redos.task_id IS NOT NULL AS is_redo
                FROM tasks LEFT JOIN executor_redos AS redos USING (task_id)
                WHERE json_extract(payload_json, '$.episode_id') = ?
-                 AND task_type IN ('gen.keyframe', 'gen.video', 'gen.foley', 'qc.check')
+                 AND (task_type IN ('gen.keyframe', 'gen.video', 'gen.foley', 'qc.check')
+                      OR (? AND task_type = ?))
                ORDER BY tasks.rowid""",
-            (episode_id,),
+            (episode_id, include_history, IMPORTED_TASK_TYPE),
         ).fetchall()
 
     def review(self, episode_id: str) -> EpisodeReview:
@@ -171,7 +177,9 @@ class ProductionService:
 
     def _review(self, db: Connection, episode: Episode) -> EpisodeReview:
         grouped = defaultdict(list)
-        for row in self._tasks(db, episode.episode_id):
+        task_rows = self._tasks(db, episode.episode_id, include_history=True)
+        historical_only = all(row["task_type"] == IMPORTED_TASK_TYPE for row in task_rows)
+        for row in task_rows:
             grouped[json.loads(row["payload_json"])["shot_id"]].append(row)
         shots = []
         for shot in episode.shots:
@@ -215,7 +223,7 @@ class ProductionService:
             elif TaskStatus.CANCELLED.value in statuses:
                 status = "已取消"
             else:
-                status = "排队中"
+                status = "待导入" if not rows and historical_only else "排队中"
             shots.append(
                 ShotReview(
                     shot_id=shot.shot_id,

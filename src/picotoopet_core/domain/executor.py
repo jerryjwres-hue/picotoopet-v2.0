@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 TASK_RUNNERS = {
     "gen.keyframe": "run_qwen_edit.py",
@@ -12,6 +12,8 @@ TASK_RUNNERS = {
     "edit.assemble": "edit.assemble",
 }
 GPU_TAG = "gpu-5070ti"
+IMPORTED_TASK_TYPE = "review.imported"
+THUMBNAIL_LIMIT = 300 * 1024
 Sha256 = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Identifier = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")]
 
@@ -76,7 +78,12 @@ class ArtifactDecision(ExecutorModel):
     note: str = Field(default="", max_length=2000)
 
 
-class ReviewedArtifact(ExecutorArtifact):
+class SourcedArtifact(ExecutorArtifact):
+    seed: StrictInt | None = Field(default=None, ge=0, le=2**63 - 1)
+    source_id: str | None = Field(default=None, min_length=1, max_length=300)
+
+
+class ReviewedArtifact(SourcedArtifact):
     artifact_id: str
     decision: Literal["pick", "reject", "redo"] | None = None
     note: str = ""

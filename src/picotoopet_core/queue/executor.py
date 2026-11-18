@@ -2,6 +2,7 @@
 
 import base64
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from sqlite3 import Connection
@@ -10,9 +11,11 @@ from uuid import uuid4
 from picotoopet_core.audit.writer import AuditWriter, canonical_hash
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.executor import (
+    IMPORTED_TASK_TYPE,
     TASK_RUNNERS,
     ArtifactDecision,
     ArtifactList,
+    ExecutorArtifact,
     ExecutorComplete,
     ExecutorFail,
     ExecutorHeartbeat,
@@ -146,7 +149,9 @@ class ExecutorService:
             self._owned(row, body, now)
 
             if isinstance(body, ExecutorComplete):
-                self._save_result(db, row, body, now)
+                self.store_result_in_transaction(
+                    db, row, body.artifacts, body.qc, body.metrics.model_dump(mode="json"), now
+                )
                 target = TaskStatus.COMPLETED
                 action = "complete"
                 db.execute(
@@ -180,11 +185,21 @@ class ExecutorService:
             self._audit(db, trace_id, action, task_id, body.worker_id)
             return updated
 
-    def _save_result(self, db, row, body: ExecutorComplete, now: datetime):
+    @staticmethod
+    def store_result_in_transaction(
+        db,
+        row,
+        entries: Sequence[ExecutorArtifact],
+        qc,
+        metrics,
+        now: datetime,
+        *,
+        result_type: str = "executor",
+    ) -> list[str]:
         task_id = row["task_id"]
         task_shot = json.loads(row["payload_json"]).get("shot_id")
         artifacts = []
-        for artifact in body.artifacts:
+        for artifact in entries:
             if artifact.shot_id != task_shot:
                 raise InvalidTransitionError("产物 shot_id 与任务分镜不一致。")
             data = artifact.model_dump(mode="json")
@@ -197,8 +212,8 @@ class ExecutorService:
             artifacts.append({"artifact_id": artifact_id, **data})
         manifest = {
             "artifacts": artifacts,
-            "qc": body.qc,
-            "metrics": body.metrics.model_dump(mode="json"),
+            "qc": qc,
+            "metrics": metrics,
         }
         result_id = str(uuid4())
         db.execute(
@@ -209,7 +224,7 @@ class ExecutorService:
                 result_id,
                 row["project_id"],
                 task_id,
-                "executor",
+                result_type,
                 canonical_hash(manifest),
                 json.dumps(manifest, ensure_ascii=False),
                 "2.2.0",
@@ -217,6 +232,7 @@ class ExecutorService:
             ),
         )
         db.execute("UPDATE tasks SET result_id = ? WHERE task_id = ?", (result_id, task_id))
+        return [item["artifact_id"] for item in artifacts]
 
     def upload(
         self,
@@ -237,24 +253,36 @@ class ExecutorService:
                 is None
             ):
                 raise InvalidTransitionError("任务未通过执行器接口领取。")
-            attempt = row["attempt_count"]
-            thumbnail_id = canonical_hash(
-                {
-                    "task": task_id,
-                    "attempt": attempt,
-                    "artifact": artifact_sha256,
-                    "jpeg": sha256(jpeg).hexdigest(),
-                }
+            thumbnail_id, inserted = self.store_thumbnail_in_transaction(
+                db, task_id, row["attempt_count"], jpeg, artifact_sha256
             )
-            inserted = db.execute(
-                """INSERT OR IGNORE INTO executor_thumbnails
-                   (thumbnail_id, task_id, attempt, artifact_sha256, jpeg)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (thumbnail_id, task_id, attempt, artifact_sha256, jpeg),
-            )
-            if inserted.rowcount:
+            if inserted:
                 self._audit(db, trace_id, "thumbnail", task_id, body.worker_id)
             return ThumbnailRecord(thumbnail_id=thumbnail_id)
+
+    @staticmethod
+    def store_thumbnail_in_transaction(
+        db: Connection,
+        task_id: str,
+        attempt: int,
+        jpeg: bytes,
+        artifact_sha256: str | None,
+    ) -> tuple[str, bool]:
+        thumbnail_id = canonical_hash(
+            {
+                "task": task_id,
+                "attempt": attempt,
+                "artifact": artifact_sha256,
+                "jpeg": sha256(jpeg).hexdigest(),
+            }
+        )
+        inserted = db.execute(
+            """INSERT OR IGNORE INTO executor_thumbnails
+               (thumbnail_id, task_id, attempt, artifact_sha256, jpeg)
+               VALUES (?, ?, ?, ?, ?)""",
+            (thumbnail_id, task_id, attempt, artifact_sha256, jpeg),
+        )
+        return thumbnail_id, inserted.rowcount > 0
 
     def thumbnail(self, task_id: str, thumbnail_id: str) -> ThumbnailContent:
         row = self.queue.database.fetchone(
@@ -279,7 +307,8 @@ class ExecutorService:
         task_id = task["task_id"]
         result_id = task["result_id"]
         result = db.execute(
-            "SELECT manifest_json FROM results WHERE result_id = ? AND result_type = 'executor'",
+            """SELECT manifest_json FROM results WHERE result_id = ?
+               AND result_type IN ('executor', 'production_import')""",
             (result_id,),
         ).fetchone()
         dependency = db.execute(
@@ -360,7 +389,8 @@ class ExecutorService:
                          )""",
                     (artifact_id, kind, payload["episode_id"], payload["shot_id"]),
                 )
-            if body.decision == "redo" and artifact["decision"] != "redo":
+            historical = task["task_type"] == IMPORTED_TASK_TYPE
+            if body.decision == "redo" and artifact["decision"] != "redo" and not historical:
                 self._redo(db, task, trace_id)
             db.execute(
                 "UPDATE executor_artifacts SET decision = ?, note = ? WHERE artifact_id = ?",
@@ -376,7 +406,9 @@ class ExecutorService:
                 resource_id=artifact_id,
                 decision=body.decision,
                 reason_code=None,
-                details={"note": body.note},
+                details={"note": body.note, "queues_generation": False}
+                if historical and body.decision == "redo"
+                else {"note": body.note},
             )
             self.queue.outbox.append_in_transaction(
                 db,

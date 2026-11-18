@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; media-src file:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>本地审片</title>
+<style>
+:root{color-scheme:dark;--ink:#e8eceb;--muted:#afb8b5;--line:#3c4846;--panel:#202825;--accent:#b7e5cc}
+*{box-sizing:border-box}body{margin:0;background:#131917;color:var(--ink);font:15px/1.5 "Segoe UI","Microsoft YaHei UI",sans-serif}
+header,main{max-width:1500px;margin:auto;padding:16px 24px}header,.bar,.controls,.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+header{border-bottom:1px solid var(--line);justify-content:space-between}h1{font-size:22px;margin:0}h2{font-size:17px;margin:0}
+main{display:grid;grid-template-columns:minmax(125px,175px) 1fr;gap:24px}aside nav{display:grid;gap:5px;margin-top:10px}nav button{display:flex;justify-content:space-between;align-items:center}
+button,select,textarea,input{font:inherit}button,select{border:1px solid var(--line);background:#28322f;color:var(--ink);border-radius:5px;padding:5px 10px}
+button:enabled,select{cursor:pointer}button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[aria-pressed=true],button.primary{background:var(--accent);color:#123426}button:disabled{opacity:.45}.muted,small{color:var(--muted)}
+section,.card{min-width:0}.bar{justify-content:space-between}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:12px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px}.card label{display:block}.card select,.card textarea{width:100%}
+video{display:block;width:100%;height:clamp(210px,48vh,630px);background:#080b09;margin:8px 0;object-fit:contain}
+textarea{margin:5px 0 0;resize:vertical;padding:8px;min-height:52px;border:1px solid var(--line);border-radius:4px;background:#151c19;color:var(--ink)}
+.controls{font-variant-numeric:tabular-nums}.controls input{accent-color:var(--accent);min-width:100px;flex:1}.actions{margin:8px 0 3px}.actions button{padding:3px 11px}
+#status{min-height:1.5em;margin:6px 0;color:var(--accent)}[hidden]{display:none!important}
+@media(max-width:740px){main{display:block}aside nav{display:flex;overflow:auto;margin:6px 0 12px}nav button{gap:5px;white-space:nowrap}header,main{padding:10px}.grid{gap:6px}.card{padding:6px}video{height:31vh}}
+</style>
+<header><div><h1 id="title"></h1><small id="summary"></small></div><div class="bar"><a id="cut" hidden target="_blank" rel="noopener" style="color:var(--accent)">观看本机粗剪</a><button id="export" class="primary">导出审片记录</button></div></header>
+<main><aside><h2>分镜</h2><nav id="shots" aria-label="分镜"></nav></aside>
+<section><div class="bar"><h2 id="shot"></h2><label>监听 <select id="listen"><option value="0">左侧原声</option><option value="1">右侧原声</option><option value="-1">静音</option></select></label></div>
+<p id="empty" class="muted" hidden>本批没有这个分镜的候选。</p><div class="grid" id="cards"></div>
+<div class="controls"><button id="play">同步播放</button><button id="back" aria-label="上一帧">−1 帧</button><button id="forward" aria-label="下一帧">+1 帧</button>
+<input id="time" type="range" min="0" max="1" value="0" step="any" aria-label="播放位置"><output id="clock">0.00 秒</output>
+<label>速度 <select id="rate"><option value="0.5">0.5×</option><option value="1" selected>1×</option></select></label></div>
+<p id="status" role="status"></p><small>浏览器保存本机草稿。导出的 JSON 可随同一批完成回执导入 Mac。</small>
+</section></main>
+<template id="card"><article class="card"><label class="picker">候选 <select></select></label><video playsinline preload="metadata"></video>
+<div class="actions"><button data-choice="pick">选用</button><button data-choice="reject">不要</button><button data-choice="">清除决定</button></div>
+<label>审片备注<textarea maxlength="2000" placeholder="记录动作、接触、机位或剪点"></textarea></label>
+<div class="actions"><select aria-label="观察项目" style="width:auto"><option>肢体接触</option><option>视线与表情</option><option>人物身份</option><option>摄影机</option><option>声音</option><option>剪点</option></select><button class="stamp">记下时间点</button></div></article></template>
+<script id="batch" type="application/json"><!--BATCH_JSON--></script>
+<script>
+"use strict";
+const data = JSON.parse(document.getElementById("batch").textContent);
+const byId = id => document.getElementById(id);
+const status = message => { byId("status").textContent = message; };
+const drafts = new Map();
+const keyOf = c => JSON.stringify([c.shot_id,c.take,c.sha256,c.source_id]);
+const oldPrefix = "picotoopet.review.v1." + data.episode_id + ".";
+const draftKey = key => "picotoopet.candidate.v2." + data.episode_id + "." + key;
+const byKey = new Map(data.candidates.map(c => [keyOf(c),c]));
+for (const c of data.candidates) {
+  if(c.note || c.decision) drafts.set(keyOf(c),{note:c.note || "",decision:c.decision || null});
+}
+try {
+  const valid = item => item && typeof item.note === "string" && [null,"reject","pick"].includes(item.decision);
+  const oldKeys=Object.keys(localStorage).filter(k=>k.startsWith(oldPrefix));
+  for(const old of oldKeys) {
+    const rows=JSON.parse(localStorage.getItem(old));
+    if(Array.isArray(rows)) for(const [key,item] of rows) if(byKey.has(key) && valid(item)) drafts.set(key,item);
+  }
+  for(const key of byKey.keys()) {
+    const c=byKey.get(key), revision=c.import_revision;
+    const saved=JSON.parse(localStorage.getItem(draftKey(key)));
+    if(revision && (!valid(saved) || saved.import_revision!==revision)) {
+      const imported={decision:c.decision || null,note:c.note || "",import_revision:revision};
+      drafts.set(key,imported);localStorage.setItem(draftKey(key),JSON.stringify(imported));
+    } else if(valid(saved)) drafts.set(key,saved);
+  }
+} catch { status("浏览器草稿不可用。请在关闭之前导出记录。"); }
+function persist(key) {
+  try { localStorage.setItem(draftKey(key),JSON.stringify(drafts.get(key))); }
+  catch { status("草稿保存失败。请导出审片记录。"); }
+}
+let activeShot, cards=[], current=[], playing=false, playbackRun=0;
+const videos = () => cards.map(c => c.querySelector("video"));
+function timelineVideo() {
+  return videos().reduce((longest,v)=>!longest || (v.duration||0)>(longest.duration||0)?v:longest,null);
+}
+function isPicked(shot) {
+  return data.candidates.some(c => c.shot_id===shot && drafts.get(keyOf(c))?.decision==="pick");
+}
+function refreshNav() {
+  for(const b of byId("shots").children) {
+    const id=b.dataset.shot;
+    b.textContent=id+(isPicked(id)?" ✓":"");
+    b.setAttribute("aria-pressed",String(id===activeShot));
+  }
+  byId("summary").textContent=data.shots.length+" 镜 · "+data.candidates.length+" 条候选 · 已选 "+data.shots.filter(isPicked).length+" 镜";
+}
+function pause() {
+  playbackRun++;playing=false;
+  videos().forEach(v=>v.pause());
+  byId("play").textContent="同步播放";
+}
+function seek(seconds) {
+  pause();
+  for(const v of videos()) if(Number.isFinite(v.duration)) v.currentTime=Math.min(v.duration,Math.max(0,seconds));
+  showTime();
+}
+function showTime() {
+  const v=timelineVideo();
+  if(!v) return;
+  if(Number.isFinite(v.duration)) byId("time").max=v.duration;
+  byId("clock").textContent=v.currentTime.toFixed(2)+" 秒";
+  byId("time").value=v.currentTime;
+}
+function applyAudio() {
+  videos().forEach((v,i)=>{v.muted=String(i)!==byId("listen").value;v.playbackRate=Number(byId("rate").value);});
+}
+function refreshCard(i, reload) {
+  const el=cards[i], c=current[i], draft=drafts.get(keyOf(c)) || {};
+  el.querySelector("textarea").value=draft.note || "";
+  for (const b of el.querySelectorAll("[data-choice]"))
+    b.setAttribute("aria-pressed",String(Boolean(b.dataset.choice) && draft.decision===b.dataset.choice));
+  if (reload) {
+    const video=el.querySelector("video");video.src=c.uri;video.load();
+  }
+}
+function openShot(id) {
+  pause(); for(const v of videos()) {v.removeAttribute("src");v.load();}
+  cards=[];current=[];byId("cards").replaceChildren();byId("time").value=0;byId("clock").textContent="0.00 秒";
+  activeShot=id;byId("shot").textContent=id;refreshNav();
+  const choices=data.candidates.filter(c=>c.shot_id===id);
+  for(let i=0;i<Math.min(2,choices.length);i++) {
+    const card=byId("card").content.firstElementChild.cloneNode(true);
+    cards.push(card);current.push(choices[i]);byId("cards").append(card);
+    const select=card.querySelector("select"), video=card.querySelector("video");
+    select.setAttribute("aria-label",(i===0?"左":"右")+"侧候选");
+    choices.forEach((c,n)=>select.add(new Option((c.in_cut?"粗剪用片 · ":"")+"第 "+c.take+" 条"+(c.seed==null?"":" · seed "+c.seed)+(c.source_id?" · "+c.source_id:""),n)));
+    select.value=String(i);
+    select.onchange=()=>{const pos=timelineVideo()?.currentTime||0;pause();current[i]=choices[Number(select.value)];refreshCard(i,true);updateChoices();
+      video.addEventListener("loadedmetadata",()=>seek(pos),{once:true});};
+    video.onloadedmetadata=showTime;
+    video.onerror=()=>status("浏览器无法播放这条本地视频。请检查文件位置和编码。");
+    video.ontimeupdate=showTime;
+    video.onended=()=>{if(videos().every(v=>v.ended || v.currentTime>=v.duration)) pause();};
+    card.querySelector("textarea").oninput=e=>{const key=keyOf(current[i]);drafts.set(key,{...drafts.get(key),decision:drafts.get(key)?.decision || null,note:e.target.value});persist(key);};
+    card.querySelector(".stamp").onclick=()=>{
+      pause();
+      const note=card.querySelector("textarea"), tag=card.querySelector("[aria-label='观察项目']").value;
+      const line="["+video.currentTime.toFixed(2)+" 秒 · "+tag+"] ";
+      if(note.value.length+line.length+1>note.maxLength) {status("备注已达长度上限。");return;}
+      note.value+=(note.value?"\n":"")+line;note.dispatchEvent(new Event("input"));note.focus();
+    };
+    for(const b of card.querySelectorAll("[data-choice]")) b.onclick=()=>{
+      const c=current[i], key=keyOf(c), decision=b.dataset.choice || null;
+      if(decision==="pick") for(const other of choices) {
+        const k=keyOf(other), d=drafts.get(k);
+        if(k!==key && d?.decision==="pick") {drafts.set(k,{...d,decision:null});persist(k);}
+      }
+      drafts.set(key,{...drafts.get(key),decision,note:drafts.get(key)?.note || ""});
+      persist(key);cards.forEach((_,idx)=>refreshCard(idx,false));refreshNav();
+    };
+    refreshCard(i,true);
+  }
+  function updateChoices() {
+    cards.forEach((card,index)=>{
+      for(const opt of card.querySelector(".picker select").options) {
+        opt.disabled=current.some((c,other)=>other!==index && c===choices[Number(opt.value)]);
+      }
+    });
+  }
+  updateChoices();
+  byId("listen").options[1].disabled=cards.length<2;
+  if(cards.length<2 && byId("listen").value==="1") byId("listen").value="0";
+  byId("empty").hidden=Boolean(cards.length);
+  for(const id of ["play","back","forward","time","listen","rate"]) byId(id).disabled=!cards.length;
+  applyAudio();
+}
+byId("play").onclick=async()=>{
+  if(playing) {pause();return;}
+  const group=videos(), first=timelineVideo();
+  const time=first.ended?0:first.currentTime;
+  if(group.some(v=>!Number.isFinite(v.duration))) {status("正在读取视频时长，请稍后播放。");return;}
+  const run=++playbackRun;
+  group.forEach(v=>{v.currentTime=Math.min(time,v.duration);});playing=true;
+  byId("play").textContent="暂停";
+  try {await Promise.all(group.filter(v=>time<v.duration).map(v=>v.play()));}
+  catch {if(run===playbackRun){pause();status("播放未成功。请确认本机文件可读。");}}
+};
+byId("time").oninput=e=>seek(Number(e.target.value));
+function stepFrame(frames) {
+  const v=timelineVideo();
+  if(v) seek(v.currentTime+frames/(current[videos().indexOf(v)]?.fps || data.fps));
+}
+byId("back").onclick=()=>stepFrame(-1);
+byId("forward").onclick=()=>stepFrame(1);
+byId("listen").onchange=applyAudio;byId("rate").onchange=applyAudio;
+byId("export").onclick=()=>{
+  const decisions=[];
+  for(const [key,draft] of drafts) if(draft.decision || draft.note) {
+    const {shot_id,take,sha256,source_id}=byKey.get(key);
+    decisions.push({shot_id,take,sha256,source_id,decision:draft.decision,note:draft.note});
+  }
+  const blob=new Blob([JSON.stringify({version:1,episode_id:data.episode_id,decisions},null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=data.episode_id+"_review.json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);status("已导出 "+decisions.length+" 条审片记录。");
+};
+byId("title").textContent=data.title;document.title=data.title+" · 审片";
+if(data.cut_uri) {byId("cut").href=data.cut_uri;byId("cut").hidden=false;}
+for(const id of data.shots) {
+  const b=document.createElement("button");b.dataset.shot=id;b.onclick=()=>openShot(id);byId("shots").append(b);
+}
+openShot(data.shots.find(id=>data.candidates.some(c=>c.shot_id===id)) || data.shots[0]);
+</script></html>

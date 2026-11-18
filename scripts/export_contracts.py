@@ -29,8 +29,8 @@ from picotoopet_core.domain.executor import (
     ExecutorLease,
     ExecutorPayload,
 )
+from picotoopet_core.domain.history_import import EpisodeHistoryImport, EpisodeHistoryImported
 from picotoopet_core.mcp.registry import build_registry
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,6 +56,8 @@ def export_schemas() -> None:
         "approval_v2.schema.json": ApprovalContract,
         "connector_event_v2.schema.json": ConnectorEventContract,
         "episode_v1.schema.json": Episode,
+        "episode_history_import_v1.schema.json": EpisodeHistoryImport,
+        "episode_history_imported_v1.schema.json": EpisodeHistoryImported,
         "artifact_decision_v1.schema.json": ArtifactDecision,
         "executor_artifact_v1.schema.json": ExecutorArtifact,
         "executor_artifact_list_v1.schema.json": ArtifactList,

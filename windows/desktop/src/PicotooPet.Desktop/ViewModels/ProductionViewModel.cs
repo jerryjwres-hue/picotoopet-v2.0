@@ -6,6 +6,7 @@ using System.Text.Encodings.Web;
 using System.Windows.Media.Imaging;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
 
@@ -30,6 +31,7 @@ public sealed class ProductionViewModel : ObservableObject
     private bool _refreshPending;
     private bool _canAssemble;
     private bool _saving;
+    private bool _hasNoteConflict;
     private string _note = "";
     private string _message = "";
     private readonly Dictionary<string, BitmapSource> _previews = new(StringComparer.Ordinal);
@@ -45,6 +47,8 @@ public sealed class ProductionViewModel : ObservableObject
         AssembleCommand = new AsyncRelayCommand(
             AssembleAsync, ReportError, () => _canAssemble && !_saving && _client() is not null);
         PlayCommand = new AsyncRelayCommand(PlayAsync, ReportError, () => Candidate?.CanPlay == true);
+        KeepDraftCommand = new AsyncRelayCommand(() => ResolveNote(false), ReportError);
+        UseMacNoteCommand = new AsyncRelayCommand(() => ResolveNote(true), ReportError);
     }
 
     public AsyncRelayCommand RefreshCommand { get; }
@@ -53,6 +57,8 @@ public sealed class ProductionViewModel : ObservableObject
     public AsyncRelayCommand RejectCommand { get; }
     public AsyncRelayCommand AssembleCommand { get; }
     public AsyncRelayCommand PlayCommand { get; }
+    public AsyncRelayCommand KeepDraftCommand { get; }
+    public AsyncRelayCommand UseMacNoteCommand { get; }
 
     public bool IsActive
     {
@@ -106,6 +112,7 @@ public sealed class ProductionViewModel : ObservableObject
                 if (previousId != value?.Record.ArtifactId)
                 {
                     Note = value?.Record.Note ?? "";
+                    HasNoteConflict = false;
                 }
                 RaisePropertyChanged(nameof(QcText));
                 RaisePropertyChanged(nameof(CandidateHint));
@@ -116,6 +123,56 @@ public sealed class ProductionViewModel : ObservableObject
 
     public string QcText => Candidate?.QcText ?? "选择候选查看质检报告。";
     public string CandidateHint => Candidate?.CanPlay == true ? "视频文件将用本机播放器打开。" : "";
+    public bool CanOpenBatch => !_saving;
+    public bool HasConnection => _client() is not null;
+
+    public bool HasNoteConflict
+    {
+        get => _hasNoteConflict;
+        private set => SetProperty(ref _hasNoteConflict, value);
+    }
+
+    private Task ResolveNote(bool useMac)
+    {
+        if (useMac) Note = Candidate?.Record.Note ?? "";
+        HasNoteConflict = false;
+        UpdateCommands();
+        return Task.CompletedTask;
+    }
+
+    public async Task ProcessBatchAsync(LocalBatchRequest options)
+    {
+        if (_saving) return;
+        _saving = true;
+        UpdateCommands();
+        var client = _client();
+        var token = options.PagePath is null ? _token() : CancellationToken.None;
+        try
+        {
+            Message = "正在核对完成回执、视频和原始种子…";
+            var manifest = await LocalVideoBatch.PrepareAsync(options, token);
+            if (options.PagePath is { } page)
+            {
+                using var browser = Process.Start(new ProcessStartInfo(page) { UseShellExecute = true });
+                Message = $"已打开离线审片页。文件保存在 {page}";
+                return;
+            }
+            if (client is null || !ReferenceEquals(client, _client()))
+                throw new InvalidOperationException("请连接 Mac Core 后再次导入。");
+            var result = await client.ImportBatchAsync(manifest, token);
+            await RefreshAsync();
+            Episode = Episodes.FirstOrDefault(x => x.EpisodeId == result.EpisodeId) ?? Episode;
+            Message = $"剧集 {result.EpisodeId} 新增 {result.InsertedCount} 条，已有 {result.ExistingCount} 条。";
+            if (result.UpdatedCount > 0) Message += $" 已补入 {result.UpdatedCount} 条离线审片记录。";
+            if (result.ConflictCount > 0) Message += $" {result.ConflictCount} 条与 Mac 审片冲突，已保留 Mac 记录。";
+        }
+        catch (Exception ex) { ReportError(ex); }
+        finally
+        {
+            _saving = false;
+            UpdateCommands();
+        }
+    }
 
     public string Note
     {
@@ -246,15 +303,24 @@ public sealed class ProductionViewModel : ObservableObject
     private void SetCandidates()
     {
         var candidateId = _candidate?.Record.ArtifactId;
+        var previousMacNote = _candidate?.Record.Note ?? "";
         var note = _note;
         _candidates = _shot?.Candidates.Select(record => new CandidateViewModel(record)).ToArray() ?? [];
         var selection = _candidates.FirstOrDefault(x => x.Record.ArtifactId == candidateId)
             ?? _candidates.FirstOrDefault();
         RaisePropertyChanged(nameof(Candidates));
         Candidate = selection;
-        if (selection?.Record.ArtifactId == candidateId)
+        if (selection is not null && selection.Record.ArtifactId == candidateId)
         {
-            Note = note;
+            if (note == previousMacNote || note == selection.Record.Note)
+            {
+                Note = selection.Record.Note;
+                HasNoteConflict = false;
+            }
+            else if (previousMacNote != selection.Record.Note)
+            {
+                HasNoteConflict = true;
+            }
         }
         _ = LoadPreviewsAsync(_candidates);
     }
@@ -322,7 +388,7 @@ public sealed class ProductionViewModel : ObservableObject
         }
     }
 
-    private bool CanDecide() => !_saving && Candidate is not null && _client() is not null;
+    private bool CanDecide() => !_saving && !HasNoteConflict && Candidate is not null && _client() is not null;
 
     private async Task DecideAsync(string decision)
     {
@@ -338,6 +404,7 @@ public sealed class ProductionViewModel : ObservableObject
             Message = decision switch
             {
                 "pick" => "已记录选用。",
+                "redo" when selected.Record.TaskType == "review.imported" => "已标记这条历史素材需要重做。",
                 "redo" => "已加入重做队列。",
                 _ => "已记录不要。",
             };
@@ -383,6 +450,8 @@ public sealed class ProductionViewModel : ObservableObject
 
     private void UpdateCommands()
     {
+        RaisePropertyChanged(nameof(CanOpenBatch));
+        RaisePropertyChanged(nameof(HasConnection));
         RefreshCommand.NotifyCanExecuteChanged();
         PickCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
@@ -428,14 +497,17 @@ public sealed class CandidateViewModel(ReviewCandidate record) : ObservableObjec
 
     public string Title => $"{KindName} · 第 {Record.Take} 条";
     public string FileName => Path.GetFileName(Record.Path);
+    public string Origin => string.Join(" · ", new[] {
+        Record.Seed is { } seed ? $"种子 {seed}" : null, Record.SourceId,
+    }.Where(x => !string.IsNullOrEmpty(x)));
     public string DecisionName => Record.Decision switch
     {
         "pick" => "已选用",
-        "redo" => "已重做",
+        "redo" => "已标记重做",
         "reject" => "不要",
         _ => "待审",
     };
     public string QcText => ProductionViewModel.FormatQc(Record.Qc);
     public bool CanPlay => Record.Kind == "video" && ProductionViewModel.IsLocalPath(Record.Path)
-        && Path.GetExtension(Record.Path).ToLowerInvariant() is ".mp4" or ".mov" or ".mkv" or ".webm";
+        && Path.GetExtension(Record.Path).ToLowerInvariant() is ".mp4" or ".m4v" or ".mov" or ".mkv" or ".webm";
 }

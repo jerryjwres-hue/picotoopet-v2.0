@@ -533,6 +533,88 @@
         "title": "EpisodeCreated",
         "type": "object"
       },
+      "EpisodeHistoryImport": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/HistoricalCandidate"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "episode": {
+            "$ref": "#/components/schemas/Episode"
+          },
+          "episode_metadata_complete": {
+            "default": true,
+            "title": "Episode Metadata Complete",
+            "type": "boolean"
+          },
+          "fill_unreviewed": {
+            "default": false,
+            "description": "只补录离线决定或备注，保留已有和曾有的 Mac 审片记录。",
+            "title": "Fill Unreviewed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "episode",
+          "candidates"
+        ],
+        "title": "EpisodeHistoryImport",
+        "type": "object"
+      },
+      "EpisodeHistoryImported": {
+        "additionalProperties": false,
+        "properties": {
+          "conflict_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflict Count"
+          },
+          "episode_id": {
+            "title": "Episode Id",
+            "type": "string"
+          },
+          "existing_count": {
+            "title": "Existing Count",
+            "type": "integer"
+          },
+          "inserted_count": {
+            "title": "Inserted Count",
+            "type": "integer"
+          },
+          "updated_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated Count"
+          }
+        },
+        "required": [
+          "episode_id",
+          "inserted_count",
+          "existing_count"
+        ],
+        "title": "EpisodeHistoryImported",
+        "type": "object"
+      },
       "EpisodeReview": {
         "additionalProperties": false,
         "properties": {
@@ -864,6 +946,122 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HistoricalCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pick",
+                  "reject"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "jpeg_base64": {
+            "anyOf": [
+              {
+                "maxLength": 409600,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jpeg Base64"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Note",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "qc": {
+            "additionalProperties": true,
+            "title": "Qc",
+            "type": "object"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "shot_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Shot Id",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "take": {
+            "minimum": 1.0,
+            "title": "Take",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "sha256",
+          "bytes",
+          "shot_id",
+          "take"
+        ],
+        "title": "HistoricalCandidate",
+        "type": "object"
+      },
       "ProjectCreate": {
         "properties": {
           "classification": {
@@ -1028,6 +1226,19 @@
             "title": "Qc",
             "type": "object"
           },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
           "sha256": {
             "pattern": "^[a-f0-9]{64}$",
             "title": "Sha256",
@@ -1050,6 +1261,19 @@
             "pattern": "^[A-Za-z0-9_-]+$",
             "title": "Shot Id",
             "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
           },
           "take": {
             "minimum": 1.0,
@@ -1140,6 +1364,19 @@
             "title": "Path",
             "type": "string"
           },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
           "sha256": {
             "pattern": "^[a-f0-9]{64}$",
             "title": "Sha256",
@@ -1151,6 +1388,19 @@
             "pattern": "^[A-Za-z0-9_-]+$",
             "title": "Shot Id",
             "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
           },
           "take": {
             "minimum": 1.0,
@@ -2068,6 +2318,72 @@
           }
         ],
         "summary": "Create Episode",
+        "tags": [
+          "episodes"
+        ]
+      }
+    },
+    "/api/v1/episodes/import": {
+      "post": {
+        "description": "登记历史素材路径、哈希和审片数据，保持本地媒体路径及原有审核决定。",
+        "operationId": "import_history_api_v1_episodes_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeHistoryImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeHistoryImported"
+                }
+              }
+            },
+            "description": "候选已导入"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeHistoryImported"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "剧集规范冲突或原文件内容已变化"
+          },
+          "413": {
+            "description": "导入体积超过限制"
+          },
+          "415": {
+            "description": "缩略图须为有效的 Base64 JPEG"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import History",
         "tags": [
           "episodes"
         ]

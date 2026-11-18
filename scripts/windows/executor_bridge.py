@@ -19,6 +19,11 @@ from urllib.parse import urlsplit
 
 import requests
 
+if __package__:
+    from .media_probe import probe_command, probe_json
+else:
+    from media_probe import probe_command, probe_json
+
 POLL_SECONDS = 5
 HEARTBEAT_SECONDS = 20
 THUMBNAIL_LIMIT = 300 * 1024
@@ -532,20 +537,7 @@ class Bridge:
             raise JobError(f"未安装 {command[0]}。") from exc
 
     def _probe(self, state, path):
-        result = self._media(
-            state,
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_streams",
-                "-show_format",
-                "-of",
-                "json",
-                str(path),
-            ],
-        )
-        return json.loads(result.stdout) if result.returncode == 0 else {}
+        return probe_json(self._media(state, probe_command(path)))
 
     def _qc(self, state, candidates):
         by_hash = {}

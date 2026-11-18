@@ -1,21 +1,22 @@
+import base64
 import hashlib
 import io
 import json
 import secrets
 import shutil
-import socket
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
-import uvicorn
 import yaml
 from fastapi.testclient import TestClient
 from PIL import Image
 from requests import ConnectionError, Session
 
 from picotoopet_core.api.app import create_app
+from picotoopet_core.api.routes import history_imports
 from picotoopet_core.audit.verifier import verify_audit_chain
 from picotoopet_core.cli import main
 from picotoopet_core.config.models import AppSettings
@@ -127,6 +128,294 @@ def episode_spec():
         ],
         "edit": {"fps": 24, "size": [576, 768], "loudness_lufs": -14},
     }
+
+
+def imported_candidate(take=1, **updates):
+    candidate = {
+        "kind": "video",
+        "path": rf"D:\Demo\take-{take}.mp4",
+        "sha256": hashlib.sha256(f"take-{take}".encode()).hexdigest(),
+        "bytes": 16,
+        "shot_id": "S01",
+        "take": take,
+        "seed": 100 + take,
+        "source_id": f"fake-receipt:S01:v{take}",
+    }
+    return candidate | updates
+
+
+def test_historical_import_preserves_takes_and_does_not_run_worker(api):
+    shot = imported_candidate(1, decision="pick", qc={"score": 92})
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 12), (10, 20, 30)).save(buffer, "JPEG")
+    shot["jpeg_base64"] = base64.b64encode(buffer.getvalue()).decode()
+    body = {"episode": episode_spec(), "candidates": [shot, imported_candidate(2)]}
+    endpoint = "/api/v1/episodes/import"
+    response = api.post(endpoint, json=body)
+    assert response.status_code == 201
+    assert response.json() == {"episode_id": "demo", "inserted_count": 2, "existing_count": 0}
+    assert api.get("/api/v1/episodes").json()[0]["episode_id"] == "demo"
+    review = api.get("/api/v1/episodes/demo/review").json()
+    assert review["can_assemble"]
+    first, second = review["shots"][0]["candidates"]
+    assert (first["seed"], first["source_id"], first["qc"]) == (101, shot["source_id"], shot["qc"])
+    assert (first["decision"], second["take"], second["seed"]) == ("pick", 2, 102)
+    thumbnails = f"/api/v1/tasks/{first['task_id']}/thumbnails"
+    thumbnail = api.get(f"{thumbnails}/{first['thumbnail_id']}").json()
+    assert thumbnail["jpeg_base64"] == shot["jpeg_base64"]
+    artifacts = api.get(f"/api/v1/tasks/{first['task_id']}/artifacts").json()
+    assert artifacts["artifacts"][0]["source_id"] == shot["source_id"]
+    result = api.get(f"/api/v1/results/{artifacts['result_id']}").json()
+    assert result["result_type"] == "production_import"
+    assert result["manifest"]["artifacts"][0]["seed"] == 101
+    decision_url = f"/api/v1/artifacts/{second['artifact_id']}/decision"
+    assert api.post(decision_url, json={"decision": "pick", "note": "approved"}).status_code == 200
+    again = api.post(endpoint, json=body)
+    assert again.status_code == 200
+    assert again.json()["existing_count"] == 2
+    assert (
+        api.post(
+            endpoint,
+            json={
+                "episode": body["episode"],
+                "candidates": [
+                    imported_candidate(
+                        2, path=r"D:\Demo\other-batch.mp4", decision="pick", seed=103
+                    ),
+                ],
+            },
+        ).status_code
+        == 201
+    )
+    review = api.get("/api/v1/episodes/demo/review").json()
+    assert [item["decision"] for item in review["shots"][0]["candidates"]] == [None, "pick", None]
+    lease = {"worker_id": "bridge", "resource_tags": ["gpu-5070ti"], "lease_seconds": 60}
+    assert api.post("/api/v1/executors/lease", json=lease).status_code == 204
+    services = api.app.state.services
+    assert services.database.scalar("SELECT count(*) FROM task_events") == 0
+    assert services.database.scalar("SELECT count(*) FROM executor_leases") == 0
+    assert (
+        services.database.scalar("SELECT count(*) FROM event_outbox WHERE topic='episode.imported'")
+        == 2
+    )
+    assert verify_audit_chain(services.database).valid
+    assert api.post("/api/v1/episodes/demo/assemble").status_code == 201
+
+
+def test_historical_import_validates_batch_before_writing(api):
+    url = "/api/v1/episodes/import"
+    base = {"episode": episode_spec(), "candidates": [imported_candidate()]}
+    assert api.post(url, json=base, headers={"Authorization": "Bearer denied"}).status_code == 401
+    bad = [imported_candidate(), imported_candidate(2, shot_id="S99")]
+    assert api.post(url, json=base | {"candidates": bad}).status_code == 422
+    assert api.get("/api/v1/episodes").json() == []
+    bad = [imported_candidate(path=r"D:\Demo\take.exe")]
+    assert api.post(url, json=base | {"candidates": bad}).status_code == 422
+    bad = [imported_candidate(jpeg_base64="eA==")]
+    assert api.post(url, json=base | {"candidates": bad}).status_code == 415
+    assert api.get("/api/v1/episodes").json() == []
+    assert api.post(url, json=base).status_code == 201
+    mismatched = base | {"episode": base["episode"] | {"title": "different"}}
+    assert api.post(url, json=mismatched).status_code == 409
+    bad = [imported_candidate(2), imported_candidate(1, sha256="0" * 64)]
+    assert api.post(url, json=base | {"candidates": bad}).status_code == 409
+    assert (
+        api.post(url, json=base | {"candidates": [imported_candidate(seed=999)]}).status_code == 409
+    )
+    assert (
+        api.post(
+            url, json=base | {"candidates": [imported_candidate(source_id="wrong-receipt")]}
+        ).status_code
+        == 409
+    )
+    review = api.get("/api/v1/episodes/demo/review").json()
+    (only,) = review["shots"][0]["candidates"]
+    assert (
+        api.post(
+            f"/api/v1/artifacts/{only['artifact_id']}/decision", json={"decision": "redo"}
+        ).status_code
+        == 200
+    )
+    assert len(api.get("/api/v1/tasks").json()) == 1
+
+
+def test_historical_import_is_concurrent_and_request_size_is_bounded(api, monkeypatch):
+    url = "/api/v1/episodes/import"
+    payload = {"episode": episode_spec(), "candidates": [imported_candidate()]}
+    barrier = threading.Barrier(2)
+
+    def run():
+        barrier.wait(timeout=5)
+        return api.post(url, json=payload).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(run) for _ in range(2)]
+        assert sorted(item.result(timeout=10) for item in requests) == [200, 201]
+
+    services = api.app.state.services
+    assert services.database.scalar("SELECT count(*) FROM tasks") == 1
+    assert services.database.scalar("SELECT count(*) FROM results") == 1
+    assert (
+        services.database.scalar("SELECT count(*) FROM event_outbox WHERE topic='episode.imported'")
+        == 1
+    )
+    monkeypatch.setattr(history_imports, "IMPORT_LIMIT", 64)
+    assert api.post(url, json=payload).status_code == 413
+
+
+def test_history_does_not_extend_ordinary_episode_or_reserve_general_keys(api):
+    spec = episode_spec()
+    generated = api.post("/api/v1/episodes", json=spec)
+    assert generated.status_code == 201
+    created = api.post(
+        "/api/v1/tasks",
+        json={
+            "task_type": "analysis",
+            "idempotency_key": "history:existing-generic-key",
+        },
+    )
+    assert created.status_code == 201
+    assert (
+        api.post(
+            "/api/v1/episodes/import",
+            json={
+                "episode": spec,
+                "candidates": [imported_candidate()],
+            },
+        ).status_code
+        == 201
+    )
+    repeat = api.post("/api/v1/episodes", json=spec)
+    assert repeat.status_code == 200
+    assert [item["task_id"] for item in repeat.json()["tasks"]] == [
+        item["task_id"] for item in generated.json()["tasks"]
+    ]
+    (imported,) = api.get("/api/v1/episodes/demo/review").json()["shots"][0]["candidates"]
+    assert imported["task_type"] == "review.imported"
+    db = api.app.state.services.database
+    assert (
+        db.scalar("SELECT idempotency_key FROM tasks WHERE task_type = 'review.imported'") is None
+    )
+    assert api.post("/api/v1/tasks", json={"task_type": "review.imported"}).status_code == 422
+
+
+def test_offline_choices_fill_only_pristine_candidates(api):
+    endpoint = "/api/v1/episodes/import"
+    original = [imported_candidate(n) for n in range(1, 5)]
+    original[3]["note"] = "already reviewed note"
+    body = {"episode": episode_spec(), "candidates": original}
+    assert api.post(endpoint, json=body).status_code == 201
+    review_url = "/api/v1/episodes/demo/review"
+    first, second, _, _ = api.get(review_url).json()["shots"][0]["candidates"]
+    for item in (first, second):
+        # The first candidate's current decision is reset by the second pick, but its
+        # previous review still excludes it from automatic offline filling.
+        assert (
+            api.post(
+                f"/api/v1/artifacts/{item['artifact_id']}/decision",
+                json={
+                    "decision": "pick",
+                    "note": "",
+                },
+            ).status_code
+            == 200
+        )
+    pending = [
+        imported_candidate(1, decision="reject"),
+        imported_candidate(3, decision="reject", note="offline comment"),
+        imported_candidate(4, decision="reject"),
+    ]
+    assert api.post(endpoint, json=body | {"candidates": pending}).json() == {
+        "episode_id": "demo",
+        "inserted_count": 0,
+        "existing_count": 3,
+    }
+    filled = api.post(endpoint, json=body | {"candidates": pending, "fill_unreviewed": True})
+    assert filled.status_code == 200
+    assert filled.json() == {
+        "episode_id": "demo",
+        "inserted_count": 0,
+        "existing_count": 3,
+        "updated_count": 1,
+        "conflict_count": 2,
+    }
+    candidates = api.get(review_url).json()["shots"][0]["candidates"]
+    assert [(item["decision"], item["note"]) for item in candidates] == [
+        (None, ""),
+        ("pick", ""),
+        ("reject", "offline comment"),
+        (None, "already reviewed note"),
+    ]
+    replay = api.post(endpoint, json=body | {"candidates": pending, "fill_unreviewed": True})
+    assert "updated_count" not in replay.json()
+    assert replay.json()["conflict_count"] == 2
+    db = api.app.state.services.database
+    assert db.scalar("SELECT count(*) FROM audit_events WHERE action='artifact.decision'") == 3
+    assert db.scalar("SELECT count(*) FROM event_outbox WHERE topic='episode.imported'") == 2
+
+
+def test_offline_selection_cannot_displace_mac_pick(api):
+    endpoint = "/api/v1/episodes/import"
+    body = {
+        "episode": episode_spec(),
+        "candidates": [
+            imported_candidate(1, decision="pick"),
+            imported_candidate(2),
+        ],
+    }
+    assert api.post(endpoint, json=body).status_code == 201
+    update = api.post(
+        endpoint,
+        json=body
+        | {
+            "candidates": [imported_candidate(2, decision="pick")],
+            "fill_unreviewed": True,
+        },
+    )
+    assert update.status_code == 200
+    assert update.json()["conflict_count"] == 1
+    candidates = api.get("/api/v1/episodes/demo/review").json()["shots"][0]["candidates"]
+    assert [item["decision"] for item in candidates] == ["pick", None]
+
+
+def test_offline_choice_retry_is_concurrent_and_audited_once(api):
+    endpoint = "/api/v1/episodes/import"
+    body = {"episode": episode_spec(), "candidates": [imported_candidate()]}
+    assert api.post(endpoint, json=body).status_code == 201
+    body["fill_unreviewed"] = True
+    body["candidates"][0].update(decision="pick", note="operator chose")
+    barrier = threading.Barrier(2)
+
+    def post():
+        barrier.wait(timeout=5)
+        return api.post(endpoint, json=body)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        replies = [pool.submit(post) for _ in range(2)]
+        results = [item.result(timeout=10) for item in replies]
+    assert all(response.status_code == 200 for response in results)
+    assert sorted(response.json().get("updated_count", 0) for response in results) == [0, 1]
+    db = api.app.state.services.database
+    assert db.scalar("SELECT count(*) FROM audit_events WHERE action='artifact.decision'") == 1
+
+
+def test_offline_note_only_fills_empty_record_and_protects_prior_note(api):
+    url = "/api/v1/episodes/import"
+    body = {"episode": episode_spec(), "candidates": [imported_candidate()]}
+    assert api.post(url, json=body).status_code == 201
+    body["fill_unreviewed"] = True
+    candidate = body["candidates"][0]
+    candidate["note"] = "00:00.8 physical contact"
+    assert api.post(url, json=body).json()["updated_count"] == 1
+    replay = api.post(url, json=body).json()
+    assert "updated_count" not in replay and "conflict_count" not in replay
+    previous = candidate["note"]
+    candidate["note"] = "a different note"
+    assert api.post(url, json=body).json()["conflict_count"] == 1
+    (item,) = api.get("/api/v1/episodes/demo/review").json()["shots"][0]["candidates"]
+    assert item["decision"] is None and item["note"] == previous
+    db = api.app.state.services.database
+    assert db.scalar("SELECT count(*) FROM audit_events WHERE action='artifact.note'") == 1
 
 
 def test_episode_chain_retry_thumbnail_and_assembly(api):
@@ -370,25 +659,6 @@ def test_expired_attempt_is_fenced_and_terminal_fail_cannot_be_leased(api):
     assert api.post(url, json=lease).status_code == 204
 
 
-@pytest.fixture
-def live_core(tmp_path):
-    token = secrets.token_hex(24)
-    app = create_app(AppSettings(paths=RuntimePaths.from_root(tmp_path / "core"), api_token=token))
-    server = uvicorn.Server(uvicorn.Config(app, ws="none", log_level="warning"))
-    # Reserve a loopback socket first so concurrent tests cannot reuse the chosen port.
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        port = listener.getsockname()[1]
-        thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
-        thread.start()
-        try:
-            yield f"http://127.0.0.1:{port}", {"Authorization": f"Bearer {token}"}
-        finally:
-            server.should_exit = True
-            thread.join(timeout=5)
-            assert not thread.is_alive()
-
-
 def test_fake_worker_done_after_disconnect(live_core, tmp_path):
     class Transport(Session):
         online = True
@@ -406,15 +676,6 @@ def test_fake_worker_done_after_disconnect(live_core, tmp_path):
     transport = Transport()
     transport.trust_env = False
     transport.headers.update(headers)
-    # Startup is asynchronous, but the listening port was reserved by the fixture.
-    import time
-
-    for _ in range(50):
-        try:
-            transport.get(f"{root}/api/v1/health", timeout=1).raise_for_status()
-            break
-        except ConnectionError:
-            time.sleep(0.05)
     result = transport.post(
         f"{root}/api/v1/tasks",
         json={

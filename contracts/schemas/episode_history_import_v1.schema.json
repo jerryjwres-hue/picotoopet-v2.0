@@ -1,0 +1,517 @@
+{
+  "$defs": {
+    "Audio": {
+      "additionalProperties": false,
+      "properties": {
+        "foley": {
+          "items": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Foley",
+          "type": "array"
+        },
+        "music_cue": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Music Cue"
+        },
+        "vocal_from": {
+          "enum": [
+            "ltx",
+            "none"
+          ],
+          "title": "Vocal From",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vocal_from",
+        "foley"
+      ],
+      "title": "Audio",
+      "type": "object"
+    },
+    "Camera": {
+      "additionalProperties": false,
+      "properties": {
+        "lens": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          ],
+          "title": "Lens"
+        },
+        "move": {
+          "minLength": 1,
+          "title": "Move",
+          "type": "string"
+        },
+        "speed": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          ],
+          "title": "Speed"
+        }
+      },
+      "required": [
+        "move",
+        "lens",
+        "speed"
+      ],
+      "title": "Camera",
+      "type": "object"
+    },
+    "Edit": {
+      "additionalProperties": false,
+      "properties": {
+        "fps": {
+          "exclusiveMinimum": 0,
+          "maximum": 240,
+          "title": "Fps",
+          "type": "number"
+        },
+        "loudness_lufs": {
+          "maximum": -5,
+          "minimum": -70,
+          "title": "Loudness Lufs",
+          "type": "number"
+        },
+        "size": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maximum": 8192,
+              "minimum": 2,
+              "multipleOf": 2,
+              "type": "integer"
+            },
+            {
+              "maximum": 8192,
+              "minimum": 2,
+              "multipleOf": 2,
+              "type": "integer"
+            }
+          ],
+          "title": "Size",
+          "type": "array"
+        }
+      },
+      "required": [
+        "fps",
+        "size",
+        "loudness_lufs"
+      ],
+      "title": "Edit",
+      "type": "object"
+    },
+    "Episode": {
+      "additionalProperties": false,
+      "properties": {
+        "characters": {
+          "items": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": "Characters",
+          "type": "array"
+        },
+        "edit": {
+          "$ref": "#/$defs/Edit"
+        },
+        "episode_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "shots": {
+          "items": {
+            "$ref": "#/$defs/Shot"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "title": "Shots",
+          "type": "array"
+        },
+        "target_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Target Seconds",
+          "type": "number"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "episode_id",
+        "title",
+        "target_seconds",
+        "characters",
+        "shots",
+        "edit"
+      ],
+      "title": "Episode",
+      "type": "object"
+    },
+    "Frame": {
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "refs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "refs",
+        "prompt"
+      ],
+      "title": "Frame",
+      "type": "object"
+    },
+    "HistoricalCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "exclusiveMinimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "pick",
+                "reject"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision"
+        },
+        "jpeg_base64": {
+          "anyOf": [
+            {
+              "maxLength": 409600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Jpeg Base64"
+        },
+        "kind": {
+          "enum": [
+            "image",
+            "video",
+            "audio"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Note",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "qc": {
+          "additionalProperties": true,
+          "title": "Qc",
+          "type": "object"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "shot_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Id"
+        },
+        "take": {
+          "minimum": 1,
+          "title": "Take",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "sha256",
+        "bytes",
+        "shot_id",
+        "take"
+      ],
+      "title": "HistoricalCandidate",
+      "type": "object"
+    },
+    "Shot": {
+      "additionalProperties": false,
+      "properties": {
+        "audio": {
+          "$ref": "#/$defs/Audio"
+        },
+        "beat": {
+          "minLength": 1,
+          "title": "Beat",
+          "type": "string"
+        },
+        "camera": {
+          "$ref": "#/$defs/Camera"
+        },
+        "caption": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caption"
+        },
+        "emotion": {
+          "minLength": 1,
+          "title": "Emotion",
+          "type": "string"
+        },
+        "first_frame": {
+          "$ref": "#/$defs/Frame"
+        },
+        "last_frame": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Frame"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
+        "shot_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "transition_out": {
+          "$ref": "#/$defs/Transition"
+        },
+        "video": {
+          "$ref": "#/$defs/Video"
+        }
+      },
+      "required": [
+        "shot_id",
+        "seconds",
+        "beat",
+        "emotion",
+        "camera",
+        "first_frame",
+        "video",
+        "audio",
+        "transition_out"
+      ],
+      "title": "Shot",
+      "type": "object"
+    },
+    "Transition": {
+      "additionalProperties": false,
+      "properties": {
+        "offset_s": {
+          "title": "Offset S",
+          "type": "number"
+        },
+        "type": {
+          "enum": [
+            "cut",
+            "j_cut",
+            "l_cut",
+            "whip",
+            "match",
+            "speed_ramp"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "offset_s"
+      ],
+      "title": "Transition",
+      "type": "object"
+    },
+    "Video": {
+      "additionalProperties": false,
+      "properties": {
+        "negative": {
+          "title": "Negative",
+          "type": "string"
+        },
+        "prompt": {
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "seeds": {
+          "items": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 48,
+          "minItems": 1,
+          "title": "Seeds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "prompt",
+        "negative",
+        "seeds"
+      ],
+      "title": "Video",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/HistoricalCandidate"
+      },
+      "maxItems": 128,
+      "minItems": 1,
+      "title": "Candidates",
+      "type": "array"
+    },
+    "episode": {
+      "$ref": "#/$defs/Episode"
+    },
+    "episode_metadata_complete": {
+      "default": true,
+      "title": "Episode Metadata Complete",
+      "type": "boolean"
+    },
+    "fill_unreviewed": {
+      "default": false,
+      "description": "只补录离线决定或备注，保留已有和曾有的 Mac 审片记录。",
+      "title": "Fill Unreviewed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "episode",
+    "candidates"
+  ],
+  "title": "EpisodeHistoryImport",
+  "type": "object"
+}

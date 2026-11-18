@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.enums import CloudPolicy, TaskStatus
+from picotoopet_core.domain.executor import IMPORTED_TASK_TYPE
 from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.events.outbox import EventOutbox
 
@@ -53,6 +54,8 @@ class QueueRepository:
     ) -> TaskRecord:
         """复用调用方事务创建任务，保证关联写入原子提交。"""
 
+        if request.task_type == IMPORTED_TASK_TYPE:
+            raise InvalidTransitionError("历史记录须通过剧集导入接口生成。")
         if request.idempotency_key:
             existing = connection.execute(
                 "SELECT * FROM tasks WHERE idempotency_key = ?",

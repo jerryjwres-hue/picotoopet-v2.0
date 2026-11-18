@@ -50,6 +50,20 @@
           "title": "Path",
           "type": "string"
         },
+        "seed": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
         "sha256": {
           "pattern": "^[a-f0-9]{64}$",
           "title": "Sha256",
@@ -61,6 +75,20 @@
           "pattern": "^[A-Za-z0-9_-]+$",
           "title": "Shot Id",
           "type": "string"
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Id"
         },
         "take": {
           "minimum": 1,

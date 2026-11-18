@@ -1,13 +1,12 @@
 """执行器、缩略图和审片 REST 路由。"""
 
-from io import BytesIO
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
-from PIL import Image, UnidentifiedImageError
 
-from picotoopet_core.api.errors import ApiError
+from picotoopet_core.api.thumbnails import validate_thumbnail
 from picotoopet_core.domain.executor import (
+    THUMBNAIL_LIMIT,
     ArtifactDecision,
     ArtifactList,
     ExecutorComplete,
@@ -24,7 +23,6 @@ from picotoopet_core.domain.models import TaskRecord
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
-THUMBNAIL_LIMIT = 300 * 1024
 
 
 @router.post(
@@ -69,25 +67,7 @@ def upload_thumbnail(
     artifact_sha256: Annotated[Sha256 | None, Form()] = None,
 ) -> ThumbnailRecord:
     jpeg = file.file.read(THUMBNAIL_LIMIT + 1)
-    if len(jpeg) > THUMBNAIL_LIMIT:
-        raise ApiError(
-            status_code=413,
-            code="VALIDATION_ERROR",
-            message="缩略图不能超过 300 KB。",
-            retryable=False,
-        )
-    try:
-        with Image.open(BytesIO(jpeg), formats=["JPEG"]) as image:
-            if max(image.size) > 8192:
-                raise ValueError("JPEG dimensions")
-            image.load()
-    except (OSError, UnidentifiedImageError, Image.DecompressionBombError, ValueError) as exc:
-        raise ApiError(
-            status_code=415,
-            code="VALIDATION_ERROR",
-            message="缩略图必须是有效的 JPEG 文件。",
-            retryable=False,
-        ) from exc
+    validate_thumbnail(jpeg)
     body = ExecutorReport(worker_id=worker_id, attempt_count=attempt_count)
     return request.app.state.services.executor.upload(
         task_id,

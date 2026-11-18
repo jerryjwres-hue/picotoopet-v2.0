@@ -33,6 +33,27 @@ curl --fail-with-body -H "Authorization: Bearer $PICOTOO_API_TOKEN" \
 
 每个分镜按首帧、视频、拟音、质检的顺序执行。桌面「生产」页显示候选和 QC 结果，可记录选用、重做或不要。双击视频候选使用本机播放器打开，或点击「本地播放」。每个分镜都有选用视频后可点击「合成本集」。
 
+### 已有视频和完成回执
+
+在 Windows 的「生产 → 打开本地批次」选择原 worker 归档到 <code>_queue\done</code> 的 <code>*.result.json</code>。工具会从同名归档任务找到 jobs，核对每条视频的镜号、原始 take、seed、字节数和 SHA-256。完整剧本可选。仅有 jobs 时，程序保留原视频提示和镜序，将缺少的导演信息记为「未录入」，采用零偏移硬切和默认 −14 LUFS 的合成设置。
+
+- **离线审片**可在断网时进行。将 HTML 保存到本机，再双击打开。左右两条可同步播放、切换监听、逐帧观察和记录带时间点的备注。导出的审片 JSON 按候选的来源和文件哈希匹配，建议保存在项目目录。
+- **导入到 Mac**使用桌面已有设备鉴权。可附本机 FFprobe 技术报告与 FFmpeg 提取的小 JPEG。Core 原子登记候选，多个设备重试同一批只产生一份记录。带离线决定重导时，仅补入尚未审过的候选，冲突计数显示在「生产」页。历史候选的「重做」记为审片要求，由后续制作任务接手。
+- **补拍**可另选 JSON 映射。下例将第二次回执里的源镜号并入已有的 S09。两个批次中的第 1 条各自保留 take、seed 和来源。
+
+```json
+[{"receipt":"retake.result.json","shots":{"S09b":"S09"}}]
+```
+
+Windows 命令行也可使用。默认只核对本地文件。以下示例在项目根目录运行，脚本路径换为本机代码目录。
+
+```powershell
+py -3 C:\Tools\picotoopet\scripts\windows\import_video_candidates.py --project-root . --receipt batch.result.json --episode-id Demo --review-page review.html
+py -3 C:\Tools\picotoopet\scripts\windows\import_video_candidates.py --project-root . --receipt batch.result.json --episode-id Demo --decisions Demo_review.json --probe --thumbnails --config C:\Tools\picotoopet\scripts\windows\executor_bridge.toml --apply
+```
+
+离线页可带 <code>--cut-plan plan.json --cut-video rough.mp4</code>，从剪辑计划的 <code>shots[].video</code> 项目标记粗剪已使用的片段。该标记独立于人工选用。<code>POST /api/v1/episodes/import</code> 仅登记历史素材，<code>POST /api/v1/episodes</code> 用于启动新剧集生成。拍摄阶段还可在本地把已确定的动作、镜位与主体编译为英文模型提示词。见[离线导演命令](episode-directing.md)。
+
 ## 使用假数据验证
 
 ```sh

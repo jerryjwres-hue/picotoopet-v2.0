@@ -14,7 +14,7 @@ public sealed record EventEnvelope(
     [property: JsonPropertyName("payload")] JsonElement Payload)
 {
     public bool IsProductionChange() =>
-        Topic == "artifact.decided" || (Topic == "task.updated"
+        Topic is "artifact.decided" or "episode.imported" || (Topic == "task.updated"
             && Payload.ValueKind == JsonValueKind.Object
             && Payload.TryGetProperty("task_type", out var type)
             && type.ValueKind == JsonValueKind.String

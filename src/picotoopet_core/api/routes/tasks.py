@@ -5,7 +5,12 @@ from pydantic import ValidationError
 
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.enums import CloudPolicy, TaskStatus
-from picotoopet_core.domain.executor import GPU_TAG, TASK_RUNNERS, ExecutorPayload
+from picotoopet_core.domain.executor import (
+    GPU_TAG,
+    IMPORTED_TASK_TYPE,
+    TASK_RUNNERS,
+    ExecutorPayload,
+)
 from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.security.auth import require_auth
 
@@ -22,6 +27,11 @@ def create_task(
 
     if idempotency_key:
         payload = payload.model_copy(update={"idempotency_key": idempotency_key})
+    if payload.task_type == IMPORTED_TASK_TYPE:
+        raise ApiError(
+            status_code=422, code="VALIDATION_ERROR", retryable=False,
+            message="历史记录须通过剧集导入接口生成。",
+        )
     if payload.task_type in TASK_RUNNERS:
         try:
             body = ExecutorPayload.model_validate(payload.payload)

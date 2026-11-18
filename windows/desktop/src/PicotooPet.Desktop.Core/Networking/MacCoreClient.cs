@@ -121,6 +121,10 @@ public sealed class MacCoreClient : IAsyncDisposable
         SendAsync<EpisodeSummary[]>(HttpMethod.Get, "api/v1/episodes",
             null, "episodes.list", null, cancellationToken);
 
+    public Task<EpisodeImportResult> ImportBatchAsync(JsonElement manifest, CancellationToken cancellationToken) =>
+        SendAsync<EpisodeImportResult>(HttpMethod.Post, "api/v1/episodes/import",
+            manifest, "episodes.import", null, cancellationToken);
+
     public Task<EpisodeReview> GetEpisodeReviewAsync(
         string episodeId, CancellationToken cancellationToken = default) =>
         SendAsync<EpisodeReview>(HttpMethod.Get,

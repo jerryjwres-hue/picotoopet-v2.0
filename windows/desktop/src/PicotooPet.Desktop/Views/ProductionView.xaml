@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FontFamily="Microsoft YaHei UI">
   <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="ShowWhenTrue"/>
     <Style TargetType="Button">
       <Setter Property="Padding" Value="13,6" />
       <Setter Property="Margin" Value="3" />
@@ -26,6 +27,7 @@
         <TextBlock Text="为每个分镜选用一个视频后可合成。" Foreground="#536174" Margin="0,4,0,0" />
       </StackPanel>
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button Content="打开本地批次" Click="OpenBatch" IsEnabled="{Binding CanOpenBatch}" />
         <Button Content="刷新" Command="{Binding RefreshCommand}" />
         <Button Content="合成本集" Command="{Binding AssembleCommand}" Style="{StaticResource PrimaryAction}" />
       </StackPanel>
@@ -112,6 +114,8 @@
                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding FileName}" Foreground="#49576A"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" />
+                    <TextBlock Text="{Binding Origin}" Foreground="#49576A" FontSize="11"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Origin}" />
                     <TextBlock Text="{Binding DecisionName}" Foreground="#206260" Margin="0,3,0,0" />
                   </StackPanel>
                 </StackPanel>
@@ -138,9 +142,18 @@
           <Button Grid.Row="2" Content="本地播放" Command="{Binding PlayCommand}" Margin="0,8,0,0"
                   ToolTip="{Binding CandidateHint}" />
           <TextBlock Grid.Row="3" Text="审片备注" FontSize="14" FontWeight="SemiBold" Margin="0,10,0,3" />
-          <TextBox Grid.Row="4" Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}"
+          <StackPanel Grid.Row="4">
+          <TextBox Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}"
                    Height="61" AcceptsReturn="True" TextWrapping="Wrap" MaxLength="2000"
                    VerticalScrollBarVisibility="Auto" Margin="0" AutomationProperties.Name="审片备注" />
+            <StackPanel Visibility="{Binding HasNoteConflict, Converter={StaticResource ShowWhenTrue}}">
+              <TextBlock Text="Mac 备注已更新，请选择要保留的版本。" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding Candidate.Record.Note}" TextTrimming="CharacterEllipsis"
+                         ToolTip="{Binding Candidate.Record.Note}"/>
+              <UniformGrid Columns="2"><Button Content="用 Mac 备注" Command="{Binding UseMacNoteCommand}" Padding="2"/>
+                <Button Content="保留草稿" Command="{Binding KeepDraftCommand}" Padding="2"/></UniformGrid>
+            </StackPanel>
+          </StackPanel>
           <UniformGrid Grid.Row="5" Columns="3" Margin="-3,6,-3,0">
             <Button Content="选用" Command="{Binding PickCommand}" Padding="4,4" Margin="3"
                     Style="{StaticResource PrimaryAction}" />

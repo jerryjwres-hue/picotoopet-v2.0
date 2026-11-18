@@ -27,7 +27,17 @@ public sealed record ReviewCandidate(
     [property: JsonPropertyName("decision")] string? Decision,
     [property: JsonPropertyName("note")] string Note,
     [property: JsonPropertyName("thumbnail_id")] string? ThumbnailId,
-    [property: JsonPropertyName("qc")] JsonElement Qc);
+    [property: JsonPropertyName("qc")] JsonElement Qc,
+    [property: JsonPropertyName("seed")] long? Seed = null,
+    [property: JsonPropertyName("source_id")] string? SourceId = null,
+    [property: JsonPropertyName("task_type")] string? TaskType = null);
+
+public sealed record EpisodeImportResult(
+    [property: JsonPropertyName("episode_id")] string EpisodeId,
+    [property: JsonPropertyName("inserted_count")] int InsertedCount,
+    [property: JsonPropertyName("existing_count")] int ExistingCount,
+    [property: JsonPropertyName("updated_count")] int UpdatedCount = 0,
+    [property: JsonPropertyName("conflict_count")] int ConflictCount = 0);
 
 public sealed record ArtifactDecisionRequest(
     [property: JsonPropertyName("decision")] string Decision,
