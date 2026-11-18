@@ -82,7 +82,7 @@ try {
     $previous     = Get-Content -LiteralPath $previousPath -Raw | ConvertFrom-Json
     $manifestPath = Join-Path $previous.path "release-manifest.json"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "上一版本缺少发布清单。" }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-ManifestFiles -Manifest $manifest -Root $previous.path
 
     Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force

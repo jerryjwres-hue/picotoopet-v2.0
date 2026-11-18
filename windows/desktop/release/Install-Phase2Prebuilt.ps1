@@ -186,7 +186,7 @@ try {
     Write-InstallProgress -Percent 5 -Stage "校验安装包" -Detail "读取预编译发布清单"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "安装包缺少 release-manifest.json。" }
     if (-not (Test-Path -LiteralPath $payloadRoot))  { throw "安装包缺少 payload 目录。" }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ([string]$manifest.release_type -ne "prebuilt") { throw "安装包不是预编译发布类型。" }
     if ([string]$manifest.target -ne "win-x64")       { throw "安装包目标不是 win-x64。" }
     if ([string]$manifest.version -notmatch '^[A-Za-z0-9._-]+$') { throw "安装包版本号非法。" }

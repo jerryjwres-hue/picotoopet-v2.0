@@ -251,7 +251,7 @@ Invoke-NativeCommand -FilePath $appExecutable -Arguments @(
 ) -TimeoutSeconds 60 | Out-Null
 Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--self-test") -TimeoutSeconds 30 | Out-Null
 if (-not (Test-Path -LiteralPath $selfTestPath)) { throw "桌面自检没有生成报告。" }
-$selfTest = Get-Content -LiteralPath $selfTestPath -Raw | ConvertFrom-Json
+$selfTest = Get-Content -LiteralPath $selfTestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ([string]$selfTest.status -ne "pass") { throw "桌面自检报告不是 pass。" }
 
 $files = @(

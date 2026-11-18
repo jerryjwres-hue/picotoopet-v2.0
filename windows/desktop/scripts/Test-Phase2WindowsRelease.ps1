@@ -86,7 +86,7 @@ try {
     $manifestPath = Join-Path $tempRoot "release-manifest.json"
     $payloadRoot  = Join-Path $tempRoot "payload"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "ZIP 缺少 release-manifest.json。" }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ([string]$manifest.release_type -ne "prebuilt") { throw "发布类型不是 prebuilt。" }
     if ([string]$manifest.target -ne "win-x64")       { throw "发布目标不是 win-x64。" }
     Assert-ManifestFiles -Manifest $manifest -PayloadRoot $payloadRoot
@@ -111,7 +111,7 @@ try {
     ))
     [void](Invoke-CheckedProcess -FilePath $diagExecutable -Arguments @("--self-test"))
     if (-not (Test-Path -LiteralPath $selfTestPath)) { throw "桌面自检报告缺失。" }
-    $selfTest = Get-Content -LiteralPath $selfTestPath -Raw | ConvertFrom-Json
+    $selfTest = Get-Content -LiteralPath $selfTestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ([string]$selfTest.status -ne "pass") { throw "桌面自检报告不是 pass。" }
 
     Write-Host "PHASE2_WINDOWS_RELEASE_TEST=PASS"

@@ -58,7 +58,7 @@ try {
     $current      = Get-Content -LiteralPath $currentPath -Raw | ConvertFrom-Json
     $manifestPath = Join-Path $current.path "release-manifest.json"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "当前版本缺少 release-manifest.json。" }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-ManifestFiles -Manifest $manifest -Root $current.path
 
     if (Test-Path -LiteralPath $settingsPath) {
