@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import tomllib
 from copy import deepcopy
@@ -21,8 +22,10 @@ import requests
 
 if __package__:
     from .media_probe import probe_command, probe_json
+    from .production_qc import check_candidates
 else:
     from media_probe import probe_command, probe_json
+    from production_qc import check_candidates
 
 POLL_SECONDS = 5
 HEARTBEAT_SECONDS = 20
@@ -274,6 +277,9 @@ class Bridge:
                     matches.sort(key=lambda item: (item["decision"] != "pick", item["take"]))
                     if field == "video":
                         for i, item in enumerate(matches, 1):
+                            state.setdefault("foley_sources", {})[f"{job['id']}_{i}"] = item[
+                                "sha256"
+                            ]
                             expanded.append(
                                 {
                                     **job,
@@ -312,7 +318,8 @@ class Bridge:
         if runner is None or runner != payload["runner"]:
             raise JobError("任务与允许的本地 runner 不匹配。")
         if runner == "qc.check":
-            return self._qc(state, self._parent(task))
+            candidates = payload["jobs"].get("artifacts")
+            return self._qc(state, self._parent(task) if candidates is None else candidates)
         if runner == "edit.assemble":
             return self._assemble(state)
         foley_jobs = payload["jobs"].get("jobs", [])
@@ -345,6 +352,8 @@ class Bridge:
                 return result
             jobs_name = f"jobs_{task['task_id']}.json"
             atomic_json(self.board / jobs_name, self._jobs(state))
+            if state.get("foley_sources"):
+                atomic_json(self.journal, state)
             atomic_json(
                 self.queue / "inbox" / filename,
                 {
@@ -400,6 +409,11 @@ class Bridge:
             if not path.is_file():
                 raise JobError(f"找不到 worker 登记的产物：{path.name}。")
             digest, length = self._hash(path, state)
+            if kind == "audio" and state.get("foley_sources"):
+                source_key = re.sub(r"_v[1-9]\d*$", "", path.stem)
+                source = state["foley_sources"].get(source_key)
+                if source:
+                    result.setdefault("qc", {}).setdefault("foley_by_sha256", {})[digest] = source
             take = re.search(r"_v([1-9]\d*)$", path.stem)
             artifacts.append(
                 {
@@ -419,6 +433,11 @@ class Bridge:
         ):
             state["report"] = {"error": "worker 没有返回可登记的产物。", "retryable": True}
             return
+        for digest, path in result.get("qc_previews", {}).items():
+            preview = self._preview(self._safe_path(path), "sheet", state, len(previews) + 1)
+            if not preview:
+                raise JobError("无法生成符合 300 KB 限制的质检报告预览。")
+            previews.append({"path": str(preview), "digest": digest})
         state["previews"] = previews
         state["report"] = {
             "artifacts": artifacts,
@@ -540,124 +559,34 @@ class Bridge:
         return probe_json(self._media(state, probe_command(path)))
 
     def _qc(self, state, candidates):
-        by_hash = {}
-        target = state["task"]["payload"]["jobs"].get("shot", {}).get("seconds")
-        for candidate in candidates:
-            if candidate["kind"] != "video":
-                continue
-            info = self._probe(state, self._safe_path(candidate["path"]))
-            video = next((x for x in info.get("streams", []) if x["codec_type"] == "video"), {})
-            duration = float(info.get("format", {}).get("duration") or 0)
-            by_hash[candidate["sha256"]] = {
-                "通过": bool(
-                    video and duration > 0 and (target is None or abs(duration - target) < 0.5)
-                ),
-                "秒数": duration,
-                "宽": video.get("width"),
-                "高": video.get("height"),
-                "有音轨": any(x["codec_type"] == "audio" for x in info.get("streams", [])),
-            }
-        if not by_hash:
-            raise JobError("质检任务没有视频候选。")
-        return {"ok": True, "qc": {"by_sha256": by_hash}}
+        try:
+            return check_candidates(self, state, candidates)
+        except requests.RequestException:
+            raise
+        except (ValueError, KeyError, OSError) as exc:
+            raise JobError(str(exc)) from exc
 
     def _assemble(self, state):
-        jobs = state["task"]["payload"]["jobs"]
-        shots, edit = jobs["shots"], jobs["edit"]
-        if any(
-            shot["transition_out"]["type"] != "cut"
-            or shot["transition_out"]["offset_s"] != 0
-            or shot["caption"]
-            or shot["audio"].get("music_cue")
-            for shot in shots
-        ):
-            raise JobError("当前合成器支持无偏移硬切。字幕、配乐和其他转场须使用本地剪辑流程。")
+        root = str(Path(__file__).resolve().parents[2])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from tools.edit.edit.production import assemble_job
+
         started = time.monotonic()
-        folder = self.state_dir / "outputs" / state["stem"]
-        folder.mkdir(parents=True, exist_ok=True)
-        width, height = edit["size"]
-        names = []
-        for index, shot in enumerate(shots):
-            path = self._safe_path(shot["path"])
-            if self._hash(path, state)[0] != shot["sha256"]:
-                raise JobError("选用视频的哈希已变化，请重新审片。")
-            info = self._probe(state, path)
-            has_audio = any(x["codec_type"] == "audio" for x in info.get("streams", []))
-            inputs = [] if has_audio else ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
-            audio = "0:a:0" if has_audio else "1:a:0"
-            name = f"clip_{index}.mp4"
-            result = self._media(
-                state,
-                [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-i",
-                    str(path),
-                    *inputs,
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    audio,
-                    "-t",
-                    str(shot["seconds"]),
-                    "-vf",
-                    f"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
-                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={edit['fps']}",
-                    "-af",
-                    "apad",
-                    "-shortest",
-                    "-c:v",
-                    "libx264",
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-c:a",
-                    "aac",
-                    "-ar",
-                    "48000",
-                    "-ac",
-                    "2",
-                    name,
-                ],
-                cwd=folder,
+        output = self.state_dir / "outputs" / state["stem"] / "episode.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            assemble_job(
+                state["task"]["payload"]["jobs"],
+                output,
+                resolve=self._safe_path,
+                digest=lambda path: self._hash(path, state)[0],
+                media=lambda cmd, cwd: self._media(state, cmd, cwd=cwd),
             )
-            if result.returncode:
-                raise JobError(f"分镜 {shot['shot_id']} 转码失败。")
-            names.append(f"file {name}\n")
-        (folder / "concat.txt").write_text("".join(names), encoding="ascii")
-        output = folder / "episode.mp4"
-        # 静音片段低于响度门限，部分 FFmpeg 版本会产生非有限采样值。
-        finite_audio = "aeval='if(isnan(val(ch))+isinf(val(ch)),0,val(ch))':c=same"
-        result = self._media(
-            state,
-            [
-                "ffmpeg",
-                "-nostdin",
-                "-loglevel",
-                "error",
-                "-y",
-                "-f",
-                "concat",
-                "-i",
-                "concat.txt",
-                "-c:v",
-                "copy",
-                "-af",
-                f"loudnorm=I={edit['loudness_lufs']}:TP=-1.5:LRA=11,{finite_audio}",
-                "-c:a",
-                "aac",
-                "-ar",
-                "48000",
-                "-movflags",
-                "+faststart",
-                output.name,
-            ],
-            cwd=folder,
-        )
-        if result.returncode:
-            raise JobError("本集合成失败。")
+        except requests.RequestException:
+            raise
+        except (ValueError, OSError) as exc:
+            raise JobError(str(exc)) from exc
         return {"ok": True, "outputs": [str(output)], "seconds": time.monotonic() - started}
 
 

@@ -14,13 +14,13 @@ Windows 用同一个 Mac Core 地址和设备令牌连接。Mac 保存任务、�
 ## 在 Windows 启动
 
 1. 启动 Claude 维护的文件 worker v2。保留已有生成脚本和目录结构。
-2. 使用 Python 3.11 或更新版本，运行 `py -3 -m pip install requests`。若要生成候选预览、检查视频和执行硬切合成，将本机 `ffmpeg` 和 `ffprobe` 加入 `PATH`。
+2. 使用 Python 3.11 或更新版本，在仓库根目录运行 `py -3 -m pip install requests -r tools/qc/requirements-runtime.txt`。若要生成候选预览、检查视频和执行硬切合成，将本机 `ffmpeg` 和 `ffprobe` 加入 `PATH`。
 3. 将 `scripts/windows/executor_bridge.example.toml` 复制为同目录的 `executor_bridge.toml`。填写 Mac Core 根地址、唯一 `worker_id` 和 Windows 现有项目根目录。在启动环境中设置 `PICOTOO_EXECUTOR_TOKEN`。
 4. 从带有该环境变量的终端运行 `scripts\windows\RUN_executor_bridge.bat`。按 Ctrl+C 停止。
 
 执行桥每 5 秒轮询空闲队列，运行任务期间每 20 秒续租。待报告进度和回执保存在项目下的 `_queue/executor_bridge/`。同一台机器重启执行桥时继续使用原来的 `worker_id`。如果 Core 已按租约规则将任务转为终态，本地回执仍可在该目录核对。
 
-剧集生成的第一帧和末帧任务使用各自的第一颗 seed。视频使用 YAML 中的候选 seeds，每镜最多 48 颗。后续阶段优先使用已选的上游图像，否则使用第一张可用图像。拟音跑对应视频候选。执行桥的质检检查视频尺寸、时长和音轨。当前本地合成器支持无偏移硬切、目标尺寸、帧率和响度，并使用选中视频自带的音轨。其他转场、字幕、配乐和人声／拟音混合由本地剪辑流程处理，任务保留这些参数。
+剧集生成的第一帧和末帧任务使用各自的第一颗 seed。视频使用 YAML 中的候选 seeds，每镜最多 48 颗。后续阶段优先使用已选的上游图像，否则使用第一张可用图像。拟音跑对应视频候选。执行桥用本机工具 `python -m qc check` 检查图像和视频，每个候选保留完整 JSON 报告、分数、问题和 JPEG。视频另外核对时长和流。需要检查主体数量或身份时，可在生成任务的 `payload.jobs.qc_spec` 中填写 `expect` 和项目内的 `identity_refs`。默认检查器采用本机视觉启发式，模型身份检查使用已有本地权重。复杂动作、穿栏或房间布局仍需导演看图。合成调用 `python -m edit assemble`，按选片、剧集清单和已绑定的本机音轨生成。
 
 ## 剧集和审片
 
