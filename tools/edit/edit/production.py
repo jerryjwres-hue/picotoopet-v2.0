@@ -102,6 +102,95 @@ def splice_video(ff, shots, starts, edges, fps):
     return video
 
 
+def splice_on_frames(ff, starts, edges, total, fps):
+    """Build each body and transition from local frame ranges; concatenate once."""
+    starts = [round(start * fps) for start in starts] + [round(total * fps)]
+    inputs, graph, parts = [], [], []
+    for i in range(len(starts) - 1):
+        inputs.extend(["-i", f"v{i}.mp4"])
+
+    def section(i, first, count, label):
+        # Changing speed and fps can place the last sample either side of the cut.
+        graph.append(
+            f"[{i}:v]tpad=stop_mode=clone:stop=2,"
+            f"trim=start_frame={first}:end_frame={first + count},"
+            f"settb=expr=1/{fps},setpts=N[{label}]"
+        )
+
+    incoming = 0
+    for i, (start, stop) in enumerate(zip(starts, starts[1:], strict=False)):
+        body = stop - start - incoming
+        if body > 0:
+            section(i, incoming, body, f"b{i}")
+            parts.append(f"[b{i}]")
+        incoming = 0
+        if i < len(edges):
+            effect, seconds = edges[i]
+            # Below one frame there is no distinct interpolated sample.
+            if effect and seconds * fps > 1:
+                incoming = min(round(seconds * fps), starts[i + 2] - stop)
+                if incoming:
+                    section(i, stop - start, incoming, f"old{i}")
+                    section(i + 1, 0, incoming, f"new{i}")
+                    graph.append(
+                        f"[old{i}][new{i}]xfade=transition={effect}:offset=0:"
+                        f"duration={incoming / fps:.9f},trim=end_frame={incoming},"
+                        f"setpts=PTS-STARTPTS[x{i}]"
+                    )
+                    parts.append(f"[x{i}]")
+    graph.append(f"{''.join(parts)}concat=n={len(parts)}:v=1:a=0,format=yuv420p[out]")
+    ff(
+        *inputs,
+        "-filter_complex",
+        ";".join(graph),
+        "-map",
+        "[out]",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "18",
+        "aligned.mp4",
+    )
+    return "aligned.mp4"
+
+
+def video_timing(run, name, *, decode=False):
+    fields = "nb_read_frames" if decode else "nb_frames"
+    command = ["ffprobe", "-v", "error", "-select_streams", "v:0"]
+    if decode:
+        command.append("-count_frames")
+    data = json.loads(
+        run(
+            [
+                *command,
+                "-show_entries",
+                f"stream={fields},duration:format=duration",
+                "-of",
+                "json",
+                name,
+            ]
+        )
+    )
+    stream = next(iter(data.get("streams", [])), {})
+    return (
+        int(stream.get(fields) or 0),
+        float(stream.get("duration") or 0),
+        float(data.get("format", {}).get("duration") or 0),
+    )
+
+
+def timing_matches(measured, total, fps, tolerance):
+    frames, duration, container = measured
+    return (
+        frames > 0
+        and abs(frames - round(total * fps)) <= tolerance
+        and abs(container - total) <= max(0.1, 1 / fps) + 1e-6
+        and abs(duration - total) <= (tolerance + 0.5) / fps + 1e-6
+    )
+
+
 def mix_audio(ff, plan, shots, starts, total, resolve):
     inputs, graph, labels = [], [], []
 
@@ -393,26 +482,46 @@ def assemble_cut(plan, output, *, resolve, media=local_media, edl=None, strip=No
             ff(*inputs, "-filter_complex", ";".join(graph), "-map", "[o]", f"a{i}.wav")
 
         total = starts[-1] + durations[-1]
-        video = splice_video(ff, shots, starts, edges, fps)
+        all_short = bool(edges) and all(duration * fps <= 1 for _, duration in edges)
+        # Preserve approved legacy mixed-transition edits if the original chain
+        # reaches its final cut. Frame quantization can differ by up to two frames.
+        tolerance = min(2, max(1, int(0.1 * fps)))
+        if not all_short:
+            video = splice_video(ff, shots, starts, edges, fps)
+        if all_short or not timing_matches(video_timing(run, video), total, fps, tolerance):
+            video = splice_on_frames(ff, starts, edges, total, fps)
+            tolerance = 0
         mix_audio(ff, plan, shots, starts, total, resolve)
-        ff(
-            "-i",
-            video,
-            "-i",
-            "audio.wav",
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-aac_coder",
-            "fast",
-            "-b:a",
-            "192k",
-            "-shortest",
-            "-movflags",
-            "+faststart",
-            "output.mp4",
-        )
+        # Some FFmpeg builds stop early when interleaving a short audio bus.
+        # Try the approved mux settings first, then keep the full video stream.
+        mux_modes = [True, False] if tolerance else [False]
+        for shortest in mux_modes:
+            ff(
+                "-i",
+                video,
+                "-i",
+                "audio.wav",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-aac_coder",
+                "fast",
+                "-b:a",
+                "192k",
+                *(["-shortest"] if shortest else []),
+                "-movflags",
+                "+faststart",
+                "output.mp4",
+            )
+            measured = video_timing(run, "output.mp4", decode=True)
+            if timing_matches(measured, total, fps, tolerance):
+                break
+        if not timing_matches(measured, total, fps, tolerance):
+            raise ValueError(
+                f"Output video does not match the timeline: {measured[0]} frames, "
+                f"{measured[1]:.3f}s; expected {round(total * fps)} frames, {total:.3f}s"
+            )
         rows = [
             {
                 "shot_id": shot.get("shot_id", f"S{i + 1:02}"),
