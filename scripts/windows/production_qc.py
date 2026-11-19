@@ -13,7 +13,11 @@ def check_candidates(bridge, state, candidates):
     payload = state["task"]["payload"]
     jobs = payload["jobs"]
     source = jobs.get("source_jobs", jobs)
+    if not isinstance(source, dict):
+        raise ValueError("质检缺少生成作业。")
     shot = source.get("shot", {})
+    if not isinstance(shot, dict):
+        raise ValueError("质检分镜规格须为对象。")
     specification = source.get("qc_spec", shot.get("qc_spec", {}))
     if not isinstance(specification, dict):
         raise ValueError("qc_spec 须为对象。")
@@ -23,6 +27,10 @@ def check_candidates(bridge, state, candidates):
     }
     spec.setdefault("check_entity_counts", "expect" in spec)
     if "identity_refs" in spec:
+        if not isinstance(spec["identity_refs"], dict) or not all(
+            isinstance(path, str) for path in spec["identity_refs"].values()
+        ):
+            raise ValueError("identity_refs 须包含本机参考图路径。")
         spec["identity_refs"] = {
             key: str(bridge._safe_path(path)) for key, path in spec["identity_refs"].items()
         }
@@ -85,6 +93,16 @@ def check_candidates(bridge, state, candidates):
             video = next((s for s in streams if s["codec_type"] == "video"), {})
             seconds = float(metadata["format"].get("duration") or 0)
             target = shot.get("seconds")
+            if target is None:
+                for job in source.get("jobs", []):
+                    if (
+                        isinstance(job, dict)
+                        and path.stem == f"{job.get('id')}_v{candidate.get('take')}"
+                    ):
+                        target = job.get("seconds")
+                        break
+            if target is not None and type(target) not in (int, float):
+                raise ValueError("目标秒数须为数值。")
             item.update(
                 {
                     "秒数": seconds,

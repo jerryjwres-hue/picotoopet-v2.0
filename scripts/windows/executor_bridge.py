@@ -290,7 +290,12 @@ class Bridge:
                             and item["kind"] == "video"
                             or field != "video"
                             and item["kind"] == "image"
-                            and f"_{field}_" in Path(item["path"]).stem
+                            and (
+                                Path(item["path"]).stem
+                                == f"{task['payload']['shot_id']}_{field}_v{item['take']}"
+                                if jobs.get("reviewed_inputs")
+                                else f"_{field}_" in Path(item["path"]).stem
+                            )
                         )
                     ]
                     if not matches:
