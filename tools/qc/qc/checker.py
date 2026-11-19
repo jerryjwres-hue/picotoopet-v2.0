@@ -8,6 +8,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from qc.artifacts import (
+    check_bandana_position,
+    check_color_smear,
+    check_dissolve_ghosting,
+    check_fence_penetration,
+)
 from qc.audio_qc import check_audio_quality
 from qc.detector import BaseDetector, DetectionBox, FallbackCVDetector, Florence2Detector
 from qc.identity import DINOv2Extractor, evaluate_identity_consistency
@@ -170,41 +176,74 @@ class ShotChecker:
 
             # Validate against expectations
             exp = self.spec.expect
+            is_fallback = getattr(self.detector, "is_fallback", False)
+            dest_list = all_warnings if is_fallback else all_fails
+            suffix = " (pure CV fallback advisory)" if is_fallback else ""
 
             if counts["dog"] != exp.dogs:
-                all_fails.append({
+                dest_list.append({
                     "check": "dog_count",
                     "frame": f_idx,
-                    "detail": f"Frame {f_idx}: expected {exp.dogs} dog(s), detected {counts['dog']}.",
+                    "detail": f"Frame {f_idx}: expected {exp.dogs} dog(s), detected {counts['dog']}{suffix}.",
                 })
 
             if counts["person"] != exp.people:
-                all_fails.append({
+                dest_list.append({
                     "check": "people_count",
                     "frame": f_idx,
-                    "detail": f"Frame {f_idx}: expected {exp.people} person(s), detected {counts['person']}.",
+                    "detail": f"Frame {f_idx}: expected {exp.people} person(s), detected {counts['person']}{suffix}.",
                 })
 
             if counts["bowl"] != exp.bowls:
-                all_fails.append({
+                dest_list.append({
                     "check": "bowl_count",
                     "frame": f_idx,
-                    "detail": f"Frame {f_idx}: expected {exp.bowls} bowl(s), detected {counts['bowl']}.",
+                    "detail": f"Frame {f_idx}: expected {exp.bowls} bowl(s), detected {counts['bowl']}{suffix}.",
                 })
 
             if counts["ball"] != exp.balls:
-                all_fails.append({
+                dest_list.append({
                     "check": "ball_count",
                     "frame": f_idx,
-                    "detail": f"Frame {f_idx}: expected {exp.balls} ball(s), detected {counts['ball']}.",
+                    "detail": f"Frame {f_idx}: expected {exp.balls} ball(s), detected {counts['ball']}{suffix}.",
                 })
 
             if not exp.faces_visible and counts["face"] > 0:
-                all_fails.append({
+                dest_list.append({
                     "check": "face_visibility",
                     "frame": f_idx,
-                    "detail": f"Frame {f_idx}: faces_visible is false, but detected {counts['face']} visible face(s).",
+                    "detail": f"Frame {f_idx}: faces_visible is false, but detected {counts['face']} visible face(s){suffix}.",
                 })
+
+        # Record pure CV fallback advisory warning if applicable
+        if getattr(self.detector, "is_fallback", False):
+            all_warnings.append({
+                "check": "pure_cv_fallback",
+                "frame": None,
+                "detail": "Pure CV fallback active; quantity checks are advisory warnings and cannot certify pass. Real Florence-2 model required.",
+            })
+
+        # 3. Artifact Anomaly Checks (Dissolve/Ghosting, Bandana position, Color smear, Fence)
+        metrics["artifacts"] = {}
+        if getattr(self.spec, "check_dissolve", True):
+            dissolve_issues = check_dissolve_ghosting(frames)
+            all_fails.extend(dissolve_issues)
+            metrics["artifacts"]["dissolve_ghosting_fails"] = len(dissolve_issues)
+
+        if getattr(self.spec, "check_bandana", True):
+            bandana_issues = check_bandana_position(frames)
+            all_fails.extend(bandana_issues)
+            metrics["artifacts"]["bandana_position_fails"] = len(bandana_issues)
+
+        if getattr(self.spec, "check_color_smear", True):
+            smear_issues = check_color_smear(frames)
+            all_fails.extend(smear_issues)
+            metrics["artifacts"]["color_smear_fails"] = len(smear_issues)
+
+        if getattr(self.spec, "check_fence", False):
+            fence_issues = check_fence_penetration(frames, enabled=True)
+            all_fails.extend(fence_issues)
+            metrics["artifacts"]["fence_penetration_fails"] = len(fence_issues)
 
         # 3. Identity Consistency Check (DINOv2)
         metrics["identity"] = {}
@@ -268,6 +307,11 @@ class ShotChecker:
             warnings=all_warnings,
             metrics=metrics,
         )
+
+        # Pure CV fallback: never certified pass
+        if getattr(self.detector, "is_fallback", False):
+            report_data["pass"] = False
+            report_data["fallback_cv_active"] = True
 
         # Output JSON
         save_report_json(report_data, out_json_path)

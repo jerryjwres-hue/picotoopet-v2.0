@@ -12,3 +12,5 @@ torch>=2.2.0
 torchvision>=0.17.0
 transformers>=4.40.0
 timm>=0.9.0
+einops>=0.7.0
+# Florence-2 pinned commit: revision=5ca5edf5bd017b9919c05d08aebef5e4c7ac3bac (MIT License)

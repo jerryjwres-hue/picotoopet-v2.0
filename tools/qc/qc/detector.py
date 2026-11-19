@@ -44,6 +44,7 @@ class DetectionBox:
 
 class BaseDetector:
     """Interface for object and person/face detection."""
+    is_fallback: bool = False
 
     def detect_frame(self, frame: np.ndarray) -> List[DetectionBox]:
         raise NotImplementedError
@@ -51,6 +52,8 @@ class BaseDetector:
 
 class Florence2Detector(BaseDetector):
     """Florence-2 open-vocabulary detector (MIT License)."""
+    is_fallback: bool = False
+    PINNED_REVISION: str = "5ca5edf5bd017b9919c05d08aebef5e4c7ac3bac"
 
     def __init__(self, model_id: str = "microsoft/Florence-2-base", device: Optional[str] = None):
         self.device = device or resolve_device()
@@ -62,25 +65,61 @@ class Florence2Detector(BaseDetector):
     def _load_model(self):
         try:
             import torch
-            from transformers import AutoModelForCausalLM, AutoProcessor
+            from transformers import AutoModelForCausalLM, AutoProcessor, PretrainedConfig, PreTrainedModel, RobertaTokenizer
+
+            # Compatibility patch 1: forced_bos_token_id for dynamic models on transformers 5.x
+            if not hasattr(PretrainedConfig, "forced_bos_token_id"):
+                setattr(PretrainedConfig, "forced_bos_token_id", None)
+
+            # Compatibility patch 2: _supports_sdpa
+            PreTrainedModel._supports_sdpa = True
+
+            # Compatibility patch 3: RobertaTokenizer additional_special_tokens
+            if not hasattr(RobertaTokenizer, "additional_special_tokens"):
+                setattr(
+                    RobertaTokenizer,
+                    "additional_special_tokens",
+                    property(lambda self: self.special_tokens_map.get("additional_special_tokens", [])),
+                )
+
             logger.info(f"Loading Florence-2 model ({self.model_id}) on device: {self.device}...")
             torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_id,
-                trust_remote_code=True,
-                torch_dtype=torch_dtype,
-                low_cpu_mem_usage=True,
-                local_files_only=True,
-            ).to(self.device)
-            self.processor = AutoProcessor.from_pretrained(
-                self.model_id,
-                trust_remote_code=True,
-                local_files_only=True,
-            )
+
+            # Try local files first, fallback to standard download
+            load_kwargs = {
+                "revision": self.PINNED_REVISION,
+                "trust_remote_code": True,
+                "torch_dtype": torch_dtype,
+                "low_cpu_mem_usage": True,
+            }
+
+            try:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_id, local_files_only=True, **load_kwargs
+                ).to(self.device)
+                self.processor = AutoProcessor.from_pretrained(
+                    self.model_id, revision=self.PINNED_REVISION, trust_remote_code=True, local_files_only=True
+                )
+            except Exception:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_id, local_files_only=False, **load_kwargs
+                ).to(self.device)
+                self.processor = AutoProcessor.from_pretrained(
+                    self.model_id, revision=self.PINNED_REVISION, trust_remote_code=True, local_files_only=False
+                )
+
+            # Compatibility patch 4: Dynamic BART weight tying from safetensors
+            if hasattr(self.model, "language_model") and hasattr(self.model.language_model, "model"):
+                lm_m = self.model.language_model.model
+                if hasattr(lm_m, "shared") and hasattr(lm_m, "encoder"):
+                    lm_m.encoder.embed_tokens = lm_m.shared
+                    lm_m.decoder.embed_tokens = lm_m.shared
+                    self.model.language_model.lm_head.weight = lm_m.shared.weight
+
             self.model.eval()
             logger.info("Florence-2 successfully loaded.")
         except Exception as exc:
-            logger.warning(f"Florence-2 local weights not available ({exc}). Using heuristic detector.")
+            logger.warning(f"Florence-2 model could not be loaded ({exc}). Using heuristic detector.")
             self.model = None
 
     def detect_frame(self, frame: np.ndarray, query_labels: Optional[List[str]] = None) -> List[DetectionBox]:
@@ -96,35 +135,39 @@ class Florence2Detector(BaseDetector):
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb)
+            orig_w, orig_h = pil_img.size
 
-            task_prompt = "<OPEN_VOCABULARY_DETECTION>"
-            text_input = task_prompt + ",".join(query_labels)
+            # Florence-2 DaViT requires square feature maps (e.g. 768x768)
+            sq_img = pil_img.resize((768, 768))
 
-            inputs = self.processor(text=text_input, images=pil_img, return_tensors="pt").to(self.device)
+            task_prompt = "<OD>"
+            inputs = self.processor(text=task_prompt, images=sq_img, return_tensors="pt").to(self.device)
             with torch.no_grad():
                 generated_ids = self.model.generate(
                     input_ids=inputs["input_ids"],
                     pixel_values=inputs["pixel_values"],
                     max_new_tokens=1024,
                     num_beams=3,
+                    use_cache=False,
                 )
             generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
             parsed = self.processor.post_process_generation(
                 generated_text,
                 task=task_prompt,
-                image_size=(pil_img.width, pil_img.height),
+                image_size=(orig_w, orig_h),
             )
 
             results: List[DetectionBox] = []
             detection_dict = parsed.get(task_prompt, {})
             bboxes = detection_dict.get("bboxes", [])
-            labels = detection_dict.get("bboxes_labels", [])
+            labels = detection_dict.get("labels", [])
 
             for bbox, label in zip(bboxes, labels):
                 x1, y1, x2, y2 = [int(v) for v in bbox]
+                lbl = str(label).strip().lower()
                 results.append(DetectionBox(
                     x1=x1, y1=y1, x2=x2, y2=y2,
-                    label=str(label).strip().lower(),
+                    label=lbl,
                     confidence=0.90,
                 ))
             return results
@@ -140,6 +183,7 @@ class FallbackCVDetector(BaseDetector):
     Permissive Apache 2.0 / BSD / MIT only. Detects faces, people, and objects.
     Ensures tests and offline runs execute without requiring multi-GB weights download.
     """
+    is_fallback: bool = True
 
     def __init__(self):
         self.face_cascade = None

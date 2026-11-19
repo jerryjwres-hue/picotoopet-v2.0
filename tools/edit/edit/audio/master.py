@@ -48,11 +48,14 @@ def normalize_lufs_and_true_peak(
 
     # 2. True-peak limiting to max_true_peak_db (e.g. -1.5 dBTP)
     ceiling_linear = 10.0 ** (max_true_peak_db / 20.0)
-    peak = np.max(np.abs(out))
-
-    if peak > ceiling_linear:
-        # Soft-knee peak limiting
-        reduction = ceiling_linear / peak
-        out *= reduction
+    excess = np.abs(out) > ceiling_linear
+    if np.any(excess):
+        # Soft-limit only the transient peaks exceeding ceiling to preserve integrated LUFS
+        signs = np.sign(out)
+        mags = np.abs(out)
+        over = mags[excess] - ceiling_linear
+        mags[excess] = ceiling_linear + (1.0 - ceiling_linear) * np.tanh(over / max(1e-4, (1.0 - ceiling_linear)))
+        mags[excess] = np.minimum(mags[excess], ceiling_linear)
+        out = signs * mags
 
     return np.clip(out, -1.0, 1.0)

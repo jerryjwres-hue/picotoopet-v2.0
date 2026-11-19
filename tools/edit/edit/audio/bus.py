@@ -95,9 +95,10 @@ class AudioBusMixer:
                         # Apply 30ms anti-pop head/tail fade
                         v_clip = apply_fade_in_out(v_clip, sr=self.sr, fade_ms=30.0)
 
-                        dest_start = int(rec_start * self.sr)
+                        dest_start = max(0, int((rec_start + getattr(shot, "audio_offset", 0.0)) * self.sr))
                         dest_end = min(total_samples, dest_start + len(v_clip))
-                        bus_vocal[dest_start:dest_end] += v_clip[:dest_end - dest_start]
+                        if dest_start < total_samples and dest_end > dest_start:
+                            bus_vocal[dest_start:dest_end] += v_clip[:dest_end - dest_start]
                     except Exception as exc:
                         logger.warning(f"Could not load vocal audio from {vocal_src}: {exc}")
 
@@ -112,9 +113,10 @@ class AudioBusMixer:
                     f_clip = f_clip * gain_lin
                     f_clip = apply_fade_in_out(f_clip, sr=self.sr, fade_ms=30.0)
 
-                    dest_start = int(rec_start * self.sr)
+                    dest_start = max(0, int(rec_start * self.sr))
                     dest_end = min(total_samples, dest_start + len(f_clip))
-                    bus_foley[dest_start:dest_end] += f_clip[:dest_end - dest_start]
+                    if dest_start < total_samples and dest_end > dest_start:
+                        bus_foley[dest_start:dest_end] += f_clip[:dest_end - dest_start]
                 except Exception as exc:
                     logger.warning(f"Could not load foley audio from {shot.foley.file}: {exc}")
 
@@ -134,32 +136,63 @@ class AudioBusMixer:
                     logger.warning(f"Could not load SFX {sfx.file}: {exc}")
 
         # 3. Populate Background Music bus with Sidechain Ducking
-        if plan.music and plan.music.file and Path(plan.music.file).is_file():
+        music_cues: List[Any] = []
+        if isinstance(plan.music, list):
+            music_cues = plan.music
+        elif plan.music is not None:
+            music_cues = [plan.music]
+
+        raw_music_bus = np.zeros((total_samples, 2), dtype=np.float32)
+
+        for cue in music_cues:
+            cue_file = getattr(cue, "file", None)
+            if not cue_file or not Path(cue_file).is_file():
+                continue
             try:
-                m_data, _ = load_audio_file(plan.music.file, target_sr=self.sr)
-                # Loop or trim to total_samples
-                if len(m_data) < total_samples:
-                    repeats = int(np.ceil(total_samples / len(m_data)))
-                    m_data = np.tile(m_data, (repeats, 1))[:total_samples]
+                m_data, _ = load_audio_file(cue_file, target_sr=self.sr)
+                # Calculate start timestamp 'at'
+                shot_idx = getattr(cue, "shot", None)
+                if shot_idx is not None and 0 <= shot_idx < len(shot_timeline_map):
+                    at = shot_timeline_map[shot_idx]["rec_in"] + getattr(cue, "offset", 0.0)
                 else:
-                    m_data = m_data[:total_samples]
+                    at = getattr(cue, "at", 0.0) or 0.0
+
+                in_samp = int(getattr(cue, "in_point", 0.0) * self.sr)
+                if in_samp < len(m_data):
+                    m_data = m_data[in_samp:]
+
+                dur = getattr(cue, "dur", None)
+                if dur is not None and dur > 0:
+                    dur_samp = int(dur * self.sr)
+                    m_data = m_data[:dur_samp]
 
                 # Base gain
-                m_gain_lin = 10.0 ** (plan.music.gain_db / 20.0)
-                m_data = m_data * m_gain_lin
-                # 30ms anti-pop on music head/tail
-                m_data = apply_fade_in_out(m_data, sr=self.sr, fade_ms=30.0)
+                gain_db = getattr(cue, "gain_db", -14.0)
+                gain_lin = 10.0 ** (gain_db / 20.0)
+                m_data = m_data * gain_lin
 
-                # Sidechain ducking under vocal bus!
-                duck_db = plan.music.duck_under_vocal_db
-                bus_music = apply_sidechain_ducking(
-                    vocal_track=bus_vocal,
-                    music_track=m_data,
+                # Fade in / out
+                fade_in_sec = getattr(cue, "fade_in", 0.3)
+                m_data = apply_fade_in_out(
+                    m_data,
                     sr=self.sr,
-                    duck_under_vocal_db=duck_db,
+                    fade_ms=max(10.0, fade_in_sec * 1000.0),
                 )
+
+                dest_start = max(0, int(at * self.sr))
+                dest_end = min(total_samples, dest_start + len(m_data))
+                if dest_start < total_samples and dest_end > dest_start:
+                    raw_music_bus[dest_start:dest_end] += m_data[:dest_end - dest_start]
             except Exception as exc:
-                logger.warning(f"Could not load music {plan.music.file}: {exc}")
+                logger.warning(f"Could not load music cue {cue_file}: {exc}")
+
+        duck_db = getattr(plan.music, "duck_under_vocal_db", -8.0) if not isinstance(plan.music, list) else -8.0
+        bus_music = apply_sidechain_ducking(
+            vocal_track=bus_vocal,
+            music_track=raw_music_bus,
+            sr=self.sr,
+            duck_under_vocal_db=duck_db,
+        )
 
         # 4. Master Mix Summing & ITU-R BS.1770-4 Normalization
         master_sum = bus_vocal + bus_foley + bus_music
