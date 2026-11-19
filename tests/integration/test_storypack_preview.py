@@ -1,6 +1,5 @@
 """StoryPack preview is an authenticated, deterministic dry run."""
 
-import json
 import secrets
 
 import pytest
