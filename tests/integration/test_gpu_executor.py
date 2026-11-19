@@ -202,7 +202,7 @@ def test_historical_import_preserves_takes_and_does_not_run_worker(api):
     assert response.json() == {"episode_id": "demo", "inserted_count": 2, "existing_count": 0}
     assert api.get("/api/v1/episodes").json()[0]["episode_id"] == "demo"
     review = api.get("/api/v1/episodes/demo/review").json()
-    assert review["can_assemble"]
+    assert review["can_assemble"] is False  # 历史素材未取得可信 QC 认证，不得直接合成。
     first, second = review["shots"][0]["candidates"]
     assert (first["seed"], first["source_id"], first["qc"]) == (101, shot["source_id"], shot["qc"])
     assert (first["decision"], second["take"], second["seed"]) == ("pick", 2, 102)
@@ -245,7 +245,7 @@ def test_historical_import_preserves_takes_and_does_not_run_worker(api):
         == 2
     )
     assert verify_audit_chain(services.database).valid
-    assert api.post("/api/v1/episodes/demo/assemble").status_code == 201
+    assert api.post("/api/v1/episodes/demo/assemble").status_code == 409
 
 
 def test_historical_import_validates_batch_before_writing(api):
@@ -646,7 +646,7 @@ def test_explicit_human_override_pins_only_reviewed_inputs(api, stage):
     assert api.get(f"/api/v1/tasks/{gate['task_id']}").json()["status"] == "Failed"
     assert api.get(f"/api/v1/tasks/{gate['task_id']}/artifacts").json()["qc"]["passed"] is False
     review = api.get("/api/v1/episodes/demo/review").json()
-    assert review["can_assemble"] == (stage == "gen.video")
+    assert review["can_assemble"] is False  # 普通设备的人工豁免不等于可信 Owner 最终合成授权。
     records = [r for r in review["shots"][0]["candidates"] if r["task_id"] == source["task_id"]]
     assert {r["artifact_id"] for r in records if r["qc"]["human_confirmed"]} == {
         i["artifact_id"] for i in chosen
