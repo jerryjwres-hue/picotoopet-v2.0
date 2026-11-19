@@ -1,5 +1,15 @@
 """Phase 1 SQLite 数据库结构。"""
 
+MIGRATION_003 = (
+    """CREATE TABLE executor_qc_picks (
+        gate_id TEXT NOT NULL REFERENCES tasks(task_id),
+        role TEXT NOT NULL,
+        artifact_id TEXT NOT NULL REFERENCES executor_artifacts(artifact_id),
+        released INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(gate_id, role)
+    )""",
+)
+
 MIGRATION_002 = (
     """CREATE TABLE executor_leases (
         task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),

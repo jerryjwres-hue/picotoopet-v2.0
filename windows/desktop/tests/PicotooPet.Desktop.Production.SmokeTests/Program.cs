@@ -58,6 +58,7 @@ internal static class Program
         Check(model.Episode?.EpisodeId == "demo", "缺少剧集");
         Check(model.Shot?.ShotId == "S01", "没有默认选中分镜");
         Check(!model.AssembleCommand.CanExecute(null), "缺少选用时合成按钮应禁用");
+        Check(model.PickLabel == "人工复核选用", "未明确标示末轮人工复核");
         Check(model.Candidates.Count == 3, "候选数量不匹配");
         Check(model.PlayCommand.CanExecute(null), "本机视频未提供播放入口");
         Check(model.QcText.Contains("通过", StringComparison.Ordinal), "没有显示中文质检字段");
@@ -287,6 +288,7 @@ internal static class Program
                     using (var decision = JsonDocument.Parse(
                         await request.Content!.ReadAsStringAsync(cancellationToken)))
                     {
+                        Check(decision.RootElement.GetProperty("accept_qc_failure").GetBoolean(), "未提交明确的人工放行标记");
                         _picked = decision.RootElement.GetProperty("decision").GetString() == "pick";
                         DecisionNote = decision.RootElement.GetProperty("note").GetString();
                         MacNote = DecisionNote ?? "";
@@ -307,7 +309,7 @@ internal static class Program
         private object Candidate(string id, string kind, string file, int take, string? decision) =>
             new { artifact_id = id, task_id = "fixture", kind, path = $@"C:\Demo\{file}", take,
                 decision, note = id == "a" ? MacNote : "", thumbnail_id = id, seed = 123, source_id = "fixture", task_type = "review.imported",
-                qc = new { passed = true, score = 92, fails = Array.Empty<string>(), report_task_id = "fixture", report_thumbnail_id = "report" },
+                qc = new { passed = false, gate_status = "QC_MANUAL_REVIEW", can_confirm = true, score = 92, fails = Array.Empty<string>(), report_task_id = "fixture", report_thumbnail_id = "report" },
             };
 
         private static HttpResponseMessage Json<T>(T value) => new(HttpStatusCode.OK)

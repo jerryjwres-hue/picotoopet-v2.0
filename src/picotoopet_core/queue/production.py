@@ -201,9 +201,18 @@ class ProductionService:
                                 (row["task_id"], row["attempt_count"]),
                             )
                         }
-                        gates[source_id] = (row, result, reports)
+                        confirmed = {
+                            pick["artifact_id"]: bool(pick["released"])
+                            for pick in db.execute(
+                                """SELECT artifact_id,released FROM executor_qc_picks
+                                   WHERE gate_id=?""",
+                                (row["task_id"],),
+                            )
+                        }
+                        superseded = any(item["redo_source"] == source_id for item in rows)
+                        gates[source_id] = (row, result, reports, confirmed, superseded)
                         if row["error_code"] == "QC_MANUAL_REVIEW":
-                            manual |= not any(item["redo_source"] == source_id for item in rows)
+                            manual |= not superseded and not any(confirmed.values())
                         continue
                     checks = result.qc.get("by_sha256")
                     if isinstance(checks, dict):
@@ -218,7 +227,7 @@ class ProductionService:
                         continue
                     qc = qc_by_hash.get(item.sha256, result.qc)
                     if gate := gates.get(row["task_id"]):
-                        check, report, reports = gate
+                        check, report, reports, confirmed, superseded = gate
                         qc = {
                             **report.qc.get("by_sha256", {}).get(item.sha256, {}),
                             "gate_status": check["error_code"] or check["status"],
@@ -227,6 +236,15 @@ class ProductionService:
                                 item.sha256, report.sheet_thumbnail_id
                             ),
                         }
+                        if check["error_code"] == "QC_MANUAL_REVIEW":
+                            qc["can_confirm"] = (
+                                not superseded
+                                and (not any(confirmed.values()) or item.artifact_id in confirmed)
+                                and item.kind in ("image", "video")
+                            )
+                            qc["can_redo"] = not superseded
+                            qc["human_confirmed"] = item.artifact_id in confirmed
+                            qc["human_released"] = any(confirmed.values())
                     candidates.append(
                         ReviewCandidate(
                             **item.model_dump(),

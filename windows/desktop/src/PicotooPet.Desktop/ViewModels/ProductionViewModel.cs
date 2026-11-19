@@ -116,12 +116,14 @@ public sealed class ProductionViewModel : ObservableObject
                 }
                 RaisePropertyChanged(nameof(QcText));
                 RaisePropertyChanged(nameof(CandidateHint));
+                RaisePropertyChanged(nameof(PickLabel));
                 UpdateCommands();
             }
         }
     }
 
     public string QcText => Candidate?.QcText ?? "选择候选查看质检报告。";
+    public string PickLabel => Candidate?.IsManualGate == true ? "人工复核选用" : "选用";
     public string CandidateHint => Candidate?.CanPlay == true ? "视频文件将用本机播放器打开。" : "";
     public bool CanOpenBatch => !_saving;
     public bool HasConnection => _client() is not null;
@@ -419,9 +421,10 @@ public sealed class ProductionViewModel : ObservableObject
         UpdateCommands();
         try
         {
-            await client.DecideArtifactAsync(selected.Record.ArtifactId, new(decision, Note), _token());
+            await client.DecideArtifactAsync(selected.Record.ArtifactId, new(decision, Note, decision == "pick" && selected.IsManualGate), _token());
             Message = decision switch
             {
+                "pick" when selected.IsManualGate => "已记录人工选用。所需素材全部确认后将放行下游任务。",
                 "pick" => "已记录选用。",
                 "redo" when selected.Record.TaskType == "review.imported" => "已标记这条历史素材需要重做。",
                 "redo" => "已加入重做队列。",
@@ -529,8 +532,11 @@ public sealed class CandidateViewModel(ReviewCandidate record) : ObservableObjec
     private string? QcString(string key) =>
         Record.Qc.ValueKind == JsonValueKind.Object && Record.Qc.TryGetProperty(key, out var value)
             && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-    public bool CanPick => QcString("gate_status") is null or "Completed";
-    public bool CanRedo => CanPick || QcString("gate_status") == "QC_MANUAL_REVIEW";
+    public bool IsManualGate => QcString("gate_status") == "QC_MANUAL_REVIEW";
+    private bool QcFlag(string key) => Record.Qc.ValueKind == JsonValueKind.Object &&
+        Record.Qc.TryGetProperty(key, out var flag) && flag.ValueKind == JsonValueKind.True;
+    public bool CanPick => QcString("gate_status") is null or "Completed" || QcFlag("can_confirm");
+    public bool CanRedo => CanPick || QcFlag("can_redo");
     internal string? ReportTask => QcString("report_task_id");
     internal string? ReportId => QcString("report_thumbnail_id");
     private BitmapSource? _report;
@@ -545,7 +551,10 @@ public sealed class CandidateViewModel(ReviewCandidate record) : ObservableObjec
             {
                 var failures = fails.EnumerateArray().Select(x => x.ToString()).ToArray();
                 var issues = failures.Length > 0 ? string.Join(Environment.NewLine, failures) : "无";
-                return $"得分 {score}{Environment.NewLine}未通过项：{issues}";
+                var review = IsManualGate ? (QcFlag("human_released") ?
+                    (QcFlag("human_confirmed") ? "人工复核已放行" : "人工已选用其他候选") :
+                    QcFlag("human_confirmed") ? "已人工确认，等待其余素材" : "待人工复核") + Environment.NewLine : "";
+                return $"{review}得分 {score}{Environment.NewLine}未通过项：{issues}";
             }
             return QcString("gate_status") switch
             {

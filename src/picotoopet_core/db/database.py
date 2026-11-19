@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .schema import MIGRATION_001, MIGRATION_002
+from .schema import MIGRATION_001, MIGRATION_002, MIGRATION_003
 
 
 class Database:
@@ -86,15 +86,16 @@ class Database:
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (1, datetime.now(UTC).isoformat()),
                 )
-            if connection.execute(
-                "SELECT 1 FROM schema_migrations WHERE version = 2"
-            ).fetchone() is None:
-                for statement in MIGRATION_002:
-                    connection.execute(statement)
-                connection.execute(
-                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                    (2, datetime.now(UTC).isoformat()),
-                )
+            for version, statements in ((2, MIGRATION_002), (3, MIGRATION_003)):
+                if connection.execute(
+                    "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
+                ).fetchone() is None:
+                    for statement in statements:
+                        connection.execute(statement)
+                    connection.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                        (version, datetime.now(UTC).isoformat()),
+                    )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
         """执行单条 SQL。"""

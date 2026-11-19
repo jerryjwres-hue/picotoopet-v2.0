@@ -2,6 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "accept_qc_failure": {
+      "default": false,
+      "title": "Accept Qc Failure",
+      "type": "boolean"
+    },
     "decision": {
       "enum": [
         "pick",

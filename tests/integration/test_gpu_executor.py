@@ -589,6 +589,74 @@ def test_failed_gate_reseeds_twice_blocks_downstream_and_marks_manual(api):
     assert api.post("/api/v1/executors/lease", json=LEASE).json()["task_type"] == "gen.keyframe"
 
 
+@pytest.mark.parametrize("stage", ["gen.keyframe", "gen.video"])
+def test_explicit_human_override_pins_only_reviewed_inputs(api, stage):
+    spec = episode_spec()
+    spec["shots"][0]["last_frame"] = {"refs": [], "prompt": "closing"}
+    api.post("/api/v1/episodes", json=spec)
+
+    def lease():
+        return api.post("/api/v1/executors/lease", json=LEASE)
+
+    def complete(task, items):
+        return api.post(
+            f"/api/v1/tasks/{task['task_id']}/complete",
+            json={"worker_id": "bridge", "artifacts": items, "qc": {}, "metrics": {"seconds": 1}},
+        )
+
+    def decide(item, **flags):
+        return api.post(
+            f"/api/v1/artifacts/{item['artifact_id']}/decision", json={"decision": "pick", **flags}
+        )
+
+    frames = [
+        {**media(digest="1"), "path": "S01_first_v1.png"},
+        {**media(digest="2"), "path": "S01_last_v1.png"},
+        {**media(digest="3", take=2), "path": "S01_first_v2.png"},
+        {**media(digest="4"), "path": "other_first_v1.png"},
+    ]
+    videos = [media("video", "5"), media("video", "6", take=2)]
+    if stage == "gen.video":
+        assert complete(lease().json(), frames).is_success
+        finish_gate(api)
+    for _ in range(3):
+        source = lease().json()
+        assert source["task_type"] == stage
+        assert complete(source, frames if stage == "gen.keyframe" else videos).is_success
+        gate = finish_gate(api, False)
+    path = f"/api/v1/tasks/{source['task_id']}/artifacts"
+    items = api.get(path).json()["artifacts"]
+    assert decide(items[0]).status_code == 409
+    chosen = [items[2], items[1]] if stage == "gen.keyframe" else [items[1]]
+    if stage == "gen.keyframe":
+        assert decide(items[3], accept_qc_failure=True).status_code == 409
+        assert decide(items[0], accept_qc_failure=True).status_code == 200
+        assert lease().status_code == 204
+    for index, item in enumerate(chosen):
+        assert decide(item, accept_qc_failure=True).status_code == 200
+        if index + 1 < len(chosen):
+            assert lease().status_code == 204
+    assert decide(chosen[-1], accept_qc_failure=True).status_code == 200
+    assert decide(items[0], accept_qc_failure=True).status_code == 409
+    next_task = lease().json()
+    pinned = next_task["payload"]["jobs"]["reviewed_inputs"]
+    assert {item["artifact_id"] for item in pinned} == {item["artifact_id"] for item in chosen}
+    assert {item["sha256"] for item in pinned} == {item["sha256"] for item in chosen}
+    assert next_task["task_type"] == ("gen.video" if stage == "gen.keyframe" else "gen.foley")
+    assert api.get(f"/api/v1/tasks/{gate['task_id']}").json()["status"] == "Failed"
+    assert api.get(f"/api/v1/tasks/{gate['task_id']}/artifacts").json()["qc"]["passed"] is False
+    review = api.get("/api/v1/episodes/demo/review").json()
+    assert review["can_assemble"] == (stage == "gen.video")
+    records = [r for r in review["shots"][0]["candidates"] if r["task_id"] == source["task_id"]]
+    assert {r["artifact_id"] for r in records if r["qc"]["human_confirmed"]} == {
+        i["artifact_id"] for i in chosen
+    }
+    db = api.app.state.services.database
+    assert db.scalar(
+        "SELECT count(*) FROM audit_events WHERE reason_code='QC_HUMAN_OVERRIDE'"
+    ) >= len(chosen)
+
+
 def test_passing_redo_releases_correct_video_and_candidate_thumbnail(api):
     stages = api.post("/api/v1/episodes", json=episode_spec()).json()["tasks"]
     body = {"worker_id": "bridge", "artifacts": [media()], "qc": {}, "metrics": {"seconds": 1}}
