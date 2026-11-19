@@ -88,8 +88,12 @@ def test_invalid_storypacks_are_rejected(api, mutation):
 
 def test_unauthorized_and_oversized_preview_never_enqueues(api):
     route = "/api/v1/studio/storypacks/preview"
-    assert api.post(route, json=storypack(), headers={"Authorization": "Bearer invalid"}).status_code == 401
-    assert api.post(route, content="A" * (128 * 1024 + 1), headers={"Content-Type": "text/yaml"}).status_code == 413
+    denied = api.post(route, json=storypack(), headers={"Authorization": "Bearer invalid"})
+    assert denied.status_code == 401
+    oversized = api.post(
+        route, content="A" * (128 * 1024 + 1), headers={"Content-Type": "text/yaml"}
+    )
+    assert oversized.status_code == 413
     assert api.app.state.services.database.scalar("SELECT COUNT(*) FROM tasks") == 0
 
 
