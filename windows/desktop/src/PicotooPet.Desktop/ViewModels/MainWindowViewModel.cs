@@ -280,7 +280,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             // Core 只证明 SQLite 是否有记录；不在 UI 上暗示身份或使用权已批准。
             var assetStatus = preview.GetProperty("asset_record_checks").EnumerateArray()
                 .Select(item => $"{item.GetProperty("ref").GetString()}: " +
-                    $"{item.GetProperty("registry_record_status").GetString()}");
+                    $"{item.GetProperty("registry_record_status").GetString()}, " +
+                    $"内容={item.GetProperty("managed_object_integrity").GetString()}");
             var missingLocks = preview.GetProperty("missing_design_locks").EnumerateArray()
                 .Select(item => item.GetString());
             var compilation = preview.GetProperty("production_compilation");
