@@ -14,7 +14,7 @@ Windows 用同一个 Mac Core 地址和设备令牌连接。Mac 保存任务、�
 ## 在 Windows 启动
 
 1. 启动 Claude 维护的文件 worker v2。保留已有生成脚本和目录结构。
-2. 使用 Python 3.11 或更新版本，在仓库根目录运行 `py -3 -m pip install requests -r tools/qc/requirements-runtime.txt`。若要生成候选预览、检查视频和执行硬切合成，将本机 `ffmpeg` 和 `ffprobe` 加入 `PATH`。
+2. 使用 Python 3.11 或更新版本，在仓库根目录运行 `py -3 -m pip install -r scripts/windows/requirements-executor.txt`。为生成候选预览、检查视频和执行分轨合成，将本机 `ffmpeg` 和 `ffprobe` 加入 `PATH`。
 3. 将 `scripts/windows/executor_bridge.example.toml` 复制为同目录的 `executor_bridge.toml`。填写 Mac Core 根地址、唯一 `worker_id` 和 Windows 现有项目根目录。在启动环境中设置 `PICOTOO_EXECUTOR_TOKEN`。
 4. 从带有该环境变量的终端运行 `scripts\windows\RUN_executor_bridge.bat`。按 Ctrl+C 停止。
 
