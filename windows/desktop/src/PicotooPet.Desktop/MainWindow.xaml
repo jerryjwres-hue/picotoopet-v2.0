@@ -114,7 +114,10 @@
                   HorizontalAlignment="Left" Padding="18,8" Margin="0,12,0,12" />
           <Border Grid.Row="3" Background="{StaticResource PanelBrush}" Padding="12"
                   CornerRadius="8">
-            <TextBlock Text="{Binding StoryPackPreviewText}" TextWrapping="Wrap" />
+            <!-- 镜头计划较长时允许独立滚动，避免撑开整个控制中心窗口。 -->
+            <ScrollViewer MaxHeight="210" VerticalScrollBarVisibility="Auto">
+              <TextBlock Text="{Binding StoryPackPreviewText}" TextWrapping="Wrap" />
+            </ScrollViewer>
           </Border>
         </Grid>
       </TabItem>
