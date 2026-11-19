@@ -1,6 +1,6 @@
 """Tests for GPU VRAM check and cooperative fallback."""
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from qc.gpu import get_gpu_memory_used_mb, resolve_device
 
 
@@ -22,7 +22,9 @@ def test_resolve_device_switches_to_cpu_when_vram_exceeds_threshold(mock_get_mem
 @patch("qc.gpu.get_gpu_memory_used_mb")
 def test_resolve_device_uses_cuda_when_vram_low(mock_get_mem):
     mock_get_mem.return_value = 2100  # < 5000 MiB
-    with patch("torch.cuda.is_available", return_value=True):
+    torch = Mock()
+    torch.cuda.is_available.return_value = True
+    with patch.dict("sys.modules", {"torch": torch}):
         device = resolve_device(threshold_mb=5000)
         assert device == "cuda"
 
