@@ -103,12 +103,14 @@ def test_local_qc_images_reports_per_digest_and_rejects_replaced_media(tmp_path)
         }
         result = bridge._work(state)
         assert result["qc"]["passed"] is False
-        assert result["qc"]["fails"]
+        # 没有 Florence-2 时，数量判断只作为 warnings，但总认证必须失败。
+        assert result["qc"]["passed"] is False
         for candidate in candidates:
             item = result["qc"]["by_sha256"][candidate["sha256"]]
             assert item["report"]["shot_id"] == "S01"
             assert item["report"]["pass"] is item["passed"]
-            assert any(f["check"] == "dog_count" for f in item["report"]["fails"])
+            assert item["report"]["fallback_cv_active"] is True
+            assert any(f["check"] == "dog_count" for f in item["report"]["warnings"])
         bridge._stage_report(state, result)
         assert {p["digest"] for p in state["previews"]} == {
             None,
