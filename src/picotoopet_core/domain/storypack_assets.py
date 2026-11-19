@@ -96,6 +96,7 @@ def inspect_recorded_asset_refs(
         )
         if row is None:
             status = "RECORD_NOT_FOUND"
+            recorded_sha256 = None
             has_digest = False
             is_original = False
             category = None
@@ -107,6 +108,7 @@ def inspect_recorded_asset_refs(
                 isinstance(declared_digest, str)
                 and _SHA256_HEX.fullmatch(declared_digest) is not None
             )
+            recorded_sha256 = declared_digest.lower() if has_digest else None
             status = "RECORDED_UNAPPROVED" if has_digest else "RECORD_HASH_MISSING"
             is_original = row["is_original"] == 1
             category = row["artifact_type"]
@@ -130,6 +132,7 @@ def inspect_recorded_asset_refs(
                 "ref": ref,
                 "registry_record_status": status,
                 "sha256_recorded": has_digest,
+                "recorded_sha256": recorded_sha256,
                 "original_flag_recorded": is_original,
                 "artifact_type": category,
                 "managed_object_integrity": managed_status,
