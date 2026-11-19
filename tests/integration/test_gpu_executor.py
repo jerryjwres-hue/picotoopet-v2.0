@@ -557,9 +557,9 @@ def test_episode_chain_retry_thumbnail_and_assembly(api):
     assert api.post(decision, json={"decision": "redo", "note": "重试"}).status_code == 200
     assert api.get("/api/v1/episodes/demo/review").json()["shots"][0]["redo_count"] == 1
     assert api.post(decision, json={"decision": "pick"}).status_code == 200
-    assembly = api.post(assemble).json()
-    assert assembly["task_type"] == "edit.assemble"
-    assert api.post(assemble).json()["task_id"] == assembly["task_id"]
+    # 此视频已提出 redo，新轮次 QC 前不能复用旧片执行合成。
+    assert api.post(assemble).status_code == 409
+    assert api.get("/api/v1/episodes/demo/review").json()["can_assemble"] is False
 
 
 def test_failed_gate_reseeds_twice_blocks_downstream_and_marks_manual(api):
