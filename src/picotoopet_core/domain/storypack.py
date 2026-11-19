@@ -133,11 +133,17 @@ def storypack_preview(pack: StoryPackV1) -> dict:
     payload = pack.model_dump(mode="json")
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     width, height, fps, seconds = OUTPUT_PROFILES[pack.output_profile]
+    source_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    # 依赖在函数内部导入，避免 StoryPack 和现有 Episode 编译契约循环加载。
+    from picotoopet_core.domain.storypack_compiler import compile_episode_draft
+
+    compilation = compile_episode_draft(pack, source_sha256)
     return {
         "validated": True,
         "schema": pack.schema,
         "episode_id": pack.episode_id,
-        "storypack_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "storypack_sha256": source_sha256,
+        "production_compilation": compilation,
         "shot_count": len(pack.shots),
         "output": {
             "width": width,
