@@ -25,6 +25,7 @@ class DINOv2Extractor:
         self.model_name = model_name
         self.model = None
         self.transform = None
+        self.is_fallback = False  # 区分 DINOv2 真推理与直方图替代算法。
         self._load_model()
 
     def _load_model(self):
@@ -47,6 +48,8 @@ class DINOv2Extractor:
         except Exception as exc:
             logger.warning(f"DINOv2 unavailable ({exc}). Using permissive CV histogram/gradient embeddings.")
             self.model = None
+            self.transform = None
+            self.is_fallback = True  # 未加载模型不允许将直方图相似度冒充身份认证。
 
     def extract_embedding(self, img_bgr: np.ndarray) -> np.ndarray:
         """Extract L2-normalized embedding vector."""
@@ -69,8 +72,10 @@ class DINOv2Extractor:
                 return emb / (norm + 1e-7)
             except Exception as exc:
                 logger.warning(f"DINOv2 extraction failed: {exc}")
+                self.is_fallback = True  # 运行中失败也使本次身份核查失去认证资格。
 
-        # Fallback embedding: combined normalized color histogram + Hu moments + edge features
+        # Fallback embedding: only for advisory metrics, never certified identity.
+        self.is_fallback = True
         return compute_fallback_embedding(img_bgr)
 
 
