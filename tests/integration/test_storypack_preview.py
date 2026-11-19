@@ -207,6 +207,80 @@ def test_duplicate_json_or_yaml_keys_fail_closed_before_digest(api):
     assert api.app.state.services.database.scalar("SELECT COUNT(*) FROM tasks") == 0
 
 
+def test_registry_missing_assets_never_receive_owner_approval(api):
+    response = api.post("/api/v1/studio/storypacks/preview", json=storypack())
+    assert response.status_code == 200
+    checks = response.json()["asset_record_checks"]
+    assert [item["ref"] for item in checks] == ["maotai_master_v1", "backyard_v1"]
+    assert all(item["registry_record_status"] == "RECORD_NOT_FOUND" for item in checks)
+    assert all(item["owner_approval_verified"] is False for item in checks)
+    assert all(item["usable_for_generation"] is False for item in checks)
+    assert response.json()["can_queue"] is False
+
+
+def test_existing_artifact_record_is_not_authorized_asset(api):
+    database = api.app.state.services.database
+    database.execute(
+        """INSERT INTO projects
+           (project_id, title, project_type, source_app, classification,
+            status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("fixture-project", "Fixture", "pet", "test", "internal", "Active",
+         "2026-11-19T00:00:00Z", "2026-11-19T00:00:00Z"),
+    )
+    database.execute(
+        """INSERT INTO artifacts
+           (artifact_id, project_id, artifact_type, classification,
+            sha256, is_original, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        ("maotai_master_v1", "fixture-project", "image", "internal",
+         "a" * 64, 1, "2026-11-19T00:00:00Z"),
+    )
+    before = database.scalar("SELECT COUNT(*) FROM artifacts")
+    response = api.post("/api/v1/studio/storypacks/preview", json=storypack())
+    assert response.status_code == 200
+    checks = {item["ref"]: item for item in response.json()["asset_record_checks"]}
+    maotai = checks["maotai_master_v1"]
+    assert maotai["registry_record_status"] == "RECORDED_UNAPPROVED"
+    assert maotai["sha256_recorded"] is True
+    assert maotai["original_flag_recorded"] is True
+    assert maotai["content_integrity_verified"] is False
+    assert maotai["owner_approval_verified"] is False
+    assert maotai["physical_file_verified"] is False
+    assert maotai["usable_for_generation"] is False
+    assert checks["backyard_v1"]["registry_record_status"] == "RECORD_NOT_FOUND"
+    assert response.json()["can_queue"] is False
+    assert database.scalar("SELECT COUNT(*) FROM artifacts") == before
+    assert database.scalar("SELECT COUNT(*) FROM tasks") == 0
+
+
+def test_record_without_valid_sha_is_not_ready(api):
+    database = api.app.state.services.database
+    database.execute(
+        """INSERT INTO projects
+           (project_id, title, project_type, source_app, classification,
+            status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("nohash-project", "Fixture", "pet", "test", "internal", "Active",
+         "2026-11-19T00:00:00Z", "2026-11-19T00:00:00Z"),
+    )
+    database.execute(
+        """INSERT INTO artifacts
+           (artifact_id, project_id, artifact_type, classification,
+            sha256, is_original, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        ("backyard_v1", "nohash-project", "image", "internal", "invalid", 0,
+         "2026-11-19T00:00:00Z"),
+    )
+    result = api.post("/api/v1/studio/storypacks/preview", json=storypack())
+    assert result.status_code == 200
+    checks = {item["ref"]: item for item in result.json()["asset_record_checks"]}
+    assert checks["backyard_v1"]["registry_record_status"] == "RECORD_HASH_MISSING"
+    assert checks["backyard_v1"]["sha256_recorded"] is False
+    assert checks["backyard_v1"]["usable_for_generation"] is False
+    assert result.json()["can_queue"] is False
+
+
 def test_portrait_preview_does_not_enable_rendering(api):
     pack = storypack()
     pack["output_profile"] = "design_portrait"
