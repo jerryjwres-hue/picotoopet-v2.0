@@ -3,6 +3,8 @@
 from fastapi import APIRouter, Depends, Request
 
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
+from picotoopet_core.domain.storypack_fingerprints import build_shot_fingerprints
 from picotoopet_core.domain.storypack import (
     StoryPackError,
     parse_storypack,
@@ -55,5 +57,18 @@ async def preview_storypack(request: Request) -> dict:
             retryable=False,
         ) from exc
 
-    # 返回预览结果，但不修改 SQLite，也不调用任何 Windows 工具。
-    return storypack_preview(pack)
+    # 只读核对记录是否存在，不能将数据库中有 SHA 等同于主人已批准。
+    preview = storypack_preview(pack)
+    preview["asset_record_checks"] = inspect_recorded_asset_refs(
+        request.app.state.services.database,
+        preview["unresolved_asset_refs"],
+        # 只能读取 Mac Core 自主管理的内容寻址对象目录。
+        managed_objects_dir=request.app.state.services.settings.paths.objects_dir,
+    )
+    # 指纹用于增量差异检查，不提供自动复用/自动生成权限。
+    preview["fingerprint_plan"] = build_shot_fingerprints(
+        pack,
+        preview["storypack_sha256"],
+        preview["asset_record_checks"],
+    )
+    return preview
