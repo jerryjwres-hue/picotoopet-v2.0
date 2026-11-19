@@ -247,7 +247,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         try
         {
-            using var document = JsonDocument.Parse(StoryPackInput);
+            // 同时支持纯 JSON 与云端 LLM 回复中的 markdown json 代码块。
+            var source = StoryPackInput.Trim();
+            var fence = source.IndexOf("```json", StringComparison.OrdinalIgnoreCase);
+            if (fence >= 0)
+            {
+                var start = source.IndexOf('\n', fence);
+                var end = start < 0 ? -1 : source.IndexOf("```", start + 1);
+                if (start < 0 || end < 0)
+                {
+                    throw new FormatException("StoryPack JSON 代码块不完整。");
+                }
+                source = source.Substring(start + 1, end - start - 1).Trim();
+            }
+            using var document = JsonDocument.Parse(source);
             var preview = await _client.PreviewStoryPackAsync(
                 document.RootElement, CurrentConnectionToken);
             var output = preview.GetProperty("output");
