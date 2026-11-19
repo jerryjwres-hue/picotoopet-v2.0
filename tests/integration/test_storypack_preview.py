@@ -97,6 +97,52 @@ def test_unauthorized_and_oversized_preview_never_enqueues(api):
     assert api.app.state.services.database.scalar("SELECT COUNT(*) FROM tasks") == 0
 
 
+def test_multi_scene_and_cast_are_declared_and_previewed(api):
+    pack = storypack()
+    pack["style_ref"] = "picotoo_cinematic_v1"
+    pack["supporting_character_refs"] = ["owner_master_v1"]
+    pack["additional_scene_refs"] = ["home_door_v1"]
+    shot = pack["shots"][1]
+    shot["scene_ref"] = "home_door_v1"
+    shot["cast_refs"] = ["maotai_master_v1", "owner_master_v1"]
+    shot["handoff"] = "scene_change"
+    response = api.post("/api/v1/studio/storypacks/preview", json=pack)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["shots"][1]["scene_ref"] == "home_door_v1"
+    assert data["shots"][1]["cast_refs"] == ["maotai_master_v1", "owner_master_v1"]
+    assert data["missing_design_locks"] == []
+    assert set(data["unresolved_asset_refs"]) == {
+        "maotai_master_v1", "owner_master_v1",
+        "backyard_v1", "home_door_v1", "picotoo_cinematic_v1",
+    }
+    assert data["can_queue"] is False
+
+
+@pytest.mark.parametrize("problem", ["unknown_scene", "unknown_cast", "scene_drift", "duplicate_cast"])
+def test_storypack_rejects_undeclared_assets_or_continuity_drift(api, problem):
+    pack = storypack()
+    if problem == "unknown_scene":
+        pack["shots"][1]["scene_ref"] = "kitchen_unapproved_v1"
+    elif problem == "unknown_cast":
+        pack["shots"][1]["cast_refs"] = ["unknown_actor_v1"]
+    elif problem == "scene_drift":
+        pack["additional_scene_refs"] = ["home_door_v1"]
+        pack["shots"][1]["scene_ref"] = "home_door_v1"
+    else:
+        pack["supporting_character_refs"] = ["maotai_master_v1"]
+    response = api.post("/api/v1/studio/storypacks/preview", json=pack)
+    assert response.status_code == 422
+    assert api.app.state.services.database.scalar("SELECT COUNT(*) FROM tasks") == 0
+
+
+def test_missing_style_is_visible_as_unfinished_lock(api):
+    response = api.post("/api/v1/studio/storypacks/preview", json=storypack())
+    assert response.status_code == 200
+    assert response.json()["missing_design_locks"] == ["style_ref"]
+    assert response.json()["can_queue"] is False
+
+
 def test_portrait_preview_does_not_enable_rendering(api):
     pack = storypack()
     pack["output_profile"] = "design_portrait"
