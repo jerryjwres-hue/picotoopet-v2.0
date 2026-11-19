@@ -256,8 +256,24 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             var height = output.GetProperty("height").GetInt32();
             var fps = output.GetProperty("fps").GetInt32();
             var duration = output.GetProperty("planned_duration_s").GetInt32();
-            StoryPackPreviewText = $"已验证：{shots} 镜 · {width}×{height} · {fps}fps · " +
-                $"{duration}秒。资产与审批尚未核验，禁止自动生产。";
+            // 将计划按镜头展开，使审核者能直接检查角色和场景切换。
+            var shotLines = preview.GetProperty("shots").EnumerateArray().Select(shot =>
+            {
+                var cast = string.Join(", ", shot.GetProperty("cast_refs").EnumerateArray()
+                    .Select(item => item.GetString()));
+                return $"{shot.GetProperty("id").GetString()}: {shot.GetProperty("action").GetString()}" +
+                    $"  [场景 {shot.GetProperty("scene_ref").GetString()} | 角色 {cast}]";
+            });
+            var refs = preview.GetProperty("unresolved_asset_refs").EnumerateArray()
+                .Select(item => item.GetString());
+            var missingLocks = preview.GetProperty("missing_design_locks").EnumerateArray()
+                .Select(item => item.GetString());
+            StoryPackPreviewText =
+                $"预览通过：{shots} 镜 · {width}×{height} · {fps}fps · {duration}秒\\n" +
+                string.Join("\\n", shotLines) + "\\n" +
+                $"待核实资产：{string.Join(", ", refs)}\\n" +
+                $"未冻结设计项：{(missingLocks.Any() ? string.Join(", ", missingLocks) : "无")}\\n" +
+                "仅预览：不得自动开始生产、解除 GPU HOLD 或发布。";
         }
         catch (Exception exception)
         {
