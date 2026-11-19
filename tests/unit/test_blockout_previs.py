@@ -8,6 +8,8 @@ import pytest
 from scripts.windows.blockout_previs_verify import (
     ProbeUnavailable,
     compare_coverage,
+    inspect_local_tools,
+    main,
     validate_package,
 )
 
@@ -199,3 +201,50 @@ def test_camera_and_subject_warnings_do_not_fake_evidence(tmp_path):
     assert result["status"] == "WARN"
     assert result["actor_track_sha256"] is None
     assert "SUBJECT_TRACKS_MISSING" in result["warnings"]
+
+
+def test_incomplete_track_cannot_prove_same_actor_motion(tmp_path):
+    a = _package(tmp_path / "wide")
+    b = _package(tmp_path / "side", camera_x=2)
+    meta = _meta(2)
+    meta["subjects"].append({"name": "SECOND_DOG", "asset": "animal.dog", "marks": []})
+    (b / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+    result = validate_package(b, probe=_probe)
+    assert result["status"] == "WARN"
+    assert "ACTOR_MOTION_NOT_PROVEN" in result["warnings"]
+    coverage = compare_coverage([validate_package(a, probe=_probe), result])
+    assert coverage["actor_paths_match"] is False
+
+
+def test_local_preflight_does_not_read_control_token_or_start_app(tmp_path, monkeypatch, capsys):
+    from scripts.windows import blockout_previs_verify as module
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    mcp = tmp_path / "Programs" / "Blockout" / "resources" / "mcp"
+    mcp.mkdir(parents=True)
+    (mcp / "blockout-mcp.mjs").write_text("fixture only", encoding="utf-8")
+    descriptor = tmp_path / "blockout"
+    descriptor.mkdir()
+    (descriptor / "control.json").write_text('{"token":"not-for-output"}', encoding="utf-8")
+    monkeypatch.setattr(module.shutil, "which", lambda name: f"/fake/{name}")
+    result = inspect_local_tools()
+    assert result["bridge_installed"] is True
+    assert result["running_descriptor_detected"] is True
+    assert result["ready_for_manual_app_test"] is True
+    assert result["mcp_connection_verified"] is False
+    assert result["app_export_verified"] is False
+    assert main(["--preflight"]) == 0
+    output = capsys.readouterr().out
+    assert "not-for-output" not in output
+    assert "mcp_connection_verified" in output
+
+
+def test_preflight_missing_bridge_is_unavailable(tmp_path, monkeypatch):
+    from scripts.windows import blockout_previs_verify as module
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(module.shutil, "which", lambda name: f"/fake/{name}")
+    assert inspect_local_tools()["bridge_installed"] is False
+    assert main(["--preflight"]) == 3
