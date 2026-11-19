@@ -39,7 +39,19 @@
       "depends_on": [
         "S02"
       ],
-      "handoff": "continuous"
+      "handoff": "scene_change",
+      "scene_ref": "home_door_v1",
+      "cast_refs": [
+        "maotai_master_v1",
+        "owner_master_v1"
+      ]
     }
+  ],
+  "style_ref": "picotoo_cinematic_v1",
+  "supporting_character_refs": [
+    "owner_master_v1"
+  ],
+  "additional_scene_refs": [
+    "home_door_v1"
   ]
 }
