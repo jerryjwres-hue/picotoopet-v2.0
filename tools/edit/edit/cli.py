@@ -40,6 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
 
+    convert = subparsers.add_parser("convert", help="Convert a cut_v2 plan to edit.production.v1")
+    convert.add_argument("--plan", required=True, help="Source cut_v2 JSON plan")
+    convert.add_argument("--root", help="Local asset root (overrides the source plan root)")
+    convert.add_argument("--out", required=True, help="Destination edit plan JSON")
     return parser
 
 
@@ -54,6 +58,17 @@ def main(args: list[str] | None = None) -> int:
     if not parsed.subcommand:
         parser.print_help()
         return 2
+
+    if parsed.subcommand == "convert":
+        from edit.convert import convert_plan
+
+        try:
+            plan = convert_plan(parsed.plan, parsed.root, parsed.out)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            sys.stderr.write(f"Conversion error: {exc}\n")
+            return 1
+        print(f"Converted {len(plan['shots'])} shots to {parsed.out}")
+        return 0
 
     if parsed.subcommand == "assemble":
         try:

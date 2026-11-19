@@ -32,6 +32,23 @@ def number(value, minimum=None):
     return n
 
 
+def cut_transition(spec):
+    if isinstance(spec, str):
+        kind = spec
+        if kind not in TRANSITIONS:
+            raise ValueError(f"Unknown transition: {kind}")
+        return kind, TRANSITIONS[kind][1]
+    kind = spec["type"]
+    if kind == "whip":
+        kind = "whip_" + spec["dir"]
+    if kind not in TRANSITIONS:
+        raise ValueError(f"Unknown transition: {kind}")
+    duration = number(spec.get("dur", TRANSITIONS[kind][1]), 0)
+    if kind == "hard" and duration != 0:
+        raise ValueError("Hard cuts require zero overlap")
+    return kind, duration
+
+
 def local_media(cmd, cwd):
     return subprocess.run(cmd, cwd=cwd, capture_output=True)
 
@@ -103,7 +120,7 @@ def mix_audio(ff, plan, shots, starts, total, resolve):
         inputs += ["-i", resolve(fx["file"])]
         graph.append(
             f"[{j}:a]aresample=48000,aformat=channel_layouts=stereo,"
-            f"volume={number(fx.get('db', 0))}dB,"
+            f"volume={number(fx.get('db', fx.get('gain_db', 0)))}dB,"
             f"{delayed(number(fx['at'], 0))}[s{j}]"
         )
         labels.append(f"[s{j}]")
@@ -127,7 +144,7 @@ def mix_audio(ff, plan, shots, starts, total, resolve):
             graph.append(
                 f"[{len(labels) + k}:a]atrim={ci}:{ci + d:.3f},asetpts=PTS-STARTPTS,"
                 "aresample=48000,aformat=channel_layouts=stereo,"
-                f"volume={number(cue.get('db', -14))}dB,"
+                f"volume={number(cue.get('db', cue.get('gain_db', -14)))}dB,"
                 f"afade=t=in:d={fi},afade=t=out:st={max(0, d - fo):.3f}:d={fo},"
                 f"{delayed(at)}[m{k}]"
             )
@@ -233,10 +250,8 @@ def assemble_cut(plan, output, *, resolve, media=local_media, edl=None, strip=No
             if length < 1 / fps:
                 raise ValueError(f"Shot {i + 1} is shorter than one frame")
             if i:
-                kind = shots[i - 1].get("transition_out", "cut")
-                if kind not in TRANSITIONS:
-                    raise ValueError(f"Unsupported outgoing transition: {kind}")
-                effect, overlap = TRANSITIONS[kind]
+                kind, overlap = cut_transition(shots[i - 1].get("transition_out", "cut"))
+                effect = TRANSITIONS[kind][0]
                 overlap = min(overlap, length / 2, durations[-1] / 2)
                 starts.append(starts[-1] + durations[-1] - overlap)
                 edges.append((effect, overlap))
@@ -311,7 +326,7 @@ def assemble_cut(plan, output, *, resolve, media=local_media, edl=None, strip=No
             gains = [number(shot.get("ltx_db", 0))]
             for track in tracks:
                 inputs += ["-i", resolve(track["file"])]
-                gains.append(number(track.get("db", -3)))
+                gains.append(number(track.get("db", track.get("gain_db", -3))))
             graph = []
             for j, gain in enumerate(gains):
                 fx = [f"atrim={a}:{b + tail * speed}", "asetpts=PTS-STARTPTS"]
@@ -370,7 +385,7 @@ def assemble_cut(plan, output, *, resolve, media=local_media, edl=None, strip=No
                 "shot_id": shot.get("shot_id", f"S{i + 1:02}"),
                 "start": starts[i],
                 "duration": durations[i],
-                "transition_out": shot.get("transition_out", "cut"),
+                "transition_out": cut_transition(shot.get("transition_out", "cut"))[0],
             }
             for i, shot in enumerate(shots)
         ]
