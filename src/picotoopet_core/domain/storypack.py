@@ -91,8 +91,15 @@ def parse_storypack(source: bytes, *, as_yaml: bool) -> StoryPackV1:
             else json.loads(source.decode("utf-8-sig"))
         )
         return StoryPackV1.model_validate(data)
-    except (UnicodeError, yaml.YAMLError, json.JSONDecodeError, ValidationError, ValueError) as exc:
-        raise StoryPackError(f"StoryPack validation failed: {exc}") from exc
+    except ValidationError as exc:
+        # 返回字段路径与错误类型，不回显用户粘贴的剧本或私有素材内容。
+        issues = [
+            f"{'.'.join(str(part) for part in item['loc'])}: {item['type']}"
+            for item in exc.errors(include_input=False)
+        ]
+        raise StoryPackError("StoryPack validation failed: " + "; ".join(issues[:16])) from exc
+    except (UnicodeError, yaml.YAMLError, json.JSONDecodeError, ValueError, RecursionError) as exc:
+        raise StoryPackError(f"StoryPack syntax invalid: {type(exc).__name__}") from exc
 
 
 def storypack_preview(pack: StoryPackV1) -> dict:
