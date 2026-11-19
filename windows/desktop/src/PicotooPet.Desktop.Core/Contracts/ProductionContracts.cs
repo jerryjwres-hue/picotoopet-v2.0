@@ -41,7 +41,8 @@ public sealed record EpisodeImportResult(
 
 public sealed record ArtifactDecisionRequest(
     [property: JsonPropertyName("decision")] string Decision,
-    [property: JsonPropertyName("note")] string Note);
+    [property: JsonPropertyName("note")] string Note,
+    [property: JsonPropertyName("accept_qc_failure")] bool AcceptQcFailure = false);
 
 public sealed record PreviewContent(
     [property: JsonPropertyName("jpeg_base64")] string JpegBase64);
