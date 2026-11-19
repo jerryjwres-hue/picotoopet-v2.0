@@ -277,8 +277,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 return $"{shot.GetProperty("id").GetString()}: {shot.GetProperty("action").GetString()}" +
                     $"  [场景 {shot.GetProperty("scene_ref").GetString()} | 角色 {cast}]";
             });
-            var refs = preview.GetProperty("unresolved_asset_refs").EnumerateArray()
-                .Select(item => item.GetString());
+            // Core 只证明 SQLite 是否有记录；不在 UI 上暗示身份或使用权已批准。
+            var assetStatus = preview.GetProperty("asset_record_checks").EnumerateArray()
+                .Select(item => $"{item.GetProperty("ref").GetString()}: " +
+                    $"{item.GetProperty("registry_record_status").GetString()}");
             var missingLocks = preview.GetProperty("missing_design_locks").EnumerateArray()
                 .Select(item => item.GetString());
             var compilation = preview.GetProperty("production_compilation");
@@ -289,7 +291,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             StoryPackPreviewText =
                 $"预览通过：{shots} 镜 · {width}×{height} · {fps}fps · {duration}秒\\n" +
                 string.Join("\\n", shotLines) + "\\n" +
-                $"待核实资产：{string.Join(", ", refs)}\\n" +
+                $"素材记录（不等于主人审批）：{string.Join("; ", assetStatus)}\\n" +
                 $"未冻结设计项：{(missingLocks.Any() ? string.Join(", ", missingLocks) : "无")}\\n" +
                 $"各镜仍需编制：{string.Join(", ", missing)}\\n" +
                 $"审批缺口：{string.Join(", ", trust)}\\n" +
