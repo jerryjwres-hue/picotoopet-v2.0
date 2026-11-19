@@ -232,6 +232,7 @@ class ProductionService:
                             **report.qc.get("by_sha256", {}).get(item.sha256, {}),
                             "gate_status": check["error_code"] or check["status"],
                             "report_task_id": check["task_id"],
+                            "superseded": superseded,             # 旧轮次不得再次被合成
                             "report_thumbnail_id": reports.get(
                                 item.sha256, report.sheet_thumbnail_id
                             ),
@@ -255,8 +256,10 @@ class ProductionService:
                         )
                     )
             statuses = {row["status"] for row in rows}
-            if self._picked_video(candidates):
+            if self._certified_video(candidates):
                 status = "已选用"
+            elif self._picked_video(candidates):
+                status = "已选用待质量认证"
             elif manual:
                 status = "待人工复核"
             elif TaskStatus.RUNNING.value in statuses:
@@ -280,8 +283,29 @@ class ProductionService:
                 )
             )
         return EpisodeReview(
-            shots=shots, can_assemble=all(self._picked_video(shot.candidates) for shot in shots)
+            shots=shots,
+            can_assemble=all(self._certified_video(shot.candidates) for shot in shots),
         )
+
+    @classmethod
+    def _certified_video(cls, candidates: list[ReviewCandidate]) -> ReviewCandidate | None:
+        """仅允许当前轮次、同一产物 SHA 的已认证 QC 视频进入正式合成。"""
+        picks = [c for c in candidates if c.kind == "video" and c.decision == "pick"]
+        if len(picks) != 1:
+            return None
+        pick = picks[0]
+        qc = pick.qc
+        if (
+            not isinstance(qc, dict)
+            or qc.get("gate_status") != TaskStatus.COMPLETED.value
+            or not isinstance(qc.get("report_task_id"), str)
+            or not qc["report_task_id"]
+            or qc.get("passed") is not True
+            or qc.get("superseded") is not False
+        ):
+            # 旧版导入、模型失败、未认证或人工豁免均不得自动签发合成许可。
+            return None
+        return pick
 
     @staticmethod
     def _picked_video(candidates: list[ReviewCandidate]) -> ReviewCandidate | None:
@@ -294,7 +318,7 @@ class ProductionService:
             episode = self._episode(db, episode_id)
             review = self._review(db, episode)
             if not review.can_assemble:
-                raise InvalidTransitionError("请先为每个分镜选用一个视频。")
+                raise InvalidTransitionError("请先选用每镜已完成当前轮次 QC 认证的视频。")
             inputs = []
             for shot, reviewed in zip(episode.shots, review.shots, strict=True):
                 picked = self._picked_video(reviewed.candidates)
