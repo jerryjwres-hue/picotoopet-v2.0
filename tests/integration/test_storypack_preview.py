@@ -143,6 +143,51 @@ def test_missing_style_is_visible_as_unfinished_lock(api):
     assert response.json()["can_queue"] is False
 
 
+def test_episode_compiler_uses_existing_contract_and_keeps_draft_nonexecutable(api):
+    from pydantic import ValidationError
+
+    from picotoopet_core.domain.episode import Episode
+
+    route = "/api/v1/studio/storypacks/preview"
+    first = api.post(route, json=storypack())
+    assert first.status_code == 200
+    preview = first.json()
+    compilation = preview["production_compilation"]
+    assert compilation["source_storypack_sha256"] == preview["storypack_sha256"]
+    assert compilation["episode_schema"] == "picotoopet_core.domain.episode.Episode"
+    assert compilation["episode_contract_valid"] is False
+    assert compilation["executable"] is False
+    assert compilation["can_queue"] is False
+    assert compilation["can_generate"] is False
+    assert compilation["can_publish"] is False
+    assert compilation["episode_draft"]["shots"][0]["camera"] is None
+    assert compilation["episode_draft"]["shots"][0]["video"] is None
+    assert compilation["shared_asset_refs"]["verified"] is False
+    assert compilation["shot_context"][1]["state_in"] == "Maotai holds the ball"
+    assert "OWNER_PRINCIPAL_VERIFIED" in compilation["missing_trust_gates"]
+    with pytest.raises(ValidationError):
+        Episode.model_validate(compilation["episode_draft"])
+    # 仅复核契约，既不产生数据库记录，也不能绕过 GPU HOLD。
+    assert api.app.state.services.database.scalar("SELECT COUNT(*) FROM tasks") == 0
+
+
+def test_compiler_draft_is_repeatable_and_uses_declared_scene_assets(api):
+    pack = storypack()
+    pack["additional_scene_refs"] = ["home_door_v1"]
+    pack["style_ref"] = "cinematic_v1"
+    pack["shots"][1]["scene_ref"] = "home_door_v1"
+    pack["shots"][1]["handoff"] = "scene_change"
+    first = api.post("/api/v1/studio/storypacks/preview", json=pack)
+    second = api.post("/api/v1/studio/storypacks/preview", json=pack)
+    assert first.status_code == second.status_code == 200
+    a = first.json()["production_compilation"]
+    b = second.json()["production_compilation"]
+    assert a == b
+    assert a["shot_context"][1]["scene_ref"] == "home_door_v1"
+    assert a["shared_asset_refs"]["scenes"] == ["backyard_v1", "home_door_v1"]
+    assert a["shared_asset_refs"]["style"] == "cinematic_v1"
+
+
 def test_portrait_preview_does_not_enable_rendering(api):
     pack = storypack()
     pack["output_profile"] = "design_portrait"
