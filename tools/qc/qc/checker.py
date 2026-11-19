@@ -111,7 +111,7 @@ class ShotChecker:
         else:
             self.detector = FallbackCVDetector()
 
-        self.identity_extractor = identity_extractor or DINOv2Extractor()
+        self.identity_extractor = identity_extractor or (DINOv2Extractor() if spec.identity_refs else None)
 
     def run_check(
         self,
@@ -167,6 +167,9 @@ class ShotChecker:
                     counts["ball"] += 1
                 elif "face" in lbl:
                     counts["face"] += 1
+
+            if not self.spec.check_entity_counts:
+                continue
 
             # Validate against expectations
             exp = self.spec.expect
