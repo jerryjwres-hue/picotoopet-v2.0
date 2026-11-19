@@ -23,6 +23,7 @@ from .routes import (
     projects,
     results,
     status,
+    studio,
     tasks,
 )
 
@@ -61,6 +62,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(tasks.router, prefix=prefix, tags=["tasks"])
     app.include_router(executors.router, prefix=prefix, tags=["executors"])
     app.include_router(episodes.router, prefix=prefix, tags=["episodes"])
+    app.include_router(studio.router, prefix=prefix, tags=["studio"])
     app.include_router(history_imports.router, prefix=prefix, tags=["episodes"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
     app.include_router(results.router, prefix=prefix, tags=["results"])
