@@ -117,6 +117,17 @@ public sealed class MacCoreClient : IAsyncDisposable
             null,
             cancellationToken);
 
+    /// <summary>只读验证来自云端 LLM 的 StoryPack；不会创建任何生产任务。</summary>
+    public Task<JsonElement> PreviewStoryPackAsync(
+        JsonElement storyPack, CancellationToken cancellationToken = default) =>
+        SendAsync<JsonElement>(
+            HttpMethod.Post,
+            "api/v1/studio/storypacks/preview",
+            storyPack,
+            "studio.storypack.preview",
+            null,
+            cancellationToken);
+
     public Task<EpisodeSummary[]> GetEpisodesAsync(CancellationToken cancellationToken = default) =>
         SendAsync<EpisodeSummary[]>(HttpMethod.Get, "api/v1/episodes",
             null, "episodes.list", null, cancellationToken);
