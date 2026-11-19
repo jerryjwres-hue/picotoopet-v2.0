@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, Request
 
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
 from picotoopet_core.domain.storypack import (
     StoryPackError,
     parse_storypack,
@@ -55,5 +56,10 @@ async def preview_storypack(request: Request) -> dict:
             retryable=False,
         ) from exc
 
-    # 返回预览结果，但不修改 SQLite，也不调用任何 Windows 工具。
-    return storypack_preview(pack)
+    # 只读核对记录是否存在，不能将数据库中有 SHA 等同于主人已批准。
+    preview = storypack_preview(pack)
+    preview["asset_record_checks"] = inspect_recorded_asset_refs(
+        request.app.state.services.database,
+        preview["unresolved_asset_refs"],
+    )
+    return preview
