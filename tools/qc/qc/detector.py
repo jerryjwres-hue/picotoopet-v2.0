@@ -60,6 +60,7 @@ class Florence2Detector(BaseDetector):
         self.model = None
         self.processor = None
         self.model_id = model_id
+        self.is_fallback = False  # 运行期状态：不能只相信类声明。
         self._load_model()
 
     def _load_model(self):
@@ -121,9 +122,12 @@ class Florence2Detector(BaseDetector):
         except Exception as exc:
             logger.warning(f"Florence-2 model could not be loaded ({exc}). Using heuristic detector.")
             self.model = None
+            self.processor = None
+            self.is_fallback = True  # 任何加载失败必须取消 Florence-2 认证资格。
 
     def detect_frame(self, frame: np.ndarray, query_labels: Optional[List[str]] = None) -> List[DetectionBox]:
         if self.model is None or self.processor is None:
+            self.is_fallback = True  # 记录实际执行引擎，不伪装成 Florence-2。
             return FallbackCVDetector().detect_frame(frame)
 
         try:
@@ -174,6 +178,7 @@ class Florence2Detector(BaseDetector):
 
         except Exception as exc:
             logger.warning(f"Error during Florence-2 inference: {exc}. Using fallback.")
+            self.is_fallback = True  # 本次任一帧回退，整条视频均不允许认证 PASS。
             return FallbackCVDetector().detect_frame(frame)
 
 

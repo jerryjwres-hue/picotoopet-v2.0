@@ -23,6 +23,16 @@ class CertifiedMockDetector(BaseDetector):
         ]
 
 
+class CertifiedMockIdentity:
+    """Test-only identity backend; not used to certify production media."""
+    is_fallback = False
+
+    def extract_embedding(self, image):
+        # Stable synthetic signature for fixture images without downloading DINOv2.
+        sample = np.array([image.mean(), image.std(), image.shape[0]], dtype=np.float32)
+        return sample / (np.linalg.norm(sample) + 1e-7)
+
+
 def test_qc_checker_passing_image(synthetic_image_generator, tmp_path):
     # Create single image matching expect: 1 dog, 1 bowl
     img = synthetic_image_generator(
@@ -51,7 +61,11 @@ def test_qc_checker_passing_image(synthetic_image_generator, tmp_path):
         json.dump(spec_dict, f)
 
     spec = ShotSpec.from_file(spec_path)
-    checker = ShotChecker(spec=spec, detector=CertifiedMockDetector())
+    checker = ShotChecker(
+        spec=spec,
+        detector=CertifiedMockDetector(),
+        identity_extractor=CertifiedMockIdentity(),
+    )
 
     report_json = tmp_path / "report.json"
     report_jpg = tmp_path / "report.jpg"
