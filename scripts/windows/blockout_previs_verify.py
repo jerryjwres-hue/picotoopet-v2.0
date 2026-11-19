@@ -65,8 +65,13 @@ def _metadata(root: Path) -> dict:
     generator, shot = meta.get("generator"), meta.get("shot")
     if not isinstance(generator, dict) or generator.get("app") != "Blockout":
         raise PackageInvalid("NOT_BLOCKOUT_METADATA")
-    if generator.get("schema") != 1:
+    if type(generator.get("schema")) is not int or generator["schema"] != 1:
         raise PackageInvalid("UNKNOWN_BLOCKOUT_METADATA_SCHEMA")
+    if (
+        not isinstance(meta.get("profile"), dict)
+        or not isinstance(meta["profile"].get("id"), str)
+    ):
+        raise PackageInvalid("PROFILE_METADATA_INVALID")
     if not isinstance(shot, dict):
         raise PackageInvalid("SHOT_METADATA_MISSING")
     duration, fps = shot.get("duration"), shot.get("fps")
