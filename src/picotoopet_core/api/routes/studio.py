@@ -61,5 +61,7 @@ async def preview_storypack(request: Request) -> dict:
     preview["asset_record_checks"] = inspect_recorded_asset_refs(
         request.app.state.services.database,
         preview["unresolved_asset_refs"],
+        # 只能读取 Mac Core 自主管理的内容寻址对象目录。
+        managed_objects_dir=request.app.state.services.settings.paths.objects_dir,
     )
     return preview
