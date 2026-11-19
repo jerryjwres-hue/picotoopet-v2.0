@@ -287,11 +287,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             // 增量指纹用于缓存与变更追踪，不代表自动生成或 QC 许可。
             var fingerprints = preview.GetProperty("fingerprint_plan").GetProperty("shots")
                 .EnumerateArray()
-                .Select(item => item.GetProperty("id").ValueKind == JsonValueKind.Undefined
-                    ? $"{item.GetProperty("shot_id").GetString()}:" +
-                      $"{item.GetProperty("input_sha256").GetString()?[..10]}"
-                    : "")
-                .Where(value => !string.IsNullOrEmpty(value));
+                .Select(item => $"{item.GetProperty("shot_id").GetString()}:" +
+                    item.GetProperty("input_sha256").GetString()?.Substring(0, 10));
             var compilation = preview.GetProperty("production_compilation");
             var missing = compilation.GetProperty("missing_contract_fields").GetProperty("each_shot")
                 .EnumerateArray().Select(item => item.GetString());
