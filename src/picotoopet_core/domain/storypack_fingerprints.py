@@ -58,10 +58,10 @@ def build_shot_fingerprints(
             "handoff": shot.handoff,
             # 仅加入该镜头真实引用的素材，避免无关场景修改导致全部重算。
             "assets": {ref: asset_snapshot.get(ref) for ref in refs},
-            "upstream_keys": [shot_keys[ref] for ref in shot.depends_on],
+            "upstream_keys": [shot_keys[ref.casefold()] for ref in shot.depends_on],
         }
         fingerprint = _digest(inputs)
-        shot_keys[shot.id] = fingerprint
+        shot_keys[shot.id.casefold()] = fingerprint
         shots.append({
             "shot_id": shot.id,
             "input_sha256": fingerprint,
