@@ -120,11 +120,10 @@ internal static class Program
         Check(model.Message.Contains("新增 1", StringComparison.Ordinal), model.Message);
         Check(model.Candidate?.Record.TaskType == "review.imported", "未读取 Core 登记的候选");
         Check(model.Candidate?.Record.Seed == 123, "真实服务的候选种子不同");
-        model.Note = "合成前确认接触。";
+        model.Note = "已选用历史片，仍需独立 QC。";
         model.PickCommand.Execute(null);
-        await WaitForAsync(() => model.AssembleCommand.CanExecute(null));
-        model.AssembleCommand.Execute(null);
-        await WaitForAsync(() => model.Message.Contains("合成任务已入队", StringComparison.Ordinal));
+        await WaitForAsync(() => model.Message.Contains("已记录选用", StringComparison.Ordinal));
+        Check(!model.AssembleCommand.CanExecute(null), "历史素材没有当前 QC 认证，不应解锁合成。");
     }
 
     private static async Task VerifyLocalBatchAsync(ProductionViewModel model, FixtureTransport transport)
