@@ -108,13 +108,37 @@ class StoryPackError(ValueError):
     """Invalid StoryPack content; the source remains unchanged."""
 
 
+class _UniqueYamlLoader(yaml.SafeLoader):
+    """Reject duplicated YAML object keys before any approval digest is computed."""
+
+    def construct_mapping(self, node, deep=False):
+        self.flatten_mapping(node)
+        result = {}
+        for key, value in node.value:
+            parsed_key = self.construct_object(key, deep=deep)
+            if not isinstance(parsed_key, str) or parsed_key in result:
+                raise StoryPackError("StoryPack YAML has duplicate/nontext mapping keys")
+            result[parsed_key] = self.construct_object(value, deep=deep)
+        return result
+
+
+def _unique_json_pairs(pairs):
+    # 不允许模型在相同 JSON key 下提交不同版本来误导审核者。
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise StoryPackError("StoryPack JSON has duplicate object keys")
+        value[key] = item
+    return value
+
+
 def parse_storypack(source: bytes, *, as_yaml: bool) -> StoryPackV1:
     """Accept only UTF-8 structured data. Never execute model, tool or code strings."""
     try:
         data = (
-            yaml.safe_load(source.decode("utf-8-sig"))
+            yaml.load(source.decode("utf-8-sig"), Loader=_UniqueYamlLoader)
             if as_yaml
-            else json.loads(source.decode("utf-8-sig"))
+            else json.loads(source.decode("utf-8-sig"), object_pairs_hook=_unique_json_pairs)
         )
         return StoryPackV1.model_validate(data)
     except ValidationError as exc:
