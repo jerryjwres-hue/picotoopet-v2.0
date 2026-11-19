@@ -33,6 +33,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _statusMessage = "请先保存 Mac 地址和设备令牌。";
     private string _storyPackInput = "";
     private string _storyPackPreviewText = "粘贴完整的 StoryPack JSON 后点击验证；不会执行生成。";
+    private string? _lastPreviewEpisodeId;
+    private string? _lastStoryReviewSha;
+    private Dictionary<string, string>? _lastShotInputSha;
     private bool _isBusy;
 
     /// <summary>创建组合依赖并注册状态事件。</summary>
@@ -285,10 +288,37 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             var missingLocks = preview.GetProperty("missing_design_locks").EnumerateArray()
                 .Select(item => item.GetString());
             // 增量指纹用于缓存与变更追踪，不代表自动生成或 QC 许可。
-            var fingerprints = preview.GetProperty("fingerprint_plan").GetProperty("shots")
-                .EnumerateArray()
-                .Select(item => $"{item.GetProperty("shot_id").GetString()}:" +
-                    item.GetProperty("input_sha256").GetString()?.Substring(0, 10));
+            var fingerprintPlan = preview.GetProperty("fingerprint_plan");
+            var currentShotKeys = fingerprintPlan.GetProperty("shots").EnumerateArray()
+                .ToDictionary(
+                    item => item.GetProperty("shot_id").GetString()!,
+                    item => item.GetProperty("input_sha256").GetString()!,
+                    StringComparer.OrdinalIgnoreCase);
+            var currentStoryReviewSha = fingerprintPlan.GetProperty("story_review_sha256")
+                .GetString()!;
+            var currentEpisodeId = preview.GetProperty("episode_id").GetString()!;
+            string changeSummary;
+            if (_lastPreviewEpisodeId == currentEpisodeId && _lastShotInputSha is not null)
+            {
+                // 仅比较当前窗口中同一集的两次预览；不能用于证明 QC 或缓存合法性。
+                var changed = currentShotKeys.Where(pair =>
+                    !_lastShotInputSha.TryGetValue(pair.Key, out var old) || old != pair.Value)
+                    .Select(pair => pair.Key).ToArray();
+                var removed = _lastShotInputSha.Keys.Where(key =>
+                    !currentShotKeys.ContainsKey(key)).ToArray();
+                var storyChanged = _lastStoryReviewSha != currentStoryReviewSha;
+                changeSummary = $"输入变化 {changed.Length} 镜" +
+                    (changed.Length > 0 ? $"（{string.Join(", ", changed)}）" : "") +
+                    (removed.Length > 0 ? $"；已删除 {string.Join(", ", removed)}" : "") +
+                    (storyChanged ? "；需重新检查故事" : "；故事审阅摘要未变");
+            }
+            else
+            {
+                changeSummary = "首次预览本集，尚无本窗口内可比较版本";
+            }
+            _lastPreviewEpisodeId = currentEpisodeId;
+            _lastStoryReviewSha = currentStoryReviewSha;
+            _lastShotInputSha = currentShotKeys;
             var compilation = preview.GetProperty("production_compilation");
             var missing = compilation.GetProperty("missing_contract_fields").GetProperty("each_shot")
                 .EnumerateArray().Select(item => item.GetString());
@@ -301,7 +331,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 $"未冻结设计项：{(missingLocks.Any() ? string.Join(", ", missingLocks) : "无")}\\n" +
                 $"各镜仍需编制：{string.Join(", ", missing)}\\n" +
                 $"审批缺口：{string.Join(", ", trust)}\\n" +
-                $"变更追踪：{string.Join("; ", fingerprints)}（仅指纹，不自动放行）\\n" +
+                $"变更追踪：{changeSummary}（只比较输入，不自动生成）\\n" +
                 "编译结果仅为草稿，不具备执行和发布许可。";
         }
         catch (Exception exception)
