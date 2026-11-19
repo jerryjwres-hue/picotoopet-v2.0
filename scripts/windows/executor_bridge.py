@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -552,6 +554,7 @@ class Bridge:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=cwd,
+                start_new_session=os.name != "nt",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             ) as process:
                 deadline = time.monotonic() + state["task"]["timeout_seconds"]
@@ -569,7 +572,17 @@ class Bridge:
                                 raise requests.ConnectionError("等待恢复任务租约") from None
                 finally:
                     if process.poll() is None:
-                        process.kill()
+                        if os.name == "nt":
+                            subprocess.run(
+                                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                                capture_output=True,
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                        else:
+                            with contextlib.suppress(ProcessLookupError):
+                                os.killpg(process.pid, signal.SIGKILL)
+                        if process.poll() is None:
+                            process.kill()
                         process.communicate()
         except FileNotFoundError as exc:
             raise JobError(f"未安装 {command[0]}。") from exc
@@ -589,19 +602,39 @@ class Bridge:
         root = str(Path(__file__).resolve().parents[2])
         if root not in sys.path:
             sys.path.insert(0, root)
-        from tools.edit.edit.production import assemble_job
+        from tools.edit.edit.production import executor_plan
 
         started = time.monotonic()
         output = self.state_dir / "outputs" / state["stem"] / "episode.mp4"
         output.parent.mkdir(parents=True, exist_ok=True)
         try:
-            assemble_job(
+            plan = executor_plan(
                 state["task"]["payload"]["jobs"],
-                output,
                 resolve=self._safe_path,
                 digest=lambda path: self._hash(path, state)[0],
-                media=lambda cmd, cwd: self._media(state, cmd, cwd=cwd),
             )
+            plan_path = output.with_name("edit_plan.json")
+            atomic_json(plan_path, plan)
+            result = self._media(
+                state,
+                [
+                    sys.executable,
+                    "-X",
+                    "utf8",
+                    "-m",
+                    "edit",
+                    "assemble",
+                    "--root",
+                    str(self.root),
+                    "--plan",
+                    str(plan_path),
+                    "--out",
+                    str(output),
+                ],
+                cwd=Path(root) / "tools/edit",
+            )
+            if result.returncode or not output.is_file():
+                raise JobError("本地剪辑失败。" + result.stderr.decode("utf-8", "replace")[-600:])
         except requests.RequestException:
             raise
         except (ValueError, OSError) as exc:

@@ -71,11 +71,19 @@ def main(args: list[str] | None = None) -> int:
                     raise ValueError(
                         "Asset root is missing. Use --root to point to the local media."
                     )
+                root = root.resolve()
+
+                def resolve_asset(ref):
+                    path = (root / ref).resolve()
+                    if not path.is_relative_to(root):
+                        raise ValueError("Media is outside the selected project root")
+                    return path
+
                 out = Path(parsed.out)
                 rows = assemble_cut(
                     data,
                     out,
-                    resolve=lambda ref: (root / ref).resolve(),
+                    resolve=resolve_asset,
                     edl=parsed.edl or out.with_name("edl.txt"),
                     strip=parsed.strip,
                 )
