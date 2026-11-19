@@ -178,5 +178,13 @@
     "updated_at"
   ],
   "title": "TaskContract",
-  "type": "object"
+  "type": "object",
+  "x-executor-payload": "executor_payload_v1.schema.json",
+  "x-executor-task-types": [
+    "gen.keyframe",
+    "gen.video",
+    "gen.foley",
+    "qc.check",
+    "edit.assemble"
+  ]
 }

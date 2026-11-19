@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from picotoopet_core.domain.enums import Classification, CloudPolicy, TaskStatus
+from picotoopet_core.domain.executor import ArtifactDecision
 from picotoopet_core.domain.models import ProjectCreate, TaskCreate
 from picotoopet_core.permissions.gate import PermissionGate
 from picotoopet_core.permissions.models import ActorType, Operation, PermissionRequest
@@ -45,6 +47,23 @@ class McpToolExecutor:
         spec = self.registry.get(tool_name)
         if spec is None:
             raise KeyError(f"未知 MCP 工具：{tool_name}")
+        if tool_name == "list_artifacts":
+            if set(arguments) != {"task_id"} or not isinstance(arguments["task_id"], str):
+                raise ValueError("请提供有效的 task_id。")
+            task = self.services.queue.get(arguments["task_id"])
+            self._authorize(spec, {"project_id": task.project_id})
+            return self.services.executor.artifacts(task.task_id).model_dump(mode="json")
+        if tool_name == "decide_artifact":
+            fields = dict(arguments)
+            artifact_id = fields.pop("artifact_id", None)
+            if not isinstance(artifact_id, str) or not artifact_id:
+                raise ValueError("请提供有效的 artifact_id。")
+            decision = ArtifactDecision.model_validate(fields)
+            task = self.services.executor.task_for_artifact(artifact_id)
+            self._authorize(spec, {"project_id": task.project_id})
+            return self.services.executor.decide(
+                artifact_id, decision, str(uuid4()), actor_type="mcp_tool", actor_id=tool_name,
+            ).model_dump(mode="json")
         self._authorize(spec, arguments)
 
         if tool_name == "create_project":

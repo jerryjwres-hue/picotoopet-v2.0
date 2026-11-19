@@ -43,6 +43,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _settingsStore = settingsStore;
         _dispatcher    = dispatcher;
         _logger        = logger;
+        Production = new ProductionViewModel(() => _client, () => CurrentConnectionToken);
         _stateStore.SnapshotChanged += OnSnapshotChanged;
         SubmitTaskCommand = new AsyncRelayCommand(
             SubmitTaskAsync,
@@ -57,6 +58,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
     public AsyncRelayCommand SubmitTaskCommand { get; }
     public AsyncRelayCommand RefreshCommand { get; }
+    public ProductionViewModel Production { get; }
 
     public string ConnectionText
     {
@@ -164,7 +166,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await RefreshCoreAsync(cancellationToken).ConfigureAwait(false);
             _eventTask = RunEventStreamAsync(stream, connectionLifetime.Token);
             await _dispatcher.InvokeAsync(
-                () => StatusMessage = "双机控制链已连接。",
+                () =>
+                {
+                    StatusMessage = "双机控制链已连接。";
+                    Production.ConnectionChanged();
+                },
                 cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -260,7 +266,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private Task ApplyEventAsync(EventEnvelope envelope)
     {
-        _stateStore.Apply(envelope, IsVisibleTask);
+        if (_stateStore.Apply(envelope, IsVisibleTask) && envelope.IsProductionChange())
+        {
+            _ = _dispatcher.InvokeAsync(Production.QueueRefresh);
+        }
         return Task.CompletedTask;
     }
 
@@ -283,8 +292,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         LatencyText = $"REST p95 {rest.P95Milliseconds:F1} ms · WS p95 {socket.P95Milliseconds:F1} ms";
     });
 
-    private void OnConnectionStateChanged(object? sender, ConnectionState state) =>
+    private void OnConnectionStateChanged(object? sender, ConnectionState state)
+    {
         _stateStore.SetConnection(state);
+        if (state == ConnectionState.Online)
+        {
+            _ = _dispatcher.InvokeAsync(Production.QueueRefresh);
+        }
+    }
 
     private void OnSnapshotChanged(object? sender, AppSnapshot snapshot)
     {
@@ -420,6 +435,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
         connectionLifetime?.Dispose();
         _stateStore.SetConnection(ConnectionState.Offline);
+        await _dispatcher.InvokeAsync(Production.ConnectionChanged).ConfigureAwait(false);
     }
 
     /// <summary>关闭应用时取消后台链路并释放连接池。</summary>

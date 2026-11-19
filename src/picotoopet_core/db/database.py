@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any
 
-from .schema import MIGRATION_001
+from .schema import MIGRATION_001, MIGRATION_002
 
 
 class Database:
@@ -78,10 +79,21 @@ class Database:
                 "SELECT 1 FROM schema_migrations WHERE version = 1"
             ).fetchone()
             if exists is None:
-                connection.executescript(MIGRATION_001)
+                for statement in MIGRATION_001.split(";"):
+                    if statement.strip():
+                        connection.execute(statement)
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (1, datetime.now(UTC).isoformat()),
+                )
+            if connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 2"
+            ).fetchone() is None:
+                for statement in MIGRATION_002:
+                    connection.execute(statement)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (2, datetime.now(UTC).isoformat()),
                 )
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:

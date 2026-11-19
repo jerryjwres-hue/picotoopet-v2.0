@@ -7,6 +7,7 @@ import hmac
 from datetime import UTC, datetime
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
@@ -95,10 +96,14 @@ async def events(websocket: WebSocket) -> None:
             exception = task.exception()
             if exception is not None:
                 raise exception
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     finally:
-        sender.cancel()
-        receiver.cancel()
-        await asyncio.gather(sender, receiver, return_exceptions=True)
-        broker.unsubscribe(queue)
+        # ASGI 测试客户端和服务器均可能在断连时并发取消路由。
+        with anyio.CancelScope(shield=True):
+            sender.cancel()
+            receiver.cancel()
+            try:
+                await asyncio.gather(sender, receiver, return_exceptions=True)
+            finally:
+                broker.unsubscribe(queue)

@@ -23,6 +23,7 @@ def test_windows_core_targets_current_lts_without_third_party_packages() -> None
     assert "<TargetFramework>net10.0</TargetFramework>" in project
     assert "<PackageReference" not in project
     assert '"version": "10.0.302"' in global_json
+    assert '"rollForward": "disable"' in global_json
 
 
 def test_network_clients_use_pooling_bounded_channel_and_resume_sequence() -> None:
@@ -69,7 +70,11 @@ def test_wpf_task_list_enables_virtualization_and_recycling() -> None:
 def test_csharp_sources_have_chinese_comments_and_no_obvious_sync_over_async() -> None:
     """C# 文件必须包含中文说明，并禁止明显同步阻塞异步调用。"""
 
-    sources = list((DESKTOP / "src").rglob("*.cs"))
+    source_root = DESKTOP / "src"
+    sources = [
+        source for source in source_root.rglob("*.cs")
+        if {"bin", "obj"}.isdisjoint(source.relative_to(source_root).parts)
+    ]
     assert len(sources) >= 12
     for source in sources:
         text = source.read_text(encoding="utf-8")

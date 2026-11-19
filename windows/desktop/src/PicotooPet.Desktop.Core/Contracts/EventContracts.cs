@@ -13,6 +13,14 @@ public sealed record EventEnvelope(
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
     [property: JsonPropertyName("payload")] JsonElement Payload)
 {
+    public bool IsProductionChange() =>
+        Topic is "artifact.decided" or "episode.imported" || (Topic == "task.updated"
+            && Payload.ValueKind == JsonValueKind.Object
+            && Payload.TryGetProperty("task_type", out var type)
+            && type.ValueKind == JsonValueKind.String
+            && type.GetString() is "gen.keyframe" or "gen.video" or "gen.foley"
+                or "qc.check" or "edit.assemble");
+
     /// <summary>尝试把任务事件负载反序列化为任务快照。</summary>
     public bool TryGetTask(JsonSerializerOptions options, out TaskRecord? task)
     {

@@ -117,6 +117,38 @@ public sealed class MacCoreClient : IAsyncDisposable
             null,
             cancellationToken);
 
+    public Task<EpisodeSummary[]> GetEpisodesAsync(CancellationToken cancellationToken = default) =>
+        SendAsync<EpisodeSummary[]>(HttpMethod.Get, "api/v1/episodes",
+            null, "episodes.list", null, cancellationToken);
+
+    public Task<EpisodeImportResult> ImportBatchAsync(JsonElement manifest, CancellationToken cancellationToken) =>
+        SendAsync<EpisodeImportResult>(HttpMethod.Post, "api/v1/episodes/import",
+            manifest, "episodes.import", null, cancellationToken);
+
+    public Task<EpisodeReview> GetEpisodeReviewAsync(
+        string episodeId, CancellationToken cancellationToken = default) =>
+        SendAsync<EpisodeReview>(HttpMethod.Get,
+            $"api/v1/episodes/{Uri.EscapeDataString(episodeId)}/review",
+            null, "episodes.review", null, cancellationToken);
+
+    public Task<JsonElement> DecideArtifactAsync(
+        string artifactId, ArtifactDecisionRequest decision, CancellationToken cancellationToken = default) =>
+        SendAsync<JsonElement>(HttpMethod.Post,
+            $"api/v1/artifacts/{Uri.EscapeDataString(artifactId)}/decision",
+            decision, "artifacts.decision", null, cancellationToken);
+
+    public Task<TaskRecord> AssembleEpisodeAsync(
+        string episodeId, CancellationToken cancellationToken = default) =>
+        SendAsync<TaskRecord>(HttpMethod.Post,
+            $"api/v1/episodes/{Uri.EscapeDataString(episodeId)}/assemble",
+            null, "episodes.assemble", null, cancellationToken);
+
+    public Task<PreviewContent> GetThumbnailAsync(
+        string taskId, string thumbnailId, CancellationToken cancellationToken = default) =>
+        SendAsync<PreviewContent>(HttpMethod.Get,
+            $"api/v1/tasks/{Uri.EscapeDataString(taskId)}/thumbnails/{Uri.EscapeDataString(thumbnailId)}",
+            null, "artifacts.thumbnail", null, cancellationToken);
+
     private async Task<T> SendAsync<T>(
         HttpMethod method,
         string relativeUri,

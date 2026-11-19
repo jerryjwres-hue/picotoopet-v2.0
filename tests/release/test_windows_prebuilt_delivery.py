@@ -83,7 +83,21 @@ def test_release_builder_generates_manifest_and_zip() -> None:
     assert "release-manifest.json" in builder
     assert "Compress-Archive" in builder
     assert "PicotooPet-Phase2-Windows-Prebuilt" in builder
+    assert "$startInfo.WorkingDirectory       = $desktopRoot" in builder
     assert "--self-test" in builder
+
+
+def test_windows_powershell_reads_release_manifest_as_utf8() -> None:
+    readers = [
+        DESKTOP / "scripts" / "Test-Phase2WindowsRelease.ps1",
+        *(DESKTOP / "release" / name for name in (
+            "Install-Phase2Prebuilt.ps1",
+            "Verify-Phase2Prebuilt.ps1",
+            "Rollback-Phase2Prebuilt.ps1",
+        )),
+    ]
+    for path in readers:
+        assert 'Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8' in read(path)
 
 
 def test_release_verifier_checks_payload_and_process_exit() -> None:

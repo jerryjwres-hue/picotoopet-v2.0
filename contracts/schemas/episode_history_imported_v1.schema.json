@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "conflict_count": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Conflict Count"
+    },
+    "episode_id": {
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "existing_count": {
+      "title": "Existing Count",
+      "type": "integer"
+    },
+    "inserted_count": {
+      "title": "Inserted Count",
+      "type": "integer"
+    },
+    "updated_count": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Updated Count"
+    }
+  },
+  "required": [
+    "episode_id",
+    "inserted_count",
+    "existing_count"
+  ],
+  "title": "EpisodeHistoryImported",
+  "type": "object"
+}

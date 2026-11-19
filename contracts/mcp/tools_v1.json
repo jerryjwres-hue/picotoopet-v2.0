@@ -692,6 +692,57 @@
       "name": "request_human_approval",
       "permission_operation": "create",
       "timeout_seconds": 30
+    },
+    {
+      "description": "列出任务的本地产物和质检报告。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "list_artifacts",
+      "permission_operation": "read",
+      "timeout_seconds": 30
+    },
+    {
+      "description": "记录选用、不要或重做决定。",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "pick",
+              "reject",
+              "redo"
+            ],
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "name": "decide_artifact",
+      "permission_operation": "update",
+      "timeout_seconds": 30
     }
   ]
 }

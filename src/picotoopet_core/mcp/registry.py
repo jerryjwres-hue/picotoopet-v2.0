@@ -29,6 +29,7 @@ FROZEN_TOOL_NAMES: tuple[str, ...] = (
     "cancel_task",
     "request_human_approval",
 )
+PRODUCTION_TOOL_NAMES = ("list_artifacts", "decide_artifact")
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +108,20 @@ def build_registry() -> dict[str, ToolSpec]:
         "get_task_status": ("读取任务状态。", _project_schema(task_id=True), "read", 30),
         "cancel_task": ("取消任务。", _project_schema(task_id=True), "update", 30),
         "request_human_approval": ("请求人工批准。", _project_schema(payload=True, task_id=True), "create", 30),
+        "list_artifacts": (
+            "列出任务的本地产物和质检报告。",
+            _closed_schema({"task_id": {"type": "string", "minLength": 1}}, ["task_id"]),
+            "read", 30,
+        ),
+        "decide_artifact": (
+            "记录选用、不要或重做决定。",
+            _closed_schema({
+                "artifact_id": {"type": "string", "minLength": 1},
+                "decision": {"type": "string", "enum": ["pick", "reject", "redo"]},
+                "note": {"type": "string", "maxLength": 2000},
+            }, ["artifact_id", "decision"]),
+            "update", 30,
+        ),
     }
     return {
         name: ToolSpec(
@@ -116,5 +131,5 @@ def build_registry() -> dict[str, ToolSpec]:
             permission_operation=definitions[name][2],
             timeout_seconds=definitions[name][3],
         )
-        for name in FROZEN_TOOL_NAMES
+        for name in (*FROZEN_TOOL_NAMES, *PRODUCTION_TOOL_NAMES)
     }

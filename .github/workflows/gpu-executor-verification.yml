@@ -1,0 +1,79 @@
+name: GPU executor verification
+
+on:
+  pull_request:
+    paths:
+      - "src/picotoopet_core/**"
+      - "contracts/**"
+      - "scripts/windows/**"
+      - "tests/**"
+      - "windows/desktop/**"
+      - "pyproject.toml"
+      - ".github/workflows/gpu-executor-verification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac-core:
+    name: Full Python suite on macOS
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install project and test dependencies
+        run: python -m pip install -e . pytest pytest-asyncio pytest-cov requests
+      - name: Make local media smoke tests available
+        run: command -v ffprobe >/dev/null && command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Run Python tests
+        run: python -m pytest -q
+
+  production-page:
+    name: WPF production page with synthetic data
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    defaults:
+      run:
+        working-directory: windows/desktop
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+      - name: Run WPF smoke test and render the production page
+        shell: pwsh
+        run: |
+          dotnet run --project tests/PicotooPet.Desktop.Production.SmokeTests -- "$env:RUNNER_TEMP/production.png"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Verify offline review in Windows Edge
+        working-directory: .
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Get-Command ffmpeg -ErrorAction Stop | Out-Null
+          if (-not (Test-Path -LiteralPath "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe")) {
+            throw "Microsoft Edge is required for offline playback verification."
+          }
+          python -m pip install -e . pytest pytest-asyncio requests playwright
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q windows/desktop/tests/browser/test_offline_review_browser.py tests/integration/test_windows_receipt_pipeline.py
+      - name: Upload synthetic screenshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-page-synthetic
+          path: ${{ runner.temp }}/production.png
+          if-no-files-found: error
+          retention-days: 30

@@ -173,6 +173,224 @@
         "title": "ApprovalRequestBody",
         "type": "object"
       },
+      "ArtifactDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "pick",
+              "reject",
+              "redo"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "ArtifactDecision",
+        "type": "object"
+      },
+      "ArtifactList": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewedArtifact"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "qc": {
+            "additionalProperties": true,
+            "title": "Qc",
+            "type": "object"
+          },
+          "result_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Id"
+          },
+          "sheet_thumbnail_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet Thumbnail Id"
+          },
+          "upstream_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Task Id"
+          }
+        },
+        "title": "ArtifactList",
+        "type": "object"
+      },
+      "Audio": {
+        "additionalProperties": false,
+        "properties": {
+          "foley": {
+            "items": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              ]
+            },
+            "title": "Foley",
+            "type": "array"
+          },
+          "music_cue": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Music Cue"
+          },
+          "vocal_from": {
+            "enum": [
+              "ltx",
+              "none"
+            ],
+            "title": "Vocal From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vocal_from",
+          "foley"
+        ],
+        "title": "Audio",
+        "type": "object"
+      },
+      "Body_upload_thumbnail_api_v1_tasks__task_id__thumbnails_post": {
+        "properties": {
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Sha256"
+          },
+          "attempt_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Count"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "JPEG 缩略图，每张最多 300 KB",
+            "title": "File",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "file"
+        ],
+        "title": "Body_upload_thumbnail_api_v1_tasks__task_id__thumbnails_post",
+        "type": "object"
+      },
+      "Camera": {
+        "additionalProperties": false,
+        "properties": {
+          "lens": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              }
+            ],
+            "title": "Lens"
+          },
+          "move": {
+            "minLength": 1,
+            "title": "Move",
+            "type": "string"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              }
+            ],
+            "title": "Speed"
+          }
+        },
+        "required": [
+          "move",
+          "lens",
+          "speed"
+        ],
+        "title": "Camera",
+        "type": "object"
+      },
       "Classification": {
         "enum": [
           "PUBLIC",
@@ -190,6 +408,531 @@
         "title": "CloudPolicy",
         "type": "string"
       },
+      "Edit": {
+        "additionalProperties": false,
+        "properties": {
+          "fps": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 240.0,
+            "title": "Fps",
+            "type": "number"
+          },
+          "loudness_lufs": {
+            "maximum": -5.0,
+            "minimum": -70.0,
+            "title": "Loudness Lufs",
+            "type": "number"
+          },
+          "size": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 8192.0,
+                "minimum": 2.0,
+                "multipleOf": 2.0,
+                "type": "integer"
+              },
+              {
+                "maximum": 8192.0,
+                "minimum": 2.0,
+                "multipleOf": 2.0,
+                "type": "integer"
+              }
+            ],
+            "title": "Size",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fps",
+          "size",
+          "loudness_lufs"
+        ],
+        "title": "Edit",
+        "type": "object"
+      },
+      "Episode": {
+        "additionalProperties": false,
+        "properties": {
+          "characters": {
+            "items": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              ]
+            },
+            "title": "Characters",
+            "type": "array"
+          },
+          "edit": {
+            "$ref": "#/components/schemas/Edit"
+          },
+          "episode_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Episode Id",
+            "type": "string"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/Shot"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Shots",
+            "type": "array"
+          },
+          "target_seconds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Target Seconds",
+            "type": "number"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "episode_id",
+          "title",
+          "target_seconds",
+          "characters",
+          "shots",
+          "edit"
+        ],
+        "title": "Episode",
+        "type": "object"
+      },
+      "EpisodeCreated": {
+        "additionalProperties": false,
+        "properties": {
+          "episode": {
+            "$ref": "#/components/schemas/Episode"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskRecord"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "episode",
+          "tasks"
+        ],
+        "title": "EpisodeCreated",
+        "type": "object"
+      },
+      "EpisodeHistoryImport": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/HistoricalCandidate"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "episode": {
+            "$ref": "#/components/schemas/Episode"
+          },
+          "episode_metadata_complete": {
+            "default": true,
+            "title": "Episode Metadata Complete",
+            "type": "boolean"
+          },
+          "fill_unreviewed": {
+            "default": false,
+            "description": "只补录离线决定或备注，保留已有和曾有的 Mac 审片记录。",
+            "title": "Fill Unreviewed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "episode",
+          "candidates"
+        ],
+        "title": "EpisodeHistoryImport",
+        "type": "object"
+      },
+      "EpisodeHistoryImported": {
+        "additionalProperties": false,
+        "properties": {
+          "conflict_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflict Count"
+          },
+          "episode_id": {
+            "title": "Episode Id",
+            "type": "string"
+          },
+          "existing_count": {
+            "title": "Existing Count",
+            "type": "integer"
+          },
+          "inserted_count": {
+            "title": "Inserted Count",
+            "type": "integer"
+          },
+          "updated_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated Count"
+          }
+        },
+        "required": [
+          "episode_id",
+          "inserted_count",
+          "existing_count"
+        ],
+        "title": "EpisodeHistoryImported",
+        "type": "object"
+      },
+      "EpisodeReview": {
+        "additionalProperties": false,
+        "properties": {
+          "can_assemble": {
+            "title": "Can Assemble",
+            "type": "boolean"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/ShotReview"
+            },
+            "title": "Shots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "shots",
+          "can_assemble"
+        ],
+        "title": "EpisodeReview",
+        "type": "object"
+      },
+      "EpisodeSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "episode_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Episode Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "episode_id",
+          "title"
+        ],
+        "title": "EpisodeSummary",
+        "type": "object"
+      },
+      "ExecutorArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "minimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "audio",
+              "sheet"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "shot_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Shot Id",
+            "type": "string"
+          },
+          "take": {
+            "minimum": 1.0,
+            "title": "Take",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "sha256",
+          "bytes",
+          "shot_id",
+          "take"
+        ],
+        "title": "ExecutorArtifact",
+        "type": "object"
+      },
+      "ExecutorComplete": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutorArtifact"
+            },
+            "maxItems": 256,
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "attempt_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Count"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/ExecutorMetrics"
+          },
+          "qc": {
+            "additionalProperties": true,
+            "title": "Qc",
+            "type": "object"
+          },
+          "worker_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "artifacts",
+          "qc",
+          "metrics"
+        ],
+        "title": "ExecutorComplete",
+        "type": "object"
+      },
+      "ExecutorFail": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Count"
+          },
+          "error": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Error",
+            "type": "string"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "worker_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "error",
+          "retryable"
+        ],
+        "title": "ExecutorFail",
+        "type": "object"
+      },
+      "ExecutorHeartbeat": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Count"
+          },
+          "message": {
+            "maxLength": 500,
+            "title": "Message",
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "number"
+          },
+          "worker_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "progress",
+          "message"
+        ],
+        "title": "ExecutorHeartbeat",
+        "type": "object"
+      },
+      "ExecutorLease": {
+        "additionalProperties": false,
+        "properties": {
+          "lease_seconds": {
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "resource_tags": {
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Resource Tags",
+            "type": "array"
+          },
+          "resume_task_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Task Id"
+          },
+          "worker_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "resource_tags",
+          "lease_seconds"
+        ],
+        "title": "ExecutorLease",
+        "type": "object"
+      },
+      "ExecutorMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "seconds": {
+            "minimum": 0.0,
+            "title": "Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "seconds"
+        ],
+        "title": "ExecutorMetrics",
+        "type": "object"
+      },
+      "Frame": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "refs": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Refs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "refs",
+          "prompt"
+        ],
+        "title": "Frame",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -201,6 +944,122 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoricalCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pick",
+                  "reject"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "jpeg_base64": {
+            "anyOf": [
+              {
+                "maxLength": 409600,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jpeg Base64"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Note",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "qc": {
+            "additionalProperties": true,
+            "title": "Qc",
+            "type": "object"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "shot_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Shot Id",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "take": {
+            "minimum": 1.0,
+            "title": "Take",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "sha256",
+          "bytes",
+          "shot_id",
+          "take"
+        ],
+        "title": "HistoricalCandidate",
         "type": "object"
       },
       "ProjectCreate": {
@@ -311,6 +1170,376 @@
           "updated_at"
         ],
         "title": "ProjectRecord",
+        "type": "object"
+      },
+      "ReviewCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "bytes": {
+            "minimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pick",
+                  "reject",
+                  "redo"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "audio",
+              "sheet"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "qc": {
+            "additionalProperties": true,
+            "title": "Qc",
+            "type": "object"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "sheet_thumbnail_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet Thumbnail Id"
+          },
+          "shot_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Shot Id",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "take": {
+            "minimum": 1.0,
+            "title": "Take",
+            "type": "integer"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_type": {
+            "title": "Task Type",
+            "type": "string"
+          },
+          "thumbnail_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Id"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "sha256",
+          "bytes",
+          "shot_id",
+          "take",
+          "artifact_id",
+          "task_id",
+          "task_type",
+          "qc"
+        ],
+        "title": "ReviewCandidate",
+        "type": "object"
+      },
+      "ReviewedArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "bytes": {
+            "minimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pick",
+                  "reject",
+                  "redo"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "audio",
+              "sheet"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "shot_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Shot Id",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "take": {
+            "minimum": 1.0,
+            "title": "Take",
+            "type": "integer"
+          },
+          "thumbnail_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Id"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "sha256",
+          "bytes",
+          "shot_id",
+          "take",
+          "artifact_id"
+        ],
+        "title": "ReviewedArtifact",
+        "type": "object"
+      },
+      "Shot": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/Audio"
+          },
+          "beat": {
+            "minLength": 1,
+            "title": "Beat",
+            "type": "string"
+          },
+          "camera": {
+            "$ref": "#/components/schemas/Camera"
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption"
+          },
+          "emotion": {
+            "minLength": 1,
+            "title": "Emotion",
+            "type": "string"
+          },
+          "first_frame": {
+            "$ref": "#/components/schemas/Frame"
+          },
+          "last_frame": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Frame"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seconds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Seconds",
+            "type": "number"
+          },
+          "shot_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Shot Id",
+            "type": "string"
+          },
+          "transition_out": {
+            "$ref": "#/components/schemas/Transition"
+          },
+          "video": {
+            "$ref": "#/components/schemas/Video"
+          }
+        },
+        "required": [
+          "shot_id",
+          "seconds",
+          "beat",
+          "emotion",
+          "camera",
+          "first_frame",
+          "video",
+          "audio",
+          "transition_out"
+        ],
+        "title": "Shot",
+        "type": "object"
+      },
+      "ShotReview": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "redo_count": {
+            "title": "Redo Count",
+            "type": "integer"
+          },
+          "shot_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Shot Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "shot_id",
+          "status",
+          "redo_count",
+          "candidates"
+        ],
+        "title": "ShotReview",
         "type": "object"
       },
       "TaskCreate": {
@@ -536,6 +1765,66 @@
         "title": "TaskStatus",
         "type": "string"
       },
+      "ThumbnailContent": {
+        "additionalProperties": false,
+        "properties": {
+          "jpeg_base64": {
+            "title": "Jpeg Base64",
+            "type": "string"
+          },
+          "thumbnail_id": {
+            "title": "Thumbnail Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thumbnail_id",
+          "jpeg_base64"
+        ],
+        "title": "ThumbnailContent",
+        "type": "object"
+      },
+      "ThumbnailRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "thumbnail_id": {
+            "title": "Thumbnail Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thumbnail_id"
+        ],
+        "title": "ThumbnailRecord",
+        "type": "object"
+      },
+      "Transition": {
+        "additionalProperties": false,
+        "properties": {
+          "offset_s": {
+            "title": "Offset S",
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "cut",
+              "j_cut",
+              "l_cut",
+              "whip",
+              "match",
+              "speed_ramp"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "offset_s"
+        ],
+        "title": "Transition",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -574,6 +1863,38 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "Video": {
+        "additionalProperties": false,
+        "properties": {
+          "negative": {
+            "title": "Negative",
+            "type": "string"
+          },
+          "prompt": {
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "seeds": {
+            "items": {
+              "maximum": 9.223372036854776e+18,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 48,
+            "minItems": 1,
+            "title": "Seeds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt",
+          "negative",
+          "seeds"
+        ],
+        "title": "Video",
         "type": "object"
       }
     },
@@ -753,6 +2074,63 @@
         ]
       }
     },
+    "/api/v1/artifacts/{artifact_id}/decision": {
+      "post": {
+        "operationId": "decide_api_v1_artifacts__artifact_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewedArtifact"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Decide",
+        "tags": [
+          "executors"
+        ]
+      }
+    },
     "/api/v1/audit/events": {
       "get": {
         "description": "读取最近脱敏审计事件。",
@@ -862,11 +2240,306 @@
         ]
       }
     },
+    "/api/v1/episodes": {
+      "get": {
+        "operationId": "list_episodes_api_v1_episodes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EpisodeSummary"
+                  },
+                  "title": "Response List Episodes Api V1 Episodes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Episodes",
+        "tags": [
+          "episodes"
+        ]
+      },
+      "post": {
+        "operationId": "create_episode_api_v1_episodes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Episode"
+              }
+            },
+            "application/yaml": {
+              "schema": {
+                "description": "UTF-8 episode.yaml",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeCreated"
+                }
+              }
+            },
+            "description": "剧集已存在"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "剧集字段校验失败"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Episode",
+        "tags": [
+          "episodes"
+        ]
+      }
+    },
+    "/api/v1/episodes/import": {
+      "post": {
+        "description": "登记历史素材路径、哈希和审片数据，保持本地媒体路径及原有审核决定。",
+        "operationId": "import_history_api_v1_episodes_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeHistoryImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeHistoryImported"
+                }
+              }
+            },
+            "description": "候选已导入"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeHistoryImported"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "剧集规范冲突或原文件内容已变化"
+          },
+          "413": {
+            "description": "导入体积超过限制"
+          },
+          "415": {
+            "description": "缩略图须为有效的 Base64 JPEG"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import History",
+        "tags": [
+          "episodes"
+        ]
+      }
+    },
+    "/api/v1/episodes/{episode_id}/assemble": {
+      "post": {
+        "operationId": "assemble_episode_api_v1_episodes__episode_id__assemble_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "episode_id",
+            "required": true,
+            "schema": {
+              "title": "Episode Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "仍有分镜没有选用的视频"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Assemble Episode",
+        "tags": [
+          "episodes"
+        ]
+      }
+    },
+    "/api/v1/episodes/{episode_id}/review": {
+      "get": {
+        "operationId": "read_review_api_v1_episodes__episode_id__review_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "episode_id",
+            "required": true,
+            "schema": {
+              "title": "Episode Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Review",
+        "tags": [
+          "episodes"
+        ]
+      }
+    },
     "/api/v1/events": {
       "summary": "认证、可续传的任务事件流",
       "x-application-ping-pong": true,
       "x-resume-query": "after_sequence",
       "x-websocket": true
+    },
+    "/api/v1/executors/lease": {
+      "post": {
+        "operationId": "lease_api_v1_executors_lease_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutorLease"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "204": {
+            "description": "无任务"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Lease",
+        "tags": [
+          "executors"
+        ]
+      }
     },
     "/api/v1/health": {
       "get": {
@@ -1279,6 +2952,53 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/artifacts": {
+      "get": {
+        "operationId": "artifacts_api_v1_tasks__task_id__artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Artifacts",
+        "tags": [
+          "executors"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/cancel": {
       "post": {
         "description": "取消尚未进入不可逆终态的任务。",
@@ -1327,6 +3047,186 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/complete": {
+      "post": {
+        "operationId": "complete_api_v1_tasks__task_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutorComplete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "租约不匹配"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Complete",
+        "tags": [
+          "executors"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/fail": {
+      "post": {
+        "operationId": "fail_api_v1_tasks__task_id__fail_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutorFail"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "租约不匹配"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Fail",
+        "tags": [
+          "executors"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/heartbeat": {
+      "post": {
+        "operationId": "heartbeat_api_v1_tasks__task_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutorHeartbeat"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "租约不匹配"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Heartbeat",
+        "tags": [
+          "executors"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/retry": {
       "post": {
         "description": "创建新的子任务，不重新打开原终态任务。",
@@ -1372,6 +3272,128 @@
         "summary": "Retry Task",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/thumbnails": {
+      "post": {
+        "operationId": "upload_thumbnail_api_v1_tasks__task_id__thumbnails_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_thumbnail_api_v1_tasks__task_id__thumbnails_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "租约不匹配"
+          },
+          "413": {
+            "description": "缩略图超过 300 KB"
+          },
+          "415": {
+            "description": "文件须为 JPEG"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload Thumbnail",
+        "tags": [
+          "executors"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/thumbnails/{thumbnail_id}": {
+      "get": {
+        "operationId": "thumbnail_api_v1_tasks__task_id__thumbnails__thumbnail_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "thumbnail_id",
+            "required": true,
+            "schema": {
+              "title": "Thumbnail Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailContent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Thumbnail",
+        "tags": [
+          "executors"
         ]
       }
     }

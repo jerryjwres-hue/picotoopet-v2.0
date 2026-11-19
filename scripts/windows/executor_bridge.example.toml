@@ -1,0 +1,7 @@
+# Copy to executor_bridge.toml and configure locally.
+# Set PICOTOO_EXECUTOR_TOKEN in the launch environment.
+mac_core_url = "https://mac-core.example.test"
+worker_id = "edit-workstation"
+project_root = 'D:\Example\EpisodeProject'
+resource_tags = ["gpu-5070ti"]
+lease_seconds = 90

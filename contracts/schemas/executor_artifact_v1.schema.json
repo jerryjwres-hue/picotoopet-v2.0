@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "bytes": {
+      "minimum": 0,
+      "title": "Bytes",
+      "type": "integer"
+    },
+    "kind": {
+      "enum": [
+        "image",
+        "video",
+        "audio",
+        "sheet"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "path": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "shot_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "take": {
+      "minimum": 1,
+      "title": "Take",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "kind",
+    "path",
+    "sha256",
+    "bytes",
+    "shot_id",
+    "take"
+  ],
+  "title": "ExecutorArtifact",
+  "type": "object"
+}

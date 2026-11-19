@@ -6,18 +6,22 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
   "aiosqlite>=0.20,<1",
+  "anyio>=4,<5",
   "fastapi>=0.128,<1",
   "httpx>=0.28,<1",
   "mcp[cli]>=1.27,<2",
   "pydantic>=2.12,<3",
   "pydantic-ai-slim[openai]>=1.0,<2",
   "pydantic-settings>=2.10,<3",
+  "pillow>=11,<13",
   "python-multipart>=0.0.20,<1",
+  "pyyaml>=6,<7",
   "uvicorn[standard]>=0.35,<1",
 ]
 
 [project.scripts]
 picotoopet-core = "picotoopet_core.cli:main"
+picotoopet = "picotoopet_core.cli:main"
 
 [dependency-groups]
 dev = [
@@ -25,6 +29,7 @@ dev = [
   "pytest-asyncio>=1.2,<2",
   "pytest-cov>=7,<8",
   "ruff>=0.12,<1",
+  "requests>=2.32,<3",
 ]
 
 [build-system]
