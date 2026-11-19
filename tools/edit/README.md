@@ -64,6 +64,27 @@ pip install -r requirements.txt
 python -m edit assemble --plan edit_plan.json --out final.mp4
 ```
 
+### 复刻 cut_v2 制作计划
+
+在 `tools/edit` 下执行以下命令。`--root` 用于计划从另一台机器迁移时替换素材根目录。原计划中有 `root` 时会自动使用 FFmpeg 制作后端。
+
+```powershell
+python -m edit assemble --plan cut-plan.json --root .\media --out cut.mp4 --edl cut.tsv
+```
+
+单独转换旧计划时，先写入新的 `edit_plan.json`，再用该文件合成。转换器保留镜头顺序和音乐引用的镜头索引，从 FFprobe 读取缺省出点，并写明转场类型、方向、重叠时间、音量和字幕时点。格式标识为 `edit.production.v1`。媒体文件使用相对素材根目录的路径，原计划保留在原处。
+
+```powershell
+python -m edit convert --plan cut-plan.json --root .\media --out edit_plan.json
+python -m edit assemble --plan edit_plan.json --out cut.mp4 --edl cut.tsv
+```
+
+此格式按原剪辑时间线解释 `in`、`out`、数值 `speed`、`punch_in`、字幕和每镜 `audio_offset`，缺省出点从实际媒体读取。原计划中的 `cut` 使用 0.04 秒淡化，`match` 使用 0.16 秒溶解，`whip_left/right/up/down` 使用 0.18 秒位移，`dip` 使用 0.30 秒淡黑。EDL 四列依次为镜号、时间线入点、镜头时长和出镜转场。多段配乐支持按 `shot`（从零开始）加 `offset` 或按 `at` 定位，保留音量、裁切、淡入淡出和侧链压低。计划可用 `font` 引用本地字体，Windows 缺省使用 Arial Bold。
+
+连续硬切或至多一帧的转场按全片帧号拼接。例如 24 fps 下连续 0.04 秒重叠的剪点会落到最近的输出帧。混合转场成片长度不足时，程序按每个边界的局部帧范围重建。输出 MP4 在替换目标文件前会核对解码帧数、视频流和容器时长。
+
+Windows 执行桥把已选视频和已渲染音频绑定到同一后端。Core 的 `cut` 是无重叠硬切。`j_cut` 让下镜声音提前，`l_cut` 延用本镜出点后的可用声音，`speed_ramp` 在镜尾从一倍加速到两倍（默认作用于最后 0.25 秒，窗口可用 `offset_s` 指定）。Foley 生成提示随剧集保留，剪辑接收渲染文件。CLI 复刻和执行桥调用依赖 FFmpeg 与 FFprobe。FFmpeg 需支持 overlay、xfade、sidechaincompress、loudnorm 及 H.264/AAC 编码。可用 drawtext 时沿用原版英文字幕；缺少 drawtext 或字幕含非 ASCII 字符时，Pillow 会检查本地字体的字形并生成透明字幕图层，再按相同时间和位置叠加。系统字体缺字时，设定计划中的 font 为覆盖相应字符的字体文件。
+
 ### 参数说明
 - `--plan`: 剪辑工程方案 JSON 文件路径（必选）。
 - `--out`: 最终合成 MP4 文件输出路径（默认 `final.mp4`）。

@@ -5,6 +5,7 @@ import json
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from pathlib import PureWindowsPath
 from sqlite3 import Connection
 from uuid import uuid4
 
@@ -169,6 +170,13 @@ class ExecutorService:
                     "UPDATE tasks SET error_code = ?, error_message = ? WHERE task_id = ?",
                     ("EXECUTOR_FAILED", body.error, task_id),
                 )
+            if isinstance(body, ExecutorComplete):
+                if row["task_type"] in ("gen.keyframe", "gen.video"):
+                    self._enqueue_check(db, row, body, trace_id)
+                elif row["task_type"] == "qc.check":
+                    jobs = json.loads(row["payload_json"])["jobs"]
+                    if "source_task_id" in jobs:
+                        target = self._finish_check(db, row, jobs, body.qc, trace_id)
             updated = self.queue.transition_in_transaction(
                 db,
                 task_id=task_id,
@@ -184,6 +192,124 @@ class ExecutorService:
             )
             self._audit(db, trace_id, action, task_id, body.worker_id)
             return updated
+
+    @staticmethod
+    def _redirect_children(db, old_id, new_id):
+        db.execute(
+            "UPDATE task_dependencies SET depends_on_task_id=? WHERE depends_on_task_id=?",
+            (new_id, old_id),
+        )
+
+    def _enqueue_check(self, db, source, body, trace_id):
+        kind = "image" if source["task_type"] == "gen.keyframe" else "video"
+        artifacts = [item.model_dump() for item in body.artifacts if item.kind == kind]
+        if not artifacts:
+            raise InvalidTransitionError("生成任务缺少可质检的产物。")
+        payload = json.loads(source["payload_json"])
+        source_id = source["task_id"]
+        check = self.queue._create_in_transaction(
+            db,
+            request=TaskCreate(
+                task_type="qc.check",
+                idempotency_key=f"qc:{source_id}",
+                resource_tag=source["resource_tag"],
+                project_id=source["project_id"],
+                priority=source["priority"],
+                payload={
+                    "episode_id": payload["episode_id"],
+                    "shot_id": payload["shot_id"],
+                    "runner": "qc.check",
+                    "args": [],
+                    "jobs": {
+                        "source_task_id": source_id,
+                        "source_type": source["task_type"],
+                        "source_jobs": payload["jobs"],
+                        "artifacts": artifacts,
+                    },
+                },
+            ),
+            parent_task_id=source_id,
+            trace_id=trace_id,
+        )
+        # Earlier releases pre-created a placeholder after foley.
+        if kind == "video":
+            for tail in db.execute(
+                """SELECT q.task_id FROM tasks q JOIN tasks f ON f.task_id=q.parent_task_id
+                   WHERE f.parent_task_id=? AND f.task_type='gen.foley'
+                   AND q.task_type='qc.check' AND q.status='Queued'
+                   AND json_type(q.payload_json,'$.jobs.shot')='object'""",
+                (source_id,),
+            ).fetchall():
+                self.queue.transition_in_transaction(
+                    db,
+                    task_id=tail["task_id"],
+                    target=TaskStatus.CANCELLED,
+                    reason="replaced_by_video_qc",
+                    trace_id=trace_id,
+                )
+        self._redirect_children(db, source_id, check.task_id)
+
+    @staticmethod
+    def _valid_check(check):
+        return (
+            isinstance(check, dict)
+            and type(check.get("passed")) is bool
+            and type(check.get("score")) in (float, int)
+            and 0 <= check["score"] <= 100
+            and isinstance(check.get("fails"), list)
+            and all(isinstance(message, str) for message in check["fails"])
+        )
+
+    def _finish_check(self, db, gate, jobs, qc, trace_id):
+        checks = qc.get("by_sha256")
+        if not (
+            self._valid_check(qc)
+            and isinstance(checks, dict)
+            and set(checks) == {item["sha256"] for item in jobs["artifacts"]}
+            and all(self._valid_check(check) for check in checks.values())
+            and qc["passed"] == all(check["passed"] for check in checks.values())
+        ):
+            raise InvalidTransitionError("质检报告缺少与源产物匹配的有效结果。")
+        if qc["passed"]:
+            return TaskStatus.COMPLETED
+
+        source_id = jobs["source_task_id"]
+        source = self._task(db, source_id)
+        key = source["idempotency_key"] or ""
+        # Redo lineage is written by the Core, unlike a client-supplied idempotency key.
+        redo = db.execute("SELECT 1 FROM executor_redos WHERE task_id=?", (source_id,)).fetchone()
+        attempt = int(key.rsplit(":", 1)[1]) if redo and key.startswith("qc-redo:") else 0
+        code = "QC_MANUAL_REVIEW"
+        if attempt < 2:
+            root = key.split(":")[1] if attempt else source_id
+            new = self._clone(
+                db,
+                source,
+                source["parent_task_id"],
+                self._dependencies(db, source_id),
+                trace_id,
+                redo_key=f"qc-redo:{root}:{attempt + 1}",
+            )
+            db.execute(
+                "INSERT INTO executor_redos(task_id,source_task_id) VALUES (?,?)",
+                (new.task_id, source_id),
+            )
+            db.execute(
+                """UPDATE tasks SET parent_task_id=? WHERE parent_task_id=? AND task_id IN
+                   (SELECT task_id FROM task_dependencies WHERE depends_on_task_id=?)""",
+                (new.task_id, source_id, gate["task_id"]),
+            )
+            self._redirect_children(db, gate["task_id"], new.task_id)
+            code = "QC_REGENERATING"
+        db.execute(
+            "UPDATE tasks SET error_code=?, error_message=? WHERE task_id=?",
+            (code, "；".join(qc["fails"]) or "质检未通过", gate["task_id"]),
+        )
+        db.execute(
+            "UPDATE executor_artifacts SET decision=NULL WHERE task_id=? AND decision='pick'",
+            (source_id,),
+        )
+        return TaskStatus.FAILED
 
     @staticmethod
     def store_result_in_transaction(
@@ -312,8 +438,11 @@ class ExecutorService:
             (result_id,),
         ).fetchone()
         dependency = db.execute(
-            """SELECT depends_on_task_id FROM task_dependencies
-               WHERE task_id = ? ORDER BY rowid LIMIT 1""",
+            """SELECT CASE WHEN parent.task_type='qc.check' THEN
+                       COALESCE(json_extract(parent.payload_json,'$.jobs.source_task_id'),
+                                parent.task_id) ELSE parent.task_id END AS depends_on_task_id
+               FROM task_dependencies dep JOIN tasks parent ON parent.task_id=dep.depends_on_task_id
+               WHERE dep.task_id = ? ORDER BY dep.rowid LIMIT 1""",
             (task_id,),
         ).fetchone()
         thumbnails = {
@@ -356,6 +485,78 @@ class ExecutorService:
             raise KeyError("产物不存在。")
         return self.queue.get(row["task_id"])
 
+    def _confirm_qc_candidate(self, db, task, gate, artifact):
+        metadata = json.loads(artifact["metadata_json"])
+        payload = json.loads(task["payload_json"])
+        if task["task_type"] == "gen.video" and metadata["kind"] == "video":
+            required = {"video"}
+            role = "video"
+        elif task["task_type"] == "gen.keyframe" and metadata["kind"] == "image":
+            # Match the exact worker output name; avoid assigning another shot or take
+            # to a frame role merely because its filename contains "first" or "last".
+            jobs = payload["jobs"].get("jobs", [])
+            if not jobs or not all(
+                isinstance(job, dict) and isinstance(job.get("id"), str) for job in jobs
+            ):
+                raise InvalidTransitionError("原始作业缺少关键帧编号，请重做并核对配置。")
+            required = {job["id"] for job in jobs}
+            expected = {f"{name}_v{metadata['take']}": name for name in required}
+            role = expected.get(PureWindowsPath(metadata["path"]).stem)
+            if role is None:
+                raise InvalidTransitionError("候选文件名无法对应本任务的关键帧和 take。")
+        else:
+            raise InvalidTransitionError("此产物不能用于人工质检放行。")
+
+        gate_id = gate["task_id"]
+        old = db.execute(
+            "SELECT * FROM executor_qc_picks WHERE gate_id=? AND role=?", (gate_id, role)
+        ).fetchone()
+        if old and old["released"]:
+            if old["artifact_id"] != artifact["artifact_id"]:
+                raise InvalidTransitionError("本轮已按确认的素材放行，请重做以建立新一轮。")
+            return
+        if old and old["artifact_id"] != artifact["artifact_id"]:
+            db.execute(
+                "UPDATE executor_artifacts SET decision=NULL WHERE artifact_id=?",
+                (old["artifact_id"],),
+            )
+        db.execute(
+            """INSERT INTO executor_qc_picks(gate_id,role,artifact_id) VALUES (?,?,?)
+               ON CONFLICT(gate_id,role) DO UPDATE SET artifact_id=excluded.artifact_id""",
+            (gate_id, role, artifact["artifact_id"]),
+        )
+        picks = db.execute(
+            """SELECT p.role,a.artifact_id,a.metadata_json FROM executor_qc_picks p
+               JOIN executor_artifacts a USING (artifact_id) WHERE p.gate_id=? ORDER BY p.role""",
+            (gate_id,),
+        ).fetchall()
+        if {item["role"] for item in picks} != required:
+            return
+        inputs = []
+        for item in picks:
+            data = json.loads(item["metadata_json"])
+            inputs.append(
+                {
+                    "artifact_id": item["artifact_id"],
+                    **{k: data[k] for k in ("sha256", "path", "take", "kind")},
+                }
+            )
+        # Pin the exact manifest before making the children leaseable. The failed
+        # gate and its machine report remain intact for audit and review.
+        for child in db.execute(
+            """SELECT t.* FROM task_dependencies d JOIN tasks t USING(task_id)
+               WHERE d.depends_on_task_id=?""",
+            (gate_id,),
+        ).fetchall():
+            child_payload = json.loads(child["payload_json"])
+            child_payload["jobs"]["reviewed_inputs"] = inputs
+            db.execute(
+                "UPDATE tasks SET payload_json=? WHERE task_id=?",
+                (json.dumps(child_payload, ensure_ascii=False), child["task_id"]),
+            )
+        self._redirect_children(db, gate_id, task["task_id"])
+        db.execute("UPDATE executor_qc_picks SET released=1 WHERE gate_id=?", (gate_id,))
+
     def decide(
         self,
         artifact_id: str,
@@ -377,7 +578,34 @@ class ExecutorService:
             kind = json.loads(artifact["metadata_json"])["kind"]
             if kind == "sheet" or task["task_type"] == "edit.assemble":
                 raise InvalidTransitionError("该产物不能作为分镜候选。")
-            if body.decision == "pick":
+            gate = db.execute(
+                """SELECT task_id,status,error_code FROM tasks WHERE task_type='qc.check'
+                   AND json_extract(payload_json,'$.jobs.source_task_id')=?
+                ORDER BY rowid DESC LIMIT 1""",
+                (task["task_id"],),
+            ).fetchone()
+            manual_gate = gate and gate["error_code"] == "QC_MANUAL_REVIEW"
+            if body.accept_qc_failure and (not manual_gate or body.decision != "pick"):
+                raise InvalidTransitionError("人工放行只适用于末轮待人工复核的候选。")
+            if gate and gate["status"] != "Completed" and body.decision in ("pick", "redo"):
+                superseded = db.execute(
+                    "SELECT 1 FROM executor_redos WHERE source_task_id=?", (task["task_id"],)
+                ).fetchone()
+                if (
+                    not manual_gate
+                    or superseded
+                    or (body.decision == "pick" and not body.accept_qc_failure)
+                ):
+                    raise InvalidTransitionError("此候选尚未通过质检，或已有后续重做。")
+            if body.accept_qc_failure:
+                self._confirm_qc_candidate(db, task, gate, artifact)
+            elif manual_gate and body.decision != "pick":
+                db.execute(
+                    """DELETE FROM executor_qc_picks
+                       WHERE gate_id=? AND artifact_id=? AND released=0""",
+                    (gate["task_id"], artifact_id),
+                )
+            if body.decision == "pick" and not (body.accept_qc_failure and kind == "image"):
                 db.execute(
                     """UPDATE executor_artifacts SET decision = NULL
                        WHERE decision = 'pick' AND artifact_id <> ?
@@ -396,6 +624,15 @@ class ExecutorService:
                 "UPDATE executor_artifacts SET decision = ?, note = ? WHERE artifact_id = ?",
                 (body.decision, body.note, artifact_id),
             )
+            audit_details = {"note": body.note}
+            if body.accept_qc_failure:
+                audit_details.update(
+                    source_task_id=task["task_id"],
+                    qc_task_id=gate["task_id"],
+                    sha256=json.loads(artifact["metadata_json"])["sha256"],
+                )
+            elif historical and body.decision == "redo":
+                audit_details["queues_generation"] = False
             self.audit.append(
                 connection=db,
                 trace_id=trace_id,
@@ -405,10 +642,8 @@ class ExecutorService:
                 resource_type="artifact",
                 resource_id=artifact_id,
                 decision=body.decision,
-                reason_code=None,
-                details={"note": body.note, "queues_generation": False}
-                if historical and body.decision == "redo"
-                else {"note": body.note},
+                reason_code="QC_HUMAN_OVERRIDE" if body.accept_qc_failure else None,
+                details=audit_details,
             )
             self.queue.outbox.append_in_transaction(
                 db,
@@ -432,8 +667,16 @@ class ExecutorService:
             task = self._task(db, task_id)
             if task["status"] not in {TaskStatus.FAILED.value, TaskStatus.CANCELLED.value}:
                 raise InvalidTransitionError("只有 Failed 或 Cancelled 任务可以重试。")
+            if task["error_code"] in ("QC_REGENERATING", "QC_MANUAL_REVIEW"):
+                raise InvalidTransitionError("质检已有结论，请在分镜审片中处理候选。")
             new_task = self._clone(db, task, task_id, self._dependencies(db, task_id), trace_id)
-            self._clone_children(db, task_id, new_task.task_id, trace_id)
+            if (
+                task["task_type"] == "qc.check"
+                and "source_task_id" in json.loads(task["payload_json"])["jobs"]
+            ):
+                self._redirect_children(db, task_id, new_task.task_id)
+            else:
+                self._clone_children(db, task_id, new_task.task_id, trace_id)
             return new_task
 
     @staticmethod
@@ -461,9 +704,23 @@ class ExecutorService:
         self._clone_children(db, task["task_id"], new_task.task_id, trace_id)
 
     def _clone_children(self, db: Connection, source_id: str, new_id: str, trace_id: str):
+        gate = db.execute(
+            """SELECT task_id FROM tasks WHERE task_type='qc.check'
+               AND json_extract(payload_json,'$.jobs.source_task_id')=?
+                ORDER BY rowid DESC LIMIT 1""",
+            (source_id,),
+        ).fetchone()
+        if (
+            gate
+            and not db.execute(
+                "SELECT 1 FROM executor_qc_picks WHERE gate_id=? AND released=1", (gate["task_id"],)
+            ).fetchone()
+        ):
+            source_id = gate["task_id"]
         children = db.execute(
             """SELECT tasks.* FROM task_dependencies JOIN tasks USING (task_id)
-               WHERE depends_on_task_id = ? AND task_id NOT IN (SELECT task_id FROM executor_redos)
+               WHERE depends_on_task_id = ? AND tasks.status <> 'Cancelled'
+                 AND task_id NOT IN (SELECT task_id FROM executor_redos)
                ORDER BY tasks.rowid""",
             (source_id,),
         ).fetchall()
@@ -473,7 +730,7 @@ class ExecutorService:
             if child["task_type"] in copied:
                 continue
             copied.add(child["task_type"])
-            clone = self._clone(db, child, new_id, (new_id,), trace_id)
+            clone = self._clone(db, child, new_id, (new_id,), trace_id, new_upstream=True)
             self._clone_children(db, child["task_id"], clone.task_id, trace_id)
 
     def _clone(
@@ -483,15 +740,25 @@ class ExecutorService:
         parent_id: str | None,
         dependencies: tuple[str, ...],
         trace_id: str,
+        *,
+        redo_key: str | None = None,
+        new_upstream: bool = False,
     ) -> TaskRecord:
         original = self.queue._row_to_record(task)
         payload = original.payload
         if original.task_type.startswith("gen."):
             payload = {**payload, "jobs": {**payload["jobs"], "out": "$bridge.output"}}
+        if new_upstream:
+            payload["jobs"].pop("reviewed_inputs", None)
+        if redo_key:
+            for job in payload["jobs"].get("jobs", []):
+                seeds = job.get("seeds") or [0]
+                job["seeds"] = [(seed + 1_000_003) % (2**63) for seed in seeds]
         new_task = self.queue._create_in_transaction(
             db,
             request=TaskCreate(
                 task_type=original.task_type,
+                idempotency_key=redo_key,
                 payload=payload,
                 priority=original.priority,
                 project_id=original.project_id,

@@ -30,6 +30,7 @@ class CaptionSpec(BaseModel):
 class ShotSpec(BaseModel):
     """Complete specification for a single shot QC check."""
     shot_id: str = Field(..., description="Unique identifier of the shot (e.g. S01, S03)")
+    check_entity_counts: bool = True
     expect: ShotExpectation = Field(default_factory=ShotExpectation, description="Expected entity presence")
     identity_refs: Dict[str, str] = Field(default_factory=dict, description="Reference images for identity verification")
     min_motion: float = Field(default=0.15, ge=0.0, description="Minimum acceptable optical flow magnitude")

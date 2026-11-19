@@ -74,6 +74,7 @@ class ExecutorFail(ExecutorReport):
 
 
 class ArtifactDecision(ExecutorModel):
+    accept_qc_failure: bool = False
     decision: Literal["pick", "reject", "redo"]
     note: str = Field(default="", max_length=2000)
 

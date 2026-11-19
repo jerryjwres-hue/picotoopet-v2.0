@@ -136,9 +136,12 @@
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <TextBlock Text="质检报告" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,6" />
-          <TextBox Grid.Row="1" Text="{Binding QcText, Mode=OneWay}" IsReadOnly="True"
+          <DockPanel Grid.Row="1">
+            <Image DockPanel.Dock="Bottom" Source="{Binding Candidate.Report}" MaxHeight="160" Stretch="Uniform" AutomationProperties.Name="质检报告图" />
+            <TextBox Text="{Binding QcText, Mode=OneWay}" IsReadOnly="True"
                    VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" Margin="0"
                    AutomationProperties.Name="质检报告" />
+          </DockPanel>
           <Button Grid.Row="2" Content="本地播放" Command="{Binding PlayCommand}" Margin="0,8,0,0"
                   ToolTip="{Binding CandidateHint}" />
           <TextBlock Grid.Row="3" Text="审片备注" FontSize="14" FontWeight="SemiBold" Margin="0,10,0,3" />
@@ -155,7 +158,7 @@
             </StackPanel>
           </StackPanel>
           <UniformGrid Grid.Row="5" Columns="3" Margin="-3,6,-3,0">
-            <Button Content="选用" Command="{Binding PickCommand}" Padding="4,4" Margin="3"
+            <Button Content="{Binding PickLabel}" Command="{Binding PickCommand}" Padding="4,4" Margin="3"
                     Style="{StaticResource PrimaryAction}" />
             <Button Content="重做" Command="{Binding RedoCommand}" Padding="4,4" Margin="3" />
             <Button Content="不要" Command="{Binding RejectCommand}" Padding="4,4" Margin="3" />

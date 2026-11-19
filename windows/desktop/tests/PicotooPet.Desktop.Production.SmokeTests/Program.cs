@@ -58,9 +58,11 @@ internal static class Program
         Check(model.Episode?.EpisodeId == "demo", "缺少剧集");
         Check(model.Shot?.ShotId == "S01", "没有默认选中分镜");
         Check(!model.AssembleCommand.CanExecute(null), "缺少选用时合成按钮应禁用");
+        Check(model.PickLabel == "人工复核选用", "未明确标示末轮人工复核");
         Check(model.Candidates.Count == 3, "候选数量不匹配");
         Check(model.PlayCommand.CanExecute(null), "本机视频未提供播放入口");
         Check(model.QcText.Contains("通过", StringComparison.Ordinal), "没有显示中文质检字段");
+        Check(model.QcText.Contains("92") && model.Candidates[0].Report is not null, "质检得分或报告图缺失");
         Check(model.Candidates.All(item => item.Preview is not null), "候选缩略图未显示");
         Check(model.Candidates[0].Origin.Contains("123", StringComparison.Ordinal), "缺少原始种子");
         Check(model.Candidates[0].Origin.Contains("fixture", StringComparison.Ordinal), "缺少原始批次");
@@ -118,11 +120,10 @@ internal static class Program
         Check(model.Message.Contains("新增 1", StringComparison.Ordinal), model.Message);
         Check(model.Candidate?.Record.TaskType == "review.imported", "未读取 Core 登记的候选");
         Check(model.Candidate?.Record.Seed == 123, "真实服务的候选种子不同");
-        model.Note = "合成前确认接触。";
+        model.Note = "已选用历史片，仍需独立 QC。";
         model.PickCommand.Execute(null);
-        await WaitForAsync(() => model.AssembleCommand.CanExecute(null));
-        model.AssembleCommand.Execute(null);
-        await WaitForAsync(() => model.Message.Contains("合成任务已入队", StringComparison.Ordinal));
+        await WaitForAsync(() => model.Message.Contains("已记录选用", StringComparison.Ordinal));
+        Check(!model.AssembleCommand.CanExecute(null), "历史素材没有当前 QC 认证，不应解锁合成。");
     }
 
     private static async Task VerifyLocalBatchAsync(ProductionViewModel model, FixtureTransport transport)
@@ -286,6 +287,7 @@ internal static class Program
                     using (var decision = JsonDocument.Parse(
                         await request.Content!.ReadAsStringAsync(cancellationToken)))
                     {
+                        Check(decision.RootElement.GetProperty("accept_qc_failure").GetBoolean(), "未提交明确的人工放行标记");
                         _picked = decision.RootElement.GetProperty("decision").GetString() == "pick";
                         DecisionNote = decision.RootElement.GetProperty("note").GetString();
                         MacNote = DecisionNote ?? "";
@@ -306,7 +308,7 @@ internal static class Program
         private object Candidate(string id, string kind, string file, int take, string? decision) =>
             new { artifact_id = id, task_id = "fixture", kind, path = $@"C:\Demo\{file}", take,
                 decision, note = id == "a" ? MacNote : "", thumbnail_id = id, seed = 123, source_id = "fixture", task_type = "review.imported",
-                qc = new { 通过 = true, 秒数 = 3.0, 宽 = 576, 高 = 768, 有音轨 = true },
+                qc = new { passed = false, gate_status = "QC_MANUAL_REVIEW", can_confirm = true, score = 92, fails = Array.Empty<string>(), report_task_id = "fixture", report_thumbnail_id = "report" },
             };
 
         private static HttpResponseMessage Json<T>(T value) => new(HttpStatusCode.OK)

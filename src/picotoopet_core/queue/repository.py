@@ -218,15 +218,14 @@ class QueueRepository:
         now          = datetime.now(UTC)
         lease_expiry = now + timedelta(seconds=lease_seconds)
         filters, parameters = self._lease_filters(resource_tags, task_types, task_id)
-        if task_types is not None:
-            filters += """
-              AND NOT EXISTS (
-                SELECT 1 FROM task_dependencies AS dep
-                JOIN tasks AS parent ON parent.task_id = dep.depends_on_task_id
-                WHERE dep.task_id = tasks.task_id AND parent.status <> ?
-              )
-            """
-            parameters += (TaskStatus.COMPLETED.value,)
+        filters += """
+          AND NOT EXISTS (
+            SELECT 1 FROM task_dependencies AS dep
+            JOIN tasks AS parent ON parent.task_id = dep.depends_on_task_id
+            WHERE dep.task_id = tasks.task_id AND parent.status <> ?
+          )
+        """
+        parameters += (TaskStatus.COMPLETED.value,)
         transaction = self.database.transaction() if connection is None else nullcontext(connection)
         with transaction as connection:
             row = connection.execute(

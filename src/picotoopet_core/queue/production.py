@@ -27,7 +27,7 @@ from picotoopet_core.domain.models import TaskCreate, TaskRecord
 from picotoopet_core.queue.executor import ExecutorService
 from picotoopet_core.queue.state_machine import InvalidTransitionError
 
-SHOT_TYPES = ("gen.keyframe", "gen.video", "gen.foley", "qc.check")
+SHOT_TYPES = ("gen.keyframe", "gen.video", "gen.foley")
 
 
 def _shot_jobs(episode: Episode, shot: Shot):
@@ -72,7 +72,6 @@ def _shot_jobs(episode: Episode, shot: Shot):
             ],
             "vocal_from": shot.audio.vocal_from,
         },
-        {"shot": shot.model_dump(mode="json")},
     )
 
 
@@ -162,7 +161,8 @@ class ProductionService:
     @staticmethod
     def _tasks(db: Connection, episode_id: str, *, include_history: bool = False):
         return db.execute(
-            """SELECT tasks.*, redos.task_id IS NOT NULL AS is_redo
+            """SELECT tasks.*, redos.task_id IS NOT NULL AS is_redo,
+                      redos.source_task_id AS redo_source
                FROM tasks LEFT JOIN executor_redos AS redos USING (task_id)
                WHERE json_extract(payload_json, '$.episode_id') = ?
                  AND (task_type IN ('gen.keyframe', 'gen.video', 'gen.foley', 'qc.check')
@@ -186,9 +186,34 @@ class ProductionService:
             rows = grouped[shot.shot_id]
             candidates = []
             qc_by_hash = {}
+            gates = {}
+            manual = False
             lists = [(row, self.executor.artifacts_in_transaction(db, row)) for row in rows]
             for row, result in lists:
                 if row["task_type"] == "qc.check":
+                    jobs = json.loads(row["payload_json"])["jobs"]
+                    if source_id := jobs.get("source_task_id"):
+                        reports = {
+                            thumb["artifact_sha256"]: thumb["thumbnail_id"]
+                            for thumb in db.execute(
+                                """SELECT artifact_sha256,thumbnail_id FROM executor_thumbnails
+                                   WHERE task_id=? AND attempt=? ORDER BY rowid""",
+                                (row["task_id"], row["attempt_count"]),
+                            )
+                        }
+                        confirmed = {
+                            pick["artifact_id"]: bool(pick["released"])
+                            for pick in db.execute(
+                                """SELECT artifact_id,released FROM executor_qc_picks
+                                   WHERE gate_id=?""",
+                                (row["task_id"],),
+                            )
+                        }
+                        superseded = any(item["redo_source"] == source_id for item in rows)
+                        gates[source_id] = (row, result, reports, confirmed, superseded)
+                        if row["error_code"] == "QC_MANUAL_REVIEW":
+                            manual |= not superseded and not any(confirmed.values())
+                        continue
                     checks = result.qc.get("by_sha256")
                     if isinstance(checks, dict):
                         qc_by_hash.update(
@@ -200,18 +225,43 @@ class ProductionService:
                 for item in result.artifacts:
                     if item.kind == "sheet":
                         continue
+                    qc = qc_by_hash.get(item.sha256, result.qc)
+                    if gate := gates.get(row["task_id"]):
+                        check, report, reports, confirmed, superseded = gate
+                        qc = {
+                            **report.qc.get("by_sha256", {}).get(item.sha256, {}),
+                            "gate_status": check["error_code"] or check["status"],
+                            "report_task_id": check["task_id"],
+                            "superseded": superseded,             # 旧轮次不得再次被合成
+                            "report_thumbnail_id": reports.get(
+                                item.sha256, report.sheet_thumbnail_id
+                            ),
+                        }
+                        if check["error_code"] == "QC_MANUAL_REVIEW":
+                            qc["can_confirm"] = (
+                                not superseded
+                                and (not any(confirmed.values()) or item.artifact_id in confirmed)
+                                and item.kind in ("image", "video")
+                            )
+                            qc["can_redo"] = not superseded
+                            qc["human_confirmed"] = item.artifact_id in confirmed
+                            qc["human_released"] = any(confirmed.values())
                     candidates.append(
                         ReviewCandidate(
                             **item.model_dump(),
                             task_id=row["task_id"],
                             task_type=row["task_type"],
                             sheet_thumbnail_id=result.sheet_thumbnail_id,
-                            qc=qc_by_hash.get(item.sha256, result.qc),
+                            qc=qc,
                         )
                     )
             statuses = {row["status"] for row in rows}
-            if self._picked_video(candidates):
+            if self._certified_video(candidates):
                 status = "已选用"
+            elif self._picked_video(candidates):
+                status = "已选用待质量认证"
+            elif manual:
+                status = "待人工复核"
             elif TaskStatus.RUNNING.value in statuses:
                 status = "执行中"
             elif TaskStatus.RETRYING.value in statuses:
@@ -233,8 +283,29 @@ class ProductionService:
                 )
             )
         return EpisodeReview(
-            shots=shots, can_assemble=all(self._picked_video(shot.candidates) for shot in shots)
+            shots=shots,
+            can_assemble=all(self._certified_video(shot.candidates) for shot in shots),
         )
+
+    @classmethod
+    def _certified_video(cls, candidates: list[ReviewCandidate]) -> ReviewCandidate | None:
+        """仅允许当前轮次、同一产物 SHA 的已认证 QC 视频进入正式合成。"""
+        picks = [c for c in candidates if c.kind == "video" and c.decision == "pick"]
+        if len(picks) != 1:
+            return None
+        pick = picks[0]
+        qc = pick.qc
+        if (
+            not isinstance(qc, dict)
+            or qc.get("gate_status") != TaskStatus.COMPLETED.value
+            or not isinstance(qc.get("report_task_id"), str)
+            or not qc["report_task_id"]
+            or qc.get("passed") is not True
+            or qc.get("superseded") is not False
+        ):
+            # 旧版导入、模型失败、未认证或人工豁免均不得自动签发合成许可。
+            return None
+        return pick
 
     @staticmethod
     def _picked_video(candidates: list[ReviewCandidate]) -> ReviewCandidate | None:
@@ -247,14 +318,41 @@ class ProductionService:
             episode = self._episode(db, episode_id)
             review = self._review(db, episode)
             if not review.can_assemble:
-                raise InvalidTransitionError("请先为每个分镜选用一个视频。")
+                raise InvalidTransitionError("请先选用每镜已完成当前轮次 QC 认证的视频。")
             inputs = []
             for shot, reviewed in zip(episode.shots, review.shots, strict=True):
                 picked = self._picked_video(reviewed.candidates)
                 assert picked is not None
+                foley_tracks = []
+                source = self.executor.artifacts_in_transaction(
+                    db, self.executor._task(db, picked.task_id)
+                )
+                single_video = sum(item.kind == "video" for item in source.artifacts) == 1
+                for child in db.execute(
+                    """SELECT * FROM tasks WHERE parent_task_id=? AND task_type='gen.foley'
+                       AND status='Completed' ORDER BY rowid DESC""",
+                    (picked.task_id,),
+                ):
+                    audio = self.executor.artifacts_in_transaction(db, child)
+                    sources = audio.qc.get("foley_by_sha256", {})
+                    if not isinstance(sources, dict):
+                        continue
+                    foley_tracks = [
+                        {"file": a.path, "sha256": a.sha256}
+                        for a in audio.artifacts
+                        if a.kind == "audio"
+                        and a.shot_id == shot.shot_id
+                        and (
+                            sources.get(a.sha256) == picked.sha256
+                            or (not sources and single_video and a.take == picked.take)
+                        )
+                    ]
+                    if foley_tracks:
+                        break
                 inputs.append(
                     {
                         "path": picked.path,
+                        "foley_tracks": foley_tracks,
                         "sha256": picked.sha256,
                         "artifact_id": picked.artifact_id,
                         "shot_id": shot.shot_id,

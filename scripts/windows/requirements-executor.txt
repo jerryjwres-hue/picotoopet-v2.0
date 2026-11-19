@@ -1,0 +1,3 @@
+requests>=2.32,<3
+pillow>=10
+-r ../../tools/qc/requirements-runtime.txt
