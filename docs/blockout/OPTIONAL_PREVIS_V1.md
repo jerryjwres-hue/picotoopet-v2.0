@@ -18,6 +18,12 @@ Blockout v5.0.0 desktop prerelease includes a Windows x64 installer. Its bundled
 2. Start Blockout. Connect the existing Windows Codex/Claude MCP client to its bundled bridge:
    %LOCALAPPDATA%\Programs\Blockout\resources\mcp\blockout-mcp.mjs
    The MCP client needs Node installed and a correct absolute path.
+   Optional one-time preflight (read-only; it does not launch Blockout or connect MCP):
+
+        # 检查本地 MCP 桥接文件、Node 与 ffprobe 是否就绪。
+        python scripts/windows/blockout_previs_verify.py --preflight
+
+   A detected control.json is *only* a running-app hint, not an MCP connectivity test.
 3. With get_state and list_assets, place a simple dog, doorway and dining table. Choreograph ONE four-second dog path and then use THREE shots inside the same scene with different cameras: wide, side, front. Use a scene preset rather than rebuilding a kitchen for each shot.
 4. In the Blockout Deliver GUI, export each shot package once. These are coverage views of one movement, **not** three chronological repeats of the movement.
 5. From the PicotooPet repository root, run the read-only checker with the three actual exported folders (quote paths that contain spaces):
