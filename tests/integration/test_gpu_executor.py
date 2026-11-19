@@ -32,6 +32,50 @@ def api(tmp_path):
         yield client
 
 
+LEASE = {"worker_id": "bridge", "resource_tags": ["gpu-5070ti"], "lease_seconds": 60}
+
+
+def media(kind="image", digest="0", take=1):
+    return {
+        "kind": kind,
+        "path": f"fixture-{digest}",
+        "sha256": digest * 64,
+        "bytes": 1,
+        "shot_id": "S01",
+        "take": take,
+    }
+
+
+def finish_gate(api, passed=True, jpeg=None):
+    gate = api.post("/api/v1/executors/lease", json=LEASE).json()
+    assert gate["task_type"] == "qc.check"
+    jobs = gate["payload"]["jobs"]
+    report = {
+        "passed": passed,
+        "score": 95 if passed else 30,
+        "fails": [] if passed else ["重复帧"],
+    }
+    by_hash = {item["sha256"]: report for item in jobs["artifacts"]}
+    body = {
+        "worker_id": "bridge",
+        "artifacts": [],
+        "metrics": {"seconds": 1},
+        "qc": {**report, "by_sha256": by_hash},
+    }
+    url = f"/api/v1/tasks/{gate['task_id']}"
+    if jpeg:
+        assert (
+            api.post(
+                url + "/thumbnails", data={"worker_id": "bridge"}, files={"file": jpeg}
+            ).status_code
+            == 201
+        )
+    response = api.post(url + "/complete", json=body)
+    assert response.status_code == 200, response.text
+    assert api.post(url + "/complete", json=body).json() == response.json()
+    return response.json()
+
+
 def test_executor_complete_and_review(api):
     task = api.post(
         "/api/v1/tasks",
@@ -94,6 +138,7 @@ def test_executor_complete_and_review(api):
     assert api.post(endpoint + "/complete", json=complete).json()["status"] == "Completed"
     assert api.post(endpoint + "/complete", json=complete).status_code == 200
     (artifact,) = api.get(endpoint + "/artifacts").json()["artifacts"]
+    finish_gate(api)
     decision_url = f"/api/v1/artifacts/{artifact['artifact_id']}/decision"
     assert api.post(decision_url, json={"decision": "pick", "note": "演示"}).status_code == 200
     assert api.get(endpoint + "/artifacts").json()["artifacts"][0]["decision"] == "pick"
@@ -101,7 +146,8 @@ def test_executor_complete_and_review(api):
     assert verify_audit_chain(services.database).valid
     assert (
         services.database.scalar(
-            "SELECT COUNT(*) FROM audit_events WHERE action='executor.complete'"
+            "SELECT COUNT(*) FROM audit_events WHERE action='executor.complete' AND resource_id=?",
+            (task["task_id"],),
         )
         == 1
     )
@@ -432,7 +478,6 @@ def test_episode_chain_retry_thumbnail_and_assembly(api):
         "gen.keyframe",
         "gen.video",
         "gen.foley",
-        "qc.check",
     ]
     assert [task["parent_task_id"] for task in tasks[1:]] == [t["task_id"] for t in tasks[:-1]]
     assemble = "/api/v1/episodes/demo/assemble"
@@ -470,7 +515,7 @@ def test_episode_chain_retry_thumbnail_and_assembly(api):
             json={
                 "worker_id": "bridge",
                 "attempt_count": 2,
-                "artifacts": [],
+                "artifacts": [media()],
                 "qc": {},
                 "metrics": {"seconds": 0},
             },
@@ -481,6 +526,7 @@ def test_episode_chain_retry_thumbnail_and_assembly(api):
         api.get(endpoint + "/artifacts").json()["sheet_thumbnail_id"]
         == uploaded.json()["thumbnail_id"]
     )
+    finish_gate(api)
     video = api.post(lease_url, json=lease).json()
     assert video["task_type"] == "gen.video"
     video_url = f"/api/v1/tasks/{video['task_id']}"
@@ -505,6 +551,7 @@ def test_episode_chain_retry_thumbnail_and_assembly(api):
         ).status_code
         == 200
     )
+    finish_gate(api, jpeg=jpg.getvalue())
     (artifact,) = api.get(video_url + "/artifacts").json()["artifacts"]
     decision = f"/api/v1/artifacts/{artifact['artifact_id']}/decision"
     assert api.post(decision, json={"decision": "redo", "note": "重试"}).status_code == 200
@@ -513,6 +560,109 @@ def test_episode_chain_retry_thumbnail_and_assembly(api):
     assembly = api.post(assemble).json()
     assert assembly["task_type"] == "edit.assemble"
     assert api.post(assemble).json()["task_id"] == assembly["task_id"]
+
+
+def test_failed_gate_reseeds_twice_blocks_downstream_and_marks_manual(api):
+    api.post("/api/v1/episodes", json=episode_spec())
+    seeds = set()
+    for attempt in range(3):
+        task = api.post("/api/v1/executors/lease", json=LEASE).json()
+        assert task["task_type"] == "gen.keyframe"
+        (seed,) = task["payload"]["jobs"]["jobs"][0]["seeds"]
+        assert seed not in seeds
+        seeds.add(seed)
+        endpoint = f"/api/v1/tasks/{task['task_id']}"
+        body = {"worker_id": "bridge", "artifacts": [media()], "qc": {}, "metrics": {"seconds": 1}}
+        assert api.post(endpoint + "/complete", json=body).status_code == 200
+        assert api.post(endpoint + "/complete", json=body).status_code == 200
+        (item,) = api.get(endpoint + "/artifacts").json()["artifacts"]
+        decision = f"/api/v1/artifacts/{item['artifact_id']}/decision"
+        assert api.post(decision, json={"decision": "pick"}).status_code == 409
+        gate = finish_gate(api, False)
+        assert gate["status"] == "Failed"
+        assert gate["error_code"] == ("QC_REGENERATING" if attempt < 2 else "QC_MANUAL_REVIEW")
+    assert api.post("/api/v1/executors/lease", json=LEASE).status_code == 204
+    (shot,) = api.get("/api/v1/episodes/demo/review").json()["shots"]
+    assert shot["redo_count"] == 2 and shot["status"] == "待人工复核"
+    assert [x["qc"]["score"] for x in shot["candidates"]] == [30, 30, 30]
+    assert api.post(decision, json={"decision": "redo"}).status_code == 200
+    assert api.post("/api/v1/executors/lease", json=LEASE).json()["task_type"] == "gen.keyframe"
+
+
+def test_passing_redo_releases_correct_video_and_candidate_thumbnail(api):
+    stages = api.post("/api/v1/episodes", json=episode_spec()).json()["tasks"]
+    body = {"worker_id": "bridge", "artifacts": [media()], "qc": {}, "metrics": {"seconds": 1}}
+    first = api.post("/api/v1/executors/lease", json=LEASE).json()
+    assert api.post(f"/api/v1/tasks/{first['task_id']}/complete", json=body).is_success
+    finish_gate(api, False)
+    redo = api.post("/api/v1/executors/lease", json=LEASE).json()
+    body["artifacts"] = [media(digest="1")]
+    assert api.post(f"/api/v1/tasks/{redo['task_id']}/complete", json=body).is_success
+    gate = api.post("/api/v1/executors/lease", json=LEASE).json()
+    assert gate["payload"]["jobs"]["source_task_id"] == redo["task_id"]
+    endpoint = f"/api/v1/tasks/{gate['task_id']}"
+    jpg = io.BytesIO()
+    Image.new("RGB", (16, 16), "blue").save(jpg, format="JPEG")
+    thumbnails = []
+    for fields in ({}, {"artifact_sha256": "1" * 64}):
+        reply = api.post(
+            endpoint + "/thumbnails",
+            data={"worker_id": "bridge", **fields},
+            files={"file": jpg.getvalue()},
+        )
+        thumbnails.append(reply.json()["thumbnail_id"])
+    report = {"score": 90, "passed": True, "fails": []}
+    body["artifacts"] = []
+    body["qc"] = {**report, "by_sha256": {"1" * 64: report}}
+    bad = {**body, "qc": {**report, "by_sha256": {}}}
+    assert api.post(endpoint + "/complete", json=bad).status_code == 409
+    assert api.post(endpoint + "/complete", json=body).status_code == 200
+    next_task = api.post("/api/v1/executors/lease", json=LEASE).json()
+    assert next_task["task_id"] == stages[1]["task_id"]
+    assert next_task["parent_task_id"] == redo["task_id"]
+    assert (
+        api.get(f"/api/v1/tasks/{next_task['task_id']}/artifacts").json()["upstream_task_id"]
+        == redo["task_id"]
+    )
+    old, current = api.get("/api/v1/episodes/demo/review").json()["shots"][0]["candidates"]
+    assert old["qc"]["gate_status"] == "QC_REGENERATING"
+    assert current["qc"]["report_thumbnail_id"] == thumbnails[1] != thumbnails[0]
+    assert current["qc"]["report_task_id"] == gate["task_id"]
+
+
+def test_assembly_uses_audio_from_selected_generation_and_take(api):
+    stages = api.post("/api/v1/episodes", json=episode_spec()).json()["tasks"]
+    for stage, artifacts in zip(
+        stages,
+        (
+            [media()],
+            [media("video", "1"), media("video", "2", 2)],
+            [media("audio", "3"), media("audio", "4", 2)],
+        ),
+        strict=True,
+    ):
+        task = api.post("/api/v1/executors/lease", json=LEASE).json()
+        assert stage["task_id"] == task["task_id"]
+        qc = (
+            {"foley_by_sha256": {"3" * 64: "1" * 64, "4" * 64: "2" * 64}}
+            if task["task_type"] == "gen.foley"
+            else {}
+        )
+        body = {"worker_id": "bridge", "artifacts": artifacts, "qc": qc, "metrics": {"seconds": 1}}
+        path = f"/api/v1/tasks/{task['task_id']}"
+        assert api.post(path + "/complete", json=body).status_code == 200
+        if task["task_type"] != "gen.foley":
+            finish_gate(api)
+        if task["task_type"] == "gen.video":
+            second = api.get(path + "/artifacts").json()["artifacts"][1]["artifact_id"]
+            assert (
+                api.post(
+                    f"/api/v1/artifacts/{second}/decision", json={"decision": "pick"}
+                ).status_code
+                == 200
+            )
+    (shot,) = api.post("/api/v1/episodes/demo/assemble").json()["payload"]["jobs"]["shots"]
+    assert shot["foley_tracks"] == [{"file": "fixture-4", "sha256": "4" * 64}]
 
 
 def test_episode_validation_reports_field(api):
@@ -525,12 +675,13 @@ def test_episode_validation_reports_field(api):
 
 def test_manual_stage_retry_preserves_lineage_and_unblocks_descendants(api):
     response = api.post("/api/v1/episodes", json=episode_spec())
-    first, video, _, _ = response.json()["tasks"]
+    first, video, _ = response.json()["tasks"]
     lease = {"worker_id": "bridge", "resource_tags": ["gpu-5070ti"], "lease_seconds": 60}
     url = "/api/v1/executors/lease"
-    complete = {"worker_id": "bridge", "artifacts": [], "qc": {}, "metrics": {"seconds": 0}}
+    complete = {"worker_id": "bridge", "artifacts": [media()], "qc": {}, "metrics": {"seconds": 0}}
     assert api.post(url, json=lease).json()["task_id"] == first["task_id"]
     assert api.post(f"/api/v1/tasks/{first['task_id']}/complete", json=complete).status_code == 200
+    finish_gate(api)
     assert api.post(url, json=lease).json()["task_id"] == video["task_id"]
     endpoint = f"/api/v1/tasks/{video['task_id']}"
     assert (
@@ -549,7 +700,9 @@ def test_manual_stage_retry_preserves_lineage_and_unblocks_descendants(api):
     assert api.post(url, json=lease).json()["task_id"] == retry["task_id"]
     retried_url = f"/api/v1/tasks/{retry['task_id']}"
     assert api.get(retried_url + "/artifacts").json()["upstream_task_id"] == first["task_id"]
+    complete["artifacts"] = [media("video")]
     assert api.post(retried_url + "/complete", json=complete).status_code == 200
+    finish_gate(api)
     foley = api.post(url, json=lease).json()
     assert foley["task_type"] == "gen.foley"
     assert foley["parent_task_id"] == retry["task_id"]

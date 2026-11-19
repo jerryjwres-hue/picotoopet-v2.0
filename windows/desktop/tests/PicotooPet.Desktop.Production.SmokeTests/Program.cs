@@ -61,6 +61,7 @@ internal static class Program
         Check(model.Candidates.Count == 3, "候选数量不匹配");
         Check(model.PlayCommand.CanExecute(null), "本机视频未提供播放入口");
         Check(model.QcText.Contains("通过", StringComparison.Ordinal), "没有显示中文质检字段");
+        Check(model.QcText.Contains("92") && model.Candidates[0].Report is not null, "质检得分或报告图缺失");
         Check(model.Candidates.All(item => item.Preview is not null), "候选缩略图未显示");
         Check(model.Candidates[0].Origin.Contains("123", StringComparison.Ordinal), "缺少原始种子");
         Check(model.Candidates[0].Origin.Contains("fixture", StringComparison.Ordinal), "缺少原始批次");
@@ -306,7 +307,7 @@ internal static class Program
         private object Candidate(string id, string kind, string file, int take, string? decision) =>
             new { artifact_id = id, task_id = "fixture", kind, path = $@"C:\Demo\{file}", take,
                 decision, note = id == "a" ? MacNote : "", thumbnail_id = id, seed = 123, source_id = "fixture", task_type = "review.imported",
-                qc = new { 通过 = true, 秒数 = 3.0, 宽 = 576, 高 = 768, 有音轨 = true },
+                qc = new { passed = true, score = 92, fails = Array.Empty<string>(), report_task_id = "fixture", report_thumbnail_id = "report" },
             };
 
         private static HttpResponseMessage Json<T>(T value) => new(HttpStatusCode.OK)
