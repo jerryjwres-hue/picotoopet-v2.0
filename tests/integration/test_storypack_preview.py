@@ -188,6 +188,25 @@ def test_compiler_draft_is_repeatable_and_uses_declared_scene_assets(api):
     assert a["shared_asset_refs"]["style"] == "cinematic_v1"
 
 
+def test_duplicate_json_or_yaml_keys_fail_closed_before_digest(api):
+    import json
+
+    pack = storypack()
+    route = "/api/v1/studio/storypacks/preview"
+    raw_json = json.dumps(pack, ensure_ascii=False).replace(
+        '"episode_id": "E02"', '"episode_id": "E02", "episode_id": "E03"',
+    )
+    assert api.post(
+        route, content=raw_json, headers={"Content-Type": "application/json"}
+    ).status_code == 422
+
+    raw_yaml = yaml.safe_dump(pack, allow_unicode=True) + "episode_id: E03\n"
+    assert api.post(
+        route, content=raw_yaml, headers={"Content-Type": "text/yaml"}
+    ).status_code == 422
+    assert api.app.state.services.database.scalar("SELECT COUNT(*) FROM tasks") == 0
+
+
 def test_portrait_preview_does_not_enable_rendering(api):
     pack = storypack()
     pack["output_profile"] = "design_portrait"
