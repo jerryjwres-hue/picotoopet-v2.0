@@ -44,6 +44,8 @@ class StoryShot(_Strict):
     state_in: Text
     state_out: Text
     because: Text
+    scene_ref: AssetRef | None = None                # 单镜场景可覆盖默认场景。
+    cast_refs: list[AssetRef] | None = None          # None=主角；[]=无角色镜头。
     depends_on: list[Identifier] = Field(default_factory=list, max_length=30)
     handoff: Literal["cut", "continuous", "scene_change"] = "cut"
 
@@ -54,7 +56,10 @@ class StoryPackV1(_Strict):
     title: Text
     output_profile: Literal["p0_landscape", "design_portrait"] = "p0_landscape"
     character_ref: AssetRef
+    supporting_character_refs: list[AssetRef] = Field(default_factory=list, max_length=12)
     scene_ref: AssetRef
+    additional_scene_refs: list[AssetRef] = Field(default_factory=list, max_length=30)
+    style_ref: AssetRef | None = None
     story: StoryIntent
     shots: list[StoryShot] = Field(min_length=1, max_length=30)
 
@@ -62,6 +67,13 @@ class StoryPackV1(_Strict):
     def check_dependencies(self) -> StoryPackV1:
         seen: set[str] = set()
         previous: StoryShot | None = None
+        previous_scene: str | None = None
+        allowed_cast = {ref.casefold() for ref in [self.character_ref, *self.supporting_character_refs]}
+        allowed_scenes = {ref.casefold() for ref in [self.scene_ref, *self.additional_scene_refs]}
+        if len(allowed_cast) != 1 + len(self.supporting_character_refs):
+            raise ValueError("supporting_character_refs: duplicate characters")
+        if len(allowed_scenes) != 1 + len(self.additional_scene_refs):
+            raise ValueError("additional_scene_refs: duplicate scenes")
         for index, shot in enumerate(self.shots):
             folded = shot.id.casefold()
             if folded in seen:
@@ -71,13 +83,24 @@ class StoryPackV1(_Strict):
                 raise ValueError(f"shots[{index}].depends_on: duplicated dependency")
             if any(item not in seen for item in dependencies):
                 raise ValueError(f"shots[{index}].depends_on: references must precede this shot")
+            actual_scene = (shot.scene_ref or self.scene_ref).casefold()
+            if actual_scene not in allowed_scenes:
+                raise ValueError(f"shots[{index}].scene_ref: scene not declared in the package")
+            cast = [ref.casefold() for ref in (
+                [self.character_ref] if shot.cast_refs is None else shot.cast_refs
+            )]
+            if len(cast) != len(set(cast)) or any(ref not in allowed_cast for ref in cast):
+                raise ValueError(f"shots[{index}].cast_refs: unknown or duplicate character")
             if shot.handoff == "continuous":
                 if previous is None or previous.id.casefold() not in dependencies:
                     raise ValueError(f"shots[{index}]: continuous handoff requires previous shot")
                 if previous.state_out.strip() != shot.state_in.strip():
                     raise ValueError(f"shots[{index}]: state_in must match previous state_out")
+                if previous_scene != actual_scene:
+                    raise ValueError(f"shots[{index}]: continuous handoff cannot change scenes")
             seen.add(folded)
             previous = shot
+            previous_scene = actual_scene
         return self
 
 
@@ -125,11 +148,25 @@ def storypack_preview(pack: StoryPackV1) -> dict:
             "planned_frames": len(pack.shots) * seconds * fps,
         },
         "shots": [
-            {"id": shot.id, "action": shot.action, "depends_on": shot.depends_on}
+            {
+                "id": shot.id,
+                "action": shot.action,
+                "depends_on": shot.depends_on,
+                "scene_ref": shot.scene_ref or pack.scene_ref,
+                "cast_refs": (
+                    [pack.character_ref] if shot.cast_refs is None else shot.cast_refs
+                ),
+                "handoff": shot.handoff,
+            }
             for shot in pack.shots
         ],
-        # 资产尚未向可信 registry 查询，预览不能冒充已完成素材核验。
-        "unresolved_asset_refs": [pack.character_ref, pack.scene_ref],
+        # 资产必须由可信登记表认证；由 LLM 粘贴的 ref 本身不构成许可。
+        "unresolved_asset_refs": list(dict.fromkeys([
+            pack.character_ref, *pack.supporting_character_refs,
+            pack.scene_ref, *pack.additional_scene_refs,
+            *([pack.style_ref] if pack.style_ref else []),
+        ])),
+        "missing_design_locks": [] if pack.style_ref else ["style_ref"],
         "required_gates": [
             "ASSET_RIGHTS_AND_IDENTITY",
             "SCRIPT_AND_STORYBOARD",
