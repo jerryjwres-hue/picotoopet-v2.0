@@ -1,0 +1,45 @@
+{
+  "schema": "picotoo.storypack.v1",
+  "episode_id": "E02",
+  "title": "茅台听见晚餐的召唤",
+  "output_profile": "p0_landscape",
+  "character_ref": "maotai_master_v1",
+  "scene_ref": "backyard_v1",
+  "story": {
+    "goal": "茅台在后院玩球，听见主人呼唤",
+    "payoff": "茅台发现晚餐已准备好，完成情绪转折"
+  },
+  "shots": [
+    {
+      "id": "S01",
+      "action": "茅台在后院追逐红球",
+      "state_in": "茅台站在后院草坪上，红球在面前",
+      "state_out": "茅台叼着红球站在草坪上",
+      "because": "建立角色、场景和玩耍状态",
+      "depends_on": [],
+      "handoff": "cut"
+    },
+    {
+      "id": "S02",
+      "action": "茅台停下，听见主人从家门口呼唤",
+      "state_in": "茅台叼着红球站在草坪上",
+      "state_out": "茅台叼着红球望向家门",
+      "because": "用主人的呼唤推动下一镜",
+      "depends_on": [
+        "S01"
+      ],
+      "handoff": "continuous"
+    },
+    {
+      "id": "S03",
+      "action": "茅台跑到门前，看见主人准备的晚餐",
+      "state_in": "茅台叼着红球望向家门",
+      "state_out": "茅台在家门口期待晚餐",
+      "because": "回收主人呼唤伏笔，完成故事目标",
+      "depends_on": [
+        "S02"
+      ],
+      "handoff": "continuous"
+    }
+  ]
+}
