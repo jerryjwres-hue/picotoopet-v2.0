@@ -1,5 +1,6 @@
 """Run the local QC CLI for each leased candidate and keep its full report."""
 
+import hashlib
 import json
 import math
 import sys
@@ -35,7 +36,9 @@ def check_candidates(bridge, state, candidates):
         digest = bridge._hash(path, state)[0]
         if digest != candidate["sha256"]:
             raise ValueError("质检时源文件哈希已改变。")
-        folder = bridge.state_dir / "outputs" / state["stem"] / digest
+        # Keep paths usable with Win32 media libraries on deeply nested project volumes.
+        report_key = hashlib.sha256(f"{state['stem']}:{digest}".encode()).hexdigest()[:32]
+        folder = bridge.state_dir / "qc" / report_key
         folder.mkdir(exist_ok=True, parents=True)
         spec_path, report_path, preview = (
             folder / name for name in ("spec.json", "report.json", "report.jpg")

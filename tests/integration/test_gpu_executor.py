@@ -876,4 +876,17 @@ def test_fake_worker_done_after_disconnect(live_core, tmp_path):
     assert artifact["thumbnail_id"]
     assert not list((config.root / "_queue/inbox").glob("*.json"))
     assert not bridge.journal.exists()
+    # The lost completion response did not duplicate the QC gate.
+    snapshot = transport.get(f"{root}/api/v1/tasks", timeout=5).json()
+    (gate,) = [t for t in snapshot if t["task_type"] == "qc.check"]
+    assert gate["parent_task_id"] == task_id
+    Bridge(config, transport).step()
+    gate_url = f"{root}/api/v1/tasks/{gate['task_id']}"
+    gate_result = transport.get(gate_url, timeout=5).json()
+    assert gate_result["status"] == "Completed", gate_result["error_message"]
+    qc_result = transport.get(gate_url + "/artifacts", timeout=5).json()
+    item = qc_result["qc"]["by_sha256"][artifact["sha256"]]
+    assert item["report"]["pass"] is True
+    preview = transport.get(gate_url + "/thumbnails/" + qc_result["sheet_thumbnail_id"], timeout=5)
+    assert base64.b64decode(preview.json()["jpeg_base64"], validate=True).startswith(b"\xff\xd8")
     transport.close()
