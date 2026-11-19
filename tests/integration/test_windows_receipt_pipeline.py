@@ -15,7 +15,6 @@ from requests import Session
 from picotoopet_core.api.app import create_app
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
-from scripts.windows.executor_bridge import Bridge, BridgeConfig
 from scripts.windows.import_video_candidates import BOARD, RUNNER
 
 IMPORTER = Path(__file__).resolve().parents[2] / "scripts/windows/import_video_candidates.py"
@@ -211,7 +210,7 @@ def test_completed_video_receipt_offline_review_then_authenticated_idempotent_im
 
 
 @pytest.mark.skipif(os.name != "nt" or not shutil.which("dotnet"), reason="需要 Windows WPF SDK")
-def test_wpf_asks_live_core_to_assemble_selected_local_video(video_batch, live_core):
+def test_wpf_does_not_assemble_imported_video_without_certified_qc(video_batch, live_core):
     root, receipt, _ = video_batch
     url, headers = live_core
     project = IMPORTER.parents[2] / "windows/desktop"
@@ -241,17 +240,9 @@ def test_wpf_asks_live_core_to_assemble_selected_local_video(video_batch, live_c
         session.trust_env = False
         session.headers.update(headers)
         tasks = session.get(url + "/api/v1/tasks", timeout=5).json()
-        assert sorted(t["task_type"] for t in tasks) == ["edit.assemble", "review.imported"]
-        assembly = next(t for t in tasks if t["task_type"] == "edit.assemble")
-        bridge = Bridge(BridgeConfig(url, "desktop-test", root), session)
-        for _ in range(3):
-            bridge.step()
-            task = session.get(url + "/api/v1/tasks/" + assembly["task_id"], timeout=5).json()
-            if task["status"] == "Completed":
-                break
-        assert task["status"] == "Completed", task
-        artifacts = session.get(
-            url + f"/api/v1/tasks/{assembly['task_id']}/artifacts",
-            timeout=5,
-        ).json()["artifacts"]
-        assert any(a["kind"] == "video" and Path(a["path"]).stat().st_size > 0 for a in artifacts)
+        assert [t["task_type"] for t in tasks] == ["review.imported"]
+        review = session.get(url + "/api/v1/episodes/demo/review", timeout=5).json()
+        assert review["can_assemble"] is False
+        # 用户仅选中历史素材不等于现行 QC 认证；正式合成 API 必须拒绝。
+        blocked = session.post(url + "/api/v1/episodes/demo/assemble", timeout=5)
+        assert blocked.status_code == 409
