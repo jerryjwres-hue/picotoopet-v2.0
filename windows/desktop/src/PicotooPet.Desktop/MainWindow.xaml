@@ -93,6 +93,35 @@
         <views:ProductionView DataContext="{Binding Production}" />
       </TabItem>
 
+      <TabItem Header="创作台">
+        <Grid Margin="16">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <TextBlock Text="粘贴 Claude、Muse 或 ChatGPT 输出的 StoryPack v1 JSON" FontSize="16"
+                     FontWeight="SemiBold" Margin="0,0,0,12" />
+          <!-- 本页只预览故事包；模型生成和 GPU 任务均由后续受控审批启用。 -->
+          <TextBox Grid.Row="1" Text="{Binding StoryPackInput, UpdateSourceTrigger=PropertyChanged}"
+                   AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap"
+                   FontFamily="Consolas" FontSize="13" Padding="12"
+                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                   ToolTip="粘贴 picotoo.storypack.v1 JSON；不会执行生成" />
+          <Button Grid.Row="2" Content="验证 StoryPack（只读）"
+                  Command="{Binding PreviewStoryPackCommand}"
+                  HorizontalAlignment="Left" Padding="18,8" Margin="0,12,0,12" />
+          <Border Grid.Row="3" Background="{StaticResource PanelBrush}" Padding="12"
+                  CornerRadius="8">
+            <!-- 镜头计划较长时允许独立滚动，避免撑开整个控制中心窗口。 -->
+            <ScrollViewer MaxHeight="210" VerticalScrollBarVisibility="Auto">
+              <TextBlock Text="{Binding StoryPackPreviewText}" TextWrapping="Wrap" />
+            </ScrollViewer>
+          </Border>
+        </Grid>
+      </TabItem>
+
       <TabItem Header="连接设置">
         <Grid Margin="20" MaxWidth="720" HorizontalAlignment="Left">
           <Grid.RowDefinitions>
