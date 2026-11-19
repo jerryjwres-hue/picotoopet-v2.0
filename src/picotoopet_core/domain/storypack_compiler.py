@@ -108,6 +108,8 @@ def compile_episode_draft(pack: StoryPackV1, source_sha256: str) -> dict:
             "OWNER_PRINCIPAL_VERIFIED",
             "ASSET_RIGHTS_AND_MASTER_SHA_LOCK",
             "STORYBOARD_APPROVED_FOR_SOURCE_SHA",
+            # 现有 static-pet Owner Review 只覆盖静态姿态，不能批准任意动态镜头。
+            "DYNAMIC_STORY_POLICY_COMPATIBILITY",
             "GPU_HOLD_RELEASED_BY_SEPARATE_AUTHORITY",
         ],
         "can_queue": False,
