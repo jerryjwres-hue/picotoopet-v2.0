@@ -112,6 +112,7 @@ def test_missing_depth_is_advisory_and_original_pipeline_remains_possible(tmp_pa
         ({"generator": {"app": "Blockout", "schema": 99}},
          "UNKNOWN_BLOCKOUT_METADATA_SCHEMA"),
         ({"cameraMarks": "camera"}, "CAMERA_MARKS_INVALID"),
+        ({"profile": "untrusted"}, "PROFILE_METADATA_INVALID"),
     ],
 )
 def test_rejects_invalid_metadata(tmp_path, change, reason):
