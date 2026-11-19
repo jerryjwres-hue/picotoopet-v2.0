@@ -1,0 +1,5 @@
+numpy>=1.26,<3
+opencv-python-headless>=4.9
+pydantic>=2.5,<3
+pyloudnorm>=0.1.1
+av>=12
