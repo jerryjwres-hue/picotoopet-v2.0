@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
@@ -30,6 +31,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _taskType = "analysis";
     private string _macBaseUrl = DesktopSettings.Default.MacBaseUrl;
     private string _statusMessage = "请先保存 Mac 地址和设备令牌。";
+    private string _storyPackInput = "";
+    private string _storyPackPreviewText = "粘贴完整的 StoryPack JSON 后点击验证；不会执行生成。";
     private bool _isBusy;
 
     /// <summary>创建组合依赖并注册状态事件。</summary>
@@ -53,11 +56,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             RefreshAsync,
             HandleError,
             () => !IsBusy && _client is not null);
+        PreviewStoryPackCommand = new AsyncRelayCommand(
+            PreviewStoryPackAsync,
+            HandleError,
+            () => !string.IsNullOrWhiteSpace(StoryPackInput));
     }
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
     public AsyncRelayCommand SubmitTaskCommand { get; }
     public AsyncRelayCommand RefreshCommand { get; }
+    public AsyncRelayCommand PreviewStoryPackCommand { get; }
     public ProductionViewModel Production { get; }
 
     public string ConnectionText
@@ -100,6 +108,25 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _statusMessage;
         private set => SetProperty(ref _statusMessage, value);
+    }
+
+    /// <summary>创作台中粘贴的 JSON；只有预览命令使用，不保存到本地设置。</summary>
+    public string StoryPackInput
+    {
+        get => _storyPackInput;
+        set
+        {
+            if (SetProperty(ref _storyPackInput, value))
+            {
+                PreviewStoryPackCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public string StoryPackPreviewText
+    {
+        get => _storyPackPreviewText;
+        private set => SetProperty(ref _storyPackPreviewText, value);
     }
 
     public bool IsBusy
@@ -206,6 +233,36 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await _dispatcher.InvokeAsync(
                 () => IsBusy = false,
                 CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>只读预览故事包：设备没有得到任何 GPU/发布许可。</summary>
+    private async Task PreviewStoryPackAsync()
+    {
+        if (_client is null)
+        {
+            StoryPackPreviewText = "请先连接 Mac Core。";
+            return;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(StoryPackInput);
+            var preview = await _client.PreviewStoryPackAsync(
+                document.RootElement, CurrentConnectionToken);
+            var output = preview.GetProperty("output");
+            var shots = preview.GetProperty("shot_count").GetInt32();
+            var width = output.GetProperty("width").GetInt32();
+            var height = output.GetProperty("height").GetInt32();
+            var fps = output.GetProperty("fps").GetInt32();
+            var duration = output.GetProperty("planned_duration_s").GetInt32();
+            StoryPackPreviewText = $"已验证：{shots} 镜 · {width}×{height} · {fps}fps · " +
+                $"{duration}秒。资产与审批尚未核验，禁止自动生产。";
+        }
+        catch (Exception exception)
+        {
+            // 不将未经验证的故事包保存到日志或自动发送到其它服务。
+            StoryPackPreviewText = $"预览失败：{exception.Message}";
         }
     }
 
