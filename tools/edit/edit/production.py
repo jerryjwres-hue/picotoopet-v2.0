@@ -232,6 +232,13 @@ def assemble_cut(plan, output, *, resolve, media=local_media, edl=None, strip=No
         shots = plan["shots"]
         if not shots:
             raise ValueError("At least one shot is required")
+        has_drawtext = False
+        if any(shot.get("caption") for shot in shots):
+            listing = run(["ffmpeg", "-hide_banner", "-filters"])
+            has_drawtext = any(
+                len(fields) > 1 and fields[1] == b"drawtext"
+                for fields in (line.split() for line in listing.splitlines())
+            )
         for i, shot in enumerate(shots):
             path = resolve(shot["video"])
             info = probe(path)
@@ -289,23 +296,49 @@ def assemble_cut(plan, output, *, resolve, media=local_media, edl=None, strip=No
                     f"crop={width}:{height}",
                     "setsar=1",
                 ]
+            video_args = []
             if shot.get("caption"):
                 cap = shot["caption"]
-                (work / f"c{i}.txt").write_text(cap["text"], encoding="utf-8")
                 st, en = number(cap.get("start", 0.2), 0), number(cap.get("end", length), 0)
                 y = number(cap.get("y", 0.20), 0)
-                filters.append(
-                    f"drawtext={fontarg}:textfile=c{i}.txt:expansion=none:"
-                    f"fontsize={max(10, round(width * 64 / 1080))}"
-                    f":fontcolor=white:borderw={max(1, round(width * 7 / 1080))}"
-                    ":bordercolor=black@0.85:x=(w-text_w)/2"
-                    f":y='h*{y}-20*max(0,1-(t-{st})/0.18)':enable='between(t,{st},{en})':alpha='min(1,(t-{st})/0.15)'"
-                )
+                if has_drawtext and cap["text"].isascii():
+                    (work / f"c{i}.txt").write_text(cap["text"], encoding="utf-8")
+                    filters.append(
+                        f"drawtext={fontarg}:textfile=c{i}.txt:expansion=none:"
+                        f"fontsize={max(10, round(width * 64 / 1080))}"
+                        f":fontcolor=white:borderw={max(1, round(width * 7 / 1080))}"
+                        ":bordercolor=black@0.85:x=(w-text_w)/2"
+                        f":y='h*{y}-20*max(0,1-(t-{st})/0.18)':enable='between(t,{st},{en})':alpha='min(1,(t-{st})/0.15)'"
+                    )
+                else:
+                    from .raster_caption import caption_image
+
+                    image = work / f"c{i}.png"
+                    caption_image(image, cap["text"], width, work / "caption.ttf")
+                    graph = (
+                        f"[0:v]{','.join(filters)}[base];"
+                        f"[1:v]format=rgba,fade=t=in:st={st}:d=0.15:alpha=1[caption];"
+                        f"[base][caption]overlay=x=(W-w)/2:y='H*{y}-20*max(0,1-(t-{st})/0.18)'"
+                        f":enable='between(t,{st},{en})':shortest=1,format=yuv420p[v]"
+                    )
+                    video_args = [
+                        "-loop",
+                        "1",
+                        "-framerate",
+                        str(fps),
+                        "-i",
+                        image.name,
+                        "-filter_complex",
+                        graph,
+                        "-map",
+                        "[v]",
+                    ]
+            if not video_args:
+                video_args = ["-vf", ",".join(filters + ["format=yuv420p"])]
             ff(
                 "-i",
                 path,
-                "-vf",
-                ",".join(filters + ["format=yuv420p"]),
+                *video_args,
                 "-an",
                 "-c:v",
                 "libx264",
