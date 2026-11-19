@@ -117,7 +117,11 @@ class ShotChecker:
         else:
             self.detector = FallbackCVDetector()
 
-        self.identity_extractor = identity_extractor or DINOv2Extractor()
+        # 没有身份参考时不加载 DINOv2，避免占用 CPU/GPU 和多余模型下载。
+        self.identity_extractor = (
+            identity_extractor if identity_extractor is not None
+            else DINOv2Extractor() if spec.identity_refs else None
+        )
 
     def run_check(
         self,
@@ -258,6 +262,13 @@ class ShotChecker:
                 all_fails.extend(id_fails)
                 all_warnings.extend(id_warns)
                 metrics["identity"][entity_key] = id_metrics
+                if id_metrics.get("min_similarity") is None:
+                    # 参考图缺失、损坏或无法识别角色，均不能作为合格身份检查。
+                    all_fails.append({
+                        "check": "identity_unverified",
+                        "frame": None,
+                        "detail": f"{entity_key}: identity evidence unavailable.",
+                    })
 
         # 4. Visual Stability Check (Brightness & Color Temp)
         stab_fails, stab_warns, stab_metrics = check_visual_stability(
@@ -300,6 +311,21 @@ class ShotChecker:
         all_warnings.extend(audio_warns)
         metrics["audio"] = audio_metrics
 
+        # 检测证据来源与真实退化状态一起保存，用于 Core 的认证判定。
+        detector_fallback = getattr(self.detector, "is_fallback", True)
+        identity_fallback = bool(self.spec.identity_refs) and (
+            self.identity_extractor is None
+            or getattr(self.identity_extractor, "is_fallback", True)
+        )
+        metrics["engines"] = {
+            "object_detector": type(self.detector).__name__,
+            "object_detector_fallback": detector_fallback,
+            "identity_extractor": (
+                type(self.identity_extractor).__name__ if self.identity_extractor is not None else None
+            ),
+            "identity_extractor_fallback": identity_fallback,
+        }
+
         # Format final report
         report_data = format_report_data(
             shot_id=self.spec.shot_id,
@@ -309,9 +335,19 @@ class ShotChecker:
         )
 
         # Pure CV fallback: never certified pass
-        if getattr(self.detector, "is_fallback", False):
+        if detector_fallback:
             report_data["pass"] = False
             report_data["fallback_cv_active"] = True
+        if identity_fallback:
+            # DINOv2 退化后仍可存辅助特征，但不能用替代特征认证同一只宠物。
+            report_data["pass"] = False
+            report_data["identity_fallback_active"] = True
+            all_warnings.append({
+                "check": "identity_model_unavailable",
+                "frame": None,
+                "detail": "Identity model unavailable; fallback similarity is advisory only.",
+            })
+            report_data["warnings"] = all_warnings
 
         # Output JSON
         save_report_json(report_data, out_json_path)
