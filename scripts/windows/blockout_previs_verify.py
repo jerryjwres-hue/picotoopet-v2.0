@@ -10,6 +10,8 @@ import argparse
 import hashlib
 import json
 import math
+import os
+import shutil
 import subprocess
 import sys
 from fractions import Fraction
@@ -272,9 +274,41 @@ def compare_coverage(packages: list[dict]) -> dict:
     }
 
 
+def inspect_local_tools() -> dict:
+    """One-time Windows preflight; existence does not mean MCP actually connected."""
+    local = os.environ.get("LOCALAPPDATA")
+    roaming = os.environ.get("APPDATA")
+    bridge = (
+        Path(local) / "Programs" / "Blockout" / "resources" / "mcp"
+        / "blockout-mcp.mjs"
+        if local else None
+    )
+    descriptor = Path(roaming) / "blockout" / "control.json" if roaming else None
+    bridge_found = bool(bridge and bridge.is_file() and not bridge.is_symlink())
+    node_found = shutil.which("node") is not None
+    ffprobe_found = shutil.which("ffprobe") is not None
+    return {
+        "schema": "picotoo.blockout-preflight.v1",
+        "bridge_installed": bridge_found,
+        "node_on_path": node_found,
+        "ffprobe_on_path": ffprobe_found,
+        "running_descriptor_detected": bool(
+            descriptor and descriptor.is_file() and not descriptor.is_symlink()
+        ),
+        "mcp_connection_verified": False,    # 不读取本地控制 Token，也不假装已经连接。
+        "app_export_verified": False,        # 必须由用户实际打开 Deliver 导出。
+        "ready_for_manual_app_test": bridge_found and node_found and ffprobe_found,
+        "gpu_hold_unchanged": True,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Read-only Blockout shot package QA")
-    parser.add_argument("packages", nargs="+", type=Path, help="Blockout Deliver export folders")
+    parser.add_argument("packages", nargs="*", type=Path, help="Blockout Deliver export folders")
+    parser.add_argument(
+        "--preflight", action="store_true",
+        help="Only inspect local Blockout bridge/Node/ffprobe presence (no MCP calls)",
+    )
     parser.add_argument("--ffprobe", default="ffprobe", help="Local ffprobe executable")
     parser.add_argument("--seconds", type=float, help="Expected shot duration (e.g. 4)")
     parser.add_argument("--fps", type=float, help="Expected fps (e.g. 24)")
@@ -283,6 +317,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--seconds must be a positive finite number")
     if args.fps is not None and (not math.isfinite(args.fps) or args.fps <= 0):
         parser.error("--fps must be a positive finite number")
+    if args.preflight:
+        status = inspect_local_tools()
+        print(json.dumps(status, ensure_ascii=False, indent=2))
+        return 0 if status["ready_for_manual_app_test"] else 3
+    if not args.packages:
+        parser.error("provide at least one Blockout export folder or use --preflight")
     results = [
         validate_package(
             path, ffprobe=args.ffprobe,
