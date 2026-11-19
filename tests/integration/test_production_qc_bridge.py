@@ -47,6 +47,30 @@ def test_manual_release_resolves_only_reviewed_unchanged_bytes(tmp_path):
         bridge._parent(task)
 
 
+def test_reviewed_first_and_last_are_distinct_for_shot_ids_containing_role_names(tmp_path):
+    shot = "A_first_B"
+    bridge = Bridge(BridgeConfig("http://localhost", "review", tmp_path), Mock())
+    def ref(role):
+        return str(tmp_path / f"{shot}_{role}_v1.png")
+    approved = [
+        {"kind": "image", "path": ref(role), "decision": "pick", "take": 1}
+        for role in ("last", "first")
+    ]
+    bridge._parent = lambda task: approved
+    task = {
+        "payload": {
+            "shot_id": shot,
+            "jobs": {
+                "reviewed_inputs": approved,
+                "jobs": [{"id": shot, "first": "$parent.first", "last": "$parent.last"}],
+            },
+        }
+    }
+    (compiled,) = bridge._jobs({"task": task})["jobs"]
+    assert compiled["first"] == ref("first")
+    assert compiled["last"] == ref("last")
+
+
 def test_local_qc_images_reports_per_digest_and_rejects_replaced_media(tmp_path):
     with requests.Session() as session:
         bridge = Bridge(BridgeConfig("http://localhost", "review", tmp_path), session)
