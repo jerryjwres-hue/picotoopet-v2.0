@@ -22,6 +22,7 @@ REQUIRED_TABLES = {
     "executor_artifacts",
     "executor_thumbnails",
     "executor_redos",
+    "executor_qc_picks",
     "production_episodes",
 }
 
@@ -43,5 +44,5 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
         )
     }
     assert REQUIRED_TABLES <= tables
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 2
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 3
     database.close()
