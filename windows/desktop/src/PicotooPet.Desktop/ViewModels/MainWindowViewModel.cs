@@ -253,7 +253,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             if (fence >= 0)
             {
                 var start = source.IndexOf('\n', fence);
-                var end = start < 0 ? -1 : source.IndexOf("```", start + 1);
+                var end = start < 0 ? -1 : source.IndexOf("```", start + 1, StringComparison.Ordinal);
                 if (start < 0 || end < 0)
                 {
                     throw new FormatException("StoryPack JSON 代码块不完整。");
