@@ -5,6 +5,9 @@ title: 茅台听见晚餐的召唤
 output_profile: p0_landscape
 character_ref: maotai_master_v1
 scene_ref: backyard_v1
+style_ref: picotoo_cinematic_v1        # 锁定本集的统一视觉风格。
+supporting_character_refs: [owner_master_v1]
+additional_scene_refs: [home_door_v1]
 
 story:
   goal: 茅台从后院玩球开始，听见主人叫它
@@ -28,9 +31,11 @@ shots:
     handoff: continuous
 
   - id: S03
+    scene_ref: home_door_v1            # 第三镜换到家门场景。
+    cast_refs: [maotai_master_v1, owner_master_v1]
     action: 茅台跑到门前，看到主人准备的晚餐
     state_in: 茅台叼着红球望向家门
     state_out: 茅台在家门口期待晚餐
     because: 回收主人呼唤的伏笔，完成故事目标
     depends_on: [S02]
-    handoff: continuous
+    handoff: scene_change
