@@ -168,14 +168,17 @@ def validate_package(
             tracks = sorted(
                 (
                     {"name": t.get("name"), "asset": t.get("asset"), "marks": t.get("marks")}
-                    for t in meta["subjects"] if isinstance(t, dict) and t.get("marks")
+                    for t in meta["subjects"]
+                    if isinstance(t, dict) and isinstance(t.get("marks"), list)
+                    and len(t["marks"]) > 0
                 ),
                 key=lambda t: str(t["name"]),
             )
-            if tracks:
+            if len(tracks) == len(meta["subjects"]):
                 raw = json.dumps(tracks, sort_keys=True, separators=(",", ":"), allow_nan=False)
                 result["actor_track_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
             else:
+                # 任何角色缺少路径，均不能声称多机位共享了完整表演。
                 result["warnings"].append("ACTOR_MOTION_NOT_PROVEN")
         raw_camera = json.dumps(
             meta["cameraMarks"], sort_keys=True, separators=(",", ":"), allow_nan=False
@@ -249,11 +252,19 @@ def compare_coverage(packages: list[dict]) -> dict:
     usable = all(p["status"] in ("PASS", "WARN") for p in packages)
     tracks = [p.get("actor_track_sha256") for p in packages]
     cameras = [p.get("camera_sha256") for p in packages]
+    timing = [
+        (p["shot"].get("duration"), p["shot"].get("fps"))
+        for p in packages if isinstance(p.get("shot"), dict)
+    ]
+    timing_matches = bool(usable and len(timing) == len(packages)
+                          and len(set(timing)) == 1)
     return {
         "package_count": len(packages),
-        "actor_paths_match": bool(usable and tracks and all(tracks)
+        "timing_matches": timing_matches,
+        "actor_paths_match": bool(timing_matches and tracks and all(tracks)
                                   and len(set(tracks)) == 1),
-        "camera_views_differ": bool(usable and len(set(cameras)) == len(packages)),
+        "camera_views_differ": bool(usable and all(cameras)
+                                   and len(set(cameras)) == len(packages)),
         # Scene entity transforms are not exported in metadata.json; compare in Blockout.
         "same_scene_layout_proven": False,
         "requires_visual_scene_review": True,
@@ -268,6 +279,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seconds", type=float, help="Expected shot duration (e.g. 4)")
     parser.add_argument("--fps", type=float, help="Expected fps (e.g. 24)")
     args = parser.parse_args(argv)
+    if args.seconds is not None and (not math.isfinite(args.seconds) or args.seconds <= 0):
+        parser.error("--seconds must be a positive finite number")
+    if args.fps is not None and (not math.isfinite(args.fps) or args.fps <= 0):
+        parser.error("--fps must be a positive finite number")
     results = [
         validate_package(
             path, ffprobe=args.ffprobe,
