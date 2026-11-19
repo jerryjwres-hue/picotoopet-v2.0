@@ -34,7 +34,7 @@ class DINOv2Extractor:
             from transformers import AutoModel
 
             logger.info(f"Loading DINOv2 model ({self.model_name}) on device: {self.device}...")
-            self.model = AutoModel.from_pretrained(self.model_name).to(self.device)
+            self.model = AutoModel.from_pretrained(self.model_name, local_files_only=True).to(self.device)
             self.model.eval()
 
             self.transform = transforms.Compose([
@@ -127,7 +127,7 @@ def evaluate_identity_consistency(
         })
         return fails, warnings, metrics
 
-    ref_bgr = cv2.imread(str(ref_p))
+    ref_bgr = cv2.imdecode(np.fromfile(ref_p, dtype=np.uint8), cv2.IMREAD_COLOR)
     if ref_bgr is None:
         warnings.append({
             "check": "identity_ref_corrupt",

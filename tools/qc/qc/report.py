@@ -154,4 +154,7 @@ def render_report_image(
     )
 
     collage = np.vstack([banner, row])
-    cv2.imwrite(str(out_p), collage, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    ok, encoded = cv2.imencode(".jpg", collage, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    if not ok:
+        raise OSError("Could not encode QC report preview")
+    out_p.write_bytes(encoded.tobytes())

@@ -34,7 +34,7 @@ def load_media_frames(media_path: str | Path, target_fps: float = 4.0) -> Tuple[
     suffix = p.suffix.lower()
     # Check if single image
     if suffix in (".png", ".jpg", ".jpeg", ".bmp", ".webp"):
-        img = cv2.imread(str(p))
+        img = cv2.imdecode(np.fromfile(p, dtype=np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError(f"Could not read image file: {p}")
         return [img], target_fps
