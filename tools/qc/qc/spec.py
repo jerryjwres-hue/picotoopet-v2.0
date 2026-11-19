@@ -29,6 +29,8 @@ class CaptionSpec(BaseModel):
 
 class ShotSpec(BaseModel):
     """Complete specification for a single shot QC check."""
+    model_config = ConfigDict(extra="allow")
+
     shot_id: str = Field(..., description="Unique identifier of the shot (e.g. S01, S03)")
     expect: ShotExpectation = Field(default_factory=ShotExpectation, description="Expected entity presence")
     identity_refs: Dict[str, str] = Field(default_factory=dict, description="Reference images for identity verification")
@@ -37,6 +39,10 @@ class ShotSpec(BaseModel):
     caption: Optional[CaptionSpec] = Field(default=None, description="Subtitle specifications")
     allow_light_change: bool = Field(default=False, description="Whether intra-shot light/brightness change is allowed")
     fps_sample: float = Field(default=4.0, gt=0, description="Sampling rate in frames per second")
+    check_dissolve: bool = Field(default=True, description="Enable dissolve/ghosting/double-exposure check")
+    check_bandana: bool = Field(default=True, description="Enable bandana neck position check")
+    check_color_smear: bool = Field(default=True, description="Enable color smear anomaly check")
+    check_fence: bool = Field(default=False, description="Enable fence penetration check")
 
     @classmethod
     def from_file(cls, path: str | Path) -> ShotSpec:

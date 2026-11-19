@@ -60,5 +60,5 @@ if %QC_EXIT% equ 1 (
 echo [RESULT] QC PROGRAM ERROR (Exit %QC_EXIT%)
 
 :end
-pause
+if "%~1"=="" if not defined CI pause
 exit /b %QC_EXIT%
