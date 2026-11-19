@@ -284,6 +284,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                     $"内容={item.GetProperty("managed_object_integrity").GetString()}");
             var missingLocks = preview.GetProperty("missing_design_locks").EnumerateArray()
                 .Select(item => item.GetString());
+            // 增量指纹用于缓存与变更追踪，不代表自动生成或 QC 许可。
+            var fingerprints = preview.GetProperty("fingerprint_plan").GetProperty("shots")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("id").ValueKind == JsonValueKind.Undefined
+                    ? $"{item.GetProperty("shot_id").GetString()}:" +
+                      $"{item.GetProperty("input_sha256").GetString()?[..10]}"
+                    : "")
+                .Where(value => !string.IsNullOrEmpty(value));
             var compilation = preview.GetProperty("production_compilation");
             var missing = compilation.GetProperty("missing_contract_fields").GetProperty("each_shot")
                 .EnumerateArray().Select(item => item.GetString());
@@ -296,6 +304,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 $"未冻结设计项：{(missingLocks.Any() ? string.Join(", ", missingLocks) : "无")}\\n" +
                 $"各镜仍需编制：{string.Join(", ", missing)}\\n" +
                 $"审批缺口：{string.Join(", ", trust)}\\n" +
+                $"变更追踪：{string.Join("; ", fingerprints)}（仅指纹，不自动放行）\\n" +
                 "编译结果仅为草稿，不具备执行和发布许可。";
         }
         catch (Exception exception)
