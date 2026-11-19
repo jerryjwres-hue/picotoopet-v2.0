@@ -30,7 +30,7 @@ def _verify_managed_object(
     """Hash only a bounded, regular, nonsymlink object within the managed store."""
     if object_hash is None:
         return "NO_MANAGED_OBJECT", False, 0
-    if _OBJECT_HASH.fullmatch(object_hash) is None:
+    if not isinstance(object_hash, str) or _OBJECT_HASH.fullmatch(object_hash) is None:
         return "BAD_OBJECT_DIGEST", False, 0
     if not isinstance(declared_digest, str) or declared_digest.lower() != object_hash:
         return "DIGEST_CONFLICT", False, 0
