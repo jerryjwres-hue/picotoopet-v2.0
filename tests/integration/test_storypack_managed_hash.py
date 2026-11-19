@@ -97,6 +97,13 @@ def test_conflicting_digest_or_invalid_storage_key_blocks(api):
     )
     assert _check(services, "conflict_v1")["managed_object_integrity"] == "DIGEST_CONFLICT"
     assert _check(services, "badpath_v1")["managed_object_integrity"] == "BAD_OBJECT_DIGEST"
+    _register_asset(
+        services.database, "wrongtype_v1",
+        sha256=stored.object_hash, stored_object_hash=12345,
+    )
+    assert _check(services, "wrongtype_v1")["managed_object_integrity"] == (
+        "BAD_OBJECT_DIGEST"
+    )
 
 
 def test_missing_or_symlinked_managed_file_blocks(api, tmp_path):
