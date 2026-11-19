@@ -34,6 +34,14 @@ Blockout v5.0.0 desktop prerelease includes a Windows x64 installer. Its bundled
 6. Read the printed JSON. Compare actor_paths_match and camera_views_differ. Verify the doorway/table geometry manually in the Blockout scene. Save the Blockout scene preset or project as **existing Job-derived evidence** once practical.
 7. Any unavailable/incompatible export is OPTIONAL_SKIPPED. Continue with the original first-frame/prompt video pipeline; never block normal production waiting for Blockout.
 
+## 一键复制给 Windows Codex / Claude 的预演指令
+
+仅在 Blockout 已运行且 MCP 已连接后使用下面这一段，不需要另开 LLM 常驻服务：
+
+> 请只用当前 Windows 的 Blockout MCP，创建《茅台晚餐》的一次性 3D 粗模验收。先调用 get_state 和 list_assets，依据真实返回的资产 ID 选择狗、门与餐桌；不要猜测资产 ID。只建一个厨房 Scene，角色为 MAOTAI，门口到餐桌边的运动路线为同一段 4 秒、24fps 的 walk→stand；避免精细建模或改动现有茅台 MASTER。先保存同一场景 Preset，然后在同一 Scene 下建立 3 个 Shot（Wide、Side、Front），三机位仅改变摄影机标记，不重建动物运动。截图检查每个机位；如果位置/路线与既有 Scene Bible 不明确，就报告需要补充的几何锚点，不要编造。最后输出 Scene/Preset/Shot 名称及三个截图的核对结果。Blockout MCP 没有确认可用的导出工具，所以到 Deliver 面板之前停止，让操作员在界面执行 Export shot package。禁止调用 GPU 视频生成、修改 ComfyUI 或解除 GPU HOLD。
+
+这段只用于**首次场景测试**。完成后复用 Preset，不要每镜重新发给 LLM。
+
 ## What a validation result means
 
 - PASS: Required metadata, prompt/readme, clean reference MP4 and the available video streams were checked.
