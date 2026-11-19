@@ -281,12 +281,19 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 .Select(item => item.GetString());
             var missingLocks = preview.GetProperty("missing_design_locks").EnumerateArray()
                 .Select(item => item.GetString());
+            var compilation = preview.GetProperty("production_compilation");
+            var missing = compilation.GetProperty("missing_contract_fields").GetProperty("each_shot")
+                .EnumerateArray().Select(item => item.GetString());
+            var trust = compilation.GetProperty("missing_trust_gates")
+                .EnumerateArray().Select(item => item.GetString());
             StoryPackPreviewText =
                 $"预览通过：{shots} 镜 · {width}×{height} · {fps}fps · {duration}秒\\n" +
                 string.Join("\\n", shotLines) + "\\n" +
                 $"待核实资产：{string.Join(", ", refs)}\\n" +
                 $"未冻结设计项：{(missingLocks.Any() ? string.Join(", ", missingLocks) : "无")}\\n" +
-                "仅预览：不得自动开始生产、解除 GPU HOLD 或发布。";
+                $"各镜仍需编制：{string.Join(", ", missing)}\\n" +
+                $"审批缺口：{string.Join(", ", trust)}\\n" +
+                "编译结果仅为草稿，不具备执行和发布许可。";
         }
         catch (Exception exception)
         {
