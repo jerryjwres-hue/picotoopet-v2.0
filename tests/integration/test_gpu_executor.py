@@ -951,10 +951,10 @@ def test_fake_worker_done_after_disconnect(live_core, tmp_path):
     Bridge(config, transport).step()
     gate_url = f"{root}/api/v1/tasks/{gate['task_id']}"
     gate_result = transport.get(gate_url, timeout=5).json()
-    assert gate_result["status"] == "Completed", gate_result["error_message"]
-    qc_result = transport.get(gate_url + "/artifacts", timeout=5).json()
-    item = qc_result["qc"]["by_sha256"][artifact["sha256"]]
-    assert item["report"]["pass"] is True
-    preview = transport.get(gate_url + "/thumbnails/" + qc_result["sheet_thumbnail_id"], timeout=5)
-    assert base64.b64decode(preview.json()["jpeg_base64"], validate=True).startswith(b"\xff\xd8")
+    # 合成样片不加载 Florence-2，只有启发式视觉结果，不得通过自动 QC。
+    assert gate_result["status"] == "Failed", gate_result["error_message"]
+    assert gate_result["error_message"] == "质检未通过"
+    # 断线和补报只能生成一个 QC gate，失败并不表示重复执行。
+    snapshot_after = transport.get(f"{root}/api/v1/tasks", timeout=5).json()
+    assert len([t for t in snapshot_after if t["task_type"] == "qc.check"]) == 1
     transport.close()

@@ -59,5 +59,5 @@ if %EDIT_EXIT% equ 0 (
 echo [RESULT] EDIT ASSEMBLE FAILED (Exit %EDIT_EXIT%)
 
 :end
-pause
+if "%~1"=="" if not defined CI pause
 exit /b %EDIT_EXIT%
