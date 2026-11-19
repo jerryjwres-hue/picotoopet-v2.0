@@ -108,13 +108,37 @@ class StoryPackError(ValueError):
     """Invalid StoryPack content; the source remains unchanged."""
 
 
+class _UniqueYamlLoader(yaml.SafeLoader):
+    """Reject duplicated YAML object keys before any approval digest is computed."""
+
+    def construct_mapping(self, node, deep=False):
+        self.flatten_mapping(node)
+        result = {}
+        for key, value in node.value:
+            parsed_key = self.construct_object(key, deep=deep)
+            if not isinstance(parsed_key, str) or parsed_key in result:
+                raise StoryPackError("StoryPack YAML has duplicate/nontext mapping keys")
+            result[parsed_key] = self.construct_object(value, deep=deep)
+        return result
+
+
+def _unique_json_pairs(pairs):
+    # 不允许模型在相同 JSON key 下提交不同版本来误导审核者。
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise StoryPackError("StoryPack JSON has duplicate object keys")
+        value[key] = item
+    return value
+
+
 def parse_storypack(source: bytes, *, as_yaml: bool) -> StoryPackV1:
     """Accept only UTF-8 structured data. Never execute model, tool or code strings."""
     try:
         data = (
-            yaml.safe_load(source.decode("utf-8-sig"))
+            yaml.load(source.decode("utf-8-sig"), Loader=_UniqueYamlLoader)
             if as_yaml
-            else json.loads(source.decode("utf-8-sig"))
+            else json.loads(source.decode("utf-8-sig"), object_pairs_hook=_unique_json_pairs)
         )
         return StoryPackV1.model_validate(data)
     except ValidationError as exc:
@@ -133,11 +157,17 @@ def storypack_preview(pack: StoryPackV1) -> dict:
     payload = pack.model_dump(mode="json")
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     width, height, fps, seconds = OUTPUT_PROFILES[pack.output_profile]
+    source_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    # 依赖在函数内部导入，避免 StoryPack 和现有 Episode 编译契约循环加载。
+    from picotoopet_core.domain.storypack_compiler import compile_episode_draft
+
+    compilation = compile_episode_draft(pack, source_sha256)
     return {
         "validated": True,
         "schema": pack.schema,
         "episode_id": pack.episode_id,
-        "storypack_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "storypack_sha256": source_sha256,
+        "production_compilation": compilation,
         "shot_count": len(pack.shots),
         "output": {
             "width": width,
