@@ -1,11 +1,50 @@
 import hashlib
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import requests
 from PIL import Image
 
 from scripts.windows.executor_bridge import Bridge, BridgeConfig, JobError
+
+
+def test_manual_release_resolves_only_reviewed_unchanged_bytes(tmp_path):
+    session = Mock()
+    bridge = Bridge(BridgeConfig("http://localhost", "review", tmp_path), session)
+    bridge.next_heartbeat = float("inf")
+    path = tmp_path / "picked.mp4"
+    path.write_bytes(b"fixture")
+    picked = {
+        "artifact_id": "selected",
+        "kind": "video",
+        "path": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "take": 2,
+    }
+    other = {**picked, "artifact_id": "other", "take": 1}
+    task = {
+        "task_id": "downstream",
+        "parent_task_id": "generation",
+        "payload": {"jobs": {"reviewed_inputs": [picked.copy()]}},
+    }
+
+    def snapshot():
+        session.request.side_effect = [
+            Mock(**{"json.return_value": {"upstream_task_id": "generation"}}),
+            Mock(**{"json.return_value": {"artifacts": [other, picked]}}),
+        ]
+
+    snapshot()
+    assert bridge._parent(task) == [picked]
+    path.write_bytes(b"replacement")
+    snapshot()
+    with pytest.raises(JobError, match="改变"):
+        bridge._parent(task)
+    task["payload"]["jobs"]["reviewed_inputs"][0]["take"] = 1
+    snapshot()
+    with pytest.raises(JobError, match="不一致"):
+        bridge._parent(task)
 
 
 def test_local_qc_images_reports_per_digest_and_rejects_replaced_media(tmp_path):

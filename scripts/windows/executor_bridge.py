@@ -225,7 +225,26 @@ class Bridge:
             return []
         response = self._request("GET", f"/tasks/{upstream}/artifacts")
         response.raise_for_status()
-        return response.json()["artifacts"]
+        artifacts = response.json()["artifacts"]
+        reviewed = task["payload"]["jobs"].get("reviewed_inputs")
+        if reviewed is None:
+            return artifacts
+        if not isinstance(reviewed, list) or not reviewed:
+            raise JobError("人工放行清单为空或无效。")
+        by_id = {item["artifact_id"]: item for item in artifacts}
+        checked = []
+        for record in reviewed:
+            item = by_id.get(record.get("artifact_id")) if isinstance(record, dict) else None
+            if item is None or any(
+                field not in record or record[field] != item[field]
+                for field in ("sha256", "path", "kind", "take")
+            ):
+                raise JobError("人工放行清单与上游登记不一致。")
+            path = self._safe_path(item["path"])
+            if not path.is_file() or self._hash(path, {"task": task})[0] != item["sha256"]:
+                raise JobError("人工放行素材的本机文件已改变。")
+            checked.append(item)
+        return checked
 
     def _jobs(self, state):
         task = state["task"]
