@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -107,6 +108,7 @@ class Bridge:
         self.journal = self.state_dir / f"{config.worker_id}.json"
         self.pause_marker = self.state_dir / f"{config.worker_id}.pause-new.json"
         self.next_heartbeat = 0.0
+        self.next_worker_proof_at = 0.0  # 独立 Worker 证据最多每 60 秒 CPU 复核一次。
 
     def _request(self, method: str, route: str, **kwargs):
         return self.session.request(
@@ -132,6 +134,106 @@ class Bridge:
             return None
         response.raise_for_status()
         return response.json()
+
+    def _maybe_report_worker_proof(self) -> None:
+        """Prove real staged bytes with distinct HMAC; never bypass a held lease."""
+        secret = os.environ.get("PICOTOO_WORKER_ATTEST_KEY", "")
+        if not secret:
+            return  # 默认关闭，不改变旧 Worker 的任何网络或 GPU 行为。
+        now = time.monotonic()
+        if now < self.next_worker_proof_at:
+            return
+        self.next_worker_proof_at = now + 60
+        if (len(secret) < 43 or len(secret) > 256 or
+                not re.fullmatch(r"[A-Za-z0-9_-]+", secret)):
+            LOG.warning("WORKER_PROOF_SECRET_INVALID")
+            return
+        try:
+            response = self._request(
+                "POST", "/studio/worker-proof/claim",
+                json={"worker_id": self.config.worker_id},
+            )
+            if response.status_code == 204:
+                return
+            if response.status_code != 200:
+                LOG.warning("WORKER_PROOF_CLAIM_UNAVAILABLE code=%d", response.status_code)
+                return
+            challenge = response.json()
+            if (challenge.get("worker_id") != self.config.worker_id
+                    or challenge.get("can_lease") is not False
+                    or challenge.get("gpu_authorized") is not False):
+                raise JobError("Worker 证据挑战不可携带 GPU 放行。")
+            bindings = challenge.get("bindings")
+            if not isinstance(bindings, list) or not 1 <= len(bindings) <= 960:
+                raise JobError("Worker 证据缺少镜头绑定。")
+            verified = set()
+            for entry in bindings:
+                if not isinstance(entry, dict) or set(entry) != {
+                    "shot_id", "role", "asset_ref", "managed_sha256"
+                }:
+                    raise JobError("Worker 证据的镜头绑定结构无效。")
+                digest = entry["managed_sha256"]
+                if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                    raise JobError("Worker 证据的图片 SHA 无效。")
+                if entry["role"] not in ("first", "last"):
+                    raise JobError("Worker 证据使用了未知首末帧角色。")
+                identity = (entry["shot_id"], entry["role"], entry["asset_ref"])
+                if identity in verified:
+                    raise JobError("Worker 证据的镜头引用重复。")
+                verified.add(identity)
+                root = self.state_dir / "staged_references"
+                matches = [
+                    root / f"{digest}{suffix}"
+                    for suffix in (".png", ".jpg", ".webp")
+                    if (root / f"{digest}{suffix}").exists()
+                    or (root / f"{digest}{suffix}").is_symlink()
+                ]
+                if len(matches) != 1:
+                    raise JobError("Worker 没有唯一的本地 SHA 图片。")
+                # 与正式 GPU 提交前采用完全相同的安全文件校验函数。
+                self._verify_staged_reference(
+                    f"../_queue/executor_bridge/staged_references/{matches[0].name}"
+                )
+            canonical = json.dumps(
+                bindings, ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False,
+            ).encode("utf-8")
+            bindings_sha = hashlib.sha256(canonical).hexdigest()
+            if bindings_sha != challenge.get("bindings_sha256"):
+                raise JobError("Worker 实际核验的绑定集合与 Core 挑战不符。")
+            keys = (
+                "nonce", "worker_id", "episode_id", "frozen_plan_sha256",
+                "source_bindings_sha256", "bindings_sha256",
+            )
+            if any(not isinstance(challenge.get(k), str) for k in keys):
+                raise JobError("Worker 证据挑战缺少冻结 Plan 身份。")
+            msg = {"contract": "picotoo.worker-local-sha-proof.v1",
+                   **{key: challenge[key] for key in keys}}
+            canonical_message = json.dumps(
+                msg, ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False,
+            ).encode("utf-8")
+            payload = {
+                **msg,
+                "signature": hmac.new(
+                    secret.encode("ascii"), hashlib.sha256(canonical_message).hexdigest().encode("ascii"),
+                    hashlib.sha256,
+                ).hexdigest(),
+            }
+            reply = self._request(
+                "POST", "/studio/worker-proof/submit", json=payload,
+            )
+            if reply.status_code != 200:
+                LOG.warning("WORKER_PROOF_REPORT_REJECTED code=%d", reply.status_code)
+                return
+            receipt = reply.json()
+            if (receipt.get("gpu_authorized") is not False
+                    or receipt.get("can_lease") is not False):
+                raise JobError("Worker SHA 证明不能赋予 GPU 权限。")
+            LOG.info("WORKER_SHA_REPORTED_HELD episode=%s", msg["episode_id"])
+        except (JobError, requests.RequestException, ValueError, KeyError) as error:
+            # 不改变现有 Journal 或租约状态，错误只需等待新的 CPU challenge。
+            LOG.warning("WORKER_PROOF_NO_GPU: %s", str(error)[:200])
 
     def _new_state(self, task):
         task_id = task["task_id"]
@@ -198,6 +300,8 @@ class Bridge:
                 return
             task = self._lease()
             if task is None:
+                # HOLD 下闲置时只做 SHA 证明；不会向本地 inbox 发新 GPU 作业。
+                self._maybe_report_worker_proof()
                 return
             state = self._new_state(task)
             self.next_heartbeat = 0
