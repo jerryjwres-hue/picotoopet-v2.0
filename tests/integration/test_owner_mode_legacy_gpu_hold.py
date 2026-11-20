@@ -123,6 +123,13 @@ def test_owner_mode_blocks_all_legacy_gpu_ingress_and_keeps_cpu_tasks(guarded):
     _blocked(api.post(f"{_API}/tasks", json={
         "task_type": "analysis", "resource_tag": GPU_TAG,
     }))
+    # 旧审片 redo 可能克隆执行器任务；人工 QC override 会释放下游 GPU 依赖。
+    _blocked(api.post(f"{_API}/artifacts/synthetic-invalid/decision", json={
+        "decision": "redo",
+    }))
+    _blocked(api.post(f"{_API}/artifacts/synthetic-invalid/decision", json={
+        "decision": "pick", "accept_qc_failure": True,
+    }))
     assert _counts(api) == before
 
     # 同一进程仍可创建普通 CPU 任务、查询状态以及取消任务。
