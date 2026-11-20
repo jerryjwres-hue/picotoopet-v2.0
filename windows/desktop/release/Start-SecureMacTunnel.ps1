@@ -107,7 +107,7 @@ if (-not (Test-Path -LiteralPath $sshExe -PathType Leaf)) {
 }
 
 # 本地端口如已被占用，拒绝把设备 Token 发给未知本地进程。
-$listener = New-Object System.Net.Sockets.TcpListener(
+$listener = [System.Net.Sockets.TcpListener]::new(
     [System.Net.IPAddress]::Loopback, 18766)
 try {
     $listener.Start()
