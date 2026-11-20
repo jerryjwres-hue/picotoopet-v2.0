@@ -13,6 +13,9 @@ from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.domain.episode import Episode
 from picotoopet_core.domain.storypack import StoryPackV1, storypack_preview
+from picotoopet_core.domain.storypack_episode_candidate import (
+    complete_storypack_episode_preview,
+)
 from picotoopet_core.queue.production import _shot_jobs
 
 _ENDPOINT = "/api/v1/studio/storypacks/episode-candidate/preview"
@@ -190,6 +193,25 @@ def test_invalid_or_untrusted_completion_never_creates_jobs(api, change):
     response = api.post(_ENDPOINT, json=payload)
     assert response.status_code == 422, (change, response.text)
     _no_production_writes(api)
+
+
+def test_narrative_compilation_is_immutable_and_reproducible():
+    """No draft mutation: Owner freeze and SHA verification must see identical source."""
+    payload = _payload()
+    source = copy.deepcopy(payload)
+    pack = StoryPackV1.model_validate(payload["storypack"])
+    first = complete_storypack_episode_preview(
+        pack, payload["storypack_sha256"], payload["completion"]
+    )
+    assert payload == source, "只读 StoryPack 预览不得修改 completion 或原始 SHA 来源"
+    second = complete_storypack_episode_preview(
+        pack, payload["storypack_sha256"], payload["completion"]
+    )
+    assert first == second
+    assert payload == source
+    # 编辑新的合成 Episode 不应回写来源补全，来源可重放和重新批准。
+    first["episode"]["shots"][0]["video"]["prompt"] = "tampered draft"
+    assert payload == source
 
 
 def test_narrative_plan_preserves_optional_last_frame_and_no_extra_gpu_tasks(api):
