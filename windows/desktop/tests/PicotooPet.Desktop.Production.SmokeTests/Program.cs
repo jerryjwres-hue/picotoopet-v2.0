@@ -28,6 +28,7 @@ internal static class Program
             try
             {
                 VerifyBatchProfile();
+                VerifyWorkerManagerSafety();
                 if (args.FirstOrDefault() == "--live-core") await VerifyLiveAsync();
                 else await VerifyAsync(args.FirstOrDefault());
                 Console.WriteLine("PRODUCTION_DESKTOP_SMOKE=PASS");
@@ -44,6 +45,70 @@ internal static class Program
         }));
         app.Run();
         return result;
+    }
+
+    /// <summary>Windows 原生测试仅验证 Worker 启动前门禁，绝不启动 GPU。</summary>
+    private static void VerifyWorkerManagerSafety()
+    {
+        Check(WorkerProcessManager.IsSecureCoreAddress("https://mac.example.test:8766"),
+            "HTTPS Mac 地址不应被拒绝");
+        Check(WorkerProcessManager.IsSecureCoreAddress("http://127.0.0.1:8766"),
+            "环回 HTTP 本地诊断不应被拒绝");
+        Check(!WorkerProcessManager.IsSecureCoreAddress("http://192.168.1.161:8766"),
+            "局域网 HTTP 不能承载 Worker 设备 Bearer");
+        Check(!WorkerProcessManager.IsSecureCoreAddress("https://user:pass@mac.example.test"),
+            "带明文 URI 凭据的 Mac 地址必须拒绝");
+        Check(!WorkerProcessManager.IsSecureCoreAddress("https://mac.example.test/x"),
+            "Worker Core 地址不接受额外 API 路径");
+        Check(!WorkerProcessManager.IsValidWorkerId("../legacy"),
+            "Worker ID 不能写入任意路径");
+        Check(WorkerProcessManager.IsValidWorkerId("edit-workstation"),
+            "合法 Worker ID 应通过");
+        Check(WorkerProcessManager.IsValidSecret(new string('w', 48)),
+            "合法 base64url HMAC 密钥应通过");
+        Check(!WorkerProcessManager.IsValidSecret("short"),
+            "不允许低强度配对密钥");
+
+        var root = Directory.CreateTempSubdirectory("picotoo-worker-lock-");
+        try
+        {
+            var queue = Path.Combine(root.FullName, "_queue");
+            var lockDir = Path.Combine(queue, "executor_bridge");
+            Directory.CreateDirectory(lockDir);
+            using var manager = new WorkerProcessManager(
+                Path.Combine(root.FullName, "missing-worker.exe"),
+                Path.Combine(root.FullName, "worker.config.toml"));
+            var refused = false;
+            try
+            {
+                manager.Start(
+                    "http://192.168.1.161:8766", root.FullName, "edit-workstation",
+                    "synthetic-device-only", new string('w', 48));
+            }
+            catch (InvalidOperationException)
+            {
+                refused = true;
+            }
+            Check(refused, "不安全 Mac URL 意外启动 Worker");
+            Check(!File.Exists(Path.Combine(root.FullName, "worker.config.toml")),
+                "失败预检不应落盘配置或密钥");
+
+            var lockPath = Path.Combine(lockDir, "edit-workstation.lock");
+            using (var stream = new FileStream(
+                lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+            {
+                stream.Lock(0, 1);
+                Check(WorkerProcessManager.ExistingWorkerOwnsLock(
+                    root.FullName, "edit-workstation"), "没有识别已占用的 Bridge 独占锁");
+                stream.Unlock(0, 1);
+            }
+            Check(!WorkerProcessManager.ExistingWorkerOwnsLock(
+                root.FullName, "edit-workstation"), "未持锁时不应报告 Worker 正在运行");
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     private static async Task VerifyAsync(string? screenshot)
