@@ -11,6 +11,7 @@ from picotoopet_core import __version__
 from picotoopet_core.api.middleware import TraceTimingMiddleware
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.services import build_services
+from picotoopet_core.mobile.access import MobileAccess
 
 from .errors import install_error_handlers
 from .routes import (
@@ -55,6 +56,7 @@ def create_app(settings: AppSettings) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.services = services
+    app.state.mobile_access = MobileAccess()        # 仅进程内，Core 重启需重新手机配对。
     app.add_middleware(TraceTimingMiddleware)
     install_error_handlers(app)
     prefix = "/api/v1"
@@ -64,6 +66,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(executors.router, prefix=prefix, tags=["executors"])
     app.include_router(episodes.router, prefix=prefix, tags=["episodes"])
     app.include_router(studio.router, prefix=prefix, tags=["studio"])
+    app.include_router(mobile.router, tags=["mobile"])
     app.include_router(history_imports.router, prefix=prefix, tags=["episodes"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
     app.include_router(results.router, prefix=prefix, tags=["results"])
