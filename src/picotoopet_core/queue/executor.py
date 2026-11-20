@@ -275,6 +275,47 @@ class ExecutorService:
 
         source_id = jobs["source_task_id"]
         source = self._task(db, source_id)
+        if source["task_type"] == "gen.video":
+            # 多抽卡有合格视频时，不因同批坏片而浪费整批 GPU 重试。
+            passing_sha = {
+                digest for digest, check in checks.items() if check["passed"] is True
+            }
+            if passing_sha:
+                approved_inputs = []
+                for row in db.execute(
+                    """SELECT artifact_id, metadata_json FROM executor_artifacts
+                       WHERE task_id=? ORDER BY rowid""",
+                    (source_id,),
+                ):
+                    artifact = json.loads(row["metadata_json"])
+                    if artifact.get("kind") != "video" or artifact.get("sha256") not in passing_sha:
+                        continue
+                    approved_inputs.append(
+                        {"artifact_id": row["artifact_id"],
+                         **{k: artifact[k] for k in ("sha256", "path", "take", "kind")}}
+                    )
+                if {item["sha256"] for item in approved_inputs} != passing_sha:
+                    raise InvalidTransitionError("质检通过的 SHA 与原始视频记录不一致。")
+
+                children = db.execute(
+                    """SELECT t.task_id,t.payload_json,t.status FROM task_dependencies d
+                       JOIN tasks t USING(task_id) WHERE d.depends_on_task_id=?
+                         AND t.task_type='gen.foley'""",
+                    (gate["task_id"],),
+                ).fetchall()
+                for child in children:
+                    if child["status"] != TaskStatus.QUEUED.value:
+                        raise InvalidTransitionError("下游任务已开始，不能重新筛选视频候选。")
+                    downstream = json.loads(child["payload_json"])
+                    if not isinstance(downstream.get("jobs"), dict):
+                        raise InvalidTransitionError("下游拟音作业缺少有效的 jobs 参数。")
+                    # 只传符合 QC 的真实文件哈希，Windows 仍逐项校验本地文件。
+                    downstream["jobs"]["reviewed_inputs"] = approved_inputs
+                    db.execute(
+                        "UPDATE tasks SET payload_json=? WHERE task_id=?",
+                        (json.dumps(downstream, ensure_ascii=False), child["task_id"]),
+                    )
+                return TaskStatus.COMPLETED
         key = source["idempotency_key"] or ""
         # Redo lineage is written by the Core, unlike a client-supplied idempotency key.
         redo = db.execute("SELECT 1 FROM executor_redos WHERE task_id=?", (source_id,)).fetchone()
@@ -587,6 +628,15 @@ class ExecutorService:
             manual_gate = gate and gate["error_code"] == "QC_MANUAL_REVIEW"
             if body.accept_qc_failure and (not manual_gate or body.decision != "pick"):
                 raise InvalidTransitionError("人工放行只适用于末轮待人工复核的候选。")
+            if gate and gate["status"] == TaskStatus.COMPLETED.value and body.decision == "pick":
+                # 一个 batch 可部分通过；普通选片只允许选被本轮 QC 认证的 SHA。
+                check_report = self.artifacts_in_transaction(
+                    db, self._task(db, gate["task_id"])
+                ).qc
+                candidate_sha = json.loads(artifact["metadata_json"])["sha256"]
+                per_candidate = check_report.get("by_sha256", {}).get(candidate_sha, {})
+                if not isinstance(per_candidate, dict) or per_candidate.get("passed") is not True:
+                    raise InvalidTransitionError("此候选未通过当前 QC，不能选用。")
             if gate and gate["status"] != "Completed" and body.decision in ("pick", "redo"):
                 superseded = db.execute(
                     "SELECT 1 FROM executor_redos WHERE source_task_id=?", (task["task_id"],)

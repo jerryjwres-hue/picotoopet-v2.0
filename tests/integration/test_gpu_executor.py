@@ -733,6 +733,108 @@ def test_assembly_uses_audio_from_selected_generation_and_take(api):
     assert shot["foley_tracks"] == [{"file": "fixture-4", "sha256": "4" * 64}]
 
 
+def test_mixed_qc_video_batch_only_releases_passing_sha_to_foley(api):
+    # 一个视频作业允许一次生成多个候选，任何一条合格就不整批重抽。
+    spec = episode_spec()
+    spec["shots"][0]["video"]["seeds"] = [101, 202, 303]
+    tasks = api.post("/api/v1/episodes", json=spec).json()["tasks"]
+
+    def lease():
+        return api.post("/api/v1/executors/lease", json=LEASE).json()
+
+    def complete(task, artifacts, qc=None):
+        return api.post(
+            f"/api/v1/tasks/{task['task_id']}/complete",
+            json={
+                "worker_id": "bridge", "artifacts": artifacts, "qc": qc or {},
+                "metrics": {"seconds": 0},
+            },
+        )
+
+    frame = lease()
+    assert frame["task_type"] == "gen.keyframe"
+    assert complete(frame, [media()]).status_code == 200
+    assert finish_gate(api)["status"] == "Completed"
+
+    video = lease()
+    assert video["task_id"] == tasks[1]["task_id"]
+    assert video["payload"]["jobs"]["jobs"][0]["seeds"] == [101, 202, 303]
+    candidates = [media("video", "1"), media("video", "2", 2), media("video", "3", 3)]
+    assert complete(video, candidates).status_code == 200
+    registered = api.get(f"/api/v1/tasks/{video['task_id']}/artifacts").json()["artifacts"]
+    gate = lease()
+    assert gate["task_type"] == "qc.check"
+    assert len(gate["payload"]["jobs"]["artifacts"]) == 3
+
+    good = {"passed": True, "score": 95, "fails": []}
+    bad = {"passed": False, "score": 12, "fails": ["主体外观错误"]}
+    report = {
+        "passed": False, "score": 65, "fails": ["存在不合格候选"],
+        "by_sha256": {"1" * 64: good, "2" * 64: bad, "3" * 64: good},
+    }
+    result = complete(gate, [], qc=report)
+    assert result.status_code == 200, result.text
+    assert result.json()["status"] == "Completed"
+    # 质检聚合为失败并非所有镜头都能用；只有真正通过的条目继续生成拟音。
+    assert api.get(f"/api/v1/tasks/{gate['task_id']}/artifacts").json()["qc"]["passed"] is False
+
+    foley = lease()
+    assert foley["task_type"] == "gen.foley"
+    assert foley["task_id"] == tasks[2]["task_id"]
+    pinned = foley["payload"]["jobs"]["reviewed_inputs"]
+    assert {item["sha256"] for item in pinned} == {"1" * 64, "3" * 64}
+    assert {item["artifact_id"] for item in pinned} == {
+        registered[0]["artifact_id"], registered[2]["artifact_id"],
+    }
+    assert all(item["kind"] == "video" for item in pinned)
+    # 不允许把同批坏片选为正式镜头，也不因其它候选合格而自动合成。
+    bad_id = registered[1]["artifact_id"]
+    assert api.post(f"/api/v1/artifacts/{bad_id}/decision", json={"decision": "pick"}).status_code == 409
+    good_id = registered[2]["artifact_id"]
+    assert api.post(f"/api/v1/artifacts/{good_id}/decision", json={"decision": "pick"}).status_code == 200
+    review = api.get("/api/v1/episodes/demo/review").json()
+    assert review["can_assemble"] is True
+    assert review["shots"][0]["status"] == "已选用"
+    assert api.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM executor_redos"
+    ) == 0
+    assert api.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM tasks WHERE task_type='gen.video'"
+    ) == 1
+
+
+def test_mixed_qc_keyframes_still_require_all_reference_roles_to_pass(api):
+    # 首帧与尾帧不能只放行其中一个，否则下游可能找不到必要参考图。
+    spec = episode_spec()
+    spec["shots"][0]["last_frame"] = {"refs": [], "prompt": "closing frame"}
+    api.post("/api/v1/episodes", json=spec)
+    frame = api.post("/api/v1/executors/lease", json=LEASE).json()
+    assert frame["task_type"] == "gen.keyframe"
+    outputs = [
+        {**media(digest="1"), "path": "S01_first_v1.png"},
+        {**media(digest="2"), "path": "S01_last_v1.png"},
+    ]
+    assert api.post(
+        f"/api/v1/tasks/{frame['task_id']}/complete",
+        json={"worker_id": "bridge", "artifacts": outputs, "qc": {}, "metrics": {"seconds": 0}},
+    ).status_code == 200
+    gate = api.post("/api/v1/executors/lease", json=LEASE).json()
+    report = {
+        "passed": False, "score": 50, "fails": ["尾帧不合格"],
+        "by_sha256": {
+            "1" * 64: {"passed": True, "score": 95, "fails": []},
+            "2" * 64: {"passed": False, "score": 5, "fails": ["尾帧不合格"]},
+        },
+    }
+    response = api.post(
+        f"/api/v1/tasks/{gate['task_id']}/complete",
+        json={"worker_id": "bridge", "artifacts": [], "qc": report, "metrics": {"seconds": 0}},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "Failed"
+    assert response.json()["error_code"] == "QC_REGENERATING"
+
+
 def test_episode_validation_reports_field(api):
     spec = episode_spec()
     spec["shots"][0]["camera"]["lens"] = False
