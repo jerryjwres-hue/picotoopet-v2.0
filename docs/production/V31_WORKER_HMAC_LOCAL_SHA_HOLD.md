@@ -19,3 +19,9 @@ Mac AppSettings needs worker_attestation_id (exact existing Worker ID) and worke
 ## Limits
 
 This is HMAC-authenticated Worker-reported SHA validation, not hardware attestation, copyright verification, GPU authorization or permanent file immutability. Existing Worker must rehash before GPU POST. A final single-Job lease gate still needs current Owner scope, independent MASTER review and revocation, frozen Plan and exact task, current Worker proof, dynamic policy checks, and old Journal recovery. Core Owner HOLD remains active; all new leases remain 204. No user PC/GPU or real media used.
+
+## Packaging STOP found during verification
+
+The current Windows Phase 2 prebuilt archive is built from the .NET WPF publish output and diagnostic EXE. The existing Python executor_bridge.py is **not bundled in that prebuilt installer**. Therefore native WPF packaging CI PASS alone is NOT proof the actual Python Worker will run automatically after Windows Studio installation. Before the first user two-machine GPU trial, include the existing executor bridge and its runtime/startup in a single operator-friendly installer (without a second scheduler), and run a clean-Windows smoke of launch -> Core 204 HOLD -> HMAC proof -> local reference SHA recheck. Do not require the user to enter terminal commands for normal operation.
+
+The environment names accepted by the real Mac loader are PICOTOO_WORKER_ATTEST_ID and PICOTOO_WORKER_ATTEST_KEY; the existing Windows Worker reads PICOTOO_WORKER_ATTEST_KEY. The actual LaunchAgent / installer environment provisioning still needs a separate, reviewed one-time implementation. This PR does not silently enable it.
