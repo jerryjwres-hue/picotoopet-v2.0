@@ -6,7 +6,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
 
 from picotoopet_core.api.thumbnails import validate_thumbnail
-from picotoopet_core.api.production_admission_hold import storypack_owner_hold
+from picotoopet_core.api.production_admission_hold import (
+    storypack_owner_hold,
+)
+from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.executor import (
     TASK_RUNNERS,
@@ -117,4 +120,15 @@ def artifacts(task_id: str, request: Request) -> ArtifactList:
 
 @router.post("/artifacts/{artifact_id}/decision")
 def decide(artifact_id: str, body: ArtifactDecision, request: Request) -> ReviewedArtifact:
+    # 旧审片 redo 会克隆新的 GPU 作业；人工 QC 放行会让下游旧任务重新可租约。
+    # 受保护 Owner 模式只允许普通选片/拒绝，不允许借这些按钮绕过冻结 Plan。
+    if storypack_owner_hold(request) and (
+        body.decision == "redo" or body.accept_qc_failure
+    ):
+        raise ApiError(
+            status_code=409,
+            code="STORYPACK_PRODUCTION_ADMISSION_REQUIRED",
+            message="请先通过 Owner、MASTER 和冻结 Plan 的正式生产准入。",
+            retryable=False,
+        )
     return request.app.state.services.executor.decide(artifact_id, body, request.state.trace_id)
