@@ -17,13 +17,13 @@ Windows `scripts/windows/executor_bridge.py` 已负责 Mac Core 租约、Journal
 
 ```powershell
 # 暂停当前 Windows bridge 领取新任务；不访问 Mac Core，不关闭 GPU。
-python scripts/windows/executor_bridge.py executor_bridge.toml --pause-new
+python scripts/windows/executor_bridge.py scripts/windows/executor_bridge.toml --pause-new
 
 # 只读检查状态；不读取、不打印设备 Token。
-python scripts/windows/executor_bridge.py executor_bridge.toml --pause-status
+python scripts/windows/executor_bridge.py scripts/windows/executor_bridge.toml --pause-status
 
 # 恢复领取新任务；仍需原有 Core/Worker 安全许可。
-python scripts/windows/executor_bridge.py executor_bridge.toml --resume-new
+python scripts/windows/executor_bridge.py scripts/windows/executor_bridge.toml --resume-new
 ```
 
 这些操作不需要 `PICOTOO_EXECUTOR_TOKEN`，不会启动独立的 Worker 进程、
