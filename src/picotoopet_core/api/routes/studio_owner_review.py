@@ -461,6 +461,7 @@ async def issue_owner_frame_transfer(
         return await run_in_threadpool(
             registry.issue,
             manifest_sha256=source_sha,
+            episode_id=pack.episode_id,  # Bind future Windows receipt to this exact Episode.
             export=lambda path: export_frame_bundle(
                 services.settings.paths.objects_dir, preview, path
             ),
