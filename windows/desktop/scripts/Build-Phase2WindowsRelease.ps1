@@ -306,6 +306,14 @@ if (-not (Test-Path -LiteralPath $selfTestPath)) { throw "桌面自检没有生�
 $selfTest = Get-Content -LiteralPath $selfTestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ([string]$selfTest.status -ne "pass") { throw "桌面自检报告不是 pass。" }
 
+# 将加密连接入口纳入安装后的版本目录与发布 SHA 清单，而不只放在解压 ZIP 顶层。
+# 这两个文件不含任何用户凭据；升级和回滚必须指向当前受验证版本。
+$connectionTools = Join-Path $payloadRoot "tools\connection"
+New-Item -ItemType Directory -Path $connectionTools -Force | Out-Null
+foreach ($name in @("CONNECT_MAC_SECURE.vbs", "Start-SecureMacTunnel.ps1")) {
+    Copy-Item -LiteralPath (Join-Path $desktopRoot "release\$name") -Destination (Join-Path $connectionTools $name) -Force
+}
+
 $files = @(
     Get-ChildItem -LiteralPath $payloadRoot -File -Recurse |
     Sort-Object FullName |
