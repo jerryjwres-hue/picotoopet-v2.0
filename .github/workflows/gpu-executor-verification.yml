@@ -61,6 +61,16 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Verify actual Windows NTFS frame staging without models or GPU
+        working-directory: .
+        shell: pwsh
+        run: |
+          # 用 Windows 真正的硬链接/目录语义验证 SHA 暂存，不启动 Worker。
+          python -m pip install -e . pytest pytest-asyncio
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q tests/integration/test_frame_bundle_staging.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Verify offline review in Windows Edge
         working-directory: .
         shell: pwsh
