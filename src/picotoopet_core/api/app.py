@@ -76,6 +76,8 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(frame_transfers.router, prefix=prefix, tags=["frame-transfer"])
     # 独立 Owner 凭据和本机来源认证，不能被设备 Bearer 替代。
     app.include_router(studio_owner_review.router, prefix=prefix, tags=["studio-owner-review"])
+    # 独立 MASTER 审查仍使用现有 Core、审计链与 loopback 身份门禁。
+    app.include_router(studio_master_review.router, prefix=prefix, tags=["studio-master-review"])
     app.include_router(mobile.router, tags=["mobile"])
     app.include_router(history_imports.router, prefix=prefix, tags=["episodes"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
