@@ -9,7 +9,7 @@ from pathlib import Path
 
 from picotoopet_core.security.owner_registry_loader import load_owner_review_registry
 
-from .keychain import read_api_token_from_keychain
+from .keychain import read_api_token_from_keychain, read_worker_attestation_key_from_keychain
 from .models import AppSettings
 from .paths import RuntimePaths
 
@@ -31,6 +31,14 @@ def load_settings() -> AppSettings:
         or read_api_token_from_keychain()
         or secrets.token_urlsafe(32)
     )
+    # 显式环境变量必须成对配置；若都未指定，使用本机安装器生成的独立 Keychain 密钥。
+    # 有单边环境变量时不混合 Keychain 值，交给 AppSettings 严格拒绝。
+    worker_id = os.getenv("PICOTOO_WORKER_ATTEST_ID") or None
+    worker_key = os.getenv("PICOTOO_WORKER_ATTEST_KEY") or None
+    if worker_id is None and worker_key is None:
+        worker_key = read_worker_attestation_key_from_keychain()
+        worker_id = "edit-workstation" if worker_key is not None else None
+
     protected = tuple(
         item.strip()
         for item in os.getenv("PICOTOO_PROTECTED_ROOTS", "").split(os.pathsep)
@@ -43,8 +51,8 @@ def load_settings() -> AppSettings:
         # 仅本机管理员的 0600 文件可提供 Owner 权限；缺失则默认关闭。
         owner_review_registry=load_owner_review_registry(Path(runtime_root).expanduser()),
         # 独立 Worker HMAC 必须由管理员一次性安全配置，缺省绝不自动开放。
-        worker_attestation_id=os.getenv("PICOTOO_WORKER_ATTEST_ID") or None,
-        worker_attestation_key=os.getenv("PICOTOO_WORKER_ATTEST_KEY") or None,
+        worker_attestation_id=worker_id,
+        worker_attestation_key=worker_key,
         api_host=os.getenv("PICOTOO_API_HOST", "0.0.0.0"),
         api_port=int(os.getenv("PICOTOO_API_PORT", "8765")),
         ollama_base_url=os.getenv("PICOTOO_OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
