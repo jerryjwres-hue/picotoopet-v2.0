@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import re
+from copy import deepcopy
 from typing import Any
 
 from picotoopet_core.domain.episode import EpisodeValidationError, load_episode
@@ -125,7 +126,8 @@ def complete_storypack_episode_preview(
             raise EpisodeCandidateError("EPISODE_SEED_DUPLICATE")
         for key in (_SHOT_REQUIRED_KEYS | _SHOT_OPTIONAL_KEYS) - {"shot_id"}:
             if key in supplied:
-                candidate["shots"][index][key] = supplied[key]
+                # 补全数据是用户原文，不允许后续导演 Prompt 拼装反向修改来源。
+                candidate["shots"][index][key] = deepcopy(supplied[key])
 
         # 关键修复：StoryPack 的状态与因果不再只留在审稿元数据中。
         # 直接绑定到将交给原有生成 Worker 的 first/last still 与 video.prompt。
