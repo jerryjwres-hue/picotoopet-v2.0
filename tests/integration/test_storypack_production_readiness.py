@@ -578,3 +578,24 @@ def test_real_loopback_http_socket_download_and_windows_sha_staging(context, tmp
         thread.join(timeout=10)
         listener.close()
         assert not thread.is_alive(), "local test socket must close cleanly"
+
+
+
+@pytest.mark.parametrize("unsafe_url", [
+    "http://192.0.2.20:8765",
+    "http://core-on-lan.local:8765",
+    "http://[",
+    "https://operator:password@core.example",
+    "https://core.example/path/to/private",
+    "https://core.example/?token=secret",
+])
+def test_windows_frame_fetch_refuses_plaintext_or_ambiguous_remote_url(unsafe_url):
+    from scripts.windows.fetch_frame_bundle import (
+        FrameFetchError,
+        _secure_core_url,
+    )
+
+    with pytest.raises(FrameFetchError, match="FRAME_FETCH_SECURE_CORE_URL_REQUIRED"):
+        _secure_core_url(unsafe_url)
+    assert _secure_core_url("http://127.0.0.1:8765") == "http://127.0.0.1:8765"
+    assert _secure_core_url("https://core.example:8765") == "https://core.example:8765"
