@@ -92,6 +92,9 @@ def export_frame_bundle(
     """
     manifest = _manifest(preflight)
     unique_hashes = sorted({item["managed_sha256"] for item in manifest["bindings"]})
+    # 源对象根目录也必须是普通目录，不能通过软链接切换素材来源。
+    if objects_dir.is_symlink() or not objects_dir.is_dir():
+        raise FrameBundleError("FRAME_BUNDLE_MANAGED_ROOT_INVALID")
     root = objects_dir.resolve(strict=True)
     out = Path(destination_zip)
     if out.exists() or out.is_symlink():
@@ -155,9 +158,12 @@ def export_frame_bundle(
             out.unlink(missing_ok=True)
         raise
 
+    with out.open("rb") as created_bundle:
+        bundle_sha256 = hashlib.file_digest(created_bundle, "sha256").hexdigest()
+
     return {
         "status": "SOURCE_BUNDLE_EXPORTED_NO_GPU_AUTHORITY",
-        "bundle_sha256": hashlib.file_digest(out.open("rb"), "sha256").hexdigest(),
+        "bundle_sha256": bundle_sha256,
         "source_bindings_sha256": preflight["source_bindings_sha256"],
         "object_count": len(unique_hashes),
         "bytes": total,
