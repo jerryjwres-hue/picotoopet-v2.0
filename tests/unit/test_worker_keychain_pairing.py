@@ -85,7 +85,7 @@ def test_mac_installer_provisions_keychain_once_without_creating_gpu_approval():
 
 
 def test_installer_hmac_base64url_does_not_remove_letter_n(tmp_path):
-    """原样执行安装器的密钥生成行，确保只去掉 '=' 而不会破坏随机 n 字符。"""
+    """执行 Mac 安装器密钥生成表达式，确保随机 n 字符不被误删。"""
     shell = shutil.which("bash")
     if shell is None:
         pytest.skip("Bash not available")
@@ -93,20 +93,20 @@ def test_installer_hmac_base64url_does_not_remove_letter_n(tmp_path):
         line for line in _INSTALL.read_text(encoding="utf-8").splitlines()
         if 'WORKER_KEY="$(' in line
     )
-    # 用固定的测试假数据取代 openssl，而不调用用户 Mac Keychain。
+    # 模拟固定的 openssl 输出，完全不接触本机实际密钥或 Keychain。
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_openssl = fake_bin / "openssl"
     fake_openssl.write_text(
-        "#!/bin/bash\\n"
-        "printf '%s\\\\n' 'n" + "A" * 42 + "='\\n",
+        "#!/bin/bash\n"
+        "printf '%s\n' 'n" + "A" * 42 + "='\n",
         encoding="utf-8",
     )
     fake_openssl.chmod(0o755)
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}:{env['PATH']}"
     run = subprocess.run(
-        [shell, "-c", line + "\\nprintf '%s' \\"$WORKER_KEY\\""],
+        [shell, "-c", line + "\nprintf '%s' \"$WORKER_KEY\""],
         capture_output=True, text=True, check=False, env=env, timeout=5,
     )
     assert run.returncode == 0, run.stderr
