@@ -107,7 +107,7 @@ class ProductionService:
                     tasks=[self.queue._row_to_record(row) for row in rows],
                 ), False
             # 所有首次新建剧集在入库前验证种子和最坏 QC 重抽预算。
-            enforce_episode_budget(episode, self.budget)
+            budget_receipt = enforce_episode_budget(episode, self.budget)
             db.execute(
                 "INSERT INTO production_episodes(episode_id, spec_json) VALUES (?, ?)",
                 (episode.episode_id, episode.model_dump_json()),
@@ -149,7 +149,13 @@ class ProductionService:
                 resource_id=episode.episode_id,
                 decision="allow",
                 reason_code=None,
-                details={"shot_count": len(episode.shots)},
+                details={
+                    "shot_count": len(episode.shots),
+                    "initial_video_takes": budget_receipt["initial_video_takes"],
+                    "max_reserved_video_takes": budget_receipt["max_reserved_video_takes"],
+                    "max_reserved_video_seconds": budget_receipt["max_reserved_video_seconds"],
+                    "metric": budget_receipt["metric"],
+                },
             )
             return EpisodeCreated(episode=episode, tasks=tasks), True
 
