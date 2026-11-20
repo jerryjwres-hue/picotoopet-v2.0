@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import html
+import math
 import re
 from urllib.parse import parse_qs, quote
 
@@ -238,6 +239,34 @@ async def mobile_preview(request: Request):
     )
 
 
+def _suggest_verified_take(candidates) -> str | None:
+    """Advisory ranking only: never writes an artifact pick or a GPU approval."""
+    eligible = []
+    for candidate in candidates:
+        qc = candidate.qc if isinstance(candidate.qc, dict) else {}
+        score = qc.get("score")
+        if (
+            candidate.kind != "video"
+            or candidate.decision == "reject"
+            or qc.get("gate_status") != "Completed"
+            or qc.get("passed") is not True
+            or qc.get("superseded") is not False
+            or not isinstance(qc.get("report_task_id"), str)
+            or not qc["report_task_id"]
+            or type(score) not in (int, float)
+            or not math.isfinite(score)
+            or not 0 <= score <= 100
+            or not isinstance(getattr(candidate, "artifact_id", None), str)
+        ):
+            continue
+        # 质检分数高优先；平分时选择 take 更小、SHA 字典序更小的一条。
+        take = getattr(candidate, "take", 0)
+        sha = getattr(candidate, "sha256", "")
+        eligible.append((float(score), take if type(take) is int else 0, str(sha),
+                         candidate.artifact_id))
+    return sorted(eligible, key=lambda row: (-row[0], row[1], row[2]))[0][3] if eligible else None
+
+
 @router.get("/mobile/episodes/{episode_id}")
 def mobile_episode_review(episode_id: str, request: Request):
     """Read-only shot candidate cards; never expose decision endpoints to mobile."""
@@ -255,13 +284,19 @@ def mobile_episode_review(episode_id: str, request: Request):
     cards = []
     for shot in review.shots[:30]:
         candidates = []
+        best_id = _suggest_verified_take(shot.candidates)
         for item in shot.candidates[:6]:
             # 仅显示人工审核有用的字段，不把内部媒体路径或完整 manifest 暴露到手机。
             qc = item.qc if isinstance(item.qc, dict) else {}
             quality = qc.get("gate_status") or qc.get("status") or "待复查"
             decision = item.decision or "未选择"
+            suggestion = (
+                "<span class='tag'>推荐候选（仅建议，不自动选用）</span> "
+                if best_id and getattr(item, "artifact_id", None) == best_id else ""
+            )
             caption = (
-                "<div class='entry'><span class='tag'>" + _escape(item.kind)
+                "<div class='entry'>" + suggestion
+                + "<span class='tag'>" + _escape(item.kind)
                 + "</span> <span class='tag'>QC：" + _escape(quality)
                 + "</span> <span class='tag'>选择：" + _escape(decision) + "</span>"
             )
