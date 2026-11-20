@@ -13,6 +13,10 @@ from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
 from picotoopet_core.domain.episode import Episode
 from picotoopet_core.domain.storypack import StoryPackV1, storypack_preview
+from picotoopet_core.domain.storypack_episode_candidate import (
+    complete_storypack_episode_preview,
+)
+from picotoopet_core.queue.production import _shot_jobs
 
 _ENDPOINT = "/api/v1/studio/storypacks/episode-candidate/preview"
 
@@ -122,6 +126,28 @@ def test_three_shot_episode_candidate_valid_but_never_authorized(api):
     ]
     assert result["shot_context"][2]["scene_ref"] == "home_door_v1"
     assert len(result["candidate_episode_sha256"]) == 64
+
+    # 每镜场景因果已真正注入将由 Windows 生成的 Prompt，而不是仅在 Preview。
+    for index, (shot, source) in enumerate(zip(
+        episode.shots, payload["storypack"]["shots"], strict=True
+    )):
+        assert f"Starting situation: {source['state_in']}" in shot.video.prompt
+        assert f"Visible action: {source['action']}" in shot.video.prompt
+        assert f"Required ending situation: {source['state_out']}" in shot.video.prompt
+        assert f"Story reason: {source['because']}" in shot.video.prompt
+        assert f"Animate the stated action only for shot {shot.shot_id}" in shot.video.prompt
+        assert shot.video.seeds == [100 + index, 200 + index]
+        assert shot.video.negative == "flicker, identity drift"
+        # 与已有 GPU Bridge 输入 JSON 对账，视频 Worker 实际读取该 prompt 字段。
+        _, video_job, _ = _shot_jobs(episode, shot)
+        assert video_job["jobs"][0]["prompt"] == shot.video.prompt
+
+    assert "Opening story state to depict: Dog on grass" in episode.shots[0].first_frame.prompt
+    assert "Opening story state to depict: Dog holding ball" in episode.shots[1].first_frame.prompt
+    assert "Continue from the preceding shot's final visible state" in episode.shots[1].video.prompt
+    assert "deliberate scene cut" in episode.shots[2].video.prompt
+    # Scene change 不应把上一镜的后院状态硬写成新室内首帧画面。
+    assert "Opening story state to depict:" not in episode.shots[2].first_frame.prompt
     assert result["references_trusted"] is False
     assert result["owner_approved"] is False
     assert result["can_queue"] is False
@@ -166,6 +192,44 @@ def test_invalid_or_untrusted_completion_never_creates_jobs(api, change):
         payload["completion"]["owner_approved"] = True
     response = api.post(_ENDPOINT, json=payload)
     assert response.status_code == 422, (change, response.text)
+    _no_production_writes(api)
+
+
+def test_narrative_compilation_is_immutable_and_reproducible():
+    """No draft mutation: Owner freeze and SHA verification must see identical source."""
+    payload = _payload()
+    source = copy.deepcopy(payload)
+    pack = StoryPackV1.model_validate(payload["storypack"])
+    first = complete_storypack_episode_preview(
+        pack, payload["storypack_sha256"], payload["completion"]
+    )
+    assert payload == source, "只读 StoryPack 预览不得修改 completion 或原始 SHA 来源"
+    second = complete_storypack_episode_preview(
+        pack, payload["storypack_sha256"], payload["completion"]
+    )
+    assert first == second
+    assert payload == source
+    # 编辑新的合成 Episode 不应回写来源补全，来源可重放和重新批准。
+    first["episode"]["shots"][0]["video"]["prompt"] = "tampered draft"
+    assert payload == source
+
+
+def test_narrative_plan_preserves_optional_last_frame_and_no_extra_gpu_tasks(api):
+    payload = _payload()
+    payload["completion"]["shots"][0]["last_frame"] = {
+        "refs": ["synthetic-tail-still.png"],
+        "prompt": "Tail holds the ball in frame",
+    }
+    response = api.post(_ENDPOINT, json=payload)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    first = result["episode"]["shots"][0]
+    assert "Final story state to depict: Dog holding ball" in first["last_frame"]["prompt"]
+    assert "Tail holds the ball in frame" in first["last_frame"]["prompt"]
+    assert first["last_frame"]["refs"] == ["synthetic-tail-still.png"]
+    assert first["video"]["seeds"] == [100, 200]
+    assert result["owner_approved"] is False
+    assert result["can_queue"] is False
     _no_production_writes(api)
 
 
