@@ -306,12 +306,13 @@ class QueueRepository:
         *,
         resource_tags: tuple[str, ...] | None = None,
         task_types: tuple[str, ...] | None = None,
+        task_id: str | None = None,
     ) -> list[str]:
-        """恢复租约过期任务；达到重试上限时转为失败。"""
+        """恢复租约过期任务；受控验收可精确限定唯一 task_id。"""
 
         checked_at = now or datetime.now(UTC)
         recovered: list[str] = []
-        filters, parameters = self._lease_filters(resource_tags, task_types)
+        filters, parameters = self._lease_filters(resource_tags, task_types, task_id)
         with self.database.transaction() as connection:
             rows = connection.execute(
                 f"""
