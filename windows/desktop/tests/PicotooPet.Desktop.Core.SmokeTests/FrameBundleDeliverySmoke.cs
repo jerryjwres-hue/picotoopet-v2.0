@@ -78,9 +78,12 @@ internal static class FrameBundleDeliverySmoke
             Assert(native is not null &&
                 native.WorkerLocalBytesVerified && !native.CanQueue && !native.GpuAuthorized,
                 "已审核素材的自动领取/落盘不得获得 GPU 权限");
-            Assert(handler.Calls == 2, "应先领取后下载，不能绕开 Mac Owner 已签发证据");
+            Assert(handler.Calls == 3, "应领取、下载并向 Mac 回传冻结来源对应的暂存声明");
+            Assert(native is not null &&
+                native.CoreStagingStatus == "WINDOWS_STAGING_REPORTED_FOR_FROZEN_PLAN",
+                "Mac 未关联指定冻结 Episode 的数据暂存回执");
             var empty = await mac.ClaimAndStagePendingFramesAsync(project);
-            Assert(empty is null && handler.Calls == 3, "一次性待传任务不应重复领取");
+            Assert(empty is null && handler.Calls == 4, "一次性待传任务不应重复领取");
 
             // Windows 普通 LAN 明文 HTTP 必须在发送任何请求前直接拒绝。
             using var insecure = new HttpClient(new SyntheticCoreHandler(bundleBytes, manifestSha, bundleSha))
@@ -166,6 +169,7 @@ internal static class FrameBundleDeliverySmoke
                     ticket = "one-use-transfer-ticket-0123456789",
                     source_bindings_sha256 = _manifestSha,
                     bundle_sha256 = _bundleSha,
+                    episode_id = "MAOTAI_READINESS",  // Owner 指定的 Episode ID 是数据身份而非 GPU 授权。
                     can_queue = false,
                     gpu_authorized = false,
                 };
@@ -173,6 +177,33 @@ internal static class FrameBundleDeliverySmoke
                 {
                     Content = new StringContent(
                         JsonSerializer.Serialize(claim),
+                        System.Text.Encoding.UTF8, "application/json"),
+                });
+            }
+            if (request.Method == HttpMethod.Post &&
+                request.RequestUri?.AbsolutePath == "/api/v1/studio/frame-transfer/staging-report")
+            {
+                // 真实 .NET 客户端应提交具体 SHA 绑定，不能上报 Windows 绝对路径。
+                var report = request.Content!.ReadAsStringAsync(cancellationToken)
+                    .GetAwaiter().GetResult();
+                using var document = JsonDocument.Parse(report);
+                var payload = document.RootElement;
+                Assert(payload.GetProperty("episode_id").GetString() == "MAOTAI_READINESS",
+                    "回执未绑定 Owner 指定的剧集身份");
+                Assert(payload.GetProperty("source_bindings_sha256").GetString() == _manifestSha,
+                    "回执没有使用实际下载并核验的素材 SHA");
+                Assert(payload.GetProperty("worker_local_bytes_verified").GetBoolean(),
+                    "未确认 Windows 本地真实校验");
+                Assert(payload.GetProperty("bindings").GetArrayLength() == 1,
+                    "回执必须逐镜头绑定正确引用");
+                Assert(!report.Contains("WorkerRef", StringComparison.OrdinalIgnoreCase) &&
+                       !report.Contains("staged_references", StringComparison.OrdinalIgnoreCase),
+                    "回执泄露了 Windows 私有文件路径");
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"status\":\"WINDOWS_STAGING_REPORTED_FOR_FROZEN_PLAN\"," +
+                        "\"can_lease\":false,\"gpu_authorized\":false}",
                         System.Text.Encoding.UTF8, "application/json"),
                 });
             }

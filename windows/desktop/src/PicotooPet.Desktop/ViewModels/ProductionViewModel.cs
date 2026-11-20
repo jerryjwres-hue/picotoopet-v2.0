@@ -205,7 +205,10 @@ public sealed class ProductionViewModel : ObservableObject
                 _workerProjectRoot, _token());
             Message = receipt is null
                 ? "暂无已审核、待同步的首帧素材。请先在 Mac 端完成主人审核。"
-                : $"素材同步完成：{receipt.Bindings.Count} 项镜头引用已按 SHA 验证。尚未放行 GPU 生成。";
+                : $"素材同步完成：{receipt.Bindings.Count} 项镜头引用已按 SHA 验证。" +
+                  (receipt.CoreStagingStatus == "WINDOWS_STAGING_REPORTED_FOR_FROZEN_PLAN"
+                      ? " 已对接 Mac 冻结计划，GPU 仍关闭。"
+                      : " 生产计划未冻结或未关联，GPU 仍关闭。");
         }
         finally
         {

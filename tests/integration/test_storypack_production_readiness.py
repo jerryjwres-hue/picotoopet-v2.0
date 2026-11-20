@@ -1057,3 +1057,115 @@ def test_independent_master_review_revocation_blocks_future_validation(context):
     assert client.app.state.services.database.scalar(
         "SELECT COUNT(*) FROM audit_events WHERE action='studio.storypack.master_source.revoke'"
     ) == 1
+
+
+def _staged_core_report(client, owner, source, episode_id="MAOTAI_READINESS"):
+    """Construct a synthetic Windows Studio statement using Core's exact source contract."""
+    # Freeze payload has three additional fields forbidden by strict readiness schema.
+    readiness = {
+        key: value for key, value in source.items()
+        if key not in (
+            "expected_candidate_episode_sha256",
+            "expected_source_bindings_sha256",
+            "confirm_gpu_hold",
+        )
+    }
+    preview = _call(client, "/production-readiness", readiness, owner)
+    assert preview.status_code == 200, preview.text
+    reference = preview.json()["frame_reference_preview"]
+    return {
+        "episode_id": episode_id,
+        "source_bindings_sha256": reference["source_bindings_sha256"],
+        "storypack_sha256": reference["storypack_sha256"],
+        "owner_subject_sha256": reference["owner_subject_sha256"],
+        "bindings": reference["bindings"],
+        "verified_bytes": 150,
+        "worker_local_bytes_verified": True,
+    }
+
+
+def _post_staged_core(client, payload, token, *, client_path=None):
+    return client.post(
+        client_path or "/api/v1/studio/frame-transfer/staging-report",
+        json=payload, headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def test_windows_stage_report_matches_real_frozen_plan_and_cannot_lease(context):
+    client, owner, device, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    body = _staged_core_report(client, owner, source)
+
+    # Copying files before Owner freezes an Episode cannot manufacture a Plan.
+    early = _post_staged_core(client, body, device)
+    assert early.status_code == 200, early.text
+    assert early.json()["core_staging_linked"] is False
+    assert early.json()["gpu_authorized"] is False
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.windows_staging_report'"
+    ) == 0
+
+    frozen = _call(client, "/production-freeze", source, owner)
+    assert frozen.status_code == 200, frozen.text
+    linked = _post_staged_core(client, body, device)
+    assert linked.status_code == 200, linked.text
+    receipt = linked.json()
+    assert receipt["status"] == "WINDOWS_STAGING_REPORTED_FOR_FROZEN_PLAN"
+    assert receipt["frozen_plan_sha256"] == frozen.json()["frozen_plan_sha256"]
+    assert receipt["worker_independently_verified"] is False
+    assert receipt["can_lease"] is False
+    assert receipt["gpu_authorized"] is False
+
+    again = _post_staged_core(client, body, device)
+    assert again.status_code == 200, again.text
+    assert again.json()["already_reported"] is True
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.windows_staging_report'"
+    ) == 1
+    assert client.post(
+        "/api/v1/executors/lease",
+        json={"worker_id": "win-worker", "resource_tags": ["gpu-5070ti"],
+              "lease_seconds": 90},
+        headers={"Authorization": f"Bearer {device}"},
+    ).status_code == 204
+
+
+def test_windows_stage_report_rejects_mismatched_shots_mac_tamper_and_owner_token(context):
+    client, owner, device, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    assert _call(client, "/production-freeze", source, owner).status_code == 200
+    body = _staged_core_report(client, owner, source)
+
+    # Neither Owner Bearer nor missing credentials can masquerade as the paired device.
+    assert _post_staged_core(client, body, owner).status_code == 401
+    assert client.post(
+        "/api/v1/studio/frame-transfer/staging-report", json=body
+    ).status_code == 401
+
+    for field in ("source_bindings_sha256", "storypack_sha256", "owner_subject_sha256"):
+        altered = copy.deepcopy(body)
+        altered[field] = "f" * 64
+        assert _post_staged_core(client, altered, device).status_code == 409
+    altered = copy.deepcopy(body)
+    altered["bindings"][0]["shot_id"] = "WRONG"
+    assert _post_staged_core(client, altered, device).status_code == 409
+    altered = copy.deepcopy(body)
+    altered["bindings"] = altered["bindings"][:-1]
+    assert _post_staged_core(client, altered, device).status_code == 409
+    altered = copy.deepcopy(body)
+    altered["bindings"].append(copy.deepcopy(altered["bindings"][0]))
+    assert _post_staged_core(client, altered, device).status_code == 409
+    altered = copy.deepcopy(body)
+    altered["worker_local_bytes_verified"] = False
+    assert _post_staged_core(client, altered, device).status_code == 422
+    altered = copy.deepcopy(body)
+    altered["worker_ref"] = r"C:\private\dog.png"
+    assert _post_staged_core(client, altered, device).status_code == 422
+
+    digest = objects["maotai_master_v1"]
+    root = client.app.state.services.settings.paths.objects_dir
+    (root / digest[:2] / digest[2:]).write_bytes(b"tampered")
+    assert _post_staged_core(client, body, device).status_code == 409
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.windows_staging_report'"
+    ) == 0
