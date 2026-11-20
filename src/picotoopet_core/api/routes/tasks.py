@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, status
 from pydantic import ValidationError
 
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.api.production_admission_hold import block_legacy_gpu_task
 from picotoopet_core.domain.enums import CloudPolicy, TaskStatus
 from picotoopet_core.domain.executor import (
     GPU_TAG,
@@ -25,6 +26,8 @@ def create_task(
 ) -> TaskRecord:
     """创建本地或人工审批任务。"""
 
+    # 先检查 GPU 准入，再允许幂等重放/执行器 payload；设备 Bearer 无法自己放行。
+    block_legacy_gpu_task(request, payload)
     if idempotency_key:
         payload = payload.model_copy(update={"idempotency_key": idempotency_key})
     if payload.task_type == IMPORTED_TASK_TYPE:
@@ -99,7 +102,12 @@ def retry_task(task_id: str, request: Request) -> TaskRecord:
     """创建新的子任务，不重新打开原终态任务。"""
 
     services = request.app.state.services
-    if services.queue.get(task_id).task_type in TASK_RUNNERS:
+    original = services.queue.get(task_id)
+    block_legacy_gpu_task(request, TaskCreate(
+        task_type=original.task_type,
+        resource_tag=original.resource_tag,
+    ))
+    if original.task_type in TASK_RUNNERS:
         return services.executor.retry(task_id, request.state.trace_id)
     return services.queue.retry(
         task_id,
