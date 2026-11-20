@@ -218,6 +218,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             throw new ArgumentException("设备令牌不能为空。", nameof(token));
         }
+        // 明确拒绝旧局域网明文 HTTP；设备 Bearer 只能走 HTTPS 或加密 SSH 的本机环回。
+        if (!WorkerProcessManager.IsSecureCoreAddress(MacBaseUrl))
+        {
+            throw new InvalidOperationException(
+                "Mac Core 不能用局域网明文 HTTP。请先双击 CONNECT_MAC_SECURE，地址填 http://127.0.0.1:18766，或使用可信 HTTPS。");
+        }
 
         await CancelConnectionAsync().ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
