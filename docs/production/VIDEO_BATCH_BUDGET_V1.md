@@ -16,17 +16,18 @@
 | 单镜视频 seeds / 候选数 | 8 |
 | 全 Episode 初始视频候选 | 48 |
 | 自动 QC 重抽 | 原有最多 2 轮 |
-| 预留视频秒数 (含两轮重抽的最坏情况) | 720 |
+| 每条生成任务的执行尝试 | 3 次（含原始尝试） |
+| 预留视频秒数（含 QC 与 Worker 重试） | 2160 |
 
 计算：
 
     initial_takes         = sum(len(shot.video.seeds) for shot in episode.shots)
     initial_video_seconds = sum(shot.seconds * len(shot.video.seeds) for shot in shots)
-    reserve_multiplier    = 1 + MAX_QC_REDO_ROUNDS
+    reserve_multiplier    = (1 + MAX_QC_REDO_ROUNDS) * MAX_VIDEO_EXECUTOR_ATTEMPTS
     reserved_seconds      = initial_video_seconds * reserve_multiplier
 
 例：3 镜 × 4 秒 × 2 seeds = 首次 6 条候选 / 24 输出秒；
-最多两轮 QC 重抽的规划上界是 18 条 / 72 输出秒。
+最多两轮 QC 重抽、且每轮 Worker 最多尝试三次的规划上界是 54 次尝试 / 216 输出秒。
 这只是请求的**视频输出秒数**，不是 GPU wall time、active seconds 或电力/成本测量。
 
 同一镜头相同 seed 重复请求会被拒绝，避免无意义的重复本地算力开销。
@@ -47,7 +48,7 @@
 
     PICOTOO_EPISODE_MAX_TAKES_PER_SHOT=8
     PICOTOO_EPISODE_MAX_TAKES_PER_EPISODE=48
-    PICOTOO_EPISODE_MAX_RESERVED_VIDEO_SECONDS=720
+    PICOTOO_EPISODE_MAX_RESERVED_VIDEO_SECONDS=2160
 
 配置范围已由 Pydantic 限定。手机网页本身不提供修改额度的接口，
 避免浏览器会话增加 GPU 预算。
@@ -57,7 +58,7 @@
 - Windows Worker 继续从原文件队列执行现有 `gen.video` 作业；
   只有原本可信的生产授权才能触发 GPU；预算预检本身不放行任何任务。
 - 已合并的部分合格 QC 规则保留同批通过的 SHA，失败候选不能被选用。
-- 原有 QC 失败最多重新生成两轮；预算按最坏 3 轮预先估计。
+- 原有 QC 失败最多重新生成两轮，每个生成任务可尝试最多 3 次；预算按最多 9 次生成尝试预先估计。
 - 现有 Episode spec 一旦冻结不可改写，避免用同一 ID 偷换 seeds。
 - 高能力 LLM 只负责故事、复杂异常和重要创意决策，普通 seed/评分/QC 不调用 LLM。
 
