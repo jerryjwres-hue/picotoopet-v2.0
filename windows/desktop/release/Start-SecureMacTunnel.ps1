@@ -1,4 +1,4 @@
-# PicotooPet｜使用系统自带 OpenSSH 建立 Windows->Mac 私有加密通道。
+﻿# PicotooPet｜使用系统自带 OpenSSH 建立 Windows->Mac 私有加密通道。
 # 仅准备控制通道；不接触设备 Token、Owner、Worker HMAC、GPU、模型或素材。
 [CmdletBinding()]
 param(
@@ -83,7 +83,7 @@ if ($SelfTest) {
 }
 
 # 首次只收集无秘密的 Mac 用户名、地址和 Core 端口；之后复用本地设置。
-$dataRoot = Join-Path $env:LOCALAPPDATA "PicotooPetV2\\DesktopApp"
+$dataRoot = Join-Path $env:LOCALAPPDATA "PicotooPetV2\DesktopApp"
 $configFile = Join-Path $dataRoot "secure-mac-tunnel.json"
 if (Test-Path -LiteralPath $configFile) {
     $config = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
@@ -101,7 +101,7 @@ if (Test-Path -LiteralPath $configFile) {
 $argsList = New-PicotooSshArguments -MacHost $macHost -MacUser $macUser -MacPort $macPort -SshPort $sshPort
 
 # 只使用 Windows 系统自带的 SSH 客户端，防止 PATH 中同名程序劫持。
-$sshExe = Join-Path $env:WINDIR "System32\\OpenSSH\\ssh.exe"
+$sshExe = Join-Path $env:WINDIR "System32\OpenSSH\ssh.exe"
 if (-not (Test-Path -LiteralPath $sshExe -PathType Leaf)) {
     throw "未安装 Windows OpenSSH Client；请先在 Windows 可选功能中启用。"
 }
