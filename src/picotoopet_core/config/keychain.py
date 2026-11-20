@@ -33,3 +33,9 @@ def read_api_token_from_keychain(service: str = "PicotooPetV2.API") -> str | Non
         return None
     token = result.stdout.strip()
     return token or None
+
+
+def read_worker_attestation_key_from_keychain() -> str | None:
+    """读取独立 Worker HMAC；绝不借用 Mac API 的设备令牌。"""
+
+    return read_api_token_from_keychain(service="PicotooPetV3.WorkerAttestation")
