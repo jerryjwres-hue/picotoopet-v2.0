@@ -27,7 +27,7 @@ def test_ssh_tunnel_requires_pinned_host_key_and_no_password_or_lan_listener():
     assert "StrictHostKeyChecking=no" not in code or code.count("StrictHostKeyChecking=no") == 1
 
 
-def test_ssh_tunnel_never_handles_sensitive_keys_or_gpu:
+def test_ssh_tunnel_never_handles_sensitive_keys_or_gpu():
     code = _TUNNEL.read_text(encoding="utf-8")
     for forbidden in (
         "PICOTOO_EXECUTOR_TOKEN", "PICOTOO_WORKER_ATTEST_KEY", "Authorization:",
