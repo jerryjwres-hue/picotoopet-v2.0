@@ -1073,8 +1073,12 @@ def main():
     if internal == "--package-self-test":
         from qc import cli as qc_cli
         from edit import cli as edit_cli
-        import import_video_candidates
-        import review_board
+        if __package__:
+            # 从源码导入时仍复用现有 scripts.windows 包；冻结 EXE 为裸模块。
+            from scripts.windows import import_video_candidates, review_board
+        else:
+            import import_video_candidates
+            import review_board
         report = {
             "contract": "picotoo.worker-bundled-runtime.v1",
             "packaged": bool(getattr(sys, "frozen", False)),
@@ -1095,7 +1099,10 @@ def main():
         elif internal == "--internal-edit":
             from edit.cli import main as internal_main
         else:
-            from import_video_candidates import main as internal_main
+            if __package__:
+                from scripts.windows.import_video_candidates import main as internal_main
+            else:
+                from import_video_candidates import main as internal_main
         raise SystemExit(internal_main(sys.argv[2:]))
 
     parser = argparse.ArgumentParser(description="启动 Windows 执行桥")
