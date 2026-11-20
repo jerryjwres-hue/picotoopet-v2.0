@@ -584,7 +584,11 @@ async def freeze_owner_production_jobs(
         return await run_in_threadpool(prepare_and_freeze)
     except (StoryboardReviewError, AssetUseError, FrameManifestContractError,
             InvalidTransitionError) as error:
-        code = error.code if hasattr(error, "code") else "FROZEN_PLAN_CONFLICT_OR_STALE"
+        # Pure manifest-contract errors carry their own stable reason as ValueError text.
+        code = error.code if hasattr(error, "code") else (
+            str(error) if isinstance(error, FrameManifestContractError)
+            else "FROZEN_PLAN_CONFLICT_OR_STALE"
+        )
         raise ApiError(
             status_code=409, code=code,
             message="指定生产计划或 Owner 证据不一致，保持 GPU HOLD。",
