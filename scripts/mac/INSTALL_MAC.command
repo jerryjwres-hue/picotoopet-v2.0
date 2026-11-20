@@ -96,5 +96,25 @@ done
 launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/com.picotoopet.mac-core.plist"
 launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/com.picotoopet.health-supervisor.plist"
 
-"$CURRENT/.venv/bin/picotoopet-core" health --skip-ollama > "$RUNTIME_ROOT/state/install-health.json"
-open "$RUNTIME_ROOT/state/install-health.json"
+# 保留完整机器报告；正常安装不弹技术 JSON，用户只需看到结论。
+HEALTH_REPORT="$RUNTIME_ROOT/state/install-health.json"
+"$CURRENT/.venv/bin/picotoopet-core" health --skip-ollama > "$HEALTH_REPORT"
+if "$CURRENT/.venv/bin/python" - "$HEALTH_REPORT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+# 仅验证安装时的数据库/磁盘健康；不把跳过 Ollama 误报为模型实测。
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if report.get("status") == "ok" else 1)
+PY
+then
+  printf '\n[PASS] PicotooPet Mac Core 安装完成，后台服务已配置。\n'
+  printf '下一步：在 Windows 双击安装包并完成一次 Mac 配对。\n'
+  printf '模型与双机实际联通仍须通过独立验收。\n'
+else
+  printf '\n[NEEDS_REVIEW] Mac Core 已部署，但健康检查未全部通过。\n' >&2
+  printf '请查看诊断报告，暂不要开始生产。\n' >&2
+  open "$HEALTH_REPORT" >/dev/null 2>&1 || true
+  exit 2
+fi
