@@ -9,8 +9,11 @@
 5 分钟内在手机输入一次性配对码，完成后浏览器保存 HttpOnly / Secure /
 SameSite=Strict 的短期 Cookie；Mac Core 重启或 8 小时后需重新配对。
 手机页面提供任务数量/最新任务、剧集清单、StoryPack JSON 只读预览。
+第二阶段可点击剧集进入只读候选画廊，查看 QC 状态、已有 JPEG 缩略图、
+选用标记和是否满足合成条件。缩略图只通过有效手机会话从现有 Core
+获取，不提供任意文件访问或执行器设备 Token。
 
-**本版不包含**：正式提交故事、触发 GPU、批量抽卡、选片、审批 OwnerPrincipal、
+**本版不包含**：正式提交故事、触发 GPU、批量抽卡、修改选片决策、审批 OwnerPrincipal、
 取消/重试、发布及下载媒体。不要因为界面可登录就声称这些已实现。
 
 ## 安全配置
@@ -21,6 +24,10 @@ SameSite=Strict 的短期 Cookie；Mac Core 重启或 8 小时后需重新配对
    `PICOTOO_MOBILE_STUDIO_ENABLED=1` 并重启服务。
 2. 本版本拒绝直接经 HTTP LAN 地址登录。不要把 Mac Core :8765/:8766、
    ComfyUI :8188 或其他设备 REST API 直接映射到互联网。
+   **远程隧道必须只转发 /mobile 与 /mobile/* 网页路径**，其余路径默认拒绝，
+   尤其是 `/api/v1/*`。一次性配对码在 Windows 通过现有内网设备 API 获取，
+   不需要将 `/api/v1/mobile/pairing` 开放给公网。隧道入口还须使用 Access
+   等用户身份验证及速率限制；切勿使用无认证的公开 Quick Tunnel。
 3. HTTPS 反向代理必须正确向**受信任的** ASGI 运行时传递 scheme=https；
    本服务不信任客户端自行发送的 `X-Forwarded-Proto`。如果反向代理配置不当，
    页面只会显示「请通过 HTTPS 私有入口访问」，不可降低此保护要求。
