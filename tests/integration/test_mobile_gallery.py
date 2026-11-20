@@ -103,6 +103,7 @@ def test_best_candidate_is_advisory_and_ignores_bad_or_old_qc(tmp_path):
                   gate="Completed", decision=None, take=1):
         return SimpleNamespace(
             artifact_id=artifact_id, kind="video", decision=decision, take=take,
+            task_id="task1", thumbnail_id=None, sheet_thumbnail_id=None,
             sha256=artifact_id * 64,
             qc={
                 "score": score, "passed": passed, "gate_status": gate,
