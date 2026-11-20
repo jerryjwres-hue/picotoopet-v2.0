@@ -20,7 +20,13 @@ Windows 用同一个 Mac Core 地址和设备令牌连接。Mac 保存任务、�
 
 执行桥每 5 秒轮询空闲队列，运行任务期间每 20 秒续租。待报告进度和回执保存在项目下的 `_queue/executor_bridge/`。同一台机器重启执行桥时继续使用原来的 `worker_id`。如果 Core 已按租约规则将任务转为终态，本地回执仍可在该目录核对。
 
-剧集生成的第一帧和末帧任务使用各自的第一颗 seed。视频使用 YAML 中的候选 seeds，每镜最多 48 颗。后续阶段优先使用已选的上游图像，否则使用第一张可用图像。拟音跑对应视频候选。执行桥用本机工具 `python -m qc check` 检查图像和视频，每个候选保留完整 JSON 报告、分数、问题和 JPEG。视频另外核对时长和流。需要检查主体数量或身份时，可在生成任务的 `payload.jobs.qc_spec` 中填写 `expect` 和项目内的 `identity_refs`。默认检查器采用本机视觉启发式，模型身份检查使用已有本地权重。复杂动作、穿栏或房间布局仍需导演看图。合成调用 `python -m edit assemble`，按选片、剧集清单和已绑定的本机音轨生成。
+需要**暂停后续抽卡**而不打断正在运行的文件 Worker 时，可在本机使用
+`python scripts/windows/executor_bridge.py scripts/windows/executor_bridge.toml --pause-new`；
+用 `--pause-status` 查询，用 `--resume-new` 恢复。只影响当前 Python 执行桥领取新租约，
+已提交 GPU 作业不会被强制结束，也不会解除原系统的 GPU HOLD。参见
+[Windows 新任务暂停 / Journal 保留](production/WINDOWS_PAUSE_NEW_TASKS.md)。
+
+剧集生成的第一帧和末帧任务使用各自的第一颗 seed。视频使用 YAML 中的候选 seeds；Episode Schema 允许最多 48 颗，但**新建剧集的默认预算限制为每镜 8 颗、每集首次 48 颗**，且按 QC 重抽与 Worker 尝试预估视频秒数。后续阶段优先使用已选的上游图像，否则使用第一张可用图像。拟音跑对应视频候选。执行桥用本机工具 `python -m qc check` 检查图像和视频，每个候选保留完整 JSON 报告、分数、问题和 JPEG。视频另外核对时长和流。需要检查主体数量或身份时，可在生成任务的 `payload.jobs.qc_spec` 中填写 `expect` 和项目内的 `identity_refs`。默认检查器采用本机视觉启发式，模型身份检查使用已有本地权重。复杂动作、穿栏或房间布局仍需导演看图。合成调用 `python -m edit assemble`，按选片、剧集清单和已绑定的本机音轨生成。
 
 ## 剧集和审片
 
