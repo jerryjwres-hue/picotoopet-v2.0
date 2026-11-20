@@ -66,9 +66,10 @@ jobs:
         shell: pwsh
         run: |
           # 用 Windows 真正的硬链接/目录语义验证 SHA 暂存，不启动 Worker。
-          python -m pip install -e . pytest pytest-asyncio
+          # 验证 Windows 上真实 SHA 暂存 + Owner 一次性下载 API 组合，无 GPU。
+          python -m pip install -e . pytest pytest-asyncio requests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pytest -q tests/integration/test_frame_bundle_staging.py
+          python -m pytest -q tests/integration/test_frame_bundle_staging.py tests/integration/test_storypack_production_readiness.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify offline review in Windows Edge

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -20,6 +21,10 @@ from picotoopet_core.security.owner_principal import (
 
 _ROOT = "/api/v1/studio/storypacks/owner-review"
 _SUBJECT = "pet:maotai"
+_SYNTHETIC_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+    "AAAAC0lEQVR42mP8/x8AAwMCAO+jRZcAAAAASUVORK5CYII="
+)
 
 
 def _pack() -> dict:
@@ -102,9 +107,10 @@ def context(tmp_path):
             ("ready-test", "Synthetic", "pet", "test", "internal",
              "Active", "2026-11-19T00:00:00Z", "2026-11-19T00:00:00Z"),
         )
-        for ref in ("maotai_master_v1", "backyard_v1", "toon_style_v1"):
+        for index, ref in enumerate(("maotai_master_v1", "backyard_v1", "toon_style_v1")):
+            # 完全合成的有效 PNG 魔数，三个身份仍然拥有不同字节及 SHA。
             stored = svc.results.put_bytes(
-                ("synthetic-dummy:" + ref).encode("utf-8"), result_type="image"
+                _SYNTHETIC_PNG + bytes([index]), result_type="image"
             )
             objects[ref] = stored.object_hash
             svc.database.execute(
@@ -327,3 +333,313 @@ def test_duplicate_frame_ref_and_stale_master_bytes_cannot_pass(context):
     assert "FRAME_MASTER_CONTENT_UNVERIFIED" in report["blocking_reasons"]
     assert report["can_generate"] is False
     _assert_no_production(client)
+
+
+
+def _issued_transfer(client, owner, objects):
+    """Acquire a one-use download ticket through exact Owner and frame evidence."""
+    payload = _create_reviewed_candidate(client, owner, objects)
+    payload["completion"]["shots"][0]["first_frame"]["refs"] = [
+        "maotai_master_v1", "backyard_v1",
+    ]
+    payload["completion"]["shots"][1]["first_frame"]["refs"] = [
+        "maotai_master_v1",
+    ]
+    readiness = _call(client, "/production-readiness", payload, owner)
+    assert readiness.status_code == 200, readiness.text
+    source_sha = readiness.json()["frame_reference_preview"]["source_bindings_sha256"]
+    assert source_sha
+    issued = _call(
+        client, "/frame-transfer/issue",
+        {**payload, "expected_source_bindings_sha256": source_sha},
+        owner,
+    )
+    assert issued.status_code == 200, issued.text
+    return payload, issued.json()
+
+
+def test_frame_ticket_streams_real_owner_bound_bytes_once_and_never_queues(
+    context, tmp_path,
+):
+    from pathlib import Path
+    import hashlib
+    import requests
+
+    from scripts.windows.fetch_frame_bundle import fetch_and_stage_frame_bundle
+
+    client, owner, device, objects = context
+    payload, issued = _issued_transfer(client, owner, objects)
+    assert issued["status"] == "FRAME_TRANSFER_TICKET_ISSUED_DATA_ONLY"
+    assert issued["can_queue"] is False
+    assert issued["gpu_authorized"] is False
+
+    class ResponseAdapter:
+        def __init__(self, response):
+            self.status_code = response.status_code
+            self.headers = response.headers
+            self.content = response.content
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def iter_content(self, chunk_size):
+            for offset in range(0, len(self.content), chunk_size):
+                yield self.content[offset:offset + chunk_size]
+
+    class SessionAdapter:
+        def get(self, url, *, headers, stream, timeout, allow_redirects):
+            # 下载器沿用旧设备令牌，但不持有 Owner Token。
+            assert url == "http://127.0.0.1:8765/api/v1/studio/frame-transfer/download"
+            assert stream is True and allow_redirects is False
+            response = client.get(
+                "/api/v1/studio/frame-transfer/download",
+                headers={**headers, "Authorization": f"Bearer {device}"},
+            )
+            return ResponseAdapter(response)
+
+    worker = tmp_path / "synthetic-windows-worker"
+    worker.mkdir()
+    (worker / "17_静态首帧板V2").mkdir()
+    receipt = fetch_and_stage_frame_bundle(
+        session=SessionAdapter(),
+        core_url="http://127.0.0.1:8765",
+        transfer_ticket=issued["ticket"],
+        expected_source_bindings_sha256=issued["source_bindings_sha256"],
+        expected_bundle_sha256=issued["bundle_sha256"],
+        worker_root=worker,
+    )
+    assert receipt["status"] == "WINDOWS_BYTES_VERIFIED_NO_PRODUCTION_AUTHORITY"
+    assert receipt["source_bindings_sha256"] == issued["source_bindings_sha256"]
+    assert receipt["gpu_authorized"] is False
+    assert receipt["can_queue"] is False
+    assert receipt["worker_local_bytes_verified"] is True
+    for item in receipt["bindings"]:
+        on_worker = worker / "17_静态首帧板V2" / item["worker_ref"]
+        assert hashlib.sha256(on_worker.read_bytes()).hexdigest() == item["managed_sha256"]
+
+    # Ticket 已在首次 GET 时消费，即使是同一个受信任设备也不允许重播。
+    replay = client.get(
+        "/api/v1/studio/frame-transfer/download",
+        headers={
+            "Authorization": f"Bearer {device}",
+            "X-Picotoo-Transfer-Ticket": issued["ticket"],
+        },
+    )
+    assert replay.status_code == 409
+    _assert_no_production(client)
+
+
+def test_frame_transfer_rejects_wrong_device_plaintext_remote_and_owner_revoke(context):
+    client, owner, device, objects = context
+    payload, issued = _issued_transfer(client, owner, objects)
+    path = "/api/v1/studio/frame-transfer/download"
+    headers = {"X-Picotoo-Transfer-Ticket": issued["ticket"]}
+
+    assert client.get(
+        path, headers={**headers, "Authorization": f"Bearer {owner}"}
+    ).status_code == 401
+    assert client.get(
+        path, headers={**headers, "Authorization": "Bearer incorrect"}
+    ).status_code == 401
+
+    # 伪造 X-Forwarded-Proto 的 HTTP 客户端不能越过 TLS 校验。
+    assert client.get(
+        path, headers={
+            **headers, "Authorization": f"Bearer {device}",
+            "X-Forwarded-Proto": "https",
+        },
+    ).status_code == 403
+    remote = TestClient(
+        client.app, base_url="http://core.example",
+        client=("192.0.2.20", 45678),
+    )
+    assert remote.get(
+        path, headers={**headers, "Authorization": f"Bearer {device}"}
+    ).status_code == 403
+
+    revoked = _call(
+        client, "/revoke",
+        {"subject_key": _SUBJECT, "review_id": payload["storyboard_review_id"]},
+        owner,
+    )
+    assert revoked.status_code == 200
+    assert client.get(
+        path, headers={**headers, "Authorization": f"Bearer {device}"}
+    ).status_code == 409
+    _assert_no_production(client)
+
+
+def test_frame_transfer_fails_closed_for_wrong_manifest_and_changed_managed_bytes(context):
+    client, owner, device, objects = context
+    payload, issued = _issued_transfer(client, owner, objects)
+    invalid = _call(
+        client, "/frame-transfer/issue",
+        {**payload, "expected_source_bindings_sha256": "e" * 64},
+        owner,
+    )
+    assert invalid.status_code == 409
+    digest = objects["maotai_master_v1"]
+    root = client.app.state.services.settings.paths.objects_dir
+    (root / digest[:2] / digest[2:]).write_bytes(b"tampered after ticket creation")
+    downloaded = client.get(
+        "/api/v1/studio/frame-transfer/download",
+        headers={
+            "Authorization": f"Bearer {device}",
+            "X-Picotoo-Transfer-Ticket": issued["ticket"],
+        },
+    )
+    assert downloaded.status_code == 409
+    _assert_no_production(client)
+
+
+def test_frame_transfer_cannot_issue_without_scoped_owner_principal(context):
+    client, owner, device, objects = context
+    payload = _create_reviewed_candidate(client, owner, objects)
+    payload["completion"]["shots"][0]["first_frame"]["refs"] = ["maotai_master_v1"]
+    payload["completion"]["shots"][1]["first_frame"]["refs"] = ["maotai_master_v1"]
+    report = _call(client, "/production-readiness", payload, owner)
+    expected = report.json()["frame_reference_preview"]["source_bindings_sha256"]
+    assert expected
+
+    assert _call(
+        client, "/frame-transfer/issue",
+        {**payload, "expected_source_bindings_sha256": expected},
+        device,
+    ).status_code == 403
+    assert _call(
+        client, "/frame-transfer/issue",
+        {**payload, "expected_source_bindings_sha256": expected},
+        "incorrect",
+    ).status_code in (401, 403)
+    _assert_no_production(client)
+
+
+
+def test_real_loopback_http_socket_download_and_windows_sha_staging(context, tmp_path):
+    """Use actual TCP HTTP and requests.Session, never a mocked HTTP response."""
+    import socket
+    import threading
+    import time
+
+    import requests
+    import uvicorn
+
+    from scripts.windows.fetch_frame_bundle import fetch_and_stage_frame_bundle
+
+    client, owner, device, objects = context
+    _, issued = _issued_transfer(client, owner, objects)
+
+    # 使用 TestClient 已启动的 Mac Core 服务对象；Uvicorn 不再重复创建 SQLite。
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    port = listener.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(
+        client.app, host="127.0.0.1", port=port,
+        lifespan="off", access_log=False, log_level="error",
+    ))
+    thread = threading.Thread(
+        target=lambda: server.run(sockets=[listener]),
+        daemon=True,
+    )
+    thread.start()
+    try:
+        deadline = time.monotonic() + 8
+        while not server.started and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert server.started, "local CPU-only HTTP server did not start"
+        worker = tmp_path / "windows-socket-stage"
+        worker.mkdir()
+        (worker / "17_静态首帧板V2").mkdir()
+        with requests.Session() as session:
+            # 真正的 TCP 请求仅使用设备 Bearer，不泄露或复制 Owner Token。
+            session.headers["Authorization"] = f"Bearer {device}"
+            receipt = fetch_and_stage_frame_bundle(
+                session=session,
+                core_url=f"http://127.0.0.1:{port}",
+                transfer_ticket=issued["ticket"],
+                expected_source_bindings_sha256=issued["source_bindings_sha256"],
+                expected_bundle_sha256=issued["bundle_sha256"],
+                worker_root=worker,
+            )
+        assert receipt["worker_local_bytes_verified"] is True
+        assert receipt["can_queue"] is False
+        assert receipt["gpu_authorized"] is False
+        # 只传输实际被 S01/S02 首帧引用的两种素材，而非整个资产库。
+        assert set(receipt["worker_ref_paths_by_digest"]) == {
+            objects["maotai_master_v1"], objects["backyard_v1"],
+        }
+        _assert_no_production(client)
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        listener.close()
+        assert not thread.is_alive(), "local test socket must close cleanly"
+
+
+
+@pytest.mark.parametrize("unsafe_url", [
+    "http://192.0.2.20:8765",
+    "http://core-on-lan.local:8765",
+    "http://[",
+    "https://operator:password@core.example",
+    "https://core.example/path/to/private",
+    "https://core.example/?token=secret",
+])
+def test_windows_frame_fetch_refuses_plaintext_or_ambiguous_remote_url(unsafe_url):
+    from scripts.windows.fetch_frame_bundle import (
+        FrameFetchError,
+        _secure_core_url,
+    )
+
+    with pytest.raises(FrameFetchError, match="FRAME_FETCH_SECURE_CORE_URL_REQUIRED"):
+        _secure_core_url(unsafe_url)
+    assert _secure_core_url("http://127.0.0.1:8765") == "http://127.0.0.1:8765"
+    assert _secure_core_url("https://core.example:8765") == "https://core.example:8765"
+
+
+
+def test_asset_use_revocation_also_invalidates_unredeemed_transfer(context):
+    client, owner, device, objects = context
+    payload, issued = _issued_transfer(client, owner, objects)
+    revoked = _call(
+        client, "/asset-use/revoke",
+        {"subject_key": _SUBJECT, "attestation_id": payload["attestation_id"]},
+        owner,
+    )
+    assert revoked.status_code == 200, revoked.text
+    response = client.get(
+        "/api/v1/studio/frame-transfer/download",
+        headers={
+            "Authorization": f"Bearer {device}",
+            "X-Picotoo-Transfer-Ticket": issued["ticket"],
+        },
+    )
+    assert response.status_code == 409
+    _assert_no_production(client)
+
+
+def test_windows_fetch_refuses_https_when_session_disables_certificate_check(tmp_path):
+    import requests
+
+    from scripts.windows.fetch_frame_bundle import (
+        FrameFetchError,
+        fetch_and_stage_frame_bundle,
+    )
+
+    session = requests.Session()
+    session.verify = False
+    try:
+        with pytest.raises(FrameFetchError, match="FRAME_FETCH_TLS_VERIFICATION_REQUIRED"):
+            fetch_and_stage_frame_bundle(
+                session=session, core_url="https://core.example",
+                transfer_ticket="a" * 32,
+                expected_source_bindings_sha256="b" * 64,
+                expected_bundle_sha256="c" * 64,
+                worker_root=tmp_path,
+            )
+    finally:
+        session.close()

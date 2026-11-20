@@ -12,6 +12,7 @@ from picotoopet_core.api.middleware import TraceTimingMiddleware
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.services import build_services
 from picotoopet_core.mobile.access import MobileAccess
+from picotoopet_core.domain.frame_transfer_tickets import FrameTransferTickets
 
 from .errors import install_error_handlers
 from .routes import (
@@ -19,6 +20,7 @@ from .routes import (
     episodes,
     events,
     executors,
+    frame_transfers,
     health,
     mobile,
     history_imports,
@@ -50,6 +52,7 @@ def create_app(settings: AppSettings) -> FastAPI:
             stop_event.set()
             await dispatcher_task
             services.close()
+            app.state.frame_transfer_tickets.close()
 
     app = FastAPI(
         title="Picotoo Pet Mac Core",
@@ -57,6 +60,8 @@ def create_app(settings: AppSettings) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.services = services
+    # 单进程短效传输凭据；重启即失效，不创建新数据库或服务。
+    app.state.frame_transfer_tickets = FrameTransferTickets()
     app.state.mobile_access = MobileAccess()        # 仅进程内，Core 重启需重新手机配对。
     app.add_middleware(TraceTimingMiddleware)
     install_error_handlers(app)
@@ -67,6 +72,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(executors.router, prefix=prefix, tags=["executors"])
     app.include_router(episodes.router, prefix=prefix, tags=["episodes"])
     app.include_router(studio.router, prefix=prefix, tags=["studio"])
+    app.include_router(frame_transfers.router, prefix=prefix, tags=["frame-transfer"])
     # 独立 Owner 凭据和本机来源认证，不能被设备 Bearer 替代。
     app.include_router(studio_owner_review.router, prefix=prefix, tags=["studio-owner-review"])
     app.include_router(mobile.router, tags=["mobile"])
