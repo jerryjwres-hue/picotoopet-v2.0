@@ -44,4 +44,5 @@ def load_settings() -> AppSettings:
         ollama_model=os.getenv("PICOTOO_OLLAMA_MODEL", "gpt-oss:20b"),
         resident_check_seconds=int(os.getenv("PICOTOO_RESIDENT_CHECK_SECONDS", "60")),
         protected_roots=protected,
+        mobile_studio_enabled=os.getenv("PICOTOO_MOBILE_STUDIO_ENABLED", "0") == "1",
     )
