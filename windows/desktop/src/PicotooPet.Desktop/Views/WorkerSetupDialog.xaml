@@ -1,0 +1,32 @@
+<Window x:Class="PicotooPet.Desktop.Views.WorkerSetupDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="本地 Worker 一次性配对" Width="500" Height="360"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        FontFamily="Microsoft YaHei UI" Background="#FAFBFC">
+  <DockPanel Margin="20">
+    <StackPanel DockPanel.Dock="Top">
+      <TextBlock Text="绑定现有 GPU Worker" FontSize="19" FontWeight="SemiBold"
+                 Foreground="#192536" />
+      <TextBlock Margin="0,7,0,14" TextWrapping="Wrap" Foreground="#536174"
+                 Text="只需首次填写 Worker ID 和与 Mac Core 相同的独立密钥。密钥保存在 Windows Credential Manager；不会写入项目文件或日志。"/>
+      <TextBlock Text="Worker ID（与 Mac Core 配置一致）" FontWeight="SemiBold"/>
+      <TextBox x:Name="WorkerIdBox" Height="32" Margin="0,5,0,12"
+               MaxLength="100" VerticalContentAlignment="Center"/>
+      <TextBlock Text="独立 Worker 配对密钥（留空则沿用已保存的密钥）" FontWeight="SemiBold"/>
+      <PasswordBox x:Name="WorkerSecretBox" Height="32" Margin="0,5,0,12"
+                   MaxLength="256" VerticalContentAlignment="Center"/>
+      <CheckBox x:Name="AutoStartCheck" IsChecked="True" Margin="0,2,0,12"
+                Content="以后打开 Studio 时自动启动已有 Worker"/>
+      <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#805B23"
+                 Text="这不会批准任何 GPU 任务。Mac Core 必须已启用 HTTPS；Owner 和独立 MASTER 审核仍由 Mac 端控制。"/>
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                HorizontalAlignment="Right" Margin="0,16,0,0">
+      <Button Content="取消" Width="90" Height="34" Margin="0,0,9,0"
+              IsCancel="True"/>
+      <Button Content="保存并启动 Worker" Width="162" Height="34"
+              IsDefault="True" Click="Confirm"/>
+    </StackPanel>
+  </DockPanel>
+</Window>
