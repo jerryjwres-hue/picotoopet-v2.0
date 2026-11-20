@@ -226,7 +226,7 @@ def test_real_studio_preview_subject_never_issues_approval_or_queue(api):
     db = api.app.state.services.database
     assert db.scalar("SELECT COUNT(*) FROM tasks") == 0
     assert db.scalar("SELECT COUNT(*) FROM approvals") == 0
-    assert db.scalar("SELECT COUNT(*) FROM episodes") == 0
+    assert db.scalar("SELECT COUNT(*) FROM production_episodes") == 0
 
 
 def test_studio_preview_missing_asset_blocks_subject(api):
