@@ -52,6 +52,7 @@ def load_settings() -> AppSettings:
         resident_check_seconds=int(os.getenv("PICOTOO_RESIDENT_CHECK_SECONDS", "60")),
         protected_roots=protected,
         mobile_studio_enabled=os.getenv("PICOTOO_MOBILE_STUDIO_ENABLED", "0") == "1",
+        scoped_gpu_admission_enabled=os.getenv("PICOTOO_SCOPED_GPU_ADMISSION", "0") == "1",
         episode_max_takes_per_shot=int(os.getenv("PICOTOO_EPISODE_MAX_TAKES_PER_SHOT", "8")),
         episode_max_takes_per_episode=int(os.getenv("PICOTOO_EPISODE_MAX_TAKES_PER_EPISODE", "48")),
         episode_max_reserved_video_seconds=float(

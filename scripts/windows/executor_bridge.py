@@ -120,15 +120,57 @@ class Bridge:
         )
 
     def _lease(self, resume_task_id=None):
+        body = {
+            "worker_id": self.config.worker_id,
+            "resource_tags": list(self.config.resource_tags),
+            "lease_seconds": self.config.lease_seconds,
+            "resume_task_id": resume_task_id,
+        }
+        signing_key = os.environ.get("PICOTOO_WORKER_ATTEST_KEY", "")
+        signed_headers = {}
+        if signing_key and re.fullmatch(r"[A-Za-z0-9_-]{43,256}", signing_key):
+            challenge = self._request(
+                "POST", "/studio/production-admission/lease-challenge", json=body,
+            )
+            if challenge.status_code == 200:
+                offered = challenge.json()
+                if (offered.get("contract") != "picotoo.scoped-worker-lease.v1"
+                        or offered.get("worker_id") != body["worker_id"]
+                        or offered.get("lease_seconds") != body["lease_seconds"]
+                        or offered.get("resume_task_id") != resume_task_id
+                        or sorted(offered.get("resource_tags", []))
+                        != sorted(body["resource_tags"])
+                        or not re.fullmatch(
+                            r"[0-9a-f]{64}", str(offered.get("frozen_plan_sha256", ""))
+                        )
+                        or not IDENTIFIER.fullmatch(str(offered.get("task_id", "")))
+                        or not IDENTIFIER.fullmatch(str(offered.get("episode_id", "")))):
+                    raise JobError("Core GPU 准入挑战与本机 Worker 不一致。")
+                keys = (
+                    "contract", "nonce", "worker_id", "episode_id", "task_id",
+                    "frozen_plan_sha256", "resource_tags", "lease_seconds",
+                    "resume_task_id",
+                )
+                message = {k: offered[k] for k in keys}
+                sha = hashlib.sha256(json.dumps(
+                    message, ensure_ascii=False, sort_keys=True,
+                    separators=(",", ":"), allow_nan=False,
+                ).encode("utf-8")).hexdigest()
+                signed_headers = {
+                    "X-Picotoo-Admission-Nonce": offered["nonce"],
+                    "X-Picotoo-Admission-HMAC": hmac.new(
+                        signing_key.encode("ascii"), sha.encode("ascii"),
+                        hashlib.sha256,
+                    ).hexdigest(),
+                }
+            elif challenge.status_code != 204:
+                # Proof challenge failed: never fall back to unsigned GPU lease.
+                raise JobError("Core 受控 GPU 租约预检不可用。")
+        # Owner HOLD requires a one-use signed nonce; old unconfigured Core still
+        # preserves its legacy behavior. No new local GPU job is written here.
         response = self._request(
-            "POST",
-            "/executors/lease",
-            json={
-                "worker_id": self.config.worker_id,
-                "resource_tags": list(self.config.resource_tags),
-                "lease_seconds": self.config.lease_seconds,
-                "resume_task_id": resume_task_id,
-            },
+            "POST", "/executors/lease", json=body,
+            **({"headers": signed_headers} if signed_headers else {}),
         )
         if response.status_code == 204:
             return None
@@ -250,8 +292,8 @@ class Bridge:
     def _owner(self, state):
         return {"worker_id": self.config.worker_id, "attempt_count": state["task"]["attempt_count"]}
 
-    def _heartbeat(self, state, progress=0.5):
-        if time.monotonic() < self.next_heartbeat:
+    def _heartbeat(self, state, progress=0.5, *, force=False):
+        if not force and time.monotonic() < self.next_heartbeat:
             return True
         response = self._request(
             "POST",
@@ -683,6 +725,11 @@ class Bridge:
             atomic_json(self.board / jobs_name, self._jobs(state))
             if state.get("foley_sources"):
                 atomic_json(self.journal, state)
+            # 在本地 inbox 真正落盘之前强制刷新 Core 证据和撤销状态。
+            # 未经授权/旧 Journal 被禁用时，禁止生成任何新的 GPU 文件任务。
+            if os.environ.get("PICOTOO_WORKER_ATTEST_KEY"):
+                if not self._heartbeat(state, progress=0.01, force=True):
+                    return None
             atomic_json(
                 self.queue / "inbox" / filename,
                 {

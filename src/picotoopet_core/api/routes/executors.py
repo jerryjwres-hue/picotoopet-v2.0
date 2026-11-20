@@ -2,13 +2,17 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, Request, Response, UploadFile
 
 from picotoopet_core.api.thumbnails import validate_thumbnail
 from picotoopet_core.api.production_admission_hold import (
     storypack_owner_hold,
 )
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.api.routes.frame_transfers import _require_secure_delivery_peer
+from picotoopet_core.domain.storypack_gpu_admission import AdmissionError, ScopedProductionAdmission
+from picotoopet_core.domain.storypack_master_evidence import MasterEvidenceError
+from picotoopet_core.domain.storypack_worker_local_proof import WorkerProofError
 from picotoopet_core.domain.executor import (
     GPU_TAG,
     TASK_RUNNERS,
@@ -34,8 +38,29 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 @router.post(
     "/executors/lease", response_model=TaskRecord, responses={204: {"description": "无任务"}}
 )
-def lease(body: ExecutorLease, request: Request) -> TaskRecord | Response:
+def lease(
+    body: ExecutorLease,
+    request: Request,
+    admission_nonce: str | None = Header(default=None, alias="X-Picotoo-Admission-Nonce"),
+    admission_hmac: str | None = Header(default=None, alias="X-Picotoo-Admission-HMAC"),
+) -> TaskRecord | Response:
     if storypack_owner_hold(request):
+        if request.app.state.services.settings.scoped_gpu_admission_enabled:
+            _require_secure_delivery_peer(request)
+            if admission_nonce and admission_hmac:
+                try:
+                    # Existing Task/ExecutorService lease tables; one signed exact task only.
+                    return request.app.state.lease_challenges.consume(
+                        body, admission_nonce, admission_hmac, request.state.trace_id,
+                    )
+                except (AdmissionError, MasterEvidenceError, WorkerProofError,
+                        ValueError, KeyError) as error:
+                    raise ApiError(
+                        status_code=409,
+                        code=getattr(error, "code", "ADMISSION_RECHECK_FAILED"),
+                        message="指定任务租约与当前 Owner/MASTER/Worker 证据不一致。",
+                        retryable=False,
+                    ) from error
         # RUNNING + 同 Worker 仅证明 Core 已发租约，不证明 Windows 已 POST GPU。
         # Owner HOLD 时任何旧 resume 都不能把完整可执行 payload 再发给 Worker。
         # 已提交的 Report 仍可由独立的 complete/fail 入口按原租约验证。
@@ -48,6 +73,15 @@ def lease(body: ExecutorLease, request: Request) -> TaskRecord | Response:
 @router.post("/tasks/{task_id}/heartbeat", responses={409: {"description": "租约不匹配"}})
 def heartbeat(task_id: str, body: ExecutorHeartbeat, request: Request) -> TaskRecord:
     if storypack_owner_hold(request):
+        if request.app.state.services.settings.scoped_gpu_admission_enabled:
+            _require_secure_delivery_peer(request)
+            # 撤销与有效租约必须在 GPU 提交前重新确认，拒绝局域网明文。
+            if ScopedProductionAdmission(
+                request.app.state.services
+            ).heartbeat_allowed(task_id, body.worker_id, body.attempt_count):
+                return request.app.state.services.executor.heartbeat(
+                    task_id, body, request.state.trace_id,
+                )
         row = request.app.state.services.database.fetchone(
             "SELECT task_type, resource_tag FROM tasks WHERE task_id = ?",
             (task_id,),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import json
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -89,7 +90,7 @@ def context(tmp_path):
             actor_id="owner-operator",
             token_sha256=owner_token_fingerprint(owner),
             subject_keys=(_SUBJECT,),
-            permissions=("storypack.review", "asset_use.attest"),
+            permissions=("storypack.review", "asset_use.attest", "production.admit"),
             registry_revision=1, enabled=True,
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         ),
@@ -108,6 +109,7 @@ def context(tmp_path):
         # 仅合成测试启用第二组 Worker HMAC 凭据；实际默认关闭。
         worker_attestation_id="win-worker-test",
         worker_attestation_key="w" * 48,
+        scoped_gpu_admission_enabled=True,  # CPU-only synth lease: no Comfy/GPU.
     ))
     with TestClient(app, client=("127.0.0.1", 59100)) as client:
         # 测试使用独立 Reviewer 凭据，不赋予原 Owner MASTER 权限。
@@ -1299,3 +1301,258 @@ def test_worker_hmac_key_actually_loads_and_is_redacted(monkeypatch, tmp_path):
     monkeypatch.delenv("PICOTOO_WORKER_ATTEST_KEY")
     settings = load_settings()
     assert settings.worker_attestation_key is None
+
+
+def _prepare_scoped_gpu_admission(context):
+    """Full synthetic Owner -> MASTER -> stage -> Worker HMAC -> held task proof."""
+    client, owner, device, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    frozen = _call(client, "/production-freeze", source, owner)
+    assert frozen.status_code == 200, frozen.text
+    held = frozen.json()
+    staged = _staged_core_report(client, owner, source)
+    assert _post_staged_core(client, staged, device).status_code == 200
+
+    master = client.app.state.synthetic_master_token
+    master_claim = _master_review_payload(held, source["claims"])
+    reviewed = _master_call(client, "commit", master_claim, master)
+    assert reviewed.status_code == 200, reviewed.text
+
+    claimed = _worker_proof_post(client, "claim", {"worker_id": "win-worker-test"}, device)
+    assert claimed.status_code == 200, claimed.text
+    signed = _signed_worker_proof(claimed.json())
+    proof = _worker_proof_post(client, "submit", signed, device)
+    assert proof.status_code == 200, proof.text
+    return held, reviewed.json()["master_review_id"]
+
+
+def _owner_admit(client, owner, held, master_review_id):
+    return client.post(
+        "/api/v1/studio/storypacks/production-admission/commit",
+        json={
+            "episode_id": held["episode_id"],
+            "frozen_plan_sha256": held["frozen_plan_sha256"],
+            "master_review_id": master_review_id,
+            "confirm_one_frozen_episode_gpu_admission": True,
+        },
+        headers={"Authorization": f"Bearer {owner}"},
+    )
+
+
+def _signed_scoped_lease(challenge, secret="w" * 48):
+    """Build exactly the same one-use Worker lease signature as executor_bridge."""
+    import hashlib
+    import hmac
+    import json
+    fields = (
+        "contract", "nonce", "worker_id", "episode_id", "task_id",
+        "frozen_plan_sha256", "resource_tags", "lease_seconds", "resume_task_id",
+    )
+    content = {key: challenge[key] for key in fields}
+    serialized = json.dumps(
+        content, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    return hmac.new(
+        secret.encode("ascii"),
+        hashlib.sha256(serialized).hexdigest().encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _scoped_lease_offer(client, device, *, resume=None):
+    body = {
+        "worker_id": "win-worker-test",
+        "resource_tags": ["gpu-5070ti"],
+        "lease_seconds": 90,
+        "resume_task_id": resume,
+    }
+    offer = client.post(
+        "/api/v1/studio/production-admission/lease-challenge", json=body,
+        headers={"Authorization": f"Bearer {device}"},
+    )
+    return body, offer
+
+
+def _scoped_lease_claim(client, device, body, offer, *, secret="w" * 48):
+    return client.post(
+        "/api/v1/executors/lease", json=body,
+        headers={
+            "Authorization": f"Bearer {device}",
+            "X-Picotoo-Admission-Nonce": offer["nonce"],
+            "X-Picotoo-Admission-HMAC": _signed_scoped_lease(offer, secret),
+        },
+    )
+
+
+def test_exact_scoped_lease_requires_live_owner_master_worker_and_signed_task(context):
+    client, owner, device, _ = context
+    held, master_id = _prepare_scoped_gpu_admission(context)
+    ordinary = client.post(
+        "/api/v1/executors/lease",
+        json={"worker_id": "win-worker-test", "resource_tags": ["gpu-5070ti"],
+              "lease_seconds": 90},
+        headers={"Authorization": f"Bearer {device}"},
+    )
+    assert ordinary.status_code == 204
+    admitted = _owner_admit(client, owner, held, master_id)
+    assert admitted.status_code == 200, admitted.text
+    admission = admitted.json()
+    assert admission["gpu_authorized_for_exact_episode"] is True
+    assert admission["local_gpu_submitted"] is False
+
+    body, offered = _scoped_lease_offer(client, device)
+    assert offered.status_code == 200, offered.text
+    chosen = offered.json()
+    assert chosen["episode_id"] == held["episode_id"]
+    assert chosen["frozen_plan_sha256"] == held["frozen_plan_sha256"]
+    assert chosen["task_id"] == held["tasks"][0]["task_id"]
+
+    wrong = _scoped_lease_claim(client, device, body, chosen, secret="z" * 48)
+    assert wrong.status_code == 409
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM tasks WHERE status='Running'"
+    ) == 0
+    # Replay after a failed HMAC is invalid: challenge is one-use.
+    assert _scoped_lease_claim(client, device, body, chosen).status_code == 409
+    body, offered = _scoped_lease_offer(client, device)
+    assert offered.status_code == 200
+    lease = _scoped_lease_claim(client, device, body, offered.json())
+    assert lease.status_code == 200, lease.text
+    task = lease.json()
+    assert task["task_id"] == chosen["task_id"]
+    assert task["status"] == "Running"
+    assert task["attempt_count"] == 1
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.scoped_gpu_lease_granted'"
+    ) == 1
+
+    # Existing lease owner can heartbeat. No other queue is silently admitted.
+    alive = client.post(
+        f"/api/v1/tasks/{task['task_id']}/heartbeat",
+        json={"worker_id": "win-worker-test", "attempt_count": 1,
+              "progress": 0.02, "message": "signed Worker CPU-only test"},
+        headers={"Authorization": f"Bearer {device}"},
+    )
+    assert alive.status_code == 200, alive.text
+
+    revoked = client.post(
+        "/api/v1/studio/storypacks/production-admission/revoke",
+        json={"episode_id": held["episode_id"],
+              "admission_id": admission["admission_id"]},
+        headers={"Authorization": f"Bearer {owner}"},
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert _scoped_lease_offer(client, device)[1].status_code == 204
+    assert client.post(
+        f"/api/v1/tasks/{task['task_id']}/heartbeat",
+        json={"worker_id": "win-worker-test", "attempt_count": 1,
+              "progress": 0.03, "message": "revoked"},
+        headers={"Authorization": f"Bearer {device}"},
+    ).status_code == 409
+    assert _owner_admit(client, owner, held, master_id).status_code == 409
+
+
+def test_scoped_admission_denies_missing_master_and_bad_actor(context):
+    client, owner, device, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    frozen = _call(client, "/production-freeze", source, owner)
+    assert frozen.status_code == 200
+    held = frozen.json()
+    missing_master = _owner_admit(client, owner, held, "missing-master-id")
+    assert missing_master.status_code == 409
+    assert _owner_admit(client, device, held, "missing-master-id").status_code in (401, 403)
+    assert _scoped_lease_offer(client, device)[1].status_code == 204
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.scoped_gpu_admission'"
+    ) == 0
+
+
+def test_scoped_lease_rejects_old_resume_and_cross_episode(context):
+    client, owner, device, _ = context
+    held, master_id = _prepare_scoped_gpu_admission(context)
+    admitted = _owner_admit(client, owner, held, master_id)
+    assert admitted.status_code == 200, admitted.text
+    assert _scoped_lease_offer(client, device, resume="legacy-task")[1].status_code == 204
+    body, offer = _scoped_lease_offer(client, device)
+    assert offer.status_code == 200
+    changed_body = {**body, "resume_task_id": "legacy-task"}
+    assert _scoped_lease_claim(
+        client, device, changed_body, offer.json(),
+    ).status_code == 409
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM tasks WHERE status='Running'"
+    ) == 0
+
+
+def test_protected_owner_mode_stays_closed_without_explicit_runtime_enable(context):
+    client, owner, device, _ = context
+    held, master_id = _prepare_scoped_gpu_admission(context)
+    # Running a prebuilt release without the explicit opt-in remains GPU-HOLD.
+    from picotoopet_core.config.models import AppSettings
+    services = client.app.state.services
+    original = services.settings
+    services.settings = original.model_copy(update={"scoped_gpu_admission_enabled": False})
+    try:
+        assert _owner_admit(client, owner, held, master_id).status_code == 409
+        assert _scoped_lease_offer(client, device)[1].status_code == 204
+        assert client.post(
+            "/api/v1/executors/lease",
+            json={"worker_id": "win-worker-test", "resource_tags": ["gpu-5070ti"],
+                  "lease_seconds": 90},
+            headers={"Authorization": f"Bearer {device}"},
+        ).status_code == 204
+    finally:
+        services.settings = original
+
+
+def test_scoped_admission_rederives_video_prompt_and_seed_from_frozen_episode(context):
+    client, owner, device, _ = context
+    held, master_id = _prepare_scoped_gpu_admission(context)
+    svc = client.app.state.services
+    # 攻击者只能改动 SQLite 旧任务内容，不能修改 Owner 原始冻结 Episode。
+    with svc.database.transaction() as db:
+        row = db.execute(
+            "SELECT task_id, payload_json FROM tasks WHERE task_type='gen.video' "
+            "AND json_extract(payload_json,'$.episode_id')=? ORDER BY rowid LIMIT 1",
+            (held["episode_id"],),
+        ).fetchone()
+        altered = json.loads(row["payload_json"])
+        altered["jobs"]["jobs"][0]["prompt"] = "unreviewed arbitrary replacement"
+        db.execute(
+            "UPDATE tasks SET payload_json=? WHERE task_id=?",
+            (json.dumps(altered), row["task_id"]),
+        )
+    # 仅比较首帧 SHA 并不足够，必须验证视频 prompt/seed 也和冻结 Episode 一致。
+    rejected = _owner_admit(client, owner, held, master_id)
+    assert rejected.status_code == 409, rejected.text
+    assert _scoped_lease_offer(client, device)[1].status_code == 204
+    assert svc.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.scoped_gpu_admission'"
+    ) == 0
+
+
+def test_scoped_gpu_lease_rejects_pre_admission_running_legacy_journal(context):
+    client, owner, device, _ = context
+    held, master_id = _prepare_scoped_gpu_admission(context)
+    admitted = _owner_admit(client, owner, held, master_id)
+    assert admitted.status_code == 200, admitted.text
+    target_id = held["tasks"][0]["task_id"]
+
+    # Legacy Worker 旧 Journal 即使属于同一 Episode，仍没有当前 HMAC 授权租约审计。
+    with client.app.state.services.database.transaction() as db:
+        db.execute(
+            "UPDATE tasks SET status='Running', lease_owner=?, attempt_count=1, "
+            "lease_expires_at=? WHERE task_id=?",
+            ("win-worker-test", (datetime.now(UTC) + timedelta(hours=1)).isoformat(), target_id),
+        )
+        db.execute(
+            "INSERT INTO executor_leases(task_id, lease_seconds) VALUES (?,?)",
+            (target_id, 90),
+        )
+    body, offer = _scoped_lease_offer(client, device, resume=target_id)
+    assert offer.status_code == 204
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events "
+        "WHERE action='episode.scoped_gpu_lease_granted'"
+    ) == 0
