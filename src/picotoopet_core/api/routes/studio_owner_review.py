@@ -12,7 +12,10 @@ from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.storypack import StoryPackV1, _unique_json_pairs
 from picotoopet_core.domain.episode import Episode
 from picotoopet_core.domain.storypack_frame_sources import inspect_frame_sources
-from picotoopet_core.domain.storypack_frame_bundle import export_frame_bundle
+from picotoopet_core.domain.storypack_frame_bundle import (
+    FrameBundleError,
+    export_frame_bundle,
+)
 from picotoopet_core.domain.frame_transfer_tickets import FrameTransferError
 from starlette.concurrency import run_in_threadpool
 from picotoopet_core.domain.storypack_episode_candidate import (
