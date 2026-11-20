@@ -6,10 +6,14 @@ PicotooPet｜Windows 安装（Phase 2 内部预编译版）
    安装器会校验 SHA-256、安装、创建桌面入口并自动启动 Studio。
    正常成功不再弹出 JSON 报告，无需打开 PowerShell、安装 .NET SDK 或编译源码。
 3. 在 Studio 中填入 Mac 地址和设备令牌，保存连接；仅首次配对需要。
-   Mac 令牌保存在该用户的系统 Keychain，不放进本 ZIP 或安装日志。
+   Windows 设备令牌保存在 Credential Manager，不放进本 ZIP 或安装日志。
 
 以后：
-- Windows 打开“Picotoo Pet AI”即可使用；Mac Core 有后台 LaunchAgent。
+- Windows 打开“Picotoo Pet AI”即可进入 Studio；Mac Core 有后台 LaunchAgent。
+- 安装包已包括真正的 Windows GPU Bridge 运行时及 QC/剪辑/批次审片组件。
+  Windows Studio 的本地批次导入不再要求额外安装 Python 3.11 或 py 启动器。
+- Worker 不会在安装时自动启动；还需首次安全配置 Worker、受控授权与现有 ComfyUI/模型。
+  安装包自检只验证本地代码和文件 SHA，不等于视频生产或视觉良品率验收。
 - 要检查连通性：可选双击 VERIFY_PHASE2_WINDOWS.vbs。
 - 要回退版本：双击 ROLLBACK_PHASE2_WINDOWS.vbs。
 - 安装失败才会自动打开诊断 JSON；报告也保留在
