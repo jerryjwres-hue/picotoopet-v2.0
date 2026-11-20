@@ -72,6 +72,19 @@ if ! security find-generic-password -a "$USER" -s "PicotooPetV2.API" >/dev/null 
   unset TOKEN
 fi
 
+# Worker 独立 HMAC 只保存在当前用户 Keychain；升级保留原值，不写入安装日志。
+# 这里不会开启 GPU 准入、Owner 审核或授权任何视频任务。
+WORKER_SERVICE="PicotooPetV3.WorkerAttestation"
+if ! security find-generic-password -a "$USER" -s "$WORKER_SERVICE" >/dev/null 2>&1; then
+  WORKER_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\\n')"
+  if [ "${#WORKER_KEY}" -ne 43 ]; then
+    echo "Worker 配对密钥生成失败，安装已停止。" >&2
+    exit 1
+  fi
+  security add-generic-password -a "$USER" -s "$WORKER_SERVICE" -w "$WORKER_KEY" >/dev/null
+  unset WORKER_KEY
+fi
+
 ln -sfn "$TARGET" "$CURRENT.next"
 mv -h "$CURRENT.next" "$CURRENT"
 
