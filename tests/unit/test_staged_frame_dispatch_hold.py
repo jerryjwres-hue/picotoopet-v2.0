@@ -71,6 +71,20 @@ def test_staged_frame_wrong_name_is_not_trusted(tmp_path):
     assert not list((bridge.queue / "inbox").iterdir())
 
 
+def test_nested_path_inside_staged_reference_dir_cannot_bypass_hash(tmp_path):
+    bridge, image, _, state = _staged(tmp_path)
+    nested = image.parent / "untrusted-subfolder"
+    nested.mkdir()
+    nested_file = nested / "unverified.png"
+    nested_file.write_bytes(PNG)
+    state["task"]["payload"]["jobs"]["jobs"][0]["refs"] = [
+        f"../_queue/executor_bridge/staged_references/{nested.name}/{nested_file.name}"
+    ]
+    with pytest.raises(JobError, match="符号链接|SHA-256"):
+        bridge._jobs(state)
+    assert not list((bridge.queue / "inbox").glob("*.json"))
+
+
 def test_staged_frame_symlink_never_used_for_gpu(tmp_path):
     bridge, image, ref, state = _staged(tmp_path)
     other = bridge.root / "outside.png"
