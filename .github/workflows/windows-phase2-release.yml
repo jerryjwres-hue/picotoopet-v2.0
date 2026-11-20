@@ -24,7 +24,7 @@ jobs:
   windows-release:
     name: Native Windows build and release gate
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       CI: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -40,11 +40,24 @@ jobs:
         with:
           global-json-file: windows/desktop/global.json
 
+      - name: Set up native Windows Python for Worker build only
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install frozen Worker build dependencies
+        shell: powershell
+        run: |
+          # 构建机依赖与最终用户依赖分离；发布包必须自带 Python DLL。
+          python -m pip install --disable-pip-version-check "pyinstaller>=6.10,<7" "scipy>=1.12,<2" -r scripts/windows/requirements-executor.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Show Windows and .NET environment
         shell: powershell
         run: |
           [Environment]::OSVersion.VersionString
           dotnet --info
+          python --version
           $PSVersionTable.PSVersion
 
       - name: Build, analyze, publish and self-test

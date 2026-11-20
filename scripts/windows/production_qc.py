@@ -52,7 +52,11 @@ def check_candidates(bridge, state, candidates):
             folder / name for name in ("spec.json", "report.json", "report.jpg")
         )
         spec_path.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
-        tool = Path(__file__).resolve().parents[2] / "tools/qc"
+        tool = (
+            Path(sys.executable).resolve().parent
+            if getattr(sys, "frozen", False)
+            else Path(__file__).resolve().parents[2] / "tools/qc"
+        )
         with TemporaryDirectory(dir=folder) as temp:
             fresh = Path(temp) / "report.json"
             jpg = fresh.with_suffix(".jpg")
@@ -60,10 +64,9 @@ def check_candidates(bridge, state, candidates):
                 state,
                 [
                     sys.executable,
-                    "-X",
-                    "utf8",
-                    "-m",
-                    "qc",
+                    *(["--internal-qc"] if getattr(sys, "frozen", False) else [
+                        "-X", "utf8", "-m", "qc"
+                    ]),
                     "check",
                     "--spec",
                     str(spec_path),

@@ -250,6 +250,58 @@ Invoke-NativeCommand -FilePath $appExecutable -Arguments @(
     "--self-test", "--self-test-output", $selfTestPath
 ) -TimeoutSeconds 60 | Out-Null
 Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--self-test") -TimeoutSeconds 30 | Out-Null
+
+# 构建同一个已有 Python Bridge 的独立运行时，而非创建第二套视频执行器。
+# 一起收录 QC/编辑/批次导入，最终 Windows 用户不再需要 py.exe。
+$python              = (Get-Command "python.exe" -ErrorAction Stop).Source
+$workerDistRoot      = Join-Path $workRoot "worker-dist"
+$workerBuildRoot     = Join-Path $workRoot "worker-build"
+$workerSpecRoot      = Join-Path $workRoot "worker-spec"
+$workerSource        = Join-Path $repoRoot "scripts\windows\executor_bridge.py"
+$workerScriptRoot    = Join-Path $repoRoot "scripts\windows"
+$workerQcRoot        = Join-Path $repoRoot "tools\qc"
+$workerEditRoot      = Join-Path $repoRoot "tools\edit"
+$workerTemplate      = Join-Path $workerScriptRoot "review_board.html"
+$workerDestParent    = Join-Path $payloadRoot "tools\worker"
+$workerDest          = Join-Path $workerDestParent "PicotooPet.Worker"
+New-Item -ItemType Directory -Path $workerDestParent, $workerDistRoot, $workerBuildRoot, $workerSpecRoot -Force | Out-Null
+Invoke-NativeCommand -FilePath $python -Arguments @(
+    "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--console",
+    "--log-level", "WARN", "--name", "PicotooPet.Worker",
+    "--distpath", $workerDistRoot,
+    "--workpath", $workerBuildRoot,
+    "--specpath", $workerSpecRoot,
+    "--paths", $workerScriptRoot, "--paths", $workerQcRoot, "--paths", $workerEditRoot,
+    "--collect-submodules", "qc", "--collect-submodules", "edit",
+    "--hidden-import", "import_video_candidates",
+    "--hidden-import", "review_board",
+    "--add-data", "$workerTemplate;.",
+    $workerSource
+) -TimeoutSeconds 1800 | Out-Null
+$workerBuilt = Join-Path $workerDistRoot "PicotooPet.Worker"
+if (-not (Test-Path -LiteralPath (Join-Path $workerBuilt "PicotooPet.Worker.exe"))) {
+    throw "GPU Bridge 没有编译出真实独立 Worker EXE。"
+}
+Copy-Item -LiteralPath $workerBuilt -Destination $workerDest -Recurse -Force
+$workerExecutable = Join-Path $workerDest "PicotooPet.Worker.exe"
+$workerReport = Invoke-NativeCommand -FilePath $workerExecutable -Arguments @(
+    "--package-self-test"
+) -TimeoutSeconds 120
+$workerCheck = $workerReport.StdOut.Trim() | ConvertFrom-Json
+if (
+    $workerCheck.contract -ne "picotoo.worker-bundled-runtime.v1" -or
+    $workerCheck.packaged -ne $true -or
+    $workerCheck.qc_importable -ne $true -or
+    $workerCheck.edit_importable -ne $true -or
+    $workerCheck.review_importable -ne $true -or
+    $workerCheck.review_template_present -ne $true -or
+    $workerCheck.lease_attempted -ne $false -or
+    $workerCheck.gpu_started -ne $false
+) {
+    throw "打包 Worker 的真实 CPU 自检未通过，拒绝生成预构建发布清单。"
+}
+Write-Host "BUNDLED_EXISTING_WORKER=PASS_NO_GPU"
+
 if (-not (Test-Path -LiteralPath $selfTestPath)) { throw "桌面自检没有生成报告。" }
 $selfTest = Get-Content -LiteralPath $selfTestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ([string]$selfTest.status -ne "pass") { throw "桌面自检报告不是 pass。" }

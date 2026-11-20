@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -23,14 +22,44 @@ public static class LocalVideoBatch
         {
             throw new InvalidOperationException("请选择项目 _queue\\done 下的 .result.json 完成回执。");
         }
-        var script = Path.Combine(AppContext.BaseDirectory, "ReviewTools", "import_video_candidates.py");
-        var start = new ProcessStartInfo("py")
+        // 正式 Release 永远使用经安装清单 SHA 验证的内置 Worker；不依赖系统 py.exe。
+        // 仅开发 DEBUG 构建允许测试脚本直跑，避免 WPF 冒烟测试伪造已打包成果。
+        var worker = Path.Combine(
+            AppContext.BaseDirectory, "tools", "worker",
+            "PicotooPet.Worker", "PicotooPet.Worker.exe");
+        ProcessStartInfo start;
+        if (File.Exists(worker))
         {
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
-            RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        foreach (var arg in new[] { "-3", "-X", "utf8", "-B", script, "--project-root", project.FullName,
+            start = new ProcessStartInfo(worker);
+            start.ArgumentList.Add("--internal-import");
+        }
+        else
+        {
+#if DEBUG
+            // 开发测试：该分支不可能进入经签名/清单校验的 Release 安装包。
+            var script = Path.Combine(
+                AppContext.BaseDirectory, "ReviewTools", "import_video_candidates.py");
+            if (!File.Exists(script))
+            {
+                throw new InvalidOperationException("测试工程缺少本地批次导入脚本。");
+            }
+            start = new ProcessStartInfo("py");
+            foreach (var arg in new[] { "-3", "-X", "utf8", "-B", script })
+            {
+                start.ArgumentList.Add(arg);
+            }
+#else
+            throw new InvalidOperationException(
+                "正式安装包缺少经校验的 Worker；请运行安装验证或回滚。");
+#endif
+        }
+        start.UseShellExecute = false;
+        start.CreateNoWindow = true;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        start.StandardOutputEncoding = Encoding.UTF8;
+        start.StandardErrorEncoding = Encoding.UTF8;
+        foreach (var arg in new[] { "--project-root", project.FullName,
             "--receipt", options.Receipt }) start.ArgumentList.Add(arg);
         void Option(string name, string? value)
         {
@@ -60,9 +89,9 @@ public static class LocalVideoBatch
         }
         using var process = new Process { StartInfo = start };
         try { process.Start(); }
-        catch (Win32Exception ex)
+        catch (System.ComponentModel.Win32Exception ex)
         {
-            throw new InvalidOperationException("无法启动 Python。请安装 Python 3.11 或更高版本及 Windows py 启动器。", ex);
+            throw new InvalidOperationException("无法启动安装包内的视频 Worker，请运行安装验证。", ex);
         }
         try
         {

@@ -114,6 +114,26 @@ try {
     $selfTest = Get-Content -LiteralPath $selfTestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ([string]$selfTest.status -ne "pass") { throw "桌面自检报告不是 pass。" }
 
+    # 真实 Windows 原生 EXE 自检；不能仅靠清单里写了一个 Worker 路径。
+    # 本段没有 Token、生产配置或 GPU，必须做到离线验证内置 QC/剪辑/审片能力。
+    $worker = Join-Path $payloadRoot "tools\worker\PicotooPet.Worker\PicotooPet.Worker.exe"
+    if (-not (Test-Path -LiteralPath $worker)) { throw "ZIP 缺少独立运行的现有 GPU Bridge。" }
+    $workerOutput = & $worker --package-self-test
+    if ($LASTEXITCODE -ne 0) { throw "预构建 Worker CPU 自检非零退出码：$LASTEXITCODE" }
+    $workerCheck = ($workerOutput -join "`n") | ConvertFrom-Json
+    if (
+        $workerCheck.contract -ne "picotoo.worker-bundled-runtime.v1" -or
+        $workerCheck.packaged -ne $true -or
+        $workerCheck.qc_importable -ne $true -or
+        $workerCheck.edit_importable -ne $true -or
+        $workerCheck.review_importable -ne $true -or
+        $workerCheck.review_template_present -ne $true -or
+        $workerCheck.lease_attempted -ne $false -or
+        $workerCheck.gpu_started -ne $false
+    ) {
+        throw "Worker 没有可校验的内置 QC/剪辑/审片运行时。"
+    }
+    Write-Host "BUNDLED_WORKER_RUNTIME=PASS_NO_GPU"
     Write-Host "PHASE2_WINDOWS_RELEASE_TEST=PASS"
     Write-Host "PACKAGE=$($zip.FullName)"
 }
