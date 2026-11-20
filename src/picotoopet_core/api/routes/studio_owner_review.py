@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.storypack import StoryPackV1, _unique_json_pairs
 from picotoopet_core.domain.episode import Episode
+from picotoopet_core.domain.storypack_frame_sources import inspect_frame_sources
 from picotoopet_core.domain.storypack_episode_candidate import (
     EpisodeCandidateError,
     complete_storypack_episode_preview,
@@ -308,6 +309,8 @@ async def preview_production_readiness(
         "asset_use_attestation_current": False,
         "episode_contract_valid": False,
         "episode_budget_allowed": False,
+        "first_frame_mac_content_bound": False,
+        "first_frame_worker_local_verified": False,
         "master_rights_independently_verified": False,
         "first_frame_master_approved": False,
         "dynamic_story_policy_admitted": False,
@@ -337,14 +340,26 @@ async def preview_production_readiness(
     except AssetUseError as error:
         reasons.append(error.code)
 
+    frame_sources = None
     try:
         candidate = complete_storypack_episode_preview(
             pack, body.storypack_sha256, body.completion,
         )
         checks["episode_contract_valid"] = candidate["episode_contract_valid"]
-        budget = request.app.state.services.production.preview_budget(
-            Episode.model_validate(candidate["episode"])
-        )
+        compiled_episode = Episode.model_validate(candidate["episode"])
+        budget = request.app.state.services.production.preview_budget(compiled_episode)
+
+        # Mac 受管理 ID 不等于 Windows 本机路径；读取当前文件后仍只提供
+        # 内容摘要，绝不把无凭据的 LLM 路径注入 Worker/ComfyUI。
+        owner_subject = _service(request).subject(pack)["review"]
+        frame_sources = inspect_frame_sources(pack, compiled_episode, owner_subject)
+        checks["first_frame_mac_content_bound"] = frame_sources[
+            "mac_managed_content_verified"
+        ]
+        checks["first_frame_worker_local_verified"] = frame_sources[
+            "worker_local_bytes_verified"
+        ]
+        reasons.extend(frame_sources["blocking_reasons"])
         checks["episode_budget_allowed"] = budget["allowed"]
         if not budget["allowed"]:
             reasons.append("EPISODE_BUDGET_EXCEEDED")
@@ -376,6 +391,7 @@ async def preview_production_readiness(
         "checks": checks,
         "blocking_reasons": list(dict.fromkeys(reasons)),
         "budget_preview": budget,
+        "frame_reference_preview": frame_sources,
         "owner_scoped": True,
         "read_only": True,
         "can_queue": False,
