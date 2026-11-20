@@ -103,6 +103,27 @@ try {
         throw "安装 VBS 含 UTF-8 BOM。"
     }
 
+    # 安装后的快捷方式必须引用 SHA 清单内的受信任脚本，而非 ZIP 顶层临时副本。
+    $connectionFolder = Join-Path $payloadRoot "tools\connection"
+    $tunnelPs         = Join-Path $connectionFolder "Start-SecureMacTunnel.ps1"
+    $tunnelVbs        = Join-Path $connectionFolder "CONNECT_MAC_SECURE.vbs"
+    foreach ($name in @("Start-SecureMacTunnel.ps1", "CONNECT_MAC_SECURE.vbs")) {
+        $entryName = "tools/connection/$name"
+        if (@($manifest.files | Where-Object { [string]$_.path -eq $entryName }).Count -ne 1) {
+            throw "SHA 发布清单缺少唯一的已安装连接入口：$entryName"
+        }
+    }
+    Assert-PowerShellSyntax -Path $tunnelPs
+    $tunnelBytes = [System.IO.File]::ReadAllBytes($tunnelVbs)
+    if (@($tunnelBytes | Where-Object { $_ -gt 127 }).Count -gt 0) {
+        throw "已安装的 SSH VBS 入口违反 ASCII 格式要求。"
+    }
+    # 原生 Windows 5.1 只执行不连网、不读 SSH 凭据的 SSH 策略测试。
+    [void](Invoke-CheckedProcess -FilePath "powershell.exe" -Arguments @(
+        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", $tunnelPs, "-SelfTest"
+    ))
+
     $appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"
     $diagExecutable = Join-Path $payloadRoot "tools\diagnostics\PicotooPet.Desktop.Diagnostics.exe"
     $selfTestPath   = Join-Path $tempRoot "desktop-self-test.json"
