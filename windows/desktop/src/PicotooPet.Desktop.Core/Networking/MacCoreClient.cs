@@ -18,6 +18,7 @@ public sealed class MacCoreClient : IAsyncDisposable
     };
 
     private readonly HttpClient _httpClient;
+    private readonly HttpClient? _frameTransferClient;
     private readonly bool _ownsClient;
 
     /// <summary>请求完成或失败时发布本机单调时钟测得的延迟。</summary>
@@ -27,15 +28,22 @@ public sealed class MacCoreClient : IAsyncDisposable
     public MacCoreClient(HttpClient httpClient, string token)
     {
         _httpClient = httpClient;
+        _frameTransferClient = null; // 注入的测试客户端仍复用相同 HttpMessageHandler。
         _ownsClient = false;
         ConfigureHeaders(_httpClient, token);
     }
 
-    private MacCoreClient(HttpClient httpClient, string token, bool ownsClient)
+    private MacCoreClient(
+        HttpClient httpClient, string token, bool ownsClient, HttpClient? frameTransferClient)
     {
         _httpClient = httpClient;
+        _frameTransferClient = frameTransferClient;
         _ownsClient = ownsClient;
         ConfigureHeaders(_httpClient, token);
+        if (_frameTransferClient is not null)
+        {
+            ConfigureHeaders(_frameTransferClient, token);
+        }
     }
 
     /// <summary>创建具有连接池、DNS 更新和压缩支持的长期客户端。</summary>
@@ -63,7 +71,20 @@ public sealed class MacCoreClient : IAsyncDisposable
             BaseAddress = EnsureTrailingSlash(options.BaseUri),
             Timeout     = options.RequestTimeout,
         };
-        return new MacCoreClient(client, options.Token, ownsClient: true);
+        // 素材可能达到 128 MiB；单独的传输连接池不能继承控制指令 5s 超时。
+        var transferHandler = new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = options.PooledConnectionLifetime,
+            ConnectTimeout           = options.ConnectTimeout,
+            AllowAutoRedirect        = false,
+            MaxConnectionsPerServer  = 2,
+        };
+        var transfer = new HttpClient(transferHandler, disposeHandler: true)
+        {
+            BaseAddress = EnsureTrailingSlash(options.BaseUri),
+            Timeout     = TimeSpan.FromMinutes(2),
+        };
+        return new MacCoreClient(client, options.Token, ownsClient: true, transfer);
     }
 
     /// <summary>读取公共健康状态。</summary>
@@ -185,7 +206,8 @@ public sealed class MacCoreClient : IAsyncDisposable
         string workerRoot,
         CancellationToken cancellationToken = default)
     {
-        var baseUri = _httpClient.BaseAddress
+        var http = _frameTransferClient ?? _httpClient;
+        var baseUri = http.BaseAddress
             ?? throw new InvalidOperationException("FRAME_TRANSFER_BASE_URI_MISSING");
         var host = baseUri.Host;
         var local = string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
@@ -194,6 +216,7 @@ public sealed class MacCoreClient : IAsyncDisposable
             !string.IsNullOrEmpty(baseUri.UserInfo) ||
             string.IsNullOrWhiteSpace(transferTicket) ||
             transferTicket.Length is < 20 or > 160 ||
+            transferTicket.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '-' or '_')) ||
             !IsLowerSha(expectedManifestSha256) ||
             !IsLowerSha(expectedBundleSha256))
         {
@@ -209,7 +232,7 @@ public sealed class MacCoreClient : IAsyncDisposable
             request.Headers.TryAddWithoutValidation("X-Picotoo-Transfer-Ticket", transferTicket);
             request.Headers.Accept.Clear();
             request.Headers.Accept.ParseAdd("application/zip");
-            using var response = await _httpClient.SendAsync(
+            using var response = await http.SendAsync(
                 request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
             if (response.StatusCode != HttpStatusCode.OK ||
@@ -443,6 +466,7 @@ public sealed class MacCoreClient : IAsyncDisposable
     {
         if (_ownsClient)
         {
+            _frameTransferClient?.Dispose();
             _httpClient.Dispose();
         }
         return ValueTask.CompletedTask;
