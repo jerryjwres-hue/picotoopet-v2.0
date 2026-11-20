@@ -17,7 +17,8 @@ PicotooPet｜Windows 安装（Phase 2 内部预编译版）
   Windows Studio 的本地批次导入不再要求额外安装 Python 3.11 或 py 启动器。
 - SSH 隧道仅在 Windows 本机开放端口 18766，系统验证 known_hosts/SSH 公钥。
   初次 SSH 配置不是无操作；若未提前建立 SSH 公钥信任，脚本会安全失败，不自动降级 HTTP。
-  Windows 重启、网络断开后需重新双击 CONNECT_MAC_SECURE.vbs；这不是无人值守隧道。
+  Windows 重启、网络断开后，在开始菜单点击“Picotoo Pet 安全连接”即可重新建立隧道；首次配置之后不再需要保留 ZIP 解压目录。
+  安全连接仍需你手动启动，并非无人值守隧道，也不会自动解除 GPU HOLD。
 - 原先保存的 http://192.168.x.x:8766 地址将被 Studio 明确拒绝，因为设备令牌不能走明文局域网。
 - Worker 不会在安装时自动启动；还需首次安全配置 Worker、受控授权与现有 ComfyUI/模型。
   安装包自检只验证本地代码和文件 SHA，不等于视频生产或视觉良品率验收。
