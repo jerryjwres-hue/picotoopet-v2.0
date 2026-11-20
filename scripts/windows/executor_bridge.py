@@ -955,9 +955,13 @@ class Bridge:
 
     def _assemble(self, state):
         root = str(Path(__file__).resolve().parents[2])
-        if root not in sys.path:
-            sys.path.insert(0, root)
-        from tools.edit.edit.production import executor_plan
+        if getattr(sys, "frozen", False):
+            # 冻结 Worker 内部同源 edit 模块，禁止依赖用户安装的 py.exe。
+            from edit.production import executor_plan
+        else:
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            from tools.edit.edit.production import executor_plan
 
         started = time.monotonic()
         output = self.state_dir / "outputs" / state["stem"] / "episode.mp4"
@@ -974,10 +978,9 @@ class Bridge:
                 state,
                 [
                     sys.executable,
-                    "-X",
-                    "utf8",
-                    "-m",
-                    "edit",
+                    *(["--internal-edit"] if getattr(sys, "frozen", False) else [
+                        "-X", "utf8", "-m", "edit"
+                    ]),
                     "assemble",
                     "--root",
                     str(self.root),
@@ -986,7 +989,11 @@ class Bridge:
                     "--out",
                     str(output),
                 ],
-                cwd=Path(root) / "tools/edit",
+                cwd=(
+                    Path(sys.executable).resolve().parent
+                    if getattr(sys, "frozen", False)
+                    else Path(root) / "tools/edit"
+                ),
             )
             if result.returncode or not output.is_file():
                 raise JobError("本地剪辑失败。" + result.stderr.decode("utf-8", "replace")[-600:])
@@ -1060,6 +1067,37 @@ def manage_new_task_pause(config: BridgeConfig, action: str) -> dict:
 
 
 def main():
+    # 同一个现有 Worker 在冻结后还承担 QC、剪辑与审片导入子命令。
+    # 这些子命令不读取 Worker 配置、不领取租约、更不向 GPU 队列写入。
+    internal = sys.argv[1] if len(sys.argv) > 1 else ""
+    if internal == "--package-self-test":
+        from qc import cli as qc_cli
+        from edit import cli as edit_cli
+        import import_video_candidates
+        import review_board
+        report = {
+            "contract": "picotoo.worker-bundled-runtime.v1",
+            "packaged": bool(getattr(sys, "frozen", False)),
+            "qc_importable": callable(qc_cli.main),
+            "edit_importable": callable(edit_cli.main),
+            "review_importable": callable(import_video_candidates.main),
+            "review_template_present": Path(review_board.__file__).with_name(
+                "review_board.html"
+            ).is_file(),
+            "lease_attempted": False,
+            "gpu_started": False,
+        }
+        print(json.dumps(report, sort_keys=True))
+        return
+    if internal in ("--internal-qc", "--internal-edit", "--internal-import"):
+        if internal == "--internal-qc":
+            from qc.cli import main as internal_main
+        elif internal == "--internal-edit":
+            from edit.cli import main as internal_main
+        else:
+            from import_video_candidates import main as internal_main
+        raise SystemExit(internal_main(sys.argv[2:]))
+
     parser = argparse.ArgumentParser(description="启动 Windows 执行桥")
     parser.add_argument(
         "config", type=Path, nargs="?", default=Path(__file__).with_name("executor_bridge.toml")
