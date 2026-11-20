@@ -13,6 +13,7 @@ from picotoopet_core.config.models import AppSettings
 from picotoopet_core.services import build_services
 from picotoopet_core.mobile.access import MobileAccess
 from picotoopet_core.domain.frame_transfer_tickets import FrameTransferTickets
+from picotoopet_core.domain.storypack_worker_local_proof import WorkerProofRegistry
 
 from .errors import install_error_handlers
 from .routes import (
@@ -30,6 +31,7 @@ from .routes import (
     studio,
     studio_owner_review,
     studio_master_review,
+    studio_worker_proof,
     tasks,
 )
 
@@ -63,6 +65,13 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.state.services = services
     # 单进程短效传输凭据；重启即失效，不创建新数据库或服务。
     app.state.frame_transfer_tickets = FrameTransferTickets()
+    # 单独 Worker 密钥默认不配置；证据签名不替代现有 Core GPU 租约门禁。
+    app.state.worker_proofs = WorkerProofRegistry(
+        database=services.database,
+        objects_dir=settings.paths.objects_dir,
+        worker_id=settings.worker_attestation_id,
+        worker_secret=settings.worker_attestation_key,
+    )
     app.state.mobile_access = MobileAccess()        # 仅进程内，Core 重启需重新手机配对。
     app.add_middleware(TraceTimingMiddleware)
     install_error_handlers(app)
@@ -78,6 +87,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(studio_owner_review.router, prefix=prefix, tags=["studio-owner-review"])
     # 独立 MASTER 审查仍使用现有 Core、审计链与 loopback 身份门禁。
     app.include_router(studio_master_review.router, prefix=prefix, tags=["studio-master-review"])
+    app.include_router(studio_worker_proof.router, prefix=prefix, tags=["studio-worker-proof"])
     app.include_router(mobile.router, tags=["mobile"])
     app.include_router(history_imports.router, prefix=prefix, tags=["episodes"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])
