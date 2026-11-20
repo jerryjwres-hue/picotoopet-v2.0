@@ -1061,7 +1061,16 @@ def test_independent_master_review_revocation_blocks_future_validation(context):
 
 def _staged_core_report(client, owner, source, episode_id="MAOTAI_READINESS"):
     """Construct a synthetic Windows Studio statement using Core's exact source contract."""
-    preview = _call(client, "/production-readiness", source, owner)
+    # Freeze payload has three additional fields forbidden by strict readiness schema.
+    readiness = {
+        key: value for key, value in source.items()
+        if key not in (
+            "expected_candidate_episode_sha256",
+            "expected_source_bindings_sha256",
+            "confirm_gpu_hold",
+        )
+    }
+    preview = _call(client, "/production-readiness", readiness, owner)
     assert preview.status_code == 200, preview.text
     reference = preview.json()["frame_reference_preview"]
     return {
