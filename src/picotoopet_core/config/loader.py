@@ -42,6 +42,9 @@ def load_settings() -> AppSettings:
         api_token=api_token,
         # 仅本机管理员的 0600 文件可提供 Owner 权限；缺失则默认关闭。
         owner_review_registry=load_owner_review_registry(Path(runtime_root).expanduser()),
+        # 独立 Worker HMAC 必须由管理员一次性安全配置，缺省绝不自动开放。
+        worker_attestation_id=os.getenv("PICOTOO_WORKER_ATTEST_ID") or None,
+        worker_attestation_key=os.getenv("PICOTOO_WORKER_ATTEST_KEY") or None,
         api_host=os.getenv("PICOTOO_API_HOST", "0.0.0.0"),
         api_port=int(os.getenv("PICOTOO_API_PORT", "8765")),
         ollama_base_url=os.getenv("PICOTOO_OLLAMA_BASE_URL", "http://127.0.0.1:11434"),

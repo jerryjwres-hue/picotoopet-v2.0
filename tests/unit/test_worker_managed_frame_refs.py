@@ -187,3 +187,69 @@ def test_self_consistent_manifest_is_only_data_not_gpu_authorization(tmp_path):
     # 本层只做本机数据映射，绝不能在 Core Owner HOLD 时使新任务获租约。
     assert "refs" in result["jobs"][0]
     _no_local_gpu(bridge)
+
+
+def test_idle_worker_hmac_proves_actual_staged_sha_without_gpu(monkeypatch, tmp_path):
+    """Real local SHA re-open + signed Core proof; never create a local GPU inbox."""
+    import hmac
+    from types import SimpleNamespace
+
+    bridge, local, state = _case(tmp_path)
+    monkeypatch.setenv("PICOTOO_WORKER_ATTEST_KEY", "w" * 48)
+    bindings = sorted(
+        state["task"]["payload"]["jobs"]["frame_source_manifest"]["bindings"],
+        key=lambda row: (row["shot_id"], row["role"], row["asset_ref"]),
+    )
+    challenge = {
+        "worker_id": "managed-unit",
+        "episode_id": "MAOTAI_READINESS",
+        "frozen_plan_sha256": "c" * 64,
+        "source_bindings_sha256": state["task"]["payload"]["jobs"]["source_bindings_sha256"],
+        "bindings": bindings,
+        "bindings_sha256": _hash(bindings),
+        "nonce": "one_time_nonce_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd",
+        "can_lease": False,
+        "gpu_authorized": False,
+    }
+    calls = []
+
+    def fake_request(method, route, **kwargs):
+        calls.append((method, route, kwargs.get("json")))
+        if route.endswith("/claim"):
+            return SimpleNamespace(status_code=200, json=lambda: challenge)
+        assert route.endswith("/submit")
+        proof = kwargs["json"]
+        msg = {key: value for key, value in proof.items() if key != "signature"}
+        signed_hash = hmac.new(
+            b"w" * 48, _hash(msg).encode("ascii"), hashlib.sha256,
+        ).hexdigest()
+        assert proof["signature"] == signed_hash
+        assert proof["episode_id"] == "MAOTAI_READINESS"
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {"can_lease": False, "gpu_authorized": False},
+        )
+
+    monkeypatch.setattr(bridge, "_request", fake_request)
+    bridge._maybe_report_worker_proof()
+    assert [item[1] for item in calls] == [
+        "/studio/worker-proof/claim", "/studio/worker-proof/submit",
+    ]
+    _no_local_gpu(bridge)
+    bridge.next_worker_proof_at = 0
+    calls.clear()
+    local.write_bytes(b"content changed")
+    bridge._maybe_report_worker_proof()
+    assert [item[1] for item in calls] == ["/studio/worker-proof/claim"]
+    _no_local_gpu(bridge)
+
+
+def test_idle_worker_proof_disabled_by_default(monkeypatch, tmp_path):
+    bridge, _, _ = _case(tmp_path)
+    monkeypatch.delenv("PICOTOO_WORKER_ATTEST_KEY", raising=False)
+    monkeypatch.setattr(
+        bridge, "_request",
+        lambda *args, **kwargs: pytest.fail("默认关闭时不得新增 Worker HTTP 请求"),
+    )
+    bridge._maybe_report_worker_proof()
+    _no_local_gpu(bridge)
