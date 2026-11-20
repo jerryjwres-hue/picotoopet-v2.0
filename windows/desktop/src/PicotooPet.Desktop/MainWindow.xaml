@@ -129,6 +129,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <TextBlock Text="Mac Core 地址" FontWeight="SemiBold" />
           <TextBox Grid.Row="1" x:Name="MacBaseUrlTextBox" Text="{Binding MacBaseUrl, UpdateSourceTrigger=PropertyChanged}" />
@@ -136,6 +137,14 @@
           <StackPanel Grid.Row="3" Orientation="Horizontal">
             <PasswordBox x:Name="TokenPasswordBox" Width="420" Margin="4" Padding="8,6" />
             <Button Content="保存并连接" Click="SaveAndConnect_Click" />
+          </StackPanel>
+          <!-- 仅在桌面显示一次性验证码；手机浏览器永远不接触设备 Token。 -->
+          <StackPanel Grid.Row="4" Margin="0,18,0,0">
+            <TextBlock Text="手机只读控制台（需要 HTTPS）" FontWeight="SemiBold" />
+            <Button Content="生成手机配对码" Command="{Binding PairMobileCommand}"
+                    HorizontalAlignment="Left" Padding="14,8" Margin="0,8,0,8" />
+            <TextBlock Text="{Binding MobilePairingText}" TextWrapping="Wrap"
+                       Foreground="#FF475569" />
           </StackPanel>
         </Grid>
       </TabItem>
