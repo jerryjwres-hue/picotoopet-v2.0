@@ -105,6 +105,9 @@ def context(tmp_path):
     app = create_app(AppSettings(
         paths=RuntimePaths.from_root(tmp_path), api_token=device,
         owner_review_registry=registry,
+        # 仅合成测试启用第二组 Worker HMAC 凭据；实际默认关闭。
+        worker_attestation_id="win-worker-test",
+        worker_attestation_key="w" * 48,
     ))
     with TestClient(app, client=("127.0.0.1", 59100)) as client:
         # 测试使用独立 Reviewer 凭据，不赋予原 Owner MASTER 权限。
@@ -1168,4 +1171,107 @@ def test_windows_stage_report_rejects_mismatched_shots_mac_tamper_and_owner_toke
     assert _post_staged_core(client, body, device).status_code == 409
     assert client.app.state.services.database.scalar(
         "SELECT COUNT(*) FROM audit_events WHERE action='episode.windows_staging_report'"
+    ) == 0
+
+
+def _signed_worker_proof(challenge: dict, key: str = "w" * 48) -> dict:
+    """Sign the canonical Core challenge with the separate synthetic Worker key."""
+    import hashlib
+    import hmac
+    import json
+    fields = (
+        "nonce", "worker_id", "episode_id", "frozen_plan_sha256",
+        "source_bindings_sha256", "bindings_sha256",
+    )
+    message = {
+        "contract": "picotoo.worker-local-sha-proof.v1",
+        **{name: challenge[name] for name in fields},
+    }
+    encoded = json.dumps(
+        message, sort_keys=True, ensure_ascii=False,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    signature = hmac.new(
+        key.encode("ascii"),
+        hashlib.sha256(encoded).hexdigest().encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {**message, "signature": signature}
+
+
+def _worker_proof_post(client, name, payload, device):
+    return client.post(
+        f"/api/v1/studio/worker-proof/{name}", json=payload,
+        headers={"Authorization": f"Bearer {device}"},
+    )
+
+
+def test_worker_hmac_proof_frozen_stage_and_no_gpu_lease(context):
+    client, owner, device, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    held = _call(client, "/production-freeze", source, owner)
+    assert held.status_code == 200
+    # 未接收到 Windows 暂存数据前，不允许任何独立 Worker 挑战。
+    absent = _worker_proof_post(client, "claim", {"worker_id": "win-worker-test"}, device)
+    assert absent.status_code == 204
+
+    staging = _staged_core_report(client, owner, source)
+    assert _post_staged_core(client, staging, device).status_code == 200
+    assert _worker_proof_post(client, "claim", {"worker_id": "different-worker"}, device).status_code == 409
+    challenge = _worker_proof_post(client, "claim", {"worker_id": "win-worker-test"}, device)
+    assert challenge.status_code == 200, challenge.text
+    offered = challenge.json()
+    assert offered["frozen_plan_sha256"] == held.json()["frozen_plan_sha256"]
+    assert len(offered["bindings"]) == len(staging["bindings"])
+    assert offered["can_lease"] is False and offered["gpu_authorized"] is False
+
+    wrong = _signed_worker_proof(offered, "z" * 48)
+    assert _worker_proof_post(client, "submit", wrong, device).status_code == 409
+    assert _worker_proof_post(client, "submit", _signed_worker_proof(offered), device).status_code == 409
+    renewed = _worker_proof_post(client, "claim", {"worker_id": "win-worker-test"}, device)
+    assert renewed.status_code == 200, renewed.text
+    signed = _signed_worker_proof(renewed.json())
+    accepted = _worker_proof_post(client, "submit", signed, device)
+    assert accepted.status_code == 200, accepted.text
+    receipt = accepted.json()
+    assert receipt["status"] == "WORKER_HMAC_SOURCE_REPORT_ACCEPTED_GPU_HOLD"
+    assert receipt["worker_authenticated"] is True
+    assert receipt["hardware_attestation"] is False
+    assert receipt["can_lease"] is False
+    assert receipt["gpu_authorized"] is False
+    assert _worker_proof_post(client, "claim", {"worker_id": "win-worker-test"}, device).status_code == 204
+    assert _worker_proof_post(client, "submit", signed, device).status_code == 409
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.worker_local_proof'"
+    ) == 1
+    assert client.post(
+        "/api/v1/executors/lease",
+        json={"worker_id": "win-worker-test", "resource_tags": ["gpu-5070ti"],
+              "lease_seconds": 90},
+        headers={"Authorization": f"Bearer {device}"},
+    ).status_code == 204
+
+
+def test_worker_proof_rejects_different_plan_and_later_tampered_mac_source(context):
+    client, owner, device, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    assert _call(client, "/production-freeze", source, owner).status_code == 200
+    staging = _staged_core_report(client, owner, source)
+    assert _post_staged_core(client, staging, device).status_code == 200
+    offered = _worker_proof_post(client, "claim", {"worker_id": "win-worker-test"}, device)
+    assert offered.status_code == 200
+    wrong = _signed_worker_proof(offered.json())
+    wrong["frozen_plan_sha256"] = "f" * 64
+    assert _worker_proof_post(client, "submit", wrong, device).status_code == 409
+
+    good = _worker_proof_post(client, "claim", {"worker_id": "win-worker-test"}, device)
+    assert good.status_code == 200
+    digest = objects["maotai_master_v1"]
+    root = client.app.state.services.settings.paths.objects_dir
+    (root / digest[:2] / digest[2:]).write_bytes(b"changed after staging")
+    assert _worker_proof_post(
+        client, "submit", _signed_worker_proof(good.json()), device,
+    ).status_code == 409
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.worker_local_proof'"
     ) == 0
