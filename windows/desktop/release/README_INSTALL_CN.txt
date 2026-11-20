@@ -1,5 +1,8 @@
 PicotooPet｜Windows 安装（Phase 2 内部预编译版）
 
+Mac 与 Windows 安装包必须从同一版本提交构建；不要混用旧的 Mac Core 包和新版 Windows Worker。
+本包为内部验收候选，真实双机与 GPU 结果仍需人工核对。
+
 首次使用只需要三步：
 1. Mac 上先双击该版本的 scripts/mac/INSTALL_MAC.command，完成后台 Core 安装。
 2. Windows 完整解压本 ZIP，双击 INSTALL_PHASE2_WINDOWS.vbs。
