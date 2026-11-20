@@ -56,5 +56,5 @@ public sealed record DesktopSettings(
     string WorkerId = "edit-workstation",
     bool WorkerAutoStart = false)
 {
-    public static DesktopSettings Default { get; } = new("http://192.168.1.161:8766");
+    public static DesktopSettings Default { get; } = new("http://127.0.0.1:18766");
 }
