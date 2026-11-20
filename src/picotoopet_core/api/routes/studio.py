@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
 from picotoopet_core.domain.storypack_fingerprints import build_shot_fingerprints
+from picotoopet_core.domain.storypack_owner_subject import build_owner_review_subject
 from picotoopet_core.domain.storypack import (
     StoryPackError,
     parse_storypack,
@@ -67,6 +68,12 @@ async def preview_storypack(request: Request) -> dict:
     )
     # 指纹用于增量差异检查，不提供自动复用/自动生成权限。
     preview["fingerprint_plan"] = build_shot_fingerprints(
+        pack,
+        preview["storypack_sha256"],
+        preview["asset_record_checks"],
+    )
+    # 为后续可信 Owner 审查锁定故事、素材版本和请求权限；此处绝不批准。
+    preview["owner_review_subject"] = build_owner_review_subject(
         pack,
         preview["storypack_sha256"],
         preview["asset_record_checks"],
