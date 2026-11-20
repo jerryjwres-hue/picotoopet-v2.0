@@ -121,6 +121,7 @@ def inspect_frame_sources(
             if manifest_sha is not None else "FRAME_REFERENCE_BLOCKED"
         ),
         "storypack_sha256": source_sha,
+        "owner_subject_sha256": subject_sha if content_bound else None,
         "source_bindings_sha256": manifest_sha,
         "bindings": bindings,
         "mac_managed_content_verified": manifest_sha is not None,
