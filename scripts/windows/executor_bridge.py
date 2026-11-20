@@ -57,7 +57,7 @@ KINDS = {
 }
 LOG = logging.getLogger("executor_bridge")
 IDENTIFIER = re.compile(r"[A-Za-z0-9_-]{1,100}")
-STAGED_IMAGE = re.compile(r"([0-9a-f]{64})\\.(png|jpg|webp)")
+STAGED_IMAGE = re.compile(r"([0-9a-f]{64})\.(png|jpg|webp)")
 
 
 class JobError(ValueError):
@@ -294,8 +294,8 @@ class Bridge:
                     raise JobError("已同步首帧不是有效的受限普通文件。")
                 header = handle.read(16)
                 valid_image = (
-                    extension == "png" and header.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
-                    or extension == "jpg" and header.startswith(b"\\xff\\xd8\\xff")
+                    extension == "png" and header.startswith(b"\x89PNG\r\n\x1a\n")
+                    or extension == "jpg" and header.startswith(b"\xff\xd8\xff")
                     or extension == "webp"
                     and header[:4] == b"RIFF" and header[8:12] == b"WEBP"
                 )
