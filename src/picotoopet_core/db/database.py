@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .schema import MIGRATION_001, MIGRATION_002, MIGRATION_003
+from .schema import MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004
 
 
 class Database:
@@ -86,7 +86,7 @@ class Database:
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (1, datetime.now(UTC).isoformat()),
                 )
-            for version, statements in ((2, MIGRATION_002), (3, MIGRATION_003)):
+            for version, statements in ((2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004)):
                 if connection.execute(
                     "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
                 ).fetchone() is None:
@@ -96,6 +96,24 @@ class Database:
                         "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                         (version, datetime.now(UTC).isoformat()),
                     )
+
+    def owner_gpu_hold(self, *, owner_credentials_configured: bool) -> bool:
+        """激活并持久化 Owner 保护状态；凭据被删除后也不能自动回退为 legacy GPU。
+
+        这是独立于 Owner token 的永久入口锁；只有受信任的未来生产准入
+        可以精确授权某个冻结任务，本标记本身永不授予 GPU 权限。
+        """
+        with self.transaction() as connection:
+            if owner_credentials_configured:
+                connection.execute(
+                    "INSERT OR IGNORE INTO owner_production_hold(hold_id, activated_at) "
+                    "VALUES (1, ?)",
+                    (datetime.now(UTC).isoformat(),),
+                )
+            row = connection.execute(
+                "SELECT hold_id FROM owner_production_hold WHERE hold_id = 1"
+            ).fetchone()
+            return row is not None
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
         """执行单条 SQL。"""
