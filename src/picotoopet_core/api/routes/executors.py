@@ -1,11 +1,15 @@
 """执行器、缩略图和审片 REST 路由。"""
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
 
 from picotoopet_core.api.thumbnails import validate_thumbnail
+from picotoopet_core.api.production_admission_hold import storypack_owner_hold
+from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.executor import (
+    TASK_RUNNERS,
     THUMBNAIL_LIMIT,
     ArtifactDecision,
     ArtifactList,
@@ -29,6 +33,29 @@ router = APIRouter(dependencies=[Depends(require_auth)])
     "/executors/lease", response_model=TaskRecord, responses={204: {"description": "无任务"}}
 )
 def lease(body: ExecutorLease, request: Request) -> TaskRecord | Response:
+    if storypack_owner_hold(request):
+        # 仅允许已有 Journal 的同 Worker 有效租约恢复；不允许新租约或自动重试。
+        # 注意不能调用 executor.lease(): 它会恢复旧任务并领取下一项，可能触发新 GPU POST。
+        if body.resume_task_id is None:
+            return Response(status_code=204)
+        services = request.app.state.services
+        row = services.database.fetchone(
+            """SELECT status, task_type, resource_tag, lease_owner, lease_expires_at
+               FROM tasks WHERE task_id = ?""",
+            (body.resume_task_id,),
+        )
+        if (
+            row is None
+            or row["status"] != TaskStatus.RUNNING.value
+            or row["task_type"] not in TASK_RUNNERS
+            or row["resource_tag"] not in body.resource_tags
+            or row["lease_owner"] != body.worker_id
+            or row["lease_expires_at"] is None
+            or datetime.fromisoformat(row["lease_expires_at"]) <= datetime.now(UTC)
+        ):
+            return Response(status_code=204)
+        # 只读返回同一条租约；心跳/回执仍由原来的严格 Owned 校验负责。
+        return services.queue.get(body.resume_task_id)
     return request.app.state.services.executor.lease(body, request.state.trace_id) or Response(
         status_code=204,
     )
