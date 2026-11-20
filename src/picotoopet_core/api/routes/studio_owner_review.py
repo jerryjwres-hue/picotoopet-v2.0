@@ -10,6 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.storypack import StoryPackV1, _unique_json_pairs
+from picotoopet_core.domain.episode import Episode
+from picotoopet_core.domain.storypack_episode_candidate import (
+    EpisodeCandidateError,
+    complete_storypack_episode_preview,
+)
 from picotoopet_core.domain.storypack_asset_use import (
     AssetUseAttestationService,
     AssetUseClaim,
@@ -277,3 +282,103 @@ async def revoke_asset_use(request: Request, principal: OwnerIdentity) -> dict:
         )
     except AssetUseError as exc:
         _asset_error(exc)
+
+
+class ProductionReadinessBody(AssetUseVerifyBody):
+    """One Owner-scoped combined preflight; not a GPU authorization request."""
+
+    storyboard_review_id: str = Field(min_length=1, max_length=100)
+    storypack_sha256: str = Field(pattern=_HASH_PATTERN)
+    completion: dict[str, Any]
+
+
+@router.post("/studio/storypacks/owner-review/production-readiness")
+async def preview_production_readiness(
+    request: Request, principal: OwnerIdentity,
+) -> dict:
+    """Recheck current independent evidence without creating any production tasks."""
+    body = await _read(request, ProductionReadinessBody)
+    _authorize(principal, body.subject_key)
+    _authorize_asset_use(principal, body.subject_key)
+    pack = _pack(body)
+
+    # 每次都重读实际 MANAGED 对象字节与 Owner 审计，不接受客户端传回的 PASS。
+    checks: dict[str, bool] = {
+        "storyboard_review_current": False,
+        "asset_use_attestation_current": False,
+        "episode_contract_valid": False,
+        "episode_budget_allowed": False,
+        "master_rights_independently_verified": False,
+        "first_frame_master_approved": False,
+        "dynamic_story_policy_admitted": False,
+        "gpu_hold_released": False,
+    }
+    reasons: list[str] = []
+    try:
+        storyboard = _service(request).verify(
+            pack=pack, subject_key=body.subject_key,
+            review_id=body.storyboard_review_id, principal=principal,
+        )
+        checks["storyboard_review_current"] = (
+            storyboard["status"] == "STORYBOARD_ONLY_CURRENT"
+        )
+    except StoryboardReviewError as error:
+        reasons.append(error.code)
+
+    try:
+        attestation = _asset_use(request).verify(
+            pack=pack, claims=body.claims,
+            subject_key=body.subject_key, principal=principal,
+            attestation_id=body.attestation_id,
+        )
+        checks["asset_use_attestation_current"] = (
+            attestation["status"] == "OWNER_ASSET_USE_CURRENT"
+        )
+    except AssetUseError as error:
+        reasons.append(error.code)
+
+    try:
+        candidate = complete_storypack_episode_preview(
+            pack, body.storypack_sha256, body.completion,
+        )
+        checks["episode_contract_valid"] = candidate["episode_contract_valid"]
+        budget = request.app.state.services.production.preview_budget(
+            Episode.model_validate(candidate["episode"])
+        )
+        checks["episode_budget_allowed"] = budget["allowed"]
+        if not budget["allowed"]:
+            reasons.append("EPISODE_BUDGET_EXCEEDED")
+        episode_sha256 = candidate["candidate_episode_sha256"]
+    except (EpisodeCandidateError, ValidationError) as error:
+        reasons.append(
+            error.code
+            if isinstance(error, EpisodeCandidateError)
+            else "EPISODE_CONTRACT_INVALID"
+        )
+        budget = None
+        episode_sha256 = None
+
+    # 这些仍须独立、可信的 MASTER/策略/GPU 准入，不能由故事 Owner 声明代替。
+    for name, reason in (
+        ("master_rights_independently_verified", "MASTER_RIGHTS_NOT_VERIFIED"),
+        ("first_frame_master_approved", "FIRST_FRAME_MASTER_NOT_APPROVED"),
+        ("dynamic_story_policy_admitted", "DYNAMIC_STORY_POLICY_NOT_ADMITTED"),
+        ("gpu_hold_released", "GPU_HOLD_NOT_RELEASED"),
+    ):
+        if not checks[name]:
+            reasons.append(reason)
+
+    return {
+        "contract": "picotoo.storypack-production-readiness.v1",
+        "status": "BLOCKED_PRODUCTION_ADMISSION",
+        "storypack_sha256": body.storypack_sha256,
+        "candidate_episode_sha256": episode_sha256,
+        "checks": checks,
+        "blocking_reasons": list(dict.fromkeys(reasons)),
+        "budget_preview": budget,
+        "owner_scoped": True,
+        "read_only": True,
+        "can_queue": False,
+        "can_generate": False,
+        "gpu_authorized": False,
+    }
