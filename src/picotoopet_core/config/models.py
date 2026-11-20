@@ -20,6 +20,7 @@ class AppSettings(BaseModel):
     ollama_model: str = "gpt-oss:20b"
     resident_check_seconds: int = Field(default=60, ge=10)
     protected_roots: tuple[str, ...] = ()
+    mobile_studio_enabled: bool = False      # 默认锁定，必须显式开启 HTTPS 手机入口。
 
     def redacted_dict(self) -> dict[str, object]:
         """返回可安全写入日志的配置副本。"""

@@ -31,6 +31,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _taskType = "analysis";
     private string _macBaseUrl = DesktopSettings.Default.MacBaseUrl;
     private string _statusMessage = "请先保存 Mac 地址和设备令牌。";
+    private string _mobilePairingText = "手机入口默认关闭，请先配置 HTTPS 并启用移动端。";
     private string _storyPackInput = "";
     private string _storyPackPreviewText = "粘贴完整的 StoryPack JSON 后点击验证；不会执行生成。";
     private string? _lastPreviewEpisodeId;
@@ -59,6 +60,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             RefreshAsync,
             HandleError,
             () => !IsBusy && _client is not null);
+        PairMobileCommand = new AsyncRelayCommand(
+            PairMobileAsync,
+            HandleError,
+            () => true);
         PreviewStoryPackCommand = new AsyncRelayCommand(
             PreviewStoryPackAsync,
             HandleError,
@@ -69,6 +74,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public AsyncRelayCommand SubmitTaskCommand { get; }
     public AsyncRelayCommand RefreshCommand { get; }
     public AsyncRelayCommand PreviewStoryPackCommand { get; }
+    public AsyncRelayCommand PairMobileCommand { get; }
     public ProductionViewModel Production { get; }
 
     public string ConnectionText
@@ -114,6 +120,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>创作台中粘贴的 JSON；只有预览命令使用，不保存到本地设置。</summary>
+    public string MobilePairingText
+    {
+        get => _mobilePairingText;
+        private set => SetProperty(ref _mobilePairingText, value);
+    }
+
     public string StoryPackInput
     {
         get => _storyPackInput;
@@ -240,6 +252,33 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>只读预览故事包：设备没有得到任何 GPU/发布许可。</summary>
+    /// <summary>只显示一次性手机配对码；不得写入日志或 Credential Manager。</summary>
+    private async Task PairMobileAsync()
+    {
+        if (_client is null)
+        {
+            MobilePairingText = "请先连接 Mac Core。";
+            return;
+        }
+
+        try
+        {
+            var response = await _client.IssueMobilePairingAsync(CurrentConnectionToken);
+            if (!response.GetProperty("enabled").GetBoolean())
+            {
+                MobilePairingText = "Mac Core 尚未启用手机版；需先配置 HTTPS 入口。";
+                return;
+            }
+            // 设备认证只发生在 Windows→Mac；浏览器配对后只能访问只读网页。
+            var code = response.GetProperty("code").GetString();
+            MobilePairingText = $"一次性配对码：{code}（5 分钟内有效，仅限手机只读）";
+        }
+        catch (Exception)
+        {
+            MobilePairingText = "配对码获取失败，请检查连接与 Mac Core 配置。";
+        }
+    }
+
     private async Task PreviewStoryPackAsync()
     {
         if (_client is null)
