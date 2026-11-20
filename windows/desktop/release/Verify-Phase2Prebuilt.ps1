@@ -61,6 +61,28 @@ try {
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-ManifestFiles -Manifest $manifest -Root $current.path
 
+    # 验证安装后的真实独立 Worker EXE，不启动桥接服务、不碰 GPU。
+    # 该检查不能证明模型/Comfy 已部署；只证明本机运行时文件可信且可执行。
+    $workerPath = Join-Path $current.path "tools\worker\PicotooPet.Worker\PicotooPet.Worker.exe"
+    if (-not (Test-Path -LiteralPath $workerPath)) {
+        throw "安装不完整：缺少经清单验证的 Windows Worker。"
+    }
+    $workerOutput = & $workerPath --package-self-test
+    if ($LASTEXITCODE -ne 0) { throw "安装后的 Worker 自检退出码非零：$LASTEXITCODE" }
+    $workerCheck = ($workerOutput -join "`n") | ConvertFrom-Json
+    if (
+        $workerCheck.contract -ne "picotoo.worker-bundled-runtime.v1" -or
+        $workerCheck.packaged -ne $true -or
+        $workerCheck.qc_importable -ne $true -or
+        $workerCheck.edit_importable -ne $true -or
+        $workerCheck.review_importable -ne $true -or
+        $workerCheck.review_template_present -ne $true -or
+        $workerCheck.gpu_started -ne $false -or
+        $workerCheck.lease_attempted -ne $false
+    ) {
+        throw "安装后的 Worker 不能证明已有 QC/剪辑/批次导入和 GPU HOLD 自检。"
+    }
+
     if (Test-Path -LiteralPath $settingsPath) {
         $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
         if (-not [string]::IsNullOrWhiteSpace([string]$settings.macBaseUrl)) {
