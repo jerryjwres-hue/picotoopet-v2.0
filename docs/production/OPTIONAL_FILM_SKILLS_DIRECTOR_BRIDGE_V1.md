@@ -50,6 +50,28 @@
 
 `episode direct` 会只替换该镜 `video.prompt`，保留现有首尾帧、`camera`、`audio`、`video.negative` 和 `video.seeds`。这意味着 Skill 提供的 **Prompt 内相机描述** 与最终执行器的独立相机配置仍需校验一致性，不能认为文本已修改真实镜头路径。
 
+## 4.1 修复：分镜因果必须进入真正的视频生成 Prompt
+
+原有 StoryPack `state_in/action/state_out/because/handoff` 已经通过结构校验，
+但 **Episode candidate 原先直接信任补全的 `video.prompt`**。生成队列
+`ProductionService._shot_jobs` 只把该字段传给 Windows Worker，
+不会读取 StoryPack 预览 `shot_context`。因此即使 JSON 分镜正确，
+真实生成的视频仍可能完全忽略前后动作与故事目标。
+
+现在 `studio/storypacks/episode-candidate/preview` 在原有同一次编译中：
+- 自动把每镜进入状态、可见动作、结束状态、因果理由与 handoff 类型写入
+  **实际 `video.prompt`**，然后保留导演补全的视觉指导，整个 Episode SHA 随之改变。
+- 首镜或 `continuous` 镜头的 `first_frame.prompt` 会明确描述进入状态；
+  如果 `last_frame` 本来存在，其 Prompt 会明确描述结束状态。
+- `scene_change` 的首帧不会被强制描绘旧场景；有意切镜和连续承接采用不同提示。
+- 不新增用户输入、后台导演流程、模型调用、镜头数量、视频种子、GPU 授权、候选素材或数据库字段。
+
+这是**确保故事约束进入生成器的输入级修复**，不是视频物理连续性保证。
+英文导演 Prompt 与原 StoryPack 文本可能混用语言；画面是否遵从动作、
+茅台身份/食盆是否一致，仍需用过去失败的粗剪作为对照做真实模型验收。
+已有独立 Episode / `episode direct` 的历史输出不被悄悄改写。
+无任何 Owner MASTER 审批会因为这一步自动生效。
+
 ## 5. 验收与停止条件
 
 **Phase A：离线契约试点**
