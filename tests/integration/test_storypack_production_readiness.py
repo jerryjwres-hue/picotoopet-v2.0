@@ -1275,3 +1275,27 @@ def test_worker_proof_rejects_different_plan_and_later_tampered_mac_source(conte
     assert client.app.state.services.database.scalar(
         "SELECT COUNT(*) FROM audit_events WHERE action='episode.worker_local_proof'"
     ) == 0
+
+
+def test_worker_hmac_key_actually_loads_and_is_redacted(monkeypatch, tmp_path):
+    """Real Mac Core loader must accept one-time opt-in, never expose the shared key."""
+    from picotoopet_core.config.loader import load_settings
+    from pydantic import ValidationError
+
+    monkeypatch.setenv("PICOTOO_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setenv("PICOTOO_API_TOKEN", "synthetic_mac_core_token_0123456789")
+    monkeypatch.setenv("PICOTOO_WORKER_ATTEST_ID", "win-worker-test")
+    monkeypatch.setenv("PICOTOO_WORKER_ATTEST_KEY", "w" * 48)
+    settings = load_settings()
+    assert settings.worker_attestation_id == "win-worker-test"
+    assert settings.worker_attestation_key == "w" * 48
+    report = settings.redacted_dict()
+    assert report["worker_attestation_key"] == "***REDACTED***"
+    assert "w" * 48 not in str(report)
+
+    monkeypatch.delenv("PICOTOO_WORKER_ATTEST_ID")
+    with pytest.raises(ValidationError):
+        load_settings()
+    monkeypatch.delenv("PICOTOO_WORKER_ATTEST_KEY")
+    settings = load_settings()
+    assert settings.worker_attestation_key is None
