@@ -29,6 +29,7 @@ from .routes import (
     status,
     studio,
     studio_owner_review,
+    studio_master_review,
     tasks,
 )
 
