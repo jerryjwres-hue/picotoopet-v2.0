@@ -253,3 +253,72 @@ def test_idle_worker_proof_disabled_by_default(monkeypatch, tmp_path):
     )
     bridge._maybe_report_worker_proof()
     _no_local_gpu(bridge)
+
+
+def test_worker_only_accepts_one_signed_scoped_lease(monkeypatch, tmp_path):
+    """CPU-only fake Core HTTP; same Worker bridge and authentic HMAC bytes."""
+    import hmac
+    from types import SimpleNamespace
+
+    bridge, _, _ = _case(tmp_path)
+    monkeypatch.setenv("PICOTOO_WORKER_ATTEST_KEY", "w" * 48)
+    request_body = {
+        "worker_id": "managed-unit",
+        "resource_tags": ["gpu-5070ti"],
+        "lease_seconds": 90,
+        "resume_task_id": None,
+    }
+    offer = {
+        "contract": "picotoo.scoped-worker-lease.v1",
+        "nonce": "one_time_lease_nonce_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",
+        "worker_id": "managed-unit",
+        "episode_id": "MAOTAI_READINESS",
+        "task_id": "exact_frozen_S01",
+        "frozen_plan_sha256": "c" * 64,
+        "resource_tags": ["gpu-5070ti"],
+        "lease_seconds": 90,
+        "resume_task_id": None,
+    }
+    expected = hmac.new(
+        b"w" * 48, _hash(offer).encode("ascii"), hashlib.sha256,
+    ).hexdigest()
+    calls = []
+
+    def fake_request(method, route, **kwargs):
+        calls.append((method, route))
+        assert kwargs["json"] == request_body
+        if route.endswith("/lease-challenge"):
+            return SimpleNamespace(status_code=200, json=lambda: offer)
+        assert route == "/executors/lease"
+        headers = kwargs["headers"]
+        assert headers["X-Picotoo-Admission-Nonce"] == offer["nonce"]
+        assert headers["X-Picotoo-Admission-HMAC"] == expected
+        return SimpleNamespace(
+            status_code=200, json=lambda: {
+                "task_id": "exact_frozen_S01",
+                "status": "Running", "attempt_count": 1,
+            },
+            raise_for_status=lambda: None,
+        )
+
+    monkeypatch.setattr(bridge, "_request", fake_request)
+    result = bridge._lease()
+    assert result["task_id"] == "exact_frozen_S01"
+    assert [item[1] for item in calls] == [
+        "/studio/production-admission/lease-challenge", "/executors/lease",
+    ]
+    _no_local_gpu(bridge)
+
+
+def test_worker_forces_core_revoke_check_immediately_before_gpu_inbox(monkeypatch, tmp_path):
+    bridge, _, state = _case(tmp_path)
+    monkeypatch.setenv("PICOTOO_WORKER_ATTEST_KEY", "w" * 48)
+    heartbeat_calls = []
+    monkeypatch.setattr(
+        bridge, "_heartbeat",
+        lambda *args, **kwargs: heartbeat_calls.append(kwargs) or False,
+    )
+    # Core reports revoked/stale immediately before local GPU queue write.
+    assert bridge._work(state) is None
+    assert any(call.get("force") is True for call in heartbeat_calls)
+    assert not list((bridge.queue / "inbox").glob("*.json"))
