@@ -71,7 +71,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # 本轮也在真正 Windows 上验证 Worker 在提交 inbox 前重新算 SHA、
           # 被篡改文件不能进入队列，以及 Owner HOLD 下旧 Journal 不触发 GPU。
-          python -m pytest -q tests/integration/test_frame_bundle_staging.py tests/integration/test_storypack_production_readiness.py tests/unit/test_staged_frame_dispatch_hold.py tests/unit/test_bridge_pause_new.py
+          python -m pytest -q tests/integration/test_frame_bundle_staging.py tests/integration/test_storypack_production_readiness.py tests/unit/test_staged_frame_dispatch_hold.py tests/unit/test_worker_managed_frame_refs.py tests/unit/test_bridge_pause_new.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify offline review in Windows Edge
