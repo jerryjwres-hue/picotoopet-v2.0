@@ -31,7 +31,7 @@ class MobileAccess:
             self._pair_hash = self._digest(code)
             self._pair_until = time.monotonic() + 300
             self._failures.clear()
-        return {"code": code, "expires_seconds": 300, "read_only": True}
+        return {"enabled": True, "code": code, "expires_seconds": 300, "read_only": True}
 
     def claim(self, code: str, source: str) -> str | None:
         """Rate-limit guessing and atomically consume one code on successful pairing."""
