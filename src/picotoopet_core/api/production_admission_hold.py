@@ -17,8 +17,9 @@ from picotoopet_core.domain.models import TaskCreate
 
 def storypack_owner_hold(request: Request) -> bool:
     """只要配置过独立 Owner 主体，即使当前凭据过期/被禁用也不能自动降级为旧模式。"""
-    registry = request.app.state.services.settings.owner_review_registry
-    return bool(registry.credentials)
+    # 读取启动时事务持久化的保护状态，而非可被清空的当前 Token 列表。
+    # 从未配置过 Owner 的旧部署仍保持原有兼容行为。
+    return request.app.state.services.owner_mode_gpu_hold
 
 
 def block_legacy_episode_creation(request: Request) -> None:
