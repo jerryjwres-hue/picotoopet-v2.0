@@ -17,6 +17,14 @@ class AppSettings(BaseModel):
     paths: RuntimePaths
     api_token: str = Field(min_length=16)
     owner_review_registry: OwnerReviewRegistry = Field(default_factory=OwnerReviewRegistry)
+    # 可选的一次配置：Worker 额外密钥不等于 Studio/Owner Bearer，也不授予 GPU。
+    worker_attestation_id: str | None = Field(
+        default=None, pattern=r"^[A-Za-z0-9_-]{1,100}$",
+    )
+    worker_attestation_key: str | None = Field(
+        default=None, min_length=43, max_length=256,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8765, ge=1, le=65535)
     ollama_base_url: str = "http://127.0.0.1:11434"
@@ -34,6 +42,9 @@ class AppSettings(BaseModel):
         payload = self.model_dump(mode="python")
         payload["paths"] = {"root": str(self.paths.root)}
         payload["api_token"] = "***REDACTED***"
+        payload["worker_attestation_key"] = (
+            "***REDACTED***" if self.worker_attestation_key is not None else None
+        )
         # Never expose Owner credential fingerprints or configured subject grants.
         payload["owner_review_registry"] = {
             "configured": len(self.owner_review_registry.credentials),
