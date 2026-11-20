@@ -515,3 +515,63 @@ def test_frame_transfer_cannot_issue_without_scoped_owner_principal(context):
         "incorrect",
     ).status_code in (401, 403)
     _assert_no_production(client)
+
+
+
+def test_real_loopback_http_socket_download_and_windows_sha_staging(context, tmp_path):
+    """Use actual TCP HTTP and requests.Session, never a mocked HTTP response."""
+    import socket
+    import threading
+    import time
+
+    import requests
+    import uvicorn
+
+    from scripts.windows.fetch_frame_bundle import fetch_and_stage_frame_bundle
+
+    client, owner, device, objects = context
+    _, issued = _issued_transfer(client, owner, objects)
+
+    # 使用 TestClient 已启动的 Mac Core 服务对象；Uvicorn 不再重复创建 SQLite。
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    port = listener.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(
+        client.app, host="127.0.0.1", port=port,
+        lifespan="off", access_log=False, log_level="error",
+    ))
+    thread = threading.Thread(
+        target=lambda: server.run(sockets=[listener]),
+        daemon=True,
+    )
+    thread.start()
+    try:
+        deadline = time.monotonic() + 8
+        while not server.started and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert server.started, "local CPU-only HTTP server did not start"
+        worker = tmp_path / "windows-socket-stage"
+        worker.mkdir()
+        (worker / "17_静态首帧板V2").mkdir()
+        with requests.Session() as session:
+            # 真正的 TCP 请求仅使用设备 Bearer，不泄露或复制 Owner Token。
+            session.headers["Authorization"] = f"Bearer {device}"
+            receipt = fetch_and_stage_frame_bundle(
+                session=session,
+                core_url=f"http://127.0.0.1:{port}",
+                transfer_ticket=issued["ticket"],
+                expected_source_bindings_sha256=issued["source_bindings_sha256"],
+                expected_bundle_sha256=issued["bundle_sha256"],
+                worker_root=worker,
+            )
+        assert receipt["worker_local_bytes_verified"] is True
+        assert receipt["can_queue"] is False
+        assert receipt["gpu_authorized"] is False
+        assert set(receipt["worker_ref_paths_by_digest"]) == set(objects.values())
+        _assert_no_production(client)
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        listener.close()
+        assert not thread.is_alive(), "local test socket must close cleanly"
