@@ -118,6 +118,17 @@ public sealed class MacCoreClient : IAsyncDisposable
             cancellationToken);
 
     /// <summary>只读验证来自云端 LLM 的 StoryPack；不会创建任何生产任务。</summary>
+    /// <summary>生成一次性手机只读配对码，不向手机传递 Windows 设备凭证。</summary>
+    public Task<JsonElement> IssueMobilePairingAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<JsonElement>(
+            HttpMethod.Post,
+            "api/v1/mobile/pairing",
+            null,
+            "mobile.pairing",
+            null,
+            cancellationToken);
+
     public Task<JsonElement> PreviewStoryPackAsync(
         JsonElement storyPack, CancellationToken cancellationToken = default) =>
         SendAsync<JsonElement>(
