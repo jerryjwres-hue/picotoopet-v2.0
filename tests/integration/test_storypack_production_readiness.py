@@ -852,6 +852,20 @@ def test_owner_freeze_rejects_stale_evidence_without_any_job(context, mutation, 
         payload["completion"]["shots"][1]["shot_id"] = "S99"
     elif mutation == "budget":
         payload["completion"]["shots"][0]["video"]["seeds"] = list(range(9))
+        # 单独验证预算门禁：更改 Episode 后先重新计算正确内容摘要。
+        # 不然会先被更早的 SHA 防篡改门禁拒绝，无法测到预算本身。
+        from picotoopet_core.domain.storypack import StoryPackV1
+        from picotoopet_core.domain.storypack_episode_candidate import (
+            complete_storypack_episode_preview,
+        )
+        candidate = complete_storypack_episode_preview(
+            StoryPackV1.model_validate(payload["storypack"]),
+            payload["storypack_sha256"],
+            payload["completion"],
+        )
+        payload["expected_candidate_episode_sha256"] = candidate[
+            "candidate_episode_sha256"
+        ]
     elif mutation == "revoked_storyboard":
         assert _call(client, "/revoke", {
             "subject_key": _SUBJECT,
