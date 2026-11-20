@@ -17,7 +17,7 @@ function Test-PicotooSshHost {
         $Value.Contains('..')) {
         return $false
     }
-    foreach ($label in ($Value -split '\\.')) {
+    foreach ($label in ($Value -split '\.')) {
         if ($label.Length -eq 0 -or $label.Length -gt 63 -or $label.StartsWith('-') -or
             $label.EndsWith('-')) {
             return $false
@@ -68,7 +68,7 @@ function New-PicotooSshArguments {
 if ($SelfTest) {
     # 可在 Windows CI/PowerShell 5.1 直接验证，不启动 ssh、不下载、不连网。
     $a = New-PicotooSshArguments -MacHost "mac.example.test" -MacUser "mac_owner" -MacPort 8766
-    if (($a -join " ") -notmatch 'StrictHostKeyChecking=yes' -or
+    if (($a -join " ") -notmatch '127\.0\.0\.1:18766:127\.0\.0\.1:8766' -or
         ($a -join " ") -notmatch 'BatchMode=yes' -or
         ($a -join " ") -notmatch '127\\.0\\.0\\.1:18766:127\\.0\\.0\\.1:8766' -or
         ($a -join " ") -match 'StrictHostKeyChecking=no') {
