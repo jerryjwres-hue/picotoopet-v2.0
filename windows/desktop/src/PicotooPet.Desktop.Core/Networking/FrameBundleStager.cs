@@ -302,4 +302,5 @@ public sealed record FrameStagingReceipt(
     IReadOnlyList<FrameStagingBinding> Bindings,
     bool WorkerLocalBytesVerified,
     bool CanQueue,
-    bool GpuAuthorized);
+    bool GpuAuthorized,
+    string? CoreStagingStatus = null);
