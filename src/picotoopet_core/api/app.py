@@ -19,6 +19,7 @@ from .routes import (
     events,
     executors,
     health,
+    mobile,
     history_imports,
     projects,
     results,
