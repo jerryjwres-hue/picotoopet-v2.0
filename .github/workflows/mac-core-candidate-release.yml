@@ -1,0 +1,135 @@
+name: V3.1 Mac Core internal candidate ZIP
+
+on:
+  pull_request:
+    paths:
+      - "src/picotoopet_core/**"
+      - "scripts/mac/**"
+      - "deploy/macos/**"
+      - "contracts/**"
+      - "pyproject.toml"
+      - ".github/workflows/mac-core-candidate-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v31-mac-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-mac-core:
+    name: Build unsigned Mac Core source installer candidate
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v6
+
+      - name: Set up package builder Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv for lock resolution
+        run: python -m pip install "uv>=0.8,<1"
+
+      - name: Assemble safe install-once Mac ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 只打包 Git 已追踪的 Mac Core 运行文件，不包括 .git 或任何私密素材。
+          root="$RUNNER_TEMP/v31-mac-bundle"
+          package="$root/PicotooPet-Mac-Core"
+          out="$GITHUB_WORKSPACE/dist/v31-mac"
+          mkdir -p "$package" "$out"
+          git archive --format=tar HEAD             README.md pyproject.toml src contracts deploy/macos scripts/mac             | tar -xf - -C "$package"
+
+          # 构建机一次生成依赖锁，用户首次安装执行 uv sync --frozen。
+          uv lock --project "$package"
+          test -s "$package/uv.lock"
+
+          # 用户看到的唯一 Mac 安装入口：不要求知道仓库目录结构。
+          cat > "$package/INSTALL_MAC.command" <<'BASH'
+          #!/bin/bash
+          # 将 Mac Finder 的双击入口转发到现有、已经审查的 Mac Core 安装器。
+          set -euo pipefail
+          SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
+          exec /bin/bash "$SOURCE_DIR/scripts/mac/INSTALL_MAC.command"
+          BASH
+          chmod 755 "$package/INSTALL_MAC.command"
+
+          # 测试只解析 Bash，不安装软件、开启 LaunchAgent 或运行推理。
+          /bin/bash -n "$package/INSTALL_MAC.command"
+          /bin/bash -n "$package/scripts/mac/INSTALL_MAC.command"
+          /bin/bash -n "$package/scripts/mac/VERIFY_MAC.command"
+          /bin/bash -n "$package/scripts/mac/ROLLBACK_MAC.command"
+
+          cat > "$package/README_START_HERE_CN.txt" <<'TEXT'
+          PicotooPet V3.1 Mac Core 内部候选包（尚未通过真实双机/GPU 验收）
+
+          首次安装：
+          1. 完整解压本 ZIP，双击最外层 INSTALL_MAC.command。
+          2. Mac 会安装或复用本地 uv、配置 Core 与 LaunchAgent。
+          3. Windows 另使用与此 Git SHA 对应的预编译安装包，首次在 Studio 中配对一次。
+
+          日常无需打开命令行；验证或回退时才使用：
+            scripts/mac/VERIFY_MAC.command
+            scripts/mac/ROLLBACK_MAC.command
+
+          注意：
+          - 本版本仍为未签名测试候选。仅在来源和 SHA 验证后、明确授权时部署。
+          - 不包含任何模型、角色 MASTER、真实场景、数据库、API 密钥或付费服务。
+          - 安装不证明模型推理、完整多镜头生成或 GPU HOLD 已放行。
+          - 真实版权与 Owner 审批、完整视频成片仍须通过独立准入/验收。
+          TEXT
+
+          # Manifest 锁定实际 checkout SHA、依赖锁文件与安装器摘要。
+          PACKAGE_ROOT="$package" SOURCE_SHA="$(git rev-parse HEAD)" python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["PACKAGE_ROOT"])
+          def sha(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          payload = {
+              "schema": "picotoo.mac-core-candidate.v1",
+              "source_sha": os.environ["SOURCE_SHA"],
+              "target": "macos-arm64-source-install",
+              "package_kind": "internal-unsigned-candidate",
+              "dependency_lock_sha256": sha(root / "uv.lock"),
+              "install_entry_sha256": sha(root / "INSTALL_MAC.command"),
+              "mac_core_script_sha256": sha(root / "scripts/mac/INSTALL_MAC.command"),
+              "production_ready": False,
+              "gpu_authorized": False,
+              "owner_grants_configured": False,
+          }
+          (root / "release-manifest.json").write_text(
+              json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          # ditto 保存文件权限，SHA 文件作为 ZIP 的独立校验凭据。
+          revision="$(git rev-parse --short=12 HEAD)"
+          zip="$out/PicotooPet-V31-Mac-Core-Candidate-$revision.zip"
+          ditto -c -k --keepParent "$package" "$zip"
+          unzip -t "$zip"
+          shasum -a 256 "$zip" > "$zip.sha256.txt"
+          cp "$package/release-manifest.json" "$out/release-manifest.json"
+
+      - name: Upload unsigned Mac candidate and checksum
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-V31-Mac-Core-Candidate
+          path: |
+            dist/v31-mac/PicotooPet-V31-Mac-Core-Candidate-*.zip
+            dist/v31-mac/PicotooPet-V31-Mac-Core-Candidate-*.zip.sha256.txt
+            dist/v31-mac/release-manifest.json
+          if-no-files-found: error
+          retention-days: 30
