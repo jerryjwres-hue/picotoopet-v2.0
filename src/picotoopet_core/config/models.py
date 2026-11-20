@@ -32,6 +32,7 @@ class AppSettings(BaseModel):
     resident_check_seconds: int = Field(default=60, ge=10)
     protected_roots: tuple[str, ...] = ()
     mobile_studio_enabled: bool = False      # 默认锁定，必须显式开启 HTTPS 手机入口。
+    scoped_gpu_admission_enabled: bool = False  # 独立开关；默认禁用受控 GPU 租约。
     episode_max_takes_per_shot: int = Field(default=8, ge=1, le=48)
     episode_max_takes_per_episode: int = Field(default=48, ge=1, le=500)
     episode_max_reserved_video_seconds: float = Field(default=2160, gt=0, le=14400)
