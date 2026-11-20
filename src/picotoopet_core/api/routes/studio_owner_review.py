@@ -12,6 +12,9 @@ from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.storypack import StoryPackV1, _unique_json_pairs
 from picotoopet_core.domain.episode import Episode
 from picotoopet_core.domain.storypack_frame_sources import inspect_frame_sources
+from picotoopet_core.domain.storypack_frame_bundle import export_frame_bundle
+from picotoopet_core.domain.frame_transfer_tickets import FrameTransferError
+from starlette.concurrency import run_in_threadpool
 from picotoopet_core.domain.storypack_episode_candidate import (
     EpisodeCandidateError,
     complete_storypack_episode_preview,
@@ -398,3 +401,74 @@ async def preview_production_readiness(
         "can_generate": False,
         "gpu_authorized": False,
     }
+
+
+class FrameTransferIssueBody(ProductionReadinessBody):
+    """Exact frozen source-manifest SHA; not a production or GPU request."""
+
+    expected_source_bindings_sha256: str = Field(pattern=_HASH_PATTERN)
+
+
+@router.post("/studio/storypacks/owner-review/frame-transfer/issue")
+async def issue_owner_frame_transfer(
+    request: Request, principal: OwnerIdentity,
+) -> dict:
+    """Owner-loopback only: issue one-use data transfer to a paired device."""
+    body = await _read(request, FrameTransferIssueBody)
+    _authorize(principal, body.subject_key)
+    _authorize_asset_use(principal, body.subject_key)
+    pack = _pack(body)
+    source_sha = body.expected_source_bindings_sha256
+    services = request.app.state.services
+
+    def validate_and_bind() -> dict:
+        # 每次重查 Owner 当前凭据、审计撤销与真实文件哈希，避免复用旧预检。
+        _service(request).verify(
+            pack=pack, subject_key=body.subject_key,
+            review_id=body.storyboard_review_id, principal=principal,
+        )
+        _asset_use(request).verify(
+            pack=pack, claims=body.claims, subject_key=body.subject_key,
+            principal=principal, attestation_id=body.attestation_id,
+        )
+        candidate = complete_storypack_episode_preview(
+            pack, body.storypack_sha256, body.completion,
+        )
+        episode = Episode.model_validate(candidate["episode"])
+        budget = services.production.preview_budget(episode)
+        if not budget["allowed"]:
+            raise FrameTransferError("FRAME_TRANSFER_EPISODE_BUDGET_BLOCKED")
+        review = _service(request).subject(pack)["review"]
+        preview = inspect_frame_sources(pack, episode, review)
+        if (
+            not preview["mac_managed_content_verified"]
+            or preview["source_bindings_sha256"] != source_sha
+        ):
+            raise FrameTransferError("FRAME_TRANSFER_SOURCE_OR_SHA_STALE")
+        return preview
+
+    try:
+        # 同步导出 128 MiB 上限的素材 ZIP 放到线程池，不阻塞主事件循环。
+        preview = await run_in_threadpool(validate_and_bind)
+        registry = request.app.state.frame_transfer_tickets
+        return await run_in_threadpool(
+            registry.issue,
+            manifest_sha256=source_sha,
+            export=lambda path: export_frame_bundle(
+                services.settings.paths.objects_dir, preview, path
+            ),
+            validate_current=lambda: validate_and_bind(),
+        )
+    except (StoryboardReviewError, AssetUseError, FrameTransferError) as error:
+        code = error.code if hasattr(error, "code") else str(error)
+        raise ApiError(
+            status_code=409, code=code,
+            message="素材传输所需的 Owner 审核或来源版本已失效。",
+            retryable=False,
+        ) from error
+    except (EpisodeCandidateError, ValidationError) as error:
+        raise ApiError(
+            status_code=422, code="FRAME_TRANSFER_EPISODE_INVALID",
+            message="素材传输对应的 Episode 合同无效。",
+            retryable=False,
+        ) from error
