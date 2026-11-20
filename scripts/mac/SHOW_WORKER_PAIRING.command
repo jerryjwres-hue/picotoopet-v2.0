@@ -9,10 +9,17 @@ if ! WORKER_KEY="$(security find-generic-password -a "$ACCOUNT" -s "$SERVICE" -w
   printf '找不到 Worker 配对密钥。请先使用最新版 INSTALL_MAC.command 安装。\n' >&2
   exit 2
 fi
-if [[ ! "$WORKER_KEY" =~ ^[A-Za-z0-9_-]{43,256}$ ]]; then
-  printf 'Worker 配对密钥格式不正确，请停止配对。\n' >&2
+# macOS 内置 Bash 3.2 兼容：长度加字符白名单，不依赖正则量词。
+if [ "${#WORKER_KEY}" -lt 43 ] || [ "${#WORKER_KEY}" -gt 256 ]; then
+  printf 'Worker 配对密钥长度不正确，请停止配对。\\n' >&2
   exit 2
 fi
+case "$WORKER_KEY" in
+  *[!a-zA-Z0-9_-]*)
+    printf 'Worker 配对密钥包含非法字符，请停止配对。\\n' >&2
+    exit 2
+    ;;
+esac
 
 printf '\nPicotooPet | Mac 与 Windows Worker 首次配对\n'
 printf 'Worker ID: edit-workstation\n'
