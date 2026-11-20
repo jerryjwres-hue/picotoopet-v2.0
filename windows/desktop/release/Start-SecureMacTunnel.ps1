@@ -68,10 +68,15 @@ function New-PicotooSshArguments {
 if ($SelfTest) {
     # 可在 Windows CI/PowerShell 5.1 直接验证，不启动 ssh、不下载、不连网。
     $a = New-PicotooSshArguments -MacHost "mac.example.test" -MacUser "mac_owner" -MacPort 8766
-    if (($a -join " ") -notmatch '127\.0\.0\.1:18766:127\.0\.0\.1:8766' -or
-        ($a -join " ") -notmatch 'BatchMode=yes' -or
-        ($a -join " ") -notmatch '127\\.0\\.0\\.1:18766:127\\.0\\.0\\.1:8766' -or
-        ($a -join " ") -match 'StrictHostKeyChecking=no') {
+    # 直接校验 SSH 参数数组，避免 PowerShell 正则转义误报安全策略失败。
+    foreach ($required in @(
+        "StrictHostKeyChecking=yes", "BatchMode=yes",
+        "PasswordAuthentication=no", "ExitOnForwardFailure=yes",
+        "127.0.0.1:18766:127.0.0.1:8766"
+    )) {
+        if ($a -notcontains $required) { throw "SSH_TUNNEL_POLICY_TEST_FAILED" }
+    }
+    if ($a -contains "StrictHostKeyChecking=no") {
         throw "SSH_TUNNEL_POLICY_TEST_FAILED"
     }
     foreach ($bad in @("-ssh", "user@evil", "host/path", "host;echo", "a..b", "mac host")) {
