@@ -48,6 +48,6 @@ def load_settings() -> AppSettings:
         episode_max_takes_per_shot=int(os.getenv("PICOTOO_EPISODE_MAX_TAKES_PER_SHOT", "8")),
         episode_max_takes_per_episode=int(os.getenv("PICOTOO_EPISODE_MAX_TAKES_PER_EPISODE", "48")),
         episode_max_reserved_video_seconds=float(
-            os.getenv("PICOTOO_EPISODE_MAX_RESERVED_VIDEO_SECONDS", "720")
+            os.getenv("PICOTOO_EPISODE_MAX_RESERVED_VIDEO_SECONDS", "2160")
         ),
     )
