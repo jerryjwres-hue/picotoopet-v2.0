@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ipaddress import ip_address
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Request, Response
 from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
@@ -42,6 +42,28 @@ def _require_secure_delivery_peer(request: Request) -> None:
             status_code=403, code="FRAME_TRANSFER_TLS_REQUIRED",
             message="远程素材下载必须使用加密连接。", retryable=False,
         )
+
+
+@router.post("/studio/frame-transfer/claim")
+async def claim_pending_owner_frame_transfer(request: Request, response: Response) -> dict | None:
+    """Paired device atomically claims the one already-approved data transfer."""
+    _require_secure_delivery_peer(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        result = await run_in_threadpool(
+            request.app.state.frame_transfer_tickets.claim_pending
+        )
+    except FrameTransferError as error:
+        raise ApiError(
+            status_code=409, code=str(error),
+            message="已审核的素材传输申请失效，请重新由主人审核。",
+            retryable=False,
+        ) from error
+    if result is None:
+        response.status_code = 204
+        return None
+    return result
 
 
 @router.get("/studio/frame-transfer/download")
