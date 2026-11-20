@@ -30,6 +30,7 @@ class _Ticket:
     bundle_sha256: str
     expires_at: float
     validate_current: Callable[[], None]
+    episode_id: str | None = None  # Owner-issued target ID is data-only, never authority.
 
 
 class FrameTransferTickets:
@@ -57,6 +58,7 @@ class FrameTransferTickets:
         self,
         *,
         manifest_sha256: str,
+        episode_id: str | None = None,
         export: Callable[[Path], dict],
         validate_current: Callable[[], None],
     ) -> dict:
@@ -88,6 +90,7 @@ class FrameTransferTickets:
                 bundle_sha256=bundle_digest,
                 expires_at=time.monotonic() + _TTL_SECONDS,
                 validate_current=validate_current,
+                episode_id=episode_id,
             )
             self._pending[key] = token
             return {
@@ -129,6 +132,7 @@ class FrameTransferTickets:
                 "ticket": token,
                 "source_bindings_sha256": item.manifest_sha256,
                 "bundle_sha256": item.bundle_sha256,
+                "episode_id": item.episode_id,  # Data-only Owner target, not a frozen Plan grant.
                 "single_use": True,
                 "can_queue": False,
                 "gpu_authorized": False,
