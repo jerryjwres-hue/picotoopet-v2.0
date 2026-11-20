@@ -6,6 +6,7 @@ using System.Text.Encodings.Web;
 using System.Windows.Media.Imaging;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Services;
 
 namespace PicotooPet.Desktop.ViewModels;
@@ -21,6 +22,12 @@ public sealed class ProductionViewModel : ObservableObject
     private readonly Func<MacCoreClient?> _client;
     private readonly Func<CancellationToken> _token;
     private readonly DesktopSettingsStore? _settingsStore;
+    private readonly WorkerProcessManager? _workerManager;
+    private readonly ITokenStore? _workerSecretStore;
+    private readonly Func<string>? _coreAddress;
+    private readonly Func<string?>? _deviceToken;
+    private string _workerRuntimeStatus = "Worker 尚未启动，GPU 默认 HOLD。";
+    private string _workerId = "edit-workstation";
     private string _workerProjectRoot = "";
     private EpisodeSummary[] _episodes = [];
     private ShotReview[] _shots = [];
@@ -40,11 +47,19 @@ public sealed class ProductionViewModel : ObservableObject
 
     public ProductionViewModel(
         Func<MacCoreClient?> client, Func<CancellationToken> token,
-        DesktopSettingsStore? settingsStore = null)
+        DesktopSettingsStore? settingsStore = null,
+        WorkerProcessManager? workerManager = null,
+        ITokenStore? workerSecretStore = null,
+        Func<string>? coreAddress = null,
+        Func<string?>? deviceToken = null)
     {
         _client = client;
         _token = token;
         _settingsStore = settingsStore;
+        _workerManager = workerManager;
+        _workerSecretStore = workerSecretStore;
+        _coreAddress = coreAddress;
+        _deviceToken = deviceToken;
         RefreshCommand = new AsyncRelayCommand(RefreshAsync, ReportError, () => _client() is not null);
         SyncApprovedFramesCommand = new AsyncRelayCommand(
             SyncApprovedFramesAsync, ReportError,
@@ -137,6 +152,13 @@ public sealed class ProductionViewModel : ObservableObject
     public bool CanOpenBatch => !_saving;
     public bool HasConnection => _client() is not null;
     public string WorkerProjectRoot => _workerProjectRoot;
+    public string CurrentWorkerId => _workerId;
+    public bool HasStoredWorkerKey => !string.IsNullOrWhiteSpace(_workerSecretStore?.Read());
+    public string WorkerRuntimeStatus
+    {
+        get => _workerRuntimeStatus;
+        private set => SetProperty(ref _workerRuntimeStatus, value);
+    }
     public bool HasWorkerProjectRoot => IsValidWorkerRoot(_workerProjectRoot);
     public string WorkerProjectStatus => HasWorkerProjectRoot
         ? $"视频项目：{Path.GetFileName(Path.TrimEndingDirectorySeparator(_workerProjectRoot))}"
@@ -186,6 +208,62 @@ public sealed class ProductionViewModel : ObservableObject
             old with { WindowsProjectRoot = root }, CancellationToken.None);
         SetWorkerProjectRoot(root);
         Message = "视频项目目录已保存。此设置只需进行一次。";
+    }
+
+    /// <summary>只有用户曾显式勾选自动启动，才在再次打开 Studio 后复用同一 Bridge。</summary>
+    public async Task TryAutoStartWorkerAsync(DesktopSettings settings)
+    {
+        _workerId = settings.WorkerId;
+        if (!settings.WorkerAutoStart)
+        {
+            WorkerRuntimeStatus = "Worker 自动启动尚未启用；GPU 保持 Mac Core 门禁。";
+            return;
+        }
+        try
+        {
+            await StartWorkerAsync(settings.WorkerId, "", true);
+        }
+        catch (Exception error)
+        {
+            // 登录与审片不因 Worker 环境缺失而中断；不能假装后台已经启动。
+            WorkerRuntimeStatus = $"Worker 自动启动被阻止：{error.Message}";
+        }
+    }
+
+    /// <summary>首次输入密钥后存 Credential Manager；正常运行不再要求命令行。</summary>
+    public async Task StartWorkerAsync(string workerId, string newSecret, bool autoStart)
+    {
+        if (_workerManager is null || _workerSecretStore is null
+            || _settingsStore is null || _coreAddress is null || _deviceToken is null)
+            throw new InvalidOperationException("此 Studio 未配置 Worker 进程管理。");
+
+        var key = string.IsNullOrEmpty(newSecret) ? _workerSecretStore.Read() : newSecret;
+        if (key is null || !WorkerProcessManager.IsValidSecret(key))
+            throw new InvalidOperationException("请先提供安全保存的 Worker 独立配对密钥。");
+
+        var coreUrl = _coreAddress();
+        var deviceToken = _deviceToken() ?? "";
+        var status = await Task.Run(() => _workerManager.Start(
+            coreUrl, _workerProjectRoot, workerId, deviceToken, key));
+        if (!string.IsNullOrEmpty(newSecret))
+            _workerSecretStore.Save(newSecret);
+        var existing = await _settingsStore.LoadAsync(CancellationToken.None);
+        await _settingsStore.SaveAsync(
+            existing with { WorkerId = workerId, WorkerAutoStart = autoStart },
+            CancellationToken.None);
+        _workerId = workerId;
+        WorkerRuntimeStatus = status;
+    }
+
+    /// <summary>只操纵现有 Worker 的 pause-new 标记，不终止在途 GPU/Journal。</summary>
+    public async Task SetWorkerNewTasksPausedAsync(bool paused)
+    {
+        if (_workerManager is null)
+            throw new InvalidOperationException("Worker 进程管理不可用。");
+        await Task.Run(() => _workerManager.SetNewLeasesPaused(paused));
+        WorkerRuntimeStatus = paused
+            ? "本地 Worker 已暂停领取新任务；已运行的任务继续保留。"
+            : "已解除本地暂停；Mac Core Owner/MASTER 和冻结 Plan 门禁仍有效。";
     }
 
     /// <summary>只领取 Mac Owner 已批准的素材，按 SHA 落地；绝不自动提交视频任务。</summary>
