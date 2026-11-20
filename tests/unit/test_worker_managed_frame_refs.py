@@ -106,11 +106,12 @@ def test_managed_frame_binds_exact_sha_and_removes_internal_manifest(tmp_path):
 
 @pytest.mark.parametrize("mutation,reason", [
     ("wrong_digest", "SHA"),
-    ("missing_digest", "SHA"),
+    ("missing_digest", "绑定|清单"),
     ("other_shot", "镜头|绑定"),
     ("other_role", "role|首帧|镜头"),
     ("other_asset", "引用|清单"),
     ("duplicate_asset", "重复"),
+    ("duplicate_role", "重复"),
     ("extra_source", "不完全一致"),
     ("missing_source", "清单|引用"),
 ])
@@ -131,6 +132,8 @@ def test_managed_frame_fail_closed_no_worker_write(tmp_path, mutation, reason):
         entry["refs"] = ["undeclared_master_v1"]
     elif mutation == "duplicate_asset":
         entry["refs"].append("maotai_master_v1")
+    elif mutation == "duplicate_role":
+        jobs["jobs"].append(deepcopy(entry))
     elif mutation == "extra_source":
         manifest["bindings"].append({
             "shot_id": "S01", "role": "first", "asset_ref": "scene001",
