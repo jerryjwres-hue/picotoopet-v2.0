@@ -10,6 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.storypack import StoryPackV1, _unique_json_pairs
+from picotoopet_core.domain.storypack_asset_use import (
+    AssetUseAttestationService,
+    AssetUseClaim,
+    AssetUseError,
+)
 from picotoopet_core.domain.storypack_owner_commit import (
     StoryboardReviewError,
     StoryboardReviewService,
@@ -168,3 +173,107 @@ async def revoke_storyboard(request: Request, principal: OwnerIdentity) -> dict:
         )
     except StoryboardReviewError as exc:
         _error(exc)
+
+
+class AssetUsePreviewBody(StoryboardPreviewBody):
+    """Per-asset rights statements are explicit, not inferred from DB existence."""
+
+    claims: list[AssetUseClaim] = Field(min_length=1, max_length=64)
+
+
+class AssetUseCommitBody(AssetUsePreviewBody):
+    expected_attestation_sha256: str = Field(pattern=_HASH_PATTERN)
+    expires_seconds: int = Field(default=900, ge=60, le=3600)
+
+
+class AssetUseVerifyBody(AssetUsePreviewBody):
+    attestation_id: str = Field(min_length=1, max_length=100)
+
+
+class AssetUseRevokeBody(_Strict):
+    subject_key: str = Field(pattern=_SUBJECT_PATTERN)
+    attestation_id: str = Field(min_length=1, max_length=100)
+
+
+def _authorize_asset_use(principal: OwnerPrincipal, subject_key: str) -> None:
+    try:
+        # 单独的 asset_use.attest Scope，不继承 storypack.review 或设备 Bearer。
+        require_owner_scope(principal, subject_key, permission="asset_use.attest")
+    except OwnerAuthFailure as exc:
+        raise ApiError(
+            status_code=exc.status_code,
+            code=exc.code,
+            message="当前 Owner 凭据无此主体的素材使用权声明权限。",
+            retryable=False,
+        ) from exc
+
+
+def _asset_use(request: Request) -> AssetUseAttestationService:
+    services = request.app.state.services
+    return AssetUseAttestationService(
+        services.database, services.settings.paths.objects_dir
+    )
+
+
+def _asset_error(error: AssetUseError) -> None:
+    # 对外只返回稳定原因码，不回显私有许可证内容或本地素材路径。
+    raise ApiError(
+        status_code=409, code=error.code,
+        message="素材使用声明与最新文件或 Owner 证据不一致。",
+        retryable=False,
+    ) from error
+
+
+@router.post("/studio/storypacks/owner-review/asset-use/preview")
+async def preview_asset_use(request: Request, principal: OwnerIdentity) -> dict:
+    body = await _read(request, AssetUsePreviewBody)
+    _authorize_asset_use(principal, body.subject_key)
+    try:
+        return _asset_use(request).prepare(_pack(body), body.claims)
+    except AssetUseError as exc:
+        _asset_error(exc)
+
+
+@router.post("/studio/storypacks/owner-review/asset-use/commit")
+async def commit_asset_use(
+    request: Request, principal: OwnerIdentity,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=10, max_length=200),
+) -> dict:
+    body = await _read(request, AssetUseCommitBody)
+    _authorize_asset_use(principal, body.subject_key)
+    try:
+        return _asset_use(request).commit(
+            pack=_pack(body), claims=body.claims, subject_key=body.subject_key,
+            principal=principal,
+            expected_attestation_sha256=body.expected_attestation_sha256,
+            idempotency_key=idempotency_key, expires_seconds=body.expires_seconds,
+        )
+    except AssetUseError as exc:
+        _asset_error(exc)
+
+
+@router.post("/studio/storypacks/owner-review/asset-use/verify")
+async def verify_asset_use(request: Request, principal: OwnerIdentity) -> dict:
+    body = await _read(request, AssetUseVerifyBody)
+    _authorize_asset_use(principal, body.subject_key)
+    try:
+        return _asset_use(request).verify(
+            pack=_pack(body), claims=body.claims, subject_key=body.subject_key,
+            principal=principal, attestation_id=body.attestation_id,
+        )
+    except AssetUseError as exc:
+        _asset_error(exc)
+
+
+@router.post("/studio/storypacks/owner-review/asset-use/revoke")
+async def revoke_asset_use(request: Request, principal: OwnerIdentity) -> dict:
+    body = await _read(request, AssetUseRevokeBody)
+    _authorize_asset_use(principal, body.subject_key)
+    try:
+        return _asset_use(request).revoke(
+            subject_key=body.subject_key,
+            attestation_id=body.attestation_id,
+            principal=principal,
+        )
+    except AssetUseError as exc:
+        _asset_error(exc)
