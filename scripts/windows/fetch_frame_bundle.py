@@ -73,7 +73,11 @@ def fetch_and_stage_frame_bundle(
         and all(char in "0123456789abcdef" for char in expected_bundle_sha256)
     ):
         raise FrameFetchError("FRAME_FETCH_INPUT_INVALID")
-    url = _secure_core_url(core_url) + "/api/v1/studio/frame-transfer/download"
+    endpoint = _secure_core_url(core_url)
+    # 远程 HTTPS 必须验证证书；禁止从旧调试 Session 继承 verify=False。
+    if endpoint.startswith("https://") and getattr(session, "verify", True) is False:
+        raise FrameFetchError("FRAME_FETCH_TLS_VERIFICATION_REQUIRED")
+    url = endpoint + "/api/v1/studio/frame-transfer/download"
 
     # 不从响应正文或返回头自选正确 SHA；预期值必须来自可信 Core/Owner 会话。
     try:
