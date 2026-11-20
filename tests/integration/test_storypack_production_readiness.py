@@ -599,3 +599,47 @@ def test_windows_frame_fetch_refuses_plaintext_or_ambiguous_remote_url(unsafe_ur
         _secure_core_url(unsafe_url)
     assert _secure_core_url("http://127.0.0.1:8765") == "http://127.0.0.1:8765"
     assert _secure_core_url("https://core.example:8765") == "https://core.example:8765"
+
+
+
+def test_asset_use_revocation_also_invalidates_unredeemed_transfer(context):
+    client, owner, device, objects = context
+    payload, issued = _issued_transfer(client, owner, objects)
+    revoked = _call(
+        client, "/asset-use/revoke",
+        {"subject_key": _SUBJECT, "attestation_id": payload["attestation_id"]},
+        owner,
+    )
+    assert revoked.status_code == 200, revoked.text
+    response = client.get(
+        "/api/v1/studio/frame-transfer/download",
+        headers={
+            "Authorization": f"Bearer {device}",
+            "X-Picotoo-Transfer-Ticket": issued["ticket"],
+        },
+    )
+    assert response.status_code == 409
+    _assert_no_production(client)
+
+
+def test_windows_fetch_refuses_https_when_session_disables_certificate_check(tmp_path):
+    import requests
+
+    from scripts.windows.fetch_frame_bundle import (
+        FrameFetchError,
+        fetch_and_stage_frame_bundle,
+    )
+
+    session = requests.Session()
+    session.verify = False
+    try:
+        with pytest.raises(FrameFetchError, match="FRAME_FETCH_TLS_VERIFICATION_REQUIRED"):
+            fetch_and_stage_frame_bundle(
+                session=session, core_url="https://core.example",
+                transfer_ticket="a" * 32,
+                expected_source_bindings_sha256="b" * 64,
+                expected_bundle_sha256="c" * 64,
+                worker_root=tmp_path,
+            )
+    finally:
+        session.close()
