@@ -123,6 +123,9 @@ def inspect_frame_sources(
         "storypack_sha256": source_sha,
         "owner_subject_sha256": subject_sha if content_bound else None,
         "source_bindings_sha256": manifest_sha,
+        # 与 Mac ZIP 的 manifest.json 完全相同的规范化内容，供冻结 Plan 绑定。
+        # 注意：返回清单不代表可排队；当前仍需独立 MASTER/Owner/GPU 放行。
+        "frame_source_manifest": manifest if manifest_sha is not None else None,
         "bindings": bindings,
         "mac_managed_content_verified": manifest_sha is not None,
         "worker_local_bytes_verified": False,
