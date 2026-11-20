@@ -26,6 +26,8 @@ class Services:
     """应用内共享服务集合。"""
 
     settings: AppSettings
+    # 数据库中一次启用后持续存在；凭据配置删除不会重新开放旧 GPU 路径。
+    owner_mode_gpu_hold: bool
     database: Database
     projects: ProjectRepository
     queue: QueueRepository
@@ -54,6 +56,10 @@ def build_services(settings: AppSettings) -> Services:
     database = Database(settings.paths.database_file)
     database.open()
     database.apply_migrations()
+    # 先持久化生产保护，再向 FastAPI/Worker 暴露任何 HTTP 入口。
+    owner_mode_gpu_hold = database.owner_gpu_hold(
+        owner_credentials_configured=bool(settings.owner_review_registry.credentials),
+    )
     outbox    = EventOutbox(database)
     broker    = EventBroker()
     dispatcher = OutboxDispatcher(outbox, broker)
@@ -63,6 +69,7 @@ def build_services(settings: AppSettings) -> Services:
     ollama = OllamaClient(settings.ollama_base_url, timeout_seconds=2.0)
     return Services(
         settings=settings,
+        owner_mode_gpu_hold=owner_mode_gpu_hold,
         database=database,
         projects=ProjectRepository(database),
         queue=queue,
