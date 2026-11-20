@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import html
-from urllib.parse import parse_qs
+import re
+from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from picotoopet_core.domain.storypack import (
     StoryPackError,
@@ -18,6 +20,7 @@ from picotoopet_core.security.auth import require_auth
 router = APIRouter()
 _COOKIE = "__Host-picotoo-mobile"
 _MAX_BODY = 160 * 1024
+_REVIEW_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _HEADERS = {
     "Cache-Control": "no-store, max-age=0",
     "Pragma": "no-cache",
@@ -26,7 +29,7 @@ _HEADERS = {
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": (
         "default-src 'none'; style-src 'unsafe-inline'; "
-        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+        "img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
     ),
 }
 
@@ -47,6 +50,7 @@ font-size:16px;font-weight:600;padding:12px 18px;cursor:pointer}
 input,textarea{box-sizing:border-box;background:#111827;color:white;border:1px solid #6b7280;
 border-radius:9px;padding:12px;width:100%;font-size:16px;margin:9px 0}
 textarea{min-height:180px;font-family:ui-monospace,monospace}
+.preview{display:block;max-width:100%;max-height:300px;border-radius:9px;margin-top:8px}
 .tag{font-size:12px;padding:3px 8px;border-radius:20px;background:#374151}
 .entry{padding:8px 0;border-bottom:1px solid #374151;overflow-wrap:anywhere}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
@@ -148,7 +152,9 @@ def mobile_dashboard(request: Request) -> HTMLResponse:
         for row in tasks
     ) or "<p class='muted'>暂无任务</p>"
     episode_lines = "".join(
-        "<div class='entry'>" + _escape(row["title"] or row["episode_id"])
+        "<div class='entry'><a href='/mobile/episodes/"
+        + quote(str(row["episode_id"]), safe="") + "'>"
+        + _escape(row["title"] or row["episode_id"]) + "</a>"
         + "<br><small>" + _escape(row["episode_id"]) + "</small></div>"
         for row in episodes
     ) or "<p class='muted'>暂无剧集</p>"
@@ -230,3 +236,73 @@ async def mobile_preview(request: Request):
         "<small>状态：仅预览，不可自动生成</small>"
         + shots + "</section>"
     )
+
+
+@router.get("/mobile/episodes/{episode_id}")
+def mobile_episode_review(episode_id: str, request: Request):
+    """Read-only shot candidate cards; never expose decision endpoints to mobile."""
+    if not _enabled(request) or not _encrypted(request):
+        return _page("NOT_AVAILABLE", status_code=403)
+    if not _session(request):
+        return _login_page("会话过期，请重新配对。")
+    if _REVIEW_ID.fullmatch(episode_id) is None:
+        return _page("剧集编号无效", status_code=404)
+    try:
+        review = request.app.state.services.production.review(episode_id)
+    except KeyError:
+        return _page("剧集不存在", status_code=404)
+
+    cards = []
+    for shot in review.shots[:30]:
+        candidates = []
+        for item in shot.candidates[:6]:
+            # 仅显示人工审核有用的字段，不把内部媒体路径或完整 manifest 暴露到手机。
+            qc = item.qc if isinstance(item.qc, dict) else {}
+            quality = qc.get("gate_status") or qc.get("status") or "待复查"
+            decision = item.decision or "未选择"
+            caption = (
+                "<div class='entry'><span class='tag'>" + _escape(item.kind)
+                + "</span> <span class='tag'>QC：" + _escape(quality)
+                + "</span> <span class='tag'>选择：" + _escape(decision) + "</span>"
+            )
+            thumb = item.thumbnail_id or item.sheet_thumbnail_id
+            if thumb and _REVIEW_ID.fullmatch(item.task_id) and _REVIEW_ID.fullmatch(thumb):
+                path = (
+                    "/mobile/thumb/" + quote(item.task_id, safe="")
+                    + "/" + quote(thumb, safe="")
+                )
+                caption += "<img class='preview' loading='lazy' alt='镜头预览' src='" + path + "'>"
+            caption += "</div>"
+            candidates.append(caption)
+        cards.append(
+            "<section class='card'><h2>" + _escape(shot.shot_id)
+            + " · " + _escape(shot.status) + "</h2>"
+            + "".join(candidates or ["<p class='muted'>暂无候选素材</p>"])
+            + "</section>"
+        )
+
+    return _page(
+        "<nav><a href='/mobile'>返回控制台</a></nav>"
+        "<h1>剧集审阅 · " + _escape(episode_id) + "</h1>"
+        "<p class='muted'>只读候选画廊，不包含选片或重新生成授权。</p>"
+        "<section class='card'><strong>合成条件：</strong>"
+        + ("已满足现有 QC 门禁" if review.can_assemble else "尚未满足") + "</section>"
+        + "".join(cards or ["<p class='muted'>暂无分镜</p>"])
+    )
+
+
+@router.get("/mobile/thumb/{task_id}/{thumbnail_id}")
+def mobile_thumbnail(task_id: str, thumbnail_id: str, request: Request):
+    """Proxy only recorded JPEG thumbnails behind a valid mobile session."""
+    if not _enabled(request) or not _encrypted(request) or not _session(request):
+        return Response(status_code=404, headers=_HEADERS)
+    if _REVIEW_ID.fullmatch(task_id) is None or _REVIEW_ID.fullmatch(thumbnail_id) is None:
+        return Response(status_code=404, headers=_HEADERS)
+    try:
+        content = request.app.state.services.executor.thumbnail(task_id, thumbnail_id)
+        jpeg = base64.b64decode(content.jpeg_base64, validate=True)
+    except (KeyError, ValueError, base64.binascii.Error):
+        return Response(status_code=404, headers=_HEADERS)
+    if len(jpeg) > 300 * 1024 or not jpeg.startswith(b"\xff\xd8"):
+        return Response(status_code=404, headers=_HEADERS)
+    return Response(jpeg, media_type="image/jpeg", headers=_HEADERS)
