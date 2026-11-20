@@ -8,6 +8,10 @@ from sqlite3 import Connection
 
 from picotoopet_core.audit.writer import canonical_hash
 from picotoopet_core.domain.enums import TaskStatus
+from picotoopet_core.domain.storypack_frame_sources import (
+    FrameManifestContractError,
+    validate_episode_frame_manifest,
+)
 from picotoopet_core.domain.episode_budget import (
     EpisodeBudgetPolicy,
     MAX_VIDEO_EXECUTOR_ATTEMPTS,
@@ -36,7 +40,11 @@ from picotoopet_core.queue.state_machine import InvalidTransitionError
 SHOT_TYPES = ("gen.keyframe", "gen.video", "gen.foley")
 
 
-def _shot_jobs(episode: Episode, shot: Shot):
+def _shot_jobs(
+    episode: Episode, shot: Shot, *,
+    frame_source_manifest: dict | None = None,
+    source_bindings_sha256: str | None = None,
+):
     frames = []
     for label, frame in (("first", shot.first_frame), ("last", shot.last_frame)):
         if frame is not None:
@@ -63,8 +71,14 @@ def _shot_jobs(episode: Episode, shot: Shot):
         item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)
         for item in shot.audio.foley
     )
+    # 只有可信 Core 内部的正式生产准入才能附加受管理资产绑定。
+    # Legacy API 不传入本参数；此操作本身既不认证 MASTER 也不放行 GPU。
+    keyframes = {"out": "$bridge.output", "jobs": frames}
+    if frame_source_manifest is not None:
+        keyframes["frame_source_manifest"] = frame_source_manifest
+        keyframes["source_bindings_sha256"] = source_bindings_sha256
     return (
-        {"out": "$bridge.output", "jobs": frames},
+        keyframes,
         {"out": "$bridge.output", "jobs": [video]},
         {
             "out": "$bridge.output",
@@ -93,7 +107,24 @@ class ProductionService:
         # 只计算计划容量，不读取数据库、不创建 Task、不调用任何模型。
         return inspect_episode_budget(episode, self.budget)
 
-    def create(self, episode: Episode, trace_id: str) -> tuple[EpisodeCreated, bool]:
+    def create(
+        self,
+        episode: Episode,
+        trace_id: str,
+        *,
+        frame_source_manifest: dict | None = None,
+        source_bindings_sha256: str | None = None,
+    ) -> tuple[EpisodeCreated, bool]:
+        # 可选元数据只供未来已独立授权的 Core 内部路径使用。
+        # 现有 HTTP /episodes 仍无该参数且在 Owner 模式下维持 409 HOLD。
+        if (frame_source_manifest is None) != (source_bindings_sha256 is None):
+            raise FrameManifestContractError("FRAME_PLAN_BINDINGS_INCOMPLETE")
+        bound_manifest = (
+            validate_episode_frame_manifest(
+                episode, frame_source_manifest, source_bindings_sha256
+            )
+            if frame_source_manifest is not None else None
+        )
         with self.queue.database.transaction() as db:
             existing = db.execute(
                 "SELECT spec_json FROM production_episodes WHERE episode_id = ?",
@@ -103,6 +134,15 @@ class ProductionService:
                 if Episode.model_validate_json(existing["spec_json"]) != episode:
                     raise InvalidTransitionError("episode_id 已存在，且内容不同。")
                 rows = self._tasks(db, episode.episode_id)
+                # 同一 Episode ID 的幂等重试不能静默复用另一版来源绑定。
+                for item in rows:
+                    if item["task_type"] != "gen.keyframe":
+                        continue
+                    prior = json.loads(item["payload_json"])["jobs"]
+                    if prior.get("source_bindings_sha256") != source_bindings_sha256:
+                        raise InvalidTransitionError(
+                            "episode_id 已存在但首帧来源 Plan Digest 不同。"
+                        )
                 return EpisodeCreated(
                     episode=episode,
                     tasks=[self.queue._row_to_record(row) for row in rows],
@@ -116,7 +156,15 @@ class ProductionService:
             tasks = []
             for shot in episode.shots:
                 parent = None
-                for task_type, jobs in zip(SHOT_TYPES, _shot_jobs(episode, shot), strict=True):
+                for task_type, jobs in zip(
+                    SHOT_TYPES,
+                    _shot_jobs(
+                        episode, shot,
+                        frame_source_manifest=bound_manifest,
+                        source_bindings_sha256=source_bindings_sha256,
+                    ),
+                    strict=True,
+                ):
                     task = self.queue._create_in_transaction(
                         db,
                         request=TaskCreate(
