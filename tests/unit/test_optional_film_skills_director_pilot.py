@@ -5,8 +5,6 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-import yaml
-
 from picotoopet_core.domain.directing import direct_episode, load_directions
 from picotoopet_core.domain.episode import Episode, load_episode
 from picotoopet_core.domain.storypack import StoryPackV1
