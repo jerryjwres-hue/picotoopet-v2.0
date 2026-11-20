@@ -13,6 +13,9 @@ from picotoopet_core.domain.storypack import (
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+# 将候选编译器合入同一个已认证 Studio 路由，不新增独立服务。
+from picotoopet_core.api.routes import studio_episode_preview
+router.include_router(studio_episode_preview.router)
 STORYPACK_LIMIT = 128 * 1024
 SUPPORTED_TYPES = {
     "application/json",
