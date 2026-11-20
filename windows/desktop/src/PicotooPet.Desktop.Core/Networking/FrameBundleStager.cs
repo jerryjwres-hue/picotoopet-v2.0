@@ -34,7 +34,7 @@ public static class FrameBundleStager
         if (files.Count is < 2 or > 66 ||
             files.Any(entry => entry.FullName.EndsWith('/') ||
                 entry.Length > MaxObjectBytes ||
-                entry.CompressedLength != entry.Length ||
+                entry.CompressedLength > MaxObjectBytes + 1024 ||
                 ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000) ||
             files.Select(entry => entry.FullName).Distinct(StringComparer.Ordinal).Count() != files.Count)
         {
