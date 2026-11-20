@@ -22,23 +22,44 @@ public static class LocalVideoBatch
         {
             throw new InvalidOperationException("请选择项目 _queue\\done 下的 .result.json 完成回执。");
         }
-        // 与 GPU Bridge 共用安装包内的现有 Python Worker，不依赖 Windows py 启动器。
-        // 缺失时严格报错；绝不从 PATH 搜索未知 Python 或自动联网下载。
+        // 正式 Release 永远使用经安装清单 SHA 验证的内置 Worker；不依赖系统 py.exe。
+        // 仅开发 DEBUG 构建允许测试脚本直跑，避免 WPF 冒烟测试伪造已打包成果。
         var worker = Path.Combine(
             AppContext.BaseDirectory, "tools", "worker",
             "PicotooPet.Worker", "PicotooPet.Worker.exe");
-        if (!File.Exists(worker))
+        ProcessStartInfo start;
+        if (File.Exists(worker))
         {
-            throw new InvalidOperationException(
-                "安装包缺少受校验的视频 Worker，请重新验证或回滚安装。");
+            start = new ProcessStartInfo(worker);
+            start.ArgumentList.Add("--internal-import");
         }
-        var start = new ProcessStartInfo(worker)
+        else
         {
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
-            RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        foreach (var arg in new[] { "--internal-import", "--project-root", project.FullName,
+#if DEBUG
+            // 开发测试：该分支不可能进入经签名/清单校验的 Release 安装包。
+            var script = Path.Combine(
+                AppContext.BaseDirectory, "ReviewTools", "import_video_candidates.py");
+            if (!File.Exists(script))
+            {
+                throw new InvalidOperationException("测试工程缺少本地批次导入脚本。");
+            }
+            start = new ProcessStartInfo("py");
+            foreach (var arg in new[] { "-3", "-X", "utf8", "-B", script })
+            {
+                start.ArgumentList.Add(arg);
+            }
+#else
+            throw new InvalidOperationException(
+                "正式安装包缺少经校验的 Worker；请运行安装验证或回滚。");
+#endif
+        }
+        start.UseShellExecute = false;
+        start.CreateNoWindow = true;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        start.StandardOutputEncoding = Encoding.UTF8;
+        start.StandardErrorEncoding = Encoding.UTF8;
+        foreach (var arg in new[] { "--project-root", project.FullName,
             "--receipt", options.Receipt }) start.ArgumentList.Add(arg);
         void Option(string name, string? value)
         {
