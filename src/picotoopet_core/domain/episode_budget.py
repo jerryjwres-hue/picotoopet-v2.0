@@ -13,14 +13,16 @@ from picotoopet_core.domain.episode import Episode, EpisodeValidationError
 
 
 MAX_QC_REDO_ROUNDS = 2                     # 与 ExecutorService 的有界重抽轮次共享。
+MAX_VIDEO_EXECUTOR_ATTEMPTS = 3             # 显式钉住单条生成 Task 的最大执行尝试。
 
 
 @dataclass(frozen=True, slots=True)
 class EpisodeBudgetPolicy:
     max_takes_per_shot: int = 8                 # 单镜最多 8 次候选抽卡。
     max_takes_per_episode: int = 48             # 每集首次生成候选总数上限。
-    max_reserved_video_seconds: float = 720.0  # 计入现有两次 QC 重抽的最坏情形。
+    max_reserved_video_seconds: float = 2160.0 # 预留 QC 重抽和 Worker 失败重试。
     qc_redo_rounds: int = MAX_QC_REDO_ROUNDS     # 与生产队列使用同一常量。
+    worker_attempts: int = MAX_VIDEO_EXECUTOR_ATTEMPTS
 
 
 def inspect_episode_budget(episode: Episode, policy: EpisodeBudgetPolicy) -> dict:
@@ -30,7 +32,8 @@ def inspect_episode_budget(episode: Episode, policy: EpisodeBudgetPolicy) -> dic
     initial_video_seconds = sum(
         len(shot.video.seeds) * shot.seconds for shot in episode.shots
     )
-    attempt_multiplier = 1 + policy.qc_redo_rounds
+    # 最坏情形须乘以 Worker 任务级失败重试，不可只计算 QC 重抽轮次。
+    attempt_multiplier = (1 + policy.qc_redo_rounds) * policy.worker_attempts
     reserved_seconds = initial_video_seconds * attempt_multiplier
     reasons = []
     for index, shot in enumerate(episode.shots):
@@ -53,6 +56,7 @@ def inspect_episode_budget(episode: Episode, policy: EpisodeBudgetPolicy) -> dic
         "initial_video_seconds": round(initial_video_seconds, 3),
         "max_reserved_video_seconds": round(reserved_seconds, 3),
         "qc_redo_rounds": policy.qc_redo_rounds,
+        "worker_attempts_per_generation": policy.worker_attempts,
         "limits": {
             "max_takes_per_shot": policy.max_takes_per_shot,
             "max_takes_per_episode": policy.max_takes_per_episode,
