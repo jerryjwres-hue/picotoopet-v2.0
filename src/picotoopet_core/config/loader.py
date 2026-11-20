@@ -7,6 +7,8 @@ import secrets
 import sys
 from pathlib import Path
 
+from picotoopet_core.security.owner_registry_loader import load_owner_review_registry
+
 from .keychain import read_api_token_from_keychain
 from .models import AppSettings
 from .paths import RuntimePaths
@@ -38,6 +40,8 @@ def load_settings() -> AppSettings:
     return AppSettings(
         paths=RuntimePaths.from_root(runtime_root),
         api_token=api_token,
+        # 仅本机管理员的 0600 文件可提供 Owner 权限；缺失则默认关闭。
+        owner_review_registry=load_owner_review_registry(Path(runtime_root).expanduser()),
         api_host=os.getenv("PICOTOO_API_HOST", "0.0.0.0"),
         api_port=int(os.getenv("PICOTOO_API_PORT", "8765")),
         ollama_base_url=os.getenv("PICOTOO_OLLAMA_BASE_URL", "http://127.0.0.1:11434"),

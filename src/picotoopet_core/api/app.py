@@ -26,6 +26,7 @@ from .routes import (
     results,
     status,
     studio,
+    studio_owner_review,
     tasks,
 )
 
@@ -66,6 +67,8 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(executors.router, prefix=prefix, tags=["executors"])
     app.include_router(episodes.router, prefix=prefix, tags=["episodes"])
     app.include_router(studio.router, prefix=prefix, tags=["studio"])
+    # 独立 Owner 凭据和本机来源认证，不能被设备 Bearer 替代。
+    app.include_router(studio_owner_review.router, prefix=prefix, tags=["studio-owner-review"])
     app.include_router(mobile.router, tags=["mobile"])
     app.include_router(history_imports.router, prefix=prefix, tags=["episodes"])
     app.include_router(approvals.router, prefix=prefix, tags=["approvals"])

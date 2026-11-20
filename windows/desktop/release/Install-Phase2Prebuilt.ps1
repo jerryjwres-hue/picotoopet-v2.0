@@ -294,7 +294,12 @@ finally {
     Write-Progress -Activity "Picotoo Pet V2 Windows Desktop" -Completed
     if ($mutexOwned) { $installMutex.ReleaseMutex() }
     $installMutex.Dispose()
-    if (Test-Path -LiteralPath $reportPath) {
+    # 成功后主程序已自动打开：不再额外弹出技术性 JSON 报告。
+    # 失败仍自动展示日志入口，完整安装报告始终留在 reports 目录。
+    if ($report.status -eq "pass") {
+        Write-Host "PicotooPet 安装成功，Studio 已启动。首次只需完成 Mac 配对。" -ForegroundColor Green
+    }
+    elseif (Test-Path -LiteralPath $reportPath) {
         Start-Process -FilePath "notepad.exe" -ArgumentList @($reportPath)
     }
 }
