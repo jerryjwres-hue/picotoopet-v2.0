@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from picotoopet_core.security.owner_principal import OwnerReviewRegistry
 
@@ -35,6 +35,13 @@ class AppSettings(BaseModel):
     episode_max_takes_per_shot: int = Field(default=8, ge=1, le=48)
     episode_max_takes_per_episode: int = Field(default=48, ge=1, le=500)
     episode_max_reserved_video_seconds: float = Field(default=2160, gt=0, le=14400)
+
+    @model_validator(mode="after")
+    def _worker_proof_pair(self) -> "AppSettings":
+        # 禁止只填一半而在生产时静默失去独立 Worker 身份验证。
+        if (self.worker_attestation_id is None) != (self.worker_attestation_key is None):
+            raise ValueError("WORKER_ATTESTATION_ID_AND_KEY_REQUIRED_TOGETHER")
+        return self
 
     def redacted_dict(self) -> dict[str, object]:
         """返回可安全写入日志的配置副本。"""
