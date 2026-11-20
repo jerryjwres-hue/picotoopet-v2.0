@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -20,6 +21,10 @@ from picotoopet_core.security.owner_principal import (
 
 _ROOT = "/api/v1/studio/storypacks/owner-review"
 _SUBJECT = "pet:maotai"
+_SYNTHETIC_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+    "AAAAC0lEQVR42mP8/x8AAwMCAO+jRZcAAAAASUVORK5CYII="
+)
 
 
 def _pack() -> dict:
@@ -102,9 +107,10 @@ def context(tmp_path):
             ("ready-test", "Synthetic", "pet", "test", "internal",
              "Active", "2026-11-19T00:00:00Z", "2026-11-19T00:00:00Z"),
         )
-        for ref in ("maotai_master_v1", "backyard_v1", "toon_style_v1"):
+        for index, ref in enumerate(("maotai_master_v1", "backyard_v1", "toon_style_v1")):
+            # 完全合成的有效 PNG 魔数，三个身份仍然拥有不同字节及 SHA。
             stored = svc.results.put_bytes(
-                ("synthetic-dummy:" + ref).encode("utf-8"), result_type="image"
+                _SYNTHETIC_PNG + bytes([index]), result_type="image"
             )
             objects[ref] = stored.object_hash
             svc.database.execute(
