@@ -74,7 +74,8 @@ def lease(
 def heartbeat(task_id: str, body: ExecutorHeartbeat, request: Request) -> TaskRecord:
     if storypack_owner_hold(request):
         if request.app.state.services.settings.scoped_gpu_admission_enabled:
-            # Revocation and existing lease grant must still be valid before GPU work.
+            _require_secure_delivery_peer(request)
+            # 撤销与有效租约必须在 GPU 提交前重新确认，拒绝局域网明文。
             if ScopedProductionAdmission(
                 request.app.state.services
             ).heartbeat_allowed(task_id, body.worker_id, body.attempt_count):
