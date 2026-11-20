@@ -8,6 +8,12 @@ from sqlite3 import Connection
 
 from picotoopet_core.audit.writer import canonical_hash
 from picotoopet_core.domain.enums import TaskStatus
+from picotoopet_core.domain.episode_budget import (
+    EpisodeBudgetPolicy,
+    MAX_VIDEO_EXECUTOR_ATTEMPTS,
+    enforce_episode_budget,
+    inspect_episode_budget,
+)
 from picotoopet_core.domain.episode import (
     Episode,
     EpisodeCreated,
@@ -76,9 +82,16 @@ def _shot_jobs(episode: Episode, shot: Shot):
 
 
 class ProductionService:
-    def __init__(self, executor: ExecutorService):
+    def __init__(
+        self, executor: ExecutorService, *, budget: EpisodeBudgetPolicy | None = None
+    ):
         self.executor = executor
         self.queue = executor.queue
+        self.budget = budget or EpisodeBudgetPolicy()
+
+    def preview_budget(self, episode: Episode) -> dict:
+        # 只计算计划容量，不读取数据库、不创建 Task、不调用任何模型。
+        return inspect_episode_budget(episode, self.budget)
 
     def create(self, episode: Episode, trace_id: str) -> tuple[EpisodeCreated, bool]:
         with self.queue.database.transaction() as db:
@@ -94,6 +107,8 @@ class ProductionService:
                     episode=episode,
                     tasks=[self.queue._row_to_record(row) for row in rows],
                 ), False
+            # 所有首次新建剧集在入库前验证种子和最坏 QC 重抽预算。
+            budget_receipt = enforce_episode_budget(episode, self.budget)
             db.execute(
                 "INSERT INTO production_episodes(episode_id, spec_json) VALUES (?, ?)",
                 (episode.episode_id, episode.model_dump_json()),
@@ -107,6 +122,10 @@ class ProductionService:
                         request=TaskCreate(
                             task_type=task_type,
                             resource_tag=GPU_TAG,
+                            # 钉住 video 每条 Task 的最大执行尝试，与预算乘数保持同步。
+                            max_attempts=(
+                                MAX_VIDEO_EXECUTOR_ATTEMPTS if task_type == "gen.video" else 3
+                            ),
                             payload=ExecutorPayload(
                                 episode_id=episode.episode_id,
                                 shot_id=shot.shot_id,
@@ -135,7 +154,13 @@ class ProductionService:
                 resource_id=episode.episode_id,
                 decision="allow",
                 reason_code=None,
-                details={"shot_count": len(episode.shots)},
+                details={
+                    "shot_count": len(episode.shots),
+                    "initial_video_takes": budget_receipt["initial_video_takes"],
+                    "max_reserved_video_takes": budget_receipt["max_reserved_video_takes"],
+                    "max_reserved_video_seconds": budget_receipt["max_reserved_video_seconds"],
+                    "metric": budget_receipt["metric"],
+                },
             )
             return EpisodeCreated(episode=episode, tasks=tasks), True
 

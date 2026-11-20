@@ -5,6 +5,7 @@ from starlette.concurrency import run_in_threadpool
 
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.episode import (
+    Episode,
     EpisodeCreated,
     EpisodeReview,
     EpisodeSummary,
@@ -18,28 +19,7 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 EPISODE_LIMIT = 2 * 1024 * 1024
 
 
-@router.post(
-    "/episodes",
-    status_code=201,
-    responses={
-        200: {"model": EpisodeCreated, "description": "剧集已存在"},
-        422: {
-            "description": "剧集字段校验失败",
-        },
-    },
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {"schema": {"$ref": "#/components/schemas/Episode"}},
-                "application/yaml": {
-                    "schema": {"type": "string", "description": "UTF-8 episode.yaml"}
-                },
-            },
-        }
-    },
-)
-async def create_episode(request: Request, response: Response) -> EpisodeCreated:
+async def _parse_episode_request(request: Request) -> Episode:
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type not in {
         "application/json",
@@ -74,11 +54,53 @@ async def create_episode(request: Request, response: Response) -> EpisodeCreated
         raise ApiError(
             status_code=422, code="VALIDATION_ERROR", message=str(exc), retryable=False
         ) from exc
+    return episode
+
+
+@router.post(
+    "/episodes",
+    status_code=201,
+    responses={
+        200: {"model": EpisodeCreated, "description": "剧集已存在"},
+        422: {
+            "description": "剧集字段校验失败",
+        },
+    },
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {"schema": {"$ref": "#/components/schemas/Episode"}},
+                "application/yaml": {
+                    "schema": {"type": "string", "description": "UTF-8 episode.yaml"}
+                },
+            },
+        }
+    },
+)
+async def create_episode(request: Request, response: Response) -> EpisodeCreated:
+    episode = await _parse_episode_request(request)
     service = request.app.state.services.production
-    created, inserted = await run_in_threadpool(service.create, episode, request.state.trace_id)
+    try:
+        created, inserted = await run_in_threadpool(
+            service.create, episode, request.state.trace_id
+        )
+    except EpisodeValidationError as exc:
+        raise ApiError(
+            status_code=422, code="VALIDATION_ERROR",
+            message=str(exc), retryable=False,
+        ) from exc
     if not inserted:
         response.status_code = 200
     return created
+
+
+@router.post("/episodes/budget/preview")
+async def preview_episode_budget(request: Request) -> dict:
+    """Estimate bounded takes before the client submits an executable Episode."""
+    episode = await _parse_episode_request(request)
+    # 只读预算诊断：既不建立 episode，也不签发 GPU 或 Owner 权限。
+    return request.app.state.services.production.preview_budget(episode)
 
 
 @router.get("/episodes")

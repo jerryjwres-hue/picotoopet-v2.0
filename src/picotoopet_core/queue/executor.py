@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from picotoopet_core.audit.writer import AuditWriter, canonical_hash
 from picotoopet_core.domain.enums import TaskStatus
+from picotoopet_core.domain.episode_budget import MAX_QC_REDO_ROUNDS
 from picotoopet_core.domain.executor import (
     IMPORTED_TASK_TYPE,
     TASK_RUNNERS,
@@ -321,7 +322,7 @@ class ExecutorService:
         redo = db.execute("SELECT 1 FROM executor_redos WHERE task_id=?", (source_id,)).fetchone()
         attempt = int(key.rsplit(":", 1)[1]) if redo and key.startswith("qc-redo:") else 0
         code = "QC_MANUAL_REVIEW"
-        if attempt < 2:
+        if attempt < MAX_QC_REDO_ROUNDS:
             root = key.split(":")[1] if attempt else source_id
             new = self._clone(
                 db,

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from picotoopet_core.approvals.service import ApprovalService
 from picotoopet_core.audit.writer import AuditWriter
 from picotoopet_core.config.models import AppSettings
+from picotoopet_core.domain.episode_budget import EpisodeBudgetPolicy
 from picotoopet_core.db.database import Database
 from picotoopet_core.events.broker import EventBroker
 from picotoopet_core.events.dispatcher import OutboxDispatcher
@@ -68,7 +69,14 @@ def build_services(settings: AppSettings) -> Services:
         approvals=ApprovalService(database, queue),
         audit=audit,
         executor=executor,
-        production=ProductionService(executor),
+        production=ProductionService(
+            executor,
+            budget=EpisodeBudgetPolicy(
+                max_takes_per_shot=settings.episode_max_takes_per_shot,
+                max_takes_per_episode=settings.episode_max_takes_per_episode,
+                max_reserved_video_seconds=settings.episode_max_reserved_video_seconds,
+            ),
+        ),
         results=ResultStore(settings.paths.results_dir),
         outbox=outbox,
         broker=broker,
