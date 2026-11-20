@@ -50,6 +50,11 @@ internal static class Program
     /// <summary>Windows 原生测试仅验证 Worker 启动前门禁，绝不启动 GPU。</summary>
     private static void VerifyWorkerManagerSafety()
     {
+        // 默认配置只允许走 Windows 本机 OpenSSH 端口；不再默认把设备令牌发到局域网。
+        Check(DesktopSettings.Default.MacBaseUrl == "http://127.0.0.1:18766",
+            "Windows Studio 默认地址必须走本机加密隧道");
+        Check(WorkerProcessManager.IsSecureCoreAddress(DesktopSettings.Default.MacBaseUrl),
+            "默认本机安全地址被 Worker 错误拒绝");
         Check(WorkerProcessManager.IsSecureCoreAddress("https://mac.example.test:8766"),
             "HTTPS Mac 地址不应被拒绝");
         Check(WorkerProcessManager.IsSecureCoreAddress("http://127.0.0.1:8766"),

@@ -330,6 +330,16 @@ Write-Json -Value $manifest -Path $manifestPath
 
 Copy-Item -LiteralPath $payloadRoot -Destination (Join-Path $packageRoot "payload") -Recurse -Force
 Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $packageRoot "release-manifest.json") -Force
+# Windows 发布构建机先执行真实 PowerShell 5.1 安全隧道策略自检，不启动 ssh。
+$sshTunnelScript = Join-Path $desktopRoot "release\\Start-SecureMacTunnel.ps1"
+$sshTunnelResult = Invoke-NativeCommand -FilePath "powershell.exe" -Arguments @(
+    "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+    "-File", $sshTunnelScript, "-SelfTest"
+) -TimeoutSeconds 20
+if ($sshTunnelResult.StdOut -notmatch "SECURE_MAC_TUNNEL_SELFTEST=PASS_NO_NETWORK_NO_GPU") {
+    throw "Windows 安全隧道策略自检未通过，拒绝发布。"
+}
+
 $releaseFiles = @(
     "INSTALL_PHASE2_WINDOWS.vbs",
     "Install-Phase2Prebuilt.ps1",
@@ -337,6 +347,8 @@ $releaseFiles = @(
     "Verify-Phase2Prebuilt.ps1",
     "ROLLBACK_PHASE2_WINDOWS.vbs",
     "Rollback-Phase2Prebuilt.ps1",
+    "CONNECT_MAC_SECURE.vbs",
+    "Start-SecureMacTunnel.ps1",
     "README_INSTALL_CN.txt"
 )
 foreach ($file in $releaseFiles) {

@@ -131,7 +131,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <TextBlock Text="Mac Core 地址" FontWeight="SemiBold" />
+          <TextBlock Text="Mac Core 安全地址（SSH 隧道：http://127.0.0.1:18766 或可信 HTTPS）" FontWeight="SemiBold" />
           <TextBox Grid.Row="1" x:Name="MacBaseUrlTextBox" Text="{Binding MacBaseUrl, UpdateSourceTrigger=PropertyChanged}" />
           <TextBlock Grid.Row="2" Text="设备令牌（仅保存到 Windows Credential Manager）" FontWeight="SemiBold" Margin="0,12,0,0" />
           <StackPanel Grid.Row="3" Orientation="Horizontal">
