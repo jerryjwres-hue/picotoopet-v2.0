@@ -158,7 +158,7 @@ class ScopedProductionAdmission:
         episode = Episode.model_validate_json(saved["spec_json"])
         if not self.services.production.preview_budget(episode)["allowed"]:
             raise AdmissionError("ADMISSION_EPISODE_BUDGET_EXCEEDED")
-        self._validate_static_tasks(db, episode_id, [s.shot_id for s in episode.shots])
+        self._validate_static_tasks(db, episode)
         return {
             "episode_id": episode_id,
             "frozen_plan_sha256": plan_sha,
@@ -170,25 +170,40 @@ class ScopedProductionAdmission:
         }
 
     @staticmethod
-    def _validate_static_tasks(db, episode_id: str, shots: list[str]) -> None:
+    def _validate_static_tasks(db, episode) -> None:
+        from picotoopet_core.queue.production import _shot_jobs
+
         rows = db.execute(
             "SELECT task_id, task_type, parent_task_id, resource_tag, payload_json "
             "FROM tasks WHERE json_extract(payload_json, '$.episode_id')=? "
             "AND task_type IN ('gen.keyframe','gen.video','gen.foley') ORDER BY rowid",
-            (episode_id,),
+            (episode.episode_id,),
         ).fetchall()
-        if len(rows) != 3 * len(shots):
+        if len(rows) != 3 * len(episode.shots):
             raise AdmissionError("ADMISSION_STATIC_TASK_SET_CHANGED")
-        for index, shot_id in enumerate(shots):
+        first = json.loads(rows[0]["payload_json"])["jobs"]
+        manifest = first.get("frame_source_manifest")
+        source_sha = first.get("source_bindings_sha256")
+        if not manifest or not source_sha:
+            raise AdmissionError("ADMISSION_FROZEN_SOURCE_MANIFEST_REQUIRED")
+        for index, shot in enumerate(episode.shots):
+            # 逐任务重建可信 Core 生产合同，拒绝改写 seed、prompt、时长和模型参数。
+            expected_jobs = _shot_jobs(
+                episode, shot, frame_source_manifest=manifest,
+                source_bindings_sha256=source_sha,
+            )
             previous = None
-            for task_type, task in zip(
+            for task_type, task, jobs in zip(
                 ("gen.keyframe", "gen.video", "gen.foley"),
-                rows[3 * index:3 * index + 3], strict=True,
+                rows[3 * index:3 * index + 3], expected_jobs, strict=True,
             ):
                 payload = json.loads(task["payload_json"])
                 if (task["task_type"] != task_type
-                        or payload.get("shot_id") != shot_id
+                        or payload.get("episode_id") != episode.episode_id
+                        or payload.get("shot_id") != shot.shot_id
                         or payload.get("runner") != TASK_RUNNERS[task_type]
+                        or payload.get("args") != []
+                        or payload.get("jobs") != jobs
                         or task["resource_tag"] != GPU_TAG
                         or task["parent_task_id"] != previous):
                     raise AdmissionError("ADMISSION_STATIC_TASK_IDENTITY_CHANGED")
