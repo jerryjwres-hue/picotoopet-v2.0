@@ -739,3 +739,189 @@ def test_transfer_claim_denies_owner_token_remote_http_and_revoked_evidence(cont
         endpoint, headers={"Authorization": f"Bearer {device}"},
     ).status_code == 204
     _assert_no_production(client)
+
+
+
+def _owner_freeze_payload(client, owner, objects):
+    """Prepare a full synthetically approved source/episode pair for held Job freezing."""
+    reviewed = _create_reviewed_candidate(client, owner, objects)
+    reviewed["completion"]["shots"][0]["first_frame"]["refs"] = [
+        "maotai_master_v1", "backyard_v1",
+    ]
+    reviewed["completion"]["shots"][1]["first_frame"]["refs"] = [
+        "maotai_master_v1",
+    ]
+    preview = _call(client, "/production-readiness", reviewed, owner)
+    assert preview.status_code == 200, preview.text
+    result = preview.json()
+    assert result["checks"]["storyboard_review_current"] is True
+    assert result["checks"]["asset_use_attestation_current"] is True
+    assert result["checks"]["first_frame_mac_content_bound"] is True
+    return {
+        **reviewed,
+        "expected_candidate_episode_sha256": result["candidate_episode_sha256"],
+        "expected_source_bindings_sha256":
+            result["frame_reference_preview"]["source_bindings_sha256"],
+        "confirm_gpu_hold": True,
+    }
+
+
+def test_owner_freeze_creates_exact_held_tasks_audit_and_idempotency(context):
+    client, owner, device, objects = context
+    payload = _owner_freeze_payload(client, owner, objects)
+    assert client.app.state.services.owner_mode_gpu_hold is True
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM production_episodes"
+    ) == 0
+
+    freeze = _call(client, "/production-freeze", payload, owner)
+    assert freeze.status_code == 200, freeze.text
+    result = freeze.json()
+    assert result["status"] == "FROZEN_OWNER_INTENT_AWAITING_INDEPENDENT_ADMISSION"
+    assert result["frozen_plan_sha256"]
+    assert result["core_task_records_created"] is True
+    assert result["already_frozen"] is False
+    assert result["can_lease"] is False
+    assert result["gpu_authorized"] is False
+    assert result["master_rights_independently_verified"] is False
+    assert result["worker_local_bytes_verified"] is False
+    assert len(result["tasks"]) == 6
+    assert [item["shot_id"] for item in result["tasks"]] == [
+        "S01", "S01", "S01", "S02", "S02", "S02",
+    ]
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM tasks"
+    ) == 6
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM approvals"
+    ) == 0
+    rows = client.app.state.services.database.fetchall(
+        "SELECT action, decision, reason_code, details_redacted_json "
+        "FROM audit_events WHERE resource_id=? AND action='episode.freeze_owner_hold'",
+        (result["episode_id"],),
+    )
+    assert len(rows) == 1
+    assert rows[0]["decision"] == "FROZEN_HOLD"
+    assert rows[0]["reason_code"] == "MASTER_WORKER_GPU_NOT_ADMITTED"
+    import json
+    assert json.loads(rows[0]["details_redacted_json"])[
+        "frozen_plan_sha256"
+    ] == result["frozen_plan_sha256"]
+
+    # 新的真实 Task 行虽然已冻结到 SQLite，却没有任意 GPU lease 权限。
+    lease = client.post(
+        "/api/v1/executors/lease",
+        json={
+            "worker_id": "win-worker-test",
+            "resource_tags": ["gpu-5070ti"],
+            "lease_seconds": 90,
+        },
+        headers={"Authorization": f"Bearer {device}"},
+    )
+    assert lease.status_code == 204
+    again = _call(client, "/production-freeze", payload, owner)
+    assert again.status_code == 200, again.text
+    assert again.json()["already_frozen"] is True
+    assert again.json()["tasks"] == result["tasks"]
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM tasks"
+    ) == 6
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events "
+        "WHERE action='episode.freeze_owner_hold'"
+    ) == 1
+
+
+@pytest.mark.parametrize("mutation,expected", [
+    ("episode_sha", "FROZEN_PLAN_EPISODE_SHA_STALE"),
+    ("frame_sha", "FROZEN_PLAN_FRAME_SOURCE_STALE"),
+    ("episode_invalid", "EPISODE_SHOT_ORDER_OR_ID_DRIFT"),
+    ("budget", "FROZEN_PLAN_EPISODE_BUDGET_EXCEEDED"),
+    ("revoked_storyboard", "OWNER_STORYBOARD_REVIEW_REVOKED"),
+    ("revoked_asset", "ASSET_USE_ATTESTATION_REVOKED"),
+    ("changed_source", "FROZEN_PLAN"),
+])
+def test_owner_freeze_rejects_stale_evidence_without_any_job(context, mutation, expected):
+    client, owner, _, objects = context
+    payload = _owner_freeze_payload(client, owner, objects)
+    if mutation == "episode_sha":
+        payload["expected_candidate_episode_sha256"] = "f" * 64
+    elif mutation == "frame_sha":
+        payload["expected_source_bindings_sha256"] = "f" * 64
+    elif mutation == "episode_invalid":
+        payload["completion"]["shots"][1]["shot_id"] = "S99"
+    elif mutation == "budget":
+        payload["completion"]["shots"][0]["video"]["seeds"] = list(range(9))
+        # 单独验证预算门禁：更改 Episode 后先重新计算正确内容摘要。
+        # 不然会先被更早的 SHA 防篡改门禁拒绝，无法测到预算本身。
+        from picotoopet_core.domain.storypack import StoryPackV1
+        from picotoopet_core.domain.storypack_episode_candidate import (
+            complete_storypack_episode_preview,
+        )
+        candidate = complete_storypack_episode_preview(
+            StoryPackV1.model_validate(payload["storypack"]),
+            payload["storypack_sha256"],
+            payload["completion"],
+        )
+        payload["expected_candidate_episode_sha256"] = candidate[
+            "candidate_episode_sha256"
+        ]
+    elif mutation == "revoked_storyboard":
+        assert _call(client, "/revoke", {
+            "subject_key": _SUBJECT,
+            "review_id": payload["storyboard_review_id"],
+        }, owner).status_code == 200
+    elif mutation == "revoked_asset":
+        assert _call(client, "/asset-use/revoke", {
+            "subject_key": _SUBJECT,
+            "attestation_id": payload["attestation_id"],
+        }, owner).status_code == 200
+    elif mutation == "changed_source":
+        digest = objects["maotai_master_v1"]
+        root = client.app.state.services.settings.paths.objects_dir
+        (root / digest[:2] / digest[2:]).write_bytes(b"tampered")
+    response = _call(client, "/production-freeze", payload, owner)
+    assert response.status_code in (409, 422), response.text
+    assert expected in response.text or mutation == "changed_source", response.text
+    _assert_no_production(client)
+
+
+def test_owner_frozen_plan_never_accepts_device_or_remote_owner(context):
+    client, owner, device, objects = context
+    payload = _owner_freeze_payload(client, owner, objects)
+    assert _call(client, "/production-freeze", payload, device).status_code == 403
+    from fastapi.testclient import TestClient
+    remote = TestClient(client.app, base_url="http://mac.example",
+                        client=("192.0.2.40", 48000))
+    result = remote.post(
+        _ROOT + "/production-freeze",
+        json=payload,
+        headers={"Authorization": f"Bearer {owner}"},
+    )
+    assert result.status_code == 403
+    invalid = {**payload, "confirm_gpu_hold": False}
+    assert _call(client, "/production-freeze", invalid, owner).status_code == 422
+    _assert_no_production(client)
+
+
+def test_frozen_plan_cannot_mutate_same_episode_source_or_owner_review(context):
+    client, owner, _, objects = context
+    payload = _owner_freeze_payload(client, owner, objects)
+    initial = _call(client, "/production-freeze", payload, owner)
+    assert initial.status_code == 200, initial.text
+    original = initial.json()["frozen_plan_sha256"]
+    assert original
+
+    # 保持同一 Episode ID 和像素时，仍不能替换 Owner 审核身份来源。
+    from copy import deepcopy
+    changed = deepcopy(payload)
+    changed["storyboard_review_id"] = "fake-review-id"
+    blocked = _call(client, "/production-freeze", changed, owner)
+    assert blocked.status_code == 409
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events "
+        "WHERE action='episode.freeze_owner_hold'"
+    ) == 1
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM tasks"
+    ) == 6

@@ -114,6 +114,8 @@ class ProductionService:
         *,
         frame_source_manifest: dict | None = None,
         source_bindings_sha256: str | None = None,
+        frozen_owner_plan: dict | None = None,
+        expected_frozen_plan_sha256: str | None = None,
     ) -> tuple[EpisodeCreated, bool]:
         # 可选元数据只供未来已独立授权的 Core 内部路径使用。
         # 现有 HTTP /episodes 仍无该参数且在 Owner 模式下维持 409 HOLD。
@@ -125,6 +127,29 @@ class ProductionService:
             )
             if frame_source_manifest is not None else None
         )
+        # 冻结意图只能由受信任的 Core Owner 路由内部提交，不是设备授权。
+        # 这一步把确切 Episode、素材及 Owner 审核证据合成一个不可变 Plan SHA。
+        frozen = frozen_owner_plan is not None or expected_frozen_plan_sha256 is not None
+        if frozen:
+            required = {
+                "contract", "subject_key", "owner_actor_id", "owner_registry_revision",
+                "storyboard_review_id", "asset_attestation_id", "storypack_sha256",
+                "episode_sha256", "source_bindings_sha256",
+            }
+            if (
+                not isinstance(frozen_owner_plan, dict)
+                or set(frozen_owner_plan) != required
+                or frozen_owner_plan.get("contract") != "picotoo.owner-frozen-plan.v1"
+                or bound_manifest is None
+                or frozen_owner_plan.get("episode_sha256") != canonical_hash(
+                    episode.model_dump(mode="json")
+                )
+                or frozen_owner_plan.get("source_bindings_sha256") != source_bindings_sha256
+                or frozen_owner_plan.get("storypack_sha256") != bound_manifest["storypack_sha256"]
+                or not isinstance(expected_frozen_plan_sha256, str)
+                or canonical_hash(frozen_owner_plan) != expected_frozen_plan_sha256
+            ):
+                raise FrameManifestContractError("FRAME_FROZEN_OWNER_PLAN_INVALID")
         with self.queue.database.transaction() as db:
             existing = db.execute(
                 "SELECT spec_json FROM production_episodes WHERE episode_id = ?",
@@ -134,6 +159,20 @@ class ProductionService:
                 if Episode.model_validate_json(existing["spec_json"]) != episode:
                     raise InvalidTransitionError("episode_id 已存在，且内容不同。")
                 rows = self._tasks(db, episode.episode_id)
+                # 冻结计划必须与原始审计行严格一致；旧 legacy Episode 不能升级冒充冻结。
+                frozen_rows = db.execute(
+                    "SELECT details_redacted_json FROM audit_events "
+                    "WHERE action='episode.freeze_owner_hold' AND resource_id=? "
+                    "ORDER BY rowid DESC",
+                    (episode.episode_id,),
+                ).fetchall()
+                if frozen:
+                    if len(frozen_rows) != 1 or json.loads(
+                        frozen_rows[0]["details_redacted_json"]
+                    ).get("frozen_plan_sha256") != expected_frozen_plan_sha256:
+                        raise InvalidTransitionError("episode_id 已冻结其他 Owner 生产 Plan。")
+                elif frozen_rows:
+                    raise InvalidTransitionError("已冻结的 Episode 禁止降级成旧版来源。")
                 # 同一 Episode ID 的幂等重试不能静默复用另一版来源绑定。
                 for item in rows:
                     if item["task_type"] != "gen.keyframe":
@@ -195,14 +234,21 @@ class ProductionService:
             self.executor.audit.append(
                 connection=db,
                 trace_id=trace_id,
-                actor_type="device",
-                actor_id="authenticated-device",
-                action="episode.create",
+                actor_type="owner_principal" if frozen else "device",
+                actor_id=(
+                    frozen_owner_plan["owner_actor_id"] if frozen
+                    else "authenticated-device"
+                ),
+                action="episode.freeze_owner_hold" if frozen else "episode.create",
                 resource_type="episode",
                 resource_id=episode.episode_id,
-                decision="allow",
-                reason_code=None,
+                decision="FROZEN_HOLD" if frozen else "allow",
+                reason_code="MASTER_WORKER_GPU_NOT_ADMITTED" if frozen else None,
                 details={
+                    **({
+                        "frozen_plan_sha256": expected_frozen_plan_sha256,
+                        "plan": frozen_owner_plan,
+                    } if frozen else {}),
                     "shot_count": len(episode.shots),
                     "initial_video_takes": budget_receipt["initial_video_takes"],
                     "max_reserved_video_takes": budget_receipt["max_reserved_video_takes"],

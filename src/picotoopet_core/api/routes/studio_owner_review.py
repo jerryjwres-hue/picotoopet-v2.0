@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.audit.writer import canonical_hash
+from picotoopet_core.queue.state_machine import InvalidTransitionError
+from picotoopet_core.domain.episode import EpisodeValidationError
+from picotoopet_core.domain.storypack_frame_sources import FrameManifestContractError
 from picotoopet_core.domain.storypack import StoryPackV1, _unique_json_pairs
 from picotoopet_core.domain.episode import Episode
 from picotoopet_core.domain.storypack_frame_sources import inspect_frame_sources
@@ -473,5 +477,127 @@ async def issue_owner_frame_transfer(
         raise ApiError(
             status_code=422, code="FRAME_TRANSFER_EPISODE_INVALID",
             message="素材传输对应的 Episode 合同无效。",
+            retryable=False,
+        ) from error
+
+
+class FrozenOwnerPlanBody(ProductionReadinessBody):
+    """Owner explicitly creates held Core jobs; never authorizes GPU or MASTER."""
+
+    expected_candidate_episode_sha256: str = Field(pattern=_HASH_PATTERN)
+    expected_source_bindings_sha256: str = Field(pattern=_HASH_PATTERN)
+    confirm_gpu_hold: Literal[True]
+
+
+@router.post("/studio/storypacks/owner-review/production-freeze")
+async def freeze_owner_production_jobs(
+    request: Request, principal: OwnerIdentity,
+) -> dict:
+    """Create an exact, auditable production job set while the Owner GPU HOLD remains on."""
+    body = await _read(request, FrozenOwnerPlanBody)
+    _authorize(principal, body.subject_key)
+    _authorize_asset_use(principal, body.subject_key)
+    services = request.app.state.services
+    if not services.owner_mode_gpu_hold:
+        raise ApiError(
+            status_code=409, code="FROZEN_PLAN_OWNER_HOLD_REQUIRED",
+            message="未启用持久 Owner GPU HOLD，不允许建立受控生产任务。",
+            retryable=False,
+        )
+    pack = _pack(body)
+
+    def prepare_and_freeze() -> dict:
+        # 所有可信证据从 Mac SQLite 审计和管理素材重新读取，绝不相信客户端 PASS 标志。
+        _service(request).verify(
+            pack=pack, subject_key=body.subject_key,
+            review_id=body.storyboard_review_id, principal=principal,
+        )
+        _asset_use(request).verify(
+            pack=pack, claims=body.claims, subject_key=body.subject_key,
+            principal=principal, attestation_id=body.attestation_id,
+        )
+        candidate = complete_storypack_episode_preview(
+            pack, body.storypack_sha256, body.completion,
+        )
+        if candidate["candidate_episode_sha256"] != body.expected_candidate_episode_sha256:
+            raise FrameManifestContractError("FROZEN_PLAN_EPISODE_SHA_STALE")
+        episode = Episode.model_validate(candidate["episode"])
+        if not services.production.preview_budget(episode)["allowed"]:
+            raise FrameManifestContractError("FROZEN_PLAN_EPISODE_BUDGET_EXCEEDED")
+        review = _service(request).subject(pack)["review"]
+        frames = inspect_frame_sources(pack, episode, review)
+        if (
+            not frames["mac_managed_content_verified"]
+            or frames["source_bindings_sha256"] != body.expected_source_bindings_sha256
+            or frames["frame_source_manifest"] is None
+        ):
+            raise FrameManifestContractError("FROZEN_PLAN_FRAME_SOURCE_STALE")
+
+        # 这是一次真正的 Owner 冻结意图，而非 GPU 许可：MASTER、Windows、
+        # 动态故事策略和独立 GPU 放行仍在后续专用门禁中验证。
+        plan = {
+            "contract": "picotoo.owner-frozen-plan.v1",
+            "subject_key": body.subject_key,
+            "owner_actor_id": principal.actor_id,
+            "owner_registry_revision": principal.registry_revision,
+            "storyboard_review_id": body.storyboard_review_id,
+            "asset_attestation_id": body.attestation_id,
+            "storypack_sha256": body.storypack_sha256,
+            "episode_sha256": candidate["candidate_episode_sha256"],
+            "source_bindings_sha256": frames["source_bindings_sha256"],
+        }
+        plan_sha = canonical_hash(plan)
+        created, inserted = services.production.create(
+            episode, request.state.trace_id,
+            frame_source_manifest=frames["frame_source_manifest"],
+            source_bindings_sha256=frames["source_bindings_sha256"],
+            frozen_owner_plan=plan,
+            expected_frozen_plan_sha256=plan_sha,
+        )
+        return {
+            "contract": "picotoo.owner-frozen-production-hold.v1",
+            "status": "FROZEN_OWNER_INTENT_AWAITING_INDEPENDENT_ADMISSION",
+            "episode_id": episode.episode_id,
+            "frozen_plan_sha256": plan_sha,
+            "candidate_episode_sha256": candidate["candidate_episode_sha256"],
+            "source_bindings_sha256": frames["source_bindings_sha256"],
+            "tasks": [
+                {
+                    "task_id": task.task_id,
+                    "task_type": task.task_type,
+                    "shot_id": task.payload.get("shot_id"),
+                }
+                for task in created.tasks
+            ],
+            "already_frozen": not inserted,
+            "core_task_records_created": True,
+            "master_rights_independently_verified": False,
+            "worker_local_bytes_verified": False,
+            "gpu_hold_released": False,
+            "can_lease": False,
+            "can_generate": False,
+            "gpu_authorized": False,
+        }
+
+    try:
+        # SQLite 任务链与冻结审计在 ProductionService.create 内同一事务提交。
+        return await run_in_threadpool(prepare_and_freeze)
+    except (StoryboardReviewError, AssetUseError, FrameManifestContractError,
+            InvalidTransitionError) as error:
+        # Pure manifest-contract errors carry their own stable reason as ValueError text.
+        code = error.code if hasattr(error, "code") else (
+            str(error) if isinstance(error, FrameManifestContractError)
+            else "FROZEN_PLAN_CONFLICT_OR_STALE"
+        )
+        raise ApiError(
+            status_code=409, code=code,
+            message="指定生产计划或 Owner 证据不一致，保持 GPU HOLD。",
+            retryable=False,
+        ) from error
+    except (EpisodeCandidateError, EpisodeValidationError, ValidationError) as error:
+        code = error.code if hasattr(error, "code") else "FROZEN_PLAN_EPISODE_INVALID"
+        raise ApiError(
+            status_code=422, code=code,
+            message="冻结 Episode 合同不合法，不创建生产任务。",
             retryable=False,
         ) from error
