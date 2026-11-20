@@ -79,7 +79,8 @@ internal static class FrameBundleDeliverySmoke
                 native.WorkerLocalBytesVerified && !native.CanQueue && !native.GpuAuthorized,
                 "已审核素材的自动领取/落盘不得获得 GPU 权限");
             Assert(handler.Calls == 3, "应领取、下载并向 Mac 回传冻结来源对应的暂存声明");
-            Assert(native.CoreStagingStatus == "WINDOWS_STAGING_REPORTED_FOR_FROZEN_PLAN",
+            Assert(native is not null &&
+                native.CoreStagingStatus == "WINDOWS_STAGING_REPORTED_FOR_FROZEN_PLAN",
                 "Mac 未关联指定冻结 Episode 的数据暂存回执");
             var empty = await mac.ClaimAndStagePendingFramesAsync(project);
             Assert(empty is null && handler.Calls == 4, "一次性待传任务不应重复领取");
