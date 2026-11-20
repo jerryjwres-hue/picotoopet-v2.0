@@ -12,12 +12,15 @@ from dataclasses import dataclass
 from picotoopet_core.domain.episode import Episode, EpisodeValidationError
 
 
+MAX_QC_REDO_ROUNDS = 2                     # 与 ExecutorService 的有界重抽轮次共享。
+
+
 @dataclass(frozen=True, slots=True)
 class EpisodeBudgetPolicy:
     max_takes_per_shot: int = 8                 # 单镜最多 8 次候选抽卡。
     max_takes_per_episode: int = 48             # 每集首次生成候选总数上限。
     max_reserved_video_seconds: float = 720.0  # 计入现有两次 QC 重抽的最坏情形。
-    qc_redo_rounds: int = 2                     # 与现有 ExecutorService 重抽轮次一致。
+    qc_redo_rounds: int = MAX_QC_REDO_ROUNDS     # 与生产队列使用同一常量。
 
 
 def inspect_episode_budget(episode: Episode, policy: EpisodeBudgetPolicy) -> dict:
