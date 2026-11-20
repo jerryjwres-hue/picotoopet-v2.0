@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import copy
+import hashlib
+import json
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -333,3 +337,121 @@ def test_existing_legacy_sqlite_migrates_to_owner_hold_without_erasing_history(t
         _blocked(api.post(f"{_API}/episodes", json=_episode()))
         assert api.post(f"{_API}/executors/lease", json=_LEASE).status_code == 204
         assert _counts(api) == before
+
+
+
+def test_core_bound_frame_manifest_survives_queue_packaging_and_gpu_hold(guarded, tmp_path):
+    """Trusted-internal data packaging only: StoryPack IDs survive Core→Worker safely."""
+    from picotoopet_core.domain.episode import Episode
+    from picotoopet_core.domain.storypack_frame_sources import FrameManifestContractError
+    from picotoopet_core.queue.state_machine import InvalidTransitionError
+    from scripts.windows.executor_bridge import Bridge, BridgeConfig
+
+    client = guarded
+    services = client.app.state.services
+    episode = Episode.model_validate(_episode())
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+        "AAAAC0lEQVR42mP8/x8AAwMCAO+jRZcAAAAASUVORK5CYII="
+    )
+    content_sha = hashlib.sha256(png).hexdigest()
+    manifest = {
+        "contract": "picotoo.frame-source-manifest.v1",
+        "storypack_sha256": "a" * 64,
+        "owner_subject_sha256": "b" * 64,
+        "bindings": [
+            {
+                "shot_id": shot.shot_id,
+                "role": "first",
+                "asset_ref": "maotai_master_v1",
+                "managed_sha256": content_sha,
+            }
+            for shot in episode.shots
+        ],
+    }
+    digest = hashlib.sha256(json.dumps(
+        manifest, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+
+    # 先校验内容来源，再通过已有 ProductionService 内部路径打包任务。
+    # 这个测试用 Core 内部方法而非开放的设备 HTTP 入口，不能作为生产授权。
+    built, inserted = services.production.create(
+        episode, "synthetic-bound-plan",
+        frame_source_manifest=manifest,
+        source_bindings_sha256=digest,
+    )
+    assert inserted is True
+    assert len(built.tasks) == 9
+    keyframes = [task for task in built.tasks if task.task_type == "gen.keyframe"]
+    assert len(keyframes) == 3
+    for task in keyframes:
+        assert task.payload["jobs"]["frame_source_manifest"] == manifest
+        assert task.payload["jobs"]["source_bindings_sha256"] == digest
+    assert all(
+        "frame_source_manifest" not in task.payload["jobs"]
+        for task in built.tasks if task.task_type != "gen.keyframe"
+    )
+
+    # 真实 Mac Owner HOLD 仍不能给其中任何 Task 发出新 GPU 租约。
+    assert client.post(f"{_API}/executors/lease", json=_LEASE).status_code == 204
+    _blocked(client.post(f"{_API}/episodes", json=_episode()))
+
+    # Windows 使用既有 Worker，读取真正从 Core SQLite 返回的 Task payload。
+    root = tmp_path / "windows-worker-test"
+    root.mkdir()
+    bridge = Bridge(
+        BridgeConfig("http://127.0.0.1:8765", "frame-test", root), session=None,
+    )
+    stage = bridge.state_dir / "staged_references"
+    stage.mkdir()
+    (stage / f"{content_sha}.png").write_bytes(png)
+    first_task = keyframes[0].model_dump(mode="json")
+    worker_jobs = bridge._jobs({"task": first_task, "stem": "synthetic_frozen_shot"})
+    assert worker_jobs["jobs"][0]["refs"] == [
+        f"../_queue/executor_bridge/staged_references/{content_sha}.png"
+    ]
+    assert "frame_source_manifest" not in worker_jobs
+    assert not list((bridge.queue / "inbox").glob("*.json"))
+
+    repeated, inserted = services.production.create(
+        episode, "same-internal-plan",
+        frame_source_manifest=manifest,
+        source_bindings_sha256=digest,
+    )
+    assert inserted is False
+    assert [task.task_id for task in repeated.tasks] == [
+        task.task_id for task in built.tasks
+    ]
+
+    # 同一 Episode ID 无权静默换用不同受管理图片 SHA。
+    changed = copy.deepcopy(manifest)
+    changed["bindings"][0]["managed_sha256"] = "e" * 64
+    changed_digest = hashlib.sha256(json.dumps(
+        changed, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+    with pytest.raises(InvalidTransitionError, match="Digest"):
+        services.production.create(
+            episode, "different-internal-plan",
+            frame_source_manifest=changed,
+            source_bindings_sha256=changed_digest,
+        )
+
+    # 来源清单缺失一个镜头时，Core 在任何 SQLite 写入前拒绝打包。
+    incomplete = copy.deepcopy(manifest)
+    incomplete["bindings"].pop()
+    incomplete_digest = hashlib.sha256(json.dumps(
+        incomplete, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+    with pytest.raises(FrameManifestContractError, match="BINDINGS"):
+        services.production.create(
+            episode, "invalid-internal-plan",
+            frame_source_manifest=incomplete,
+            source_bindings_sha256=incomplete_digest,
+        )
+    assert services.database.scalar(
+        "SELECT COUNT(*) FROM production_episodes WHERE episode_id=?",
+        (episode.episode_id,),
+    ) == 1

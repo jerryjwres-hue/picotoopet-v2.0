@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from copy import deepcopy
 
 from picotoopet_core.domain.episode import Episode
 from picotoopet_core.domain.storypack import StoryPackV1, storypack_preview
@@ -123,6 +125,9 @@ def inspect_frame_sources(
         "storypack_sha256": source_sha,
         "owner_subject_sha256": subject_sha if content_bound else None,
         "source_bindings_sha256": manifest_sha,
+        # 与 Mac ZIP 的 manifest.json 完全相同的规范化内容，供冻结 Plan 绑定。
+        # 注意：返回清单不代表可排队；当前仍需独立 MASTER/Owner/GPU 放行。
+        "frame_source_manifest": manifest if manifest_sha is not None else None,
         "bindings": bindings,
         "mac_managed_content_verified": manifest_sha is not None,
         "worker_local_bytes_verified": False,
@@ -134,3 +139,88 @@ def inspect_frame_sources(
         "can_queue": False,
         "gpu_authorized": False,
     }
+
+
+class FrameManifestContractError(ValueError):
+    """Data-only manifest mismatch; never grants production or GPU authority."""
+
+
+def validate_episode_frame_manifest(
+    episode: Episode, manifest: dict, expected_sha256: str,
+) -> dict:
+    """Validate complete exact shot/ref binding before internal Core task packing.
+
+    This is intentionally *not* a rights, Owner, Plan, or GPU admission decision.
+    The future admission service must validate those independently before invoking
+    the existing ProductionService with these opt-in metadata fields.
+    """
+    valid_sha = lambda value: (
+        isinstance(value, str)
+        and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+    )
+    if (
+        not isinstance(manifest, dict)
+        or set(manifest) != {
+            "contract", "storypack_sha256", "owner_subject_sha256", "bindings"
+        }
+        or manifest.get("contract") != "picotoo.frame-source-manifest.v1"
+        or not valid_sha(expected_sha256)
+        or not valid_sha(manifest.get("storypack_sha256"))
+        or not valid_sha(manifest.get("owner_subject_sha256"))
+    ):
+        raise FrameManifestContractError("FRAME_PLAN_MANIFEST_INVALID")
+    bindings = manifest["bindings"]
+    if not isinstance(bindings, list) or not 1 <= len(bindings) <= 960:
+        raise FrameManifestContractError("FRAME_PLAN_BINDINGS_INVALID")
+    try:
+        encoded = json.dumps(
+            manifest, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError) as error:
+        raise FrameManifestContractError("FRAME_PLAN_MANIFEST_INVALID") from error
+    if len(encoded) > 128 * 1024 or hashlib.sha256(encoded).hexdigest() != expected_sha256:
+        raise FrameManifestContractError("FRAME_PLAN_SHA_OR_SIZE_MISMATCH")
+
+    # 既有 Episode 为镜头顺序及 first/last 的唯一来源；不相信清单额外声明。
+    source_refs: set[tuple[str, str, str]] = set()
+    for shot in episode.shots:
+        for role, frame in (("first", shot.first_frame), ("last", shot.last_frame)):
+            if frame is None:
+                continue
+            if role == "first" and not frame.refs:
+                raise FrameManifestContractError("FRAME_PLAN_FIRST_REFS_MISSING")
+            for ref in frame.refs:
+                if (
+                    not isinstance(ref, str)
+                    or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{2,99}", ref) is None
+                    or (shot.shot_id, role, ref) in source_refs
+                ):
+                    raise FrameManifestContractError("FRAME_PLAN_EPISODE_REF_INVALID")
+                source_refs.add((shot.shot_id, role, ref))
+
+    declared: set[tuple[str, str, str]] = set()
+    for binding in bindings:
+        if (
+            not isinstance(binding, dict)
+            or set(binding) != {"shot_id", "role", "asset_ref", "managed_sha256"}
+        ):
+            raise FrameManifestContractError("FRAME_PLAN_BINDING_INVALID")
+        shot = binding["shot_id"]
+        role = binding["role"]
+        asset = binding["asset_ref"]
+        digest = binding["managed_sha256"]
+        if (
+            not isinstance(shot, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,100}", shot) is None
+            or role not in ("first", "last")
+            or not isinstance(asset, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{2,99}", asset) is None
+            or not valid_sha(digest)
+            or (shot, role, asset) in declared
+        ):
+            raise FrameManifestContractError("FRAME_PLAN_BINDING_INVALID")
+        declared.add((shot, role, asset))
+    if declared != source_refs:
+        raise FrameManifestContractError("FRAME_PLAN_EPISODE_BINDINGS_MISMATCH")
+    return deepcopy(manifest)

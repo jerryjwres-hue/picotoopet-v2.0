@@ -318,9 +318,134 @@ class Bridge:
         except OSError as error:
             raise JobError("已同步首帧无法安全重新校验。") from error
 
+
+    def _bind_managed_frame_refs(self, task: dict, jobs: dict) -> None:
+        """Map Core's content-addressed StoryPack IDs to verified Windows images.
+
+        The manifest is a *data* contract, not an Owner approval or lease.
+        It must be inserted by a future independently authorized, immutable
+        Core production Plan. This method cannot grant GPU permission.
+        """
+        has_manifest = "frame_source_manifest" in jobs
+        has_digest = "source_bindings_sha256" in jobs
+        if not has_manifest and not has_digest:
+            return
+        if not (has_manifest and has_digest) or task.get("task_type") != "gen.keyframe":
+            raise JobError("受管理首帧绑定缺少完整的冻结源清单。")
+        manifest = jobs.pop("frame_source_manifest")
+        claimed_sha = jobs.pop("source_bindings_sha256")
+        if (
+            not isinstance(manifest, dict)
+            or set(manifest) != {
+                "contract", "storypack_sha256", "owner_subject_sha256", "bindings"
+            }
+            or manifest.get("contract") != "picotoo.frame-source-manifest.v1"
+            or not isinstance(claimed_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", claimed_sha)
+            or any(
+                not isinstance(manifest.get(field), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", manifest[field])
+                for field in ("storypack_sha256", "owner_subject_sha256")
+            )
+        ):
+            raise JobError("受管理首帧源清单格式无效。")
+        canonical = json.dumps(
+            manifest, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+        if len(canonical) > 128 * 1024:
+            raise JobError("受管理首帧清单超过已支持的大小。")
+        if hashlib.sha256(canonical).hexdigest() != claimed_sha:
+            raise JobError("受管理首帧清单与冻结 SHA 不一致。")
+
+        bindings = manifest["bindings"]
+        if not isinstance(bindings, list) or not 1 <= len(bindings) <= 960:
+            raise JobError("受管理首帧绑定数量无效。")
+        declared = {}
+        for binding in bindings:
+            if (
+                not isinstance(binding, dict)
+                or set(binding) != {"shot_id", "role", "asset_ref", "managed_sha256"}
+            ):
+                raise JobError("受管理首帧条目结构无效。")
+            shot = binding["shot_id"]
+            role = binding["role"]
+            ref = binding["asset_ref"]
+            digest = binding["managed_sha256"]
+            if (
+                not isinstance(shot, str)
+                or not IDENTIFIER.fullmatch(shot)
+                or role not in ("first", "last")
+                or not isinstance(ref, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{2,99}", ref)
+                or not isinstance(digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or (shot, role, ref) in declared
+            ):
+                raise JobError("受管理首帧条目不可信或重复。")
+            declared[(shot, role, ref)] = digest
+
+        shot_id = task["payload"].get("shot_id")
+        if not isinstance(shot_id, str) or not IDENTIFIER.fullmatch(shot_id):
+            raise JobError("受管理首帧没有有效镜头身份。")
+        entries = jobs.get("jobs")
+        if not isinstance(entries, list) or not 1 <= len(entries) <= 2:
+            raise JobError("受管理首帧作业列表无效。")
+        required = {
+            (role, ref)
+            for (shot, role, ref) in declared
+            if shot == shot_id
+        }
+        actual = set()
+        seen_roles = set()
+        staged_dir = self.state_dir / "staged_references"
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise JobError("受管理首帧作业对象无效。")
+            job_id = entry.get("id")
+            if job_id not in (f"{shot_id}_first", f"{shot_id}_last"):
+                raise JobError("首帧绑定与当前 shot_id、role 不一致。")
+            role = job_id.removeprefix(f"{shot_id}_")
+            if role in seen_roles:
+                raise JobError("受管理首帧存在重复的镜头角色。")
+            seen_roles.add(role)
+            refs = entry.get("refs")
+            if not isinstance(refs, list) or not refs or len(refs) > 32:
+                raise JobError("受管理首帧引用列表无效。")
+            rewritten = []
+            for ref in refs:
+                if (
+                    not isinstance(ref, str)
+                    or (role, ref) in actual
+                    or (shot_id, role, ref) not in declared
+                ):
+                    raise JobError("受管理首帧引用缺失、重复或不属于本镜头。")
+                actual.add((role, ref))
+                digest = declared[(shot_id, role, ref)]
+                matches = [
+                    staged_dir / f"{digest}{extension}"
+                    for extension in (".png", ".jpg", ".webp")
+                    if (staged_dir / f"{digest}{extension}").exists()
+                    or (staged_dir / f"{digest}{extension}").is_symlink()
+                ]
+                if len(matches) != 1:
+                    raise JobError("Windows 缺少唯一且已验证的首帧 SHA 图片。")
+                relative = (
+                    f"../_queue/executor_bridge/staged_references/{matches[0].name}"
+                )
+                # 再次重读真实字节，拒绝被篡改、软链接或格式错误的图像。
+                self._verify_staged_reference(relative)
+                rewritten.append(relative)
+            entry["refs"] = rewritten
+        if actual != required:
+            raise JobError("本镜头首帧引用与冻结 Mac 清单不完全一致。")
+
     def _jobs(self, state):
         task = state["task"]
         jobs = deepcopy(task["payload"]["jobs"])
+        # Mac Core 原始 refs 是资产 ID，不是 Windows 文件路径。
+        # 仅当 Core 明确下发绑定 SHA 时才转换；不能猜测或搜索同名图片。
+        self._bind_managed_frame_refs(task, jobs)
         if jobs.get("out") == "$bridge.output":
             jobs["out"] = f"../_queue/executor_bridge/outputs/{state['stem']}"
         if "out" in jobs:
