@@ -12,8 +12,10 @@
 
 ## 本轮最小 fail-closed 机制
 
-当 **AppSettings.owner_review_registry.credentials 非空**时，不论当前 Owner
-凭据是否过期或禁用，Mac Core 都进入受保护的 StoryPack Owner 模式：
+当 **AppSettings.owner_review_registry.credentials 首次出现任意配置项**时，
+Mac Core 在启动期间把单例 `owner_production_hold` 标记原子写入现有 SQLite。
+从此只要继续使用该数据库，不论当前 Owner 凭据是否过期、禁用或被清空，
+旧 GPU 路径都必须保持关闭。单纯删除 Owner Registry 无法降级到 legacy 模式：
 
 - 直接 `POST /episodes`、`POST /episodes/{episode_id}/assemble`：返回
   `409 STORYPACK_PRODUCTION_ADMISSION_REQUIRED`。
@@ -28,9 +30,13 @@
   这个例外不触发恢复过期任务、不递增 attempt、不会产生新 GPU POST。
 - 原有只读查看、预算预览、普通 CPU 任务、取消旧任务、有效租约的心跳
   和成果回执仍按原逻辑运行，方便人工审查与保留历史。
-- **凭据消失不是安全放行信号。** 生产部署必须保留 Owner Registry；
-  全部 credentials 被清空会回到 legacy 模式，因此不能把“空 Registry”
-  作为正式启用 V3.1 的安全配置。这是当前配置模式的已知界限。
+- **凭据消失不是安全放行信号。** 保护标记使用数据库迁移 v4 创建的
+  单例表，首次启用即持久化，重复启动不覆盖时间戳。Owner 凭据文件被误删、
+  替换成空配置、禁用或过期都不会恢复旧 GPU 入口。启动初始化失败必须停止服务。
+- **不可用数据库回滚冒充正常恢复。** 删除/替换整份 `core.db`、恢复首次启用
+  Owner 之前的备份，或人为修改 SQLite，可以丢失此锁；这属于本机文件系统/恢复
+  权限问题。正式 V3.1 安装仍要验证带 Owner 的部署身份和备份恢复流程。
+  暂时不增加第二个哨兵文件或并行授权系统。
 - 没有改原 Worker、Journal 内容、GPU 执行器、已有租约数据库结构或生产模型。
   不修改任何用户设备和 ComfyUI，CPU 测试不发 GPU POST。
 
@@ -38,10 +44,10 @@
 
 1. 这不是新的生产放行机制，**没有**签发任何有效 GPU 授权。
    数据同步的 `CanQueue=false/GpuAuthorized=false` 仍必须保持原义。
-2. 这次保护的是**运行时配置了 Owner Registry** 的旧 HTTP 入口。
-   没有 Owner 配置的旧安装仍按原 legacy API 工作，避免悄悄破坏现有部署。
-   在正式 V3.1 部署前，必须将已选定的 Owner 凭据配置视为安装准入要求，
-   并独立验证任何无配置回退不会重新启用旧路径。
+2. 这次保护的是**任何曾在当前 Core 数据库启用 Owner Registry** 的旧 HTTP
+   入口。一直没有 Owner 配置/历史标记的旧安装仍按原 legacy API 工作，
+   避免悄悄破坏已有部署。正式 V3.1 安装必须首次安全配置 Owner 凭据，
+   并验证恢复备份时不会把已受保护项目降级回全开放的历史数据库。
 3. 下一项才是完成独立的受信任生产 Plan：Owner+MASTER 来源证据、
    镜头/视频预算、Windows 实际素材 SHA、不可变 Plan Digest、
    指定 Job 受控 GPU HOLD/租约恢复与可撤销授权必须原子校验。
@@ -60,3 +66,15 @@
   过期后重播皆拒绝，不增加 attempt，也不丢弃已有 Journal。
 - 没有 Owner Registry 的 legacy 模式仍可使用原始 Episode 创建 API；
   测试严格区分这个兼容模式，不将其当作受保护生产。
+
+
+### SQLite v4 保护迁移验收
+
+- 原有 `core.db` 自动迁移 v4，只增加单例 `owner_production_hold` 表，不修改
+  `tasks`、`production_episodes`、`approvals` 或 Journal 行。
+- 新的无 Owner legacy 安装表为空，仍按现有旧模式运行；**仅当首次配置过 Owner
+  凭据**才原子插入 `hold_id=1`。
+- 关闭 Core 并重新启动、清空 Owner Registry、再次重启：只读报告的保护状态
+  与原始 `activated_at` 保持不变，所有旧 GPU 入口仍返回拒绝。
+- 将历史非 Owner SQLite 升级至 Owner 模式：旧 Episode 和任务不删除，新的
+  GPU POST 与新 lease 被拒绝；原有 RUNNING Journal 恢复规则不变。
