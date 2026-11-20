@@ -27,8 +27,19 @@
         <TextBlock Text="为每个分镜选用一个视频后可合成。" Foreground="#536174" Margin="0,4,0,0" />
         <TextBlock Text="{Binding WorkerProjectStatus}" Foreground="#536174"
                    Margin="0,3,0,0" FontSize="11" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding WorkerRuntimeStatus}" Foreground="#445365"
+                   Margin="0,3,0,0" FontSize="11" MaxWidth="440" TextWrapping="Wrap" />
       </StackPanel>
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+      <StackPanel DockPanel.Dock="Right" Orientation="Vertical">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button Content="一次配对并启动 Worker" Click="SetupWorker"
+                  ToolTip="使用安装包内的现有执行桥，密钥仅存 Windows Credential Manager；不授权 GPU。" />
+          <Button Content="暂停新任务" Click="PauseWorker"
+                  ToolTip="只暂停新租约，保留已提交 GPU 作业和旧 Journal。" />
+          <Button Content="恢复新任务" Click="ResumeWorker"
+                  ToolTip="只清除本地暂停；Mac Core 授权和冻结 Plan 检查不变。" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
         <Button Content="选择视频目录（首次）" Click="ChooseWorkerProject"
                 ToolTip="仅首次选择已有 Windows Worker 视频工程根目录，后续自动记住。" />
         <Button Content="同步已审核首帧" Command="{Binding SyncApprovedFramesCommand}"
@@ -36,6 +47,7 @@
         <Button Content="打开本地批次" Click="OpenBatch" IsEnabled="{Binding CanOpenBatch}" />
         <Button Content="刷新" Command="{Binding RefreshCommand}" />
         <Button Content="合成本集" Command="{Binding AssembleCommand}" Style="{StaticResource PrimaryAction}" />
+        </StackPanel>
       </StackPanel>
     </DockPanel>
 

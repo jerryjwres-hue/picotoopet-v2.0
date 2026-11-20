@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using System.IO;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Networking;
@@ -16,6 +17,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly DesktopSettingsStore _settingsStore;
     private readonly IUiDispatcher _dispatcher;
     private readonly SafeFileLogger _logger;
+    private readonly WorkerProcessManager _workerManager;
     private readonly AppStateStore _stateStore = new();
     private readonly LatencyRecorder _restLatency = new();
     private readonly LatencyRecorder _socketLatency = new();
@@ -50,7 +52,19 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _settingsStore = settingsStore;
         _dispatcher    = dispatcher;
         _logger        = logger;
-        Production = new ProductionViewModel(() => _client, () => CurrentConnectionToken, settingsStore);
+        // 程序安装目录内的唯一 GPU Bridge；关闭 Studio 不杀掉在途旧 Journal。
+        var appRoot = AppContext.BaseDirectory;
+        var localRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PicotooPetV2", "Desktop");
+        _workerManager = new WorkerProcessManager(
+            Path.Combine(appRoot, "tools", "worker",
+                "PicotooPet.Worker", "PicotooPet.Worker.exe"),
+            Path.Combine(localRoot, "worker_launch.toml"));
+        var workerKeyStore = new CredentialManagerTokenStore("PicotooPetV3/WorkerAttestationKey");
+        Production = new ProductionViewModel(
+            () => _client, () => CurrentConnectionToken, settingsStore,
+            _workerManager, workerKeyStore, () => MacBaseUrl, () => _tokenStore.Read());
         _stateStore.SnapshotChanged += OnSnapshotChanged;
         SubmitTaskCommand = new AsyncRelayCommand(
             SubmitTaskAsync,
@@ -169,7 +183,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             ConnectionText = "未配对";
             return;
         }
-        await ConnectAsync(token, cancellationToken);
+        try
+        {
+            await ConnectAsync(token, cancellationToken);
+        }
+        finally
+        {
+            // Mac 暂时离线也允许已配对 Worker 自己重试，不要求用户重启脚本。
+            // 仍须用户此前显式选择自动启动，并有有效的 HTTPS 与独立密钥。
+            await Production.TryAutoStartWorkerAsync(settings);
+        }
     }
 
     /// <summary>验证地址与令牌后保存；Token 只进入 Credential Manager。</summary>
@@ -181,6 +204,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         var existing = await _settingsStore.LoadAsync(cancellationToken);
         await _settingsStore.SaveAsync(
             existing with { MacBaseUrl = MacBaseUrl }, cancellationToken);
+        if (existing.WorkerAutoStart)
+            await Production.TryAutoStartWorkerAsync(existing);
     }
 
     private async Task ConnectAsync(string token, CancellationToken cancellationToken)
@@ -620,6 +645,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         await CancelConnectionAsync().ConfigureAwait(false);
         _stateStore.SnapshotChanged -= OnSnapshotChanged;
         _lifetime.Dispose();
+        _workerManager.Dispose();
         await _logger.DisposeAsync().ConfigureAwait(false);
     }
 }

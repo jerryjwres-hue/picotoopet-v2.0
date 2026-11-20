@@ -322,3 +322,35 @@ def test_worker_forces_core_revoke_check_immediately_before_gpu_inbox(monkeypatc
     assert bridge._work(state) is None
     assert any(call.get("force") is True for call in heartbeat_calls)
     assert not list((bridge.queue / "inbox").glob("*.json"))
+
+
+def test_hmac_worker_204_never_falls_back_to_unsigned_legacy_lease(monkeypatch, tmp_path):
+    """Core Owner HOLD/no job 204 must stop before the bearer-only lease route."""
+    from types import SimpleNamespace
+
+    bridge, _, _ = _case(tmp_path)
+    monkeypatch.setenv("PICOTOO_WORKER_ATTEST_KEY", "w" * 48)
+    calls = []
+
+    def fake_request(method, route, **kwargs):
+        calls.append(route)
+        assert route == "/studio/production-admission/lease-challenge"
+        return SimpleNamespace(status_code=204)
+
+    monkeypatch.setattr(bridge, "_request", fake_request)
+    assert bridge._lease() is None
+    assert calls == ["/studio/production-admission/lease-challenge"]
+    _no_local_gpu(bridge)
+
+
+def test_invalid_worker_hmac_key_blocks_legacy_lease_without_any_http(monkeypatch, tmp_path):
+    """Malformed Worker credential must never silently enable legacy GPU work."""
+    bridge, _, _ = _case(tmp_path)
+    monkeypatch.setenv("PICOTOO_WORKER_ATTEST_KEY", "short")
+    monkeypatch.setattr(
+        bridge, "_request",
+        lambda *args, **kwargs: pytest.fail("无效 Worker 密钥竟触发 Core 租约请求"),
+    )
+    with pytest.raises(JobError):
+        bridge._lease()
+    _no_local_gpu(bridge)

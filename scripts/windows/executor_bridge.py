@@ -128,7 +128,10 @@ class Bridge:
         }
         signing_key = os.environ.get("PICOTOO_WORKER_ATTEST_KEY", "")
         signed_headers = {}
-        if signing_key and re.fullmatch(r"[A-Za-z0-9_-]{43,256}", signing_key):
+        if signing_key:
+            # 配置了独立 Worker 密钥，就绝不允许回退到旧 Bearer GPU 租约。
+            if not re.fullmatch(r"[A-Za-z0-9_-]{43,256}", signing_key):
+                raise JobError("Worker 密钥无效，拒绝旧租约回退。")
             challenge = self._request(
                 "POST", "/studio/production-admission/lease-challenge", json=body,
             )
@@ -163,8 +166,10 @@ class Bridge:
                         hashlib.sha256,
                     ).hexdigest(),
                 }
-            elif challenge.status_code != 204:
-                # Proof challenge failed: never fall back to unsigned GPU lease.
+            elif challenge.status_code == 204:
+                # 未授权或尚无可领取任务，直接空闲；不得发送 unsigned lease。
+                return None
+            else:
                 raise JobError("Core 受控 GPU 租约预检不可用。")
         # Owner HOLD requires a one-use signed nonce; old unconfigured Core still
         # preserves its legacy behavior. No new local GPU job is written here.
@@ -1147,7 +1152,8 @@ def main():
                 while True:
                     try:
                         bridge.step()
-                    except (requests.RequestException, OSError) as exc:
+                    except (requests.RequestException, OSError, JobError) as exc:
+                        # 认证失败只保留旧 Journal 并重试，绝不绕回旧无签名租约。
                         LOG.warning("本地状态已保留，将重试：%s", exc)
                     time.sleep(POLL_SECONDS)
             except KeyboardInterrupt:
