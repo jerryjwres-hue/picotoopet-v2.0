@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Net.Sockets;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -53,6 +55,8 @@ public sealed class MacCoreClient : IAsyncDisposable
             MaxConnectionsPerServer       = 16,
             AutomaticDecompression        = DecompressionMethods.GZip | DecompressionMethods.Deflate,
             EnableMultipleHttp2Connections = false,
+            // 不跟随跳转到不可信域名，特别是持有设备 Bearer 的私有素材下载。
+            AllowAutoRedirect            = false,
         };
         var client = new HttpClient(handler, disposeHandler: true)
         {
@@ -170,6 +174,101 @@ public sealed class MacCoreClient : IAsyncDisposable
         SendAsync<PreviewContent>(HttpMethod.Get,
             $"api/v1/tasks/{Uri.EscapeDataString(taskId)}/thumbnails/{Uri.EscapeDataString(thumbnailId)}",
             null, "artifacts.thumbnail", null, cancellationToken);
+
+
+    /// <summary>从已由 Mac Owner 签发的一次性凭据下载 ZIP，并使用 .NET 原生代码在 Worker 目录验 SHA。</summary>
+    /// <remarks>这只是数据同步；方法绝不创建生产任务、解除 GPU HOLD 或声明 MASTER 已批准。</remarks>
+    public async Task<FrameStagingReceipt> DownloadAndStageFramesAsync(
+        string transferTicket,
+        string expectedManifestSha256,
+        string expectedBundleSha256,
+        string workerRoot,
+        CancellationToken cancellationToken = default)
+    {
+        var baseUri = _httpClient.BaseAddress
+            ?? throw new InvalidOperationException("FRAME_TRANSFER_BASE_URI_MISSING");
+        var host = baseUri.Host;
+        var local = string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+            (IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address));
+        if ((baseUri.Scheme != Uri.UriSchemeHttps && !(baseUri.Scheme == Uri.UriSchemeHttp && local)) ||
+            !string.IsNullOrEmpty(baseUri.UserInfo) ||
+            string.IsNullOrWhiteSpace(transferTicket) ||
+            transferTicket.Length is < 20 or > 160 ||
+            !IsLowerSha(expectedManifestSha256) ||
+            !IsLowerSha(expectedBundleSha256))
+        {
+            throw new InvalidDataException("FRAME_TRANSFER_SECURE_INPUT_REQUIRED");
+        }
+
+        var temp = Path.Combine(Path.GetTempPath(), $"picotoo-private-frame-{Guid.NewGuid():N}.zip");
+        try
+        {
+            // 只用设备 Bearer + Owner 单次 Ticket；绝不把 Owner Token 放到 Windows。
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get, "api/v1/studio/frame-transfer/download");
+            request.Headers.TryAddWithoutValidation("X-Picotoo-Transfer-Ticket", transferTicket);
+            request.Headers.Accept.Clear();
+            request.Headers.Accept.ParseAdd("application/zip");
+            using var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.OK ||
+                response.Content.Headers.ContentType?.MediaType != "application/zip" ||
+                !HeaderSha(response, "X-Picotoo-Source-Bindings-Sha256", expectedManifestSha256) ||
+                !HeaderSha(response, "X-Picotoo-Bundle-Sha256", expectedBundleSha256))
+            {
+                throw new InvalidDataException("FRAME_TRANSFER_RESPONSE_NOT_TRUSTED");
+            }
+
+            // 逐块下载并在 ZIP 解析之前核对 Mac 提供的原始 bundle SHA。
+            using var bundleHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            long total = 0;
+            await using (var source = await response.Content.ReadAsStreamAsync(
+                cancellationToken).ConfigureAwait(false))
+            await using (var file = new FileStream(
+                temp, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                1024 * 1024, FileOptions.Asynchronous))
+            {
+                var buffer = new byte[1024 * 1024];
+                int count;
+                while ((count = await source.ReadAsync(buffer, cancellationToken)
+                    .ConfigureAwait(false)) > 0)
+                {
+                    total += count;
+                    if (total > 129L * 1024 * 1024)
+                    {
+                        throw new InvalidDataException("FRAME_TRANSFER_SIZE_LIMIT");
+                    }
+                    bundleHash.AppendData(buffer, 0, count);
+                    await file.WriteAsync(buffer.AsMemory(0, count), cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                await file.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            if (total == 0 || !string.Equals(
+                Convert.ToHexString(bundleHash.GetHashAndReset()), expectedBundleSha256,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("FRAME_TRANSFER_BUNDLE_SHA_MISMATCH");
+            }
+
+            // Windows 实际重读本地图片字节；即使数据对账成功也不签发 GPU 权限。
+            return await FrameBundleStager.StageAsync(
+                temp, expectedManifestSha256, workerRoot, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            File.Delete(temp);
+        }
+    }
+
+    private static bool IsLowerSha(string value) =>
+        value is { Length: 64 } && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    private static bool HeaderSha(HttpResponseMessage response, string name, string expected) =>
+        response.Headers.TryGetValues(name, out var values) &&
+        values.SequenceEqual(new[] { expected }, StringComparer.Ordinal);
 
     private async Task<T> SendAsync<T>(
         HttpMethod method,
