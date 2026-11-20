@@ -62,6 +62,28 @@ function Set-PicotooShortcuts {
     }
 }
 
+function Set-PicotooTunnelShortcut {
+    param([Parameter(Mandatory)][string]$VersionRoot)
+
+    # 与安装器使用同一规则：回滚后只保留当前版本内经清单核验的连接脚本。
+    $shortcutPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet 安全连接.lnk"
+    $folder       = Join-Path $VersionRoot "tools\connection"
+    $launcher     = Join-Path $folder "CONNECT_MAC_SECURE.vbs"
+    $script       = Join-Path $folder "Start-SecureMacTunnel.ps1"
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $script -PathType Leaf)) {
+        Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+        return
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut                  = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath       = Join-Path $env:WINDIR "System32\wscript.exe"
+    $shortcut.Arguments        = '"' + $launcher + '"'
+    $shortcut.WorkingDirectory = $folder
+    $shortcut.Description      = "PicotooPet Mac SSH 加密连接（仅在明确双击后启动）"
+    $shortcut.Save()
+}
+
 $report = [ordered]@{
     schema_version = "2.2.0"
     generated_at   = (Get-Date).ToUniversalTime().ToString("o")
@@ -90,6 +112,7 @@ try {
     Write-JsonAtomic -Value $previous -Path $currentPath
     Write-JsonAtomic -Value $current -Path $previousPath
     Set-PicotooShortcuts -Executable ([string]$previous.executable)
+    Set-PicotooTunnelShortcut -VersionRoot ([string]$previous.path)
     $process = Start-Process -FilePath $previous.executable -WorkingDirectory $previous.path -PassThru
     Start-Sleep -Seconds 2
     $process.Refresh()
@@ -107,6 +130,7 @@ catch {
             Write-JsonAtomic -Value $current -Path $currentPath
             Write-JsonAtomic -Value $previous -Path $previousPath
             Set-PicotooShortcuts -Executable ([string]$current.executable)
+            Set-PicotooTunnelShortcut -VersionRoot ([string]$current.path)
             Start-Process -FilePath $current.executable -WorkingDirectory $current.path
         }
         catch {
