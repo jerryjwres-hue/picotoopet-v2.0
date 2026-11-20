@@ -353,6 +353,8 @@ class Bridge:
             manifest, ensure_ascii=False, sort_keys=True,
             separators=(",", ":"), allow_nan=False,
         ).encode("utf-8")
+        if len(canonical) > 128 * 1024:
+            raise JobError("受管理首帧清单超过已支持的大小。")
         if hashlib.sha256(canonical).hexdigest() != claimed_sha:
             raise JobError("受管理首帧清单与冻结 SHA 不一致。")
 
@@ -395,6 +397,7 @@ class Bridge:
             if shot == shot_id
         }
         actual = set()
+        seen_roles = set()
         staged_dir = self.state_dir / "staged_references"
         for entry in entries:
             if not isinstance(entry, dict):
@@ -403,6 +406,9 @@ class Bridge:
             if job_id not in (f"{shot_id}_first", f"{shot_id}_last"):
                 raise JobError("首帧绑定与当前 shot_id、role 不一致。")
             role = job_id.removeprefix(f"{shot_id}_")
+            if role in seen_roles:
+                raise JobError("受管理首帧存在重复的镜头角色。")
+            seen_roles.add(role)
             refs = entry.get("refs")
             if not isinstance(refs, list) or not refs or len(refs) > 32:
                 raise JobError("受管理首帧引用列表无效。")
