@@ -183,8 +183,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             ConnectionText = "未配对";
             return;
         }
-        await ConnectAsync(token, cancellationToken);
-        await Production.TryAutoStartWorkerAsync(settings);
+        try
+        {
+            await ConnectAsync(token, cancellationToken);
+        }
+        finally
+        {
+            // Mac 暂时离线也允许已配对 Worker 自己重试，不要求用户重启脚本。
+            // 仍须用户此前显式选择自动启动，并有有效的 HTTPS 与独立密钥。
+            await Production.TryAutoStartWorkerAsync(settings);
+        }
     }
 
     /// <summary>验证地址与令牌后保存；Token 只进入 Credential Manager。</summary>
