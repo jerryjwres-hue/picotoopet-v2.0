@@ -151,8 +151,9 @@ class WorkerProofRegistry:
             self.database, sorted(expected),
             managed_objects_dir=self.objects_dir,
         )
-        if any(
-            row["recorded_sha256"] != expected[row["ref"]]
+        if len(checks) != len(expected) or any(
+            row["ref"] not in expected
+            or row["recorded_sha256"] != expected[row["ref"]]
             or row["content_integrity_verified"] is not True
             for row in checks
         ):
