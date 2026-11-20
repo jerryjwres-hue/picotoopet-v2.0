@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from starlette.concurrency import run_in_threadpool
 
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.api.production_admission_hold import block_legacy_episode_creation
 from picotoopet_core.domain.episode import (
     Episode,
     EpisodeCreated,
@@ -79,6 +80,8 @@ async def _parse_episode_request(request: Request) -> Episode:
     },
 )
 async def create_episode(request: Request, response: Response) -> EpisodeCreated:
+    # Owner 模式禁止旧设备接口直接入 GPU 队列；只读预算接口不受影响。
+    block_legacy_episode_creation(request)
     episode = await _parse_episode_request(request)
     service = request.app.state.services.production
     try:
@@ -119,4 +122,6 @@ def read_review(episode_id: str, request: Request) -> EpisodeReview:
     responses={409: {"description": "仍有分镜没有选用的视频"}},
 )
 def assemble_episode(episode_id: str, request: Request) -> TaskRecord:
+    # 合成同样创建新执行任务，不能成为绕过生产门禁的旁路。
+    block_legacy_episode_creation(request)
     return request.app.state.services.production.assemble(episode_id, request.state.trace_id)

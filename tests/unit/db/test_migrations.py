@@ -24,6 +24,7 @@ REQUIRED_TABLES = {
     "executor_redos",
     "executor_qc_picks",
     "production_episodes",
+    "owner_production_hold",
 }
 
 
@@ -44,5 +45,7 @@ def test_database_applies_required_pragmas_and_schema(tmp_path: Path) -> None:
         )
     }
     assert REQUIRED_TABLES <= tables
-    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 3
+    assert database.scalar("SELECT COUNT(*) FROM schema_migrations") == 4
+    # 新建的旧版兼容项目默认没有激活 Owner 保护；仅迁移不会自行授权/禁用 GPU。
+    assert database.scalar("SELECT COUNT(*) FROM owner_production_hold") == 0
     database.close()

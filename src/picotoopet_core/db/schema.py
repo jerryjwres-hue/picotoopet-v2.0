@@ -1,5 +1,14 @@
 """Phase 1 SQLite 数据库结构。"""
 
+# 单例安全锁定：已经配置过 Owner 的数据库不允许凭据清空后重新打开旧 GPU 路径。
+# 此表只表示保护模式已启用；不代表 GPU 可以运行，也不存储 Owner 密钥。
+MIGRATION_004 = (
+    """CREATE TABLE owner_production_hold (
+        hold_id INTEGER PRIMARY KEY CHECK (hold_id = 1),
+        activated_at TEXT NOT NULL
+    )""",
+)
+
 MIGRATION_003 = (
     """CREATE TABLE executor_qc_picks (
         gate_id TEXT NOT NULL REFERENCES tasks(task_id),
