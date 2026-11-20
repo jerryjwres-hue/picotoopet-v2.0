@@ -237,3 +237,94 @@ def test_no_owner_registry_preserves_existing_legacy_contract(tmp_path):
         assert response.status_code == 201, response.text
         assert len(response.json()["tasks"]) == 9
         assert _counts(api)["episodes"] == 1
+
+
+
+def test_owner_gpu_hold_survives_cleared_registry_and_multiple_restarts(tmp_path):
+    """配置过 Owner 后，清空凭据甚至 Core 重启也不能恢复设备端 GPU 入口。"""
+    root = RuntimePaths.from_root(tmp_path)
+    device = secrets.token_urlsafe(32)
+    owner = secrets.token_urlsafe(32)
+    registry = OwnerReviewRegistry(credentials=(
+        OwnerCredentialConfig(
+            credential_id="owner-safety-latch",
+            actor_id="pet-owner",
+            token_sha256=owner_token_fingerprint(owner),
+            subject_keys=("pet:maotai",),
+            permissions=("storypack.review",),
+            registry_revision=1,
+            enabled=True,
+        ),
+    ))
+    # 启用 Owner 的首次启动必须先在 SQLite 中持久锁定，再接受 HTTP。
+    protected = create_app(AppSettings(
+        paths=root, api_token=device, owner_review_registry=registry,
+    ))
+    with TestClient(
+        protected, headers={"Authorization": f"Bearer {device}"},
+    ) as api:
+        assert api.app.state.services.owner_mode_gpu_hold is True
+        first_stamp = api.app.state.services.database.scalar(
+            "SELECT activated_at FROM owner_production_hold WHERE hold_id = 1"
+        )
+        assert first_stamp is not None
+        _blocked(api.post(f"{_API}/episodes", json=_episode()))
+
+    # 模拟配置文件意外清空：保留原始 Core SQLite，不重新生成旧队列。
+    for _ in range(2):
+        cleared = create_app(AppSettings(paths=root, api_token=device))
+        with TestClient(
+            cleared, headers={"Authorization": f"Bearer {device}"},
+        ) as api:
+            assert not api.app.state.services.settings.owner_review_registry.credentials
+            assert api.app.state.services.owner_mode_gpu_hold is True
+            assert api.app.state.services.database.scalar(
+                "SELECT activated_at FROM owner_production_hold WHERE hold_id = 1"
+            ) == first_stamp
+            before = _counts(api)
+            _blocked(api.post(f"{_API}/episodes", json=_episode()))
+            _blocked(api.post(f"{_API}/tasks", json={
+                "task_type": "gen.video", "resource_tag": GPU_TAG,
+            }))
+            assert api.post(f"{_API}/executors/lease", json=_LEASE).status_code == 204
+            assert _counts(api) == before
+
+
+def test_existing_legacy_sqlite_migrates_to_owner_hold_without_erasing_history(tmp_path):
+    """第一次迁移保护模式不会清理已有记录，也不会影响另一个独立旧项目。"""
+    root = RuntimePaths.from_root(tmp_path / "existing-legacy")
+    device = secrets.token_urlsafe(32)
+
+    # 先模拟旧安装：没有 Owner 凭据时可创建 legacy Episode。
+    legacy = create_app(AppSettings(paths=root, api_token=device))
+    with TestClient(legacy, headers={"Authorization": f"Bearer {device}"}) as api:
+        assert api.app.state.services.owner_mode_gpu_hold is False
+        assert api.app.state.services.database.scalar(
+            "SELECT COUNT(*) FROM owner_production_hold"
+        ) == 0
+        created = api.post(f"{_API}/episodes", json=_episode())
+        assert created.status_code == 201, created.text
+        before = _counts(api)
+
+    # 更新配置启用 Owner：原任务仍在，但旧接口不能新增或租出 GPU。
+    owner = secrets.token_urlsafe(32)
+    registry = OwnerReviewRegistry(credentials=(
+        OwnerCredentialConfig(
+            credential_id="protect-existing-install",
+            actor_id="pet-owner",
+            token_sha256=owner_token_fingerprint(owner),
+            subject_keys=("pet:maotai",),
+            permissions=("storypack.review",),
+            registry_revision=1,
+            enabled=False,
+        ),
+    ))
+    upgraded = create_app(AppSettings(
+        paths=root, api_token=device, owner_review_registry=registry,
+    ))
+    with TestClient(upgraded, headers={"Authorization": f"Bearer {device}"}) as api:
+        assert api.app.state.services.owner_mode_gpu_hold is True
+        assert _counts(api) == before
+        _blocked(api.post(f"{_API}/episodes", json=_episode()))
+        assert api.post(f"{_API}/executors/lease", json=_LEASE).status_code == 204
+        assert _counts(api) == before
