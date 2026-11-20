@@ -835,7 +835,7 @@ def test_owner_freeze_creates_exact_held_tasks_audit_and_idempotency(context):
 @pytest.mark.parametrize("mutation,expected", [
     ("episode_sha", "FROZEN_PLAN_EPISODE_SHA_STALE"),
     ("frame_sha", "FROZEN_PLAN_FRAME_SOURCE_STALE"),
-    ("episode_invalid", "FROZEN_PLAN_EPISODE_INVALID"),
+    ("episode_invalid", "EPISODE_SHOT_ORDER_OR_ID_DRIFT"),
     ("budget", "FROZEN_PLAN_EPISODE_BUDGET_EXCEEDED"),
     ("revoked_storyboard", "OWNER_STORYBOARD_REVIEW_REVOKED"),
     ("revoked_asset", "ASSET_USE_ATTESTATION_REVOKED"),
