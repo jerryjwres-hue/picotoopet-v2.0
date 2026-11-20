@@ -82,6 +82,7 @@ def _complete() -> dict:
 def context(tmp_path):
     owner = secrets.token_urlsafe(32)
     device = secrets.token_urlsafe(32)
+    master = secrets.token_urlsafe(32)
     registry = OwnerReviewRegistry(credentials=(
         OwnerCredentialConfig(
             credential_id="readiness-owner",
@@ -92,12 +93,22 @@ def context(tmp_path):
             registry_revision=1, enabled=True,
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         ),
+        OwnerCredentialConfig(
+            credential_id="readiness-master",
+            actor_id="independent-master-reviewer",
+            token_sha256=owner_token_fingerprint(master),
+            subject_keys=(_SUBJECT,), permissions=("master.verify",),
+            registry_revision=1, enabled=True,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
     ))
     app = create_app(AppSettings(
         paths=RuntimePaths.from_root(tmp_path), api_token=device,
         owner_review_registry=registry,
     ))
     with TestClient(app, client=("127.0.0.1", 59100)) as client:
+        # 测试使用独立 Reviewer 凭据，不赋予原 Owner MASTER 权限。
+        client.app.state.synthetic_master_token = master
         svc = app.state.services
         objects = {}
         svc.database.execute(
@@ -925,3 +936,124 @@ def test_frozen_plan_cannot_mutate_same_episode_source_or_owner_review(context):
     assert client.app.state.services.database.scalar(
         "SELECT COUNT(*) FROM tasks"
     ) == 6
+
+
+def _master_review_payload(held: dict, original_owner_claims: list[dict]) -> dict:
+    """Build only synthetic human-review evidence from exactly frozen source IDs."""
+    return {
+        "episode_id": held["episode_id"],
+        "frozen_plan_sha256": held["frozen_plan_sha256"],
+        "source_bindings_sha256": held["source_bindings_sha256"],
+        "confirm_independent_human_review": True,
+        "claims": [
+            {
+                "ref": claim["ref"],
+                "asset_sha256": claim["asset_sha256"],
+                "basis": claim["basis"],
+                # 自行创作的合成源文件本身作为原始证据；并非法律证明。
+                "evidence_ref": claim["ref"],
+                "evidence_sha256": claim["asset_sha256"],
+                "human_source_review_completed": True,
+                "commercial_ai_use_checked": True,
+            }
+            for claim in original_owner_claims
+        ],
+    }
+
+
+def _master_call(client, suffix, payload: dict, credential: str):
+    return client.post(
+        "/api/v1/studio/storypacks/master-review/" + suffix,
+        json=payload, headers={"Authorization": f"Bearer {credential}"},
+    )
+
+
+def test_independent_master_review_uses_real_frozen_sqlite_and_stays_gpu_held(context):
+    client, owner, device, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    freeze = _call(client, "/production-freeze", source, owner)
+    assert freeze.status_code == 200, freeze.text
+    payload = _master_review_payload(freeze.json(), source["claims"])
+    master = client.app.state.synthetic_master_token
+
+    # Owner 与普通设备均不可自称独立 MASTER 审核人。
+    assert _master_call(client, "commit", payload, owner).status_code == 403
+    assert _master_call(client, "commit", payload, device).status_code == 403
+    reviewed = _master_call(client, "commit", payload, master)
+    assert reviewed.status_code == 200, reviewed.text
+    result = reviewed.json()
+    assert result["status"] == "INDEPENDENT_HUMAN_MASTER_REVIEW_GPU_HOLD"
+    assert result["gpu_authorized"] is False
+    assert result["can_lease"] is False
+    assert result["independent_human_source_review_recorded"] is True
+    assert len(result["master_review_id"]) > 10
+
+    repeated = _master_call(client, "commit", payload, master)
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["master_review_id"] == result["master_review_id"]
+    assert repeated.json()["already_reviewed"] is True
+    verified = _master_call(
+        client, "verify", {**payload, "master_review_id": result["master_review_id"]},
+        master,
+    )
+    assert verified.status_code == 200, verified.text
+    # 即使两个独立身份都审核过，旧 Device 路由也不能领取 GPU 任务。
+    assert client.post(
+        "/api/v1/executors/lease",
+        json={"worker_id": "win-worker", "resource_tags": ["gpu-5070ti"],
+              "lease_seconds": 90},
+        headers={"Authorization": f"Bearer {device}"},
+    ).status_code == 204
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='studio.storypack.master_source.review'"
+    ) == 1
+
+
+def test_independent_master_rejects_cross_plan_and_tampered_source(context):
+    client, owner, _, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    held = _call(client, "/production-freeze", source, owner).json()
+    master = client.app.state.synthetic_master_token
+    payload = _master_review_payload(held, source["claims"])
+
+    wrong = {**payload, "frozen_plan_sha256": "f" * 64}
+    assert _master_call(client, "commit", wrong, master).status_code == 409
+    incomplete = copy.deepcopy(payload)
+    incomplete["claims"].pop()
+    assert _master_call(client, "commit", incomplete, master).status_code == 409
+    mismatched = copy.deepcopy(payload)
+    mismatched["claims"][0]["asset_sha256"] = "e" * 64
+    assert _master_call(client, "commit", mismatched, master).status_code == 409
+
+    reviewed = _master_call(client, "commit", payload, master)
+    assert reviewed.status_code == 200, reviewed.text
+    review_id = reviewed.json()["master_review_id"]
+    digest = objects["maotai_master_v1"]
+    root = client.app.state.services.settings.paths.objects_dir
+    (root / digest[:2] / digest[2:]).write_bytes(b"changed")
+    assert _master_call(
+        client, "verify", {**payload, "master_review_id": review_id}, master,
+    ).status_code == 409
+
+
+def test_independent_master_review_revocation_blocks_future_validation(context):
+    client, owner, _, objects = context
+    source = _owner_freeze_payload(client, owner, objects)
+    held = _call(client, "/production-freeze", source, owner).json()
+    master = client.app.state.synthetic_master_token
+    payload = _master_review_payload(held, source["claims"])
+    review = _master_call(client, "commit", payload, master)
+    assert review.status_code == 200, review.text
+    review_id = review.json()["master_review_id"]
+    revoked = _master_call(
+        client, "revoke", {"episode_id": held["episode_id"],
+                          "master_review_id": review_id}, master,
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert _master_call(
+        client, "verify", {**payload, "master_review_id": review_id}, master,
+    ).status_code == 409
+    assert _master_call(client, "commit", payload, master).status_code == 409
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='studio.storypack.master_source.revoke'"
+    ) == 1
