@@ -29,9 +29,14 @@ class FrameFetchError(ValueError):
 
 def _secure_core_url(core_url: str) -> str:
     """Forbid remote plaintext HTTP, credentials in URL and arbitrary URL parts."""
+    if not isinstance(core_url, str):
+        raise FrameFetchError("FRAME_FETCH_SECURE_CORE_URL_REQUIRED")
     try:
         parsed = urlsplit(core_url)
         host = parsed.hostname or ""
+    except ValueError as error:
+        raise FrameFetchError("FRAME_FETCH_SECURE_CORE_URL_REQUIRED") from error
+    try:
         loopback = ipaddress.ip_address(host).is_loopback
     except ValueError:
         loopback = host.casefold() == "localhost"
