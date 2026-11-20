@@ -185,7 +185,7 @@ class Bridge:
 
     def _new_tasks_paused(self) -> bool:
         # Windows 本地暂停标记仅约束当前 Worker，绝不等同于 Core 全局 GPU HOLD。
-        return self.pause_marker.exists()
+        return self.pause_marker.exists() or self.pause_marker.is_symlink()
 
     def step(self):
         if self.journal.exists():
