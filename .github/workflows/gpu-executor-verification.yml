@@ -54,6 +54,13 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: windows/desktop/global.json
+      - name: Verify native OpenSSH tunnel flags before desktop build (no network)
+        shell: powershell
+        working-directory: .
+        run: |
+          # Windows PowerShell 5.1 原生验证 SSH host key、公钥认证和本机端口绑定，不启动 SSH。
+          .\\windows\\desktop\\release\\Start-SecureMacTunnel.ps1 -SelfTest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run WPF smoke test and render the production page
         shell: pwsh
         run: |
