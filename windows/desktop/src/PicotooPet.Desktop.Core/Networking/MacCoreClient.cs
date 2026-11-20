@@ -247,9 +247,45 @@ public sealed class MacCoreClient : IAsyncDisposable
         var ticket = json.GetProperty("ticket").GetString() ?? "";
         var manifest = json.GetProperty("source_bindings_sha256").GetString() ?? "";
         var zipSha = json.GetProperty("bundle_sha256").GetString() ?? "";
-        // 下载后二次校验，旧 Ticket 不可重新领取，也不生成任何生产 Task。
-        return await DownloadAndStageFramesAsync(
+        // 下载、落盘并重新计算真实文件 SHA 后，才向 Mac 回报数据暂存。
+        var staged = await DownloadAndStageFramesAsync(
             ticket, manifest, zipSha, workerRoot, cancellationToken).ConfigureAwait(false);
+        if (json.TryGetProperty("episode_id", out var episodeIdElement) &&
+            episodeIdElement.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(episodeIdElement.GetString()))
+        {
+            // 不发送 Windows 私有路径；该上报不是 Worker 执行签名或 GPU 授权。
+            var stagingPayload = new
+            {
+                episode_id                  = episodeIdElement.GetString(),
+                source_bindings_sha256      = staged.SourceBindingsSha256,
+                storypack_sha256            = staged.StorypackSha256,
+                owner_subject_sha256        = staged.OwnerSubjectSha256,
+                verified_bytes             = staged.VerifiedBytes,
+                worker_local_bytes_verified = staged.WorkerLocalBytesVerified,
+                bindings                   = staged.Bindings.Select(binding => new
+                {
+                    shot_id         = binding.ShotId,
+                    role            = binding.Role,
+                    asset_ref       = binding.AssetRef,
+                    managed_sha256  = binding.ManagedSha256,
+                }).ToArray(),
+            };
+            var ack = await SendAsync<JsonElement>(
+                HttpMethod.Post, "api/v1/studio/frame-transfer/staging-report",
+                stagingPayload, "studio.frame.staging-report",
+                null, cancellationToken).ConfigureAwait(false);
+            if (ack.GetProperty("gpu_authorized").GetBoolean() ||
+                ack.GetProperty("can_lease").GetBoolean())
+            {
+                throw new InvalidDataException("FRAME_STAGING_REPORT_UNSAFE_GPU_AUTHORITY");
+            }
+            staged = staged with
+            {
+                CoreStagingStatus = ack.GetProperty("status").GetString(),
+            };
+        }
+        return staged;
     }
 
     /// <summary>从已由 Mac Owner 签发的一次性凭据下载 ZIP，并使用 .NET 原生代码在 Worker 目录验 SHA。</summary>
