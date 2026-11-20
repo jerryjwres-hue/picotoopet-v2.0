@@ -311,7 +311,9 @@ class ScopedProductionAdmission:
         result = []
         for row in all_rows:
             task_type = row["task_type"]
-            if task_type not in TASK_RUNNERS or row["resource_tag"] != GPU_TAG:
+            if (task_type not in ("gen.keyframe", "gen.video", "gen.foley", "qc.check")
+                    or row["resource_tag"] != GPU_TAG):
+                # 未获授权的合成、旧导入及新类型不能借用已批准 Episode。
                 raise AdmissionError("ADMISSION_UNPLANNED_TASK_IN_EPISODE")
             payload = json.loads(row["payload_json"])
             if payload.get("runner") != TASK_RUNNERS[task_type]:
