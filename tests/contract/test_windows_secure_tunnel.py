@@ -60,3 +60,45 @@ def test_studio_refuses_remote_plaintext_and_defaults_to_loopback():
     assert main.index("IsSecureCoreAddress(MacBaseUrl)") < main.index("await CancelConnectionAsync()")
     assert 'new("http://127.0.0.1:18766")' in settings
     assert "http://192.168.1.161:8766" not in settings
+
+
+def test_installed_tunnel_is_in_verified_payload_and_fixed_start_menu():
+    # 发布构建必须在收集 manifest.files 之前复制连接入口；不能只留 ZIP 临时文件。
+    builder = _BUILD.read_text(encoding="utf-8-sig")
+    assert 'Join-Path $payloadRoot "tools\\connection"' in builder
+    assert builder.index('Join-Path $payloadRoot "tools\\connection"') < builder.index("$files = @(")
+    assert '"CONNECT_MAC_SECURE.vbs", "Start-SecureMacTunnel.ps1"' in builder
+    installer = (_RELEASE / "Install-Phase2Prebuilt.ps1").read_text(encoding="utf-8-sig")
+    rollback = (_RELEASE / "Rollback-Phase2Prebuilt.ps1").read_text(encoding="utf-8-sig")
+    for source in (installer, rollback):
+        assert "function Set-PicotooTunnelShortcut" in source
+        assert "Picotoo Pet 安全连接.lnk" in source
+        assert 'Join-Path $env:WINDIR "System32\\wscript.exe"' in source
+        assert 'CONNECT_MAC_SECURE.vbs' in source
+        assert 'Start-SecureMacTunnel.ps1' in source
+    assert "Set-PicotooTunnelShortcut -VersionRoot $finalPath" in installer
+    assert "Set-PicotooTunnelShortcut -VersionRoot ([string]$previousCurrent.path)" in installer
+    assert "Set-PicotooTunnelShortcut -VersionRoot ([string]$previous.path)" in rollback
+    assert "Set-PicotooTunnelShortcut -VersionRoot ([string]$current.path)" in rollback
+
+
+def test_verifier_uses_secured_port_and_rejects_legacy_plaintext():
+    # 真实安装验证程序不能绕过 Studio 安全规则把令牌发到旧 IP:8766。
+    script = (_RELEASE / "Verify-Phase2Prebuilt.ps1").read_text(encoding="utf-8-sig")
+    assert '$baseUrl      = "http://127.0.0.1:18766"' in script
+    assert "function Assert-SecureCoreAddress" in script
+    assert "$baseUrl = Assert-SecureCoreAddress -Url $baseUrl" in script
+    assert script.index("$baseUrl = Assert-SecureCoreAddress -Url $baseUrl") < script.index("Start-Process -FilePath $diagnostic")
+    assert "$uri.Scheme -eq 'http' -and $uri.IsLoopback" in script
+    assert "$uri.Scheme -ne 'https'" in script
+    assert "不安全 Mac Core 地址" in script
+
+
+def test_native_release_gate_checks_both_installed_tunnel_files():
+    # 自检验证 ZIP payload 本身和原生 PS5.1，而不假设用户保留解压目录。
+    gate = (_ROOT / "windows" / "desktop" / "scripts" / "Test-Phase2WindowsRelease.ps1").read_text(encoding="utf-8-sig")
+    assert 'Join-Path $payloadRoot "tools\\connection"' in gate
+    assert "Assert-ManifestFiles" in gate
+    assert "Assert-PowerShellSyntax -Path $tunnelPs" in gate
+    assert '"-File", $tunnelPs, "-SelfTest"' in gate
+    assert "$tunnelBytes" in gate

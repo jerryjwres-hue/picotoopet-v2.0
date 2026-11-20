@@ -42,6 +42,8 @@ SSH 仅承载原有受设备 Bearer 认证的 API，**不等于 Owner 或 GPU �
    的配对；视频项目和 Worker 独立密钥沿用 PR #291 一次配置。
    此后所有已有 Windows Core API/Worker 请求复用此本机地址。
 
+**安装后持续使用：** 新版 Windows 预编译安装器还会把 `CONNECT_MAC_SECURE.vbs` 和 `Start-SecureMacTunnel.ps1` 复制到当前版本的 `tools/connection`，并加入 SHA256 发布清单；开始菜单提供“Picotoo Pet 安全连接”快捷方式，避免丢失 ZIP 后不能重新连 Mac。回滚到旧版本时快捷方式同步切换或清理。`VERIFY_PHASE2_WINDOWS.vbs` 使用 `http://127.0.0.1:18766`，拒绝旧明文 LAN HTTP。
+
 SSH 认证失败、主机密钥陌生/变更、端口占用、Core 不可达时**明确 FAIL**，
 不会假装连接成功、不自动信任新 host key、不回退到明文局域网 HTTP。
 只有 Mac 系统用户事先允许的 SSH 公钥可建立连接。SSH 进程在 Windows 登录会话中持续运行；

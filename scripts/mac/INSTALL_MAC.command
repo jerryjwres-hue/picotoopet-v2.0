@@ -76,7 +76,8 @@ fi
 # 这里不会开启 GPU 准入、Owner 审核或授权任何视频任务。
 WORKER_SERVICE="PicotooPetV3.WorkerAttestation"
 if ! security find-generic-password -a "$USER" -s "$WORKER_SERVICE" >/dev/null 2>&1; then
-  WORKER_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\\n')"
+  # Bash 命令替换会去除尾部换行；只删除 base64 填充符，不得误删随机字符 n。
+  WORKER_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
   if [ "${#WORKER_KEY}" -ne 43 ]; then
     echo "Worker 配对密钥生成失败，安装已停止。" >&2
     exit 1

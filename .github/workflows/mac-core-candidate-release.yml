@@ -5,6 +5,8 @@ on:
     paths:
       - "src/picotoopet_core/**"
       - "scripts/mac/**"
+      # 让同一 PR 的 Mac/Windows 内部候选包共享同一个 checkout SHA，避免装错跨端版本。
+      - "windows/desktop/**"
       - "deploy/macos/**"
       - "contracts/**"
       - "pyproject.toml"
