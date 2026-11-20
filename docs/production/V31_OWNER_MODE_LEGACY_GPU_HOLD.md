@@ -19,6 +19,9 @@
   `409 STORYPACK_PRODUCTION_ADMISSION_REQUIRED`。
 - 直接 `POST /tasks` 创建任何 `TASK_RUNNERS` 或 GPU_TAG 任务：同样阻止；
   对已经失败/取消的相关 GPU 任务的 `POST /tasks/{task_id}/retry` 也拒绝。
+- 旧 `POST /artifacts/{artifact_id}/decision` 的 `redo` 和
+  `accept_qc_failure=true` 可能创建重抽或释放旧下游 GPU 作业，因此也返回 409；
+  普通 `pick` / `reject` 的人工记录保留。
 - `POST /executors/lease` 在这种模式下**不发放新的任务租约**，返回 204；
   唯一例外为 Worker 明确携带 `resume_task_id`，且数据库中仍为同 Worker、
   同资源标签、RUNNING 且租约未过期的既有任务：只读返回原任务。
