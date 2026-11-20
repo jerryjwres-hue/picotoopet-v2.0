@@ -628,6 +628,15 @@ class ExecutorService:
             manual_gate = gate and gate["error_code"] == "QC_MANUAL_REVIEW"
             if body.accept_qc_failure and (not manual_gate or body.decision != "pick"):
                 raise InvalidTransitionError("人工放行只适用于末轮待人工复核的候选。")
+            if gate and gate["status"] == TaskStatus.COMPLETED.value and body.decision == "pick":
+                # 一个 batch 可部分通过；普通选片只允许选被本轮 QC 认证的 SHA。
+                check_report = self.artifacts_in_transaction(
+                    db, self._task(db, gate["task_id"])
+                ).qc
+                candidate_sha = json.loads(artifact["metadata_json"])["sha256"]
+                per_candidate = check_report.get("by_sha256", {}).get(candidate_sha, {})
+                if not isinstance(per_candidate, dict) or per_candidate.get("passed") is not True:
+                    raise InvalidTransitionError("此候选未通过当前 QC，不能选用。")
             if gate and gate["status"] != "Completed" and body.decision in ("pick", "redo"):
                 superseded = db.execute(
                     "SELECT 1 FROM executor_redos WHERE source_task_id=?", (task["task_id"],)
