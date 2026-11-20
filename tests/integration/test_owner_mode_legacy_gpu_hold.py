@@ -154,7 +154,7 @@ def test_owner_mode_denies_new_executor_lease_without_changing_queue(guarded):
     assert _counts(api) == before
 
 
-def test_existing_running_journal_can_resume_read_only_but_not_lease_next(guarded):
+def test_owner_hold_keeps_old_journal_but_refuses_unsafe_resume_and_heartbeat(guarded):
     api = guarded
     services = api.app.state.services
 
@@ -189,10 +189,15 @@ def test_existing_running_journal_can_resume_read_only_but_not_lease_next(guarde
     resumed = api.post(f"{_API}/executors/lease", json={
         **_LEASE, "resume_task_id": created.task_id,
     })
-    assert resumed.status_code == 200, resumed.text
-    assert resumed.json()["task_id"] == created.task_id
-    assert resumed.json()["attempt_count"] == 1
+    # 即使旧租约仍为 RUNNING，Mac 也不知道 Windows 是否真的 POST。
+    # 因此 HOLD 必须禁止返回可重投的 payload，同时不删除 Journal/任务。
+    assert resumed.status_code == 204
+    _blocked(api.post(f"{_API}/tasks/{created.task_id}/heartbeat", json={
+        "worker_id": _LEASE["worker_id"], "attempt_count": 1,
+        "progress": 0.5, "message": "old unsubmitted Journal",
+    }))
     assert _counts(api) == counts
+    assert api.get(f"{_API}/tasks/{created.task_id}").json()["status"] == "Running"
 
     # 已排队或租约过期的 Job 不能借 Journal 入口重开新 GPU POST。
     services.database.execute(

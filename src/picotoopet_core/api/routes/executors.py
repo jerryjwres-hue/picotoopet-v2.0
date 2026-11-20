@@ -1,6 +1,5 @@
 """执行器、缩略图和审片 REST 路由。"""
 
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
@@ -10,8 +9,8 @@ from picotoopet_core.api.production_admission_hold import (
     storypack_owner_hold,
 )
 from picotoopet_core.api.errors import ApiError
-from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.executor import (
+    GPU_TAG,
     TASK_RUNNERS,
     THUMBNAIL_LIMIT,
     ArtifactDecision,
@@ -37,28 +36,10 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 )
 def lease(body: ExecutorLease, request: Request) -> TaskRecord | Response:
     if storypack_owner_hold(request):
-        # 仅允许已有 Journal 的同 Worker 有效租约恢复；不允许新租约或自动重试。
-        # 注意不能调用 executor.lease(): 它会恢复旧任务并领取下一项，可能触发新 GPU POST。
-        if body.resume_task_id is None:
-            return Response(status_code=204)
-        services = request.app.state.services
-        row = services.database.fetchone(
-            """SELECT status, task_type, resource_tag, lease_owner, lease_expires_at
-               FROM tasks WHERE task_id = ?""",
-            (body.resume_task_id,),
-        )
-        if (
-            row is None
-            or row["status"] != TaskStatus.RUNNING.value
-            or row["task_type"] not in TASK_RUNNERS
-            or row["resource_tag"] not in body.resource_tags
-            or row["lease_owner"] != body.worker_id
-            or row["lease_expires_at"] is None
-            or datetime.fromisoformat(row["lease_expires_at"]) <= datetime.now(UTC)
-        ):
-            return Response(status_code=204)
-        # 只读返回同一条租约；心跳/回执仍由原来的严格 Owned 校验负责。
-        return services.queue.get(body.resume_task_id)
+        # RUNNING + 同 Worker 仅证明 Core 已发租约，不证明 Windows 已 POST GPU。
+        # Owner HOLD 时任何旧 resume 都不能把完整可执行 payload 再发给 Worker。
+        # 已提交的 Report 仍可由独立的 complete/fail 入口按原租约验证。
+        return Response(status_code=204)
     return request.app.state.services.executor.lease(body, request.state.trace_id) or Response(
         status_code=204,
     )
@@ -66,6 +47,22 @@ def lease(body: ExecutorLease, request: Request) -> TaskRecord | Response:
 
 @router.post("/tasks/{task_id}/heartbeat", responses={409: {"description": "租约不匹配"}})
 def heartbeat(task_id: str, body: ExecutorHeartbeat, request: Request) -> TaskRecord:
+    if storypack_owner_hold(request):
+        row = request.app.state.services.database.fetchone(
+            "SELECT task_type, resource_tag FROM tasks WHERE task_id = ?",
+            (task_id,),
+        )
+        if row is not None and (
+            row["task_type"] in TASK_RUNNERS or row["resource_tag"] == GPU_TAG
+        ):
+            # 旧 Worker 若已租约但尚未 POST，本次 409 会强制进入 resume。
+            # 而 resume 在 Owner HOLD 下为 204，因此不能再提交新 GPU 请求。
+            raise ApiError(
+                status_code=409,
+                code="STORYPACK_PRODUCTION_ADMISSION_REQUIRED",
+                message="Owner HOLD 已冻结旧 GPU 租约；只能收集已完成的原始回执。",
+                retryable=False,
+            )
     return request.app.state.services.executor.heartbeat(task_id, body, request.state.trace_id)
 
 
