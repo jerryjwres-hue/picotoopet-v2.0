@@ -103,6 +103,7 @@ class Bridge:
         ):
             folder.mkdir(parents=True, exist_ok=True)
         self.journal = self.state_dir / f"{config.worker_id}.json"
+        self.pause_marker = self.state_dir / f"{config.worker_id}.pause-new.json"
         self.next_heartbeat = 0.0
 
     def _request(self, method: str, route: str, **kwargs):
@@ -182,10 +183,17 @@ class Bridge:
         self.next_heartbeat = 0
         return state
 
+    def _new_tasks_paused(self) -> bool:
+        # Windows 本地暂停标记仅约束当前 Worker，绝不等同于 Core 全局 GPU HOLD。
+        return self.pause_marker.exists() or self.pause_marker.is_symlink()
+
     def step(self):
         if self.journal.exists():
             state = json.loads(self.journal.read_text(encoding="utf-8"))
         else:
+            # 暂停后不再领取新任务；已有 Journal 的恢复仍优先进行。
+            if self._new_tasks_paused():
+                return
             task = self._lease()
             if task is None:
                 return
@@ -200,6 +208,10 @@ class Bridge:
             state = self._resume(state)
             if state is None or not self._heartbeat(state):
                 return
+        # 如果已领租约但尚未送到本地队列，暂停时先保持 Journal 与心跳。
+        # 旧的 submitted 任务仍继续收回执，避免抛弃已经运行的 GPU 作业。
+        if self._new_tasks_paused() and not state.get("submitted"):
+            return
         try:
             result = self._work(state)
             if result is None:
@@ -677,20 +689,64 @@ def read_config(path: Path) -> BridgeConfig:
     return BridgeConfig(raw["mac_core_url"], worker, root, tags, lease)
 
 
+def _pause_marker(config: BridgeConfig) -> Path:
+    # 每个 worker_id 独立暂停，不修改 Mac Core 的任何生产配置。
+    return config.root.resolve() / "_queue" / "executor_bridge" / (
+        f"{config.worker_id}.pause-new.json"
+    )
+
+
+def manage_new_task_pause(config: BridgeConfig, action: str) -> dict:
+    """Local operator control; never requires or prints a Core device token."""
+    marker = _pause_marker(config)
+    if marker.is_symlink() or marker.parent.is_symlink():
+        raise ValueError("暂停标记目录或文件不能是符号链接。")
+    if not marker.parent.resolve().is_relative_to(config.root.resolve()):
+        raise ValueError("暂停标记不在现有 Windows 项目目录内。")
+    if action == "pause":
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        # 原子写入，重启后仍保留暂停；不会丢掉原有 Worker Journal。
+        atomic_json(marker, {"version": 1, "mode": "pause-new-leases"})
+    elif action == "resume":
+        marker.unlink(missing_ok=True)
+    elif action != "status":
+        raise ValueError("无效暂停操作。")
+    return {
+        "worker_id": config.worker_id,
+        "new_task_leases_paused": marker.exists(),
+        "inflight_journal_preserved": True,
+        "already_submitted_jobs_continue": True,
+        "global_gpu_hold_unchanged": True,
+        "scope": "THIS_WINDOWS_BRIDGE_ONLY",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="启动 Windows 执行桥")
     parser.add_argument(
         "config", type=Path, nargs="?", default=Path(__file__).with_name("executor_bridge.toml")
     )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--pause-new", action="store_true", help="暂停领取新任务")
+    mode.add_argument("--resume-new", action="store_true", help="继续领取新任务")
+    mode.add_argument("--pause-status", action="store_true", help="只读查看本机暂停状态")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    try:
+        config = read_config(args.config)
+        # 管理暂停只需本机项目配置，不需要长期设备 Token，且不会启动 Worker。
+        action = (
+            "pause" if args.pause_new else "resume" if args.resume_new
+            else "status" if args.pause_status else None
+        )
+        if action:
+            print(json.dumps(manage_new_task_pause(config, action), ensure_ascii=False))
+            return
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        parser.error(f"执行桥配置无效：{exc}")
     token = os.environ.get("PICOTOO_EXECUTOR_TOKEN")
     if not token:
         parser.error("请设置环境变量 PICOTOO_EXECUTOR_TOKEN。")
-    try:
-        config = read_config(args.config)
-    except (OSError, ValueError, TypeError, KeyError) as exc:
-        parser.error(f"执行桥配置无效：{exc}")
     with requests.Session() as session:
         session.trust_env = False
         session.headers["Authorization"] = f"Bearer {token}"
