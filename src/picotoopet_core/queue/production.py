@@ -10,6 +10,7 @@ from picotoopet_core.audit.writer import canonical_hash
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.domain.episode_budget import (
     EpisodeBudgetPolicy,
+    MAX_VIDEO_EXECUTOR_ATTEMPTS,
     enforce_episode_budget,
     inspect_episode_budget,
 )
@@ -121,6 +122,10 @@ class ProductionService:
                         request=TaskCreate(
                             task_type=task_type,
                             resource_tag=GPU_TAG,
+                            # 钉住 video 每条 Task 的最大执行尝试，与预算乘数保持同步。
+                            max_attempts=(
+                                MAX_VIDEO_EXECUTOR_ATTEMPTS if task_type == "gen.video" else 3
+                            ),
                             payload=ExecutorPayload(
                                 episode_id=episode.episode_id,
                                 shot_id=shot.shot_id,
