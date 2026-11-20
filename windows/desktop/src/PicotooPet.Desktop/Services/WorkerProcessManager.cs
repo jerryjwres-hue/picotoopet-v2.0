@@ -154,7 +154,7 @@ public sealed class WorkerProcessManager : IDisposable
         }
         _ownedProcess?.Dispose();
         _ownedProcess = process;
-        return "原有 Windows Worker 已启动；仍需有效 Owner/MASTER/冻结 Plan 才能取得 GPU 租约。";
+        return "已发起 Worker 启动；独占锁/实际握手仍需运行验证，GPU 准入由 Mac 控制。";
     }
 
     /// <summary>调用现有 --pause-new / --resume-new；不终止已有 GPU 任务或 Journal。</summary>
