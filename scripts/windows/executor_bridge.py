@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import stat
 import shutil
 import signal
 import subprocess
@@ -56,6 +57,7 @@ KINDS = {
 }
 LOG = logging.getLogger("executor_bridge")
 IDENTIFIER = re.compile(r"[A-Za-z0-9_-]{1,100}")
+STAGED_IMAGE = re.compile(r"([0-9a-f]{64})\\.(png|jpg|webp)")
 
 
 class JobError(ValueError):
@@ -260,6 +262,62 @@ class Bridge:
             checked.append(item)
         return checked
 
+    def _verify_staged_reference(self, raw: str) -> None:
+        """在生成本地 Worker inbox 前，重新哈希每个已同步的首帧文件。
+
+        Stage receipt 不是永久通行证；仅用真实 SHA 命名的图像才被认为
+        是同步资产，普通 legacy 本地 refs 保持原行为。
+        """
+        staged = self.state_dir / "staged_references"
+        lexical = Path(os.path.abspath(self.board / raw))
+        resolved = self._safe_path(raw, self.board)
+        if lexical.parent != staged and resolved.parent != staged:
+            return
+        if (
+            lexical.parent != staged
+            or resolved != lexical
+            or staged.is_symlink()
+            or self.state_dir.is_symlink()
+            or self.queue.is_symlink()
+            or lexical.is_symlink()
+        ):
+            raise JobError("首帧暂存目录或文件为不可信的符号链接。")
+        match = STAGED_IMAGE.fullmatch(lexical.name)
+        if match is None:
+            raise JobError("已同步首帧未使用合法 SHA-256 文件名。")
+        expected, extension = match.groups()
+        try:
+            fd = os.open(lexical, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "rb") as handle:
+                metadata = os.fstat(handle.fileno())
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 64 * 1024 * 1024:
+                    raise JobError("已同步首帧不是有效的受限普通文件。")
+                header = handle.read(16)
+                valid_image = (
+                    extension == "png" and header.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+                    or extension == "jpg" and header.startswith(b"\\xff\\xd8\\xff")
+                    or extension == "webp"
+                    and header[:4] == b"RIFF" and header[8:12] == b"WEBP"
+                )
+                if not valid_image:
+                    raise JobError("已同步首帧图片格式不符合 SHA 文件名。")
+                sha = hashlib.sha256()
+                sha.update(header)
+                length = len(header)
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    length += len(chunk)
+                    if length > 64 * 1024 * 1024:
+                        raise JobError("已同步首帧超过本地体积上限。")
+                    sha.update(chunk)
+                if (
+                    length != metadata.st_size
+                    or os.fstat(handle.fileno()).st_size != length
+                    or sha.hexdigest() != expected
+                ):
+                    raise JobError("已同步首帧的本地 SHA 已改变，禁止提交 GPU 作业。")
+        except OSError as error:
+            raise JobError("已同步首帧无法安全重新校验。") from error
+
     def _jobs(self, state):
         task = state["task"]
         jobs = deepcopy(task["payload"]["jobs"])
@@ -271,6 +329,7 @@ class Bridge:
             self._safe_path(jobs["out"], self.board)
         parent = None
         expanded = []
+        checked_refs: set[str] = set()
         entries = jobs.get("jobs", [])
         if not isinstance(entries, list) or any(not isinstance(job, dict) for job in entries):
             raise JobError("jobs.jobs 须为作业对象数组。")
@@ -285,6 +344,9 @@ class Bridge:
                     if not isinstance(ref, str):
                         raise JobError("jobs.jobs 的 mask 须为路径。")
                     self._safe_path(ref, self.board)
+                    if ref not in checked_refs:
+                        self._verify_staged_reference(ref)
+                        checked_refs.add(ref)
             for field in ("first", "last", "video"):
                 value = job.get(field)
                 if not value:
