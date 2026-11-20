@@ -58,6 +58,7 @@ def _deny(error: WorkerProofError | MasterEvidenceError) -> None:
 
 @router.post(
     "/studio/worker-proof/claim",
+    response_model=None,  # 路由明确返回结构化数据或 HTTP 204，不生成 Union 模型。
     responses={204: {"description": "未启用或暂无待核验的冻结素材"}},
 )
 async def claim_worker_sha_challenge(
