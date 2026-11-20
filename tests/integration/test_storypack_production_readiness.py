@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import json
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -1503,3 +1504,29 @@ def test_protected_owner_mode_stays_closed_without_explicit_runtime_enable(conte
         ).status_code == 204
     finally:
         services.settings = original
+
+
+def test_scoped_admission_rederives_video_prompt_and_seed_from_frozen_episode(context):
+    client, owner, device, _ = context
+    held, master_id = _prepare_scoped_gpu_admission(context)
+    svc = client.app.state.services
+    # 攻击者只能改动 SQLite 旧任务内容，不能修改 Owner 原始冻结 Episode。
+    with svc.database.transaction() as db:
+        row = db.execute(
+            "SELECT task_id, payload_json FROM tasks WHERE task_type='gen.video' "
+            "AND json_extract(payload_json,'$.episode_id')=? ORDER BY rowid LIMIT 1",
+            (held["episode_id"],),
+        ).fetchone()
+        altered = json.loads(row["payload_json"])
+        altered["jobs"]["jobs"][0]["prompt"] = "unreviewed arbitrary replacement"
+        db.execute(
+            "UPDATE tasks SET payload_json=? WHERE task_id=?",
+            (json.dumps(altered), row["task_id"]),
+        )
+    # 仅比较首帧 SHA 并不足够，必须验证视频 prompt/seed 也和冻结 Episode 一致。
+    rejected = _owner_admit(client, owner, held, master_id)
+    assert rejected.status_code == 409, rejected.text
+    assert _scoped_lease_offer(client, device)[1].status_code == 204
+    assert svc.database.scalar(
+        "SELECT COUNT(*) FROM audit_events WHERE action='episode.scoped_gpu_admission'"
+    ) == 0
