@@ -39,13 +39,32 @@ Bridge 收到此结构后：
 5. 原本没有此清单的 legacy 任务保持默认行为，但 StoryPack Owner
    保护模式下仍由 #280–#281 的 Core GPU HOLD 阻断新租约。
 
+## 内部 Core 生产任务打包现已接线（仍不提供 GPU 生产授权）
+
+- 现有 `ProductionService.create()` 新增**仅内部代码可调用**的可选参数
+  `frame_source_manifest` 和 `source_bindings_sha256`。既有
+  `POST /episodes` API 没有接收这些参数，而且在受保护 Owner 模式下
+  继续返回 409。
+- 若内部调用方给定两个参数，Core 先检查 manifest 摘要与全体 Episode
+  的首末帧引用逐条完全一致，才把它们写进对应每个
+  `gen.keyframe` 的现有 `payload.jobs`；`gen.video` 与
+  `gen.foley` 不重复携带素材清单。
+- 同一个 `episode_id` 的幂等重放必须保持原来的源清单 SHA，不能
+  静默替换人物或场景图片；丢失/部分提供绑定的内部调用也被拒绝。
+- CPU-only 合成集成测试实际串联了 Core SQLite Task → Windows Bridge
+  → SHA 文件路径解析，同时验证 Owner HOLD 下对该 Job 仍零新 Lease。
+- **重要：内部参数只验证合同，不验证素材法律权利，也不授予权限。**
+  只有将来真正的独立受信任准入模块核验 Owner / MASTER /
+  已暂存的 Windows 文件 / 冻结 Plan 后才能调用此入口。
+
 ## 本轮尚未实施的最后授权链接
 
-- 目前 `ProductionService.create()` **尚未**从 `production-readiness`
-  自动读取清单、更不能把只读检查结果当生产权限。
+- `ProductionService.create()` 现能携带已验证数据格式，但尚未由
+  `production-readiness` 经真实**独立授权**后自动调用；
+  不能把只读检查或自一致 SHA 当生产权限。
 - 独立 MASTER 来源、动态故事政策、受信任的 Windows 字节回执和冻结
-  Plan 的审批仍未完成，因此新清单只是可校验的**执行输入合同**；
-  不创建 Episode/Task，不发 GPU Lease，不运行 Comfy。
+  Plan 的审批仍未完成，现有 Owner HOLD 仍禁止新 GPU Lease。
+  本轮合成 Core 任务测试并没有真实生成视频或 Comfy POST。
 - 下一项应在**现有生产准入**中先完成 Owner/MASTER 与指定 Job 的授权，
   再以服务端的不可变 Plan 构造这些受管理源条目；
   不能通过直接公开 `POST /tasks` 或恢复旧 lease 来绕行。
