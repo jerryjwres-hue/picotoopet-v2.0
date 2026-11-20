@@ -271,7 +271,7 @@ class Bridge:
         staged = self.state_dir / "staged_references"
         lexical = Path(os.path.abspath(self.board / raw))
         resolved = self._safe_path(raw, self.board)
-        if lexical.parent != staged and resolved.parent != staged:
+        if not (lexical.is_relative_to(staged) or resolved.is_relative_to(staged)):
             return
         if (
             lexical.parent != staged
