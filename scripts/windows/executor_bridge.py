@@ -1152,7 +1152,8 @@ def main():
                 while True:
                     try:
                         bridge.step()
-                    except (requests.RequestException, OSError) as exc:
+                    except (requests.RequestException, OSError, JobError) as exc:
+                        # 认证失败只保留旧 Journal 并重试，绝不绕回旧无签名租约。
                         LOG.warning("本地状态已保留，将重试：%s", exc)
                     time.sleep(POLL_SECONDS)
             except KeyboardInterrupt:
