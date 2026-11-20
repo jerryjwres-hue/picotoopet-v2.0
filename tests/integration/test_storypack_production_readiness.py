@@ -568,7 +568,10 @@ def test_real_loopback_http_socket_download_and_windows_sha_staging(context, tmp
         assert receipt["worker_local_bytes_verified"] is True
         assert receipt["can_queue"] is False
         assert receipt["gpu_authorized"] is False
-        assert set(receipt["worker_ref_paths_by_digest"]) == set(objects.values())
+        # 只传输实际被 S01/S02 首帧引用的两种素材，而非整个资产库。
+        assert set(receipt["worker_ref_paths_by_digest"]) == {
+            objects["maotai_master_v1"], objects["backyard_v1"],
+        }
         _assert_no_production(client)
     finally:
         server.should_exit = True
