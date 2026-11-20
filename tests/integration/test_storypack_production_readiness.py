@@ -1530,3 +1530,29 @@ def test_scoped_admission_rederives_video_prompt_and_seed_from_frozen_episode(co
     assert svc.database.scalar(
         "SELECT COUNT(*) FROM audit_events WHERE action='episode.scoped_gpu_admission'"
     ) == 0
+
+
+def test_scoped_gpu_lease_rejects_pre_admission_running_legacy_journal(context):
+    client, owner, device, _ = context
+    held, master_id = _prepare_scoped_gpu_admission(context)
+    admitted = _owner_admit(client, owner, held, master_id)
+    assert admitted.status_code == 200, admitted.text
+    target_id = held["tasks"][0]["task_id"]
+
+    # Legacy Worker 旧 Journal 即使属于同一 Episode，仍没有当前 HMAC 授权租约审计。
+    with client.app.state.services.database.transaction() as db:
+        db.execute(
+            "UPDATE tasks SET status='Running', lease_owner=?, attempt_count=1, "
+            "lease_expires_at=? WHERE task_id=?",
+            ("win-worker-test", (datetime.now(UTC) + timedelta(hours=1)).isoformat(), target_id),
+        )
+        db.execute(
+            "INSERT INTO executor_leases(task_id, lease_seconds) VALUES (?,?)",
+            (target_id, 90),
+        )
+    body, offer = _scoped_lease_offer(client, device, resume=target_id)
+    assert offer.status_code == 204
+    assert client.app.state.services.database.scalar(
+        "SELECT COUNT(*) FROM audit_events "
+        "WHERE action='episode.scoped_gpu_lease_granted'"
+    ) == 0
