@@ -241,3 +241,89 @@ def test_invalid_episode_or_budget_is_displayed_but_never_queued(context):
     assert result.json()["checks"]["episode_budget_allowed"] is False
     assert "EPISODE_BUDGET_EXCEEDED" in result.json()["blocking_reasons"]
     _assert_no_production(client)
+
+
+
+def test_managed_frame_ids_bind_sha_but_windows_worker_remains_unverified(context):
+    client, owner, _, objects = context
+    payload = _create_reviewed_candidate(client, owner, objects)
+
+    # 使用当前 StoryPack 的角色与场景 ID，而非凭空猜测的 Windows 路径。
+    payload["completion"]["shots"][0]["first_frame"]["refs"] = [
+        "maotai_master_v1", "backyard_v1",
+    ]
+    payload["completion"]["shots"][1]["first_frame"]["refs"] = [
+        "maotai_master_v1",
+    ]
+    result = _call(client, "/production-readiness", payload, owner)
+    assert result.status_code == 200, result.text
+    report = result.json()
+    refs = report["frame_reference_preview"]
+
+    assert report["checks"]["first_frame_mac_content_bound"] is True
+    assert report["checks"]["first_frame_worker_local_verified"] is False
+    assert refs["status"] == "MAC_CONTENT_BOUND_WORKER_STAGING_REQUIRED"
+    assert refs["source_bindings_sha256"]
+    assert {
+        (row["shot_id"], row["role"], row["asset_ref"], row["managed_sha256"])
+        for row in refs["bindings"]
+    } == {
+        ("S01", "first", "maotai_master_v1", objects["maotai_master_v1"]),
+        ("S01", "first", "backyard_v1", objects["backyard_v1"]),
+        ("S02", "first", "maotai_master_v1", objects["maotai_master_v1"]),
+    }
+    assert "FRAME_WORKER_STAGING_AND_HASH_REQUIRED" in report["blocking_reasons"]
+    assert report["can_queue"] is False
+    assert report["can_generate"] is False
+    assert _call(client, "/production-readiness", payload, owner).json() == report
+    _assert_no_production(client)
+
+
+@pytest.mark.parametrize("invalid_ref,expected_error", [
+    ("C:\\\\private\\\\maotai.png", "FRAME_PATH_NOT_A_MANAGED_ID"),
+    ("../../private/maotai.png", "FRAME_PATH_NOT_A_MANAGED_ID"),
+    ("unknown_reference.png", "FRAME_REFERENCE_UNDECLARED_FOR_SHOT"),
+])
+def test_untrusted_first_frame_strings_never_become_worker_file_paths(
+    context, invalid_ref, expected_error,
+):
+    client, owner, _, objects = context
+    payload = _create_reviewed_candidate(client, owner, objects)
+    payload["completion"]["shots"][0]["first_frame"]["refs"] = [invalid_ref]
+    report = _call(client, "/production-readiness", payload, owner)
+    assert report.status_code == 200, report.text
+    parsed = report.json()
+    assert parsed["checks"]["first_frame_mac_content_bound"] is False
+    assert any(
+        reason.startswith(expected_error)
+        for reason in parsed["blocking_reasons"]
+    )
+    assert parsed["can_queue"] is False
+    _assert_no_production(client)
+
+
+def test_duplicate_frame_ref_and_stale_master_bytes_cannot_pass(context):
+    client, owner, _, objects = context
+    payload = _create_reviewed_candidate(client, owner, objects)
+    payload["completion"]["shots"][0]["first_frame"]["refs"] = [
+        "maotai_master_v1", "maotai_master_v1",
+    ]
+    duplicate = _call(client, "/production-readiness", payload, owner)
+    assert duplicate.status_code == 200, duplicate.text
+    assert any(
+        reason.startswith("FRAME_DUPLICATE_REFERENCE")
+        for reason in duplicate.json()["blocking_reasons"]
+    )
+
+    payload["completion"]["shots"][0]["first_frame"]["refs"] = ["maotai_master_v1"]
+    payload["completion"]["shots"][1]["first_frame"]["refs"] = ["maotai_master_v1"]
+    digest = objects["maotai_master_v1"]
+    root = client.app.state.services.settings.paths.objects_dir
+    (root / digest[:2] / digest[2:]).write_bytes(b"tampered managed bytes")
+    stale = _call(client, "/production-readiness", payload, owner)
+    assert stale.status_code == 200, stale.text
+    report = stale.json()
+    assert report["checks"]["first_frame_mac_content_bound"] is False
+    assert "FRAME_MASTER_CONTENT_UNVERIFIED" in report["blocking_reasons"]
+    assert report["can_generate"] is False
+    _assert_no_production(client)
