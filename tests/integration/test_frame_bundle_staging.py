@@ -116,9 +116,12 @@ def test_full_cpu_only_export_import_into_existing_worker_sandbox(staging):
     assert imported["gpu_authorized"] is False
     assert len(imported["bindings"]) == 3
     assert set(imported["worker_ref_paths_by_digest"]) == set(hashes.values())
+    # Worker 正常启动时会创建静态首帧板；这里使用相同的项目布局。
+    board = windows / "17_静态首帧板V2"
+    board.mkdir()
     for digest, ref in imported["worker_ref_paths_by_digest"].items():
         # 返回的相对路径与现有 Worker Bridge.board 的 _safe_path 兼容。
-        from_board = windows / "17_静态首帧板V2" / ref
+        from_board = board / ref
         assert from_board.resolve().is_relative_to(windows.resolve())
         assert hashlib.sha256(from_board.read_bytes()).hexdigest() == digest
 
@@ -222,7 +225,11 @@ def test_worker_rejects_preexisting_corrupted_staging_file(staging):
 def test_worker_rejects_symlinked_staging_directory(staging):
     objects, windows, _, preview, bundle = staging
     export_frame_bundle(objects, preview, bundle)
-    (windows / "_queue").symlink_to(objects, target_is_directory=True)
+    try:
+        (windows / "_queue").symlink_to(objects, target_is_directory=True)
+    except OSError:
+        # 个别 Windows Runner 未授予创建链接特权；Mac 用例仍覆盖此拒绝路径。
+        pytest.skip("CI runner cannot create directory symlinks")
     with pytest.raises(FrameStageError, match="FRAME_STAGE_STAGING_SYMLINK"):
         stage_frame_bundle(
             bundle,
