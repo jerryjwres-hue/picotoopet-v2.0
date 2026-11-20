@@ -270,6 +270,18 @@ def test_managed_frame_ids_bind_sha_but_windows_worker_remains_unverified(contex
     assert report["checks"]["first_frame_worker_local_verified"] is False
     assert refs["status"] == "MAC_CONTENT_BOUND_WORKER_STAGING_REQUIRED"
     assert refs["source_bindings_sha256"]
+    # Mac 签出的源码清单与 Windows 将验证的 ZIP manifest.json 共用同一规范摘要。
+    import hashlib
+    import json
+
+    manifest = refs["frame_source_manifest"]
+    assert manifest["contract"] == "picotoo.frame-source-manifest.v1"
+    assert manifest["bindings"] == refs["bindings"]
+    canonical = json.dumps(
+        manifest, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    assert hashlib.sha256(canonical).hexdigest() == refs["source_bindings_sha256"]
     assert {
         (row["shot_id"], row["role"], row["asset_ref"], row["managed_sha256"])
         for row in refs["bindings"]
@@ -300,6 +312,7 @@ def test_untrusted_first_frame_strings_never_become_worker_file_paths(
     assert report.status_code == 200, report.text
     parsed = report.json()
     assert parsed["checks"]["first_frame_mac_content_bound"] is False
+    assert parsed["frame_reference_preview"]["frame_source_manifest"] is None
     assert any(
         reason.startswith(expected_error)
         for reason in parsed["blocking_reasons"]
