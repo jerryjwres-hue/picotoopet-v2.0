@@ -33,6 +33,64 @@ public partial class ProductionView : UserControl
         }
     }
 
+    /// <summary>一键安全启动已打包的原有 Worker；首次使用才要求独立密钥。</summary>
+    private async void SetupWorker(object sender, System.Windows.RoutedEventArgs args)
+    {
+        if (DataContext is not ProductionViewModel model) return;
+        var dialog = new WorkerSetupDialog(
+            model.CurrentWorkerId, model.HasStoredWorkerKey)
+        {
+            Owner = System.Windows.Window.GetWindow(this),
+        };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            await model.StartWorkerAsync(
+                dialog.WorkerId, dialog.WorkerSecret, dialog.AutoStart);
+        }
+        catch (System.Exception error)
+        {
+            System.Windows.MessageBox.Show(
+                System.Windows.Window.GetWindow(this), error.Message,
+                "Worker 启动未完成", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>暂停新租约但不杀死 Worker，确保旧 Journal 可被恢复处理。</summary>
+    private async void PauseWorker(object sender, System.Windows.RoutedEventArgs args)
+    {
+        if (DataContext is not ProductionViewModel model) return;
+        try
+        {
+            await model.SetWorkerNewTasksPausedAsync(true);
+        }
+        catch (System.Exception error)
+        {
+            System.Windows.MessageBox.Show(
+                System.Windows.Window.GetWindow(this), error.Message,
+                "暂停 Worker 失败", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>只恢复本地取任务，不授予 Mac 端 Episode/GPU 准入。</summary>
+    private async void ResumeWorker(object sender, System.Windows.RoutedEventArgs args)
+    {
+        if (DataContext is not ProductionViewModel model) return;
+        try
+        {
+            await model.SetWorkerNewTasksPausedAsync(false);
+        }
+        catch (System.Exception error)
+        {
+            System.Windows.MessageBox.Show(
+                System.Windows.Window.GetWindow(this), error.Message,
+                "恢复 Worker 失败", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
     private async void OpenBatch(object sender, System.Windows.RoutedEventArgs args)
     {
         if (DataContext is not ProductionViewModel model || !model.CanOpenBatch) return;
