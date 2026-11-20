@@ -77,10 +77,11 @@ def test_budget_preview_reports_worst_case_without_writes(api):
     result = response.json()
     assert result["allowed"] is True
     assert result["initial_video_takes"] == 6
-    assert result["max_reserved_video_takes"] == 18
+    assert result["max_reserved_video_takes"] == 54
     assert result["initial_video_seconds"] == 24.0
-    assert result["max_reserved_video_seconds"] == 72.0
+    assert result["max_reserved_video_seconds"] == 216.0
     assert result["qc_redo_rounds"] == 2
+    assert result["worker_attempts_per_generation"] == 3
     assert result["gpu_authorized"] is False
     assert result["read_only"] is True
     assert result["metric"] == "REQUESTED_VIDEO_OUTPUT_SECONDS_NOT_GPU_WALL_TIME"
@@ -141,6 +142,7 @@ def test_episode_create_is_idempotent_even_if_admin_later_reduces_budget(api):
     payload = _episode()
     created = api.post("/api/v1/episodes", json=payload)
     assert created.status_code == 201, created.text
+    assert [task["max_attempts"] for task in created.json()["tasks"] if task["task_type"] == "gen.video"] == [3, 3, 3]
     first_counts = _counts(api)
     api.app.state.services.production.budget = EpisodeBudgetPolicy(
         max_takes_per_shot=1,
