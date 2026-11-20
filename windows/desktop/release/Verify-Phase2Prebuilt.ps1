@@ -44,12 +44,30 @@ function Assert-ManifestFiles {
     }
 }
 
+function Assert-SecureCoreAddress {
+    param([Parameter(Mandatory)][string]$Url)
+
+    # 校验与 Studio / Worker 一致：HTTPS 或本机环回 HTTP；旧局域网 HTTP 严格拒绝。
+    $uri = $null
+    if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri) -or
+        $null -eq $uri -or
+        -not [string]::IsNullOrEmpty($uri.UserInfo) -or
+        -not [string]::IsNullOrEmpty($uri.Query) -or
+        -not [string]::IsNullOrEmpty($uri.Fragment) -or
+        $uri.AbsolutePath -ne '/' -or
+        ($uri.Scheme -ne 'https' -and
+         -not ($uri.Scheme -eq 'http' -and $uri.IsLoopback))) {
+        throw "禁止使用不安全 Mac Core 地址；请先建立本机 SSH 隧道或使用可信 HTTPS。"
+    }
+    return $uri.AbsoluteUri.TrimEnd('/')
+}
+
 $dataRoot     = Join-Path $env:LOCALAPPDATA "PicotooPetV2\DesktopApp"
 $currentPath  = Join-Path $dataRoot "current_version.json"
 $reportsRoot  = Join-Path $dataRoot "reports"
 $reportPath   = Join-Path $reportsRoot "phase2-windows-verification.json"
 $settingsPath = Join-Path $env:LOCALAPPDATA "PicotooPetV2\Desktop\settings.json"
-$baseUrl      = "http://127.0.0.1:8766"
+$baseUrl      = "http://127.0.0.1:18766"
 $exitCode     = 2
 New-Item -ItemType Directory -Path $reportsRoot -Force | Out-Null
 
@@ -90,6 +108,9 @@ try {
             if ($candidate.IsAbsoluteUri) { $baseUrl = $candidate.AbsoluteUri.TrimEnd('/') }
         }
     }
+
+    # 诊断工具绝不绕过 Studio 的网络门禁，拒绝把设备令牌发往旧局域网 HTTP。
+    $baseUrl = Assert-SecureCoreAddress -Url $baseUrl
 
     $executable = [string]$current.executable
     $diagnostic = Join-Path $current.path "tools\diagnostics\PicotooPet.Desktop.Diagnostics.exe"
