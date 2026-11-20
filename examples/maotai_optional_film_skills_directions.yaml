@@ -1,0 +1,50 @@
+# PicotooPet V3.1 演示：一次性导演输出，供现有 episode direct 编译。
+# 所有形象/场景描述仅为合成测试示例；不代表真实 MASTER 已经审批。
+# Acting → action，CineDance → camera/scene，Lira → 仅提供静态首帧建议。
+# 不包含 Higgsfield @tag、模型 API、文件路径、Seed 或 GPU 许可。
+identities:
+  maotai_master_v1: A large fluffy black-and-cream Alaskan malamute with a curled tail and a lime-green triangular bandana
+  owner_master_v1: An adult owner figure whose appearance must match the separately reviewed owner reference
+shots:
+  S01:
+    subjects: [maotai_master_v1]
+    scene: A fenced backyard with an open lawn, a small red ball, and a house door in the distant background
+    intent: Establish the dog, the red ball and the position of the distant house door
+    action:
+      trigger: The red ball rolls within reach of the dog
+      behavior: The dog takes two short steps, lowers its head and gently picks up the ball
+      landing: The dog stands still on the same lawn patch with the ball held in its mouth
+    camera:
+      opening: A low wide view shows the entire dog, the red ball and the house door behind it
+      trigger: As the dog takes the first step toward the ball
+      move: locked-off camera
+      landing: The full dog and the same distant house door remain in the final frame
+    sound: Quiet outdoor ambience with one soft paw step
+  S02:
+    subjects: [maotai_master_v1]
+    scene: The same backyard lawn with the house door in the same background position and the same red ball
+    intent: Show a clear reaction to the owner's offscreen call without changing the dog's position
+    action:
+      trigger: A single owner call comes from the direction of the house door
+      behavior: The dog stops moving, perks its ears and turns its head toward the door while keeping the ball
+      landing: The dog's body stays planted and its face points toward the house door
+    camera:
+      opening: A medium shot from the same side of the dog shows the held ball and the background door
+      trigger: After the ears rise in response to the call
+      move: slow dolly in
+      landing: The dog's face fills more of the frame while the ball and doorway direction remain readable
+    sound: One distant offscreen owner call without additional dialogue
+  S03:
+    subjects: [maotai_master_v1, owner_master_v1]
+    scene: The front doorway of the same house with a food bowl placed safely on the indoor floor
+    intent: Complete the dog's journey by revealing the prepared dinner and the waiting owner
+    action:
+      trigger: The dog reaches the doorway after the owner's call
+      behavior: The dog stops at the threshold, releases the ball and looks toward the bowl while the owner waits
+      landing: The dog faces the bowl beside the doorway and the owner remains in the same visible position
+    camera:
+      opening: A doorway medium-wide shot establishes the dog, the waiting owner, the floor and the bowl
+      trigger: As the dog releases the ball at the threshold
+      move: locked-off camera
+      landing: The bowl, the dog's head and the owner are all clearly visible without changing screen direction
+    sound: A gentle ball contact sound and a brief quiet pause
