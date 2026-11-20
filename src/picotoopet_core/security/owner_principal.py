@@ -28,7 +28,7 @@ class OwnerCredentialConfig(BaseModel):
     actor_id: str = Field(pattern=_ID_PATTERN, max_length=80)
     token_sha256: str = Field(pattern=_FINGERPRINT_PATTERN)
     subject_keys: tuple[str, ...] = Field(min_length=1, max_length=32)
-    permissions: tuple[Literal["owner_facts.review", "storypack.review"], ...] = ()
+    permissions: tuple[Literal["owner_facts.review", "storypack.review", "asset_use.attest"], ...] = ()
     registry_revision: int = Field(ge=1)
     enabled: bool = False
     expires_at: datetime | None = None
@@ -72,7 +72,7 @@ class OwnerPrincipal(BaseModel):
     actor_id: str
     credential_id: str
     subject_keys: tuple[str, ...]
-    permissions: tuple[Literal["owner_facts.review", "storypack.review"], ...]
+    permissions: tuple[Literal["owner_facts.review", "storypack.review", "asset_use.attest"], ...]
     registry_revision: int
 
 
