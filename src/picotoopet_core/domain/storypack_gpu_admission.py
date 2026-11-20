@@ -103,10 +103,9 @@ class ScopedProductionAdmission:
             and item.registry_revision == subject["reviewer_registry_revision"]
             and _scope(item, plan["subject_key"], "master.verify")
         ]
-        if len(grants) != 1 or grants[0].credential_id == master["actor_id"]:
-            # Master event actor_id is a public actor identifier, not a credential ID.
-            if len(grants) != 1:
-                raise AdmissionError("ADMISSION_MASTER_CREDENTIAL_NOT_CURRENT")
+        # MASTER 审核人必须是另一名当前有效的授权主体，不能借用 Owner 身份。
+        if len(grants) != 1 or master["actor_id"] != grants[0].actor_id:
+            raise AdmissionError("ADMISSION_MASTER_CREDENTIAL_NOT_CURRENT")
         reviewer = OwnerPrincipal(
             actor_id=grants[0].actor_id,
             credential_id=grants[0].credential_id,
@@ -336,7 +335,11 @@ class ScopedProductionAdmission:
                 continue
             status = row["status"]
             if status == TaskStatus.RUNNING.value:
-                if row["lease_owner"] != worker_id or row["lease_expires_at"] < now:
+                # 只允许带有相同 task_id 的旧 Journal 恢复；无 Journal 不重投。
+                if resume_id != row["task_id"]:
+                    continue
+                if (row["lease_owner"] != worker_id
+                        or row["lease_expires_at"] is None):
                     continue
                 # Old pre-admission journals must never become eligible retroactively.
                 grants = db.execute(
@@ -350,6 +353,8 @@ class ScopedProductionAdmission:
                 if (last.get("worker_id") != worker_id
                         or last.get("attempt_count") != row["attempt_count"]):
                     continue
+                if row["lease_expires_at"] < now:
+                    return {"task_id": row["task_id"], "status": "Expired"}
                 return {"task_id": row["task_id"], "status": status}
             if status not in (TaskStatus.QUEUED.value, TaskStatus.RETRYING.value):
                 continue
@@ -496,7 +501,14 @@ class LeaseChallengeRegistry:
     def issue(self, body: ExecutorLease) -> dict | None:
         with self._lock:
             candidate = self.admission.next_lease(body)
-            if candidate is None:
+            if candidate is not None and candidate["task_status"] == "Expired":
+                # 仅恢复已经证明是本 Episode + 本 Worker 的过期旧租约。
+                self.services.queue.recover_expired_leases(
+                    resource_tags=(GPU_TAG,), task_types=tuple(TASK_RUNNERS),
+                    task_id=candidate["task_id"],
+                )
+                candidate = self.admission.next_lease(body)
+            if candidate is None or candidate["task_status"] == "Expired":
                 return None
             nonce = secrets.token_urlsafe(32)
             message = {
