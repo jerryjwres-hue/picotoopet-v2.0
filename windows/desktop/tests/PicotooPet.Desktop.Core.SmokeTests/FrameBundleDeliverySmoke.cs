@@ -74,11 +74,13 @@ internal static class FrameBundleDeliverySmoke
                 Timeout = TimeSpan.FromSeconds(60),
             };
             await using var mac = new MacCoreClient(client, "device-test-token");
-            var native = await mac.DownloadAndStageFramesAsync(
-                "one-use-transfer-ticket-0123456789", manifestSha, bundleSha, project);
-            Assert(native.WorkerLocalBytesVerified && !native.CanQueue && !native.GpuAuthorized,
-                "已验证传输意外获得 GPU 权限");
-            Assert(handler.Calls == 1, "原生客户端请求数量不匹配");
+            var native = await mac.ClaimAndStagePendingFramesAsync(project);
+            Assert(native is not null &&
+                native.WorkerLocalBytesVerified && !native.CanQueue && !native.GpuAuthorized,
+                "已审核素材的自动领取/落盘不得获得 GPU 权限");
+            Assert(handler.Calls == 2, "应先领取后下载，不能绕开 Mac Owner 已签发证据");
+            var empty = await mac.ClaimAndStagePendingFramesAsync(project);
+            Assert(empty is null && handler.Calls == 3, "一次性待传任务不应重复领取");
 
             // Windows 普通 LAN 明文 HTTP 必须在发送任何请求前直接拒绝。
             using var insecure = new HttpClient(new SyntheticCoreHandler(bundleBytes, manifestSha, bundleSha))
@@ -134,6 +136,7 @@ internal static class FrameBundleDeliverySmoke
         private readonly byte[] _body;
         private readonly string _manifestSha;
         private readonly string _bundleSha;
+        private bool _claimed;
 
         public int Calls { get; private set; }
 
@@ -148,6 +151,31 @@ internal static class FrameBundleDeliverySmoke
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Calls++;
+            if (request.Method == HttpMethod.Post &&
+                request.RequestUri?.AbsolutePath == "/api/v1/studio/frame-transfer/claim")
+            {
+                // 设备只能领取 Mac Owner 已签发一次的传输令牌，第二次返回 204。
+                if (_claimed)
+                {
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+                }
+                _claimed = true;
+                var claim = new
+                {
+                    status = "FRAME_TRANSFER_CLAIMED_DATA_ONLY",
+                    ticket = "one-use-transfer-ticket-0123456789",
+                    source_bindings_sha256 = _manifestSha,
+                    bundle_sha256 = _bundleSha,
+                    can_queue = false,
+                    gpu_authorized = false,
+                };
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        JsonSerializer.Serialize(claim),
+                        System.Text.Encoding.UTF8, "application/json"),
+                });
+            }
             Assert(request.Method == HttpMethod.Get, "应使用 GET 下载素材");
             Assert(request.RequestUri?.AbsolutePath == "/api/v1/studio/frame-transfer/download",
                 "下载路径错误");

@@ -20,6 +20,8 @@ public sealed class ProductionViewModel : ObservableObject
 
     private readonly Func<MacCoreClient?> _client;
     private readonly Func<CancellationToken> _token;
+    private readonly DesktopSettingsStore? _settingsStore;
+    private string _workerProjectRoot = "";
     private EpisodeSummary[] _episodes = [];
     private ShotReview[] _shots = [];
     private CandidateViewModel[] _candidates = [];
@@ -36,11 +38,17 @@ public sealed class ProductionViewModel : ObservableObject
     private string _message = "";
     private readonly Dictionary<string, BitmapSource> _previews = new(StringComparer.Ordinal);
 
-    public ProductionViewModel(Func<MacCoreClient?> client, Func<CancellationToken> token)
+    public ProductionViewModel(
+        Func<MacCoreClient?> client, Func<CancellationToken> token,
+        DesktopSettingsStore? settingsStore = null)
     {
         _client = client;
         _token = token;
+        _settingsStore = settingsStore;
         RefreshCommand = new AsyncRelayCommand(RefreshAsync, ReportError, () => _client() is not null);
+        SyncApprovedFramesCommand = new AsyncRelayCommand(
+            SyncApprovedFramesAsync, ReportError,
+            () => !_saving && HasConnection && HasWorkerProjectRoot);
         PickCommand = new AsyncRelayCommand(() => DecideAsync("pick"), ReportError, () => CanDecide() && Candidate?.CanPick == true);
         RedoCommand = new AsyncRelayCommand(() => DecideAsync("redo"), ReportError, () => CanDecide() && Candidate?.CanRedo == true);
         RejectCommand = new AsyncRelayCommand(() => DecideAsync("reject"), ReportError, CanDecide);
@@ -52,6 +60,7 @@ public sealed class ProductionViewModel : ObservableObject
     }
 
     public AsyncRelayCommand RefreshCommand { get; }
+    public AsyncRelayCommand SyncApprovedFramesCommand { get; }
     public AsyncRelayCommand PickCommand { get; }
     public AsyncRelayCommand RedoCommand { get; }
     public AsyncRelayCommand RejectCommand { get; }
@@ -127,6 +136,83 @@ public sealed class ProductionViewModel : ObservableObject
     public string CandidateHint => Candidate?.CanPlay == true ? "视频文件将用本机播放器打开。" : "";
     public bool CanOpenBatch => !_saving;
     public bool HasConnection => _client() is not null;
+    public string WorkerProjectRoot => _workerProjectRoot;
+    public bool HasWorkerProjectRoot => IsValidWorkerRoot(_workerProjectRoot);
+    public string WorkerProjectStatus => HasWorkerProjectRoot
+        ? $"视频项目：{Path.GetFileName(Path.TrimEndingDirectorySeparator(_workerProjectRoot))}"
+        : "未选择视频项目目录（仅首次需要）";
+
+
+    /// <summary>恢复已有非敏感视频项目配置；不扫描用户目录或执行 Worker。</summary>
+    public void SetWorkerProjectRoot(string? root)
+    {
+        _workerProjectRoot = root ?? "";
+        RaisePropertyChanged(nameof(WorkerProjectRoot));
+        RaisePropertyChanged(nameof(WorkerProjectStatus));
+        RaisePropertyChanged(nameof(HasWorkerProjectRoot));
+        UpdateCommands();
+    }
+
+    private static bool IsValidWorkerRoot(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root) ||
+            !Path.IsPathFullyQualified(root) ||
+            root.StartsWith(@"\\", StringComparison.Ordinal) ||
+            !Directory.Exists(root))
+        {
+            return false;
+        }
+        // 只接受已有的本地 Worker 项目，不把普通文件夹误当视频工程。
+        return Directory.Exists(Path.Combine(root, "_queue")) ||
+               Directory.Exists(Path.Combine(root, "17_静态首帧板V2"));
+    }
+
+    /// <summary>用户只需选一次已有 Worker 项目；路径使用既有非敏感设置文件保存。</summary>
+    public async Task ChooseWorkerProjectAsync(string folder)
+    {
+        var root = Path.GetFullPath(folder);
+        if (!IsValidWorkerRoot(root))
+        {
+            throw new InvalidOperationException(
+                "请选择已有视频项目根目录（应包含 _queue 或 17_静态首帧板V2）。");
+        }
+        if (_settingsStore is null)
+        {
+            throw new InvalidOperationException("当前 Studio 未配置视频项目设置存储。");
+        }
+        // 先保存成功，再更新 UI；没有模型加载或 GPU 操作。
+        var old = await _settingsStore.LoadAsync(CancellationToken.None);
+        await _settingsStore.SaveAsync(
+            old with { WindowsProjectRoot = root }, CancellationToken.None);
+        SetWorkerProjectRoot(root);
+        Message = "视频项目目录已保存。此设置只需进行一次。";
+    }
+
+    /// <summary>只领取 Mac Owner 已批准的素材，按 SHA 落地；绝不自动提交视频任务。</summary>
+    private async Task SyncApprovedFramesAsync()
+    {
+        var client = _client();
+        if (client is null || !HasWorkerProjectRoot || _saving)
+        {
+            return;
+        }
+        _saving = true;
+        UpdateCommands();
+        try
+        {
+            Message = "正在检查 Mac 上已审核的首帧素材并同步…";
+            var receipt = await client.ClaimAndStagePendingFramesAsync(
+                _workerProjectRoot, _token());
+            Message = receipt is null
+                ? "暂无已审核、待同步的首帧素材。请先在 Mac 端完成主人审核。"
+                : $"素材同步完成：{receipt.Bindings.Count} 项镜头引用已按 SHA 验证。尚未放行 GPU 生成。";
+        }
+        finally
+        {
+            _saving = false;
+            UpdateCommands();
+        }
+    }
 
     public bool HasNoteConflict
     {
@@ -475,6 +561,7 @@ public sealed class ProductionViewModel : ObservableObject
         RaisePropertyChanged(nameof(CanOpenBatch));
         RaisePropertyChanged(nameof(HasConnection));
         RefreshCommand.NotifyCanExecuteChanged();
+        SyncApprovedFramesCommand.NotifyCanExecuteChanged();
         PickCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
         RejectCommand.NotifyCanExecuteChanged();

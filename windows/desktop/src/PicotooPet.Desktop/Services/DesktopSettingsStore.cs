@@ -50,7 +50,7 @@ public sealed class DesktopSettingsStore
 }
 
 /// <summary>可安全落盘的桌面设置。</summary>
-public sealed record DesktopSettings(string MacBaseUrl)
+public sealed record DesktopSettings(string MacBaseUrl, string WindowsProjectRoot = "")
 {
     public static DesktopSettings Default { get; } = new("http://192.168.1.161:8766");
 }

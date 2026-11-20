@@ -643,3 +643,86 @@ def test_windows_fetch_refuses_https_when_session_disables_certificate_check(tmp
             )
     finally:
         session.close()
+
+
+
+def test_paired_device_claims_pending_owner_frame_once_then_downloads(context):
+    client, owner, device, objects = context
+    endpoint = "/api/v1/studio/frame-transfer/claim"
+    headers = {"Authorization": f"Bearer {device}"}
+
+    # 不经过 Owner 审核不会存在任何可领取传输。
+    assert client.post(endpoint, headers=headers).status_code == 204
+    payload, issued = _issued_transfer(client, owner, objects)
+    assert issued["can_queue"] is False
+    claimed = client.post(endpoint, headers=headers)
+    assert claimed.status_code == 200, claimed.text
+    claim = claimed.json()
+    assert claim["status"] == "FRAME_TRANSFER_CLAIMED_DATA_ONLY"
+    assert claim["ticket"] == issued["ticket"]
+    assert claim["source_bindings_sha256"] == issued["source_bindings_sha256"]
+    assert claim["bundle_sha256"] == issued["bundle_sha256"]
+    assert claim["can_queue"] is False
+    assert claim["gpu_authorized"] is False
+    assert claimed.headers["cache-control"] == "no-store"
+
+    # 先领取者独占；单次下载后原 Ticket 不可重放。
+    assert client.post(endpoint, headers=headers).status_code == 204
+    downloaded = client.get(
+        "/api/v1/studio/frame-transfer/download",
+        headers={
+            **headers, "X-Picotoo-Transfer-Ticket": claim["ticket"],
+        },
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content.startswith(b"PK")
+    replay = client.get(
+        "/api/v1/studio/frame-transfer/download",
+        headers={
+            **headers, "X-Picotoo-Transfer-Ticket": claim["ticket"],
+        },
+    )
+    assert replay.status_code == 409
+    _assert_no_production(client)
+
+
+def test_transfer_claim_denies_owner_token_remote_http_and_revoked_evidence(context):
+    client, owner, device, objects = context
+    endpoint = "/api/v1/studio/frame-transfer/claim"
+    payload, _ = _issued_transfer(client, owner, objects)
+
+    # Owner 不能代替已配对设备领取，远程明文 HTTP/伪造代理头必须阻止。
+    assert client.post(
+        endpoint, headers={"Authorization": f"Bearer {owner}"}
+    ).status_code == 401
+    remote = TestClient(
+        client.app, base_url="http://mac.example",
+        client=("192.0.2.30", 45678),
+    )
+    assert remote.post(
+        endpoint, headers={"Authorization": f"Bearer {device}"}
+    ).status_code == 403
+    assert client.post(
+        endpoint, headers={
+            "Authorization": f"Bearer {device}",
+            "X-Forwarded-Proto": "https",
+        },
+    ).status_code == 403
+
+    revoked = _call(
+        client, "/asset-use/revoke",
+        {
+            "subject_key": _SUBJECT,
+            "attestation_id": payload["attestation_id"],
+        },
+        owner,
+    )
+    assert revoked.status_code == 200
+    stale = client.post(
+        endpoint, headers={"Authorization": f"Bearer {device}"},
+    )
+    assert stale.status_code == 409
+    assert client.post(
+        endpoint, headers={"Authorization": f"Bearer {device}"},
+    ).status_code == 204
+    _assert_no_production(client)

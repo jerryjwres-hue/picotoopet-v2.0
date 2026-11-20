@@ -197,6 +197,61 @@ public sealed class MacCoreClient : IAsyncDisposable
             null, "artifacts.thumbnail", null, cancellationToken);
 
 
+    /// <summary>Studio 一次点击：领取 Mac 上已审核的待传首帧并在 Windows 本机核验，绝不触发生成。</summary>
+    public async Task<FrameStagingReceipt?> ClaimAndStagePendingFramesAsync(
+        string workerRoot,
+        CancellationToken cancellationToken = default)
+    {
+        var http = _frameTransferClient ?? _httpClient;
+        var baseUri = http.BaseAddress
+            ?? throw new InvalidOperationException("FRAME_TRANSFER_BASE_URI_MISSING");
+        var local = string.Equals(baseUri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+            (IPAddress.TryParse(baseUri.Host, out var address) && IPAddress.IsLoopback(address));
+        if ((baseUri.Scheme != Uri.UriSchemeHttps &&
+             !(baseUri.Scheme == Uri.UriSchemeHttp && local)) ||
+            !string.IsNullOrEmpty(baseUri.UserInfo))
+        {
+            throw new InvalidDataException("FRAME_TRANSFER_SECURE_INPUT_REQUIRED");
+        }
+        if (!Directory.Exists(workerRoot))
+        {
+            throw new InvalidDataException("FRAME_TRANSFER_WORKER_PROJECT_MISSING");
+        }
+
+        // 只通过现有设备 Bearer 向 Mac 领取主人已经批准的资料，绝不接触 Owner Token。
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, "api/v1/studio/frame-transfer/claim");
+        using var response = await http.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NoContent)
+        {
+            return null;
+        }
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            throw new InvalidDataException("FRAME_TRANSFER_CLAIM_NOT_AUTHORIZED_OR_STALE");
+        }
+        await using var responseStream = await response.Content.ReadAsStreamAsync(
+            cancellationToken).ConfigureAwait(false);
+        using var body = await JsonDocument.ParseAsync(
+            responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var json = body.RootElement;
+        if (json.ValueKind != JsonValueKind.Object ||
+            json.GetProperty("status").GetString() != "FRAME_TRANSFER_CLAIMED_DATA_ONLY" ||
+            json.GetProperty("can_queue").GetBoolean() ||
+            json.GetProperty("gpu_authorized").GetBoolean())
+        {
+            throw new InvalidDataException("FRAME_TRANSFER_CLAIM_INVALID");
+        }
+        var ticket = json.GetProperty("ticket").GetString() ?? "";
+        var manifest = json.GetProperty("source_bindings_sha256").GetString() ?? "";
+        var zipSha = json.GetProperty("bundle_sha256").GetString() ?? "";
+        // 下载后二次校验，旧 Ticket 不可重新领取，也不生成任何生产 Task。
+        return await DownloadAndStageFramesAsync(
+            ticket, manifest, zipSha, workerRoot, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>从已由 Mac Owner 签发的一次性凭据下载 ZIP，并使用 .NET 原生代码在 Worker 目录验 SHA。</summary>
     /// <remarks>这只是数据同步；方法绝不创建生产任务、解除 GPU HOLD 或声明 MASTER 已批准。</remarks>
     public async Task<FrameStagingReceipt> DownloadAndStageFramesAsync(

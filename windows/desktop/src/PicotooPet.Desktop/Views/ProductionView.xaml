@@ -25,8 +25,14 @@
       <StackPanel VerticalAlignment="Center">
         <TextBlock Text="生产审片" FontSize="23" FontWeight="SemiBold" Foreground="#192536" />
         <TextBlock Text="为每个分镜选用一个视频后可合成。" Foreground="#536174" Margin="0,4,0,0" />
+        <TextBlock Text="{Binding WorkerProjectStatus}" Foreground="#536174"
+                   Margin="0,3,0,0" FontSize="11" TextTrimming="CharacterEllipsis" />
       </StackPanel>
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button Content="选择视频目录（首次）" Click="ChooseWorkerProject"
+                ToolTip="仅首次选择已有 Windows Worker 视频工程根目录，后续自动记住。" />
+        <Button Content="同步已审核首帧" Command="{Binding SyncApprovedFramesCommand}"
+                ToolTip="只下载 Mac 已批准且 SHA 匹配的参考图；不创建视频任务或放行 GPU。" />
         <Button Content="打开本地批次" Click="OpenBatch" IsEnabled="{Binding CanOpenBatch}" />
         <Button Content="刷新" Command="{Binding RefreshCommand}" />
         <Button Content="合成本集" Command="{Binding AssembleCommand}" Style="{StaticResource PrimaryAction}" />

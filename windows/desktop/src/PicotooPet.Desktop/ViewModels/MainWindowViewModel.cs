@@ -50,7 +50,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _settingsStore = settingsStore;
         _dispatcher    = dispatcher;
         _logger        = logger;
-        Production = new ProductionViewModel(() => _client, () => CurrentConnectionToken);
+        Production = new ProductionViewModel(() => _client, () => CurrentConnectionToken, settingsStore);
         _stateStore.SnapshotChanged += OnSnapshotChanged;
         SubmitTaskCommand = new AsyncRelayCommand(
             SubmitTaskAsync,
@@ -162,6 +162,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         var settings = await _settingsStore.LoadAsync(cancellationToken);
         MacBaseUrl = settings.MacBaseUrl;
+        Production.SetWorkerProjectRoot(settings.WindowsProjectRoot);
         var token = _tokenStore.Read();
         if (string.IsNullOrWhiteSpace(token))
         {
@@ -176,7 +177,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         await ConnectAsync(token, cancellationToken);
         _tokenStore.Save(token);
-        await _settingsStore.SaveAsync(new DesktopSettings(MacBaseUrl), cancellationToken);
+        // 重新配对 Mac 时必须保留已有 Windows 视频项目目录，不要求重复选择。
+        var existing = await _settingsStore.LoadAsync(cancellationToken);
+        await _settingsStore.SaveAsync(
+            existing with { MacBaseUrl = MacBaseUrl }, cancellationToken);
     }
 
     private async Task ConnectAsync(string token, CancellationToken cancellationToken)

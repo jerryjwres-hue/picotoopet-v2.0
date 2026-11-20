@@ -40,6 +40,8 @@ class FrameTransferTickets:
         self._folder = tempfile.TemporaryDirectory(prefix="picotoo-frame-transfer-")
         self._lock = threading.RLock()
         self._active: dict[str, _Ticket] = {}
+        # 只保存待设备领取的单次 Token；已经领取的不能被第二台设备再次取得。
+        self._pending: dict[str, str] = {}
         self._closed = False
 
     def _purge_expired(self) -> None:
@@ -48,6 +50,7 @@ class FrameTransferTickets:
         for key, item in tuple(self._active.items()):
             if item.expires_at <= now:
                 self._active.pop(key)
+                self._pending.pop(key, None)
                 item.path.unlink(missing_ok=True)
 
     def issue(
@@ -86,12 +89,46 @@ class FrameTransferTickets:
                 expires_at=time.monotonic() + _TTL_SECONDS,
                 validate_current=validate_current,
             )
+            self._pending[key] = token
             return {
                 "status": "FRAME_TRANSFER_TICKET_ISSUED_DATA_ONLY",
                 "ticket": token,
                 "source_bindings_sha256": manifest_sha256,
                 "bundle_sha256": bundle_digest,
                 "expires_in_seconds": _TTL_SECONDS,
+                "single_use": True,
+                "can_queue": False,
+                "gpu_authorized": False,
+            }
+
+    def claim_pending(self) -> dict | None:
+        """Atomically hand the newest outstanding Owner-approved data ticket to one device."""
+        with self._lock:
+            if self._closed:
+                raise FrameTransferError("FRAME_TRANSFER_CLOSED")
+            self._purge_expired()
+            if not self._pending:
+                return None
+
+            # 唯一待领取任务；先取出 Token，其他设备此刻无法重复领取。
+            key, token = next(iter(self._pending.items()))
+            self._pending.pop(key)
+            item = self._active.get(key)
+            if item is None:
+                return None
+            try:
+                # 领取时仍复查最新审批；不依赖 Owner 当初提交的旧布尔值。
+                item.validate_current()
+            except BaseException as error:
+                self._active.pop(key, None)
+                item.path.unlink(missing_ok=True)
+                raise FrameTransferError("FRAME_TRANSFER_SOURCE_OR_APPROVAL_STALE") from error
+
+            return {
+                "status": "FRAME_TRANSFER_CLAIMED_DATA_ONLY",
+                "ticket": token,
+                "source_bindings_sha256": item.manifest_sha256,
+                "bundle_sha256": item.bundle_sha256,
                 "single_use": True,
                 "can_queue": False,
                 "gpu_authorized": False,
@@ -107,6 +144,7 @@ class FrameTransferTickets:
                 raise FrameTransferError("FRAME_TRANSFER_CLOSED")
             self._purge_expired()
             item = self._active.pop(key, None)
+            self._pending.pop(key, None)
             if item is None:
                 raise FrameTransferError("FRAME_TRANSFER_NOT_FOUND_OR_USED")
             try:
@@ -128,4 +166,5 @@ class FrameTransferTickets:
                 return
             self._closed = True
             self._active.clear()
+            self._pending.clear()
             self._folder.cleanup()
