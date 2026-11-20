@@ -462,7 +462,7 @@ async def issue_owner_frame_transfer(
             ),
             validate_current=lambda: validate_and_bind(),
         )
-    except (StoryboardReviewError, AssetUseError, FrameTransferError) as error:
+    except (StoryboardReviewError, AssetUseError, FrameTransferError, FrameBundleError) as error:
         code = error.code if hasattr(error, "code") else str(error)
         raise ApiError(
             status_code=409, code=code,
