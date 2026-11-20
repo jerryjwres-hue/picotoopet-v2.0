@@ -134,10 +134,36 @@ function Set-PicotooShortcuts {
     }
 }
 
+function Set-PicotooTunnelShortcut {
+    param([Parameter(Mandatory)][string]$VersionRoot)
+
+    # 安装目录中的双击入口已由发布清单校验；无需保留 ZIP，也不自动开启 SSH。
+    $shortcutPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet 安全连接.lnk"
+    $tunnelFolder = Join-Path $VersionRoot "tools\connection"
+    $launcher     = Join-Path $tunnelFolder "CONNECT_MAC_SECURE.vbs"
+    $script       = Join-Path $tunnelFolder "Start-SecureMacTunnel.ps1"
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $script -PathType Leaf)) {
+        # 回滚到不含此功能的旧版本时必须清理过期快捷方式，防止跑错版本。
+        Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+        return
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut                  = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath       = Join-Path $env:WINDIR "System32\wscript.exe"
+    $shortcut.Arguments        = '"' + $launcher + '"'
+    $shortcut.WorkingDirectory = $tunnelFolder
+    $shortcut.Description      = "PicotooPet Mac SSH 加密连接（仅在明确双击后启动）"
+    $shortcut.Save()
+}
+
 function Remove-PicotooShortcuts {
     foreach ($shortcutPath in Get-PicotooShortcutPaths) {
         Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
     }
+    # 首次安装失败时同步撤销安全连接快捷方式，避免悬空入口。
+    $tunnelShortcut = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet 安全连接.lnk"
+    Remove-Item -LiteralPath $tunnelShortcut -Force -ErrorAction SilentlyContinue
 }
 
 function Restore-PreviousActivation {
@@ -145,6 +171,7 @@ function Restore-PreviousActivation {
     if ($null -ne $previousCurrent) {
         Write-JsonAtomic -Value $previousCurrent -Path $currentPath
         Set-PicotooShortcuts -Executable ([string]$previousCurrent.executable)
+        Set-PicotooTunnelShortcut -VersionRoot ([string]$previousCurrent.path)
         Start-Process -FilePath $previousCurrent.executable -WorkingDirectory $previousCurrent.path
     }
     else {
@@ -196,6 +223,13 @@ try {
     $stagingPath         = Join-Path $versionsRoot ".staging-$versionId-$PID"
     $report.install_path = $finalPath
     Assert-ManifestFiles -Manifest $manifest -Root $payloadRoot
+    # 安装入口必须在已签清单的 payload 内，拒绝仅 ZIP 顶层的未受控脚本。
+    foreach ($name in @("CONNECT_MAC_SECURE.vbs", "Start-SecureMacTunnel.ps1")) {
+        $requiredPath = "tools/connection/$name"
+        if (-not ($manifest.files | Where-Object { [string]$_.path -eq $requiredPath })) {
+            throw "发布清单缺少安装后安全连接入口：$requiredPath"
+        }
+    }
 
     Write-InstallProgress -Percent 20 -Stage "检查当前版本" -Detail "保存可回滚版本指针"
     if ($hadCurrentPointer) {
@@ -245,6 +279,7 @@ try {
     }
     Write-JsonAtomic -Value $currentPointer -Path $currentPath
     Set-PicotooShortcuts -Executable $executable
+    Set-PicotooTunnelShortcut -VersionRoot $finalPath
 
     Write-InstallProgress -Percent 85 -Stage "启动应用" -Detail "检查新进程能否保持运行"
     Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
