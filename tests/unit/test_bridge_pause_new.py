@@ -83,6 +83,15 @@ def test_pause_mid_lease_preserves_heartbeat_and_unsubmitted_journal(bridge):
     assert not list((worker.queue / "running").glob("*.json"))
     assert any(url.endswith("/heartbeat") for _, url in session.calls)
     assert not any(url.endswith("/executors/lease") for _, url in session.calls)
+    # 恢复后只写入一次原 Task 的 inbox，不重新请求或复制一个新租约。
+    manage_new_task_pause(worker.config, "resume")
+    worker.step()
+    inbox = list((worker.queue / "inbox").glob("*.json"))
+    assert len(inbox) == 1
+    assert json.loads(worker.journal.read_text(encoding="utf-8"))["submitted"] is True
+    worker.step()
+    assert len(list((worker.queue / "inbox").glob("*.json"))) == 1
+    assert not any(url.endswith("/executors/lease") for _, url in session.calls)
 
 
 def test_pause_does_not_abandon_submitted_worker_receipt(bridge):
