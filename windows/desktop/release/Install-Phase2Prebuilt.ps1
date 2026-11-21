@@ -242,6 +242,8 @@ function Restore-PreviousActivation {
     $restoredState = Restore-PicotooManagedShortcutSnapshot `
         -ShortcutState $preActivationShortcutState `
         -DesktopDirectory $DesktopDirectory
+    # 安装失败时仅恢复当前指针/快捷方式，不遗留新版本的 SSH 启动入口。
+    Set-PicotooTunnelShortcut -VersionRoot $(if ($null -ne $previousCurrent) { [string]$previousCurrent.path } else { "" })
     if ($script:StrictP0Activation -and $null -ne $previousCurrent) {
         # 原有旧版本如不认识 HOLD，恢复开机自启会在下次登录偷偷启动 Worker。
         $safePrevious = $false
@@ -502,6 +504,11 @@ try {
         shortcut_state    = @($shortcutValidation.shortcut_state)
     }
     Write-JsonAtomic -Value $currentPointer -Path $currentPath
+    if ($script:StrictP0Activation) {
+        # 只有已验证的当前 payload 提供安全连接；不启动 SSH，不为开机自启注册任务。
+        Set-PicotooTunnelShortcut -VersionRoot $finalPath
+        [void](Assert-PicotooTunnelShortcut -VersionRoot $finalPath)
+    }
     $report.shortcut_paths           = $shortcutValidation.shortcut_paths
     $report.shortcut_state           = @($shortcutValidation.shortcut_state)
     $report.shortcuts_verified       = [bool]$shortcutValidation.shortcuts_verified
