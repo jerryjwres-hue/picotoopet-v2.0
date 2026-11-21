@@ -1,4 +1,4 @@
-name: Phase 2.3 Slice D Windows Prebuilt Release
+name: Optional Desktop Pet Full Release (manual only)
 
 on:
   workflow_dispatch:
@@ -11,32 +11,6 @@ on:
         options:
           - picotoopet-windows-release
           - windows-2025
-  pull_request:
-    paths:
-      - "AGENTS.md"
-      - "skills/preserving-project-goals/SKILL.md"
-      - "contracts/release/**"
-      - "scripts/detect_component_impact.py"
-      - "scripts/stamp_windows_goal_integrity.py"
-      - "scripts/verify_project_goal_integrity.py"
-      - "tests/**"
-      - "src/**"
-      - "windows/desktop/**"
-      - ".github/workflows/windows-phase2-release.yml"
-  push:
-    branches:
-      - main
-    paths:
-      - "AGENTS.md"
-      - "skills/preserving-project-goals/SKILL.md"
-      - "contracts/release/**"
-      - "scripts/detect_component_impact.py"
-      - "scripts/stamp_windows_goal_integrity.py"
-      - "scripts/verify_project_goal_integrity.py"
-      - "tests/**"
-      - "src/**"
-      - "windows/desktop/**"
-      - ".github/workflows/windows-phase2-release.yml"
 
 permissions:
   contents: read
@@ -47,7 +21,7 @@ concurrency:
 
 jobs:
   impact:
-    name: Detect Windows release impact
+    name: Optional full desktop-pet impact check (manual)
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     outputs:
@@ -85,7 +59,7 @@ jobs:
   windows-release:
     needs: impact
     if: needs.impact.outputs.windows == 'true'
-    name: Native Windows build and single formal release gate
+    name: Optional full desktop-pet build and formal release gate
     runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_target || 'windows-2025' }}
     timeout-minutes: 50
     env:
