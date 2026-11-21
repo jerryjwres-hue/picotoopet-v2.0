@@ -15,6 +15,7 @@ import json
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from picotoopet_core.production.profile import frame_count_for_duration
 
 Identifier = Annotated[
     str,
@@ -153,6 +154,9 @@ def storypack_preview(pack: StoryPackV1) -> dict:
     payload = pack.model_dump(mode="json")
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     width, height, fps, seconds = OUTPUT_PROFILES[pack.output_profile]
+    # Canonical 2.3 Wan profile uses 4n+1 frames; 4 seconds at 24fps means 97, not 96.
+    # Reuse the real Production compiler's quantization without granting render authority.
+    frames_per_shot = frame_count_for_duration(seconds, fps)
     source_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     # 2.3 的 Creative → ProductionPlan 不接受旧 V3.1 Episode；禁止虚构兼容编译结果。
     compilation = {
@@ -181,8 +185,9 @@ def storypack_preview(pack: StoryPackV1) -> dict:
             "height": height,
             "fps": fps,
             "seconds_per_shot": seconds,
+            "frames_per_shot": frames_per_shot,
             "planned_duration_s": len(pack.shots) * seconds,
-            "planned_frames": len(pack.shots) * seconds * fps,
+            "planned_frames": len(pack.shots) * frames_per_shot,
         },
         "shots": [
             {
