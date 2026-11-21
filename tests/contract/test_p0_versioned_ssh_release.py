@@ -62,7 +62,8 @@ def test_installer_and_rollback_restore_ssh_shortcut_without_worker_start() -> N
     rollback = ROLLBACK.read_text(encoding="utf-8-sig")
     assert "Set-PicotooTunnelShortcut -VersionRoot $finalPath" in install
     assert "Assert-PicotooTunnelShortcut -VersionRoot $finalPath" in install
-    assert "Set-PicotooTunnelShortcut -VersionRoot $(if" in install
+    assert "Set-PicotooTunnelShortcut -VersionRoot $oldVersionRoot" in install
+    assert "if ($script:StrictP0Activation) {\n        # 仅影视预览恢复 SSH 入口" in install
     assert "Set-PicotooTunnelShortcut -VersionRoot ([string]$previous.path)" in rollback
     assert "Set-PicotooTunnelShortcut -VersionRoot ([string]$current.path)" in rollback
     assert "Assert-PicotooTunnelShortcut -VersionRoot ([string]$previous.path)" in rollback
