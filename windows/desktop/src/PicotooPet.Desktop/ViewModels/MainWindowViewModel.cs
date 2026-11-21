@@ -142,6 +142,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             throw new InvalidOperationException("Mac 地址格式无效。");
         }
+        if (!SecureCoreEndpoint.IsAllowed(baseUri))
+        {
+            // 拒绝旧设置保存的局域网明文地址，绝不在检查前发送设备令牌。
+            throw new InvalidOperationException(
+                "Mac Core 不允许局域网明文 HTTP。请先使用安全 SSH 隧道，地址 http://127.0.0.1:18766；或使用可信 HTTPS。");
+        }
         if (string.IsNullOrWhiteSpace(token))
         {
             throw new ArgumentException("设备令牌不能为空。", nameof(token));
