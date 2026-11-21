@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Core.Contracts;
 
 namespace PicotooPet.Desktop.ViewModels;
 
@@ -62,6 +63,12 @@ public sealed partial class CreativeIntelligencePanelViewModel
     private string _storyPackPreviewStatus = "可选：粘贴导演生成的 StoryPack JSON，仅校验镜头与资产。";
     private bool _isStoryPackPreviewBusy;
     private long _storyPackRevision;
+    private string? _goalDraftObjective;
+    private string? _goalDraftDigest;
+    private long _goalDraftRevision = -1;
+    private string? _submittedGoalDigest;
+    private bool _isStoryGoalBusy;
+    private string _storyGoalStatus = "先执行只读 StoryPack 检查，才可主动创建标准本地 Goal。";
 
     /// <summary>仅保留当前内存中粘贴的草稿；不上传历史、日志或本地缓存。</summary>
     public string StoryPackJson
@@ -72,6 +79,7 @@ public sealed partial class CreativeIntelligencePanelViewModel
             if (SetProperty(ref _storyPackJson, value ?? string.Empty))
             {
                 Interlocked.Increment(ref _storyPackRevision);
+                ResetPreparedGoal();
                 StoryPackPreviewStatus = "草稿已改变；预览结果不再有效，重新点击校验。";
                 RaisePropertyChanged(nameof(CanPreviewStoryPack));
             }
@@ -100,6 +108,142 @@ public sealed partial class CreativeIntelligencePanelViewModel
     public bool CanPreviewStoryPack =>
         !IsStoryPackPreviewBusy && !string.IsNullOrWhiteSpace(StoryPackJson);
 
+    /// <summary>新路径复用现有 Human Goal；只有有效最新预览和显式用户点击才可提交。</summary>
+    public bool CanCreateStoryGoal =>
+        !IsStoryPackPreviewBusy && !_isStoryGoalBusy && _goalDraftObjective is not null
+        && _goalDraftDigest is not null && _goalDraftRevision == Volatile.Read(ref _storyPackRevision)
+        && !string.Equals(_submittedGoalDigest, _goalDraftDigest, StringComparison.Ordinal);
+
+    public string StoryGoalStatus
+    {
+        get => _storyGoalStatus;
+        private set => SetProperty(ref _storyGoalStatus, value);
+    }
+
+    private void ResetPreparedGoal()
+    {
+        _goalDraftObjective = null;
+        _goalDraftDigest = null;
+        _goalDraftRevision = -1;
+        StoryGoalStatus = "草稿未通过最新的标准 Goal 准入检查。";
+        RaisePropertyChanged(nameof(CanCreateStoryGoal));
+    }
+
+    /// <summary>纯 JSON 类型与范围校验，拒绝任何伪造放行或不一致的预览摘要。</summary>
+    public static bool TryGetCanonicalGoalIntake(
+        JsonElement preview, out string objective, out string digest)
+    {
+        objective = string.Empty;
+        digest = string.Empty;
+        if (preview.ValueKind != JsonValueKind.Object
+            || !HasBool(preview, "validated", true)
+            || !HasBool(preview, "can_queue", false)
+            || !preview.TryGetProperty("production_compilation", out var compilation)
+            || !HasBool(compilation, "executable", false)
+            || !preview.TryGetProperty("core23_compatibility", out var compatibility)
+            || !HasBool(compatibility, "gpu_post_authorized", false)
+            || !preview.TryGetProperty("owner_review_subject", out var owner)
+            || !HasBool(owner, "owner_approved", false)
+            || !preview.TryGetProperty("shot_count", out var shots)
+            || !shots.TryGetInt32(out var shotCount) || shotCount != 3
+            || !preview.TryGetProperty("output", out var output)
+            || !output.TryGetProperty("width", out var width) || width.GetInt32() != 832
+            || !output.TryGetProperty("height", out var height) || height.GetInt32() != 480
+            || !output.TryGetProperty("fps", out var fps) || fps.GetInt32() != 24
+            || !output.TryGetProperty("frames_per_shot", out var perShot) || perShot.GetInt32() != 97
+            || !output.TryGetProperty("planned_frames", out var total) || total.GetInt32() != 291
+            || !preview.TryGetProperty("storypack_sha256", out var sourceHash)
+            || sourceHash.ValueKind != JsonValueKind.String
+            || !preview.TryGetProperty("canonical_goal_intake", out var intake)
+            || intake.ValueKind != JsonValueKind.Object
+            || !HasBool(intake, "ready_for_user_submission", true)
+            || !HasBool(intake, "requires_explicit_user_action", true)
+            || !HasBool(intake, "local_video_preferred", true)
+            || !HasBool(intake, "source_evidence_verified", false)
+            || !HasBool(intake, "creative_package_approved", false)
+            || !HasBool(intake, "production_plan_executable", false)
+            || !HasBool(intake, "owner_approved", false)
+            || !HasBool(intake, "gpu_post_authorized", false)
+            || !StringFieldIs(intake, "contract", "picotoo.storypack.canonical-goal-intake.v1")
+            || !StringFieldIs(intake, "goal_type", "video.creative")
+            || !StringFieldIs(intake, "depth", "standard")
+            || !intake.TryGetProperty("blocking_reasons", out var reasons)
+            || reasons.ValueKind != JsonValueKind.Array || reasons.GetArrayLength() != 0
+            || !intake.TryGetProperty("storypack_sha256", out var intakeHash)
+            || intakeHash.ValueKind != JsonValueKind.String
+            || !intake.TryGetProperty("objective", out var statement)
+            || statement.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var hash = sourceHash.GetString();
+        var candidate = statement.GetString();
+        if (hash is null || hash.Length != 64 || hash.Any(c => !(
+            c is >= '0' and <= '9' or >= 'a' and <= 'f'))
+            || !string.Equals(hash, intakeHash.GetString(), StringComparison.Ordinal)
+            || candidate is null || candidate.Length is < 4 or > 2000
+            || !candidate.Contains("纯宠物视频", StringComparison.Ordinal)
+            || !candidate.Contains("3个镜头", StringComparison.Ordinal)
+            || !candidate.Contains("每个镜头4秒", StringComparison.Ordinal)
+            || !intake.TryGetProperty("objective_character_count", out var length)
+            || !length.TryGetInt32(out var reportedLength) || reportedLength != candidate.Length)
+        {
+            return false;
+        }
+
+        objective = candidate;
+        digest = hash;
+        return true;
+    }
+
+    private static bool StringFieldIs(JsonElement json, string property, string expected) =>
+        json.ValueKind == JsonValueKind.Object
+        && json.TryGetProperty(property, out var value)
+        && value.ValueKind == JsonValueKind.String
+        && string.Equals(value.GetString(), expected, StringComparison.Ordinal);
+
+    /// <summary>只在用户确认时创建现有 Core HumanGoal；重复操作按 StoryPack 摘要幂等。</summary>
+    public async Task CreateStoryGoalAsync(CancellationToken cancellationToken)
+    {
+        if (!CanCreateStoryGoal)
+        {
+            return;
+        }
+
+        var revision = Volatile.Read(ref _storyPackRevision);
+        var objective = _goalDraftObjective!;
+        var digest = _goalDraftDigest!;
+        _isStoryGoalBusy = true;
+        RaisePropertyChanged(nameof(CanCreateStoryGoal));
+        StoryGoalStatus = "正在向 Mac Core 提交现有 video.creative Goal；不会创建 GPU 任务……";
+        try
+        {
+            var created = await RequireSession().CreateGoalAsync(
+                new HumanGoalCreateRequest("video.creative", objective, "standard"),
+                "studio-storypack-goal-v1-" + digest,
+                cancellationToken);
+            if (Volatile.Read(ref _storyPackRevision) == revision)
+            {
+                _submittedGoalDigest = digest;
+                StoryGoalStatus = "本地创意 Goal 已创建：" + created.GoalId
+                    + "。需通过来源核验、Creative 和 Owner 门禁；GPU 仍 HOLD。";
+            }
+        }
+        catch (ApiException)
+        {
+            if (Volatile.Read(ref _storyPackRevision) == revision)
+            {
+                StoryGoalStatus = "标准 Goal 创建失败，未获得任何生产或 GPU 授权；可重试。";
+            }
+        }
+        finally
+        {
+            _isStoryGoalBusy = false;
+            RaisePropertyChanged(nameof(CanCreateStoryGoal));
+        }
+    }
+
     /// <summary>只向真实 Mac Core 发送一个有界 JSON 草稿；不触发 Creative/Production Task。</summary>
     public async Task PreviewStoryPackAsync(CancellationToken cancellationToken)
     {
@@ -116,6 +260,7 @@ public sealed partial class CreativeIntelligencePanelViewModel
             return;
         }
 
+        ResetPreparedGoal();
         IsStoryPackPreviewBusy = true;
         StoryPackPreviewStatus = "正在校验 JSON 与 Mac 已登记资产（只读）……";
         try
@@ -133,6 +278,16 @@ public sealed partial class CreativeIntelligencePanelViewModel
             if (Volatile.Read(ref _storyPackRevision) == revision)
             {
                 StoryPackPreviewStatus = FormatReadOnlyStoryPackPreview(result);
+                if (!StoryPackPreviewStatus.Contains("UNVERIFIED", StringComparison.Ordinal)
+                    && TryGetCanonicalGoalIntake(result, out var objective, out var digest))
+                {
+                    _goalDraftObjective = objective;
+                    _goalDraftDigest = digest;
+                    _goalDraftRevision = revision;
+                    StoryGoalStatus = "已核验：可主动创建现有 Mac 本地 video.creative Goal。"
+                        + " 这只是创意研究入口，资产、Owner、GPU 均未批准。";
+                    RaisePropertyChanged(nameof(CanCreateStoryGoal));
+                }
             }
         }
         catch (JsonException)
