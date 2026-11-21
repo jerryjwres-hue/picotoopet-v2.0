@@ -147,11 +147,11 @@ public sealed partial class CreativeIntelligencePanelViewModel
             || !preview.TryGetProperty("shot_count", out var shots)
             || !shots.TryGetInt32(out var shotCount) || shotCount != 3
             || !preview.TryGetProperty("output", out var output)
-            || !output.TryGetProperty("width", out var width) || width.GetInt32() != 832
-            || !output.TryGetProperty("height", out var height) || height.GetInt32() != 480
-            || !output.TryGetProperty("fps", out var fps) || fps.GetInt32() != 24
-            || !output.TryGetProperty("frames_per_shot", out var perShot) || perShot.GetInt32() != 97
-            || !output.TryGetProperty("planned_frames", out var total) || total.GetInt32() != 291
+            || !output.TryGetProperty("width", out var width) || !width.TryGetInt32(out var pixelsWide) || pixelsWide != 832
+            || !output.TryGetProperty("height", out var height) || !height.TryGetInt32(out var pixelsHigh) || pixelsHigh != 480
+            || !output.TryGetProperty("fps", out var fps) || !fps.TryGetInt32(out var framesPerSecond) || framesPerSecond != 24
+            || !output.TryGetProperty("frames_per_shot", out var perShot) || !perShot.TryGetInt32(out var frameCount) || frameCount != 97
+            || !output.TryGetProperty("planned_frames", out var total) || !total.TryGetInt32(out var totalFrames) || totalFrames != 291
             || !preview.TryGetProperty("storypack_sha256", out var sourceHash)
             || sourceHash.ValueKind != JsonValueKind.String
             || !preview.TryGetProperty("canonical_goal_intake", out var intake)
