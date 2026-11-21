@@ -10,6 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from picotoopet_core.api.app import create_app
+from picotoopet_core.autonomous.goal_service import HumanGoalRequest
+from picotoopet_core.creative.director import parse_goal_directives
 from picotoopet_core.config.models import AppSettings
 from picotoopet_core.config.paths import RuntimePaths
 
@@ -97,6 +99,28 @@ def test_three_shot_preview_is_deterministic_and_never_enqueues(studio):
     assert data["output"]["planned_duration_s"] == 12
     assert data["can_queue"] is False
     assert data["production_compilation"]["executable"] is False
+    intake = data["canonical_goal_intake"]
+    assert intake["ready_for_user_submission"] is True
+    assert intake["requires_explicit_user_action"] is True
+    assert intake["storypack_sha256"] == data["storypack_sha256"]
+    assert intake["goal_type"] == "video.creative"
+    assert intake["depth"] == "standard"
+    assert intake["local_video_preferred"] is True
+    assert all(intake[key] is False for key in (
+        "source_evidence_verified", "creative_package_approved",
+        "production_plan_executable", "owner_approved", "gpu_post_authorized",
+    ))
+    # 现有 2.3 Goal 契约能真实接受提案；预览本身仍没有提交 Goal。
+    _ = HumanGoalRequest.model_validate({
+        "goal_type": intake["goal_type"],
+        "depth": intake["depth"],
+        "objective": intake["objective"],
+        "local_video_preferred": intake["local_video_preferred"],
+    })
+    directives = parse_goal_directives(intake["objective"])
+    assert directives.shot_count == 3
+    assert directives.shot_seconds == 4
+    assert directives.pet_only is True
     assert data["production_compilation"]["reason"] == "CANONICAL_23_PRODUCTION_BRIDGE_NOT_IMPLEMENTED"
     assert data["core23_compatibility"]["gpu_post_authorized"] is False
     assert data["owner_review_subject"]["owner_approved"] is False
@@ -182,3 +206,29 @@ def test_changes_are_scoped_to_dependent_shots(studio):
     new_keys = [shot["input_sha256"] for shot in newer["fingerprint_plan"]["shots"]]
     assert all(old != new for old, new in zip(old_keys, new_keys, strict=True))
     assert newer["can_queue"] is False
+
+
+def test_goal_intake_blocks_oversize_and_non_p0_without_writing(studio):
+    """不截断故事，也不让不合规格的草稿静默变成 Goal。"""
+
+    before = _counts(studio)
+    too_long = storypack()
+    for shot in too_long["shots"]:
+        shot["action"] = shot["action"] + (" 长动作" * 210)
+    long_response = studio.post(ROUTE, json=too_long)
+    assert long_response.status_code == 200
+    long_intake = long_response.json()["canonical_goal_intake"]
+    assert long_intake["ready_for_user_submission"] is False
+    assert long_intake["objective"] is None
+    assert "GOAL_OBJECTIVE_OVER_2000_CHARS" in long_intake["blocking_reasons"]
+    assert long_response.json()["production_compilation"]["executable"] is False
+
+    two_shots = storypack()
+    two_shots["shots"] = two_shots["shots"][:2]
+    two_response = studio.post(ROUTE, json=two_shots)
+    assert two_response.status_code == 200
+    two_intake = two_response.json()["canonical_goal_intake"]
+    assert two_intake["ready_for_user_submission"] is False
+    assert "P0_REQUIRES_EXACTLY_THREE_SHOTS" in two_intake["blocking_reasons"]
+    assert two_intake["objective"] is None
+    assert _counts(studio) == before
