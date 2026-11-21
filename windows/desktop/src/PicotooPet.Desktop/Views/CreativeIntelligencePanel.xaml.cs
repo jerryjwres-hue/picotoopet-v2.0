@@ -37,6 +37,15 @@ public partial class CreativeIntelligencePanel : System.Windows.Controls.UserCon
     private async void Prepare_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.PrepareAsync(CancellationToken.None));
 
+    // 只把真实故事示例写入内存文本框；用户须再次主动点击只读检查。
+    private void LoadMaotaiPilot_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is CreativeIntelligencePanelViewModel viewModel)
+        {
+            viewModel.LoadMaotaiDinnerPilotDraft();
+        }
+    }
+
     // 仅用户点击时请求已经存在的 Mac Core 只读入口；不持有生产授权。
     private async void StoryPackPreview_Click(object sender, RoutedEventArgs e)
     {
