@@ -319,14 +319,14 @@ Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--endpoint-policy-s
 if ($ValidationScope -eq "UiPreview") {
     # 使用 #298/#308 已审查的系统 OpenSSH 入口，发布到当前版本 payload。
     # 文件纳入 release-manifest SHA；只复制且执行无联网自检，不自动建立 SSH。
-    $connectionOutput = Join-Path $payloadRoot "tools\\connection"
+    $connectionOutput = Join-Path $payloadRoot "tools\connection"
     New-Item -ItemType Directory -Path $connectionOutput -Force | Out-Null
     foreach ($name in @("CONNECT_MAC_SECURE.vbs", "Start-SecureMacTunnel.ps1")) {
         Copy-ReleaseFile `
-            -Source (Join-Path $desktopRoot "release\\$name") `
+            -Source (Join-Path $desktopRoot "release\$name") `
             -Destination (Join-Path $connectionOutput $name)
     }
-    $powershell51 = Join-Path $env:WINDIR "System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    $powershell51 = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
     Invoke-NativeCommand -FilePath $powershell51 -Arguments @(
         "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
         "-File", (Join-Path $connectionOutput "Start-SecureMacTunnel.ps1"), "-SelfTest"
