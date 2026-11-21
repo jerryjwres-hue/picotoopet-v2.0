@@ -1,4 +1,4 @@
-# Phase 2 Windows 预编译安装验证；校验文件、版本、快捷方式、进程和真实双机链路。
+﻿# Phase 2 Windows 预编译安装验证；校验文件、版本、快捷方式、进程和真实双机链路。
 [CmdletBinding()]
 param(
     [int]$RestSamples = 500,
