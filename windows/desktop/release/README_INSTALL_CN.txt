@@ -40,6 +40,16 @@ Research 执行边界：
 - 安装、验证和回滚共同校验桌面、开始菜单和开机启动三处快捷方式。
 - 桌面路径使用 Windows DesktopDirectory，兼容 OneDrive 或其他重定向桌面。
 
+Mac 2.3.27.1 安全连接（P0 #296，先连通，后再进行 Worker 受控验收）：
+- Mac Core 应监听 127.0.0.1:8766；原有 8765 PicotooPetAI Server 保持不动。
+- Mac 系统“远程登录”须事先开启，并限制为授权用户；Windows 已配置 SSH 公钥和可信 known_hosts。
+- 双击本包 CONNECT_MAC_SECURE.vbs，首次输入 Mac 主机和系统用户名，Core 端口默认为 8766。
+- 必须看到 SECURE_MAC_TUNNEL=READY；Windows Studio 使用 http://127.0.0.1:18766。
+- 安装后可在开始菜单点击“Picotoo Pet 安全连接”，无需保留 ZIP。
+- 不自动信任 SSH 主机密钥、不开启密码登录、不把设备 Token 发到明文局域网 HTTP。
+- Core 认证令牌仍使用原设备配对；SSH 隧道不提供 Owner/Master/GPU/Worker 授权。
+- 旧版 Core 的 Worker 认证仍为独立 Ed25519 Challenge/Witness，不要用 V3.1 的新 HMAC 密钥代替。
+
 安装：
 1. 完整解压 ZIP，并打开唯一的 PicotooPet-Phase2-Windows-Prebuilt-* 顶层目录。
 2. 双击 INSTALL_PHASE2_WINDOWS.vbs。
