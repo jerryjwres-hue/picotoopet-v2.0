@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.ViewModels;
 
@@ -65,6 +66,71 @@ internal static class StudioStoryPackPanelSmokeTests
             && summary.Contains("未验证资产 2 项", StringComparison.Ordinal)
             && summary.Contains("GPU HOLD", StringComparison.Ordinal),
             "3 镜头预览必须保留资产缺口和明确 HOLD");
+
+        // 已校验的 StoryPack 可以作为真正 Human Goal 的「用户确认提案」，但绝不直接创建生产任务。
+        var candidate = JsonNode.Parse(valid.GetRawText())!;
+        var sha = new string('a', 64);
+        candidate["storypack_sha256"] = sha;
+        candidate["canonical_goal_intake"] = JsonSerializer.SerializeToNode(new
+        {
+            contract = "picotoo.storypack.canonical-goal-intake.v1",
+            storypack_sha256 = sha,
+            goal_type = "video.creative",
+            depth = "standard",
+            local_video_preferred = true,
+            objective = "纯宠物视频，3个镜头，每个镜头4秒；请使用原有 Core 研究与 Creative 通路。",
+            objective_character_count = "纯宠物视频，3个镜头，每个镜头4秒；请使用原有 Core 研究与 Creative 通路。".Length,
+            ready_for_user_submission = true,
+            blocking_reasons = Array.Empty<string>(),
+            requires_explicit_user_action = true,
+            source_evidence_verified = false,
+            creative_package_approved = false,
+            production_plan_executable = false,
+            owner_approved = false,
+            gpu_post_authorized = false,
+        });
+        var ready = JsonElement.Parse(candidate.ToJsonString());
+        SmokeAssert.True(
+            CreativeIntelligencePanelViewModel.TryGetCanonicalGoalIntake(
+                ready, out var intakeObjective, out var intakeDigest)
+            && intakeDigest == sha && intakeObjective.Contains("纯宠物视频", StringComparison.Ordinal),
+            "已验证提案须能从 Core 只读响应进入唯一现有 Goal 输入合同");
+
+        foreach (var (field, value) in new (string, bool)[]
+        {
+            ("ready_for_user_submission", false),
+            ("requires_explicit_user_action", false),
+            ("source_evidence_verified", true),
+            ("creative_package_approved", true),
+            ("production_plan_executable", true),
+            ("owner_approved", true),
+            ("gpu_post_authorized", true),
+        })
+        {
+            var forged = JsonNode.Parse(candidate.ToJsonString())!;
+            forged["canonical_goal_intake"]![field] = value;
+            SmokeAssert.True(
+                !CreativeIntelligencePanelViewModel.TryGetCanonicalGoalIntake(
+                    JsonElement.Parse(forged.ToJsonString()), out _, out _),
+                $"伪造的 {field} 标志不得允许创建 Goal");
+        }
+
+        foreach (var field in new[] { "storypack_sha256", "objective", "goal_type" })
+        {
+            var incomplete = JsonNode.Parse(candidate.ToJsonString())!;
+            (incomplete["canonical_goal_intake"] as JsonObject)!.Remove(field);
+            SmokeAssert.True(
+                !CreativeIntelligencePanelViewModel.TryGetCanonicalGoalIntake(
+                    JsonElement.Parse(incomplete.ToJsonString()), out _, out _),
+                $"缺少 {field} 不得显示 Goal 已就绪");
+        }
+
+        var stale = JsonNode.Parse(candidate.ToJsonString())!;
+        stale["canonical_goal_intake"]!["storypack_sha256"] = new string('b', 64);
+        SmokeAssert.True(
+            !CreativeIntelligencePanelViewModel.TryGetCanonicalGoalIntake(
+                JsonElement.Parse(stale.ToJsonString()), out _, out _),
+            "响应体与请求 StoryPack 摘要不一致必须拒绝");
 
         // 客户端不能把不完整的只读回执、伪造 GPU 放行或 Owner 标志显示为成功。
         foreach (var rejected in new[]
