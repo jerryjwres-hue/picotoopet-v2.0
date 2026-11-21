@@ -5,13 +5,26 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNTIME_ROOT="$HOME/Library/Application Support/PicotooPetV2"
-VERSION="2.2.0-phase2-slice1-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+# 版本名必须来自这份 2.3 Core 的真实产品版本，严禁回退到 2.2 的伪标签。
+PRODUCT_VERSION="$(tr -d '\\r\\n' < "$SOURCE_ROOT/src/picotoopet_core/product-version.txt")"
+if [[ ! "$PRODUCT_VERSION" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+  echo "STOP=INVALID_PRODUCT_VERSION" >&2
+  exit 1
+fi
+VERSION="${PRODUCT_VERSION}-v31-compat-$(date -u +%Y%m%dT%H%M%SZ)-$"
 VERSIONS_ROOT="$RUNTIME_ROOT/versions"
 TARGET="$VERSIONS_ROOT/$VERSION"
 CURRENT="$RUNTIME_ROOT/current"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 STATE_DIR="$RUNTIME_ROOT/state"
 PORT_HELPER="$SCRIPT_DIR/lib/runtime_port.sh"
+DB_COMPAT="$SCRIPT_DIR/lib/check_install_database.py"
+DATABASE_FILE="$RUNTIME_ROOT/database/core.db"
+
+# 先只读验明 Schema 24 家族；本机历史任务不允许任何降级或同编号异构接管。
+# 当前仍运行的 2.3 Core 不在这一步中被卸载；不启动 Worker 或 Comfy。
+command -v python3 >/dev/null 2>&1 || { echo "STOP=PYTHON3_UNAVAILABLE" >&2; exit 1; }
+python3 "$DB_COMPAT" --database "$DATABASE_FILE"
 
 mkdir -p "$VERSIONS_ROOT" "$RUNTIME_ROOT/logs" "$RUNTIME_ROOT/backups" "$STATE_DIR" "$LAUNCH_AGENTS"
 
@@ -65,6 +78,10 @@ else
   uv sync --project "$TARGET" --frozen
 fi
 
+# 在线备份必须在任何 Keychain、current 或 LaunchAgent 变更之前验证完成。
+# 不复制活动 WAL 原始文件；备份失败时原 Core 仍保持运行。
+python3 "$DB_COMPAT" --database "$DATABASE_FILE" --backup-dir "$RUNTIME_ROOT/backups"
+
 # 令牌只进入当前用户 Keychain；升级时保留现有令牌，避免已配对 Windows 无故掉线。
 if ! security find-generic-password -a "$USER" -s "PicotooPetV2.API" >/dev/null 2>&1; then
   TOKEN="$(openssl rand -hex 32)"
@@ -90,11 +107,36 @@ for name in ("com.picotoopet.mac-core.plist", "com.picotoopet.health-supervisor.
     (destination / name).write_text(text, encoding="utf-8")
 PY
 
+# 避免 launchd 异步注销时返回 37；只注册本产品这两个服务，保留 8765 AI Server。
 for label in com.picotoopet.mac-core com.picotoopet.health-supervisor; do
   launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
 done
-launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/com.picotoopet.mac-core.plist"
-launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/com.picotoopet.health-supervisor.plist"
+for label in com.picotoopet.mac-core com.picotoopet.health-supervisor; do
+  unloaded=0
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+      unloaded=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$unloaded" != 1 ]; then
+    echo "STOP=LAUNCHAGENT_UNLOAD_TIMEOUT:$label" >&2
+    exit 1
+  fi
+  bootstrapped=0
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/$label.plist"; then
+      bootstrapped=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$bootstrapped" != 1 ]; then
+    echo "STOP=LAUNCHAGENT_BOOTSTRAP_FAILED:$label" >&2
+    exit 1
+  fi
+done
 
 "$CURRENT/.venv/bin/picotoopet-core" health --skip-ollama > "$RUNTIME_ROOT/state/install-health.json"
 open "$RUNTIME_ROOT/state/install-health.json"
