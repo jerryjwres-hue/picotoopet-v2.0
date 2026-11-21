@@ -214,7 +214,7 @@ def test_installer_product_version_regex_matches_real_runtime() -> None:
         )
         assert result.returncode == expected, (version, result.stderr)
     assert 'VERSION="${PRODUCT_VERSION}-v31-compat-' in installer
-    assert '-$$"' in installer
+    assert '-${BASHPID}"' in installer
 
 
 def test_core_only_upgrade_never_launches_supervisor_or_worker() -> None:
