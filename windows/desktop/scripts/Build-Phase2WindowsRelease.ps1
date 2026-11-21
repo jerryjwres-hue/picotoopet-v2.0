@@ -247,24 +247,6 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "-p:ContinuousIntegrationBuild=true"
 ) -WorkingDirectory $desktopRoot | Out-Null
 
-# Smoke scope -----------------------------------------------------------------
-$smokeArguments = @(
-    "run", "--project", $smokeProject, "--configuration", "Release", "--no-build"
-)
-if ($ValidationScope -eq "UiPreview") {
-    $smokeArguments += @("--", "--ui-interaction-only")
-}
-Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments -WorkingDirectory $desktopRoot | Out-Null
-
-if ($ValidationScope -eq "Full") {
-    # 桌宠是暂停的可选子系统；仅手动完整桌宠版 Release 运行其独立素材门禁。
-    # 非桌宠的 CI/影视工作站构建绝不隐式触发此昂贵且目前缺素材的验收。
-    Invoke-NativeCommand -FilePath $dotnet -Arguments @(
-        "run", "--project", $smokeProject, "--configuration", "Release",
-        "--no-build", "--", "--desktop-pet-acceptance-only"
-    ) -WorkingDirectory $desktopRoot | Out-Null
-}
-
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $appProject, "--runtime", "win-x64", "--nologo",
     "-p:PublishReadyToRun=true"
@@ -289,6 +271,26 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "-p:IncludeNativeLibrariesForSelfExtract=true", "-p:PublishTrimmed=false",
     "-p:DebugType=None", "-p:DebugSymbols=false", "-p:ContinuousIntegrationBuild=true"
 ) -WorkingDirectory $desktopRoot | Out-Null
+
+# Smoke scope -----------------------------------------------------------------
+# Build/publish must finish before any WPF smoke might retain DLL handles.
+# Keep exactly the existing UI-only and optional full desktop-pet test scopes.
+$smokeArguments = @(
+    "run", "--project", $smokeProject, "--configuration", "Release", "--no-build"
+)
+if ($ValidationScope -eq "UiPreview") {
+    $smokeArguments += @("--", "--ui-interaction-only")
+}
+Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments -WorkingDirectory $desktopRoot | Out-Null
+
+if ($ValidationScope -eq "Full") {
+    # 桌宠是暂停的可选子系统；仅手动完整桌宠版 Release 运行其独立素材门禁。
+    # 非桌宠的 CI/影视工作站构建绝不隐式触发此昂贵且目前缺素材的验收。
+    Invoke-NativeCommand -FilePath $dotnet -Arguments @(
+        "run", "--project", $smokeProject, "--configuration", "Release",
+        "--no-build", "--", "--desktop-pet-acceptance-only"
+    ) -WorkingDirectory $desktopRoot | Out-Null
+}
 
 $appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"
 $diagExecutable = Join-Path $diagOutput "PicotooPet.Desktop.Diagnostics.exe"
