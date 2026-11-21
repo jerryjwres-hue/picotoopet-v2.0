@@ -32,7 +32,7 @@ if [ -s "$DB_FILE" ]; then
       ;;
   esac
   if [ "$migrations" -gt 4 ]; then
-    echo "STOP=UNSUPPORTED_DATABASE_VERSION_$migrations；本安装包最高只支持版本 4。" >&2
+    echo "STOP=UNSUPPORTED_DATABASE_VERSION_${migrations}；本安装包最高只支持版本 4。" >&2
     echo "保留现有 Core、SQLite、Goal 和审批记录；请勿重置或手工补表。" >&2
     exit 1
   fi
