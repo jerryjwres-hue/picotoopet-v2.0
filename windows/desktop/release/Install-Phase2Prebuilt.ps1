@@ -43,6 +43,7 @@ $mutexOwned       = $false
 $previousCurrent  = $null
 $previousPrevious = $null
 $activationStarted = $false
+$script:StrictP0Activation = $false
 $hadCurrentPointer  = Test-Path -LiteralPath $currentPath
 $hadPreviousPointer = Test-Path -LiteralPath $previousPath
 $stagingPath        = $null
@@ -177,7 +178,16 @@ function Invoke-ActivationCheck {
         [switch]$SelfTest
     )
 
-    Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
+    if ($script:StrictP0Activation) {
+        # 影视预览严禁强杀正在持有 Comfy Job 的同一 EXE Worker。
+        if (@(Get-CimInstance Win32_Process -Filter "Name = 'Picotoo Pet AI.exe'").Count -gt 0) {
+            throw 'P0_PREVIEW_ACTIVE_GPU_WORKER_NO_FORCE_KILL'
+        }
+    }
+    else {
+        # 完整传统版沿用原有升级清理；不改变它的独立发布行为。
+        Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
+    }
     if ($SelfTest) {
         $arguments = @("--self-test", "--self-test-output", $activationReport)
         $argumentLine = ($arguments | ForEach-Object { ConvertTo-NativeArgument -Value $_ }) -join ' '
@@ -243,11 +253,17 @@ function Restore-PreviousActivation {
         elseif (Test-Path -LiteralPath (Join-Path ([string]$previousCurrent.path) "product-version.txt") -PathType Leaf) {
             $previousProductVersion = Read-InstalledProductVersion -Root ([string]$previousCurrent.path)
         }
-        Invoke-ActivationCheck `
-            -Executable ([string]$previousCurrent.executable) `
-            -WorkingDirectory ([string]$previousCurrent.path) `
-            -ExpectedProductVersion $previousProductVersion `
-            -SelfTest:$ActivationSelfTest | Out-Null
+        if ($script:StrictP0Activation) {
+            # 未验证的旧版本未必懂 HOLD；失败恢复只还原指针与快捷方式，禁止启动旧 Worker。
+            $report.recovery_activation = 'BLOCKED_OLD_WORKER_NOT_AUTOSTARTED'
+        }
+        else {
+            Invoke-ActivationCheck `
+                -Executable ([string]$previousCurrent.executable) `
+                -WorkingDirectory ([string]$previousCurrent.path) `
+                -ExpectedProductVersion $previousProductVersion `
+                -SelfTest:$ActivationSelfTest | Out-Null
+        }
     }
 
     if ($hadPreviousPointer -and $null -ne $previousPrevious) {
@@ -276,6 +292,7 @@ $report = [ordered]@{
     shortcuts_verified       = $false
     activation               = $null
     recovery_shortcuts       = $null
+    recovery_activation      = $null
     source_build_on_user_pc  = $false
     error                    = $null
 }
@@ -307,6 +324,8 @@ try {
         throw "发布清单缺少 product_version。"
     }
     $productVersion = Assert-PicotooProductVersion -ProductVersion ([string]$manifest.product_version)
+    # 仅作用于可选 UI 影视预览；旧桌宠完整发行仍保持独立原逻辑。
+    $script:StrictP0Activation = ([string]$manifest.validation_scope -eq 'windows-ui-preview')
     if ($manifest.PSObject.Properties.Name -contains "user_install_allowed" -and
         -not [bool]$manifest.user_install_allowed) {
         throw "发布清单不允许用户安装。"
