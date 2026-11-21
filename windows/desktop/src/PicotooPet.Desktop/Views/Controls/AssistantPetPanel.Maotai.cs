@@ -9,6 +9,9 @@ namespace PicotooPet.Desktop.Views.Controls;
 /// <summary>Q版阿拉斯加“茅台”的连续时间表现层；真实状态仍只来自 PetPresentation。</summary>
 public partial class AssistantPetPanel
 {
+    // 桌宠 v2 只保留将来可恢复的扩展位；默认完全不读取素材/初始化 Rig/挂 GPU 渲染节拍。
+    // 不使用用户设置或模型输出启用，只有未来独立、受审查的代码升级才能更改此开关。
+    private static readonly bool DesktopPetV2Enabled = false;
     private const double MaotaiMaximumDeltaSeconds = 0.05;
     private const double MaotaiStageMinX           = 28.0;
     private const double MaotaiStageMaxX           = 120.0;
@@ -78,6 +81,13 @@ public partial class AssistantPetPanel
     protected override void OnInitialized(EventArgs e)
     {
         base.OnInitialized(e);
+
+        if (!DesktopPetV2Enabled)
+        {
+            // 仅隐藏已废弃的动画舞台，保留同一面板的 Core/Worker 文字状态。
+            Loaded += (_, _) => MaotaiV2Root.Visibility = Visibility.Collapsed;
+            return;
+        }
 
         Loaded            += MaotaiPet_Loaded;
         Unloaded          += MaotaiPet_Unloaded;
