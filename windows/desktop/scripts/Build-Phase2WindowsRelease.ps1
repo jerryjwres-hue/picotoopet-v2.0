@@ -29,7 +29,8 @@ function Invoke-NativeCommand {
         [Parameter(Mandatory)][string]$FilePath,
         [Parameter(Mandatory)][string[]]$Arguments,
         [string]$WorkingDirectory = "",
-        [int]$TimeoutSeconds = 900
+        [int]$TimeoutSeconds = 900,
+        [switch]$CaptureOutput
     )
 
     $argumentLine = ($Arguments | ForEach-Object {
@@ -45,8 +46,10 @@ function Invoke-NativeCommand {
     }
     $startInfo.UseShellExecute        = $false
     $startInfo.CreateNoWindow         = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError  = $true
+    # 编译/发布默认继承 CI 控制台句柄，避免 SmokeTests 子进程继承匿名管道后使 ReadToEndAsync 永不结束。
+    # 只有 --version 需要解析标准输出，此时才启用受限时的管道捕获。
+    $startInfo.RedirectStandardOutput = [bool]$CaptureOutput
+    $startInfo.RedirectStandardError  = [bool]$CaptureOutput
 
     $process           = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
@@ -54,26 +57,40 @@ function Invoke-NativeCommand {
         if (-not $process.Start()) {
             throw "无法启动原生命令：$FilePath"
         }
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $stdout     = ""
+        $stderr     = ""
+        $stdoutTask = $null
+        $stderrTask = $null
+        if ($CaptureOutput) {
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+            $stderrTask = $process.StandardError.ReadToEndAsync()
+        }
+
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             try { $process.Kill() } catch { }
-            try { $process.WaitForExit() } catch { }
+            # 不做无限期 WaitForExit；遗留的 GUI 测试子进程不得挂住整个发布任务。
             throw "原生命令超时（$TimeoutSeconds 秒）：$FilePath"
         }
-        $process.WaitForExit()
         $process.Refresh()
-        $stdout   = $stdoutTask.GetAwaiter().GetResult()
-        $stderr   = $stderrTask.GetAwaiter().GetResult()
-        $exitCode = [int]$process.ExitCode
 
-        if (-not [string]::IsNullOrWhiteSpace($stdout)) {
-            Write-Host $stdout.TrimEnd()
+        if ($CaptureOutput) {
+            # 捕获模式也必须有独立的管道关闭期限；绝不使用无界 GetResult。
+            if (-not $stdoutTask.Wait(5000) -or -not $stderrTask.Wait(5000)) {
+                throw "原生命令输出流未关闭（可能存在继承句柄的子进程）：$FilePath"
+            }
+            $stdout = $stdoutTask.GetAwaiter().GetResult()
+            $stderr = $stderrTask.GetAwaiter().GetResult()
+            if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+                Write-Host $stdout.TrimEnd()
+            }
+            if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+                Write-Host $stderr.TrimEnd()
+            }
         }
-        if (-not [string]::IsNullOrWhiteSpace($stderr)) {
-            Write-Host $stderr.TrimEnd()
-        }
+
+        $exitCode = [int]$process.ExitCode
         if ($exitCode -ne 0) {
+            # 未捕获模式的完整 stdout/stderr 已直接进入原生 GitHub Actions 日志。
             $tail = (($stderr + "`n" + $stdout) -split "`r?`n" |
                 Select-Object -Last 80) -join "`n"
             throw "原生命令失败（退出码 $exitCode）：$FilePath`n$tail"
@@ -86,9 +103,7 @@ function Invoke-NativeCommand {
         }
     }
     finally {
-        if ($null -ne $process) {
-            $process.Dispose()
-        }
+        $process.Dispose()
     }
 }
 
@@ -214,7 +229,7 @@ if ($Version -notmatch '^[A-Za-z0-9._-]+$') {
 }
 
 $dotnet     = (Get-Command "dotnet.exe" -ErrorAction Stop).Source
-$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot).StdOut.Trim()
+$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot -CaptureOutput).StdOut.Trim()
 if ($sdkVersion -ne "10.0.302") {
     throw "Windows 发布必须使用 .NET SDK 10.0.302，实际为 $sdkVersion。"
 }
