@@ -179,6 +179,8 @@ function Invoke-ActivationCheck {
     )
 
     if ($script:StrictP0Activation) {
+        # 最后一次读取持久 HOLD；安装后启动不可依赖安装前的过期授权状态。
+        Assert-PicotooP0HoldForActivation
         # 影视预览严禁强杀正在持有 Comfy Job 的同一 EXE Worker。
         if (@(Get-CimInstance Win32_Process -Filter "Name = 'Picotoo Pet AI.exe'").Count -gt 0) {
             throw 'P0_PREVIEW_ACTIVE_GPU_WORKER_NO_FORCE_KILL'
