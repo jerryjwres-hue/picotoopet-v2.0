@@ -211,7 +211,7 @@ internal static class GoalVideoContinuationViewModelSmokeTests
 
     private static HumanGoalRecord Goal(string goalId = "goal-1") => new(
         goalId, null, "workflow-1", "human", "product.research_to_video", "P1",
-        "研究产品并生成视频", JsonDocument.Parse("{}").RootElement.Clone(), "local-first",
+        "研究产品并生成视频", JsonElement.Parse("{}"), "local-first",
         false, null, "Completed", "goal-key", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
     private static GoalHandoffMetadataRecord Handoff(bool ready, string goalId = "goal-1") => new(

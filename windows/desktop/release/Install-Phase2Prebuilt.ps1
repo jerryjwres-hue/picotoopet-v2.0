@@ -225,6 +225,7 @@ function Restore-PreviousActivation {
     }
     else {
         Remove-Item -LiteralPath $currentPath -Force -ErrorAction SilentlyContinue
+        Set-PicotooTunnelShortcut -VersionRoot ""
     }
 
     $restoredState = Restore-PicotooManagedShortcutSnapshot `
@@ -236,6 +237,7 @@ function Restore-PreviousActivation {
     }
 
     if ($null -ne $previousCurrent) {
+        Set-PicotooTunnelShortcut -VersionRoot ([string]$previousCurrent.path)
         $previousProductVersion = ""
         if ($previousCurrent.PSObject.Properties.Name -contains "product_version") {
             $previousProductVersion = [string]$previousCurrent.product_version
@@ -453,6 +455,7 @@ try {
         shortcut_state    = @($shortcutValidation.shortcut_state)
     }
     Write-JsonAtomic -Value $currentPointer -Path $currentPath
+    Set-PicotooTunnelShortcut -VersionRoot $finalPath
     $report.shortcut_paths           = $shortcutValidation.shortcut_paths
     $report.shortcut_state           = @($shortcutValidation.shortcut_state)
     $report.shortcuts_verified       = [bool]$shortcutValidation.shortcuts_verified

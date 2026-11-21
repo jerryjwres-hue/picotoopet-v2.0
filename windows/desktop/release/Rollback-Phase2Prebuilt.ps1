@@ -212,6 +212,7 @@ function Invoke-RollbackActivationCheck {
 function Restore-RollbackOrigin {
     Write-JsonAtomic -Value $current -Path $currentPath
     Write-JsonAtomic -Value $previous -Path $previousPath
+    Set-PicotooTunnelShortcut -VersionRoot ([string]$current.path)
     $restoredState = @(
         Restore-PicotooManagedShortcutSnapshot `
             -ShortcutState $originShortcutState `
@@ -342,6 +343,7 @@ try {
         -NotePropertyValue @($originShortcutState) -Force
     Write-JsonAtomic -Value $previous -Path $currentPath
     Write-JsonAtomic -Value $current -Path $previousPath
+    Set-PicotooTunnelShortcut -VersionRoot ([string]$previous.path)
 
     $activation = Invoke-RollbackActivationCheck `
         -Executable ([string]$previous.executable) `

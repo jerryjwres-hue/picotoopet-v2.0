@@ -119,6 +119,7 @@ internal static class Program
 
             VerifyLatencyPercentiles();
             VerifyReconnectBounds();
+            SecureCoreEndpointSmokeTests.Run();
             VerifyStateDeduplication();
             CapabilitySmokeTests.Run();
             WorkerStatusSmokeTests.Run();
