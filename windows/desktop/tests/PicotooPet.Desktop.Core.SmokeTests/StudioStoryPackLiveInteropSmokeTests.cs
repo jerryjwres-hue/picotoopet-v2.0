@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
@@ -24,48 +25,20 @@ internal static class StudioStoryPackLiveInteropSmokeTests
         SmokeAssert.Equal("ok", health.Status, "真实 Python Core 未恢复健康");
 
         var before = await client.GetTasksAsync().ConfigureAwait(false);
-        var pack = JsonElement.Parse("""
-        {
-          "schema": "picotoo.storypack.v1",
-          "episode_id": "maotai_native_http",
-          "title": "Maotai Dinner - Canonical Interop",
-          "output_profile": "p0_landscape",
-          "character_ref": "maotai_master_v1",
-          "scene_ref": "dinner_room_v1",
-          "style_ref": "cute_3d_style_v1",
-          "story": {
-            "goal": "Maotai waits for dinner",
-            "payoff": "The bowl is ready"
-          },
-          "shots": [
-            {
-              "id": "S01",
-              "action": "Maotai sees the bowl",
-              "state_in": "At the door",
-              "state_out": "At the bowl",
-              "because": "He smells dinner"
-            },
-            {
-              "id": "S02",
-              "action": "Maotai sits by the bowl",
-              "state_in": "At the bowl",
-              "state_out": "Sitting by the bowl",
-              "because": "He is curious",
-              "depends_on": ["S01"],
-              "handoff": "continuous"
-            },
-            {
-              "id": "S03",
-              "action": "Maotai waits for the food",
-              "state_in": "Sitting by the bowl",
-              "state_out": "Ready for dinner",
-              "because": "He hears the owner",
-              "depends_on": ["S02"],
-              "handoff": "continuous"
-            }
-          ]
-        }
-        """);
+        // 真正让 Core 校验用户在 WPF 中可一键载入的剧本，而不是另一份测试专用空剧情。
+        var pack = JsonElement.Parse(CreativeIntelligencePanelViewModel.MaotaiDinnerPilotDraft);
+        SmokeAssert.Equal(3, pack.GetProperty("shots").GetArrayLength(),
+            "UI 试片必须保留完整三镜头故事");
+        SmokeAssert.True(
+            pack.GetProperty("shots")[1].GetProperty("state_in").GetString()
+                == pack.GetProperty("shots")[0].GetProperty("state_out").GetString()
+            && pack.GetProperty("shots")[2].GetProperty("state_in").GetString()
+                == pack.GetProperty("shots")[1].GetProperty("state_out").GetString(),
+            "三镜状态衔接在送往 Mac 之前就必须一致");
+        SmokeAssert.True(
+            pack.GetProperty("shots")[0].GetProperty("action").GetString()!.Contains("荧绿色", StringComparison.Ordinal)
+            && pack.GetProperty("shots")[2].GetProperty("action").GetString()!.Contains("第一口", StringComparison.Ordinal),
+            "真正的 P0 剧本应包含茅台形象锚点和明确故事结局");
         var preview = await client.PreviewStudioStoryPackAsync(pack).ConfigureAwait(false);
 
         SmokeAssert.Equal(3, preview.GetProperty("shot_count").GetInt32(),
@@ -101,6 +74,15 @@ internal static class StudioStoryPackLiveInteropSmokeTests
             "BLOCKED_INCOMPLETE_EVIDENCE",
             preview.GetProperty("owner_review_subject").GetProperty("status").GetString(),
             "未登记的 Maotai Master 资产不应获得批准");
+        SmokeAssert.Equal(3, preview.GetProperty("asset_record_checks").GetArrayLength(),
+            "三个草稿资产应分别得到真实 Core 的资产核验结果");
+        foreach (var asset in preview.GetProperty("asset_record_checks").EnumerateArray())
+        {
+            SmokeAssert.True(
+                asset.GetProperty("content_integrity_verified").ValueKind == JsonValueKind.False
+                && asset.GetProperty("usable_for_generation").ValueKind == JsonValueKind.False,
+                "任何 draft_ 参考资产都不得通过真实 Core 的生产信任门禁");
+        }
 
         // 额外重复提交一次，确认指纹稳定且没有副作用。
         var repeated = await client.PreviewStudioStoryPackAsync(pack).ConfigureAwait(false);
