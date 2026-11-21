@@ -108,6 +108,15 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
             return;
         }
 
+        // 旧持久化 LAN HTTP 地址只标为离线，绝不自动传输设备 Bearer。
+        if (!Uri.TryCreate(settings.MacBaseUrl, UriKind.Absolute, out var savedBaseUri)
+            || !SecureCoreEndpoint.IsAllowed(savedBaseUri))
+        {
+            _stateStore.SetConnection(ConnectionState.Offline);
+            SetStatus("安全阻断：旧 Mac 地址不安全。请先建立 SSH 连接，并在设置中填写 http://127.0.0.1:18766。");
+            return;
+        }
+
         await ConnectAsync(settings.MacBaseUrl, token, cancellationToken).ConfigureAwait(false);
     }
 
@@ -334,9 +343,11 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
         {
             throw new InvalidOperationException("Mac 地址格式无效。");
         }
-        if (baseUri.Scheme is not ("http" or "https"))
+        // 任何设备 Bearer 请求建立前即拒绝明文局域网、带凭据或可疑路径。
+        if (!SecureCoreEndpoint.IsAllowed(baseUri))
         {
-            throw new InvalidOperationException("Mac 地址只允许 HTTP 或 HTTPS。");
+            throw new InvalidOperationException(
+                "Mac 地址仅允许经 SSH 转发的本机 HTTP 或可信 HTTPS；禁止局域网明文连接。");
         }
         if (string.IsNullOrWhiteSpace(token))
         {

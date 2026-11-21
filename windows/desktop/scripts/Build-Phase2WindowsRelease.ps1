@@ -29,7 +29,8 @@ function Invoke-NativeCommand {
         [Parameter(Mandatory)][string]$FilePath,
         [Parameter(Mandatory)][string[]]$Arguments,
         [string]$WorkingDirectory = "",
-        [int]$TimeoutSeconds = 900
+        [int]$TimeoutSeconds = 900,
+        [switch]$CaptureOutput
     )
 
     $argumentLine = ($Arguments | ForEach-Object {
@@ -45,8 +46,10 @@ function Invoke-NativeCommand {
     }
     $startInfo.UseShellExecute        = $false
     $startInfo.CreateNoWindow         = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError  = $true
+    # 编译/发布默认继承 CI 控制台句柄，避免 SmokeTests 子进程继承匿名管道后使 ReadToEndAsync 永不结束。
+    # --version 与直接执行测试 DLL 时才启用带截止时间的管道捕获。
+    $startInfo.RedirectStandardOutput = [bool]$CaptureOutput
+    $startInfo.RedirectStandardError  = [bool]$CaptureOutput
 
     $process           = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
@@ -54,26 +57,40 @@ function Invoke-NativeCommand {
         if (-not $process.Start()) {
             throw "无法启动原生命令：$FilePath"
         }
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $stdout     = ""
+        $stderr     = ""
+        $stdoutTask = $null
+        $stderrTask = $null
+        if ($CaptureOutput) {
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+            $stderrTask = $process.StandardError.ReadToEndAsync()
+        }
+
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             try { $process.Kill() } catch { }
-            try { $process.WaitForExit() } catch { }
+            # 不做无限期 WaitForExit；遗留的 GUI 测试子进程不得挂住整个发布任务。
             throw "原生命令超时（$TimeoutSeconds 秒）：$FilePath"
         }
-        $process.WaitForExit()
         $process.Refresh()
-        $stdout   = $stdoutTask.GetAwaiter().GetResult()
-        $stderr   = $stderrTask.GetAwaiter().GetResult()
-        $exitCode = [int]$process.ExitCode
 
-        if (-not [string]::IsNullOrWhiteSpace($stdout)) {
-            Write-Host $stdout.TrimEnd()
+        if ($CaptureOutput) {
+            # 捕获模式也必须有独立的管道关闭期限；绝不使用无界 GetResult。
+            if (-not $stdoutTask.Wait(5000) -or -not $stderrTask.Wait(5000)) {
+                throw "原生命令输出流未关闭（可能存在继承句柄的子进程）：$FilePath"
+            }
+            $stdout = $stdoutTask.GetAwaiter().GetResult()
+            $stderr = $stderrTask.GetAwaiter().GetResult()
+            if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+                Write-Host $stdout.TrimEnd()
+            }
+            if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+                Write-Host $stderr.TrimEnd()
+            }
         }
-        if (-not [string]::IsNullOrWhiteSpace($stderr)) {
-            Write-Host $stderr.TrimEnd()
-        }
+
+        $exitCode = [int]$process.ExitCode
         if ($exitCode -ne 0) {
+            # 未捕获模式的完整 stdout/stderr 已直接进入原生 GitHub Actions 日志。
             $tail = (($stderr + "`n" + $stdout) -split "`r?`n" |
                 Select-Object -Last 80) -join "`n"
             throw "原生命令失败（退出码 $exitCode）：$FilePath`n$tail"
@@ -86,9 +103,7 @@ function Invoke-NativeCommand {
         }
     }
     finally {
-        if ($null -ne $process) {
-            $process.Dispose()
-        }
+        $process.Dispose()
     }
 }
 
@@ -214,7 +229,7 @@ if ($Version -notmatch '^[A-Za-z0-9._-]+$') {
 }
 
 $dotnet     = (Get-Command "dotnet.exe" -ErrorAction Stop).Source
-$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot).StdOut.Trim()
+$sdkVersion = (Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot -CaptureOutput).StdOut.Trim()
 if ($sdkVersion -ne "10.0.302") {
     throw "Windows 发布必须使用 .NET SDK 10.0.302，实际为 $sdkVersion。"
 }
@@ -247,15 +262,6 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "-p:ContinuousIntegrationBuild=true"
 ) -WorkingDirectory $desktopRoot | Out-Null
 
-# Smoke scope -----------------------------------------------------------------
-$smokeArguments = @(
-    "run", "--project", $smokeProject, "--configuration", "Release", "--no-build"
-)
-if ($ValidationScope -eq "UiPreview") {
-    $smokeArguments += @("--", "--ui-interaction-only")
-}
-Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments -WorkingDirectory $desktopRoot | Out-Null
-
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $appProject, "--runtime", "win-x64", "--nologo",
     "-p:PublishReadyToRun=true"
@@ -281,6 +287,32 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "-p:DebugType=None", "-p:DebugSymbols=false", "-p:ContinuousIntegrationBuild=true"
 ) -WorkingDirectory $desktopRoot | Out-Null
 
+# Smoke scope -----------------------------------------------------------------
+# 编译已经完成。直接运行编译产物 DLL（dotnet host 就是测试进程），避免 dotnet run
+# 启动 WPF GUI apphost 后提前返回，导致测试仍在执行而发布报告已经宣称 PASS。
+$smokeDll = Join-Path $desktopRoot "tests\PicotooPet.Desktop.Core.SmokeTests\bin\Release\net10.0-windows10.0.19041.0\PicotooPet.Desktop.Core.SmokeTests.dll"
+if (-not (Test-Path -LiteralPath $smokeDll -PathType Leaf)) { throw "P0_RELEASE_SMOKE_DLL_MISSING" }
+$smokeArguments = @($smokeDll)
+$smokeMarker = "PHASE2_CORE_SMOKE=PASS"
+if ($ValidationScope -eq "UiPreview") {
+    $smokeArguments += "--ui-interaction-only"
+    $smokeMarker = "PHASE23_UI_INTERACTION_SMOKE=PASS"
+}
+# 仅捕获直接运行的测试进程输出；同时验证真实退出码和明确 PASS 标记。
+$smokeResult = Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments -WorkingDirectory $desktopRoot -CaptureOutput -TimeoutSeconds 180
+if (-not ($smokeResult.StdOut -split "\r?\n" | Where-Object { $_ -ceq $smokeMarker })) {
+    throw "P0_RELEASE_SMOKE_COMPLETION_MARKER_MISSING: $smokeMarker"
+}
+if ($ValidationScope -eq "Full") {
+    # 桌宠保持独立手动完整发行门禁；同样要求真实测试结果，不缩减旧测试范围。
+    $petResult = Invoke-NativeCommand -FilePath $dotnet -Arguments @(
+        $smokeDll, "--desktop-pet-acceptance-only"
+    ) -WorkingDirectory $desktopRoot -CaptureOutput -TimeoutSeconds 180
+    if (-not ($petResult.StdOut -split "\r?\n" | Where-Object { $_ -ceq "OPTIONAL_DESKTOP_PET_ACCEPTANCE=PASS" })) {
+        throw "OPTIONAL_DESKTOP_PET_COMPLETION_MARKER_MISSING"
+    }
+}
+
 $appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"
 $diagExecutable = Join-Path $diagOutput "PicotooPet.Desktop.Diagnostics.exe"
 $publishedProductVersionFile = Join-Path $payloadRoot "product-version.txt"
@@ -304,6 +336,25 @@ Invoke-NativeCommand -FilePath $appExecutable -Arguments @(
     "--self-test", "--self-test-output", $selfTestPath
 ) -TimeoutSeconds 60 | Out-Null
 Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--self-test") -TimeoutSeconds 30 | Out-Null
+# 即使诊断 EXE 直接运行也不得从 Credential Manager 向 LAN HTTP 发送 Bearer。
+Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--endpoint-policy-self-test") -TimeoutSeconds 30 | Out-Null
+
+if ($ValidationScope -eq "UiPreview") {
+    # 使用 #298/#308 已审查的系统 OpenSSH 入口，发布到当前版本 payload。
+    # 文件纳入 release-manifest SHA；只复制且执行无联网自检，不自动建立 SSH。
+    $connectionOutput = Join-Path $payloadRoot "tools\connection"
+    New-Item -ItemType Directory -Path $connectionOutput -Force | Out-Null
+    foreach ($name in @("CONNECT_MAC_SECURE.vbs", "Start-SecureMacTunnel.ps1")) {
+        Copy-ReleaseFile `
+            -Source (Join-Path $desktopRoot "release\$name") `
+            -Destination (Join-Path $connectionOutput $name)
+    }
+    $powershell51 = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
+    Invoke-NativeCommand -FilePath $powershell51 -Arguments @(
+        "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", (Join-Path $connectionOutput "Start-SecureMacTunnel.ps1"), "-SelfTest"
+    ) -TimeoutSeconds 30 | Out-Null
+}
 if (-not (Test-Path -LiteralPath $selfTestPath -PathType Leaf)) {
     throw "桌面自检没有生成报告。"
 }
@@ -396,6 +447,9 @@ $manifest = [ordered]@{
     sdk_version          = $sdkVersion
     validation_scope      = $validationScopeText
     full_release         = $fullRelease
+    # 新版影视预览经过原生 P0 三镜头/HOLD 测试；历史包缺少此标记即视为未知 Worker。
+    p0_hold_aware        = ($ValidationScope -eq "UiPreview")
+    secure_tunnel_package = ($ValidationScope -eq "UiPreview")
     built_at             = (Get-Date).ToUniversalTime().ToString("o")
     commit               = $buildCommit
     build_commit         = $buildCommit
@@ -454,6 +508,8 @@ P0 #91 严格三镜头开发预览 — 首次安装前必读（不是正式 Rele
    three-shot-acceptance.json（schema_version=1.0 / mode=hold）和 three-shot-acceptance.json.armed。
    缺任一项：STOP，不可安装/启动 GUI/Worker。
 ④ 然后才能运行 INSTALL_PHASE2_WINDOWS.vbs。UiPreview 安装器会再次核验 HOLD + .armed，
+   安装成功后，开始菜单的“Picotoo Pet Secure Connect”（安全连接）需要用户主动点击，仅创建安全 SSH 隧道，
+   首次要求预先验证 known_hosts、公钥认证及 Mac Remote Login；不自动启动 GPU/Worker。
    缺失则拒绝安装激活。安装器不会替你授权模型推理或 Comfy GPU POST。
 ⑤ 保持 HOLD：只读审核 Mac Core 认证、唯一 Production Job、exactly 3 T2V Task、冻结 Plan Digest。
    仅在另行确认电路/设备安全并得到用户明确 GPU 授权后，才设置对该 Job 的 ALLOW。
@@ -473,6 +529,8 @@ $report = [ordered]@{
     schema_version       = "2.3.0"
     generated_at         = (Get-Date).ToUniversalTime().ToString("o")
     status               = "pass"
+    native_smoke_marker  = $smokeMarker
+    native_smoke_exit    = [int]$smokeResult.ExitCode
     version              = $Version
     product_version      = $ProductVersion
     sdk_version          = $sdkVersion

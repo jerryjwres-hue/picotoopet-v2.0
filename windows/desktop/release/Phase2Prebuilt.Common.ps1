@@ -1,4 +1,4 @@
-# Phase 2 Windows 预编译包共享兼容逻辑；安装、验证和回滚必须共同使用。
+﻿# Phase 2 Windows 预编译包共享兼容逻辑；安装、验证和回滚必须共同使用。
 
 $script:PicotooManagedShortcutPattern = '^Picotoo Pet AI(?: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)?\.lnk$'
 $script:PicotooProductVersionPattern = '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
@@ -230,6 +230,84 @@ function Restore-PicotooManagedShortcutSnapshot {
     return @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
 }
 
+function Get-PicotooTunnelShortcutPath {
+    # Windows 系统开始菜单入口；绝不加入开机启动项，也不启动 SSH。
+    # 固定 ASCII 文件名，兼容英文 Windows PowerShell 5.1 与旧 WScript COM 代码页。
+    return Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet Secure Connect.lnk"
+}
+
+function Set-PicotooTunnelShortcut {
+    param([string]$VersionRoot = "")
+
+    # 仅引用已验证 manifest SHA 的版本化 payload，不执行 SSH，也不读取证书/密钥。
+    $path = Get-PicotooTunnelShortcutPath
+    # 保存和核验均使用同一规范绝对路径，避免重复分隔符影响 VBS 参数比较。
+    $connection = if ($VersionRoot) { [IO.Path]::GetFullPath((Join-Path $VersionRoot "tools\connection")) } else { "" }
+    $launcher = if ($connection) { Join-Path $connection "CONNECT_MAC_SECURE.vbs" } else { "" }
+    $bootstrap = if ($connection) { Join-Path $connection "Start-SecureMacTunnel.ps1" } else { "" }
+
+    if (-not $launcher -or -not (Test-Path -LiteralPath $launcher -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $bootstrap -PathType Leaf)) {
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        return
+    }
+
+    New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        $shortcut                  = $shell.CreateShortcut($path)
+        $shortcut.TargetPath       = Join-Path $env:WINDIR "System32\wscript.exe"
+        $shortcut.Arguments        = '"' + $launcher + '"'
+        $shortcut.WorkingDirectory = $connection
+        $shortcut.Description      = "PicotooPet Mac SSH (manual secure connection)"
+        $shortcut.Save()
+    }
+    finally {
+        if ($null -ne $shell -and [Runtime.InteropServices.Marshal]::IsComObject($shell)) {
+            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+        }
+    }
+}
+
+function Assert-PicotooTunnelShortcut {
+    param([Parameter(Mandatory)][string]$VersionRoot)
+
+    # 离线只读比较当前启动器目标；拒绝错误旧版本或指向其他脚本。
+    $path = Get-PicotooTunnelShortcutPath
+    # 仅规范 Windows 路径拼写；不放宽 VBS 参数或允许额外命令行参数。
+    $folder = [IO.Path]::GetFullPath((Join-Path $VersionRoot "tools\connection"))
+    $launcher = Join-Path $folder "CONNECT_MAC_SECURE.vbs"
+    $script = Join-Path $folder "Start-SecureMacTunnel.ps1"
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $script -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "P0_VERSIONED_SSH_SHORTCUT_OR_PAYLOAD_MISSING"
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        $shortcut = $shell.CreateShortcut($path)
+        $expectedExe = [IO.Path]::GetFullPath((Join-Path $env:WINDIR "System32\wscript.exe"))
+        $expectedDir = [IO.Path]::GetFullPath($folder)
+        $actualExe = [IO.Path]::GetFullPath([string]$shortcut.TargetPath)
+        $actualDir = [IO.Path]::GetFullPath([string]$shortcut.WorkingDirectory)
+        if (-not $actualExe.Equals($expectedExe, [StringComparison]::OrdinalIgnoreCase) -or
+            -not $actualDir.Equals($expectedDir, [StringComparison]::OrdinalIgnoreCase) -or
+            [string]$shortcut.Arguments -cne ('"' + $launcher + '"')) {
+            # 仅报告各字段是否匹配，不输出可能被篡改的任意命令行内容。
+            $exeMatches = $actualExe.Equals($expectedExe, [StringComparison]::OrdinalIgnoreCase)
+            $dirMatches = $actualDir.Equals($expectedDir, [StringComparison]::OrdinalIgnoreCase)
+            $argMatches = [string]$shortcut.Arguments -ceq ('"' + $launcher + '"')
+            throw "P0_VERSIONED_SSH_SHORTCUT_WRONG_TARGET; exe_match=$exeMatches; dir_match=$dirMatches; arg_match=$argMatches"
+        }
+    }
+    finally {
+        if ($null -ne $shell -and [Runtime.InteropServices.Marshal]::IsComObject($shell)) {
+            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+        }
+    }
+    return $true
+}
+
 function Set-PicotooShortcuts {
     param(
         [Parameter(Mandatory)][string]$Executable,
@@ -335,4 +413,44 @@ function Remove-PicotooShortcuts {
     param([string]$DesktopDirectory = "")
 
     return @(Remove-PicotooManagedShortcuts -DesktopDirectory $DesktopDirectory)
+}
+
+
+function Assert-PicotooP0HoldForActivation {
+    # 影视预览启动 GUI 之前重检持久 HOLD，避免复制/升级期间被换成 ALLOW。
+    # 不触碰核心身份、签名、设备令牌、Comfy 队列或任何 GPU 任务。
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        throw 'P0_ACTIVATION_HOLD_LOCALAPPDATA_MISSING'
+    }
+    $gateFile = Join-Path $env:LOCALAPPDATA 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
+    $armedFile = $gateFile + '.armed'
+    for ($folder = [IO.DirectoryInfo]::new((Split-Path -Parent $gateFile));
+        $null -ne $folder; $folder = $folder.Parent) {
+        if ($folder.Exists -and ($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'P0_ACTIVATION_HOLD_REPARSE_DIRECTORY'
+        }
+    }
+    if (-not (Test-Path -LiteralPath $gateFile -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $armedFile -PathType Leaf)) {
+        throw 'P0_ACTIVATION_HOLD_FIRST_REQUIRED'
+    }
+    foreach ($file in @($gateFile, $armedFile)) {
+        $attributes = (Get-Item -LiteralPath $file -Force).Attributes
+        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'P0_ACTIVATION_HOLD_REPARSE_FILE'
+        }
+    }
+    try {
+        $raw = [IO.File]::ReadAllText($gateFile, [Text.UTF8Encoding]::new($false, $true))
+        $state = $raw | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw 'P0_ACTIVATION_HOLD_INVALID'
+    }
+    if ([string]$state.schema_version -cne '1.0' -or
+        [string]$state.mode -cne 'hold' -or
+        @($state.PSObject.Properties.Name).Count -ne 2 -or
+        (Get-Item -LiteralPath $armedFile -Force).Length -lt 1) {
+        throw 'P0_ACTIVATION_HOLD_NOT_ARMED'
+    }
 }

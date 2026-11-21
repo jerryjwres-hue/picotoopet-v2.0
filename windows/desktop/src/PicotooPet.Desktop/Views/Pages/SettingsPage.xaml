@@ -14,7 +14,7 @@
         <TextBlock Text="Mac Core 地址" Margin="0,24,0,6" FontWeight="SemiBold" />
         <TextBox Text="{Binding MacBaseUrl, UpdateSourceTrigger=PropertyChanged}"
                  MinWidth="520"
-                 ToolTip="例如 http://192.168.1.161:8766" />
+                 ToolTip="安全连接示例：http://127.0.0.1:18766（SSH 隧道）；也可使用可信 HTTPS" />
         <TextBlock Text="设备令牌" Margin="0,18,0,6" FontWeight="SemiBold" />
         <PasswordBox x:Name="TokenPasswordBox"
                      MinWidth="520"

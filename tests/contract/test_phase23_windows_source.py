@@ -271,7 +271,6 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
     ):
         assert forbidden not in control
     for required in (
-        "Detect Windows release impact",
         "Build-Phase2WindowsRelease.ps1",
         "stamp_windows_goal_integrity.py",
         "verify_project_goal_integrity.py",
@@ -281,6 +280,47 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         assert required in release
     assert "--ui-interaction-only" not in release
     assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" not in release
+
+    # 手动桌宠 Release 不再属于日常 PR；仍保留真实安装包与生命周期校验。
+    assert "workflow_dispatch:" in release
+    assert "pull_request:" not in release
+    assert "Optional full desktop-pet impact check (manual)" in release
+
+    # 三镜头影视预览继续在 PR 自动构建，并保留逐字节验证和生产 HOLD。
+    film = (
+        ROOT / ".github" / "workflows" / "p0-three-shot-developer-preview.yml"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "pull_request:",
+        "Verify ZIP bytes, complete manifest and permanent production HOLD",
+        "verify_p0_developer_preview.py",
+        "P0_DESKTOP_PET_DORMANCY_CONTRACT_FAILED",
+    ):
+        assert required in film
+
+
+def test_control_center_ci_builds_before_ui_smoke_without_rebuilding_loaded_dll() -> None:
+    """先编译再执行 WPF 冒烟，禁止运行中重新覆盖被加载的 DLL。"""
+
+    workflow = (
+        ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
+    ).read_text(encoding="utf-8")
+
+    # 旧绑定变异测试会清理测试产物，完整严格构建必须在其后。
+    legacy = workflow.index("- name: Reproduce legacy Task Center binding failure")
+    compile_gate = workflow.index("- name: Build WPF solution with warnings as errors")
+    ui_smoke = workflow.index("- name: Run isolated Control Center UI interaction smoke")
+    self_test = workflow.index("- name: Run published Control Center self-test")
+    assert legacy < compile_gate < ui_smoke < self_test
+
+    # UI 冒烟与正式自检都只执行已编译二进制，避免 MSB3026 DLL 文件锁。
+    ui_step = workflow[ui_smoke:self_test]
+    self_step = workflow[self_test:workflow.index("- name: Upload compact WPF evidence")]
+    assert "--ui-interaction-only" in ui_step
+    assert "--self-test" in self_step
+    assert "--no-build" in ui_step
+    assert "--no-build" in self_step
+    assert "-warnaserror" in workflow[compile_gate:ui_smoke]
 
 
 def test_package_verifies_task_center_and_worker_fallback() -> None:

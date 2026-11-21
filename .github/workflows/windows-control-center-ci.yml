@@ -120,35 +120,63 @@ jobs:
           dotnet --info
           $PSVersionTable.PSVersion
 
+      - name: Verify Windows PowerShell 5.1 secure Core URL policy before GUI launch
+        shell: powershell
+        run: |
+          # 严格复用正式 VERIFY 脚本的真实 URL 前门禁，不连接 Mac、不启动 Worker。
+          .\windows\desktop\release\Verify-Phase2Prebuilt.ps1 -AddressPolicySelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'P0_SECURE_VERIFIER_NATIVE_SELFTEST_FAILED' }
+
       - name: Reproduce legacy Task Center binding failure
         shell: pwsh
         run: |
           .\windows\desktop\scripts\Test-TaskCenterLegacyBindingRegression.ps1
 
-      - name: Run isolated Control Center UI interaction smoke including ShellNavigationReconnectWpfSmokeTests
-        shell: powershell
-        run: |
-          dotnet run `
-            --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
-            --configuration Release `
-            -- `
-            --ui-interaction-only
-
       - name: Build WPF solution with warnings as errors
         shell: powershell
         run: |
+          # 先完成严格编译，再运行可能持有 WPF 程序集的 UI 进程，避免 DLL 文件占用。
           dotnet build windows/desktop/PicotooPet.Desktop.sln `
             --configuration Release `
             --nologo `
             -warnaserror
 
+      - name: Verify native diagnostics EXE never transmits Bearer over plaintext LAN
+        shell: powershell
+        run: |
+          # 使用已经严格编译的诊断 EXE；正反例无需设备令牌、Mac 服务或网络。
+          $policy = dotnet run `
+            --project windows/desktop/tools/PicotooPet.Desktop.Diagnostics/PicotooPet.Desktop.Diagnostics.csproj `
+            --configuration Release `
+            --no-build `
+            -- `
+            --endpoint-policy-self-test
+          $policy | Write-Host
+          if ($LASTEXITCODE -ne 0 -or
+              $policy -notcontains "DIAGNOSTICS_SECURE_ENDPOINT_POLICY=PASS; NO_BEARER_READ=TRUE; NO_NETWORK=TRUE") {
+              throw 'P0_NATIVE_DIAGNOSTICS_ENDPOINT_POLICY_FAILED'
+          }
+
+      - name: Run isolated Control Center UI interaction smoke including ShellNavigationReconnectWpfSmokeTests
+        shell: powershell
+        run: |
+          # 使用刚验证的二进制文件，不在 UI 冒烟后再次编译被加载的 DLL。
+          dotnet run `
+            --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
+            --configuration Release `
+            --no-build `
+            -- `
+            --ui-interaction-only
+
       - name: Run published Control Center self-test
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path windows/desktop/artifacts -Force | Out-Null
+          # 自检仅执行已通过严格编译的 WPF 程序，不因可能残留的 smoke 句柄重建。
           $output = dotnet run `
             --project windows/desktop/src/PicotooPet.Desktop/PicotooPet.Desktop.csproj `
             --configuration Release `
+            --no-build `
             -- `
             --self-test `
             --self-test-output windows/desktop/artifacts/control-center-self-test.json

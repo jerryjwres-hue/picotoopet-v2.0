@@ -125,6 +125,17 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         ApplyFloatingMode(IsFloatingMode);
         ApplyPresentation(Presentation);
 
+        if (!DesktopPetV2Enabled)
+        {
+            // 桌宠被搁置：只保留 Core/Worker 状态文字、指示灯与常规控制台。
+            // 不显示任何拟人角色或悬浮入口，也不保留 170px 空白舞台。
+            PetStage.Visibility = Visibility.Collapsed;
+            FloatButton.Visibility = Visibility.Collapsed;
+            AssistantStatusCardGrid.RowDefinitions[2].Height = new GridLength(0);
+            SuspendContinuousMotion();
+            return;
+        }
+
         if (IsVisible)
         {
             StartBreathing(_activeMode);
@@ -279,6 +290,10 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
     private void ConfigureFrameTimer(AssistantPetMode mode)
     {
         _frameTimer.Stop();
+        if (!DesktopPetV2Enabled)
+        {
+            return;
+        }
         _frameTimer.Interval = mode switch
         {
             AssistantPetMode.Working => TimeSpan.FromMilliseconds(310),
@@ -694,7 +709,7 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
     private void StartBreathing(AssistantPetMode mode)
     {
         PetScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-        if (!_isLoaded || !IsVisible)
+        if (!DesktopPetV2Enabled || !_isLoaded || !IsVisible)
         {
             return;
         }
@@ -1038,6 +1053,13 @@ public partial class AssistantPetPanel : System.Windows.Controls.UserControl
         object sender,
         DependencyPropertyChangedEventArgs e)
     {
+        if (!DesktopPetV2Enabled)
+        {
+            // 可选桌宠即使反复显示/隐藏窗口，也绝不恢复定时器或动画订阅。
+            SuspendContinuousMotion();
+            return;
+        }
+
         if (!_isLoaded)
         {
             return;

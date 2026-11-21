@@ -59,7 +59,7 @@
           Background="{StaticResource PetCardBackground}"
           BorderBrush="#FF176AA9"
           BorderThickness="1">
-    <Grid>
+    <Grid x:Name="AssistantStatusCardGrid">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />

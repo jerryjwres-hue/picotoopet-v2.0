@@ -37,6 +37,64 @@ public partial class CreativeIntelligencePanel : System.Windows.Controls.UserCon
     private async void Prepare_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.PrepareAsync(CancellationToken.None));
 
+    // 只把真实故事示例写入内存文本框；用户须再次主动点击只读检查。
+    private void LoadMaotaiPilot_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is CreativeIntelligencePanelViewModel viewModel)
+        {
+            viewModel.LoadMaotaiDinnerPilotDraft();
+        }
+    }
+
+    // 仅用户点击时请求已经存在的 Mac Core 只读入口；不持有生产授权。
+    private async void StoryPackPreview_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not CreativeIntelligencePanelViewModel viewModel)
+        {
+            return;
+        }
+        try
+        {
+            await viewModel.PreviewStoryPackAsync(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // 故障文本不能泄露剧本、用户资产路径或 Bearer；生产状态仍保持 HOLD。
+            ShowSafeError("StoryPack 只读预览失败", "校验未完成，未创建生产任务。");
+        }
+    }
+
+    // 创建的是正式 Core Human Goal，不是生产授权；用户必须二次确认。
+    private async void CreateStoryGoal_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not CreativeIntelligencePanelViewModel viewModel
+            || !viewModel.CanCreateStoryGoal)
+        {
+            return;
+        }
+        var response = MessageBox.Show(
+            Window.GetWindow(this),
+            "将已检查的三镜头故事交给现有 Mac Core 创建本地视频创意 Goal？"
+            + "\n这会启动正常的来源研究与创意工作流。"
+            + "\n不会批准角色资产、生产计划、Owner 或 GPU；所有 HOLD 继续有效。",
+            "确认创建本地创意 Goal",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No);
+        if (response != MessageBoxResult.Yes)
+        {
+            return;
+        }
+        try
+        {
+            await viewModel.CreateStoryGoalAsync(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            ShowSafeError("创建 Goal 失败", "Core 未确认创建成功，请检查连接后重试；GPU HOLD 保持不变。");
+        }
+    }
+
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.RefreshAsync(CancellationToken.None));
 

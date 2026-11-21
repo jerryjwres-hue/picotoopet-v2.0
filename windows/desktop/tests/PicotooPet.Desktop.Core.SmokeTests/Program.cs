@@ -15,6 +15,22 @@ internal static class Program
     {
         try
         {
+            // 新 Studio 只读端点的独立 CPU 合同验收；不要求 Maotai 正式 WPF 艺术资产。
+            // Windows CI 专用：启动独立真实 2.3 Python Core 后才执行以下 localhost HTTP 联调。
+            if (args.Contains("--studio-storypack-live-only", StringComparer.Ordinal))
+            {
+                await StudioStoryPackLiveInteropSmokeTests.RunAsync().ConfigureAwait(false);
+                return 0;
+            }
+
+            if (args.Contains("--studio-storypack-client-only", StringComparer.Ordinal))
+            {
+                await StudioStoryPackClientSmokeTests.RunAsync().ConfigureAwait(false);
+                StudioStoryPackPanelSmokeTests.Run();
+                Console.WriteLine("STUDIO_23_STORYPACK_CLIENT=PASS; LEASE=0; GPU_POST=0");
+                return 0;
+            }
+
             if (args.Contains("--reference-preview-batch-only", StringComparer.Ordinal))
             {
                 var failures = new List<Exception>();
@@ -117,17 +133,10 @@ internal static class Program
                 return 0;
             }
 
-            VerifyLatencyPercentiles();
-            VerifyReconnectBounds();
-            VerifyStateDeduplication();
-            CapabilitySmokeTests.Run();
-            WorkerStatusSmokeTests.Run();
-            StateStoreSmokeTests.Run();
-            NavigationSmokeTests.Run();
-            CoalescingUiDispatcherSmokeTests.Run();
-            OperatorSimpleModeSmokeTests.Run();
-            GoalVideoReturnParserSmokeTests.Run();
-            GoalVideoReturnPanelWpfSmokeTests.Run();
+            // 桌宠仅保留未来扩展入口；只有手动专项调用才执行全部旧验收。
+            // 不允许让未交付的桌宠 PNG 阻塞 Mac/Windows 视频生产核心测试。
+            if (args.Contains("--desktop-pet-acceptance-only", StringComparer.Ordinal))
+            {
             MaotaiNaturalMotionV2SmokeTests.Run();
             MaotaiRenderLoopPerformanceSmokeTests.Run();
             MaotaiJumpDynamicsSmokeTests.Run();
@@ -136,6 +145,25 @@ internal static class Program
             MaotaiNaturalMotionV2AcceptanceSmokeTests.Run();
             MaotaiAssetPixelValidationSmokeTests.Run();
             MaotaiNaturalExpressionV2SmokeTests.Run();
+                Console.WriteLine("OPTIONAL_DESKTOP_PET_ACCEPTANCE=PASS");
+                return 0;
+            }
+
+            VerifyLatencyPercentiles();
+            VerifyReconnectBounds();
+            VerifyStateDeduplication();
+            CapabilitySmokeTests.Run();
+            WorkerStatusSmokeTests.Run();
+            StateStoreSmokeTests.Run();
+            // 设备令牌在进入 HTTP/WebSocket 之前必须先通过安全地址检查。
+            SecureCoreEndpointSmokeTests.Run();
+            // 设备令牌在进入 HTTP/WebSocket 之前必须先通过安全地址检查。
+        SecureCoreEndpointSmokeTests.Run();
+        NavigationSmokeTests.Run();
+            CoalescingUiDispatcherSmokeTests.Run();
+            OperatorSimpleModeSmokeTests.Run();
+            GoalVideoReturnParserSmokeTests.Run();
+            GoalVideoReturnPanelWpfSmokeTests.Run();
             NavigationFaultBoundarySmokeTests.Run();
             NavigationContentRenderingSmokeTests.Run();
             ShellNavigationReconnectWpfSmokeTests.Run();
@@ -207,7 +235,7 @@ internal static class Program
 
     /// <summary>
     /// 只验证 Windows Control Center/UI 的真实交互合同。
-    /// 正式 Release 不使用此入口，仍运行完整 Smoke（包括茅台 V2 资产门禁）。
+    /// 桌宠在单独的 --desktop-pet-acceptance-only 入口，不属于电影主线。
     /// </summary>
     private static async Task RunUiInteractionOnlyAsync()
     {
