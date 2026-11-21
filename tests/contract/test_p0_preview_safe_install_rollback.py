@@ -93,3 +93,21 @@ def test_prelaunch_hold_is_rechecked_at_last_moment_for_both_activation_paths() 
         assert required in common
     assert "Assert-PicotooP0HoldForActivation" in install
     assert "Assert-PicotooP0HoldForActivation" in rollback
+
+
+def test_release_builder_completes_before_wpf_smoke_without_dll_rebuild() -> None:
+    """原生发布 CI 禁止 UI smoke 持有 DLL 时再次调用 solution build。"""
+
+    workflow = NATIVE.read_text(encoding="utf-8")
+    builder = workflow.index("- name: Build installable Windows UI Preview")
+    ui_smoke = workflow.index("- name: Run isolated Control Center UI-only native smoke")
+    verify = workflow.index("- name: Verify P0 preview ZIP contains mandatory HOLD-first")
+    assert builder < ui_smoke < verify
+
+    # 发布构建器自身仍运行完整原生 UI 冒烟；发布后不重新构建已加载的 DLL。
+    ui_step = workflow[ui_smoke:verify]
+    assert "--no-build" in ui_step
+    assert "--ui-interaction-only" in ui_step
+    assert "P0_RELEASE_UI_NATIVE_SMOKE_FAILED" in ui_step
+    assert "dotnet build " not in ui_step
+    assert "dotnet restore " not in ui_step
