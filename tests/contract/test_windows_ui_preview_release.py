@@ -50,12 +50,15 @@ def test_formal_release_workflows_never_request_ui_preview_scope() -> None:
 def test_ui_preview_workflow_builds_installable_lifecycle_verified_artifact() -> None:
     assert PREVIEW.exists(), "缺少独立 Windows UI Preview workflow"
     workflow = _read(PREVIEW)
+    builder = _read(BUILDER)
 
     for required in (
         "feature/windows-ui-interaction-polish-2.3.27.1",
         "windows-2025",
         "tests/contract",
-        "--ui-interaction-only",
+        "Verify completed builder smoke",
+        "P0_RELEASE_BUILDER_SMOKE_PROVENANCE_MISMATCH",
+        "P0_RELEASE_SMOKE_PROCESS_LEFT_RUNNING",
         "-ValidationScope UiPreview",
         "Test-Phase2WindowsRelease.ps1",
         "actions/upload-artifact@v7",
@@ -63,6 +66,10 @@ def test_ui_preview_workflow_builds_installable_lifecycle_verified_artifact() ->
         "artifact-sha256.txt",
     ):
         assert required in workflow
+
+    # 真正的 UI-only 冒烟由封包器执行，不能因去掉外层重复运行而丢失测试。
+    assert '$smokeArguments += @("--", "--ui-interaction-only")' in builder
+    assert "Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments" in builder
 
     # Preview 只能作为验收包，不能伪装正式发布或跳过生命周期验证。
     assert "windows-phase2-release.yml" not in workflow
