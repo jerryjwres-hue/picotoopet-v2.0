@@ -182,3 +182,16 @@ def test_ssh_shortcut_filename_is_ascii_for_native_windows_legacy_codepages() ->
     assert "Picotoo Pet Secure Connect" in builder
     # 已有原生安装、篡改、升级、回滚检查继续使用同一个路径函数。
     assert "Assert-PicotooTunnelShortcut" in LIFECYCLE.read_text(encoding="utf-8-sig")
+
+
+def test_secure_shortcut_uses_canonical_version_path_in_both_hosts() -> None:
+    """PS5.1 安装与 PS7 原生夹具须使用相同的绝对 VBS 路径，不能降低目标验证。"""
+
+    common = COMMON.read_text(encoding="utf-8-sig")
+    lifecycle = LIFECYCLE.read_text(encoding="utf-8-sig")
+    assert common.count('[IO.Path]::GetFullPath((Join-Path $VersionRoot "tools' + chr(92) + 'connection"))') == 2
+    assert "P0_VERSIONED_SSH_SHORTCUT_WRONG_TARGET; exe_match=" in common
+    assert "arg_match=$argMatches" in common
+    assert lifecycle.count('Join-Path (Join-Path $dataRoot "versions") $version') >= 5
+    # 原有篡改脚本目标必须继续拒绝，不允许任意附加参数。
+    assert "P0_SSH_TAMPERED_SHORTCUT_WAS_NOT_REFUSED" in lifecycle
