@@ -8,6 +8,7 @@ from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.storypack import StoryPackError, parse_storypack, storypack_preview
 from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
 from picotoopet_core.domain.storypack_fingerprints import build_shot_fingerprints
+from picotoopet_core.domain.storypack_goal_intake import build_storypack_goal_intake
 from picotoopet_core.domain.storypack_owner_subject import build_owner_review_subject
 from picotoopet_core.security.auth import require_auth
 
@@ -66,6 +67,12 @@ async def preview_storypack(request: Request, response: Response) -> dict:
     )
     preview["owner_review_subject"] = build_owner_review_subject(
         pack, preview["storypack_sha256"], preview["asset_record_checks"]
+    )
+
+    # 仅构造现有 HumanGoalService 的可审阅输入；不创建 Goal、Workflow 或 Task。
+    # 草稿到正式 Creative Package 的来源验证和 Production 门禁仍由原 2.3 服务完成。
+    preview["canonical_goal_intake"] = build_storypack_goal_intake(
+        pack, preview["storypack_sha256"]
     )
 
     # 预览成功≠合法 ProductionPlan；旧 V3.1 Episode 无法代替 2.3 的审批与 Claim。
