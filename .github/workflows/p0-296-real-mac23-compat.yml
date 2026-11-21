@@ -1,0 +1,60 @@
+name: P0-296 Mac 2.3 SQLite-24 upgrade guard
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-296-real-mac23-compat.yml"
+      - "scripts/mac/INSTALL_MAC.command"
+      - "scripts/mac/ROLLBACK_MAC.command"
+      - "scripts/mac/lib/check_install_database.py"
+      - "deploy/macos/com.picotoopet.mac-core.plist"
+      - "tests/contract/test_v31_compatible_mac_23_upgrade.py"
+      - "src/picotoopet_core/db/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac-real-schema24:
+    name: Native Mac Core 2.3 compatibility (CPU only)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out 2.3 based candidate
+        uses: actions/checkout@v6
+
+      - name: Use Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install 2.3 Core and test dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest==9.1.1 pytest-asyncio==1.4.0
+
+      - name: Check installer syntax and loopback configuration
+        shell: bash
+        run: |
+          bash -n scripts/mac/INSTALL_MAC.command
+          plutil -lint deploy/macos/com.picotoopet.mac-core.plist
+          python -m py_compile scripts/mac/lib/check_install_database.py
+
+      - name: Test real v24 migration, historical rows, foreign schema denial and worker gates
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          PYTHONPATH=.:src python -m pytest -q \
+            tests/contract/test_v31_compatible_mac_23_upgrade.py \
+            tests/unit/db/test_migration_024.py \
+            tests/production/test_v11_worker_challenge_transport.py \
+            tests/production/test_v11_worker_witness.py
+
+      - name: Do not claim device or GPU acceptance
+        shell: bash
+        run: |
+          echo "PASS here means CPU-only source compatibility, not a Mac device install."
+          echo "NO_USER_DEVICE=YES NO_GPU_POST=YES NO_VIDEO_ACCEPTANCE=YES"
