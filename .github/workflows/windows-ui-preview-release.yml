@@ -165,8 +165,10 @@ jobs:
               $report.source_head -ne $env:PICOTOO_SOURCE_HEAD_SHA -or
               $report.native_ci_verified -ne $true) { throw 'P0_RELEASE_BUILDER_SMOKE_PROVENANCE_MISMATCH' }
           $alive = @(Get-CimInstance Win32_Process | Where-Object {
-            $_.Name -match '^PicotooPet\\.Desktop\\.Core\\.SmokeTests(?:\\.exe)?
-
+            $_.Name -like 'PicotooPet.Desktop.Core.SmokeTests*'
+          })
+          if ($alive.Count -ne 0) { throw 'P0_RELEASE_SMOKE_PROCESS_LEFT_RUNNING' }
+          Write-Host 'P0_RELEASE_BUILDER_UI_SMOKE=PASS; PROVENANCE=PASS; PROCESS_EXIT=PASS'
       - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
         if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
