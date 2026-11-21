@@ -144,7 +144,7 @@ try {
             if ([int]$response.StatusCode -eq 200 -and
                 [string]$health.status -eq 'ok' -and
                 [string]$health.database -eq 'ok' -and
-                [string]$health.version -match '^2\\.3\\.') {
+                [string]$health.version -match '^2\.3\.') {
                 $ready = $true
                 break
             }
