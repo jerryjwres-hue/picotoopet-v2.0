@@ -18,7 +18,7 @@ public sealed class DesktopSettingsStore
         _path = path;
     }
 
-    /// <summary>读取设置；文件不存在时使用已确认的 Mac 局域网地址。</summary>
+    /// <summary>读取设置；未配置时只连接已认证的本机 SSH 隧道。</summary>
     public async Task<DesktopSettings> LoadAsync(CancellationToken cancellationToken)
     {
         if (!File.Exists(_path))
@@ -52,5 +52,5 @@ public sealed class DesktopSettingsStore
 /// <summary>可安全落盘的桌面设置。</summary>
 public sealed record DesktopSettings(string MacBaseUrl)
 {
-    public static DesktopSettings Default { get; } = new("http://192.168.1.161:8766");
+    public static DesktopSettings Default { get; } = new("http://127.0.0.1:18766");
 }
