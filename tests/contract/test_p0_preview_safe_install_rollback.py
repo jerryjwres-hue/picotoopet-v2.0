@@ -105,7 +105,8 @@ def test_release_builder_completes_before_wpf_smoke_without_dll_rebuild() -> Non
     run_smoke = builder.index("Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments")
     build_report = builder.index("$report = [ordered]@{", run_smoke)
     assert publish < smoke < run_smoke < build_report
-    assert '"--no-build"' in builder[smoke:run_smoke]
+    assert "$smokeArguments = @($smokeDll)" in builder[smoke:run_smoke]
+    assert "P0_RELEASE_SMOKE_COMPLETION_MARKER_MISSING" in builder[run_smoke:build_report]
     assert '"--ui-interaction-only"' in builder[smoke:run_smoke]
 
     # 外层 CI 必须核实同一 SHA 的真实构建报告与 WPF 退出，再继续安装验收。
