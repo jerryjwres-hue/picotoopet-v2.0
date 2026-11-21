@@ -150,3 +150,16 @@ def test_pull_request_native_release_runs_when_security_or_contract_gates_change
     assert '      - "windows/desktop/**"' in section
     assert '      - "tests/contract/**"' in section
     assert '      - "tests/security/**"' in section
+
+
+def test_release_workflow_has_no_duplicated_or_truncated_job_sections() -> None:
+    """确保 YAML 不会因字符串替换而复制整段 job 或截断尾部。"""
+
+    workflow = NATIVE_CI.read_text(encoding="utf-8")
+    assert workflow.count("  windows-ui-preview:") == 1
+    assert workflow.count("      - name: Build installable Windows UI Preview") == 1
+    assert workflow.count("      - name: Verify completed builder smoke") == 1
+    assert workflow.count("      - name: Verify P0 preview ZIP") == 1
+    assert workflow.count("      - name: Verify install upgrade recovery rollback lifecycle") == 1
+    assert workflow.count("      - name: Publish Preview run provenance to source commit") == 1
+    assert workflow.rstrip().endswith("});")
