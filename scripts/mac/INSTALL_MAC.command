@@ -20,11 +20,15 @@ STATE_DIR="$RUNTIME_ROOT/state"
 PORT_HELPER="$SCRIPT_DIR/lib/runtime_port.sh"
 DB_COMPAT="$SCRIPT_DIR/lib/check_install_database.py"
 DATABASE_FILE="$RUNTIME_ROOT/database/core.db"
+DB_REQUIRE=()
+if [ -L "$CURRENT" ] || [ -d "$CURRENT" ]; then
+  DB_REQUIRE=(--require-existing)
+fi
 
 # 先只读验明 Schema 24 家族；本机历史任务不允许任何降级或同编号异构接管。
 # 当前仍运行的 2.3 Core 不在这一步中被卸载；不启动 Worker 或 Comfy。
 command -v python3 >/dev/null 2>&1 || { echo "STOP=PYTHON3_UNAVAILABLE" >&2; exit 1; }
-python3 "$DB_COMPAT" --database "$DATABASE_FILE"
+python3 "$DB_COMPAT" --database "$DATABASE_FILE" "${DB_REQUIRE[@]}"
 
 mkdir -p "$VERSIONS_ROOT" "$RUNTIME_ROOT/logs" "$RUNTIME_ROOT/backups" "$STATE_DIR" "$LAUNCH_AGENTS"
 
@@ -80,7 +84,7 @@ fi
 
 # 在线备份必须在任何 Keychain、current 或 LaunchAgent 变更之前验证完成。
 # 不复制活动 WAL 原始文件；备份失败时原 Core 仍保持运行。
-python3 "$DB_COMPAT" --database "$DATABASE_FILE" --backup-dir "$RUNTIME_ROOT/backups"
+python3 "$DB_COMPAT" --database "$DATABASE_FILE" --backup-dir "$RUNTIME_ROOT/backups" "${DB_REQUIRE[@]}"
 
 # 令牌只进入当前用户 Keychain；升级时保留现有令牌，避免已配对 Windows 无故掉线。
 if ! security find-generic-password -a "$USER" -s "PicotooPetV2.API" >/dev/null 2>&1; then
