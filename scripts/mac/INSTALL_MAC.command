@@ -127,6 +127,70 @@ if ! security find-generic-password -a "$USER" -s "PicotooPetV2.API" >/dev/null 
   unset TOKEN
 fi
 
+# 保存旧 LaunchAgent 和真实运行状态；失败时必须恢复原运行/停止状态。
+PLIST_WAS_PRESENT=0
+PLIST_BACKUP="$STATE_DIR/mac-core-$VERSION.before.plist"
+if [ -e "$CORE_PLIST" ] || [ -L "$CORE_PLIST" ]; then
+  if [ ! -f "$CORE_PLIST" ] || [ -L "$CORE_PLIST" ]; then
+    echo "STOP=UNSAFE_EXISTING_LAUNCHAGENT" >&2
+    exit 1
+  fi
+  cp -p "$CORE_PLIST" "$PLIST_BACKUP"
+  PLIST_WAS_PRESENT=1
+fi
+OLD_CORE_LOADED=0
+if launchctl print "gui/$UID/com.picotoopet.mac-core" >/dev/null 2>&1; then
+  OLD_CORE_LOADED=1
+  if [ "$PREVIOUS_EXISTS" -ne 1 ] || [ "$PLIST_WAS_PRESENT" -ne 1 ]; then
+    echo "STOP=UNMANAGED_RUNNING_CORE" >&2
+    exit 1
+  fi
+fi
+
+# 原子更新前武装失败回滚；任何启动/HTTP 检查错误都不得留下半安装 Core。
+ROLLBACK_ARMED=0
+rollback_failed_core_install() {
+  local status=$?
+  trap - EXIT
+  if [ "$ROLLBACK_ARMED" -ne 1 ] || [ "$status" -eq 0 ]; then
+    exit "$status"
+  fi
+
+  set +e
+  local restore_ok=1
+  echo "STOP=NEW_CORE_INSTALL_FAILED; ATTEMPTING_ROLLBACK" >&2
+  launchctl bootout "gui/$UID/com.picotoopet.mac-core" >/dev/null 2>&1 || true
+
+  # 回退指针后再重新启动旧 Core，避免旧 plist 指向新版本。
+  if [ "$PREVIOUS_EXISTS" -eq 1 ]; then
+    ln -sfn "$PREVIOUS_TARGET" "$CURRENT.restore.$VERSION" || restore_ok=0
+    if [ "$restore_ok" -eq 1 ]; then
+      mv -h "$CURRENT.restore.$VERSION" "$CURRENT" || restore_ok=0
+    fi
+  elif [ -L "$CURRENT" ]; then
+    rm -f "$CURRENT" || restore_ok=0
+  fi
+
+  # 新安装不存在原 plist 时，恢复为未安装状态而非假装启动成功。
+  if [ "$PLIST_WAS_PRESENT" -eq 1 ]; then
+    cp -p "$PLIST_BACKUP" "$CORE_PLIST" || restore_ok=0
+  else
+    rm -f "$CORE_PLIST" || restore_ok=0
+  fi
+  if [ "$OLD_CORE_LOADED" -eq 1 ] && [ "$restore_ok" -eq 1 ]; then
+    launchctl bootstrap "gui/$UID" "$CORE_PLIST" || restore_ok=0
+  fi
+
+  if [ "$restore_ok" -eq 1 ]; then
+    echo "ROLLBACK=RESTORED_PREVIOUS_CORE" >&2
+  else
+    echo "STOP=ROLLBACK_REQUIRES_MANUAL_RECOVERY" >&2
+  fi
+  exit "$status"
+}
+trap rollback_failed_core_install EXIT
+ROLLBACK_ARMED=1
+
 ln -sfn "$TARGET" "$CURRENT.next"
 mv -h "$CURRENT.next" "$CURRENT"
 
