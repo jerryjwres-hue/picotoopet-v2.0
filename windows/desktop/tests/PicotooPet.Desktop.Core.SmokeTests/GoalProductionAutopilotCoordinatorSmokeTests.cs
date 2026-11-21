@@ -113,7 +113,7 @@ internal static class GoalProductionAutopilotCoordinatorSmokeTests
 
     private static ProductionPackageRecord Package(string jobId) => new(
         "package-1", jobId, "creative-package", new string('d', 64), new string('e', 64),
-        "production/package.json", JsonDocument.Parse("{}").RootElement.Clone(), "PASS", DateTimeOffset.UtcNow);
+        "production/package.json", JsonElement.Parse("{}"), "PASS", DateTimeOffset.UtcNow);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
