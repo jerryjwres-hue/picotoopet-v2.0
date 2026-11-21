@@ -318,14 +318,14 @@ if ([string]$selfTest.product_version -ne $ProductVersion -or
 
 # 将经过原生 PowerShell 5.1 自测的隧道入口加入 payload 哈希清单，
 # 安装后不需要保留 ZIP 解压目录；隧道不接触设备 Token 或 GPU。
-$tunnelDirectory = Join-Path $payloadRoot "tools\\connection"
+$tunnelDirectory = Join-Path $payloadRoot "tools\connection"
 New-Item -ItemType Directory -Path $tunnelDirectory -Force | Out-Null
 foreach ($name in @("CONNECT_MAC_SECURE.vbs", "Start-SecureMacTunnel.ps1")) {
     Copy-ReleaseFile `
-        -Source (Join-Path $desktopRoot "release\\$name") `
+        -Source (Join-Path $desktopRoot "release\$name") `
         -Destination (Join-Path $tunnelDirectory $name)
 }
-$tunnelTest = Invoke-NativeCommand -FilePath (Join-Path $env:WINDIR "System32\\WindowsPowerShell\\v1.0\\powershell.exe") -Arguments @(
+$tunnelTest = Invoke-NativeCommand -FilePath (Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe") -Arguments @(
     "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
     "-File", (Join-Path $tunnelDirectory "Start-SecureMacTunnel.ps1"), "-SelfTest"
 ) -TimeoutSeconds 20
