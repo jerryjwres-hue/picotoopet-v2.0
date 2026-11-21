@@ -140,3 +140,13 @@ def test_native_release_reuses_validated_ui_smoke_without_second_wpf_run() -> No
     assert "P0_RELEASE_SMOKE_PROCESS_LEFT_RUNNING" in verification
     assert "dotnet run" not in verification
     assert "PicotooPet.Desktop.Core.SmokeTests*" in verification
+
+
+def test_pull_request_native_release_runs_when_security_or_contract_gates_change() -> None:
+    """PR 对 Windows 合同/安全门禁的修改也必须重验真实发布，不可漏跑。"""
+
+    workflow = NATIVE_CI.read_text(encoding="utf-8")
+    section = workflow.split("  pull_request:", 1)[1].split("  workflow_dispatch:", 1)[0]
+    assert '      - "windows/desktop/**"' in section
+    assert '      - "tests/contract/**"' in section
+    assert '      - "tests/security/**"' in section
