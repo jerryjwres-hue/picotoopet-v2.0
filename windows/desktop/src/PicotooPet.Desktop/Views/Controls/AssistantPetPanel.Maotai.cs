@@ -11,7 +11,7 @@ public partial class AssistantPetPanel
 {
     // 桌宠 v2 只保留将来可恢复的扩展位；默认完全不读取素材/初始化 Rig/挂 GPU 渲染节拍。
     // 不使用用户设置或模型输出启用，只有未来独立、受审查的代码升级才能更改此开关。
-    private static readonly bool DesktopPetV2Enabled = false;
+    private static readonly bool DesktopPetV2Enabled; // C# 默认 false；严格分析器禁止重复初始化。
     private const double MaotaiMaximumDeltaSeconds = 0.05;
     private const double MaotaiStageMinX           = 28.0;
     private const double MaotaiStageMaxX           = 120.0;
