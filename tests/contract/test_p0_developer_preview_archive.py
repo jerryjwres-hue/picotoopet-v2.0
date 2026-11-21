@@ -19,6 +19,7 @@ _RUN = "12345"
 README = (
     b"NOT a formal Release Builder output.\n"
     b"Desktop pet is DEFERRED and excluded from film-production scope.\n"
+    b"Only trusted SSH public-key authentication; no credentials in the archive.\n"
 )
 
 
@@ -29,6 +30,8 @@ def _create_preview(
     source_sha: str = _SHA,
     tamper: bool = False,
     missing_hold: bool = False,
+    missing_tunnel: bool = False,
+    tamper_tunnel: bool = False,
     duplicate: bool = False,
     unsafe_path: bool = False,
 ) -> tuple[Path, Path]:
@@ -40,10 +43,14 @@ def _create_preview(
         "app/Picotoo Pet AI.exe": b"TEST-ONLY-NOT-A-REAL-EXE",
         "app/product-version.txt": b"2.3.27.1\n",
         "Prepare-P0ThreeShotHold.ps1": b"# TEST ONLY: persistent HOLD\n",
+        "CONNECT_MAC_SECURE.vbs": b"' TEST ONLY: protected OpenSSH launcher\n",
+        "Start-SecureMacTunnel.ps1": b"# TEST ONLY: SSH loopback strict keys\n",
         "README_P0_DEVELOPER_PREVIEW.txt": README,
     }
     if missing_hold:
         files.pop("Prepare-P0ThreeShotHold.ps1")
+    if missing_tunnel:
+        files.pop("Start-SecureMacTunnel.ps1")
     manifest = {
         "schema_version": "p0-three-shot-developer-preview.v1",
         "source_sha": source_sha,
@@ -55,6 +62,8 @@ def _create_preview(
         "user_install_allowed": False,
         "executable": "app/Picotoo Pet AI.exe",
         "hold_script": "Prepare-P0ThreeShotHold.ps1",
+        "connection_launcher": "CONNECT_MAC_SECURE.vbs",
+        "connection_script": "Start-SecureMacTunnel.ps1",
         "files": [
             {
                 "path": name,
@@ -66,7 +75,10 @@ def _create_preview(
     }
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as package:
         for name, data in files.items():
-            package.writestr(name, data + (b"CHANGED" if tamper and name.endswith(".exe") else b""))
+            changed = (tamper and name.endswith(".exe")) or (
+                tamper_tunnel and name == "Start-SecureMacTunnel.ps1"
+            )
+            package.writestr(name, data + (b"CHANGED" if changed else b""))
         if duplicate:
             # Duplicate basename under different case must not be extracted on Windows.
             package.writestr("APP/product-version.txt", b"2.3.27.1")
@@ -96,7 +108,7 @@ class PreviewArchiveContractTests(unittest.TestCase):
     def test_synthetic_hold_archive_passes_without_exe_execution(self):
         archive, receipt = _create_preview(self.root)
         result = self.verify(archive, receipt)
-        self.assertEqual(result["files_verified"], 4)
+        self.assertEqual(result["files_verified"], 6)
         self.assertFalse(result["formal_release_pass"])
         self.assertFalse(result["user_install_allowed"])
 
@@ -124,6 +136,16 @@ class PreviewArchiveContractTests(unittest.TestCase):
     def test_rejects_missing_persistent_hold(self):
         archive, receipt = _create_preview(self.root, missing_hold=True)
         with self.assertRaisesRegex(PreviewVerificationError, "REQUIRED_PAYLOAD_MISSING"):
+            self.verify(archive, receipt)
+
+    def test_rejects_missing_trusted_ssh_script(self):
+        archive, receipt = _create_preview(self.root, missing_tunnel=True)
+        with self.assertRaisesRegex(PreviewVerificationError, "REQUIRED_PAYLOAD_MISSING"):
+            self.verify(archive, receipt)
+
+    def test_rejects_modified_trusted_ssh_script(self):
+        archive, receipt = _create_preview(self.root, tamper_tunnel=True)
+        with self.assertRaisesRegex(PreviewVerificationError, "FILE_BYTES_OR_SHA256_MISMATCH"):
             self.verify(archive, receipt)
 
     def test_rejects_case_collision(self):
