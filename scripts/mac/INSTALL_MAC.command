@@ -7,7 +7,7 @@ SOURCE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNTIME_ROOT="$HOME/Library/Application Support/PicotooPetV2"
 # 版本名必须来自这份 2.3 Core 的真实产品版本，严禁回退到 2.2 的伪标签。
 PRODUCT_VERSION="$(cat "$SOURCE_ROOT/src/picotoopet_core/product-version.txt")"
-if [[ ! "$PRODUCT_VERSION" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+if [[ ! "$PRODUCT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "STOP=INVALID_PRODUCT_VERSION" >&2
   exit 1
 fi
