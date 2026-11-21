@@ -26,6 +26,7 @@ internal static class Program
             if (args.Contains("--studio-storypack-client-only", StringComparer.Ordinal))
             {
                 await StudioStoryPackClientSmokeTests.RunAsync().ConfigureAwait(false);
+                StudioStoryPackPanelSmokeTests.Run();
                 Console.WriteLine("STUDIO_23_STORYPACK_CLIENT=PASS; LEASE=0; GPU_POST=0");
                 return 0;
             }
