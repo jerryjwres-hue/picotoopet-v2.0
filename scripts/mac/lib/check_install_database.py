@@ -79,10 +79,15 @@ def verify_backup(database: Path, original: tuple[int, int, int]) -> None:
             raise ValueError("BACKUP_CONTENT_MISMATCH")
 
 
-def check_database(database: Path, backup_dir: Path | None) -> None:
+def check_database(database: Path, backup_dir: Path | None, *, require_existing: bool = False) -> None:
     """预检无副作用；仅显式 backup 阶段才写独立快照。"""
 
+    # Broken symlinks are not new installs and must never be treated as an empty database.
+    if database.is_symlink():
+        raise ValueError("UNSAFE_EXISTING_DATABASE")
     if not database.exists():
+        if require_existing:
+            raise ValueError("MISSING_EXISTING_DATABASE")
         print("DATABASE=NEW")
         return
     if database.is_symlink() or not database.is_file() or database.stat().st_size == 0:
@@ -120,9 +125,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="PicotooPet 2.3 SQLite compatibility gate")
     parser.add_argument("--database", required=True, type=Path)
     parser.add_argument("--backup-dir", type=Path)
+    parser.add_argument("--require-existing", action="store_true")
     arguments = parser.parse_args()
     try:
-        check_database(arguments.database, arguments.backup_dir)
+        check_database(arguments.database, arguments.backup_dir, require_existing=arguments.require_existing)
     except (OSError, sqlite3.Error, ValueError) as exc:
         # 不打印敏感数据、完整 SQL、认证信息或数据库行内容。
         code = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
