@@ -232,3 +232,53 @@ def test_goal_intake_blocks_oversize_and_non_p0_without_writing(studio):
     assert "P0_REQUIRES_EXACTLY_THREE_SHOTS" in two_intake["blocking_reasons"]
     assert two_intake["objective"] is None
     assert _counts(studio) == before
+
+
+def test_storypack_uses_existing_human_goal_route_idempotently_without_production(studio):
+    """真实 Core API：草稿→原有 Human Goal；没有另建 Production/Worker/GPU 通道。"""
+
+    preview = studio.post(ROUTE, json=storypack())
+    assert preview.status_code == 200
+    intake = preview.json()["canonical_goal_intake"]
+    assert intake["ready_for_user_submission"] is True
+
+    # 这次测试模拟了 UI 的明确二次确认；预览 GET/POST 本身仍零写入。
+    goal_request = {
+        "goal_type": intake["goal_type"],
+        "objective": intake["objective"],
+        "depth": intake["depth"],
+        "local_video_preferred": intake["local_video_preferred"],
+    }
+    key = "studio-storypack-goal-v1-" + intake["storypack_sha256"]
+    db = studio.app.state.services.database
+    before_prod = int(db.scalar("SELECT COUNT(*) FROM production_jobs") or 0)
+    before_approvals = int(db.scalar("SELECT COUNT(*) FROM approvals") or 0)
+
+    first = studio.post(
+        "/api/v1/autonomous/goals",
+        json=goal_request,
+        headers={"Idempotency-Key": key},
+    )
+    assert first.status_code == 201, first.text
+    created = first.json()
+    assert created["intent_type"] == "video.creative"
+    assert created["constraints"]["local_video_preferred"] is True
+    assert created["constraints"]["read_only_research"] is True
+    assert created["workflow_id"] is not None
+
+    replay = studio.post(
+        "/api/v1/autonomous/goals",
+        json=goal_request,
+        headers={"Idempotency-Key": key},
+    )
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["goal_id"] == created["goal_id"]
+    assert replay.json()["workflow_id"] == created["workflow_id"]
+
+    # Goal can research, but only the existing canonical Creative and Owner/Worker
+    # gates may ever make a ProductionPlan executable or permit a GPU POST.
+    assert int(db.scalar("SELECT COUNT(*) FROM production_jobs") or 0) == before_prod
+    assert int(db.scalar("SELECT COUNT(*) FROM approvals") or 0) == before_approvals
+    stored = studio.get(f'/api/v1/autonomous/goals/{created["goal_id"]}')
+    assert stored.status_code == 200
+    assert stored.json()["goal_id"] == created["goal_id"]
