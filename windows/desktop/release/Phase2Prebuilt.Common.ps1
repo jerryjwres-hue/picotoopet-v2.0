@@ -336,3 +336,43 @@ function Remove-PicotooShortcuts {
 
     return @(Remove-PicotooManagedShortcuts -DesktopDirectory $DesktopDirectory)
 }
+
+
+function Assert-PicotooP0HoldForActivation {
+    # 影视预览启动 GUI 之前重检持久 HOLD，避免复制/升级期间被换成 ALLOW。
+    # 不触碰核心身份、签名、设备令牌、Comfy 队列或任何 GPU 任务。
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        throw 'P0_ACTIVATION_HOLD_LOCALAPPDATA_MISSING'
+    }
+    $gateFile = Join-Path $env:LOCALAPPDATA 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
+    $armedFile = $gateFile + '.armed'
+    for ($folder = [IO.DirectoryInfo]::new((Split-Path -Parent $gateFile));
+        $null -ne $folder; $folder = $folder.Parent) {
+        if ($folder.Exists -and ($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'P0_ACTIVATION_HOLD_REPARSE_DIRECTORY'
+        }
+    }
+    if (-not (Test-Path -LiteralPath $gateFile -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $armedFile -PathType Leaf)) {
+        throw 'P0_ACTIVATION_HOLD_FIRST_REQUIRED'
+    }
+    foreach ($file in @($gateFile, $armedFile)) {
+        $attributes = (Get-Item -LiteralPath $file -Force).Attributes
+        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'P0_ACTIVATION_HOLD_REPARSE_FILE'
+        }
+    }
+    try {
+        $raw = [IO.File]::ReadAllText($gateFile, [Text.UTF8Encoding]::new($false, $true))
+        $state = $raw | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw 'P0_ACTIVATION_HOLD_INVALID'
+    }
+    if ([string]$state.schema_version -cne '1.0' -or
+        [string]$state.mode -cne 'hold' -or
+        @($state.PSObject.Properties.Name).Count -ne 2 -or
+        (Get-Item -LiteralPath $armedFile -Force).Length -lt 1) {
+        throw 'P0_ACTIVATION_HOLD_NOT_ARMED'
+    }
+}

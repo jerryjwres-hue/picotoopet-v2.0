@@ -33,6 +33,7 @@ $mutexOwned     = $false
 $current        = $null
 $previous       = $null
 $switched       = $false
+$script:StrictP0Rollback = $false
 $originShortcutState = @()
 $targetProductVersion = $null
 New-Item -ItemType Directory -Path $reportsRoot -Force | Out-Null
@@ -165,7 +166,17 @@ function Invoke-RollbackActivationCheck {
         [switch]$SelfTest
     )
 
-    Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
+    if ($script:StrictP0Rollback) {
+        # 还原或启动回滚目标前重查 HOLD，禁止审核期间被替换成 ALLOW。
+        Assert-PicotooP0HoldForActivation
+        # 同一 EXE Worker 可能持有不可中断的 GPU Job；回滚不得强制杀死。
+        if (@(Get-CimInstance Win32_Process -Filter "Name = 'Picotoo Pet AI.exe'").Count -gt 0) {
+            throw 'P0_PREVIEW_RUNNING_WORKER_ROLLBACK_BLOCKED'
+        }
+    }
+    else {
+        Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
+    }
     if ($SelfTest) {
         $arguments = @("--self-test", "--self-test-output", $activationPath)
         $argumentLine = ($arguments | ForEach-Object {
@@ -286,6 +297,53 @@ try {
     }
     $manifest = Read-JsonUtf8 -Path $manifestPath
     Assert-ManifestFiles -Manifest $manifest -Root ([string]$previous.path)
+    # 影视预览只能回滚到同样理解持久 HOLD 的版本；旧完整包无法证明安全。
+    $currentManifestPath = Join-Path ([string]$current.path) 'release-manifest.json'
+    if (-not (Test-Path -LiteralPath $currentManifestPath -PathType Leaf)) {
+        throw 'P0_ROLLBACK_CURRENT_MANIFEST_MISSING'
+    }
+    $currentManifest = Read-JsonUtf8 -Path $currentManifestPath
+    $script:StrictP0Rollback = (
+        [string]$currentManifest.validation_scope -eq 'windows-ui-preview' -or
+        [string]$manifest.validation_scope -eq 'windows-ui-preview'
+    )
+    if ($script:StrictP0Rollback) {
+        if ([string]$currentManifest.validation_scope -ne 'windows-ui-preview' -or
+            [string]$manifest.validation_scope -ne 'windows-ui-preview' -or
+            $currentManifest.p0_hold_aware -ne $true -or
+            $manifest.p0_hold_aware -ne $true) {
+            # 不用旧版或伪兼容的 UI Preview manifest 默许 GPU Worker 安全。
+            throw 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED'
+        }
+        $gateFile = Join-Path $env:LOCALAPPDATA 'PicotooPetV2\\MediaWorker\\v1\\three-shot-acceptance.json'
+        $armedFile = $gateFile + '.armed'
+        foreach ($parent in @([IO.DirectoryInfo]::new((Split-Path -Parent $gateFile)))) {
+            for ($folder = $parent; $null -ne $folder; $folder = $folder.Parent) {
+                if ($folder.Exists -and ($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    throw 'P0_ROLLBACK_HOLD_REPARSE_DIRECTORY'
+                }
+            }
+        }
+        if (-not (Test-Path -LiteralPath $gateFile -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $armedFile -PathType Leaf)) {
+            throw 'P0_ROLLBACK_HOLD_FIRST_REQUIRED'
+        }
+        foreach ($file in @($gateFile, $armedFile)) {
+            if (((Get-Item -LiteralPath $file -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'P0_ROLLBACK_HOLD_REPARSE_FILE'
+            }
+        }
+        try { $gate = Get-Content -LiteralPath $gateFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop }
+        catch { throw 'P0_ROLLBACK_HOLD_INVALID' }
+        if ([string]$gate.schema_version -ne '1.0' -or [string]$gate.mode -ne 'hold' -or
+            @($gate.PSObject.Properties).Count -ne 2 -or
+            [IO.File]::ReadAllBytes($armedFile).Length -lt 1) {
+            throw 'P0_ROLLBACK_HOLD_NOT_ARMED'
+        }
+        if (@(Get-CimInstance Win32_Process -Filter "Name = 'Picotoo Pet AI.exe'").Count -gt 0) {
+            throw 'P0_PREVIEW_RUNNING_WORKER_ROLLBACK_BLOCKED'
+        }
+    }
     $targetProductVersion = Resolve-PointerProductVersion -Pointer $previous -Manifest $manifest
 
     $appEntry = $manifest.files | Where-Object {
@@ -323,7 +381,15 @@ try {
         }
     }
 
-    Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
+    if ($script:StrictP0Rollback) {
+        # 再次检查，避免审核快捷方式期间 Worker 被手动启动。
+        if (@(Get-CimInstance Win32_Process -Filter "Name = 'Picotoo Pet AI.exe'").Count -gt 0) {
+            throw 'P0_PREVIEW_RUNNING_WORKER_ROLLBACK_BLOCKED'
+        }
+    }
+    else {
+        Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue | Stop-Process -Force
+    }
     $switched = $true
     $restoredShortcutState = @(
         Restore-PicotooManagedShortcutSnapshot `

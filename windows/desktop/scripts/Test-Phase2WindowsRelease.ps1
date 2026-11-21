@@ -546,6 +546,70 @@ function Invoke-LifecycleFixture {
             throw "VERIFY 没有验证产品版本和三处快捷方式。"
         }
 
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            # 原生负例 1：有 armed 标记但模式为 ALLOW，回滚必须在指针/快捷方式变更前拒绝。
+            $heldJson = [IO.File]::ReadAllText($gate, [Text.UTF8Encoding]::new($false, $true))
+            try {
+                [IO.File]::WriteAllText($gate, '{"schema_version":"1.0","mode":"allow"}', [Text.UTF8Encoding]::new($false))
+                $refused = Invoke-ReleaseScript -ScriptPath $rollbackB -Arguments @(
+                    '-DataRoot', $dataRoot,
+                    '-DesktopDirectory', $DesktopDirectory,
+                    '-ActivationSelfTest', '-SuppressReportOpen'
+                ) -ExpectedExitCodes @(1)
+                if ($refused.StdOut -notmatch 'P0_ROLLBACK_HOLD_NOT_ARMED') {
+                    throw 'P0_PREVIEW_ROLLBACK_ALLOW_NOT_REFUSED'
+                }
+                [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionB -PreviousVersion $versionA `
+                    -CurrentProductVersion $productVersionB -PreviousProductVersion $productVersionA)
+            }
+            finally {
+                [IO.File]::WriteAllText($gate, $heldJson, [Text.UTF8Encoding]::new($false))
+            }
+
+            # 原生负例 2：旧版不识别 P0 HOLD 时，绝不自动回滚并启动未知 Worker。
+            $targetManifestPath = Join-Path $dataRoot "versions\\$versionA\\release-manifest.json"
+            $targetOriginal = [IO.File]::ReadAllText($targetManifestPath, [Text.UTF8Encoding]::new($false, $true))
+            try {
+                $unknown = $targetOriginal | ConvertFrom-Json
+                $unknown.validation_scope = 'full-release'
+                Write-JsonUtf8 -Value $unknown -Path $targetManifestPath
+                $refused = Invoke-ReleaseScript -ScriptPath $rollbackB -Arguments @(
+                    '-DataRoot', $dataRoot,
+                    '-DesktopDirectory', $DesktopDirectory,
+                    '-ActivationSelfTest', '-SuppressReportOpen'
+                ) -ExpectedExitCodes @(1)
+                if ($refused.StdOut -notmatch 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED') {
+                    throw 'P0_PREVIEW_ROLLBACK_UNVERIFIED_TARGET_ACCEPTED'
+                }
+                [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionB -PreviousVersion $versionA `
+                    -CurrentProductVersion $productVersionB -PreviousProductVersion $productVersionA)
+            }
+            finally {
+                [IO.File]::WriteAllText($targetManifestPath, $targetOriginal, [Text.UTF8Encoding]::new($false))
+            }
+            # 原生负例 2b：目标虽然自称 UI Preview，但缺少 HOLD-aware 构建标记，同样禁止回滚。
+            $markerOriginal = [IO.File]::ReadAllText($targetManifestPath, [Text.UTF8Encoding]::new($false, $true))
+            try {
+                $unmarked = $markerOriginal | ConvertFrom-Json
+                $unmarked.p0_hold_aware = $false
+                Write-JsonUtf8 -Value $unmarked -Path $targetManifestPath
+                $refused = Invoke-ReleaseScript -ScriptPath $rollbackB -Arguments @(
+                    '-DataRoot', $dataRoot,
+                    '-DesktopDirectory', $DesktopDirectory,
+                    '-ActivationSelfTest', '-SuppressReportOpen'
+                ) -ExpectedExitCodes @(1)
+                if ($refused.StdOut -notmatch 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED') {
+                    throw 'P0_PREVIEW_ROLLBACK_UNMARKED_TARGET_ACCEPTED'
+                }
+                [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionB -PreviousVersion $versionA `
+                    -CurrentProductVersion $productVersionB -PreviousProductVersion $productVersionA)
+            }
+            finally {
+                [IO.File]::WriteAllText($targetManifestPath, $markerOriginal, [Text.UTF8Encoding]::new($false))
+            }
+            Write-Host 'P0_PREVIEW_ROLLBACK_HOLD_AND_OLD_WORKER_NEGATIVES=PASS'
+        }
+
         Set-CorruptDesktopShortcut `
             -DesktopDirectory $DesktopDirectory `
             -ProductVersion $productVersionB
@@ -598,6 +662,10 @@ function Invoke-LifecycleFixture {
             [string]$failureReport.recovery_shortcuts.restore_mode -ne "pre-activation-snapshot") {
             throw "激活失败后没有按快照恢复快捷方式。"
         }
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview' -and
+            [string]$failureReport.recovery_activation -ne 'BLOCKED_OLD_WORKER_NOT_AUTOSTARTED') {
+            throw 'P0_PREVIEW_FAILURE_MUST_NOT_AUTO_START_OLD_WORKER'
+        }
         $afterFailure = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $beforeFailure -Actual $afterFailure
         $restoredPointers = Assert-PointerVersions `
@@ -611,6 +679,41 @@ function Invoke-LifecycleFixture {
             -ProductVersion $productVersionA `
             -DesktopDirectory $DesktopDirectory `
             -RequireNoLegacy)
+
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            # 原生负例 3：失败恢复至未知旧版时，应仅保留手动快捷方式，绝不能开机自动重启 Worker。
+            $oldManifestPath = Join-Path $dataRoot "versions\\$versionA\\release-manifest.json"
+            $oldOriginal = [IO.File]::ReadAllText($oldManifestPath, [Text.UTF8Encoding]::new($false, $true))
+            try {
+                $oldMetadata = $oldOriginal | ConvertFrom-Json
+                # 回归历史 UI Preview 未声明 HOLD-aware 的情况，即使 scope 字符串相同也不得开机自启。
+                $oldMetadata.p0_hold_aware = $false
+                Write-JsonUtf8 -Value $oldMetadata -Path $oldManifestPath
+                [void](Invoke-ReleaseScript -ScriptPath $installerFailure -Arguments @(
+                    '-PackageRoot', $packageFailure,
+                    '-DataRoot', $dataRoot,
+                    '-DesktopDirectory', $DesktopDirectory,
+                    '-ActivationSelfTest', '-SuppressReportOpen'
+                ) -ExpectedExitCodes @(1))
+                $unsafeRecovery = Copy-ValidatedReport -DataRoot $dataRoot `
+                    -Filter 'phase2-prebuilt-install-*.json' `
+                    -Destination (Join-Path $EvidenceRoot "$Name-legacy-startup-refusal.json") `
+                    -ExpectedStatus 'fail'
+                if ([string]$unsafeRecovery.recovery_startup -ne 'DISABLED_UNVERIFIED_OLD_WORKER') {
+                    throw 'P0_LEGACY_WORKER_STARTUP_WAS_NOT_DISABLED'
+                }
+                $afterUnsafe = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+                if (@($afterUnsafe | Where-Object location -eq 'startup').Count -ne 0) {
+                    throw 'P0_LEGACY_STARTUP_SHORTCUT_STILL_PRESENT'
+                }
+                [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionA -PreviousVersion $versionB `
+                    -CurrentProductVersion $productVersionA -PreviousProductVersion $productVersionB)
+                Write-Host 'P0_PREVIEW_UNVERIFIED_LEGACY_AUTOSTART_DISABLED=PASS'
+            }
+            finally {
+                [IO.File]::WriteAllText($oldManifestPath, $oldOriginal, [Text.UTF8Encoding]::new($false))
+            }
+        }
 
         Write-Host "PHASE2_WINDOWS_LIFECYCLE_FIXTURE=PASS | $Name"
     }
