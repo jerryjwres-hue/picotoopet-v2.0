@@ -68,7 +68,53 @@ class Database:
                 connection.commit()
 
     def apply_migrations(self) -> None:
-        """幂等应用 Phase 1 数据库迁移。"""
+        """仅为当前已知数据库版本应用迁移；对更高或未知版本原样保护。"""
+
+        # 防止历史数据库沿用同一个 schema_migrations 数字却属于不同架构。
+        # 必须在 CREATE TABLE、Owner HOLD 和任何队列操作之前检测；无兼容保证时拒绝启动。
+        max_supported = 4
+        with self._lock:
+            connection = self.connection
+            migration_table = connection.execute(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'schema_migrations'"
+            ).fetchone()
+            if migration_table is not None:
+                versions = [
+                    row[0] for row in connection.execute(
+                        "SELECT version FROM schema_migrations"
+                    ).fetchall()
+                ]
+                if any(
+                    not isinstance(version, int) or version < 1 or version > max_supported
+                    for version in versions
+                ):
+                    raise RuntimeError(
+                        "UNSUPPORTED_EXISTING_DATABASE_SCHEMA: "
+                        "existing migration version exceeds supported 1-4; "
+                        "do not overwrite or reinitialize this database"
+                    )
+                if 4 in versions:
+                    owner_table = connection.execute(
+                        "SELECT 1 FROM sqlite_master "
+                        "WHERE type = 'table' AND name = 'owner_production_hold'"
+                    ).fetchone()
+                    if owner_table is None:
+                        raise RuntimeError(
+                            "INCOMPATIBLE_MIGRATION_004: existing version 4 does "
+                            "not contain owner_production_hold; preserve existing database"
+                        )
+            elif self.path.stat().st_size > 0:
+                # 只接受原生空库首次初始化；其他来源的无版本 SQLite 不得静默接管。
+                existing_tables = connection.execute(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1"
+                ).fetchone()
+                if existing_tables is not None:
+                    raise RuntimeError(
+                        "UNKNOWN_EXISTING_DATABASE_SCHEMA: unmanaged tables without "
+                        "schema_migrations; preserve existing database"
+                    )
 
         with self.transaction() as connection:
             connection.execute(
