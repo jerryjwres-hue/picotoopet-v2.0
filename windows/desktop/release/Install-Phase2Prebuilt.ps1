@@ -242,6 +242,29 @@ function Restore-PreviousActivation {
     $restoredState = Restore-PicotooManagedShortcutSnapshot `
         -ShortcutState $preActivationShortcutState `
         -DesktopDirectory $DesktopDirectory
+    if ($script:StrictP0Activation -and $null -ne $previousCurrent) {
+        # 原有旧版本如不认识 HOLD，恢复开机自启会在下次登录偷偷启动 Worker。
+        $safePrevious = $false
+        try {
+            $previousManifestFile = Join-Path ([string]$previousCurrent.path) 'release-manifest.json'
+            if (Test-Path -LiteralPath $previousManifestFile -PathType Leaf) {
+                $previousManifest = Read-JsonUtf8 -Path $previousManifestFile
+                $safePrevious = ([string]$previousManifest.validation_scope -ceq 'windows-ui-preview')
+            }
+        }
+        catch {
+            $safePrevious = $false
+        }
+        if (-not $safePrevious) {
+            foreach ($managed in @(Get-PicotooManagedShortcutFiles -DesktopDirectory $DesktopDirectory)) {
+                if ([string]$managed.location -eq 'startup') {
+                    Remove-Item -LiteralPath ([string]$managed.file.FullName) -Force
+                }
+            }
+            $restoredState = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+            $report.recovery_startup = 'DISABLED_UNVERIFIED_OLD_WORKER'
+        }
+    }
     $report.recovery_shortcuts = [ordered]@{
         restore_mode = "pre-activation-snapshot"
         shortcut_state = @($restoredState)
@@ -295,6 +318,7 @@ $report = [ordered]@{
     activation               = $null
     recovery_shortcuts       = $null
     recovery_activation      = $null
+    recovery_startup         = $null
     source_build_on_user_pc  = $false
     error                    = $null
 }
