@@ -64,6 +64,37 @@ public partial class CreativeIntelligencePanel : System.Windows.Controls.UserCon
         }
     }
 
+    // 创建的是正式 Core Human Goal，不是生产授权；用户必须二次确认。
+    private async void CreateStoryGoal_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not CreativeIntelligencePanelViewModel viewModel
+            || !viewModel.CanCreateStoryGoal)
+        {
+            return;
+        }
+        var response = MessageBox.Show(
+            Window.GetWindow(this),
+            "将已检查的三镜头故事交给现有 Mac Core 创建本地视频创意 Goal？"
+            + "\n这会启动正常的来源研究与创意工作流。"
+            + "\n不会批准角色资产、生产计划、Owner 或 GPU；所有 HOLD 继续有效。",
+            "确认创建本地创意 Goal",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No);
+        if (response != MessageBoxResult.Yes)
+        {
+            return;
+        }
+        try
+        {
+            await viewModel.CreateStoryGoalAsync(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            ShowSafeError("创建 Goal 失败", "Core 未确认创建成功，请检查连接后重试；GPU HOLD 保持不变。");
+        }
+    }
+
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.RefreshAsync(CancellationToken.None));
 
