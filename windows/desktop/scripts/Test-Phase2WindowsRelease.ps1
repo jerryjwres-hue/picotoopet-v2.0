@@ -499,6 +499,9 @@ function Invoke-LifecycleFixture {
             -ProductVersion $productVersionA
         $snapshotA = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $installA.shortcut_state -Actual $snapshotA
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            [void](Assert-PicotooTunnelShortcut -VersionRoot (Join-Path $dataRoot "versions\\$versionA"))
+        }
 
         [void](Invoke-ReleaseScript -ScriptPath $installerB -Arguments @(
             "-PackageRoot", $packageB,
@@ -517,6 +520,9 @@ function Invoke-LifecycleFixture {
             -ProductVersion $productVersionB
         $snapshotB = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $installB.shortcut_state -Actual $snapshotB
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            [void](Assert-PicotooTunnelShortcut -VersionRoot (Join-Path $dataRoot "versions\\$versionB"))
+        }
         if (Test-Path -LiteralPath (Join-Path $DesktopDirectory "Picotoo Pet AI 2.3.5.9.lnk")) {
             throw "升级后仍保留旧版本快捷方式。"
         }
@@ -636,6 +642,9 @@ function Invoke-LifecycleFixture {
             -PreviousProductVersion $productVersionB
         $restoredA = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $snapshotA -Actual $restoredA
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            [void](Assert-PicotooTunnelShortcut -VersionRoot (Join-Path $dataRoot "versions\\$versionA"))
+        }
         [void](Assert-PicotooShortcuts `
             -Executable ([string]$pointers.current.executable) `
             -ProductVersion $productVersionA `
@@ -668,6 +677,10 @@ function Invoke-LifecycleFixture {
         }
         $afterFailure = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $beforeFailure -Actual $afterFailure
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            # 失败恢复后不允许保留之前 B 版本的安全连接入口。
+            [void](Assert-PicotooTunnelShortcut -VersionRoot (Join-Path $dataRoot "versions\\$versionA"))
+        }
         $restoredPointers = Assert-PointerVersions `
             -DataRoot $dataRoot `
             -CurrentVersion $versionA `
