@@ -7,6 +7,57 @@ namespace PicotooPet.Desktop.ViewModels;
 /// <summary>既有创意面板的可选只读 StoryPack 预览；不增加日常生产步骤或审批捷径。</summary>
 public sealed partial class CreativeIntelligencePanelViewModel
 {
+    /// <summary>首片只读故事草稿：角色/厨房/风格资产 ID 仅是未登记的 draft ref，不是可信参考图。</summary>
+    public const string MaotaiDinnerPilotDraft = """
+        {
+          "schema": "picotoo.storypack.v1",
+          "episode_id": "maotai_dinner_p0_draft_v1",
+          "title": "茅台的开饭仪式",
+          "output_profile": "p0_landscape",
+          "character_ref": "draft_maotai_identity_v1",
+          "scene_ref": "draft_kitchen_layout_v1",
+          "style_ref": "draft_cute3d_style_v1",
+          "story": {
+            "goal": "戴荧绿色三角围巾的阿拉斯加犬茅台，闻到晚餐香味，想立刻冲向食盆。",
+            "payoff": "茅台克制偷吃的冲动，乖乖等待开饭信号，终于开心吃到第一口晚餐。"
+          },
+          "shots": [
+            {
+              "id": "S01",
+              "action": "第一镜头4秒：可爱3D漫画风格，中景定场。毛茸茸的黑白奶油色阿拉斯加犬茅台戴荧绿色三角围巾，从画面左后方厨房门口走向右前方靠墙的银色双环圆口食盆。看到碗里的晚饭，他突然刹车，眼睛一亮，尾巴抬起。厨房门、墙、地面、食盆位置固定，不出现字幕或额外人物。",
+              "state_in": "茅台站在厨房左后侧入口，双环圆口食盆在画面右前方靠墙。",
+              "state_out": "茅台停在右侧双环圆口食盆前，鼻尖离碗一掌，双前爪着地。",
+              "because": "他看见晚饭就在面前，忍不住想抢先开吃。"
+            },
+            {
+              "id": "S02",
+              "action": "第二镜头4秒：沿用相同厨房空间和食盆真实圆形双环口沿。茅台把鼻尖慢慢靠近食盆，眼看就要偷吃，突然想起还没听到开饭指令；他滑稽地后缩，端正坐好、双耳竖起，看向画外等待。荧绿色三角围巾、毛色纹路和双环碗保持一致。",
+              "state_in": "茅台停在右侧双环圆口食盆前，鼻尖离碗一掌，双前爪着地。",
+              "state_out": "茅台端正坐在食盆左侧，鼻尖离碗一掌，双耳竖起，望向画外。",
+              "because": "他想吃却记得开饭前必须先坐好等待。",
+              "depends_on": ["S01"],
+              "handoff": "continuous"
+            },
+            {
+              "id": "S03",
+              "action": "第三镜头4秒：保持同一餐厅厨房布局、光照和圆形双环食盆。画外响起短促开饭提示音（仅音效，无新角色入镜）；茅台先抬头确认，再迫不及待低头吃下第一口，蓬松尾巴欢快摆动，最后停在满足的表情。不得变换脸型、围巾颜色、食盆形状或位置。",
+              "state_in": "茅台端正坐在食盆左侧，鼻尖离碗一掌，双耳竖起，望向画外。",
+              "state_out": "茅台正低头吃第一口晚餐，荧绿色三角围巾清晰可见，食盆未移动。",
+              "because": "开饭提示音终于响起，等待得到回报。",
+              "depends_on": ["S02"],
+              "handoff": "continuous"
+            }
+          ]
+        }
+        """;
+
+    /// <summary>用户主动一键载入试片剧本，只修改内存草稿；不自动发送、审批或放行 GPU。</summary>
+    public void LoadMaotaiDinnerPilotDraft()
+    {
+        StoryPackJson = MaotaiDinnerPilotDraft;
+        StoryPackPreviewStatus = "茅台三镜头示例已载入；角色、场景和风格资产均未验证。点击只读检查，不会生成任务。";
+    }
+
     private string _storyPackJson = string.Empty;
     private string _storyPackPreviewStatus = "可选：粘贴导演生成的 StoryPack JSON，仅校验镜头与资产。";
     private bool _isStoryPackPreviewBusy;
