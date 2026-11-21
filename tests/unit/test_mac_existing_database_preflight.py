@@ -63,6 +63,7 @@ def test_install_preflight_order_and_frozen_version_compatibility() -> None:
     assert text.index("# 只读预检必须先于任何版本指针") < text.index('mkdir -p "$VERSIONS_ROOT"')
     assert "sqlite3 -readonly" in text
     assert "STOP=UNSUPPORTED_DATABASE_VERSION_" in text
+    assert "STOP=UNSUPPORTED_DATABASE_VERSION_${migrations}" in text
     assert "STOP=INCOMPATIBLE_MIGRATION_004" in text
     assert text.index("STOP=INCOMPATIBLE_MIGRATION_004") < text.index('ln -sfn "$TARGET" "$CURRENT.next"')
 
