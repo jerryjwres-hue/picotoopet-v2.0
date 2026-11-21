@@ -32,3 +32,11 @@
 - **不要为了忽略桌宠而隐藏正式 Release 失败。** 旧完整 Windows Release 继续标记 `BLOCKED (desktop pet assets)`，视频生产专用独立构建/检查必须如实标注身份、SHA、HOLD 和安装限制。
 - Windows 实机操作先做只读检查、CPU-only 联调和安全回滚；不得擅自运行 GPU、Comfy POST、升级运行中的 Mac Core 或解除 Owner/MASTER/HOLD。
 - 日常产品目标保持：一个导演台输入故事，Mac 权威计划，Windows 同一 Worker 执行，视觉 QC 与 MP4 归档，手机远程审核使用同一后台。
+
+## 桌宠扩展位最终策略（2026-11-21）
+
+桌宠 V2 **只是保留的理论空位**：默认关闭、不读取 v2 角色图片、不生成动画、不执行其素材/像素/运动测试。44 张 PNG、耳机与双足形象等均不在本期开发/安装/影视验收范围。
+
+旧完整桌宠 Release 已改为**仅手动触发**，它的历史失败不再影响常规 GitHub PR/影视生产构建。今后不得因缺少 `torso_neutral.png` 等桌宠资产反复请求用户或 Claude 操作。当前仅维护 Mac Core → 本地 Creative → Production Plan → Windows Worker → Comfy/QC/MP4 主线；原有安全/审批/HOLD 不可绕过。
+
+如未来用户明确启用桌宠，另开隔离任务评估素材、行为及独立发布；不要自动恢复此功能。
