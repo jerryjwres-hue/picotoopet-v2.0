@@ -271,7 +271,6 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
     ):
         assert forbidden not in control
     for required in (
-        "Detect Windows release impact",
         "Build-Phase2WindowsRelease.ps1",
         "stamp_windows_goal_integrity.py",
         "verify_project_goal_integrity.py",
@@ -281,6 +280,23 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         assert required in release
     assert "--ui-interaction-only" not in release
     assert "Invoke-Phase2WindowsReleaseLifecycleGate.ps1" not in release
+
+    # 手动桌宠 Release 不再属于日常 PR；仍保留真实安装包与生命周期校验。
+    assert "workflow_dispatch:" in release
+    assert "pull_request:" not in release
+    assert "Optional full desktop-pet impact check (manual)" in release
+
+    # 三镜头影视预览继续在 PR 自动构建，并保留逐字节验证和生产 HOLD。
+    film = (
+        ROOT / ".github" / "workflows" / "p0-three-shot-developer-preview.yml"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "pull_request:",
+        "Verify ZIP bytes, complete manifest and permanent production HOLD",
+        "verify_p0_developer_preview.py",
+        "P0_DESKTOP_PET_DORMANCY_CONTRACT_FAILED",
+    ):
+        assert required in film
 
 
 def test_package_verifies_task_center_and_worker_fallback() -> None:
