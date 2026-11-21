@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import shutil
@@ -197,6 +198,9 @@ def test_dangling_database_symlink_is_not_fresh_install(tmp_path: Path) -> None:
 def test_installer_product_version_regex_matches_real_runtime() -> None:
     """解析实际安装脚本的 Bash 正则，防止双反斜杠让 2.3.27.1 无法安装。"""
 
+    # Git Bash on Windows transforms regex quoting; the macOS native runner owns this shell contract.
+    if os.name == "nt":
+        pytest.skip("Native macOS Bash validation is the authoritative installer shell check")
     if shutil.which("bash") is None:
         pytest.skip("Bash unavailable on runner")
     installer = INSTALL.read_text(encoding="utf-8")
