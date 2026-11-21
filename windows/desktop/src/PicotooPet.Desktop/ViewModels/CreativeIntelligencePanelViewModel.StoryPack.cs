@@ -101,6 +101,7 @@ public sealed partial class CreativeIntelligencePanelViewModel
             if (SetProperty(ref _isStoryPackPreviewBusy, value))
             {
                 RaisePropertyChanged(nameof(CanPreviewStoryPack));
+                RaisePropertyChanged(nameof(CanCreateStoryGoal));
             }
         }
     }
