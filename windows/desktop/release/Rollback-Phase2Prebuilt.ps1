@@ -223,6 +223,10 @@ function Invoke-RollbackActivationCheck {
 function Restore-RollbackOrigin {
     Write-JsonAtomic -Value $current -Path $currentPath
     Write-JsonAtomic -Value $previous -Path $previousPath
+    if ($script:StrictP0Rollback) {
+        # 回滚激活失败时，恢复到原当前版本的手动 SSH 快捷方式。
+        Set-PicotooTunnelShortcut -VersionRoot ([string]$current.path)
+    }
     $restoredState = @(
         Restore-PicotooManagedShortcutSnapshot `
             -ShortcutState $originShortcutState `
@@ -408,6 +412,11 @@ try {
         -NotePropertyValue @($originShortcutState) -Force
     Write-JsonAtomic -Value $previous -Path $currentPath
     Write-JsonAtomic -Value $current -Path $previousPath
+    if ($script:StrictP0Rollback) {
+        # 安装身份切换与 SSH 入口一起切换，不允许保留新版本脚本旧版指针。
+        Set-PicotooTunnelShortcut -VersionRoot ([string]$previous.path)
+        [void](Assert-PicotooTunnelShortcut -VersionRoot ([string]$previous.path))
+    }
 
     $activation = Invoke-RollbackActivationCheck `
         -Executable ([string]$previous.executable) `
