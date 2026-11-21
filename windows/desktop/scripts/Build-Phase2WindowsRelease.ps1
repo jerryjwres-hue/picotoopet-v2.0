@@ -47,7 +47,7 @@ function Invoke-NativeCommand {
     $startInfo.UseShellExecute        = $false
     $startInfo.CreateNoWindow         = $true
     # 编译/发布默认继承 CI 控制台句柄，避免 SmokeTests 子进程继承匿名管道后使 ReadToEndAsync 永不结束。
-    # 只有 --version 需要解析标准输出，此时才启用受限时的管道捕获。
+    # --version 与直接执行测试 DLL 时才启用带截止时间的管道捕获。
     $startInfo.RedirectStandardOutput = [bool]$CaptureOutput
     $startInfo.RedirectStandardError  = [bool]$CaptureOutput
 
@@ -288,23 +288,29 @@ Invoke-NativeCommand -FilePath $dotnet -Arguments @(
 ) -WorkingDirectory $desktopRoot | Out-Null
 
 # Smoke scope -----------------------------------------------------------------
-# Build/publish must finish before any WPF smoke might retain DLL handles.
-# Keep exactly the existing UI-only and optional full desktop-pet test scopes.
-$smokeArguments = @(
-    "run", "--project", $smokeProject, "--configuration", "Release", "--no-build"
-)
+# 编译已经完成。直接运行编译产物 DLL（dotnet host 就是测试进程），避免 dotnet run
+# 启动 WPF GUI apphost 后提前返回，导致测试仍在执行而发布报告已经宣称 PASS。
+$smokeDll = Join-Path $desktopRoot "tests\PicotooPet.Desktop.Core.SmokeTests\bin\Release\net10.0-windows10.0.19041.0\PicotooPet.Desktop.Core.SmokeTests.dll"
+if (-not (Test-Path -LiteralPath $smokeDll -PathType Leaf)) { throw "P0_RELEASE_SMOKE_DLL_MISSING" }
+$smokeArguments = @($smokeDll)
+$smokeMarker = "PHASE2_CORE_SMOKE=PASS"
 if ($ValidationScope -eq "UiPreview") {
-    $smokeArguments += @("--", "--ui-interaction-only")
+    $smokeArguments += "--ui-interaction-only"
+    $smokeMarker = "PHASE23_UI_INTERACTION_SMOKE=PASS"
 }
-Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments -WorkingDirectory $desktopRoot | Out-Null
-
+# 仅捕获直接运行的测试进程输出；同时验证真实退出码和明确 PASS 标记。
+$smokeResult = Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments -WorkingDirectory $desktopRoot -CaptureOutput -TimeoutSeconds 180
+if (-not ($smokeResult.StdOut -split "\r?\n" | Where-Object { $_ -ceq $smokeMarker })) {
+    throw "P0_RELEASE_SMOKE_COMPLETION_MARKER_MISSING: $smokeMarker"
+}
 if ($ValidationScope -eq "Full") {
-    # 桌宠是暂停的可选子系统；仅手动完整桌宠版 Release 运行其独立素材门禁。
-    # 非桌宠的 CI/影视工作站构建绝不隐式触发此昂贵且目前缺素材的验收。
-    Invoke-NativeCommand -FilePath $dotnet -Arguments @(
-        "run", "--project", $smokeProject, "--configuration", "Release",
-        "--no-build", "--", "--desktop-pet-acceptance-only"
-    ) -WorkingDirectory $desktopRoot | Out-Null
+    # 桌宠保持独立手动完整发行门禁；同样要求真实测试结果，不缩减旧测试范围。
+    $petResult = Invoke-NativeCommand -FilePath $dotnet -Arguments @(
+        $smokeDll, "--desktop-pet-acceptance-only"
+    ) -WorkingDirectory $desktopRoot -CaptureOutput -TimeoutSeconds 180
+    if (-not ($petResult.StdOut -split "\r?\n" | Where-Object { $_ -ceq "OPTIONAL_DESKTOP_PET_ACCEPTANCE=PASS" })) {
+        throw "OPTIONAL_DESKTOP_PET_COMPLETION_MARKER_MISSING"
+    }
 }
 
 $appExecutable  = Join-Path $payloadRoot "Picotoo Pet AI.exe"
@@ -523,6 +529,8 @@ $report = [ordered]@{
     schema_version       = "2.3.0"
     generated_at         = (Get-Date).ToUniversalTime().ToString("o")
     status               = "pass"
+    native_smoke_marker  = $smokeMarker
+    native_smoke_exit    = [int]$smokeResult.ExitCode
     version              = $Version
     product_version      = $ProductVersion
     sdk_version          = $sdkVersion
