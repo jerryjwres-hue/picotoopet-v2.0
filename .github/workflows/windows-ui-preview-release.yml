@@ -144,8 +144,8 @@ jobs:
           Write-Host 'P0_PRELAUNCH_HOLD=PASS; GPU_NETWORK=0'
       # Preview package ---------------------------------------------------------
       # Build before UI smoke: smoke can leave a WPF process holding its loaded DLL.
-      # The native builder already runs the same UI-only test using --no-build;
-      # retain the independent CI smoke AFTER packaging and prohibit a second compile.
+      # The native builder executes the compiled test DLL directly and requires its PASS marker;
+      # attest the result after packaging, without a second smoke runner.
       - name: Build installable Windows UI Preview
         shell: pwsh
         run: |
@@ -165,7 +165,9 @@ jobs:
           $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
           if ($report.status -ne 'pass' -or $report.validation_scope -ne 'windows-ui-preview' -or
               $report.source_head -ne $env:PICOTOO_SOURCE_HEAD_SHA -or
-              $report.native_ci_verified -ne $true) { throw 'P0_RELEASE_BUILDER_SMOKE_PROVENANCE_MISMATCH' }
+              $report.native_ci_verified -ne $true -or
+              $report.native_smoke_marker -cne 'PHASE23_UI_INTERACTION_SMOKE=PASS' -or
+              $null -eq $report.native_smoke_exit -or [int]$report.native_smoke_exit -ne 0) { throw 'P0_RELEASE_BUILDER_SMOKE_PROVENANCE_MISMATCH' }
           $alive = @(Get-CimInstance Win32_Process | Where-Object {
             $_.Name -like 'PicotooPet.Desktop.Core.SmokeTests*'
           })
