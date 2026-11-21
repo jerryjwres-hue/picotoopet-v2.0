@@ -36,6 +36,14 @@
                   Click="StoryPackPreview_Click" />
           <TextBlock x:Name="StoryPackPreviewSummary" Margin="0,7,0,0" FontWeight="SemiBold"
                      Text="{Binding StoryPackPreviewStatus, Mode=OneWay}" TextWrapping="Wrap" />
+          <!-- 只创建现有 Mac Core video.creative Goal；明确二次点击，绝不等同于 Production 批准。 -->
+          <Button x:Name="CreateStoryGoalButton"
+                  Content="下一步 · 创建本地视频创意 Goal（需确认）"
+                  HorizontalAlignment="Left" Padding="13,6" Margin="0,7,0,0"
+                  IsEnabled="{Binding CanCreateStoryGoal, Mode=OneWay}"
+                  Click="CreateStoryGoal_Click" />
+          <TextBlock Margin="0,5,0,0" Text="{Binding StoryGoalStatus, Mode=OneWay}"
+                     TextWrapping="Wrap" />
           <TextBlock Margin="0,4,0,0" Text="Owner 未批准、资产未验证、GPU HOLD 时不能生成。此处没有审批、执行或 Comfy POST 入口。"
                      TextWrapping="Wrap" />
         </StackPanel>
