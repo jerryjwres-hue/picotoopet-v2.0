@@ -108,6 +108,15 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
             return;
         }
 
+        // 旧持久化 LAN HTTP 地址只标为离线，绝不自动传输设备 Bearer。
+        if (!Uri.TryCreate(settings.MacBaseUrl, UriKind.Absolute, out var savedBaseUri)
+            || !SecureCoreEndpoint.IsAllowed(savedBaseUri))
+        {
+            _stateStore.SetConnection(ConnectionState.Offline);
+            SetStatus("安全阻断：旧 Mac 地址不安全。请先建立 SSH 连接，并在设置中填写 http://127.0.0.1:18766。");
+            return;
+        }
+
         await ConnectAsync(settings.MacBaseUrl, token, cancellationToken).ConfigureAwait(false);
     }
 
