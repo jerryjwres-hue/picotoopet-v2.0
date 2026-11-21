@@ -9,6 +9,7 @@ on:
       - "scripts/mac/lib/check_install_database.py"
       - "deploy/macos/com.picotoopet.mac-core.plist"
       - "tests/contract/test_v31_compatible_mac_23_upgrade.py"
+      - "tests/contract/test_mac_core_install_rollback_296.py"
       - "src/picotoopet_core/db/**"
   workflow_dispatch:
 
@@ -39,6 +40,7 @@ jobs:
         shell: bash
         run: |
           bash -n scripts/mac/INSTALL_MAC.command
+          bash -n scripts/mac/ROLLBACK_MAC.command
           plutil -lint deploy/macos/com.picotoopet.mac-core.plist
           python -m py_compile scripts/mac/lib/check_install_database.py
 
@@ -49,6 +51,7 @@ jobs:
         run: |
           PYTHONPATH=.:src python -m pytest -q \
             tests/contract/test_v31_compatible_mac_23_upgrade.py \
+            tests/contract/test_mac_core_install_rollback_296.py \
             tests/unit/db/test_migration_024.py \
             tests/production/test_v11_worker_challenge_transport.py \
             tests/production/test_v11_worker_witness.py
