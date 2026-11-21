@@ -71,7 +71,7 @@ internal static class GoalVideoReturnPanelWpfSmokeTests
 
     private static HumanGoalRecord Goal() => new(
         "goal-1", null, "workflow-1", "human", "product.research_to_video", "P1",
-        "研究产品并生成视频", JsonDocument.Parse("{}").RootElement.Clone(), "local-first",
+        "研究产品并生成视频", JsonElement.Parse("{}"), "local-first",
         false, null, "Completed", "goal-key", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
     private static GoalHandoffMetadataRecord Handoff() => new(
