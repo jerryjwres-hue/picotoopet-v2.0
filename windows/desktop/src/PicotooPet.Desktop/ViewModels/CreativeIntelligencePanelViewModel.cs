@@ -6,7 +6,7 @@ using PicotooPet.Desktop.Services;
 namespace PicotooPet.Desktop.ViewModels;
 
 /// <summary>Creative Intelligence 固定控制面；只选择 PASS 来源与可选业务目标。</summary>
-public sealed class CreativeIntelligencePanelViewModel : ObservableObject
+public sealed partial class CreativeIntelligencePanelViewModel : ObservableObject
 {
     public const string FixedCreativeProfile = "creative.content_plan.v1";
     public const string CreativeBoundaryText = "creative_ready != rendered != publish-ready";
