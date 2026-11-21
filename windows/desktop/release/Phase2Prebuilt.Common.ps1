@@ -232,7 +232,7 @@ function Restore-PicotooManagedShortcutSnapshot {
 
 function Get-PicotooTunnelShortcutPath {
     # Windows 系统开始菜单入口；绝不加入开机启动项，也不启动 SSH。
-    return Join-Path $env:APPDATA "Microsoft\\Windows\\Start Menu\\Programs\\Picotoo Pet 安全连接.lnk"
+    return Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet 安全连接.lnk"
 }
 
 function Set-PicotooTunnelShortcut {
@@ -240,7 +240,7 @@ function Set-PicotooTunnelShortcut {
 
     # 仅引用已验证 manifest SHA 的版本化 payload，不执行 SSH，也不读取证书/密钥。
     $path = Get-PicotooTunnelShortcutPath
-    $connection = if ($VersionRoot) { Join-Path $VersionRoot "tools\\connection" } else { "" }
+    $connection = if ($VersionRoot) { Join-Path $VersionRoot "tools\connection" } else { "" }
     $launcher = if ($connection) { Join-Path $connection "CONNECT_MAC_SECURE.vbs" } else { "" }
     $bootstrap = if ($connection) { Join-Path $connection "Start-SecureMacTunnel.ps1" } else { "" }
 
@@ -254,7 +254,7 @@ function Set-PicotooTunnelShortcut {
     $shell = New-Object -ComObject WScript.Shell
     try {
         $shortcut                  = $shell.CreateShortcut($path)
-        $shortcut.TargetPath       = Join-Path $env:WINDIR "System32\\wscript.exe"
+        $shortcut.TargetPath       = Join-Path $env:WINDIR "System32\wscript.exe"
         $shortcut.Arguments        = '"' + $launcher + '"'
         $shortcut.WorkingDirectory = $connection
         $shortcut.Description      = "PicotooPet Mac SSH 安全连接（手动点击，不自动启动）"
@@ -272,7 +272,7 @@ function Assert-PicotooTunnelShortcut {
 
     # 离线只读比较当前启动器目标；拒绝错误旧版本或指向其他脚本。
     $path = Get-PicotooTunnelShortcutPath
-    $folder = Join-Path $VersionRoot "tools\\connection"
+    $folder = Join-Path $VersionRoot "tools\connection"
     $launcher = Join-Path $folder "CONNECT_MAC_SECURE.vbs"
     $script = Join-Path $folder "Start-SecureMacTunnel.ps1"
     if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) -or
@@ -283,7 +283,7 @@ function Assert-PicotooTunnelShortcut {
     $shell = New-Object -ComObject WScript.Shell
     try {
         $shortcut = $shell.CreateShortcut($path)
-        $expectedExe = [IO.Path]::GetFullPath((Join-Path $env:WINDIR "System32\\wscript.exe"))
+        $expectedExe = [IO.Path]::GetFullPath((Join-Path $env:WINDIR "System32\wscript.exe"))
         $expectedDir = [IO.Path]::GetFullPath($folder)
         $actualExe = [IO.Path]::GetFullPath([string]$shortcut.TargetPath)
         $actualDir = [IO.Path]::GetFullPath([string]$shortcut.WorkingDirectory)
