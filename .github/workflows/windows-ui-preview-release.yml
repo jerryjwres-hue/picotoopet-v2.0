@@ -140,14 +140,10 @@ jobs:
           dotnet run --no-build --project windows/desktop/tests/PicotooPet.MediaWorker.SmokeTests -c Release -- --three-shot-gate-probe held ('a' * 64)
           if ($LASTEXITCODE) { throw 'P0_HOLD_PROBE_FAILED' }
           Write-Host 'P0_PRELAUNCH_HOLD=PASS; GPU_NETWORK=0'
-      - name: Build WPF and run UI-only native smoke
-        shell: pwsh
-        run: |
-          dotnet restore windows/desktop/PicotooPet.Desktop.sln --nologo
-          dotnet build windows/desktop/PicotooPet.Desktop.sln --configuration Release --no-restore --nologo -p:ContinuousIntegrationBuild=true -warnaserror
-          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj --configuration Release --no-build -- --ui-interaction-only
-
       # Preview package ---------------------------------------------------------
+      # Build before UI smoke: smoke can leave a WPF process holding its loaded DLL.
+      # The native builder already runs the same UI-only test using --no-build;
+      # retain the independent CI smoke AFTER packaging and prohibit a second compile.
       - name: Build installable Windows UI Preview
         shell: pwsh
         run: |
@@ -156,6 +152,14 @@ jobs:
           & windows/desktop/scripts/Build-Phase2WindowsRelease.ps1 `
             -Version $version `
             -ValidationScope UiPreview
+
+      - name: Run isolated Control Center UI-only native smoke on built binaries
+        shell: pwsh
+        run: |
+          # Reuse the exact compiled test DLL; never rebuild after it may remain loaded.
+          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
+            --configuration Release --no-build -- --ui-interaction-only
+          if ($LASTEXITCODE -ne 0) { throw 'P0_RELEASE_UI_NATIVE_SMOKE_FAILED' }
 
       - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
         if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
