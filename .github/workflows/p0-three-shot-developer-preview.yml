@@ -50,6 +50,18 @@ jobs:
           if ($actual -cne $env:PICOTOO_PREVIEW_SOURCE_SHA) { throw 'P0_PREVIEW_WRONG_SOURCE_COMMIT' }
           Write-Output "SOURCE_SHA_PIN=PASS; SHA=$actual; USER_INSTALL_ALLOWED=FALSE"
 
+      - name: Set up Python 3.12 for real ZIP verification (not a server)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Reject fake ZIP manifest, changed bytes and unsafe archive members
+        shell: pwsh
+        run: |
+          # 纯标准库负例：不安装包、不执行 EXE、不运行 Windows Worker。
+          python -m unittest discover -s tests/contract -p "test_p0_developer_preview_archive.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_ARCHIVE_NEGATIVE_SUITE_FAILED' }
+
       - name: Install pinned .NET SDK
         uses: actions/setup-dotnet@v6
         with:
@@ -119,6 +131,16 @@ jobs:
           "$sha  $([IO.Path]::GetFileName($zip))" | Set-Content -LiteralPath (Join-Path $root 'preview-sha256.txt') -Encoding ascii
           Write-Host "P0_PREVIEW_PORTABLE_BUILD=PASS; SOURCE_SHA=$env:PICOTOO_PREVIEW_SOURCE_SHA; ZIP_SHA256=$sha"
           Write-Host 'FORMAL_RELEASE=NOT_RUN; GUI_LAUNCHED=NO; REAL_GPU=UNVERIFIED'
+
+      - name: Verify ZIP bytes, complete manifest and permanent production HOLD
+        shell: pwsh
+        run: |
+          # 已构建产物必须逐字节复验；缺文件、错哈希、伪造放行均 STOP。
+          $root = Join-Path $env:RUNNER_TEMP 'p0-three-shot-preview'
+          $archive = Join-Path $root ("P0-ThreeShot-DeveloperPreview-" + $env:PICOTOO_PREVIEW_SOURCE_SHA.Substring(0,12) + ".zip")
+          $receipt = Join-Path $root 'preview-sha256.txt'
+          python scripts/ci/verify_p0_developer_preview.py --archive $archive --sha256-receipt $receipt --source-sha $env:PICOTOO_PREVIEW_SOURCE_SHA --run-id $env:GITHUB_RUN_ID
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_ZIP_BYTES_UNVERIFIED' }
 
       - name: Upload internal portable developer-preview evidence
         uses: actions/upload-artifact@v7
