@@ -26,7 +26,9 @@ internal static class StudioStoryPackPanelSmokeTests
             "planned_duration_s": 12,
             "width": 832,
             "height": 480,
-            "fps": 24
+            "fps": 24,
+            "frames_per_shot": 97,
+            "planned_frames": 291
           },
           "production_compilation": {"executable": false},
           "core23_compatibility": {"gpu_post_authorized": false},
@@ -42,6 +44,8 @@ internal static class StudioStoryPackPanelSmokeTests
         SmokeAssert.True(summary.Contains("3 镜头", StringComparison.Ordinal)
             && summary.Contains("12 秒", StringComparison.Ordinal)
             && summary.Contains("832×480", StringComparison.Ordinal)
+            && summary.Contains("每镜 97 帧", StringComparison.Ordinal)
+            && summary.Contains("共 291 渲染帧", StringComparison.Ordinal)
             && summary.Contains("未验证资产 2 项", StringComparison.Ordinal)
             && summary.Contains("GPU HOLD", StringComparison.Ordinal),
             "3 镜头预览必须保留资产缺口和明确 HOLD");
