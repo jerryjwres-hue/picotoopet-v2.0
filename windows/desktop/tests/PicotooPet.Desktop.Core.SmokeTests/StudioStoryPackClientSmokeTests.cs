@@ -125,7 +125,7 @@ internal static class StudioStoryPackClientSmokeTests
                 return new HttpResponseMessage(HttpStatusCode.Unauthorized)
                 {
                     Content = new StringContent(
-                        "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"denied\",\"retryable\":false}",
+                        "{\"error\":{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"denied\",\"retryable\":false}}",
                         Encoding.UTF8,
                         "application/json"),
                 };
