@@ -11,7 +11,7 @@ if [[ ! "$PRODUCT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "STOP=INVALID_PRODUCT_VERSION" >&2
   exit 1
 fi
-VERSION="${PRODUCT_VERSION}-v31-compat-$(date -u +%Y%m%dT%H%M%SZ)-$"
+VERSION="${PRODUCT_VERSION}-v31-compat-$(date -u +%Y%m%dT%H%M%SZ)-${BASHPID}"
 VERSIONS_ROOT="$RUNTIME_ROOT/versions"
 TARGET="$VERSIONS_ROOT/$VERSION"
 CURRENT="$RUNTIME_ROOT/current"
