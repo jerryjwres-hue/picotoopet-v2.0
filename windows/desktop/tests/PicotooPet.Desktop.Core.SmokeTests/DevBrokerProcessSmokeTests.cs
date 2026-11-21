@@ -53,7 +53,7 @@ internal static class DevBrokerProcessSmokeTests
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries);
             Assert(events.Length == 4, "Mock Return 事件数量不是 4");
             Assert(
-                events.Select(line => JsonDocument.Parse(line).RootElement
+                events.Select(line => JsonElement.Parse(line)
                         .GetProperty("sequence").GetInt32())
                     .SequenceEqual([1, 2, 3, 4]),
                 "Mock Return 事件顺序不连续");
