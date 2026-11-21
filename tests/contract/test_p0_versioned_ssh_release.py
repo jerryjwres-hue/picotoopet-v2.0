@@ -97,3 +97,27 @@ def test_native_release_builder_publishes_before_running_its_wpf_smoke() -> None
     smoke_args = builder.index('$smokeArguments = @(')
     assert first_publish < smoke_args < ui_smoke
     assert '"--no-build"' in builder[smoke_args:ui_smoke]
+
+
+def test_native_publish_cannot_hang_on_inherited_smoke_stdout_pipes() -> None:
+    """后台测试子进程可继承管道，发布命令不能无界等待 ReadToEndAsync。"""
+
+    builder = BUILDER.read_text(encoding="utf-8-sig")
+    native = builder[
+        builder.index("function Invoke-NativeCommand {"):
+        builder.index("function Write-Utf8NoBom {")
+    ]
+
+    # 非捕获命令直接向 CI 控制台输出，不持有可能被子进程继承的匿名管道。
+    assert "[switch]$CaptureOutput" in native
+    assert "$startInfo.RedirectStandardOutput = [bool]$CaptureOutput" in native
+    assert "$startInfo.RedirectStandardError  = [bool]$CaptureOutput" in native
+    assert "if ($CaptureOutput) {" in native
+    assert "-not $stdoutTask.Wait(5000)" in native
+    assert "-not $stderrTask.Wait(5000)" in native
+
+    # 禁止再调用无参数 WaitForExit() 或无界 stdoutTask.GetResult()。
+    assert "$process.WaitForExit()" not in native
+    assert "$process.WaitForExit($TimeoutSeconds * 1000)" in native
+    assert 'Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot -CaptureOutput' in builder
+    assert builder.count("-CaptureOutput") == 1
