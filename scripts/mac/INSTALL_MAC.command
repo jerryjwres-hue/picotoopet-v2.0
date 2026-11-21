@@ -184,6 +184,33 @@ rollback_failed_core_install() {
   fi
   if [ "$OLD_CORE_LOADED" -eq 1 ] && [ "$restore_ok" -eq 1 ]; then
     launchctl bootstrap "gui/$UID" "$CORE_PLIST" || restore_ok=0
+    # launchctl bootstrap 成功仍不等于 Core 正常；再次校验原版本与 SQLite。
+    if [ "$restore_ok" -eq 1 ]; then
+      local old_version_file="$PREVIOUS_TARGET/src/picotoopet_core/product-version.txt"
+      local old_version=""
+      if [ -f "$old_version_file" ]; then
+        old_version="$(cat "$old_version_file")"
+      fi
+      local old_ready=0
+      if [ -n "$old_version" ]; then
+        for recovery_attempt in 1 2 3 4 5 6 7 8; do
+          local old_health=""
+          old_health="$(curl --noproxy '*' --silent --fail --connect-timeout 2 --max-time 3 \
+            "http://127.0.0.1:$API_PORT/api/v1/health" 2>/dev/null)" || old_health=""
+          if [ -n "$old_health" ] && printf '%s' "$old_health" | python3 -c \
+            'import json,sys; d=json.load(sys.stdin); sys.exit(0 if (d.get("status") == "ok" and d.get("database") == "ok" and d.get("version") == sys.argv[1]) else 1)' \
+            "$old_version" 2>/dev/null; then
+            old_ready=1
+            break
+          fi
+          sleep 2
+        done
+      fi
+      if [ "$old_ready" -ne 1 ]; then
+        restore_ok=0
+        echo "STOP=ROLLED_BACK_BUT_OLD_HTTP_UNVERIFIED" >&2
+      fi
+    fi
   fi
 
   if [ "$restore_ok" -eq 1 ]; then
