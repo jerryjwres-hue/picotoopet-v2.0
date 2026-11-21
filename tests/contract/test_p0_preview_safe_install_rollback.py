@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL = ROOT / "windows/desktop/release/Install-Phase2Prebuilt.ps1"
 ROLLBACK = ROOT / "windows/desktop/release/Rollback-Phase2Prebuilt.ps1"
+COMMON = ROOT / "windows/desktop/release/Phase2Prebuilt.Common.ps1"
 LIFECYCLE = ROOT / "windows/desktop/scripts/Test-Phase2WindowsRelease.ps1"
 NATIVE = ROOT / ".github/workflows/windows-ui-preview-release.yml"
 
@@ -62,3 +63,22 @@ def test_native_release_lifecycle_exercises_both_rollback_negative_cases() -> No
         assert marker in lifecycle
     assert "Test-Phase2WindowsRelease.ps1" in workflow
     assert "fix/p0-film-activation-no-worker-force-kill" in workflow
+
+
+def test_prelaunch_hold_is_rechecked_at_last_moment_for_both_activation_paths() -> None:
+    """安装/回滚复制完成后必须重读最新 HOLD，不能依赖旧检查的 TOCTOU 结果。"""
+
+    common = COMMON.read_text(encoding="utf-8-sig")
+    install = INSTALL.read_text(encoding="utf-8-sig")
+    rollback = ROLLBACK.read_text(encoding="utf-8-sig")
+    assert "function Assert-PicotooP0HoldForActivation" in common
+    for required in (
+        "P0_ACTIVATION_HOLD_FIRST_REQUIRED",
+        "P0_ACTIVATION_HOLD_NOT_ARMED",
+        "P0_ACTIVATION_HOLD_REPARSE_DIRECTORY",
+        "P0_ACTIVATION_HOLD_REPARSE_FILE",
+        "three-shot-acceptance.json",
+    ):
+        assert required in common
+    assert "Assert-PicotooP0HoldForActivation" in install
+    assert "Assert-PicotooP0HoldForActivation" in rollback
