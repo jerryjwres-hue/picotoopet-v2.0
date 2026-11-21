@@ -67,10 +67,15 @@ else
 fi
 case "$API_PORT" in
   ''|*[!0-9]*)
-    echo "API 端口记录无效：$API_PORT" >&2
+    echo "STOP=INVALID_API_PORT" >&2
     exit 1
     ;;
 esac
+if [ "$API_PORT" -lt 1 ] || [ "$API_PORT" -gt 65535 ]; then
+  echo "STOP=INVALID_API_PORT_RANGE" >&2
+  exit 1
+fi
+command -v curl >/dev/null 2>&1 || { echo "STOP=CURL_UNAVAILABLE" >&2; exit 1; }
 printf '%s\n' "$API_PORT" > "$STATE_DIR/api-port.txt"
 
 # 只能原子切换现有符号链接；普通目录、相对链接或损坏链接一律拒绝。
@@ -238,5 +243,27 @@ if [ "$bootstrapped" != 1 ]; then
   exit 1
 fi
 
+# 必须验证 launchd 真的以指定版本响应 HTTP；单独运行 CLI health 不能代替服务验收。
+SERVICE_READY=0
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  HEALTH_BODY="$(curl --noproxy '*' --silent --fail --connect-timeout 2 --max-time 3 \
+    "http://127.0.0.1:$API_PORT/api/v1/health" 2>/dev/null)" || HEALTH_BODY=""
+  if [ -n "$HEALTH_BODY" ] && printf '%s' "$HEALTH_BODY" | python3 -c \
+    'import json,sys; d=json.load(sys.stdin); sys.exit(0 if (d.get("status") == "ok" and d.get("database") == "ok" and d.get("version") == sys.argv[1]) else 1)' \
+    "$PRODUCT_VERSION" 2>/dev/null; then
+    SERVICE_READY=1
+    break
+  fi
+  sleep 2
+done
+if [ "$SERVICE_READY" -ne 1 ]; then
+  echo "STOP=REAL_CORE_HTTP_VERSION_OR_DB_UNHEALTHY" >&2
+  exit 1
+fi
+
 "$CURRENT/.venv/bin/picotoopet-core" health --skip-ollama > "$RUNTIME_ROOT/state/install-health.json"
-open "$RUNTIME_ROOT/state/install-health.json"
+# 只有 Core 本机 HTTP 与 SQLite 均通过后才正式提交指针，取消自动回滚。
+ROLLBACK_ARMED=0
+trap - EXIT
+echo "CORE_INSTALL=PASS VERSION=$PRODUCT_VERSION PORT=$API_PORT; SUPERVISOR=UNCHANGED; GPU=HOLD"
+open "$RUNTIME_ROOT/state/install-health.json" >/dev/null 2>&1 || true
