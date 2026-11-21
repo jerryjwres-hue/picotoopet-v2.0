@@ -16,6 +16,7 @@ VERSIONS_ROOT="$RUNTIME_ROOT/versions"
 TARGET="$VERSIONS_ROOT/$VERSION"
 CURRENT="$RUNTIME_ROOT/current"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
+CORE_PLIST="$LAUNCH_AGENTS/com.picotoopet.mac-core.plist"
 STATE_DIR="$RUNTIME_ROOT/state"
 PORT_HELPER="$SCRIPT_DIR/lib/runtime_port.sh"
 DB_COMPAT="$SCRIPT_DIR/lib/check_install_database.py"
@@ -36,27 +37,65 @@ mkdir -p "$VERSIONS_ROOT" "$RUNTIME_ROOT/logs" "$RUNTIME_ROOT/backups" "$STATE_D
 # 已有安装保留当前端口；首次安装时按 8765、8766 顺序选择空闲端口。
 if [ -f "$STATE_DIR/api-port.txt" ]; then
   API_PORT="$(cat "$STATE_DIR/api-port.txt")"
+  # 新状态文件不得与已启动实例的 LaunchAgent 记录冲突。
+  if [ -f "$CORE_PLIST" ]; then
+    INSTALLED_PORT="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PICOTOO_API_PORT' "$CORE_PLIST" 2>/dev/null)" || {
+      echo "STOP=EXISTING_LAUNCHAGENT_PORT_UNKNOWN" >&2
+      exit 1
+    }
+    if [ "$API_PORT" != "$INSTALLED_PORT" ]; then
+      echo "STOP=PORT_STATE_CONFLICT" >&2
+      exit 1
+    fi
+  fi
+elif [ -f "$CORE_PLIST" ]; then
+  # 兼容手工部署的 2.3 LaunchAgent：从原配置读取端口，不误占 8765 AI Server。
+  API_PORT="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PICOTOO_API_PORT' "$CORE_PLIST" 2>/dev/null)" || {
+    echo "STOP=EXISTING_LAUNCHAGENT_PORT_UNKNOWN" >&2
+    exit 1
+  }
+elif [ -L "$CURRENT" ]; then
+  echo "STOP=EXISTING_CORE_PORT_UNKNOWN" >&2
+  exit 1
 else
   # shellcheck source=lib/runtime_port.sh
   source "$PORT_HELPER"
   API_PORT="$(select_api_port 8765 8766)" || {
-    echo "8765 和 8766 均被占用，安装已停止。" >&2
+    echo "STOP=NO_FREE_API_PORT" >&2
     exit 1
   }
 fi
 case "$API_PORT" in
   ''|*[!0-9]*)
-    echo "API 端口记录无效：$API_PORT" >&2
+    echo "STOP=INVALID_API_PORT" >&2
     exit 1
     ;;
 esac
+if [ "$API_PORT" -lt 1 ] || [ "$API_PORT" -gt 65535 ]; then
+  echo "STOP=INVALID_API_PORT_RANGE" >&2
+  exit 1
+fi
+command -v curl >/dev/null 2>&1 || { echo "STOP=CURL_UNAVAILABLE" >&2; exit 1; }
 printf '%s\n' "$API_PORT" > "$STATE_DIR/api-port.txt"
 
-# 保留上一个版本路径，为原子回滚提供依据。
+# 只能原子切换现有符号链接；普通目录、相对链接或损坏链接一律拒绝。
+PREVIOUS_TARGET=""
+PREVIOUS_EXISTS=0
 if [ -L "$CURRENT" ]; then
-  readlink "$CURRENT" > "$STATE_DIR/previous_version.txt"
-elif [ -d "$CURRENT" ]; then
-  printf '%s\n' "$CURRENT" > "$STATE_DIR/previous_version.txt"
+  PREVIOUS_TARGET="$(readlink "$CURRENT")"
+  if [[ "$PREVIOUS_TARGET" != /* ]] || [ ! -d "$PREVIOUS_TARGET" ]; then
+    echo "STOP=UNSAFE_PREVIOUS_CORE_LINK" >&2
+    exit 1
+  fi
+  PREVIOUS_EXISTS=1
+  printf '%s\n' "$PREVIOUS_TARGET" > "$STATE_DIR/previous_version.txt"
+elif [ -e "$CURRENT" ]; then
+  echo "STOP=UNMANAGED_CURRENT_DIRECTORY" >&2
+  exit 1
+fi
+if [ -e "$CURRENT.next" ] || [ -L "$CURRENT.next" ]; then
+  echo "STOP=STALE_CURRENT_NEXT" >&2
+  exit 1
 fi
 
 # 安装 uv；日常运行不需要用户打开终端。
@@ -92,6 +131,101 @@ if ! security find-generic-password -a "$USER" -s "PicotooPetV2.API" >/dev/null 
   security add-generic-password -a "$USER" -s "PicotooPetV2.API" -w "$TOKEN" >/dev/null
   unset TOKEN
 fi
+
+# 保存旧 LaunchAgent 和真实运行状态；失败时必须恢复原运行/停止状态。
+PLIST_WAS_PRESENT=0
+PLIST_BACKUP="$STATE_DIR/mac-core-$VERSION.before.plist"
+if [ -e "$CORE_PLIST" ] || [ -L "$CORE_PLIST" ]; then
+  if [ ! -f "$CORE_PLIST" ] || [ -L "$CORE_PLIST" ]; then
+    echo "STOP=UNSAFE_EXISTING_LAUNCHAGENT" >&2
+    exit 1
+  fi
+  cp -p "$CORE_PLIST" "$PLIST_BACKUP"
+  PLIST_WAS_PRESENT=1
+fi
+OLD_CORE_LOADED=0
+if launchctl print "gui/$UID/com.picotoopet.mac-core" >/dev/null 2>&1; then
+  OLD_CORE_LOADED=1
+  if [ "$PREVIOUS_EXISTS" -ne 1 ] || [ "$PLIST_WAS_PRESENT" -ne 1 ]; then
+    echo "STOP=UNMANAGED_RUNNING_CORE" >&2
+    exit 1
+  fi
+fi
+
+# 原子更新前武装失败回滚；任何启动/HTTP 检查错误都不得留下半安装 Core。
+ROLLBACK_ARMED=0
+rollback_failed_core_install() {
+  local status=$?
+  trap - EXIT
+  if [ "$ROLLBACK_ARMED" -ne 1 ] || [ "$status" -eq 0 ]; then
+    exit "$status"
+  fi
+
+  set +e
+  local restore_ok=1
+  echo "STOP=NEW_CORE_INSTALL_FAILED; ATTEMPTING_ROLLBACK" >&2
+  launchctl bootout "gui/$UID/com.picotoopet.mac-core" >/dev/null 2>&1 || true
+
+  # 回退指针后再重新启动旧 Core，避免旧 plist 指向新版本。
+  if [ "$PREVIOUS_EXISTS" -eq 1 ]; then
+    ln -sfn "$PREVIOUS_TARGET" "$CURRENT.restore.$VERSION" || restore_ok=0
+    if [ "$restore_ok" -eq 1 ]; then
+      mv -h "$CURRENT.restore.$VERSION" "$CURRENT" || restore_ok=0
+    fi
+  elif [ -L "$CURRENT" ]; then
+    rm -f "$CURRENT" || restore_ok=0
+  fi
+
+  # 新安装不存在原 plist 时，恢复为未安装状态而非假装启动成功。
+  if [ "$PLIST_WAS_PRESENT" -eq 1 ]; then
+    cp -p "$PLIST_BACKUP" "$CORE_PLIST" || restore_ok=0
+  else
+    rm -f "$CORE_PLIST" || restore_ok=0
+  fi
+  if [ "$OLD_CORE_LOADED" -eq 1 ] && [ "$restore_ok" -eq 1 ]; then
+    launchctl bootstrap "gui/$UID" "$CORE_PLIST" || restore_ok=0
+    # launchctl bootstrap 成功仍不等于 Core 正常；再次校验原版本与 SQLite。
+    if [ "$restore_ok" -eq 1 ]; then
+      local old_version_file="$PREVIOUS_TARGET/src/picotoopet_core/product-version.txt"
+      local old_version=""
+      if [ -f "$old_version_file" ]; then
+        old_version="$(cat "$old_version_file")"
+      fi
+      local old_ready=0
+      if [ -n "$old_version" ]; then
+        for recovery_attempt in 1 2 3 4 5 6 7 8; do
+          local old_health=""
+          old_health="$(curl --noproxy '*' --silent --fail --connect-timeout 2 --max-time 3 \
+            "http://127.0.0.1:$API_PORT/api/v1/health" 2>/dev/null)" || old_health=""
+          if [ -n "$old_health" ] && printf '%s' "$old_health" | python3 -c \
+            'import json,sys; d=json.load(sys.stdin); sys.exit(0 if (d.get("status") == "ok" and d.get("database") == "ok" and d.get("version") == sys.argv[1]) else 1)' \
+            "$old_version" 2>/dev/null; then
+            old_ready=1
+            break
+          fi
+          sleep 2
+        done
+      fi
+      if [ "$old_ready" -ne 1 ]; then
+        restore_ok=0
+        echo "STOP=ROLLED_BACK_BUT_OLD_HTTP_UNVERIFIED" >&2
+      fi
+    fi
+  fi
+
+  if [ "$restore_ok" -eq 1 ]; then
+    if [ "$PREVIOUS_EXISTS" -eq 1 ]; then
+      echo "ROLLBACK=RESTORED_PREVIOUS_CORE" >&2
+    else
+      echo "ROLLBACK=REMOVED_FAILED_FIRST_INSTALL" >&2
+    fi
+  else
+    echo "STOP=ROLLBACK_REQUIRES_MANUAL_RECOVERY" >&2
+  fi
+  exit "$status"
+}
+trap rollback_failed_core_install EXIT
+ROLLBACK_ARMED=1
 
 ln -sfn "$TARGET" "$CURRENT.next"
 mv -h "$CURRENT.next" "$CURRENT"
@@ -140,5 +274,27 @@ if [ "$bootstrapped" != 1 ]; then
   exit 1
 fi
 
+# 必须验证 launchd 真的以指定版本响应 HTTP；单独运行 CLI health 不能代替服务验收。
+SERVICE_READY=0
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  HEALTH_BODY="$(curl --noproxy '*' --silent --fail --connect-timeout 2 --max-time 3 \
+    "http://127.0.0.1:$API_PORT/api/v1/health" 2>/dev/null)" || HEALTH_BODY=""
+  if [ -n "$HEALTH_BODY" ] && printf '%s' "$HEALTH_BODY" | python3 -c \
+    'import json,sys; d=json.load(sys.stdin); sys.exit(0 if (d.get("status") == "ok" and d.get("database") == "ok" and d.get("version") == sys.argv[1]) else 1)' \
+    "$PRODUCT_VERSION" 2>/dev/null; then
+    SERVICE_READY=1
+    break
+  fi
+  sleep 2
+done
+if [ "$SERVICE_READY" -ne 1 ]; then
+  echo "STOP=REAL_CORE_HTTP_VERSION_OR_DB_UNHEALTHY" >&2
+  exit 1
+fi
+
 "$CURRENT/.venv/bin/picotoopet-core" health --skip-ollama > "$RUNTIME_ROOT/state/install-health.json"
-open "$RUNTIME_ROOT/state/install-health.json"
+# 只有 Core 本机 HTTP 与 SQLite 均通过后才正式提交指针，取消自动回滚。
+ROLLBACK_ARMED=0
+trap - EXIT
+echo "CORE_INSTALL=PASS VERSION=$PRODUCT_VERSION PORT=$API_PORT; SUPERVISOR=UNCHANGED; GPU=HOLD"
+open "$RUNTIME_ROOT/state/install-health.json" >/dev/null 2>&1 || true
