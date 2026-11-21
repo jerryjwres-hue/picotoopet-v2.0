@@ -167,6 +167,8 @@ function Invoke-RollbackActivationCheck {
     )
 
     if ($script:StrictP0Rollback) {
+        # 还原或启动回滚目标前重查 HOLD，禁止审核期间被替换成 ALLOW。
+        Assert-PicotooP0HoldForActivation
         # 同一 EXE Worker 可能持有不可中断的 GPU Job；回滚不得强制杀死。
         if (@(Get-CimInstance Win32_Process -Filter "Name = 'Picotoo Pet AI.exe'").Count -gt 0) {
             throw 'P0_PREVIEW_RUNNING_WORKER_ROLLBACK_BLOCKED'
