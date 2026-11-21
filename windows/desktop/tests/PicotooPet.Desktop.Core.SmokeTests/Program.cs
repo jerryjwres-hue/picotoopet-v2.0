@@ -16,6 +16,13 @@ internal static class Program
         try
         {
             // 新 Studio 只读端点的独立 CPU 合同验收；不要求 Maotai 正式 WPF 艺术资产。
+            // Windows CI 专用：启动独立真实 2.3 Python Core 后才执行以下 localhost HTTP 联调。
+            if (args.Contains("--studio-storypack-live-only", StringComparer.Ordinal))
+            {
+                await StudioStoryPackLiveInteropSmokeTests.RunAsync().ConfigureAwait(false);
+                return 0;
+            }
+
             if (args.Contains("--studio-storypack-client-only", StringComparer.Ordinal))
             {
                 await StudioStoryPackClientSmokeTests.RunAsync().ConfigureAwait(false);
