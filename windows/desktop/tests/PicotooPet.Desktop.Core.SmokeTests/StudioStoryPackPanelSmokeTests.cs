@@ -12,6 +12,22 @@ internal static class StudioStoryPackPanelSmokeTests
         var vm = CreativeIntelligencePanelViewModel.CreateForSmokeTest(
             Array.Empty<CreativeEligibleSourceRecord>());
         SmokeAssert.True(!vm.CanPreviewStoryPack, "空 StoryPack 不应允许预览");
+        // 一键示例仅改内存草稿，不会接 Mac、创建 Job 或开启 GPU。
+        vm.LoadMaotaiDinnerPilotDraft();
+        SmokeAssert.True(vm.CanPreviewStoryPack, "三镜头草稿载入后应允许手动只读检查");
+        var pilot = JsonElement.Parse(vm.StoryPackJson);
+        SmokeAssert.Equal("maotai_dinner_p0_draft_v1",
+            pilot.GetProperty("episode_id").GetString(), "载入了错误的首片示例");
+        SmokeAssert.Equal(3, pilot.GetProperty("shots").GetArrayLength(),
+            "首片故事必须有三个真实动作镜头");
+        SmokeAssert.True(pilot.GetProperty("character_ref").GetString()!.StartsWith("draft_", StringComparison.Ordinal)
+            && pilot.GetProperty("scene_ref").GetString()!.StartsWith("draft_", StringComparison.Ordinal),
+            "示例不得伪装成已经验证的参考资产");
+        SmokeAssert.True(pilot.GetProperty("shots")[1].GetProperty("action").GetString()!.Contains("坐好", StringComparison.Ordinal)
+            && pilot.GetProperty("shots")[2].GetProperty("action").GetString()!.Contains("第一口", StringComparison.Ordinal),
+            "首片不能退化成没有起承转合的纯技术空镜头");
+        SmokeAssert.True(vm.StoryPackPreviewStatus.Contains("未验证", StringComparison.Ordinal),
+            "载入示例必须保留未验证资产的清晰提示");
         vm.StoryPackJson = "{}";
         SmokeAssert.True(vm.CanPreviewStoryPack, "输入存在后应支持手动只读预览");
         SmokeAssert.True(vm.StoryPackPreviewStatus.Contains("草稿已改变", StringComparison.Ordinal),
