@@ -43,6 +43,7 @@ from .routes import (
     results,
     returns,
     status,
+    studio,
     tasks,
     workers,
 )
@@ -170,4 +171,6 @@ def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(results.router, prefix=prefix, tags=["results"])
     app.include_router(events.router, prefix=prefix, tags=["events"])
     app.include_router(status.router, prefix=prefix, tags=["status", "audit"])
+    # V3.1 UI 只读适配层；2.3 Production / Owner / Worker 原路由保持权威。
+    app.include_router(studio.router, prefix=prefix, tags=["studio-preview"])
     return app
