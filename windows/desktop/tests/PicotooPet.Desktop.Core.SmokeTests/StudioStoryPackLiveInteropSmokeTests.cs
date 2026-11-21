@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Networking;
+using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.ViewModels;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
@@ -41,6 +42,21 @@ internal static class StudioStoryPackLiveInteropSmokeTests
             "真正的 P0 剧本应包含茅台形象锚点和明确故事结局");
         var preview = await client.PreviewStudioStoryPackAsync(pack).ConfigureAwait(false);
 
+        // 使用「真实 Core 接口返回」的 Goal 提案，而不是 Windows 假服务或自编 ProductionPlan。
+        SmokeAssert.True(
+            CreativeIntelligencePanelViewModel.TryGetCanonicalGoalIntake(
+                preview, out var canonicalObjective, out var canonicalDigest),
+            "真实 Mac 2.3 StoryPack 预览未能生成可审阅的 canonical Goal 提案");
+        SmokeAssert.Equal(
+            preview.GetProperty("storypack_sha256").GetString(), canonicalDigest,
+            "真实 Core 返回的 Goal 绑定不一致");
+        var canonicalRequest = new HumanGoalCreateRequest(
+            "video.creative", canonicalObjective, "standard");
+        SmokeAssert.True(
+            canonicalRequest.Objective.Contains("荧绿色", StringComparison.Ordinal)
+            && canonicalRequest.Objective.Contains("第一口", StringComparison.Ordinal),
+            "Core 的 Human Goal 提案丢失了茅台身份或故事结局");
+        // 这一步仅测试可兼容的请求形状；真实创建须用户二次点击确认。
         SmokeAssert.Equal(3, preview.GetProperty("shot_count").GetInt32(),
             "真实跨语言 HTTP 没有保留三个镜头");
         SmokeAssert.Equal(12, preview.GetProperty("output").GetProperty("planned_duration_s").GetInt32(),
