@@ -214,7 +214,11 @@ rollback_failed_core_install() {
   fi
 
   if [ "$restore_ok" -eq 1 ]; then
-    echo "ROLLBACK=RESTORED_PREVIOUS_CORE" >&2
+    if [ "$PREVIOUS_EXISTS" -eq 1 ]; then
+      echo "ROLLBACK=RESTORED_PREVIOUS_CORE" >&2
+    else
+      echo "ROLLBACK=REMOVED_FAILED_FIRST_INSTALL" >&2
+    fi
   else
     echo "STOP=ROLLBACK_REQUIRES_MANUAL_RECOVERY" >&2
   fi
