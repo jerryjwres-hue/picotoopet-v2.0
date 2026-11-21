@@ -138,9 +138,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private async Task ConnectAsync(string token, CancellationToken cancellationToken)
     {
-        if (!Uri.TryCreate(MacBaseUrl, UriKind.Absolute, out var baseUri))
+        if (!Uri.TryCreate(MacBaseUrl, UriKind.Absolute, out var baseUri)
+            || !SecureCoreEndpoint.IsAllowed(baseUri))
         {
-            throw new InvalidOperationException("Mac 地址格式无效。");
+            // 旧兼容入口同样不得把 Credential Manager 的 Bearer 发往局域网明文地址。
+            throw new InvalidOperationException(
+                "Mac 地址仅允许经 SSH 转发的本机 HTTP 或可信 HTTPS。");
         }
         if (string.IsNullOrWhiteSpace(token))
         {

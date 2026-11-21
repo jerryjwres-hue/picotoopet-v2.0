@@ -155,7 +155,11 @@ internal static class Program
             CapabilitySmokeTests.Run();
             WorkerStatusSmokeTests.Run();
             StateStoreSmokeTests.Run();
-            NavigationSmokeTests.Run();
+            // 设备令牌在进入 HTTP/WebSocket 之前必须先通过安全地址检查。
+            SecureCoreEndpointSmokeTests.Run();
+            // 设备令牌在进入 HTTP/WebSocket 之前必须先通过安全地址检查。
+        SecureCoreEndpointSmokeTests.Run();
+        NavigationSmokeTests.Run();
             CoalescingUiDispatcherSmokeTests.Run();
             OperatorSimpleModeSmokeTests.Run();
             GoalVideoReturnParserSmokeTests.Run();
