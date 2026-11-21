@@ -299,6 +299,30 @@ def test_control_center_and_release_ci_have_non_overlapping_required_gates() -> 
         assert required in film
 
 
+def test_control_center_ci_builds_before_ui_smoke_without_rebuilding_loaded_dll() -> None:
+    """先编译再执行 WPF 冒烟，禁止运行中重新覆盖被加载的 DLL。"""
+
+    workflow = (
+        ROOT / ".github" / "workflows" / "windows-control-center-ci.yml"
+    ).read_text(encoding="utf-8")
+
+    # 旧绑定变异测试会清理测试产物，完整严格构建必须在其后。
+    legacy = workflow.index("- name: Reproduce legacy Task Center binding failure")
+    compile_gate = workflow.index("- name: Build WPF solution with warnings as errors")
+    ui_smoke = workflow.index("- name: Run isolated Control Center UI interaction smoke")
+    self_test = workflow.index("- name: Run published Control Center self-test")
+    assert legacy < compile_gate < ui_smoke < self_test
+
+    # UI 冒烟与正式自检都只执行已编译二进制，避免 MSB3026 DLL 文件锁。
+    ui_step = workflow[ui_smoke:self_test]
+    self_step = workflow[self_test:workflow.index("- name: Upload compact WPF evidence")]
+    assert "--ui-interaction-only" in ui_step
+    assert "--self-test" in self_step
+    assert "--no-build" in ui_step
+    assert "--no-build" in self_step
+    assert "-warnaserror" in workflow[compile_gate:ui_smoke]
+
+
 def test_package_verifies_task_center_and_worker_fallback() -> None:
     """真实 ZIP 载荷必须运行桌面自检，并由自检报告覆盖任务中心与 Worker 降级。"""
 
