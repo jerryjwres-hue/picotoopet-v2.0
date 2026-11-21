@@ -316,6 +316,23 @@ if ([string]$selfTest.product_version -ne $ProductVersion -or
     throw "桌面自检产品版本文案不一致。"
 }
 
+# 将经过原生 PowerShell 5.1 自测的隧道入口加入 payload 哈希清单，
+# 安装后不需要保留 ZIP 解压目录；隧道不接触设备 Token 或 GPU。
+$tunnelDirectory = Join-Path $payloadRoot "tools\\connection"
+New-Item -ItemType Directory -Path $tunnelDirectory -Force | Out-Null
+foreach ($name in @("CONNECT_MAC_SECURE.vbs", "Start-SecureMacTunnel.ps1")) {
+    Copy-ReleaseFile `
+        -Source (Join-Path $desktopRoot "release\\$name") `
+        -Destination (Join-Path $tunnelDirectory $name)
+}
+$tunnelTest = Invoke-NativeCommand -FilePath (Join-Path $env:WINDIR "System32\\WindowsPowerShell\\v1.0\\powershell.exe") -Arguments @(
+    "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+    "-File", (Join-Path $tunnelDirectory "Start-SecureMacTunnel.ps1"), "-SelfTest"
+) -TimeoutSeconds 20
+if ($tunnelTest.StdOut -notmatch "SECURE_MAC_TUNNEL_SELFTEST=PASS_NO_NETWORK_NO_GPU") {
+    throw "Windows 隧道安全自测失败，拒绝打包。"
+}
+
 $files = @(
     Get-ChildItem -LiteralPath $payloadRoot -File -Recurse |
     Sort-Object FullName |
@@ -426,6 +443,8 @@ $releaseFiles = @(
     "Verify-Phase2Prebuilt.ps1",
     "ROLLBACK_PHASE2_WINDOWS.vbs",
     "Rollback-Phase2Prebuilt.ps1",
+    "CONNECT_MAC_SECURE.vbs",
+    "Start-SecureMacTunnel.ps1",
     "README_INSTALL_CN.txt"
 )
 foreach ($file in $releaseFiles) {
