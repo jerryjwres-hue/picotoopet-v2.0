@@ -7,7 +7,7 @@ SOURCE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNTIME_ROOT="$HOME/Library/Application Support/PicotooPetV2"
 # 版本名必须来自这份 2.3 Core 的真实产品版本，严禁回退到 2.2 的伪标签。
 PRODUCT_VERSION="$(cat "$SOURCE_ROOT/src/picotoopet_core/product-version.txt")"
-if [[ ! "$PRODUCT_VERSION" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+if [[ ! "$PRODUCT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "STOP=INVALID_PRODUCT_VERSION" >&2
   exit 1
 fi
@@ -101,42 +101,40 @@ source = Path(sys.argv[1]) / "deploy" / "macos"
 home = sys.argv[2]
 destination = Path(sys.argv[3])
 api_port = sys.argv[4]
-for name in ("com.picotoopet.mac-core.plist", "com.picotoopet.health-supervisor.plist"):
+for name in ("com.picotoopet.mac-core.plist",):
     text = (source / name).read_text(encoding="utf-8")
     text = text.replace("__HOME__", home).replace("__API_PORT__", api_port)
     (destination / name).write_text(text, encoding="utf-8")
 PY
 
-# 避免 launchd 异步注销时返回 37；只注册本产品这两个服务，保留 8765 AI Server。
-for label in com.picotoopet.mac-core com.picotoopet.health-supervisor; do
-  launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
-done
-for label in com.picotoopet.mac-core com.picotoopet.health-supervisor; do
-  unloaded=0
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
-      unloaded=1
-      break
-    fi
-    sleep 1
-  done
-  if [ "$unloaded" != 1 ]; then
-    echo "STOP=LAUNCHAGENT_UNLOAD_TIMEOUT:$label" >&2
-    exit 1
+# 只重启 Mac Core；恢复现场的 Health Supervisor 继续保持未启动态，不由升级器启动。
+# 这里不会调用 Windows Worker、ComfyUI，也不会授予任何 GPU 生产许可。
+label=com.picotoopet.mac-core
+launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
+unloaded=0
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+    unloaded=1
+    break
   fi
-  bootstrapped=0
-  for attempt in 1 2 3 4 5 6 7 8; do
-    if launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/$label.plist"; then
-      bootstrapped=1
-      break
-    fi
-    sleep 1
-  done
-  if [ "$bootstrapped" != 1 ]; then
-    echo "STOP=LAUNCHAGENT_BOOTSTRAP_FAILED:$label" >&2
-    exit 1
-  fi
+  sleep 1
 done
+if [ "$unloaded" != 1 ]; then
+  echo "STOP=LAUNCHAGENT_UNLOAD_TIMEOUT:$label" >&2
+  exit 1
+fi
+bootstrapped=0
+for attempt in 1 2 3 4 5 6 7 8; do
+  if launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/$label.plist"; then
+    bootstrapped=1
+    break
+  fi
+  sleep 1
+done
+if [ "$bootstrapped" != 1 ]; then
+  echo "STOP=LAUNCHAGENT_BOOTSTRAP_FAILED:$label" >&2
+  exit 1
+fi
 
 "$CURRENT/.venv/bin/picotoopet-core" health --skip-ollama > "$RUNTIME_ROOT/state/install-health.json"
 open "$RUNTIME_ROOT/state/install-health.json"
