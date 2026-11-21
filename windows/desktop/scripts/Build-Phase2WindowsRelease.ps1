@@ -313,6 +313,8 @@ Invoke-NativeCommand -FilePath $appExecutable -Arguments @(
     "--self-test", "--self-test-output", $selfTestPath
 ) -TimeoutSeconds 60 | Out-Null
 Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--self-test") -TimeoutSeconds 30 | Out-Null
+# 即使诊断 EXE 直接运行也不得从 Credential Manager 向 LAN HTTP 发送 Bearer。
+Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--endpoint-policy-self-test") -TimeoutSeconds 30 | Out-Null
 if (-not (Test-Path -LiteralPath $selfTestPath -PathType Leaf)) {
     throw "桌面自检没有生成报告。"
 }
