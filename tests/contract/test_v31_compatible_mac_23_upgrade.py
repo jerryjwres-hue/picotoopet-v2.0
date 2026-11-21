@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
+import shutil
+
+import pytest
 import subprocess
 import sys
 from pathlib import Path
@@ -49,12 +52,19 @@ def _historical_db(tmp_path: Path, version: int = 24, *, foreign_v4: bool = Fals
     return database
 
 
-def _run(database: Path, backup_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    database: Path,
+    backup_dir: Path | None = None,
+    *,
+    require_existing: bool = False,
+) -> subprocess.CompletedProcess[str]:
     """始终运行真实安装器调用的独立 SQLite 兼容检查程序。"""
 
     command = [sys.executable, str(PREFLIGHT), "--database", str(database)]
     if backup_dir is not None:
         command.extend(["--backup-dir", str(backup_dir)])
+    if require_existing:
+        command.append("--require-existing")
     return subprocess.run(command, text=True, capture_output=True, check=False, timeout=30)
 
 
@@ -155,3 +165,64 @@ def test_actual_schema24_created_by_23_core_is_compatible(tmp_path: Path) -> Non
     check = _run(path)
     assert check.returncode == 0, check.stderr
     assert "SCHEMA=COMPATIBLE_24" in check.stdout
+
+
+def test_installed_core_requires_existing_database(tmp_path: Path) -> None:
+    """恢复现场已有 current 链接时，缺失历史数据库必须 STOP，绝不初始化空库。"""
+
+    source = tmp_path / "database" / "core.db"
+    result = _run(source, require_existing=True)
+    assert result.returncode == 2
+    assert "STOP=DATABASE_COMPATIBILITY:MISSING_EXISTING_DATABASE" in result.stderr
+    assert not source.exists()
+    installer = INSTALL.read_text(encoding="utf-8")
+    assert 'DB_REQUIRE=(--require-existing)' in installer
+    assert '"${DB_REQUIRE[@]}"' in installer
+
+
+def test_dangling_database_symlink_is_not_fresh_install(tmp_path: Path) -> None:
+    """无论 Unix 链接目标是否存在，都不得误判成安全的新 DB。"""
+
+    source = tmp_path / "core.db"
+    try:
+        source.symlink_to(tmp_path / "missing-target.db")
+    except (OSError, NotImplementedError):
+        pytest.skip("This runner cannot create symlinks")
+    result = _run(source)
+    assert result.returncode == 2
+    assert "UNSAFE_EXISTING_DATABASE" in result.stderr
+
+
+def test_installer_product_version_regex_matches_real_runtime() -> None:
+    """解析实际安装脚本的 Bash 正则，防止双反斜杠让 2.3.27.1 无法安装。"""
+
+    if shutil.which("bash") is None:
+        pytest.skip("Bash unavailable on runner")
+    installer = INSTALL.read_text(encoding="utf-8")
+    line = next(
+        line for line in installer.splitlines()
+        if line.startswith('if [[ ! "$PRODUCT_VERSION" =~ ')
+    )
+    pattern = line.removeprefix('if [[ ! "$PRODUCT_VERSION" =~ ').removesuffix(' ]]; then')
+    for version, expected in (("2.3.27.1", 0), ("2.2.0", 1), ("2x3x27x1", 1)):
+        result = subprocess.run(
+            ["bash", "-c", f'PRODUCT_VERSION={version}; [[ "$PRODUCT_VERSION" =~ {pattern} ]]'],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == expected, (version, result.stderr)
+    assert 'VERSION="${PRODUCT_VERSION}-v31-compat-' in installer
+    assert '-$$"' in installer
+
+
+def test_core_only_upgrade_never_launches_supervisor_or_worker() -> None:
+    """当前阶段允许 Core 升级，但不得将 Health Supervisor、Worker 或 GPU 自动启动。"""
+
+    installer = INSTALL.read_text(encoding="utf-8")
+    assert 'label=com.picotoopet.mac-core' in installer
+    assert 'for name in ("com.picotoopet.mac-core.plist",):' in installer
+    assert 'label=com.picotoopet.health-supervisor' not in installer
+    assert 'com.picotoopet.health-supervisor.plist"' not in installer
+    assert "picotoopet-core worker" not in installer
