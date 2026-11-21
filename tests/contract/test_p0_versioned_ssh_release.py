@@ -168,3 +168,17 @@ def test_release_workflow_has_no_duplicated_or_truncated_job_sections() -> None:
     assert workflow.count("      - name: Verify install upgrade recovery rollback lifecycle") == 1
     assert workflow.count("      - name: Publish Preview run provenance to source commit") == 1
     assert workflow.rstrip().endswith("});")
+
+
+def test_ssh_shortcut_filename_is_ascii_for_native_windows_legacy_codepages() -> None:
+    """英文 Windows 的 WScript COM 不得因中文快捷方式文件名导致安装失败。"""
+
+    common = COMMON.read_text(encoding="utf-8-sig")
+    builder = BUILDER.read_text(encoding="utf-8-sig")
+    path_func = common[common.index("function Get-PicotooTunnelShortcutPath"):
+                       common.index("function Set-PicotooTunnelShortcut")]
+    assert "Picotoo Pet Secure Connect.lnk" in path_func
+    assert "Picotoo Pet 安全连接.lnk" not in path_func
+    assert "Picotoo Pet Secure Connect" in builder
+    # 已有原生安装、篡改、升级、回滚检查继续使用同一个路径函数。
+    assert "Assert-PicotooTunnelShortcut" in LIFECYCLE.read_text(encoding="utf-8-sig")
