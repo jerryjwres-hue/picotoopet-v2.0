@@ -141,6 +141,22 @@ jobs:
             --nologo `
             -warnaserror
 
+      - name: Verify native diagnostics EXE never transmits Bearer over plaintext LAN
+        shell: powershell
+        run: |
+          # 使用已经严格编译的诊断 EXE；正反例无需设备令牌、Mac 服务或网络。
+          $policy = dotnet run `
+            --project windows/desktop/tools/PicotooPet.Desktop.Diagnostics/PicotooPet.Desktop.Diagnostics.csproj `
+            --configuration Release `
+            --no-build `
+            -- `
+            --endpoint-policy-self-test
+          $policy | Write-Host
+          if ($LASTEXITCODE -ne 0 -or
+              $policy -notcontains "DIAGNOSTICS_SECURE_ENDPOINT_POLICY=PASS; NO_BEARER_READ=TRUE; NO_NETWORK=TRUE") {
+              throw 'P0_NATIVE_DIAGNOSTICS_ENDPOINT_POLICY_FAILED'
+          }
+
       - name: Run isolated Control Center UI interaction smoke including ShellNavigationReconnectWpfSmokeTests
         shell: powershell
         run: |
