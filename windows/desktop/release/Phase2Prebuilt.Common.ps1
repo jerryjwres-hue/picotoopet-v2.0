@@ -1,4 +1,4 @@
-# Phase 2 Windows 预编译包共享兼容逻辑；安装、验证和回滚必须共同使用。
+﻿# Phase 2 Windows 预编译包共享兼容逻辑；安装、验证和回滚必须共同使用。
 
 $script:PicotooManagedShortcutPattern = '^Picotoo Pet AI(?: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)?\.lnk$'
 $script:PicotooProductVersionPattern = '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
