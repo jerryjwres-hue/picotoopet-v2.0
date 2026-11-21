@@ -309,7 +309,10 @@ try {
     )
     if ($script:StrictP0Rollback) {
         if ([string]$currentManifest.validation_scope -ne 'windows-ui-preview' -or
-            [string]$manifest.validation_scope -ne 'windows-ui-preview') {
+            [string]$manifest.validation_scope -ne 'windows-ui-preview' -or
+            $currentManifest.p0_hold_aware -ne $true -or
+            $manifest.p0_hold_aware -ne $true) {
+            # 不用旧版或伪兼容的 UI Preview manifest 默许 GPU Worker 安全。
             throw 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED'
         }
         $gateFile = Join-Path $env:LOCALAPPDATA 'PicotooPetV2\\MediaWorker\\v1\\three-shot-acceptance.json'
