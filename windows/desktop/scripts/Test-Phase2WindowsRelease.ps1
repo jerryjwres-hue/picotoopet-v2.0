@@ -660,6 +660,40 @@ function Invoke-LifecycleFixture {
             -DesktopDirectory $DesktopDirectory `
             -RequireNoLegacy)
 
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            # 原生负例 3：失败恢复至未知旧版时，应仅保留手动快捷方式，绝不能开机自动重启 Worker。
+            $oldManifestPath = Join-Path $dataRoot "versions\\$versionA\\release-manifest.json"
+            $oldOriginal = [IO.File]::ReadAllText($oldManifestPath, [Text.UTF8Encoding]::new($false, $true))
+            try {
+                $oldMetadata = $oldOriginal | ConvertFrom-Json
+                $oldMetadata.validation_scope = 'full-release'
+                Write-JsonUtf8 -Value $oldMetadata -Path $oldManifestPath
+                [void](Invoke-ReleaseScript -ScriptPath $installerFailure -Arguments @(
+                    '-PackageRoot', $packageFailure,
+                    '-DataRoot', $dataRoot,
+                    '-DesktopDirectory', $DesktopDirectory,
+                    '-ActivationSelfTest', '-SuppressReportOpen'
+                ) -ExpectedExitCodes @(1))
+                $unsafeRecovery = Copy-ValidatedReport -DataRoot $dataRoot `
+                    -Filter 'phase2-prebuilt-install-*.json' `
+                    -Destination (Join-Path $EvidenceRoot "$Name-legacy-startup-refusal.json") `
+                    -ExpectedStatus 'fail'
+                if ([string]$unsafeRecovery.recovery_startup -ne 'DISABLED_UNVERIFIED_OLD_WORKER') {
+                    throw 'P0_LEGACY_WORKER_STARTUP_WAS_NOT_DISABLED'
+                }
+                $afterUnsafe = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+                if (@($afterUnsafe | Where-Object location -eq 'startup').Count -ne 0) {
+                    throw 'P0_LEGACY_STARTUP_SHORTCUT_STILL_PRESENT'
+                }
+                [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionA -PreviousVersion $versionB `
+                    -CurrentProductVersion $productVersionA -PreviousProductVersion $productVersionB)
+                Write-Host 'P0_PREVIEW_UNVERIFIED_LEGACY_AUTOSTART_DISABLED=PASS'
+            }
+            finally {
+                [IO.File]::WriteAllText($oldManifestPath, $oldOriginal, [Text.UTF8Encoding]::new($false))
+            }
+        }
+
         Write-Host "PHASE2_WINDOWS_LIFECYCLE_FIXTURE=PASS | $Name"
     }
     finally {
