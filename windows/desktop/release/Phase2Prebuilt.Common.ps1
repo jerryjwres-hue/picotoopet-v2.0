@@ -230,6 +230,38 @@ function Restore-PicotooManagedShortcutSnapshot {
     return @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
 }
 
+function Set-PicotooTunnelShortcut {
+    param([string]$VersionRoot = "")
+
+    # 仅指向已完成 manifest SHA256 核对的安装目录；旧版不含隧道时清理快捷方式。
+    # 不自动发起 SSH：只有用户点击开始菜单才会启动安全连接。
+    $directory = Join-Path $env:APPDATA "Microsoft\\Windows\\Start Menu\\Programs"
+    $shortcutPath = Join-Path $directory "Picotoo Pet 安全连接.lnk"
+    $tunnelDir = if ($VersionRoot) { Join-Path $VersionRoot "tools\\connection" } else { "" }
+    $launcher = if ($tunnelDir) { Join-Path $tunnelDir "CONNECT_MAC_SECURE.vbs" } else { "" }
+    $script = if ($tunnelDir) { Join-Path $tunnelDir "Start-SecureMacTunnel.ps1" } else { "" }
+    if (-not $launcher -or -not (Test-Path -LiteralPath $launcher -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $script -PathType Leaf)) {
+        Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+        return
+    }
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        $shortcut                  = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath       = Join-Path $env:WINDIR "System32\\wscript.exe"
+        $shortcut.Arguments        = '"' + $launcher + '"'
+        $shortcut.WorkingDirectory = $tunnelDir
+        $shortcut.Description      = "PicotooPet Mac SSH 安全连接（点击后启动）"
+        $shortcut.Save()
+    }
+    finally {
+        if ($null -ne $shell -and [Runtime.InteropServices.Marshal]::IsComObject($shell)) {
+            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+        }
+    }
+}
+
 function Set-PicotooShortcuts {
     param(
         [Parameter(Mandatory)][string]$Executable,
