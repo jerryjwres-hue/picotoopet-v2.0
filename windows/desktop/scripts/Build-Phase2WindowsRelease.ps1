@@ -508,7 +508,7 @@ P0 #91 严格三镜头开发预览 — 首次安装前必读（不是正式 Rele
    three-shot-acceptance.json（schema_version=1.0 / mode=hold）和 three-shot-acceptance.json.armed。
    缺任一项：STOP，不可安装/启动 GUI/Worker。
 ④ 然后才能运行 INSTALL_PHASE2_WINDOWS.vbs。UiPreview 安装器会再次核验 HOLD + .armed，
-   安装成功后，开始菜单的“Picotoo Pet 安全连接”需要用户主动点击，仅创建安全 SSH 隧道，
+   安装成功后，开始菜单的“Picotoo Pet Secure Connect”（安全连接）需要用户主动点击，仅创建安全 SSH 隧道，
    首次要求预先验证 known_hosts、公钥认证及 Mac Remote Login；不自动启动 GPU/Worker。
    缺失则拒绝安装激活。安装器不会替你授权模型推理或 Comfy GPU POST。
 ⑤ 保持 HOLD：只读审核 Mac Core 认证、唯一 Production Job、exactly 3 T2V Task、冻结 Plan Digest。
