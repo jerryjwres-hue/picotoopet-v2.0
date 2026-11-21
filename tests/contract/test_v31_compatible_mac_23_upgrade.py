@@ -226,3 +226,5 @@ def test_core_only_upgrade_never_launches_supervisor_or_worker() -> None:
     assert 'label=com.picotoopet.health-supervisor' not in installer
     assert 'com.picotoopet.health-supervisor.plist"' not in installer
     assert "picotoopet-core worker" not in installer
+    rollback = (ROOT / "scripts/mac/ROLLBACK_MAC.command").read_text(encoding="utf-8")
+    assert "com.picotoopet.health-supervisor" not in rollback
