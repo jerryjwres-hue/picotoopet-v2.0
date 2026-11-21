@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/p0-296-real-mac23-compat.yml"
       - "scripts/mac/INSTALL_MAC.command"
+      - "scripts/mac/ROLLBACK_MAC.command"
       - "scripts/mac/lib/check_install_database.py"
       - "deploy/macos/com.picotoopet.mac-core.plist"
       - "tests/contract/test_v31_compatible_mac_23_upgrade.py"
