@@ -96,7 +96,9 @@ def test_native_release_builder_publishes_before_running_its_wpf_smoke() -> None
     assert first_publish < full_pet_smoke < app_self_test
     smoke_args = builder.index('$smokeArguments = @(')
     assert first_publish < smoke_args < ui_smoke
-    assert '"--no-build"' in builder[smoke_args:ui_smoke]
+    assert "$smokeArguments = @($smokeDll)" in builder[smoke_args:ui_smoke]
+    assert '"--ui-interaction-only"' in builder[smoke_args:ui_smoke]
+    assert "P0_RELEASE_SMOKE_COMPLETION_MARKER_MISSING" in builder[ui_smoke:app_self_test]
 
 
 def test_native_publish_cannot_hang_on_inherited_smoke_stdout_pipes() -> None:
@@ -120,7 +122,10 @@ def test_native_publish_cannot_hang_on_inherited_smoke_stdout_pipes() -> None:
     assert "$process.WaitForExit()" not in native
     assert "$process.WaitForExit($TimeoutSeconds * 1000)" in native
     assert 'Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot -CaptureOutput' in builder
-    assert builder.count("-CaptureOutput") == 1
+    # SDK 版本读取与直接执行测试 DLL 均为显式有界捕获。
+    assert builder.count("-CaptureOutput") == 3
+    assert "native_smoke_exit    = [int]$smokeResult.ExitCode" in builder
+    assert "native_smoke_marker  = $smokeMarker" in builder
 
 
 def test_native_release_reuses_validated_ui_smoke_without_second_wpf_run() -> None:
