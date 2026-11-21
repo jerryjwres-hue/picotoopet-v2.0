@@ -110,13 +110,30 @@ function Invoke-CheckedProcess {
     }
 }
 
+# 与 Studio 相同的 fail-closed 地址策略：诊断工具也可能读取设备 Token。
+# 必须在任何启动 GUI 或网络诊断之前拒绝旧保存的明文局域网地址。
+function Assert-SecureCoreAddress {
+    param([Parameter(Mandatory)][string]$Url)
+
+    $uri = [Uri]$Url
+    if (-not $uri.IsAbsoluteUri -or $uri.UserInfo.Length -ne 0 -or
+        $uri.Query.Length -ne 0 -or $uri.Fragment.Length -ne 0 -or
+        $uri.AbsolutePath -ne "/") {
+        throw "不安全 Mac Core 地址：只允许原生 HTTPS 或 SSH 本机环回。"
+    }
+    if (($uri.Scheme -eq 'http' -and $uri.IsLoopback) -or $uri.Scheme -eq 'https') {
+        return $uri.AbsoluteUri.TrimEnd('/')
+    }
+    throw "不安全 Mac Core 地址：请改用 http://127.0.0.1:18766 或可信 HTTPS。"
+}
+
 $dataRoot     = $DataRoot
 $currentPath  = Join-Path $dataRoot "current_version.json"
 $reportsRoot  = Join-Path $dataRoot "reports"
 $reportPath   = Join-Path $reportsRoot "phase2-windows-verification.json"
 $selfTestPath = Join-Path $reportsRoot "phase2-windows-verification-self-test.json"
 $settingsPath = Join-Path $env:LOCALAPPDATA "PicotooPetV2\Desktop\settings.json"
-$baseUrl      = "http://127.0.0.1:8766"
+$baseUrl      = "http://127.0.0.1:18766"
 $exitCode     = 2
 New-Item -ItemType Directory -Path $reportsRoot -Force | Out-Null
 
@@ -211,6 +228,8 @@ try {
                 }
             }
         }
+
+        $baseUrl = Assert-SecureCoreAddress -Url $baseUrl
 
         if ($null -eq (Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue)) {
             Start-Process -FilePath $executable -WorkingDirectory ([string]$current.path)
