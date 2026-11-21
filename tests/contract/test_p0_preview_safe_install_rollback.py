@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 INSTALL = ROOT / "windows/desktop/release/Install-Phase2Prebuilt.ps1"
 ROLLBACK = ROOT / "windows/desktop/release/Rollback-Phase2Prebuilt.ps1"
 COMMON = ROOT / "windows/desktop/release/Phase2Prebuilt.Common.ps1"
+BUILDER = ROOT / "windows/desktop/scripts/Build-Phase2WindowsRelease.ps1"
 LIFECYCLE = ROOT / "windows/desktop/scripts/Test-Phase2WindowsRelease.ps1"
 NATIVE = ROOT / ".github/workflows/windows-ui-preview-release.yml"
 
@@ -29,6 +30,7 @@ def test_failed_preview_install_does_not_auto_restart_legacy_worker() -> None:
     source = INSTALL.read_text(encoding="utf-8-sig")
     assert "$report.recovery_activation = 'BLOCKED_OLD_WORKER_NOT_AUTOSTARTED'" in source
     assert "$report.recovery_startup = 'DISABLED_UNVERIFIED_OLD_WORKER'" in source
+    assert "$previousManifest.p0_hold_aware -eq $true" in source
     assert "Get-PicotooManagedShortcutFiles" in source
     assert "if ([string]$managed.location -eq 'startup')" in source
     assert source.index("$report.recovery_activation = 'BLOCKED_OLD_WORKER_NOT_AUTOSTARTED'") < (
@@ -50,6 +52,9 @@ def test_preview_rollback_requires_armed_hold_and_verified_target_before_switch(
     ):
         assert source.index(required) < switch
     assert "if ($script:StrictP0Rollback)" in source
+    assert "$manifest.p0_hold_aware -ne $true" in source
+    builder = BUILDER.read_text(encoding="utf-8-sig")
+    assert 'p0_hold_aware        = ($ValidationScope -eq "UiPreview")' in builder
 
 
 def test_native_release_lifecycle_exercises_both_rollback_negative_cases() -> None:
@@ -61,6 +66,7 @@ def test_native_release_lifecycle_exercises_both_rollback_negative_cases() -> No
         "P0_PREVIEW_ROLLBACK_HOLD_AND_OLD_WORKER_NEGATIVES=PASS",
         "P0_PREVIEW_ROLLBACK_ALLOW_NOT_REFUSED",
         "P0_PREVIEW_ROLLBACK_UNVERIFIED_TARGET_ACCEPTED",
+        "P0_PREVIEW_ROLLBACK_UNMARKED_TARGET_ACCEPTED",
         "P0_PREVIEW_FAILURE_MUST_NOT_AUTO_START_OLD_WORKER",
         "P0_PREVIEW_UNVERIFIED_LEGACY_AUTOSTART_DISABLED=PASS",
         "P0_LEGACY_STARTUP_SHORTCUT_STILL_PRESENT",
