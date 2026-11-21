@@ -14,6 +14,8 @@ WORKFLOW = ROOT / ".github/workflows/windows-phase2-release.yml"
 SMOKE = ROOT / "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs"
 BUILDER = ROOT / "windows/desktop/scripts/Build-Phase2WindowsRelease.ps1"
 PANEL = ROOT / "windows/desktop/src/PicotooPet.Desktop/Views/Controls/AssistantPetPanel.Maotai.cs"
+STATUS_PANEL = ROOT / "windows/desktop/src/PicotooPet.Desktop/Views/Controls/AssistantPetPanel.xaml.cs"
+STATUS_XAML = ROOT / "windows/desktop/src/PicotooPet.Desktop/Views/Controls/AssistantPetPanel.xaml"
 MANUAL = ROOT / "docs/p0_296/REAL_23_V31_ARCHITECTURE_GATES.md"
 
 
@@ -56,6 +58,19 @@ class DormantDesktopPetContractTests(unittest.TestCase):
             r"MaotaiV2Root.Visibility = Visibility.Collapsed;[\s\S]*?return;",
         )
         self.assertIn("Loaded            += MaotaiPet_Loaded;", source)
+
+    def test_parked_status_ui_has_no_pet_canvas_or_animation_timer(self):
+        """原有 Mac Core/Worker 状态仍可见，但艺术舞台和循环动画停止。"""
+
+        panel = STATUS_PANEL.read_text(encoding="utf-8")
+        layout = STATUS_XAML.read_text(encoding="utf-8")
+        self.assertIn('x:Name="AssistantStatusCardGrid"', layout)
+        self.assertIn('PetStage.Visibility = Visibility.Collapsed;', panel)
+        self.assertIn('FloatButton.Visibility = Visibility.Collapsed;', panel)
+        self.assertIn('AssistantStatusCardGrid.RowDefinitions[2].Height = new GridLength(0);', panel)
+        self.assertIn('if (!DesktopPetV2Enabled)', panel)
+        self.assertIn('if (!DesktopPetV2Enabled || !_isLoaded || !IsVisible)', panel)
+        self.assertIn('SuspendContinuousMotion();', panel)
 
     def test_architecture_manual_declares_dormant_nonblocking_extension(self):
         source = MANUAL.read_text(encoding="utf-8")
