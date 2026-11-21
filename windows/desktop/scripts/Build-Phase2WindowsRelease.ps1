@@ -405,6 +405,8 @@ $manifest = [ordered]@{
     sdk_version          = $sdkVersion
     validation_scope      = $validationScopeText
     full_release         = $fullRelease
+    # 新版影视预览经过原生 P0 三镜头/HOLD 测试；历史包缺少此标记即视为未知 Worker。
+    p0_hold_aware        = ($ValidationScope -eq "UiPreview")
     built_at             = (Get-Date).ToUniversalTime().ToString("o")
     commit               = $buildCommit
     build_commit         = $buildCommit
