@@ -275,7 +275,7 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
 
     private static CreativePackageRecord V2CandidatePackage() => Package() with
     {
-        Manifest = JsonDocument.Parse("""
+        Manifest = JsonElement.Parse("""
         {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1",
          "quality_outcome":"PASS","source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
          "stage_results":{"video_bible.v1":{},"keyframe_kit.v1":{},"script.v1":{},
@@ -283,31 +283,31 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
              {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO"},
              {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO"},
              {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO"}]}}}
-        """).RootElement.Clone(),
+        """),
     };
 
     private static CreativePackageRecord V1TextCandidatePackage() => Package() with
     {
-        Manifest = JsonDocument.Parse("""
+        Manifest = JsonElement.Parse("""
         {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1",
          "quality_outcome":"PASS","source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
          "stage_results":{"shot_plan.v1":{"shots":[
              {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO"},
              {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO"},
              {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO"}]}}}
-        """).RootElement.Clone(),
+        """),
     };
 
     private static GoalVideoContinuationRecord Continuation() => new("11111111-1111-4111-8111-111111111111", new string('a', 64),
         new string('b', 64), "job-1", "22222222-2222-4222-8222-222222222222", new string('c', 64), "creative_ready", null, null);
 
     private static CreativePackageRecord Package() => new("22222222-2222-4222-8222-222222222222", "job-1", new string('d', 64),
-        new string('c', 64), "packages/package-1.zip", JsonDocument.Parse("""
+        new string('c', 64), "packages/package-1.zip", JsonElement.Parse("""
         {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1","quality_outcome":"PASS",
          "source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
          "stage_results":{"shot_plan.v1":{"shots":[{"shot_id":"shot-1","render_intent":"IMAGE_TO_VIDEO"},
          {"shot_id":"text-shot","render_intent":"TEXT_TO_VIDEO"}]}}}
-        """).RootElement.Clone(), "PASS", DateTimeOffset.UtcNow);
+        """), "PASS", DateTimeOffset.UtcNow);
 
     private sealed class RecordingGateway : IReferenceBatchGateway
     {

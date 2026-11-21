@@ -256,6 +256,15 @@ if ($ValidationScope -eq "UiPreview") {
 }
 Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments -WorkingDirectory $desktopRoot | Out-Null
 
+if ($ValidationScope -eq "Full") {
+    # 桌宠是暂停的可选子系统；仅手动完整桌宠版 Release 运行其独立素材门禁。
+    # 非桌宠的 CI/影视工作站构建绝不隐式触发此昂贵且目前缺素材的验收。
+    Invoke-NativeCommand -FilePath $dotnet -Arguments @(
+        "run", "--project", $smokeProject, "--configuration", "Release",
+        "--no-build", "--", "--desktop-pet-acceptance-only"
+    ) -WorkingDirectory $desktopRoot | Out-Null
+}
+
 Invoke-NativeCommand -FilePath $dotnet -Arguments @(
     "restore", $appProject, "--runtime", "win-x64", "--nologo",
     "-p:PublishReadyToRun=true"

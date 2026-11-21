@@ -73,3 +73,48 @@ QC、局部重试、拼接和收据归档尽量由确定性的本地执行器完
 不得替换真实 2.3 Core 数据库、绕过 Owner/MASTER HOLD、复制 2.2 迁移、
 增加并行执行器、自动启动 Supervisor/Worker、以模拟或 CI 结果代替实机验证，
 或要求用户反复执行大量终端命令来补救版本集成问题。
+
+
+## 七、2026-11-20 决策：桌宠 V2 冻结，双机视频生产架构 P0
+
+**决策状态：用户明确要求；本节覆盖此前任何“桌宠 44 PNG 应优先补齐”的开发排序。**
+
+### 7.1 暂停范围
+
+- 暂停 `windows/desktop/src/PicotooPet.Desktop/Assets/Maotai/V2/` 的 44 个桌宠 Raster Skeleton PNG、`v1.png`、`motion_sheet.png` 的后续生成、分层、挑选、替换、视觉微调与相关动作验收工作。
+- 先前双足圆球形、蓝耳机的拟人桌宠方案**不是**当前电影角色身份标准；现有文件仅作为历史尝试记录，不能伪称《茅台》正式形象，也不要删除原始文件。
+- 桌宠的蓝色耳机、WPF 动作、10 分钟运动稳定性属于独立软件视觉附加功能；不得向**视频制作角色资产**施加其外观约束。电影角色以用户认可的真实阿拉斯加犬参考（黑白奶油色毛、荧绿色三角围巾、四足体态）为准。
+- 桌宠不作为本阶段 Mac Core、Creative、Production Plan、Windows Worker、Comfy、QC、FFmpeg、手机/网页操控的依赖或准入条件；不为它新增设计、模型、日常操作、GPU 工作量或新执行器。
+
+### 7.2 “绕过桌宠问题”的精确定义
+
+- **允许：** 在规划、任务排期、专门的视频生产集成测试中**跳过桌宠功能和桌宠视觉验收**；保留缺口清单和独立失败证据，开发一条与桌宠完全解耦的 P0 视频生产交付/验收路径。
+- **不允许：** 修改/删除 `MaotaiNaturalMotionV2AcceptanceSmokeTests` 来冒充完整正式 Windows Release PASS；创建空白或伪分层 PNG；谎报原版 Release、签名安装包、Owner/MASTER 授权、GPU 渲染或实机通过。
+- **事实标记：** 现有 `Phase 2.3 Slice D Windows Prebuilt Release` 仍因 `torso_neutral.png` 等 44 张素材缺失而 **BLOCKED（desktop-pet-only）**。与其独立的 P0 film-only 开发者构建可有自己的真实构建/哈希结果，但不能将 `user_install_allowed=false` 的内部预览包宣称为正式用户安装包。
+- 如果工程确需一个**可安装的、无桌宠依赖的影视工作站发行包**，单独定义清楚发行范围、功能禁用方式、签名/版本/回滚和安全验证，在真实原生 CI 全部通过后再申请用户实机安装授权；**不冒用原有完整 Release 标签**。
+
+### 7.3 新的唯一工作顺序（架构第一）
+
+1. **P0-A 权威架构集成：** 保留 Mac Core 2.3.27.1、SQLite schema 24 和真实历史任务；核对 V3.1 StoryPack/导演台 ↔ 原有 Creative Package / Goal / Production Job / 冻结 Plan 的合规映射。StoryPack 目前是只读预览，**不能直接当作可执行 Production Plan**。
+2. **P0-B 双机通信和恢复：** 保留 Ed25519 Challenge → Witness、Owner/MASTER/HOLD、单一 Windows Same-EXE Worker、Credential Manager / Keychain、私有 SSH/HTTPS 通道；验证双端真实 API、Outbox/Journal 恢复、重启去重及 `Lease=0 / Attempt=0 / Comfy POST=0` 的 HOLD 准入。
+3. **P0-C 最短用户入口：** Windows Studio 能清楚完成“提供故事→检查缺少哪些已认证宠物/场景资产→必要的主人审批→生产计划审阅”；减少反复粘贴 JSON、手动传文件或运行脚本。手机远程控制后续接同一个 Mac Core，不增加第二条队列或暴露公网 Bearer。
+4. **P0-D 真实首片：** 在用户**单独明确许可 GPU**、素材来源认证以及 Plan/Owner 门禁满足后，做《茅台》`3×4s / 832×480 / 24fps / 97 帧每镜`，经真实 QC、失败局部重试、FFmpeg 拼接和人工 ACCEPT；保存 MP4、每镜原始证据及可追溯哈希。
+5. **P1：** 首片完成后再迭代镜头良率、无限候选池、连续性、云端/手机便利性和日常自动化。桌宠功能仍处于冻结状态，只有用户重新明确授权才恢复。
+
+### 7.4 Claude/其他 Windows 执行者范围
+
+Windows 执行者应**先只读盘点当前 Mac 2.3 API/Windows 客户端契约与本地 Comfy/Wan/LTX/FFmpeg/Worker**；能安全完成的开发在独立分支+Draft PR 中实现并运行 CPU-only 原生 CI。不得为了“解决桌宠报错”改动核心门禁、让假资产通过测试，或启动 Comfy GPU POST。Windows 实机检查不等于 Mac 实机、完整影片或用户授权。
+
+**验收报告必须分别写：** ARCHITECTURE/CPU CI、WINDOWS LOCAL READ-ONLY、MAC LIVE/NETWORK、OWNER/MASTER/GPU、RENDER/QC、FORMAL FULL RELEASE（桌宠 BLOCKED）。任何一项未知都为 UNVERIFIED，不合并为总体 PASS。
+
+
+## 八、2026-11-21 生效：桌宠仅保留理论扩展位，全面退出默认验收
+
+**本节覆盖第七节中把缺失的 44 张 PNG 当作未来常规交付阻塞的措辞。**
+
+- **实现状态 = PARKED / DEFERRED，非开发任务。** 不生成 44 张图、不优化 Rig、不做动作、不修桌宠素材相关失败、不申请 GPU、不要求 Claude 检查。未来只有用户主动重新列入优先级才恢复。
+- **运行时：** `AssistantPetPanel.Maotai.cs` 的 `DesktopPetV2Enabled = false`，不订阅 v2 动画渲染事件、不读取 v2 PNG，只隐藏其动画根节点；Mac Core、Windows Worker 和状态文字面板继续运行。保留的文件和接口只是理论性扩展位，不等于功能已交付。
+- **默认测试：** `PicotooPet.Desktop.Core.SmokeTests` 的一般入口不调用 v2 素材/动作测试。可选桌宠专用测试须显式执行 `--desktop-pet-acceptance-only`，当前不安排运行。
+- **自动 CI：** 旧 `.github/workflows/windows-phase2-release.yml` 调整为 **仅手动触发** 的 `Optional Desktop Pet Full Release (manual only)`。停止在 PR 或 main push 上反复产生桌宠 PNG 的红灯；原完整 Release 检验不删、不伪造成功，其状态只代表可选桌宠产品。
+- **日常工作：** P0 的 Mac↔Windows 架构、真实 Goal/Creative/Production/Worker、Comfy/QC/MP4 以及独立影视工作站构建一律不依赖桌宠验收。由桌宠引发的错误统一记录为 `DESKTOP_PET_DEFERRED_NONBLOCKING`，**不再阻塞**电影主线，但不掩盖任何来源、Owner、Worker、HOLD、安装签名或 GPU 的真实安全失败。
+- **范围边界：** 旧完整桌宠 Release 历史记录仍为 BLOCKED；只有独立影视构建获得其自身真实门禁验证后才能报告对应 PASS，不能借此宣称全功能桌宠版正式交付。Github 分支保护所要求的 check 名称若不能读取，必须独立核实，不得擅自认定已解除分支策略。
