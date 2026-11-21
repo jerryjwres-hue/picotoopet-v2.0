@@ -1,0 +1,47 @@
+name: P0-296 Windows 2.3 Studio StoryPack Client
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-296-windows23-studio-preview-client.yml"
+      - "windows/desktop/src/PicotooPet.Desktop.Core/Networking/MacCoreClient.Studio.cs"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/StudioStoryPackClientSmokeTests.cs"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  studio-transport-only:
+    name: Native Windows bounded Studio preview contract (CPU only)
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - name: Checkout original 2.3 Windows Studio client
+        uses: actions/checkout@v6
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Native restore and build focused Studio contract
+        shell: pwsh
+        run: |
+          dotnet restore windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj
+          dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj --configuration Release --no-restore
+
+      - name: Run only read-only Mac 2.3 StoryPack HTTP client contract
+        shell: pwsh
+        run: |
+          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj --configuration Release --no-build -- --studio-storypack-client-only
+
+      - name: Maintain release HOLD
+        shell: pwsh
+        run: |
+          Write-Output "CPU_ONLY=PASS; NO_MAC_CONNECT=YES; NO_GPU_POST=YES; FULL_RELEASE=BLOCKED"
