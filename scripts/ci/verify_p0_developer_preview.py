@@ -184,7 +184,7 @@ def verify_preview_archive(
             with zip_file.open("README_P0_DEVELOPER_PREVIEW.txt") as handle:
                 readme = handle.read().decode("utf-8-sig")
             if "NOT a formal Release Builder output" not in readme \
-                or "Missing Maotai v2 independent assets" not in readme:
+                or "Desktop pet is DEFERRED and excluded from film-production scope." not in readme:
                 raise PreviewVerificationError("UNSAFE_README_CLAIMS")
             with zip_file.open("app/product-version.txt") as handle:
                 product_version = handle.read().decode("utf-8-sig").strip()
