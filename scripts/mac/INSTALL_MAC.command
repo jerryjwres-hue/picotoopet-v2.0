@@ -104,11 +104,40 @@ for name in ("com.picotoopet.mac-core.plist", "com.picotoopet.health-supervisor.
     (destination / name).write_text(text, encoding="utf-8")
 PY
 
+# 等待 launchd 异步移除旧服务完成，再注册新 plist，规避 37: Operation already in progress。
+# 当前用户的 GUI LaunchAgent 不需要 sudo；严格拒绝假成功，失败保留日志供诊断。
 for label in com.picotoopet.mac-core com.picotoopet.health-supervisor; do
   launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
 done
-launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/com.picotoopet.mac-core.plist"
-launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/com.picotoopet.health-supervisor.plist"
+
+for label in com.picotoopet.mac-core com.picotoopet.health-supervisor; do
+  unloaded=0
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+      unloaded=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$unloaded" -ne 1 ]; then
+    echo "STOP: 旧 LaunchAgent 仍未卸载：$label" >&2
+    exit 1
+  fi
+
+  bootstrapped=0
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/$label.plist"; then
+      bootstrapped=1
+      break
+    fi
+    # launchd 有时稍后才完成注销；只重试该服务，不重装整个 Mac Core。
+    sleep 1
+  done
+  if [ "$bootstrapped" -ne 1 ]; then
+    echo "STOP: LaunchAgent 注册失败：$label；请检查 launchctl 日志。" >&2
+    exit 1
+  fi
+done
 
 # 保留完整机器报告；正常安装不弹技术 JSON，用户只需看到结论。
 HEALTH_REPORT="$RUNTIME_ROOT/state/install-health.json"
