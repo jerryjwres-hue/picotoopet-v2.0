@@ -37,6 +37,24 @@ public partial class CreativeIntelligencePanel : System.Windows.Controls.UserCon
     private async void Prepare_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.PrepareAsync(CancellationToken.None));
 
+    // 仅用户点击时请求已经存在的 Mac Core 只读入口；不持有生产授权。
+    private async void StoryPackPreview_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not CreativeIntelligencePanelViewModel viewModel)
+        {
+            return;
+        }
+        try
+        {
+            await viewModel.PreviewStoryPackAsync(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // 故障文本不能泄露剧本、用户资产路径或 Bearer；生产状态仍保持 HOLD。
+            ShowSafeError("StoryPack 只读预览失败", "校验未完成，未创建生产任务。");
+        }
+    }
+
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(viewModel => viewModel.RefreshAsync(CancellationToken.None));
 
