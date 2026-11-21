@@ -101,7 +101,7 @@ jobs:
           @(
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
             'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'
-            'Missing Maotai v2 independent assets continue to block the formal product Release.'
+            'Desktop pet is DEFERRED and excluded from film-production scope.'
             'This ZIP does not start any GUI/Worker and does not install models or access the GPU.'
             'Before any GUI launch on an approved Windows machine, run Prepare-P0ThreeShotHold.ps1'
             'from the same Windows account that will launch Picotoo Pet AI.exe. It writes persistent HOLD.'
