@@ -35,9 +35,9 @@ def test_ui_preview_builder_is_explicit_and_full_release_remains_default() -> No
     ):
         assert required in builder
 
-    # 正式构建仍必须默认走完整 Smoke；Preview 只在显式选择时追加 UI-only 参数。
-    assert '"run", "--project", $smokeProject, "--configuration", "Release", "--no-build"' in builder
-    assert '$smokeArguments += @("--", "--ui-interaction-only")' in builder
+    # 正式构建仍必须默认走完整 Smoke；Preview 只在显式选择时追加 UI-only 参数；直接运行编译产物。
+    assert "$smokeArguments = @($smokeDll)" in builder
+    assert '$smokeArguments += "--ui-interaction-only"' in builder
 
 
 def test_formal_release_workflows_never_request_ui_preview_scope() -> None:
@@ -68,7 +68,7 @@ def test_ui_preview_workflow_builds_installable_lifecycle_verified_artifact() ->
         assert required in workflow
 
     # 真正的 UI-only 冒烟由封包器执行，不能因去掉外层重复运行而丢失测试。
-    assert '$smokeArguments += @("--", "--ui-interaction-only")' in builder
+    assert '$smokeArguments += "--ui-interaction-only"' in builder
     assert "Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments" in builder
 
     # Preview 只能作为验收包，不能伪装正式发布或跳过生命周期验证。
