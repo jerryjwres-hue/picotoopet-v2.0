@@ -315,6 +315,23 @@ Invoke-NativeCommand -FilePath $appExecutable -Arguments @(
 Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--self-test") -TimeoutSeconds 30 | Out-Null
 # 即使诊断 EXE 直接运行也不得从 Credential Manager 向 LAN HTTP 发送 Bearer。
 Invoke-NativeCommand -FilePath $diagExecutable -Arguments @("--endpoint-policy-self-test") -TimeoutSeconds 30 | Out-Null
+
+if ($ValidationScope -eq "UiPreview") {
+    # 使用 #298/#308 已审查的系统 OpenSSH 入口，发布到当前版本 payload。
+    # 文件纳入 release-manifest SHA；只复制且执行无联网自检，不自动建立 SSH。
+    $connectionOutput = Join-Path $payloadRoot "tools\\connection"
+    New-Item -ItemType Directory -Path $connectionOutput -Force | Out-Null
+    foreach ($name in @("CONNECT_MAC_SECURE.vbs", "Start-SecureMacTunnel.ps1")) {
+        Copy-ReleaseFile `
+            -Source (Join-Path $desktopRoot "release\\$name") `
+            -Destination (Join-Path $connectionOutput $name)
+    }
+    $powershell51 = Join-Path $env:WINDIR "System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    Invoke-NativeCommand -FilePath $powershell51 -Arguments @(
+        "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", (Join-Path $connectionOutput "Start-SecureMacTunnel.ps1"), "-SelfTest"
+    ) -TimeoutSeconds 30 | Out-Null
+}
 if (-not (Test-Path -LiteralPath $selfTestPath -PathType Leaf)) {
     throw "桌面自检没有生成报告。"
 }
@@ -409,6 +426,7 @@ $manifest = [ordered]@{
     full_release         = $fullRelease
     # 新版影视预览经过原生 P0 三镜头/HOLD 测试；历史包缺少此标记即视为未知 Worker。
     p0_hold_aware        = ($ValidationScope -eq "UiPreview")
+    secure_tunnel_package = ($ValidationScope -eq "UiPreview")
     built_at             = (Get-Date).ToUniversalTime().ToString("o")
     commit               = $buildCommit
     build_commit         = $buildCommit
@@ -467,6 +485,8 @@ P0 #91 严格三镜头开发预览 — 首次安装前必读（不是正式 Rele
    three-shot-acceptance.json（schema_version=1.0 / mode=hold）和 three-shot-acceptance.json.armed。
    缺任一项：STOP，不可安装/启动 GUI/Worker。
 ④ 然后才能运行 INSTALL_PHASE2_WINDOWS.vbs。UiPreview 安装器会再次核验 HOLD + .armed，
+   安装成功后，开始菜单的“Picotoo Pet 安全连接”需要用户主动点击，仅创建安全 SSH 隧道，
+   首次要求预先验证 known_hosts、公钥认证及 Mac Remote Login；不自动启动 GPU/Worker。
    缺失则拒绝安装激活。安装器不会替你授权模型推理或 Comfy GPU POST。
 ⑤ 保持 HOLD：只读审核 Mac Core 认证、唯一 Production Job、exactly 3 T2V Task、冻结 Plan Digest。
    仅在另行确认电路/设备安全并得到用户明确 GPU 授权后，才设置对该 Job 的 ALLOW。
