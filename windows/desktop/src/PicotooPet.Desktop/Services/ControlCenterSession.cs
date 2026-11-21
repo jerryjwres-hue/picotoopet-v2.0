@@ -334,9 +334,11 @@ public sealed partial class ControlCenterSession : IAsyncDisposable
         {
             throw new InvalidOperationException("Mac 地址格式无效。");
         }
-        if (baseUri.Scheme is not ("http" or "https"))
+        // 任何设备 Bearer 请求建立前即拒绝明文局域网、带凭据或可疑路径。
+        if (!SecureCoreEndpoint.IsAllowed(baseUri))
         {
-            throw new InvalidOperationException("Mac 地址只允许 HTTP 或 HTTPS。");
+            throw new InvalidOperationException(
+                "Mac 地址仅允许经 SSH 转发的本机 HTTP 或可信 HTTPS；禁止局域网明文连接。");
         }
         if (string.IsNullOrWhiteSpace(token))
         {
