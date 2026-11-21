@@ -7,6 +7,8 @@ on:
     paths:
       - ".github/workflows/p0-three-shot-developer-preview.yml"
       - "windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1"
+      - "windows/desktop/release/Start-SecureMacTunnel.ps1"
+      - "windows/desktop/release/CONNECT_MAC_SECURE.vbs"
       - "windows/desktop/src/**"
       - "src/picotoopet_core/product-version.txt"
       - "src/picotoopet_core/creative/**"
@@ -22,6 +24,11 @@ on:
       - "src/picotoopet_core/domain/storypack.py"
       - "tests/integration/test_real23_studio_storypack_preview.py"
       - "tests/contract/test_p0_desktop_pet_dormant.py"
+      - "tests/contract/test_p0_developer_preview_archive.py"
+      - "tests/contract/test_p0_secure_ssh_film_preview.py"
+      - "scripts/ci/verify_p0_developer_preview.py"
+      - "windows/desktop/release/Start-SecureMacTunnel.ps1"
+      - "windows/desktop/release/CONNECT_MAC_SECURE.vbs"
       - ".github/workflows/windows-phase2-release.yml"
       - "windows/desktop/scripts/Build-Phase2WindowsRelease.ps1"
 
@@ -31,7 +38,7 @@ permissions:
 jobs:
   portable-preview:
     # 其他 PR 不得触发便携包；明确禁止作为正式安装产物。
-    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate'
+    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop'
     name: Build unsigned portable WPF candidate without Release Builder
     runs-on: windows-2025
     timeout-minutes: 35
@@ -69,6 +76,12 @@ jobs:
           python -m unittest discover -s tests/contract -p "test_p0_desktop_pet_dormant.py" -v
           if ($LASTEXITCODE -ne 0) { throw 'P0_DESKTOP_PET_DORMANCY_CONTRACT_FAILED' }
 
+          # 原生 Windows 5.1 无联网自检；不得下载密钥、连接 Mac 或触发 Worker。
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/desktop/release/Start-SecureMacTunnel.ps1 -SelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'P0_SECURE_SSH_NATIVE_SELFTEST_FAILED' }
+          python -m unittest discover -s tests/contract -p "test_p0_secure_ssh_film_preview.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_SECURE_SSH_FILM_PREVIEW_CONTRACT_FAILED' }
+
       - name: Install pinned .NET SDK
         uses: actions/setup-dotnet@v6
         with:
@@ -98,11 +111,17 @@ jobs:
             }
           }
           Copy-Item -LiteralPath 'windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1' -Destination (Join-Path $bundle 'Prepare-P0ThreeShotHold.ps1')
+          Copy-Item -LiteralPath 'windows/desktop/release/CONNECT_MAC_SECURE.vbs' -Destination (Join-Path $bundle 'CONNECT_MAC_SECURE.vbs')
+          Copy-Item -LiteralPath 'windows/desktop/release/Start-SecureMacTunnel.ps1' -Destination (Join-Path $bundle 'Start-SecureMacTunnel.ps1')
           @(
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
             'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'
             'Desktop pet is DEFERRED and excluded from film-production scope.'
-            'This ZIP does not start any GUI/Worker and does not install models or access the GPU.'
+            'Only trusted SSH public-key authentication; no credentials in the archive.'
+            'The optional CONNECT_MAC_SECURE.vbs launches the trusted Windows OpenSSH loopback tunnel.'
+            'Mac Remote Login, a pre-approved SSH key, and trusted known_hosts are prerequisites.'
+            'A loopback URL without an active trusted SSH tunnel is NOT a verified Mac connection.'
+            'This ZIP does not start any GUI/Worker or SSH tunnel and does not install models or access the GPU.'
             'Before any GUI launch on an approved Windows machine, run Prepare-P0ThreeShotHold.ps1'
             'from the same Windows account that will launch Picotoo Pet AI.exe. It writes persistent HOLD.'
             'Verify the PowerShell output P0_HOLD_PREPARED=PASS before opening the app.'
@@ -129,6 +148,8 @@ jobs:
             user_install_allowed = $false
             executable = 'app/Picotoo Pet AI.exe'
             hold_script = 'Prepare-P0ThreeShotHold.ps1'
+            connection_launcher = 'CONNECT_MAC_SECURE.vbs'
+            connection_script = 'Start-SecureMacTunnel.ps1'
             files = $files
           }
           $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $bundle 'preview-manifest.json') -Encoding utf8
