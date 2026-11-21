@@ -12,12 +12,23 @@ on:
       - "src/picotoopet_core/creative/**"
       - "tests/creative/**"
   workflow_dispatch:
+  # 仅此 #296 合并候选 PR 启用内部便携构建；不替换正式 Release Gate。
+  pull_request:
+    paths:
+      - ".github/workflows/p0-three-shot-developer-preview.yml"
+      - "windows/desktop/src/**"
+      - "windows/desktop/tests/**"
+      - "scripts/ci/test_real23_windows_storypack_http.py"
+      - "src/picotoopet_core/domain/storypack.py"
+      - "tests/integration/test_real23_studio_storypack_preview.py"
 
 permissions:
   contents: read
 
 jobs:
   portable-preview:
+    # 其他 PR 不得触发便携包；明确禁止作为正式安装产物。
+    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate'
     name: Build unsigned portable WPF candidate without Release Builder
     runs-on: windows-2025
     timeout-minutes: 35
@@ -25,9 +36,19 @@ jobs:
       CI: "true"
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      PICOTOO_PREVIEW_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Check out exact candidate source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify real checkout SHA before building unsigned preview
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -cne $env:PICOTOO_PREVIEW_SOURCE_SHA) { throw 'P0_PREVIEW_WRONG_SOURCE_COMMIT' }
+          Write-Output "SOURCE_SHA_PIN=PASS; SHA=$actual; USER_INSTALL_ALLOWED=FALSE"
 
       - name: Install pinned .NET SDK
         uses: actions/setup-dotnet@v6
@@ -80,7 +101,7 @@ jobs:
           })
           $manifest = [ordered]@{
             schema_version = 'p0-three-shot-developer-preview.v1'
-            source_sha = $env:GITHUB_SHA
+            source_sha = $env:PICOTOO_PREVIEW_SOURCE_SHA
             github_run_id = $env:GITHUB_RUN_ID
             product_version = (Get-Content -LiteralPath (Join-Path $app 'product-version.txt') -Raw).Trim()
             build_target = 'win-x64-self-contained'
@@ -92,11 +113,11 @@ jobs:
             files = $files
           }
           $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $bundle 'preview-manifest.json') -Encoding utf8
-          $zip = Join-Path $root "P0-ThreeShot-DeveloperPreview-$($env:GITHUB_SHA.Substring(0,12)).zip"
+          $zip = Join-Path $root "P0-ThreeShot-DeveloperPreview-$($env:PICOTOO_PREVIEW_SOURCE_SHA.Substring(0,12)).zip"
           Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $zip -CompressionLevel Optimal
           $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$sha  $([IO.Path]::GetFileName($zip))" | Set-Content -LiteralPath (Join-Path $root 'preview-sha256.txt') -Encoding ascii
-          Write-Host "P0_PREVIEW_PORTABLE_BUILD=PASS; SOURCE_SHA=$env:GITHUB_SHA; ZIP_SHA256=$sha"
+          Write-Host "P0_PREVIEW_PORTABLE_BUILD=PASS; SOURCE_SHA=$env:PICOTOO_PREVIEW_SOURCE_SHA; ZIP_SHA256=$sha"
           Write-Host 'FORMAL_RELEASE=NOT_RUN; GUI_LAUNCHED=NO; REAL_GPU=UNVERIFIED'
 
       - name: Upload internal portable developer-preview evidence
