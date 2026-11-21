@@ -29,6 +29,7 @@ on:
       - "scripts/ci/verify_p0_developer_preview.py"
       - "windows/desktop/release/Start-SecureMacTunnel.ps1"
       - "windows/desktop/release/CONNECT_MAC_SECURE.vbs"
+      - "windows/desktop/release/Verify-Phase2Prebuilt.ps1"
       - ".github/workflows/windows-phase2-release.yml"
       - "windows/desktop/scripts/Build-Phase2WindowsRelease.ps1"
 
@@ -79,6 +80,10 @@ jobs:
           # 原生 Windows 5.1 无联网自检；不得下载密钥、连接 Mac 或触发 Worker。
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/desktop/release/Start-SecureMacTunnel.ps1 -SelfTest
           if ($LASTEXITCODE -ne 0) { throw 'P0_SECURE_SSH_NATIVE_SELFTEST_FAILED' }
+
+          # 旧 Windows VERIFY 诊断器也可能读取 Bearer；只能接 SSH 环回/可信 HTTPS。
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/desktop/release/Verify-Phase2Prebuilt.ps1 -AddressPolicySelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'P0_SECURE_VERIFIER_NATIVE_SELFTEST_FAILED' }
           python -m unittest discover -s tests/contract -p "test_p0_secure_ssh_film_preview.py" -v
           if ($LASTEXITCODE -ne 0) { throw 'P0_SECURE_SSH_FILM_PREVIEW_CONTRACT_FAILED' }
 
