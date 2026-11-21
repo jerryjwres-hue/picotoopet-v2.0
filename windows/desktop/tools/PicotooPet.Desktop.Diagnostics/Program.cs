@@ -409,6 +409,33 @@ internal sealed record DiagnosticOptions(
         {
             throw new InvalidOperationException("NULL_DIAGNOSTICS_ENDPOINT_ALLOWED");
         }
+        // 不是只测试帮助函数：真实 CLI Parse 同样必须在读取 Bearer 前拒绝不安全 URL。
+        foreach (var unsafeUrl in new[]
+        {
+            "http://192.168.1.161:8766/",
+            "http://mac.local:8766/",
+            "http://127.0.0.1:18766/?token=hidden",
+            "https://name:password@mac.example.test/",
+        })
+        {
+            var rejected = false;
+            try
+            {
+                _ = Parse(new[] { "--base-url", unsafeUrl });
+            }
+            catch (ArgumentException)
+            {
+                rejected = true;
+            }
+            if (!rejected)
+            {
+                throw new InvalidOperationException("UNSAFE_DIAGNOSTICS_CLI_ALLOWED");
+            }
+        }
+        if (Parse(Array.Empty<string>()).BaseUri.AbsoluteUri != "http://127.0.0.1:18766/")
+        {
+            throw new InvalidOperationException("DIAGNOSTICS_DEFAULT_NOT_SSH_LOOPBACK");
+        }
     }
 
     private static int ParsePositive(
