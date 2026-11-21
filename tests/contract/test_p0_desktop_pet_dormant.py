@@ -52,7 +52,7 @@ class DormantDesktopPetContractTests(unittest.TestCase):
 
     def test_runtime_keeps_extension_slot_off_and_preserves_status_panel(self):
         source = PANEL.read_text(encoding="utf-8")
-        self.assertIn("private static readonly bool DesktopPetV2Enabled;", source)
+        self.assertIn("private static bool DesktopPetV2Enabled => false;", source)
         self.assertRegex(
             source, r"if \(!DesktopPetV2Enabled\)\s*\{[\s\S]*?"
             r"MaotaiV2Root.Visibility = Visibility.Collapsed;[\s\S]*?return;",
