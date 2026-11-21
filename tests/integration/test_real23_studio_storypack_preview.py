@@ -91,6 +91,9 @@ def test_three_shot_preview_is_deterministic_and_never_enqueues(studio):
     assert data["output"]["width"] == 832
     assert data["output"]["height"] == 480
     assert data["output"]["fps"] == 24
+    # Use the canonical Wan 4n+1 frame count, not simplistic 4 × 24 = 96.
+    assert data["output"]["frames_per_shot"] == 97
+    assert data["output"]["planned_frames"] == 291
     assert data["output"]["planned_duration_s"] == 12
     assert data["can_queue"] is False
     assert data["production_compilation"]["executable"] is False
