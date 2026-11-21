@@ -39,7 +39,8 @@ def test_upgrade_requires_real_http_version_and_can_rollback() -> None:
     assert script.index('trap rollback_failed_core_install EXIT') < script.index(
         'mv -h "$CURRENT.next" "$CURRENT"'
     )
-    assert script.index('curl --noproxy') > script.index(
+    # The rollback handler has its own curl before activation; verify the NEW Core probe separately.
+    assert script.index("SERVICE_READY=0\nfor attempt") > script.index(
         'mv -h "$CURRENT.next" "$CURRENT"'
     )
     assert script.index('ROLLBACK_ARMED=0\ntrap - EXIT\n') > script.index(
