@@ -41,8 +41,21 @@ def test_manual_dispatch_defaults_to_self_hosted_native_runners() -> None:
 
 
 def test_pull_request_native_gates_remain_enabled() -> None:
-    """The fallback adds a manual path without weakening normal PR verification."""
+    """Keep Core, Worker, Control Center and film-preview PR gates automatic."""
 
-    for relative in WORKFLOWS:
+    automatic_workflows = (
+        ".github/workflows/windows-control-center-ci.yml",
+        ".github/workflows/macos-core-slice-b-ci.yml",
+        ".github/workflows/macos-worker-slice-c-ci.yml",
+        ".github/workflows/p0-three-shot-developer-preview.yml",
+    )
+    for relative in automatic_workflows:
         source = (ROOT / relative).read_text(encoding="utf-8")
         assert "pull_request:" in source
+
+    # 桌宠完整 Release 可选且仅手动执行，不应阻塞正常影视 PR。
+    optional_pet_release = (ROOT / ".github/workflows/windows-phase2-release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_dispatch:" in optional_pet_release
+    assert "pull_request:" not in optional_pet_release
