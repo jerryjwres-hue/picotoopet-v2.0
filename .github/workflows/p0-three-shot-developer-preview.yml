@@ -21,6 +21,9 @@ on:
       - "scripts/ci/test_real23_windows_storypack_http.py"
       - "src/picotoopet_core/domain/storypack.py"
       - "tests/integration/test_real23_studio_storypack_preview.py"
+      - "tests/contract/test_p0_desktop_pet_dormant.py"
+      - ".github/workflows/windows-phase2-release.yml"
+      - "windows/desktop/scripts/Build-Phase2WindowsRelease.ps1"
 
 permissions:
   contents: read
@@ -61,6 +64,10 @@ jobs:
           # 纯标准库负例：不安装包、不执行 EXE、不运行 Windows Worker。
           python -m unittest discover -s tests/contract -p "test_p0_developer_preview_archive.py" -v
           if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_ARCHIVE_NEGATIVE_SUITE_FAILED' }
+
+          # 防回退：桌宠必须保持手动、默认不运行，不允许重新阻塞影视架构 CI。
+          python -m unittest discover -s tests/contract -p "test_p0_desktop_pet_dormant.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_DESKTOP_PET_DORMANCY_CONTRACT_FAILED' }
 
       - name: Install pinned .NET SDK
         uses: actions/setup-dotnet@v6
