@@ -141,7 +141,14 @@ public sealed partial class CreativeIntelligencePanelViewModel
             || !output.TryGetProperty("height", out var height)
             || !height.TryGetInt32(out var pixelsHigh)
             || !output.TryGetProperty("fps", out var fps)
-            || !fps.TryGetInt32(out var framesPerSecond))
+            || !fps.TryGetInt32(out var framesPerSecond)
+            || !output.TryGetProperty("frames_per_shot", out var perShotFrames)
+            || !perShotFrames.TryGetInt32(out var renderFrames)
+            || !output.TryGetProperty("planned_frames", out var totalFrames)
+            || !totalFrames.TryGetInt32(out var renderTotal)
+            || shotCount is < 1 or > 30
+            || renderFrames is < 1 or > 121
+            || renderTotal != (long)shotCount * renderFrames)
         {
             return "预览响应缺少必要安全字段；结果 UNVERIFIED，禁止进入生产。";
         }
@@ -163,7 +170,9 @@ public sealed partial class CreativeIntelligencePanelViewModel
             return "没有资产登记核验结果；预览 UNVERIFIED，禁止进入生产。";
         }
 
-        return $"剧本结构：{shotCount} 镜头 · {seconds} 秒 · {pixelsWide}×{pixelsHigh} · {framesPerSecond}fps。"
+        // 四秒是镜头的目标时长；Wan 使用 4n+1 帧族，四秒对应 97 渲染帧。
+        return $"剧本结构：{shotCount} 镜头 · 目标 {seconds} 秒 · {pixelsWide}×{pixelsHigh} · {framesPerSecond}fps。"
+            + $" 每镜 {renderFrames} 帧，共 {renderTotal} 渲染帧。"
             + $" 未验证资产 {unverified} 项。Owner 未批准，GPU HOLD；不可生成或发布。";
     }
 
