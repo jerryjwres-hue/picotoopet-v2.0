@@ -22,3 +22,13 @@
 | Windows 仅验证 | `windows\bootstrap\VERIFY_WINDOWS_SETUP.vbs` |
 
 任何报告出现 `hash-mismatch`、`PROTECTED_MUTATION_DENIED`、`MODEL_MISSING` 或 `SERVICE_UNAVAILABLE` 时，先保留报告和日志，不要手工移动原始数据。
+
+
+## 2026-11-20 临时执行优先级：桌宠暂停
+
+**最高优先级是 PicotooPet 的 Mac↔Windows 视频生产架构，不是 Windows Q 版桌宠。** 详细不可绕过的协议与实施边界见 [P0 #296 架构与门禁](../p0_296/REAL_23_V31_ARCHITECTURE_GATES.md#七2026-11-20-决策桌宠-v2-冻结双机视频生产架构-p0)。
+
+- 暂停生成/验收 44 张 `Assets/Maotai/V2` 桌宠 PNG，不再沿用双足圆球角色图；不删除已有尝试和证据。桌宠异常只记录为可选功能阻塞，不要求用户解决后才能开展三镜头视频工作。
+- **不要为了忽略桌宠而隐藏正式 Release 失败。** 旧完整 Windows Release 继续标记 `BLOCKED (desktop pet assets)`，视频生产专用独立构建/检查必须如实标注身份、SHA、HOLD 和安装限制。
+- Windows 实机操作先做只读检查、CPU-only 联调和安全回滚；不得擅自运行 GPU、Comfy POST、升级运行中的 Mac Core 或解除 Owner/MASTER/HOLD。
+- 日常产品目标保持：一个导演台输入故事，Mac 权威计划，Windows 同一 Worker 执行，视觉 QC 与 MP4 归档，手机远程审核使用同一后台。
