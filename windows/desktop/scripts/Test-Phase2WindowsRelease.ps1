@@ -553,6 +553,41 @@ function Invoke-LifecycleFixture {
         }
 
         if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            # 版本化 SSH 快捷方式如指向篡改后的 VBS，真实离线 VERIFY 必须拒绝。
+            $sshLink = Get-PicotooTunnelShortcutPath
+            $shell = New-Object -ComObject WScript.Shell
+            try {
+                $shortcut = $shell.CreateShortcut($sshLink)
+                $oldArgument = [string]$shortcut.Arguments
+                $shortcut.Arguments = '"C:\\untrusted\\not-picotoo.vbs"'
+                $shortcut.Save()
+            }
+            finally {
+                if ([Runtime.InteropServices.Marshal]::IsComObject($shell)) {
+                    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+                }
+            }
+            try {
+                $refused = Invoke-ReleaseScript -ScriptPath $verifierB -Arguments @(
+                    '-DataRoot', $dataRoot,
+                    '-DesktopDirectory', $DesktopDirectory,
+                    '-OfflinePackageOnly', '-SuppressReportOpen'
+                ) -ExpectedExitCodes @(2)
+                $refusalReport = Copy-ValidatedReport -DataRoot $dataRoot `
+                    -Filter 'phase2-windows-verification.json' `
+                    -Destination (Join-Path $EvidenceRoot "$Name-ssh-shortcut-tamper.json") `
+                    -ExpectedStatus 'fail'
+                if (($refusalReport.errors -join ';') -notmatch 'P0_VERSIONED_SSH_SHORTCUT_WRONG_TARGET') {
+                    throw 'P0_SSH_TAMPERED_SHORTCUT_WAS_NOT_REFUSED'
+                }
+            }
+            finally {
+                Set-PicotooTunnelShortcut -VersionRoot (Join-Path $dataRoot "versions\\$versionB")
+            }
+            Write-Host 'P0_VERSIONED_SSH_SHORTCUT_TAMPER_REFUSED=PASS'
+        }
+
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
             # 原生负例 1：有 armed 标记但模式为 ALLOW，回滚必须在指针/快捷方式变更前拒绝。
             $heldJson = [IO.File]::ReadAllText($gate, [Text.UTF8Encoding]::new($false, $true))
             try {
