@@ -23,6 +23,15 @@ internal static class Program
     /// <summary>执行健康、任务回传与 Ping/Pong 高样本测试，并输出机器可读报告。</summary>
     private static async Task<int> Main(string[] args)
     {
+        // 原生无联网负例必须在读取 Credential Manager 之前触发。
+        if (args.Any(argument =>
+                string.Equals(argument, "--endpoint-policy-self-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            DiagnosticOptions.AssertEndpointPolicySelfTest();
+            Console.WriteLine("DIAGNOSTICS_SECURE_ENDPOINT_POLICY=PASS; NO_BEARER_READ=TRUE; NO_NETWORK=TRUE");
+            return 0;
+        }
+
         if (args.Any(argument =>
                 string.Equals(argument, "--self-test", StringComparison.OrdinalIgnoreCase)))
         {
@@ -317,7 +326,13 @@ internal sealed record DiagnosticOptions(
         {
             values[args[index]] = args[index + 1];
         }
-        var baseUrl = values.GetValueOrDefault("--base-url", "http://192.168.1.161:8766");
+        var baseUrl = values.GetValueOrDefault("--base-url", "http://127.0.0.1:18766");
+        var baseUri = new Uri(baseUrl, UriKind.Absolute);
+        // 无论直接双击还是 VERIFY 调用，令牌都不能经明文 LAN HTTP 发出。
+        if (!IsSafeMacBaseUri(baseUri))
+        {
+            throw new ArgumentException("UNSAFE_MAC_CORE_URL: require SSH loopback or trusted HTTPS");
+        }
         var output = values.GetValueOrDefault(
             "--output",
             Path.Combine(Path.GetTempPath(), "phase2-windows-verification.json"));
@@ -328,7 +343,7 @@ internal sealed record DiagnosticOptions(
             900,
             restSamples / 5 + taskSamples * 2 + socketSamples / 10 + 60);
         return new DiagnosticOptions(
-            new Uri(baseUrl, UriKind.Absolute),
+            baseUri,
             output,
             restSamples,
             taskSamples,
@@ -337,6 +352,63 @@ internal sealed record DiagnosticOptions(
             TimeSpan.FromSeconds(10),
             TimeSpan.FromSeconds(Math.Max(60, socketSamples / 10 + 30)),
             TimeSpan.FromSeconds(estimatedSeconds));
+    }
+
+    internal static bool IsSafeMacBaseUri(Uri? uri)
+    {
+        // 使用与真实 Windows Studio 相同的身份边界；禁止 URL 嵌入凭据或附加路径。
+        if (uri is null || !uri.IsAbsoluteUri ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment) ||
+            uri.AbsolutePath != "/")
+        {
+            return false;
+        }
+        if (uri.Scheme == Uri.UriSchemeHttp)
+        {
+            return uri.IsLoopback;
+        }
+        // HTTPS 只能走 .NET 默认证书验证，严禁禁用校验或回退为 HTTP。
+        return uri.Scheme == Uri.UriSchemeHttps;
+    }
+
+    internal static void AssertEndpointPolicySelfTest()
+    {
+        // 正反例不创建 HttpClient、不读取令牌，也不启动 GUI/Worker/GPU。
+        foreach (var url in new[]
+        {
+            "http://127.0.0.1:18766/",
+            "http://localhost:18766/",
+            "https://mac.example.test:8766/",
+        })
+        {
+            if (!IsSafeMacBaseUri(new Uri(url)))
+            {
+                throw new InvalidOperationException("SAFE_DIAGNOSTICS_ENDPOINT_REJECTED");
+            }
+        }
+        foreach (var url in new[]
+        {
+            "http://192.168.1.161:8766/",
+            "http://mac.local:8766/",
+            "http://example.com/",
+            "http://127.0.0.1:18766/api/v1/health",
+            "http://127.0.0.1:18766/?token=hidden",
+            "https://name:password@mac.example.test/",
+            "https://mac.example.test/#fragment",
+            "ftp://127.0.0.1:18766/",
+        })
+        {
+            if (IsSafeMacBaseUri(new Uri(url)))
+            {
+                throw new InvalidOperationException("UNSAFE_DIAGNOSTICS_ENDPOINT_ALLOWED");
+            }
+        }
+        if (IsSafeMacBaseUri(null))
+        {
+            throw new InvalidOperationException("NULL_DIAGNOSTICS_ENDPOINT_ALLOWED");
+        }
     }
 
     private static int ParsePositive(
