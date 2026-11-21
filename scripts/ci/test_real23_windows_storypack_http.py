@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from contextlib import closing
 import socket
 import sqlite3
 import subprocess
@@ -57,7 +58,8 @@ def _assert_sandbox_untouched(db_path: Path) -> None:
 
     if not db_path.is_file():
         raise RuntimeError("REAL_CORE_DATABASE_MISSING")
-    with sqlite3.connect(str(db_path)) as db:
+    # sqlite3 Connection 的 context manager 不负责 close；Windows 必须显式释放文件句柄。
+    with closing(sqlite3.connect(str(db_path))) as db:
         db.execute("PRAGMA query_only=ON")
         maximum = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
         if maximum != 24:
