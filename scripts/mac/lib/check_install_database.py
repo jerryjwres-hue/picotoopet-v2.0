@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import os
 import sqlite3
 import sys
@@ -73,7 +74,7 @@ def inspect(connection: sqlite3.Connection) -> tuple[int, int, int]:
 def verify_backup(database: Path, original: tuple[int, int, int]) -> None:
     """对备份文件进行独立只读重开与任务/审批计数验证。"""
 
-    with _readonly(database) as check:
+    with closing(_readonly(database)) as check:
         if inspect(check) != original:
             raise ValueError("BACKUP_CONTENT_MISMATCH")
 
@@ -87,7 +88,7 @@ def check_database(database: Path, backup_dir: Path | None) -> None:
     if database.is_symlink() or not database.is_file() or database.stat().st_size == 0:
         raise ValueError("UNSAFE_EXISTING_DATABASE")
 
-    with _readonly(database) as source:
+    with closing(_readonly(database)) as source:
         summary = inspect(source)
         print(f"SCHEMA=COMPATIBLE_{summary[0]} TASKS={summary[1]} APPROVALS={summary[2]}")
         if backup_dir is None:
