@@ -13,6 +13,41 @@ LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 STATE_DIR="$RUNTIME_ROOT/state"
 PORT_HELPER="$SCRIPT_DIR/lib/runtime_port.sh"
 
+# 只读预检必须先于任何版本指针、密钥、LaunchAgent 或数据库变更。
+# 现有数据若来自 24 版迁移，绝不可用只支持 1-4 版的 Core 覆盖运行。
+DB_FILE="$RUNTIME_ROOT/database/core.db"
+if [ -s "$DB_FILE" ]; then
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    echo "STOP=SQLITE_PREFLIGHT_UNAVAILABLE；已有数据库，不能安全判断兼容性。" >&2
+    exit 1
+  fi
+  migrations="$(sqlite3 -readonly "$DB_FILE"     "SELECT COALESCE(MAX(version), 0) FROM schema_migrations" 2>/dev/null)" || {
+    echo "STOP=UNKNOWN_EXISTING_DATABASE；迁移记录无法读取，未修改安装。" >&2
+    exit 1
+  }
+  case "$migrations" in
+    ''|*[!0-9]*)
+      echo "STOP=UNKNOWN_EXISTING_DATABASE；迁移版本无效。" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$migrations" -gt 4 ]; then
+    echo "STOP=UNSUPPORTED_DATABASE_VERSION_$migrations；本安装包最高只支持版本 4。" >&2
+    echo "保留现有 Core、SQLite、Goal 和审批记录；请勿重置或手工补表。" >&2
+    exit 1
+  fi
+  if [ "$migrations" -eq 4 ]; then
+    hold_table="$(sqlite3 -readonly "$DB_FILE"       "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='owner_production_hold'" 2>/dev/null)" || {
+      echo "STOP=SQLITE_SCHEMA_CHECK_FAILED；现有数据库保留原状。" >&2
+      exit 1
+    }
+    if [ "$hold_table" != "1" ]; then
+      echo "STOP=INCOMPATIBLE_MIGRATION_004；同一迁移编号对应不同架构。" >&2
+      exit 1
+    fi
+  fi
+fi
+
 mkdir -p "$VERSIONS_ROOT" "$RUNTIME_ROOT/logs" "$RUNTIME_ROOT/backups" "$STATE_DIR" "$LAUNCH_AGENTS"
 
 
