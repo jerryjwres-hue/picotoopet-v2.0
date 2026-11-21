@@ -241,7 +241,8 @@ function Set-PicotooTunnelShortcut {
 
     # 仅引用已验证 manifest SHA 的版本化 payload，不执行 SSH，也不读取证书/密钥。
     $path = Get-PicotooTunnelShortcutPath
-    $connection = if ($VersionRoot) { Join-Path $VersionRoot "tools\connection" } else { "" }
+    # 保存和核验均使用同一规范绝对路径，避免重复分隔符影响 VBS 参数比较。
+    $connection = if ($VersionRoot) { [IO.Path]::GetFullPath((Join-Path $VersionRoot "tools\connection")) } else { "" }
     $launcher = if ($connection) { Join-Path $connection "CONNECT_MAC_SECURE.vbs" } else { "" }
     $bootstrap = if ($connection) { Join-Path $connection "Start-SecureMacTunnel.ps1" } else { "" }
 
@@ -273,7 +274,8 @@ function Assert-PicotooTunnelShortcut {
 
     # 离线只读比较当前启动器目标；拒绝错误旧版本或指向其他脚本。
     $path = Get-PicotooTunnelShortcutPath
-    $folder = Join-Path $VersionRoot "tools\connection"
+    # 仅规范 Windows 路径拼写；不放宽 VBS 参数或允许额外命令行参数。
+    $folder = [IO.Path]::GetFullPath((Join-Path $VersionRoot "tools\connection"))
     $launcher = Join-Path $folder "CONNECT_MAC_SECURE.vbs"
     $script = Join-Path $folder "Start-SecureMacTunnel.ps1"
     if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) -or
@@ -291,7 +293,11 @@ function Assert-PicotooTunnelShortcut {
         if (-not $actualExe.Equals($expectedExe, [StringComparison]::OrdinalIgnoreCase) -or
             -not $actualDir.Equals($expectedDir, [StringComparison]::OrdinalIgnoreCase) -or
             [string]$shortcut.Arguments -cne ('"' + $launcher + '"')) {
-            throw "P0_VERSIONED_SSH_SHORTCUT_WRONG_TARGET"
+            # 仅报告各字段是否匹配，不输出可能被篡改的任意命令行内容。
+            $exeMatches = $actualExe.Equals($expectedExe, [StringComparison]::OrdinalIgnoreCase)
+            $dirMatches = $actualDir.Equals($expectedDir, [StringComparison]::OrdinalIgnoreCase)
+            $argMatches = [string]$shortcut.Arguments -ceq ('"' + $launcher + '"')
+            throw "P0_VERSIONED_SSH_SHORTCUT_WRONG_TARGET; exe_match=$exeMatches; dir_match=$dirMatches; arg_match=$argMatches"
         }
     }
     finally {
