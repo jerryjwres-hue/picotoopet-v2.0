@@ -249,7 +249,11 @@ function Restore-PreviousActivation {
             $previousManifestFile = Join-Path ([string]$previousCurrent.path) 'release-manifest.json'
             if (Test-Path -LiteralPath $previousManifestFile -PathType Leaf) {
                 $previousManifest = Read-JsonUtf8 -Path $previousManifestFile
-                $safePrevious = ([string]$previousManifest.validation_scope -ceq 'windows-ui-preview')
+                # 旧 UI Preview 也可能不懂 P0 HOLD；必须有新版原生构建声明才能保留 Startup。
+                $safePrevious = (
+                    [string]$previousManifest.validation_scope -ceq 'windows-ui-preview' -and
+                    $previousManifest.p0_hold_aware -eq $true
+                )
             }
         }
         catch {
