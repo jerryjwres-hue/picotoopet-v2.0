@@ -16,12 +16,12 @@ if [ ! -d "$PREVIOUS" ]; then
   exit 1
 fi
 
-for label in com.picotoopet.mac-core com.picotoopet.health-supervisor; do
+# 只恢复 Core 进程；Supervisor 原有停止/运行状态不由回滚器更改。
+for label in com.picotoopet.mac-core; do
   launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
 done
 ln -sfn "$PREVIOUS" "$CURRENT.next"
 mv -h "$CURRENT.next" "$CURRENT"
 launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/com.picotoopet.mac-core.plist"
-launchctl bootstrap "gui/$UID" "$LAUNCH_AGENTS/com.picotoopet.health-supervisor.plist"
 printf '%s\n' "$(date -u +%FT%TZ) rollback -> $PREVIOUS" >> "$ROOT/state/rollback.log"
 open "$ROOT/state/rollback.log"
