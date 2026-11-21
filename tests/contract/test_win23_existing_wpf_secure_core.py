@@ -22,6 +22,10 @@ def test_both_real_wpf_connection_entries_guard_before_token_networking() -> Non
         session.index("MacCoreClient.Create(MacCoreClientOptions.CreateDefault(baseUri, token))")
     )
     assert "if (!SecureCoreEndpoint.IsAllowed(baseUri))" in session
+    assert "SetStatus(\"安全阻断：旧 Mac 地址不安全。" in session
+    assert session.index("!SecureCoreEndpoint.IsAllowed(savedBaseUri)") < session.index(
+        "await ConnectAsync(settings.MacBaseUrl, token, cancellationToken)"
+    )
     assert "|| !SecureCoreEndpoint.IsAllowed(baseUri)" in old_ui
     assert old_ui.index("!SecureCoreEndpoint.IsAllowed(baseUri)") < old_ui.index(
         "MacCoreClient.Create(MacCoreClientOptions.CreateDefault(baseUri, token))"
@@ -48,6 +52,9 @@ def test_default_address_and_native_wpf_smoke_keep_guard_visible() -> None:
 
     assert 'new("http://127.0.0.1:18766")' in settings
     assert 'new("http://192.168.1.161:8766")' not in settings
+    settings_page = (APP / "Views/Pages/SettingsPage.xaml").read_text(encoding="utf-8")
+    assert "http://192.168.1.161:8766" not in settings_page
+    assert "http://127.0.0.1:18766" in settings_page
     assert program.count("SecureCoreEndpointSmokeTests.Run();") >= 2
     for required in (
         '"http://127.0.0.1:18766/"',
