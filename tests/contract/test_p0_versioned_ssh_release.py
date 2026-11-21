@@ -121,3 +121,22 @@ def test_native_publish_cannot_hang_on_inherited_smoke_stdout_pipes() -> None:
     assert "$process.WaitForExit($TimeoutSeconds * 1000)" in native
     assert 'Invoke-NativeCommand -FilePath $dotnet -Arguments @("--version") -WorkingDirectory $desktopRoot -CaptureOutput' in builder
     assert builder.count("-CaptureOutput") == 1
+
+
+def test_native_release_reuses_validated_ui_smoke_without_second_wpf_run() -> None:
+    """原生构建器已执行 UI 冒烟测试，CI 只能核对凭据，不能重复启动 WPF。"""
+
+    workflow = NATIVE_CI.read_text(encoding="utf-8")
+    builder = BUILDER.read_text(encoding="utf-8-sig")
+    section_start = workflow.index("      - name: Verify completed builder smoke")
+    section_end = workflow.index("      - name: Verify P0 preview ZIP", section_start)
+    verification = workflow[section_start:section_end]
+
+    # 必须由构建器运行真实 UI-only smoke，成功后才写入发布报告。
+    assert "Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments" in builder
+    assert '"--ui-interaction-only"' in builder
+    assert verification.count("Get-CimInstance Win32_Process") == 1
+    assert "P0_RELEASE_BUILDER_SMOKE_PROVENANCE_MISMATCH" in verification
+    assert "P0_RELEASE_SMOKE_PROCESS_LEFT_RUNNING" in verification
+    assert "dotnet run" not in verification
+    assert "PicotooPet.Desktop.Core.SmokeTests*" in verification
