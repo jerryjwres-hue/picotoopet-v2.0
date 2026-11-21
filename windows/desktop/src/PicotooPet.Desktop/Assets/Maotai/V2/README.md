@@ -13,3 +13,11 @@
 - 正式资产缺失或损坏时运行时 fail closed；Shell/Core/Worker/Task/Approval 不得受影响。
 
 当前 Smoke Gate 同时验证：文件齐全、PNG 签名、IHDR、像素尺寸、alpha 通道、manifest Pivot/overlap，以及 installer publish 映射。
+
+## 桌宠扩展位最终策略（2026-11-21）
+
+桌宠 V2 **只是保留的理论空位**：默认关闭、不读取 v2 角色图片、不生成动画、不执行其素材/像素/运动测试。44 张 PNG、耳机与双足形象等均不在本期开发/安装/影视验收范围。
+
+旧完整桌宠 Release 已改为**仅手动触发**，它的历史失败不再影响常规 GitHub PR/影视生产构建。今后不得因缺少 `torso_neutral.png` 等桌宠资产反复请求用户或 Claude 操作。当前仅维护 Mac Core → 本地 Creative → Production Plan → Windows Worker → Comfy/QC/MP4 主线；原有安全/审批/HOLD 不可绕过。
+
+如未来用户明确启用桌宠，另开隔离任务评估素材、行为及独立发布；不要自动恢复此功能。
