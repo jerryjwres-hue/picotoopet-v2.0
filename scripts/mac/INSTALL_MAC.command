@@ -16,6 +16,7 @@ VERSIONS_ROOT="$RUNTIME_ROOT/versions"
 TARGET="$VERSIONS_ROOT/$VERSION"
 CURRENT="$RUNTIME_ROOT/current"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
+CORE_PLIST="$LAUNCH_AGENTS/com.picotoopet.mac-core.plist"
 STATE_DIR="$RUNTIME_ROOT/state"
 PORT_HELPER="$SCRIPT_DIR/lib/runtime_port.sh"
 DB_COMPAT="$SCRIPT_DIR/lib/check_install_database.py"
@@ -36,11 +37,31 @@ mkdir -p "$VERSIONS_ROOT" "$RUNTIME_ROOT/logs" "$RUNTIME_ROOT/backups" "$STATE_D
 # 已有安装保留当前端口；首次安装时按 8765、8766 顺序选择空闲端口。
 if [ -f "$STATE_DIR/api-port.txt" ]; then
   API_PORT="$(cat "$STATE_DIR/api-port.txt")"
+  # 新状态文件不得与已启动实例的 LaunchAgent 记录冲突。
+  if [ -f "$CORE_PLIST" ]; then
+    INSTALLED_PORT="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PICOTOO_API_PORT' "$CORE_PLIST" 2>/dev/null)" || {
+      echo "STOP=EXISTING_LAUNCHAGENT_PORT_UNKNOWN" >&2
+      exit 1
+    }
+    if [ "$API_PORT" != "$INSTALLED_PORT" ]; then
+      echo "STOP=PORT_STATE_CONFLICT" >&2
+      exit 1
+    fi
+  fi
+elif [ -f "$CORE_PLIST" ]; then
+  # 兼容手工部署的 2.3 LaunchAgent：从原配置读取端口，不误占 8765 AI Server。
+  API_PORT="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PICOTOO_API_PORT' "$CORE_PLIST" 2>/dev/null)" || {
+    echo "STOP=EXISTING_LAUNCHAGENT_PORT_UNKNOWN" >&2
+    exit 1
+  }
+elif [ -L "$CURRENT" ]; then
+  echo "STOP=EXISTING_CORE_PORT_UNKNOWN" >&2
+  exit 1
 else
   # shellcheck source=lib/runtime_port.sh
   source "$PORT_HELPER"
   API_PORT="$(select_api_port 8765 8766)" || {
-    echo "8765 和 8766 均被占用，安装已停止。" >&2
+    echo "STOP=NO_FREE_API_PORT" >&2
     exit 1
   }
 fi
@@ -52,11 +73,24 @@ case "$API_PORT" in
 esac
 printf '%s\n' "$API_PORT" > "$STATE_DIR/api-port.txt"
 
-# 保留上一个版本路径，为原子回滚提供依据。
+# 只能原子切换现有符号链接；普通目录、相对链接或损坏链接一律拒绝。
+PREVIOUS_TARGET=""
+PREVIOUS_EXISTS=0
 if [ -L "$CURRENT" ]; then
-  readlink "$CURRENT" > "$STATE_DIR/previous_version.txt"
-elif [ -d "$CURRENT" ]; then
-  printf '%s\n' "$CURRENT" > "$STATE_DIR/previous_version.txt"
+  PREVIOUS_TARGET="$(readlink "$CURRENT")"
+  if [[ "$PREVIOUS_TARGET" != /* ]] || [ ! -d "$PREVIOUS_TARGET" ]; then
+    echo "STOP=UNSAFE_PREVIOUS_CORE_LINK" >&2
+    exit 1
+  fi
+  PREVIOUS_EXISTS=1
+  printf '%s\n' "$PREVIOUS_TARGET" > "$STATE_DIR/previous_version.txt"
+elif [ -e "$CURRENT" ]; then
+  echo "STOP=UNMANAGED_CURRENT_DIRECTORY" >&2
+  exit 1
+fi
+if [ -e "$CURRENT.next" ] || [ -L "$CURRENT.next" ]; then
+  echo "STOP=STALE_CURRENT_NEXT" >&2
+  exit 1
 fi
 
 # 安装 uv；日常运行不需要用户打开终端。
