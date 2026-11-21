@@ -18,7 +18,7 @@ _SHA = "a" * 40
 _RUN = "12345"
 README = (
     b"NOT a formal Release Builder output.\n"
-    b"Missing Maotai v2 independent assets continue to block the formal product Release.\n"
+    b"Desktop pet is DEFERRED and excluded from film-production scope.\n"
 )
 
 
