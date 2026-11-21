@@ -242,8 +242,11 @@ function Restore-PreviousActivation {
     $restoredState = Restore-PicotooManagedShortcutSnapshot `
         -ShortcutState $preActivationShortcutState `
         -DesktopDirectory $DesktopDirectory
-    # 安装失败时仅恢复当前指针/快捷方式，不遗留新版本的 SSH 启动入口。
-    Set-PicotooTunnelShortcut -VersionRoot $(if ($null -ne $previousCurrent) { [string]$previousCurrent.path } else { "" })
+    if ($script:StrictP0Activation) {
+        # 仅影视预览恢复 SSH 入口；传统桌宠 Full Release 不得被该扩展修改。
+        $oldVersionRoot = if ($null -ne $previousCurrent) { [string]$previousCurrent.path } else { "" }
+        Set-PicotooTunnelShortcut -VersionRoot $oldVersionRoot
+    }
     if ($script:StrictP0Activation -and $null -ne $previousCurrent) {
         # 原有旧版本如不认识 HOLD，恢复开机自启会在下次登录偷偷启动 Worker。
         $safePrevious = $false
