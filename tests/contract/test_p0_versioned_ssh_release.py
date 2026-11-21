@@ -19,9 +19,12 @@ def test_builder_binds_secure_ssh_scripts_to_versioned_hashed_payload() -> None:
     """连接脚本在 manifest 文件枚举之前复制和自检，不随 Full 桌宠包发布。"""
 
     text = BUILDER.read_text(encoding="utf-8-sig")
-    copy = text.index('Copy-ReleaseFile \\')
+    # 安全连接脚本必须先进入 payload，才能包含在逐文件 SHA256 发布清单。
+    # 不以 PowerShell 的续行符作为定位依据：其语法是反引号而非反斜杠。
+    connection = text.index('$connectionOutput = Join-Path $payloadRoot')
+    native_ssh_test = text.index('Start-SecureMacTunnel.ps1"), "-SelfTest"')
     files = text.index('$files = @(')
-    assert copy < files
+    assert connection < native_ssh_test < files
     assert 'Join-Path $payloadRoot "tools\\connection"' in text
     assert 'Join-Path $connectionOutput "Start-SecureMacTunnel.ps1"' in text
     assert 'Join-Path $connectionOutput $name' in text
