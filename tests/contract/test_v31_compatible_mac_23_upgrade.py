@@ -228,3 +228,28 @@ def test_core_only_upgrade_never_launches_supervisor_or_worker() -> None:
     assert "picotoopet-core worker" not in installer
     rollback = (ROOT / "scripts/mac/ROLLBACK_MAC.command").read_text(encoding="utf-8")
     assert "com.picotoopet.health-supervisor" not in rollback
+
+
+def test_23_production_authority_survives_v31_ui_integration() -> None:
+    """V3.1 Studio 不得整文件覆盖真实 2.3 的生产、审批和 Worker 入口。"""
+
+    app = (ROOT / "src/picotoopet_core/api/app.py").read_text(encoding="utf-8")
+    for route in (
+        "production.router",
+        "autonomous_goals.router",
+        "creative_intelligence.router",
+        "postproduction.router",
+        "owner_structured_reviews.router",
+        "workers.router",
+    ):
+        assert f"app.include_router({route}" in app
+
+    production = (
+        ROOT / "src/picotoopet_core/api/routes/production.py"
+    ).read_text(encoding="utf-8")
+    for endpoint in (
+        "/production/jobs/{production_job_id}/worker-challenge",
+        "/production/jobs/{production_job_id}/witness/preflight",
+        "/production/jobs/{production_job_id}/claim",
+    ):
+        assert endpoint in production
