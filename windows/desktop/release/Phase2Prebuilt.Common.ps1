@@ -232,7 +232,8 @@ function Restore-PicotooManagedShortcutSnapshot {
 
 function Get-PicotooTunnelShortcutPath {
     # Windows 系统开始菜单入口；绝不加入开机启动项，也不启动 SSH。
-    return Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet 安全连接.lnk"
+    # 固定 ASCII 文件名，兼容英文 Windows PowerShell 5.1 与旧 WScript COM 代码页。
+    return Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Picotoo Pet Secure Connect.lnk"
 }
 
 function Set-PicotooTunnelShortcut {
@@ -257,7 +258,7 @@ function Set-PicotooTunnelShortcut {
         $shortcut.TargetPath       = Join-Path $env:WINDIR "System32\wscript.exe"
         $shortcut.Arguments        = '"' + $launcher + '"'
         $shortcut.WorkingDirectory = $connection
-        $shortcut.Description      = "PicotooPet Mac SSH 安全连接（手动点击，不自动启动）"
+        $shortcut.Description      = "PicotooPet Mac SSH (manual secure connection)"
         $shortcut.Save()
     }
     finally {
