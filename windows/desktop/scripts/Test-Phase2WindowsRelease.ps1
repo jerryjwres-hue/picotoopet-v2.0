@@ -587,6 +587,26 @@ function Invoke-LifecycleFixture {
             finally {
                 [IO.File]::WriteAllText($targetManifestPath, $targetOriginal, [Text.UTF8Encoding]::new($false))
             }
+            # 原生负例 2b：目标虽然自称 UI Preview，但缺少 HOLD-aware 构建标记，同样禁止回滚。
+            $markerOriginal = [IO.File]::ReadAllText($targetManifestPath, [Text.UTF8Encoding]::new($false, $true))
+            try {
+                $unmarked = $markerOriginal | ConvertFrom-Json
+                $unmarked.p0_hold_aware = $false
+                Write-JsonUtf8 -Value $unmarked -Path $targetManifestPath
+                $refused = Invoke-ReleaseScript -ScriptPath $rollbackB -Arguments @(
+                    '-DataRoot', $dataRoot,
+                    '-DesktopDirectory', $DesktopDirectory,
+                    '-ActivationSelfTest', '-SuppressReportOpen'
+                ) -ExpectedExitCodes @(1)
+                if ($refused.StdOut -notmatch 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED') {
+                    throw 'P0_PREVIEW_ROLLBACK_UNMARKED_TARGET_ACCEPTED'
+                }
+                [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionB -PreviousVersion $versionA `
+                    -CurrentProductVersion $productVersionB -PreviousProductVersion $productVersionA)
+            }
+            finally {
+                [IO.File]::WriteAllText($targetManifestPath, $markerOriginal, [Text.UTF8Encoding]::new($false))
+            }
             Write-Host 'P0_PREVIEW_ROLLBACK_HOLD_AND_OLD_WORKER_NEGATIVES=PASS'
         }
 
@@ -666,7 +686,8 @@ function Invoke-LifecycleFixture {
             $oldOriginal = [IO.File]::ReadAllText($oldManifestPath, [Text.UTF8Encoding]::new($false, $true))
             try {
                 $oldMetadata = $oldOriginal | ConvertFrom-Json
-                $oldMetadata.validation_scope = 'full-release'
+                # 回归历史 UI Preview 未声明 HOLD-aware 的情况，即使 scope 字符串相同也不得开机自启。
+                $oldMetadata.p0_hold_aware = $false
                 Write-JsonUtf8 -Value $oldMetadata -Path $oldManifestPath
                 [void](Invoke-ReleaseScript -ScriptPath $installerFailure -Arguments @(
                     '-PackageRoot', $packageFailure,
