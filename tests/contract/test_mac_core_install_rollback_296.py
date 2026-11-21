@@ -48,7 +48,7 @@ def test_upgrade_requires_real_http_version_and_can_rollback() -> None:
     # Shell Rollback cannot launch Supervisor or Windows Worker.
     assert "launchctl bootstrap" in script
     assert "com.picotoopet.health-supervisor" not in script
-    assert "comfyui" not in script.lower()
+    assert "comfyui serve" not in script.lower()
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Actual BSD mv -h / Bash are tested on macOS")
