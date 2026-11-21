@@ -153,13 +153,171 @@ jobs:
             -Version $version `
             -ValidationScope UiPreview
 
-      - name: Run isolated Control Center UI-only native smoke on built binaries
+      - name: Verify completed builder smoke and clean native process exit
         shell: pwsh
         run: |
-          # Reuse the exact compiled test DLL; never rebuild after it may remain loaded.
-          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
-            --configuration Release --no-build -- --ui-interaction-only
-          if ($LASTEXITCODE -ne 0) { throw 'P0_RELEASE_UI_NATIVE_SMOKE_FAILED' }
+          # 构建器已运行相同的 --ui-interaction-only 冒烟测试，任意非零退出会阻断封包。
+          # 不得重复启动 WPF 测试；只读核对报告 SHA/Scope 与原生进程退出状态。
+          $reportPath = 'windows/desktop/artifacts/release/windows-build-report.json'
+          if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { throw 'P0_RELEASE_BUILD_REPORT_MISSING' }
+          $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+          if ($report.status -ne 'pass' -or $report.validation_scope -ne 'windows-ui-preview' -or
+              $report.source_head -ne $env:PICOTOO_SOURCE_HEAD_SHA -or
+              $report.native_ci_verified -ne $true) { throw 'P0_RELEASE_BUILDER_SMOKE_PROVENANCE_MISMATCH' }
+          $alive = @(Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -match '^PicotooPet\\.Desktop\\.Core\\.SmokeTests(?:\\.exe)?
+
+      - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        shell: pwsh
+        run: |
+          $zips = @(Get-ChildItem 'windows/desktop/artifacts/release' -Filter 'PicotooPet-Phase2-Windows-Prebuilt-*.zip' -File)
+          if ($zips.Count -ne 1) { throw 'P0_PREVIEW_ZIP_COUNT_INVALID' }
+          $dest = Join-Path $env:RUNNER_TEMP 'p0-packed-bootstrap-check'
+          Expand-Archive -LiteralPath $zips[0].FullName -DestinationPath $dest -Force
+          $roots = @(Get-ChildItem -LiteralPath $dest -Directory)
+          if ($roots.Count -ne 1) { throw 'P0_PREVIEW_PACKAGE_ROOT_INVALID' }
+          $script = Join-Path $roots[0].FullName 'Prepare-P0ThreeShotHold.ps1'
+          $readme = Join-Path $roots[0].FullName 'README_INSTALL_CN.txt'
+          if (-not (Test-Path -LiteralPath $script -PathType Leaf) -or -not (Test-Path -LiteralPath $readme -PathType Leaf)) { throw 'P0_PREVIEW_BOOTSTRAP_MISSING_FROM_ZIP' }
+          # Copy-ReleaseFile intentionally converts .ps1 to UTF-8 with BOM for native Windows PowerShell 5.1.
+          # Validate exact expected *packaged bytes*, not the original no-BOM repository file's hash.
+          $source = [IO.File]::ReadAllText('windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1', [Text.UTF8Encoding]::new($false, $true))
+          $utf8WithBom = [Text.UTF8Encoding]::new($true)
+          [byte[]]$expectedBytes = $utf8WithBom.GetPreamble() + $utf8WithBom.GetBytes($source)
+          $expectedHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($expectedBytes))
+          $actualHash = (Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) { throw 'P0_PREVIEW_BOOTSTRAP_HASH_MISMATCH' }
+          Write-Host "P0_PREVIEW_BOOTSTRAP_PACKAGED_SHA256=$actualHash; UTF8_BOM=PASS"
+          $text = Get-Content -LiteralPath $readme -Raw
+          if (-not $text.StartsWith('P0 #91 严格三镜头开发预览') -or -not $text.Contains('P0_HOLD_PREPARED=PASS; ARMED=PASS')) { throw 'P0_PREVIEW_HOLD_FIRST_README_MISSING' }
+          if ($env:PICOTOO_SOURCE_REF -eq 'fix/p0-reboot-explicit-attempt2-20261028') {
+            $retryScript = Join-Path $roots[0].FullName 'Approve-P0LostPromptAttempt2.ps1'
+            if (-not (Test-Path -LiteralPath $retryScript -PathType Leaf)) { throw 'P0_ATTEMPT2_SCRIPT_MISSING' }
+            $retrySource = [IO.File]::ReadAllText('windows/desktop/scripts/Approve-P0LostPromptAttempt2.ps1', [Text.UTF8Encoding]::new($false, $true))
+            [byte[]]$expectedRetry = $utf8WithBom.GetPreamble() + $utf8WithBom.GetBytes($retrySource)
+            $expectedRetryHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($expectedRetry))
+            if ((Get-FileHash -LiteralPath $retryScript -Algorithm SHA256).Hash -ne $expectedRetryHash) { throw 'P0_ATTEMPT2_SCRIPT_HASH_MISMATCH' }
+            Write-Host 'P0_EXACT_ATTEMPT2_OPERATOR_SCRIPT_PACKAGED=PASS'
+          }
+          Write-Host 'P0_PREVIEW_OPERATOR_BOOTSTRAP_IN_ZIP=PASS'
+      - name: Verify install upgrade recovery rollback lifecycle
+        shell: pwsh
+        run: |
+          & windows/desktop/scripts/Test-Phase2WindowsRelease.ps1 `
+            -ReleaseRoot windows/desktop/artifacts/release
+
+      - name: P0 launch actual published GUI and unique same-EXE Worker under HOLD
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_ACTIONS -ne 'true') { throw 'P0_CI_ONLY' }
+          $gate = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
+          $cfg = Get-Content -LiteralPath $gate -Raw | ConvertFrom-Json
+          if ($cfg.mode -ne 'hold' -or -not (Test-Path -LiteralPath ($gate + '.armed'))) { throw 'P0_HOLD_REQUIRED' }
+          $exe = (Resolve-Path 'windows/desktop/artifacts/release/work/payload/Picotoo Pet AI.exe').Path
+          $gui = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -WindowStyle Hidden -PassThru
+          $workers = @()
+          try {
+            $until = [DateTime]::UtcNow.AddSeconds(20)
+            do {
+              Start-Sleep -Milliseconds 250
+              $gui.Refresh()
+              if ($gui.HasExited) { throw ('P0_PUBLISHED_GUI_EXITED_' + $gui.ExitCode) }
+              $workers = @(Get-CimInstance Win32_Process -Filter "Name='Picotoo Pet AI.exe'" | Where-Object {
+                $_.ParentProcessId -eq $gui.Id -and $_.ExecutablePath -eq $exe -and $_.CommandLine -match '--p0-media-worker'
+              })
+            } until ($workers.Count -eq 1 -or [DateTime]::UtcNow -gt $until)
+            if ($workers.Count -ne 1) { throw 'P0_PUBLISHED_SAME_EXE_WORKER_NOT_OBSERVED' }
+            Start-Sleep -Seconds 3
+            if (-not (Get-Process -Id $workers[0].ProcessId -ErrorAction SilentlyContinue)) { throw 'P0_PUBLISHED_WORKER_EXITED' }
+            $gui.Refresh()
+            if ($gui.HasExited) { throw 'P0_PUBLISHED_GUI_EXITED' }
+            Write-Host 'P0_PUBLISHED_GUI_AND_SAME_EXE_WORKER_START=PASS; REAL_GPU=UNVERIFIED'
+          } finally {
+            $cleanup = @(@($workers) + @(Get-CimInstance Win32_Process -Filter "Name='Picotoo Pet AI.exe'" -ErrorAction SilentlyContinue | Where-Object {
+              $_.ParentProcessId -eq $gui.Id -and $_.ExecutablePath -eq $exe -and $_.CommandLine -match '--p0-media-worker'
+            }) | Sort-Object ProcessId -Unique)
+            foreach ($worker in $cleanup) { Stop-Process -Id $worker.ProcessId -Force -ErrorAction SilentlyContinue }
+            if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force -ErrorAction SilentlyContinue }
+            $gui.Dispose()
+          }
+      - name: Create outer artifact SHA-256
+        shell: pwsh
+        run: |
+          $root = "windows/desktop/artifacts/release"
+          $zips = @(Get-ChildItem -LiteralPath $root -Filter "PicotooPet-Phase2-Windows-Prebuilt-*.zip" -File)
+          if ($zips.Count -ne 1) {
+            throw "Expected exactly one Windows UI Preview ZIP, found $($zips.Count)."
+          }
+          $zip  = $zips[0]
+          $hash = (Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText(
+            (Join-Path $root "artifact-sha256.txt"),
+            "$hash  $($zip.Name)`n",
+            [System.Text.UTF8Encoding]::new($false))
+
+      - name: P0 preview package source and published EXE hash evidence
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        shell: pwsh
+        run: |
+          $root = 'windows/desktop/artifacts/release'
+          $manifest = Get-Content -LiteralPath "$root/work/release-manifest.json" -Raw | ConvertFrom-Json
+          if ($manifest.full_release -or $manifest.validation_scope -ne 'windows-ui-preview' -or $manifest.source_head -ne $env:PICOTOO_SOURCE_HEAD_SHA) { throw 'P0_PREVIEW_PROVENANCE_INVALID' }
+          if (-not $manifest.native_ci_verified -or -not $manifest.user_install_allowed) { throw 'P0_PREVIEW_NATIVE_PACKAGE_NOT_VERIFIED' }
+          $entry = @($manifest.files | Where-Object path -eq 'Picotoo Pet AI.exe')
+          if ($entry.Count -ne 1) { throw 'P0_PREVIEW_EXE_MANIFEST_ENTRY_MISSING' }
+          $actual = (Get-FileHash -LiteralPath "$root/work/payload/Picotoo Pet AI.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $entry[0].sha256) { throw 'P0_PREVIEW_EXE_SHA_MISMATCH' }
+          $zip = @(Get-ChildItem -LiteralPath $root -Filter 'PicotooPet-Phase2-Windows-Prebuilt-*.zip' -File)
+          if ($zip.Count -ne 1) { throw 'P0_PREVIEW_ZIP_AMBIGUOUS' }
+          $evidence = [ordered]@{
+            label = 'P0 Developer Preview'; source_sha = $env:PICOTOO_SOURCE_HEAD_SHA; workflow_run = $env:GITHUB_RUN_ID
+            validation_scope = $manifest.validation_scope; formal_release = $false
+            p0_gate_28_cases = 'PASS'; prelaunch_hold = 'PASS'; native_ui_and_worker_launch = 'PASS'
+            zip_sha256 = (Get-FileHash -LiteralPath $zip[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            exe_sha256 = $actual; live_mac_core = 'UNVERIFIED'; real_comfy_gpu = 'UNVERIFIED'
+          }
+          $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath "$root/p0-preview-lifecycle-evidence.json" -Encoding utf8
+          Copy-Item -LiteralPath "$root/work/release-manifest.json" -Destination "$root/release-manifest.json"
+          Write-Host "P0_NATIVE_PREVIEW_INSTALL_LIFECYCLE=PASS; SOURCE_SHA=$env:PICOTOO_SOURCE_HEAD_SHA; EXE_SHA256=$actual"
+      - name: Upload Windows UI Preview evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: PicotooPet-Windows-UI-Preview-2.3.27.1-${{ github.run_number }}
+          path: |
+            windows/desktop/artifacts/release/PicotooPet-Phase2-Windows-Prebuilt-*.zip
+            windows/desktop/artifacts/release/*.sha256.txt
+            windows/desktop/artifacts/release/artifact-sha256.txt
+            windows/desktop/artifacts/release/windows-build-report.json
+            windows/desktop/artifacts/release/p0-preview-lifecycle-evidence.json
+            windows/desktop/artifacts/release/release-manifest.json
+            windows/desktop/artifacts/release/fixture-evidence/**
+          if-no-files-found: error
+          retention-days: 14
+
+      # Provenance --------------------------------------------------------------
+      - name: Publish Preview run provenance to source commit
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          PREVIEW_JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.PREVIEW_JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request?.head.sha ?? context.sha,
+              state,
+              context: 'windows-ui-preview-release',
+              description: `Windows UI Preview run ${context.runId} ${state}`,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+          })
+          if ($alive.Count -ne 0) { throw 'P0_RELEASE_SMOKE_PROCESS_LEFT_RUNNING' }
+          Write-Host 'P0_RELEASE_BUILDER_UI_SMOKE=PASS; PROVENANCE=PASS; PROCESS_EXIT=PASS'
 
       - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
         if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
