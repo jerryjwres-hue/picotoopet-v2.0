@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import shutil
 
@@ -242,7 +243,7 @@ def test_23_production_authority_survives_v31_ui_integration() -> None:
         "owner_structured_reviews.router",
         "workers.router",
     ):
-        assert f"app.include_router({route}" in app
+        assert re.search(r"app\.include_router\(\s*" + re.escape(route), app)
 
     production = (
         ROOT / "src/picotoopet_core/api/routes/production.py"
