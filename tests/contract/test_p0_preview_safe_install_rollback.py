@@ -120,3 +120,24 @@ def test_release_builder_completes_before_wpf_smoke_without_dll_rebuild() -> Non
     assert "dotnet run" not in step
     assert "dotnet build " not in step
     assert "dotnet restore " not in step
+
+
+def test_rollback_native_negatives_require_fresh_report_and_no_side_effects() -> None:
+    """回滚不输出拒绝原因到 stdout，必须检验本次拒绝审计和状态不变。"""
+
+    lifecycle = LIFECYCLE.read_text(encoding="utf-8-sig")
+    helper = lifecycle[lifecycle.index("function Invoke-ExpectedRollbackRefusal"):
+                       lifecycle.index("function Assert-PointerVersions")]
+    assert "-ExpectedExitCodes @(1)" in helper
+    assert "$before -notcontains $_.FullName" in helper
+    assert "$fresh.Count -ne 1" in helper
+    assert "'phase2-rollback-activation-*'" in helper
+    assert "[string]$denial.error -cne $ExpectedReason" in helper
+    assert "$null -ne $denial.activation" in helper
+    assert "$null -ne $denial.recovery" in helper
+    assert "$null -ne $denial.current_after" in helper
+    assert "$null -ne $denial.previous_after" in helper
+    assert helper.count("Get-FileHash") == 6
+    assert "Assert-ShortcutSnapshotEqual" in helper
+    assert "Copy-Item -LiteralPath $fresh[0].FullName" in helper
+    assert lifecycle.count("Invoke-ExpectedRollbackRefusal -ScriptPath $rollbackB") == 3
