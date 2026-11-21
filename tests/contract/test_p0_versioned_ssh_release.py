@@ -80,3 +80,18 @@ def test_verifier_and_native_lifecycle_require_installed_shortcut_identity() -> 
     assert "Assert-PicotooTunnelShortcut -VersionRoot ([string]$current.path)" in verifier
     assert native.count("Assert-PicotooTunnelShortcut -VersionRoot") >= 4
     assert "-ValidationScope UiPreview" in NATIVE_CI.read_text(encoding="utf-8")
+
+
+def test_native_release_builder_publishes_before_running_its_wpf_smoke() -> None:
+    """发布时不得让前一个 WPF smoke 占用 DLL 后再编译同一项目。"""
+
+    builder = BUILDER.read_text(encoding="utf-8-sig")
+    first_publish = builder.index('    "publish", $appProject')
+    ui_smoke = builder.index('Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments')
+    full_pet_smoke = builder.index('"--desktop-pet-acceptance-only"')
+    app_self_test = builder.index('Invoke-NativeCommand -FilePath $appExecutable -Arguments @(')
+
+    # 先构建发布，再运行现有两个 no-build smoke；之后不得再编译。
+    assert first_publish < ui_smoke < app_self_test
+    assert first_publish < full_pet_smoke < app_self_test
+    assert '"--no-build"' in builder[ui_smoke:app_self_test]
