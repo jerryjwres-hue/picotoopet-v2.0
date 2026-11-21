@@ -94,4 +94,6 @@ def test_native_release_builder_publishes_before_running_its_wpf_smoke() -> None
     # 先构建发布，再运行现有两个 no-build smoke；之后不得再编译。
     assert first_publish < ui_smoke < app_self_test
     assert first_publish < full_pet_smoke < app_self_test
-    assert '"--no-build"' in builder[ui_smoke:app_self_test]
+    smoke_args = builder.index('$smokeArguments = @(')
+    assert first_publish < smoke_args < ui_smoke
+    assert '"--no-build"' in builder[smoke_args:ui_smoke]
