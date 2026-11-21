@@ -1,0 +1,146 @@
+"""CPU-only archive tamper tests; NEVER run Windows EXE or enable GPU."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+from scripts.ci.verify_p0_developer_preview import (
+    PreviewVerificationError,
+    verify_preview_archive,
+)
+
+_SHA = "a" * 40
+_RUN = "12345"
+README = (
+    b"NOT a formal Release Builder output.\n"
+    b"Missing Maotai v2 independent assets continue to block the formal product Release.\n"
+)
+
+
+def _create_preview(
+    root: Path,
+    *,
+    release_flag: bool = False,
+    source_sha: str = _SHA,
+    tamper: bool = False,
+    missing_hold: bool = False,
+    duplicate: bool = False,
+    unsafe_path: bool = False,
+) -> tuple[Path, Path]:
+    """Synthetic ZIP resembles real preview metadata, never a runnable application."""
+
+    archive = root / f"P0-ThreeShot-DeveloperPreview-{_SHA[:12]}.zip"
+    receipt = root / "preview-sha256.txt"
+    files = {
+        "app/Picotoo Pet AI.exe": b"TEST-ONLY-NOT-A-REAL-EXE",
+        "app/product-version.txt": b"2.3.27.1\n",
+        "Prepare-P0ThreeShotHold.ps1": b"# TEST ONLY: persistent HOLD\n",
+        "README_P0_DEVELOPER_PREVIEW.txt": README,
+    }
+    if missing_hold:
+        files.pop("Prepare-P0ThreeShotHold.ps1")
+    manifest = {
+        "schema_version": "p0-three-shot-developer-preview.v1",
+        "source_sha": source_sha,
+        "github_run_id": _RUN,
+        "product_version": "2.3.27.1",
+        "build_target": "win-x64-self-contained",
+        "artifact_kind": "unsigned-portable-developer-preview",
+        "formal_release_pass": release_flag,
+        "user_install_allowed": False,
+        "executable": "app/Picotoo Pet AI.exe",
+        "hold_script": "Prepare-P0ThreeShotHold.ps1",
+        "files": [
+            {
+                "path": name,
+                "size_bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+            for name, data in files.items()
+        ],
+    }
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as package:
+        for name, data in files.items():
+            package.writestr(name, data + (b"CHANGED" if tamper and name.endswith(".exe") else b""))
+        if duplicate:
+            # Duplicate basename under different case must not be extracted on Windows.
+            package.writestr("APP/product-version.txt", b"2.3.27.1")
+        if unsafe_path:
+            package.writestr("../outside.txt", b"NO")
+        package.writestr("preview-manifest.json", json.dumps(manifest).encode("utf-8"))
+
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    receipt.write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+    return archive, receipt
+
+
+class PreviewArchiveContractTests(unittest.TestCase):
+    """Protect the exact artifact ZIP, not a separate fake success marker."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def verify(self, archive: Path, receipt: Path, **overrides):
+        return verify_preview_archive(
+            archive, receipt, expected_source_sha=overrides.get("sha", _SHA),
+            expected_run_id=overrides.get("run_id", _RUN),
+        )
+
+    def test_synthetic_hold_archive_passes_without_exe_execution(self):
+        archive, receipt = _create_preview(self.root)
+        result = self.verify(archive, receipt)
+        self.assertEqual(result["files_verified"], 4)
+        self.assertFalse(result["formal_release_pass"])
+        self.assertFalse(result["user_install_allowed"])
+
+    def test_rejects_formal_release_claim(self):
+        archive, receipt = _create_preview(self.root, release_flag=True)
+        with self.assertRaisesRegex(PreviewVerificationError, "UNAUTHORIZED_RELEASE_CLAIM"):
+            self.verify(archive, receipt)
+
+    def test_rejects_source_sha_mismatch(self):
+        archive, receipt = _create_preview(self.root, source_sha="b" * 40)
+        with self.assertRaisesRegex(PreviewVerificationError, "MANIFEST_IDENTITY_MISMATCH"):
+            self.verify(archive, receipt)
+
+    def test_rejects_body_tamper_even_if_zip_receipt_is_recomputed(self):
+        archive, receipt = _create_preview(self.root, tamper=True)
+        with self.assertRaisesRegex(PreviewVerificationError, "FILE_BYTES_OR_SHA256_MISMATCH"):
+            self.verify(archive, receipt)
+
+    def test_rejects_changed_zip_without_receipt_update(self):
+        archive, receipt = _create_preview(self.root)
+        receipt.write_text("0" * 64 + f"  {archive.name}\n", encoding="ascii")
+        with self.assertRaisesRegex(PreviewVerificationError, "ARCHIVE_SHA256_RECEIPT_MISMATCH"):
+            self.verify(archive, receipt)
+
+    def test_rejects_missing_persistent_hold(self):
+        archive, receipt = _create_preview(self.root, missing_hold=True)
+        with self.assertRaisesRegex(PreviewVerificationError, "REQUIRED_PAYLOAD_MISSING"):
+            self.verify(archive, receipt)
+
+    def test_rejects_case_collision(self):
+        archive, receipt = _create_preview(self.root, duplicate=True)
+        with self.assertRaisesRegex(PreviewVerificationError, "DUPLICATE_OR_CASE_COLLIDING_PATH"):
+            self.verify(archive, receipt)
+
+    def test_rejects_path_traversal(self):
+        archive, receipt = _create_preview(self.root, unsafe_path=True)
+        with self.assertRaisesRegex(PreviewVerificationError, "UNSAFE_ZIP_PATH"):
+            self.verify(archive, receipt)
+
+    def test_rejects_wrong_run_id(self):
+        archive, receipt = _create_preview(self.root)
+        with self.assertRaisesRegex(PreviewVerificationError, "MANIFEST_IDENTITY_MISMATCH"):
+            self.verify(archive, receipt, run_id="99999")
+
+
+if __name__ == "__main__":
+    unittest.main()
