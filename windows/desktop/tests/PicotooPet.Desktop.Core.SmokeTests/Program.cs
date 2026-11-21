@@ -15,6 +15,14 @@ internal static class Program
     {
         try
         {
+            // 新 Studio 只读端点的独立 CPU 合同验收；不要求 Maotai 正式 WPF 艺术资产。
+            if (args.Contains("--studio-storypack-client-only", StringComparer.Ordinal))
+            {
+                await StudioStoryPackClientSmokeTests.RunAsync().ConfigureAwait(false);
+                Console.WriteLine("STUDIO_23_STORYPACK_CLIENT=PASS; LEASE=0; GPU_POST=0");
+                return 0;
+            }
+
             if (args.Contains("--reference-preview-batch-only", StringComparer.Ordinal))
             {
                 var failures = new List<Exception>();
