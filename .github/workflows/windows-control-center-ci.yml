@@ -120,6 +120,13 @@ jobs:
           dotnet --info
           $PSVersionTable.PSVersion
 
+      - name: Verify Windows PowerShell 5.1 secure Core URL policy before GUI launch
+        shell: powershell
+        run: |
+          # 严格复用正式 VERIFY 脚本的真实 URL 前门禁，不连接 Mac、不启动 Worker。
+          .\windows\desktop\release\Verify-Phase2Prebuilt.ps1 -AddressPolicySelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'P0_SECURE_VERIFIER_NATIVE_SELFTEST_FAILED' }
+
       - name: Reproduce legacy Task Center binding failure
         shell: pwsh
         run: |
