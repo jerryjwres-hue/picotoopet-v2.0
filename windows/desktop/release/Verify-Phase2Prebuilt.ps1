@@ -194,6 +194,13 @@ try {
         -ProductVersion $productVersion `
         -DesktopDirectory $DesktopDirectory `
         -RequireNoLegacy
+    if ([string]$manifest.validation_scope -eq 'windows-ui-preview') {
+        # 限定当前版本的手动 SSH 入口必须匹配 payload；仅核查，不启动连接。
+        if ($manifest.secure_tunnel_package -ne $true) {
+            throw 'P0_VERSIONED_SSH_MANIFEST_MISSING'
+        }
+        [void](Assert-PicotooTunnelShortcut -VersionRoot ([string]$current.path))
+    }
     $releaseValidation = [ordered]@{
         version             = [string]$current.version
         product_version     = $productVersion

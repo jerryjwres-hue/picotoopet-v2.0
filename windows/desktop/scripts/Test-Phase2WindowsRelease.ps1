@@ -286,6 +286,58 @@ function Copy-ValidatedReport {
     return $report
 }
 
+function Invoke-ExpectedRollbackRefusal {
+    param(
+        [Parameter(Mandatory)][string]$ScriptPath,
+        [Parameter(Mandatory)][string]$DataRoot,
+        [Parameter(Mandatory)][string]$DesktopDirectory,
+        [Parameter(Mandatory)][string]$ExpectedReason,
+        [Parameter(Mandatory)][string]$EvidencePath
+    )
+
+    # 原生回滚只将拒绝原因写入 JSON；不能用空 stdout 误判安全负例。
+    $reportsRoot = Join-Path $DataRoot "reports"
+    $before = @(Get-ChildItem -LiteralPath $reportsRoot -Filter "phase2-rollback-*.json" -File |
+        ForEach-Object FullName)
+    $currentPath = Join-Path $DataRoot "current_version.json"
+    $previousPath = Join-Path $DataRoot "previous_version.json"
+    $currentHash = (Get-FileHash -LiteralPath $currentPath -Algorithm SHA256).Hash
+    $previousHash = (Get-FileHash -LiteralPath $previousPath -Algorithm SHA256).Hash
+    $shortcuts = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+    $sshPath = Get-PicotooTunnelShortcutPath
+    $sshHash = (Get-FileHash -LiteralPath $sshPath -Algorithm SHA256).Hash
+
+    [void](Invoke-ReleaseScript -ScriptPath $ScriptPath -Arguments @(
+        '-DataRoot', $DataRoot,
+        '-DesktopDirectory', $DesktopDirectory,
+        '-ActivationSelfTest', '-SuppressReportOpen'
+    ) -ExpectedExitCodes @(1))
+
+    # 只接受本次调用新生成的唯一报告；任何激活报告均证明负例失败。
+    $fresh = @(Get-ChildItem -LiteralPath $reportsRoot -Filter "phase2-rollback-*.json" -File |
+        Where-Object { $before -notcontains $_.FullName })
+    if ($fresh.Count -ne 1 -or $fresh[0].Name -like 'phase2-rollback-activation-*') {
+        throw 'P0_ROLLBACK_REFUSAL_REPORT_NOT_UNIQUE'
+    }
+    $denial = Read-JsonUtf8 -Path $fresh[0].FullName
+    if ([string]$denial.status -ne 'fail' -or
+        [string]$denial.error -cne $ExpectedReason -or
+        $null -ne $denial.activation -or $null -ne $denial.recovery -or
+        $null -ne $denial.current_after -or $null -ne $denial.previous_after) {
+        throw "P0_ROLLBACK_REFUSAL_REASON_MISMATCH: expected=$ExpectedReason; actual=$($denial.error)"
+    }
+
+    # 拒绝发生后，两个版本指针和全部快捷方式必须保持原样。
+    if ((Get-FileHash -LiteralPath $currentPath -Algorithm SHA256).Hash -ne $currentHash -or
+        (Get-FileHash -LiteralPath $previousPath -Algorithm SHA256).Hash -ne $previousHash -or
+        (Get-FileHash -LiteralPath $sshPath -Algorithm SHA256).Hash -ne $sshHash) {
+        throw 'P0_ROLLBACK_REFUSAL_CHANGED_ACTIVATION_STATE'
+    }
+    Assert-ShortcutSnapshotEqual -Expected $shortcuts -Actual @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
+    Copy-Item -LiteralPath $fresh[0].FullName -Destination $EvidencePath -Force
+    Write-Host "P0_ROLLBACK_REFUSAL=PASS; REASON=$ExpectedReason; ACTIVATION=0; POINTERS_UNCHANGED=YES"
+}
+
 function Assert-PointerVersions {
     param(
         [Parameter(Mandatory)][string]$DataRoot,
@@ -499,6 +551,9 @@ function Invoke-LifecycleFixture {
             -ProductVersion $productVersionA
         $snapshotA = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $installA.shortcut_state -Actual $snapshotA
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            [void](Assert-PicotooTunnelShortcut -VersionRoot (Join-Path (Join-Path $dataRoot "versions") $versionA))
+        }
 
         [void](Invoke-ReleaseScript -ScriptPath $installerB -Arguments @(
             "-PackageRoot", $packageB,
@@ -517,6 +572,9 @@ function Invoke-LifecycleFixture {
             -ProductVersion $productVersionB
         $snapshotB = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $installB.shortcut_state -Actual $snapshotB
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            [void](Assert-PicotooTunnelShortcut -VersionRoot (Join-Path (Join-Path $dataRoot "versions") $versionB))
+        }
         if (Test-Path -LiteralPath (Join-Path $DesktopDirectory "Picotoo Pet AI 2.3.5.9.lnk")) {
             throw "升级后仍保留旧版本快捷方式。"
         }
@@ -547,18 +605,50 @@ function Invoke-LifecycleFixture {
         }
 
         if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            # 版本化 SSH 快捷方式如指向篡改后的 VBS，真实离线 VERIFY 必须拒绝。
+            $sshLink = Get-PicotooTunnelShortcutPath
+            $shell = New-Object -ComObject WScript.Shell
+            try {
+                $shortcut = $shell.CreateShortcut($sshLink)
+                $oldArgument = [string]$shortcut.Arguments
+                $shortcut.Arguments = '"C:\\untrusted\\not-picotoo.vbs"'
+                $shortcut.Save()
+            }
+            finally {
+                if ([Runtime.InteropServices.Marshal]::IsComObject($shell)) {
+                    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+                }
+            }
+            try {
+                $refused = Invoke-ReleaseScript -ScriptPath $verifierB -Arguments @(
+                    '-DataRoot', $dataRoot,
+                    '-DesktopDirectory', $DesktopDirectory,
+                    '-OfflinePackageOnly', '-SuppressReportOpen'
+                ) -ExpectedExitCodes @(2)
+                $refusalReport = Copy-ValidatedReport -DataRoot $dataRoot `
+                    -Filter 'phase2-windows-verification.json' `
+                    -Destination (Join-Path $EvidenceRoot "$Name-ssh-shortcut-tamper.json") `
+                    -ExpectedStatus 'fail'
+                if (($refusalReport.errors -join ';') -notmatch 'P0_VERSIONED_SSH_SHORTCUT_WRONG_TARGET') {
+                    throw 'P0_SSH_TAMPERED_SHORTCUT_WAS_NOT_REFUSED'
+                }
+            }
+            finally {
+                Set-PicotooTunnelShortcut -VersionRoot (Join-Path (Join-Path $dataRoot "versions") $versionB)
+            }
+            Write-Host 'P0_VERSIONED_SSH_SHORTCUT_TAMPER_REFUSED=PASS'
+        }
+
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
             # 原生负例 1：有 armed 标记但模式为 ALLOW，回滚必须在指针/快捷方式变更前拒绝。
             $heldJson = [IO.File]::ReadAllText($gate, [Text.UTF8Encoding]::new($false, $true))
             try {
                 [IO.File]::WriteAllText($gate, '{"schema_version":"1.0","mode":"allow"}', [Text.UTF8Encoding]::new($false))
-                $refused = Invoke-ReleaseScript -ScriptPath $rollbackB -Arguments @(
-                    '-DataRoot', $dataRoot,
-                    '-DesktopDirectory', $DesktopDirectory,
-                    '-ActivationSelfTest', '-SuppressReportOpen'
-                ) -ExpectedExitCodes @(1)
-                if ($refused.StdOut -notmatch 'P0_ROLLBACK_HOLD_NOT_ARMED') {
-                    throw 'P0_PREVIEW_ROLLBACK_ALLOW_NOT_REFUSED'
-                }
+                # P0_PREVIEW_ROLLBACK_ALLOW_NOT_REFUSED：必须有精确原因和无副作用审计证据。
+                Invoke-ExpectedRollbackRefusal -ScriptPath $rollbackB `
+                    -DataRoot $dataRoot -DesktopDirectory $DesktopDirectory `
+                    -ExpectedReason 'P0_ROLLBACK_HOLD_NOT_ARMED' `
+                    -EvidencePath (Join-Path $EvidenceRoot "$Name-rollback-refusal-allow.json")
                 [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionB -PreviousVersion $versionA `
                     -CurrentProductVersion $productVersionB -PreviousProductVersion $productVersionA)
             }
@@ -573,14 +663,11 @@ function Invoke-LifecycleFixture {
                 $unknown = $targetOriginal | ConvertFrom-Json
                 $unknown.validation_scope = 'full-release'
                 Write-JsonUtf8 -Value $unknown -Path $targetManifestPath
-                $refused = Invoke-ReleaseScript -ScriptPath $rollbackB -Arguments @(
-                    '-DataRoot', $dataRoot,
-                    '-DesktopDirectory', $DesktopDirectory,
-                    '-ActivationSelfTest', '-SuppressReportOpen'
-                ) -ExpectedExitCodes @(1)
-                if ($refused.StdOut -notmatch 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED') {
-                    throw 'P0_PREVIEW_ROLLBACK_UNVERIFIED_TARGET_ACCEPTED'
-                }
+                # P0_PREVIEW_ROLLBACK_UNVERIFIED_TARGET_ACCEPTED：必须有精确原因和无副作用审计证据。
+                Invoke-ExpectedRollbackRefusal -ScriptPath $rollbackB `
+                    -DataRoot $dataRoot -DesktopDirectory $DesktopDirectory `
+                    -ExpectedReason 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED' `
+                    -EvidencePath (Join-Path $EvidenceRoot "$Name-rollback-refusal-unknown-target.json")
                 [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionB -PreviousVersion $versionA `
                     -CurrentProductVersion $productVersionB -PreviousProductVersion $productVersionA)
             }
@@ -593,14 +680,11 @@ function Invoke-LifecycleFixture {
                 $unmarked = $markerOriginal | ConvertFrom-Json
                 $unmarked.p0_hold_aware = $false
                 Write-JsonUtf8 -Value $unmarked -Path $targetManifestPath
-                $refused = Invoke-ReleaseScript -ScriptPath $rollbackB -Arguments @(
-                    '-DataRoot', $dataRoot,
-                    '-DesktopDirectory', $DesktopDirectory,
-                    '-ActivationSelfTest', '-SuppressReportOpen'
-                ) -ExpectedExitCodes @(1)
-                if ($refused.StdOut -notmatch 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED') {
-                    throw 'P0_PREVIEW_ROLLBACK_UNMARKED_TARGET_ACCEPTED'
-                }
+                # P0_PREVIEW_ROLLBACK_UNMARKED_TARGET_ACCEPTED：必须有精确原因和无副作用审计证据。
+                Invoke-ExpectedRollbackRefusal -ScriptPath $rollbackB `
+                    -DataRoot $dataRoot -DesktopDirectory $DesktopDirectory `
+                    -ExpectedReason 'P0_ROLLBACK_UNVERIFIED_OLD_WORKER_DENIED' `
+                    -EvidencePath (Join-Path $EvidenceRoot "$Name-rollback-refusal-unmarked-target.json")
                 [void](Assert-PointerVersions -DataRoot $dataRoot -CurrentVersion $versionB -PreviousVersion $versionA `
                     -CurrentProductVersion $productVersionB -PreviousProductVersion $productVersionA)
             }
@@ -636,6 +720,9 @@ function Invoke-LifecycleFixture {
             -PreviousProductVersion $productVersionB
         $restoredA = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $snapshotA -Actual $restoredA
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            [void](Assert-PicotooTunnelShortcut -VersionRoot (Join-Path (Join-Path $dataRoot "versions") $versionA))
+        }
         [void](Assert-PicotooShortcuts `
             -Executable ([string]$pointers.current.executable) `
             -ProductVersion $productVersionA `
@@ -668,6 +755,10 @@ function Invoke-LifecycleFixture {
         }
         $afterFailure = @(Get-PicotooManagedShortcutSnapshot -DesktopDirectory $DesktopDirectory)
         Assert-ShortcutSnapshotEqual -Expected $beforeFailure -Actual $afterFailure
+        if ([string]$fixtureManifest.validation_scope -eq 'windows-ui-preview') {
+            # 失败恢复后不允许保留之前 B 版本的安全连接入口。
+            [void](Assert-PicotooTunnelShortcut -VersionRoot (Join-Path (Join-Path $dataRoot "versions") $versionA))
+        }
         $restoredPointers = Assert-PointerVersions `
             -DataRoot $dataRoot `
             -CurrentVersion $versionA `

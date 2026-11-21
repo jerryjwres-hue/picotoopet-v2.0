@@ -21,6 +21,8 @@ on:
     paths:
       - ".github/workflows/windows-ui-preview-release.yml"
       - "windows/desktop/**"
+      - "tests/contract/**"
+      - "tests/security/**"
   workflow_dispatch:
 
 concurrency:
@@ -34,7 +36,7 @@ permissions:
 jobs:
   windows-ui-preview:
     # Only isolated P0 GUI-fix and localized-executor recovery PRs may build via pull_request.
-    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle' || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028')
     name: Build and lifecycle-test Windows UI Preview
     runs-on: windows-2025
     timeout-minutes: 60
@@ -103,7 +105,7 @@ jobs:
 
       # Only the strict three-shot candidate needs admission before any published WPF process.
       - name: P0 strict preview prelaunch HOLD and 28 independent no-GPU cases
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
         run: |
           $gate = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PicotooPetV2\MediaWorker\v1\three-shot-acceptance.json'
@@ -142,8 +144,8 @@ jobs:
           Write-Host 'P0_PRELAUNCH_HOLD=PASS; GPU_NETWORK=0'
       # Preview package ---------------------------------------------------------
       # Build before UI smoke: smoke can leave a WPF process holding its loaded DLL.
-      # The native builder already runs the same UI-only test using --no-build;
-      # retain the independent CI smoke AFTER packaging and prohibit a second compile.
+      # The native builder executes the compiled test DLL directly and requires its PASS marker;
+      # attest the result after packaging, without a second smoke runner.
       - name: Build installable Windows UI Preview
         shell: pwsh
         run: |
@@ -153,16 +155,26 @@ jobs:
             -Version $version `
             -ValidationScope UiPreview
 
-      - name: Run isolated Control Center UI-only native smoke on built binaries
+      - name: Verify completed builder smoke and clean native process exit
         shell: pwsh
         run: |
-          # Reuse the exact compiled test DLL; never rebuild after it may remain loaded.
-          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/PicotooPet.Desktop.Core.SmokeTests.csproj `
-            --configuration Release --no-build -- --ui-interaction-only
-          if ($LASTEXITCODE -ne 0) { throw 'P0_RELEASE_UI_NATIVE_SMOKE_FAILED' }
-
+          # 构建器已执行 UI-only WPF 冒烟测试，失败会阻断原生封包。
+          # 这里只读校验同一构建的 SHA、Scope 和进程退出，绝不重复启动 WPF 测试。
+          $reportPath = 'windows/desktop/artifacts/release/windows-build-report.json'
+          if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { throw 'P0_RELEASE_BUILD_REPORT_MISSING' }
+          $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+          if ($report.status -ne 'pass' -or $report.validation_scope -ne 'windows-ui-preview' -or
+              $report.source_head -ne $env:PICOTOO_SOURCE_HEAD_SHA -or
+              $report.native_ci_verified -ne $true -or
+              $report.native_smoke_marker -cne 'PHASE23_UI_INTERACTION_SMOKE=PASS' -or
+              $null -eq $report.native_smoke_exit -or [int]$report.native_smoke_exit -ne 0) { throw 'P0_RELEASE_BUILDER_SMOKE_PROVENANCE_MISMATCH' }
+          $alive = @(Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -like 'PicotooPet.Desktop.Core.SmokeTests*'
+          })
+          if ($alive.Count -ne 0) { throw 'P0_RELEASE_SMOKE_PROCESS_LEFT_RUNNING' }
+          Write-Host 'P0_RELEASE_BUILDER_UI_SMOKE=PASS; PROVENANCE=PASS; PROCESS_EXIT=PASS'
       - name: Verify P0 preview ZIP contains mandatory HOLD-first operator bootstrap
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
         run: |
           $zips = @(Get-ChildItem 'windows/desktop/artifacts/release' -Filter 'PicotooPet-Phase2-Windows-Prebuilt-*.zip' -File)
@@ -202,7 +214,7 @@ jobs:
             -ReleaseRoot windows/desktop/artifacts/release
 
       - name: P0 launch actual published GUI and unique same-EXE Worker under HOLD
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
         run: |
           if ($env:GITHUB_ACTIONS -ne 'true') { throw 'P0_CI_ONLY' }
@@ -252,7 +264,7 @@ jobs:
             [System.Text.UTF8Encoding]::new($false))
 
       - name: P0 preview package source and published EXE hash evidence
-        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
+        if: github.ref_name == 'integration/p0-three-shot-gate-creative-candidate-v1' || github.ref_name == 'fix/p0-91-diagnostics-null-owner-crash-20261022' || ((github.ref_name == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/windows-gui-snapshot-backpressure-p0-20261024' || github.head_ref == 'fix/p0-film-activation-no-worker-force-kill' || github.head_ref == 'fix/p0-diagnostics-exe-secure-bearer-endpoint' || github.head_ref == 'feat/p0-296-versioned-film-ssh-lifecycle') || (github.head_ref == 'fix/p0-windows-unicode-executor-20261028' || github.head_ref == 'fix/p0-reboot-explicit-attempt2-20261028'))
         shell: pwsh
         run: |
           $root = 'windows/desktop/artifacts/release'

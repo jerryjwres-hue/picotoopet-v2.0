@@ -96,18 +96,48 @@ def test_prelaunch_hold_is_rechecked_at_last_moment_for_both_activation_paths() 
 
 
 def test_release_builder_completes_before_wpf_smoke_without_dll_rebuild() -> None:
-    """原生发布 CI 禁止 UI smoke 持有 DLL 时再次调用 solution build。"""
+    """发布构建和 UI 测试顺序仍受约束；CI 不再重复启动同一个 WPF 测试。"""
 
     workflow = NATIVE.read_text(encoding="utf-8")
-    builder = workflow.index("- name: Build installable Windows UI Preview")
-    ui_smoke = workflow.index("- name: Run isolated Control Center UI-only native smoke")
-    verify = workflow.index("- name: Verify P0 preview ZIP contains mandatory HOLD-first")
-    assert builder < ui_smoke < verify
+    builder = BUILDER.read_text(encoding="utf-8-sig")
+    publish = builder.index('    "publish", $diagProject')
+    smoke = builder.index("$smokeArguments = @(")
+    run_smoke = builder.index("Invoke-NativeCommand -FilePath $dotnet -Arguments $smokeArguments")
+    build_report = builder.index("$report = [ordered]@{", run_smoke)
+    assert publish < smoke < run_smoke < build_report
+    assert "$smokeArguments = @($smokeDll)" in builder[smoke:run_smoke]
+    assert "P0_RELEASE_SMOKE_COMPLETION_MARKER_MISSING" in builder[run_smoke:build_report]
+    assert '"--ui-interaction-only"' in builder[smoke:run_smoke]
 
-    # 发布构建器自身仍运行完整原生 UI 冒烟；发布后不重新构建已加载的 DLL。
-    ui_step = workflow[ui_smoke:verify]
-    assert "--no-build" in ui_step
-    assert "--ui-interaction-only" in ui_step
-    assert "P0_RELEASE_UI_NATIVE_SMOKE_FAILED" in ui_step
-    assert "dotnet build " not in ui_step
-    assert "dotnet restore " not in ui_step
+    # 外层 CI 必须核实同一 SHA 的真实构建报告与 WPF 退出，再继续安装验收。
+    build = workflow.index("- name: Build installable Windows UI Preview")
+    attest = workflow.index("- name: Verify completed builder smoke")
+    verify = workflow.index("- name: Verify P0 preview ZIP contains mandatory HOLD-first")
+    assert build < attest < verify
+    step = workflow[attest:verify]
+    assert "P0_RELEASE_BUILDER_SMOKE_PROVENANCE_MISMATCH" in step
+    assert "P0_RELEASE_SMOKE_PROCESS_LEFT_RUNNING" in step
+    assert "dotnet run" not in step
+    assert "dotnet build " not in step
+    assert "dotnet restore " not in step
+
+
+def test_rollback_native_negatives_require_fresh_report_and_no_side_effects() -> None:
+    """回滚不输出拒绝原因到 stdout，必须检验本次拒绝审计和状态不变。"""
+
+    lifecycle = LIFECYCLE.read_text(encoding="utf-8-sig")
+    helper = lifecycle[lifecycle.index("function Invoke-ExpectedRollbackRefusal"):
+                       lifecycle.index("function Assert-PointerVersions")]
+    assert "-ExpectedExitCodes @(1)" in helper
+    assert "$before -notcontains $_.FullName" in helper
+    assert "$fresh.Count -ne 1" in helper
+    assert "'phase2-rollback-activation-*'" in helper
+    assert "[string]$denial.error -cne $ExpectedReason" in helper
+    assert "$null -ne $denial.activation" in helper
+    assert "$null -ne $denial.recovery" in helper
+    assert "$null -ne $denial.current_after" in helper
+    assert "$null -ne $denial.previous_after" in helper
+    assert helper.count("Get-FileHash") == 6
+    assert "Assert-ShortcutSnapshotEqual" in helper
+    assert "Copy-Item -LiteralPath $fresh[0].FullName" in helper
+    assert lifecycle.count("Invoke-ExpectedRollbackRefusal -ScriptPath $rollbackB") == 3
