@@ -49,7 +49,10 @@ def test_mac_scripts_cover_install_verify_backup_repair_and_rollback() -> None:
     assert "launchctl bootstrap" in install
     assert "versions" in install and "current" in install
     assert "previous_version.txt" in install
-    assert 'VERSION="2.2.0-phase2-slice1-$(date -u +%Y%m%dT%H%M%SZ)-$$"' in install
+    # 2.3 Core 必须使用 canonical product-version，而非历史 2.2 字面版本。
+    assert 'PRODUCT_VERSION="$(cat "$SOURCE_ROOT/src/picotoopet_core/product-version.txt")"' in install
+    assert 'VERSION="${PRODUCT_VERSION}-v31-compat-' in install
+    assert "2.2.0-phase2-slice1" not in install
     assert "previous_version.txt" in rollback
     assert "launchctl bootout" in rollback
     assert ".backup" in backup
@@ -202,7 +205,10 @@ def test_phase2_mac_upgrade_preserves_pairing_token_and_reports_new_version() ->
 
     install = (SCRIPTS / "INSTALL_MAC.command").read_text(encoding="utf-8")
 
-    assert 'VERSION="2.2.0-phase2-slice1-$(date -u +%Y%m%dT%H%M%SZ)-$$"' in install
+    # 2.3 Core 必须使用 canonical product-version，而非历史 2.2 字面版本。
+    assert 'PRODUCT_VERSION="$(cat "$SOURCE_ROOT/src/picotoopet_core/product-version.txt")"' in install
+    assert 'VERSION="${PRODUCT_VERSION}-v31-compat-' in install
+    assert "2.2.0-phase2-slice1" not in install
     assert "security find-generic-password" in install
     assert "security delete-generic-password" not in install
     assert 'if ! security find-generic-password' in install
