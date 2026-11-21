@@ -78,6 +78,11 @@ internal static class StudioStoryPackLiveInteropSmokeTests
             "预览分辨率不符合 P0");
         SmokeAssert.Equal(24, preview.GetProperty("output").GetProperty("fps").GetInt32(),
             "预览帧率不符合 P0");
+        // Canonical Wan 2.3 uses a 4n+1 frame family: 4 sec = 97 frames, not 96.
+        SmokeAssert.Equal(97, preview.GetProperty("output").GetProperty("frames_per_shot").GetInt32(),
+            "Studio 预览与真实 Wan Production 编译器的单镜帧数不一致");
+        SmokeAssert.Equal(291, preview.GetProperty("output").GetProperty("planned_frames").GetInt32(),
+            "三个镜头的渲染帧数必须是 3 × 97");
         SmokeAssert.True(preview.GetProperty("can_queue").ValueKind == JsonValueKind.False,
             "真实 Mac Core 意外开放 Queue");
         SmokeAssert.True(
