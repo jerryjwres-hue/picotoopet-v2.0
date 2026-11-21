@@ -7,6 +7,7 @@ param(
     [string]$DataRoot = "",
     [string]$DesktopDirectory = "",
     [switch]$OfflinePackageOnly,
+    [switch]$AddressPolicySelfTest,
     [switch]$SuppressReportOpen
 )
 
@@ -110,13 +111,49 @@ function Invoke-CheckedProcess {
     }
 }
 
+# 禁止安装后诊断向明文 LAN 泄漏与 WPF 相同的设备 Bearer。
+# 纯地址策略必须在任何进程/诊断网络访问之前执行。
+function Assert-SecureCoreAddress {
+    param([Parameter(Mandatory)][string]$Url)
+
+    $uri = $null
+    if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri) -or
+        $null -eq $uri -or -not [string]::IsNullOrEmpty($uri.UserInfo) -or
+        -not [string]::IsNullOrEmpty($uri.Query) -or
+        -not [string]::IsNullOrEmpty($uri.Fragment) -or $uri.AbsolutePath -ne "/") {
+        throw "UNSAFE_MAC_CORE_URL: use trusted SSH loopback or verified HTTPS"
+    }
+    if (($uri.Scheme -eq "http" -and $uri.IsLoopback) -or $uri.Scheme -eq "https") {
+        return $uri.AbsoluteUri.TrimEnd("/")
+    }
+    throw "UNSAFE_MAC_CORE_URL: use http://127.0.0.1:18766 or verified HTTPS"
+}
+
+if ($AddressPolicySelfTest) {
+    # Windows PowerShell 5.1 原生无网络负例：不读取令牌、不访问安装目录、不启动 EXE。
+    foreach ($valid in @("http://127.0.0.1:18766/", "http://localhost:18766/",
+        "https://mac.example.test:8766/")) {
+        if (-not (Assert-SecureCoreAddress -Url $valid)) { throw "SECURE_VERIFIER_VALID_REJECTED" }
+    }
+    foreach ($invalid in @("http://192.168.1.161:8766/", "http://mac.local:8766/",
+        "http://example.com/", "ftp://127.0.0.1:18766/",
+        "https://name:password@mac.example.test/", "http://127.0.0.1:18766/api/v1/health",
+        "http://127.0.0.1:18766/?key=secret", "https://mac.example.test/#fragment")) {
+        $rejected = $false
+        try { [void](Assert-SecureCoreAddress -Url $invalid) } catch { $rejected = $true }
+        if (-not $rejected) { throw "SECURE_VERIFIER_UNSAFE_ACCEPTED" }
+    }
+    Write-Host "SECURE_CORE_VERIFIER_ADDRESS_POLICY=PASS; NO_NETWORK=TRUE; NO_GUI=TRUE"
+    exit 0
+}
+
 $dataRoot     = $DataRoot
 $currentPath  = Join-Path $dataRoot "current_version.json"
 $reportsRoot  = Join-Path $dataRoot "reports"
 $reportPath   = Join-Path $reportsRoot "phase2-windows-verification.json"
 $selfTestPath = Join-Path $reportsRoot "phase2-windows-verification-self-test.json"
 $settingsPath = Join-Path $env:LOCALAPPDATA "PicotooPetV2\Desktop\settings.json"
-$baseUrl      = "http://127.0.0.1:8766"
+$baseUrl      = "http://127.0.0.1:18766"
 $exitCode     = 2
 New-Item -ItemType Directory -Path $reportsRoot -Force | Out-Null
 
@@ -206,11 +243,13 @@ try {
             $settings = Read-JsonUtf8 -Path $settingsPath
             if (-not [string]::IsNullOrWhiteSpace([string]$settings.macBaseUrl)) {
                 $candidate = [Uri]$settings.macBaseUrl
-                if ($candidate.IsAbsoluteUri) {
-                    $baseUrl = $candidate.AbsoluteUri.TrimEnd('/')
-                }
+                # 旧的明文 LAN 设置一经读到即拒绝，不静默回退到默认地址。
+                $baseUrl = Assert-SecureCoreAddress -Url ([string]$settings.macBaseUrl)
             }
         }
+
+        # 这是启动 GUI、诊断进程及网络会话之前的最后强制门禁。
+        $baseUrl = Assert-SecureCoreAddress -Url $baseUrl
 
         if ($null -eq (Get-Process -Name "Picotoo Pet AI" -ErrorAction SilentlyContinue)) {
             Start-Process -FilePath $executable -WorkingDirectory ([string]$current.path)
