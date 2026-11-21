@@ -54,6 +54,9 @@ function New-PicotooSshArguments {
         "-N", "-T",
         "-o", "BatchMode=yes",
         "-o", "PasswordAuthentication=no",
+        "-o", "KbdInteractiveAuthentication=no",
+        "-o", "PreferredAuthentications=publickey",
+        "-o", "PubkeyAuthentication=yes",
         "-o", "StrictHostKeyChecking=yes",
         "-o", "ExitOnForwardFailure=yes",
         "-o", "ConnectTimeout=7",
@@ -71,8 +74,9 @@ if ($SelfTest) {
     # 直接校验 SSH 参数数组，避免 PowerShell 正则转义误报安全策略失败。
     foreach ($required in @(
         "StrictHostKeyChecking=yes", "BatchMode=yes",
-        "PasswordAuthentication=no", "ExitOnForwardFailure=yes",
-        "127.0.0.1:18766:127.0.0.1:8766"
+        "PasswordAuthentication=no", "KbdInteractiveAuthentication=no",
+        "PreferredAuthentications=publickey", "PubkeyAuthentication=yes",
+        "ExitOnForwardFailure=yes", "127.0.0.1:18766:127.0.0.1:8766"
     )) {
         if ($a -notcontains $required) { throw "SSH_TUNNEL_POLICY_TEST_FAILED" }
     }
