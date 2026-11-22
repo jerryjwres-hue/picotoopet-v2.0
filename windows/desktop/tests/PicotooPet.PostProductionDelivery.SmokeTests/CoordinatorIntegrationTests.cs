@@ -247,7 +247,38 @@ internal static class CoordinatorIntegrationTests
             }
             Check(_composeCalls == 1, "unchanged inputs must skip repeated C009 work");
 
-            // 03. Repairing a managed source changes actual bytes. A new
+            // 03. Repairing a managed *path* with identical bytes also changes
+            //     the fingerprint, because an invalid path can cause C009A
+            //     to reject otherwise intact media.
+            var oldArtifact = await MakeFallbackAsync(job).ConfigureAwait(false);
+            var oldInput = new MasterCompositionInputV1(
+                oldArtifact, NarrationPlan(job, true), null, OverlayPlan(job, false), null);
+            var oldFingerprint = await memo.CaptureFingerprintAsync(
+                oldInput, CancellationToken.None).ConfigureAwait(false);
+            Check(oldFingerprint is not null
+                && await memo.WasAlreadyFailedAsync(
+                    goal, job, oldFingerprint, CancellationToken.None).ConfigureAwait(false),
+                "negative memo should match exactly the original managed input");
+            var movedMovie = Path.Combine(_finalRoot, "path-repair.mp4");
+            var movedManifest = Path.Combine(_finalRoot, "path-repair.json");
+            File.Copy(oldArtifact.FilePath, movedMovie);
+            File.Copy(oldArtifact.ManifestPath, movedManifest);
+            var correctedInput = oldInput with
+            {
+                C004 = oldArtifact with
+                {
+                    FilePath = movedMovie,
+                    ManifestPath = movedManifest,
+                },
+            };
+            var repairedPathFingerprint = await memo.CaptureFingerprintAsync(
+                correctedInput, CancellationToken.None).ConfigureAwait(false);
+            Check(repairedPathFingerprint is not null && repairedPathFingerprint != oldFingerprint
+                && !await memo.WasAlreadyFailedAsync(
+                    goal, job, repairedPathFingerprint, CancellationToken.None).ConfigureAwait(false),
+                "changed managed file path must not be permanently suppressed");
+
+            // 04. Repairing a managed source changes actual bytes. A new
             //     process re-validates and may produce the QA-gated master.
             var movie = Path.Combine(_finalRoot, "final-" + Sha(job)[..32] + ".mp4");
             await File.AppendAllTextAsync(movie, "-repaired").ConfigureAwait(false);
