@@ -1,6 +1,8 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using PicotooPet.Desktop.Core.Networking;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
@@ -94,6 +96,54 @@ internal static class StudioStoryPackClientSmokeTests
             SmokeAssert.Equal("AUTHENTICATION_REQUIRED", error.Code,
                 "客户端未正确透传 Mac Core 拒绝原因");
         }
+
+        // 素材走同一配对客户端；二进制字节、身份与确认头必须逐项对账。
+        var assetBytes = new byte[] { 0x89, 0x50, 0x4e, 0x47, 0, 0xff };
+        var assetHash = Convert.ToHexStringLower(SHA256.HashData(assetBytes));
+        var expectedAssetId = "asset-" + Convert.ToHexStringLower(SHA256.HashData(
+            JsonSerializer.SerializeToUtf8Bytes(new[] { "project-1", "character", assetHash })));
+        var assetId = await client.ImportStudioAssetAsync(
+            "project-1", "character", "image/png", assetBytes).ConfigureAwait(false);
+        SmokeAssert.Equal(expectedAssetId, assetId, "资产身份必须绑定项目/角色/字节哈希");
+        SmokeAssert.Equal("/api/v1/studio/assets/import", handler.Path, "资产没有使用 canonical Core API");
+        SmokeAssert.Equal("Bearer studio-fixture-token", handler.Authorization, "资产未复用配对 Bearer");
+        SmokeAssert.Equal("image/png", handler.ContentType, "素材不得被转换成 JSON");
+        SmokeAssert.Equal("yes", handler.AssetConfirmed, "缺少明确登记确认");
+        SmokeAssert.Equal(assetHash, handler.AssetDigest, "上传哈希不匹配");
+        SmokeAssert.True(handler.AssetBytes?.SequenceEqual(assetBytes) == true, "上传必须保留精确文件字节");
+
+        // 即使 HTTP 成功，任何伪造身份、篡改回执或批准字段都必须拒绝。
+        foreach (var field in new[] { "artifact_id", "sha256", "size_bytes", "owner_approved",
+                                     "master_approved", "can_queue", "gpu_post_authorized" })
+        {
+            handler.ForgedAssetField = field;
+            var rejected = false;
+            try
+            {
+                await client.ImportStudioAssetAsync(
+                    "project-1", "character", "image/png", assetBytes).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException)
+            {
+                rejected = true;
+            }
+            SmokeAssert.True(rejected, $"伪造资产回执字段 {field} 不得绑定草稿");
+        }
+        handler.ForgedAssetField = null;
+
+        var previousRequests = handler.TotalRequests;
+        try
+        {
+            await client.ImportStudioAssetAsync(
+                "project-1", "character", "text/plain", assetBytes).ConfigureAwait(false);
+            throw new InvalidOperationException("非法角色 MIME 错误发往 Core");
+        }
+        catch (ArgumentException)
+        {
+            // 客户端应拒绝不符合合同的输入。
+        }
+        SmokeAssert.Equal(previousRequests, handler.TotalRequests, "非法素材不应发出 HTTP 请求");
+        Console.WriteLine("STUDIO_ASSET_BYTE_TRANSPORT=PASS; RECEIPT_FAIL_CLOSED=PASS");
     }
 
     private sealed class StudioPreviewHandler : HttpMessageHandler
@@ -105,6 +155,10 @@ internal static class StudioStoryPackClientSmokeTests
         public string? ContentType { get; private set; }
         public string? Body { get; private set; }
         public bool RejectNext { get; set; }
+        public byte[]? AssetBytes { get; private set; }
+        public string? AssetConfirmed { get; private set; }
+        public string? AssetDigest { get; private set; }
+        public string? ForgedAssetField { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -115,6 +169,43 @@ internal static class StudioStoryPackClientSmokeTests
             Path = request.RequestUri?.AbsolutePath;
             Authorization = request.Headers.Authorization?.ToString();
             ContentType = request.Content?.Headers.ContentType?.MediaType;
+            if (Path == "/api/v1/studio/assets/import")
+            {
+                var project = request.Headers.GetValues("X-Picotoo-Project-Id").Single();
+                var role = request.Headers.GetValues("X-Picotoo-Asset-Role").Single();
+                AssetConfirmed = request.Headers.GetValues("X-Picotoo-Import-Confirmed").Single();
+                AssetDigest = request.Headers.GetValues("X-Picotoo-Asset-SHA256").Single();
+                var bytes = await request.Content!.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+                AssetBytes = bytes;
+                var digest = Convert.ToHexStringLower(SHA256.HashData(bytes));
+                var id = "asset-" + Convert.ToHexStringLower(SHA256.HashData(
+                    JsonSerializer.SerializeToUtf8Bytes(new[] { project, role, digest })));
+                var receipt = JsonNode.Parse(JsonSerializer.Serialize(new
+                {
+                    contract = "picotoo.storypack.local-asset-intake.v1",
+                    artifact_id = id, project_id = project, role, sha256 = digest,
+                    media_type = ContentType, size_bytes = bytes.Length, registration = "CREATED",
+                    content_integrity_verified = true,
+                    source_provenance = "OPERATOR_SUBMITTED_COPY_UNVERIFIED",
+                    cloud_policy = "local_only", is_original = false, owner_approved = false,
+                    master_approved = false, can_queue = false, gpu_post_authorized = false,
+                }))!.AsObject();
+                if (ForgedAssetField is { } field)
+                {
+                    receipt[field] = field switch
+                    {
+                        "artifact_id" => JsonValue.Create("asset-" + new string('0', 64)),
+                        "sha256" => JsonValue.Create(new string('0', 64)),
+                        "size_bytes" => JsonValue.Create(-1),
+                        _ => JsonValue.Create(true),
+                    };
+                }
+                return new HttpResponseMessage(HttpStatusCode.Created)
+                {
+                    Content = new StringContent(receipt.ToJsonString(), Encoding.UTF8, "application/json"),
+                };
+            }
+
             Body = request.Content is null
                 ? null
                 : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
