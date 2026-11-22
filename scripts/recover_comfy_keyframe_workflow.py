@@ -206,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("PNG_EMBEDDED_NO_HISTORY_ID")
             # Source is one explicit existing PNG: never manufacture a
             # synthetic success or history entry from embedded metadata.
-            from comfy_png_embedded_evidence import recover_png_file
+            from scripts.comfy_png_embedded_evidence import recover_png_file
             data, manifest = recover_png_file(args.png_file)
         else:
             if args.prompt_id is None:
