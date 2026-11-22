@@ -535,6 +535,91 @@ def test_scoped_goal_pins_exact_existing_packet_and_local_workflow(studio, scope
     assert _counts(studio)[1:] == before[1:]
     assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
 
+    # Exercise the genuine Creative coordinator and repositories with bounded
+    # previously computed CPU fixture results. Only result lookup is substituted;
+    # the actual Goal, ResultStore, source set and Creative job are durable facts.
+    from picotoopet_core.autonomous.human_pipeline import GoalPipelineError
+    from picotoopet_core.autonomous.local_creative import GoalLocalCreativeCoordinator
+    from picotoopet_core.creative.execution import CreativeIntelligenceCoordinator
+
+    synthesis = {
+        "goal_id": created["goal_id"],
+        "evidence_ids": result["evidence_ids"],
+        "findings": ["Fixture interpretation of reviewed statements, not a verified fact."],
+    }
+    records = {}
+    for task_id, document, result_type in (
+        ("fixture-discovery", result, "autonomous.discovery.v1"),
+        ("fixture-synthesis", synthesis, "autonomous.goal_synthesis.v1"),
+    ):
+        stored = services.results.put_json(
+            document, result_type=result_type, max_bytes=256 * 1024
+        )
+        records[task_id] = SimpleNamespace(
+            object_hash=stored.object_hash, result_type=result_type
+        )
+    prior_steps = SimpleNamespace(steps=[
+        SimpleNamespace(step_key="research-evidence", task_id="fixture-discovery"),
+        SimpleNamespace(step_key="evidence-synthesis", task_id="fixture-synthesis"),
+    ])
+    bridge = GoalLocalCreativeCoordinator(
+        goals=services.autonomous_goals,
+        workflows=SimpleNamespace(get_workflow=lambda _: prior_steps),
+        result_records=SimpleNamespace(get_for_task=records.__getitem__),
+        result_store=services.results,
+        creative=services.creative,
+    )
+    bridge_task = SimpleNamespace(
+        task_type="autonomous.goal_creative.v1",
+        payload={"goal_id": created["goal_id"]},
+    )
+    job_result = bridge.handler(bridge_task).result_document
+    job_id = job_result["creative_job_id"]
+    job = services.creative.get_job(job_id)
+    source = services.creative_source.load_persisted_source_set(job_id)
+    assert job.creative_profile.value == "creative.content_plan.v2"
+    assert set(source.evidence_ids) == set(result["evidence_ids"])
+    owner_findings = [
+        item.finding for item in source.findings
+        if item.finding.get("source_type") == "owner_subject_attestation"
+    ]
+    assert len(owner_findings) == 3
+    assert {item["reviewed_packet_sha256"] for item in owner_findings} == {
+        binding["reviewed_packet_sha256"]
+    }
+    assert bridge.handler(bridge_task).result_document["creative_job_id"] == job_id
+    assert db.scalar(
+        "SELECT COUNT(*) FROM tasks WHERE resource_tag=?", (f"creative:{job_id}",)
+    ) == 0
+    assert services.creative.get_package(job_id) is None
+
+    # A post-Goal modification cannot pass either handoff or pre-model Creative.
+    digest = binding["assets"]["character"]["sha256"]
+    target = services.results.objects_dir / digest[:2] / digest[2:]
+    target.write_bytes(b"tampered after registration")
+    with pytest.raises(GoalPipelineError, match="STORY_GOAL_PINNED_ASSET_CHANGED"):
+        bridge.handler(bridge_task)
+
+    class NoModel:
+        def run(self, *args, **kwargs):
+            raise AssertionError("Invalid assets must stop before model inference")
+
+    execution = CreativeIntelligenceCoordinator(
+        database=db, queue=None, repository=services.creative_repository,
+        source_normalizer=services.creative_source, store=services.creative_store,
+        adapter=NoModel(), configured_model_id="cpu-fixture-not-a-live-model",
+    )
+    execution.handler(SimpleNamespace(payload={
+        "creative_job_id": job_id,
+        "source_set_digest": job.source_set_digest,
+        "creative_profile": job.creative_profile.value,
+    }))
+    rejected = services.creative.get_job(job_id)
+    assert rejected.failure_code == "STORY_GOAL_PINNED_ASSET_CHANGED"
+    assert services.creative.get_package(job_id) is None
+    assert _counts(studio)[1:] == before[1:]
+    assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
+
 
 @pytest.mark.parametrize("case,expected", [
     ("auth", 401), ("confirmation", 409), ("digest", 409),
