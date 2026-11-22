@@ -19,7 +19,7 @@ MAX_INPUTS = 256
 COMFY_ORIGIN = "http://127.0.0.1:8188"
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 SLOT_NAMES = frozenset({
-    "text", "image", "seed", "noise_seed", "width", "height",
+    "text", "prompt", "image", "seed", "noise_seed", "width", "height",
     "steps", "cfg", "filename_prefix",
 })
 MODEL_NAMES = frozenset({
