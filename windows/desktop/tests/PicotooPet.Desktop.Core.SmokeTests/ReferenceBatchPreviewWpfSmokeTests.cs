@@ -314,6 +314,26 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             await vm.LoadCompositionWorkOrderAsync(workOrderPath);
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Neither accepted nor forged report may create approval");
 
+            // 06. Different shot IDs / CAS filenames with identical bytes
+            //     must not enable the SEALED V2 WPF approval request.
+            //     Legacy v1 batch behavior is exercised by the older fixture.
+            var duplicateGateway = new RecordingGateway();
+            var duplicateV2 = new ReferenceBatchPreviewViewModel(
+                duplicateGateway, stager, Continuation(), V2CandidatePackage());
+            foreach (var shot in duplicateV2.EligibleShots)
+                await duplicateV2.AddAsync(shot, source, "USER_SUPPLIED", null);
+            SmokeAssert.Equal(3, duplicateV2.Items.Count,
+                "Duplicate-byte regression must exercise complete three-shot staging");
+            SmokeAssert.Equal(1, duplicateV2.Items.Select(x => x.Sha256)
+                .Distinct(StringComparer.Ordinal).Count(),
+                "Fixture must really contain renamed byte-identical images");
+            duplicateV2.UserConfirmsPreviewAndRights = true;
+            SmokeAssert.True(!duplicateV2.CanSubmit,
+                "V2 cannot enable approval for identical images with three different paths");
+            await RejectAsync(() => duplicateV2.SubmitAsync());
+            SmokeAssert.Equal(0, duplicateGateway.RegisterCalls,
+                "A direct V2 submit must fail before Core when compositions share bytes");
+
             // 01. 真实 UI 读取本地观察清单，但不将观察结果视为许可或审批。
             var observedRoot = Path.Combine(root, "local-comfy-output");
             Directory.CreateDirectory(observedRoot);

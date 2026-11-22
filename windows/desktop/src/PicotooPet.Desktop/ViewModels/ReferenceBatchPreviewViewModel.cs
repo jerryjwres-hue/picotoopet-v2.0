@@ -139,7 +139,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public bool CanResumeReferenceBatch => CanLoadObservedCandidates
         && _initialReceipt is null && Items.Count == 0;
     public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
-        && (!_requiresFullV2Batch || Items.Count == _eligibleShots.Count);
+        && (!_requiresFullV2Batch || (Items.Count == _eligibleShots.Count
+            && Items.Select(x => x.Sha256).Distinct(StringComparer.Ordinal).Count() == Items.Count));
     public bool CanRefresh => !IsBusy && _initialReceipt is not null;
     public ProductionJobRecord? CreatedProductionJob
     {
@@ -564,7 +565,12 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             Items.Add(item);
             _consent = false;
             RaisePropertyChanged(nameof(UserConfirmsPreviewAndRights));
-            StatusText = "请查看每张预览，并明确确认预览与使用权后申请审批。";
+            // 06. Only the sealed V2 three-shot path requires distinct
+            //     composition contents; legacy reference batches stay intact.
+            StatusText = _requiresFullV2Batch
+                && Items.Select(x => x.Sha256).Distinct(StringComparer.Ordinal).Count() != Items.Count
+                ? "不同镜头选中了相同图像内容，需更换独立构图；当前不能提交批量审批。"
+                : "请查看每张预览，并明确确认预览与使用权后申请审批。";
         }
         catch { StatusText = "无法验证所选图片；请检查格式、大小和使用权声明。"; throw; }
         finally { Exit(); }
@@ -589,6 +595,11 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             // ── The new v2 Core contract requires all three trusted shot/image claims.
             if (_requiresFullV2Batch && Items.Count != _eligibleShots.Count)
                 throw new InvalidDataException("REFERENCE_V2_FULL_COVERAGE_REQUIRED");
+            // 07. Direct callers cannot bypass a disabled WPF button and
+            //     re-submit byte-identical images for different V2 shots.
+            if (_requiresFullV2Batch && Items.Select(x => x.Sha256)
+                    .Distinct(StringComparer.Ordinal).Count() != Items.Count)
+                throw new InvalidDataException("REFERENCE_V2_DUPLICATE_IMAGE_BYTES");
             var request = _frozenRequest ?? BuildRequest();
             ReferenceBatchValidation.ValidateRequest(request);
             await VerifySnapshotsAsync(request, cancellationToken);
