@@ -37,6 +37,8 @@ def _create_preview(
     include_offline_tools: bool = False,
     tool_body_tamper: bool = False,
     wrong_tool_manifest: bool = False,
+    include_inspector: bool = False,
+    tamper_inspector: bool = False,
 ) -> tuple[Path, Path]:
     """Synthetic ZIP resembles real preview metadata, never a runnable application."""
 
@@ -50,6 +52,8 @@ def _create_preview(
         "Start-SecureMacTunnel.ps1": b"# TEST ONLY: SSH loopback strict keys\n",
         "README_P0_DEVELOPER_PREVIEW.txt": README,
     }
+    if include_inspector and not include_offline_tools:
+        raise ValueError("INSPECTOR_REQUIRES_BUNDLED_TOOLS")
     if include_offline_tools:
         # 01. Fixture tools are static fake Python, never real Comfy programs.
         files.update({
@@ -60,6 +64,9 @@ def _create_preview(
             "scripts/collect_local_keyframe_outputs.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
             "scripts/offline_png_output_collector.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
         })
+        if include_inspector:
+            files["scripts/audit_local_qwen_pngs.py"] = b"# SYNTHETIC INSPECTOR\n"
+            files["Inspect-QwenKeyframes.ps1"] = b"# SYNTHETIC READ-ONLY INSPECTOR\n"
     if missing_hold:
         files.pop("Prepare-P0ThreeShotHold.ps1")
     if missing_tunnel:
@@ -80,6 +87,8 @@ def _create_preview(
         **({"offline_keyframe_tools": sorted(
             name for name in files if name.startswith("scripts/")
         )} if include_offline_tools else {}),
+        **({"offline_inspector_script": "Inspect-QwenKeyframes.ps1"}
+           if include_inspector else {}),
         "files": [
             {
                 "path": name,
@@ -95,7 +104,9 @@ def _create_preview(
         for name, data in files.items():
             changed = (tamper and name.endswith(".exe")) or (
                 tamper_tunnel and name == "Start-SecureMacTunnel.ps1"
-            ) or (tool_body_tamper and name == "scripts/recover_comfy_keyframe_workflow.py")
+            ) or (tool_body_tamper and name == "scripts/recover_comfy_keyframe_workflow.py") or (
+                tamper_inspector and name == "Inspect-QwenKeyframes.ps1"
+            )
             package.writestr(name, data + (b"CHANGED" if changed else b""))
         if duplicate:
             # Duplicate basename under different case must not be extracted on Windows.
@@ -192,6 +203,22 @@ class PreviewArchiveContractTests(unittest.TestCase):
     def test_undeclared_or_missing_qwen_toolset_rejected(self):
         archive, receipt = _create_preview(self.root, wrong_tool_manifest=True)
         with self.assertRaisesRegex(PreviewVerificationError, "OFFLINE_QWEN_TOOLSET_INCOMPLETE"):
+            self.verify(archive, receipt)
+
+    def test_bundled_one_command_inspector_is_verified(self):
+        archive, receipt = _create_preview(
+            self.root, include_offline_tools=True, include_inspector=True
+        )
+        result = self.verify(archive, receipt)
+        self.assertEqual(result["files_verified"], 14)
+        self.assertFalse(result["formal_release_pass"])
+
+    def test_inspector_wrapper_tamper_is_rejected(self):
+        archive, receipt = _create_preview(
+            self.root, include_offline_tools=True, include_inspector=True,
+            tamper_inspector=True
+        )
+        with self.assertRaisesRegex(PreviewVerificationError, "FILE_BYTES_OR_SHA256_MISMATCH"):
             self.verify(archive, receipt)
 
     def test_rejects_wrong_run_id(self):
