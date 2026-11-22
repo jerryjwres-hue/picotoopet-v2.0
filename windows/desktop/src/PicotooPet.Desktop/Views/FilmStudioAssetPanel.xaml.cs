@@ -1,7 +1,6 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using Microsoft.Win32;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.ViewModels;
@@ -21,6 +20,10 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
     private void Project_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         // 01. 必须选择真实活动项目，不以默认目录或草稿推测项目 ID。
+        if (ImportCharacterButton is null || ImportSceneButton is null || ImportStyleButton is null)
+        {
+            return;
+        }
         var selected = AssetProjectSelector.SelectedItem is ProjectRecord { Status: "Active" };
         ImportCharacterButton.IsEnabled = selected;
         ImportSceneButton.IsEnabled = selected;
@@ -75,7 +78,7 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
         }
 
         // 02. 原生文件选择器只读用户选中的单一文件；不扫描目录。
-        var dialog = new OpenFileDialog
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Filter = role == "style"
                 ? "风格文件|*.png;*.jpg;*.jpeg;*.webp;*.txt;*.md;*.json"
