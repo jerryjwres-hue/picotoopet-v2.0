@@ -59,8 +59,11 @@ public sealed partial class MacCoreClient
             || length.ValueKind != JsonValueKind.Number
             || !length.TryGetInt32(out var size) || size != snapshot.Length
             || !AssetBoolIs(receipt, "content_integrity_verified", true)
-            || new[] { "owner_approved", "master_approved", "is_original", "can_queue",
-                       "gpu_post_authorized" }.Any(key => !AssetBoolIs(receipt, key, false))
+            || !AssetBoolIs(receipt, "owner_approved", false)
+            || !AssetBoolIs(receipt, "master_approved", false)
+            || !AssetBoolIs(receipt, "is_original", false)
+            || !AssetBoolIs(receipt, "can_queue", false)
+            || !AssetBoolIs(receipt, "gpu_post_authorized", false)
             || !AssetStringIs(receipt, "artifact_id", expectedId))
         {
             throw new InvalidOperationException("资产回执未验证；不得绑定剧本或生成任务。");
