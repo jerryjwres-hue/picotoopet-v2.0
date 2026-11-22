@@ -249,6 +249,71 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.Equal("Lock bowl", vm.KeyframeInstructions[2].ReviewChecklist, "Preserve checklist");
             SmokeAssert.True(vm.EligibleShots.SequenceEqual(new[] { "shot-1", "shot-2", "shot-3" }),
                 "The v2 candidate shot order/identity changed");
+            // 01. 直接复用 #342 本地构图工作单，在原有 WPF 审批页展示缺失镜头。
+            //     此报告既不能选择参考图，也不能发起 Owner/GPU 审批。
+            var workOrder = new
+            {
+                schema = "picotoo.qwen-reference-readiness.v1",
+                status = "BLOCKED_MISSING_REFERENCES",
+                creative_package_sha256 = vm.CreativePackageDigest,
+                creative_kit_digest = new string('a', 64),
+                source_rights_confirmed = false,
+                source_inputs_verified_for_production = false,
+                production_authorized = false,
+                gpu_post = 0,
+                composition_work_order = new
+                {
+                    schema = "picotoo.qwen-local-composition-workorder.v1",
+                    creative_kit_digest = new string('a', 64),
+                    shot_count = 3,
+                    source_workflow_modified = false,
+                    all_images_approved = false,
+                    gpu_post = 0,
+                    items = vm.KeyframeInstructions.Select((item, index) => new
+                    {
+                        shot_id = item.ShotId,
+                        order = index + 1,
+                        composition_status = index == 0 ? "OBSERVED_UNAPPROVED" : "NEEDS_DISTINCT_COMPOSITION",
+                        existing_input_filename = index == 0 ? "old-composition.png" : (string?)null,
+                        source = "FROZEN_CREATIVE_KEYFRAME_KIT",
+                        creative_still_prompt = item.StillPrompt,
+                        creative_still_prompt_sha256 = Convert.ToHexStringLower(
+                            SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(item.StillPrompt))),
+                        review_checklist = item.ReviewChecklist.Split('\n'),
+                        prompt_text_local_only = true,
+                        new_image_created = false,
+                        owner_approved = false
+                    }).ToArray()
+                }
+            };
+            var workOrderPath = Path.Combine(root, "three-shot-workorder.json");
+            await File.WriteAllTextAsync(workOrderPath, JsonSerializer.Serialize(workOrder));
+            SmokeAssert.True(vm.CanLoadCompositionWorkOrder, "Frozen v2 must permit local-only work-order reading");
+            await vm.LoadCompositionWorkOrderAsync(workOrderPath);
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count, "Three shot-scoped work items were not exposed");
+            SmokeAssert.Equal("OBSERVED_UNAPPROVED", vm.CompositionWorkOrders[0].Status,
+                "Historical S1 must never be approved by an observation report");
+            SmokeAssert.True(vm.CompositionWorkOrders.Skip(1).All(x => x.Status == "NEEDS_DISTINCT_COMPOSITION"),
+                "S2/S3 must remain explicitly missing before local image creation");
+            var workOrderPanel = new ReferenceBatchPreviewPanel(vm);
+            workOrderPanel.Measure(new Size(1000, 700));
+            workOrderPanel.Arrange(new Rect(0, 0, 1000, 700));
+            workOrderPanel.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            SmokeAssert.Equal(3, ((ItemsControl)workOrderPanel.FindName("CompositionWorkOrderList")).Items.Count,
+                "Existing WPF review screen must display all three frozen work orders");
+            SmokeAssert.Equal(0, vm.Items.Count, "Reading the work order must not stage any candidate");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Work-order read must not call Core");
+            var forgedOrder = JsonNode.Parse(JsonSerializer.Serialize(workOrder))!.AsObject();
+            forgedOrder["composition_work_order"]!["items"]![1]!["creative_still_prompt"] = "fabricated";
+            var forgedOrderPath = Path.Combine(root, "forged-workorder.json");
+            await File.WriteAllTextAsync(forgedOrderPath, forgedOrder.ToJsonString());
+            await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedOrderPath));
+            SmokeAssert.Equal(0, vm.CompositionWorkOrders.Count,
+                "Changed Creative prompt must clear every previously displayed status");
+            await vm.LoadCompositionWorkOrderAsync(workOrderPath);
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Neither accepted nor forged report may create approval");
+
             // 01. 真实 UI 读取本地观察清单，但不将观察结果视为许可或审批。
             var observedRoot = Path.Combine(root, "local-comfy-output");
             Directory.CreateDirectory(observedRoot);

@@ -20,6 +20,9 @@ public sealed record ReferencePreviewItem(string ShotId, string Sha256, long Byt
 
 public sealed record ReferenceKeyframeInstruction(string ShotId, string StillPrompt, string ReviewChecklist);
 
+// 只读工作单只反映本地构图缺口，不是资产导入、真实图片审核或 GPU 授权。
+public sealed record ReferenceCompositionWorkItem(string ShotId, string Status, string ExistingFilename);
+
 // 只读候选是历史输出观测，不是 Producer 授权、身份资产或使用许可。
 public sealed record ReferenceObservedCandidate(string ShotId, string OutputRelativePath,
     string Sha256, long Bytes, int Width, int Height, string PromptId,
@@ -117,6 +120,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public string CreativePackageDigest { get; }
     public ObservableCollection<ReferencePreviewItem> Items { get; } = new();
     public ObservableCollection<ReferenceObservedCandidate> ObservedCandidates { get; } = new();
+    public ObservableCollection<ReferenceCompositionWorkItem> CompositionWorkOrders { get; } = new();
     public string[] EligibleShots { get; }
     public IReadOnlyList<ReferenceKeyframeInstruction> KeyframeInstructions { get; }
     public bool UserConfirmsPreviewAndRights
@@ -131,6 +135,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public bool IsBusy => Volatile.Read(ref _operation) != 0;
     public bool CanEdit => !IsBusy && _frozenRequest is null;
     public bool CanLoadObservedCandidates => CanEdit && _p0PlanCandidate;
+    public bool CanLoadCompositionWorkOrder => CanEdit && _p0PlanCandidate;
     public bool CanResumeReferenceBatch => CanLoadObservedCandidates
         && _initialReceipt is null && Items.Count == 0;
     public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
@@ -216,6 +221,102 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             Receipt = null;
             _approvalFresh = false;
             StatusText = "恢复失败：审批身份或本地快照无法重新验证，未创建任何新任务。";
+            throw;
+        }
+        finally { Exit(); }
+    }
+
+    // 04. 从既有 Qwen readiness JSON 读取三镜头工作单；保留原 WPF 审批路径。
+    //     同一 Creative Package / Keyframe Kit 的字节指纹和原始 Prompt
+    //     必须逐镜一致；此读取不碰 Core、磁盘快照、Comfy 或 GPU。
+    public async Task LoadCompositionWorkOrderAsync(string reportPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanLoadCompositionWorkOrder)
+            throw new InvalidDataException("COMPOSITION_WORKORDER_NOT_ELIGIBLE");
+        if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
+        try
+        {
+            var file = new FileInfo(reportPath);
+            if (!file.Exists || file.Length is <= 0 or > 1024 * 1024)
+                throw new InvalidDataException("COMPOSITION_WORKORDER_SIZE_INVALID");
+            var raw = await File.ReadAllBytesAsync(reportPath, cancellationToken);
+            if (raw.LongLength != file.Length)
+                throw new InvalidDataException("COMPOSITION_WORKORDER_CHANGED");
+            using var document = JsonDocument.Parse(raw, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = false,
+                CommentHandling = JsonCommentHandling.Disallow,
+                MaxDepth = 24
+            });
+            var root = document.RootElement;
+            RequireDistinctJsonProperties(root);
+            if (Text(root, "schema") != "picotoo.qwen-reference-readiness.v1"
+                || Text(root, "creative_package_sha256") != CreativePackageDigest
+                || Text(root, "creative_kit_digest") != _keyframeKitDigest
+                || Bool(root, "source_rights_confirmed")
+                || Bool(root, "source_inputs_verified_for_production")
+                || Bool(root, "production_authorized")
+                || Number(root, "gpu_post") != 0
+                || Text(root, "status") is not (
+                    "BLOCKED_MISSING_REFERENCES" or "BLOCKED_INVALID_REFERENCE"
+                    or "READY_FOR_OWNER_BINDING_REVIEW")
+                || !root.TryGetProperty("composition_work_order", out var work)
+                || Text(work, "schema") != "picotoo.qwen-local-composition-workorder.v1"
+                || Text(work, "creative_kit_digest") != _keyframeKitDigest
+                || Number(work, "shot_count") != 3
+                || Bool(work, "source_workflow_modified")
+                || Bool(work, "all_images_approved")
+                || Number(work, "gpu_post") != 0
+                || !work.TryGetProperty("items", out var items)
+                || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() != 3)
+                throw new InvalidDataException("COMPOSITION_WORKORDER_CONTEXT_INVALID");
+
+            var parsed = new List<ReferenceCompositionWorkItem>();
+            foreach (var item in items.EnumerateArray())
+            {
+                var index = parsed.Count;
+                var frozen = KeyframeInstructions[index];
+                var prompt = Text(item, "creative_still_prompt");
+                var promptDigest = Convert.ToHexStringLower(
+                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(prompt)));
+                var state = Text(item, "composition_status");
+                var hasFilename = item.TryGetProperty("existing_input_filename", out var input)
+                    && input.ValueKind == JsonValueKind.String;
+                var name = hasFilename ? input.GetString()! : string.Empty;
+                if (Text(item, "shot_id") != frozen.ShotId || Number(item, "order") != index + 1
+                    || Text(item, "source") != "FROZEN_CREATIVE_KEYFRAME_KIT"
+                    || prompt != frozen.StillPrompt
+                    || Text(item, "creative_still_prompt_sha256") != promptDigest
+                    || !item.TryGetProperty("review_checklist", out var checklist)
+                    || checklist.ValueKind != JsonValueKind.Array
+                    || string.Join("\n", checklist.EnumerateArray().Select(x => x.ValueKind ==
+                        JsonValueKind.String ? x.GetString() : null)) != frozen.ReviewChecklist
+                    || !Bool(item, "prompt_text_local_only")
+                    || Bool(item, "new_image_created") || Bool(item, "owner_approved")
+                    || state is not ("OBSERVED_UNAPPROVED" or "NEEDS_DISTINCT_COMPOSITION"
+                        or "INVALID_REFERENCE" or "UNVERIFIED")
+                    || (state == "OBSERVED_UNAPPROVED" && !hasFilename)
+                    || (state != "OBSERVED_UNAPPROVED" && hasFilename)
+                    || (hasFilename && (name.Length is < 1 or > 240 || name.Contains('\\')
+                        || name.Contains(':') || name.StartsWith('/')
+                        || name.Split('/').Any(part => part is "" or "." or ".."
+                            || part.EndsWith(' ') || part.EndsWith('.')))))
+                    throw new InvalidDataException("COMPOSITION_WORKORDER_SHOT_INVALID");
+                parsed.Add(new(frozen.ShotId, state, name));
+            }
+            if (Text(root, "status") == "READY_FOR_OWNER_BINDING_REVIEW"
+                && parsed.Any(x => x.Status != "OBSERVED_UNAPPROVED"))
+                throw new InvalidDataException("COMPOSITION_WORKORDER_READY_CONFLICT");
+
+            CompositionWorkOrders.Clear();
+            foreach (var item in parsed) CompositionWorkOrders.Add(item);
+            StatusText = "三镜头构图工作单已核对封存 Prompt；这只是本地状态，图片、来源权利和 Owner 审批均未获得认可。";
+        }
+        catch
+        {
+            CompositionWorkOrders.Clear();
+            StatusText = "三镜头构图工作单未通过检查，已清除所有本地状态；未导入资产或申请审批。";
             throw;
         }
         finally { Exit(); }

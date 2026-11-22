@@ -38,6 +38,28 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "未能验证所选图片，请检查格式、大小和使用权声明。"); }
     }
 
+    // 本地工作单只显示三个镜头的构图准备状态，不触发导入或审批。
+    private async void LoadCompositionWorkOrder_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanLoadCompositionWorkOrder) return;
+        var picker = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "三镜头工作单 (JSON)|*.json",
+            Multiselect = false, CheckFileExists = true, Title = "选择本地 Qwen 三镜头 readiness 报告"
+        };
+        if (picker.ShowDialog() != true) return;
+        try
+        {
+            await vm.LoadCompositionWorkOrderAsync(picker.FileName);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+        }
+        catch (Exception)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "工作单与封存 Creative Kit 不匹配，未导入资产或触发审批。");
+        }
+    }
+
     private async void LoadObservedCandidates_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanLoadObservedCandidates) return;

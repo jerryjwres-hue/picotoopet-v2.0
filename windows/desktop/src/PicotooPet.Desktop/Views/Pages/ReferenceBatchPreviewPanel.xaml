@@ -24,6 +24,28 @@
      </ItemsControl.ItemTemplate>
     </ItemsControl>
    </Expander>
+   <!-- 原审核页内只读展示 #342 工作单；不改变现有 Core Owner/注册按钮。 -->
+   <Expander Header="三镜头构图准备状态（本地工作单，未审批）" Margin="0,12,0,0">
+    <StackPanel>
+     <TextBlock Text="读取现有 Qwen readiness JSON，查看哪些镜头需要独立构图。仅核对封存 Prompt 和工作单；不导入图片、不证明画质、不放行 GPU。" TextWrapping="Wrap" Margin="0,0,0,8"/>
+     <Button x:Name="LoadCompositionWorkOrderButton" Content="读取三镜头构图工作单..." Padding="12,6"
+             HorizontalAlignment="Left" IsEnabled="{Binding CanLoadCompositionWorkOrder, FallbackValue=False}"
+             Click="LoadCompositionWorkOrder_Click" Margin="0,0,0,8"/>
+     <ItemsControl x:Name="CompositionWorkOrderList" ItemsSource="{Binding CompositionWorkOrders}">
+      <ItemsControl.ItemTemplate>
+       <DataTemplate>
+        <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8" Margin="0,0,0,5">
+         <StackPanel>
+          <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding Status, StringFormat=构图状态：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding ExistingFilename, StringFormat=历史输入（未批准）：{0}}" FontSize="10" TextWrapping="Wrap"/>
+         </StackPanel>
+        </Border>
+       </DataTemplate>
+      </ItemsControl.ItemTemplate>
+     </ItemsControl>
+    </StackPanel>
+   </Expander>
    <Expander Header="本地 ComfyUI 首帧候选（需人工审核）" Margin="0,12,0,0">
     <StackPanel>
      <TextBlock Text="候选清单只显示历史结果，不证明图像质量或使用权。本地 AI 输出不能自动归类为 USER_SUPPLIED；使用前须提供 LICENSED 来源凭据 SHA-256。" TextWrapping="Wrap" Margin="0,0,0,7"/>
