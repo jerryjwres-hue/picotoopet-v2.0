@@ -1025,3 +1025,51 @@ def _verify_dynamic_creative_and_production_gate(studio, created, binding, job, 
     target.write_bytes(b"tampered after Creative PASS")
     with pytest.raises(ValueError, match="STORY_GOAL_PINNED_ASSET_CHANGED"):
         services.production._verify_dynamic_reference_scope(package)
+
+
+def test_reviewed_packets_are_scoped_reusable_and_recomputed(studio, scoped_story):
+    db = studio.app.state.services.database
+    pack = scoped_story["storypack"]
+    query = {
+        "project_id": scoped_story["project_id"],
+        "character_ref": pack["character_ref"],
+        "subject_key": scoped_story["owner_subject_key"],
+    }
+    route = "/api/v1/studio/owner-subject-packets"
+    # Later unrelated photo claims must never auto-select for the current character bytes.
+    _reviewed_packet(studio, "pet:maotai", "1" * 64, "The pet plans to visit the doorway.")
+    before = _counts(studio)
+    result = studio.get(route, params=query)
+    assert result.status_code == 200, result.text
+    body = result.json()
+    assert body["project_id"] == query["project_id"]
+    assert body["character_ref"] == query["character_ref"]
+    assert body["character_sha256"] == hashlib.sha256(_ASSET_PNG).hexdigest()
+    assert [packet["packet_digest"] for packet in body["packets"]] == [
+        scoped_story["reviewed_packet_sha256"]
+    ]
+    assert {claim["kind"] for claim in body["packets"][0]["claims"]} == {
+        "visible_identity", "visible_scene", "creative_intent"
+    }
+    assert all(body[key] is False for key in ("owner_approved", "production_approval_granted", "can_queue"))
+    assert studio.get(route, params=query, headers={"Authorization": "Bearer invalid"}).status_code == 401
+    assert studio.get(route, params={**query, "project_id": "unrelated"}).status_code == 409
+    assert studio.get(route, params={**query, "character_ref": pack["scene_ref"]}).status_code == 409
+    assert studio.get(route, params={**query, "subject_key": "pet:other"}).json()["packets"] == []
+    assert _counts(studio) == before
+
+    # Recompute the original packet digest from its ordered claims. Even if the
+    # altered text and raw row hash agree, it is not the owner's reviewed packet.
+    original = db.fetchone(
+        "SELECT evidence_id FROM canonical_evidence WHERE origin_ref=?",
+        (f"pet-owner:{scoped_story['reviewed_packet_sha256']}:claim:01",),
+    )
+    text = "Unexpected replacement of the reviewed identity statement."
+    with db.transaction() as conn:
+        conn.execute("UPDATE canonical_evidence SET text_value=?,raw_hash=? WHERE evidence_id=?",
+                     (text, hashlib.sha256(text.encode()).hexdigest(), original["evidence_id"]))
+    assert studio.get(route, params=query).json()["packets"] == []
+    denied = studio.post(SCOPED_ROUTE, json=scoped_story, headers={"X-Picotoo-Goal-Confirmed": "yes"})
+    assert denied.status_code == 409
+    assert db.scalar("SELECT COUNT(*) FROM autonomous_goals") == 0
+    assert _counts(studio) == before
