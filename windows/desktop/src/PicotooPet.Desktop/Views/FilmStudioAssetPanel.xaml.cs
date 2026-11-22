@@ -160,11 +160,11 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
         }
     }
 
-    internal sealed record ScopedPreview(
+    public sealed record ScopedPreview(
         string CharacterRef, string CharacterSha, string StoryDigest,
         string SubjectDigest, string MotionDigest, string MotionSummary);
 
-    internal static ScopedPreview ParseScopedPreview(JsonElement draft, JsonElement preview)
+    public static ScopedPreview ParseScopedPreview(JsonElement draft, JsonElement preview)
     {
         // 服务端必须确认每一份实际角色/场景/风格字节；任何未批准字段缺失都拒绝。
         if (CreativeIntelligencePanelViewModel.FormatReadOnlyStoryPackPreview(preview)
