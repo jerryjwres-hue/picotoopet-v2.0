@@ -92,7 +92,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         }
         _requiresFullV2Batch = v2Candidate;
         _creativeJobId = package.CreativeJobId;
-        _keyframeKitDigest = v2Candidate ? Text(kit, "kit_digest") : string.Empty;
+        _keyframeKitDigest = v2Candidate && stages.TryGetProperty("keyframe_kit.v1", out var pinnedKit)
+            ? Text(pinnedKit, "kit_digest") : string.Empty;
         // 01. P0 完整计划只涵盖三镜头、四秒、横屏的已封存候选。
         KeyframeInstructions = v2Candidate ? ReadKeyframeInstructions(stages, eligible)
             : Array.Empty<ReferenceKeyframeInstruction>();
@@ -265,7 +266,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
 
     private static bool SafeObservedRelativePath(string value) =>
         value is { Length: >= 1 and <= 240 }
-        && !value.StartsWith("/", StringComparison.Ordinal)
+        && value[0] != '/'
         && !value.Contains('\\') && !value.Contains(':')
         && value.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
         && value.Split('/').All(part => part.Length is >= 1 and <= 100
