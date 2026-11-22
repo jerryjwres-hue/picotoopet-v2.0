@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from picotoopet_core.business.local_intelligence import LocalIntelligenceError
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.models import TaskRecord
+from picotoopet_core.domain.storypack_scoped_goal import reverify_scoped_story_assets
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.worker.handlers import HandlerResult
 
@@ -461,6 +462,26 @@ class CreativeIntelligenceCoordinator:
         )
         if goal_backed_pet_v2:
             try:
+                # Re-read the submitted scope immediately before any model call.
+                # A valid owner review cannot revive deleted, changed or foreign assets.
+                snapshot = self.database.fetchone(
+                    "SELECT g.constraints_json FROM creative_goal_source_sets s "
+                    "JOIN autonomous_goals g ON g.goal_id=s.goal_id "
+                    "WHERE s.creative_job_id=?",
+                    (job.creative_job_id,),
+                )
+                if snapshot is not None:
+                    constraints = _json_row(
+                        snapshot["constraints_json"], "TRUSTED_STATE_FACTS_GOAL_CONSTRAINTS_INVALID"
+                    )
+                    if "storypack_binding" in constraints:
+                        try:
+                            reverify_scoped_story_assets(
+                                self.database, self.store.paths.objects_dir,
+                                constraints["storypack_binding"],
+                            )
+                        except ValueError as error:
+                            raise TrustedPetCreativeBindingError(str(error)) from error
                 trusted_pet = load_trusted_pet_creative_binding(self.database, job)
             except TrustedPetCreativeBindingError as error:
                 self.repository.transition_job(
