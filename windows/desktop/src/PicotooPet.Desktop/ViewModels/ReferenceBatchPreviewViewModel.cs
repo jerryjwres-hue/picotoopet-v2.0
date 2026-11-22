@@ -251,7 +251,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                     || Convert.ToHexStringLower(SHA256.HashData(bytes)) != observed.Sha256)
                     throw new InvalidDataException("KEYFRAME_THUMBNAIL_HASH_CHANGED");
                 using var metadataStream = new MemoryStream(bytes, writable: false);
-                var decoder = BitmapDecoder.Create(
+                var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(
                     metadataStream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.OnDemand);
                 if (decoder.Frames.Count != 1 || decoder.Frames[0].PixelWidth != observed.Width
                     || decoder.Frames[0].PixelHeight != observed.Height)
