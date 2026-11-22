@@ -174,6 +174,11 @@ public sealed class MasterVisualFailureMemoStore
                         + Path.DirectorySeparatorChar,
                     StringComparison.OrdinalIgnoreCase))
                 return null;
+            // 05. A corrected managed *path* must also change the memo,
+            //     even if the file at the new path has identical bytes.
+            //     This relative path is hashed only; never stored in plaintext.
+            var relative = Path.GetRelativePath(allowedRoot, full)
+                .Replace('\\', '/');
             if (File.Exists(full))
             {
                 ProductionLocalEnvironment.AssertNoLinkEscape(allowedRoot, full);
@@ -183,11 +188,11 @@ public sealed class MasterVisualFailureMemoStore
                     full, FileMode.Open, FileAccess.Read, FileShare.Read,
                     64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
                 var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-                return "FILE:" + Hex(hash) + ":" +
+                return "FILE:" + relative + ":" + Hex(hash) + ":" +
                     stream.Length.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
             ProductionLocalEnvironment.AssertNoLinkEscape(allowedRoot, full);
-            return "MISSING";
+            return "MISSING:" + relative;
         }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException or ArgumentException or NotSupportedException)
