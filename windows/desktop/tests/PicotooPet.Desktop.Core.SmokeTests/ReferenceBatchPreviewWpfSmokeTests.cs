@@ -54,6 +54,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.True(panel.FindName("ChooseReferenceButton") is Button, "Native file selection is missing");
         SmokeAssert.True(panel.FindName("LoadObservedCandidatesButton") is Button,
             "Read-only Comfy candidate list import is missing");
+        SmokeAssert.True(panel.FindName("RestoreReferenceBatchButton") is Button,
+            "Existing approved batches must be recoverable after restart");
+        SmokeAssert.True(panel.FindName("ResumeApprovalIdTextBox") is TextBox,
+            "Existing approval ID input is missing");
         SmokeAssert.True(panel.FindName("ObservedCandidatesList") is ItemsControl,
             "Observed candidates cannot be reviewed in the existing UI");
         SmokeAssert.True(panel.FindName("PreviewItems") is ItemsControl, "Real reference preview list is missing");
@@ -372,6 +376,28 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.Equal(firstKey, gateway.ProductionKey, "Unknown plan receipt retry must preserve key");
             SmokeAssert.True(vm.CreatedProductionJob is not null && !vm.CanCreateReviewedPlan,
                 "Verified three-shot plan must be shown exactly once");
+
+            // 04. App restart restores exact three private image snapshots from a persisted Core receipt.
+            var resumed = new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), V2CandidatePackage());
+            SmokeAssert.True(resumed.CanResumeReferenceBatch, "New session should permit read-only batch recovery");
+            await RejectAsync(() => resumed.ResumeReferenceBatchAsync("not-a-uuid"));
+            SmokeAssert.Equal(0, resumed.Items.Count, "Invalid approval ID must not stage references");
+            await resumed.ResumeReferenceBatchAsync("44444444-4444-4444-8444-444444444444");
+            SmokeAssert.Equal(3, resumed.Items.Count, "Restart must restore all frozen snapshot images");
+            SmokeAssert.True(!resumed.CanEdit && !resumed.CanResumeReferenceBatch
+                && !resumed.CanCreateReviewedPlan && !resumed.UserConfirmsPreviewAndRights,
+                "Restart may not implicitly restore rights, approve or create production");
+            var callsBeforeRefresh = gateway.GetCalls;
+            await resumed.RefreshAsync();
+            SmokeAssert.Equal(callsBeforeRefresh + 1, gateway.GetCalls,
+                "Restart must re-query the existing approval status");
+            SmokeAssert.True(resumed.CanCreateReviewedPlan,
+                "Previously approved exact snapshot may resume explicit v1.1 plan creation");
+            await resumed.CreateReviewedPlanAsync();
+            SmokeAssert.Equal(firstKey, gateway.ProductionKey,
+                "Restart must reuse same immutable production idempotency identity");
+            SmokeAssert.Equal(gateway.RegisterCalls, 2,
+                "Read-only restart must never POST another registration");
 
             // ── Missing v2 markers and unrelated legacy T2V stay unselectable.
             var legacy = new ReferenceBatchPreviewViewModel(

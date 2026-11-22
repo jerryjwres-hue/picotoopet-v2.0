@@ -50,6 +50,17 @@
      </ItemsControl>
     </StackPanel>
    </Expander>
+   <StackPanel Margin="0,12,0,0">
+    <TextBlock Text="恢复已有三镜头参考图审批（重启后不重复提交）" FontWeight="SemiBold"/>
+    <TextBlock Text="仅凭 Core 审批 ID 重新读取原快照；恢复不自动批准，仍需刷新并单独创建生产计划。" TextWrapping="Wrap"/>
+    <WrapPanel Margin="0,4,0,8">
+     <TextBox x:Name="ResumeApprovalIdTextBox" Width="340" MaxLength="36"
+              VerticalContentAlignment="Center" ToolTip="粘贴已有 Core approval_id UUID"/>
+     <Button x:Name="RestoreReferenceBatchButton" Content="恢复已有批次" Padding="12,6"
+             Margin="8,0,0,0" IsEnabled="{Binding CanResumeReferenceBatch, FallbackValue=False}"
+             Click="RestoreReferenceBatch_Click"/>
+    </WrapPanel>
+   </StackPanel>
    <Grid Margin="0,16,0,0" IsEnabled="{Binding CanEdit, FallbackValue=False}">
     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <StackPanel Margin="0,0,10,0"><TextBlock Text="镜头"/><ComboBox x:Name="ShotComboBox" ItemsSource="{Binding EligibleShots}" MinHeight="30" /></StackPanel>

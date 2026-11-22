@@ -103,6 +103,22 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         }
     }
 
+    private async void RestoreReferenceBatch_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanResumeReferenceBatch) return;
+        try
+        {
+            // 01. 只向现有 Core GET 查验审批，不触发 POST、Owner 决定或 GPU。
+            await vm.ResumeReferenceBatchAsync(ResumeApprovalIdTextBox.Text.Trim());
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+        }
+        catch (Exception)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "原审批或本地参考快照无法验证；未恢复，也没有重复申请。");
+        }
+    }
+
     private void RemoveReference_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || sender is not Button { Tag: string shotId }) return;

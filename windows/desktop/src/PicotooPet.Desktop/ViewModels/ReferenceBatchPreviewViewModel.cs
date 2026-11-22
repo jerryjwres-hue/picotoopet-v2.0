@@ -131,6 +131,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public bool IsBusy => Volatile.Read(ref _operation) != 0;
     public bool CanEdit => !IsBusy && _frozenRequest is null;
     public bool CanLoadObservedCandidates => CanEdit && _p0PlanCandidate;
+    public bool CanResumeReferenceBatch => CanLoadObservedCandidates
+        && _initialReceipt is null && Items.Count == 0;
     public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
         && (!_requiresFullV2Batch || Items.Count == _eligibleShots.Count);
     public bool CanRefresh => !IsBusy && _initialReceipt is not null;
@@ -146,7 +148,80 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
     public ReferenceBatchReceipt? Receipt { get => _receipt; private set => SetProperty(ref _receipt, value); }
 
-    // 01. 校验本地候选清单的完整身份；只显示元数据，绝不自动 Stage 或批准。
+    // 01. 从正式 Core 已存在的审批 ID 恢复三个本地快照，而非重新申请审批。
+    //     这仅恢复观察态；即使 Core 回报 Approved，也必须显式刷新再创建 Plan。
+    public async Task ResumeReferenceBatchAsync(string approvalId, CancellationToken cancellationToken = default)
+    {
+        if (!CanResumeReferenceBatch || !IsIdentifier(approvalId))
+            throw new InvalidDataException("REFERENCE_RESUME_CONTEXT_INVALID");
+        if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
+        try
+        {
+            var receipt = await _gateway.GetReferenceBatchAsync(approvalId, cancellationToken);
+            if (receipt.ApprovalId != approvalId || receipt.GoalId != GoalId
+                || receipt.CreativePackageId != CreativePackageId
+                || receipt.CreativePackageDigest != CreativePackageDigest
+                || receipt.References.Length != 3
+                || !receipt.References.Select(x => x.ShotId)
+                    .ToHashSet(StringComparer.Ordinal).SetEquals(_eligibleShots))
+                throw new InvalidDataException("REFERENCE_RESUME_SCOPE_INVALID");
+
+            // 02. 从 Core 回执重建只读请求，但不调用 Register/POST。
+            var references = receipt.References
+                .OrderBy(x => Array.IndexOf(EligibleShots, x.ShotId))
+                .ToArray();
+            var reconstructed = new ReferenceBatchRequest(
+                "reference_batch.v1", GoalId, CreativePackageId, CreativePackageDigest,
+                references.Select(x => new ReferenceCandidate(
+                    x.ShotId, x.InputRelativePath, x.Sha256, x.Bytes,
+                    x.SourceReference, x.SourceDigest, "wan22.i2v.production.v1")).ToArray(),
+                true);
+            ReferenceBatchValidation.ValidateReceipt(reconstructed, receipt);
+
+            // 03. 只有所有已登记图片通过既有 CAS 检查与实际像素解码，才发布恢复态。
+            var validated = new List<(ReferencePreviewSnapshot Snapshot, ReferencePreviewItem Item)>();
+            foreach (var row in references)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var format = Path.GetExtension(row.InputRelativePath).ToLowerInvariant();
+                if (format is not (".png" or ".jpg" or ".webp"))
+                    throw new InvalidDataException("REFERENCE_RESUME_FORMAT_INVALID");
+                var snapshot = new ReferencePreviewSnapshot(row.InputRelativePath, row.Sha256, row.Bytes, format);
+                var bytes = await _stager.ReadVerifiedAsync(snapshot, cancellationToken);
+                var preview = await DecodePreviewAsync(bytes, format, cancellationToken);
+                validated.Add((snapshot, new ReferencePreviewItem(
+                    row.ShotId, row.Sha256, row.Bytes, row.InputRelativePath,
+                    row.SourceReference, row.SourceDigest, preview)));
+            }
+            foreach (var entry in validated)
+            {
+                _snapshots.Add(entry.Item.ShotId, entry);
+                Items.Add(entry.Item);
+            }
+            _frozenRequest = reconstructed;
+            _initialReceipt = receipt with { References = receipt.References.ToArray() };
+            Receipt = receipt;
+            _approvalFresh = false;
+            _consent = false;
+            RaisePropertyChanged(nameof(UserConfirmsPreviewAndRights));
+            StatusText = "既有三镜头批次已恢复（仅本地只读），请先刷新 Core 审批状态；不会重复注册。";
+        }
+        catch
+        {
+            // 04. 失败时绝不保留半批次或错误批准状态。
+            _snapshots.Clear();
+            Items.Clear();
+            _frozenRequest = null;
+            _initialReceipt = null;
+            Receipt = null;
+            _approvalFresh = false;
+            StatusText = "恢复失败：审批身份或本地快照无法重新验证，未创建任何新任务。";
+            throw;
+        }
+        finally { Exit(); }
+    }
+
+    // 05. 校验本地候选清单的完整身份；只显示元数据，绝不自动 Stage 或批准。
     public async Task LoadObservedCandidatesAsync(string manifestPath, CancellationToken cancellationToken = default)
     {
         if (!CanLoadObservedCandidates) throw new InvalidDataException("KEYFRAME_OBSERVATION_NOT_ELIGIBLE");
@@ -594,6 +669,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         RaisePropertyChanged(nameof(IsBusy));
         RaisePropertyChanged(nameof(CanEdit));
         RaisePropertyChanged(nameof(CanLoadObservedCandidates));
+        RaisePropertyChanged(nameof(CanResumeReferenceBatch));
         RaisePropertyChanged(nameof(CanSubmit));
         RaisePropertyChanged(nameof(CanRefresh));
         RaisePropertyChanged(nameof(CanCreateReviewedPlan));
