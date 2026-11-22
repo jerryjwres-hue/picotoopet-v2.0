@@ -14,11 +14,16 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from picotoopet_core.business.local_intelligence import LocalIntelligenceError
 from picotoopet_core.db.database import Database
 from picotoopet_core.domain.models import TaskRecord
-from picotoopet_core.domain.storypack_scoped_goal import reverify_scoped_story_assets
+from picotoopet_core.domain.storypack import StoryPackV1
+from picotoopet_core.domain.storypack_scoped_goal import (
+    load_bound_dynamic_storypack,
+    reverify_scoped_story_assets,
+)
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
 from picotoopet_core.worker.handlers import HandlerResult
 
 from .director import director_constraints, parse_goal_directives, story_gate_applies
+from .dynamic_pet_story import DYNAMIC_PET_POLICY, build_dynamic_motion_proposal
 from .models import (
     CreativeBriefResult,
     CreativeDeepAiHandoffRecord,
@@ -107,6 +112,7 @@ class TrustedPetCreativeBinding:
     subject_key: str
     story_policy_opt_in: str
     facts: StateFactsV1
+    dynamic_pack: StoryPackV1 | None = None
 
     def opt_in(self) -> StaticPetStoryOptInV1:
         """Typed reference consumed by the single pure static-story policy (#236)."""
@@ -228,12 +234,39 @@ def load_trusted_pet_creative_binding(
     if value.get("record_kind") != "owner_structured_review_commit.v1":
         raise TrustedPetCreativeBindingError("TRUSTED_STATE_FACTS_COMMITMENT_INVALID")
     story_policy = value.get("story_policy_opt_in")
-    if story_policy != STATIC_PET_STORY_POLICY:
+    # A scoped dynamic story requires its own named policy; the old static
+    # opt-in cannot approve or replace the authored motion.
+    dynamic_pack = None
+    if "storypack_binding" in constraints:
+        try:
+            dynamic_pack = load_bound_dynamic_storypack(constraints["storypack_binding"])
+        except ValueError as error:
+            raise TrustedPetCreativeBindingError("TRUSTED_DYNAMIC_SCOPE_INVALID") from error
+    expected_policy = DYNAMIC_PET_POLICY if dynamic_pack is not None else STATIC_PET_STORY_POLICY
+    if story_policy != expected_policy:
         raise TrustedPetCreativeBindingError("TRUSTED_STORY_POLICY_NOT_SELECTED")
+    if dynamic_pack is not None:
+        if value.get("confirmed_motion_digest") != build_dynamic_motion_proposal(
+            dynamic_pack
+        )["motion_digest"]:
+            raise TrustedPetCreativeBindingError("TRUSTED_DYNAMIC_MOTION_DIGEST_MISMATCH")
     try:
         facts = StateFactsV1.model_validate(value.get("state_facts"))
     except ValidationError as error:
         raise TrustedPetCreativeBindingError("TRUSTED_STATE_FACTS_COMMITMENT_INVALID") from error
+    if dynamic_pack is None and not facts.pose_lock.fixed:
+        raise TrustedPetCreativeBindingError("TRUSTED_STATIC_POSE_REQUIRED")
+    if dynamic_pack is not None:
+        motion = dynamic_pack.dynamic_motion
+        if (
+            motion is None or facts.facts_version != 2 or facts.pose_lock.fixed
+            or facts.pose_lock.body_pose.strip().casefold() != "standing"
+            or facts.pose_lock.support_surface != motion.support_surface
+            or not {item.framing.value for item in motion.shots} <= set(
+                facts.camera_lock.allowed_framings
+            )
+        ):
+            raise TrustedPetCreativeBindingError("TRUSTED_DYNAMIC_FACTS_INVALID")
     if facts.subject_key != subject_key:
         raise TrustedPetCreativeBindingError("TRUSTED_STATE_FACTS_SUBJECT_MISMATCH")
     if facts.source_set_digest != job.source_set_digest:
@@ -310,6 +343,9 @@ def load_trusted_pet_creative_binding(
                 "field_path"
             )
             == "allowed_events"
+            and _json_row(item["provenance_json"], "TRUSTED_STATE_FACTS_BINDING_INVALID").get(
+                "review_digest"
+            ) == review_digest
         ),
         None,
     )
@@ -340,7 +376,20 @@ def load_trusted_pet_creative_binding(
         subject_key=subject_key,
         story_policy_opt_in=story_policy,
         facts=facts,
+        dynamic_pack=dynamic_pack,
     )
+
+
+def verify_current_pet_binding(database: Database, job: CreativeJobRecord,
+                               binding: TrustedPetCreativeBinding) -> bool:
+    """Re-read current ledger commitment, including dynamic opt-in and exact motion."""
+    if binding.dynamic_pack is None:
+        return verify_owner_commitment_in_ledger(database, binding.opt_in())
+    try:
+        current = load_trusted_pet_creative_binding(database, job)
+    except TrustedPetCreativeBindingError:
+        return False
+    return current == binding
 
 
 class CreativeIntelligenceCoordinator:
