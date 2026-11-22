@@ -321,6 +321,32 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             var visibleWorkOrders = (ItemsControl)workOrderPanel.FindName("CompositionWorkOrderList");
             SmokeAssert.Equal(3, visibleWorkOrders.Items.Count,
                 "Existing WPF review screen must display all three frozen work orders");
+            // 03. Never silently mark a Comfy-generated reference USER_SUPPLIED.
+            //     The user must actively choose the origin for every manual
+            //     image-staging interaction before any native file dialog opens.
+            var sourceChoice = (ComboBox)workOrderPanel.FindName("SourceComboBox");
+            SmokeAssert.Equal(-1, sourceChoice.SelectedIndex,
+                "Source origin must have no default USER_SUPPLIED classification");
+            var sourceShot = (ComboBox)workOrderPanel.FindName("ShotComboBox");
+            sourceShot.SelectedItem = "shot-2";
+            ((Button)workOrderPanel.FindName("ChooseReferenceButton")).RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            SmokeAssert.True(((TextBlock)workOrderPanel.FindName("OperationStatusText")).Text
+                .Contains("来源声明", StringComparison.Ordinal),
+                "Missing origin must be rejected before opening the native file picker");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "A missing origin must not stage an image or infer legal source");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "A missing origin must never request Mac Core approval");
+            sourceChoice.SelectedIndex = 1;
+            ((Button)workOrderPanel.FindName("ChooseReferenceButton")).RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            SmokeAssert.True(((TextBlock)workOrderPanel.FindName("OperationStatusText")).Text
+                .Contains("LICENSED", StringComparison.Ordinal),
+                "Selecting LICENSED without a source digest must fail before native file selection");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "Missing LICENSED evidence must never stage a reference");
+            sourceChoice.SelectedIndex = -1;
             // 02. A shot card uses the ORIGINAL source selector and snapshot
             //     picker, not a second auto-approval surface or API client.
             var cardTemplate = (DependencyObject)visibleWorkOrders.ItemTemplate!.LoadContent();

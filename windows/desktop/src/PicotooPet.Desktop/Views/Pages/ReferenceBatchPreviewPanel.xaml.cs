@@ -49,10 +49,13 @@ public partial class ReferenceBatchPreviewPanel : UserControl
             || !vm.EligibleShots.Contains(shotId, StringComparer.Ordinal)) return;
         try
         {
-            if (SourceComboBox.SelectedItem is not ComboBoxItem { Content: string source })
+            // 04. No implicit original-photo classification: the operator
+            //     must explicitly select a valid origin before the OS file picker.
+            if (SourceComboBox.SelectedItem is not ComboBoxItem { Content: string source }
+                || source is not ("USER_SUPPLIED" or "LICENSED"))
             {
                 OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
-                    "请先在来源声明中选择 USER_SUPPLIED 或 LICENSED。");
+                    "请先在来源声明中主动选择 USER_SUPPLIED 或 LICENSED；生成图不能默认为本人原图。");
                 return;
             }
             var digest = SourceDigestTextBox.Text.Trim();
@@ -73,6 +76,9 @@ public partial class ReferenceBatchPreviewPanel : UserControl
             };
             if (picker.ShowDialog() != true) return;
             await vm.AddAsync(shotId, picker.FileName, source, digest);
+            // 05. Avoid accidentally carrying one shot's provenance declaration
+            //     into the next shot; exact source choice is per image.
+            SourceComboBox.SelectedIndex = -1;
             OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
         }
         catch (Exception)

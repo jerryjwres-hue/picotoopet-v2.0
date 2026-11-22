@@ -101,8 +101,10 @@
    <Grid Margin="0,16,0,0" IsEnabled="{Binding CanEdit, FallbackValue=False}">
     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <StackPanel Margin="0,0,10,0"><TextBlock Text="镜头"/><ComboBox x:Name="ShotComboBox" ItemsSource="{Binding EligibleShots}" MinHeight="30" /></StackPanel>
-    <StackPanel Grid.Column="1" Margin="0,0,10,0"><TextBlock Text="来源声明"/>
-     <ComboBox x:Name="SourceComboBox" SelectedIndex="0" MinHeight="30">
+    <!-- Each image needs a deliberate provenance choice; never auto-label Qwen output as USER_SUPPLIED. -->
+    <StackPanel Grid.Column="1" Margin="0,0,10,0"><TextBlock Text="来源声明（必须主动选择）"/>
+     <ComboBox x:Name="SourceComboBox" SelectedIndex="-1" MinHeight="30"
+               ToolTip="未选择则禁止选图；USER_SUPPLIED 仅用于本人提供的原始素材，生成图须核对 LICENSED 来源。">
       <ComboBoxItem Content="USER_SUPPLIED"/><ComboBoxItem Content="LICENSED"/>
      </ComboBox>
     </StackPanel>
