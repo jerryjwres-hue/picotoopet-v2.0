@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from qwen_reference_readiness import inspect_readiness  # noqa: E402
-from prepare_local_keyframe_batch import prepare, sha  # noqa: E402
+from prepare_local_keyframe_batch import canonical_bytes, prepare, sha  # noqa: E402
 from test_qwen_reference_bindings import jpeg, qwen_fixture  # noqa: E402
 
 
@@ -95,6 +95,75 @@ class ThreeShotReadinessTests(unittest.TestCase):
             self.assertEqual(graph, original)
             self.assertNotIn("old positive", json.dumps(plan))
             self.assertNotIn("negative unchanged", json.dumps(plan))
+
+    def test_real_kit_shared_scene_lock_is_not_lost_in_shot_work_orders(self):
+        # 01. Real KeyframeSpec contains camera_framing but not scene_id.
+        #     The frozen scene comes from keyframe_kit.v1.locks instead.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, package = observed_fixture(root)
+            bible = package["stage_results"]["video_bible.v1"]
+            bible["shots"] = [
+                {
+                    "shot_id": f"shot-{index}", "order": index,
+                    "scene_id": "kitchen-scene",
+                    "opening_state": opening, "closing_state": closing,
+                    "handoff_to_next": "CONTINUOUS",
+                }
+                for index, (opening, closing) in enumerate((
+                    ("pet waits by the door", "pet approaches the bowl"),
+                    ("pet approaches the bowl", "pet touches the bowl"),
+                    ("pet touches the bowl", "pet settles beside the bowl"),
+                ), 1)
+            ]
+            bible["bible_digest"] = sha(canonical_bytes({
+                key: value for key, value in bible.items()
+                if key != "bible_digest"
+            }))
+            kit = package["stage_results"]["keyframe_kit.v1"]
+            kit["bible_digest"] = bible["bible_digest"]
+            kit["locks"] = {"scene_id": "kitchen-scene"}
+            kit["kit_digest"] = None
+            kit["kit_digest"] = sha(canonical_bytes({
+                key: value for key, value in kit.items()
+                if key != "bible_digest"
+            }))
+            plan = inspect_readiness(
+                graph, recovery, package, "a" * 64, root,
+                composition_node="1", fixed_nodes=("2", "3"),
+            )
+            self.assertEqual(plan["status"], "BLOCKED_MISSING_REFERENCES")
+            self.assertEqual([
+                item["scene_id"] for item in plan["composition_work_order"]["items"]
+            ], ["kitchen-scene"] * 3)
+            self.assertFalse(plan["production_authorized"])
+            self.assertEqual(plan["gpu_post"], 0)
+            items = plan["composition_work_order"]["items"]
+            self.assertEqual(
+                [item["opening_state"] for item in items],
+                [shot["opening_state"] for shot in bible["shots"]],
+            )
+            self.assertEqual(
+                [item["closing_state"] for item in items],
+                [shot["closing_state"] for shot in bible["shots"]],
+            )
+            self.assertEqual(
+                [item["handoff_to_next"] for item in items], ["CONTINUOUS"] * 3
+            )
+            self.assertEqual(items[1]["closing_state"], items[2]["opening_state"])
+
+            # 02. A contradicting shot-local scene must never override locks.
+            kit["keyframes"][1]["scene_id"] = "unrelated-room"
+            kit["kit_digest"] = None
+            kit["kit_digest"] = sha(canonical_bytes({
+                key: value for key, value in kit.items()
+                if key != "bible_digest"
+            }))
+            with self.assertRaisesRegex(ValueError, "SCENE_LOCK_CONFLICT"):
+                inspect_readiness(
+                    graph, recovery, package, "a" * 64, root,
+                    composition_node="1", fixed_nodes=("2", "3"),
+                )
 
     def test_distinct_new_compositions_produce_unapproved_strict_slot_map(self):
         with tempfile.TemporaryDirectory() as folder:

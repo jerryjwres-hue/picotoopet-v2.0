@@ -19,12 +19,14 @@ public sealed record ReferencePreviewItem(string ShotId, string Sha256, long Byt
     string InputRelativePath, string SourceReference, string SourceDigest, BitmapSource Preview);
 
 public sealed record ReferenceKeyframeInstruction(
-    string ShotId, string StillPrompt, string ReviewChecklist, string SceneId, string CameraFraming);
+    string ShotId, string StillPrompt, string ReviewChecklist, string SceneId, string CameraFraming,
+    string OpeningState, string ClosingState, string HandoffToNext);
 
 // 只读工作单只反映本地构图缺口，不是资产导入、真实图片审核或 GPU 授权。
 public sealed record ReferenceCompositionWorkItem(
     string ShotId, string Status, string ExistingFilename, string StillPrompt,
-    string ReviewChecklist, string SceneId, string CameraFraming);
+    string ReviewChecklist, string SceneId, string CameraFraming,
+    string OpeningState, string ClosingState, string HandoffToNext);
 
 // 只读候选是历史输出观测，不是 Producer 授权、身份资产或使用许可。
 public sealed record ReferenceObservedCandidate(string ShotId, string OutputRelativePath,
@@ -297,6 +299,15 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                     || Text(item, "creative_still_prompt_sha256") != promptDigest
                     || Text(item, "camera_framing") != frozen.CameraFraming
                     || Text(item, "scene_id") != frozen.SceneId
+                    // 04. New Python reports may include actual Bible state
+                    //     handoffs. If supplied, they must match frozen Core
+                    //     data. Old reports without these keys remain read-only.
+                    || (item.TryGetProperty("opening_state", out _)
+                        && Text(item, "opening_state") != frozen.OpeningState)
+                    || (item.TryGetProperty("closing_state", out _)
+                        && Text(item, "closing_state") != frozen.ClosingState)
+                    || (item.TryGetProperty("handoff_to_next", out _)
+                        && Text(item, "handoff_to_next") != frozen.HandoffToNext)
                     || !item.TryGetProperty("review_checklist", out var checklist)
                     || checklist.ValueKind != JsonValueKind.Array
                     || string.Join("\n", checklist.EnumerateArray().Select(x => x.ValueKind ==
@@ -313,7 +324,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                             || part.EndsWith(' ') || part.EndsWith('.')))))
                     throw new InvalidDataException("COMPOSITION_WORKORDER_SHOT_INVALID");
                 parsed.Add(new(frozen.ShotId, state, name, frozen.StillPrompt,
-                    frozen.ReviewChecklist, frozen.SceneId, frozen.CameraFraming));
+                    frozen.ReviewChecklist, frozen.SceneId, frozen.CameraFraming,
+                    frozen.OpeningState, frozen.ClosingState, frozen.HandoffToNext));
             }
             if (Text(root, "status") == "READY_FOR_OWNER_BINDING_REVIEW"
                 && parsed.Any(x => x.Status != "OBSERVED_UNAPPROVED"))
@@ -343,7 +355,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         foreach (var instruction in KeyframeInstructions)
             CompositionWorkOrders.Add(new(
                 instruction.ShotId, "UNVERIFIED", string.Empty, instruction.StillPrompt,
-                instruction.ReviewChecklist, instruction.SceneId, instruction.CameraFraming));
+                instruction.ReviewChecklist, instruction.SceneId, instruction.CameraFraming,
+                instruction.OpeningState, instruction.ClosingState, instruction.HandoffToNext));
     }
 
     // 05. 校验本地候选清单的完整身份；只显示元数据，绝不自动 Stage 或批准。
@@ -727,6 +740,16 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             || !kit.TryGetProperty("keyframes", out var frames)
             || frames.ValueKind != JsonValueKind.Array || frames.GetArrayLength() != 3)
             return Array.Empty<ReferenceKeyframeInstruction>();
+        // 01. Real KeyframeSpec has camera_framing but scene_id lives in
+        //     the Kit's shared locks. The video Bible carries actual shot
+        //     opening/closing state and cut handoffs for continuity review.
+        var lockedScene = kit.TryGetProperty("locks", out var locks)
+            ? Text(locks, "scene_id") : string.Empty;
+        JsonElement bibleShots = default;
+        var hasBibleShots = stages.TryGetProperty("video_bible.v1", out var bible)
+            && bible.ValueKind == JsonValueKind.Object
+            && bible.TryGetProperty("shots", out bibleShots)
+            && bibleShots.ValueKind == JsonValueKind.Array && bibleShots.GetArrayLength() == 3;
         var items = new List<ReferenceKeyframeInstruction>();
         foreach (var frame in frames.EnumerateArray())
         {
@@ -742,15 +765,46 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 || checklist.EnumerateArray().Any(x => x.ValueKind != JsonValueKind.String
                     || string.IsNullOrWhiteSpace(x.GetString()) || x.GetString()!.Length > 500))
                 return Array.Empty<ReferenceKeyframeInstruction>();
-            var scene = Text(frame, "scene_id");
+            var frameScene = Text(frame, "scene_id");
+            // 02. Never let a shot-local claim override the immutable global
+            //     scene lock; older synthetic/legacy kits may have only one.
+            if (lockedScene.Length > 120 || (lockedScene.Length > 0
+                && frameScene.Length > 0 && lockedScene != frameScene))
+                return Array.Empty<ReferenceKeyframeInstruction>();
+            var scene = lockedScene.Length > 0 ? lockedScene : frameScene;
             var camera = Text(frame, "camera_framing");
-            // 03. Both fields are optional on historical kits; never fabricate
-            //     camera or scene metadata, but reject oversized claims.
             if (scene.Length > 120 || camera.Length > 180)
                 return Array.Empty<ReferenceKeyframeInstruction>();
+
+            var opening = string.Empty;
+            var closing = string.Empty;
+            var handoff = string.Empty;
+            if (hasBibleShots)
+            {
+                var shot = bibleShots[index];
+                // 03. Continuity is an informational copy of the frozen
+                //     Bible only, not a command inferred from a Qwen report.
+                if (Text(shot, "shot_id") == id
+                    && Text(shot, "scene_id") == scene
+                    && shot.TryGetProperty("order", out var bibleOrder)
+                    && bibleOrder.ValueKind == JsonValueKind.Number
+                    && bibleOrder.TryGetInt32(out var ordinal) && ordinal == index + 1)
+                {
+                    var start = Text(shot, "opening_state");
+                    var end = Text(shot, "closing_state");
+                    var cut = Text(shot, "handoff_to_next");
+                    if (start.Length is > 0 and <= 300 && end.Length is > 0 and <= 300
+                        && cut is "CONTINUOUS" or "CUT_ON_ACTION" or "SCENE_CHANGE")
+                    {
+                        opening = start;
+                        closing = end;
+                        handoff = cut;
+                    }
+                }
+            }
             items.Add(new(id, prompt,
                 string.Join("\n", checklist.EnumerateArray().Select(x => x.GetString())),
-                scene, camera));
+                scene, camera, opening, closing, handoff));
         }
         return items.AsReadOnly();
     }

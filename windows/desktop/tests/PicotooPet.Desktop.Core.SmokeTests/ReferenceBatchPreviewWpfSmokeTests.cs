@@ -327,8 +327,17 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Absent local evidence must never be presented as a missing or observed image");
             SmokeAssert.Equal("Opening pose two", vm.CompositionWorkOrders[1].StillPrompt,
                 "Local work card must reuse the exact frozen Creative Kit prompt");
-            SmokeAssert.Equal("kitchen-scene", vm.CompositionWorkOrders[1].SceneId,
-                "Show the frozen scene identity without a second user input");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.SceneId == "kitchen-scene"),
+                "Real KeyframeKit keeps the scene ID in shared locks, not in per-shot KeyframeSpec");
+            SmokeAssert.Equal("paw approaches bowl", vm.CompositionWorkOrders[1].OpeningState,
+                "S2 must expose the frozen Bible opening state for continuous composition");
+            SmokeAssert.Equal("paw touches bowl", vm.CompositionWorkOrders[1].ClosingState,
+                "S2 must expose the frozen Bible closing state for shot handoff");
+            SmokeAssert.Equal("CONTINUOUS", vm.CompositionWorkOrders[1].HandoffToNext,
+                "S2 handoff must remain the frozen Story Director choice");
+            SmokeAssert.Equal(vm.CompositionWorkOrders[1].ClosingState,
+                vm.CompositionWorkOrders[2].OpeningState,
+                "The test must exercise an actual S2-to-S3 opening/closing continuity lock");
             SmokeAssert.Equal("close-up", vm.CompositionWorkOrders[1].CameraFraming,
                 "Show the frozen camera framing beside the per-shot brief");
             SmokeAssert.Equal("Lock bowl", vm.CompositionWorkOrders[2].ReviewChecklist,
@@ -369,6 +378,9 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                         creative_still_prompt = item.StillPrompt,
                         camera_framing = item.CameraFraming,
                         scene_id = item.SceneId,
+                        opening_state = item.OpeningState,
+                        closing_state = item.ClosingState,
+                        handoff_to_next = item.HandoffToNext,
                         creative_still_prompt_sha256 = Convert.ToHexStringLower(
                             SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(item.StillPrompt))),
                         review_checklist = item.ReviewChecklist.Split('\n'),
@@ -455,6 +467,21 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Camera spoofing must discard every claim of an observed image");
             SmokeAssert.Equal("close-up", vm.CompositionWorkOrders[1].CameraFraming,
                 "Camera spoofing must restore the original frozen framing");
+            SmokeAssert.Equal("paw approaches bowl", vm.CompositionWorkOrders[1].OpeningState,
+                "A forged Qwen status report cannot erase the Story Director state progression");
+            await vm.LoadCompositionWorkOrderAsync(workOrderPath);
+            // 05. Even a plausible Python-shaped report cannot override
+            //     the source-bound opening/closing states of a real story.
+            var forgedHandoff = JsonNode.Parse(JsonSerializer.Serialize(workOrder))!.AsObject();
+            forgedHandoff["composition_work_order"]!["items"]![1]!["opening_state"] =
+                "the pet teleports outside the kitchen";
+            var forgedHandoffPath = Path.Combine(root, "forged-handoff.json");
+            await File.WriteAllTextAsync(forgedHandoffPath, forgedHandoff.ToJsonString());
+            await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedHandoffPath));
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Forged continuity text must clear optional observations");
+            SmokeAssert.Equal("paw approaches bowl", vm.CompositionWorkOrders[1].OpeningState,
+                "Frozen continuity must remain available after a forged report");
             await vm.LoadCompositionWorkOrderAsync(workOrderPath);
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Neither accepted nor forged report may create approval");
 
@@ -703,12 +730,16 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         Manifest = JsonElement.Parse("""
         {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1",
          "quality_outcome":"PASS","source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-         "stage_results":{"video_bible.v1":{},"creative_brief.v1":{"output_profile_id":"video.landscape.v1"},
-           "keyframe_kit.v1":{"schema_version":"keyframe_kit.v1",
+         "stage_results":{"video_bible.v1":{"shots":[
+           {"shot_id":"shot-1","order":1,"scene_id":"kitchen-scene","opening_state":"dog enters kitchen","closing_state":"dog stands beside bowl","handoff_to_next":"CONTINUOUS"},
+           {"shot_id":"shot-2","order":2,"scene_id":"kitchen-scene","opening_state":"paw approaches bowl","closing_state":"paw touches bowl","handoff_to_next":"CONTINUOUS"},
+           {"shot_id":"shot-3","order":3,"scene_id":"kitchen-scene","opening_state":"paw touches bowl","closing_state":"dog rests by bowl","handoff_to_next":"CONTINUOUS"}]},
+           "creative_brief.v1":{"output_profile_id":"video.landscape.v1"},
+           "keyframe_kit.v1":{"schema_version":"keyframe_kit.v1","locks":{"scene_id":"kitchen-scene"},
              "kit_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bible_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
              "keyframes":[
                {"shot_id":"shot-1","order":1,"still_prompt":"Opening pose one","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock identity"]},
-               {"shot_id":"shot-2","order":2,"still_prompt":"Opening pose two","approval_status":"PENDING_HUMAN_REVIEW","scene_id":"kitchen-scene","camera_framing":"close-up","review_checklist":["Lock scene"]},
+               {"shot_id":"shot-2","order":2,"still_prompt":"Opening pose two","approval_status":"PENDING_HUMAN_REVIEW","camera_framing":"close-up","review_checklist":["Lock scene"]},
                {"shot_id":"shot-3","order":3,"still_prompt":"Opening pose three","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock bowl"]}]},"script.v1":{},
            "shot_plan.v1":{"shots":[
              {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO","duration_seconds":4},

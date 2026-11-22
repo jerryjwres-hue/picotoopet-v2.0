@@ -194,7 +194,44 @@ def inspect_readiness(
                             "file": {key: observed[key]
                                      for key in ("filename", "sha256", "bytes")}})
 
-    # 05. Convert the frozen Creative keyframe kit into an exact local work
+    # 05. The real KeyframeSpec stores camera_framing per shot, while the
+    #     shared scene_id is frozen in keyframe_kit.v1.locks. Avoid emitting a
+    #     blank scene simply because a shot has no redundant scene_id field.
+    kit = package["stage_results"]["keyframe_kit.v1"]
+    locks = kit.get("locks")
+    frozen_scene = locks.get("scene_id") if isinstance(locks, dict) else None
+    if frozen_scene is not None and (not isinstance(frozen_scene, str)
+                                     or not 1 <= len(frozen_scene) <= 120):
+        raise ValueError("REFERENCE_PREFLIGHT_SCENE_LOCK_INVALID")
+    if frozen_scene is not None and any(
+        frame.get("scene_id") not in (None, frozen_scene) for frame in frames
+    ):
+        raise ValueError("REFERENCE_PREFLIGHT_SCENE_LOCK_CONFLICT")
+
+    # 06. Preserve the real shot-to-shot state handoff from the same
+    #     frozen Video Bible. Historical minimal kits without shot states
+    #     remain supported, but never receive invented narrative details.
+    bible = package["stage_results"]["video_bible.v1"]
+    bible_shots = bible.get("shots") if isinstance(bible, dict) else None
+    frozen_transitions = {}
+    if isinstance(bible_shots, list):
+        if len(bible_shots) != 3:
+            raise ValueError("REFERENCE_PREFLIGHT_BIBLE_SHOT_COUNT_INVALID")
+        for index, (frame, shot) in enumerate(zip(frames, bible_shots, strict=True), 1):
+            if (not isinstance(shot, dict)
+                or shot.get("shot_id") != frame["shot_id"]
+                or shot.get("order") != index
+                or (frozen_scene is not None
+                    and shot.get("scene_id") != frozen_scene)
+                or any(not isinstance(shot.get(field), str)
+                       or not 1 <= len(shot[field]) <= 300
+                       for field in ("opening_state", "closing_state"))
+                or shot.get("handoff_to_next") not in
+                    ("CONTINUOUS", "CUT_ON_ACTION", "SCENE_CHANGE")):
+                raise ValueError("REFERENCE_PREFLIGHT_BIBLE_HANDOFF_INVALID")
+            frozen_transitions[frame["shot_id"]] = shot
+
+    # 07. Convert the frozen Creative keyframe kit into an exact local work
     #     order, instead of asking an operator to retype three long prompts.
     #     Its text comes ONLY from the verified kit, never from a guessed
     #     composition or a historical Comfy PNG's negative prompt.
@@ -230,7 +267,11 @@ def inspect_readiness(
                 frame["still_prompt"].encode("utf-8")
             ),
             "camera_framing": frame.get("camera_framing"),
-            "scene_id": frame.get("scene_id"),
+            "scene_id": frozen_scene if frozen_scene is not None
+                        else frame.get("scene_id"),
+            "opening_state": frozen_transitions.get(shot_id, {}).get("opening_state"),
+            "closing_state": frozen_transitions.get(shot_id, {}).get("closing_state"),
+            "handoff_to_next": frozen_transitions.get(shot_id, {}).get("handoff_to_next"),
             "review_checklist": list(frame["review_checklist"]),
             "prompt_text_local_only": True,
             "new_image_created": False,
