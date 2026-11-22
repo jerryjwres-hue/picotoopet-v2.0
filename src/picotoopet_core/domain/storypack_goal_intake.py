@@ -13,14 +13,16 @@ _P0_SHOTS = 3
 _P0_SECONDS_PER_SHOT = 4
 
 
-def build_storypack_goal_intake(pack: StoryPackV1, storypack_sha256: str) -> dict:
+def build_storypack_goal_intake(
+    pack: StoryPackV1, storypack_sha256: str, *, scoped_dynamic: bool = False,
+) -> dict:
     """Reuse the existing `video.creative` Goal route instead of inventing an executor."""
 
     width, height, fps, seconds = OUTPUT_PROFILES[pack.output_profile]
     reasons: list[str] = []
     # Dynamic proposals must never enter the existing static-only trusted pipeline.
-    if pack.dynamic_motion is not None:
-        reasons.append("DYNAMIC_OWNER_POLICY_NOT_IMPLEMENTED")
+    if pack.dynamic_motion is not None and not scoped_dynamic:
+        reasons.append("DYNAMIC_SCOPED_GOAL_REQUIRED")
     if pack.output_profile != "p0_landscape" or (
         width, height, fps, seconds
     ) != (832, 480, 24, _P0_SECONDS_PER_SHOT):
@@ -47,6 +49,9 @@ def build_storypack_goal_intake(pack: StoryPackV1, storypack_sha256: str) -> dic
             f"动机：{shot.because}。"
             f"切换：{shot.handoff}。"
         )
+    if pack.dynamic_motion is not None and scoped_dynamic:
+        # The explicitly reviewed motion choices govern the action projection.
+        lines.append("动态动作以主人审核的分镜提案为准；禁止静态眨眼替代或改写动作。")
     objective = "\n".join(lines)
     if len(objective) > _GOAL_OBJECTIVE_LIMIT:
         reasons.append("GOAL_OBJECTIVE_OVER_2000_CHARS")
