@@ -18,6 +18,10 @@ from picotoopet_core.autonomous.evidence_ledger import (
     EvidenceTrust,
 )
 from picotoopet_core.creative.director import parse_goal_directives
+from picotoopet_core.creative.dynamic_pet_story import (
+    DYNAMIC_PET_POLICY, build_dynamic_motion_proposal,
+)
+from picotoopet_core.domain.storypack_scoped_goal import load_bound_dynamic_storypack
 from picotoopet_core.creative.service import schedule_after_owner_commit
 from picotoopet_core.creative.source import NormalizedCreativeSourceSet
 from picotoopet_core.creative.state_spine import (
@@ -124,7 +128,8 @@ class OwnerStructuredReviewPreviewRequest(_Strict):
     review_actor_id: str = Field(min_length=1, max_length=80)
     proposal_digest: str = Field(pattern=_DIGEST)
     decisions: list[OwnerStructuredFieldDecision] = Field(max_length=64)
-    story_policy_opt_in: Literal["static-pet-story-v1.0.0"] | None = None
+    story_policy_opt_in: Literal["static-pet-story-v1.0.0", "dynamic-pet-feeding-v1.0.0"] | None = None
+    confirmed_motion_digest: str | None = Field(default=None, pattern=_DIGEST)
 
     @model_validator(mode="after")
     def unique_fields(self) -> OwnerStructuredReviewPreviewRequest:
@@ -169,6 +174,7 @@ class OwnerStructuredReviewProposal(_Strict):
     source_evidence: tuple[OwnerEvidenceSummary, ...]
     fields: dict[str, OwnerStructuredFieldProposal]
     proposal_digest: str = Field(pattern=_DIGEST)
+    dynamic_motion_proposal: dict[str, Any] | None = None
 
 
 class OwnerStructuredReviewPreview(_Strict):
@@ -186,7 +192,7 @@ class OwnerStructuredReviewPreview(_Strict):
     reason_codes: tuple[str, ...]
     state_facts: StateFactsV1 | None
     model_calls: Literal[0] = 0
-    story_policy_opt_in: Literal["static-pet-story-v1.0.0"] | None = None
+    story_policy_opt_in: Literal["static-pet-story-v1.0.0", "dynamic-pet-feeding-v1.0.0"] | None = None
 
 
 class OwnerStructuredReviewCommitRequest(_Strict):
@@ -230,7 +236,7 @@ class OwnerStructuredReviewCommit(_Strict):
     preview_digest: str = Field(pattern=_DIGEST)
     facts_id: str
     facts_digest: str = Field(pattern=_DIGEST)
-    story_policy_opt_in: Literal["static-pet-story-v1.0.0"] | None = None
+    story_policy_opt_in: Literal["static-pet-story-v1.0.0", "dynamic-pet-feeding-v1.0.0"] | None = None
 
 
 class _EvidenceCandidate(_Strict):
@@ -252,6 +258,7 @@ class _Snapshot(_Strict):
     source_revision_digest: str
     evidence: tuple[OwnerEvidenceSummary, ...]
     candidates: tuple[_EvidenceCandidate, ...]
+    dynamic_motion_proposal: dict[str, Any] | None = None
 
 
 class OwnerStructuredReviewService:
@@ -282,6 +289,8 @@ class OwnerStructuredReviewService:
             "source_evidence": [item.model_dump(mode="json") for item in snapshot.evidence],
             "fields": {path: item.model_dump(mode="json") for path, item in fields.items()},
         }
+        if snapshot.dynamic_motion_proposal is not None:
+            document["dynamic_motion_proposal"] = snapshot.dynamic_motion_proposal
         document["proposal_digest"] = canonical_sha256(document)
         return OwnerStructuredReviewProposal.model_validate(document)
 
@@ -307,6 +316,18 @@ class OwnerStructuredReviewService:
             # The owner must opt in explicitly; permission to blink alone is not opt-in.
             "story_policy_opt_in": request.story_policy_opt_in,
         }
+        motion = proposal.dynamic_motion_proposal
+        # Dynamic policy explicitly reviews the exact projected movement and spatial anchors.
+        # A static or missing policy on a dynamic Goal never silently downgrades the story.
+        if motion is not None:
+            if (
+                request.story_policy_opt_in != DYNAMIC_PET_POLICY
+                or request.confirmed_motion_digest != motion["motion_digest"]
+            ):
+                raise OwnerStructuredReviewError(409, "OWNER_REVIEW_DYNAMIC_MOTION_CONFIRMATION_REQUIRED")
+            review_document["confirmed_motion_digest"] = request.confirmed_motion_digest
+        elif request.story_policy_opt_in == DYNAMIC_PET_POLICY or request.confirmed_motion_digest is not None:
+            raise OwnerStructuredReviewError(409, "OWNER_REVIEW_DYNAMIC_SCOPE_REQUIRED")
         review_digest = canonical_sha256(review_document)
         values: dict[str, JsonValue] = {}
         bindings: dict[str, dict[str, object]] = {}
@@ -371,6 +392,7 @@ class OwnerStructuredReviewService:
             bindings=bindings,
             review_digest=review_digest,
             actor_id=principal.actor_id,
+            dynamic=motion is not None,
         )
         if state_facts is None:
             return self._preview_result(
@@ -382,7 +404,7 @@ class OwnerStructuredReviewService:
                 story_policy_opt_in=request.story_policy_opt_in,
             )
         # The special policy never follows automatically from the allowed event list.
-        if request.story_policy_opt_in is not None:
+        if request.story_policy_opt_in == "static-pet-story-v1.0.0":
             if (
                 set(state_facts.allowed_events)
                 != {AllowedEvent.BLINK_AND_REOPEN, AllowedEvent.SUBTLE_BREATHING}
@@ -393,6 +415,27 @@ class OwnerStructuredReviewService:
                     review_digest=review_digest,
                     outcome="NEEDS_HUMAN",
                     reasons=("OWNER_REVIEW_STATIC_POLICY_PREREQUISITES_INVALID",),
+                    state_facts=None,
+                    story_policy_opt_in=request.story_policy_opt_in,
+                )
+        if motion is not None:
+            # Only the exact feeding motion vocabulary and reviewed camera/support
+            # choices can be used; the initial posture must be standing.
+            details = motion["motion"]
+            if (
+                state_facts.facts_version != 2
+                or state_facts.pose_lock.fixed
+                or state_facts.pose_lock.body_pose.strip().casefold() != "standing"
+                or state_facts.pose_lock.support_surface != details["support_surface"]
+                or not {item["framing"] for item in motion["shots"]} <= set(
+                    state_facts.camera_lock.allowed_framings
+                )
+            ):
+                return self._preview_result(
+                    proposal=proposal,
+                    review_digest=review_digest,
+                    outcome="NEEDS_HUMAN",
+                    reasons=("OWNER_REVIEW_DYNAMIC_POLICY_PREREQUISITES_INVALID",),
                     state_facts=None,
                     story_policy_opt_in=request.story_policy_opt_in,
                 )
@@ -418,12 +461,16 @@ class OwnerStructuredReviewService:
         if not key or len(key) > 200:
             raise OwnerStructuredReviewError(409, "OWNER_REVIEW_IDEMPOTENCY_KEY_INVALID")
         self._authorize_actor(principal, request.preview_request.review_actor_id)
+        # Preserve legacy replay identity when the new field is not present.
+        request_document = request.model_dump(mode="json")
+        if request.preview_request.confirmed_motion_digest is None:
+            request_document["preview_request"].pop("confirmed_motion_digest", None)
         request_fingerprint = canonical_sha256(
             {
                 "actor_id": principal.actor_id,
                 "credential_id": principal.credential_id,
                 "registry_revision": principal.registry_revision,
-                "request": request.model_dump(mode="json"),
+                "request": request_document,
             }
         )
         origin_ref = f"owner-structured-review:commit:{hashlib.sha256(key.encode()).hexdigest()}"
@@ -794,6 +841,15 @@ class OwnerStructuredReviewService:
         ):
             raise OwnerStructuredReviewError(409, "OWNER_REVIEW_GOAL_SOURCE_INVALID")
 
+        dynamic_motion_proposal = None
+        if "storypack_binding" in constraints:
+            try:
+                bound_pack = load_bound_dynamic_storypack(constraints["storypack_binding"])
+                if bound_pack is not None:
+                    dynamic_motion_proposal = build_dynamic_motion_proposal(bound_pack)
+            except ValueError as error:
+                raise OwnerStructuredReviewError(409, "OWNER_REVIEW_DYNAMIC_SCOPE_INVALID") from error
+
         subject_rows = self.database.fetchall(
             "SELECT * FROM canonical_evidence WHERE subject_key=? ORDER BY evidence_id LIMIT 5001",
             (subject_key,),
@@ -878,6 +934,7 @@ class OwnerStructuredReviewService:
             source_revision_digest=revision,
             evidence=summaries,
             candidates=candidates,
+            dynamic_motion_proposal=dynamic_motion_proposal,
         )
 
     @staticmethod
@@ -1113,6 +1170,7 @@ class OwnerStructuredReviewService:
         bindings: dict[str, dict[str, object]],
         review_digest: str,
         actor_id: str,
+        dynamic: bool = False,
     ) -> StateFactsV1 | None:
         lock_ids = {
             "subject_lock.subject_id": values["subject_lock.subject_id"],
@@ -1120,7 +1178,9 @@ class OwnerStructuredReviewService:
             "scene_lock.scene_lock_id": f"scene-{review_digest[:16]}",
             "camera_lock.camera_lock_id": f"camera-{review_digest[:16]}",
         }
-        all_values = {**values, **_DERIVED_VALUES, **lock_ids}
+        # v2 binds an authored starting pose, not a fixed body pose in every shot.
+        derived = {**_DERIVED_VALUES, "pose_lock.fixed": not dynamic}
+        all_values = {**values, **derived, **lock_ids}
         derived_paths = (
             *_DERIVED_VALUES,
             "pose_lock.pose_lock_id",
@@ -1155,7 +1215,7 @@ class OwnerStructuredReviewService:
                 {
                     "schema_version": "state_facts.v1",
                     "facts_id": f"facts-{review_digest[:24]}",
-                    "facts_version": 1,
+                    "facts_version": 2 if dynamic else 1,
                     "creative_profile": "creative.content_plan.v2",
                     "pet_only": True,
                     "new_job_only": True,
@@ -1198,7 +1258,7 @@ class OwnerStructuredReviewService:
         outcome: Literal["READY", "NEEDS_HUMAN"],
         reasons: tuple[str, ...],
         state_facts: StateFactsV1 | None,
-        story_policy_opt_in: Literal["static-pet-story-v1.0.0"] | None,
+        story_policy_opt_in: Literal["static-pet-story-v1.0.0", "dynamic-pet-feeding-v1.0.0"] | None,
     ) -> OwnerStructuredReviewPreview:
         document: dict[str, object] = {
             "schema_version": "owner_structured_review.preview.v1",
