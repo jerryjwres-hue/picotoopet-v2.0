@@ -132,6 +132,71 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             await RejectAsync(() => vm.AddAsync("text-shot", source, "USER_SUPPLIED", null));
             await RejectAsync(() => vm.AddAsync("shot-1", source, "LICENSED", null));
             SmokeAssert.Equal(0, vm.Items.Count, "Rejected source declarations must not appear as eligible references");
+            // 01. 真实 UI 读取本地观察清单，但不将观察结果视为许可或审批。
+            var observedRoot = Path.Combine(root, "local-comfy-output");
+            Directory.CreateDirectory(observedRoot);
+            var digest = Convert.ToHexStringLower(SHA256.HashData(png));
+            var observedShots = Enumerable.Range(1, 3).Select(i =>
+            {
+                var shot = $"shot-{i}";
+                File.WriteAllBytes(Path.Combine(observedRoot, shot + ".png"), png);
+                return new
+                {
+                    shot_id = shot, order = i, prompt_id = $"00000000-0000-4000-8000-{i:000000000000}",
+                    prepared_graph_sha256 = new string('c', 64),
+                    selected_reference = (object?)null,
+                    candidates = new[]
+                    {
+                        new
+                        {
+                            output_relative_path = shot + ".png", sha256 = digest, bytes = png.Length,
+                            width = 2, height = 1, image_container_crc_verified = true,
+                            pixels_decoded = false, visual_review = "UNREVIEWED",
+                        }
+                    }
+                };
+            }).ToArray();
+            var observedManifest = new
+            {
+                schema = "picotoo.local-keyframe-output-candidates.v1",
+                creative_package_id = vm.CreativePackageId,
+                creative_package_sha256 = vm.CreativePackageDigest,
+                keyframe_kit_digest = new string('a', 64),
+                recorded_image_bytes_observed = true, candidate_files_staged = false,
+                source_rights_confirmed = false, reference_approved = false,
+                review_status = "NEEDS_HUMAN_REVIEW", gpu_post = 0,
+                shots = observedShots
+            };
+            var observedFile = Path.Combine(root, "candidate_manifest.json");
+            await File.WriteAllTextAsync(observedFile, JsonSerializer.Serialize(observedManifest));
+            SmokeAssert.True(vm.CanLoadObservedCandidates, "Sealed three-shot view should accept read-only candidates");
+            await vm.LoadObservedCandidatesAsync(observedFile);
+            SmokeAssert.Equal(3, vm.ObservedCandidates.Count, "Full candidate observation lost shots");
+            SmokeAssert.Equal(0, vm.Items.Count, "Read-only observation must never stage images");
+            SmokeAssert.True(!vm.UserConfirmsPreviewAndRights && gateway.RegisterCalls == 0,
+                "Observed output cannot grant rights or write an approval");
+            await RejectAsync(() => vm.AddObservedCandidateAsync(vm.ObservedCandidates[0], observedRoot, "not-a-license"));
+            SmokeAssert.Equal(0, vm.Items.Count, "Invalid license must reject observed candidate");
+            await vm.AddObservedCandidateAsync(vm.ObservedCandidates[0], observedRoot, new string('e', 64));
+            SmokeAssert.Equal("LICENSED", vm.Items.Single().SourceReference,
+                "Generated candidate must not silently become USER_SUPPLIED");
+            SmokeAssert.True(!vm.UserConfirmsPreviewAndRights && gateway.RegisterCalls == 0,
+                "Explicit selection must not confirm rights or create approval");
+            // 02. Changing the real file after observation must block another import.
+            File.WriteAllBytes(Path.Combine(observedRoot, "shot-2.png"), [1, 2, 3]);
+            await RejectAsync(() => vm.AddObservedCandidateAsync(
+                vm.ObservedCandidates[1], observedRoot, new string('e', 64)));
+            SmokeAssert.Equal(1, vm.Items.Count, "Tampered observed image must not replace staged image");
+            File.WriteAllBytes(Path.Combine(observedRoot, "shot-2.png"), png);
+            // 03. Wrong package digest must fail before selecting any local file.
+            var alteredJson = JsonSerializer.Serialize(observedManifest).Replace(
+                vm.CreativePackageDigest, new string('f', 64), StringComparison.Ordinal);
+            var alteredFile = Path.Combine(root, "wrong-candidate.json");
+            await File.WriteAllTextAsync(alteredFile, alteredJson);
+            await RejectAsync(() => vm.LoadObservedCandidatesAsync(alteredFile));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count, "Failed manifest must clear untrusted observations");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Observed candidate path must not call Core");
+
             await vm.AddAsync("shot-1", source, "USER_SUPPLIED", null);
             SmokeAssert.Equal(1, vm.Items.Count, "Staged reference must appear in the actual preview collection");
             SmokeAssert.Equal(vm.Items[0].Sha256, vm.Items[0].SourceDigest, "User supplied source digest must bind the exact staged bytes");
