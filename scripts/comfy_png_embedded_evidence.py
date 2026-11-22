@@ -11,7 +11,7 @@ import struct
 import zlib
 from pathlib import Path
 
-from recover_comfy_keyframe_workflow import (
+from scripts.recover_comfy_keyframe_workflow import (
     IMAGE_SUFFIXES, MAX_INPUTS, MAX_NODES, MODEL_NAMES, SLOT_NAMES,
     canonical_bytes, parse_history,
 )
