@@ -16,6 +16,8 @@ on:
       - scripts/comfy_png_embedded_evidence.py
       - tests/creative_quality_2026/test_comfy_png_embedded_evidence.py
       - scripts/prepare_local_keyframe_batch.py
+      - scripts/qwen_reference_bindings.py
+      - tests/creative_quality_2026/test_qwen_reference_bindings.py
       - scripts/collect_local_keyframe_outputs.py
       - tests/creative_quality_2026/test_keyframe_handoff_chain.py
       - tests/creative_quality_2026/test_collect_local_keyframe_outputs.py
@@ -59,6 +61,9 @@ jobs:
       - name: Recover Qwen API graph from existing PNG metadata (CPU only)
         shell: pwsh
         run: python -m unittest discover -s tests/creative_quality_2026 -p test_comfy_png_embedded_evidence.py
+      - name: Qwen shot-scoped image bindings and exact input files (CPU only)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_qwen_reference_bindings.py
       - name: Build existing native WPF smoke harness (no packaging)
         shell: pwsh
         run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
