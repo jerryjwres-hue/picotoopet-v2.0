@@ -182,6 +182,49 @@ def inspect_readiness(
                             "file": {key: observed[key]
                                      for key in ("filename", "sha256", "bytes")}})
 
+    # 05. Convert the frozen Creative keyframe kit into an exact local work
+    #     order, instead of asking an operator to retype three long prompts.
+    #     Its text comes ONLY from the verified kit, never from a guessed
+    #     composition or a historical Comfy PNG's negative prompt.
+    missing_shots = {item["shot_id"] for item in missing if "shot_id" in item}
+    invalid_shots = {item["shot_id"] for item in invalid if "shot_id" in item}
+    observed_shots = {
+        item["shot_id"]: item
+        for item in inventory if item.get("role") == "COMPOSITION_CANDIDATE"
+    }
+    work_items = []
+    for frame in frames:
+        shot_id = frame["shot_id"]
+        if shot_id in invalid_shots:
+            state = "INVALID_REFERENCE"
+        elif shot_id in missing_shots:
+            state = "NEEDS_DISTINCT_COMPOSITION"
+        elif shot_id in observed_shots:
+            state = "OBSERVED_UNAPPROVED"
+        else:
+            state = "UNVERIFIED"
+        work_items.append({
+            "shot_id": shot_id,
+            "order": frame["order"],
+            "composition_status": state,
+            "composition_node": composition_node,
+            "existing_input_filename": (
+                observed_shots[shot_id]["filename"]
+                if shot_id in observed_shots else None
+            ),
+            "source": "FROZEN_CREATIVE_KEYFRAME_KIT",
+            "creative_still_prompt": frame["still_prompt"],
+            "creative_still_prompt_sha256": sha(
+                frame["still_prompt"].encode("utf-8")
+            ),
+            "camera_framing": frame.get("camera_framing"),
+            "scene_id": frame.get("scene_id"),
+            "review_checklist": list(frame["review_checklist"]),
+            "prompt_text_local_only": True,
+            "new_image_created": False,
+            "owner_approved": False,
+        })
+
     complete = not missing and not invalid and len(map_entries) == len(load_ids)
     proposed = None
     if complete:
@@ -209,6 +252,17 @@ def inspect_readiness(
         "missing": missing,
         "invalid": invalid,
         "binding_proposal": proposed,
+        # 06. Present shot-specific creative instructions for missing visuals.
+        #     This is a local work order, not a generated artifact or approval.
+        "composition_work_order": {
+            "schema": "picotoo.qwen-local-composition-workorder.v1",
+            "creative_kit_digest": kit_digest,
+            "shot_count": 3,
+            "items": work_items,
+            "source_workflow_modified": False,
+            "all_images_approved": False,
+            "gpu_post": 0,
+        },
         "image_quality": "UNREVIEWED",
         "source_rights_confirmed": False,
         "source_inputs_verified_for_production": False,

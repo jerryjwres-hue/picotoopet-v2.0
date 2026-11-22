@@ -62,6 +62,30 @@ class ThreeShotReadinessTests(unittest.TestCase):
             self.assertEqual([i["shot_id"] for i in plan["missing"]], ["shot-2", "shot-3"])
             self.assertEqual([i["reason"] for i in plan["missing"]],
                              ["MISSING_SHOT_COMPOSITION"] * 2)
+            # 01. Existing source kit automatically supplies precise prompts,
+            #     framing, shot order and review criteria for S2/S3, without
+            #     generating or approving a picture.
+            work = plan["composition_work_order"]
+            self.assertEqual(work["shot_count"], 3)
+            self.assertFalse(work["source_workflow_modified"])
+            self.assertFalse(work["all_images_approved"])
+            self.assertEqual(work["gpu_post"], 0)
+            self.assertEqual([x["composition_status"] for x in work["items"]], [
+                "OBSERVED_UNAPPROVED",
+                "NEEDS_DISTINCT_COMPOSITION",
+                "NEEDS_DISTINCT_COMPOSITION",
+            ])
+            for frame, item in zip(
+                package["stage_results"]["keyframe_kit.v1"]["keyframes"],
+                work["items"], strict=True
+            ):
+                self.assertEqual(item["creative_still_prompt"], frame["still_prompt"])
+                self.assertEqual(item["creative_still_prompt_sha256"],
+                                 sha(frame["still_prompt"].encode("utf-8")))
+                self.assertEqual(item["review_checklist"], frame["review_checklist"])
+                self.assertFalse(item["new_image_created"])
+                self.assertFalse(item["owner_approved"])
+                self.assertTrue(item["prompt_text_local_only"])
             self.assertIsNone(plan["binding_proposal"])
             self.assertEqual(len(plan["inventory"]), 3)
             self.assertEqual(len([i for i in plan["inventory"] if i["format"] == "jpeg"]), 2)
@@ -82,6 +106,14 @@ class ThreeShotReadinessTests(unittest.TestCase):
                 shot_2="s02-composition.png", shot_3="s03-composition.png",
             )
             self.assertEqual(plan["status"], "READY_FOR_OWNER_BINDING_REVIEW")
+            # 02. Even after three distinct real inputs are found, the work
+            #     order remains unapproved, and no AI/GPU operation is run.
+            self.assertEqual(
+                [x["composition_status"]
+                 for x in plan["composition_work_order"]["items"]],
+                ["OBSERVED_UNAPPROVED"] * 3,
+            )
+            self.assertFalse(plan["composition_work_order"]["all_images_approved"])
             binding = plan["binding_proposal"]
             self.assertEqual([x["mode"] for x in binding["reference_images"]],
                              ["per_shot", "fixed", "fixed"])
@@ -123,6 +155,8 @@ class ThreeShotReadinessTests(unittest.TestCase):
                     )
                     self.assertEqual(plan["status"], status)
                     self.assertIsNone(plan["binding_proposal"])
+                    self.assertEqual(len(plan["composition_work_order"]["items"]), 3)
+                    self.assertFalse(plan["composition_work_order"]["all_images_approved"])
 
     def test_untrusted_roles_and_missing_recovery_evidence_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
