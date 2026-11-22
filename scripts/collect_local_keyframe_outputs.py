@@ -12,16 +12,19 @@ import os
 import stat
 import struct
 import sys
+import urllib.request
 import zlib
 from pathlib import Path, PurePosixPath
 
 from prepare_local_keyframe_batch import read_bounded, require_digest
 from recover_comfy_keyframe_workflow import (
-    canonical_bytes, fetch_history, parse_history, prompt_identity,
+    COMFY_ORIGIN, MAX_HISTORY_BYTES, NoRedirect, canonical_bytes,
+    fetch_history, parse_history, prompt_identity,
 )
 
 MAX_IMAGE_BYTES = 32 * 1024 * 1024
 MAX_CANDIDATES_PER_SHOT = 32
+MAX_HISTORY_ITEMS = 2000
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
@@ -160,6 +163,76 @@ def candidate_history(history: dict, prompt_id: str, expected_graph_sha: str) ->
     return images
 
 
+def fetch_recent_history() -> bytes:
+    """One fixed local GET only; never enqueue, mutate, or browse arbitrary URLs."""
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), NoRedirect()
+    )
+    request = urllib.request.Request(
+        f"{COMFY_ORIGIN}/history",
+        headers={"Accept": "application/json"}, method="GET",
+    )
+    with opener.open(request, timeout=10) as response:
+        return response.read(MAX_HISTORY_BYTES + 1)
+
+
+def discover_exact_prompt_ids(batch: dict, batch_dir: Path,
+                              listing: dict) -> tuple[dict, dict[str, dict]]:
+    """Discover unique completed prompt IDs by byte-exact frozen graph digest.
+
+    01. Ambiguity never selects a 'newest' picture; callers must use explicit
+        prompt IDs when the same graph has been executed more than once.
+    02. Failed, incomplete, or unrelated history entries do not grant a match.
+    """
+    shots = batch.get("shots")
+    if not isinstance(shots, list) or len(shots) != 3:
+        raise ValueError("CANDIDATE_DISCOVERY_BATCH_INVALID")
+    if not isinstance(listing, dict) or len(listing) > MAX_HISTORY_ITEMS:
+        raise ValueError("CANDIDATE_DISCOVERY_HISTORY_SIZE_INVALID")
+    expected = {}
+    for order, shot in enumerate(shots, 1):
+        shot_id, graph_file = shot.get("shot_id"), shot.get("graph_file")
+        if (not isinstance(shot_id, str)
+            or graph_file != f"{order:02d}-{shot_id}.json"):
+            raise ValueError("CANDIDATE_DISCOVERY_GRAPH_INVALID")
+        digest = require_digest(shot["graph_sha256"])
+        if digest in expected or file_sha(read_bounded(batch_dir / graph_file)) != digest:
+            raise ValueError("CANDIDATE_DISCOVERY_GRAPH_INVALID")
+        expected[digest] = shot_id
+
+    matched: dict[str, list[tuple[str, dict]]] = {shot_id: [] for shot_id in expected.values()}
+    for prompt_id, entry in listing.items():
+        if not isinstance(entry, dict):
+            continue
+        try:
+            prompt_identity(prompt_id)
+        except (ValueError, TypeError, AttributeError):
+            continue
+        prompt = entry.get("prompt")
+        if (not isinstance(prompt, list) or len(prompt) < 3
+            or prompt[1] != prompt_id or not isinstance(prompt[2], dict)):
+            continue
+        digest = file_sha(canonical_bytes(prompt[2]))
+        shot_id = expected.get(digest)
+        if shot_id is None:
+            continue
+        try:
+            candidate_history({prompt_id: entry}, prompt_id, digest)
+        except (ValueError, TypeError, KeyError):
+            continue
+        matched[shot_id].append((prompt_id, entry))
+
+    if any(len(matches) != 1 for matches in matched.values()):
+        raise ValueError("CANDIDATE_DISCOVERY_AMBIGUOUS_OR_MISSING")
+    identities = {"schema": "picotoo.keyframe-prompt-identities.v1",
+                  "shots": [{"shot_id": shot["shot_id"],
+                             "prompt_id": matched[shot["shot_id"]][0][0]}
+                            for shot in shots]}
+    histories = {entries[0][0]: {entries[0][0]: entries[0][1]}
+                 for entries in matched.values()}
+    return identities, histories
+
+
 def collect(batch: dict, batch_dir: Path, identities: dict,
             histories: dict[str, dict], output_root: Path) -> dict:
     """Make a bounded review manifest, never a selected or approved reference."""
@@ -235,24 +308,37 @@ def collect(batch: dict, batch_dir: Path, identities: dict,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--batch-dir", type=Path, required=True)
-    parser.add_argument("--prompt-ids", type=Path, required=True)
-    parser.add_argument("--history-dir", type=Path)
-    parser.add_argument("--live-history", action="store_true")
+    parser.add_argument("--prompt-ids", type=Path)
+    history_source = parser.add_mutually_exclusive_group(required=True)
+    history_source.add_argument("--history-dir", type=Path)
+    history_source.add_argument("--live-history", action="store_true")
+    history_source.add_argument("--history-snapshot", type=Path)
+    history_source.add_argument("--live-history-scan", action="store_true")
     parser.add_argument("--comfy-output-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
-    if args.live_history == (args.history_dir is not None):
-        parser.error("Choose exactly one history source.")
+    auto_discovery = args.history_snapshot is not None or args.live_history_scan
+    if auto_discovery == (args.prompt_ids is not None):
+        parser.error("Auto-discovery omits --prompt-ids; explicit history requires --prompt-ids.")
     try:
         batch = parse_history(read_bounded(args.batch_dir / "batch_manifest.json"))
-        identities = parse_history(read_bounded(args.prompt_ids))
-        ids = [prompt_identity(item["prompt_id"]) for item in identities["shots"]]
-        histories = {
-            key: parse_history(
-                fetch_history(key) if args.live_history
-                else read_bounded(args.history_dir / f"{key}.json")
-            ) for key in ids
-        }
+        if auto_discovery:
+            listing = parse_history(
+                fetch_recent_history() if args.live_history_scan
+                else read_bounded(args.history_snapshot)
+            )
+            identities, histories = discover_exact_prompt_ids(
+                batch, args.batch_dir, listing
+            )
+        else:
+            identities = parse_history(read_bounded(args.prompt_ids))
+            ids = [prompt_identity(item["prompt_id"]) for item in identities["shots"]]
+            histories = {
+                key: parse_history(
+                    fetch_history(key) if args.live_history
+                    else read_bounded(args.history_dir / f"{key}.json")
+                ) for key in ids
+            }
         result = collect(batch, args.batch_dir, identities, histories, args.comfy_output_root)
         # 03. No image is copied or imported into approved Core reference storage.
         args.output_dir.mkdir(parents=False, exist_ok=False)
