@@ -164,7 +164,11 @@ class HumanGoalService:
                         }
                     ),
                     "read_only_research": True,
-                    **({"storypack_binding": scoped_story_binding} if scoped_story_binding is not None else {}),
+                    **(
+                        {"storypack_binding": scoped_story_binding}
+                        if scoped_story_binding is not None
+                        else {}
+                    ),
                     **(
                         {"owner_subject_key": request.owner_subject_key}
                         if request.owner_subject_key is not None
