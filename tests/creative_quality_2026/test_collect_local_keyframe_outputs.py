@@ -14,7 +14,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from collect_local_keyframe_outputs import (  # noqa: E402
-    collect, file_sha, main, png_chunks_checked, safe_components,
+    collect, discover_exact_prompt_ids, fetch_recent_history,
+    file_sha, main, png_chunks_checked, safe_components,
 )
 from recover_comfy_keyframe_workflow import canonical_bytes  # noqa: E402
 
@@ -162,6 +163,68 @@ class CandidateTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             png_chunks_checked(header + chunk + animated[33:])
+
+    def test_discovery_uses_exact_graph_identity_without_manual_prompt_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            batch, folder, identities, histories, output, _ = fixture(root)
+            listing = {key: value[key] for key, value in histories.items()}
+            listing["unrelated-history"] = {"prompt": ["not-a-uuid", "untrusted", {}]}
+            found, matched = discover_exact_prompt_ids(batch, folder, listing)
+            self.assertEqual(found, identities)
+            self.assertEqual(set(matched), set(histories))
+            self.assertEqual(collect(batch, folder, found, matched, output)["gpu_post"], 0)
+
+            # 01. Two completed prompts with an identical graph are ambiguous.
+            duplicate_id = "00000000-0000-4000-8000-000000000009"
+            first = identities["shots"][0]["prompt_id"]
+            duplicate = copy.deepcopy(listing[first])
+            duplicate["prompt"][1] = duplicate_id
+            listing[duplicate_id] = duplicate
+            with self.assertRaisesRegex(ValueError, "AMBIGUOUS"):
+                discover_exact_prompt_ids(batch, folder, listing)
+            del listing[duplicate_id]
+
+            # 02. A failed task never substitutes for a missing completed task.
+            listing[first]["status"]["status_str"] = "error"
+            with self.assertRaisesRegex(ValueError, "AMBIGUOUS_OR_MISSING"):
+                discover_exact_prompt_ids(batch, folder, listing)
+
+            # 03. Modified frozen local graph disqualifies every matching history.
+            listing[first]["status"]["status_str"] = "success"
+            (folder / batch["shots"][0]["graph_file"]).write_bytes(b"{}")
+            with self.assertRaisesRegex(ValueError, "GRAPH_INVALID"):
+                discover_exact_prompt_ids(batch, folder, listing)
+
+    def test_offline_history_snapshot_discovers_and_collects_without_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, folder, _, histories, output, _ = fixture(root)
+            listing = {key: value[key] for key, value in histories.items()}
+            history_path = root / "complete-history.json"
+            history_path.write_bytes(canonical_bytes(listing))
+            args = ["--batch-dir", str(folder), "--history-snapshot", str(history_path),
+                    "--comfy-output-root", str(output), "--output-dir", str(root / "discovered")]
+            with patch("collect_local_keyframe_outputs.fetch_history") as single, patch(
+                "collect_local_keyframe_outputs.fetch_recent_history"
+            ) as listing_get:
+                self.assertEqual(main(args), 0)
+                self.assertEqual(main(args), 1)
+                single.assert_not_called()
+                listing_get.assert_not_called()
+            report = json.loads((root / "discovered" / "candidate_manifest.json").read_bytes())
+            self.assertEqual(len(report["shots"]), 3)
+            self.assertFalse(report["source_rights_confirmed"])
+
+    def test_live_history_scan_is_fixed_loopback_get(self):
+        with patch("collect_local_keyframe_outputs.urllib.request.build_opener") as builder:
+            opener = builder.return_value
+            opener.open.return_value.__enter__.return_value.read.return_value = b"{}"
+            self.assertEqual(fetch_recent_history(), b"{}")
+            request = opener.open.call_args.args[0]
+            self.assertEqual(request.full_url, "http://127.0.0.1:8188/history")
+            self.assertEqual(request.get_method(), "GET")
+            self.assertEqual(builder.call_args.args[0].proxies, {})
 
     def test_offline_cli_never_overwrites_or_accesses_network(self):
         with tempfile.TemporaryDirectory() as tmp:
