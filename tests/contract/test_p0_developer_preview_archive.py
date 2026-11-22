@@ -34,6 +34,9 @@ def _create_preview(
     tamper_tunnel: bool = False,
     duplicate: bool = False,
     unsafe_path: bool = False,
+    include_offline_tools: bool = False,
+    tool_body_tamper: bool = False,
+    wrong_tool_manifest: bool = False,
 ) -> tuple[Path, Path]:
     """Synthetic ZIP resembles real preview metadata, never a runnable application."""
 
@@ -47,6 +50,16 @@ def _create_preview(
         "Start-SecureMacTunnel.ps1": b"# TEST ONLY: SSH loopback strict keys\n",
         "README_P0_DEVELOPER_PREVIEW.txt": README,
     }
+    if include_offline_tools:
+        # 01. Fixture tools are static fake Python, never real Comfy programs.
+        files.update({
+            "scripts/recover_comfy_keyframe_workflow.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/comfy_png_embedded_evidence.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/prepare_local_keyframe_batch.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/qwen_reference_bindings.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/collect_local_keyframe_outputs.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/offline_png_output_collector.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+        })
     if missing_hold:
         files.pop("Prepare-P0ThreeShotHold.ps1")
     if missing_tunnel:
@@ -64,6 +77,9 @@ def _create_preview(
         "hold_script": "Prepare-P0ThreeShotHold.ps1",
         "connection_launcher": "CONNECT_MAC_SECURE.vbs",
         "connection_script": "Start-SecureMacTunnel.ps1",
+        **({"offline_keyframe_tools": sorted(
+            name for name in files if name.startswith("scripts/")
+        )} if include_offline_tools else {}),
         "files": [
             {
                 "path": name,
@@ -73,11 +89,13 @@ def _create_preview(
             for name, data in files.items()
         ],
     }
+    if wrong_tool_manifest:
+        manifest["offline_keyframe_tools"] = ["scripts/untrusted_gpu_post.py"]
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as package:
         for name, data in files.items():
             changed = (tamper and name.endswith(".exe")) or (
                 tamper_tunnel and name == "Start-SecureMacTunnel.ps1"
-            )
+            ) or (tool_body_tamper and name == "scripts/recover_comfy_keyframe_workflow.py")
             package.writestr(name, data + (b"CHANGED" if changed else b""))
         if duplicate:
             # Duplicate basename under different case must not be extracted on Windows.
@@ -156,6 +174,24 @@ class PreviewArchiveContractTests(unittest.TestCase):
     def test_rejects_path_traversal(self):
         archive, receipt = _create_preview(self.root, unsafe_path=True)
         with self.assertRaisesRegex(PreviewVerificationError, "UNSAFE_ZIP_PATH"):
+            self.verify(archive, receipt)
+
+    def test_exact_cpu_only_qwen_toolset_verified_in_unsigned_archive(self):
+        archive, receipt = _create_preview(self.root, include_offline_tools=True)
+        result = self.verify(archive, receipt)
+        self.assertEqual(result["files_verified"], 12)
+        self.assertFalse(result["user_install_allowed"])
+
+    def test_tampered_qwen_tool_bytes_rejected(self):
+        archive, receipt = _create_preview(
+            self.root, include_offline_tools=True, tool_body_tamper=True
+        )
+        with self.assertRaisesRegex(PreviewVerificationError, "FILE_BYTES_OR_SHA256_MISMATCH"):
+            self.verify(archive, receipt)
+
+    def test_undeclared_or_missing_qwen_toolset_rejected(self):
+        archive, receipt = _create_preview(self.root, wrong_tool_manifest=True)
+        with self.assertRaisesRegex(PreviewVerificationError, "OFFLINE_QWEN_TOOLSET_INCOMPLETE"):
             self.verify(archive, receipt)
 
     def test_rejects_wrong_run_id(self):

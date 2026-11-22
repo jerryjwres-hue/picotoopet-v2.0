@@ -10,6 +10,12 @@ on:
       - "windows/desktop/release/Start-SecureMacTunnel.ps1"
       - "windows/desktop/release/CONNECT_MAC_SECURE.vbs"
       - "windows/desktop/src/**"
+      - "scripts/recover_comfy_keyframe_workflow.py"
+      - "scripts/comfy_png_embedded_evidence.py"
+      - "scripts/prepare_local_keyframe_batch.py"
+      - "scripts/qwen_reference_bindings.py"
+      - "scripts/collect_local_keyframe_outputs.py"
+      - "scripts/offline_png_output_collector.py"
       - "src/picotoopet_core/product-version.txt"
       - "src/picotoopet_core/creative/**"
       - "tests/creative/**"
@@ -40,7 +46,7 @@ jobs:
   portable-preview:
     # 其他 PR 不得触发便携包；仅允许本次 #330 统一集成审查构建无签名内部候选。
     # 必须同时匹配原有精确 head 和本次唯一 base，不扩大其他 PR 的构建权限。
-    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop' || (github.head_ref == 'feat/p0-296-keyframe-thumbnail-review' && github.base_ref == 'integrate/p0-296-film-closed-loop-candidate-20261121')
+    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop' || (github.head_ref == 'feat/p0-296-keyframe-thumbnail-review' && github.base_ref == 'integrate/p0-296-film-closed-loop-candidate-20261121') || (github.head_ref == 'feat/p0-330-bundle-offline-qwen-tools-20261122' && github.base_ref == 'fix/p0-330-c009-visual-restart-repeat-20261122')
     name: Build unsigned portable WPF candidate without Release Builder
     runs-on: windows-2025
     timeout-minutes: 35
@@ -119,6 +125,51 @@ jobs:
           Copy-Item -LiteralPath 'windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1' -Destination (Join-Path $bundle 'Prepare-P0ThreeShotHold.ps1')
           Copy-Item -LiteralPath 'windows/desktop/release/CONNECT_MAC_SECURE.vbs' -Destination (Join-Path $bundle 'CONNECT_MAC_SECURE.vbs')
           Copy-Item -LiteralPath 'windows/desktop/release/Start-SecureMacTunnel.ps1' -Destination (Join-Path $bundle 'Start-SecureMacTunnel.ps1')
+          # 01. Ship the exact CPU-only Qwen recovery and image-evidence tools
+          #     with the Windows preview; no model, prompt, or user file included.
+          $toolsDir = Join-Path $bundle 'scripts'
+          New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+          $offlineToolNames = @(
+            'recover_comfy_keyframe_workflow.py'
+            'comfy_png_embedded_evidence.py'
+            'prepare_local_keyframe_batch.py'
+            'qwen_reference_bindings.py'
+            'collect_local_keyframe_outputs.py'
+            'offline_png_output_collector.py'
+          )
+          foreach ($name in $offlineToolNames) {
+            Copy-Item -LiteralPath (Join-Path 'scripts' $name) -Destination (Join-Path $toolsDir $name)
+          }
+
+          # 02. Static --help validates standalone packaged imports only.
+          #     It cannot submit a Comfy request, run a model or enable Worker.
+          $priorPythonPath = $env:PYTHONPATH
+          $priorNoBytecode = $env:PYTHONDONTWRITEBYTECODE
+          Push-Location $bundle
+          try {
+            # 03. Execute from ZIP root with bytecode disabled. Otherwise
+            #     Python writes unapproved scripts/__pycache__ files into the
+            #     portable bundle and exact toolset verification must fail.
+            $env:PYTHONPATH = "$bundle;$toolsDir"
+            $env:PYTHONDONTWRITEBYTECODE = '1'
+            foreach ($name in @('recover_comfy_keyframe_workflow.py', 'prepare_local_keyframe_batch.py', 'collect_local_keyframe_outputs.py')) {
+              python (Join-Path $toolsDir $name) --help *> $null
+              if ($LASTEXITCODE -ne 0) { throw "P0_PREVIEW_OFFLINE_TOOL_IMPORT_FAILED: $name" }
+            }
+            python -c "import scripts.comfy_png_embedded_evidence; import scripts.qwen_reference_bindings; import scripts.offline_png_output_collector"
+            if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_PACKAGE_NAMESPACE_IMPORT_FAILED' }
+          } finally {
+            $env:PYTHONPATH = $priorPythonPath
+            $env:PYTHONDONTWRITEBYTECODE = $priorNoBytecode
+            Pop-Location
+          }
+          # 04. Forbid any additional .pyc/source/prompt payload; only the
+          #     exact six intentionally copied CPU-only scripts may be shipped.
+          $actualOfflineFiles = @(Get-ChildItem -LiteralPath $toolsDir -Recurse -File | ForEach-Object { $_.Name })
+          if (($actualOfflineFiles.Count -ne $offlineToolNames.Count) -or
+              (@(Compare-Object -ReferenceObject $offlineToolNames -DifferenceObject $actualOfflineFiles).Count -ne 0)) {
+            throw 'P0_PREVIEW_UNEXPECTED_OFFLINE_TOOL_FILES'
+          }
           @(
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
             'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'
@@ -133,6 +184,9 @@ jobs:
             'Verify the PowerShell output P0_HOLD_PREPARED=PASS before opening the app.'
             'Do NOT start an existing Worker with unknown Ready Goals or change HOLD to ALLOW until'
             'the exact three-shot Core Job/Plan/Digest has been reviewed and GPU execution is safe.'
+            'Six scripts/*.py tools are bundled for offline CPU-only inspection, not run automatically.'
+            'These source tools need Python 3.12; do not install Python or run them for production without review.'
+            'They do not fetch models, license creative assets or authorize C009/C011 / Comfy GPU jobs.'
             'Production Comfy/Wan, Ollama, Mac Core, FFmpeg and GPU presence are not validated here.'
           ) | Set-Content -LiteralPath (Join-Path $bundle 'README_P0_DEVELOPER_PREVIEW.txt') -Encoding utf8
 
@@ -156,6 +210,7 @@ jobs:
             hold_script = 'Prepare-P0ThreeShotHold.ps1'
             connection_launcher = 'CONNECT_MAC_SECURE.vbs'
             connection_script = 'Start-SecureMacTunnel.ps1'
+            offline_keyframe_tools = @($offlineToolNames | ForEach-Object { "scripts/$_" })
             files = $files
           }
           $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $bundle 'preview-manifest.json') -Encoding utf8
