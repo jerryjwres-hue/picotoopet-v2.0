@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import secrets
 from contextlib import closing
@@ -64,10 +66,28 @@ def _assert_sandbox_untouched(db_path: Path) -> None:
         maximum = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
         if maximum != 24:
             raise RuntimeError(f"REAL_CORE_SCHEMA_UNEXPECTED:{maximum}")
-        for table in ("tasks", "approvals", "production_jobs"):
+        for table in ("tasks", "approvals", "production_jobs", "production_attempts"):
             count = db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             if count != 0:
                 raise RuntimeError(f"READ_ONLY_VIOLATION:{table}:{count}")
+        # 唯一新增持久数据是 sandbox 项目及三份有界登记资产；相同文件重试不得增加行。
+        rows = db.execute(
+            "SELECT artifact_type, sha256, stored_object_hash, size_bytes, is_original, cloud_policy "
+            "FROM artifacts"
+        ).fetchall()
+        if len(rows) != 3 or {row[0] for row in rows} != {
+            "storypack_character", "storypack_scene", "storypack_style"
+        }:
+            raise RuntimeError("STUDIO_ASSET_SCOPE_OR_REPLAY_MISMATCH")
+        for _, digest, stored_hash, size, original, policy in rows:
+            if digest != stored_hash or original != 0 or policy != "local_only":
+                raise RuntimeError("STUDIO_ASSET_TRUST_FIELDS_INVALID")
+            obj = db_path.parent.parent / "results" / "objects" / digest[:2] / digest[2:]
+            data = obj.read_bytes()
+            if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
+                raise RuntimeError("STUDIO_ASSET_MANAGED_BYTES_MISMATCH")
+        if db.execute("SELECT COUNT(*) FROM projects").fetchone()[0] != 1:
+            raise RuntimeError("STUDIO_PROJECT_SCOPE_MISMATCH")
 
 
 def main() -> int:
@@ -108,6 +128,20 @@ def main() -> int:
             )
             try:
                 _wait_for_core(port, proc)
+                # 显式创建唯一的临时测试项目；不使用真实用户项目。
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/v1/projects",
+                    data=json.dumps({
+                        "title": "CI asset registration fixture",
+                        "project_type": "film",
+                        "source_app": "test",
+                        "classification": "INTERNAL",
+                    }).encode("utf-8"),
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    env["PICOTOO_TEST_STUDIO_PROJECT"] = json.load(response)["project_id"]
                 # 与已编译的原生 C# 客户端实际通过 localhost HTTP 相互操作。
                 call = subprocess.run(
                     [
@@ -134,6 +168,8 @@ def main() -> int:
                     raise RuntimeError(f"WINDOWS_REAL_HTTP_CLIENT_FAILED:{call.returncode}")
                 if "REAL_CORE_WINDOWS_STUDIO_HTTP=PASS" not in call.stdout:
                     raise RuntimeError("WINDOWS_REAL_HTTP_MISSING_PROOF")
+                if "REAL_CORE_WINDOWS_ASSET_HTTP=PASS" not in call.stdout:
+                    raise RuntimeError("WINDOWS_REAL_ASSET_HTTP_MISSING_PROOF")
             finally:
                 proc.terminate()
                 try:
@@ -146,6 +182,7 @@ def main() -> int:
 
     # 上游两端没有借用用户私有服务器，也未授予正式的 GPU/Owner 许可。
     print("REAL_23_WINDOWS_HTTP=PASS; SQLITE_V24=PASS; TASK=0; APPROVAL=0; PRODUCTION=0")
+    print("REAL_ASSET_HTTP=PASS; ASSETS=3; MANAGED_SHA256=PASS; REPLAY=PASS")
     print("WORKER=NOT_STARTED; COMFY=NOT_STARTED; OWNER=NOT_APPROVED")
     return 0
 
