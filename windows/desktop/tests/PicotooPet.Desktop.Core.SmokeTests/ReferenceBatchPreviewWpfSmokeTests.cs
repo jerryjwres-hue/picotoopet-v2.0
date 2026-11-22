@@ -468,13 +468,19 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             await RejectAsync(() => vm.SubmitAsync());
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Partial v2 reference must not POST to Core");
 
-            await vm.AddAsync("shot-2", source, "USER_SUPPLIED", null);
+            // 06. 合法的三镜头成功测试使用之前已单独构造的不同 PNG。
+            //     相同字节复用的失败路径由 duplicateV2 回归独立覆盖。
+            await vm.AddAsync("shot-2", Path.Combine(observedRoot, "shot-2.png"),
+                "USER_SUPPLIED", null);
             vm.UserConfirmsPreviewAndRights = true;
             SmokeAssert.True(!vm.CanSubmit, "Two v2 stills must not enable request submission");
             await RejectAsync(() => vm.SubmitAsync());
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Two-shot v2 request must not POST to Core");
 
-            await vm.AddAsync("shot-3", source, "USER_SUPPLIED", null);
+            await vm.AddAsync("shot-3", Path.Combine(observedRoot, "shot-3.png"),
+                "USER_SUPPLIED", null);
+            SmokeAssert.Equal(3, vm.Items.Select(x => x.Sha256).Distinct(StringComparer.Ordinal).Count(),
+                "Full v2 fixture must use three truly distinct synthetic image byte identities");
             SmokeAssert.True(!vm.CanSubmit, "All three images still require fresh rights consent");
             vm.UserConfirmsPreviewAndRights = true;
             SmokeAssert.True(vm.CanSubmit, "All three snapshots plus explicit consent must enable submission");
