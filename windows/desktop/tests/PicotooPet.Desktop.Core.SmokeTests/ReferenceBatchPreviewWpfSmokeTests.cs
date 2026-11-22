@@ -154,10 +154,14 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
                 "Python-origin Kit alone must not imply a real Comfy image observation");
             await vm.LoadCompositionWorkOrderAsync(reportPath);
-            SmokeAssert.True(vm.CompositionWorkOrders.Select(x => x.Status).SequenceEqual(
-                new[] { "OBSERVED_UNAPPROVED", "NEEDS_DISTINCT_COMPOSITION",
-                    "NEEDS_DISTINCT_COMPOSITION" }),
-                "Python emitter and WPF reader disagree on three-shot composition state");
+            // 03. Avoid transient array allocations under the native
+            //     Windows warnings-as-errors gate (CA1861); check each shot.
+            SmokeAssert.Equal("OBSERVED_UNAPPROVED", vm.CompositionWorkOrders[0].Status,
+                "Python emitter and WPF reader disagree on S1 observation state");
+            SmokeAssert.Equal("NEEDS_DISTINCT_COMPOSITION", vm.CompositionWorkOrders[1].Status,
+                "Python emitter and WPF reader disagree on S2 missing composition");
+            SmokeAssert.Equal("NEEDS_DISTINCT_COMPOSITION", vm.CompositionWorkOrders[2].Status,
+                "Python emitter and WPF reader disagree on S3 missing composition");
             SmokeAssert.Equal("old-composition.png", vm.CompositionWorkOrders[0].ExistingFilename,
                 "WPF must preserve Python's verified historical composition name");
             SmokeAssert.Equal("Opening state 2", vm.CompositionWorkOrders[1].StillPrompt,
