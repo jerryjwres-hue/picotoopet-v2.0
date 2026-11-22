@@ -466,10 +466,17 @@ def scoped_story(studio):
     }
 
 
-def test_scoped_goal_pins_exact_existing_packet_and_local_workflow(studio, scoped_story):
+@pytest.mark.parametrize("dynamic", [False, True])
+def test_scoped_goal_pins_exact_existing_packet_and_local_workflow(studio, scoped_story, dynamic):
     from picotoopet_core.autonomous.discovery import ContentDiscoveryCoordinator
     from picotoopet_core.autonomous.evidence_ledger import CanonicalEvidenceLedger
     from picotoopet_core.autonomous.local_intelligence import LocalAnalysisResult
+
+    if dynamic:
+        scoped_story["storypack"]["dynamic_motion"] = dynamic_dinner_pack()["dynamic_motion"]
+        preview = studio.post(ROUTE, json=scoped_story["storypack"])
+        assert preview.status_code == 200, preview.text
+        scoped_story["confirmed_subject_sha256"] = preview.json()["owner_review_subject"]["subject_sha256"]
 
     # 新的主人声明不应静默替换已经选择的旧声明；二者同属一个真实宠物范围。
     later = _reviewed_packet(
@@ -592,6 +599,10 @@ def test_scoped_goal_pins_exact_existing_packet_and_local_workflow(studio, scope
         "SELECT COUNT(*) FROM tasks WHERE resource_tag=?", (f"creative:{job_id}",)
     ) == 0
     assert services.creative.get_package(job_id) is None
+
+    if dynamic:
+        _verify_dynamic_creative_and_production_gate(studio, created, binding, job, source)
+        return
 
     # A post-Goal modification cannot pass either handoff or pre-model Creative.
     digest = binding["assets"]["character"]["sha256"]
@@ -718,7 +729,7 @@ def test_dynamic_storypack_projects_motion_without_granting_authority(studio):
     assert all(motion[key] is False for key in ("owner_approved", "can_queue", "gpu_post_authorized"))
     assert preview["canonical_goal_intake"]["ready_for_user_submission"] is False
     assert preview["canonical_goal_intake"]["objective"] is None
-    assert "DYNAMIC_OWNER_POLICY_NOT_IMPLEMENTED" in (
+    assert "DYNAMIC_SCOPED_GOAL_REQUIRED" in (
         preview["canonical_goal_intake"]["blocking_reasons"]
     )
     assert preview["can_queue"] is False
@@ -853,3 +864,164 @@ def test_dynamic_motion_uses_existing_bible_and_shot_plan_but_stays_unapproved()
         objective="纯宠物视频，明确要求3个镜头，每个镜头4秒",
     )
     assert decision.outcome is CreativeQualityOutcome.NEEDS_HUMAN
+
+
+def _verify_dynamic_creative_and_production_gate(studio, created, binding, job, source):
+    """Real SQLite owner review and canonical durable Creative stages, CPU model fixture only."""
+    from types import SimpleNamespace
+
+    from picotoopet_core.autonomous.owner_structured_review import (
+        OwnerStructuredReviewCommitRequest, OwnerStructuredReviewError,
+        OwnerStructuredReviewPreviewRequest, OwnerStructuredReviewService,
+    )
+    from picotoopet_core.creative.execution import (
+        CreativeIntelligenceCoordinator, load_trusted_pet_creative_binding,
+        verify_current_pet_binding,
+    )
+    from picotoopet_core.production.models import ProductionJobCreateRequest
+    from picotoopet_core.security.owner_principal import OwnerPrincipal
+
+    services = studio.app.state.services
+    db = services.database
+    principal = OwnerPrincipal(
+        actor_id="fixture-owner", credential_id="fixture-credential",
+        subject_keys=("pet:maotai",), permissions=("owner_facts.review",),
+        registry_revision=1,
+    )
+    review = OwnerStructuredReviewService(db)
+    proposal = review.proposal(created["goal_id"], principal)
+    motion = proposal.dynamic_motion_proposal
+    assert motion["motion_digest"] == binding["dynamic_motion_digest"]
+    values = {
+        "subject_lock.subject_id": "maotai",
+        "subject_lock.species": "dog",
+        "subject_lock.breed_or_type": "Alaskan Malamute",
+        "subject_lock.coat_or_appearance": "gray and white fur",
+        "subject_lock.distinguishing_marks": ["green scarf"],
+        "pose_lock.body_pose": "standing",
+        "pose_lock.head_direction": "looking away from the bowl",
+        "pose_lock.support_surface": "wood floor",
+        "scene_lock.environment": "dining room doorway and corner",
+        "scene_lock.lighting": "warm window light",
+        "scene_lock.temporary_accessories": ["green scarf"],
+        "camera_lock.allowed_framings": [item["framing"] for item in motion["shots"]],
+        "allowed_events": [item["event"] for item in motion["shots"]],
+    }
+    body = {
+        "goal_id": created["goal_id"],
+        "review_actor_id": principal.actor_id,
+        "proposal_digest": proposal.proposal_digest,
+        "decisions": [
+            {"field_path": key, "decision": "CORRECT", "corrected_value": value}
+            for key, value in values.items()
+        ],
+        "story_policy_opt_in": "dynamic-pet-feeding-v1.0.0",
+        "confirmed_motion_digest": motion["motion_digest"],
+    }
+    before = db.scalar("SELECT COUNT(*) FROM canonical_evidence")
+    for patch in (
+        {"story_policy_opt_in": "static-pet-story-v1.0.0"},
+        {"confirmed_motion_digest": "0" * 64},
+        {"confirmed_motion_digest": None},
+    ):
+        with pytest.raises(OwnerStructuredReviewError, match="MOTION_CONFIRMATION_REQUIRED"):
+            review.preview(OwnerStructuredReviewPreviewRequest.model_validate({**body, **patch}), principal)
+    assert db.scalar("SELECT COUNT(*) FROM canonical_evidence") == before
+    assert db.scalar("SELECT COUNT(*) FROM tasks WHERE resource_tag=?", (f"creative:{job.creative_job_id}",)) == 0
+    request = OwnerStructuredReviewPreviewRequest.model_validate(body)
+    reviewed = review.preview(request, principal)
+    assert reviewed.outcome == "READY", reviewed.reason_codes
+    assert reviewed.state_facts.facts_version == 2
+    assert reviewed.state_facts.pose_lock.fixed is False
+    commit_request = OwnerStructuredReviewCommitRequest(
+        preview_request=request, source_revision_digest=reviewed.source_revision_digest,
+        review_digest=reviewed.review_digest, preview_digest=reviewed.preview_digest,
+    )
+    commit = review.commit(commit_request, principal, idempotency_key="fixture-dynamic-review")
+    assert review.commit(commit_request, principal, idempotency_key="fixture-dynamic-review") == commit
+    assert db.scalar("SELECT COUNT(*) FROM tasks WHERE resource_tag=?", (f"creative:{job.creative_job_id}",)) == 1
+    trusted = load_trusted_pet_creative_binding(db, job)
+    assert trusted.dynamic_pack is not None
+    assert verify_current_pet_binding(db, job, trusted)
+
+    class TwoCallFixture:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, stage, context, *, correction=None):
+            kind = stage.stage_kind.value
+            self.calls.append(kind)
+            refs = [source.findings[0].source_finding_ref]
+            evidence = source.evidence_ids
+            header = {"schema_version": "1.0", "creative_profile": "creative.content_plan.v1"}
+            assert context["trusted_dynamic_story"]["motion"]["motion_digest"] == motion["motion_digest"]
+            if kind == "idea_ranking.v1":
+                return {**header, "ideas": [
+                    {
+                        "idea_id": f"idea-{i}", "rank": i, "title": "Dinner",
+                        "audience_problem": "short pet story", "hook": "pet notices dinner",
+                        "angle": "a small daily moment", "value_proposition": "warmth",
+                        "format_hint": "short film", "confidence": 0.8,
+                        "source_finding_refs": refs, "source_evidence_ids": evidence,
+                        "claim_risk": "LOW",
+                    } for i in range(1, 4)
+                ]}
+            if kind == "creative_brief.v1":
+                return {
+                    **header, "selected_idea_id": "idea-1",
+                    "target_audience": "pet lovers", "customer_problem": "short story",
+                    "value_proposition": "warmth", "primary_hook": "pet notices dinner",
+                    "emotional_tone": "warm", "content_format": "short film",
+                    "output_profile_id": "video.landscape.v1",
+                    "duration_min_seconds": 12, "duration_max_seconds": 12,
+                    "message_hierarchy": ["discover", "approach", "eat"],
+                    "required_source_finding_refs": refs,
+                    "required_source_evidence_ids": evidence,
+                    "cta_intent": "quiet ending",
+                }
+            raise AssertionError(f"Owner-reviewed action was unnecessarily rewritten: {kind}")
+
+    model = TwoCallFixture()
+    coordinator = CreativeIntelligenceCoordinator(
+        database=db, queue=None, repository=services.creative_repository,
+        source_normalizer=services.creative_source, store=services.creative_store,
+        adapter=model, configured_model_id="cpu-fixture-not-a-live-model",
+    )
+    task = SimpleNamespace(payload={
+        "creative_job_id": job.creative_job_id, "source_set_digest": job.source_set_digest,
+        "creative_profile": job.creative_profile.value,
+    })
+    outcome = coordinator.handler(task)
+    assert outcome.summary["status"] == "creative_ready", (
+        outcome.summary, services.creative.get_job(job.creative_job_id)
+    )
+    assert model.calls == ["idea_ranking.v1", "creative_brief.v1"]
+    package = services.creative.get_package(job.creative_job_id)
+    stages = package.manifest["stage_results"]
+    assert package.quality_outcome.value == "PASS"
+    assert stages["dynamic_story_review.v1"]["motion_digest"] == motion["motion_digest"]
+    assert stages["dynamic_story_review.v1"]["render_authorized"] is False
+    assert len(stages["keyframe_kit.v1"]["keyframes"]) == 3
+    assert all("round steel bowl" in item["still_prompt"] for item in stages["keyframe_kit.v1"]["keyframes"])
+    assert "walks left to right" in stages["shot_plan.v1"]["shots"][1]["action"]
+    assert "first bites" in stages["shot_plan.v1"]["shots"][2]["action"]
+    coordinator.handler(task)
+    assert model.calls == ["idea_ranking.v1", "creative_brief.v1"]
+    assert services.creative.get_package(job.creative_job_id).creative_package_id == package.creative_package_id
+    assert services.production.requires_reviewed_references(package)
+    assert services.production._verify_dynamic_reference_scope(package)
+    with pytest.raises(ValueError, match="REVIEWED_REFERENCES_REQUIRED"):
+        services.production.create_job(ProductionJobCreateRequest(
+            creative_package_id=package.creative_package_id,
+            idempotency_key="fixture-no-t2v-downgrade",
+        ))
+    # No dynamic package or text gate is evidence of visual quality or render authority.
+    assert db.scalar("SELECT COUNT(*) FROM production_jobs") == 0
+    assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
+    assert db.scalar("SELECT COUNT(*) FROM approvals") == 0
+
+    digest = binding["assets"]["character"]["sha256"]
+    target = services.results.objects_dir / digest[:2] / digest[2:]
+    target.write_bytes(b"tampered after Creative PASS")
+    with pytest.raises(ValueError, match="STORY_GOAL_PINNED_ASSET_CHANGED"):
+        services.production._verify_dynamic_reference_scope(package)
