@@ -20,4 +20,5 @@ public enum NavigationRoute
     Health,
     Diagnostics,
     Settings,
+    FilmStudio,
 }

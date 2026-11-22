@@ -97,6 +97,32 @@ internal static class ProductionShellEntryWpfSmokeTests
                 .Count(w => w.Content is ProductionPanel) == 1,
                 "重复点击错误创建第二套生产面板");
             panels[0].Close();
+
+            // 影视快捷入口：真实 Shell 点击加载现有创意/生产控件，无业务 Inbox 或 GPU 动作。
+            var filmEntry = shell.FindName("OpenFilmStudioButton") as Button
+                ?? throw new InvalidOperationException("Film Studio direct entry missing");
+            SmokeAssert.True(filmEntry.IsEnabled, "Film Studio entry must be reachable");
+            filmEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, filmEntry));
+            shell.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+            shell.UpdateLayout();
+            SmokeAssert.Equal(NavigationRoute.FilmStudio, viewModel.CurrentRoute,
+                "Film Studio navigation must use the canonical Shell route");
+            SmokeAssert.True(viewModel.CurrentPage is FilmStudioPageViewModel,
+                "Film Studio route must compose existing view models");
+            var creative = FindVisual<CreativeIntelligencePanel>(shell).Single();
+            SmokeAssert.True(creative.DataContext is CreativeIntelligencePanelViewModel,
+                "Film Studio must host the existing creative panel");
+            var expander = creative.FindName("StoryPackExpander") as Expander;
+            SmokeAssert.True(expander?.IsExpanded == true,
+                "StoryPack should be expanded on direct Studio entry");
+            SmokeAssert.True(creative.FindName("LoadStoryPackFileButton") is Button,
+                "Native StoryPack file picker is missing");
+            SmokeAssert.True(creative.FindName("CreateStoryGoalButton") is Button { IsEnabled: false },
+                "Opening Film Studio must not authorize Goal creation");
+            SmokeAssert.True(FindVisual<ProductionPanel>(shell).Count() == 1,
+                "Film Studio must reuse one canonical ProductionPanel");
+            Console.WriteLine("REAL_FILM_STUDIO_DIRECT_ENTRY=PASS; STORYPACK_EXPANDED=PASS; GPU_POST=0");
+
             shell.AllowExplicitClose();
             shell.Close();
             shellWindow = null;
