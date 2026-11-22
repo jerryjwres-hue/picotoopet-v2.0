@@ -51,7 +51,7 @@ def fixture(root: Path):
         graph_bytes = canonical_bytes(graph)
         filename = f"{i:02d}-{shot}.json"
         (batch_dir / filename).write_bytes(graph_bytes)
-        (output_root / f"{shot}.png").write_bytes(png(16, 9))
+        (output_root / f"{shot}.png").write_bytes(png(15 + i, 9))
         records.append({"shot_id": shot, "order": i, "graph_file": filename,
                         "graph_sha256": file_sha(graph_bytes)})
         ids.append({"shot_id": shot, "prompt_id": prompt_id})
@@ -93,7 +93,7 @@ class CandidateTests(unittest.TestCase):
             for item in result["shots"]:
                 self.assertEqual(len(item["candidates"]), 1)
                 candidate = item["candidates"][0]
-                self.assertEqual((candidate["width"], candidate["height"]), (16, 9))
+                self.assertEqual((candidate["width"], candidate["height"]), (15 + item["order"], 9))
                 self.assertEqual(candidate["visual_review"], "UNREVIEWED")
                 self.assertFalse(candidate["pixels_decoded"])
                 self.assertIsNone(item["selected_reference"])
