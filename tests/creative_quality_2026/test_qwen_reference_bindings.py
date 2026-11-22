@@ -29,6 +29,20 @@ def png(n: int) -> bytes:
             + _chunk(b"IEND", b""))
 
 
+def jpeg(marker: int = 1) -> bytes:
+    """Minimal grayscale JPEG marker fixture: structure only, no pixel claims."""
+    # 01. SOI + APP0 + SOF0 (4x4, 1 channel) + SOS + entropy + EOI.
+    #     The checked bytes are intentionally not decoded as an image.
+    return (
+        b"\xff\xd8"
+        + b"\xff\xe0\x00\x07JFIF\x00"
+        + b"\xff\xc0\x00\x0b\x08\x00\x04\x00\x04\x01\x01\x11\x00"
+        + b"\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00"
+        + bytes((0x40, marker))
+        + b"\xff\xd9"
+    )
+
+
 def qwen_fixture(root: Path):
     graph, recovery, bindings, package = fixture()
     graph["1"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {
@@ -95,6 +109,81 @@ class QwenBindingsTests(unittest.TestCase):
                 self.assertEqual(item["2"], before["2"])
                 self.assertEqual(item["3"]["inputs"]["model"], before["3"]["inputs"]["model"])
             self.assertEqual(before, graph)
+
+    def test_qwen_png_composition_and_two_existing_jpeg_dog_references(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, bindings, package = qwen_fixture(root)
+            # 02. Real Windows audit observed LoadImage 2/3 references as
+            #     REF_DOG_A_00x.jpg; preserving original bytes is mandatory.
+            original = copy.deepcopy(graph)
+            for node, name, marker in (
+                ("7", "REF_DOG_A_001.jpg", 1),
+                ("8", "REF_DOG_A_002.jpg", 2),
+            ):
+                raw = jpeg(marker)
+                (root / name).write_bytes(raw)
+                graph[node]["inputs"]["image"] = name
+                entry = next(entry for entry in bindings["reference_images"]
+                             if entry["node_id"] == node)
+                entry["file"] = {
+                    "filename": name, "sha256": hashlib.sha256(raw).hexdigest(),
+                    "bytes": len(raw),
+                }
+            recovery["graph_sha256"] = sha(
+                json.dumps(graph, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            )
+            bindings["graph_sha256"] = recovery["graph_sha256"]
+            files, report = prepare(graph, recovery, bindings, package, "a" * 64, 0, root)
+            self.assertEqual(len(files), 3)
+            self.assertFalse(report["production_authorized"])
+            self.assertFalse(report["source_inputs_verified"])
+            for item in report["reference_inputs"]:
+                if item["node_id"] in ("7", "8"):
+                    self.assertEqual(item["mode"], "fixed")
+                    self.assertEqual([shot["format"] for shot in item["shots"]], ["jpeg"] * 3)
+                    self.assertEqual([shot["dimensions"] for shot in item["shots"]], [(4, 4)] * 3)
+                    self.assertTrue(all(shot["pixels_decoded"] is False for shot in item["shots"]))
+            for shot in report["shots"]:
+                graph_out = json.loads(files[shot["graph_file"]])
+                self.assertEqual(graph_out["7"]["inputs"]["image"], "REF_DOG_A_001.jpg")
+                self.assertEqual(graph_out["8"]["inputs"]["image"], "REF_DOG_A_002.jpg")
+            self.assertEqual(original["3"], graph["3"])
+            self.assertEqual(graph["7"]["inputs"]["image"], "REF_DOG_A_001.jpg")
+
+    def test_renamed_png_corrupt_jpeg_and_jpeg_symlink_denied(self):
+        from qwen_reference_bindings import _verify, jpeg_dimensions
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name, data in (
+                ("renamed.jpg", png(1)),
+                ("missing-end.jpeg", jpeg(3)[:-2]),
+                ("no-frame.jpg", b"\xff\xd8\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00\x01\xff\xd9"),
+            ):
+                (root / name).write_bytes(data)
+                evidence = {
+                    "filename": name,
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "bytes": len(data),
+                }
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    _verify(root, evidence)
+            with self.assertRaises(ValueError):
+                jpeg_dimensions(b"\xff\xd8\xff\xd9")
+            source = root / "actual.jpeg"
+            source.write_bytes(jpeg(7))
+            linked = root / "REF_DOG_A_001.jpg"
+            try:
+                linked.symlink_to(source)
+            except (OSError, NotImplementedError):
+                self.skipTest("Symlinks unsupported")
+            with self.assertRaises(ValueError):
+                _verify(root, {
+                    "filename": linked.name,
+                    "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                    "bytes": source.stat().st_size,
+                })
 
     def test_missing_ref_wrong_hash_unpinned_slot_and_symlink_denied(self):
         with tempfile.TemporaryDirectory() as folder:
