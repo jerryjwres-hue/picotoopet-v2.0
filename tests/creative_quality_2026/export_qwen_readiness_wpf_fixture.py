@@ -7,8 +7,16 @@ from __future__ import annotations
 
 import argparse
 import copy
+import sys
 import tempfile
 from pathlib import Path
+
+# 00. This script is executed by filename, not "python -m"; explicitly
+#     expose the repo root for "scripts.*" and existing direct script imports.
+#     Do not rely on a developer's PYTHONPATH or editable installation.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from test_qwen_reference_readiness import observed_fixture
 from qwen_reference_readiness import inspect_readiness
