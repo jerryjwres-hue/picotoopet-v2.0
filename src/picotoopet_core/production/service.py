@@ -118,6 +118,91 @@ class ProductionService:
             for row in rows
         ]
 
+    def _dynamic_scope(self, package: CreativePackageRecord) -> dict | None:
+        """Identify dynamic packages from durable Goal constraints, not caller flags."""
+        row = self.repository.database.fetchone(
+            "SELECT g.constraints_json FROM creative_goal_source_sets s "
+            "JOIN autonomous_goals g ON g.goal_id=s.goal_id WHERE s.creative_job_id=?",
+            (package.creative_job_id,),
+        )
+        stages = package.manifest.get("stage_results")
+        marker = (
+            stages.get("dynamic_story_review.v1")
+            if isinstance(stages, dict) else None
+        )
+        if row is None:
+            if marker is not None:
+                raise ValueError("PRODUCTION_DYNAMIC_GOAL_LINEAGE_INVALID")
+            return None
+        constraints = json.loads(row["constraints_json"])
+        scope = constraints.get("storypack_binding")
+        if not isinstance(scope, dict):
+            if marker is not None:
+                raise ValueError("PRODUCTION_DYNAMIC_GOAL_LINEAGE_INVALID")
+            return None
+        from picotoopet_core.domain.storypack_scoped_goal import load_bound_dynamic_storypack
+
+        pack = load_bound_dynamic_storypack(scope)
+        if pack is None:
+            if marker is not None:
+                raise ValueError("PRODUCTION_DYNAMIC_GOAL_LINEAGE_INVALID")
+            return None
+        if not isinstance(marker, dict):
+            raise ValueError("PRODUCTION_DYNAMIC_REVIEW_MARKER_REQUIRED")
+        return scope
+
+    def requires_reviewed_references(self, package: CreativePackageRecord) -> bool:
+        """The existing worker auto-continuation must not create ordinary T2V for dynamic film."""
+        return self._dynamic_scope(package) is not None
+
+    def _verify_dynamic_reference_scope(self, package: CreativePackageRecord) -> bool:
+        """Recheck current Owner review, actual source bytes and canonical keyframe projection."""
+        scope = self._dynamic_scope(package)
+        if scope is None:
+            return False
+        from picotoopet_core.creative.execution import (
+            KEYFRAME_KIT_STAGE_KEY,
+            load_trusted_pet_creative_binding,
+            verify_current_pet_binding,
+        )
+        from picotoopet_core.creative.dynamic_pet_story import DYNAMIC_PET_POLICY
+        from picotoopet_core.creative.models import CreativeBriefResult, CreativeScriptResult
+        from picotoopet_core.creative.video_bible import (
+            VideoBible, build_keyframe_kit, shot_plan_integrity_findings,
+        )
+        from picotoopet_core.domain.storypack_scoped_goal import reverify_scoped_story_assets
+
+        job = self.creative_repository.get_job(package.creative_job_id)
+        database = self.repository.database
+        reverify_scoped_story_assets(database, self.store.paths.objects_dir, scope)
+        binding = load_trusted_pet_creative_binding(database, job)
+        stages = package.manifest["stage_results"]
+        expected = {
+            "policy": DYNAMIC_PET_POLICY,
+            "motion_digest": scope["dynamic_motion_digest"],
+            "commitment_id": binding.commitment_id,
+            "review_digest": binding.review_digest,
+            "facts_digest": binding.facts.facts_digest,
+            "reference_approval_required": True,
+            "render_authorized": False,
+        }
+        if (
+            binding.dynamic_pack is None
+            or not verify_current_pet_binding(database, job, binding)
+            or stages.get("dynamic_story_review.v1") != expected
+        ):
+            raise ValueError("PRODUCTION_DYNAMIC_OWNER_REVIEW_INVALID")
+        bible = VideoBible.model_validate(stages["video_bible.v1"])
+        script = CreativeScriptResult.model_validate(stages["script.v1"])
+        brief = CreativeBriefResult.model_validate(stages["creative_brief.v1"])
+        if (bible.source_set_digest != package.source_set_digest
+            or shot_plan_integrity_findings(bible, script, stages["shot_plan.v1"])
+            or build_keyframe_kit(
+                bible, script, output_profile_id=brief.output_profile_id.value,
+            ).model_dump(mode="json") != stages[KEYFRAME_KIT_STAGE_KEY]):
+            raise ValueError("PRODUCTION_DYNAMIC_PACKAGE_PROJECTION_INVALID")
+        return True
+
     def create_job(self, request: ProductionJobCreateRequest) -> ProductionJobRecord:
         # ── Producer contributes no renderer configuration ──────────────────
         package = self._creative_package_by_id(request.creative_package_id)
@@ -127,6 +212,10 @@ class ProductionService:
             or creative_job.status is not CreativeJobStatus.CREATIVE_READY
         ):
             raise ValueError("PRODUCTION_CREATIVE_PACKAGE_NOT_ELIGIBLE")
+
+        # Dynamic scoped films require separately approved image anchors.
+        if self.requires_reviewed_references(package):
+            raise ValueError("PRODUCTION_DYNAMIC_REVIEWED_REFERENCES_REQUIRED")
 
         existing = self.repository.database.fetchone(
             "SELECT production_job_id FROM production_jobs WHERE idempotency_key=?",
@@ -238,6 +327,9 @@ class ProductionService:
         )
         if source is None or creative_job.project_key != f"goal-{source['goal_id']}":
             raise ValueError("PRODUCTION_V11_GOAL_LINEAGE_INVALID")
+
+        # Dynamic films preserve their reviewed state and current Owner authority.
+        self._verify_dynamic_reference_scope(package)
 
         # Select only actual persisted approval rows. The request does not
         # provide an asset, file path or user consent boolean.
@@ -399,6 +491,8 @@ class ProductionService:
         stored = self.repository.get_task(production_job_id, production_task_id)
         if stored.task_plan.model_dump(mode="json") != task.model_dump(mode="json"):
             raise ValueError("PRODUCTION_V11_TASK_SNAPSHOT_MISMATCH")
+        # A stale/withdrawn dynamic review cannot be used for a previously frozen plan.
+        self._verify_dynamic_reference_scope(self._creative_package_by_id(job.creative_package_id))
         ref = task.reference_asset
         verify_persisted_reference_approval(self.repository.database, ref)
         descriptor = approved_reference_descriptor(self.repository.database, ref)
