@@ -89,6 +89,10 @@ public partial class ShellWindow : Window
         base.OnClosed(e);
     }
 
+    // 独立影视入口只切换到同一 Shell、同一 Session，不创建任务。
+    private void OpenFilmStudio_Click(object sender, RoutedEventArgs e) =>
+        _viewModel.Navigate(Navigation.NavigationRoute.FilmStudio);
+
     private void ContentHost_NavigationFaulted(
         object sender,
         NavigationFaultEventArgs e)
