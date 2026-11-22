@@ -110,11 +110,11 @@ public sealed partial class CreativeIntelligencePanelViewModel
     }
 
     public bool CanPreviewStoryPack =>
-        !IsStoryPackPreviewBusy && !string.IsNullOrWhiteSpace(StoryPackJson);
+        !_isAssetImportBusy && !IsStoryPackPreviewBusy && !string.IsNullOrWhiteSpace(StoryPackJson);
 
     /// <summary>新路径复用现有 Human Goal；只有有效最新预览和显式用户点击才可提交。</summary>
     public bool CanCreateStoryGoal =>
-        !IsStoryPackPreviewBusy && !_isStoryGoalBusy && _goalDraftObjective is not null
+        !_isAssetImportBusy && !IsStoryPackPreviewBusy && !_isStoryGoalBusy && _goalDraftObjective is not null
         && _goalDraftDigest is not null && _goalDraftRevision == Volatile.Read(ref _storyPackRevision)
         && !string.Equals(_submittedGoalDigest, _goalDraftDigest, StringComparison.Ordinal);
 
