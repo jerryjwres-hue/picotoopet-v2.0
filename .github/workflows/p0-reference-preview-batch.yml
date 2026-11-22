@@ -14,6 +14,8 @@ on:
       - .github/workflows/p0-reference-preview-batch.yml
       - scripts/recover_comfy_keyframe_workflow.py
       - scripts/prepare_local_keyframe_batch.py
+      - scripts/collect_local_keyframe_outputs.py
+      - tests/creative_quality_2026/test_collect_local_keyframe_outputs.py
       - tests/creative_quality_2026/test_prepare_local_keyframe_batch.py
       - tests/creative_quality_2026/test_recover_comfy_keyframe_workflow.py
   workflow_dispatch:
@@ -45,6 +47,9 @@ jobs:
       - name: Frozen keyframe graph binding dry-run (synthetic, no Comfy)
         shell: pwsh
         run: python -m unittest discover -s tests/creative_quality_2026 -p test_prepare_local_keyframe_batch.py
+      - name: Completed keyframe candidate evidence (synthetic, no Comfy)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_collect_local_keyframe_outputs.py
       - name: Build existing native WPF smoke harness (no packaging)
         shell: pwsh
         run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
