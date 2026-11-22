@@ -60,8 +60,15 @@
                           AutomationProperties.AutomationId="OwnerReviewIntentFields"/>
 
             <CheckBox Content="单独授权静态宠物故事策略：首镜眨眼后睁眼，后两镜仅轻微呼吸（不自动启用）"
-                      IsChecked="{Binding StaticPetStorySelected, Mode=TwoWay}" IsEnabled="{Binding HasProposal}"
+                      IsChecked="{Binding StaticPetStorySelected, Mode=TwoWay}" IsEnabled="{Binding CanSelectStaticStory}"
                       Margin="0,8,0,0" AutomationProperties.AutomationId="OwnerReviewStaticStoryOptIn"/>
+            <!-- Core 动态提案与摘要必须由主人明确核对。 -->
+            <TextBox Text="{Binding DynamicMotionText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                     MaxHeight="220" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0"
+                     AutomationProperties.AutomationId="OwnerReviewDynamicMotionProposal"/>
+            <CheckBox Content="我已核对动态镜头、动作路径与状态变化，授权本次确切动作策略（非 GPU 授权）"
+                      IsChecked="{Binding DynamicPetStorySelected, Mode=TwoWay}" IsEnabled="{Binding HasDynamicMotion}"
+                      Margin="0,8,0,0" AutomationProperties.AutomationId="OwnerReviewDynamicStoryOptIn"/>
             <Button Content="2. 生成预览（不写入）" Command="{Binding PreviewCommand}" Margin="0,8,0,0" HorizontalAlignment="Left"
                     AutomationProperties.AutomationId="OwnerReviewPreview"/>
             <TextBox Text="{Binding PreviewSummary, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Margin="0,8,0,0"

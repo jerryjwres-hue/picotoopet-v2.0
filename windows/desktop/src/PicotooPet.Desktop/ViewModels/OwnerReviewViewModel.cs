@@ -157,6 +157,7 @@ public sealed class OwnerReviewViewModel : ObservableObject
     private string _commitSummary = string.Empty;
     private bool _ownerConfirmed;
     private bool _staticPetStorySelected;
+    private bool _dynamicPetStorySelected;
     private bool _busy;
 
     private readonly bool _livePinnedSsh;
@@ -190,6 +191,12 @@ public sealed class OwnerReviewViewModel : ObservableObject
 
     public string CredentialStatus { get; private set; } = string.Empty;
     public bool HasProposal => _draft is not null;
+    public bool HasDynamicMotion => _draft?.HasDynamicMotion == true;
+    public bool CanSelectStaticStory => HasProposal && !HasDynamicMotion;
+    public string DynamicMotionText => _draft?.Proposal.DynamicMotionProposal is JsonElement motion
+        && motion.ValueKind == JsonValueKind.Object
+        ? string.Join("\n", motion.EnumerateObject().Select(p => $"{p.Name}: {p.Value.GetRawText()}"))
+        : string.Empty;
     public string ProposalHeader { get; private set; } = string.Empty;
     public string EvidenceNotice { get; private set; } = string.Empty;
     public string? IdempotencyKey => _draft?.IdempotencyKey;
@@ -217,8 +224,23 @@ public sealed class OwnerReviewViewModel : ObservableObject
         get => _staticPetStorySelected;
         set
         {
+            if (value && !CanSelectStaticStory) return;
             if (!SetProperty(ref _staticPetStorySelected, value)) return;
             if (_draft is not null) _draft.StaticPetStorySelected = value;
+            PreviewSummary = string.Empty;
+            OwnerConfirmed = false;
+            CommitCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    public bool DynamicPetStorySelected
+    {
+        get => _dynamicPetStorySelected;
+        set
+        {
+            if (value && !HasDynamicMotion) return;
+            if (!SetProperty(ref _dynamicPetStorySelected, value)) return;
+            if (_draft is not null) _draft.DynamicPetStorySelected = value;
             PreviewSummary = string.Empty;
             OwnerConfirmed = false;
             CommitCommand.NotifyCanExecuteChanged();
@@ -293,7 +315,15 @@ public sealed class OwnerReviewViewModel : ObservableObject
         Busy = true;
         try
         {
-            var preview = await _client.PreviewAsync(draft.BuildPreviewRequest(), CancellationToken.None).ConfigureAwait(true);
+            // 请求途中修改草稿时，拒绝将旧回执绑定到新选择。
+            var submitted = draft.BuildPreviewRequest();
+            var preview = await _client.PreviewAsync(submitted, CancellationToken.None).ConfigureAwait(true);
+            if (!ReferenceEquals(_draft, draft) || draft.FirstValidationProblem() is not null
+                || JsonSerializer.Serialize(submitted) != JsonSerializer.Serialize(draft.BuildPreviewRequest()))
+            {
+                draft.DiscardPreviewAfterConflict();
+                throw new OwnerReviewException(OwnerReviewFailureKind.Conflict, 409, "OWNER_REVIEW_PREVIEW_MISMATCH");
+            }
             draft.AcceptPreview(preview);
             OwnerConfirmed = false;
             PreviewSummary = DescribePreview(preview);
@@ -347,6 +377,9 @@ public sealed class OwnerReviewViewModel : ObservableObject
         OwnerConfirmed = false;
         StatusText = "已离开审核；未提交任何内容。";
         RaisePropertyChanged(nameof(HasProposal));
+        RaisePropertyChanged(nameof(HasDynamicMotion));
+        RaisePropertyChanged(nameof(CanSelectStaticStory));
+        RaisePropertyChanged(nameof(DynamicMotionText));
         return Task.CompletedTask;
     }
 
@@ -365,8 +398,10 @@ public sealed class OwnerReviewViewModel : ObservableObject
         CommitSummary = string.Empty;
         _ownerConfirmed = false;
         _staticPetStorySelected = false;
+        _dynamicPetStorySelected = false;
         RaisePropertyChanged(nameof(OwnerConfirmed));
         RaisePropertyChanged(nameof(StaticPetStorySelected));
+        RaisePropertyChanged(nameof(DynamicPetStorySelected));
         ProposalHeader = $"Goal {proposal.GoalId} · 主体 {proposal.SubjectKey} · 审核人 {proposal.ReviewActorId}";
         EvidenceNotice = proposal.SourceEvidence.Any(item => !item.PhotoBytesVerified)
             ? "注意：照片字节未经 Core 校验，所有身份事实均为主人声明；文字审核本身不授权 I2V。"
@@ -374,6 +409,9 @@ public sealed class OwnerReviewViewModel : ObservableObject
         RaisePropertyChanged(nameof(ProposalHeader));
         RaisePropertyChanged(nameof(EvidenceNotice));
         RaisePropertyChanged(nameof(HasProposal));
+        RaisePropertyChanged(nameof(HasDynamicMotion));
+        RaisePropertyChanged(nameof(CanSelectStaticStory));
+        RaisePropertyChanged(nameof(DynamicMotionText));
         PreviewCommand.NotifyCanExecuteChanged();
         CommitCommand.NotifyCanExecuteChanged();
     }
@@ -396,7 +434,8 @@ public sealed class OwnerReviewViewModel : ObservableObject
         + $"source_revision_digest={preview.SourceRevisionDigest}\n"
         + $"review_digest={preview.ReviewDigest}\n"
         + $"preview_digest={preview.PreviewDigest}\n"
-        + $"静态故事策略：{preview.StoryPolicyOptIn ?? "未选择（保持原验收规则）"}\n"
+        + $"故事策略：{preview.StoryPolicyOptIn ?? "未选择（保持原验收规则）"}\n"
+        + (preview.ConfirmedMotionDigest is { } motion ? $"motion_digest={motion}\n" : string.Empty)
         + "（以上摘要全部由 Core 计算，Windows 不生成替代摘要。）";
 
     private void ShowError(Exception error)
@@ -416,6 +455,9 @@ public sealed class OwnerReviewViewModel : ObservableObject
                     CommitSummary = string.Empty;
                     OwnerConfirmed = false;
                     RaisePropertyChanged(nameof(HasProposal));
+                    RaisePropertyChanged(nameof(HasDynamicMotion));
+                    RaisePropertyChanged(nameof(CanSelectStaticStory));
+                    RaisePropertyChanged(nameof(DynamicMotionText));
                     PreviewCommand.NotifyCanExecuteChanged();
                     StatusText = "数据已过期，必须重新加载提案才能再次预览或提交。";
                 }
