@@ -1020,11 +1020,93 @@ def _verify_dynamic_creative_and_production_gate(studio, created, binding, job, 
     assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
     assert db.scalar("SELECT COUNT(*) FROM approvals") == 0
 
+    # 01. Exercise the positive dynamic route, not just the legacy static v2 fixture.
+    #     References below are synthetic Windows claims; Mac has not read image bytes.
+    shots = [item["shot_id"] for item in stages["shot_plan.v1"]["shots"]]
+    claims = []
+    for i, shot_id in enumerate(shots, 1):
+        sha = f"{i:064x}"
+        claims.append({
+            "shot_id": shot_id, "input_relative_path": f"PicotooPet/references/{sha}/{shot_id}.png",
+            "sha256": sha, "bytes": 4096 + i, "source_reference": "USER_SUPPLIED",
+            "source_digest": sha, "rights_scope": "wan22.i2v.production.v1",
+        })
+    batch_route = "/api/v1/production/references/batches"
+    batch_request = {
+        "schema_version": "reference_batch.v1", "goal_id": created["goal_id"],
+        "creative_package_id": package.creative_package_id,
+        "creative_package_digest": package.package_digest,
+        "selected_references": claims, "user_confirms_preview_and_rights": True,
+    }
+    registered = studio.post(batch_route, json=batch_request,
+                             headers={"Idempotency-Key": "dynamic-fixture-three-refs"})
+    assert registered.status_code == 201, registered.text
+    receipt = registered.json()
+    assert receipt["status"] == "Pending"
+    assert studio.post(batch_route, json=batch_request,
+                       headers={"Idempotency-Key": "dynamic-fixture-three-refs"}).json() == receipt
+    assert db.scalar("SELECT COUNT(*) FROM production_jobs") == 0
+
+    # 02. Pending cannot create a plan; only a synthetic explicit decision may approve.
+    from picotoopet_core.production.versioned_plan import ProductionJobCreateV11Request
+
+    create = {
+        "schema_version": "1.1", "creative_package_id": package.creative_package_id,
+        "idempotency_key": "dynamic-fixture-three-shot-plan",
+        "approved_reference_ids": [receipt["approval_id"]], "pilot_first_shot": False,
+    }
+    with pytest.raises(ValueError, match="PRODUCTION_V11_REFERENCE_NOT_APPROVED"):
+        services.production.create_job_v11(ProductionJobCreateV11Request.model_validate(create))
+    services.approvals.decide_for_control_center(
+        approval_id=receipt["approval_id"], decision="approve",
+        request_digest=receipt["approval_request_digest"],
+        idempotency_key="dynamic-fixture-approve-refs",
+        resolved_by="synthetic-fixture", reason="offline CPU test only",
+    )
+    assert studio.get(batch_route + "/" + receipt["approval_id"]).json()["status"] == "Approved"
+
+    # 03. Actual authenticated full-plan HTTP route binds all three dynamic shots.
+    route = "/api/v1/production/jobs/v1.1"
+    response = studio.post(route, json=create)
+    assert response.status_code in (200, 201), response.text
+    production_job = response.json()
+    production_id = production_job["production_job_id"]
+    assert production_job["lease_executor_id"] is None
+    assert studio.post(route, json=create).json()["production_job_id"] == production_id
+    plan_response = studio.get(f"/api/v1/production/jobs/{production_id}/plan")
+    assert plan_response.status_code == 200, plan_response.text
+    plan = plan_response.json()
+    assert plan["schema_version"] == "1.1"
+    assert plan["target_runtime_ms"] == 12000
+    assert [item["shot_id"] for item in plan["tasks"]] == shots
+    assert "walks left to right" in plan["tasks"][1]["positive_prompt"]
+    assert "first bites" in plan["tasks"][2]["positive_prompt"]
+    for task_plan, claim in zip(plan["tasks"], claims, strict=True):
+        assert task_plan["render_intent"] == "IMAGE_TO_VIDEO"
+        assert task_plan["workflow_id"] == "comfy.wan22.ti2v5b.i2v.v1"
+        assert (task_plan["width"], task_plan["height"], task_plan["fps"],
+                task_plan["frame_count"], task_plan["target_duration_ms"]) == (832, 480, 24, 97, 4000)
+        ref = task_plan["reference_asset"]
+        assert ref["approval_id"] == receipt["approval_id"]
+        assert ref["approval_request_digest"] == receipt["approval_request_digest"]
+        assert ref["sha256"] == claim["sha256"]
+        assert ref["input_relative_path"] == claim["input_relative_path"]
+        assert ref["goal_id"] == created["goal_id"]
+    assert services.production._digest(plan) == production_job["plan_digest"]
+    assert db.scalar("SELECT COUNT(*) FROM production_jobs") == 1
+    assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
+    assert db.scalar("SELECT COUNT(*) FROM production_jobs WHERE lease_executor_id IS NOT NULL") == 0
+    assert services.creative.get_package(job.creative_job_id).package_digest == package.package_digest
+
+    # 04. Altered source bytes stop the existing frozen plan authorization as well.
     digest = binding["assets"]["character"]["sha256"]
     target = services.results.objects_dir / digest[:2] / digest[2:]
     target.write_bytes(b"tampered after Creative PASS")
     with pytest.raises(ValueError, match="STORY_GOAL_PINNED_ASSET_CHANGED"):
         services.production._verify_dynamic_reference_scope(package)
+    with pytest.raises(ValueError, match="STORY_GOAL_PINNED_ASSET_CHANGED"):
+        services.production.authorize_reference_v11(production_id, plan["tasks"][0]["production_task_id"])
+    assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
 
 
 def test_first_owner_packet_lookup_is_readonly_before_any_commit(studio):
