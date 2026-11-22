@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:viewModels="clr-namespace:PicotooPet.Desktop.ViewModels"
              xmlns:pages="clr-namespace:PicotooPet.Desktop.Views.Pages"
+             xmlns:views="clr-namespace:PicotooPet.Desktop.Views"
              ShutdownMode="OnExplicitShutdown">
   <Application.Resources>
     <SolidColorBrush x:Key="PanelBrush" Color="#FFF7F8FA" />
@@ -65,6 +66,18 @@
     </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:AutomationPageViewModel}">
       <pages:AutomationPage />
+    </DataTemplate>
+    <!-- 影视专用页复用已有控件，不加载业务 Inbox 或评价/晋级面板。 -->
+    <DataTemplate DataType="{x:Type viewModels:FilmStudioPageViewModel}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24">
+          <TextBlock Text="故事 → 创意 → 生产与审片" FontSize="24" FontWeight="SemiBold" />
+          <TextBlock Text="仅在明确确认后提交创意 Goal；资产、Owner 与 GPU 门禁仍由现有 Core 和 Worker 决定。"
+                     Margin="0,6,0,12" TextWrapping="Wrap" />
+          <views:CreativeIntelligencePanel DataContext="{Binding Creative, Mode=OneWay}" />
+          <views:ProductionPanel Margin="0,18,0,0" DataContext="{Binding Production, Mode=OneWay}" />
+        </StackPanel>
+      </ScrollViewer>
     </DataTemplate>
     <DataTemplate DataType="{x:Type viewModels:BusinessAutomationPageViewModel}">
       <pages:BusinessAutomationPage />
