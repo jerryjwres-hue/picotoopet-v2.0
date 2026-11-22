@@ -158,6 +158,47 @@ class ThreeShotReadinessTests(unittest.TestCase):
                     self.assertEqual(len(plan["composition_work_order"]["items"]), 3)
                     self.assertFalse(plan["composition_work_order"]["all_images_approved"])
 
+    def test_renamed_byte_identical_composition_blocks_shot_2_or_3(self):
+        # 03. Filename uniqueness must not allow copies of an earlier shot.
+        #     Both SHOT_001→002 and SHOT_002→003 cases stay CPU-only.
+        cases = (
+            ("s02-composition.png", "old-composition.png", "shot-2", "shot-1"),
+            ("s03-composition.png", "s02-composition.png", "shot-3", "shot-2"),
+        )
+        for target, source, duplicate_shot, original_shot in cases:
+            with self.subTest(duplicate_shot=duplicate_shot):
+                with tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder)
+                    graph, recovery, package = observed_fixture(root)
+                    (root / target).write_bytes((root / source).read_bytes())
+                    frozen = copy.deepcopy(graph)
+                    plan = inspect_readiness(
+                        graph, recovery, package, "a" * 64, root,
+                        composition_node="1", fixed_nodes=("2", "3"),
+                        shot_2="s02-composition.png",
+                        shot_3="s03-composition.png",
+                    )
+                    self.assertEqual(plan["status"], "BLOCKED_INVALID_REFERENCE")
+                    self.assertIsNone(plan["binding_proposal"])
+                    self.assertEqual(len(plan["invalid"]), 1)
+                    self.assertEqual(
+                        plan["invalid"][0]["reason"],
+                        "DUPLICATE_SHOT_COMPOSITION_BYTES",
+                    )
+                    self.assertEqual(plan["invalid"][0]["shot_id"], duplicate_shot)
+                    self.assertEqual(
+                        plan["invalid"][0]["duplicate_of_shot_id"], original_shot
+                    )
+                    self.assertEqual(
+                        [x["composition_status"]
+                         for x in plan["composition_work_order"]["items"]
+                         if x["shot_id"] == duplicate_shot],
+                        ["INVALID_REFERENCE"],
+                    )
+                    self.assertFalse(plan["production_authorized"])
+                    self.assertEqual(plan["gpu_post"], 0)
+                    self.assertEqual(graph, frozen)
+
     def test_untrusted_roles_and_missing_recovery_evidence_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
