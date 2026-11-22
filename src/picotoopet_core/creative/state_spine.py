@@ -193,14 +193,11 @@ class StateFactsV1(_Strict):
         dynamic_events = {
             AllowedEvent.NOTICE_BOWL, AllowedEvent.APPROACH_BOWL, AllowedEvent.BEGIN_EATING,
         }
-        if self.facts_version == 1:
-            if not self.pose_lock.fixed or not set(self.allowed_events) <= static_events:
+        if self.pose_lock.fixed:
+            if not set(self.allowed_events) <= static_events:
                 raise ValueError("STATE_FACTS_STATIC_SCOPE_INVALID")
-        elif self.facts_version == 2:
-            if self.pose_lock.fixed or set(self.allowed_events) != dynamic_events:
-                raise ValueError("STATE_FACTS_DYNAMIC_SCOPE_INVALID")
-        else:
-            raise ValueError("STATE_FACTS_VERSION_UNSUPPORTED")
+        elif self.facts_version != 2 or set(self.allowed_events) != dynamic_events:
+            raise ValueError("STATE_FACTS_DYNAMIC_SCOPE_INVALID")
         return self
 
 
@@ -300,7 +297,7 @@ def build_state_spine(
 ) -> StateSpineV1:
     """Build S0→S3 without asking a model to restate any locked state."""
 
-    if facts.facts_version != 1 or not facts.pose_lock.fixed:
+    if not facts.pose_lock.fixed:
         raise ValueError("STATE_SPINE_STATIC_FACTS_REQUIRED")
     if len(events) != 3:
         raise ValueError("STATE_SPINE_REQUIRES_THREE_EVENTS")
