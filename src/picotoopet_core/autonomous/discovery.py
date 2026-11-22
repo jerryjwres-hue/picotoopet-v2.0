@@ -55,6 +55,8 @@ class ContentDiscoveryRequest(BaseModel):
         default=None, max_length=68, pattern=r"^pet:[a-z0-9][a-z0-9-]{1,63}$"
     )
 
+    owner_review_packet_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
     @model_validator(mode="after")
     def _require_safe_scope(self) -> ContentDiscoveryRequest:
         if self.read_only is not True:
@@ -66,6 +68,8 @@ class ContentDiscoveryRequest(BaseModel):
             or not parse_goal_directives(self.objective).pet_only
         ):
             raise ValueError("OWNER_SUBJECT_PET_ONLY_SCOPE_INVALID")
+        if self.owner_review_packet_sha256 is not None and self.owner_subject_key is None:
+            raise ValueError("OWNER_SUBJECT_PACKET_SCOPE_REQUIRED")
         for key in self.connected_product_keys:
             if not key or key != key.strip() or len(key) > 200:
                 raise ValueError("connected_product_keys must contain bounded canonical keys")
@@ -176,7 +180,11 @@ class ContentDiscoveryCoordinator:
         )
         if request.owner_subject_key is not None:
             # Only exact owner-selected pets; never broaden into product matching or web guessing.
-            connected = self._owner_evidence_for_subject(request.owner_subject_key)
+            connected = (
+                self._owner_evidence_for_subject(request.owner_subject_key, request.owner_review_packet_sha256)
+                if request.owner_review_packet_sha256 is not None
+                else self._owner_evidence_for_subject(request.owner_subject_key)
+            )
             if not connected:
                 raise ContentDiscoveryError("OWNER_SUBJECT_GROUNDING_MISSING")
         elif request.connected_product_keys:
@@ -192,12 +200,13 @@ class ContentDiscoveryCoordinator:
             details={"connected_evidence_count": len(connected)},
         )
 
-        queries = self._queries_for_objective(request.objective)
+        # A bound private-pet StoryPack uses only reviewed local statements; no external search.
+        queries = () if request.owner_review_packet_sha256 is not None else self._queries_for_objective(request.objective)
         per_query_limit = max(
             1,
-            min(5, (request.max_candidates + len(queries) - 1) // len(queries)),
+            min(5, (request.max_candidates + max(1, len(queries)) - 1) // max(1, len(queries))),
         )
-        per_query_timeout = min(max(int(task.timeout_seconds / len(queries)), 30), 120)
+        per_query_timeout = min(max(int(task.timeout_seconds / max(1, len(queries))), 30), 120)
 
         successful: list[dict[str, str]] = []
         radar_inputs: list[RadarCandidateInput] = []
@@ -445,15 +454,17 @@ class ContentDiscoveryCoordinator:
             return self.seed_queries
         return build_discovery_queries(objective)
 
-    def _owner_evidence_for_subject(self, subject_key: str) -> list[dict[str, object]]:
+    def _owner_evidence_for_subject(
+        self, subject_key: str, pinned_packet: str | None = None,
+    ) -> list[dict[str, object]]:
         """Project only explicitly owner-reviewed manual facts from the canonical ledger."""
 
         if self.owner_evidence is None:
             raise ContentDiscoveryError("OWNER_SUBJECT_EVIDENCE_BACKEND_MISSING")
         selected: list[dict[str, object]] = []
-        reviewed_packet: str | None = None
+        reviewed_packet: str | None = pinned_packet
         for record in self.owner_evidence.list(
-            subject_key=subject_key, limit=_MAX_CONNECTED_EVIDENCE
+            subject_key=subject_key, limit=5000 if pinned_packet is not None else _MAX_CONNECTED_EVIDENCE
         ):
             if (
                 record.subject_key != subject_key

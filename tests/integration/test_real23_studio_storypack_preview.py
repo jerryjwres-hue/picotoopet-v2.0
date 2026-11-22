@@ -409,3 +409,262 @@ def test_asset_intake_never_repairs_tampered_object_or_follows_link(studio, tmp_
     assert rejected.status_code == 409
     assert external.read_bytes() == data
     assert target.is_symlink()
+
+
+SCOPED_ROUTE = "/api/v1/studio/storypacks/scoped-goal"
+
+
+def _reviewed_packet(studio, subject, photo_hash, intent):
+    packet = {
+        "subject_key": subject,
+        "photo_sha256_claim": photo_hash,
+        "claims": [
+            {"kind": "visible_identity", "statement": "A gray and white dog wears a green scarf."},
+            {"kind": "visible_scene", "statement": "A round bowl rests on the kitchen floor."},
+            {"kind": "creative_intent", "statement": intent},
+        ],
+    }
+    preview = studio.post("/api/v1/autonomous/owner-subject-evidence/preview", json=packet)
+    assert preview.status_code == 200, preview.text
+    digest = preview.json()["packet_digest"]
+    commit = studio.post("/api/v1/autonomous/owner-subject-evidence/commit", json={
+        "packet": packet, "reviewed_digest": digest, "owner_confirmed": True,
+    })
+    assert commit.status_code == 201, commit.text
+    assert commit.json()["production_approval_granted"] is False
+    return digest
+
+
+@pytest.fixture
+def scoped_story(studio):
+    project = _asset_project(studio)
+    pack = storypack()
+    for role, data, media in (
+        ("character", _ASSET_PNG, "image/png"),
+        ("scene", _ASSET_PNG, "image/png"),
+        ("style", b"Local style test", "text/plain"),
+    ):
+        receipt = studio.post(ASSET_ROUTE, content=data, headers=_asset_headers(
+            project, role, data, media
+        ))
+        assert receipt.status_code == 201, receipt.text
+        pack[f"{role}_ref"] = receipt.json()["artifact_id"]
+
+    preview = studio.post(ROUTE, json=pack)
+    assert preview.status_code == 200, preview.text
+    subject = preview.json()["owner_review_subject"]
+    assert subject["status"] == "REVIEW_SUBJECT_PREPARED_UNAPPROVED"
+    return {
+        "storypack": pack,
+        "project_id": project,
+        "owner_subject_key": "pet:maotai",
+        "confirmed_subject_sha256": subject["subject_sha256"],
+        "reviewed_packet_sha256": _reviewed_packet(
+            studio, "pet:maotai", hashlib.sha256(_ASSET_PNG).hexdigest(),
+            "The dog intends to wait and then eat dinner.",
+        ),
+    }
+
+
+def test_scoped_goal_pins_exact_existing_packet_and_local_workflow(studio, scoped_story):
+    from picotoopet_core.autonomous.discovery import ContentDiscoveryCoordinator
+    from picotoopet_core.autonomous.evidence_ledger import CanonicalEvidenceLedger
+    from picotoopet_core.autonomous.local_intelligence import LocalAnalysisResult
+
+    # 新的主人声明不应静默替换已经选择的旧声明；二者同属一个真实宠物范围。
+    later = _reviewed_packet(
+        studio, "pet:maotai", hashlib.sha256(_ASSET_PNG).hexdigest(),
+        "The dog intends to sleep beside the kitchen doorway.",
+    )
+    assert later != scoped_story["reviewed_packet_sha256"]
+    db = studio.app.state.services.database
+    services = studio.app.state.services
+    before = _counts(studio)
+    headers = {"X-Picotoo-Goal-Confirmed": "yes"}
+    first = studio.post(SCOPED_ROUTE, json=scoped_story, headers=headers)
+    assert first.status_code == 201, first.text
+    created = first.json()
+    binding = created["constraints"]["storypack_binding"]
+    assert binding["reviewed_packet_sha256"] == scoped_story["reviewed_packet_sha256"]
+    assert binding["owner_subject_key"] == "pet:maotai"
+    assert len(binding["owner_evidence"]) == 3
+    assert binding["subject_sha256"] == scoped_story["confirmed_subject_sha256"]
+    assert set(binding["assets"]) == {"character", "scene", "style"}
+    workflow = services.workflows.get_workflow(created["workflow_id"])
+    step = next(item for item in workflow.steps if item.step_key == "research-evidence")
+    assert step.payload["owner_review_packet_sha256"] == scoped_story["reviewed_packet_sha256"]
+
+    replay = studio.post(SCOPED_ROUTE, json=scoped_story, headers=headers)
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["goal_id"] == created["goal_id"]
+    assert replay.json()["workflow_id"] == created["workflow_id"]
+
+    # Exercise the actual discovery handler with a deterministic local-analysis
+    # fixture. A search call is forbidden; no worker/GPU/model server is started.
+    from types import SimpleNamespace
+
+    class NoExternalSearch:
+        def search(self, **kwargs):
+            raise AssertionError("Private scoped story attempted external research")
+
+    class FixtureLocal:
+        def analyze(self, request):
+            return LocalAnalysisResult(
+                role=request.role, summary="reviewed local claims",
+                confidence=0.5, findings=["owner claims only"],
+                evidence_ids=request.evidence_ids,
+            )
+
+    coordinator = ContentDiscoveryCoordinator(
+        search=NoExternalSearch(), local=FixtureLocal(),
+        owner_evidence=CanonicalEvidenceLedger(db),
+    )
+    result = coordinator.handler(SimpleNamespace(
+        task_type="autonomous.discovery.v1", payload=step.payload,
+        timeout_seconds=900, task_id="fixture",
+    )).result_document
+    assert result["search_count"] == 0
+    assert result["search_evidence"] == []
+    assert len(result["connected_evidence"]) == 3
+    assert {row["reviewed_packet_sha256"] for row in result["connected_evidence"]} == {
+        scoped_story["reviewed_packet_sha256"]
+    }
+    assert {row["evidence_id"] for row in result["connected_evidence"]} == {
+        row["evidence_id"] for row in binding["owner_evidence"]
+    }
+    assert _counts(studio)[1:] == before[1:]
+    assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
+
+    # Exercise the genuine Creative coordinator and repositories with bounded
+    # previously computed CPU fixture results. Only result lookup is substituted;
+    # the actual Goal, ResultStore, source set and Creative job are durable facts.
+    from picotoopet_core.autonomous.human_pipeline import GoalPipelineError
+    from picotoopet_core.autonomous.local_creative import GoalLocalCreativeCoordinator
+    from picotoopet_core.creative.execution import CreativeIntelligenceCoordinator
+
+    synthesis = {
+        "goal_id": created["goal_id"],
+        "evidence_ids": result["evidence_ids"],
+        "findings": ["Fixture interpretation of reviewed statements, not a verified fact."],
+    }
+    records = {}
+    for task_id, document, result_type in (
+        ("fixture-discovery", result, "autonomous.discovery.v1"),
+        ("fixture-synthesis", synthesis, "autonomous.goal_synthesis.v1"),
+    ):
+        stored = services.results.put_json(
+            document, result_type=result_type, max_bytes=256 * 1024
+        )
+        records[task_id] = SimpleNamespace(
+            object_hash=stored.object_hash, result_type=result_type
+        )
+    prior_steps = SimpleNamespace(steps=[
+        SimpleNamespace(step_key="research-evidence", task_id="fixture-discovery"),
+        SimpleNamespace(step_key="evidence-synthesis", task_id="fixture-synthesis"),
+    ])
+    bridge = GoalLocalCreativeCoordinator(
+        goals=services.autonomous_goals,
+        workflows=SimpleNamespace(get_workflow=lambda _: prior_steps),
+        result_records=SimpleNamespace(get_for_task=records.__getitem__),
+        result_store=services.results,
+        creative=services.creative,
+    )
+    bridge_task = SimpleNamespace(
+        task_type="autonomous.goal_creative.v1",
+        payload={"goal_id": created["goal_id"]},
+    )
+    job_result = bridge.handler(bridge_task).result_document
+    job_id = job_result["creative_job_id"]
+    job = services.creative.get_job(job_id)
+    source = services.creative_source.load_persisted_source_set(job_id)
+    assert job.creative_profile.value == "creative.content_plan.v2"
+    assert set(source.evidence_ids) == set(result["evidence_ids"])
+    owner_findings = [
+        item.finding for item in source.findings
+        if item.finding.get("source_type") == "owner_subject_attestation"
+    ]
+    assert len(owner_findings) == 3
+    assert {item["reviewed_packet_sha256"] for item in owner_findings} == {
+        binding["reviewed_packet_sha256"]
+    }
+    assert bridge.handler(bridge_task).result_document["creative_job_id"] == job_id
+    assert db.scalar(
+        "SELECT COUNT(*) FROM tasks WHERE resource_tag=?", (f"creative:{job_id}",)
+    ) == 0
+    assert services.creative.get_package(job_id) is None
+
+    # A post-Goal modification cannot pass either handoff or pre-model Creative.
+    digest = binding["assets"]["character"]["sha256"]
+    target = services.results.objects_dir / digest[:2] / digest[2:]
+    target.write_bytes(b"tampered after registration")
+    with pytest.raises(GoalPipelineError, match="STORY_GOAL_PINNED_ASSET_CHANGED"):
+        bridge.handler(bridge_task)
+
+    class NoModel:
+        def run(self, *args, **kwargs):
+            raise AssertionError("Invalid assets must stop before model inference")
+
+    execution = CreativeIntelligenceCoordinator(
+        database=db, queue=None, repository=services.creative_repository,
+        source_normalizer=services.creative_source, store=services.creative_store,
+        adapter=NoModel(), configured_model_id="cpu-fixture-not-a-live-model",
+    )
+    execution.handler(SimpleNamespace(payload={
+        "creative_job_id": job_id,
+        "source_set_digest": job.source_set_digest,
+        "creative_profile": job.creative_profile.value,
+    }))
+    rejected = services.creative.get_job(job_id)
+    assert rejected.failure_code == "STORY_GOAL_PINNED_ASSET_CHANGED"
+    assert services.creative.get_package(job_id) is None
+    assert _counts(studio)[1:] == before[1:]
+    assert db.scalar("SELECT COUNT(*) FROM production_attempts") == 0
+
+
+@pytest.mark.parametrize("case,expected", [
+    ("auth", 401), ("confirmation", 409), ("digest", 409),
+    ("project", 409), ("role", 409), ("tamper", 409),
+    ("packet", 409), ("wrong_photo", 409), ("subject", 409),
+    ("duplicate_json", 422),
+])
+def test_scoped_goal_denials_never_create_goal(studio, scoped_story, case, expected):
+    payload = copy.deepcopy(scoped_story)
+    headers = {"X-Picotoo-Goal-Confirmed": "yes"}
+    db = studio.app.state.services.database
+    before = _counts(studio)
+    before_goals = db.scalar("SELECT COUNT(*) FROM autonomous_goals")
+    if case == "auth":
+        headers["Authorization"] = "Bearer invalid"
+    elif case == "confirmation":
+        headers["X-Picotoo-Goal-Confirmed"] = "no"
+    elif case == "digest":
+        payload["confirmed_subject_sha256"] = "0" * 64
+    elif case == "project":
+        payload["project_id"] = _asset_project(studio)
+    elif case == "role":
+        payload["storypack"]["scene_ref"] = payload["storypack"]["character_ref"]
+    elif case == "tamper":
+        digest = hashlib.sha256(_ASSET_PNG).hexdigest()
+        store = studio.app.state.services.results
+        (store.objects_dir / digest[:2] / digest[2:]).write_bytes(b"tampered")
+    elif case == "packet":
+        payload["reviewed_packet_sha256"] = "0" * 64
+    elif case == "wrong_photo":
+        payload["reviewed_packet_sha256"] = _reviewed_packet(
+            studio, "pet:maotai", "1" * 64, "A different image was explicitly reviewed."
+        )
+    elif case == "subject":
+        payload["owner_subject_key"] = "pet:other"
+
+    if case == "duplicate_json":
+        body = json.dumps(payload).replace(
+            '"project_id":', '"project_id":"duplicate","project_id":', 1
+        )
+        response = studio.post(SCOPED_ROUTE, content=body, headers={
+            **headers, "Content-Type": "application/json",
+        })
+    else:
+        response = studio.post(SCOPED_ROUTE, json=payload, headers=headers)
+    assert response.status_code == expected, response.text
+    assert db.scalar("SELECT COUNT(*) FROM autonomous_goals") == before_goals
+    assert _counts(studio) == before
