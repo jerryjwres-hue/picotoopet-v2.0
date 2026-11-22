@@ -22,6 +22,8 @@ public sealed record ReferenceKeyframeInstruction(string ShotId, string StillPro
 /// <summary>Local preview and explicit request for existing Core approvals; never grants execution permission.</summary>
 public sealed class ReferenceBatchPreviewViewModel : ObservableObject
 {
+    // 固定 P0 顺序：复用同一只读数组，避免重复分配。
+    private static readonly int[] P0ShotOrders = [1, 2, 3];
     private readonly IReferenceBatchGateway _gateway;
     private readonly ReferencePreviewSnapshotStager _stager;
     private readonly HashSet<string> _eligibleShots;
@@ -276,7 +278,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
 
     // 03. 展示成功之前，逐镜核对 Core 真实冻结计划和全部已批参考图。
     // 02. 显示原始首帧 Prompt 与检查清单，不替换 Core 判断。
-    private static IReadOnlyList<ReferenceKeyframeInstruction> ReadKeyframeInstructions(JsonElement stages, IReadOnlyList<string> shotIds)
+    private static IReadOnlyList<ReferenceKeyframeInstruction> ReadKeyframeInstructions(JsonElement stages, List<string> shotIds)
     {
         if (!stages.TryGetProperty("keyframe_kit.v1", out var kit)
             || Text(kit, "schema_version") != "keyframe_kit.v1"
@@ -311,7 +313,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             || plan.ProjectKey != job.ProjectKey || plan.ProductionProfile != job.ProductionProfile
             || plan.OutputProfileId != "video.landscape.v1"
             || plan.TargetRuntimeMs != 12000 || plan.Tasks is not { Length: 3 }
-            || !plan.Tasks.OrderBy(x => x.Order).Select(x => x.Order).SequenceEqual(new[] { 1, 2, 3 })
+            || !plan.Tasks.OrderBy(x => x.Order).Select(x => x.Order).SequenceEqual(P0ShotOrders)
             || !plan.Tasks.OrderBy(x => x.Order).Select(x => x.ShotId).SequenceEqual(EligibleShots))
             throw new InvalidDataException("REFERENCE_PRODUCTION_PLAN_MISMATCH");
         // 03. 复用现有执行器的 canonical JSON 摘要规则。
