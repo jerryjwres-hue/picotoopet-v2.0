@@ -21,6 +21,15 @@ _MAX_FILE_BYTES = 768 * 1024 * 1024
 _MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
+_OFFLINE_QWEN_TOOLS = frozenset({
+    "local-keyframes/recover_comfy_keyframe_workflow.py",
+    "local-keyframes/comfy_png_embedded_evidence.py",
+    "local-keyframes/prepare_local_keyframe_batch.py",
+    "local-keyframes/qwen_reference_bindings.py",
+    "local-keyframes/collect_local_keyframe_outputs.py",
+    "local-keyframes/offline_png_output_collector.py",
+})
+
 _REQUIRED = {
     "app/Picotoo Pet AI.exe",
     "app/product-version.txt",
@@ -185,6 +194,17 @@ def verify_preview_archive(
                 raise PreviewVerificationError("UNLISTED_ARCHIVE_MEMBER")
             if not _REQUIRED.issubset(listed):
                 raise PreviewVerificationError("REQUIRED_PAYLOAD_MISSING")
+
+            # 01. A declared Qwen toolkit must be exactly these known,
+            #     SHA-checked CPU-only files. Previous preview ZIPs without
+            #     this optional field remain verifiable as old previews.
+            offline = manifest.get("offline_keyframe_tools")
+            if offline is not None:
+                if (not isinstance(offline, list) or len(offline) != len(_OFFLINE_QWEN_TOOLS)
+                    or any(not isinstance(item, str) for item in offline)
+                    or set(offline) != _OFFLINE_QWEN_TOOLS
+                    or not _OFFLINE_QWEN_TOOLS.issubset(listed)):
+                    raise PreviewVerificationError("OFFLINE_QWEN_TOOLSET_INCOMPLETE")
             with zip_file.open("README_P0_DEVELOPER_PREVIEW.txt") as handle:
                 readme = handle.read().decode("utf-8-sig")
             if "NOT a formal Release Builder output" not in readme \
