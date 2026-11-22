@@ -49,5 +49,9 @@ public sealed class FilmStudioPageViewModel : PageViewModel
         return session.ImportStudioAssetAsync(projectId, role, mediaType, data, cancellationToken);
     }
 
+    // 同一配对会话、同一 Core，不建立新凭据或连接身份。
+    internal ControlCenterSession ScopedSession => _assetSession
+        ?? throw new InvalidOperationException("离线测试没有 Core 会话。");
+
     public static FilmStudioPageViewModel CreateForSmokeTest() => new();
 }
