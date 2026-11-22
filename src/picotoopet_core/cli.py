@@ -306,6 +306,10 @@ def _run_worker(
         package = services.creative_repository.package_for(creative_job_id)
         if package is None or package.quality_outcome.value != "PASS":
             return
+        # Dynamic reviewed stories wait for the existing per-shot I2V reference
+        # approval flow; automatic v1 T2V continuation would discard their anchors.
+        if services.production.requires_reviewed_references(package):
+            return
         from picotoopet_core.production.models import ProductionJobCreateRequest
 
         services.production.create_job(ProductionJobCreateRequest(
