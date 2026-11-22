@@ -9,6 +9,7 @@ public static class OwnerReviewWire
     public const string FrozenCoreSha = "5c51fdb31e3cd65c170c4a3f84b1bb0037817b43";
     public const string FrozenOpenApiSha256 = "bfcbb89952e0755085597880098ae727600deea141a191df22085aba07e7789a";
     public const string StaticPetStoryPolicy = "static-pet-story-v1.0.0";
+    public const string DynamicPetStoryPolicy = "dynamic-pet-feeding-v1.0.0";
     public const string ProposalSchema = "owner_structured_review.proposal.v1";
     public const string PreviewSchema = "owner_structured_review.preview.v1";
     public const string CommitSchema = "owner_structured_review.commit.v1";
@@ -63,7 +64,9 @@ public sealed record OwnerReviewProposal(
     [property: JsonPropertyName("source_evidence")] IReadOnlyList<OwnerEvidenceSummary> SourceEvidence,
     [property: JsonPropertyName("fields")] IReadOnlyDictionary<string, OwnerFieldProposal> Fields,
     [property: JsonPropertyName("proposal_digest")] string ProposalDigest,
-    [property: JsonPropertyName("schema_version")] string SchemaVersion = OwnerReviewWire.ProposalSchema);
+    [property: JsonPropertyName("schema_version")] string SchemaVersion = OwnerReviewWire.ProposalSchema,
+    [property: JsonPropertyName("dynamic_motion_proposal"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    JsonElement? DynamicMotionProposal = null);
 
 /// <summary>单字段主人决定。</summary>
 public sealed record OwnerFieldDecision(
@@ -77,7 +80,9 @@ public sealed record OwnerReviewPreviewRequest(
     [property: JsonPropertyName("review_actor_id")] string ReviewActorId,
     [property: JsonPropertyName("proposal_digest")] string ProposalDigest,
     [property: JsonPropertyName("decisions")] IReadOnlyList<OwnerFieldDecision> Decisions,
-    [property: JsonPropertyName("story_policy_opt_in")] string? StoryPolicyOptIn = null);
+    [property: JsonPropertyName("story_policy_opt_in")] string? StoryPolicyOptIn = null,
+    [property: JsonPropertyName("confirmed_motion_digest"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ConfirmedMotionDigest = null);
 
 /// <summary>POST preview 响应；state_facts 仅作展示，客户端从不计算权威摘要。</summary>
 public sealed record OwnerReviewPreview(
@@ -93,7 +98,9 @@ public sealed record OwnerReviewPreview(
     [property: JsonPropertyName("state_facts")] JsonElement? StateFacts,
     [property: JsonPropertyName("model_calls")] int ModelCalls = 0,
     [property: JsonPropertyName("schema_version")] string SchemaVersion = OwnerReviewWire.PreviewSchema,
-    [property: JsonPropertyName("story_policy_opt_in")] string? StoryPolicyOptIn = null);
+    [property: JsonPropertyName("story_policy_opt_in")] string? StoryPolicyOptIn = null,
+    [property: JsonPropertyName("confirmed_motion_digest"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ConfirmedMotionDigest = null);
 
 /// <summary>POST commit 请求。</summary>
 public sealed record OwnerReviewCommitRequest(
