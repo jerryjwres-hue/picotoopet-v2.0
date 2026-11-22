@@ -189,6 +189,11 @@ def resolve_reference_bindings(
                 )
                 if name in shots.values():
                     raise ValueError("KEYFRAME_REFERENCE_REUSED_PER_SHOT")
+                # 04. Renaming a previous composition must not bypass the
+                #     strict dry-run gate. Compare verified bytes by SHA256.
+                if any(previous["sha256"] == evidence["sha256"]
+                       for previous in recorded.values()):
+                    raise ValueError("KEYFRAME_REFERENCE_REUSED_BYTES_PER_SHOT")
                 shots[shot_id] = name
                 recorded[shot_id] = evidence
         else:
