@@ -289,6 +289,18 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Real local image thumbnails must decode for all observed stills");
             SmokeAssert.Equal(0, vm.Items.Count, "Read-only observation must never stage images");
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Thumbnail read may not create approvals");
+            // 02. Any changed file must invalidate EVERY preview, not leave one trusted-looking thumbnail.
+            var changedThumbnail = Path.Combine(observedRoot, "shot-2.png");
+            File.WriteAllBytes(changedThumbnail, [1, 2, 3]);
+            await RejectAsync(() => vm.InspectObservedCandidatesAsync(observedRoot));
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is null),
+                "One corrupt thumbnail must clear the complete untrusted observation");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Thumbnail corruption must never write an approval");
+            File.WriteAllBytes(changedThumbnail, png);
+            await vm.InspectObservedCandidatesAsync(observedRoot);
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
+                "Restoring original bytes should permit the exact same read-only preview");
             SmokeAssert.True(!vm.UserConfirmsPreviewAndRights && gateway.RegisterCalls == 0,
                 "Observed output cannot grant rights or write an approval");
             await RejectAsync(() => vm.AddObservedCandidateAsync(vm.ObservedCandidates[0], observedRoot, "not-a-license"));
