@@ -68,6 +68,8 @@ def qwen_fixture(root: Path):
     recovery["history_status"] = "PNG_EMBEDDED_NO_HISTORY"
     recovery["source_kind"] = "COMFY_PNG_TEXt_PROMPT"
     recovery["source_image_sha256"] = "f" * 64
+    recovery["source_image_container_crc_verified"] = True
+    recovery["prompt_id"] = None
     return graph, recovery, bindings, package
 
 
