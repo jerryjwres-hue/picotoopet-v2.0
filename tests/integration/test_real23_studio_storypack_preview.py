@@ -668,3 +668,188 @@ def test_scoped_goal_denials_never_create_goal(studio, scoped_story, case, expec
     assert response.status_code == expected, response.text
     assert db.scalar("SELECT COUNT(*) FROM autonomous_goals") == before_goals
     assert _counts(studio) == before
+
+
+def dynamic_dinner_pack():
+    pack = storypack()
+    # 字段均为测试剧本中的显式空间描述，不是用户真实资产或物理测量。
+    pack["dynamic_motion"] = {
+        "policy": "dynamic-pet-feeding-v1.0.0",
+        "start_location": "the doorway",
+        "bowl_location": "the dining corner",
+        "support_surface": "wood floor",
+        "bowl_description": "round steel bowl",
+        "screen_direction": "LEFT_TO_RIGHT",
+        "shots": [
+            {"shot_id": "S01", "event": "NOTICE_BOWL", "framing": "wide full-body shot"},
+            {"shot_id": "S02", "event": "APPROACH_BOWL", "framing": "medium full-body shot"},
+            {"shot_id": "S03", "event": "BEGIN_EATING", "framing": "close shot of muzzle and bowl"},
+        ],
+    }
+    return pack
+
+
+def test_dynamic_storypack_projects_motion_without_granting_authority(studio):
+    pack = dynamic_dinner_pack()
+    before = _counts(studio)
+    first = studio.post(ROUTE, json=pack)
+    assert first.status_code == 200, first.text
+    preview = first.json()
+    motion = preview["dynamic_motion_proposal"]
+    assert motion["storypack_sha256"] == preview["storypack_sha256"]
+    assert motion["status"] == "DYNAMIC_PROPOSAL_REQUIRES_OWNER_REVIEW"
+    assert motion["planned_payoff"] == "START_NOT_EATING_TO_AT_BOWL_EATING"
+    assert [item["event"] for item in motion["shots"]] == [
+        "NOTICE_BOWL", "APPROACH_BOWL", "BEGIN_EATING"
+    ]
+    states = motion["states"]
+    assert [item["location"] for item in states] == ["START", "START", "AT_BOWL", "AT_BOWL"]
+    assert [item["feeding"] for item in states] == ["NOT_EATING"] * 3 + ["EATING"]
+    assert states[-1]["posture"] == "STANDING_HEAD_LOWERED"
+    assert "walks left to right" in motion["shots"][1]["visible_action"]
+    assert "first bites" in motion["shots"][2]["visible_action"]
+    assert [item["source_action"] for item in motion["shots"]] == [
+        item["action"] for item in pack["shots"]
+    ]
+    assert all(
+        a["closing_state"] == b["opening_state"]
+        for a, b in zip(motion["shots"], motion["shots"][1:])
+    )
+    assert all(motion[key] is False for key in ("owner_approved", "can_queue", "gpu_post_authorized"))
+    assert preview["canonical_goal_intake"]["ready_for_user_submission"] is False
+    assert preview["canonical_goal_intake"]["objective"] is None
+    assert "DYNAMIC_OWNER_POLICY_NOT_IMPLEMENTED" in (
+        preview["canonical_goal_intake"]["blocking_reasons"]
+    )
+    assert preview["can_queue"] is False
+    assert studio.post(ROUTE, json=pack).json() == preview
+
+    changed = copy.deepcopy(pack)
+    changed["dynamic_motion"]["screen_direction"] = "RIGHT_TO_LEFT"
+    second = studio.post(ROUTE, json=changed)
+    assert second.status_code == 200, second.text
+    new = second.json()
+    assert new["storypack_sha256"] != preview["storypack_sha256"]
+    assert new["dynamic_motion_proposal"]["motion_digest"] != motion["motion_digest"]
+    assert "walks right to left" in new["dynamic_motion_proposal"]["shots"][1]["visible_action"]
+    assert all(
+        a["input_sha256"] != b["input_sha256"]
+        for a, b in zip(preview["fingerprint_plan"]["shots"], new["fingerprint_plan"]["shots"])
+    )
+    assert _counts(studio) == before
+
+
+def test_motion_extension_does_not_change_legacy_digest(studio):
+    from picotoopet_core.domain.storypack import StoryPackV1
+
+    pack = storypack()
+    old = StoryPackV1.model_validate(pack).model_dump(mode="json", exclude={"dynamic_motion"})
+    expected = hashlib.sha256(json.dumps(
+        old, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
+    normal = studio.post(ROUTE, json=pack).json()
+    explicit_null = studio.post(ROUTE, json={**pack, "dynamic_motion": None}).json()
+    assert normal["storypack_sha256"] == expected
+    assert normal == explicit_null
+    assert "dynamic_motion_proposal" not in normal
+    assert normal["canonical_goal_intake"]["ready_for_user_submission"] is True
+
+
+@pytest.mark.parametrize("case", [
+    "event_order", "same_location", "close_approach", "duplicate_framing",
+    "foreign_shot", "noncontinuous", "portrait", "extra_cast", "fake_approval",
+])
+def test_dynamic_motion_invalid_input_fails_closed(studio, case):
+    pack = dynamic_dinner_pack()
+    motion = pack["dynamic_motion"]
+    if case == "event_order":
+        motion["shots"][0]["event"] = "BEGIN_EATING"
+    elif case == "same_location":
+        motion["bowl_location"] = motion["start_location"]
+    elif case == "close_approach":
+        motion["shots"][1]["framing"], motion["shots"][2]["framing"] = (
+            motion["shots"][2]["framing"], motion["shots"][1]["framing"]
+        )
+    elif case == "duplicate_framing":
+        motion["shots"][1]["framing"] = motion["shots"][0]["framing"]
+    elif case == "foreign_shot":
+        motion["shots"][2]["shot_id"] = "S99"
+    elif case == "noncontinuous":
+        pack["shots"][1]["handoff"] = "cut"
+    elif case == "portrait":
+        pack["output_profile"] = "design_portrait"
+    elif case == "extra_cast":
+        pack["supporting_character_refs"] = ["other_pet"]
+    else:
+        motion["owner_approved"] = True
+    before = _counts(studio)
+    assert studio.post(ROUTE, json=pack).status_code == 422
+    assert _counts(studio) == before
+
+
+def test_dynamic_motion_uses_existing_bible_and_shot_plan_but_stays_unapproved():
+    from picotoopet_core.creative.dynamic_pet_story import bind_dynamic_bible_proposal
+    from picotoopet_core.creative.models import (
+        CreativeQualityOutcome, CreativeScriptResult, CreativeStageKind, ShotPlanResult,
+    )
+    from picotoopet_core.creative.profiles import creative_profile_definition
+    from picotoopet_core.creative.quality import CreativeQualityGate
+    from picotoopet_core.creative.source import NormalizedCreativeSourceSet
+    from picotoopet_core.creative.video_bible import (
+        SceneSpec, SubjectIdentity, derive_shot_plan, evaluate_story_storyboard, seal_bible,
+        shot_plan_integrity_findings,
+    )
+    from picotoopet_core.domain.storypack import StoryPackV1
+
+    pack = StoryPackV1.model_validate(dynamic_dinner_pack())
+    script = CreativeScriptResult.model_validate({
+        "schema_version": "1.0", "creative_profile": "creative.content_plan.v1",
+        "script_id": "fixture", "title": "Dinner", "target_duration_seconds": 12,
+        "cta_beat_id": "beat-3",
+        "beats": [
+            {"beat_id": f"beat-{index}", "order": index, "duration_seconds": 4,
+             "visual_intent": shot.action}
+            for index, shot in enumerate(pack.shots, 1)
+        ],
+    })
+    subject = SubjectIdentity(
+        subject_id="fixture-pet", kind="PET", species="dog", breed_or_type="Alaskan Malamute",
+        coat_or_appearance="gray and white fur", distinguishing_marks=["green scarf"],
+        identity_phrase="Alaskan Malamute dog with gray and white fur and green scarf",
+    )
+    scene = SceneSpec(
+        scene_id="dining", environment_phrase="a dining corner with a round steel bowl on the wood floor",
+        lighting_phrase="soft warm window light", palette=["warm", "wood"],
+    )
+    draft = bind_dynamic_bible_proposal(pack, script, subject, scene)
+    assert draft.needs_human is True
+    assert draft.product is None
+    assert draft.subject == subject
+    assert draft.scenes == [scene]
+    assert not evaluate_story_storyboard(draft, product_required=False)
+    assert draft.shots[0].opening_state != draft.shots[-1].closing_state
+
+    # 仅测试原投影函数能保留动作/角色/道具；不持久化，不创建包或生产任务。
+    sealed = seal_bible(
+        draft, project_key="fixture", source_set_digest="a" * 64, selected_idea_id="idea-1"
+    )
+    projected = derive_shot_plan(sealed, script)
+    plan = ShotPlanResult.model_validate(projected)
+    assert all(item.subject == subject.identity_phrase for item in plan.shots)
+    assert all("round steel bowl" in " ".join(item.continuity_keys) for item in plan.shots)
+    assert "walks left to right" in plan.shots[1].action
+    assert "first bites" in plan.shots[2].action
+    assert not shot_plan_integrity_findings(sealed, script, projected)
+
+    # 真实 Creative quality gate 必须拒绝未经动态 Owner 审核的 Bible。
+    source = NormalizedCreativeSourceSet(
+        project_key="fixture", result_package_ids=[], result_digests=[],
+        findings=[], evidence_ids=[], source_set_digest="a" * 64,
+    )
+    decision, _ = CreativeQualityGate().evaluate(
+        stage_kind=CreativeStageKind.VIDEO_BIBLE,
+        profile=creative_profile_definition("creative.content_plan.v2"),
+        source_set=source, previous_stages={}, raw_result=draft.model_dump(mode="json"),
+        objective="纯宠物视频，明确要求3个镜头，每个镜头4秒",
+    )
+    assert decision.outcome is CreativeQualityOutcome.NEEDS_HUMAN

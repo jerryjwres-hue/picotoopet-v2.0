@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+from picotoopet_core.creative.dynamic_pet_story import build_dynamic_motion_proposal
 from picotoopet_core.domain.storypack import StoryPackV1
 
 
@@ -36,6 +37,15 @@ def build_shot_fingerprints(
             "content_integrity_verified": row.get("content_integrity_verified") is True,
         }
 
+    # 只让动态镜头的实际动作、状态及固定空间进入对应指纹，沿依赖链传播。
+    motion = build_dynamic_motion_proposal(pack) if pack.dynamic_motion is not None else None
+    motion_context = (
+        {key: value for key, value in motion["motion"].items() if key != "shots"}
+        if motion is not None else None
+    )
+    motion_by_shot = (
+        {item["shot_id"]: item for item in motion["shots"]} if motion is not None else {}
+    )
     shot_keys: dict[str, str] = {}
     shots = []
     for shot in pack.shots:
@@ -60,6 +70,11 @@ def build_shot_fingerprints(
             "assets": {ref: asset_snapshot.get(ref) for ref in refs},
             "upstream_keys": [shot_keys[ref.casefold()] for ref in shot.depends_on],
         }
+        if motion_context is not None:
+            inputs["dynamic_motion"] = {
+                "context": motion_context,
+                "shot": motion_by_shot[shot.id],
+            }
         fingerprint = _digest(inputs)
         shot_keys[shot.id.casefold()] = fingerprint
         shots.append({
