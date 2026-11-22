@@ -24,11 +24,11 @@
      </ItemsControl.ItemTemplate>
     </ItemsControl>
    </Expander>
-   <!-- 原审核页内只读展示 #342 工作单；不改变现有 Core Owner/注册按钮。 -->
-   <Expander Header="三镜头构图准备状态（本地工作单，未审批）" Margin="0,12,0,0">
+   <!-- 直接从封存 Creative Kit 填充三镜头工作卡；外部报告只更新本地观察状态。 -->
+   <Expander Header="三镜头构图准备（封存导演指令 · 未审批）" Margin="0,12,0,0" IsExpanded="True">
     <StackPanel>
-     <TextBlock Text="读取现有 Qwen readiness JSON，查看哪些镜头需要独立构图。仅核对封存 Prompt 和工作单；不导入图片、不证明画质、不放行 GPU。" TextWrapping="Wrap" Margin="0,0,0,8"/>
-     <Button x:Name="LoadCompositionWorkOrderButton" Content="读取三镜头构图工作单..." Padding="12,6"
+     <TextBlock Text="三镜头的原始提示词、场景和机位随封存创意包直接显示。未载入本地证据时显示 UNVERIFIED；读取 Qwen readiness 报告仅补充历史构图状态，绝不确认画质、使用权或 GPU 授权。" TextWrapping="Wrap" Margin="0,0,0,8"/>
+     <Button x:Name="LoadCompositionWorkOrderButton" Content="核对本地 Qwen 构图报告（可选）..." Padding="12,6"
              HorizontalAlignment="Left" IsEnabled="{Binding CanLoadCompositionWorkOrder, FallbackValue=False}"
              Click="LoadCompositionWorkOrder_Click" Margin="0,0,0,8"/>
      <ItemsControl x:Name="CompositionWorkOrderList" ItemsSource="{Binding CompositionWorkOrders}">
@@ -38,7 +38,15 @@
          <StackPanel>
           <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold"/>
           <TextBlock Text="{Binding Status, StringFormat=构图状态：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding SceneId, StringFormat=封存场景：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding CameraFraming, StringFormat=封存机位：{0}}" TextWrapping="Wrap"/>
           <TextBlock Text="{Binding ExistingFilename, StringFormat=历史输入（未批准）：{0}}" FontSize="10" TextWrapping="Wrap"/>
+          <TextBox Text="{Binding StillPrompt, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                   MaxHeight="160" VerticalScrollBarVisibility="Auto"
+                   AutomationProperties.Name="此镜头封存首帧提示词"/>
+          <Button Content="复制此镜头 Prompt" Tag="{Binding}" Padding="8,4"
+                  HorizontalAlignment="Left" Click="CopyCompositionPrompt_Click" Margin="0,5,0,5"/>
+          <TextBlock Text="{Binding ReviewChecklist}" TextWrapping="Wrap"/>
          </StackPanel>
         </Border>
        </DataTemplate>

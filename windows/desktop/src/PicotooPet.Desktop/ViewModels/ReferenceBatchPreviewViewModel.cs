@@ -18,10 +18,13 @@ namespace PicotooPet.Desktop.ViewModels;
 public sealed record ReferencePreviewItem(string ShotId, string Sha256, long Bytes,
     string InputRelativePath, string SourceReference, string SourceDigest, BitmapSource Preview);
 
-public sealed record ReferenceKeyframeInstruction(string ShotId, string StillPrompt, string ReviewChecklist);
+public sealed record ReferenceKeyframeInstruction(
+    string ShotId, string StillPrompt, string ReviewChecklist, string SceneId, string CameraFraming);
 
 // 只读工作单只反映本地构图缺口，不是资产导入、真实图片审核或 GPU 授权。
-public sealed record ReferenceCompositionWorkItem(string ShotId, string Status, string ExistingFilename);
+public sealed record ReferenceCompositionWorkItem(
+    string ShotId, string Status, string ExistingFilename, string StillPrompt,
+    string ReviewChecklist, string SceneId, string CameraFraming);
 
 // 只读候选是历史输出观测，不是 Producer 授权、身份资产或使用许可。
 public sealed record ReferenceObservedCandidate(string ShotId, string OutputRelativePath,
@@ -106,6 +109,16 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             && Text(brief, "output_profile_id") == "video.landscape.v1"
             && shots.EnumerateArray().All(shot => shot.TryGetProperty("duration_seconds", out var duration)
                 && duration.ValueKind == JsonValueKind.Number && duration.TryGetDouble(out var seconds) && seconds == 4);
+        // 02. A valid frozen Creative Kit immediately supplies three editable-workflow
+        //     briefs. Without inspected local Comfy bytes their status is UNVERIFIED.
+        //     This avoids requiring an external JSON merely to read S2/S3 prompts.
+        if (_p0PlanCandidate)
+        {
+            foreach (var instruction in KeyframeInstructions)
+                CompositionWorkOrders.Add(new(
+                    instruction.ShotId, "UNVERIFIED", string.Empty, instruction.StillPrompt,
+                    instruction.ReviewChecklist, instruction.SceneId, instruction.CameraFraming));
+        }
         _gateway = gateway;
         _stager = stager;
         GoalId = continuation.GoalId;
@@ -289,6 +302,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                     || Text(item, "source") != "FROZEN_CREATIVE_KEYFRAME_KIT"
                     || prompt != frozen.StillPrompt
                     || Text(item, "creative_still_prompt_sha256") != promptDigest
+                    || Text(item, "camera_framing") != frozen.CameraFraming
+                    || Text(item, "scene_id") != frozen.SceneId
                     || !item.TryGetProperty("review_checklist", out var checklist)
                     || checklist.ValueKind != JsonValueKind.Array
                     || string.Join("\n", checklist.EnumerateArray().Select(x => x.ValueKind ==
@@ -304,7 +319,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                         || name.Split('/').Any(part => part is "" or "." or ".."
                             || part.EndsWith(' ') || part.EndsWith('.')))))
                     throw new InvalidDataException("COMPOSITION_WORKORDER_SHOT_INVALID");
-                parsed.Add(new(frozen.ShotId, state, name));
+                parsed.Add(new(frozen.ShotId, state, name, frozen.StillPrompt,
+                    frozen.ReviewChecklist, frozen.SceneId, frozen.CameraFraming));
             }
             if (Text(root, "status") == "READY_FOR_OWNER_BINDING_REVIEW"
                 && parsed.Any(x => x.Status != "OBSERVED_UNAPPROVED"))
@@ -719,7 +735,15 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 || checklist.EnumerateArray().Any(x => x.ValueKind != JsonValueKind.String
                     || string.IsNullOrWhiteSpace(x.GetString()) || x.GetString()!.Length > 500))
                 return Array.Empty<ReferenceKeyframeInstruction>();
-            items.Add(new(id, prompt, string.Join("\n", checklist.EnumerateArray().Select(x => x.GetString()))));
+            var scene = Text(frame, "scene_id");
+            var camera = Text(frame, "camera_framing");
+            // 03. Both fields are optional on historical kits; never fabricate
+            //     camera or scene metadata, but reject oversized claims.
+            if (scene.Length > 120 || camera.Length > 180)
+                return Array.Empty<ReferenceKeyframeInstruction>();
+            items.Add(new(id, prompt,
+                string.Join("\n", checklist.EnumerateArray().Select(x => x.GetString())),
+                scene, camera));
         }
         return items.AsReadOnly();
     }

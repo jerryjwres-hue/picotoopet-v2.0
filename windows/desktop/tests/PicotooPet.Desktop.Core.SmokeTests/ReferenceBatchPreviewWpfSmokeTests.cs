@@ -245,6 +245,22 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
 
             SmokeAssert.Equal(3, vm.EligibleShots.Length, "Sealed-v2 candidate must expose exactly three shot ids");
             SmokeAssert.Equal(3, vm.KeyframeInstructions.Count, "Display all sealed keyframe instructions");
+            // 01. Frozen shot briefs must appear without opening a second JSON report.
+            //     No local images, approvals or GPU tasks are implied by these cards.
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count,
+                "Existing WPF review must immediately show three frozen composition briefs");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Absent local evidence must never be presented as a missing or observed image");
+            SmokeAssert.Equal("Opening pose two", vm.CompositionWorkOrders[1].StillPrompt,
+                "Local work card must reuse the exact frozen Creative Kit prompt");
+            SmokeAssert.Equal("kitchen-scene", vm.CompositionWorkOrders[1].SceneId,
+                "Show the frozen scene identity without a second user input");
+            SmokeAssert.Equal("close-up", vm.CompositionWorkOrders[1].CameraFraming,
+                "Show the frozen camera framing beside the per-shot brief");
+            SmokeAssert.Equal("Lock bowl", vm.CompositionWorkOrders[2].ReviewChecklist,
+                "Review checklist must appear without a Qwen local report");
+            SmokeAssert.Equal(0, vm.Items.Count, "Frozen briefs cannot stage images");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Frozen briefs cannot create Core approvals");
             SmokeAssert.Equal("Opening pose two", vm.KeyframeInstructions[1].StillPrompt, "Preserve Core prompts");
             SmokeAssert.Equal("Lock bowl", vm.KeyframeInstructions[2].ReviewChecklist, "Preserve checklist");
             SmokeAssert.True(vm.EligibleShots.SequenceEqual(new[] { "shot-1", "shot-2", "shot-3" }),
@@ -277,6 +293,8 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                         existing_input_filename = index == 0 ? "old-composition.png" : (string?)null,
                         source = "FROZEN_CREATIVE_KEYFRAME_KIT",
                         creative_still_prompt = item.StillPrompt,
+                        camera_framing = item.CameraFraming,
+                        scene_id = item.SceneId,
                         creative_still_prompt_sha256 = Convert.ToHexStringLower(
                             SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(item.StillPrompt))),
                         review_checklist = item.ReviewChecklist.Split('\n'),
@@ -311,6 +329,14 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedOrderPath));
             SmokeAssert.Equal(0, vm.CompositionWorkOrders.Count,
                 "Changed Creative prompt must clear every previously displayed status");
+            await vm.LoadCompositionWorkOrderAsync(workOrderPath);
+            var forgedCamera = JsonNode.Parse(JsonSerializer.Serialize(workOrder))!.AsObject();
+            forgedCamera["composition_work_order"]!["items"]![1]!["camera_framing"] = "invented camera";
+            var forgedCameraPath = Path.Combine(root, "forged-camera.json");
+            await File.WriteAllTextAsync(forgedCameraPath, forgedCamera.ToJsonString());
+            await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedCameraPath));
+            SmokeAssert.Equal(0, vm.CompositionWorkOrders.Count,
+                "Forged camera instructions must not survive a failed evidence import");
             await vm.LoadCompositionWorkOrderAsync(workOrderPath);
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Neither accepted nor forged report may create approval");
 
@@ -564,7 +590,7 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
              "kit_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bible_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
              "keyframes":[
                {"shot_id":"shot-1","order":1,"still_prompt":"Opening pose one","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock identity"]},
-               {"shot_id":"shot-2","order":2,"still_prompt":"Opening pose two","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock scene"]},
+               {"shot_id":"shot-2","order":2,"still_prompt":"Opening pose two","approval_status":"PENDING_HUMAN_REVIEW","scene_id":"kitchen-scene","camera_framing":"close-up","review_checklist":["Lock scene"]},
                {"shot_id":"shot-3","order":3,"still_prompt":"Opening pose three","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock bowl"]}]},"script.v1":{},
            "shot_plan.v1":{"shots":[
              {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO","duration_seconds":4},

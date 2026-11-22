@@ -38,6 +38,27 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "未能验证所选图片，请检查格式、大小和使用权声明。"); }
     }
 
+    // 01. 只复制封存 Creative Kit 的镜头提示词；不发送到 Comfy、Core 或其他服务。
+    //     用户自行决定何时使用该文本，不能通过复制绕过现有审批门禁。
+    private void CopyCompositionPrompt_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm
+            || sender is not Button { Tag: ReferenceCompositionWorkItem item }
+            || !vm.CompositionWorkOrders.Contains(item)
+            || string.IsNullOrWhiteSpace(item.StillPrompt)) return;
+        try
+        {
+            System.Windows.Clipboard.SetText(item.StillPrompt);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "已复制封存的镜头提示词；没有提交生成任务，GPU 仍 HOLD。");
+        }
+        catch (Exception)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "系统剪贴板不可用，原始镜头 Prompt 仍可在只读文本框中查看。");
+        }
+    }
+
     // 本地工作单只显示三个镜头的构图准备状态，不触发导入或审批。
     private async void LoadCompositionWorkOrder_Click(object sender, RoutedEventArgs e)
     {
