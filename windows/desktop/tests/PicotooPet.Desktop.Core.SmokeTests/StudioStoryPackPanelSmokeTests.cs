@@ -161,7 +161,12 @@ internal static class StudioStoryPackPanelSmokeTests
         var characterId = "asset-" + new string('a', 64);
         var sceneId = "asset-" + new string('b', 64);
         var styleId = "asset-" + new string('c', 64);
+        SmokeAssert.True(vm.TryBeginAssetImport(captured), "素材登记必须冻结当前预览");
+        SmokeAssert.True(!vm.CanPreviewStoryPack && !vm.CanCreateStoryGoal, "上传期间必须禁用预览和旧 Goal");
+        SmokeAssert.True(!vm.TryBeginAssetImport(captured), "重复登记操作必须拒绝");
         SmokeAssert.True(vm.TryBindImportedAsset(captured, "character", characterId), "角色回执应绑定精确角色引用");
+        vm.EndAssetImport();
+        SmokeAssert.True(vm.CanPreviewStoryPack && !vm.CanCreateStoryGoal, "仅重新预览可用，不能复用旧 Goal");
         SmokeAssert.True(!vm.TryBindImportedAsset(captured, "scene", sceneId), "旧快照不得覆盖已修改草稿");
         SmokeAssert.True(vm.TryBindImportedAsset(vm.StoryPackJson, "scene", sceneId), "场景回执应绑定场景引用");
         SmokeAssert.True(vm.TryBindImportedAsset(vm.StoryPackJson, "style", styleId), "风格回执应绑定风格锁");
