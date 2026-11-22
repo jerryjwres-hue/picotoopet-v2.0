@@ -6,9 +6,12 @@ namespace PicotooPet.Desktop.ViewModels;
 /// <summary>独立影视入口：只组合原有面板，不创建新队列或自动执行工作流。</summary>
 public sealed class FilmStudioPageViewModel : PageViewModel
 {
+    private readonly ControlCenterSession? _assetSession;
+
     public FilmStudioPageViewModel(ControlCenterSession session) : base("影视工作台")
     {
         ArgumentNullException.ThrowIfNull(session);
+        _assetSession = session;
         Creative = new CreativeIntelligencePanelViewModel(session)
         {
             StoryPackInitiallyExpanded = true,
@@ -29,6 +32,22 @@ public sealed class FilmStudioPageViewModel : PageViewModel
 
     // 02. 复用生产面板的全部既有审批与 HOLD 限制。
     public ProductionPanelViewModel Production { get; }
+
+    // 03. 读取真实活动项目，禁止自动创建或改写项目。
+    public async Task<IReadOnlyList<ProjectRecord>> GetAssetProjectsAsync(CancellationToken cancellationToken)
+    {
+        var session = _assetSession ?? throw new InvalidOperationException("离线测试没有 Core 会话。");
+        var projects = await session.GetProjectsAsync(cancellationToken);
+        return projects.Where(project => project.Status == "Active").ToArray();
+    }
+
+    // 04. 仅显式 UI 同意后调用，登记不等于 Owner/MASTER 批准。
+    public Task<string> RegisterAssetAsync(
+        string projectId, string role, string mediaType, byte[] data, CancellationToken cancellationToken)
+    {
+        var session = _assetSession ?? throw new InvalidOperationException("离线测试没有 Core 会话。");
+        return session.ImportStudioAssetAsync(projectId, role, mediaType, data, cancellationToken);
+    }
 
     public static FilmStudioPageViewModel CreateForSmokeTest() => new();
 }
