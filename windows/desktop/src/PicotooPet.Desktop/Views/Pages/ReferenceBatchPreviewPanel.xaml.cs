@@ -10,6 +10,7 @@ namespace PicotooPet.Desktop.Views.Pages;
 public partial class ReferenceBatchPreviewPanel : UserControl
 {
     public event EventHandler? ApprovalsRequested;
+    private string? _observedOutputRoot;
     public ReferenceBatchPreviewPanel() => InitializeComponent();
     public ReferenceBatchPreviewPanel(ReferenceBatchPreviewViewModel viewModel) : this()
     {
@@ -35,6 +36,61 @@ public partial class ReferenceBatchPreviewPanel : UserControl
             OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
         }
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "未能验证所选图片，请检查格式、大小和使用权声明。"); }
+    }
+
+    private async void LoadObservedCandidates_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanLoadObservedCandidates) return;
+        var picker = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "候选清单 (JSON)|candidate_manifest.json|JSON 文件|*.json",
+            Multiselect = false, CheckFileExists = true, Title = "选择本地首帧候选清单"
+        };
+        if (picker.ShowDialog() != true) return;
+        try
+        {
+            await vm.LoadObservedCandidatesAsync(picker.FileName);
+            _observedOutputRoot = null;
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+        }
+        catch (Exception)
+        {
+            _observedOutputRoot = null;
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "候选清单验证失败，未导入任何图片。");
+        }
+    }
+
+    private async void UseObservedCandidate_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanEdit
+            || sender is not Button { Tag: ReferenceObservedCandidate candidate }) return;
+        var licenseDigest = SourceDigestTextBox.Text.Trim();
+        if (licenseDigest.Length != 64)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "本地生成图像请先输入 LICENSED 许可或来源证明的 64 位 SHA-256；不能自动视为 USER_SUPPLIED。");
+            return;
+        }
+        if (_observedOutputRoot is null)
+        {
+            var folder = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "选择当前 ComfyUI Output 根目录（本地只读）"
+            };
+            if (folder.ShowDialog() != true) return;
+            _observedOutputRoot = folder.FolderName;
+        }
+        try
+        {
+            // 01. 用户点击才导入现有快照管线；最终授权仍是独立勾选与审批。
+            await vm.AddObservedCandidateAsync(candidate, _observedOutputRoot, licenseDigest);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+        }
+        catch (Exception)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "候选图像、路径或来源摘要核验失败；未自动提交审批。");
+        }
     }
 
     private void RemoveReference_Click(object sender, RoutedEventArgs e)

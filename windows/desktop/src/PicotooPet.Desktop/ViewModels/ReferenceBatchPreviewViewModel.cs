@@ -10,6 +10,7 @@ using BitmapDecoder = Windows.Graphics.Imaging.BitmapDecoder;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Production;
+using PicotooPet.Desktop.Services;
 using PicotooPet.ReferencePreview.Codecs;
 
 namespace PicotooPet.Desktop.ViewModels;
@@ -18,6 +19,10 @@ public sealed record ReferencePreviewItem(string ShotId, string Sha256, long Byt
     string InputRelativePath, string SourceReference, string SourceDigest, BitmapSource Preview);
 
 public sealed record ReferenceKeyframeInstruction(string ShotId, string StillPrompt, string ReviewChecklist);
+
+// 只读候选是历史输出观测，不是 Producer 授权、身份资产或使用许可。
+public sealed record ReferenceObservedCandidate(string ShotId, string OutputRelativePath,
+    string Sha256, long Bytes, int Width, int Height, string PromptId);
 
 /// <summary>Local preview and explicit request for existing Core approvals; never grants execution permission.</summary>
 public sealed class ReferenceBatchPreviewViewModel : ObservableObject
@@ -30,6 +35,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     private readonly bool _requiresFullV2Batch;
     private readonly bool _p0PlanCandidate;
     private readonly string _creativeJobId;
+    private readonly string _keyframeKitDigest;
     private readonly Dictionary<string, (ReferencePreviewSnapshot Snapshot, ReferencePreviewItem Item)> _snapshots = new(StringComparer.Ordinal);
     private ReferenceBatchRequest? _frozenRequest;
     private ReferenceBatchReceipt? _initialReceipt;
@@ -86,6 +92,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         }
         _requiresFullV2Batch = v2Candidate;
         _creativeJobId = package.CreativeJobId;
+        _keyframeKitDigest = v2Candidate ? Text(kit, "kit_digest") : string.Empty;
         // 01. P0 完整计划只涵盖三镜头、四秒、横屏的已封存候选。
         KeyframeInstructions = v2Candidate ? ReadKeyframeInstructions(stages, eligible)
             : Array.Empty<ReferenceKeyframeInstruction>();
@@ -107,6 +114,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public string CreativePackageId { get; }
     public string CreativePackageDigest { get; }
     public ObservableCollection<ReferencePreviewItem> Items { get; } = new();
+    public ObservableCollection<ReferenceObservedCandidate> ObservedCandidates { get; } = new();
     public string[] EligibleShots { get; }
     public IReadOnlyList<ReferenceKeyframeInstruction> KeyframeInstructions { get; }
     public bool UserConfirmsPreviewAndRights
@@ -120,6 +128,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     }
     public bool IsBusy => Volatile.Read(ref _operation) != 0;
     public bool CanEdit => !IsBusy && _frozenRequest is null;
+    public bool CanLoadObservedCandidates => CanEdit && _p0PlanCandidate;
     public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
         && (!_requiresFullV2Batch || Items.Count == _eligibleShots.Count);
     public bool CanRefresh => !IsBusy && _initialReceipt is not null;
@@ -134,6 +143,151 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         && receipt.References.Length == 3 && CreatedProductionJob is null;
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
     public ReferenceBatchReceipt? Receipt { get => _receipt; private set => SetProperty(ref _receipt, value); }
+
+    // 01. 校验本地候选清单的完整身份；只显示元数据，绝不自动 Stage 或批准。
+    public async Task LoadObservedCandidatesAsync(string manifestPath, CancellationToken cancellationToken = default)
+    {
+        if (!CanLoadObservedCandidates) throw new InvalidDataException("KEYFRAME_OBSERVATION_NOT_ELIGIBLE");
+        if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
+        try
+        {
+            var info = new FileInfo(manifestPath);
+            if (!info.Exists || info.Length is <= 0 or > 1024 * 1024)
+                throw new InvalidDataException("KEYFRAME_CANDIDATE_MANIFEST_SIZE_INVALID");
+            var raw = await File.ReadAllBytesAsync(manifestPath, cancellationToken);
+            if (raw.LongLength != info.Length)
+                throw new InvalidDataException("KEYFRAME_CANDIDATE_MANIFEST_CHANGED");
+            using var document = JsonDocument.Parse(raw, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = false,
+                CommentHandling = JsonCommentHandling.Disallow,
+                MaxDepth = 24
+            });
+            var root = document.RootElement;
+            RequireDistinctJsonProperties(root);
+            if (Text(root, "schema") != "picotoo.local-keyframe-output-candidates.v1"
+                || Text(root, "creative_package_id") != CreativePackageId
+                || Text(root, "creative_package_sha256") != CreativePackageDigest
+                || Text(root, "keyframe_kit_digest") != _keyframeKitDigest
+                || !Bool(root, "recorded_image_bytes_observed")
+                || Bool(root, "candidate_files_staged") || Bool(root, "reference_approved")
+                || Bool(root, "source_rights_confirmed")
+                || Number(root, "gpu_post") != 0
+                || Text(root, "review_status") != "NEEDS_HUMAN_REVIEW"
+                || !root.TryGetProperty("shots", out var shots)
+                || shots.ValueKind != JsonValueKind.Array || shots.GetArrayLength() != 3)
+                throw new InvalidDataException("KEYFRAME_OBSERVATION_CONTEXT_INVALID");
+            var parsed = new List<ReferenceObservedCandidate>();
+            var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var index = 0;
+            foreach (var shot in shots.EnumerateArray())
+            {
+                var shotId = Text(shot, "shot_id");
+                if (shotId != EligibleShots[index] || Number(shot, "order") != index + 1
+                    || !IsDigest(Text(shot, "prepared_graph_sha256"))
+                    || !IsIdentifier(Text(shot, "prompt_id"))
+                    || !shot.TryGetProperty("selected_reference", out var selected)
+                    || selected.ValueKind != JsonValueKind.Null
+                    || !shot.TryGetProperty("candidates", out var candidates)
+                    || candidates.ValueKind != JsonValueKind.Array
+                    || candidates.GetArrayLength() is < 1 or > 32)
+                    throw new InvalidDataException("KEYFRAME_OBSERVATION_SHOT_INVALID");
+                foreach (var item in candidates.EnumerateArray())
+                {
+                    var relative = Text(item, "output_relative_path");
+                    var digest = Text(item, "sha256");
+                    var bytes = Number(item, "bytes");
+                    var width = Number(item, "width");
+                    var height = Number(item, "height");
+                    if (!SafeObservedRelativePath(relative) || !seenPaths.Add(relative)
+                        || !IsDigest(digest) || bytes is <= 0 or > ReferencePreviewSnapshotStager.MaxBytes
+                        || width is < 1 or > 8192 || height is < 1 or > 8192
+                        || !Bool(item, "image_container_crc_verified")
+                        || Bool(item, "pixels_decoded") || Text(item, "visual_review") != "UNREVIEWED")
+                        throw new InvalidDataException("KEYFRAME_OBSERVATION_IMAGE_INVALID");
+                    parsed.Add(new(shotId, relative, digest, bytes, (int)width, (int)height,
+                        Text(shot, "prompt_id")));
+                }
+                index++;
+            }
+            ObservedCandidates.Clear();
+            foreach (var observed in parsed) ObservedCandidates.Add(observed);
+            StatusText = "已读取本地首帧候选清单；图片尚未选择、授权或导入，请逐张核验。";
+        }
+        catch
+        {
+            ObservedCandidates.Clear();
+            StatusText = "候选清单未通过核验，未导入参考图或发送审批。";
+            throw;
+        }
+        finally { Exit(); }
+    }
+
+    // 02. 用户明确选择一张本地生成图片，并提供许可摘要时，才调用已有可信快照管线。
+    public async Task AddObservedCandidateAsync(ReferenceObservedCandidate observed,
+        string comfyOutputRoot, string licensedSourceDigest, CancellationToken cancellationToken = default)
+    {
+        if (!CanEdit || observed is null || !ObservedCandidates.Contains(observed)
+            || !IsDigest(licensedSourceDigest) || !Path.IsPathFullyQualified(comfyOutputRoot))
+            throw new InvalidDataException("KEYFRAME_OBSERVED_RIGHTS_OR_SCOPE_REQUIRED");
+        var path = ProductionLocalEnvironment.ResolveUnderRoot(
+            comfyOutputRoot, observed.OutputRelativePath, true);
+        ProductionLocalEnvironment.AssertNoLinkEscape(comfyOutputRoot, path);
+        if (!ProductionLocalEnvironment.IsOrdinaryFile(path)
+            || new FileInfo(path).Length != observed.Bytes
+            || await ProductionLocalEnvironment.Sha256FileAsync(path, cancellationToken) != observed.Sha256)
+            throw new InvalidDataException("KEYFRAME_OBSERVED_IMAGE_CHANGED");
+        await AddAsync(observed.ShotId, path, "LICENSED", licensedSourceDigest, cancellationToken);
+        var selected = Items.SingleOrDefault(x => x.ShotId == observed.ShotId);
+        if (selected is null || selected.Sha256 != observed.Sha256 || selected.Bytes != observed.Bytes)
+        {
+            Remove(observed.ShotId);
+            throw new InvalidDataException("KEYFRAME_OBSERVED_SNAPSHOT_MISMATCH");
+        }
+        // 03. 保持勾选框默认未确认，等待独立的预览和许可确认。
+    }
+
+    private static long Number(JsonElement element, string key)
+    {
+        if (!element.TryGetProperty(key, out var value)
+            || value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out var parsed))
+            throw new InvalidDataException("KEYFRAME_OBSERVATION_FIELD_INVALID");
+        return parsed;
+    }
+
+    private static bool Bool(JsonElement element, string key)
+    {
+        if (!element.TryGetProperty(key, out var value)
+            || value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new InvalidDataException("KEYFRAME_OBSERVATION_FIELD_INVALID");
+        return value.GetBoolean();
+    }
+
+    private static bool SafeObservedRelativePath(string value) =>
+        value is { Length: >= 1 and <= 240 }
+        && !value.StartsWith('/', StringComparison.Ordinal)
+        && !value.Contains('\\') && !value.Contains(':')
+        && value.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+        && value.Split('/').All(part => part.Length is >= 1 and <= 100
+            && part is not ("." or "..") && !part.EndsWith(' ') && !part.EndsWith('.')
+            && part.All(ch => ch >= ' ' && ch != '\u007f'));
+
+    private static void RequireDistinctJsonProperties(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var field in element.EnumerateObject())
+            {
+                if (!names.Add(field.Name)) throw new InvalidDataException("KEYFRAME_JSON_DUPLICATE_KEY");
+                RequireDistinctJsonProperties(field.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray()) RequireDistinctJsonProperties(item);
+        }
+    }
 
     public async Task AddAsync(string shotId, string sourcePath, string sourceReference, string? sourceDigest,
         CancellationToken cancellationToken = default)
@@ -381,6 +535,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     {
         RaisePropertyChanged(nameof(IsBusy));
         RaisePropertyChanged(nameof(CanEdit));
+        RaisePropertyChanged(nameof(CanLoadObservedCandidates));
         RaisePropertyChanged(nameof(CanSubmit));
         RaisePropertyChanged(nameof(CanRefresh));
         RaisePropertyChanged(nameof(CanCreateReviewedPlan));

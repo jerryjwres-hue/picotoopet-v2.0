@@ -52,6 +52,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.True(panel.FindName("SourceComboBox") is ComboBox, "Explicit source declaration is missing");
         SmokeAssert.True(panel.FindName("SourceDigestTextBox") is TextBox, "Licensed-source digest input is missing");
         SmokeAssert.True(panel.FindName("ChooseReferenceButton") is Button, "Native file selection is missing");
+        SmokeAssert.True(panel.FindName("LoadObservedCandidatesButton") is Button,
+            "Read-only Comfy candidate list import is missing");
+        SmokeAssert.True(panel.FindName("ObservedCandidatesList") is ItemsControl,
+            "Observed candidates cannot be reviewed in the existing UI");
         SmokeAssert.True(panel.FindName("PreviewItems") is ItemsControl, "Real reference preview list is missing");
         var consent = panel.FindName("ConsentCheckBox") as CheckBox
             ?? throw new InvalidOperationException("Explicit preview and rights consent is missing");
