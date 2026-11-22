@@ -130,3 +130,55 @@ def prepare_scoped_story_goal(payload: ScopedStoryGoalRequest, services) -> tupl
         "owner_evidence": matched,
     }
     return proposal, binding
+
+
+def reverify_scoped_story_assets(database, objects_dir, binding: dict) -> None:
+    """Check the submitted assets again before each trusted creative execution."""
+    # Existing unscoped Goals are handled by the caller, never by a fallback here.
+    if not isinstance(binding, dict) or binding.get("schema") != (
+        "picotoo.storypack.scoped-goal-binding.v1"
+    ):
+        raise ValueError("STORY_GOAL_ASSET_SCOPE_INVALID")
+    assets = binding.get("assets")
+    project_id = binding.get("project_id")
+    if not isinstance(assets, dict) or set(assets) != {"character", "scene", "style"}:
+        raise ValueError("STORY_GOAL_ASSET_SCOPE_INVALID")
+    if not isinstance(project_id, str) or not project_id:
+        raise ValueError("STORY_GOAL_ASSET_SCOPE_INVALID")
+    project = database.fetchone(
+        "SELECT status FROM projects WHERE project_id=?", (project_id,)
+    )
+    if project is None or project["status"] != "Active":
+        raise ValueError("STORY_GOAL_PROJECT_UNAVAILABLE")
+
+    refs = []
+    for asset in assets.values():
+        if (
+            not isinstance(asset, dict)
+            or not isinstance(asset.get("artifact_id"), str)
+            or not isinstance(asset.get("sha256"), str)
+        ):
+            raise ValueError("STORY_GOAL_ASSET_SCOPE_INVALID")
+        refs.append(asset["artifact_id"])
+    if len(set(refs)) != 3:
+        raise ValueError("STORY_GOAL_ASSET_SCOPE_INVALID")
+
+    checked = {
+        item["ref"]: item for item in inspect_recorded_asset_refs(
+            database, refs, managed_objects_dir=objects_dir
+        )
+    }
+    for role, asset in assets.items():
+        ref = asset["artifact_id"]
+        row = database.fetchone(
+            "SELECT project_id, artifact_type, cloud_policy FROM artifacts WHERE artifact_id=?",
+            (ref,),
+        )
+        if (
+            row is None or row["project_id"] != project_id
+            or row["artifact_type"] != f"storypack_{role}"
+            or row["cloud_policy"] != "local_only"
+            or checked[ref]["recorded_sha256"] != asset["sha256"]
+            or checked[ref]["content_integrity_verified"] is not True
+        ):
+            raise ValueError("STORY_GOAL_PINNED_ASSET_CHANGED")
