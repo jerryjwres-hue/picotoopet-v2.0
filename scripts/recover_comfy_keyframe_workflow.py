@@ -193,20 +193,31 @@ def export_candidate(directory: Path, data: bytes, manifest: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--prompt-id", required=True)
+    parser.add_argument("--prompt-id")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--history-file", type=Path)
     source.add_argument("--live-history", action="store_true")
+    source.add_argument("--png-file", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        prompt_identity(args.prompt_id)
-        if args.history_file is not None:
-            with args.history_file.open("rb") as stream:
-                raw = stream.read(MAX_HISTORY_BYTES + 1)
+        if args.png_file is not None:
+            if args.prompt_id is not None:
+                raise ValueError("PNG_EMBEDDED_NO_HISTORY_ID")
+            # Source is one explicit existing PNG: never manufacture a
+            # synthetic success or history entry from embedded metadata.
+            from scripts.comfy_png_embedded_evidence import recover_png_file
+            data, manifest = recover_png_file(args.png_file)
         else:
-            raw = fetch_history(args.prompt_id)
-        data, manifest = recover(parse_history(raw), args.prompt_id)
+            if args.prompt_id is None:
+                raise ValueError("HISTORY_PROMPT_ID_REQUIRED")
+            prompt_identity(args.prompt_id)
+            if args.history_file is not None:
+                with args.history_file.open("rb") as stream:
+                    raw = stream.read(MAX_HISTORY_BYTES + 1)
+            else:
+                raw = fetch_history(args.prompt_id)
+            data, manifest = recover(parse_history(raw), args.prompt_id)
         export_candidate(args.output_dir, data, manifest)
     except (ValueError, OSError, TypeError, RecursionError, OverflowError):
         # No paths, prompt bodies or private filenames are printed into logs.
