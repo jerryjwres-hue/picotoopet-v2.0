@@ -129,7 +129,9 @@ class OwnerStructuredReviewPreviewRequest(_Strict):
     proposal_digest: str = Field(pattern=_DIGEST)
     decisions: list[OwnerStructuredFieldDecision] = Field(max_length=64)
     story_policy_opt_in: Literal["static-pet-story-v1.0.0", "dynamic-pet-feeding-v1.0.0"] | None = None
-    confirmed_motion_digest: str | None = Field(default=None, pattern=_DIGEST)
+    confirmed_motion_digest: str | None = Field(
+        default=None, pattern=_DIGEST, exclude_if=lambda value: value is None,
+    )
 
     @model_validator(mode="after")
     def unique_fields(self) -> OwnerStructuredReviewPreviewRequest:
@@ -174,7 +176,9 @@ class OwnerStructuredReviewProposal(_Strict):
     source_evidence: tuple[OwnerEvidenceSummary, ...]
     fields: dict[str, OwnerStructuredFieldProposal]
     proposal_digest: str = Field(pattern=_DIGEST)
-    dynamic_motion_proposal: dict[str, Any] | None = None
+    dynamic_motion_proposal: dict[str, Any] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
 
 
 class OwnerStructuredReviewPreview(_Strict):
@@ -192,7 +196,9 @@ class OwnerStructuredReviewPreview(_Strict):
     reason_codes: tuple[str, ...]
     state_facts: StateFactsV1 | None
     model_calls: Literal[0] = 0
-    confirmed_motion_digest: str | None = Field(default=None, pattern=_DIGEST)
+    confirmed_motion_digest: str | None = Field(
+        default=None, pattern=_DIGEST, exclude_if=lambda value: value is None,
+    )
     story_policy_opt_in: Literal["static-pet-story-v1.0.0", "dynamic-pet-feeding-v1.0.0"] | None = None
 
 
@@ -259,7 +265,9 @@ class _Snapshot(_Strict):
     source_revision_digest: str
     evidence: tuple[OwnerEvidenceSummary, ...]
     candidates: tuple[_EvidenceCandidate, ...]
-    dynamic_motion_proposal: dict[str, Any] | None = None
+    dynamic_motion_proposal: dict[str, Any] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
 
 
 class OwnerStructuredReviewService:
