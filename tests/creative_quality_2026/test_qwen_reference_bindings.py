@@ -151,6 +151,87 @@ class QwenBindingsTests(unittest.TestCase):
             self.assertEqual(original["3"], graph["3"])
             self.assertEqual(graph["7"]["inputs"]["image"], "REF_DOG_A_001.jpg")
 
+    def test_observed_node_layout_1_2_3_load_7_8_prompt_12_sample_14_save(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, recovery, bindings, package = qwen_fixture(root)
+            # 03. Match the node identities verified in the six real PNGs,
+            #     while keeping test bytes synthetic and GPU-free.
+            jpeg1, jpeg2 = jpeg(9), jpeg(10)
+            (root / "REF_DOG_A_001.jpg").write_bytes(jpeg1)
+            (root / "REF_DOG_A_002.jpg").write_bytes(jpeg2)
+            graph = {
+                "1": {"class_type": "LoadImage", "inputs": {"image": "old-composition.png"}},
+                "2": {"class_type": "LoadImage", "inputs": {"image": "REF_DOG_A_001.jpg"}},
+                "3": {"class_type": "LoadImage", "inputs": {"image": "REF_DOG_A_002.jpg"}},
+                "4": {"class_type": "UNETLoader", "inputs": {
+                    "unet_name": "qwen_image_edit_2511_fp8mixed.safetensors",
+                }},
+                "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {
+                    "prompt": "initial positive",
+                    "image1": ["1", 0], "image2": ["2", 0], "image3": ["3", 0],
+                }},
+                "8": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {
+                    "prompt": "frozen negative",
+                }},
+                "12": {"class_type": "KSampler", "inputs": {
+                    "seed": 99, "model": ["4", 0], "positive": ["7", 0],
+                    "negative": ["8", 0],
+                }},
+                "14": {"class_type": "SaveImage", "inputs": {
+                    "filename_prefix": "PVP", "images": ["12", 0],
+                }},
+            }
+            bindings["positive_prompt"] = {
+                "node_id": "7", "class_type": "TextEncodeQwenImageEditPlus",
+                "input_name": "prompt",
+            }
+            bindings["seed"] = {"node_id": "12", "class_type": "KSampler",
+                                 "input_name": "seed"}
+            bindings["output_prefix"] = {"node_id": "14", "class_type": "SaveImage",
+                                          "input_name": "filename_prefix"}
+            def evidence(name: str, raw: bytes) -> dict:
+                # 04. Every image slot is pinned to exact bytes; never infer
+                #     rights, visual quality, or missing future composition.
+                return {"filename": name, "sha256": hashlib.sha256(raw).hexdigest(),
+                        "bytes": len(raw)}
+
+            bindings["reference_images"] = [
+                {"node_id": "1", "class_type": "LoadImage", "input_name": "image",
+                 "mode": "per_shot", "files": [
+                     {"shot_id": f"shot-{i}",
+                      **evidence(f"s0{i}-composition.png",
+                                 (root / f"s0{i}-composition.png").read_bytes())}
+                     for i in (1, 2, 3)
+                 ]},
+                {"node_id": "2", "class_type": "LoadImage", "input_name": "image",
+                 "mode": "fixed", "file": evidence("REF_DOG_A_001.jpg", jpeg1)},
+                {"node_id": "3", "class_type": "LoadImage", "input_name": "image",
+                 "mode": "fixed", "file": evidence("REF_DOG_A_002.jpg", jpeg2)},
+            ]
+            recovery["graph_sha256"] = sha(
+                json.dumps(graph, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            )
+            bindings["graph_sha256"] = recovery["graph_sha256"]
+            original = copy.deepcopy(graph)
+            files, report = prepare(graph, recovery, bindings, package, "a" * 64, 0, root)
+            self.assertEqual(len(files), 3)
+            self.assertEqual(len(report["reference_inputs"]), 3)
+            for number, shot in enumerate(report["shots"], 1):
+                prepared = json.loads(files[shot["graph_file"]])
+                self.assertEqual(prepared["7"]["inputs"]["prompt"], f"Opening state {number}")
+                self.assertEqual(prepared["8"], original["8"])
+                self.assertEqual(prepared["1"]["inputs"]["image"],
+                                 f"s0{number}-composition.png")
+                self.assertEqual(prepared["2"]["inputs"]["image"], "REF_DOG_A_001.jpg")
+                self.assertEqual(prepared["3"]["inputs"]["image"], "REF_DOG_A_002.jpg")
+                self.assertEqual(prepared["4"], original["4"])
+                self.assertEqual(prepared["12"]["inputs"]["negative"],
+                                 original["12"]["inputs"]["negative"])
+            self.assertEqual(graph, original)
+            self.assertFalse(report["source_inputs_verified"])
+            self.assertFalse(report["production_authorized"])
+
     def test_renamed_png_corrupt_jpeg_and_jpeg_symlink_denied(self):
         from qwen_reference_bindings import _verify, jpeg_dimensions
 
