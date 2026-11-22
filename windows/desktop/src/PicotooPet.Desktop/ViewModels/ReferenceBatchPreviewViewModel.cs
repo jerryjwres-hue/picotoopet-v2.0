@@ -254,6 +254,13 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 || !root.TryGetProperty("shots", out var shots)
                 || shots.ValueKind != JsonValueKind.Array || shots.GetArrayLength() != 3)
                 throw new InvalidDataException("KEYFRAME_OBSERVATION_CONTEXT_INVALID");
+            // 01. PNG-embedded historyless evidence never receives a fake UUID.
+            //     Only exact graph-bound offline bytes can reach human review.
+            var provenance = Text(root, "history_provenance");
+            var embedded = provenance == "PNG_EMBEDDED_NO_HISTORY";
+            if (provenance is not ("" or "PNG_EMBEDDED_NO_HISTORY")
+                || (embedded && Bool(root, "comfy_history_success_verified")))
+                throw new InvalidDataException("KEYFRAME_OBSERVATION_PROVENANCE_INVALID");
             var parsed = new List<ReferenceObservedCandidate>();
             var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var seenDigests = new HashSet<string>(StringComparer.Ordinal);
@@ -263,9 +270,13 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             {
                 var shotId = Text(shot, "shot_id");
                 var promptId = Text(shot, "prompt_id");
+                if (!shot.TryGetProperty("prompt_id", out var promptValue)
+                    || (embedded
+                        ? promptValue.ValueKind != JsonValueKind.Null
+                        : !IsIdentifier(promptId) || !seenPrompts.Add(promptId)))
+                    throw new InvalidDataException("KEYFRAME_OBSERVATION_HISTORY_ID_INVALID");
                 if (shotId != EligibleShots[index] || Number(shot, "order") != index + 1
                     || !IsDigest(Text(shot, "prepared_graph_sha256"))
-                    || !IsIdentifier(promptId) || !seenPrompts.Add(promptId)
                     || !shot.TryGetProperty("selected_reference", out var selected)
                     || selected.ValueKind != JsonValueKind.Null
                     || !shot.TryGetProperty("candidates", out var candidates)
@@ -285,6 +296,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                         || width is < 1 or > 8192 || height is < 1 or > 8192
                         || width * height > 16_000_000
                         || !Bool(item, "image_container_crc_verified")
+                        || (embedded && !Bool(item, "embedded_prompt_graph_verified"))
                         || Bool(item, "pixels_decoded") || Text(item, "visual_review") != "UNREVIEWED")
                         throw new InvalidDataException("KEYFRAME_OBSERVATION_IMAGE_INVALID");
                     parsed.Add(new(shotId, relative, digest, bytes, (int)width, (int)height,
@@ -294,7 +306,9 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             }
             ObservedCandidates.Clear();
             foreach (var observed in parsed) ObservedCandidates.Add(observed);
-            StatusText = "已读取本地首帧候选清单；图片尚未选择、授权或导入，请逐张核验。";
+            StatusText = embedded
+                ? "已核验无历史 Prompt ID 的 PNG 内嵌图合同；未认证运行成功，仍需人工审片和许可。"
+                : "已读取本地首帧候选清单；图片尚未选择、授权或导入，请逐张核验。";
         }
         catch
         {

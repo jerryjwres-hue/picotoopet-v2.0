@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -345,6 +346,36 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             await RejectAsync(() => vm.LoadObservedCandidatesAsync(alteredFile));
             SmokeAssert.Equal(0, vm.ObservedCandidates.Count, "Failed manifest must clear untrusted observations");
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Observed candidate path must not call Core");
+
+            // 05. Comfy PNG metadata must never invent a Prompt ID or claim
+            //     a successful historical job when /history has been cleared.
+            var embedded = JsonNode.Parse(JsonSerializer.Serialize(observedManifest))!.AsObject();
+            embedded["history_provenance"] = "PNG_EMBEDDED_NO_HISTORY";
+            embedded["comfy_history_success_verified"] = false;
+            foreach (var shot in embedded["shots"]!.AsArray())
+            {
+                shot!["prompt_id"] = null;
+                foreach (var image in shot["candidates"]!.AsArray())
+                    image!["embedded_prompt_graph_verified"] = true;
+            }
+            var embeddedPath = Path.Combine(root, "historyless-candidate.json");
+            await File.WriteAllTextAsync(embeddedPath, embedded.ToJsonString());
+            await vm.LoadObservedCandidatesAsync(embeddedPath);
+            SmokeAssert.Equal(3, vm.ObservedCandidates.Count,
+                "Exact embedded graph evidence should retain three unapproved candidates");
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.PromptId.Length == 0),
+                "Missing historical Prompt ID must never be fabricated");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "PNG metadata may not POST an approval");
+            embedded["comfy_history_success_verified"] = true;
+            await File.WriteAllTextAsync(embeddedPath, embedded.ToJsonString());
+            await RejectAsync(() => vm.LoadObservedCandidatesAsync(embeddedPath));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "Forged Comfy historical success must fail closed");
+            embedded["comfy_history_success_verified"] = false;
+            embedded["shots"]![0]!["candidates"]![0]!["embedded_prompt_graph_verified"] = false;
+            await File.WriteAllTextAsync(embeddedPath, embedded.ToJsonString());
+            await RejectAsync(() => vm.LoadObservedCandidatesAsync(embeddedPath));
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Unverified embedded graph may not write Core");
 
             await vm.AddAsync("shot-1", source, "USER_SUPPLIED", null);
             vm.UserConfirmsPreviewAndRights = true;

@@ -142,6 +142,20 @@ def prepare(graph: dict, recovery: dict, bindings: dict, package: dict,
         or recovery.get("gpu_post") != 0
         or not 1 <= len(graph) <= 512):
         raise ValueError("KEYFRAME_RECOVERY_MISMATCH")
+    # 04. Source class cannot be upgraded by changing an untrusted manifest
+    #     label: historyless PNG remains historyless and needs its exact
+    #     observed PNG digest plus structural CRC evidence.
+    if recovery["history_status"] == "PNG_EMBEDDED_NO_HISTORY":
+        if (recovery.get("prompt_id") is not None
+            or recovery.get("source_kind") != "COMFY_PNG_TEXt_PROMPT"
+            or not recovery.get("source_image_container_crc_verified") is True
+            or not isinstance(recovery.get("source_image_sha256"), str)
+            or len(recovery["source_image_sha256"]) != 64
+            or any(ch not in "0123456789abcdef"
+                   for ch in recovery["source_image_sha256"])):
+            raise ValueError("KEYFRAME_EMBEDDED_PROVENANCE_INVALID")
+    elif recovery.get("source_kind") == "COMFY_PNG_TEXt_PROMPT":
+        raise ValueError("KEYFRAME_HISTORY_PROVENANCE_CONFLICT")
     if (type(variant) is not int or not 0 <= variant <= 10000
         or bindings.get("schema") != "picotoo.local-keyframe-slot-map.v1"
         or bindings.get("graph_sha256") != graph_sha

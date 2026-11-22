@@ -48,6 +48,9 @@ class EmbeddedPngTests(unittest.TestCase):
         self.assertEqual(manifest["history_status"], "PNG_EMBEDDED_NO_HISTORY")
         self.assertIsNone(manifest["prompt_id"])
         self.assertTrue(manifest["source_image_container_crc_verified"])
+        self.assertIn("prompt", next(x for x in manifest["node_inventory"]
+                                    if x["class_type"] == "TextEncodeQwenImageEditPlus")
+                      ["candidate_input_slots"])
         for key in ("production_authorized", "workflow_registered", "model_bytes_verified",
                     "binding_reviewed", "image_pixels_decoded"):
             self.assertFalse(manifest[key])
