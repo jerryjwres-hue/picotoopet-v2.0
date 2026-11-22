@@ -10,9 +10,11 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from picotoopet_core.config import AppSettings, RuntimePaths
 from picotoopet_core.db.database import CURRENT_SCHEMA_VERSION, Database
 from picotoopet_core.domain.enums import TaskStatus
 from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepository
+from picotoopet_core.services import build_services
 from picotoopet_core.worker.handlers import default_handlers
 
 UNSUPPORTED = "phase2.link.acceptance"
@@ -78,13 +80,22 @@ def test_existing_mac_24_backlog_reopens_without_replaying_old_tasks(tmp_path: P
     # 03. Simulate the earlier Mac installation, then make a consistent offline
     #     SQLite backup before exercising candidate code on that backup only.
     baseline = tmp_path / "synthetic-mac-baseline.db"
-    snapshot = tmp_path / "isolated-upgrade-copy.db"
+    candidate_root = tmp_path / "isolated-candidate-runtime"
+    snapshot = candidate_root / "database" / "core.db"
+    snapshot.parent.mkdir(parents=True)
     _build_synthetic_baseline(baseline)
     with sqlite3.connect(baseline) as source, sqlite3.connect(snapshot) as destination:
         source.backup(destination)
 
-    database = Database(snapshot)
-    database.open()
+    # 04. Build the actual candidate Core service graph against only the
+    #     isolated backup copy; this exercises startup schema/ledger behavior.
+    settings = AppSettings(
+        paths=RuntimePaths.from_root(candidate_root),
+        api_token="synthetic-token-never-installed-0001",
+        api_host="127.0.0.1",
+    )
+    services = build_services(settings)
+    database = services.database
     before = _snapshot_state(database)
     assert before["counts"]["tasks"] == QUEUED_COUNT + FAILED_COUNT
     assert before["counts"]["task_attempts"] == 0
@@ -92,11 +103,12 @@ def test_existing_mac_24_backlog_reopens_without_replaying_old_tasks(tmp_path: P
     assert before["counts"]["approvals"] == 0
     assert before["counts"]["production_jobs"] == 0
 
-    # 04. Reapplying Schema 24 and querying Worker capabilities must not
+    # 05. Reapplying Schema 24 and querying Worker capabilities must not
     #     silently turn the legacy link acceptance backlog into runnable jobs.
     assert CURRENT_SCHEMA_VERSION == 24
     database.apply_migrations()
     assert int(database.scalar("SELECT MAX(version) FROM schema_migrations")) == 24
+    assert int(database.scalar("SELECT COUNT(*) FROM canonical_evidence")) == 0
     assert int(database.scalar("PRAGMA user_version")) == 0
     assert database.scalar("PRAGMA quick_check") == "ok"
     handlers = default_handlers()
@@ -122,7 +134,7 @@ def test_existing_mac_24_backlog_reopens_without_replaying_old_tasks(tmp_path: P
     assert int(database.scalar("SELECT COUNT(*) FROM task_attempts")) == 0
     database.close()
 
-    # 05. The simulated original installed baseline is never altered by the
+    # 06. The simulated original installed baseline is never altered by the
     #     candidate copy's migration or Worker validation.
     with sqlite3.connect(f"file:{baseline}?mode=ro", uri=True) as source:
         assert source.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == QUEUED_COUNT + FAILED_COUNT
@@ -132,7 +144,7 @@ def test_existing_mac_24_backlog_reopens_without_replaying_old_tasks(tmp_path: P
 def test_unsupported_type_is_not_claimed_even_if_supported_work_is_present(
     tmp_path: Path,
 ) -> None:
-    # 06. Higher-priority legacy backlog cannot starve or hijack an explicitly
+    # 07. Higher-priority legacy backlog cannot starve or hijack an explicitly
     #     supported task. All legacy rows stay in their original statuses.
     database = Database(tmp_path / "isolated-supported-fixture.db")
     database.open()
