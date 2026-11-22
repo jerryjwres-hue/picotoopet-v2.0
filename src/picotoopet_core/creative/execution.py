@@ -23,7 +23,11 @@ from picotoopet_core.queue.diagnostic_repository import DiagnosticQueueRepositor
 from picotoopet_core.worker.handlers import HandlerResult
 
 from .director import director_constraints, parse_goal_directives, story_gate_applies
-from .dynamic_pet_story import DYNAMIC_PET_POLICY, build_dynamic_motion_proposal
+from .dynamic_pet_story import (
+    DYNAMIC_PET_POLICY,
+    bind_dynamic_bible_proposal,
+    build_dynamic_motion_proposal,
+)
 from .models import (
     CreativeBriefResult,
     CreativeDeepAiHandoffRecord,
@@ -52,6 +56,7 @@ from .state_spine import (
     bind_pet_only_video_bible,
     bound_bible_integrity_findings,
     build_state_spine,
+    _identity_phrase,
     canonical_sha256,
     verify_shot_plan_prompt_locks,
 )
@@ -66,6 +71,8 @@ from .video_bible import (
     KeyframeKitError,
     VideoBible,
     build_keyframe_kit,
+    SceneSpec,
+    SubjectIdentity,
     derive_shot_plan,
     shot_plan_integrity_findings,
 )
@@ -541,6 +548,13 @@ class CreativeIntelligenceCoordinator:
                     finished=True,
                 )
                 return self._summary(job.creative_job_id, CreativeJobStatus.NEEDS_HUMAN)
+        if trusted_pet is not None and trusted_pet.dynamic_pack is not None:
+            # Source scope is immutable; the latest owner review may be withdrawn.
+            if not verify_current_pet_binding(self.database, job, trusted_pet):
+                return self._fail_closed_reused_stage(
+                    job.creative_job_id, CreativeStageKind.VIDEO_BIBLE,
+                    "TRUSTED_DYNAMIC_OWNER_COMMITMENT_CHANGED",
+                )
         previous: dict[str, dict[str, Any]] = {}
         for stage_definition in profile.stages:
             stage_kind = stage_definition.stage_kind
@@ -558,7 +572,20 @@ class CreativeIntelligenceCoordinator:
                 stage_kind,
                 profile_id=profile.profile_id,
             )
-            if trusted_pet is not None and stage_kind is CreativeStageKind.VIDEO_BIBLE:
+            if trusted_pet is not None and trusted_pet.dynamic_pack is not None:
+                if not verify_current_pet_binding(self.database, job, trusted_pet):
+                    return self._fail_closed_reused_stage(
+                        job.creative_job_id, stage_kind, "TRUSTED_DYNAMIC_OWNER_COMMITMENT_CHANGED"
+                    )
+                # The immutable stage input includes the reviewed motion and exact facts.
+                # Script and Bible are deterministic; idea and brief retain local model use.
+                context["trusted_dynamic_story"] = {
+                    "commitment_id": trusted_pet.commitment_id,
+                    "review_digest": trusted_pet.review_digest,
+                    "facts_digest": trusted_pet.facts.facts_digest,
+                    "motion": build_dynamic_motion_proposal(trusted_pet.dynamic_pack),
+                }
+            elif trusted_pet is not None and stage_kind is CreativeStageKind.VIDEO_BIBLE:
                 spine = build_state_spine(
                     trusted_pet.facts,
                     ["BLINK_AND_REOPEN", "SUBTLE_BREATHING", "SUBTLE_BREATHING"],
@@ -593,6 +620,23 @@ class CreativeIntelligenceCoordinator:
                 problem = self._completed_stage_problem(
                     stage_kind, stage.result, previous, source_set, profile.profile_id
                 )
+                if problem is None and trusted_pet is not None and trusted_pet.dynamic_pack is not None:
+                    if stage_kind in {CreativeStageKind.SCRIPT, CreativeStageKind.VIDEO_BIBLE}:
+                        try:
+                            expected = self._dynamic_stage_payload(
+                                stage_kind, trusted_pet, source_set, previous,
+                            )
+                            decision, parsed = self.quality.evaluate(
+                                stage_kind=stage_kind, profile=profile, source_set=source_set,
+                                previous_stages=previous, raw_result=expected,
+                                objective=job.creative_objective,
+                            )
+                            if (decision.outcome is not CreativeQualityOutcome.PASS
+                                or parsed is None
+                                or parsed.model_dump(mode="json") != stage.result):
+                                problem = "CREATIVE_COMPLETED_DYNAMIC_STAGE_MISMATCH"
+                        except (KeyError, ValueError, TypeError):
+                            problem = "CREATIVE_COMPLETED_DYNAMIC_STAGE_INVALID"
                 if problem is not None:
                     return self._fail_closed_reused_stage(job.creative_job_id, stage_kind, problem)
                 previous[stage_kind.value] = stage.result
@@ -658,7 +702,11 @@ class CreativeIntelligenceCoordinator:
                     finished=True,
                 )
                 return self._summary(job.creative_job_id, CreativeJobStatus.REJECTED)
-            local_only = self._local_only_failure(profile.profile_id, stage_kind)
+            local_only = (
+                "CREATIVE_DYNAMIC_LOCAL_REVIEW_REQUIRED"
+                if trusted_pet is not None and trusted_pet.dynamic_pack is not None
+                else self._local_only_failure(profile.profile_id, stage_kind)
+            )
             if local_only is not None:
                 self.repository.update_stage(
                     stage.stage_run_id,
@@ -687,6 +735,32 @@ class CreativeIntelligenceCoordinator:
             )
 
         self._attach_keyframe_kit(job.creative_objective, previous)
+        if trusted_pet is not None and trusted_pet.dynamic_pack is not None:
+            # A dynamic film never silently degrades to an unanchored T2V package.
+            if (KEYFRAME_KIT_STAGE_KEY not in previous
+                or not verify_current_pet_binding(self.database, job, trusted_pet)):
+                return self._fail_closed_reused_stage(
+                    job.creative_job_id, CreativeStageKind.VIDEO_BIBLE,
+                    "CREATIVE_DYNAMIC_KEYFRAME_OR_REVIEW_MISSING",
+                )
+            try:
+                reverify_scoped_story_assets(
+                    self.database, self.store.paths.objects_dir, constraints["storypack_binding"],
+                )
+            except ValueError as error:
+                return self._fail_closed_reused_stage(
+                    job.creative_job_id, CreativeStageKind.VIDEO_BIBLE, str(error),
+                )
+            # Durable marker is a plan review, NOT a reference/production permission.
+            previous["dynamic_story_review.v1"] = {
+                "policy": DYNAMIC_PET_POLICY,
+                "motion_digest": build_dynamic_motion_proposal(trusted_pet.dynamic_pack)["motion_digest"],
+                "commitment_id": trusted_pet.commitment_id,
+                "review_digest": trusted_pet.review_digest,
+                "facts_digest": trusted_pet.facts.facts_digest,
+                "reference_approval_required": True,
+                "render_authorized": False,
+            }
         return self._finish_package(job.creative_job_id, source_set, previous, profile)
 
     @staticmethod
@@ -769,6 +843,11 @@ class CreativeIntelligenceCoordinator:
         profile,  # type: ignore[no-untyped-def]
         trusted_pet: TrustedPetCreativeBinding | None = None,
     ) -> tuple[dict[str, Any] | None, CreativeQualityOutcome, dict[str, Any], list[str]]:
+        if (trusted_pet is not None and trusted_pet.dynamic_pack is not None
+            and stage_definition.stage_kind in {CreativeStageKind.SCRIPT, CreativeStageKind.VIDEO_BIBLE}):
+            return self._run_dynamic_stage(
+                stage, stage_definition, source_set, previous, context, profile, trusted_pet,
+            )
         if stage_definition.executor == "DERIVED":
             return self._run_derived(
                 stage=stage,
@@ -877,6 +956,110 @@ class CreativeIntelligenceCoordinator:
             last_raw,
             ["CREATIVE_STAGE_ATTEMPT_BUDGET_EXHAUSTED"],
         )
+
+    @staticmethod
+    def _dynamic_stage_payload(
+        stage_kind: CreativeStageKind,
+        binding: TrustedPetCreativeBinding,
+        source_set: NormalizedCreativeSourceSet,
+        previous: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Compile only owner-reviewed immutable motion; no extra model call."""
+        pack = binding.dynamic_pack
+        if pack is None or binding.story_policy_opt_in != DYNAMIC_PET_POLICY:
+            raise ValueError("CREATIVE_DYNAMIC_BINDING_REQUIRED")
+        motion = build_dynamic_motion_proposal(pack)
+        facts = binding.facts
+        if stage_kind is CreativeStageKind.SCRIPT:
+            # Preserve the exact dominant action plus opening/closing state in each beat.
+            return CreativeScriptResult.model_validate({
+                "schema_version": "1.0",
+                "creative_profile": "creative.content_plan.v1",
+                "script_id": "dynamic-" + motion["motion_digest"][:20],
+                "title": pack.title[:180],
+                "target_duration_seconds": 12,
+                "cta_beat_id": "beat-3",
+                "beats": [
+                    {
+                        "beat_id": f"beat-{index}",
+                        "order": index,
+                        "duration_seconds": 4,
+                        "visual_intent": (
+                            item["visible_action"] + "; opens on " + item["opening_state"]
+                            + "; ends on " + item["closing_state"]
+                        ),
+                        "claim_source_evidence_ids": source_set.evidence_ids[:30],
+                    }
+                    for index, item in enumerate(motion["shots"], 1)
+                ],
+            }).model_dump(mode="json")
+        if stage_kind is not CreativeStageKind.VIDEO_BIBLE:
+            raise ValueError("CREATIVE_DYNAMIC_STAGE_UNSUPPORTED")
+        script = CreativeScriptResult.model_validate(previous[CreativeStageKind.SCRIPT.value])
+        subject = facts.subject_lock
+        scene = facts.scene_lock
+        authored = pack.dynamic_motion
+        if authored is None:
+            raise ValueError("CREATIVE_DYNAMIC_BINDING_REQUIRED")
+        # Include the same bowl geometry, floor support and layout in every still;
+        # existing KeyframeKit only carries the environment phrase, not all anchors.
+        environment = (
+            f"{scene.environment}; {authored.bowl_description} fixed at "
+            f"{authored.bowl_location} on {authored.support_surface}"
+        )
+        if scene.temporary_accessories:
+            environment += "; accessories: " + ", ".join(scene.temporary_accessories)
+        draft = bind_dynamic_bible_proposal(
+            pack, script,
+            SubjectIdentity(
+                subject_id=subject.subject_id, kind="PET", species=subject.species,
+                breed_or_type=subject.breed_or_type, coat_or_appearance=subject.coat_or_appearance,
+                distinguishing_marks=subject.distinguishing_marks,
+                identity_phrase=_identity_phrase(facts),
+            ),
+            SceneSpec(
+                scene_id=scene.scene_lock_id, environment_phrase=environment,
+                lighting_phrase=scene.lighting, palette=["source-locked"],
+            ),
+        )
+        # This is allowed only after the canonical ledger's matching dynamic
+        # commitment passed. The ordinary quality gate still validates/seals it.
+        return draft.model_copy(update={
+            "needs_human": False, "unverified_fields": [],
+        }).model_dump(mode="json")
+
+    def _run_dynamic_stage(
+        self, stage, stage_definition, source_set, previous, context, profile, binding,
+    ) -> tuple[dict[str, Any] | None, CreativeQualityOutcome, dict[str, Any], list[str]]:
+        try:
+            raw = self._dynamic_stage_payload(
+                stage_definition.stage_kind, binding, source_set, previous,
+            )
+            decision, parsed = self.quality.evaluate(
+                stage_kind=stage_definition.stage_kind, profile=profile,
+                source_set=source_set, previous_stages=previous, raw_result=raw,
+                objective=context.get("creative_objective"),
+            )
+            reasons = decision.reasons
+        except (KeyError, ValueError, TypeError):
+            raw, parsed = {}, None
+            reasons = ["CREATIVE_DYNAMIC_PROJECTION_INVALID"]
+            decision = None
+        if decision is not None and decision.outcome is CreativeQualityOutcome.PASS and parsed is not None:
+            payload = parsed.model_dump(mode="json")
+            self.repository.update_stage(
+                stage.stage_run_id, status="Completed", model_attempts=0,
+                result=payload, result_digest=self._digest(payload),
+                quality_outcome=CreativeQualityOutcome.PASS, finished=True,
+            )
+            return payload, CreativeQualityOutcome.PASS, raw, []
+        self.repository.update_stage(
+            stage.stage_run_id, status="NeedsHuman", model_attempts=0,
+            result=raw, result_digest=self._digest(raw),
+            quality_outcome=CreativeQualityOutcome.NEEDS_HUMAN,
+            failure_code="CREATIVE_DYNAMIC_PROJECTION_REJECTED", finished=True,
+        )
+        return None, CreativeQualityOutcome.NEEDS_HUMAN, raw, reasons
 
     def _run_trusted_pet_video_bible(
         self,
@@ -1093,7 +1276,7 @@ class CreativeIntelligenceCoordinator:
         bible = VideoBible.model_validate(previous[CreativeStageKind.VIDEO_BIBLE.value])
         script = CreativeScriptResult.model_validate(previous[CreativeStageKind.SCRIPT.value])
         raw = derive_shot_plan(bible, script)
-        if trusted_pet is not None:
+        if trusted_pet is not None and trusted_pet.dynamic_pack is None:
             lock_findings = verify_shot_plan_prompt_locks(raw, trusted_pet.facts)
             if lock_findings:
                 digest = self._digest(raw)
