@@ -55,8 +55,8 @@ def _wait_for_core(port: int, process: subprocess.Popen[bytes]) -> None:
     raise RuntimeError("REAL_CORE_HEALTH_TIMEOUT")
 
 
-def _assert_sandbox_untouched(db_path: Path) -> None:
-    """使用 query_only 读取 Core 的真实 24 版 SQLite；拒绝任何任务/审批/生产写入。"""
+def _assert_sandbox_scoped_goal(db_path: Path) -> None:
+    """使用 query_only 核对唯一显式 Goal，拒绝任何执行/审批/生产写入。"""
 
     if not db_path.is_file():
         raise RuntimeError("REAL_CORE_DATABASE_MISSING")
@@ -66,11 +66,30 @@ def _assert_sandbox_untouched(db_path: Path) -> None:
         maximum = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
         if maximum != 24:
             raise RuntimeError(f"REAL_CORE_SCHEMA_UNEXPECTED:{maximum}")
-        for table in ("tasks", "approvals", "production_jobs", "production_attempts"):
+        for table in ("approvals", "production_jobs", "production_attempts", "creative_jobs"):
             count = db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             if count != 0:
                 raise RuntimeError(f"READ_ONLY_VIOLATION:{table}:{count}")
-        # 唯一新增持久数据是 sandbox 项目及三份有界登记资产；相同文件重试不得增加行。
+        # 只读阶段已在客户端证明 TASK_DELTA=0；后续显式确认只允许一个 local Goal。
+        goals = db.execute("SELECT goal_id,workflow_id,intent_type,constraints_json FROM autonomous_goals").fetchall()
+        if len(goals) != 1 or goals[0][2] != "video.creative" or not goals[0][1]:
+            raise RuntimeError("STUDIO_SCOPED_GOAL_REPLAY_MISMATCH")
+        constraints = json.loads(goals[0][3])
+        binding = constraints["storypack_binding"]
+        if (constraints.get("local_video_preferred") is not True
+            or constraints.get("read_only_research") is not True
+            or binding.get("owner_subject_key") != "pet:ci-fixture"
+            or len(binding.get("dynamic_motion_digest", "")) != 64):
+            raise RuntimeError("STUDIO_SCOPED_GOAL_CONSTRAINT_MISMATCH")
+        if db.execute("SELECT COUNT(*) FROM canonical_evidence").fetchone()[0] != 3:
+            raise RuntimeError("STUDIO_OWNER_PACKET_REPLAY_MISMATCH")
+        for task in db.execute("SELECT task_type,resource_tag,attempt_count,lease_owner FROM tasks"):
+            if (task[0] not in {"autonomous.discovery.v1", "autonomous.goal_synthesis.v1",
+                                "autonomous.goal_creative.v1"}
+                or task[1] != f"workflow:{goals[0][1]}"
+                or task[2] != 0 or task[3] is not None):
+                raise RuntimeError("STUDIO_UNEXPECTED_EXECUTION")
+        # 保留既有项目及三份有界登记资产；相同文件重试不得增加行。
         rows = db.execute(
             "SELECT artifact_type, sha256, stored_object_hash, size_bytes, is_original, cloud_policy "
             "FROM artifacts"
@@ -170,6 +189,8 @@ def main() -> int:
                     raise RuntimeError("WINDOWS_REAL_HTTP_MISSING_PROOF")
                 if "REAL_CORE_WINDOWS_ASSET_HTTP=PASS" not in call.stdout:
                     raise RuntimeError("WINDOWS_REAL_ASSET_HTTP_MISSING_PROOF")
+                if "REAL_CORE_WINDOWS_SCOPED_GOAL_HTTP=PASS" not in call.stdout:
+                    raise RuntimeError("WINDOWS_REAL_SCOPED_GOAL_MISSING_PROOF")
             finally:
                 proc.terminate()
                 try:
@@ -178,11 +199,12 @@ def main() -> int:
                     proc.kill()
                     proc.wait(timeout=10)
 
-        _assert_sandbox_untouched(root / "core-runtime" / "database" / "core.db")
+        _assert_sandbox_scoped_goal(root / "core-runtime" / "database" / "core.db")
 
     # 上游两端没有借用用户私有服务器，也未授予正式的 GPU/Owner 许可。
-    print("REAL_23_WINDOWS_HTTP=PASS; SQLITE_V24=PASS; TASK=0; APPROVAL=0; PRODUCTION=0")
+    print("REAL_23_WINDOWS_HTTP=PASS; SQLITE_V24=PASS; READONLY_TASK_DELTA=0; SCOPED_GOAL=1; APPROVAL=0; PRODUCTION=0")
     print("REAL_ASSET_HTTP=PASS; ASSETS=3; MANAGED_SHA256=PASS; REPLAY=PASS")
+    print("REAL_SCOPED_GOAL_HTTP=PASS; EVIDENCE_PACKETS=1; GOAL_REPLAY=PASS; EXECUTED_TASKS=0")
     print("WORKER=NOT_STARTED; COMFY=NOT_STARTED; OWNER=NOT_APPROVED")
     return 0
 
