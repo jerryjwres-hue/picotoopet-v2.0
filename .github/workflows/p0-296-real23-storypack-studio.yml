@@ -6,6 +6,13 @@ on:
       - ".github/workflows/p0-296-real23-storypack-studio.yml"
       - "src/picotoopet_core/domain/storypack*.py"
       - "src/picotoopet_core/creative/dynamic_pet_story.py"
+      - "src/picotoopet_core/creative/state_spine.py"
+      - "src/picotoopet_core/creative/execution.py"
+      - "src/picotoopet_core/creative/service.py"
+      - "src/picotoopet_core/autonomous/owner_structured_review.py"
+      - "src/picotoopet_core/production/service.py"
+      - "src/picotoopet_core/cli.py"
+      - "tests/unit/autonomous/test_owner_structured_review.py"
       - "src/picotoopet_core/api/routes/studio.py"
       - "src/picotoopet_core/api/app.py"
       - "src/picotoopet_core/autonomous/goal_service.py"
@@ -44,6 +51,7 @@ jobs:
         run: |
           PYTHONPATH=.:src python -m pytest -q \
             tests/integration/test_real23_studio_storypack_preview.py \
+            tests/unit/autonomous/test_owner_structured_review.py \
             tests/contract/test_v31_compatible_mac_23_upgrade.py \
             tests/production/test_v11_worker_challenge_transport.py \
             tests/production/test_v11_worker_witness.py
