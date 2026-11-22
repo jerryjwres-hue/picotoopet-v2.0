@@ -1,0 +1,130 @@
+"""Strict StoryPack handoff to the existing local pet-only Human Goal.
+
+Managed bytes and a previously reviewed claim packet are separate from
+OwnerPrincipal approval, MASTER registration, and production authorization.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from picotoopet_core.creative.director import parse_goal_directives
+from picotoopet_core.domain.storypack import StoryPackV1, storypack_preview
+from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
+from picotoopet_core.domain.storypack_goal_intake import build_storypack_goal_intake
+from picotoopet_core.domain.storypack_owner_subject import build_owner_review_subject
+
+
+class ScopedStoryGoalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    storypack: StoryPackV1
+    project_id: str = Field(min_length=1, max_length=100)
+    owner_subject_key: str = Field(pattern=r"^pet:[a-z0-9][a-z0-9-]{1,63}$")
+    reviewed_packet_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    confirmed_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def prepare_scoped_story_goal(payload: ScopedStoryGoalRequest, services) -> tuple[dict, dict]:
+    """Recheck actual Core bytes/claims, then prepare a frozen server-side Goal binding."""
+    pack = payload.storypack
+    preview = storypack_preview(pack)
+    proposal = build_storypack_goal_intake(pack, preview["storypack_sha256"])
+    if not proposal["ready_for_user_submission"]:
+        raise ValueError("STORY_GOAL_NOT_READY")
+
+    # 01. This bridge covers the existing single-pet / single-scene P0 route only.
+    if (
+        pack.supporting_character_refs or pack.additional_scene_refs or not pack.style_ref
+        or any(
+            shot.cast_refs not in (None, [pack.character_ref])
+            or shot.scene_ref not in (None, pack.scene_ref)
+            or (index > 0 and shot.handoff != "continuous")
+            for index, shot in enumerate(pack.shots)
+        )
+    ):
+        raise ValueError("STORY_GOAL_P0_SCOPE_UNSUPPORTED")
+    directives = parse_goal_directives(proposal["objective"])
+    if not directives.pet_only or directives.shot_count != 3 or directives.shot_seconds != 4:
+        raise ValueError("STORY_GOAL_DIRECTIVES_CONFLICT")
+
+    database = services.database
+    project = database.fetchone(
+        "SELECT status FROM projects WHERE project_id=?", (payload.project_id,)
+    )
+    if project is None or project["status"] != "Active":
+        raise ValueError("STORY_GOAL_PROJECT_UNAVAILABLE")
+
+    # 02. Recheck exact role, project, local-only policy and actual managed object bytes.
+    role_refs = {"character": pack.character_ref, "scene": pack.scene_ref, "style": pack.style_ref}
+    if len(set(role_refs.values())) != 3:
+        raise ValueError("STORY_GOAL_ASSET_ROLE_COLLISION")
+    checks = inspect_recorded_asset_refs(
+        database, list(role_refs.values()), managed_objects_dir=services.settings.paths.objects_dir
+    )
+    by_ref = {item["ref"]: item for item in checks}
+    assets = {}
+    for role, ref in role_refs.items():
+        row = database.fetchone(
+            "SELECT project_id, artifact_type, sha256, cloud_policy FROM artifacts WHERE artifact_id=?",
+            (ref,),
+        )
+        check = by_ref[ref]
+        if (row is None or row["project_id"] != payload.project_id
+            or row["artifact_type"] != f"storypack_{role}" or row["cloud_policy"] != "local_only"
+            or check["content_integrity_verified"] is not True
+            or row["sha256"] != check["recorded_sha256"]):
+            raise ValueError("STORY_GOAL_ASSET_UNVERIFIED")
+        assets[role] = {"artifact_id": ref, "sha256": row["sha256"]}
+
+    subject = build_owner_review_subject(pack, preview["storypack_sha256"], checks)
+    if (subject["status"] != "REVIEW_SUBJECT_PREPARED_UNAPPROVED"
+        or subject["subject_sha256"] != payload.confirmed_subject_sha256):
+        raise ValueError("STORY_GOAL_SUBJECT_MISMATCH")
+
+    # 03. Select only an existing exact reviewed claim packet. Never manufacture
+    # owner testimony from a draft, infer identity from filenames, or grant OwnerPrincipal.
+    evidence_rows = database.fetchall(
+        "SELECT evidence_id,evidence_type,text_value,raw_hash,trust_level,provenance_json,origin_kind,source "
+        "FROM canonical_evidence WHERE subject_key=? AND source='owner_attestation' "
+        "AND origin_kind='manual' ORDER BY evidence_id LIMIT 5001",
+        (payload.owner_subject_key,),
+    )
+    if len(evidence_rows) > 5000:
+        raise ValueError("STORY_GOAL_EVIDENCE_LIMIT")
+    kinds = {"pet.owner.visible_identity", "pet.owner.visible_scene", "pet.owner.creative_intent"}
+    matched = []
+    for row in evidence_rows:
+        provenance = json.loads(row["provenance_json"])
+        if provenance.get("reviewed_packet_sha256") != payload.reviewed_packet_sha256:
+            continue
+        if (
+            provenance.get("owner_reviewed") is not True
+            or provenance.get("photo_bytes_verified") is not False
+            or provenance.get("photo_sha256_claim") != assets["character"]["sha256"]
+            or row["evidence_type"] not in kinds
+            or row["trust_level"] != ("E" if row["evidence_type"] == "pet.owner.creative_intent" else "D")
+            or not row["text_value"].strip()
+            or hashlib.sha256(row["text_value"].encode("utf-8")).hexdigest() != row["raw_hash"]
+        ):
+            raise ValueError("STORY_GOAL_OWNER_PACKET_INVALID")
+        matched.append({"evidence_id": row["evidence_id"], "kind": row["evidence_type"],
+                        "raw_hash": row["raw_hash"]})
+    if not 3 <= len(matched) <= 10 or {row["kind"] for row in matched} != kinds:
+        raise ValueError("STORY_GOAL_OWNER_PACKET_INCOMPLETE")
+
+    # 04. Bind immutable identities, not permissions. The subsequent structured
+    # OwnerPrincipal review and all production authorizations remain mandatory.
+    binding = {
+        "schema": "picotoo.storypack.scoped-goal-binding.v1",
+        "storypack_sha256": preview["storypack_sha256"],
+        "subject_sha256": subject["subject_sha256"],
+        "project_id": payload.project_id,
+        "owner_subject_key": payload.owner_subject_key,
+        "reviewed_packet_sha256": payload.reviewed_packet_sha256,
+        "assets": assets,
+        "owner_evidence": matched,
+    }
+    return proposal, binding
