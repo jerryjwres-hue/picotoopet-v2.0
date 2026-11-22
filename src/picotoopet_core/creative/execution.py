@@ -268,6 +268,7 @@ def load_trusted_pet_creative_binding(
         if (
             motion is None or facts.facts_version != 2 or facts.pose_lock.fixed
             or facts.pose_lock.body_pose.strip().casefold() != "standing"
+            or facts.pose_lock.head_direction.strip().casefold() != "looking away from the bowl"
             or facts.pose_lock.support_surface != motion.support_surface
             or not {item.framing.value for item in motion.shots} <= set(
                 facts.camera_lock.allowed_framings
@@ -971,6 +972,10 @@ class CreativeIntelligenceCoordinator:
         motion = build_dynamic_motion_proposal(pack)
         facts = binding.facts
         if stage_kind is CreativeStageKind.SCRIPT:
+            brief = CreativeBriefResult.model_validate(previous[CreativeStageKind.CREATIVE_BRIEF.value])
+            if (brief.output_profile_id.value != "video.landscape.v1"
+                or not brief.duration_min_seconds <= 12 <= brief.duration_max_seconds):
+                raise ValueError("CREATIVE_DYNAMIC_BRIEF_PROFILE_INVALID")
             # Preserve the exact dominant action plus opening/closing state in each beat.
             return CreativeScriptResult.model_validate({
                 "schema_version": "1.0",
