@@ -504,8 +504,13 @@ def register_sealed_references(c, shots):
         "creative_package_id": c.package.creative_package_id,
         "creative_package_digest": c.package.package_digest,
         "selected_references": [{
-            "shot_id": shot, "input_relative_path": f"PicotooPet/references/{'a' * 64}/{shot}.png",
-            "sha256": "a" * 64, "bytes": 12, "source_reference": "USER_SUPPLIED",
+            # 01. 每个 synthetic shot 使用独立字节身份声明；并不假称已读取用户图片。
+            #     Legacy single-shot 与 sealed full-three-shot 测试共用此 helper。
+            "shot_id": shot, "input_relative_path": (
+                f"PicotooPet/references/{hashlib.sha256(shot.encode('utf-8')).hexdigest()}/{shot}.png"
+            ),
+            "sha256": hashlib.sha256(shot.encode("utf-8")).hexdigest(),
+            "bytes": 12, "source_reference": "USER_SUPPLIED",
             "source_digest": c.package.source_set_digest, "rights_scope": "wan22.i2v.production.v1",
         } for shot in shots],
         "user_confirms_preview_and_rights": True,
