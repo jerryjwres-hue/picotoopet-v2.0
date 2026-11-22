@@ -24,6 +24,30 @@
      </ItemsControl.ItemTemplate>
     </ItemsControl>
    </Expander>
+   <Expander Header="本地 ComfyUI 首帧候选（需人工审核）" Margin="0,12,0,0">
+    <StackPanel>
+     <TextBlock Text="候选清单只显示历史结果，不证明图像质量或使用权。本地 AI 输出不能自动归类为 USER_SUPPLIED；使用前须提供 LICENSED 来源凭据 SHA-256。" TextWrapping="Wrap" Margin="0,0,0,7"/>
+     <Button x:Name="LoadObservedCandidatesButton" Content="读取本地候选清单..." Padding="12,6"
+             HorizontalAlignment="Left" IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
+             Click="LoadObservedCandidates_Click" Margin="0,0,0,8"/>
+     <ItemsControl x:Name="ObservedCandidatesList" ItemsSource="{Binding ObservedCandidates}">
+      <ItemsControl.ItemTemplate>
+       <DataTemplate>
+        <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8" Margin="0,0,0,5">
+         <StackPanel>
+          <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding OutputRelativePath}" TextWrapping="Wrap" FontSize="10"/>
+          <TextBlock Text="{Binding Sha256, StringFormat=本地观察 SHA-256：{0}}" TextWrapping="Wrap" FontSize="10" FontFamily="Consolas"/>
+          <Button Content="使用此候选作参考图（需 LICENSED 凭据）" Tag="{Binding}" HorizontalAlignment="Left"
+                  IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                  Click="UseObservedCandidate_Click" Margin="0,5,0,0"/>
+         </StackPanel>
+        </Border>
+       </DataTemplate>
+      </ItemsControl.ItemTemplate>
+     </ItemsControl>
+    </StackPanel>
+   </Expander>
    <Grid Margin="0,16,0,0" IsEnabled="{Binding CanEdit, FallbackValue=False}">
     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <StackPanel Margin="0,0,10,0"><TextBlock Text="镜头"/><ComboBox x:Name="ShotComboBox" ItemsSource="{Binding EligibleShots}" MinHeight="30" /></StackPanel>
