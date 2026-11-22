@@ -314,15 +314,27 @@ def main(argv: list[str] | None = None) -> int:
     history_source.add_argument("--live-history", action="store_true")
     history_source.add_argument("--history-snapshot", type=Path)
     history_source.add_argument("--live-history-scan", action="store_true")
+    history_source.add_argument("--embedded-png-map", type=Path)
     parser.add_argument("--comfy-output-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     auto_discovery = args.history_snapshot is not None or args.live_history_scan
-    if auto_discovery == (args.prompt_ids is not None):
-        parser.error("Auto-discovery omits --prompt-ids; explicit history requires --prompt-ids.")
+    embedded_mode = args.embedded_png_map is not None
+    if embedded_mode or auto_discovery:
+        if args.prompt_ids is not None:
+            parser.error("Embedded/auto mode cannot use --prompt-ids.")
+    elif args.prompt_ids is None:
+        parser.error("Explicit Comfy history requires --prompt-ids.")
     try:
         batch = parse_history(read_bounded(args.batch_dir / "batch_manifest.json"))
-        if auto_discovery:
+        if embedded_mode:
+            # 01. No network, no fake Comfy history, no inferred output path.
+            from offline_png_output_collector import collect_embedded_outputs
+            selected = parse_history(read_bounded(args.embedded_png_map))
+            result = collect_embedded_outputs(
+                batch, args.batch_dir, selected, args.comfy_output_root
+            )
+        elif auto_discovery:
             listing = parse_history(
                 fetch_recent_history() if args.live_history_scan
                 else read_bounded(args.history_snapshot)
@@ -339,7 +351,8 @@ def main(argv: list[str] | None = None) -> int:
                     else read_bounded(args.history_dir / f"{key}.json")
                 ) for key in ids
             }
-        result = collect(batch, args.batch_dir, identities, histories, args.comfy_output_root)
+        if not embedded_mode:
+            result = collect(batch, args.batch_dir, identities, histories, args.comfy_output_root)
         # 03. No image is copied or imported into approved Core reference storage.
         args.output_dir.mkdir(parents=False, exist_ok=False)
         with (args.output_dir / "candidate_manifest.json").open("xb") as output:

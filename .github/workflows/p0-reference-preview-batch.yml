@@ -19,6 +19,8 @@ on:
       - scripts/qwen_reference_bindings.py
       - tests/creative_quality_2026/test_qwen_reference_bindings.py
       - scripts/collect_local_keyframe_outputs.py
+      - scripts/offline_png_output_collector.py
+      - tests/creative_quality_2026/test_offline_png_output_collector.py
       - tests/creative_quality_2026/test_keyframe_handoff_chain.py
       - tests/creative_quality_2026/test_collect_local_keyframe_outputs.py
       - tests/creative_quality_2026/test_prepare_local_keyframe_batch.py
@@ -64,6 +66,9 @@ jobs:
       - name: Qwen shot-scoped image bindings and exact input files (CPU only)
         shell: pwsh
         run: python -m unittest discover -s tests/creative_quality_2026 -p test_qwen_reference_bindings.py
+      - name: Collect exact PNG-embedded prepared graph outputs offline (CPU only)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_offline_png_output_collector.py
       - name: Build existing native WPF smoke harness (no packaging)
         shell: pwsh
         run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
