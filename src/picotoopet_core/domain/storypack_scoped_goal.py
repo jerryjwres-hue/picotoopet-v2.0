@@ -107,6 +107,8 @@ def prepare_scoped_story_goal(payload: ScopedStoryGoalRequest, services) -> tupl
             or row["evidence_type"] not in kinds
             or row["trust_level"] != ("E" if row["evidence_type"] == "pet.owner.creative_intent" else "D")
             or not row["text_value"].strip()
+            or row["text_value"] != row["text_value"].strip()
+            or len(row["text_value"]) > 500
             or hashlib.sha256(row["text_value"].encode("utf-8")).hexdigest() != row["raw_hash"]
         ):
             raise ValueError("STORY_GOAL_OWNER_PACKET_INVALID")
