@@ -27,6 +27,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     private ReferenceBatchRequest? _frozenRequest;
     private ReferenceBatchReceipt? _initialReceipt;
     private ReferenceBatchReceipt? _receipt;
+    private ProductionJobRecord? _createdProductionJob;
+    private bool _approvalFresh;
     private bool _consent;
     private int _operation;
     private string _statusText = "请选择镜头与参考图，查看预览后确认使用权。";
@@ -104,6 +106,15 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
         && (!_requiresFullV2Batch || Items.Count == _eligibleShots.Count);
     public bool CanRefresh => !IsBusy && _initialReceipt is not null;
+    public ProductionJobRecord? CreatedProductionJob
+    {
+        get => _createdProductionJob;
+        private set => SetProperty(ref _createdProductionJob, value);
+    }
+    public bool CanCreateReviewedPlan => !IsBusy && _requiresFullV2Batch
+        && _gateway is IReviewedThreeShotPlanGateway && _approvalFresh
+        && Receipt is { Status: "Approved" } receipt && receipt.ExpiresAt > DateTimeOffset.UtcNow
+        && receipt.References.Length == 3 && CreatedProductionJob is null;
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
     public ReferenceBatchReceipt? Receipt { get => _receipt; private set => SetProperty(ref _receipt, value); }
 
@@ -166,6 +177,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             ReferenceBatchValidation.ValidateReceipt(request, receipt);
             _initialReceipt = receipt with { References = receipt.References.ToArray() };
             Receipt = receipt;
+            // 初次登记回执不作为生产依据；必须独立刷新正式批准状态。
+            _approvalFresh = false;
             StatusText = "Core 已返回审批请求；请在现有审批中心查看并作出决定。";
         }
         catch { StatusText = _frozenRequest is null ? "未提交；请检查预览与使用权确认。"
@@ -182,17 +195,100 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         {
             ReferenceBatchValidation.ValidateRequest(request);
             await VerifySnapshotsAsync(request, cancellationToken);
-            var fresh = await _gateway.GetReferenceBatchAsync(initial.ApprovalId, cancellationToken);
-            ReferenceBatchValidation.ValidateReceipt(request, fresh);
-            if (fresh.BatchId != initial.BatchId || fresh.ApprovalId != initial.ApprovalId
-                || fresh.ApprovalRequestDigest != initial.ApprovalRequestDigest || fresh.ExpiresAt != initial.ExpiresAt
-                || fresh.References.Any(reference => initial.References.Single(x => x.ShotId == reference.ShotId).AssetId != reference.AssetId))
-                throw new InvalidDataException("REFERENCE_RECEIPT_IDENTITY_CHANGED");
+            var fresh = await ReadBoundReceiptAsync(request, initial, cancellationToken);
             Receipt = fresh;
+            _approvalFresh = fresh.Status == "Approved" && fresh.ExpiresAt > DateTimeOffset.UtcNow;
             StatusText = "已从 Core 刷新审批状态。";
         }
-        catch { StatusText = "未能验证参考图或 Core 回执；未采纳新的审批状态。"; throw; }
+        catch { _approvalFresh = false; StatusText = "未能验证参考图或 Core 回执；未采纳新的审批状态。"; throw; }
         finally { Exit(); }
+    }
+
+    // 01. 此入口只生成完整三镜头计划；不得从刷新、审核成功或加载页面自动调用。
+    public async Task CreateReviewedPlanAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanCreateReviewedPlan || _gateway is not IReviewedThreeShotPlanGateway production)
+            throw new InvalidDataException("REFERENCE_APPROVED_FULL_BATCH_REQUIRED");
+        var request = _frozenRequest ?? throw new InvalidDataException("REFERENCE_REQUEST_REQUIRED");
+        var initial = _initialReceipt ?? throw new InvalidDataException("REFERENCE_RECEIPT_REQUIRED");
+        if (!Enter()) return;
+        try
+        {
+            _approvalFresh = false;
+            await VerifySnapshotsAsync(request, cancellationToken);
+            var fresh = await ReadBoundReceiptAsync(request, initial, cancellationToken);
+            Receipt = fresh;
+            if (fresh.Status != "Approved" || fresh.ExpiresAt <= DateTimeOffset.UtcNow)
+                throw new InvalidDataException("REFERENCE_APPROVAL_NOT_CURRENT");
+            if (!fresh.References.Select(x => x.ShotId).ToHashSet(StringComparer.Ordinal).SetEquals(_eligibleShots))
+                throw new InvalidDataException("REFERENCE_V2_FULL_COVERAGE_REQUIRED");
+            // 02. 固定批次与审批摘要构成重启可复现的幂等键；不使用随机重试 ID。
+            var key = "reviewed-three-shot-v11-" + fresh.ApprovalId + "-" + fresh.ApprovalRequestDigest;
+            var create = new ProductionJobCreateRequest(CreativePackageId,
+                ProductionPanelViewModel.FixedProductionProfile, key);
+            cancellationToken.ThrowIfCancellationRequested();
+            var job = await production.CreateReviewedThreeShotV11Async(create, fresh.ApprovalId, cancellationToken);
+            if (!Guid.TryParseExact(job.ProductionJobId, "D", out var jobId) || jobId == Guid.Empty
+                || job.CreativePackageId != CreativePackageId || job.CreativePackageDigest != CreativePackageDigest
+                || job.ProjectKey != "goal-" + GoalId || job.ProductionProfile != create.ProductionProfile
+                || job.IdempotencyKey != key || !IsDigest(job.PlanDigest))
+                throw new InvalidDataException("REFERENCE_PRODUCTION_JOB_MISMATCH");
+            var plan = await production.ReadReviewedProductionPlanAsync(job.ProductionJobId, cancellationToken);
+            ValidateCreatedPlan(job, plan, fresh);
+            CreatedProductionJob = job;
+            StatusText = "三镜头 v1.1 计划已创建并核对；尚未授权或启动 GPU，请进入原生产台。";
+        }
+        catch
+        {
+            // 未知 POST 结果不能宣称没有创建；刷新后同批次继续使用原幂等键。
+            StatusText = "未取得可验证的生产计划；请刷新审批后重试同一批次，不会另建任务。";
+            throw;
+        }
+        finally { Exit(); }
+    }
+
+    private async Task<ReferenceBatchReceipt> ReadBoundReceiptAsync(ReferenceBatchRequest request,
+        ReferenceBatchReceipt initial, CancellationToken cancellationToken)
+    {
+        var fresh = await _gateway.GetReferenceBatchAsync(initial.ApprovalId, cancellationToken);
+        ReferenceBatchValidation.ValidateReceipt(request, fresh);
+        if (fresh.BatchId != initial.BatchId || fresh.ApprovalId != initial.ApprovalId
+            || fresh.ApprovalRequestDigest != initial.ApprovalRequestDigest || fresh.ExpiresAt != initial.ExpiresAt
+            || fresh.References.Any(reference => initial.References.Single(x => x.ShotId == reference.ShotId).AssetId != reference.AssetId))
+            throw new InvalidDataException("REFERENCE_RECEIPT_IDENTITY_CHANGED");
+        return fresh;
+    }
+
+    // 03. 展示成功之前，逐镜核对 Core 真实冻结计划和全部已批参考图。
+    private void ValidateCreatedPlan(ProductionJobRecord job, ProductionPlanRecord plan, ReferenceBatchReceipt approved)
+    {
+        if (plan.SchemaVersion != "1.1" || plan.ProductionJobId != job.ProductionJobId
+            || plan.CreativePackageId != CreativePackageId || plan.CreativePackageDigest != CreativePackageDigest
+            || plan.ProjectKey != job.ProjectKey || plan.ProductionProfile != job.ProductionProfile
+            || plan.TargetRuntimeMs != 12000 || plan.Tasks is not { Length: 3 }
+            || !plan.Tasks.OrderBy(x => x.Order).Select(x => x.ShotId).SequenceEqual(EligibleShots))
+            throw new InvalidDataException("REFERENCE_PRODUCTION_PLAN_MISMATCH");
+        var taskIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var task in plan.Tasks)
+        {
+            var source = approved.References.Single(x => x.ShotId == task.ShotId);
+            var asset = task.ReferenceAsset;
+            if (string.IsNullOrWhiteSpace(task.ProductionTaskId) || !taskIds.Add(task.ProductionTaskId)
+                || task.RenderIntent != "IMAGE_TO_VIDEO" || task.ExecutionDisposition != "Executable"
+                || task.Width != 832 || task.Height != 480 || task.Fps != 24
+                || task.FrameCount != 97 || task.TargetDurationMs != 4000 || asset is null
+                || asset.SchemaVersion != "reference_asset.v1" || asset.AssetId != source.AssetId
+                || asset.GoalId != GoalId || asset.CreativePackageId != CreativePackageId
+                || asset.CreativePackageDigest != CreativePackageDigest
+                || asset.ProductionJobId != job.ProductionJobId || asset.ProductionTaskId != task.ProductionTaskId
+                || asset.ShotId != task.ShotId || asset.ApprovalId != approved.ApprovalId
+                || asset.ApprovalRequestDigest != approved.ApprovalRequestDigest
+                || asset.InputRelativePath != source.InputRelativePath || task.TrustedInputAssetRef != source.InputRelativePath
+                || asset.Sha256 != source.Sha256 || asset.Bytes != source.Bytes
+                || asset.SourceReference != source.SourceReference || asset.SourceDigest != source.SourceDigest
+                || asset.RightsScope != "wan22.i2v.production.v1")
+                throw new InvalidDataException("REFERENCE_PRODUCTION_SHOT_MISMATCH");
+        }
     }
 
     private ReferenceBatchRequest BuildRequest()
@@ -235,6 +331,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         RaisePropertyChanged(nameof(CanEdit));
         RaisePropertyChanged(nameof(CanSubmit));
         RaisePropertyChanged(nameof(CanRefresh));
+        RaisePropertyChanged(nameof(CanCreateReviewedPlan));
     }
     private static string Text(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object
         && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : string.Empty;

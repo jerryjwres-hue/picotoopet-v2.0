@@ -58,5 +58,15 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "未能验证本地快照或 Core 回执，请稍后重试。"); }
     }
 
+    private async void CreateReviewedPlan_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanCreateReviewedPlan) return;
+        // 独立显式操作：不会由收到 Approved 回执自动触发。
+        if (System.Windows.MessageBox.Show("创建与当前三张已批参考图绑定的生产计划？此操作不启动 GPU。",
+                "确认三镜头生产计划", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try { await vm.CreateReviewedPlanAsync(); }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
     private void OpenApprovals_Click(object sender, RoutedEventArgs e) => ApprovalsRequested?.Invoke(this, EventArgs.Empty);
 }
