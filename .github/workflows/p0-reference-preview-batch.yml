@@ -14,6 +14,8 @@ on:
       - .github/workflows/p0-reference-preview-batch.yml
       - scripts/recover_comfy_keyframe_workflow.py
       - scripts/comfy_png_embedded_evidence.py
+      - scripts/audit_local_qwen_pngs.py
+      - tests/creative_quality_2026/test_audit_local_qwen_pngs.py
       - tests/creative_quality_2026/test_comfy_png_embedded_evidence.py
       - scripts/prepare_local_keyframe_batch.py
       - scripts/qwen_reference_bindings.py
@@ -73,6 +75,9 @@ jobs:
       - name: Full Qwen 2511 PNG-to-three-shot-to-review contract (CPU only)
         shell: pwsh
         run: python -m unittest discover -s tests/creative_quality_2026 -p test_qwen_png_local_full_chain.py
+      - name: Read-only offline inspection of six Qwen PNGs (CPU-only, no Comfy)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_audit_local_qwen_pngs.py
       - name: Build existing native WPF smoke harness (no packaging)
         shell: pwsh
         run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
