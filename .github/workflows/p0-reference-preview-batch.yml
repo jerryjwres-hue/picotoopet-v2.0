@@ -19,6 +19,8 @@ on:
       - tests/creative_quality_2026/test_comfy_png_embedded_evidence.py
       - scripts/prepare_local_keyframe_batch.py
       - scripts/qwen_reference_bindings.py
+      - scripts/qwen_reference_readiness.py
+      - tests/creative_quality_2026/test_qwen_reference_readiness.py
       - tests/creative_quality_2026/test_qwen_reference_bindings.py
       - scripts/collect_local_keyframe_outputs.py
       - scripts/offline_png_output_collector.py
@@ -78,6 +80,9 @@ jobs:
       - name: Read-only offline inspection of six Qwen PNGs (CPU-only, no Comfy)
         shell: pwsh
         run: python -m unittest discover -s tests/creative_quality_2026 -p test_audit_local_qwen_pngs.py
+      - name: Three-shot Qwen reference readiness with missing shots (CPU-only)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_qwen_reference_readiness.py
       - name: Build existing native WPF smoke harness (no packaging)
         shell: pwsh
         run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
