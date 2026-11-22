@@ -9,6 +9,14 @@ public interface IReferenceBatchGateway
     Task<ReferenceBatchReceipt> GetReferenceBatchAsync(string approvalId, CancellationToken cancellationToken);
 }
 
+// 单独能力接口：普通参考图预览客户端不因此获得生产创建能力。
+public interface IReviewedThreeShotPlanGateway : IReferenceBatchGateway
+{
+    Task<ProductionJobRecord> CreateReviewedThreeShotV11Async(ProductionJobCreateRequest request,
+        string approvedReferenceId, CancellationToken cancellationToken);
+    Task<ProductionPlanRecord> ReadReviewedProductionPlanAsync(string jobId, CancellationToken cancellationToken);
+}
+
 public sealed partial class MacCoreClient : IReferenceBatchGateway
 {
     public async Task<ReferenceBatchReceipt> RegisterReferenceBatchAsync(

@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -58,6 +59,8 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.True(panel.FindName("SubmitBatchButton") is Button, "Batch request action is missing");
         SmokeAssert.True(panel.FindName("RefreshBatchButton") is Button, "Receipt refresh action is missing");
         SmokeAssert.True(panel.FindName("OpenApprovalsButton") is Button, "Existing approvals navigation is missing");
+        SmokeAssert.True(panel.FindName("CreateReviewedPlanButton") is Button { IsEnabled: false },
+            "Plan creation must remain disabled before exact approval");
         var approvalsRequested = false;
         panel.ApprovalsRequested += (_, _) => approvalsRequested = true;
         ((Button)panel.FindName("OpenApprovalsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -232,6 +235,9 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             var vm = new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), V2CandidatePackage());
 
             SmokeAssert.Equal(3, vm.EligibleShots.Length, "Sealed-v2 candidate must expose exactly three shot ids");
+            SmokeAssert.Equal(3, vm.KeyframeInstructions.Count, "Display all sealed keyframe instructions");
+            SmokeAssert.Equal("Opening pose two", vm.KeyframeInstructions[1].StillPrompt, "Preserve Core prompts");
+            SmokeAssert.Equal("Lock bowl", vm.KeyframeInstructions[2].ReviewChecklist, "Preserve checklist");
             SmokeAssert.True(vm.EligibleShots.SequenceEqual(new[] { "shot-1", "shot-2", "shot-3" }),
                 "The v2 candidate shot order/identity changed");
             await vm.AddAsync("shot-1", source, "USER_SUPPLIED", null);
@@ -257,6 +263,31 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.True(!vm.CanEdit, "Ambiguous v2 POST must freeze the exact image selection");
             await RejectAsync(() => vm.AddAsync("shot-2", source, "USER_SUPPLIED", null));
 
+            // 生产创建只能在三张快照、独立批准、显式操作之后进入 v1.1。
+            await RejectAsync(() => vm.CreateReviewedPlanAsync());
+            SmokeAssert.Equal(0, gateway.CreateCalls, "Unknown registration must not create a plan");
+            await vm.SubmitAsync();
+            SmokeAssert.True(!vm.CanCreateReviewedPlan, "Pending receipt must not create a plan");
+            gateway.ReceiptStatus = "Approved";
+            await vm.RefreshAsync();
+            SmokeAssert.True(vm.CanCreateReviewedPlan, "Fresh full approval must enable explicit plan creation");
+            SmokeAssert.Equal(0, gateway.CreateCalls, "Refresh must never create a plan");
+            gateway.ReceiptStatus = "Revoked";
+            await RejectAsync(() => vm.CreateReviewedPlanAsync());
+            SmokeAssert.Equal(0, gateway.CreateCalls, "Revoked approval must block POST");
+            gateway.ReceiptStatus = "Approved";
+            await vm.RefreshAsync();
+            gateway.TamperPlan = true;
+            await RejectAsync(() => vm.CreateReviewedPlanAsync());
+            SmokeAssert.True(vm.CreatedProductionJob is null, "Tampered plan cannot be displayed as accepted");
+            var firstKey = gateway.ProductionKey;
+            gateway.TamperPlan = false;
+            await vm.RefreshAsync();
+            await vm.CreateReviewedPlanAsync();
+            SmokeAssert.Equal(firstKey, gateway.ProductionKey, "Unknown plan receipt retry must preserve key");
+            SmokeAssert.True(vm.CreatedProductionJob is not null && !vm.CanCreateReviewedPlan,
+                "Verified three-shot plan must be shown exactly once");
+
             // ── Missing v2 markers and unrelated legacy T2V stay unselectable.
             var legacy = new ReferenceBatchPreviewViewModel(
                 new RecordingGateway(), stager, Continuation(), V1TextCandidatePackage());
@@ -278,11 +309,17 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         Manifest = JsonElement.Parse("""
         {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1",
          "quality_outcome":"PASS","source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-         "stage_results":{"video_bible.v1":{},"keyframe_kit.v1":{},"script.v1":{},
+         "stage_results":{"video_bible.v1":{},"creative_brief.v1":{"output_profile_id":"video.landscape.v1"},
+           "keyframe_kit.v1":{"schema_version":"keyframe_kit.v1",
+             "kit_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bible_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+             "keyframes":[
+               {"shot_id":"shot-1","order":1,"still_prompt":"Opening pose one","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock identity"]},
+               {"shot_id":"shot-2","order":2,"still_prompt":"Opening pose two","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock scene"]},
+               {"shot_id":"shot-3","order":3,"still_prompt":"Opening pose three","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock bowl"]}]},"script.v1":{},
            "shot_plan.v1":{"shots":[
-             {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO"},
-             {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO"},
-             {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO"}]}}}
+             {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO","duration_seconds":4},
+             {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO","duration_seconds":4},
+             {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO","duration_seconds":4}]}}}
         """),
     };
 
@@ -309,8 +346,13 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
          {"shot_id":"text-shot","render_intent":"TEXT_TO_VIDEO"}]}}}
         """), "PASS", DateTimeOffset.UtcNow);
 
-    private sealed class RecordingGateway : IReferenceBatchGateway
+    private sealed class RecordingGateway : IReviewedThreeShotPlanGateway
     {
+        public int CreateCalls { get; private set; }
+        public string ReceiptStatus { get; set; } = "Pending";
+        public bool TamperPlan { get; set; }
+        public string? ProductionKey { get; private set; }
+        private ProductionJobRecord? _productionJob;
         public int RegisterCalls { get; private set; }
         public int GetCalls { get; private set; }
         public bool FailNextPost { get; set; }
@@ -341,6 +383,51 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.Equal("44444444-4444-4444-8444-444444444444", approvalId, "Refresh must address approval_id, not batch_id");
             return Task.FromResult(CreateReceipt());
         }
+        public Task<ProductionJobRecord> CreateReviewedThreeShotV11Async(ProductionJobCreateRequest request,
+            string approvedReferenceId, CancellationToken cancellationToken)
+        {
+            CreateCalls++;
+            ProductionKey = request.IdempotencyKey;
+            var receipt = CreateReceipt();
+            SmokeAssert.Equal(receipt.ApprovalId, approvedReferenceId, "Must use approval, not asset or batch ID");
+            var now = DateTimeOffset.UtcNow;
+            _productionJob = new ProductionJobRecord("88888888-8888-4888-8888-888888888888",
+                request.CreativePackageId, receipt.CreativePackageDigest, "goal-" + receipt.GoalId,
+                request.ProductionProfile, new string('a', 64), "Ready", null, null, null, null,
+                request.IdempotencyKey, now, now, null);
+            var job = _productionJob;
+            var plan = BuildPlan(job, false);
+            _productionJob = job with { PlanDigest = Convert.ToHexString(SHA256.HashData(
+                CanonicalJson.Serialize(JsonSerializer.SerializeToNode(plan)!))).ToLowerInvariant() };
+            return Task.FromResult(_productionJob);
+        }
+
+        public Task<ProductionPlanRecord> ReadReviewedProductionPlanAsync(string jobId, CancellationToken cancellationToken)
+        {
+            var job = _productionJob ?? throw new InvalidOperationException("No production job");
+            SmokeAssert.Equal(job.ProductionJobId, jobId, "Read exact Job");
+            return Task.FromResult(BuildPlan(job, TamperPlan));
+        }
+
+        private ProductionPlanRecord BuildPlan(ProductionJobRecord job, bool tamper)
+        {
+            var jobId = job.ProductionJobId;
+            var receipt = CreateReceipt();
+            var tasks = receipt.References.Select((x, i) =>
+            {
+                var taskId = "task-" + i;
+                var asset = new ProductionReferenceAssetV11Record("reference_asset.v1", x.AssetId,
+                    receipt.GoalId, "job-1", receipt.CreativePackageId, jobId, taskId, x.ShotId,
+                    receipt.CreativePackageDigest, x.InputRelativePath,
+                    tamper ? new string('f', 64) : x.Sha256, x.Bytes, x.SourceReference, x.SourceDigest,
+                    "wan22.i2v.production.v1", receipt.ApprovalId, receipt.ApprovalRequestDigest);
+                return new ProductionTaskPlanRecord(taskId, x.ShotId, i + 1, "IMAGE_TO_VIDEO", "Executable",
+                    ComfyWorkflowTemplateValidator.I2VWorkflowId, "fixture", "fixture", 1, 832, 480, 24, 97, 4000, x.InputRelativePath, asset);
+            }).ToArray();
+            return new ProductionPlanRecord("1.1", job.ProductionProfile, jobId,
+                job.CreativePackageId, job.CreativePackageDigest, job.ProjectKey, "video.landscape.v1", 12000, tasks);
+        }
+
         public ReferenceBatchReceipt CreateReceipt()
         {
             var request = Request ?? throw new InvalidOperationException("No request");
@@ -349,11 +436,11 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 schema_version = "reference_batch.v1", batch_id = ChangedIdentity == "batch"
                     ? "66666666-6666-4666-8666-666666666666" : "33333333-3333-4333-8333-333333333333",
                 approval_id = "44444444-4444-4444-8444-444444444444",
-                approval_request_digest = new string(ChangedIdentity == "digest" ? 'f' : 'e', 64), status = "Pending",
+                approval_request_digest = new string(ChangedIdentity == "digest" ? 'f' : 'e', 64), status = ReceiptStatus,
                 expires_at = new DateTimeOffset(2030, 1, ChangedIdentity == "expiry" ? 2 : 1, 0, 0, 0, TimeSpan.Zero), goal_id = request.GoalId,
                 creative_package_id = request.CreativePackageId, creative_package_digest = request.CreativePackageDigest,
-                references = request.SelectedReferences.Select(x => new { asset_id = ChangedIdentity == "asset"
-                    ? "77777777-7777-4777-8777-777777777777" : "55555555-5555-4555-8555-555555555555", shot_id = x.ShotId,
+                references = request.SelectedReferences.Select((x, i) => new { asset_id = ChangedIdentity == "asset"
+                    ? "77777777-7777-4777-8777-777777777777" : $"55555555-5555-4555-8555-55555555555{i + 1}", shot_id = x.ShotId,
                     input_relative_path = x.InputRelativePath, sha256 = MismatchReceipt ? new string('f', 64) : x.Sha256, bytes = x.Bytes,
                     source_reference = x.SourceReference, source_digest = x.SourceDigest })
             });
