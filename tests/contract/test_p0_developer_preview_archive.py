@@ -53,12 +53,12 @@ def _create_preview(
     if include_offline_tools:
         # 01. Fixture tools are static fake Python, never real Comfy programs.
         files.update({
-            "local-keyframes/recover_comfy_keyframe_workflow.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
-            "local-keyframes/comfy_png_embedded_evidence.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
-            "local-keyframes/prepare_local_keyframe_batch.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
-            "local-keyframes/qwen_reference_bindings.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
-            "local-keyframes/collect_local_keyframe_outputs.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
-            "local-keyframes/offline_png_output_collector.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/recover_comfy_keyframe_workflow.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/comfy_png_embedded_evidence.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/prepare_local_keyframe_batch.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/qwen_reference_bindings.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/collect_local_keyframe_outputs.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
+            "scripts/offline_png_output_collector.py": b"# SYNTHETIC CPU-ONLY QWEN TOOL\\n",
         })
     if missing_hold:
         files.pop("Prepare-P0ThreeShotHold.ps1")
@@ -78,7 +78,7 @@ def _create_preview(
         "connection_launcher": "CONNECT_MAC_SECURE.vbs",
         "connection_script": "Start-SecureMacTunnel.ps1",
         **({"offline_keyframe_tools": sorted(
-            name for name in files if name.startswith("local-keyframes/")
+            name for name in files if name.startswith("scripts/")
         )} if include_offline_tools else {}),
         "files": [
             {
@@ -90,12 +90,12 @@ def _create_preview(
         ],
     }
     if wrong_tool_manifest:
-        manifest["offline_keyframe_tools"] = ["local-keyframes/untrusted_gpu_post.py"]
+        manifest["offline_keyframe_tools"] = ["scripts/untrusted_gpu_post.py"]
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as package:
         for name, data in files.items():
             changed = (tamper and name.endswith(".exe")) or (
                 tamper_tunnel and name == "Start-SecureMacTunnel.ps1"
-            ) or (tool_body_tamper and name == "local-keyframes/recover_comfy_keyframe_workflow.py")
+            ) or (tool_body_tamper and name == "scripts/recover_comfy_keyframe_workflow.py")
             package.writestr(name, data + (b"CHANGED" if changed else b""))
         if duplicate:
             # Duplicate basename under different case must not be extracted on Windows.
