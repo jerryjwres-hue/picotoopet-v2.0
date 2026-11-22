@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Contracts;
@@ -105,6 +106,54 @@ internal static class StudioStoryPackLiveInteropSmokeTests
         SmokeAssert.Equal(preview.GetProperty("storypack_sha256").GetString(),
             repeated.GetProperty("storypack_sha256").GetString(),
             "同一 StoryPack 的真实 HTTP 摘要出现非确定性变化");
+
+        // 真实跨语言素材上传：临时项目与 CI 素材，不读取用户文件。
+        var project = Environment.GetEnvironmentVariable("PICOTOO_TEST_STUDIO_PROJECT");
+        if (string.IsNullOrWhiteSpace(project))
+        {
+            throw new InvalidOperationException("CI fixture project missing.");
+        }
+
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XgZsAAAAASUVORK5CYII=");
+        var style = Encoding.UTF8.GetBytes("CI fixture: local-only stylized reference");
+        var vm = CreativeIntelligencePanelViewModel.CreateForSmokeTest(
+            Array.Empty<CreativeEligibleSourceRecord>());
+        vm.LoadMaotaiDinnerPilotDraft();
+        foreach (var (role, media, bytes) in new (string, string, byte[])[]
+        {
+            ("character", "image/png", png),
+            ("scene", "image/png", png),
+            ("style", "text/plain", style),
+        })
+        {
+            var original = vm.StoryPackJson;
+            var id = await client.ImportStudioAssetAsync(project, role, media, bytes)
+                .ConfigureAwait(false);
+            var replay = await client.ImportStudioAssetAsync(project, role, media, bytes)
+                .ConfigureAwait(false);
+            SmokeAssert.Equal(id, replay, "真实 Core 资产重试必须幂等");
+            SmokeAssert.True(vm.TryBindImportedAsset(original, role, id),
+                "真实资产登记回执无法绑定草稿");
+        }
+        var registered = await client.PreviewStudioStoryPackAsync(JsonElement.Parse(vm.StoryPackJson))
+            .ConfigureAwait(false);
+        SmokeAssert.Equal("REVIEW_SUBJECT_PREPARED_UNAPPROVED",
+            registered.GetProperty("owner_review_subject").GetProperty("status").GetString(),
+            "三份真实登记资产必须允许构造未批准的审核主体");
+        foreach (var asset in registered.GetProperty("asset_record_checks").EnumerateArray())
+        {
+            SmokeAssert.Equal("CONTENT_VERIFIED_UNAPPROVED",
+                asset.GetProperty("managed_object_integrity").GetString(),
+                "跨语言登记素材字节核验失败");
+            SmokeAssert.True(asset.GetProperty("usable_for_generation").ValueKind == JsonValueKind.False,
+                "资产登记不得隐式通过生产授权");
+        }
+        SmokeAssert.True(registered.GetProperty("can_queue").ValueKind == JsonValueKind.False
+            && registered.GetProperty("owner_review_subject").GetProperty("owner_approved").ValueKind == JsonValueKind.False
+            && registered.GetProperty("core23_compatibility").GetProperty("gpu_post_authorized").ValueKind == JsonValueKind.False,
+            "真实导入后必须保留生产否决字段");
+        Console.WriteLine("REAL_CORE_WINDOWS_ASSET_HTTP=PASS; REPLAY=PASS; GPU_POST=0");
 
         var after = await client.GetTasksAsync().ConfigureAwait(false);
         SmokeAssert.Equal(before.Length, after.Length, "预览误创建真实 Core Task");

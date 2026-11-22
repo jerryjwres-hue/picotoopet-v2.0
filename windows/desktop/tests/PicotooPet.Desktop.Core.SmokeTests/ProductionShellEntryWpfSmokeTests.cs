@@ -121,7 +121,20 @@ internal static class ProductionShellEntryWpfSmokeTests
                 "Opening Film Studio must not authorize Goal creation");
             SmokeAssert.True(FindVisual<ProductionPanel>(shell).Count() == 1,
                 "Film Studio must reuse one canonical ProductionPanel");
-            Console.WriteLine("REAL_FILM_STUDIO_DIRECT_ENTRY=PASS; STORYPACK_EXPANDED=PASS; GPU_POST=0");
+            // 原生入口只能响应用户选择，不允许自动登记或自动创建项目。
+            var assetPanel = FindVisual<FilmStudioAssetPanel>(shell).Single();
+            SmokeAssert.True(assetPanel.DataContext is FilmStudioPageViewModel,
+                "资产面板必须复用同一影视会话");
+            SmokeAssert.True(assetPanel.FindName("AssetProjectSelector") is ComboBox,
+                "缺少真实项目选择器");
+            SmokeAssert.True(assetPanel.FindName("RefreshAssetProjectsButton") is Button,
+                "缺少真实项目读取入口");
+            foreach (var controlName in new[] { "ImportCharacterButton", "ImportSceneButton", "ImportStyleButton" })
+            {
+                SmokeAssert.True(assetPanel.FindName(controlName) is Button { IsEnabled: false },
+                    $"未选择项目时 {controlName} 不得允许资产登记");
+            }
+            Console.WriteLine("REAL_FILM_STUDIO_DIRECT_ENTRY=PASS; STORYPACK_EXPANDED=PASS; ASSET_UI=PASS; GPU_POST=0");
 
             shell.AllowExplicitClose();
             shell.Close();
