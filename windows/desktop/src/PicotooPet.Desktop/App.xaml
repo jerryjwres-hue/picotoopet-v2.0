@@ -74,6 +74,7 @@
           <TextBlock Text="故事 → 创意 → 生产与审片" FontSize="24" FontWeight="SemiBold" />
           <TextBlock Text="仅在明确确认后提交创意 Goal；资产、Owner 与 GPU 门禁仍由现有 Core 和 Worker 决定。"
                      Margin="0,6,0,12" TextWrapping="Wrap" />
+          <views:FilmStudioAssetPanel />
           <views:CreativeIntelligencePanel DataContext="{Binding Creative, Mode=OneWay}" />
           <views:ProductionPanel Margin="0,18,0,0" DataContext="{Binding Production, Mode=OneWay}" />
         </StackPanel>
