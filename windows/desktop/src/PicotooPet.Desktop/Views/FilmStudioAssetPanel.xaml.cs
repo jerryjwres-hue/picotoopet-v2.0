@@ -92,6 +92,7 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
         }
 
         AssetControls.IsEnabled = false;
+        var importStarted = false;
         try
         {
             var mediaType = Path.GetExtension(dialog.FileName).ToUpperInvariant() switch
@@ -137,6 +138,12 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
             }
 
             // 04. 回执由客户端独立校验；绑定只更新当前相同草稿，绝不自动提交。
+            if (!model.Creative.TryBeginAssetImport(originalDraft))
+            {
+                AssetStatus.Text = "草稿已改变或创意操作进行中；未发送素材，请重试。";
+                return;
+            }
+            importStarted = true;
             AssetStatus.Text = "正在核验并登记本地素材副本……";
             var id = await model.RegisterAssetAsync(
                 project.ProjectId, role, mediaType, data, CancellationToken.None);
@@ -153,6 +160,10 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
         }
         finally
         {
+            if (importStarted)
+            {
+                model.Creative.EndAssetImport();
+            }
             AssetControls.IsEnabled = true;
         }
     }
