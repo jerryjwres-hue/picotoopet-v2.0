@@ -7,6 +7,35 @@ namespace PicotooPet.Desktop.ViewModels;
 /// <summary>登记回执只绑定草稿引用；不批准资产、不调用 Goal 或生产。</summary>
 public sealed partial class CreativeIntelligencePanelViewModel
 {
+    private bool _isAssetImportBusy;
+
+    public bool TryBeginAssetImport(string originalDraft)
+    {
+        // 先冻结当前预览与 Goal 按钮，避免上传期间提交旧故事。
+        if (_isAssetImportBusy || IsStoryPackPreviewBusy || _isStoryGoalBusy
+            || !string.Equals(originalDraft, StoryPackJson, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        _isAssetImportBusy = true;
+        Interlocked.Increment(ref _storyPackRevision);
+        ResetPreparedGoal();
+        StoryPackPreviewStatus = "正在登记本地素材；登记完成后必须重新检查。";
+        RaisePropertyChanged(nameof(CanPreviewStoryPack));
+        return true;
+    }
+
+    public void EndAssetImport()
+    {
+        if (!_isAssetImportBusy)
+        {
+            return;
+        }
+        _isAssetImportBusy = false;
+        RaisePropertyChanged(nameof(CanPreviewStoryPack));
+        RaisePropertyChanged(nameof(CanCreateStoryGoal));
+    }
+
     public bool TryBindImportedAsset(string originalDraft, string role, string assetId)
     {
         // 01. 网络期间草稿可能已被修改；绝不覆盖新文本或运行中的 Goal。
