@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -234,6 +235,9 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             var vm = new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), V2CandidatePackage());
 
             SmokeAssert.Equal(3, vm.EligibleShots.Length, "Sealed-v2 candidate must expose exactly three shot ids");
+            SmokeAssert.Equal(3, vm.KeyframeInstructions.Count, "Display all sealed keyframe instructions");
+            SmokeAssert.Equal("Opening pose two", vm.KeyframeInstructions[1].StillPrompt, "Preserve Core prompts");
+            SmokeAssert.Equal("Lock bowl", vm.KeyframeInstructions[2].ReviewChecklist, "Preserve checklist");
             SmokeAssert.True(vm.EligibleShots.SequenceEqual(new[] { "shot-1", "shot-2", "shot-3" }),
                 "The v2 candidate shot order/identity changed");
             await vm.AddAsync("shot-1", source, "USER_SUPPLIED", null);
@@ -305,11 +309,17 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         Manifest = JsonElement.Parse("""
         {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1",
          "quality_outcome":"PASS","source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-         "stage_results":{"video_bible.v1":{},"keyframe_kit.v1":{},"script.v1":{},
+         "stage_results":{"video_bible.v1":{},"creative_brief.v1":{"output_profile_id":"video.landscape.v1"},
+           "keyframe_kit.v1":{"schema_version":"keyframe_kit.v1",
+             "kit_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bible_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+             "keyframes":[
+               {"shot_id":"shot-1","order":1,"still_prompt":"Opening pose one","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock identity"]},
+               {"shot_id":"shot-2","order":2,"still_prompt":"Opening pose two","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock scene"]},
+               {"shot_id":"shot-3","order":3,"still_prompt":"Opening pose three","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock bowl"]}]},"script.v1":{},
            "shot_plan.v1":{"shots":[
-             {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO"},
-             {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO"},
-             {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO"}]}}}
+             {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO","duration_seconds":4},
+             {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO","duration_seconds":4},
+             {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO","duration_seconds":4}]}}}
         """),
     };
 
@@ -385,12 +395,23 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 request.CreativePackageId, receipt.CreativePackageDigest, "goal-" + receipt.GoalId,
                 request.ProductionProfile, new string('a', 64), "Ready", null, null, null, null,
                 request.IdempotencyKey, now, now, null);
+            var job = _productionJob;
+            var plan = BuildPlan(job, false);
+            _productionJob = job with { PlanDigest = Convert.ToHexString(SHA256.HashData(
+                CanonicalJson.Serialize(JsonSerializer.SerializeToNode(plan)!))).ToLowerInvariant() };
             return Task.FromResult(_productionJob);
         }
 
         public Task<ProductionPlanRecord> ReadReviewedProductionPlanAsync(string jobId, CancellationToken cancellationToken)
         {
             var job = _productionJob ?? throw new InvalidOperationException("No production job");
+            SmokeAssert.Equal(job.ProductionJobId, jobId, "Read exact Job");
+            return Task.FromResult(BuildPlan(job, TamperPlan));
+        }
+
+        private ProductionPlanRecord BuildPlan(ProductionJobRecord job, bool tamper)
+        {
+            var jobId = job.ProductionJobId;
             var receipt = CreateReceipt();
             var tasks = receipt.References.Select((x, i) =>
             {
@@ -398,13 +419,13 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 var asset = new ProductionReferenceAssetV11Record("reference_asset.v1", x.AssetId,
                     receipt.GoalId, "job-1", receipt.CreativePackageId, jobId, taskId, x.ShotId,
                     receipt.CreativePackageDigest, x.InputRelativePath,
-                    TamperPlan ? new string('f', 64) : x.Sha256, x.Bytes, x.SourceReference, x.SourceDigest,
+                    tamper ? new string('f', 64) : x.Sha256, x.Bytes, x.SourceReference, x.SourceDigest,
                     "wan22.i2v.production.v1", receipt.ApprovalId, receipt.ApprovalRequestDigest);
-                return new ProductionTaskPlanRecord(taskId, x.ShotId, i, "IMAGE_TO_VIDEO", "Executable",
-                    "wan22", "fixture", "fixture", 1, 832, 480, 24, 97, 4000, x.InputRelativePath, asset);
+                return new ProductionTaskPlanRecord(taskId, x.ShotId, i + 1, "IMAGE_TO_VIDEO", "Executable",
+                    ComfyWorkflowTemplateValidator.I2VWorkflowId, "fixture", "fixture", 1, 832, 480, 24, 97, 4000, x.InputRelativePath, asset);
             }).ToArray();
-            return Task.FromResult(new ProductionPlanRecord("1.1", job.ProductionProfile, jobId,
-                job.CreativePackageId, job.CreativePackageDigest, job.ProjectKey, "p0_landscape", 12000, tasks));
+            return new ProductionPlanRecord("1.1", job.ProductionProfile, jobId,
+                job.CreativePackageId, job.CreativePackageDigest, job.ProjectKey, "video.landscape.v1", 12000, tasks);
         }
 
         public ReferenceBatchReceipt CreateReceipt()

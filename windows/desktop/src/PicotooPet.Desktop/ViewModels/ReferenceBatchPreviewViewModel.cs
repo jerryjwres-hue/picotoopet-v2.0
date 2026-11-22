@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -16,6 +17,8 @@ namespace PicotooPet.Desktop.ViewModels;
 public sealed record ReferencePreviewItem(string ShotId, string Sha256, long Bytes,
     string InputRelativePath, string SourceReference, string SourceDigest, BitmapSource Preview);
 
+public sealed record ReferenceKeyframeInstruction(string ShotId, string StillPrompt, string ReviewChecklist);
+
 /// <summary>Local preview and explicit request for existing Core approvals; never grants execution permission.</summary>
 public sealed class ReferenceBatchPreviewViewModel : ObservableObject
 {
@@ -23,6 +26,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     private readonly ReferencePreviewSnapshotStager _stager;
     private readonly HashSet<string> _eligibleShots;
     private readonly bool _requiresFullV2Batch;
+    private readonly bool _p0PlanCandidate;
+    private readonly string _creativeJobId;
     private readonly Dictionary<string, (ReferencePreviewSnapshot Snapshot, ReferencePreviewItem Item)> _snapshots = new(StringComparer.Ordinal);
     private ReferenceBatchRequest? _frozenRequest;
     private ReferenceBatchReceipt? _initialReceipt;
@@ -78,6 +83,15 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             eligible.AddRange(shots.EnumerateArray().Select(shot => Text(shot, "shot_id")));
         }
         _requiresFullV2Batch = v2Candidate;
+        _creativeJobId = package.CreativeJobId;
+        // 01. P0 完整计划只涵盖三镜头、四秒、横屏的已封存候选。
+        KeyframeInstructions = v2Candidate ? ReadKeyframeInstructions(stages, eligible)
+            : Array.Empty<ReferenceKeyframeInstruction>();
+        _p0PlanCandidate = v2Candidate && KeyframeInstructions.Count == 3
+            && stages.TryGetProperty("creative_brief.v1", out var brief)
+            && Text(brief, "output_profile_id") == "video.landscape.v1"
+            && shots.EnumerateArray().All(shot => shot.TryGetProperty("duration_seconds", out var duration)
+                && duration.ValueKind == JsonValueKind.Number && duration.TryGetDouble(out var seconds) && seconds == 4);
         _gateway = gateway;
         _stager = stager;
         GoalId = continuation.GoalId;
@@ -92,6 +106,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public string CreativePackageDigest { get; }
     public ObservableCollection<ReferencePreviewItem> Items { get; } = new();
     public string[] EligibleShots { get; }
+    public IReadOnlyList<ReferenceKeyframeInstruction> KeyframeInstructions { get; }
     public bool UserConfirmsPreviewAndRights
     {
         get => _consent;
@@ -111,7 +126,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         get => _createdProductionJob;
         private set => SetProperty(ref _createdProductionJob, value);
     }
-    public bool CanCreateReviewedPlan => !IsBusy && _requiresFullV2Batch
+    public bool CanCreateReviewedPlan => !IsBusy && _p0PlanCandidate
         && _gateway is IReviewedThreeShotPlanGateway && _approvalFresh
         && Receipt is { Status: "Approved" } receipt && receipt.ExpiresAt > DateTimeOffset.UtcNow
         && receipt.References.Length == 3 && CreatedProductionJob is null;
@@ -260,14 +275,48 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     }
 
     // 03. 展示成功之前，逐镜核对 Core 真实冻结计划和全部已批参考图。
+    // 02. 显示原始首帧 Prompt 与检查清单，不替换 Core 判断。
+    private static IReadOnlyList<ReferenceKeyframeInstruction> ReadKeyframeInstructions(JsonElement stages, IReadOnlyList<string> shotIds)
+    {
+        if (!stages.TryGetProperty("keyframe_kit.v1", out var kit)
+            || Text(kit, "schema_version") != "keyframe_kit.v1"
+            || !IsDigest(Text(kit, "kit_digest")) || !IsDigest(Text(kit, "bible_digest"))
+            || !kit.TryGetProperty("keyframes", out var frames)
+            || frames.ValueKind != JsonValueKind.Array || frames.GetArrayLength() != 3)
+            return Array.Empty<ReferenceKeyframeInstruction>();
+        var items = new List<ReferenceKeyframeInstruction>();
+        foreach (var frame in frames.EnumerateArray())
+        {
+            var index = items.Count;
+            var id = Text(frame, "shot_id");
+            var prompt = Text(frame, "still_prompt");
+            if (id != shotIds[index] || prompt.Length is < 1 or > 5000
+                || Text(frame, "approval_status") != "PENDING_HUMAN_REVIEW"
+                || !frame.TryGetProperty("order", out var order)
+                || order.ValueKind != JsonValueKind.Number || !order.TryGetInt32(out var number) || number != index + 1
+                || !frame.TryGetProperty("review_checklist", out var checklist)
+                || checklist.ValueKind != JsonValueKind.Array || checklist.GetArrayLength() is < 1 or > 20
+                || checklist.EnumerateArray().Any(x => x.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(x.GetString()) || x.GetString()!.Length > 500))
+                return Array.Empty<ReferenceKeyframeInstruction>();
+            items.Add(new(id, prompt, string.Join("\n", checklist.EnumerateArray().Select(x => x.GetString()))));
+        }
+        return items.AsReadOnly();
+    }
+
     private void ValidateCreatedPlan(ProductionJobRecord job, ProductionPlanRecord plan, ReferenceBatchReceipt approved)
     {
         if (plan.SchemaVersion != "1.1" || plan.ProductionJobId != job.ProductionJobId
             || plan.CreativePackageId != CreativePackageId || plan.CreativePackageDigest != CreativePackageDigest
             || plan.ProjectKey != job.ProjectKey || plan.ProductionProfile != job.ProductionProfile
+            || plan.OutputProfileId != "video.landscape.v1"
             || plan.TargetRuntimeMs != 12000 || plan.Tasks is not { Length: 3 }
+            || !plan.Tasks.OrderBy(x => x.Order).Select(x => x.Order).SequenceEqual(new[] { 1, 2, 3 })
             || !plan.Tasks.OrderBy(x => x.Order).Select(x => x.ShotId).SequenceEqual(EligibleShots))
             throw new InvalidDataException("REFERENCE_PRODUCTION_PLAN_MISMATCH");
+        // 03. 复用现有执行器的 canonical JSON 摘要规则。
+        var digest = Convert.ToHexString(SHA256.HashData(CanonicalJson.Serialize(JsonSerializer.SerializeToNode(plan)!))).ToLowerInvariant();
+        if (digest != job.PlanDigest) throw new InvalidDataException("REFERENCE_PRODUCTION_PLAN_DIGEST_MISMATCH");
         var taskIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var task in plan.Tasks)
         {
@@ -275,10 +324,11 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             var asset = task.ReferenceAsset;
             if (string.IsNullOrWhiteSpace(task.ProductionTaskId) || !taskIds.Add(task.ProductionTaskId)
                 || task.RenderIntent != "IMAGE_TO_VIDEO" || task.ExecutionDisposition != "Executable"
+                || task.WorkflowId != ComfyWorkflowTemplateValidator.I2VWorkflowId
                 || task.Width != 832 || task.Height != 480 || task.Fps != 24
                 || task.FrameCount != 97 || task.TargetDurationMs != 4000 || asset is null
                 || asset.SchemaVersion != "reference_asset.v1" || asset.AssetId != source.AssetId
-                || asset.GoalId != GoalId || asset.CreativePackageId != CreativePackageId
+                || asset.GoalId != GoalId || asset.CreativeJobId != _creativeJobId || asset.CreativePackageId != CreativePackageId
                 || asset.CreativePackageDigest != CreativePackageDigest
                 || asset.ProductionJobId != job.ProductionJobId || asset.ProductionTaskId != task.ProductionTaskId
                 || asset.ShotId != task.ShotId || asset.ApprovalId != approved.ApprovalId
