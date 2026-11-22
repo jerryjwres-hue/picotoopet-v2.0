@@ -1027,6 +1027,42 @@ def _verify_dynamic_creative_and_production_gate(studio, created, binding, job, 
         services.production._verify_dynamic_reference_scope(package)
 
 
+def test_first_owner_packet_lookup_is_readonly_before_any_commit(studio):
+    """Fresh Core has its canonical ledger ready before the first Film Studio lookup."""
+    db = studio.app.state.services.database
+    # 01. Before any owner evidence endpoint is called, startup has initialized the ledger.
+    assert db.scalar("SELECT MAX(version) FROM schema_migrations") == 24
+    assert db.scalar("SELECT COUNT(*) FROM canonical_evidence") == 0
+    project_id = _asset_project(studio)
+    uploaded = studio.post(
+        ASSET_ROUTE, content=_ASSET_PNG,
+        headers=_asset_headers(project_id, "character", _ASSET_PNG),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    query = {
+        "project_id": project_id,
+        "character_ref": uploaded.json()["artifact_id"],
+        "subject_key": "pet:first-lookup",
+    }
+
+    # 02. Empty and repeated queries must be genuine reads, not lazy schema creation.
+    route = "/api/v1/studio/owner-subject-packets"
+    before = _counts(studio)
+    changes_before = db.connection.total_changes
+    schema_before = db.scalar("PRAGMA schema_version")
+    for _ in range(2):
+        result = studio.get(route, params=query)
+        assert result.status_code == 200, result.text
+        assert result.json()["packets"] == []
+        assert all(result.json()[flag] is False for flag in (
+            "owner_approved", "production_approval_granted", "can_queue",
+        ))
+    assert db.connection.total_changes == changes_before
+    assert db.scalar("PRAGMA schema_version") == schema_before
+    assert db.scalar("SELECT COUNT(*) FROM canonical_evidence") == 0
+    assert _counts(studio) == before
+
+
 def test_reviewed_packets_are_scoped_reusable_and_recomputed(studio, scoped_story):
     db = studio.app.state.services.database
     pack = scoped_story["storypack"]
