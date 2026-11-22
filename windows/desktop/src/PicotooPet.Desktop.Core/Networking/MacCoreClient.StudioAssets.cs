@@ -19,7 +19,7 @@ public sealed partial class MacCoreClient
             || projectId.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
             || role is not ("character" or "scene" or "style")
             || !(mediaType is "image/png" or "image/jpeg" or "image/webp"
-                 || role == "style" && mediaType is "text/plain" or "application/json")
+                 || (role == "style" && mediaType is ("text/plain" or "application/json")))
             || data.Length is <= 0 or > MaxStudioAssetBytes)
         {
             throw new ArgumentException("不符合本地资产登记合同。");
@@ -28,6 +28,9 @@ public sealed partial class MacCoreClient
         // 02. 冻结上传字节与 SHA；不包含本地路径或文件名。
         var snapshot = data.ToArray();
         var digest = Convert.ToHexStringLower(SHA256.HashData(snapshot));
+        // 项目 ID、角色和哈希均限定为 ASCII 安全字段，与 Core 紧凑 JSON 完全一致。
+        var scope = JsonSerializer.SerializeToUtf8Bytes(new[] { projectId, role, digest });
+        var expectedId = "asset-" + Convert.ToHexStringLower(SHA256.HashData(scope));
         var receipt = await SendAsync<JsonElement>(
             HttpMethod.Post, "api/v1/studio/assets/import", null,
             "studio.asset.import.local", null, cancellationToken, 16 * 1024,
@@ -58,16 +61,12 @@ public sealed partial class MacCoreClient
             || !AssetBoolIs(receipt, "content_integrity_verified", true)
             || new[] { "owner_approved", "master_approved", "is_original", "can_queue",
                        "gpu_post_authorized" }.Any(key => !AssetBoolIs(receipt, key, false))
-            || !receipt.TryGetProperty("artifact_id", out var idField)
-            || idField.ValueKind != JsonValueKind.String
-            || idField.GetString() is not { Length: 70 } assetId
-            || !assetId.StartsWith("asset-", StringComparison.Ordinal)
-            || assetId.Skip(6).Any(c => !(c is >= '0' and <= '9' or >= 'a' and <= 'f')))
+            || !AssetStringIs(receipt, "artifact_id", expectedId))
         {
             throw new InvalidOperationException("资产回执未验证；不得绑定剧本或生成任务。");
         }
 
-        return assetId;
+        return expectedId;
     }
 
     private static bool AssetStringIs(JsonElement value, string key, string expected) =>
