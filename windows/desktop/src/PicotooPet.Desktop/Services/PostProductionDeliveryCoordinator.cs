@@ -40,6 +40,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     private bool _disposed;
     private bool _opening;
     private readonly VerifiedGoalDeliveryProjectionStore? _durableProjection;
+    private readonly MasterVisualFailureMemoStore? _visualFailureMemo;
     private bool _backgroundProduction;
 
     /// <summary>
@@ -61,9 +62,11 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         bool backgroundProduction = true,
         Func<DateTimeOffset>? utcNow = null,
         TimeSpan? retryDelay = null,
-        Action<string, string, string, Exception>? failureReporter = null)
+        Action<string, string, string, Exception>? failureReporter = null,
+        MasterVisualFailureMemoStore? visualFailureMemo = null)
     {
         _durableProjection = durableProjection;
+        _visualFailureMemo = visualFailureMemo;
         _backgroundProduction = backgroundProduction;
         _failureReporter = failureReporter;
         // ── A transient postproduction outage must not permanently poison a ready Core job. ──
@@ -105,7 +108,8 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             qa.VerifyAsync,
             durableProjection: VerifiedGoalDeliveryProjectionStore.CreateDefault(),
             backgroundProduction: false,
-            failureReporter: session.LogPostProductionFailure);
+            failureReporter: session.LogPostProductionFailure,
+            visualFailureMemo: MasterVisualFailureMemoStore.CreateDefault());
     }
 
     public GoalDeliverySnapshot CurrentSnapshot
@@ -451,6 +455,7 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
     {
         // ── Report the exact last entered CPU-only stage, never a user-authored path.
         var stage = "PLAN_FETCH";
+        string? frozenVisualFingerprint = null;
         try
         {
             // Requirements come from immutable Core plans; never infer them from available files.
@@ -498,6 +503,17 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
             var masterInput = new MasterCompositionInputV1(
                 c004, narrationPlan, audio, overlayPlan, visualOverlay);
             stage = "C009_MASTER";
+            if (_backgroundProduction && _visualFailureMemo is not null)
+            {
+                // 01. Only an identical frozen plan and unchanged real C004/C008
+                //     bytes can suppress an already known deterministic error.
+                frozenVisualFingerprint = await _visualFailureMemo.CaptureFingerprintAsync(
+                    masterInput, cancellationToken).ConfigureAwait(false);
+                if (frozenVisualFingerprint is not null
+                    && await _visualFailureMemo.WasAlreadyFailedAsync(
+                        goalId, jobId, frozenVisualFingerprint, cancellationToken).ConfigureAwait(false))
+                    throw new InvalidDataException("MASTER_VISUAL_REPEAT_SUPPRESSED");
+            }
             var result = await _compose(masterInput, cancellationToken).ConfigureAwait(false);
 
             GoalDeliveryCandidateV1 candidate;
@@ -604,6 +620,29 @@ public sealed class PostProductionDeliveryCoordinator : IPostProductionDeliveryO
         }
         catch (Exception error)
         {
+            // 02. Only the actual C009A deterministic visual-invalid contract
+            //     writes a negative SHA memo; transient, QA, authentication and
+            //     other errors never become sticky across process restarts.
+            if (stage == "C009_MASTER" && frozenVisualFingerprint is not null
+                && _visualFailureMemo is not null
+                && error is MasterCompositionException
+                {
+                    Code: MasterCompositionException.VisualInvalid
+                })
+            {
+                try
+                {
+                    await _visualFailureMemo.RememberAsync(
+                        goalId, jobId, frozenVisualFingerprint, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception memoFailure) when (memoFailure is IOException
+                    or UnauthorizedAccessException or InvalidDataException)
+                {
+                    // 03. A memo I/O error cannot hide the original master
+                    //     validation failure or grant a fallback/QA PASS.
+                }
+            }
             // ── Persist a safe failure code so a live Worker can be diagnosed.
             _failureReporter?.Invoke(goalId, jobId, stage, error);
             lock (_gate)
