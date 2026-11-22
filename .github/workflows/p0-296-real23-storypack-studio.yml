@@ -7,6 +7,10 @@ on:
       - "src/picotoopet_core/domain/storypack*.py"
       - "src/picotoopet_core/api/routes/studio.py"
       - "src/picotoopet_core/api/app.py"
+      - "src/picotoopet_core/autonomous/goal_service.py"
+      - "src/picotoopet_core/autonomous/human_pipeline.py"
+      - "src/picotoopet_core/autonomous/discovery.py"
+      - "src/picotoopet_core/autonomous/local_creative.py"
       - "tests/integration/test_real23_studio_storypack_preview.py"
   workflow_dispatch:
 
@@ -15,7 +19,7 @@ permissions:
 
 jobs:
   readonly-native-mac:
-    name: Native Mac 2.3 read-only Studio and Worker denial
+    name: Native Mac 2.3 Studio scope and Worker denial
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -32,7 +36,7 @@ jobs:
         run: |
           python -m pip install -e . pytest==9.1.1 pytest-asyncio==1.4.0 ruff==0.16.1
 
-      - name: Verify read-only StoryPack, real schema and Ed25519 denial
+      - name: Verify StoryPack, scoped Goal, real schema and Ed25519 denial
         shell: bash
         env:
           PYTHONDONTWRITEBYTECODE: "1"
