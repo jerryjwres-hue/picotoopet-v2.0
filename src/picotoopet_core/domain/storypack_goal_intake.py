@@ -68,7 +68,9 @@ def build_storypack_goal_intake(pack: StoryPackV1, storypack_sha256: str) -> dic
         "owner_approved": False,
         "gpu_post_authorized": False,
         "next_step": (
-            "REVIEW_AND_SUBMIT_EXISTING_HUMAN_GOAL_API"
+            "DYNAMIC_OWNER_REVIEW_POLICY_REQUIRED"
+            if pack.dynamic_motion is not None
+            else "REVIEW_AND_SUBMIT_EXISTING_HUMAN_GOAL_API"
             if not reasons else "REVISE_STORYPACK_MANUALLY"
         ),
     }
