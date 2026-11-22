@@ -8,8 +8,6 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from collect_local_keyframe_outputs import verified_output
-
 MAX_REFERENCE_ENTRIES = 12
 
 
@@ -42,6 +40,8 @@ def _verify(root: Path, file: dict) -> tuple[str, dict]:
         or any(ch not in "0123456789abcdef" for ch in digest)
         or type(count) is not int or not 0 < count <= 32 * 1024 * 1024):
         raise ValueError("KEYFRAME_REFERENCE_FILE_INVALID")
+    # 03. Local import avoids cycle: collector reuses batch digest validators.
+    from collect_local_keyframe_outputs import verified_output
     subfolder, _, basename = filename.rpartition("/")
     relative, data, dimensions = verified_output(root, subfolder, basename)
     if relative != filename or len(data) != count or hashlib.sha256(data).hexdigest() != digest:
