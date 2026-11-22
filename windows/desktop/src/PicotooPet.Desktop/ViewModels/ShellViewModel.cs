@@ -210,6 +210,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.CloudDevelopment => new CloudDevelopmentPageViewModel(),
         NavigationRoute.Automation when _session is not null =>
             new AutomationPageViewModel(_session),
+        NavigationRoute.FilmStudio when _session is not null =>
+            new FilmStudioPageViewModel(_session),
         NavigationRoute.BusinessAutomation when _session is not null =>
             new BusinessAutomationPageViewModel(_session),
         NavigationRoute.Health when _session is not null =>
@@ -304,6 +306,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationRoute.CloudDevelopment => "云端开发",
         NavigationRoute.Automation => "自动化",
         NavigationRoute.BusinessAutomation => "业务自动化",
+        NavigationRoute.FilmStudio => "影视工作台",
         NavigationRoute.Health => "健康",
         NavigationRoute.Diagnostics => "诊断",
         NavigationRoute.Settings => "设置",
@@ -355,6 +358,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             "当前服务尚未声明耐久工作流自动化能力。",
             "升级 Mac Core 后页面将接入工作流、步骤和安全控制动作。",
             "你现在不需要操作。"),
+        NavigationRoute.FilmStudio => FilmStudioPageViewModel.CreateForSmokeTest(),
         NavigationRoute.BusinessAutomation => BusinessAutomationPageViewModel.CreateForSmokeTest(
             Array.Empty<BusinessWorkPackageRecord>(),
             "local.intelligence.v1 · smoke"),
@@ -465,6 +469,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         else if (route is NavigationRoute.Projects
                  or NavigationRoute.Automation
                  or NavigationRoute.BusinessAutomation
+                 or NavigationRoute.FilmStudio
                  or NavigationRoute.Health
                  or NavigationRoute.Diagnostics)
         {
