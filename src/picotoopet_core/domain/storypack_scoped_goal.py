@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from picotoopet_core.autonomous.owner_subject_evidence import OwnerSubjectEvidencePacket
 from picotoopet_core.creative.director import parse_goal_directives
 from picotoopet_core.creative.dynamic_pet_story import build_dynamic_motion_proposal
 from picotoopet_core.domain.storypack import StoryPackV1, storypack_preview
@@ -89,36 +91,15 @@ def prepare_scoped_story_goal(payload: ScopedStoryGoalRequest, services) -> tupl
 
     # 03. Select only an existing exact reviewed claim packet. Never manufacture
     # owner testimony from a draft, infer identity from filenames, or grant OwnerPrincipal.
-    evidence_rows = database.fetchall(
-        "SELECT evidence_id,evidence_type,text_value,raw_hash,trust_level,provenance_json,origin_kind,source "
-        "FROM canonical_evidence WHERE subject_key=? AND source='owner_attestation' "
-        "AND origin_kind='manual' ORDER BY evidence_id LIMIT 5001",
-        (payload.owner_subject_key,),
+    packets = reviewed_owner_packets(database, payload.owner_subject_key,
+                                    assets["character"]["sha256"])
+    matched_packet = next(
+        (packet for packet in packets if packet["packet_digest"] == payload.reviewed_packet_sha256),
+        None,
     )
-    if len(evidence_rows) > 5000:
-        raise ValueError("STORY_GOAL_EVIDENCE_LIMIT")
-    kinds = {"pet.owner.visible_identity", "pet.owner.visible_scene", "pet.owner.creative_intent"}
-    matched = []
-    for row in evidence_rows:
-        provenance = json.loads(row["provenance_json"])
-        if provenance.get("reviewed_packet_sha256") != payload.reviewed_packet_sha256:
-            continue
-        if (
-            provenance.get("owner_reviewed") is not True
-            or provenance.get("photo_bytes_verified") is not False
-            or provenance.get("photo_sha256_claim") != assets["character"]["sha256"]
-            or row["evidence_type"] not in kinds
-            or row["trust_level"] != ("E" if row["evidence_type"] == "pet.owner.creative_intent" else "D")
-            or not row["text_value"].strip()
-            or row["text_value"] != row["text_value"].strip()
-            or len(row["text_value"]) > 500
-            or hashlib.sha256(row["text_value"].encode("utf-8")).hexdigest() != row["raw_hash"]
-        ):
-            raise ValueError("STORY_GOAL_OWNER_PACKET_INVALID")
-        matched.append({"evidence_id": row["evidence_id"], "kind": row["evidence_type"],
-                        "raw_hash": row["raw_hash"]})
-    if not 3 <= len(matched) <= 10 or {row["kind"] for row in matched} != kinds:
-        raise ValueError("STORY_GOAL_OWNER_PACKET_INCOMPLETE")
+    if matched_packet is None:
+        raise ValueError("STORY_GOAL_OWNER_PACKET_INVALID")
+    matched = matched_packet["evidence"]
 
     # 04. Bind immutable identities, not permissions. The subsequent structured
     # OwnerPrincipal review and all production authorizations remain mandatory.
@@ -138,6 +119,112 @@ def prepare_scoped_story_goal(payload: ScopedStoryGoalRequest, services) -> tupl
         binding["dynamic_storypack"] = pack.model_dump(mode="json")
         binding["dynamic_motion_digest"] = motion["motion_digest"]
     return proposal, binding
+
+
+
+def reviewed_owner_packets(database, subject_key: str, photo_sha256: str) -> list[dict]:
+    """Reconstruct exact reviewed packets, including original claim order and digest."""
+    rows = database.fetchall(
+        "SELECT evidence_id,evidence_type,text_value,raw_hash,trust_level,"
+        "provenance_json,origin_ref,captured_at "
+        "FROM canonical_evidence WHERE subject_key=? AND source='owner_attestation' "
+        "AND origin_kind='manual' ORDER BY evidence_id LIMIT 5001",
+        (subject_key,),
+    )
+    if len(rows) > 5000:
+        raise ValueError("STORY_GOAL_EVIDENCE_LIMIT")
+    groups: dict[str, list] = {}
+    for row in rows:
+        try:
+            provenance = json.loads(row["provenance_json"])
+        except (ValueError, TypeError):
+            continue
+        digest = provenance.get("reviewed_packet_sha256") if isinstance(provenance, dict) else None
+        if isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest):
+            groups.setdefault(digest, []).append((row, provenance))
+
+    packets = []
+    for digest, members in groups.items():
+        indexed = {}
+        evidence = []
+        for row, provenance in members:
+            prefix = f"pet-owner:{digest}:claim:"
+            origin = row["origin_ref"]
+            ordinal = origin[len(prefix):] if isinstance(origin, str) and origin.startswith(prefix) else ""
+            text = row["text_value"]
+            kind = row["evidence_type"].removeprefix("pet.owner.")
+            if (
+                re.fullmatch(r"0[1-9]|10", ordinal) is None
+                or int(ordinal) in indexed
+                or provenance.get("owner_reviewed") is not True
+                or provenance.get("photo_bytes_verified") is not False
+                or provenance.get("photo_sha256_claim") != photo_sha256
+                or kind not in {"visible_identity", "visible_scene", "creative_intent"}
+                or row["evidence_type"] != f"pet.owner.{kind}"
+                or row["trust_level"] != ("E" if kind == "creative_intent" else "D")
+                or not isinstance(text, str) or text != text.strip()
+                or hashlib.sha256(text.encode("utf-8")).hexdigest() != row["raw_hash"]
+            ):
+                break
+            indexed[int(ordinal)] = {"kind": kind, "statement": text}
+            evidence.append({
+                "evidence_id": row["evidence_id"], "kind": row["evidence_type"],
+                "raw_hash": row["raw_hash"],
+            })
+        else:
+            if sorted(indexed) != list(range(1, len(indexed) + 1)):
+                continue
+            try:
+                packet = OwnerSubjectEvidencePacket.model_validate({
+                    "subject_key": subject_key, "photo_sha256_claim": photo_sha256,
+                    "claims": [indexed[index] for index in sorted(indexed)],
+                })
+            except ValueError:
+                continue
+            if packet.digest() != digest:
+                continue
+            packets.append({
+                "packet_digest": digest,
+                "packet": packet.model_dump(mode="json"),
+                "evidence": sorted(evidence, key=lambda item: item["evidence_id"]),
+                "captured_at": max(row["captured_at"] for row, _ in members),
+            })
+    return sorted(packets, key=lambda packet: (packet["captured_at"], packet["packet_digest"]),
+                  reverse=True)
+
+
+def list_scoped_reviewed_packets(services, project_id: str, character_ref: str,
+                                 subject_key: str) -> dict:
+    """Return at most 10 exact matching, local-only attestation packets; no authority."""
+    database = services.database
+    row = database.fetchone(
+        "SELECT a.sha256, a.artifact_type, a.cloud_policy, p.status "
+        "FROM artifacts a JOIN projects p ON p.project_id=a.project_id "
+        "WHERE a.artifact_id=? AND a.project_id=?",
+        (character_ref, project_id),
+    )
+    if (row is None or row["status"] != "Active"
+        or row["artifact_type"] != "storypack_character" or row["cloud_policy"] != "local_only"):
+        raise ValueError("STORY_GOAL_ASSET_UNVERIFIED")
+    check = inspect_recorded_asset_refs(
+        database, [character_ref], managed_objects_dir=services.settings.paths.objects_dir,
+    )[0]
+    if check["content_integrity_verified"] is not True or row["sha256"] != check["recorded_sha256"]:
+        raise ValueError("STORY_GOAL_ASSET_UNVERIFIED")
+    candidates = reviewed_owner_packets(database, subject_key, row["sha256"])
+    return {
+        "contract": "picotoo.storypack.reviewed-owner-packets.v1",
+        "project_id": project_id, "character_ref": character_ref,
+        "subject_key": subject_key, "character_sha256": row["sha256"],
+        "packets": [
+            {"packet_digest": item["packet_digest"], "claims": item["packet"]["claims"],
+             "captured_at": item["captured_at"]}
+            for item in candidates[:10]
+        ],
+        "owner_approved": False,
+        "production_approval_granted": False,
+        "can_queue": False,
+    }
 
 
 def load_bound_dynamic_storypack(binding: dict) -> StoryPackV1 | None:

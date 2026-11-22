@@ -134,7 +134,23 @@ internal static class ProductionShellEntryWpfSmokeTests
                 SmokeAssert.True(assetPanel.FindName(controlName) is Button { IsEnabled: false },
                     $"未选择项目时 {controlName} 不得允许资产登记");
             }
-            Console.WriteLine("REAL_FILM_STUDIO_DIRECT_ENTRY=PASS; STORYPACK_EXPANDED=PASS; ASSET_UI=PASS; GPU_POST=0");
+            // 动态入口真实 WPF 点击仅改草稿；项目未选时必须禁止提交。
+            SmokeAssert.True(assetPanel.FindName("SubmitScopedStoryButton") is Button { IsEnabled: false },
+                "未选项目不得提交动态 Goal");
+            var dynamicEntry = assetPanel.FindName("LoadDynamicPilotButton") as Button
+                ?? throw new InvalidOperationException("Dynamic film entry missing");
+            dynamicEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, dynamicEntry));
+            shell.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+            var studio = (FilmStudioPageViewModel)assetPanel.DataContext;
+            var draft = System.Text.Json.JsonElement.Parse(studio.Creative.StoryPackJson);
+            SmokeAssert.Equal("dynamic-pet-feeding-v1.0.0",
+                draft.GetProperty("dynamic_motion").GetProperty("policy").GetString(),
+                "真实 UI 动态示例没有选择动态动作契约");
+            SmokeAssert.True(!studio.Creative.CanCreateStoryGoal,
+                "载入动态示例不能直接创建旧普通 Goal");
+            SmokeAssert.True(assetPanel.FindName("SubmitScopedStoryButton") is Button { IsEnabled: false },
+                "动态示例不得自动选择项目或授权 Goal");
+            Console.WriteLine("REAL_FILM_STUDIO_DIRECT_ENTRY=PASS; STORYPACK_EXPANDED=PASS; ASSET_UI=PASS; DYNAMIC_UI=PASS; GPU_POST=0");
 
             shell.AllowExplicitClose();
             shell.Close();

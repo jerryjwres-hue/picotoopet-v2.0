@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from starlette.concurrency import run_in_threadpool
 
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.autonomous.goal_service import HumanGoalRequest, HumanGoalService
 from picotoopet_core.autonomous.models import GoalRecord
-from picotoopet_core.domain.storypack_scoped_goal import ScopedStoryGoalRequest, prepare_scoped_story_goal
+from picotoopet_core.domain.storypack_scoped_goal import (
+    ScopedStoryGoalRequest, list_scoped_reviewed_packets, prepare_scoped_story_goal,
+)
 from picotoopet_core.domain.storypack import StoryPackError, parse_storypack, storypack_preview
 from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
 from picotoopet_core.domain.storypack_asset_intake import MAX_ASSET_BYTES, import_local_asset
@@ -134,6 +136,25 @@ async def import_storypack_asset(
     except OSError as exc:
         raise ApiError(status_code=409, code="ASSET_STORE_UNAVAILABLE",
                        message="Managed store unavailable.", retryable=False) from exc
+
+
+@router.get("/studio/owner-subject-packets")
+def list_owner_subject_packets(
+    request: Request,
+    response: Response,
+    project_id: str = Query(min_length=1, max_length=100),
+    character_ref: str = Query(pattern=r"^asset-[a-f0-9]{64}$"),
+    subject_key: str = Query(pattern=r"^pet:[a-z0-9][a-z0-9-]{1,63}$"),
+) -> dict:
+    """Read existing exact packet candidates from the canonical local evidence ledger."""
+    response.headers["Cache-Control"] = "no-store, private"
+    try:
+        return list_scoped_reviewed_packets(
+            request.app.state.services, project_id, character_ref, subject_key,
+        )
+    except ValueError as exc:
+        raise ApiError(status_code=409, code="STORY_GOAL_PACKET_LOOKUP_REJECTED",
+                       message="Scoped evidence could not be verified.", retryable=False) from exc
 
 
 @router.post("/studio/storypacks/scoped-goal", response_model=GoalRecord, status_code=201)
