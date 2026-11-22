@@ -38,8 +38,9 @@ permissions:
 
 jobs:
   portable-preview:
-    # 其他 PR 不得触发便携包；明确禁止作为正式安装产物。
-    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop'
+    # 其他 PR 不得触发便携包；仅允许本次 #330 统一集成审查构建无签名内部候选。
+    # 必须同时匹配原有精确 head 和本次唯一 base，不扩大其他 PR 的构建权限。
+    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop' || (github.head_ref == 'feat/p0-296-keyframe-thumbnail-review' && github.base_ref == 'integrate/p0-296-film-closed-loop-candidate-20261121')
     name: Build unsigned portable WPF candidate without Release Builder
     runs-on: windows-2025
     timeout-minutes: 35
