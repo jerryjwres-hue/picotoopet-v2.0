@@ -19,6 +19,7 @@ from uuid import UUID
 from recover_comfy_keyframe_workflow import (
     MAX_HISTORY_BYTES, canonical_bytes, parse_history,
 )
+from qwen_reference_bindings import resolve_reference_bindings
 
 MAX_PACKAGE_BYTES = 16 * 1024 * 1024
 PROFILE = "video.landscape.v1"
@@ -127,23 +128,37 @@ def slot(graph: dict, binding: dict, allowed: set[str], value_type: type) -> tup
 
 
 def prepare(graph: dict, recovery: dict, bindings: dict, package: dict,
-            package_sha: str, variant: int) -> tuple[dict[str, bytes], dict]:
+            package_sha: str, variant: int,
+            input_root: Path | None = None) -> tuple[dict[str, bytes], dict]:
     # 03. Freeze all topology and non-allowlisted inputs: no guessed node IDs.
     graph_sha = sha(canonical_bytes(graph))
     require_digest(package_sha)
     if (recovery["schema"] != "picotoo.local-keyframe-workflow-recovery.v1"
         or recovery["graph_sha256"] != graph_sha
         or recovery.get("production_authorized") is not False
-        or recovery.get("history_status") != "RECORDED_SUCCESS"
+        or recovery.get("history_status") not in (
+            "RECORDED_SUCCESS", "PNG_EMBEDDED_NO_HISTORY"
+        )
         or recovery.get("gpu_post") != 0
         or not 1 <= len(graph) <= 512):
         raise ValueError("KEYFRAME_RECOVERY_MISMATCH")
     if (type(variant) is not int or not 0 <= variant <= 10000
         or bindings.get("schema") != "picotoo.local-keyframe-slot-map.v1"
         or bindings.get("graph_sha256") != graph_sha
-        or set(bindings) != {"schema", "graph_sha256", "positive_prompt", "seed", "output_prefix"}):
+        or set(bindings) not in (
+            {"schema", "graph_sha256", "positive_prompt", "seed", "output_prefix"},
+            {"schema", "graph_sha256", "positive_prompt", "seed", "output_prefix", "reference_images"},
+        )):
         raise ValueError("KEYFRAME_BINDINGS_INVALID")
-    prompt_slot = slot(graph, bindings["positive_prompt"], {"text"}, str)
+    prompt_binding = bindings["positive_prompt"]
+    # 01. Qwen-Image-Edit uses a strictly named .prompt field. Do not allow
+    #     arbitrary class_type or transform other prompt-like graph fields.
+    if prompt_binding.get("input_name") == "prompt":
+        if prompt_binding.get("class_type") != "TextEncodeQwenImageEditPlus":
+            raise ValueError("KEYFRAME_QWEN_PROMPT_NODE_INVALID")
+        prompt_slot = slot(graph, prompt_binding, {"prompt"}, str)
+    else:
+        prompt_slot = slot(graph, prompt_binding, {"text"}, str)
     seed_slot = slot(graph, bindings["seed"], {"seed", "noise_seed"}, int)
     prefix_slot = slot(graph, bindings["output_prefix"], {"filename_prefix"}, str)
     if len({prompt_slot, seed_slot, prefix_slot}) != 3:
@@ -153,6 +168,9 @@ def prepare(graph: dict, recovery: dict, bindings: dict, package: dict,
     # negative prompt untouched. This is a candidate projection, not verification
     # of their contents, current file availability, or FLUX model identity.
     kit_digest, frames = keyframes(package)
+    references, reference_inventory = resolve_reference_bindings(
+        graph, bindings, frames, input_root
+    )
     files: dict[str, bytes] = {}
     records = []
     for frame in frames:
@@ -166,6 +184,10 @@ def prepare(graph: dict, recovery: dict, bindings: dict, package: dict,
             (prompt_slot, frame["still_prompt"]), (seed_slot, seed), (prefix_slot, prefix)
         ):
             candidate[node_id]["inputs"][name] = value
+        # 02. Change only explicitly reviewed LoadImage filename inputs;
+        #     all model selectors, negative prompts and graph topology stay frozen.
+        for node_id, per_shot in references.items():
+            candidate[node_id]["inputs"]["image"] = per_shot[shot_id]
         filename = f"{frame['order']:02d}-{shot_id}.json"
         data = canonical_bytes(candidate)
         files[filename] = data
@@ -183,6 +205,8 @@ def prepare(graph: dict, recovery: dict, bindings: dict, package: dict,
         "source_graph_sha256": graph_sha,
         "slot_map_sha256": sha(canonical_bytes(bindings)),
         "variant": variant,
+        "history_provenance": recovery["history_status"],
+        "reference_inputs": reference_inventory,
         "shots": records,
         "source_inputs_verified": False,
         "workflow_registered": False,
@@ -198,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--package-sha256", required=True)
     parser.add_argument("--recovery-dir", type=Path, required=True)
     parser.add_argument("--slot-map", type=Path, required=True)
+    parser.add_argument("--input-root", type=Path)
     parser.add_argument("--variant", type=int, default=0)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -207,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         recovery = parse_history(read_bounded(args.recovery_dir / "recovery_manifest.json"))
         bindings = parse_history(read_bounded(args.slot_map))
         files, manifest = prepare(graph, recovery, bindings, package,
-                                  args.package_sha256, args.variant)
+                                  args.package_sha256, args.variant, args.input_root)
         # 04. No overwrite; the last-written manifest marks complete export.
         args.output_dir.mkdir(parents=False, exist_ok=False)
         for name, data in files.items():
