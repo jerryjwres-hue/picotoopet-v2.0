@@ -20,6 +20,7 @@ on:
       - "src/picotoopet_core/autonomous/discovery.py"
       - "src/picotoopet_core/autonomous/local_creative.py"
       - "tests/integration/test_real23_studio_storypack_preview.py"
+      - "tests/integration/queue/test_mac24_backlog_compat.py"
   workflow_dispatch:
 
 permissions:
@@ -51,6 +52,7 @@ jobs:
         run: |
           PYTHONPATH=.:src python -m pytest -q \
             tests/integration/test_real23_studio_storypack_preview.py \
+            tests/integration/queue/test_mac24_backlog_compat.py \
             tests/unit/autonomous/test_owner_structured_review.py \
             tests/contract/test_v31_compatible_mac_23_upgrade.py \
             tests/production/test_v11_worker_challenge_transport.py \
