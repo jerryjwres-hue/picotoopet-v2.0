@@ -1,3 +1,5 @@
+using System.IO;
+using System.Text;
 using System.Windows;
 using PicotooPet.Desktop.ViewModels;
 
@@ -43,6 +45,50 @@ public partial class CreativeIntelligencePanel : System.Windows.Controls.UserCon
         if (DataContext is CreativeIntelligencePanelViewModel viewModel)
         {
             viewModel.LoadMaotaiDinnerPilotDraft();
+        }
+    }
+
+    // 只读取用户显式选择的有界 JSON 文件；仍须手动点击只读检查。
+    private void LoadStoryPackFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not CreativeIntelligencePanelViewModel viewModel)
+        {
+            return;
+        }
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "StoryPack JSON (*.json)|*.json",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+        {
+            return;
+        }
+        try
+        {
+            using var stream = new FileStream(dialog.FileName, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (stream.Length is <= 0 or > 128 * 1024)
+            {
+                throw new InvalidDataException("StoryPack size");
+            }
+            var data = new byte[(int)stream.Length];
+            stream.ReadExactly(data);
+            if (stream.ReadByte() != -1)
+            {
+                throw new InvalidDataException("StoryPack changed");
+            }
+            var draft = new UTF8Encoding(false, true).GetString(data).TrimStart('\uFEFF');
+            if (draft.Length > 100000 || string.IsNullOrWhiteSpace(draft))
+            {
+                throw new InvalidDataException("StoryPack text");
+            }
+            viewModel.StoryPackJson = draft;
+        }
+        catch (Exception)
+        {
+            // 失败保留原草稿，不回显文件路径、内容或错误堆栈。
+            ShowSafeError("StoryPack 文件读取失败", "请选择有效 UTF-8 JSON 文件（最多 128 KiB、100000 字符）。原草稿保持不变。");
         }
     }
 
