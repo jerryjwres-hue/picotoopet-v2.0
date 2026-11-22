@@ -29,6 +29,8 @@ _OFFLINE_QWEN_TOOLS = frozenset({
     "scripts/collect_local_keyframe_outputs.py",
     "scripts/offline_png_output_collector.py",
 })
+_OFFLINE_QWEN_TOOLS_V2 = _OFFLINE_QWEN_TOOLS | {"scripts/audit_local_qwen_pngs.py"}
+
 
 _REQUIRED = {
     "app/Picotoo Pet AI.exe",
@@ -200,12 +202,21 @@ def verify_preview_archive(
             #     this optional field remain verifiable as old previews.
             offline = manifest.get("offline_keyframe_tools")
             if offline is not None:
-                if (not isinstance(offline, list) or len(offline) != len(_OFFLINE_QWEN_TOOLS)
+                if (not isinstance(offline, list)
                     or any(not isinstance(item, str) for item in offline)
-                    or set(offline) != _OFFLINE_QWEN_TOOLS
-                    or {name for name in listed if name.startswith("scripts/")} != _OFFLINE_QWEN_TOOLS):
+                    or set(offline) not in (_OFFLINE_QWEN_TOOLS, _OFFLINE_QWEN_TOOLS_V2)
+                    or {name for name in listed if name.startswith("scripts/")} != set(offline)):
                     raise PreviewVerificationError("OFFLINE_QWEN_TOOLSET_INCOMPLETE")
-            elif any(name.startswith("scripts/") for name in listed):
+                if set(offline) == _OFFLINE_QWEN_TOOLS_V2:
+                    if (manifest.get("offline_inspector_script") != "Inspect-QwenKeyframes.ps1"
+                        or "Inspect-QwenKeyframes.ps1" not in listed):
+                        raise PreviewVerificationError("OFFLINE_INSPECTOR_SCRIPT_MISSING")
+                elif "offline_inspector_script" in manifest or "Inspect-QwenKeyframes.ps1" in listed:
+                    raise PreviewVerificationError("OFFLINE_INSPECTOR_UNEXPECTED")
+            elif any(name.startswith("scripts/") for name in listed) or (
+                "Inspect-QwenKeyframes.ps1" in listed
+                or "offline_inspector_script" in manifest
+            ):
                 raise PreviewVerificationError("OFFLINE_QWEN_TOOLSET_UNDECLARED")
             with zip_file.open("README_P0_DEVELOPER_PREVIEW.txt") as handle:
                 readme = handle.read().decode("utf-8-sig")
