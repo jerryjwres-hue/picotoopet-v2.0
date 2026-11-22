@@ -198,6 +198,13 @@ def main() -> int:
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait(timeout=10)
+                # 失败时保留真实 Python 服务端诊断；仅限本次 CI 临时实例。
+                if sys.exc_info()[0] is not None:
+                    log.flush()
+                    diagnostic = output.read_bytes()[-24000:].decode("utf-8", errors="replace")
+                    diagnostic = diagnostic.replace(token, "[REDACTED_TEST_TOKEN]")
+                    print("=== CI SANDBOX CORE LOG TAIL ===", file=sys.stderr)
+                    print(diagnostic, file=sys.stderr)
 
         _assert_sandbox_scoped_goal(root / "core-runtime" / "database" / "core.db")
 
