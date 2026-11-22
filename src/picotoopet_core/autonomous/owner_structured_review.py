@@ -435,6 +435,8 @@ class OwnerStructuredReviewService:
                 state_facts.facts_version != 2
                 or state_facts.pose_lock.fixed
                 or state_facts.pose_lock.body_pose.strip().casefold() != "standing"
+                or state_facts.pose_lock.head_direction.strip().casefold()
+                != "looking away from the bowl"
                 or state_facts.pose_lock.support_surface != details["support_surface"]
                 or not {item["framing"] for item in motion["shots"]} <= set(
                     state_facts.camera_lock.allowed_framings
