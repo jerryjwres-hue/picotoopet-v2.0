@@ -232,6 +232,34 @@ class QwenBindingsTests(unittest.TestCase):
             self.assertFalse(report["source_inputs_verified"])
             self.assertFalse(report["production_authorized"])
 
+    def test_renamed_composition_copy_rejected_by_strict_batch_preparer(self):
+        # 05. The strict binder must independently reject byte-identical
+        #     S1→S2 and S2→S3 images, even with different valid filenames.
+        copies = (
+            ("s02-composition.png", "s01-composition.png"),
+            ("s03-composition.png", "s02-composition.png"),
+        )
+        for target, source in copies:
+            with self.subTest(target=target):
+                with tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder)
+                    graph, recovery, bindings, package = qwen_fixture(root)
+                    raw = (root / source).read_bytes()
+                    (root / target).write_bytes(raw)
+                    item = next(
+                        item for item in bindings["reference_images"][0]["files"]
+                        if item["filename"] == target
+                    )
+                    item["sha256"] = hashlib.sha256(raw).hexdigest()
+                    item["bytes"] = len(raw)
+                    with self.assertRaisesRegex(
+                        ValueError, "KEYFRAME_REFERENCE_REUSED_BYTES_PER_SHOT"
+                    ):
+                        prepare(
+                            graph, recovery, bindings, package,
+                            "a" * 64, 0, root
+                        )
+
     def test_renamed_png_corrupt_jpeg_and_jpeg_symlink_denied(self):
         from qwen_reference_bindings import _verify, jpeg_dimensions
 
