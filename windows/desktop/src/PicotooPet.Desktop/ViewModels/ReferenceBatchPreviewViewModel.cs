@@ -789,6 +789,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         RaisePropertyChanged(nameof(IsBusy));
         RaisePropertyChanged(nameof(CanEdit));
         RaisePropertyChanged(nameof(CanLoadObservedCandidates));
+        RaisePropertyChanged(nameof(CanLoadCompositionWorkOrder));
         RaisePropertyChanged(nameof(CanResumeReferenceBatch));
         RaisePropertyChanged(nameof(CanSubmit));
         RaisePropertyChanged(nameof(CanRefresh));
