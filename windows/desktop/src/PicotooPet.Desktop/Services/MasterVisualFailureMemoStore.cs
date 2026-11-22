@@ -158,8 +158,8 @@ public sealed class MasterVisualFailureMemoStore
         }
     }
 
-    private async Task<string?> CaptureFileAsync(
-        string allowedRoot, string path, CancellationToken cancellationToken)
+    private static async Task<string?> CaptureFileAsync(
+        string allowedRoot, string? path, CancellationToken cancellationToken)
     {
         // 04. Never hash arbitrary Core/user paths or follow symlinks.
         //     An absent source has a stable marker so creating the file later
