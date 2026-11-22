@@ -251,11 +251,19 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             // 01. 真实 UI 读取本地观察清单，但不将观察结果视为许可或审批。
             var observedRoot = Path.Combine(root, "local-comfy-output");
             Directory.CreateDirectory(observedRoot);
-            var digest = Convert.ToHexStringLower(SHA256.HashData(png));
             var observedShots = Enumerable.Range(1, 3).Select(i =>
             {
                 var shot = $"shot-{i}";
-                File.WriteAllBytes(Path.Combine(observedRoot, shot + ".png"), png);
+                // Distinct real PNG bytes per shot: duplicate hashes are forbidden by the collector.
+                var pixels = new byte[] { 0, 0, (byte)(40 * i), 255, 0, (byte)(60 * i), 0, 255 };
+                var image = BitmapSource.Create(2, 1, 96, 96, PixelFormats.Bgra32, null, pixels, 8);
+                var outputEncoder = new PngBitmapEncoder();
+                outputEncoder.Frames.Add(BitmapFrame.Create(image));
+                using var encoded = new MemoryStream();
+                outputEncoder.Save(encoded);
+                var imageBytes = encoded.ToArray();
+                var digest = Convert.ToHexStringLower(SHA256.HashData(imageBytes));
+                File.WriteAllBytes(Path.Combine(observedRoot, shot + ".png"), imageBytes);
                 return new
                 {
                     shot_id = shot, order = i, prompt_id = $"00000000-0000-4000-8000-{i:000000000000}",
@@ -265,7 +273,7 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                     {
                         new
                         {
-                            output_relative_path = shot + ".png", sha256 = digest, bytes = png.Length,
+                            output_relative_path = shot + ".png", sha256 = digest, bytes = imageBytes.Length,
                             width = 2, height = 1, image_container_crc_verified = true,
                             pixels_decoded = false, visual_review = "UNREVIEWED",
                         }
@@ -295,13 +303,14 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Thumbnail read may not create approvals");
             // 02. Any changed file must invalidate EVERY preview, not leave one trusted-looking thumbnail.
             var changedThumbnail = Path.Combine(observedRoot, "shot-2.png");
+            var originalSecondImage = File.ReadAllBytes(changedThumbnail);
             File.WriteAllBytes(changedThumbnail, [1, 2, 3]);
             await RejectAsync(() => vm.InspectObservedCandidatesAsync(observedRoot));
             SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is null),
                 "One corrupt thumbnail must clear the complete untrusted observation");
             SmokeAssert.Equal(0, gateway.RegisterCalls,
                 "Thumbnail corruption must never write an approval");
-            File.WriteAllBytes(changedThumbnail, png);
+            File.WriteAllBytes(changedThumbnail, originalSecondImage);
             await vm.InspectObservedCandidatesAsync(observedRoot);
             SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
                 "Restoring original bytes should permit the exact same read-only preview");
@@ -319,8 +328,16 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             await RejectAsync(() => vm.AddObservedCandidateAsync(
                 vm.ObservedCandidates[1], observedRoot, new string('e', 64)));
             SmokeAssert.Equal(1, vm.Items.Count, "Tampered observed image must not replace staged image");
-            File.WriteAllBytes(Path.Combine(observedRoot, "shot-2.png"), png);
-            // 03. Wrong package digest must fail before selecting any local file.
+            File.WriteAllBytes(Path.Combine(observedRoot, "shot-2.png"), originalSecondImage);
+            // 03. A forged manifest must not reuse the same image across two shots.
+            var duplicateJson = JsonSerializer.Serialize(observedManifest).Replace(
+                observedShots[1].candidates[0].sha256,
+                observedShots[0].candidates[0].sha256, StringComparison.Ordinal);
+            var duplicateFile = Path.Combine(root, "duplicate-candidate.json");
+            await File.WriteAllTextAsync(duplicateFile, duplicateJson);
+            await RejectAsync(() => vm.LoadObservedCandidatesAsync(duplicateFile));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count, "Duplicate source bytes must fail closed");
+            // 04. Wrong package digest must fail before selecting any local file.
             var alteredJson = JsonSerializer.Serialize(observedManifest).Replace(
                 vm.CreativePackageDigest, new string('f', 64), StringComparison.Ordinal);
             var alteredFile = Path.Combine(root, "wrong-candidate.json");

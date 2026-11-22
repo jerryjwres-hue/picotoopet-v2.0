@@ -256,13 +256,16 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 throw new InvalidDataException("KEYFRAME_OBSERVATION_CONTEXT_INVALID");
             var parsed = new List<ReferenceObservedCandidate>();
             var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenDigests = new HashSet<string>(StringComparer.Ordinal);
+            var seenPrompts = new HashSet<string>(StringComparer.Ordinal);
             var index = 0;
             foreach (var shot in shots.EnumerateArray())
             {
                 var shotId = Text(shot, "shot_id");
+                var promptId = Text(shot, "prompt_id");
                 if (shotId != EligibleShots[index] || Number(shot, "order") != index + 1
                     || !IsDigest(Text(shot, "prepared_graph_sha256"))
-                    || !IsIdentifier(Text(shot, "prompt_id"))
+                    || !IsIdentifier(promptId) || !seenPrompts.Add(promptId)
                     || !shot.TryGetProperty("selected_reference", out var selected)
                     || selected.ValueKind != JsonValueKind.Null
                     || !shot.TryGetProperty("candidates", out var candidates)
@@ -277,13 +280,15 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                     var width = Number(item, "width");
                     var height = Number(item, "height");
                     if (!SafeObservedRelativePath(relative) || !seenPaths.Add(relative)
-                        || !IsDigest(digest) || bytes is <= 0 or > ReferencePreviewSnapshotStager.MaxBytes
+                        || !IsDigest(digest) || !seenDigests.Add(digest)
+                        || bytes is <= 0 or > ReferencePreviewSnapshotStager.MaxBytes
                         || width is < 1 or > 8192 || height is < 1 or > 8192
+                        || width * height > 16_000_000
                         || !Bool(item, "image_container_crc_verified")
                         || Bool(item, "pixels_decoded") || Text(item, "visual_review") != "UNREVIEWED")
                         throw new InvalidDataException("KEYFRAME_OBSERVATION_IMAGE_INVALID");
                     parsed.Add(new(shotId, relative, digest, bytes, (int)width, (int)height,
-                        Text(shot, "prompt_id")));
+                        promptId));
                 }
                 index++;
             }
