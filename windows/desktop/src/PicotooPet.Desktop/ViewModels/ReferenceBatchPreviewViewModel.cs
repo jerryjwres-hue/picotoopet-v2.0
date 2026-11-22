@@ -109,16 +109,9 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             && Text(brief, "output_profile_id") == "video.landscape.v1"
             && shots.EnumerateArray().All(shot => shot.TryGetProperty("duration_seconds", out var duration)
                 && duration.ValueKind == JsonValueKind.Number && duration.TryGetDouble(out var seconds) && seconds == 4);
-        // 02. A valid frozen Creative Kit immediately supplies three editable-workflow
-        //     briefs. Without inspected local Comfy bytes their status is UNVERIFIED.
-        //     This avoids requiring an external JSON merely to read S2/S3 prompts.
-        if (_p0PlanCandidate)
-        {
-            foreach (var instruction in KeyframeInstructions)
-                CompositionWorkOrders.Add(new(
-                    instruction.ShotId, "UNVERIFIED", string.Empty, instruction.StillPrompt,
-                    instruction.ReviewChecklist, instruction.SceneId, instruction.CameraFraming));
-        }
+        // 02. A frozen Kit is the permanent trusted source for these three
+        //     briefs; an optional local report can replace only observation status.
+        ResetCompositionWorkOrdersToFrozen();
         _gateway = gateway;
         _stager = stager;
         GoalId = continuation.GoalId;
@@ -332,11 +325,25 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         }
         catch
         {
-            CompositionWorkOrders.Clear();
-            StatusText = "三镜头构图工作单未通过检查，已清除所有本地状态；未导入资产或申请审批。";
+            // 03. Reject untrusted local report, but never erase the immutable
+            //     Core-frozen brief or require an unrelated JSON just to resume.
+            ResetCompositionWorkOrdersToFrozen();
+            StatusText = "本地报告核验失败；已清除其观察结果，封存三镜头指令保留。未导入资产或申请审批。";
             throw;
         }
         finally { Exit(); }
+    }
+
+    // 04. Restoring the Core-frozen data never observes or approves a local image.
+    //     Use this after rejecting a forged/stale optional Qwen status report.
+    private void ResetCompositionWorkOrdersToFrozen()
+    {
+        CompositionWorkOrders.Clear();
+        if (!_p0PlanCandidate) return;
+        foreach (var instruction in KeyframeInstructions)
+            CompositionWorkOrders.Add(new(
+                instruction.ShotId, "UNVERIFIED", string.Empty, instruction.StillPrompt,
+                instruction.ReviewChecklist, instruction.SceneId, instruction.CameraFraming));
     }
 
     // 05. 校验本地候选清单的完整身份；只显示元数据，绝不自动 Stage 或批准。

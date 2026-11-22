@@ -318,8 +318,17 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             workOrderPanel.Arrange(new Rect(0, 0, 1000, 700));
             workOrderPanel.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            SmokeAssert.Equal(3, ((ItemsControl)workOrderPanel.FindName("CompositionWorkOrderList")).Items.Count,
+            var visibleWorkOrders = (ItemsControl)workOrderPanel.FindName("CompositionWorkOrderList");
+            SmokeAssert.Equal(3, visibleWorkOrders.Items.Count,
                 "Existing WPF review screen must display all three frozen work orders");
+            // 02. A shot card uses the ORIGINAL source selector and snapshot
+            //     picker, not a second auto-approval surface or API client.
+            var cardTemplate = (DependencyObject)visibleWorkOrders.ItemTemplate!.LoadContent();
+            SmokeAssert.Equal(1, VisualButtons(cardTemplate).Count(button =>
+                button.Content is string text && text == "为此镜头选择参考图…"),
+                "Each shot card must offer the existing manual local-image picker");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Rendering a per-shot selection button must not POST to Core");
             SmokeAssert.Equal(0, vm.Items.Count, "Reading the work order must not stage any candidate");
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Work-order read must not call Core");
             var forgedOrder = JsonNode.Parse(JsonSerializer.Serialize(workOrder))!.AsObject();
@@ -327,16 +336,25 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             var forgedOrderPath = Path.Combine(root, "forged-workorder.json");
             await File.WriteAllTextAsync(forgedOrderPath, forgedOrder.ToJsonString());
             await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedOrderPath));
-            SmokeAssert.Equal(0, vm.CompositionWorkOrders.Count,
-                "Changed Creative prompt must clear every previously displayed status");
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count,
+                "Forged evidence must never erase the three immutable Core-frozen briefs");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"
+                && x.ExistingFilename == string.Empty),
+                "A rejected Qwen report must remove only untrusted observation claims");
+            SmokeAssert.Equal("Opening pose two", vm.CompositionWorkOrders[1].StillPrompt,
+                "Rejected report must retain only the original Creative Kit prompt");
             await vm.LoadCompositionWorkOrderAsync(workOrderPath);
             var forgedCamera = JsonNode.Parse(JsonSerializer.Serialize(workOrder))!.AsObject();
             forgedCamera["composition_work_order"]!["items"]![1]!["camera_framing"] = "invented camera";
             var forgedCameraPath = Path.Combine(root, "forged-camera.json");
             await File.WriteAllTextAsync(forgedCameraPath, forgedCamera.ToJsonString());
             await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedCameraPath));
-            SmokeAssert.Equal(0, vm.CompositionWorkOrders.Count,
-                "Forged camera instructions must not survive a failed evidence import");
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count,
+                "Camera spoofing must not erase the frozen three-shot production briefs");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Camera spoofing must discard every claim of an observed image");
+            SmokeAssert.Equal("close-up", vm.CompositionWorkOrders[1].CameraFraming,
+                "Camera spoofing must restore the original frozen framing");
             await vm.LoadCompositionWorkOrderAsync(workOrderPath);
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Neither accepted nor forged report may create approval");
 
@@ -721,6 +739,18 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                     source_reference = x.SourceReference, source_digest = x.SourceDigest })
             });
             return JsonSerializer.Deserialize<ReferenceBatchReceipt>(json)!;
+        }
+    }
+
+    // 03. Inspect a native WPF DataTemplate without invoking its file chooser.
+    //     The handler itself must remain an explicit user-click action.
+    private static IEnumerable<Button> VisualButtons(DependencyObject root)
+    {
+        if (root is Button button) yield return button;
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            foreach (var child in VisualButtons(VisualTreeHelper.GetChild(root, index)))
+                yield return child;
         }
     }
 

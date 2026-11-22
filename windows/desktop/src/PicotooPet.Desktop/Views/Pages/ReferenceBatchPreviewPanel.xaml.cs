@@ -18,24 +18,68 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         DataContext = viewModel;
     }
 
+    // 01. Generic picker and per-shot card share exactly one original
+    //     snapshot staging path; neither one bypasses explicit source/rights.
     private async void ChooseReference_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanEdit) return;
+        if (ShotComboBox.SelectedItem is not string shotId)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "请先选择镜头。");
+            return;
+        }
+        await ChooseReferenceForShotAsync(shotId);
+    }
+
+    // 02. Shot-specific convenience selection does NOT assert a local Qwen
+    //     observation, choose USER_SUPPLIED automatically, or grant approval.
+    private async void ChooseCompositionShot_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanEdit
+            || sender is not Button { Tag: ReferenceCompositionWorkItem item }
+            || !vm.CompositionWorkOrders.Contains(item)
+            || !vm.EligibleShots.Contains(item.ShotId, StringComparer.Ordinal)) return;
+        await ChooseReferenceForShotAsync(item.ShotId);
+    }
+
+    private async Task ChooseReferenceForShotAsync(string shotId)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanEdit
+            || !vm.EligibleShots.Contains(shotId, StringComparer.Ordinal)) return;
         try
         {
-            if (ShotComboBox.SelectedItem is not string shotId
-                || SourceComboBox.SelectedItem is not ComboBoxItem { Content: string source })
-            { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "请先选择镜头和来源声明。"); return; }
+            if (SourceComboBox.SelectedItem is not ComboBoxItem { Content: string source })
+            {
+                OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                    "请先在来源声明中选择 USER_SUPPLIED 或 LICENSED。");
+                return;
+            }
+            var digest = SourceDigestTextBox.Text.Trim();
+            // 03. A generated/third-party picture cannot be registered as
+            //     LICENSED until the operator has an explicit source digest.
+            if (source == "LICENSED" && (digest.Length != 64 || digest.Any(ch =>
+                !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')))))
+            {
+                OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                    "LICENSED 图片必须先填有效的许可或来源材料 SHA-256；没有自动授予使用权。");
+                return;
+            }
             var picker = new Microsoft.Win32.OpenFileDialog
             {
                 Filter = "参考图 (PNG, JPEG, WebP)|*.png;*.jpg;*.jpeg;*.webp",
-                Multiselect = false, CheckFileExists = true, Title = "选择本镜头参考图"
+                Multiselect = false, CheckFileExists = true,
+                Title = $"选择 {shotId} 的本地参考图"
             };
             if (picker.ShowDialog() != true) return;
-            await vm.AddAsync(shotId, picker.FileName, source, SourceDigestTextBox.Text.Trim());
+            await vm.AddAsync(shotId, picker.FileName, source, digest);
             OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
         }
-        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "未能验证所选图片，请检查格式、大小和使用权声明。"); }
+        catch (Exception)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "参考图字节、格式或来源声明核验失败；未申请审批，也未启动 GPU。");
+        }
     }
 
     // 01. 只复制封存 Creative Kit 的镜头提示词；不发送到 Comfy、Core 或其他服务。

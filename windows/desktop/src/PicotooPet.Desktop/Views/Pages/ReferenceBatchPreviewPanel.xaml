@@ -31,6 +31,7 @@
      <Button x:Name="LoadCompositionWorkOrderButton" Content="核对本地 Qwen 构图报告（可选）..." Padding="12,6"
              HorizontalAlignment="Left" IsEnabled="{Binding CanLoadCompositionWorkOrder, FallbackValue=False}"
              Click="LoadCompositionWorkOrder_Click" Margin="0,0,0,8"/>
+     <TextBlock Text="逐镜选图沿用下方的来源声明：真实本人提供的原图选择 USER_SUPPLIED；本地生成或第三方图片必须正确声明 LICENSED 并提供许可/来源摘要。逐镜按钮不会自动批准。" TextWrapping="Wrap" Margin="0,0,0,8"/>
      <ItemsControl x:Name="CompositionWorkOrderList" ItemsSource="{Binding CompositionWorkOrders}">
       <ItemsControl.ItemTemplate>
        <DataTemplate>
@@ -44,8 +45,14 @@
           <TextBox Text="{Binding StillPrompt, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
                    MaxHeight="160" VerticalScrollBarVisibility="Auto"
                    AutomationProperties.Name="此镜头封存首帧提示词"/>
-          <Button Content="复制此镜头 Prompt" Tag="{Binding}" Padding="8,4"
-                  HorizontalAlignment="Left" Click="CopyCompositionPrompt_Click" Margin="0,5,0,5"/>
+          <WrapPanel Margin="0,5,0,5">
+           <Button Content="复制此镜头 Prompt" Tag="{Binding}" Padding="8,4"
+                   HorizontalAlignment="Left" Click="CopyCompositionPrompt_Click" Margin="0,0,8,0"/>
+           <Button Content="为此镜头选择参考图…" Tag="{Binding}" Padding="8,4"
+                   HorizontalAlignment="Left"
+                   IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                   Click="ChooseCompositionShot_Click"/>
+          </WrapPanel>
           <TextBlock Text="{Binding ReviewChecklist}" TextWrapping="Wrap"/>
          </StackPanel>
         </Border>
