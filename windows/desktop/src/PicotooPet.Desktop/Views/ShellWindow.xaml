@@ -297,7 +297,7 @@
         <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
           <!-- 任何页面都可直接进入影视工作台，只切换页面。 -->
           <Button x:Name="OpenFilmStudioButton" Content="影视工作台" Tag="FilmStudio"
-                  Click="AdvancedRoute_Click" Margin="0,0,8,0" />
+                  Click="OpenFilmStudio_Click" Margin="0,0,8,0" />
           <Border Tag="{Binding PetPresentation.Indicator, Mode=OneWay}" Style="{StaticResource ShellStatusBadgeStyle}" CornerRadius="11" Padding="10,7" Margin="0,0,8,0">
             <StackPanel Orientation="Horizontal">
               <Ellipse Tag="{Binding PetPresentation.Indicator, Mode=OneWay}" Style="{StaticResource ShellStatusDotStyle}" Margin="0,0,7,0" VerticalAlignment="Center" />
@@ -360,7 +360,7 @@
             <!-- Visual review entry : opens existing ProductionPanel; navigation itself never invokes render or GPU. -->
             <Button x:Name="OpenProductionPanelButton" Content="本地生产与审片" Click="OpenProductionPanel_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
             <Button Content="结果" Tag="Results" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
-            <Button Content="影视工作台" Tag="FilmStudio" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
+            <Button Content="影视工作台" Tag="FilmStudio" Click="OpenFilmStudio_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
             <Button Content="业务自动化" Tag="BusinessAutomation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
             <Button Content="自动化" Tag="Automation" Click="AdvancedRoute_Click" Style="{StaticResource AdvancedRouteButtonStyle}" Width="180" />
           </WrapPanel>
