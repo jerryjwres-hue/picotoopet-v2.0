@@ -59,6 +59,9 @@ public sealed partial class CreativeIntelligencePanelViewModel
         StoryPackPreviewStatus = "茅台三镜头示例已载入；角色、场景和风格资产均未验证。点击只读检查，不会生成任务。";
     }
 
+    // 影视专用页展开故事工作区；原业务自动化保持默认折叠。
+    public bool StoryPackInitiallyExpanded { get; set; }
+
     private string _storyPackJson = string.Empty;
     private string _storyPackPreviewStatus = "可选：粘贴导演生成的 StoryPack JSON，仅校验镜头与资产。";
     private bool _isStoryPackPreviewBusy;
