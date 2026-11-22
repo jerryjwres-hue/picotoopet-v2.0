@@ -51,6 +51,16 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         {
             await vm.LoadObservedCandidatesAsync(picker.FileName);
             _observedOutputRoot = null;
+            // 01. 同一目录只选一次，后台依次重核并显示各镜头缩略图。
+            var folder = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "选择当前 ComfyUI Output 根目录（只读取缩略图）"
+            };
+            if (folder.ShowDialog() == true)
+            {
+                await vm.InspectObservedCandidatesAsync(folder.FolderName);
+                _observedOutputRoot = folder.FolderName;
+            }
             OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
         }
         catch (Exception)

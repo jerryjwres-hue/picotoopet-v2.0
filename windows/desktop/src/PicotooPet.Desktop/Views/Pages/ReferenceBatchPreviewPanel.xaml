@@ -36,6 +36,8 @@
         <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8" Margin="0,0,0,5">
          <StackPanel>
           <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold"/>
+          <Image Source="{Binding Preview}" Width="230" Height="145" Stretch="Uniform" HorizontalAlignment="Left"
+                 AutomationProperties.Name="本地候选缩略图（未批准）"/>
           <TextBlock Text="{Binding OutputRelativePath}" TextWrapping="Wrap" FontSize="10"/>
           <TextBlock Text="{Binding Sha256, StringFormat=本地观察 SHA-256：{0}}" TextWrapping="Wrap" FontSize="10" FontFamily="Consolas"/>
           <Button Content="使用此候选作参考图（需 LICENSED 凭据）" Tag="{Binding}" HorizontalAlignment="Left"

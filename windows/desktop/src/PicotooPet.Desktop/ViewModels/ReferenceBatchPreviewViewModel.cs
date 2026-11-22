@@ -22,7 +22,8 @@ public sealed record ReferenceKeyframeInstruction(string ShotId, string StillPro
 
 // 只读候选是历史输出观测，不是 Producer 授权、身份资产或使用许可。
 public sealed record ReferenceObservedCandidate(string ShotId, string OutputRelativePath,
-    string Sha256, long Bytes, int Width, int Height, string PromptId);
+    string Sha256, long Bytes, int Width, int Height, string PromptId,
+    BitmapSource? Preview = null);
 
 /// <summary>Local preview and explicit request for existing Core approvals; never grants execution permission.</summary>
 public sealed class ReferenceBatchPreviewViewModel : ObservableObject
@@ -224,7 +225,63 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         finally { Exit(); }
     }
 
-    // 02. 用户明确选择一张本地生成图片，并提供许可摘要时，才调用已有可信快照管线。
+    // 02. 同一输出根目录一次完成所有候选的字节重核与低分辨率缩略图。
+    //     这里只读解码供视觉选择，不能产生身份、许可或生产 PASS。
+    public async Task InspectObservedCandidatesAsync(string outputRoot, CancellationToken cancellationToken = default)
+    {
+        if (!CanLoadObservedCandidates || !Path.IsPathFullyQualified(outputRoot)
+            || ObservedCandidates.Count is < 3 or > 96)
+            throw new InvalidDataException("KEYFRAME_THUMBNAIL_CONTEXT_INVALID");
+        if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
+        try
+        {
+            var inspected = new List<ReferenceObservedCandidate>();
+            foreach (var observed in ObservedCandidates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var path = ProductionLocalEnvironment.ResolveUnderRoot(
+                    outputRoot, observed.OutputRelativePath, true);
+                ProductionLocalEnvironment.AssertNoLinkEscape(outputRoot, path);
+                if (!ProductionLocalEnvironment.IsOrdinaryFile(path)
+                    || new FileInfo(path).Length != observed.Bytes)
+                    throw new InvalidDataException("KEYFRAME_THUMBNAIL_FILE_CHANGED");
+                // 03. 每次从真实磁盘字节重新计算哈希，不信任 manifest 声明。
+                var bytes = await File.ReadAllBytesAsync(path, cancellationToken);
+                if (bytes.LongLength != observed.Bytes
+                    || Convert.ToHexStringLower(SHA256.HashData(bytes)) != observed.Sha256)
+                    throw new InvalidDataException("KEYFRAME_THUMBNAIL_HASH_CHANGED");
+                using var metadataStream = new MemoryStream(bytes, writable: false);
+                var decoder = BitmapDecoder.Create(
+                    metadataStream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.OnDemand);
+                if (decoder.Frames.Count != 1 || decoder.Frames[0].PixelWidth != observed.Width
+                    || decoder.Frames[0].PixelHeight != observed.Height)
+                    throw new InvalidDataException("KEYFRAME_THUMBNAIL_DIMENSIONS_CHANGED");
+                using var thumbnailStream = new MemoryStream(bytes, writable: false);
+                var thumbnail = new BitmapImage();
+                thumbnail.BeginInit();
+                thumbnail.CacheOption = BitmapCacheOption.OnLoad;
+                thumbnail.DecodePixelWidth = 240;
+                thumbnail.StreamSource = thumbnailStream;
+                thumbnail.EndInit();
+                thumbnail.Freeze();
+                inspected.Add(observed with { Preview = thumbnail });
+            }
+            // 04. 全批校验后一次发布；任何单张失败不得留下部分可信外观。
+            for (var index = 0; index < inspected.Count; index++)
+                ObservedCandidates[index] = inspected[index];
+            StatusText = "已读取并重核全部候选缩略图；仍需人工选择、确认来源许可和申请审批。";
+        }
+        catch
+        {
+            for (var index = 0; index < ObservedCandidates.Count; index++)
+                ObservedCandidates[index] = ObservedCandidates[index] with { Preview = null };
+            StatusText = "候选原图或路径已变化；清除预览，不接受候选图为有效来源。";
+            throw;
+        }
+        finally { Exit(); }
+    }
+
+    // 05. 用户明确选择一张本地生成图片，并提供许可摘要时，才调用已有可信快照管线。
     public async Task AddObservedCandidateAsync(ReferenceObservedCandidate observed,
         string comfyOutputRoot, string licensedSourceDigest, CancellationToken cancellationToken = default)
     {

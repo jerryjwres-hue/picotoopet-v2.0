@@ -284,7 +284,11 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.True(vm.CanLoadObservedCandidates, "Sealed three-shot view should accept read-only candidates");
             await vm.LoadObservedCandidatesAsync(observedFile);
             SmokeAssert.Equal(3, vm.ObservedCandidates.Count, "Full candidate observation lost shots");
+            await vm.InspectObservedCandidatesAsync(observedRoot);
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
+                "Real local image thumbnails must decode for all observed stills");
             SmokeAssert.Equal(0, vm.Items.Count, "Read-only observation must never stage images");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Thumbnail read may not create approvals");
             SmokeAssert.True(!vm.UserConfirmsPreviewAndRights && gateway.RegisterCalls == 0,
                 "Observed output cannot grant rights or write an approval");
             await RejectAsync(() => vm.AddObservedCandidateAsync(vm.ObservedCandidates[0], observedRoot, "not-a-license"));
