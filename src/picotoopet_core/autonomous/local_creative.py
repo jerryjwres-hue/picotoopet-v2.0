@@ -10,6 +10,7 @@ from picotoopet_core.creative.models import CreativeProfile
 from picotoopet_core.creative.service import CreativeIntelligenceService
 from picotoopet_core.creative.source import CreativeSourceFinding, NormalizedCreativeSourceSet
 from picotoopet_core.domain.models import TaskRecord
+from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
 from picotoopet_core.worker.handlers import HandlerResult
 
 from .human_pipeline import (
@@ -165,6 +166,34 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
             )
             if actual != story_binding.get("owner_evidence"):
                 raise GoalPipelineError("STORY_GOAL_PINNED_EVIDENCE_CHANGED")
+
+            # Managed bytes must still match the submitted scope at the durable
+            # Creative handoff. No uploaded path or model-supplied identity is trusted.
+            assets = story_binding.get("assets")
+            objects_dir = getattr(self.result_store, "objects_dir", None)
+            if not isinstance(assets, dict) or set(assets) != {"character", "scene", "style"} or objects_dir is None:
+                raise GoalPipelineError("STORY_GOAL_ASSET_SCOPE_INVALID")
+            refs = [item["artifact_id"] for item in assets.values()]
+            database = self.creative.repository.database
+            checked = {
+                check["ref"]: check for check in inspect_recorded_asset_refs(
+                    database, refs, managed_objects_dir=objects_dir
+                )
+            }
+            for role, asset in assets.items():
+                ref = asset["artifact_id"]
+                row = database.fetchone(
+                    "SELECT project_id, artifact_type, cloud_policy FROM artifacts WHERE artifact_id=?",
+                    (ref,),
+                )
+                if (
+                    row is None or row["project_id"] != story_binding.get("project_id")
+                    or row["artifact_type"] != f"storypack_{role}"
+                    or row["cloud_policy"] != "local_only"
+                    or checked[ref]["recorded_sha256"] != asset["sha256"]
+                    or checked[ref]["content_integrity_verified"] is not True
+                ):
+                    raise GoalPipelineError("STORY_GOAL_PINNED_ASSET_CHANGED")
 
         discovery_hash = self._hash_for_step(goal, _DISCOVERY_STEP, _DISCOVERY_RESULT_TYPE)
         synthesis_hash = self._hash_for_step(goal, _SYNTHESIS_STEP, _SYNTHESIS_RESULT_TYPE)
