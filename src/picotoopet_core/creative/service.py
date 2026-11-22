@@ -80,7 +80,7 @@ def schedule_after_owner_commit(database: Database, creative_job_id: str) -> boo
     from .execution import (  # local import: execution is heavy and never imports service
         TrustedPetCreativeBindingError,
         load_trusted_pet_creative_binding,
-        verify_owner_commitment_in_ledger,
+        verify_current_pet_binding,
     )
 
     repository = CreativeRepository(database)
@@ -98,7 +98,7 @@ def schedule_after_owner_commit(database: Database, creative_job_id: str) -> boo
         binding = load_trusted_pet_creative_binding(database, job)
     except TrustedPetCreativeBindingError:
         return False
-    if not verify_owner_commitment_in_ledger(database, binding.opt_in()):
+    if not verify_current_pet_binding(database, job, binding):
         return False
     QueueRepository(database).create(creative_task_request(job))
     return True

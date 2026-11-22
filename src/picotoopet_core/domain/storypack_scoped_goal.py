@@ -11,6 +11,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field
 
 from picotoopet_core.creative.director import parse_goal_directives
+from picotoopet_core.creative.dynamic_pet_story import build_dynamic_motion_proposal
 from picotoopet_core.domain.storypack import StoryPackV1, storypack_preview
 from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
 from picotoopet_core.domain.storypack_goal_intake import build_storypack_goal_intake
@@ -31,7 +32,9 @@ def prepare_scoped_story_goal(payload: ScopedStoryGoalRequest, services) -> tupl
     """Recheck actual Core bytes/claims, then prepare a frozen server-side Goal binding."""
     pack = payload.storypack
     preview = storypack_preview(pack)
-    proposal = build_storypack_goal_intake(pack, preview["storypack_sha256"])
+    proposal = build_storypack_goal_intake(
+        pack, preview["storypack_sha256"], scoped_dynamic=True,
+    )
     if not proposal["ready_for_user_submission"]:
         raise ValueError("STORY_GOAL_NOT_READY")
 
@@ -129,7 +132,41 @@ def prepare_scoped_story_goal(payload: ScopedStoryGoalRequest, services) -> tupl
         "assets": assets,
         "owner_evidence": matched,
     }
+    if pack.dynamic_motion is not None:
+        # Preserve the full authored pack and deterministic motion digest, not merely text.
+        motion = build_dynamic_motion_proposal(pack)
+        binding["dynamic_storypack"] = pack.model_dump(mode="json")
+        binding["dynamic_motion_digest"] = motion["motion_digest"]
     return proposal, binding
+
+
+def load_bound_dynamic_storypack(binding: dict) -> StoryPackV1 | None:
+    """Reconstruct exact dynamic scope; absent legacy motion never grants new authority."""
+    if not isinstance(binding, dict):
+        raise ValueError("DYNAMIC_SCOPE_INVALID")
+    if "dynamic_storypack" not in binding and "dynamic_motion_digest" not in binding:
+        return None
+    try:
+        pack = StoryPackV1.model_validate(binding["dynamic_storypack"])
+        if pack.dynamic_motion is None:
+            raise ValueError("DYNAMIC_SCOPE_INVALID")
+        motion = build_dynamic_motion_proposal(pack)
+        if (
+            motion["motion_digest"] != binding.get("dynamic_motion_digest")
+            or motion["storypack_sha256"] != binding.get("storypack_sha256")
+            or any(
+                pack_ref != binding["assets"][role]["artifact_id"]
+                for role, pack_ref in (
+                    ("character", pack.character_ref),
+                    ("scene", pack.scene_ref),
+                    ("style", pack.style_ref),
+                )
+            )
+        ):
+            raise ValueError("DYNAMIC_SCOPE_DIGEST_MISMATCH")
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("DYNAMIC_SCOPE_INVALID") from error
+    return pack
 
 
 def reverify_scoped_story_assets(database, objects_dir, binding: dict) -> None:

@@ -67,6 +67,9 @@ class AuthorityKind(StrEnum):
 class AllowedEvent(StrEnum):
     BLINK_AND_REOPEN = "BLINK_AND_REOPEN"
     SUBTLE_BREATHING = "SUBTLE_BREATHING"
+    NOTICE_BOWL = "NOTICE_BOWL"
+    APPROACH_BOWL = "APPROACH_BOWL"
+    BEGIN_EATING = "BEGIN_EATING"
 
 
 class EvidenceBindingV1(_Strict):
@@ -125,7 +128,7 @@ class PoseLockV1(_BoundLock):
     body_pose: str = Field(min_length=1, max_length=240)
     head_direction: str = Field(min_length=1, max_length=160)
     support_surface: str = Field(min_length=1, max_length=200)
-    fixed: Literal[True]
+    fixed: bool
 
     @model_validator(mode="after")
     def _bindings_match(self) -> PoseLockV1:
@@ -186,6 +189,15 @@ class StateFactsV1(_Strict):
             raise ValueError("STATE_FACTS_DIGEST_MISMATCH")
         if len(set(self.allowed_events)) != len(self.allowed_events):
             raise ValueError("STATE_FACTS_DUPLICATE_ALLOWED_EVENT")
+        static_events = {AllowedEvent.BLINK_AND_REOPEN, AllowedEvent.SUBTLE_BREATHING}
+        dynamic_events = {
+            AllowedEvent.NOTICE_BOWL, AllowedEvent.APPROACH_BOWL, AllowedEvent.BEGIN_EATING,
+        }
+        if self.pose_lock.fixed:
+            if not set(self.allowed_events) <= static_events:
+                raise ValueError("STATE_FACTS_STATIC_SCOPE_INVALID")
+        elif self.facts_version != 2 or set(self.allowed_events) != dynamic_events:
+            raise ValueError("STATE_FACTS_DYNAMIC_SCOPE_INVALID")
         return self
 
 
@@ -285,6 +297,8 @@ def build_state_spine(
 ) -> StateSpineV1:
     """Build S0→S3 without asking a model to restate any locked state."""
 
+    if not facts.pose_lock.fixed:
+        raise ValueError("STATE_SPINE_STATIC_FACTS_REQUIRED")
     if len(events) != 3:
         raise ValueError("STATE_SPINE_REQUIRES_THREE_EVENTS")
     try:
