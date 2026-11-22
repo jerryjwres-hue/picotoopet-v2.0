@@ -138,6 +138,9 @@ def inspect_readiness(
         graph[composition_node]["inputs"]["image"], shot_2, shot_3
     ]
     missing, invalid, inventory, map_entries, seen = [], [], [], [], set()
+    # 04a. A renamed copy is not a distinct composition. Track verified bytes,
+    #      not just filenames, without decoding pixels or authorizing generation.
+    seen_composition_hashes: dict[str, str] = {}
     shot_files = []
     for index, (shot_id, name) in enumerate(zip(shots, compositions, strict=True), 1):
         if name is None:
@@ -159,6 +162,15 @@ def inspect_readiness(
             invalid.append({"shot_id": shot_id, "node_id": composition_node,
                             "reason": "INVALID_COMPOSITION_FILE"})
             continue
+        # 04b. Reject identical file bytes even when the operator changes
+        #      the filename. Never propose a runnable mapping for this case.
+        first_shot = seen_composition_hashes.get(observed["sha256"])
+        if first_shot is not None:
+            invalid.append({"shot_id": shot_id, "node_id": composition_node,
+                            "reason": "DUPLICATE_SHOT_COMPOSITION_BYTES",
+                            "duplicate_of_shot_id": first_shot})
+            continue
+        seen_composition_hashes[observed["sha256"]] = shot_id
         inventory.append({"shot_id": shot_id, "node_id": composition_node,
                           "role": "COMPOSITION_CANDIDATE", **observed})
         shot_files.append({"shot_id": shot_id, **{key: observed[key]
