@@ -127,7 +127,7 @@ jobs:
           Copy-Item -LiteralPath 'windows/desktop/release/Start-SecureMacTunnel.ps1' -Destination (Join-Path $bundle 'Start-SecureMacTunnel.ps1')
           # 01. Ship the exact CPU-only Qwen recovery and image-evidence tools
           #     with the Windows preview; no model, prompt, or user file included.
-          $toolsDir = Join-Path $bundle 'local-keyframes'
+          $toolsDir = Join-Path $bundle 'scripts'
           New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
           $offlineToolNames = @(
             'recover_comfy_keyframe_workflow.py'
@@ -144,14 +144,20 @@ jobs:
           # 02. Static --help validates standalone packaged imports only.
           #     It cannot submit a Comfy request, run a model or enable Worker.
           $priorPythonPath = $env:PYTHONPATH
+          Push-Location $bundle
           try {
+            # 03. Execute from the ZIP root, not the Git checkout. This
+            #     guarantees the 'scripts.*' imports resolve to bundled bytes.
             $env:PYTHONPATH = "$bundle;$toolsDir"
             foreach ($name in @('recover_comfy_keyframe_workflow.py', 'prepare_local_keyframe_batch.py', 'collect_local_keyframe_outputs.py')) {
               python (Join-Path $toolsDir $name) --help *> $null
               if ($LASTEXITCODE -ne 0) { throw "P0_PREVIEW_OFFLINE_TOOL_IMPORT_FAILED: $name" }
             }
+            python -c "import scripts.comfy_png_embedded_evidence; import scripts.qwen_reference_bindings; import scripts.offline_png_output_collector"
+            if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_PACKAGE_NAMESPACE_IMPORT_FAILED' }
           } finally {
             $env:PYTHONPATH = $priorPythonPath
+            Pop-Location
           }
           @(
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
@@ -167,7 +173,7 @@ jobs:
             'Verify the PowerShell output P0_HOLD_PREPARED=PASS before opening the app.'
             'Do NOT start an existing Worker with unknown Ready Goals or change HOLD to ALLOW until'
             'the exact three-shot Core Job/Plan/Digest has been reviewed and GPU execution is safe.'
-            'Six local-keyframes/*.py tools are bundled for offline CPU-only inspection, not run automatically.'
+            'Six scripts/*.py tools are bundled for offline CPU-only inspection, not run automatically.'
             'These source tools need Python 3.12; do not install Python or run them for production without review.'
             'They do not fetch models, license creative assets or authorize C009/C011 / Comfy GPU jobs.'
             'Production Comfy/Wan, Ollama, Mac Core, FFmpeg and GPU presence are not validated here.'
@@ -193,7 +199,7 @@ jobs:
             hold_script = 'Prepare-P0ThreeShotHold.ps1'
             connection_launcher = 'CONNECT_MAC_SECURE.vbs'
             connection_script = 'Start-SecureMacTunnel.ps1'
-            offline_keyframe_tools = @($offlineToolNames | ForEach-Object { "local-keyframes/$_" })
+            offline_keyframe_tools = @($offlineToolNames | ForEach-Object { "scripts/$_" })
             files = $files
           }
           $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $bundle 'preview-manifest.json') -Encoding utf8
