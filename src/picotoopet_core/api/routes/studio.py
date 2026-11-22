@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Header, Request, Response
+from starlette.concurrency import run_in_threadpool
 
 from picotoopet_core.api.errors import ApiError
 from picotoopet_core.domain.storypack import StoryPackError, parse_storypack, storypack_preview
 from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
+from picotoopet_core.domain.storypack_asset_intake import MAX_ASSET_BYTES, import_local_asset
 from picotoopet_core.domain.storypack_fingerprints import build_shot_fingerprints
 from picotoopet_core.domain.storypack_goal_intake import build_storypack_goal_intake
 from picotoopet_core.domain.storypack_owner_subject import build_owner_review_subject
@@ -86,3 +88,46 @@ async def preview_storypack(request: Request, response: Response) -> dict:
         "can_queue": False,
     }
     return preview
+
+
+@router.post("/studio/assets/import", status_code=201)
+async def import_storypack_asset(
+    request: Request,
+    response: Response,
+    project_id: str = Header(min_length=1, max_length=100, alias="X-Picotoo-Project-Id"),
+    role: str = Header(pattern=r"^(character|scene|style)$", alias="X-Picotoo-Asset-Role"),
+    sha256: str = Header(pattern=r"^[a-f0-9]{64}$", alias="X-Picotoo-Asset-SHA256"),
+    confirmed: str = Header(alias="X-Picotoo-Import-Confirmed"),
+) -> dict:
+    """Explicit local copy intake; device Bearer does not constitute Owner approval."""
+    response.headers["Cache-Control"] = "no-store, private"
+    if confirmed != "yes":
+        raise ApiError(status_code=409, code="ASSET_IMPORT_CONFIRMATION_REQUIRED",
+                       message="Confirm the local asset copy before import.", retryable=False)
+
+    # Bound the actual streamed body, independently of the Content-Length header.
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > MAX_ASSET_BYTES:
+            raise ApiError(status_code=413, code="ASSET_TOO_LARGE",
+                           message="Asset exceeds local intake limit.", retryable=False)
+        data.extend(chunk)
+
+    services = request.app.state.services
+    try:
+        return await run_in_threadpool(
+            import_local_asset, services.database, services.results,
+            project_id=project_id, role=role, media_type=media_type,
+            declared_sha256=sha256, data=bytes(data),
+        )
+    except ValueError as exc:
+        # Do not echo private filesystem paths or arbitrary exception details.
+        code = str(exc)
+        if not code.startswith("ASSET_"):
+            code = "ASSET_IMPORT_REJECTED"
+        raise ApiError(status_code=409, code=code,
+                       message="Local asset intake rejected.", retryable=False) from exc
+    except OSError as exc:
+        raise ApiError(status_code=409, code="ASSET_STORE_UNAVAILABLE",
+                       message="Managed store unavailable.", retryable=False) from exc

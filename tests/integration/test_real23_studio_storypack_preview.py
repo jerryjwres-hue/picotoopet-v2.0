@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import base64
+import hashlib
 import json
 import secrets
 
@@ -282,3 +284,128 @@ def test_storypack_uses_existing_human_goal_route_idempotently_without_productio
     stored = studio.get(f'/api/v1/autonomous/goals/{created["goal_id"]}')
     assert stored.status_code == 200
     assert stored.json()["goal_id"] == created["goal_id"]
+
+
+ASSET_ROUTE = "/api/v1/studio/assets/import"
+# Real 1x1 PNG bytes used solely in temporary CPU-only integrity tests.
+_ASSET_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XgZsAAAAASUVORK5CYII="
+)
+
+
+def _asset_project(studio):
+    response = studio.post("/api/v1/projects", json={
+        "title": "Local intake fixture", "project_type": "film", "source_app": "test",
+        "classification": "INTERNAL",
+    })
+    assert response.status_code == 201, response.text
+    return response.json()["project_id"]
+
+
+def _asset_headers(project_id, role, data, media="image/png"):
+    return {
+        "X-Picotoo-Project-Id": project_id,
+        "X-Picotoo-Asset-Role": role,
+        "X-Picotoo-Asset-SHA256": hashlib.sha256(data).hexdigest(),
+        "X-Picotoo-Import-Confirmed": "yes",
+        "Content-Type": media,
+    }
+
+
+def test_asset_intake_reuses_store_and_prepares_unapproved_subject(studio):
+    project = _asset_project(studio)
+    before = _counts(studio)
+    db = studio.app.state.services.database
+    refs = {}
+    for role, data, media in (
+        ("character", _ASSET_PNG, "image/png"),
+        ("scene", _ASSET_PNG, "image/png"),
+        ("style", b"Stylized local test only", "text/plain"),
+    ):
+        headers = _asset_headers(project, role, data, media)
+        first = studio.post(ASSET_ROUTE, content=data, headers=headers)
+        assert first.status_code == 201, first.text
+        receipt = first.json()
+        refs[f"{role}_ref"] = receipt["artifact_id"]
+        assert receipt["registration"] == "CREATED"
+        assert receipt["content_integrity_verified"] is True
+        assert receipt["cloud_policy"] == "local_only"
+        assert all(receipt[key] is False for key in (
+            "is_original", "owner_approved", "master_approved", "gpu_post_authorized", "can_queue"
+        ))
+        replay = studio.post(ASSET_ROUTE, content=data, headers=headers)
+        assert replay.status_code == 201
+        assert replay.json()["artifact_id"] == receipt["artifact_id"]
+        assert replay.json()["registration"] == "REPLAY"
+        assert db.scalar("SELECT COUNT(*) FROM artifacts WHERE artifact_id=?",
+                         (receipt["artifact_id"],)) == 1
+    pack = storypack()
+    pack.update(refs)
+    preview = studio.post(ROUTE, json=pack)
+    assert preview.status_code == 200, preview.text
+    result = preview.json()
+    assert all(item["managed_object_integrity"] == "CONTENT_VERIFIED_UNAPPROVED"
+               and not item["usable_for_generation"] for item in result["asset_record_checks"])
+    assert result["owner_review_subject"]["status"] == "REVIEW_SUBJECT_PREPARED_UNAPPROVED"
+    assert result["owner_review_subject"]["owner_approved"] is False
+    assert result["can_queue"] is False
+    assert _counts(studio) == before
+
+
+@pytest.mark.parametrize("case,expected", [
+    ("auth", 401), ("confirmation", 409), ("digest", 409), ("role", 422),
+    ("project", 409), ("media", 409), ("oversize", 413),
+])
+def test_asset_intake_rejects_invalid_requests_without_registration(studio, case, expected):
+    project = _asset_project(studio)
+    before = _counts(studio)
+    db = studio.app.state.services.database
+    data = _ASSET_PNG
+    headers = _asset_headers(project, "character", data)
+    if case == "auth":
+        headers["Authorization"] = "Bearer invalid"
+    elif case == "confirmation":
+        headers["X-Picotoo-Import-Confirmed"] = "no"
+    elif case == "digest":
+        headers["X-Picotoo-Asset-SHA256"] = "0" * 64
+    elif case == "role":
+        headers["X-Picotoo-Asset-Role"] = "../private"
+    elif case == "project":
+        headers["X-Picotoo-Project-Id"] = "missing"
+    elif case == "media":
+        headers["Content-Type"] = "text/html"
+    else:
+        data = b"x" * (16 * 1024 * 1024 + 1)
+    response = studio.post(ASSET_ROUTE, content=data, headers=headers)
+    assert response.status_code == expected, response.text
+    assert db.scalar("SELECT COUNT(*) FROM artifacts") == 0
+    assert _counts(studio) == before
+
+
+def test_asset_intake_never_repairs_tampered_object_or_follows_link(studio, tmp_path):
+    project = _asset_project(studio)
+    data = _ASSET_PNG
+    headers = _asset_headers(project, "character", data)
+    first = studio.post(ASSET_ROUTE, content=data, headers=headers)
+    assert first.status_code == 201
+    digest = first.json()["sha256"]
+    store = studio.app.state.services.results
+    target = store.objects_dir / digest[:2] / digest[2:]
+    target.write_bytes(b"tampered")
+    rejected = studio.post(ASSET_ROUTE, content=data, headers=headers)
+    assert rejected.status_code == 409
+    assert target.read_bytes() == b"tampered"
+
+    # For the symlink case use a managed leaf pointing at a sandbox fixture.
+    # Windows CI can require a privilege to create symlinks; native Mac does not.
+    target.unlink()
+    external = tmp_path / "protected-fixture"
+    external.write_bytes(data)
+    try:
+        target.symlink_to(external)
+    except OSError:
+        pytest.skip("symlink unavailable on this test host")
+    rejected = studio.post(ASSET_ROUTE, content=data, headers=headers)
+    assert rejected.status_code == 409
+    assert external.read_bytes() == data
+    assert target.is_symlink()
