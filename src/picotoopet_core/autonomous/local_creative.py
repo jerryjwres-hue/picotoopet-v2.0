@@ -146,6 +146,26 @@ class GoalLocalCreativeCoordinator(_PriorResultReader):
             }.issubset(supported):
                 raise GoalPipelineError("OWNER_SUBJECT_EVIDENCE_NOT_SYNTHESIZED")
 
+        # Scoped Studio Goals cannot substitute a later owner packet or use web IDs.
+        story_binding = goal.constraints.get("storypack_binding")
+        if story_binding is not None:
+            if (
+                not isinstance(story_binding, dict)
+                or story_binding.get("owner_subject_key") != owner_key
+                or discovery.get("search_evidence") != []
+                or any(row.get("reviewed_packet_sha256") != story_binding.get("reviewed_packet_sha256")
+                       for row in owner_statements)
+            ):
+                raise GoalPipelineError("STORY_GOAL_PINNED_PACKET_MISMATCH")
+            actual = sorted(
+                ({"evidence_id": row["evidence_id"], "kind": row["evidence_type"],
+                  "raw_hash": hashlib.sha256(str(row["text_excerpt"]).encode("utf-8")).hexdigest()}
+                 for row in owner_statements),
+                key=lambda row: row["evidence_id"],
+            )
+            if actual != story_binding.get("owner_evidence"):
+                raise GoalPipelineError("STORY_GOAL_PINNED_EVIDENCE_CHANGED")
+
         discovery_hash = self._hash_for_step(goal, _DISCOVERY_STEP, _DISCOVERY_RESULT_TYPE)
         synthesis_hash = self._hash_for_step(goal, _SYNTHESIS_STEP, _SYNTHESIS_RESULT_TYPE)
         source_identity = f"goal-synthesis:{synthesis_hash}"
