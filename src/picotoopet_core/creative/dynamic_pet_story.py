@@ -123,7 +123,9 @@ def _action_text(event: MotionEvent, motion: DynamicFeedingV1) -> str:
     if event is MotionEvent.NOTICE_BOWL:
         return "the pet turns its gaze toward the bowl while staying in place"
     if event is MotionEvent.APPROACH_BOWL:
-        direction = "left to right" if motion.screen_direction == "LEFT_TO_RIGHT" else "right to left"
+        direction = (
+            "left to right" if motion.screen_direction == "LEFT_TO_RIGHT" else "right to left"
+        )
         return f"the pet walks {direction} toward the stationary bowl across the support surface"
     return "the pet takes its first bites from the stationary bowl"
 
