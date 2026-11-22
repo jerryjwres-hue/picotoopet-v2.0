@@ -265,7 +265,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
 
     private static bool SafeObservedRelativePath(string value) =>
         value is { Length: >= 1 and <= 240 }
-        && !value.StartsWith('/', StringComparison.Ordinal)
+        && !value.StartsWith("/", StringComparison.Ordinal)
         && !value.Contains('\\') && !value.Contains(':')
         && value.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
         && value.Split('/').All(part => part.Length is >= 1 and <= 100
