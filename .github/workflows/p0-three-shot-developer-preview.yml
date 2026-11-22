@@ -14,6 +14,7 @@ on:
       - "scripts/comfy_png_embedded_evidence.py"
       - "scripts/prepare_local_keyframe_batch.py"
       - "scripts/qwen_reference_bindings.py"
+      - "scripts/qwen_reference_readiness.py"
       - "scripts/collect_local_keyframe_outputs.py"
       - "scripts/offline_png_output_collector.py"
       - "scripts/audit_local_qwen_pngs.py"
@@ -48,7 +49,7 @@ jobs:
   portable-preview:
     # 其他 PR 不得触发便携包；仅允许本次 #330 统一集成审查构建无签名内部候选。
     # 必须同时匹配原有精确 head 和本次唯一 base，不扩大其他 PR 的构建权限。
-    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop' || (github.head_ref == 'feat/p0-296-keyframe-thumbnail-review' && github.base_ref == 'integrate/p0-296-film-closed-loop-candidate-20261121') || (github.head_ref == 'feat/p0-330-bundle-offline-qwen-tools-20261122' && github.base_ref == 'fix/p0-330-c009-visual-restart-repeat-20261122') || (github.head_ref == 'feat/p0-330-qwen-one-command-inventory-20261122' && github.base_ref == 'feat/p0-330-qwen-six-png-readonly-inventory-20261122')
+    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop' || (github.head_ref == 'feat/p0-296-keyframe-thumbnail-review' && github.base_ref == 'integrate/p0-296-film-closed-loop-candidate-20261121') || (github.head_ref == 'feat/p0-330-bundle-offline-qwen-tools-20261122' && github.base_ref == 'fix/p0-330-c009-visual-restart-repeat-20261122') || (github.head_ref == 'feat/p0-330-qwen-one-command-inventory-20261122' && github.base_ref == 'feat/p0-330-qwen-six-png-readonly-inventory-20261122') || (github.head_ref == 'feat/p0-330-jpeg-and-readiness-windows-bundle-20261122' && github.base_ref == 'feat/p0-330-qwen-three-shot-reference-preflight-20261122')
     name: Build unsigned portable WPF candidate without Release Builder
     runs-on: windows-2025
     timeout-minutes: 35
@@ -85,6 +86,13 @@ jobs:
           # 防回退：桌宠必须保持手动、默认不运行，不允许重新阻塞影视架构 CI。
           python -m unittest discover -s tests/contract -p "test_p0_desktop_pet_dormant.py" -v
           if ($LASTEXITCODE -ne 0) { throw 'P0_DESKTOP_PET_DORMANCY_CONTRACT_FAILED' }
+
+          # 01. Run exact-node Qwen JPEG and missing-composition negative
+          #     tests with synthetic CPU data before any preview build.
+          python -m unittest discover -s tests/creative_quality_2026 -p "test_qwen_reference_bindings.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_JPEG_BINDINGS_FAILED' }
+          python -m unittest discover -s tests/creative_quality_2026 -p "test_qwen_reference_readiness.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_SHOT_READINESS_FAILED' }
 
           # 原生 Windows 5.1 无联网自检；不得下载密钥、连接 Mac 或触发 Worker。
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/desktop/release/Start-SecureMacTunnel.ps1 -SelfTest
@@ -136,6 +144,7 @@ jobs:
             'comfy_png_embedded_evidence.py'
             'prepare_local_keyframe_batch.py'
             'qwen_reference_bindings.py'
+            'qwen_reference_readiness.py'
             'collect_local_keyframe_outputs.py'
             'offline_png_output_collector.py'
             'audit_local_qwen_pngs.py'
@@ -160,7 +169,7 @@ jobs:
               python (Join-Path $toolsDir $name) --help *> $null
               if ($LASTEXITCODE -ne 0) { throw "P0_PREVIEW_OFFLINE_TOOL_IMPORT_FAILED: $name" }
             }
-            python -c "import scripts.comfy_png_embedded_evidence; import scripts.qwen_reference_bindings; import scripts.offline_png_output_collector; import scripts.audit_local_qwen_pngs"
+            python -c "import scripts.comfy_png_embedded_evidence; import scripts.qwen_reference_bindings; import scripts.qwen_reference_readiness; import scripts.offline_png_output_collector; import scripts.audit_local_qwen_pngs"
             if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_PACKAGE_NAMESPACE_IMPORT_FAILED' }
           } finally {
             $env:PYTHONPATH = $priorPythonPath
@@ -168,7 +177,7 @@ jobs:
             Pop-Location
           }
           # 04. Forbid any additional .pyc/source/prompt payload; only the
-          #     exact seven intentionally copied CPU-only scripts may be shipped.
+          #     exact eight intentionally copied CPU-only scripts may be shipped.
           $actualOfflineFiles = @(Get-ChildItem -LiteralPath $toolsDir -Recurse -File | ForEach-Object { $_.Name })
           if (($actualOfflineFiles.Count -ne $offlineToolNames.Count) -or
               (@(Compare-Object -ReferenceObject $offlineToolNames -DifferenceObject $actualOfflineFiles).Count -ne 0)) {
@@ -209,9 +218,11 @@ jobs:
             'Verify the PowerShell output P0_HOLD_PREPARED=PASS before opening the app.'
             'Do NOT start an existing Worker with unknown Ready Goals or change HOLD to ALLOW until'
             'the exact three-shot Core Job/Plan/Digest has been reviewed and GPU execution is safe.'
-            'Seven scripts/*.py tools are bundled for offline CPU-only inspection, not run automatically.'
+            'Eight scripts/*.py tools are bundled for offline CPU-only inspection, not run automatically.'
             'Inspect-QwenKeyframes.ps1 is optional, reads existing PVP PNGs and writes only one private report.'
             'These source tools need Python 3.12; do not install Python or run them for production without review.'
+            'Missing SHOT_002 or SHOT_003 compositions stay BLOCKED; readiness does not create images.'
+            'Qwen JPEG reference files are checked without conversion.'
             'They do not fetch models, license creative assets or authorize C009/C011 / Comfy GPU jobs.'
             'Production Comfy/Wan, Ollama, Mac Core, FFmpeg and GPU presence are not validated here.'
           ) | Set-Content -LiteralPath (Join-Path $bundle 'README_P0_DEVELOPER_PREVIEW.txt') -Encoding utf8

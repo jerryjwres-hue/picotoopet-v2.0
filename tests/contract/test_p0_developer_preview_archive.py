@@ -39,6 +39,8 @@ def _create_preview(
     wrong_tool_manifest: bool = False,
     include_inspector: bool = False,
     tamper_inspector: bool = False,
+    include_readiness: bool = False,
+    tamper_readiness: bool = False,
 ) -> tuple[Path, Path]:
     """Synthetic ZIP resembles real preview metadata, never a runnable application."""
 
@@ -52,6 +54,8 @@ def _create_preview(
         "Start-SecureMacTunnel.ps1": b"# TEST ONLY: SSH loopback strict keys\n",
         "README_P0_DEVELOPER_PREVIEW.txt": README,
     }
+    if include_readiness and not include_inspector:
+        raise ValueError("READINESS_REQUIRES_INSPECTOR")
     if include_inspector and not include_offline_tools:
         raise ValueError("INSPECTOR_REQUIRES_BUNDLED_TOOLS")
     if include_offline_tools:
@@ -67,6 +71,10 @@ def _create_preview(
         if include_inspector:
             files["scripts/audit_local_qwen_pngs.py"] = b"# SYNTHETIC INSPECTOR\n"
             files["Inspect-QwenKeyframes.ps1"] = b"# SYNTHETIC READ-ONLY INSPECTOR\n"
+            if include_readiness:
+                files["scripts/qwen_reference_readiness.py"] = (
+                    b"# SYNTHETIC MISSING-SHOT PREFLIGHT ONLY\n"
+                )
     if missing_hold:
         files.pop("Prepare-P0ThreeShotHold.ps1")
     if missing_tunnel:
@@ -106,7 +114,7 @@ def _create_preview(
                 tamper_tunnel and name == "Start-SecureMacTunnel.ps1"
             ) or (tool_body_tamper and name == "scripts/recover_comfy_keyframe_workflow.py") or (
                 tamper_inspector and name == "Inspect-QwenKeyframes.ps1"
-            )
+            ) or (tamper_readiness and name == "scripts/qwen_reference_readiness.py")
             package.writestr(name, data + (b"CHANGED" if changed else b""))
         if duplicate:
             # Duplicate basename under different case must not be extracted on Windows.
@@ -219,6 +227,29 @@ class PreviewArchiveContractTests(unittest.TestCase):
             tamper_inspector=True
         )
         with self.assertRaisesRegex(PreviewVerificationError, "FILE_BYTES_OR_SHA256_MISMATCH"):
+            self.verify(archive, receipt)
+
+    def test_eight_tool_jpeg_ready_archive_is_verified_but_not_installable(self):
+        # 01. The new candidate contains the eighth CPU-only script while
+        #     existing formal release and GPU gates remain closed.
+        archive, receipt = _create_preview(
+            self.root, include_offline_tools=True,
+            include_inspector=True, include_readiness=True,
+        )
+        result = self.verify(archive, receipt)
+        self.assertEqual(result["files_verified"], 15)
+        self.assertFalse(result["formal_release_pass"])
+        self.assertFalse(result["user_install_allowed"])
+
+    def test_jpeg_readiness_script_bytes_cannot_be_replaced(self):
+        # 02. A new SHA-verified file may never be replaced without detection.
+        archive, receipt = _create_preview(
+            self.root, include_offline_tools=True, include_inspector=True,
+            include_readiness=True, tamper_readiness=True,
+        )
+        with self.assertRaisesRegex(
+            PreviewVerificationError, "FILE_BYTES_OR_SHA256_MISMATCH"
+        ):
             self.verify(archive, receipt)
 
     def test_rejects_wrong_run_id(self):
