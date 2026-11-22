@@ -21,6 +21,7 @@ on:
       - scripts/qwen_reference_bindings.py
       - scripts/qwen_reference_readiness.py
       - tests/creative_quality_2026/test_qwen_reference_readiness.py
+      - tests/creative_quality_2026/export_qwen_readiness_wpf_fixture.py
       - tests/creative_quality_2026/test_qwen_reference_bindings.py
       - scripts/collect_local_keyframe_outputs.py
       - scripts/offline_png_output_collector.py
@@ -83,11 +84,18 @@ jobs:
       - name: Three-shot Qwen reference readiness with missing shots (CPU-only)
         shell: pwsh
         run: python -m unittest discover -s tests/creative_quality_2026 -p test_qwen_reference_readiness.py
+      # 01. Bridge Python's real readiness emitter to the same native WPF
+      #     parser. Synthetic bytes only; no live user files or GPU tasks.
+      - name: Generate Python Qwen readiness for native WPF (CPU-only)
+        shell: pwsh
+        run: python tests/creative_quality_2026/export_qwen_readiness_wpf_fixture.py --output-dir "$env:RUNNER_TEMP/qwen-wpf"
       - name: Build existing native WPF smoke harness (no packaging)
         shell: pwsh
         run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
       - name: Real image, GUI and API contracts (no GPU)
         shell: pwsh
+        env:
+          PICOTOO_WPF_QWEN_FIXTURE_DIR: ${{ runner.temp }}/qwen-wpf
         run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --reference-preview-batch-only
       - name: Existing Goal and Approvals regressions
         shell: pwsh

@@ -106,6 +106,12 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(wideStream.ToArray(), ".png"));
         await VerifyBatchStateAsync(stream.ToArray());
         await VerifySealedV2SelectionAsync(stream.ToArray());
+        // 01. The native Windows contract runner can consume the EXACT
+        //     JSON emitted by the Python Qwen readiness source from this SHA.
+        //     Other isolated smoke runners do not require this optional CI input.
+        var pythonFixtureDir = Environment.GetEnvironmentVariable("PICOTOO_WPF_QWEN_FIXTURE_DIR");
+        if (!string.IsNullOrWhiteSpace(pythonFixtureDir))
+            await VerifyPythonQwenReadinessInteropAsync(pythonFixtureDir);
         Console.WriteLine("REFERENCE_PREVIEW_GUI_API=PASS; PNG_JPEG_PIXELS=PASS; GPU_POST=0");
         var codecs = Windows.Graphics.Imaging.BitmapDecoder.GetDecoderInformationEnumerator();
         Console.WriteLine("NATIVE_WEBP_CODEC_REGISTERED=" + codecs.Any(codec => codec.CodecId == Windows.Graphics.Imaging.BitmapDecoder.WebpDecoderId));
@@ -116,6 +122,70 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.Equal(1, webpPreview.PixelHeight, "WebP fixture height changed");
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp[..20], ".webp"));
         Console.WriteLine("REFERENCE_PREVIEW_WEBP=PASS; DECODER=BUNDLED_CPU");
+    }
+
+    // 02. Real language-boundary contract: Python's inspect_readiness()
+    //     generates this report in CI; no handwritten approximation can
+    //     accidentally drift away from native WPF's exact JSON parser.
+    private static async Task VerifyPythonQwenReadinessInteropAsync(string fixtureDir)
+    {
+        var reportPath = Path.Combine(fixtureDir, "python_qwen_readiness.json");
+        var manifestPath = Path.Combine(fixtureDir, "python_creative_manifest.json");
+        if (!File.Exists(reportPath) || !File.Exists(manifestPath))
+            throw new InvalidDataException("QWEN_WPF_PYTHON_FIXTURE_MISSING");
+
+        var root = Path.Combine(Path.GetTempPath(), "reference-qwen-bridge-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var policy = new ReferencePreviewFilePolicy(ProductionLocalEnvironment.ResolveUnderRoot,
+                ProductionLocalEnvironment.AssertNoLinkEscape, ProductionLocalEnvironment.IsOrdinaryFile,
+                ProductionLocalEnvironment.Sha256FileAsync);
+            var stager = new ReferencePreviewSnapshotStager(root, policy,
+                ReferenceBatchPreviewViewModel.ValidateImageAsync);
+            var gateway = new RecordingGateway();
+            var creative = Package() with
+            {
+                Manifest = JsonElement.Parse(await File.ReadAllBytesAsync(manifestPath))
+            };
+            var vm = new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), creative);
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count,
+                "Python-origin frozen Kit must immediately yield three unverified shot cards");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Python-origin Kit alone must not imply a real Comfy image observation");
+            await vm.LoadCompositionWorkOrderAsync(reportPath);
+            SmokeAssert.True(vm.CompositionWorkOrders.Select(x => x.Status).SequenceEqual(
+                new[] { "OBSERVED_UNAPPROVED", "NEEDS_DISTINCT_COMPOSITION",
+                    "NEEDS_DISTINCT_COMPOSITION" }),
+                "Python emitter and WPF reader disagree on three-shot composition state");
+            SmokeAssert.Equal("old-composition.png", vm.CompositionWorkOrders[0].ExistingFilename,
+                "WPF must preserve Python's verified historical composition name");
+            SmokeAssert.Equal("Opening state 2", vm.CompositionWorkOrders[1].StillPrompt,
+                "WPF must copy the real Python frozen Kit prompt without retyping");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "Python readiness import must not stage synthetic source images");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Python readiness import must not request Core approval");
+
+            // 03. Even Python-shaped forged JSON must lose its observation
+            //     claims and restore unaltered frozen prompts after rejection.
+            var forged = JsonNode.Parse(await File.ReadAllTextAsync(reportPath))!.AsObject();
+            forged["composition_work_order"]!["items"]![1]!["creative_still_prompt"] = "FORGED";
+            var forgedPath = Path.Combine(root, "forged-python-readiness.json");
+            await File.WriteAllTextAsync(forgedPath, forged.ToJsonString());
+            await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedPath));
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Rejected Python-shaped data must clear all untrusted observations");
+            SmokeAssert.Equal("Opening state 2", vm.CompositionWorkOrders[1].StillPrompt,
+                "Rejected Python report must retain the immutable frozen Kit");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Neither genuine nor forged Python report may submit to Core");
+            Console.WriteLine("QWEN_PYTHON_TO_WPF_REAL_JSON=PASS; SHOTS=3; GPU_POST=0");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
     }
 
     private static async Task VerifyBatchStateAsync(byte[] png)
