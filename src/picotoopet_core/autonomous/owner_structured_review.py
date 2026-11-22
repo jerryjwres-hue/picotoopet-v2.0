@@ -192,6 +192,7 @@ class OwnerStructuredReviewPreview(_Strict):
     reason_codes: tuple[str, ...]
     state_facts: StateFactsV1 | None
     model_calls: Literal[0] = 0
+    confirmed_motion_digest: str | None = Field(default=None, pattern=_DIGEST)
     story_policy_opt_in: Literal["static-pet-story-v1.0.0", "dynamic-pet-feeding-v1.0.0"] | None = None
 
 
@@ -689,6 +690,10 @@ class OwnerStructuredReviewService:
                 "preview_digest": preview.preview_digest,
                 "story_policy_opt_in": preview.story_policy_opt_in,
                 "state_facts": facts.model_dump(mode="json"),
+                **(
+                    {"confirmed_motion_digest": preview.confirmed_motion_digest}
+                    if preview.confirmed_motion_digest is not None else {}
+                ),
             },
             trust_level=EvidenceTrust.D,
             confidence=1.0,
@@ -1274,5 +1279,7 @@ class OwnerStructuredReviewService:
             "model_calls": 0,
             "story_policy_opt_in": story_policy_opt_in,
         }
+        if proposal.dynamic_motion_proposal is not None:
+            document["confirmed_motion_digest"] = proposal.dynamic_motion_proposal["motion_digest"]
         document["preview_digest"] = canonical_sha256(document)
         return OwnerStructuredReviewPreview.model_validate(document)
