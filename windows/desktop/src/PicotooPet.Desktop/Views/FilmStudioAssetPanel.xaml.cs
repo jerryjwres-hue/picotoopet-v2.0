@@ -13,6 +13,9 @@ namespace PicotooPet.Desktop.Views;
 /// <summary>明确同意后通过原 Core 通道登记本地素材；不启动预览、Goal 或渲染。</summary>
 public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
 {
+    // 固定动态三镜事件序列，复用数组避免重复分配。
+    private static readonly string[] DynamicEvents = ["NOTICE_BOWL", "APPROACH_BOWL", "BEGIN_EATING"];
+
     public FilmStudioAssetPanel()
     {
         InitializeComponent();
@@ -219,7 +222,7 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
         }
         var shots = motion.GetProperty("shots").EnumerateArray().ToArray();
         if (shots.Length != 3 || !shots.Select(shot => shot.GetProperty("event").GetString()).SequenceEqual(
-            new[] { "NOTICE_BOWL", "APPROACH_BOWL", "BEGIN_EATING" }))
+            DynamicEvents))
         {
             throw new InvalidOperationException("不支持的动态故事动作序列。");
         }
