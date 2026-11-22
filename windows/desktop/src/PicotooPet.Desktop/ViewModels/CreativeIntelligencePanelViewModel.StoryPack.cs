@@ -110,7 +110,8 @@ public sealed partial class CreativeIntelligencePanelViewModel
     }
 
     public bool CanPreviewStoryPack =>
-        !_isAssetImportBusy && !IsStoryPackPreviewBusy && !string.IsNullOrWhiteSpace(StoryPackJson);
+        !_isAssetImportBusy && !IsStoryPackPreviewBusy && !_isStoryGoalBusy
+        && !string.IsNullOrWhiteSpace(StoryPackJson);
 
     /// <summary>新路径复用现有 Human Goal；只有有效最新预览和显式用户点击才可提交。</summary>
     public bool CanCreateStoryGoal =>
