@@ -76,7 +76,7 @@ def read_package(path: Path, expected_sha: str) -> dict:
     return package
 
 
-def keyframes(package: dict) -> tuple[str, list[dict]]:
+def keyframes(package: dict, *, allow_vertical_guidance: bool = False) -> tuple[str, list[dict]]:
     # 02. Use exact Core kit payload, including original review state and shot order.
     if (package.get("schema_version") != "1.0"
         or package.get("quality_outcome") != "PASS"
@@ -89,7 +89,11 @@ def keyframes(package: dict) -> tuple[str, list[dict]]:
         or kit["bible_digest"] != bible["bible_digest"]
         or sha(canonical_bytes({k: v for k, v in bible.items() if k != "bible_digest"}))
             != require_digest(bible["bible_digest"])
-        or stages["creative_brief.v1"]["output_profile_id"] != PROFILE):
+        # Strict production preparation remains landscape-only. The single
+        # explicit vertical exception is used solely by bootstrap drafts.
+        or (stages["creative_brief.v1"]["output_profile_id"] != PROFILE
+            and not (allow_vertical_guidance is True and
+                     stages["creative_brief.v1"]["output_profile_id"] == "video.vertical.v1"))):
         raise ValueError("KEYFRAME_KIT_LINEAGE_INVALID")
     digest = require_digest(kit["kit_digest"])
     # Matches Core _kit_digest: omit bible_digest, retain kit_digest as null.
@@ -236,7 +240,8 @@ def prepare(graph: dict, recovery: dict, bindings: dict, package: dict,
 
 def bootstrap_compositions(
     graph: dict, recovery: dict, package: dict, package_sha: str,
-    variant: int, input_root: Path,
+    variant: int, input_root: Path, *,
+    allow_vertical_guidance: bool = False,
 ) -> tuple[dict[str, bytes], dict]:
     """Prepare *unapproved creative drafts*, never strict reference bindings.
 
@@ -275,7 +280,16 @@ def bootstrap_compositions(
     slots, load_ids = _graph_slots(graph)
     if len(load_ids) != 3:
         raise ValueError("COMPOSITION_BOOTSTRAP_QWEN_INPUTS_INVALID")
-    kit_digest, frames = keyframes(package)
+    # 04a. A vertical PASS Kit can be consulted ONLY as historical creative
+    #      guidance for a future landscape draft. It is not a new landscape
+    #      PASS package and cannot be used by strict production preparation.
+    source_profile = package["stage_results"]["creative_brief.v1"]["output_profile_id"]
+    if (type(allow_vertical_guidance) is not bool
+        or (allow_vertical_guidance and source_profile != "video.vertical.v1")):
+        raise ValueError("COMPOSITION_BOOTSTRAP_VERTICAL_OPT_IN_INVALID")
+    kit_digest, frames = keyframes(
+        package, allow_vertical_guidance=allow_vertical_guidance
+    )
     observed_inputs = []
     for node_id in load_ids:
         # 02. Pin three source references by real image bytes. The original
@@ -329,6 +343,13 @@ def bootstrap_compositions(
         "source_graph_sha256": digest,
         "history_provenance": recovery["history_status"],
         "variant": variant,
+        # 04b. The target profile records creative intent only. The source
+        #      graph dimensions, source Kit and original ZIP are NOT converted.
+        "source_output_profile_id": source_profile,
+        "intended_later_output_profile_id": PROFILE,
+        "source_output_profile_matches_intent": source_profile == PROFILE,
+        "source_profile_conversion_performed": False,
+        "target_geometry_verified": False,
         "historical_reference_inputs": observed_inputs,
         "historical_composition_reused_as_guidance_only": True,
         "distinct_shot_compositions_observed": False,
@@ -363,6 +384,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--recovery-dir", type=Path, required=True)
     parser.add_argument("--slot-map", type=Path)
     parser.add_argument("--composition-bootstrap", action="store_true")
+    parser.add_argument(
+        "--allow-vertical-guidance-for-landscape-drafts", action="store_true",
+        help="Use a Core PASS vertical v2 Kit as unapproved creative guidance only; "
+             "does not create a landscape Kit, convert geometry or permit production.",
+    )
     parser.add_argument("--input-root", type=Path)
     parser.add_argument("--variant", type=int, default=0)
     parser.add_argument("--variant-count", type=int, default=1)
@@ -386,6 +412,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("COMPOSITION_BOOTSTRAP_ARGUMENTS_INVALID")
             bindings = None
         else:
+            if args.allow_vertical_guidance_for_landscape_drafts:
+                raise ValueError("COMPOSITION_BOOTSTRAP_ONLY_FLAG")
             if args.slot_map is None:
                 raise ValueError("KEYFRAME_SLOT_MAP_REQUIRED")
             bindings = parse_history(read_bounded(args.slot_map))
@@ -394,7 +422,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.composition_bootstrap:
                 files, manifest = bootstrap_compositions(
                     graph, recovery, package, args.package_sha256,
-                    variant, args.input_root
+                    variant, args.input_root,
+                    allow_vertical_guidance=args.allow_vertical_guidance_for_landscape_drafts,
                 )
             else:
                 files, manifest = prepare(
@@ -430,6 +459,12 @@ def main(argv: list[str] | None = None) -> int:
                            "picotoo.local-keyframe-variant-index.v1"),
                 "creative_package_sha256": args.package_sha256,
                 "keyframe_kit_digest": prepared[0][2]["keyframe_kit_digest"],
+                **({
+                    "source_output_profile_id": prepared[0][2]["source_output_profile_id"],
+                    "intended_later_output_profile_id": PROFILE,
+                    "source_profile_conversion_performed": False,
+                    "target_geometry_verified": False,
+                } if args.composition_bootstrap else {}),
                 "variant_count": args.variant_count,
                 "variants": entries,
                 "source_inputs_verified": False,
@@ -448,6 +483,9 @@ def main(argv: list[str] | None = None) -> int:
         print("COMPOSITION_BOOTSTRAP=DRY_RUN_ONLY; "
               f"VARIANTS={args.variant_count}; SHOTS_PER_VARIANT=3; GPU_POST=0")
         print("DISTINCT_S2_S3_COMPOSITIONS=NOT_CREATED; OWNER_APPROVAL=FALSE")
+        if args.allow_vertical_guidance_for_landscape_drafts:
+            print("SOURCE_PROFILE=video.vertical.v1; INTENDED_PROFILE=video.landscape.v1; "
+                  "GEOMETRY_CONVERSION=NOT_PERFORMED; LANDSCAPE_PACKAGE=STILL_REQUIRED")
     elif args.variant_count == 1:
         print("KEYFRAME_BATCH=DRY_RUN_CANDIDATE; SHOTS=3; GPU_POST=0")
     else:
