@@ -327,6 +327,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Existing WPF review must immediately show three frozen composition briefs");
             SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
                 "Absent local evidence must never be presented as a missing or observed image");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x =>
+                x.LocalSelectionStatus == "未选择本地快照"
+                && x.LocalSelectionSha256.Length == 0),
+                "Frozen work cards must explicitly show no staged local snapshot");
             SmokeAssert.Equal("Opening pose two", vm.CompositionWorkOrders[1].StillPrompt,
                 "Local work card must reuse the exact frozen Creative Kit prompt");
             SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.SceneId == "kitchen-scene"),
@@ -520,6 +524,23 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 await duplicateV2.AddAsync(shot, source, "USER_SUPPLIED", null);
             SmokeAssert.Equal(3, duplicateV2.Items.Count,
                 "Duplicate-byte regression must exercise complete three-shot staging");
+            SmokeAssert.True(duplicateV2.CompositionWorkOrders.All(x =>
+                x.LocalSelectionStatus == "内容重复（禁止批量提交）"
+                && x.LocalSelectionSha256 == duplicateV2.Items[0].Sha256),
+                "Every duplicate-shot card must clearly block identical local image bytes");
+            SmokeAssert.True(duplicateV2.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Selecting byte-identical local images must never certify a historical composition");
+            duplicateV2.Remove("shot-3");
+            SmokeAssert.True(duplicateV2.CompositionWorkOrders[2].LocalSelectionStatus == "未选择本地快照"
+                && duplicateV2.CompositionWorkOrders.Take(2).All(x =>
+                    x.LocalSelectionStatus == "内容重复（禁止批量提交）"),
+                "Removing one duplicate must update all three local progress cards");
+            duplicateV2.Remove("shot-2");
+            SmokeAssert.True(duplicateV2.CompositionWorkOrders[0].LocalSelectionStatus
+                == "本地快照已选（不代表审批）",
+                "Once duplication is resolved the surviving local snapshot must stay unapproved");
+            await duplicateV2.AddAsync("shot-2", source, "USER_SUPPLIED", null);
+            await duplicateV2.AddAsync("shot-3", source, "USER_SUPPLIED", null);
             SmokeAssert.Equal(1, duplicateV2.Items.Select(x => x.Sha256)
                 .Distinct(StringComparer.Ordinal).Count(),
                 "Fixture must really contain renamed byte-identical images");
@@ -659,6 +680,16 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Unverified embedded graph may not write Core");
 
             await vm.AddAsync("shot-1", source, "USER_SUPPLIED", null);
+            SmokeAssert.Equal("本地快照已选（不代表审批）",
+                vm.CompositionWorkOrders[0].LocalSelectionStatus,
+                "Selecting S1 must immediately update the existing work-order card");
+            SmokeAssert.Equal(vm.Items.Single().Sha256,
+                vm.CompositionWorkOrders[0].LocalSelectionSha256,
+                "The S1 card must display verified local snapshot digest, not Qwen report claims");
+            SmokeAssert.True(vm.CompositionWorkOrders.Skip(1).All(x =>
+                x.LocalSelectionStatus == "未选择本地快照"
+                && x.LocalSelectionSha256.Length == 0),
+                "S1 selection must not imply S2 or S3 composition exists");
             vm.UserConfirmsPreviewAndRights = true;
             SmokeAssert.True(!vm.CanSubmit, "One v2 still must not enable request submission");
             await RejectAsync(() => vm.SubmitAsync());
@@ -668,6 +699,12 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             //     相同字节复用的失败路径由 duplicateV2 回归独立覆盖。
             await vm.AddAsync("shot-2", Path.Combine(observedRoot, "shot-2.png"),
                 "USER_SUPPLIED", null);
+            SmokeAssert.Equal("本地快照已选（不代表审批）",
+                vm.CompositionWorkOrders[1].LocalSelectionStatus,
+                "Distinct S2 bytes must appear only on S2's local staging card");
+            SmokeAssert.Equal("未选择本地快照",
+                vm.CompositionWorkOrders[2].LocalSelectionStatus,
+                "S3 must remain visibly missing until its own distinct local picture is selected");
             vm.UserConfirmsPreviewAndRights = true;
             SmokeAssert.True(!vm.CanSubmit, "Two v2 stills must not enable request submission");
             await RejectAsync(() => vm.SubmitAsync());
@@ -675,6 +712,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
 
             await vm.AddAsync("shot-3", Path.Combine(observedRoot, "shot-3.png"),
                 "USER_SUPPLIED", null);
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x =>
+                x.LocalSelectionStatus == "本地快照已选（不代表审批）"
+                && x.LocalSelectionSha256.Length == 64),
+                "Three distinct locally staged images must appear without altering approval state");
             SmokeAssert.Equal(3, vm.Items.Select(x => x.Sha256).Distinct(StringComparer.Ordinal).Count(),
                 "Full v2 fixture must use three truly distinct synthetic image byte identities");
             SmokeAssert.True(!vm.CanSubmit, "All three images still require fresh rights consent");
@@ -719,6 +760,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.Equal(0, resumed.Items.Count, "Invalid approval ID must not stage references");
             await resumed.ResumeReferenceBatchAsync("44444444-4444-4444-8444-444444444444");
             SmokeAssert.Equal(3, resumed.Items.Count, "Restart must restore all frozen snapshot images");
+            SmokeAssert.True(resumed.CompositionWorkOrders.All(x =>
+                x.LocalSelectionStatus == "本地快照已选（不代表审批）"
+                && x.LocalSelectionSha256.Length == 64),
+                "A resumed Core receipt must display restored snapshots without asserting Owner approval");
             SmokeAssert.True(!resumed.CanEdit && !resumed.CanResumeReferenceBatch
                 && !resumed.CanCreateReviewedPlan && !resumed.UserConfirmsPreviewAndRights,
                 "Restart may not implicitly restore rights, approve or create production");

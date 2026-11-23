@@ -26,7 +26,9 @@ public sealed record ReferenceKeyframeInstruction(
 public sealed record ReferenceCompositionWorkItem(
     string ShotId, string Status, string ExistingFilename, string StillPrompt,
     string ReviewChecklist, string SceneId, string CameraFraming,
-    string OpeningState, string ClosingState, string HandoffToNext);
+    string OpeningState, string ClosingState, string HandoffToNext,
+    string LocalSelectionStatus = "未选择本地快照",
+    string LocalSelectionSha256 = "");
 
 // 只读候选是历史输出观测，不是 Producer 授权、身份资产或使用许可。
 public sealed record ReferenceObservedCandidate(string ShotId, string OutputRelativePath,
@@ -247,6 +249,9 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 _snapshots.Add(entry.Item.ShotId, entry);
                 Items.Add(entry.Item);
             }
+            // 05. Recovery restores only verified local snapshot identity;
+            //     never turn a restored Core receipt into visual approval.
+            SyncLocalShotSelections();
             _frozenRequest = reconstructed;
             _initialReceipt = receipt with { References = receipt.References.ToArray() };
             Receipt = receipt;
@@ -260,6 +265,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             // 04. 失败时绝不保留半批次或错误批准状态。
             _snapshots.Clear();
             Items.Clear();
+            SyncLocalShotSelections();
             _frozenRequest = null;
             _initialReceipt = null;
             Receipt = null;
@@ -368,6 +374,9 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
 
             CompositionWorkOrders.Clear();
             foreach (var item in parsed) CompositionWorkOrders.Add(item);
+            // 06. External reports can change historical observations only.
+            //     Local staged bytes remain a separate, trusted projection.
+            SyncLocalShotSelections();
             StatusText = "三镜头构图工作单已核对封存 Prompt；这只是本地状态，图片、来源权利和 Owner 审批均未获得认可。";
         }
         catch
@@ -392,6 +401,33 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 instruction.ShotId, "UNVERIFIED", string.Empty, instruction.StillPrompt,
                 instruction.ReviewChecklist, instruction.SceneId, instruction.CameraFraming,
                 instruction.OpeningState, instruction.ClosingState, instruction.HandoffToNext));
+        SyncLocalShotSelections();
+    }
+
+    // 05. The historical Qwen work-order state and the verified, staged
+    //     local snapshot state are independent. Neither grants rights or
+    //     Owner approval. Do not infer a shot from an output filename.
+    private void SyncLocalShotSelections()
+    {
+        if (!_p0PlanCandidate) return;
+        for (var index = 0; index < CompositionWorkOrders.Count; index++)
+        {
+            var existing = CompositionWorkOrders[index];
+            var hasSnapshot = _snapshots.TryGetValue(existing.ShotId, out var staged);
+            var digest = hasSnapshot ? staged.Item.Sha256 : string.Empty;
+            var duplicate = hasSnapshot && _snapshots.Values.Count(
+                value => value.Item.Sha256 == digest) > 1;
+            var selection = !hasSnapshot ? "未选择本地快照"
+                : duplicate ? "内容重复（禁止批量提交）"
+                : "本地快照已选（不代表审批）";
+            if (existing.LocalSelectionStatus != selection
+                || existing.LocalSelectionSha256 != digest)
+                CompositionWorkOrders[index] = existing with
+                {
+                    LocalSelectionStatus = selection,
+                    LocalSelectionSha256 = digest
+                };
+        }
     }
 
     // 05. 校验本地候选清单的完整身份；只显示元数据，绝不自动 Stage 或批准。
@@ -634,6 +670,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             if (_snapshots.TryGetValue(shotId, out var previous)) Items.Remove(previous.Item);
             _snapshots[shotId] = (snapshot, item);
             Items.Add(item);
+            SyncLocalShotSelections();
             _consent = false;
             RaisePropertyChanged(nameof(UserConfirmsPreviewAndRights));
             // 06. Only the sealed V2 three-shot path requires distinct
@@ -651,6 +688,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     {
         AssertEditable();
         if (_snapshots.Remove(shotId, out var previous)) Items.Remove(previous.Item);
+        SyncLocalShotSelections();
         _consent = false;
         RaisePropertyChanged(nameof(UserConfirmsPreviewAndRights));
         NotifyState();

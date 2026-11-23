@@ -45,7 +45,12 @@
         <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8" Margin="0,0,0,5">
          <StackPanel>
           <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold"/>
-          <TextBlock Text="{Binding Status, StringFormat=构图状态：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding Status, StringFormat=历史构图观察（未审批）：{0}}" TextWrapping="Wrap"/>
+          <!-- 05. Stage state is based on locally verified snapshot bytes,
+               not the historical/untrusted Qwen readiness status above. -->
+          <TextBlock Text="{Binding LocalSelectionStatus, StringFormat=本地选图：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding LocalSelectionSha256, StringFormat=已选快照 SHA-256：{0}}"
+                     FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
           <TextBlock Text="{Binding SceneId, StringFormat=封存场景：{0}}" TextWrapping="Wrap"/>
           <TextBlock Text="{Binding CameraFraming, StringFormat=封存机位：{0}}" TextWrapping="Wrap"/>
           <!-- 04. Show source-bound story state transitions before choosing S2/S3.
