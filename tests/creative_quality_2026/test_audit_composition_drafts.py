@@ -45,9 +45,18 @@ def fixture(root: Path) -> tuple[Path, Path, Path]:
         for order in (1, 2, 3):
             shot_id = f"SHOT_{order:03d}"
             seed = 1234567890123400 + variant * 100 + order
+            positive = f"Shot {order} creative draft"
             graph = {
-                "10": {"class_type": "KSampler", "inputs": {"seed": seed}},
-                "11": {"class_type": "SaveImage", "inputs": {"filename_prefix": "test"}},
+                "8": {"class_type": "TextEncodeQwenImageEditPlus",
+                      "inputs": {"prompt": positive}},
+                "9": {"class_type": "TextEncodeQwenImageEditPlus",
+                      "inputs": {"prompt": "negative prompt frozen"}},
+                "10": {"class_type": "KSampler",
+                       "inputs": {"seed": seed, "positive": ["8", 0],
+                                  "negative": ["9", 0]}},
+                "11": {"class_type": "SaveImage",
+                       "inputs": {"filename_prefix":
+                           f"PicotooPet/composition_bootstrap/{'a'*16}/{shot_id}/v{variant:04d}"}},
             }
             raw_graph = canonical_bytes(graph)
             graph_name = f"{order:02d}-{shot_id}.json"
@@ -55,7 +64,8 @@ def fixture(root: Path) -> tuple[Path, Path, Path]:
             shots.append({
                 "shot_id": shot_id, "order": order,
                 "graph_file": graph_name, "graph_sha256": digest(raw_graph),
-                "seed": seed, "human_visual_review": "NOT_PERFORMED",
+                "seed": seed, "still_prompt_sha256": digest(positive.encode("utf-8")),
+                "human_visual_review": "NOT_PERFORMED",
                 "generated_composition": None,
             })
             (review / f"v{variant:04d}_{shot_id}_shot{order}.png").write_bytes(png(graph))
@@ -183,6 +193,37 @@ class CompositionDraftAuditTests(unittest.TestCase):
                 index_path = bootstrap / "variant_index.json"
                 index = json.loads(index_path.read_bytes())
                 index["variants"][0]["batch_manifest_sha256"] = digest(raw)
+                index_path.write_bytes(canonical_bytes(index))
+                with self.assertRaises(ValueError):
+                    audit(bootstrap, review)
+
+    def test_cross_variant_frozen_graph_and_prompt_hash_rejected(self):
+        # 09. Rehashing a valid PNG must not hide changes to frozen Qwen nodes.
+        for alteration in ("negative_prompt", "model_selector", "prompt_digest"):
+            with self.subTest(alteration=alteration), tempfile.TemporaryDirectory() as temp:
+                bootstrap, review, _ = fixture(Path(temp))
+                folder = bootstrap / "v0001"
+                graph_path = folder / "02-SHOT_002.json"
+                manifest_path = folder / "batch_manifest.json"
+                graph = json.loads(graph_path.read_bytes())
+                manifest = json.loads(manifest_path.read_bytes())
+                if alteration == "negative_prompt":
+                    graph["9"]["inputs"]["prompt"] = "silent negative prompt tamper"
+                elif alteration == "model_selector":
+                    graph["10"]["inputs"]["model"] = ["other", 0]
+                else:
+                    graph["8"]["inputs"]["prompt"] = "different prompt"
+                raw_graph = canonical_bytes(graph)
+                graph_path.write_bytes(raw_graph)
+                manifest["shots"][1]["graph_sha256"] = digest(raw_graph)
+                if alteration == "prompt_digest":
+                    manifest["shots"][1]["still_prompt_sha256"] = "f" * 64
+                raw_manifest = canonical_bytes(manifest)
+                manifest_path.write_bytes(raw_manifest)
+                (review / "v0001_SHOT_002_shot2.png").write_bytes(png(graph))
+                index_path = bootstrap / "variant_index.json"
+                index = json.loads(index_path.read_bytes())
+                index["variants"][1]["batch_manifest_sha256"] = digest(raw_manifest)
                 index_path.write_bytes(canonical_bytes(index))
                 with self.assertRaises(ValueError):
                     audit(bootstrap, review)
