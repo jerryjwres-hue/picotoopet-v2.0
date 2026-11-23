@@ -196,14 +196,28 @@ jobs:
           } finally {
             $env:PYTHONPATH = $previousFixturePath
           }
+          # 06. Build six referenced input files with synthetic, repeated
+          #     bytes. The audit must observe them but NEVER assign them to
+          #     S2/S3 or claim distinct approved scene compositions.
+          $syntheticInput = Join-Path $env:RUNNER_TEMP 'synthetic-qwen-comfy-input'
+          $previousInputFixturePath = $env:PYTHONPATH
+          try {
+            $env:PYTHONPATH = "$env:GITHUB_WORKSPACE;$env:GITHUB_WORKSPACE/tests/creative_quality_2026"
+            python -B -c "import sys; from pathlib import Path; from test_comfy_png_embedded_evidence import GRAPH,png; p=Path(sys.argv[1]); p.mkdir(); [(p / f'private-input-{n}.png').write_bytes(png(GRAPH)) for n in range(6)]" $syntheticInput
+            if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_SYNTHETIC_INPUT_FIXTURE_FAILED' }
+          } finally {
+            $env:PYTHONPATH = $previousInputFixturePath
+          }
           $inspector = Join-Path $bundle 'Inspect-QwenKeyframes.ps1'
-          $inspectorOutput = (& pwsh -NoLogo -NoProfile -NonInteractive -File $inspector -OutputRoot $syntheticOutput -ExpectedCount 6 | Out-String)
+          $inspectorOutput = (& pwsh -NoLogo -NoProfile -NonInteractive -File $inspector -OutputRoot $syntheticOutput -InputRoot $syntheticInput -ExpectedCount 6 | Out-String)
           if ($LASTEXITCODE -ne 0 -or
               $inspectorOutput -notmatch 'QWEN_INSPECTION=OBSERVED_NEEDS_REVIEW' -or
+              $inspectorOutput -notmatch 'QWEN_REFERENCED_INPUTS=6/6' -or
+              $inspectorOutput -notmatch 'S2_S3_ASSIGNMENT=UNVERIFIED' -or
               $inspectorOutput -notmatch 'GPU_POST=0') {
             throw 'P0_QWEN_BUNDLED_LAUNCHER_SMOKE_FAILED'
           }
-          Write-Host 'P0_QWEN_BUNDLED_LAUNCHER_SMOKE=PASS; REAL_IMAGES_TOUCHED=0; GPU_POST=0'
+          Write-Host 'P0_QWEN_BUNDLED_LAUNCHER_SMOKE=PASS; INPUT_BYTES=6; S2_S3_ASSIGNMENT=UNVERIFIED; REAL_IMAGES_TOUCHED=0; GPU_POST=0'
           @(
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
             'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'

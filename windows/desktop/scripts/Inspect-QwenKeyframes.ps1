@@ -4,6 +4,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputRoot,
+    [string]$InputRoot,
     [int]$ExpectedCount = 6
 )
 
@@ -22,7 +23,20 @@ if ($ExpectedCount -lt 1 -or $ExpectedCount -gt 64) {
     throw 'QWEN_INSPECT_EXPECTED_COUNT_INVALID'
 }
 
-# 02. No Python install is attempted. Missing Python is a safe STOP.
+# 02. Inspect the sibling Comfy input directory when it exists. This never
+#     searches a drive or decides whether a file is an S2/S3 composition.
+#     An explicit -InputRoot must exist; the optional auto-path may be absent.
+if ([string]::IsNullOrWhiteSpace($InputRoot)) {
+    $sibling = Join-Path (Split-Path -Parent $OutputRoot) 'input'
+    if (Test-Path -LiteralPath $sibling -PathType Container) {
+        $InputRoot = $sibling
+    }
+}
+elseif (-not (Test-Path -LiteralPath $InputRoot -PathType Container)) {
+    throw 'QWEN_INSPECT_COMFY_INPUT_NOT_FOUND'
+}
+
+# 03. No Python install is attempted. Missing Python is a safe STOP.
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($null -eq $python -or $python.CommandType -notin @('Application', 'ExternalScript')) {
     throw 'QWEN_INSPECT_PYTHON_NOT_AVAILABLE'
@@ -46,7 +60,15 @@ Push-Location $bundle
 try {
     $env:PYTHONPATH = $bundle
     $env:PYTHONDONTWRITEBYTECODE = '1'
-    & $python.Source -B $audit --output-root $OutputRoot --expected-count $ExpectedCount --report-file $report
+    # 04. Argument-array invocation prevents filename/path fragments from
+    #     becoming PowerShell commands. No additional files are created.
+    $auditArgs = @('-B', $audit, '--output-root', $OutputRoot,
+                   '--expected-count', [string]$ExpectedCount,
+                   '--report-file', $report)
+    if (-not [string]::IsNullOrWhiteSpace($InputRoot)) {
+        $auditArgs += @('--input-root', $InputRoot)
+    }
+    & $python.Source @auditArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Host "QWEN_INSPECTION=UNVERIFIED; REPORT=$report; GPU_POST=0"
         throw 'QWEN_INSPECT_INVENTORY_NOT_VERIFIED'
@@ -58,4 +80,7 @@ finally {
     Pop-Location
 }
 Write-Host "QWEN_INSPECTION=OBSERVED_NEEDS_REVIEW; REPORT=$report; GPU_POST=0"
+if ([string]::IsNullOrWhiteSpace($InputRoot)) {
+    Write-Host 'QWEN_REFERENCED_INPUTS=NOT_CHECKED; S2_S3_ASSIGNMENT=UNVERIFIED'
+}
 Write-Host 'COMFY_POST=0; MODEL_INFERENCE=NOT_RUN; PRODUCTION_AUTHORIZED=FALSE'

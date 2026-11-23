@@ -111,8 +111,81 @@ def _inspect_png(path: Path) -> dict:
     }
 
 
+def inspect_loadimage_inputs(png_files: list[dict], input_root: Path) -> dict:
+    """Inspect only filenames referenced by verified PNG graphs; never infer S2/S3.
+
+    This is a separate read-only input inventory. Reused shared pet/bowl
+    references are expected; no image is assigned to a production shot.
+    """
+    # 01. The optional path is explicit and must be an ordinary directory.
+    #     Avoid scanning drives, walking subfolders or inferring rights.
+    if not input_root.is_dir() or input_root.is_symlink():
+        raise ValueError("QWEN_INPUT_ROOT_INVALID")
+
+    references: dict[str, list[dict]] = {}
+    for png in png_files:
+        for slot in png["load_image_slots"]:
+            name = slot["current_filename"]
+            references.setdefault(name, []).append({
+                "output_png": png["filename"],
+                "node_id": slot["node_id"],
+            })
+    if len(references) > 192:
+        raise ValueError("QWEN_INPUT_REFERENCE_COUNT_INVALID")
+
+    # 02. Reuse the strict Comfy image verifier, including path restrictions,
+    #     bounded size, PNG/JPEG integrity and hash. Import lazily to avoid
+    #     coupling the normal output-only PNG audit to the readiness module.
+    from scripts.qwen_reference_readiness import _observe_input
+
+    observed: list[dict] = []
+    missing: list[dict] = []
+    for filename, usages in sorted(references.items()):
+        try:
+            entry = _observe_input(input_root, filename)
+            observed.append({
+                "filename": filename,
+                "sha256": entry["sha256"],
+                "bytes": entry["bytes"],
+                "format": entry["format"],
+                "dimensions": entry["dimensions"],
+                "used_by": usages,
+                "pixels_decoded": False,
+                "owner_approved": False,
+            })
+        except FileNotFoundError:
+            missing.append({
+                "filename": filename,
+                "reason": "QWEN_INPUT_FILE_NOT_FOUND",
+                "used_by": usages,
+            })
+        except (ValueError, OSError, TypeError, KeyError, IndexError,
+                OverflowError, RecursionError):
+            # 03. Never include exceptions, file contents, prompt strings,
+            #     absolute paths, or inferred success in a JSON report.
+            missing.append({
+                "filename": filename,
+                "reason": "QWEN_INPUT_FILE_UNVERIFIED",
+                "used_by": usages,
+            })
+
+    return {
+        "status": "ALL_REFERENCED_INPUT_BYTES_OBSERVED"
+        if observed and not missing else "INPUT_REFERENCES_UNVERIFIED",
+        "referenced_file_count": len(references),
+        "observed_file_count": len(observed),
+        "observed": observed,
+        "unverified": missing,
+        "shot_2_3_assignment": "UNVERIFIED",
+        "independent_composition_images": "UNVERIFIED",
+        "input_rights_confirmed": False,
+        "gpu_post": 0,
+    }
+
+
 def inspect_directory(
     output_root: Path, *, prefix: str = PREFIX, expected_count: int | None = None,
+    input_root: Path | None = None,
 ) -> dict:
     """Enumerate only bounded, directly contained PNGs with an explicit prefix."""
     if (not output_root.is_dir() or output_root.is_symlink()
@@ -148,6 +221,10 @@ def inspect_directory(
             errors.append({"filename": path.name, "reason": reason[:80]})
     if expected_count is not None and len(paths) != expected_count:
         errors.append({"filename": None, "reason": "QWEN_EXPECTED_COUNT_MISMATCH"})
+    # 04. Input bytes are a separate observation dimension. Even fully
+    #     available shared inputs cannot prove independent S2/S3 compositions.
+    input_inventory = (inspect_loadimage_inputs(files, input_root)
+                       if input_root is not None else None)
     return {
         "schema": "picotoo.qwen-local-png-readonly-inspection.v1",
         "status": "OBSERVED_NEEDS_REVIEW" if not errors else "UNVERIFIED",
@@ -155,6 +232,8 @@ def inspect_directory(
         "verified_png_count": len(files),
         "files": files,
         "errors": errors,
+        **({"referenced_input_inventory": input_inventory}
+           if input_inventory is not None else {}),
         "raw_prompt_text_exported": False,
         "comfy_history_success_verified": False,
         "model_files_verified": False,
@@ -170,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--prefix", default=PREFIX)
     parser.add_argument("--expected-count", type=int)
+    parser.add_argument("--input-root", type=Path)
     parser.add_argument("--report-file", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
@@ -177,10 +257,14 @@ def main(argv: list[str] | None = None) -> int:
         report = args.report_file.resolve(strict=False)
         # 04. Never write reports into Comfy's output tree, and never replace
         #     an existing report. The operator explicitly chooses the path.
-        if report.is_relative_to(root) or not report.parent.is_dir():
+        input_root = args.input_root.resolve(strict=True) if args.input_root else None
+        if (report.is_relative_to(root)
+            or (input_root is not None and report.is_relative_to(input_root))
+            or not report.parent.is_dir()):
             raise ValueError("QWEN_REPORT_DESTINATION_INVALID")
         result = inspect_directory(
-            args.output_root, prefix=args.prefix, expected_count=args.expected_count
+            args.output_root, prefix=args.prefix, expected_count=args.expected_count,
+            input_root=args.input_root,
         )
         with args.report_file.open("xb") as stream:
             stream.write(canonical_bytes(result))
@@ -188,6 +272,11 @@ def main(argv: list[str] | None = None) -> int:
         print("QWEN_PNG_INSPECTION=UNVERIFIED; GPU_POST=0", file=sys.stderr)
         return 1
     print(f"QWEN_PNG_INSPECTION={result['status']}; COUNT={result['candidate_count']}; GPU_POST=0")
+    if "referenced_input_inventory" in result:
+        inventory = result["referenced_input_inventory"]
+        print("QWEN_REFERENCED_INPUTS="
+              + f"{inventory['observed_file_count']}/{inventory['referenced_file_count']}"
+              + "; S2_S3_ASSIGNMENT=UNVERIFIED; GPU_POST=0")
     print("MODEL_INFERENCE=NOT_RUN; PRODUCTION_AUTHORIZED=FALSE")
     return 0 if not result["errors"] else 1
 
