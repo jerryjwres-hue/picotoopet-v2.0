@@ -279,6 +279,11 @@ jobs:
             'The existing prepare_local_keyframe_batch.py accepts --variant-count (1..8) for local CPU-only seed alternatives.'
             'Optional --composition-bootstrap (with --input-root and without --slot-map) prepares Qwen prompt graphs for INITIAL creative composition drafts when S2/S3 independent pictures are absent.'
             'Bootstrap uses the existing source graph LoadImage references as HISTORICAL GUIDANCE ONLY, never as the S2/S3 outputs.'
+            'When the only authentic Core v2 PASS Creative Package is video.vertical.v1, ONLY --composition-bootstrap --allow-vertical-guidance-for-landscape-drafts can use its frozen prompts as historical creative references for later LANDSCAPE drafts.'
+            'This does not change the original vertical Core ZIP, still prompts, Qwen image dimensions or model nodes; it DOES NOT convert to a landscape package or certify target output geometry.'
+            'Bootstrap manifest reports source_output_profile_id=video.vertical.v1, intended_later_output_profile_id=video.landscape.v1, source_profile_conversion_performed=false and target_geometry_verified=false.'
+            'Production still requires a new Core creative.content_plan.v2 PASS package with a native video.landscape.v1 brief, separate real S2/S3 images, exact rights, review and approval.'
+
             'It emits an intentionally different bootstrap manifest schema; the strict candidate collector, reference registration, Owner/GPU/production flow MUST NOT accept it as a finished image batch.'
             'Manual local creative generation and independent visual selection are still required; this bundle does not generate pixels or issue any Comfy POST.'
             'Each vNNNN folder is a normal separate three-shot batch for the existing collector; no image is generated.'
