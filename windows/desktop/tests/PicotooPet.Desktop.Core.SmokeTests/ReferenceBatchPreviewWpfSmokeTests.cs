@@ -63,9 +63,9 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             "Existing approved batches must be recoverable after restart");
         SmokeAssert.True(panel.FindName("ResumeApprovalIdTextBox") is TextBox,
             "Existing approval ID input is missing");
-        var observedList = panel.FindName("ObservedCandidatesList") as ItemsControl;
-        SmokeAssert.True(observedList is not null,
-            "Observed candidates cannot be reviewed in the existing UI");
+        var observedList = panel.FindName("ObservedCandidatesList") as ItemsControl
+            ?? throw new InvalidOperationException(
+                "Observed candidates cannot be reviewed in the existing UI");
         // 01. Same-shot alternatives must render side by side, with one
         //     explicit header per shot rather than a long batch-major list.
         SmokeAssert.True(observedList.GroupStyle.Count == 1
