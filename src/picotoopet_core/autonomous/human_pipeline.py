@@ -105,6 +105,14 @@ class HumanGoalWorkflowPlanner:
         ):
             raise GoalPipelineError("OWNER_SUBJECT_GOAL_SCOPE_INVALID")
 
+        story_binding = goal.constraints.get("storypack_binding")
+        if story_binding is not None and (
+            not isinstance(story_binding, dict)
+            or owner_subject_key is None
+            or story_binding.get("owner_subject_key") != owner_subject_key
+        ):
+            raise GoalPipelineError("STORY_GOAL_SCOPE_INVALID")
+
         steps = [
             WorkflowStepCreate(
                 step_key=_DISCOVERY_STEP,
@@ -114,6 +122,8 @@ class HumanGoalWorkflowPlanner:
                     "objective": goal.objective,
                     "read_only": True,
                     "max_candidates": self._MAX_CANDIDATES_BY_DEPTH[depth],
+                    **({"owner_review_packet_sha256": story_binding["reviewed_packet_sha256"]}
+                       if story_binding is not None else {}),
                     **(
                         {"owner_subject_key": owner_subject_key}
                         if owner_subject_key is not None

@@ -12,6 +12,25 @@ on:
       - windows/desktop/**/ControlCenterSession.ReferenceBatches.cs
       - windows/desktop/**/Program.cs
       - .github/workflows/p0-reference-preview-batch.yml
+      - scripts/recover_comfy_keyframe_workflow.py
+      - scripts/comfy_png_embedded_evidence.py
+      - scripts/audit_local_qwen_pngs.py
+      - tests/creative_quality_2026/test_audit_local_qwen_pngs.py
+      - tests/creative_quality_2026/test_comfy_png_embedded_evidence.py
+      - scripts/prepare_local_keyframe_batch.py
+      - scripts/qwen_reference_bindings.py
+      - scripts/qwen_reference_readiness.py
+      - tests/creative_quality_2026/test_qwen_reference_readiness.py
+      - tests/creative_quality_2026/export_qwen_readiness_wpf_fixture.py
+      - tests/creative_quality_2026/test_qwen_reference_bindings.py
+      - scripts/collect_local_keyframe_outputs.py
+      - scripts/offline_png_output_collector.py
+      - tests/creative_quality_2026/test_offline_png_output_collector.py
+      - tests/creative_quality_2026/test_qwen_png_local_full_chain.py
+      - tests/creative_quality_2026/test_keyframe_handoff_chain.py
+      - tests/creative_quality_2026/test_collect_local_keyframe_outputs.py
+      - tests/creative_quality_2026/test_prepare_local_keyframe_batch.py
+      - tests/creative_quality_2026/test_recover_comfy_keyframe_workflow.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,11 +51,51 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: windows/desktop/global.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Historical keyframe workflow recovery contract (synthetic, no Comfy)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_recover_comfy_keyframe_workflow.py
+      - name: Frozen keyframe graph binding dry-run (synthetic, no Comfy)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_prepare_local_keyframe_batch.py
+      - name: Completed keyframe candidate evidence (synthetic, no Comfy)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_collect_local_keyframe_outputs.py
+      - name: Complete offline still workflow handoff (synthetic, no Comfy)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_keyframe_handoff_chain.py
+      - name: Recover Qwen API graph from existing PNG metadata (CPU only)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_comfy_png_embedded_evidence.py
+      - name: Qwen shot-scoped image bindings and exact input files (CPU only)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_qwen_reference_bindings.py
+      - name: Collect exact PNG-embedded prepared graph outputs offline (CPU only)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_offline_png_output_collector.py
+      - name: Full Qwen 2511 PNG-to-three-shot-to-review contract (CPU only)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_qwen_png_local_full_chain.py
+      - name: Read-only offline inspection of six Qwen PNGs (CPU-only, no Comfy)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_audit_local_qwen_pngs.py
+      - name: Three-shot Qwen reference readiness with missing shots (CPU-only)
+        shell: pwsh
+        run: python -m unittest discover -s tests/creative_quality_2026 -p test_qwen_reference_readiness.py
+      # 01. Bridge Python's real readiness emitter to the same native WPF
+      #     parser. Synthetic bytes only; no live user files or GPU tasks.
+      - name: Generate Python Qwen readiness for native WPF (CPU-only)
+        shell: pwsh
+        run: python tests/creative_quality_2026/export_qwen_readiness_wpf_fixture.py --output-dir "$env:RUNNER_TEMP/qwen-wpf"
       - name: Build existing native WPF smoke harness (no packaging)
         shell: pwsh
         run: dotnet build windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release --warnaserror
       - name: Real image, GUI and API contracts (no GPU)
         shell: pwsh
+        env:
+          PICOTOO_WPF_QWEN_FIXTURE_DIR: ${{ runner.temp }}/qwen-wpf
         run: dotnet run --no-build --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --reference-preview-batch-only
       - name: Existing Goal and Approvals regressions
         shell: pwsh

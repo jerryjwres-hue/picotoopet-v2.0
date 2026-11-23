@@ -21,6 +21,18 @@ _MAX_FILE_BYTES = 768 * 1024 * 1024
 _MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
+_OFFLINE_QWEN_TOOLS = frozenset({
+    "scripts/recover_comfy_keyframe_workflow.py",
+    "scripts/comfy_png_embedded_evidence.py",
+    "scripts/prepare_local_keyframe_batch.py",
+    "scripts/qwen_reference_bindings.py",
+    "scripts/collect_local_keyframe_outputs.py",
+    "scripts/offline_png_output_collector.py",
+})
+_OFFLINE_QWEN_TOOLS_V2 = _OFFLINE_QWEN_TOOLS | {"scripts/audit_local_qwen_pngs.py"}
+_OFFLINE_QWEN_TOOLS_V3 = _OFFLINE_QWEN_TOOLS_V2 | {"scripts/qwen_reference_readiness.py"}
+
+
 _REQUIRED = {
     "app/Picotoo Pet AI.exe",
     "app/product-version.txt",
@@ -185,6 +197,44 @@ def verify_preview_archive(
                 raise PreviewVerificationError("UNLISTED_ARCHIVE_MEMBER")
             if not _REQUIRED.issubset(listed):
                 raise PreviewVerificationError("REQUIRED_PAYLOAD_MISSING")
+
+            # 01. A declared Qwen toolkit must be exactly these known,
+            #     SHA-checked CPU-only files. Previous preview ZIPs without
+            #     this optional field remain verifiable as old previews.
+            offline = manifest.get("offline_keyframe_tools")
+            if offline is not None:
+                if (not isinstance(offline, list)
+                    or any(not isinstance(item, str) for item in offline)
+                    or set(offline) not in (
+                        _OFFLINE_QWEN_TOOLS, _OFFLINE_QWEN_TOOLS_V2,
+                        _OFFLINE_QWEN_TOOLS_V3
+                    )
+                    or {name for name in listed if name.startswith("scripts/")} != set(offline)):
+                    raise PreviewVerificationError("OFFLINE_QWEN_TOOLSET_INCOMPLETE")
+                if set(offline) in (_OFFLINE_QWEN_TOOLS_V2, _OFFLINE_QWEN_TOOLS_V3):
+                    if (manifest.get("offline_inspector_script") != "Inspect-QwenKeyframes.ps1"
+                        or "Inspect-QwenKeyframes.ps1" not in listed):
+                        raise PreviewVerificationError("OFFLINE_INSPECTOR_SCRIPT_MISSING")
+                elif "offline_inspector_script" in manifest or "Inspect-QwenKeyframes.ps1" in listed:
+                    raise PreviewVerificationError("OFFLINE_INSPECTOR_UNEXPECTED")
+            elif any(name.startswith("scripts/") for name in listed) or (
+                "Inspect-QwenKeyframes.ps1" in listed
+                or "offline_inspector_script" in manifest
+            ):
+                raise PreviewVerificationError("OFFLINE_QWEN_TOOLSET_UNDECLARED")
+            # 02. The optional one-click local check can only ship together
+            #     with the real HOLD script and eight exact offline Qwen
+            #     tools. Earlier portable archives remain valid as legacy.
+            quickcheck = manifest.get("local_quickcheck_script")
+            if quickcheck is not None:
+                if (quickcheck != "QuickCheck-P0ThreeShot.ps1"
+                    or quickcheck not in listed
+                    or set(offline or ()) != _OFFLINE_QWEN_TOOLS_V3
+                    or manifest.get("offline_inspector_script")
+                       != "Inspect-QwenKeyframes.ps1"):
+                    raise PreviewVerificationError("QUICKCHECK_BUNDLED_SCRIPT_INVALID")
+            elif "QuickCheck-P0ThreeShot.ps1" in listed:
+                raise PreviewVerificationError("QUICKCHECK_BUNDLED_SCRIPT_UNDECLARED")
             with zip_file.open("README_P0_DEVELOPER_PREVIEW.txt") as handle:
                 readme = handle.read().decode("utf-8-sig")
             if "NOT a formal Release Builder output" not in readme \

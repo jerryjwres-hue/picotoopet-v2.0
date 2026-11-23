@@ -1,0 +1,58 @@
+name: P0 Composition Draft Evidence Audit (Windows)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-composition-draft-evidence.yml"
+      - "scripts/audit_composition_drafts.py"
+      - "scripts/comfy_png_embedded_evidence.py"
+      - "scripts/recover_comfy_keyframe_workflow.py"
+      - "tests/creative_quality_2026/test_audit_composition_drafts.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-composition-draft-evidence-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-offline-evidence:
+    name: Windows offline audit Python ${{ matrix.python }}
+    runs-on: windows-2022
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - name: Check out exact proposed source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Confirm interpreter and compile evidence auditor
+        shell: pwsh
+        run: |
+          python --version
+          python -m py_compile scripts/audit_composition_drafts.py
+          python -m py_compile tests/creative_quality_2026/test_audit_composition_drafts.py
+
+      - name: Run six-draft offline evidence contract
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests/creative_quality_2026 -p test_audit_composition_drafts.py -v
+
+      - name: Confirm unapproved draft status
+        shell: pwsh
+        run: |
+          Write-Host "CREATIVE_DRAFT_AUDIT=TESTED"
+          Write-Host "PRODUCTION_AUTHORIZED=FALSE"
+          Write-Host "GPU_POST=0"
+          Write-Host "USER_INSTALL_ALLOWED=FALSE"

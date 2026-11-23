@@ -97,6 +97,61 @@ internal static class ProductionShellEntryWpfSmokeTests
                 .Count(w => w.Content is ProductionPanel) == 1,
                 "重复点击错误创建第二套生产面板");
             panels[0].Close();
+
+            // 影视快捷入口：真实 Shell 点击加载现有创意/生产控件，无业务 Inbox 或 GPU 动作。
+            var filmEntry = shell.FindName("OpenFilmStudioButton") as Button
+                ?? throw new InvalidOperationException("Film Studio direct entry missing");
+            SmokeAssert.True(filmEntry.IsEnabled, "Film Studio entry must be reachable");
+            filmEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, filmEntry));
+            shell.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+            shell.UpdateLayout();
+            SmokeAssert.Equal(NavigationRoute.FilmStudio, viewModel.CurrentRoute,
+                "Film Studio navigation must use the canonical Shell route");
+            SmokeAssert.True(viewModel.CurrentPage is FilmStudioPageViewModel,
+                "Film Studio route must compose existing view models");
+            var creative = FindVisual<CreativeIntelligencePanel>(shell).Single();
+            SmokeAssert.True(creative.DataContext is CreativeIntelligencePanelViewModel,
+                "Film Studio must host the existing creative panel");
+            var expander = creative.FindName("StoryPackExpander") as Expander;
+            SmokeAssert.True(expander?.IsExpanded == true,
+                "StoryPack should be expanded on direct Studio entry");
+            SmokeAssert.True(creative.FindName("LoadStoryPackFileButton") is Button,
+                "Native StoryPack file picker is missing");
+            SmokeAssert.True(creative.FindName("CreateStoryGoalButton") is Button { IsEnabled: false },
+                "Opening Film Studio must not authorize Goal creation");
+            SmokeAssert.True(FindVisual<ProductionPanel>(shell).Count() == 1,
+                "Film Studio must reuse one canonical ProductionPanel");
+            // 原生入口只能响应用户选择，不允许自动登记或自动创建项目。
+            var assetPanel = FindVisual<FilmStudioAssetPanel>(shell).Single();
+            SmokeAssert.True(assetPanel.DataContext is FilmStudioPageViewModel,
+                "资产面板必须复用同一影视会话");
+            SmokeAssert.True(assetPanel.FindName("AssetProjectSelector") is ComboBox,
+                "缺少真实项目选择器");
+            SmokeAssert.True(assetPanel.FindName("RefreshAssetProjectsButton") is Button,
+                "缺少真实项目读取入口");
+            foreach (var controlName in new[] { "ImportCharacterButton", "ImportSceneButton", "ImportStyleButton" })
+            {
+                SmokeAssert.True(assetPanel.FindName(controlName) is Button { IsEnabled: false },
+                    $"未选择项目时 {controlName} 不得允许资产登记");
+            }
+            // 动态入口真实 WPF 点击仅改草稿；项目未选时必须禁止提交。
+            SmokeAssert.True(assetPanel.FindName("SubmitScopedStoryButton") is Button { IsEnabled: false },
+                "未选项目不得提交动态 Goal");
+            var dynamicEntry = assetPanel.FindName("LoadDynamicPilotButton") as Button
+                ?? throw new InvalidOperationException("Dynamic film entry missing");
+            dynamicEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, dynamicEntry));
+            shell.Dispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
+            var studio = (FilmStudioPageViewModel)assetPanel.DataContext;
+            var draft = System.Text.Json.JsonElement.Parse(studio.Creative.StoryPackJson);
+            SmokeAssert.Equal("dynamic-pet-feeding-v1.0.0",
+                draft.GetProperty("dynamic_motion").GetProperty("policy").GetString(),
+                "真实 UI 动态示例没有选择动态动作契约");
+            SmokeAssert.True(!studio.Creative.CanCreateStoryGoal,
+                "载入动态示例不能直接创建旧普通 Goal");
+            SmokeAssert.True(assetPanel.FindName("SubmitScopedStoryButton") is Button { IsEnabled: false },
+                "动态示例不得自动选择项目或授权 Goal");
+            Console.WriteLine("REAL_FILM_STUDIO_DIRECT_ENTRY=PASS; STORYPACK_EXPANDED=PASS; ASSET_UI=PASS; DYNAMIC_UI=PASS; GPU_POST=0");
+
             shell.AllowExplicitClose();
             shell.Close();
             shellWindow = null;

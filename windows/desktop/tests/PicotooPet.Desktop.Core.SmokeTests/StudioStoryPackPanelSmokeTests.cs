@@ -148,6 +148,39 @@ internal static class StudioStoryPackPanelSmokeTests
                 "不完整或伪造授权不得显示为已通过");
         }
 
+        // 正式导入只替换指定引用，与上一版故事的观察/审批完全分离。
+        vm.LoadMaotaiDinnerPilotDraft();
+        var draft = JsonNode.Parse(vm.StoryPackJson)!.AsObject();
+        var originalCharacter = draft["character_ref"]!.GetValue<string>();
+        var originalScene = draft["scene_ref"]!.GetValue<string>();
+        var secondShot = draft["shots"]![1]!.AsObject();
+        secondShot["cast_refs"] = JsonSerializer.SerializeToNode(new[] { originalCharacter });
+        secondShot["scene_ref"] = originalScene;
+        vm.StoryPackJson = draft.ToJsonString();
+        var captured = vm.StoryPackJson;
+        var characterId = "asset-" + new string('a', 64);
+        var sceneId = "asset-" + new string('b', 64);
+        var styleId = "asset-" + new string('c', 64);
+        SmokeAssert.True(vm.TryBeginAssetImport(captured), "素材登记必须冻结当前预览");
+        SmokeAssert.True(!vm.CanPreviewStoryPack && !vm.CanCreateStoryGoal, "上传期间必须禁用预览和旧 Goal");
+        SmokeAssert.True(!vm.TryBeginAssetImport(captured), "重复登记操作必须拒绝");
+        SmokeAssert.True(vm.TryBindImportedAsset(captured, "character", characterId), "角色回执应绑定精确角色引用");
+        vm.EndAssetImport();
+        SmokeAssert.True(vm.CanPreviewStoryPack && !vm.CanCreateStoryGoal, "仅重新预览可用，不能复用旧 Goal");
+        SmokeAssert.True(!vm.TryBindImportedAsset(captured, "scene", sceneId), "旧快照不得覆盖已修改草稿");
+        SmokeAssert.True(vm.TryBindImportedAsset(vm.StoryPackJson, "scene", sceneId), "场景回执应绑定场景引用");
+        SmokeAssert.True(vm.TryBindImportedAsset(vm.StoryPackJson, "style", styleId), "风格回执应绑定风格锁");
+        var bound = JsonElement.Parse(vm.StoryPackJson);
+        SmokeAssert.Equal(characterId, bound.GetProperty("character_ref").GetString(), "主角色 ID 不匹配");
+        SmokeAssert.Equal(characterId, bound.GetProperty("shots")[1].GetProperty("cast_refs")[0].GetString(), "显式镜头角色没有同步");
+        SmokeAssert.Equal(sceneId, bound.GetProperty("shots")[1].GetProperty("scene_ref").GetString(), "显式镜头场景没有同步");
+        SmokeAssert.Equal(styleId, bound.GetProperty("style_ref").GetString(), "风格 ID 不匹配");
+        SmokeAssert.Equal(pilot.GetProperty("shots")[1].GetProperty("action").GetString(),
+            bound.GetProperty("shots")[1].GetProperty("action").GetString(), "登记不得改写导演动作");
+        SmokeAssert.True(!vm.CanCreateStoryGoal && vm.StoryPackPreviewStatus.Contains("重新只读检查", StringComparison.Ordinal),
+            "素材改变必须令原预览与 Goal 准入失效");
+        Console.WriteLine("STUDIO_ASSET_DRAFT_BINDING=PASS; STALE_DRAFT_REJECTED=PASS");
+
         vm.StoryPackJson = string.Empty;
         SmokeAssert.True(!vm.CanPreviewStoryPack, "清空草稿应立即关闭按钮");
     }

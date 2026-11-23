@@ -1,7 +1,9 @@
+using System.Text;
 using System.Text.Json;
 using PicotooPet.Desktop.Core.Networking;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Views;
 
 namespace PicotooPet.Desktop.Core.SmokeTests;
 
@@ -106,6 +108,54 @@ internal static class StudioStoryPackLiveInteropSmokeTests
             repeated.GetProperty("storypack_sha256").GetString(),
             "同一 StoryPack 的真实 HTTP 摘要出现非确定性变化");
 
+        // 真实跨语言素材上传：临时项目与 CI 素材，不读取用户文件。
+        var project = Environment.GetEnvironmentVariable("PICOTOO_TEST_STUDIO_PROJECT");
+        if (string.IsNullOrWhiteSpace(project))
+        {
+            throw new InvalidOperationException("CI fixture project missing.");
+        }
+
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XgZsAAAAASUVORK5CYII=");
+        var style = Encoding.UTF8.GetBytes("CI fixture: local-only stylized reference");
+        var vm = CreativeIntelligencePanelViewModel.CreateForSmokeTest(
+            Array.Empty<CreativeEligibleSourceRecord>());
+        vm.LoadMaotaiDinnerPilotDraft();
+        foreach (var (role, media, bytes) in new (string, string, byte[])[]
+        {
+            ("character", "image/png", png),
+            ("scene", "image/png", png),
+            ("style", "text/plain", style),
+        })
+        {
+            var original = vm.StoryPackJson;
+            var id = await client.ImportStudioAssetAsync(project, role, media, bytes)
+                .ConfigureAwait(false);
+            var replay = await client.ImportStudioAssetAsync(project, role, media, bytes)
+                .ConfigureAwait(false);
+            SmokeAssert.Equal(id, replay, "真实 Core 资产重试必须幂等");
+            SmokeAssert.True(vm.TryBindImportedAsset(original, role, id),
+                "真实资产登记回执无法绑定草稿");
+        }
+        var registered = await client.PreviewStudioStoryPackAsync(JsonElement.Parse(vm.StoryPackJson))
+            .ConfigureAwait(false);
+        SmokeAssert.Equal("REVIEW_SUBJECT_PREPARED_UNAPPROVED",
+            registered.GetProperty("owner_review_subject").GetProperty("status").GetString(),
+            "三份真实登记资产必须允许构造未批准的审核主体");
+        foreach (var asset in registered.GetProperty("asset_record_checks").EnumerateArray())
+        {
+            SmokeAssert.Equal("CONTENT_VERIFIED_UNAPPROVED",
+                asset.GetProperty("managed_object_integrity").GetString(),
+                "跨语言登记素材字节核验失败");
+            SmokeAssert.True(asset.GetProperty("usable_for_generation").ValueKind == JsonValueKind.False,
+                "资产登记不得隐式通过生产授权");
+        }
+        SmokeAssert.True(registered.GetProperty("can_queue").ValueKind == JsonValueKind.False
+            && registered.GetProperty("owner_review_subject").GetProperty("owner_approved").ValueKind == JsonValueKind.False
+            && registered.GetProperty("core23_compatibility").GetProperty("gpu_post_authorized").ValueKind == JsonValueKind.False,
+            "真实导入后必须保留生产否决字段");
+        Console.WriteLine("REAL_CORE_WINDOWS_ASSET_HTTP=PASS; REPLAY=PASS; GPU_POST=0");
+
         var after = await client.GetTasksAsync().ConfigureAwait(false);
         SmokeAssert.Equal(before.Length, after.Length, "预览误创建真实 Core Task");
 
@@ -125,5 +175,49 @@ internal static class StudioStoryPackLiveInteropSmokeTests
         }
 
         Console.WriteLine("REAL_CORE_WINDOWS_STUDIO_HTTP=PASS; TASK_DELTA=0; LEASE=0; GPU_POST=0");
+
+        // 独立的明确提交阶段：使用实际 WPF 动态示例，保留前三份已登记资产。
+        vm.LoadDynamicDinnerPilotDraft();
+        var dynamicPack = JsonElement.Parse(vm.StoryPackJson);
+        var dynamicPreview = await client.PreviewStudioStoryPackAsync(dynamicPack).ConfigureAwait(false);
+        var scope = FilmStudioAssetPanel.ParseScopedPreview(dynamicPack, dynamicPreview);
+        SmokeAssert.True(scope.MotionSummary.Contains("walks left to right", StringComparison.Ordinal),
+            "动态预览必须包含真实接近动作");
+        SmokeAssert.True(!CreativeIntelligencePanelViewModel.TryGetCanonicalGoalIntake(
+            dynamicPreview, out _, out _), "动态故事不得误走旧普通 Goal");
+
+        var subject = "pet:ci-fixture";
+        var empty = await client.GetScopedOwnerPacketsAsync(
+            project, scope.CharacterRef, subject, scope.CharacterSha).ConfigureAwait(false);
+        SmokeAssert.Equal(0, empty.GetProperty("packets").GetArrayLength(),
+            "临时宠物不应在用户确认前具有声明");
+        var evidence = JsonSerializer.SerializeToElement(new
+        {
+            subject_key = subject,
+            photo_sha256_claim = scope.CharacterSha,
+            claims = new[]
+            {
+                new { kind = "visible_identity", statement = "Synthetic fixture dog wears a green scarf." },
+                new { kind = "visible_scene", statement = "Round steel bowl in the synthetic dining scene." },
+                new { kind = "creative_intent", statement = "The pet notices, approaches and begins eating." },
+            },
+        });
+        var packetDigest = await client.PreviewOwnerPacketAsync(evidence).ConfigureAwait(false);
+        // 仅在 CI 中模拟对上面完整、无个人信息的固定声明作出明确确认。
+        await client.CommitReviewedOwnerPacketAsync(evidence, packetDigest).ConfigureAwait(false);
+        await client.CommitReviewedOwnerPacketAsync(evidence, packetDigest).ConfigureAwait(false);
+        var reused = await client.GetScopedOwnerPacketsAsync(
+            project, scope.CharacterRef, subject, scope.CharacterSha).ConfigureAwait(false);
+        SmokeAssert.Equal(1, reused.GetProperty("packets").GetArrayLength(), "声明登记必须幂等");
+        SmokeAssert.Equal(packetDigest, reused.GetProperty("packets")[0].GetProperty("packet_digest").GetString(),
+            "读取的已有声明必须与已登记摘要一致");
+        var goalId = await client.SubmitScopedStoryGoalAsync(
+            dynamicPack, project, scope.CharacterRef, scope.CharacterSha, subject,
+            packetDigest, scope.SubjectDigest, scope.StoryDigest, scope.MotionDigest).ConfigureAwait(false);
+        var replayGoal = await client.SubmitScopedStoryGoalAsync(
+            dynamicPack, project, scope.CharacterRef, scope.CharacterSha, subject,
+            packetDigest, scope.SubjectDigest, scope.StoryDigest, scope.MotionDigest).ConfigureAwait(false);
+        SmokeAssert.Equal(goalId, replayGoal, "动态 Scoped Goal 重试不能创建重复工作流");
+        Console.WriteLine("REAL_CORE_WINDOWS_SCOPED_GOAL_HTTP=PASS; OWNER_PACKET_REUSE=PASS; GPU_POST=0");
     }
 }

@@ -15,6 +15,10 @@ import json
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from picotoopet_core.creative.dynamic_pet_story import (
+    DynamicFeedingV1,
+    build_dynamic_motion_proposal,
+)
 from picotoopet_core.production.profile import frame_count_for_duration
 
 Identifier = Annotated[
@@ -67,6 +71,8 @@ class StoryPackV1(_Strict):
     style_ref: AssetRef | None = None
     story: StoryIntent
     shots: list[StoryShot] = Field(min_length=1, max_length=30)
+    # Explicit opt-in; absent on legacy packs. Never infer movement from free text.
+    dynamic_motion: DynamicFeedingV1 | None = None
 
     @model_validator(mode="after")
     def check_dependencies(self) -> StoryPackV1:
@@ -106,6 +112,8 @@ class StoryPackV1(_Strict):
             seen.add(folded)
             previous = shot
             previous_scene = actual_scene
+        if self.dynamic_motion is not None:
+            build_dynamic_motion_proposal(self)
         return self
 
 
@@ -151,7 +159,10 @@ def parse_storypack(source: bytes, *, as_yaml: bool = False) -> StoryPackV1:
 
 def storypack_preview(pack: StoryPackV1) -> dict:
     """Deterministic dry-run summary: no DB writes, worker calls or approvals."""
+    # Preserve exact pre-extension digest for every legacy StoryPack.
     payload = pack.model_dump(mode="json")
+    if pack.dynamic_motion is None:
+        payload.pop("dynamic_motion")
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     width, height, fps, seconds = OUTPUT_PROFILES[pack.output_profile]
     # Canonical 2.3 Wan profile uses 4n+1 frames; 4 seconds at 24fps means 97, not 96.
@@ -179,6 +190,10 @@ def storypack_preview(pack: StoryPackV1) -> dict:
         "episode_id": pack.episode_id,
         "storypack_sha256": source_sha256,
         "production_compilation": compilation,
+        **(
+            {"dynamic_motion_proposal": build_dynamic_motion_proposal(pack)}
+            if pack.dynamic_motion is not None else {}
+        ),
         "shot_count": len(pack.shots),
         "output": {
             "width": width,

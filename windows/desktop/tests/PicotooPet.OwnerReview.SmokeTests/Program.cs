@@ -33,6 +33,7 @@ internal static class Program
             ("no_default_confirm_and_unknown_blocks", DraftRulesAsync),
             ("unknown_and_empty_list_corrections_have_canonical_types", UnknownListTypesAsync),
             ("static_story_requires_separate_owner_opt_in", StaticOptInAsync),
+            ("dynamic_story_exact_motion_opt_in", DynamicOptInAsync),
             ("preview_writes_nothing_and_commit_is_explicit", FlowAsync),
             ("idempotent_replay_uses_same_key_and_body", ReplayAsync),
             ("stale_409_forces_reload_never_overwrites", StaleAsync),
@@ -489,6 +490,46 @@ internal static class Program
         }
     }
 
+    private static Task DynamicOptInAsync()
+    {
+        // 合成资料验证动态授权合同，无实际设备或生产写入。
+        var raw = MockOwnerReviewCore.Proposal();
+        var digest = new string('9', 64);
+        raw["dynamic_motion_proposal"] = new JsonObject
+        {
+            ["policy"] = OwnerReviewWire.DynamicPetStoryPolicy,
+            ["motion_digest"] = digest,
+            ["motion"] = new JsonObject(),
+            ["shots"] = new JsonArray(new JsonObject(), new JsonObject(), new JsonObject()),
+            ["states"] = new JsonArray(new JsonObject(), new JsonObject(), new JsonObject(), new JsonObject()),
+            ["status"] = "DYNAMIC_PROPOSAL_REQUIRES_OWNER_REVIEW",
+            ["owner_approved"] = false, ["can_queue"] = false, ["gpu_post_authorized"] = false,
+        };
+        var proposal = JsonSerializer.Deserialize<OwnerReviewProposal>(raw.ToJsonString(), Web)!;
+        var draft = new OwnerReviewDraft(proposal);
+        foreach (var field in draft.Fields) draft.SetDecision(field.Proposal.FieldPath, "UNKNOWN");
+        True(draft.HasDynamicMotion && !draft.DynamicPetStorySelected, "no implicit dynamic consent");
+        True(Throws<InvalidOperationException>(() => draft.BuildPreviewRequest()), "dynamic opt-in mandatory");
+        True(Throws<InvalidOperationException>(() => draft.StaticPetStorySelected = true), "no static downgrade");
+        draft.DynamicPetStorySelected = true;
+        var request = draft.BuildPreviewRequest();
+        Eq(OwnerReviewWire.DynamicPetStoryPolicy, request.StoryPolicyOptIn, "exact dynamic policy");
+        Eq(digest, request.ConfirmedMotionDigest, "exact Core motion digest");
+        var previewJson = MockOwnerReviewCore.Preview(false, OwnerReviewWire.DynamicPetStoryPolicy);
+        previewJson["confirmed_motion_digest"] = new string('0', 64);
+        var wrong = JsonSerializer.Deserialize<OwnerReviewPreview>(previewJson.ToJsonString(), Web)!;
+        True(Throws<OwnerReviewException>(() => draft.AcceptPreview(wrong)), "mismatched motion rejected");
+        previewJson["confirmed_motion_digest"] = digest;
+        var accepted = JsonSerializer.Deserialize<OwnerReviewPreview>(previewJson.ToJsonString(), Web)!;
+        draft.AcceptPreview(accepted);
+        True(draft.CommitBlock() == OwnerReviewCommitBlock.NotExplicitlyConfirmed, "final consent still needed");
+        draft.OwnerExplicitlyConfirmed = true;
+        Eq(digest, draft.BuildCommitRequest().PreviewRequest.ConfirmedMotionDigest, "commit retains frozen motion");
+        draft.DynamicPetStorySelected = false;
+        True(!draft.OwnerExplicitlyConfirmed && draft.CommitBlock() == OwnerReviewCommitBlock.NoPreview, "changed policy invalidates consent");
+        return Task.CompletedTask;
+    }
+
     private static async Task FlowAsync()
     {
         var (client, core, store) = NewClient();
@@ -783,6 +824,7 @@ internal static class Program
             var banner = (TextBlock)Find(panel, "OwnerReviewTransportBanner");
             True(banner.Text.Contains("TRANSPORT_SECURITY=BLOCKED", StringComparison.Ordinal), "banner shows blocked transport");
             Find(panel, "OwnerReviewPreview"); Find(panel, "OwnerReviewConfirm"); Find(panel, "OwnerReviewCommit"); Find(panel, "OwnerReviewCancel");
+            Find(panel, "OwnerReviewDynamicMotionProposal"); Find(panel, "OwnerReviewDynamicStoryOptIn");
             var policy = (CheckBox)Find(panel, "OwnerReviewStaticStoryOptIn");
             True(policy.IsChecked != true, "static story is never selected by default");
             var confirm = (CheckBox)Find(panel, "OwnerReviewConfirm");

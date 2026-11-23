@@ -253,6 +253,14 @@ class ReferenceRegistrationService:
                 eligible = {item.get("shot_id") for item in bridged_shots
                             if isinstance(item, dict)
                             and item.get("render_intent") == "IMAGE_TO_VIDEO"}
+                # 01. For the SEALED V2 full three-shot contract only,
+                #     different filenames cannot re-label identical image
+                #     bytes as distinct compositions. Existing single-shot
+                #     pilot and legacy v1 registration stay unchanged.
+                if len(request.selected_references) == len(eligible) == 3 and len({
+                    item.sha256 for item in request.selected_references
+                }) != 3:
+                    raise ApprovalError("REFERENCE_V2_DUPLICATE_IMAGE_BYTES")
             if any(item.shot_id not in eligible for item in request.selected_references):
                 raise ApprovalError("REFERENCE_SHOT_NOT_I2V_OR_NOT_IN_PACKAGE")
 

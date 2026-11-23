@@ -361,7 +361,8 @@ public sealed partial class MacCoreClient : IAsyncDisposable
         string operation,
         string? idempotencyKey,
         CancellationToken cancellationToken,
-        int? maxResponseBytes = null)
+        int? maxResponseBytes = null,
+        Action<HttpRequestMessage>? configureRequest = null)
     {
         var traceId = Guid.NewGuid().ToString("N");
         using var request = new HttpRequestMessage(method, relativeUri);
@@ -374,6 +375,8 @@ public sealed partial class MacCoreClient : IAsyncDisposable
         {
             request.Content = JsonContent.Create(payload, options: JsonOptions);
         }
+        // 资产流使用同一个认证、Trace、超时、响应大小及错误处理入口。
+        configureRequest?.Invoke(request);
 
         var started             = Stopwatch.GetTimestamp();
         var measurementRecorded = false;

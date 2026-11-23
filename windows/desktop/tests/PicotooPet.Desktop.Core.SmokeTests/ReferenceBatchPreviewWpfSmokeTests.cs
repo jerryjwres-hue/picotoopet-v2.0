@@ -1,5 +1,7 @@
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -51,6 +53,24 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.True(panel.FindName("SourceComboBox") is ComboBox, "Explicit source declaration is missing");
         SmokeAssert.True(panel.FindName("SourceDigestTextBox") is TextBox, "Licensed-source digest input is missing");
         SmokeAssert.True(panel.FindName("ChooseReferenceButton") is Button, "Native file selection is missing");
+        SmokeAssert.True(panel.FindName("CopyThreeShotBriefButton") is Button,
+            "One-click frozen three-shot director handoff is missing");
+        SmokeAssert.True(panel.FindName("LoadObservedCandidatesButton") is Button,
+            "Read-only Comfy candidate list import is missing");
+        SmokeAssert.True(panel.FindName("LoadObservedVariantFolderButton") is Button,
+            "One-folder multi-seed candidate comparison entry is missing");
+        SmokeAssert.True(panel.FindName("RestoreReferenceBatchButton") is Button,
+            "Existing approved batches must be recoverable after restart");
+        SmokeAssert.True(panel.FindName("ResumeApprovalIdTextBox") is TextBox,
+            "Existing approval ID input is missing");
+        var observedList = panel.FindName("ObservedCandidatesList") as ItemsControl
+            ?? throw new InvalidOperationException(
+                "Observed candidates cannot be reviewed in the existing UI");
+        // 01. Same-shot alternatives must render side by side, with one
+        //     explicit header per shot rather than a long batch-major list.
+        SmokeAssert.True(observedList.GroupStyle.Count == 1
+            && observedList.GroupStyle[0].Panel is not null,
+            "The WPF review must show visually grouped same-shot alternatives");
         SmokeAssert.True(panel.FindName("PreviewItems") is ItemsControl, "Real reference preview list is missing");
         var consent = panel.FindName("ConsentCheckBox") as CheckBox
             ?? throw new InvalidOperationException("Explicit preview and rights consent is missing");
@@ -58,6 +78,8 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.True(panel.FindName("SubmitBatchButton") is Button, "Batch request action is missing");
         SmokeAssert.True(panel.FindName("RefreshBatchButton") is Button, "Receipt refresh action is missing");
         SmokeAssert.True(panel.FindName("OpenApprovalsButton") is Button, "Existing approvals navigation is missing");
+        SmokeAssert.True(panel.FindName("CreateReviewedPlanButton") is Button { IsEnabled: false },
+            "Plan creation must remain disabled before exact approval");
         var approvalsRequested = false;
         panel.ApprovalsRequested += (_, _) => approvalsRequested = true;
         ((Button)panel.FindName("OpenApprovalsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -94,6 +116,12 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(wideStream.ToArray(), ".png"));
         await VerifyBatchStateAsync(stream.ToArray());
         await VerifySealedV2SelectionAsync(stream.ToArray());
+        // 01. The native Windows contract runner can consume the EXACT
+        //     JSON emitted by the Python Qwen readiness source from this SHA.
+        //     Other isolated smoke runners do not require this optional CI input.
+        var pythonFixtureDir = Environment.GetEnvironmentVariable("PICOTOO_WPF_QWEN_FIXTURE_DIR");
+        if (!string.IsNullOrWhiteSpace(pythonFixtureDir))
+            await VerifyPythonQwenReadinessInteropAsync(pythonFixtureDir);
         Console.WriteLine("REFERENCE_PREVIEW_GUI_API=PASS; PNG_JPEG_PIXELS=PASS; GPU_POST=0");
         var codecs = Windows.Graphics.Imaging.BitmapDecoder.GetDecoderInformationEnumerator();
         Console.WriteLine("NATIVE_WEBP_CODEC_REGISTERED=" + codecs.Any(codec => codec.CodecId == Windows.Graphics.Imaging.BitmapDecoder.WebpDecoderId));
@@ -104,6 +132,74 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.Equal(1, webpPreview.PixelHeight, "WebP fixture height changed");
         await RejectAsync(() => ReferenceBatchPreviewViewModel.DecodePreviewAsync(webp[..20], ".webp"));
         Console.WriteLine("REFERENCE_PREVIEW_WEBP=PASS; DECODER=BUNDLED_CPU");
+    }
+
+    // 02. Real language-boundary contract: Python's inspect_readiness()
+    //     generates this report in CI; no handwritten approximation can
+    //     accidentally drift away from native WPF's exact JSON parser.
+    private static async Task VerifyPythonQwenReadinessInteropAsync(string fixtureDir)
+    {
+        var reportPath = Path.Combine(fixtureDir, "python_qwen_readiness.json");
+        var manifestPath = Path.Combine(fixtureDir, "python_creative_manifest.json");
+        if (!File.Exists(reportPath) || !File.Exists(manifestPath))
+            throw new InvalidDataException("QWEN_WPF_PYTHON_FIXTURE_MISSING");
+
+        var root = Path.Combine(Path.GetTempPath(), "reference-qwen-bridge-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var policy = new ReferencePreviewFilePolicy(ProductionLocalEnvironment.ResolveUnderRoot,
+                ProductionLocalEnvironment.AssertNoLinkEscape, ProductionLocalEnvironment.IsOrdinaryFile,
+                ProductionLocalEnvironment.Sha256FileAsync);
+            var stager = new ReferencePreviewSnapshotStager(root, policy,
+                ReferenceBatchPreviewViewModel.ValidateImageAsync);
+            var gateway = new RecordingGateway();
+            var creative = Package() with
+            {
+                Manifest = JsonElement.Parse(await File.ReadAllBytesAsync(manifestPath))
+            };
+            var vm = new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), creative);
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count,
+                "Python-origin frozen Kit must immediately yield three unverified shot cards");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Python-origin Kit alone must not imply a real Comfy image observation");
+            await vm.LoadCompositionWorkOrderAsync(reportPath);
+            // 03. Avoid transient array allocations under the native
+            //     Windows warnings-as-errors gate (CA1861); check each shot.
+            SmokeAssert.Equal("OBSERVED_UNAPPROVED", vm.CompositionWorkOrders[0].Status,
+                "Python emitter and WPF reader disagree on S1 observation state");
+            SmokeAssert.Equal("NEEDS_DISTINCT_COMPOSITION", vm.CompositionWorkOrders[1].Status,
+                "Python emitter and WPF reader disagree on S2 missing composition");
+            SmokeAssert.Equal("NEEDS_DISTINCT_COMPOSITION", vm.CompositionWorkOrders[2].Status,
+                "Python emitter and WPF reader disagree on S3 missing composition");
+            SmokeAssert.Equal("old-composition.png", vm.CompositionWorkOrders[0].ExistingFilename,
+                "WPF must preserve Python's verified historical composition name");
+            SmokeAssert.Equal("Opening state 2", vm.CompositionWorkOrders[1].StillPrompt,
+                "WPF must copy the real Python frozen Kit prompt without retyping");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "Python readiness import must not stage synthetic source images");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Python readiness import must not request Core approval");
+
+            // 03. Even Python-shaped forged JSON must lose its observation
+            //     claims and restore unaltered frozen prompts after rejection.
+            var forged = JsonNode.Parse(await File.ReadAllTextAsync(reportPath))!.AsObject();
+            forged["composition_work_order"]!["items"]![1]!["creative_still_prompt"] = "FORGED";
+            var forgedPath = Path.Combine(root, "forged-python-readiness.json");
+            await File.WriteAllTextAsync(forgedPath, forged.ToJsonString());
+            await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedPath));
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Rejected Python-shaped data must clear all untrusted observations");
+            SmokeAssert.Equal("Opening state 2", vm.CompositionWorkOrders[1].StillPrompt,
+                "Rejected Python report must retain the immutable frozen Kit");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Neither genuine nor forged Python report may submit to Core");
+            Console.WriteLine("QWEN_PYTHON_TO_WPF_REAL_JSON=PASS; SHOTS=3; GPU_POST=0");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
     }
 
     private static async Task VerifyBatchStateAsync(byte[] png)
@@ -232,21 +328,559 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             var vm = new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), V2CandidatePackage());
 
             SmokeAssert.Equal(3, vm.EligibleShots.Length, "Sealed-v2 candidate must expose exactly three shot ids");
+            SmokeAssert.Equal(3, vm.KeyframeInstructions.Count, "Display all sealed keyframe instructions");
+            // 01. Frozen shot briefs must appear without opening a second JSON report.
+            //     No local images, approvals or GPU tasks are implied by these cards.
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count,
+                "Existing WPF review must immediately show three frozen composition briefs");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Absent local evidence must never be presented as a missing or observed image");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x =>
+                x.LocalSelectionStatus == "未选择本地快照"
+                && x.LocalSelectionSha256.Length == 0),
+                "Frozen work cards must explicitly show no staged local snapshot");
+            SmokeAssert.Equal("Opening pose two", vm.CompositionWorkOrders[1].StillPrompt,
+                "Local work card must reuse the exact frozen Creative Kit prompt");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.SceneId == "kitchen-scene"),
+                "Real KeyframeKit keeps the scene ID in shared locks, not in per-shot KeyframeSpec");
+            SmokeAssert.Equal("paw approaches bowl", vm.CompositionWorkOrders[1].OpeningState,
+                "S2 must expose the frozen Bible opening state for continuous composition");
+            SmokeAssert.Equal("paw touches bowl", vm.CompositionWorkOrders[1].ClosingState,
+                "S2 must expose the frozen Bible closing state for shot handoff");
+            SmokeAssert.Equal("CONTINUOUS", vm.CompositionWorkOrders[1].HandoffToNext,
+                "S2 handoff must remain the frozen Story Director choice");
+            SmokeAssert.Equal(vm.CompositionWorkOrders[1].ClosingState,
+                vm.CompositionWorkOrders[2].OpeningState,
+                "The test must exercise an actual S2-to-S3 opening/closing continuity lock");
+            SmokeAssert.Equal("close-up", vm.CompositionWorkOrders[1].CameraFraming,
+                "Show the frozen camera framing beside the per-shot brief");
+            SmokeAssert.Equal("Lock bowl", vm.CompositionWorkOrders[2].ReviewChecklist,
+                "Review checklist must appear without a Qwen local report");
+            // 02. One-click handoff is source-bound, contains all three
+            //     exact still prompts and state locks, never inferred Qwen data.
+            SmokeAssert.True(vm.CanCopyFrozenThreeShotBrief,
+                "Three-shot frozen director handoff should be available without a readiness report");
+            var frozenHandoff = vm.BuildFrozenThreeShotBrief();
+            SmokeAssert.True(frozenHandoff.Contains("===== 1/3 | shot-1 =====", StringComparison.Ordinal)
+                && frozenHandoff.Contains("===== 2/3 | shot-2 =====", StringComparison.Ordinal)
+                && frozenHandoff.Contains("===== 3/3 | shot-3 =====", StringComparison.Ordinal),
+                "The one-click handoff must contain exactly the original three ordered shot briefs");
+            SmokeAssert.True(frozenHandoff.Contains("Opening pose two", StringComparison.Ordinal)
+                && frozenHandoff.Contains("统一场景：kitchen-scene", StringComparison.Ordinal)
+                && frozenHandoff.Contains("镜头构图：close-up", StringComparison.Ordinal)
+                && frozenHandoff.Contains("起始状态：paw approaches bowl", StringComparison.Ordinal)
+                && frozenHandoff.Contains("结束状态：paw touches bowl", StringComparison.Ordinal)
+                && frozenHandoff.Contains("人工视觉检查清单：", StringComparison.Ordinal),
+                "Handoff must preserve exact frozen prompt, scene, camera, continuity and review criteria");
+            SmokeAssert.True(!frozenHandoff.Contains("OBSERVED_UNAPPROVED", StringComparison.Ordinal)
+                && !frozenHandoff.Contains("NEEDS_DISTINCT_COMPOSITION", StringComparison.Ordinal),
+                "Untrusted local observation statuses must never contaminate the director handoff");
+            SmokeAssert.Equal(0, vm.Items.Count, "Frozen briefs cannot stage images");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Frozen briefs cannot create Core approvals");
+            SmokeAssert.Equal("Opening pose two", vm.KeyframeInstructions[1].StillPrompt, "Preserve Core prompts");
+            SmokeAssert.Equal("Lock bowl", vm.KeyframeInstructions[2].ReviewChecklist, "Preserve checklist");
             SmokeAssert.True(vm.EligibleShots.SequenceEqual(new[] { "shot-1", "shot-2", "shot-3" }),
                 "The v2 candidate shot order/identity changed");
+            // 01. 直接复用 #342 本地构图工作单，在原有 WPF 审批页展示缺失镜头。
+            //     此报告既不能选择参考图，也不能发起 Owner/GPU 审批。
+            var workOrder = new
+            {
+                schema = "picotoo.qwen-reference-readiness.v1",
+                status = "BLOCKED_MISSING_REFERENCES",
+                creative_package_sha256 = vm.CreativePackageDigest,
+                creative_kit_digest = new string('a', 64),
+                source_rights_confirmed = false,
+                source_inputs_verified_for_production = false,
+                production_authorized = false,
+                gpu_post = 0,
+                composition_work_order = new
+                {
+                    schema = "picotoo.qwen-local-composition-workorder.v1",
+                    creative_kit_digest = new string('a', 64),
+                    shot_count = 3,
+                    source_workflow_modified = false,
+                    all_images_approved = false,
+                    gpu_post = 0,
+                    items = vm.KeyframeInstructions.Select((item, index) => new
+                    {
+                        shot_id = item.ShotId,
+                        order = index + 1,
+                        composition_status = index == 0 ? "OBSERVED_UNAPPROVED" : "NEEDS_DISTINCT_COMPOSITION",
+                        existing_input_filename = index == 0 ? "old-composition.png" : (string?)null,
+                        source = "FROZEN_CREATIVE_KEYFRAME_KIT",
+                        creative_still_prompt = item.StillPrompt,
+                        camera_framing = item.CameraFraming,
+                        scene_id = item.SceneId,
+                        opening_state = item.OpeningState,
+                        closing_state = item.ClosingState,
+                        handoff_to_next = item.HandoffToNext,
+                        creative_still_prompt_sha256 = Convert.ToHexStringLower(
+                            SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(item.StillPrompt))),
+                        review_checklist = item.ReviewChecklist.Split('\n'),
+                        prompt_text_local_only = true,
+                        new_image_created = false,
+                        owner_approved = false
+                    }).ToArray()
+                }
+            };
+            var workOrderPath = Path.Combine(root, "three-shot-workorder.json");
+            await File.WriteAllTextAsync(workOrderPath, JsonSerializer.Serialize(workOrder));
+            SmokeAssert.True(vm.CanLoadCompositionWorkOrder, "Frozen v2 must permit local-only work-order reading");
+            await vm.LoadCompositionWorkOrderAsync(workOrderPath);
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count, "Three shot-scoped work items were not exposed");
+            SmokeAssert.Equal("OBSERVED_UNAPPROVED", vm.CompositionWorkOrders[0].Status,
+                "Historical S1 must never be approved by an observation report");
+            SmokeAssert.True(vm.CompositionWorkOrders.Skip(1).All(x => x.Status == "NEEDS_DISTINCT_COMPOSITION"),
+                "S2/S3 must remain explicitly missing before local image creation");
+            var workOrderPanel = new ReferenceBatchPreviewPanel(vm);
+            workOrderPanel.Measure(new Size(1000, 700));
+            workOrderPanel.Arrange(new Rect(0, 0, 1000, 700));
+            workOrderPanel.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            var copyAll = (Button)workOrderPanel.FindName("CopyThreeShotBriefButton");
+            SmokeAssert.True(copyAll.IsEnabled, "The frozen three-shot handoff should be one click");
+            SmokeAssert.Equal(frozenHandoff, vm.BuildFrozenThreeShotBrief(),
+                "Loading an external Qwen status report must not rewrite the director handoff");
+            var visibleWorkOrders = (ItemsControl)workOrderPanel.FindName("CompositionWorkOrderList");
+            SmokeAssert.Equal(3, visibleWorkOrders.Items.Count,
+                "Existing WPF review screen must display all three frozen work orders");
+            // 03. Never silently mark a Comfy-generated reference USER_SUPPLIED.
+            //     The user must actively choose the origin for every manual
+            //     image-staging interaction before any native file dialog opens.
+            var sourceChoice = (ComboBox)workOrderPanel.FindName("SourceComboBox");
+            SmokeAssert.Equal(-1, sourceChoice.SelectedIndex,
+                "Source origin must have no default USER_SUPPLIED classification");
+            var sourceShot = (ComboBox)workOrderPanel.FindName("ShotComboBox");
+            sourceShot.SelectedItem = "shot-2";
+            ((Button)workOrderPanel.FindName("ChooseReferenceButton")).RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            SmokeAssert.True(((TextBlock)workOrderPanel.FindName("OperationStatusText")).Text
+                .Contains("来源声明", StringComparison.Ordinal),
+                "Missing origin must be rejected before opening the native file picker");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "A missing origin must not stage an image or infer legal source");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "A missing origin must never request Mac Core approval");
+            sourceChoice.SelectedIndex = 1;
+            ((Button)workOrderPanel.FindName("ChooseReferenceButton")).RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            SmokeAssert.True(((TextBlock)workOrderPanel.FindName("OperationStatusText")).Text
+                .Contains("LICENSED", StringComparison.Ordinal),
+                "Selecting LICENSED without a source digest must fail before native file selection");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "Missing LICENSED evidence must never stage a reference");
+            sourceChoice.SelectedIndex = -1;
+            // 02. A shot card uses the ORIGINAL source selector and snapshot
+            //     picker, not a second auto-approval surface or API client.
+            var cardTemplate = (DependencyObject)visibleWorkOrders.ItemTemplate!.LoadContent();
+            SmokeAssert.Equal(1, VisualButtons(cardTemplate).Count(button =>
+                button.Content is string text && text == "为此镜头选择参考图…"),
+                "Each shot card must offer the existing manual local-image picker");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Rendering a per-shot selection button must not POST to Core");
+            SmokeAssert.Equal(0, vm.Items.Count, "Reading the work order must not stage any candidate");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Work-order read must not call Core");
+            var forgedOrder = JsonNode.Parse(JsonSerializer.Serialize(workOrder))!.AsObject();
+            forgedOrder["composition_work_order"]!["items"]![1]!["creative_still_prompt"] = "fabricated";
+            var forgedOrderPath = Path.Combine(root, "forged-workorder.json");
+            await File.WriteAllTextAsync(forgedOrderPath, forgedOrder.ToJsonString());
+            await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedOrderPath));
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count,
+                "Forged evidence must never erase the three immutable Core-frozen briefs");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"
+                && x.ExistingFilename == string.Empty),
+                "A rejected Qwen report must remove only untrusted observation claims");
+            SmokeAssert.Equal("Opening pose two", vm.CompositionWorkOrders[1].StillPrompt,
+                "Rejected report must retain only the original Creative Kit prompt");
+            await vm.LoadCompositionWorkOrderAsync(workOrderPath);
+            var forgedCamera = JsonNode.Parse(JsonSerializer.Serialize(workOrder))!.AsObject();
+            forgedCamera["composition_work_order"]!["items"]![1]!["camera_framing"] = "invented camera";
+            var forgedCameraPath = Path.Combine(root, "forged-camera.json");
+            await File.WriteAllTextAsync(forgedCameraPath, forgedCamera.ToJsonString());
+            await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedCameraPath));
+            SmokeAssert.Equal(3, vm.CompositionWorkOrders.Count,
+                "Camera spoofing must not erase the frozen three-shot production briefs");
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Camera spoofing must discard every claim of an observed image");
+            SmokeAssert.Equal("close-up", vm.CompositionWorkOrders[1].CameraFraming,
+                "Camera spoofing must restore the original frozen framing");
+            SmokeAssert.Equal("paw approaches bowl", vm.CompositionWorkOrders[1].OpeningState,
+                "A forged Qwen status report cannot erase the Story Director state progression");
+            await vm.LoadCompositionWorkOrderAsync(workOrderPath);
+            // 05. Even a plausible Python-shaped report cannot override
+            //     the source-bound opening/closing states of a real story.
+            var forgedHandoff = JsonNode.Parse(JsonSerializer.Serialize(workOrder))!.AsObject();
+            forgedHandoff["composition_work_order"]!["items"]![1]!["opening_state"] =
+                "the pet teleports outside the kitchen";
+            var forgedHandoffPath = Path.Combine(root, "forged-handoff.json");
+            await File.WriteAllTextAsync(forgedHandoffPath, forgedHandoff.ToJsonString());
+            await RejectAsync(() => vm.LoadCompositionWorkOrderAsync(forgedHandoffPath));
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Forged continuity text must clear optional observations");
+            SmokeAssert.Equal("paw approaches bowl", vm.CompositionWorkOrders[1].OpeningState,
+                "Frozen continuity must remain available after a forged report");
+            await vm.LoadCompositionWorkOrderAsync(workOrderPath);
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Neither accepted nor forged report may create approval");
+
+            // 06. Different shot IDs / CAS filenames with identical bytes
+            //     must not enable the SEALED V2 WPF approval request.
+            //     Legacy v1 batch behavior is exercised by the older fixture.
+            var duplicateGateway = new RecordingGateway();
+            var duplicateV2 = new ReferenceBatchPreviewViewModel(
+                duplicateGateway, stager, Continuation(), V2CandidatePackage());
+            foreach (var shot in duplicateV2.EligibleShots)
+                await duplicateV2.AddAsync(shot, source, "USER_SUPPLIED", null);
+            SmokeAssert.Equal(3, duplicateV2.Items.Count,
+                "Duplicate-byte regression must exercise complete three-shot staging");
+            SmokeAssert.True(duplicateV2.CompositionWorkOrders.All(x =>
+                x.LocalSelectionStatus == "内容重复（禁止批量提交）"
+                && x.LocalSelectionSha256 == duplicateV2.Items[0].Sha256),
+                "Every duplicate-shot card must clearly block identical local image bytes");
+            SmokeAssert.True(duplicateV2.CompositionWorkOrders.All(x => x.Status == "UNVERIFIED"),
+                "Selecting byte-identical local images must never certify a historical composition");
+            duplicateV2.Remove("shot-3");
+            SmokeAssert.True(duplicateV2.CompositionWorkOrders[2].LocalSelectionStatus == "未选择本地快照"
+                && duplicateV2.CompositionWorkOrders.Take(2).All(x =>
+                    x.LocalSelectionStatus == "内容重复（禁止批量提交）"),
+                "Removing one duplicate must update all three local progress cards");
+            duplicateV2.Remove("shot-2");
+            SmokeAssert.True(duplicateV2.CompositionWorkOrders[0].LocalSelectionStatus
+                == "本地快照已选（不代表审批）",
+                "Once duplication is resolved the surviving local snapshot must stay unapproved");
+            await duplicateV2.AddAsync("shot-2", source, "USER_SUPPLIED", null);
+            await duplicateV2.AddAsync("shot-3", source, "USER_SUPPLIED", null);
+            SmokeAssert.Equal(1, duplicateV2.Items.Select(x => x.Sha256)
+                .Distinct(StringComparer.Ordinal).Count(),
+                "Fixture must really contain renamed byte-identical images");
+            duplicateV2.UserConfirmsPreviewAndRights = true;
+            SmokeAssert.True(!duplicateV2.CanSubmit,
+                "V2 cannot enable approval for identical images with three different paths");
+            await RejectAsync(() => duplicateV2.SubmitAsync());
+            SmokeAssert.Equal(0, duplicateGateway.RegisterCalls,
+                "A direct V2 submit must fail before Core when compositions share bytes");
+
+            // 01. 真实 UI 读取本地观察清单，但不将观察结果视为许可或审批。
+            var observedRoot = Path.Combine(root, "local-comfy-output");
+            Directory.CreateDirectory(observedRoot);
+            var observedShots = Enumerable.Range(1, 3).Select(i =>
+            {
+                var shot = $"shot-{i}";
+                // Distinct real PNG bytes per shot: duplicate hashes are forbidden by the collector.
+                var pixels = new byte[] { 0, 0, (byte)(40 * i), 255, 0, (byte)(60 * i), 0, 255 };
+                var image = BitmapSource.Create(2, 1, 96, 96, PixelFormats.Bgra32, null, pixels, 8);
+                var outputEncoder = new PngBitmapEncoder();
+                outputEncoder.Frames.Add(BitmapFrame.Create(image));
+                using var encoded = new MemoryStream();
+                outputEncoder.Save(encoded);
+                var imageBytes = encoded.ToArray();
+                var digest = Convert.ToHexStringLower(SHA256.HashData(imageBytes));
+                File.WriteAllBytes(Path.Combine(observedRoot, shot + ".png"), imageBytes);
+                return new
+                {
+                    shot_id = shot, order = i, prompt_id = $"00000000-0000-4000-8000-{i:000000000000}",
+                    prepared_graph_sha256 = new string('c', 64),
+                    selected_reference = (object?)null,
+                    candidates = new[]
+                    {
+                        new
+                        {
+                            output_relative_path = shot + ".png", sha256 = digest, bytes = imageBytes.Length,
+                            width = 2, height = 1, image_container_crc_verified = true,
+                            pixels_decoded = false, visual_review = "UNREVIEWED",
+                        }
+                    }
+                };
+            }).ToArray();
+            var observedManifest = new
+            {
+                schema = "picotoo.local-keyframe-output-candidates.v1",
+                creative_package_id = vm.CreativePackageId,
+                creative_package_sha256 = vm.CreativePackageDigest,
+                keyframe_kit_digest = new string('a', 64),
+                recorded_image_bytes_observed = true, candidate_files_staged = false,
+                source_rights_confirmed = false, reference_approved = false,
+                review_status = "NEEDS_HUMAN_REVIEW", gpu_post = 0,
+                shots = observedShots
+            };
+            var observedFile = Path.Combine(root, "candidate_manifest.json");
+            await File.WriteAllTextAsync(observedFile, JsonSerializer.Serialize(observedManifest));
+            SmokeAssert.True(vm.CanLoadObservedCandidates, "Sealed three-shot view should accept read-only candidates");
+            await vm.LoadObservedCandidatesAsync(observedFile);
+            SmokeAssert.Equal(3, vm.ObservedCandidates.Count, "Full candidate observation lost shots");
+            // 01. One known Comfy Desktop folder removes the repetitive output
+            //     picker only when all three *actual* PNG bytes verify.
+            var fakeLocalAppData = Path.Combine(root, "fake-user-localappdata");
+            var standardOutput = Path.Combine(fakeLocalAppData,
+                "Comfy-Desktop", "ComfyUI-Shared", "output");
+            Directory.CreateDirectory(standardOutput);
+            foreach (var path in Directory.EnumerateFiles(observedRoot, "*.png"))
+                File.Copy(path, Path.Combine(standardOutput, Path.GetFileName(path)));
+            SmokeAssert.True(await ReferenceBatchPreviewPanel.TryInspectStandardComfyOutputAsync(
+                    vm, Path.Combine(root, "missing-localappdata")) is null,
+                "Absent standard folder must fall back to explicit manual selection");
+            var autoOutput = await ReferenceBatchPreviewPanel.TryInspectStandardComfyOutputAsync(
+                vm, fakeLocalAppData);
+            SmokeAssert.Equal(standardOutput, autoOutput,
+                "An exact verified default output should avoid the second folder picker");
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
+                "Auto-discovery must decode real SHA-checked thumbnails, not just locate a folder");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "Auto-discovery cannot select, stage, or approve candidates");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Auto-discovery must never POST an Owner approval");
+            // 02. Existing default-path bytes may be stale or tampered with:
+            //     reject all thumbnails, then permit the existing manual root.
+            await vm.LoadObservedCandidatesAsync(observedFile);
+            File.WriteAllBytes(Path.Combine(standardOutput, "shot-3.png"), [1, 2, 3]);
+            SmokeAssert.True(await ReferenceBatchPreviewPanel.TryInspectStandardComfyOutputAsync(
+                    vm, fakeLocalAppData) is null,
+                "Changed default output must not be treated as successful auto-preview");
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is null),
+                "Failed default-root SHA must not leave partially accepted thumbnails");
+            await vm.InspectObservedCandidatesAsync(observedRoot);
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
+                "Real local image thumbnails must decode for all observed stills");
+            SmokeAssert.Equal(0, vm.Items.Count, "Read-only observation must never stage images");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Thumbnail read may not create approvals");
+
+            // 06. One explicit vNNNN directory selection combines two
+            //     independently observed seed batches without selecting,
+            //     licensing or submitting any candidate image.
+            var variantRoot = Path.Combine(root, "seed-variants");
+            var v7 = Path.Combine(variantRoot, "v0007");
+            var v8 = Path.Combine(variantRoot, "v0008");
+            Directory.CreateDirectory(v7);
+            Directory.CreateDirectory(v8);
+            var firstVariant = JsonNode.Parse(JsonSerializer.Serialize(observedManifest))!.AsObject();
+            firstVariant["batch_manifest_sha256"] = new string('a', 64);
+            var secondVariant = JsonNode.Parse(JsonSerializer.Serialize(observedManifest))!.AsObject();
+            secondVariant["batch_manifest_sha256"] = new string('b', 64);
+            for (var i = 1; i <= 3; i++)
+            {
+                // 07. Distinct PNG payloads are real decodable local images;
+                //     distinct seeds alone are not mistaken for image proof.
+                var pixels = new byte[] { 5, 0, (byte)(80 * i), 255, 7, (byte)(70 * i), 5, 255 };
+                var image = BitmapSource.Create(2, 1, 96, 96, PixelFormats.Bgra32, null, pixels, 8);
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(image));
+                using var stream = new MemoryStream();
+                encoder.Save(stream);
+                var bytes = stream.ToArray();
+                var outputName = $"variant2-shot-{i}.png";
+                File.WriteAllBytes(Path.Combine(observedRoot, outputName), bytes);
+                var digest = Convert.ToHexStringLower(SHA256.HashData(bytes));
+                var shot = secondVariant["shots"]![i - 1]!;
+                shot["prompt_id"] = $"11111111-1111-4111-8111-{i:000000000000}";
+                shot["prepared_graph_sha256"] = new string('d', 64);
+                var candidate = shot["candidates"]![0]!;
+                candidate["output_relative_path"] = outputName;
+                candidate["sha256"] = digest;
+                candidate["bytes"] = bytes.Length;
+            }
+            var firstVariantFile = Path.Combine(v7, "candidate_manifest.json");
+            var secondVariantFile = Path.Combine(v8, "candidate_manifest.json");
+            await File.WriteAllTextAsync(firstVariantFile, firstVariant.ToJsonString());
+            await File.WriteAllTextAsync(secondVariantFile, secondVariant.ToJsonString());
+            await vm.LoadObservedVariantFolderAsync(variantRoot);
+            SmokeAssert.Equal(6, vm.ObservedCandidates.Count,
+                "Two valid variant manifests must expose six independent candidates");
+            SmokeAssert.Equal(2, vm.ObservedCandidates.Select(x => x.CandidateBatch).Distinct().Count(),
+                "Each candidate must display its source batch ordinal, not guessed seed authority");
+            SmokeAssert.True(vm.ObservedCandidates.Select(x => x.ShotId).SequenceEqual(
+                ["shot-1", "shot-1", "shot-2", "shot-2", "shot-3", "shot-3"]),
+                "Alternatives must appear beside the same shot, not alternate between distant batches");
+            SmokeAssert.True(vm.ObservedCandidates.GroupBy(x => x.ShotId)
+                .All(group => group.Count() == 2),
+                "Every shot must retain one independently observed image from each batch");
+            SmokeAssert.Equal(3, vm.ObservedCandidateGroups.Groups?.Count ?? 0,
+                "The WPF view must have separate S1/S2/S3 visual groups");
+            await vm.InspectObservedCandidatesAsync(observedRoot);
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
+                "One folder review must render every verified seed alternative thumbnail");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "Multi-seed thumbnail aggregation cannot stage any source image");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Aggregating multiple seeds cannot call Core approval API");
+
+            // 09. Explicitly picking one reviewed image and then another
+            //     for the SAME shot should update the exact staged SHA
+            //     annotation, rather than falsely marking both selected.
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.SelectionStatus == "尚未选用"),
+                "All observed images start unselected without a staged snapshot");
+            await vm.AddObservedCandidateAsync(vm.ObservedCandidates[0],
+                observedRoot, new string('e', 64));
+            SmokeAssert.Equal("当前镜头已选用此图（未审批）",
+                vm.ObservedCandidates[0].SelectionStatus,
+                "Only the byte-identical staged SHA can mark a candidate selected");
+            SmokeAssert.Equal("当前镜头已选其他候选",
+                vm.ObservedCandidates[1].SelectionStatus,
+                "The alternative for that shot must remain explicitly unselected");
+            vm.UserConfirmsPreviewAndRights = true;
+            await vm.AddObservedCandidateAsync(vm.ObservedCandidates[1],
+                observedRoot, new string('e', 64));
+            SmokeAssert.Equal("当前镜头已选其他候选",
+                vm.ObservedCandidates[0].SelectionStatus,
+                "Replacing a staged candidate must clear the former selection");
+            SmokeAssert.Equal("当前镜头已选用此图（未审批）",
+                vm.ObservedCandidates[1].SelectionStatus,
+                "Replacing a staged candidate must display the new exact SHA");
+            SmokeAssert.True(!vm.UserConfirmsPreviewAndRights,
+                "Switching a visual candidate must revoke stale rights consent");
+            SmokeAssert.Equal(1, vm.Items.Count,
+                "Switching one shot must replace, not append, a staged image");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Switching candidates must never submit an approval request");
+            vm.Remove("shot-1");
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.SelectionStatus == "尚未选用"),
+                "Removing the staged image must reset both alternatives");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "The comparison test must leave no staged image behind");
+
+            // 08. The original one-file importer must remain compatible
+            //     while multi-import rejects mixed provenance and duplicates.
+            await RejectAsync(() => vm.LoadObservedCandidateManifestsAsync(
+                [firstVariantFile, firstVariantFile]));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "Reusing the same candidate source twice must invalidate the whole batch");
+            secondVariant["creative_package_sha256"] = new string('f', 64);
+            await File.WriteAllTextAsync(secondVariantFile, secondVariant.ToJsonString());
+            await RejectAsync(() => vm.LoadObservedVariantFolderAsync(variantRoot));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "One forged Creative Package must invalidate all seed candidates");
+            secondVariant["creative_package_sha256"] = vm.CreativePackageDigest;
+            secondVariant["batch_manifest_sha256"] = new string('a', 64);
+            await File.WriteAllTextAsync(secondVariantFile, secondVariant.ToJsonString());
+            await RejectAsync(() => vm.LoadObservedVariantFolderAsync(variantRoot));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "Two manifests claiming one batch digest cannot be merged as independent");
+            secondVariant["batch_manifest_sha256"] = new string('b', 64);
+            await File.WriteAllTextAsync(secondVariantFile, secondVariant.ToJsonString());
+            Directory.CreateDirectory(Path.Combine(variantRoot, "v0009"));
+            await RejectAsync(() => vm.LoadObservedVariantFolderAsync(variantRoot));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "A missing third candidate manifest must not leave a partial trusted review");
+            Directory.Delete(Path.Combine(variantRoot, "v0009"));
+            await vm.LoadObservedCandidatesAsync(observedFile);
+            await vm.InspectObservedCandidatesAsync(observedRoot);
+            SmokeAssert.Equal(3, vm.ObservedCandidates.Count,
+                "Legacy single-manifest import must work after a multi-seed review");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Multi-seed import and negative scenarios must never grant approval");
+
+            // 02. Any changed file must invalidate EVERY preview, not leave one trusted-looking thumbnail.
+            var changedThumbnail = Path.Combine(observedRoot, "shot-2.png");
+            var originalSecondImage = File.ReadAllBytes(changedThumbnail);
+            File.WriteAllBytes(changedThumbnail, [1, 2, 3]);
+            await RejectAsync(() => vm.InspectObservedCandidatesAsync(observedRoot));
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is null),
+                "One corrupt thumbnail must clear the complete untrusted observation");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Thumbnail corruption must never write an approval");
+            File.WriteAllBytes(changedThumbnail, originalSecondImage);
+            await vm.InspectObservedCandidatesAsync(observedRoot);
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
+                "Restoring original bytes should permit the exact same read-only preview");
+            SmokeAssert.True(!vm.UserConfirmsPreviewAndRights && gateway.RegisterCalls == 0,
+                "Observed output cannot grant rights or write an approval");
+            await RejectAsync(() => vm.AddObservedCandidateAsync(vm.ObservedCandidates[0], observedRoot, "not-a-license"));
+            SmokeAssert.Equal(0, vm.Items.Count, "Invalid license must reject observed candidate");
+            await vm.AddObservedCandidateAsync(vm.ObservedCandidates[0], observedRoot, new string('e', 64));
+            SmokeAssert.Equal("LICENSED", vm.Items.Single().SourceReference,
+                "Generated candidate must not silently become USER_SUPPLIED");
+            SmokeAssert.True(!vm.UserConfirmsPreviewAndRights && gateway.RegisterCalls == 0,
+                "Explicit selection must not confirm rights or create approval");
+            // 02. Changing the real file after observation must block another import.
+            File.WriteAllBytes(Path.Combine(observedRoot, "shot-2.png"), [1, 2, 3]);
+            await RejectAsync(() => vm.AddObservedCandidateAsync(
+                vm.ObservedCandidates[1], observedRoot, new string('e', 64)));
+            SmokeAssert.Equal(1, vm.Items.Count, "Tampered observed image must not replace staged image");
+            File.WriteAllBytes(Path.Combine(observedRoot, "shot-2.png"), originalSecondImage);
+            // 03. A forged manifest must not reuse the same image across two shots.
+            var duplicateJson = JsonSerializer.Serialize(observedManifest).Replace(
+                observedShots[1].candidates[0].sha256,
+                observedShots[0].candidates[0].sha256, StringComparison.Ordinal);
+            var duplicateFile = Path.Combine(root, "duplicate-candidate.json");
+            await File.WriteAllTextAsync(duplicateFile, duplicateJson);
+            await RejectAsync(() => vm.LoadObservedCandidatesAsync(duplicateFile));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count, "Duplicate source bytes must fail closed");
+            // 04. Wrong package digest must fail before selecting any local file.
+            var alteredJson = JsonSerializer.Serialize(observedManifest).Replace(
+                vm.CreativePackageDigest, new string('f', 64), StringComparison.Ordinal);
+            var alteredFile = Path.Combine(root, "wrong-candidate.json");
+            await File.WriteAllTextAsync(alteredFile, alteredJson);
+            await RejectAsync(() => vm.LoadObservedCandidatesAsync(alteredFile));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count, "Failed manifest must clear untrusted observations");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Observed candidate path must not call Core");
+
+            // 05. Comfy PNG metadata must never invent a Prompt ID or claim
+            //     a successful historical job when /history has been cleared.
+            var embedded = JsonNode.Parse(JsonSerializer.Serialize(observedManifest))!.AsObject();
+            embedded["history_provenance"] = "PNG_EMBEDDED_NO_HISTORY";
+            embedded["comfy_history_success_verified"] = false;
+            foreach (var shot in embedded["shots"]!.AsArray())
+            {
+                shot!["prompt_id"] = null;
+                foreach (var image in shot["candidates"]!.AsArray())
+                    image!["embedded_prompt_graph_verified"] = true;
+            }
+            var embeddedPath = Path.Combine(root, "historyless-candidate.json");
+            await File.WriteAllTextAsync(embeddedPath, embedded.ToJsonString());
+            await vm.LoadObservedCandidatesAsync(embeddedPath);
+            SmokeAssert.Equal(3, vm.ObservedCandidates.Count,
+                "Exact embedded graph evidence should retain three unapproved candidates");
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.PromptId.Length == 0),
+                "Missing historical Prompt ID must never be fabricated");
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "PNG metadata may not POST an approval");
+            embedded["comfy_history_success_verified"] = true;
+            await File.WriteAllTextAsync(embeddedPath, embedded.ToJsonString());
+            await RejectAsync(() => vm.LoadObservedCandidatesAsync(embeddedPath));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "Forged Comfy historical success must fail closed");
+            embedded["comfy_history_success_verified"] = false;
+            embedded["shots"]![0]!["candidates"]![0]!["embedded_prompt_graph_verified"] = false;
+            await File.WriteAllTextAsync(embeddedPath, embedded.ToJsonString());
+            await RejectAsync(() => vm.LoadObservedCandidatesAsync(embeddedPath));
+            SmokeAssert.Equal(0, gateway.RegisterCalls, "Unverified embedded graph may not write Core");
+
             await vm.AddAsync("shot-1", source, "USER_SUPPLIED", null);
+            SmokeAssert.Equal("本地快照已选（不代表审批）",
+                vm.CompositionWorkOrders[0].LocalSelectionStatus,
+                "Selecting S1 must immediately update the existing work-order card");
+            SmokeAssert.Equal(vm.Items.Single().Sha256,
+                vm.CompositionWorkOrders[0].LocalSelectionSha256,
+                "The S1 card must display verified local snapshot digest, not Qwen report claims");
+            SmokeAssert.True(vm.CompositionWorkOrders.Skip(1).All(x =>
+                x.LocalSelectionStatus == "未选择本地快照"
+                && x.LocalSelectionSha256.Length == 0),
+                "S1 selection must not imply S2 or S3 composition exists");
             vm.UserConfirmsPreviewAndRights = true;
             SmokeAssert.True(!vm.CanSubmit, "One v2 still must not enable request submission");
             await RejectAsync(() => vm.SubmitAsync());
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Partial v2 reference must not POST to Core");
 
-            await vm.AddAsync("shot-2", source, "USER_SUPPLIED", null);
+            // 06. 合法的三镜头成功测试使用之前已单独构造的不同 PNG。
+            //     相同字节复用的失败路径由 duplicateV2 回归独立覆盖。
+            await vm.AddAsync("shot-2", Path.Combine(observedRoot, "shot-2.png"),
+                "USER_SUPPLIED", null);
+            SmokeAssert.Equal("本地快照已选（不代表审批）",
+                vm.CompositionWorkOrders[1].LocalSelectionStatus,
+                "Distinct S2 bytes must appear only on S2's local staging card");
+            SmokeAssert.Equal("未选择本地快照",
+                vm.CompositionWorkOrders[2].LocalSelectionStatus,
+                "S3 must remain visibly missing until its own distinct local picture is selected");
             vm.UserConfirmsPreviewAndRights = true;
             SmokeAssert.True(!vm.CanSubmit, "Two v2 stills must not enable request submission");
             await RejectAsync(() => vm.SubmitAsync());
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Two-shot v2 request must not POST to Core");
 
-            await vm.AddAsync("shot-3", source, "USER_SUPPLIED", null);
+            await vm.AddAsync("shot-3", Path.Combine(observedRoot, "shot-3.png"),
+                "USER_SUPPLIED", null);
+            SmokeAssert.True(vm.CompositionWorkOrders.All(x =>
+                x.LocalSelectionStatus == "本地快照已选（不代表审批）"
+                && x.LocalSelectionSha256.Length == 64),
+                "Three distinct locally staged images must appear without altering approval state");
+            SmokeAssert.Equal(3, vm.Items.Select(x => x.Sha256).Distinct(StringComparer.Ordinal).Count(),
+                "Full v2 fixture must use three truly distinct synthetic image byte identities");
             SmokeAssert.True(!vm.CanSubmit, "All three images still require fresh rights consent");
             vm.UserConfirmsPreviewAndRights = true;
             SmokeAssert.True(vm.CanSubmit, "All three snapshots plus explicit consent must enable submission");
@@ -256,6 +890,57 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Actual v2 request must bind exactly three staged images");
             SmokeAssert.True(!vm.CanEdit, "Ambiguous v2 POST must freeze the exact image selection");
             await RejectAsync(() => vm.AddAsync("shot-2", source, "USER_SUPPLIED", null));
+
+            // 生产创建只能在三张快照、独立批准、显式操作之后进入 v1.1。
+            await RejectAsync(() => vm.CreateReviewedPlanAsync());
+            SmokeAssert.Equal(0, gateway.CreateCalls, "Unknown registration must not create a plan");
+            await vm.SubmitAsync();
+            SmokeAssert.True(!vm.CanCreateReviewedPlan, "Pending receipt must not create a plan");
+            gateway.ReceiptStatus = "Approved";
+            await vm.RefreshAsync();
+            SmokeAssert.True(vm.CanCreateReviewedPlan, "Fresh full approval must enable explicit plan creation");
+            SmokeAssert.Equal(0, gateway.CreateCalls, "Refresh must never create a plan");
+            gateway.ReceiptStatus = "Revoked";
+            await RejectAsync(() => vm.CreateReviewedPlanAsync());
+            SmokeAssert.Equal(0, gateway.CreateCalls, "Revoked approval must block POST");
+            gateway.ReceiptStatus = "Approved";
+            await vm.RefreshAsync();
+            gateway.TamperPlan = true;
+            await RejectAsync(() => vm.CreateReviewedPlanAsync());
+            SmokeAssert.True(vm.CreatedProductionJob is null, "Tampered plan cannot be displayed as accepted");
+            var firstKey = gateway.ProductionKey;
+            gateway.TamperPlan = false;
+            await vm.RefreshAsync();
+            await vm.CreateReviewedPlanAsync();
+            SmokeAssert.Equal(firstKey, gateway.ProductionKey, "Unknown plan receipt retry must preserve key");
+            SmokeAssert.True(vm.CreatedProductionJob is not null && !vm.CanCreateReviewedPlan,
+                "Verified three-shot plan must be shown exactly once");
+
+            // 04. App restart restores exact three private image snapshots from a persisted Core receipt.
+            var resumed = new ReferenceBatchPreviewViewModel(gateway, stager, Continuation(), V2CandidatePackage());
+            SmokeAssert.True(resumed.CanResumeReferenceBatch, "New session should permit read-only batch recovery");
+            await RejectAsync(() => resumed.ResumeReferenceBatchAsync("not-a-uuid"));
+            SmokeAssert.Equal(0, resumed.Items.Count, "Invalid approval ID must not stage references");
+            await resumed.ResumeReferenceBatchAsync("44444444-4444-4444-8444-444444444444");
+            SmokeAssert.Equal(3, resumed.Items.Count, "Restart must restore all frozen snapshot images");
+            SmokeAssert.True(resumed.CompositionWorkOrders.All(x =>
+                x.LocalSelectionStatus == "本地快照已选（不代表审批）"
+                && x.LocalSelectionSha256.Length == 64),
+                "A resumed Core receipt must display restored snapshots without asserting Owner approval");
+            SmokeAssert.True(!resumed.CanEdit && !resumed.CanResumeReferenceBatch
+                && !resumed.CanCreateReviewedPlan && !resumed.UserConfirmsPreviewAndRights,
+                "Restart may not implicitly restore rights, approve or create production");
+            var callsBeforeRefresh = gateway.GetCalls;
+            await resumed.RefreshAsync();
+            SmokeAssert.Equal(callsBeforeRefresh + 1, gateway.GetCalls,
+                "Restart must re-query the existing approval status");
+            SmokeAssert.True(resumed.CanCreateReviewedPlan,
+                "Previously approved exact snapshot may resume explicit v1.1 plan creation");
+            await resumed.CreateReviewedPlanAsync();
+            SmokeAssert.Equal(firstKey, gateway.ProductionKey,
+                "Restart must reuse same immutable production idempotency identity");
+            SmokeAssert.Equal(gateway.RegisterCalls, 2,
+                "Read-only restart must never POST another registration");
 
             // ── Missing v2 markers and unrelated legacy T2V stay unselectable.
             var legacy = new ReferenceBatchPreviewViewModel(
@@ -278,11 +963,21 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         Manifest = JsonElement.Parse("""
         {"creative_package_id":"22222222-2222-4222-8222-222222222222","creative_job_id":"job-1",
          "quality_outcome":"PASS","source_set_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-         "stage_results":{"video_bible.v1":{},"keyframe_kit.v1":{},"script.v1":{},
+         "stage_results":{"video_bible.v1":{"shots":[
+           {"shot_id":"shot-1","order":1,"scene_id":"kitchen-scene","opening_state":"dog enters kitchen","closing_state":"dog stands beside bowl","handoff_to_next":"CONTINUOUS"},
+           {"shot_id":"shot-2","order":2,"scene_id":"kitchen-scene","opening_state":"paw approaches bowl","closing_state":"paw touches bowl","handoff_to_next":"CONTINUOUS"},
+           {"shot_id":"shot-3","order":3,"scene_id":"kitchen-scene","opening_state":"paw touches bowl","closing_state":"dog rests by bowl","handoff_to_next":"CONTINUOUS"}]},
+           "creative_brief.v1":{"output_profile_id":"video.landscape.v1"},
+           "keyframe_kit.v1":{"schema_version":"keyframe_kit.v1","locks":{"scene_id":"kitchen-scene"},
+             "kit_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bible_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+             "keyframes":[
+               {"shot_id":"shot-1","order":1,"still_prompt":"Opening pose one","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock identity"]},
+               {"shot_id":"shot-2","order":2,"still_prompt":"Opening pose two","approval_status":"PENDING_HUMAN_REVIEW","camera_framing":"close-up","review_checklist":["Lock scene"]},
+               {"shot_id":"shot-3","order":3,"still_prompt":"Opening pose three","approval_status":"PENDING_HUMAN_REVIEW","review_checklist":["Lock bowl"]}]},"script.v1":{},
            "shot_plan.v1":{"shots":[
-             {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO"},
-             {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO"},
-             {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO"}]}}}
+             {"shot_id":"shot-1","render_intent":"GENERATIVE_VIDEO","duration_seconds":4},
+             {"shot_id":"shot-2","render_intent":"GENERATIVE_VIDEO","duration_seconds":4},
+             {"shot_id":"shot-3","render_intent":"GENERATIVE_VIDEO","duration_seconds":4}]}}}
         """),
     };
 
@@ -309,8 +1004,13 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
          {"shot_id":"text-shot","render_intent":"TEXT_TO_VIDEO"}]}}}
         """), "PASS", DateTimeOffset.UtcNow);
 
-    private sealed class RecordingGateway : IReferenceBatchGateway
+    private sealed class RecordingGateway : IReviewedThreeShotPlanGateway
     {
+        public int CreateCalls { get; private set; }
+        public string ReceiptStatus { get; set; } = "Pending";
+        public bool TamperPlan { get; set; }
+        public string? ProductionKey { get; private set; }
+        private ProductionJobRecord? _productionJob;
         public int RegisterCalls { get; private set; }
         public int GetCalls { get; private set; }
         public bool FailNextPost { get; set; }
@@ -341,6 +1041,51 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.Equal("44444444-4444-4444-8444-444444444444", approvalId, "Refresh must address approval_id, not batch_id");
             return Task.FromResult(CreateReceipt());
         }
+        public Task<ProductionJobRecord> CreateReviewedThreeShotV11Async(ProductionJobCreateRequest request,
+            string approvedReferenceId, CancellationToken cancellationToken)
+        {
+            CreateCalls++;
+            ProductionKey = request.IdempotencyKey;
+            var receipt = CreateReceipt();
+            SmokeAssert.Equal(receipt.ApprovalId, approvedReferenceId, "Must use approval, not asset or batch ID");
+            var now = DateTimeOffset.UtcNow;
+            _productionJob = new ProductionJobRecord("88888888-8888-4888-8888-888888888888",
+                request.CreativePackageId, receipt.CreativePackageDigest, "goal-" + receipt.GoalId,
+                request.ProductionProfile, new string('a', 64), "Ready", null, null, null, null,
+                request.IdempotencyKey, now, now, null);
+            var job = _productionJob;
+            var plan = BuildPlan(job, false);
+            _productionJob = job with { PlanDigest = Convert.ToHexString(SHA256.HashData(
+                CanonicalJson.Serialize(JsonSerializer.SerializeToNode(plan)!))).ToLowerInvariant() };
+            return Task.FromResult(_productionJob);
+        }
+
+        public Task<ProductionPlanRecord> ReadReviewedProductionPlanAsync(string jobId, CancellationToken cancellationToken)
+        {
+            var job = _productionJob ?? throw new InvalidOperationException("No production job");
+            SmokeAssert.Equal(job.ProductionJobId, jobId, "Read exact Job");
+            return Task.FromResult(BuildPlan(job, TamperPlan));
+        }
+
+        private ProductionPlanRecord BuildPlan(ProductionJobRecord job, bool tamper)
+        {
+            var jobId = job.ProductionJobId;
+            var receipt = CreateReceipt();
+            var tasks = receipt.References.Select((x, i) =>
+            {
+                var taskId = "task-" + i;
+                var asset = new ProductionReferenceAssetV11Record("reference_asset.v1", x.AssetId,
+                    receipt.GoalId, "job-1", receipt.CreativePackageId, jobId, taskId, x.ShotId,
+                    receipt.CreativePackageDigest, x.InputRelativePath,
+                    tamper ? new string('f', 64) : x.Sha256, x.Bytes, x.SourceReference, x.SourceDigest,
+                    "wan22.i2v.production.v1", receipt.ApprovalId, receipt.ApprovalRequestDigest);
+                return new ProductionTaskPlanRecord(taskId, x.ShotId, i + 1, "IMAGE_TO_VIDEO", "Executable",
+                    ComfyWorkflowTemplateValidator.I2VWorkflowId, "fixture", "fixture", 1, 832, 480, 24, 97, 4000, x.InputRelativePath, asset);
+            }).ToArray();
+            return new ProductionPlanRecord("1.1", job.ProductionProfile, jobId,
+                job.CreativePackageId, job.CreativePackageDigest, job.ProjectKey, "video.landscape.v1", 12000, tasks);
+        }
+
         public ReferenceBatchReceipt CreateReceipt()
         {
             var request = Request ?? throw new InvalidOperationException("No request");
@@ -349,15 +1094,27 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 schema_version = "reference_batch.v1", batch_id = ChangedIdentity == "batch"
                     ? "66666666-6666-4666-8666-666666666666" : "33333333-3333-4333-8333-333333333333",
                 approval_id = "44444444-4444-4444-8444-444444444444",
-                approval_request_digest = new string(ChangedIdentity == "digest" ? 'f' : 'e', 64), status = "Pending",
+                approval_request_digest = new string(ChangedIdentity == "digest" ? 'f' : 'e', 64), status = ReceiptStatus,
                 expires_at = new DateTimeOffset(2030, 1, ChangedIdentity == "expiry" ? 2 : 1, 0, 0, 0, TimeSpan.Zero), goal_id = request.GoalId,
                 creative_package_id = request.CreativePackageId, creative_package_digest = request.CreativePackageDigest,
-                references = request.SelectedReferences.Select(x => new { asset_id = ChangedIdentity == "asset"
-                    ? "77777777-7777-4777-8777-777777777777" : "55555555-5555-4555-8555-555555555555", shot_id = x.ShotId,
+                references = request.SelectedReferences.Select((x, i) => new { asset_id = ChangedIdentity == "asset"
+                    ? "77777777-7777-4777-8777-777777777777" : $"55555555-5555-4555-8555-55555555555{i + 1}", shot_id = x.ShotId,
                     input_relative_path = x.InputRelativePath, sha256 = MismatchReceipt ? new string('f', 64) : x.Sha256, bytes = x.Bytes,
                     source_reference = x.SourceReference, source_digest = x.SourceDigest })
             });
             return JsonSerializer.Deserialize<ReferenceBatchReceipt>(json)!;
+        }
+    }
+
+    // 03. Inspect a native WPF DataTemplate without invoking its file chooser.
+    //     The handler itself must remain an explicit user-click action.
+    private static IEnumerable<Button> VisualButtons(DependencyObject root)
+    {
+        if (root is Button button) yield return button;
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            foreach (var child in VisualButtons(VisualTreeHelper.GetChild(root, index)))
+                yield return child;
         }
     }
 

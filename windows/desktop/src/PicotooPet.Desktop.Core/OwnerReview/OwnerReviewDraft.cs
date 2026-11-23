@@ -53,10 +53,12 @@ public sealed class OwnerReviewDraft
     private readonly Dictionary<string, OwnerReviewFieldState> _fields;
     private string? _previewedFingerprint;
     private bool _staticPetStorySelected;
+    private bool _dynamicPetStorySelected;
 
     public OwnerReviewDraft(OwnerReviewProposal proposal)
     {
         Proposal = proposal;
+        DynamicMotionDigest = ReadMotionDigest(proposal.DynamicMotionProposal);
         _fields = proposal.Fields
             .OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .ToDictionary(pair => pair.Key, pair => new OwnerReviewFieldState(pair.Value), StringComparer.Ordinal);
@@ -74,10 +76,55 @@ public sealed class OwnerReviewDraft
         get => _staticPetStorySelected;
         set
         {
+            if (value && HasDynamicMotion) throw new InvalidOperationException("动态故事不得退回静态策略。");
             if (_staticPetStorySelected == value) return;
             _staticPetStorySelected = value;
             InvalidatePreview();
         }
+    }
+
+    // 01. 动态动作必须由 Core 提案绑定，且默认不授权。
+    public string? DynamicMotionDigest { get; }
+    public bool HasDynamicMotion => DynamicMotionDigest is not null;
+    public bool DynamicPetStorySelected
+    {
+        get => _dynamicPetStorySelected;
+        set
+        {
+            if (value && !HasDynamicMotion) throw new InvalidOperationException("没有可审核的动态提案。");
+            if (_dynamicPetStorySelected == value) return;
+            _dynamicPetStorySelected = value;
+            InvalidatePreview();
+        }
+    }
+
+    private string? SelectedPolicy => DynamicPetStorySelected ? OwnerReviewWire.DynamicPetStoryPolicy
+        : StaticPetStorySelected ? OwnerReviewWire.StaticPetStoryPolicy : null;
+
+    private static string? ReadMotionDigest(JsonElement? candidate)
+    {
+        if (candidate is null || candidate.Value.ValueKind == JsonValueKind.Null) return null;
+        var value = candidate.Value;
+        if (value.ValueKind != JsonValueKind.Object
+            || !value.TryGetProperty("policy", out var policy) || policy.ValueKind != JsonValueKind.String
+            || policy.GetString() != OwnerReviewWire.DynamicPetStoryPolicy
+            || !value.TryGetProperty("motion_digest", out var hash) || hash.ValueKind != JsonValueKind.String
+            || hash.GetString() is not { Length: 64 } digest
+            || !digest.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
+            || !value.TryGetProperty("motion", out var motion) || motion.ValueKind != JsonValueKind.Object
+            || !value.TryGetProperty("shots", out var shots) || shots.ValueKind != JsonValueKind.Array
+            || shots.GetArrayLength() != 3
+            || !value.TryGetProperty("states", out var states) || states.ValueKind != JsonValueKind.Array
+            || states.GetArrayLength() != 4
+            || !value.TryGetProperty("status", out var status) || status.ValueKind != JsonValueKind.String
+            || status.GetString() != "DYNAMIC_PROPOSAL_REQUIRES_OWNER_REVIEW"
+            || !value.TryGetProperty("owner_approved", out var owner) || owner.ValueKind != JsonValueKind.False
+            || !value.TryGetProperty("can_queue", out var queue) || queue.ValueKind != JsonValueKind.False
+            || !value.TryGetProperty("gpu_post_authorized", out var gpu) || gpu.ValueKind != JsonValueKind.False)
+        {
+            throw new InvalidOperationException("动态动作提案格式或权限状态无效。");
+        }
+        return digest;
     }
 
     /// <summary>当前预览对应的幂等键；同一预览的重试复用同一键，新预览换新键。</summary>
@@ -124,6 +171,10 @@ public sealed class OwnerReviewDraft
                 return $"字段 {field.Proposal.FieldPath} 选择了更正，必须填写更正值。";
             }
         }
+        if (HasDynamicMotion && !DynamicPetStorySelected)
+        {
+            return "请明确核对并选择本次动态动作策略。";
+        }
         return null;
     }
 
@@ -142,7 +193,7 @@ public sealed class OwnerReviewDraft
             .ToList();
         return new OwnerReviewPreviewRequest(
             Proposal.GoalId, Proposal.ReviewActorId, Proposal.ProposalDigest, decisions,
-            StaticPetStorySelected ? OwnerReviewWire.StaticPetStoryPolicy : null);
+            SelectedPolicy, DynamicPetStorySelected ? DynamicMotionDigest : null);
     }
 
     /// <summary>接受 Core 返回的预览，并为这一预览分配新的幂等键。</summary>
@@ -151,7 +202,8 @@ public sealed class OwnerReviewDraft
         ArgumentNullException.ThrowIfNull(preview);
         if (preview.ProposalDigest != Proposal.ProposalDigest
             || preview.GoalId != Proposal.GoalId
-            || preview.StoryPolicyOptIn != (StaticPetStorySelected ? OwnerReviewWire.StaticPetStoryPolicy : null))
+            || preview.StoryPolicyOptIn != SelectedPolicy
+            || preview.ConfirmedMotionDigest != (DynamicPetStorySelected ? DynamicMotionDigest : null))
         {
             throw new OwnerReviewException(OwnerReviewFailureKind.Conflict, 409, "OWNER_REVIEW_PREVIEW_MISMATCH");
         }
@@ -195,7 +247,20 @@ public sealed class OwnerReviewDraft
             Preview.PreviewDigest);
     }
 
-    public void MarkCommitted(OwnerReviewCommit commit) => Committed = commit;
+    public void MarkCommitted(OwnerReviewCommit commit)
+    {
+        // 02. 动态回执只能匹配这次已冻结的审核预览。
+        if (HasDynamicMotion && (Preview is null || commit.GoalId != Proposal.GoalId
+            || commit.SubjectKey != Proposal.SubjectKey || commit.ReviewActorId != Proposal.ReviewActorId
+            || commit.ProposalDigest != Proposal.ProposalDigest
+            || commit.SourceRevisionDigest != Preview.SourceRevisionDigest
+            || commit.ReviewDigest != Preview.ReviewDigest || commit.PreviewDigest != Preview.PreviewDigest
+            || commit.StoryPolicyOptIn != OwnerReviewWire.DynamicPetStoryPolicy))
+        {
+            throw new OwnerReviewException(OwnerReviewFailureKind.Conflict, 409, "OWNER_REVIEW_COMMIT_MISMATCH");
+        }
+        Committed = commit;
+    }
 
     /// <summary>After any 409 the old Core preview, consent and replay key are invalid.</summary>
     public void DiscardPreviewAfterConflict() => InvalidatePreview();
@@ -213,7 +278,7 @@ public sealed class OwnerReviewDraft
         var text = string.Join(
             "\n",
             _fields.Values.Select(f => $"{f.Proposal.FieldPath}\u001f{f.Decision}\u001f{f.CorrectedText}"))
-            + "\u001fstatic-policy=" + _staticPetStorySelected;
+            + "\u001fpolicy=" + SelectedPolicy + "\u001fmotion=" + DynamicMotionDigest;
         return Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
     }
 

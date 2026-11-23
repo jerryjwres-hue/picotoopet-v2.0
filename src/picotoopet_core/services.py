@@ -12,6 +12,7 @@ from picotoopet_core.automation.quality import QualityGate
 from picotoopet_core.automation.repository import AutomationRepository
 from picotoopet_core.automation.scheduler import WorkflowScheduler
 from picotoopet_core.automation.service import WorkflowService
+from picotoopet_core.autonomous.evidence_ledger import CanonicalEvidenceLedger
 from picotoopet_core.autonomous.manager import AutonomousOperationsManager
 from picotoopet_core.autonomous.repository import AutonomousGoalRepository
 from picotoopet_core.broker.service import BrokerSessionService
@@ -142,6 +143,9 @@ def build_services(settings: AppSettings) -> Services:
     database = Database(settings.paths.database_file)
     database.open()
     database.apply_migrations()
+    # 初始化既有证据账本，再开放 API；首次只读查询不得触发 DDL。
+    # 保留 Schema 24 与全部已有记录，复用账本自身的幂等 schema 初始化。
+    CanonicalEvidenceLedger(database)
     outbox = EventOutbox(database)
     broker = EventBroker()
     dispatcher = OutboxDispatcher(outbox, broker)

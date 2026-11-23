@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from starlette.concurrency import run_in_threadpool
 
 from picotoopet_core.api.errors import ApiError
+from picotoopet_core.autonomous.goal_service import HumanGoalRequest, HumanGoalService
+from picotoopet_core.autonomous.models import GoalRecord
+from picotoopet_core.domain.storypack_scoped_goal import (
+    ScopedStoryGoalRequest, list_scoped_reviewed_packets, prepare_scoped_story_goal,
+)
 from picotoopet_core.domain.storypack import StoryPackError, parse_storypack, storypack_preview
 from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
+from picotoopet_core.domain.storypack_asset_intake import MAX_ASSET_BYTES, import_local_asset
 from picotoopet_core.domain.storypack_fingerprints import build_shot_fingerprints
 from picotoopet_core.domain.storypack_goal_intake import build_storypack_goal_intake
 from picotoopet_core.domain.storypack_owner_subject import build_owner_review_subject
@@ -86,3 +93,135 @@ async def preview_storypack(request: Request, response: Response) -> dict:
         "can_queue": False,
     }
     return preview
+
+
+@router.post("/studio/assets/import", status_code=201)
+async def import_storypack_asset(
+    request: Request,
+    response: Response,
+    project_id: str = Header(min_length=1, max_length=100, alias="X-Picotoo-Project-Id"),
+    role: str = Header(pattern=r"^(character|scene|style)$", alias="X-Picotoo-Asset-Role"),
+    sha256: str = Header(pattern=r"^[a-f0-9]{64}$", alias="X-Picotoo-Asset-SHA256"),
+    confirmed: str = Header(alias="X-Picotoo-Import-Confirmed"),
+) -> dict:
+    """Explicit local copy intake; device Bearer does not constitute Owner approval."""
+    response.headers["Cache-Control"] = "no-store, private"
+    if confirmed != "yes":
+        raise ApiError(status_code=409, code="ASSET_IMPORT_CONFIRMATION_REQUIRED",
+                       message="Confirm the local asset copy before import.", retryable=False)
+
+    # Bound the actual streamed body, independently of the Content-Length header.
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > MAX_ASSET_BYTES:
+            raise ApiError(status_code=413, code="ASSET_TOO_LARGE",
+                           message="Asset exceeds local intake limit.", retryable=False)
+        data.extend(chunk)
+
+    services = request.app.state.services
+    try:
+        return await run_in_threadpool(
+            import_local_asset, services.database, services.results,
+            project_id=project_id, role=role, media_type=media_type,
+            declared_sha256=sha256, data=bytes(data),
+        )
+    except ValueError as exc:
+        # Do not echo private filesystem paths or arbitrary exception details.
+        code = str(exc)
+        if not code.startswith("ASSET_"):
+            code = "ASSET_IMPORT_REJECTED"
+        raise ApiError(status_code=409, code=code,
+                       message="Local asset intake rejected.", retryable=False) from exc
+    except OSError as exc:
+        raise ApiError(status_code=409, code="ASSET_STORE_UNAVAILABLE",
+                       message="Managed store unavailable.", retryable=False) from exc
+
+
+@router.get("/studio/owner-subject-packets")
+def list_owner_subject_packets(
+    request: Request,
+    response: Response,
+    project_id: str = Query(min_length=1, max_length=100),
+    character_ref: str = Query(pattern=r"^asset-[a-f0-9]{64}$"),
+    subject_key: str = Query(pattern=r"^pet:[a-z0-9][a-z0-9-]{1,63}$"),
+) -> dict:
+    """Read existing exact packet candidates from the canonical local evidence ledger."""
+    response.headers["Cache-Control"] = "no-store, private"
+    try:
+        return list_scoped_reviewed_packets(
+            request.app.state.services, project_id, character_ref, subject_key,
+        )
+    except ValueError as exc:
+        raise ApiError(status_code=409, code="STORY_GOAL_PACKET_LOOKUP_REJECTED",
+                       message="Scoped evidence could not be verified.", retryable=False) from exc
+
+
+@router.post("/studio/storypacks/scoped-goal", response_model=GoalRecord, status_code=201)
+async def submit_scoped_storypack_goal(
+    request: Request,
+    response: Response,
+    confirmed: str = Header(alias="X-Picotoo-Goal-Confirmed"),
+) -> GoalRecord:
+    """Explicitly create the existing local Goal, not a Creative or GPU approval."""
+    response.headers["Cache-Control"] = "no-store, private"
+    if confirmed != "yes":
+        raise ApiError(status_code=409, code="STORY_GOAL_CONFIRMATION_REQUIRED",
+                       message="Explicit Goal confirmation required.", retryable=False)
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+        raise ApiError(status_code=415, code="STORYPACK_JSON_ONLY",
+                       message="JSON required.", retryable=False)
+
+    # Read bounded bytes rather than accepting an unbounded automatic Pydantic body.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > STORYPACK_LIMIT:
+            raise ApiError(status_code=413, code="STORYPACK_TOO_LARGE",
+                           message="StoryPack input too large.", retryable=False)
+        body.extend(chunk)
+
+    # Reject duplicate keys and nonfinite JSON in the wrapper as well as in the pack.
+    import json
+    from picotoopet_core.domain.storypack import _unique_json_pairs
+
+    def reject_nonfinite(value: str) -> None:
+        raise ValueError("STORY_GOAL_NONFINITE")
+
+    try:
+        decoded = json.loads(
+            bytes(body).decode("utf-8-sig"),
+            object_pairs_hook=_unique_json_pairs,
+            parse_constant=reject_nonfinite,
+        )
+        payload = ScopedStoryGoalRequest.model_validate(decoded)
+    except (ValueError, UnicodeError, RecursionError) as exc:
+        raise ApiError(status_code=422, code="STORY_GOAL_INVALID",
+                       message="Invalid scoped StoryPack request.", retryable=False) from exc
+
+    services = request.app.state.services
+
+    def create() -> GoalRecord:
+        proposal, binding = prepare_scoped_story_goal(payload, services)
+        goal_request = HumanGoalRequest(
+            goal_type="video.creative", objective=proposal["objective"],
+            depth="standard", local_video_preferred=True,
+            owner_subject_key=payload.owner_subject_key,
+        )
+        # One reviewed scope, one idempotent existing Goal; caller cannot set constraints.
+        import hashlib
+        digest = hashlib.sha256(json.dumps(
+            binding, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")).hexdigest()
+        return HumanGoalService(services.autonomous_goals, services.workflows).create(
+            goal_request, idempotency_key="studio-scoped-story-v1-" + digest,
+            scoped_story_binding=binding,
+        )
+
+    try:
+        return await run_in_threadpool(create)
+    except ValueError as exc:
+        code = str(exc)
+        if not code.startswith("STORY_GOAL_"):
+            code = "STORY_GOAL_REJECTED"
+        raise ApiError(status_code=409, code=code,
+                       message="Scoped Goal evidence did not verify.", retryable=False) from exc

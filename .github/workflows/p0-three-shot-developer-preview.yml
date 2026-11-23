@@ -7,9 +7,19 @@ on:
     paths:
       - ".github/workflows/p0-three-shot-developer-preview.yml"
       - "windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1"
+      - "windows/desktop/scripts/QuickCheck-P0ThreeShot.ps1"
       - "windows/desktop/release/Start-SecureMacTunnel.ps1"
       - "windows/desktop/release/CONNECT_MAC_SECURE.vbs"
       - "windows/desktop/src/**"
+      - "scripts/recover_comfy_keyframe_workflow.py"
+      - "scripts/comfy_png_embedded_evidence.py"
+      - "scripts/prepare_local_keyframe_batch.py"
+      - "scripts/qwen_reference_bindings.py"
+      - "scripts/qwen_reference_readiness.py"
+      - "scripts/collect_local_keyframe_outputs.py"
+      - "scripts/offline_png_output_collector.py"
+      - "scripts/audit_local_qwen_pngs.py"
+      - "windows/desktop/scripts/Inspect-QwenKeyframes.ps1"
       - "src/picotoopet_core/product-version.txt"
       - "src/picotoopet_core/creative/**"
       - "tests/creative/**"
@@ -28,6 +38,7 @@ on:
       - "tests/contract/test_p0_secure_ssh_film_preview.py"
       - "scripts/ci/verify_p0_developer_preview.py"
       - "windows/desktop/release/Start-SecureMacTunnel.ps1"
+      - "windows/desktop/scripts/QuickCheck-P0ThreeShot.ps1"
       - "windows/desktop/release/CONNECT_MAC_SECURE.vbs"
       - "windows/desktop/release/Verify-Phase2Prebuilt.ps1"
       - ".github/workflows/windows-phase2-release.yml"
@@ -38,8 +49,9 @@ permissions:
 
 jobs:
   portable-preview:
-    # 其他 PR 不得触发便携包；明确禁止作为正式安装产物。
-    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop'
+    # 其他 PR 不得触发便携包；仅允许本次 #330 统一集成审查构建无签名内部候选。
+    # 必须同时匹配原有精确 head 和本次唯一 base，不扩大其他 PR 的构建权限。
+    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop' || (github.head_ref == 'feat/p0-296-keyframe-thumbnail-review' && github.base_ref == 'integrate/p0-296-film-closed-loop-candidate-20261121') || (github.head_ref == 'feat/p0-330-bundle-offline-qwen-tools-20261122' && github.base_ref == 'fix/p0-330-c009-visual-restart-repeat-20261122') || (github.head_ref == 'feat/p0-330-qwen-one-command-inventory-20261122' && github.base_ref == 'feat/p0-330-qwen-six-png-readonly-inventory-20261122') || (github.head_ref == 'feat/p0-330-jpeg-and-readiness-windows-bundle-20261122' && github.base_ref == 'feat/p0-330-qwen-three-shot-reference-preflight-20261122')
     name: Build unsigned portable WPF candidate without Release Builder
     runs-on: windows-2025
     timeout-minutes: 35
@@ -76,6 +88,22 @@ jobs:
           # 防回退：桌宠必须保持手动、默认不运行，不允许重新阻塞影视架构 CI。
           python -m unittest discover -s tests/contract -p "test_p0_desktop_pet_dormant.py" -v
           if ($LASTEXITCODE -ne 0) { throw 'P0_DESKTOP_PET_DORMANCY_CONTRACT_FAILED' }
+
+          # 01. Run exact-node Qwen JPEG and missing-composition negative
+          #     tests with synthetic CPU data before any preview build.
+          python -m unittest discover -s tests/creative_quality_2026 -p "test_qwen_reference_bindings.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_JPEG_BINDINGS_FAILED' }
+          python -m unittest discover -s tests/creative_quality_2026 -p "test_qwen_reference_readiness.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_SHOT_READINESS_FAILED' }
+
+          # 02. Multiple local seed options still preserve each frozen
+          #     3-shot package and never generate or send GPU prompts.
+          python -m unittest discover -s tests/creative_quality_2026 -p "test_prepare_local_keyframe_batch.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_VARIANT_PREPARATION_FAILED' }
+          # 03. One read-only history snapshot must identify every prepared
+          #     seed graph exactly and produce WPF-compatible review folders.
+          python -m unittest discover -s tests/creative_quality_2026 -p "test_collect_local_keyframe_outputs.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_VARIANT_EVIDENCE_COLLECTOR_FAILED' }
 
           # 原生 Windows 5.1 无联网自检；不得下载密钥、连接 Mac 或触发 Worker。
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/desktop/release/Start-SecureMacTunnel.ps1 -SelfTest
@@ -116,8 +144,120 @@ jobs:
             }
           }
           Copy-Item -LiteralPath 'windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1' -Destination (Join-Path $bundle 'Prepare-P0ThreeShotHold.ps1')
+          Copy-Item -LiteralPath 'windows/desktop/scripts/QuickCheck-P0ThreeShot.ps1' -Destination (Join-Path $bundle 'QuickCheck-P0ThreeShot.ps1')
           Copy-Item -LiteralPath 'windows/desktop/release/CONNECT_MAC_SECURE.vbs' -Destination (Join-Path $bundle 'CONNECT_MAC_SECURE.vbs')
           Copy-Item -LiteralPath 'windows/desktop/release/Start-SecureMacTunnel.ps1' -Destination (Join-Path $bundle 'Start-SecureMacTunnel.ps1')
+          # 01. Ship the exact CPU-only Qwen recovery and image-evidence tools
+          #     with the Windows preview; no model, prompt, or user file included.
+          $toolsDir = Join-Path $bundle 'scripts'
+          New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+          $offlineToolNames = @(
+            'recover_comfy_keyframe_workflow.py'
+            'comfy_png_embedded_evidence.py'
+            'prepare_local_keyframe_batch.py'
+            'qwen_reference_bindings.py'
+            'qwen_reference_readiness.py'
+            'collect_local_keyframe_outputs.py'
+            'offline_png_output_collector.py'
+            'audit_local_qwen_pngs.py'
+          )
+          foreach ($name in $offlineToolNames) {
+            Copy-Item -LiteralPath (Join-Path 'scripts' $name) -Destination (Join-Path $toolsDir $name)
+          }
+          Copy-Item -LiteralPath 'windows/desktop/scripts/Inspect-QwenKeyframes.ps1' -Destination (Join-Path $bundle 'Inspect-QwenKeyframes.ps1')
+
+          # 02. Static --help validates standalone packaged imports only.
+          #     It cannot submit a Comfy request, run a model or enable Worker.
+          $priorPythonPath = $env:PYTHONPATH
+          $priorNoBytecode = $env:PYTHONDONTWRITEBYTECODE
+          Push-Location $bundle
+          try {
+            # 03. Execute from ZIP root with bytecode disabled. Otherwise
+            #     Python writes unapproved scripts/__pycache__ files into the
+            #     portable bundle and exact toolset verification must fail.
+            $env:PYTHONPATH = "$bundle;$toolsDir"
+            $env:PYTHONDONTWRITEBYTECODE = '1'
+            foreach ($name in @('recover_comfy_keyframe_workflow.py', 'prepare_local_keyframe_batch.py', 'collect_local_keyframe_outputs.py')) {
+              python (Join-Path $toolsDir $name) --help *> $null
+              if ($LASTEXITCODE -ne 0) { throw "P0_PREVIEW_OFFLINE_TOOL_IMPORT_FAILED: $name" }
+            }
+            python -c "import scripts.comfy_png_embedded_evidence; import scripts.qwen_reference_bindings; import scripts.qwen_reference_readiness; import scripts.offline_png_output_collector; import scripts.audit_local_qwen_pngs"
+            if ($LASTEXITCODE -ne 0) { throw 'P0_PREVIEW_PACKAGE_NAMESPACE_IMPORT_FAILED' }
+          } finally {
+            $env:PYTHONPATH = $priorPythonPath
+            $env:PYTHONDONTWRITEBYTECODE = $priorNoBytecode
+            Pop-Location
+          }
+          # 04. Forbid any additional .pyc/source/prompt payload; only the
+          #     exact eight intentionally copied CPU-only scripts may be shipped.
+          $actualOfflineFiles = @(Get-ChildItem -LiteralPath $toolsDir -Recurse -File | ForEach-Object { $_.Name })
+          if (($actualOfflineFiles.Count -ne $offlineToolNames.Count) -or
+              (@(Compare-Object -ReferenceObject $offlineToolNames -DifferenceObject $actualOfflineFiles).Count -ne 0)) {
+            throw 'P0_PREVIEW_UNEXPECTED_OFFLINE_TOOL_FILES'
+          }
+          # 05. Exercise the *real bundled* Windows inspection launcher against
+          #     six synthetic Qwen PNGs. No private user files, network, Comfy
+          #     process, model load, installation or GPU are involved.
+          $syntheticOutput = Join-Path $env:RUNNER_TEMP 'synthetic-qwen-comfy-output'
+          New-Item -ItemType Directory -Force -Path $syntheticOutput | Out-Null
+          $previousFixturePath = $env:PYTHONPATH
+          try {
+            $env:PYTHONPATH = "$env:GITHUB_WORKSPACE;$env:GITHUB_WORKSPACE/tests/creative_quality_2026"
+            python -B -c "import sys; from pathlib import Path; from test_audit_local_qwen_pngs import fixtures; fixtures(Path(sys.argv[1]), 6)" $syntheticOutput
+            if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_SYNTHETIC_PNG_FIXTURE_FAILED' }
+          } finally {
+            $env:PYTHONPATH = $previousFixturePath
+          }
+          # 06. Build six referenced input files with synthetic, repeated
+          #     bytes. The audit must observe them but NEVER assign them to
+          #     S2/S3 or claim distinct approved scene compositions.
+          $syntheticInput = Join-Path $env:RUNNER_TEMP 'synthetic-qwen-comfy-input'
+          $previousInputFixturePath = $env:PYTHONPATH
+          try {
+            $env:PYTHONPATH = "$env:GITHUB_WORKSPACE;$env:GITHUB_WORKSPACE/tests/creative_quality_2026"
+            python -B -c "import sys; from pathlib import Path; from test_comfy_png_embedded_evidence import GRAPH,png; p=Path(sys.argv[1]); p.mkdir(); [(p / f'private-input-{n}.png').write_bytes(png(GRAPH)) for n in range(6)]" $syntheticInput
+            if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_SYNTHETIC_INPUT_FIXTURE_FAILED' }
+          } finally {
+            $env:PYTHONPATH = $previousInputFixturePath
+          }
+          $inspector = Join-Path $bundle 'Inspect-QwenKeyframes.ps1'
+          $inspectorOutput = (& pwsh -NoLogo -NoProfile -NonInteractive -File $inspector -OutputRoot $syntheticOutput -InputRoot $syntheticInput -ExpectedCount 6 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or
+              $inspectorOutput -notmatch 'QWEN_INSPECTION=OBSERVED_NEEDS_REVIEW' -or
+              $inspectorOutput -notmatch 'QWEN_REFERENCED_INPUTS=6/6' -or
+              $inspectorOutput -notmatch 'S2_S3_ASSIGNMENT=UNVERIFIED' -or
+              $inspectorOutput -notmatch 'GPU_POST=0') {
+            throw 'P0_QWEN_BUNDLED_LAUNCHER_SMOKE_FAILED'
+          }
+          Write-Host 'P0_QWEN_BUNDLED_LAUNCHER_SMOKE=PASS; INPUT_BYTES=6; S2_S3_ASSIGNMENT=UNVERIFIED; REAL_IMAGES_TOUCHED=0; GPU_POST=0'
+          # 07. Run the actual manual quick-check wrapper on ephemeral CI only.
+          #     It must arm HOLD first and reuse the packaged inspector; no
+          #     local user machine, SSH, Comfy, model or Worker is accessed.
+          $quickCheck = Join-Path $bundle 'QuickCheck-P0ThreeShot.ps1'
+          $quickOutput = (& pwsh -NoLogo -NoProfile -NonInteractive -File $quickCheck -OutputRoot $syntheticOutput -InputRoot $syntheticInput -ExpectedCount 6 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or
+              $quickOutput -notmatch 'P0_HOLD_PREPARED=PASS' -or
+              $quickOutput -notmatch 'QWEN_REFERENCED_INPUTS=6/6' -or
+              $quickOutput -notmatch 'P0_LOCAL_QUICKCHECK=PASS' -or
+              $quickOutput -notmatch 'GPU_HOLD=HOLD' -or
+              $quickOutput -notmatch 'S2_S3_COMPOSITION=UNVERIFIED') {
+            throw 'P0_QUICKCHECK_BUNDLED_NATIVE_SMOKE_FAILED'
+          }
+          Write-Host 'P0_QUICKCHECK_BUNDLED_NATIVE_SMOKE=PASS; HOLD=HOLD; GPU_POST=0'
+          # 08. Removing one *synthetic runner* input must turn an otherwise
+          #     successful six-PNG inspection into a blocked combined check.
+          Remove-Item -LiteralPath (Join-Path $syntheticInput 'private-input-5.png') -Force
+          $blockedQuickCheck = (& pwsh -NoLogo -NoProfile -NonInteractive -File $quickCheck -OutputRoot $syntheticOutput -InputRoot $syntheticInput -ExpectedCount 6 2>$null | Out-String)
+          if ($LASTEXITCODE -eq 0 -or
+              $blockedQuickCheck -notmatch 'P0_LOCAL_QUICKCHECK=BLOCKED' -or
+              $blockedQuickCheck -match 'P0_LOCAL_QUICKCHECK=PASS') {
+            throw 'P0_QUICKCHECK_MISSING_INPUT_NOT_BLOCKED'
+          }
+          Write-Host 'P0_QUICKCHECK_MISSING_INPUT_STOP=PASS; GPU_POST=0'
+          # 09. The nonzero exit code was EXPECTED and asserted above.
+          #     Clear only that verified negative's process status before
+          #     concluding this successful packaging step on GitHub Actions.
+          $global:LASTEXITCODE = 0
           @(
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
             'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'
@@ -132,6 +272,31 @@ jobs:
             'Verify the PowerShell output P0_HOLD_PREPARED=PASS before opening the app.'
             'Do NOT start an existing Worker with unknown Ready Goals or change HOLD to ALLOW until'
             'the exact three-shot Core Job/Plan/Digest has been reviewed and GPU execution is safe.'
+            'Eight scripts/*.py tools are bundled for offline CPU-only inspection, not run automatically.'
+            'Inspect-QwenKeyframes.ps1 is optional, reads existing PVP PNGs and writes only one private report.'
+            'QuickCheck-P0ThreeShot.ps1 is optional: arms permanent HOLD first, then runs the same offline inspector.'
+            'QuickCheck stops if the GUI/Worker is already running, and never resumes or starts any process.'
+            'The existing prepare_local_keyframe_batch.py accepts --variant-count (1..8) for local CPU-only seed alternatives.'
+            'Optional --composition-bootstrap (with --input-root and without --slot-map) prepares Qwen prompt graphs for INITIAL creative composition drafts when S2/S3 independent pictures are absent.'
+            'Bootstrap uses the existing source graph LoadImage references as HISTORICAL GUIDANCE ONLY, never as the S2/S3 outputs.'
+            'When the only authentic Core v2 PASS Creative Package is video.vertical.v1, ONLY --composition-bootstrap --allow-vertical-guidance-for-landscape-drafts can use its frozen prompts as historical creative references for later LANDSCAPE drafts.'
+            'This does not change the original vertical Core ZIP, still prompts, Qwen image dimensions or model nodes; it DOES NOT convert to a landscape package or certify target output geometry.'
+            'Bootstrap manifest reports source_output_profile_id=video.vertical.v1, intended_later_output_profile_id=video.landscape.v1, source_profile_conversion_performed=false and target_geometry_verified=false.'
+            'An original IMAGE_TO_VIDEO shot intent can be retained as HISTORICAL GUIDANCE in bootstrap draft JSON only; it is never converted into GENERATIVE_VIDEO or accepted by strict production input binding.'
+            'Production still requires a new Core creative.content_plan.v2 PASS package with a native video.landscape.v1 brief, separate real S2/S3 images, exact rights, review and approval.'
+
+            'It emits an intentionally different bootstrap manifest schema; the strict candidate collector, reference registration, Owner/GPU/production flow MUST NOT accept it as a finished image batch.'
+            'Manual local creative generation and independent visual selection are still required; this bundle does not generate pixels or issue any Comfy POST.'
+            'Each vNNNN folder is a normal separate three-shot batch for the existing collector; no image is generated.'
+            'collect_local_keyframe_outputs.py --variants-root <prepared-folder> supports --history-snapshot <file> (offline), or explicit --live-history-scan (one read-only GET to 127.0.0.1:8188/history).'
+            'Example from the bundle root: python .\\scripts\\collect_local_keyframe_outputs.py --variants-root C:\\prepared-seeds --live-history-scan --comfy-output-root C:\\ComfyUI\\output --output-dir C:\\new-review'
+            'The live-history option only reads completed recorded outputs from an ALREADY RUNNING Comfy; it does not start Comfy, run Qwen, send a POST, approve images or lift GPU HOLD.'
+            'Its output vNNNN/candidate_manifest.json folders can be selected once from the Windows multi-seed thumbnail review button; no candidate is auto-approved.'
+            'These source tools need Python 3.12; do not install Python or run them for production without review.'
+            'Missing SHOT_002 or SHOT_003 compositions stay BLOCKED; readiness does not create images.'
+            'Qwen JPEG reference files are checked without conversion.'
+            'JPEG references with a real marker-parsed EOI and at most 64 post-EOI bytes remain byte-identical; the full-file SHA256 is pinned, and offline manifests record jpeg_trailing_bytes and jpeg_trailing_sha256 (or null when absent). Bad JPEG markers, missing EOI, wrong SHA, symlinks and tails longer than 64 bytes still STOP.'
+            'They do not fetch models, license creative assets or authorize C009/C011 / Comfy GPU jobs.'
             'Production Comfy/Wan, Ollama, Mac Core, FFmpeg and GPU presence are not validated here.'
           ) | Set-Content -LiteralPath (Join-Path $bundle 'README_P0_DEVELOPER_PREVIEW.txt') -Encoding utf8
 
@@ -155,6 +320,9 @@ jobs:
             hold_script = 'Prepare-P0ThreeShotHold.ps1'
             connection_launcher = 'CONNECT_MAC_SECURE.vbs'
             connection_script = 'Start-SecureMacTunnel.ps1'
+            offline_keyframe_tools = @($offlineToolNames | ForEach-Object { "scripts/$_" })
+            offline_inspector_script = 'Inspect-QwenKeyframes.ps1'
+            local_quickcheck_script = 'QuickCheck-P0ThreeShot.ps1'
             files = $files
           }
           $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $bundle 'preview-manifest.json') -Encoding utf8

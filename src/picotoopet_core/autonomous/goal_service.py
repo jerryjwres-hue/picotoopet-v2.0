@@ -132,10 +132,21 @@ class HumanGoalService:
     def templates() -> list[GoalTemplate]:
         return list(_TEMPLATES)
 
-    def create(self, request: HumanGoalRequest, *, idempotency_key: str) -> GoalRecord:
+    def create(
+        self, request: HumanGoalRequest, *, idempotency_key: str,
+        scoped_story_binding: dict | None = None,
+    ) -> GoalRecord:
         key = idempotency_key.strip()
         if not key:
             raise ValueError("idempotency_key must not be empty")
+        # Server-only binding; the public HumanGoalRequest remains unchanged.
+        if scoped_story_binding is not None and (
+            request.owner_subject_key is None
+            or scoped_story_binding.get("owner_subject_key") != request.owner_subject_key
+            or request.goal_type is not HumanGoalType.VIDEO_CREATIVE
+            or not request.local_video_preferred
+        ):
+            raise ValueError("STORY_GOAL_SCOPE_MISMATCH")
         goal = self.repository.create(
             GoalCreate(
                 origin=GoalOrigin.HUMAN,
@@ -153,6 +164,11 @@ class HumanGoalService:
                         }
                     ),
                     "read_only_research": True,
+                    **(
+                        {"storypack_binding": scoped_story_binding}
+                        if scoped_story_binding is not None
+                        else {}
+                    ),
                     **(
                         {"owner_subject_key": request.owner_subject_key}
                         if request.owner_subject_key is not None
