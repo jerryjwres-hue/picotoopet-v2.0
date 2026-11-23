@@ -86,7 +86,101 @@ def _isolated_graph(graph: dict) -> tuple[str, str, int, str]:
     return _digest(canonical_bytes(normalized)), positive_text, seed, prefix
 
 
-def audit(bootstrap_dir: Path, review_dir: Path) -> dict:
+
+REVIEW_IMAGE_NAME = re.compile(r"^v(\d{4})_([A-Za-z0-9_.-]+)_shot([123])\.png$")
+REVIEW_IMAGE_SHA_FIELDS = (
+    "output_image_sha256", "output_sha256", "image_sha256", "png_sha256",
+    "sha256",
+)
+
+
+def _bind_review_index(review_index: dict, groups: dict[str, dict]) -> dict:
+    """Reconcile original render names with staged evidence by FULL PNG SHA.
+
+    The original owner index is not generated or rewritten here. A renamed
+    copy is valid only if its exact bytes match the original render's SHA.
+    Unknown index schemas remain UNVERIFIED rather than gaining approval.
+    """
+    # 07. Key by (variant, shot order), not a fabricated name or untrusted
+    #     position. The original index may say SHOT_001 while the frozen
+    #     Creative Kit's actual shot_id is "shot1".
+    expected = {
+        (candidate["variant"], group["order"]): (group["shot_id"], candidate)
+        for group in groups.values() for candidate in group["candidates"]
+    }
+    matched: dict[tuple[int, int], dict] = {}
+    undecidable = False
+    stack: list[tuple[object, int]] = [(review_index, 0)]
+    visited = 0
+    while stack:
+        node, depth = stack.pop()
+        visited += 1
+        if depth > 16 or visited > 8192:
+            raise ValueError("COMPOSITION_REVIEW_INDEX_COMPLEXITY_INVALID")
+        if isinstance(node, list):
+            stack.extend((item, depth + 1) for item in node)
+            continue
+        if not isinstance(node, dict):
+            continue
+        stack.extend((item, depth + 1) for item in node.values()
+                     if isinstance(item, (dict, list)))
+        if "output_image" not in node:
+            continue
+        declared_name = node["output_image"]
+        if not isinstance(declared_name, str):
+            undecidable = True
+            continue
+        # 08. Only the basename is read as metadata. It is NEVER used to
+        #     resolve an external path or dereference the original index.
+        basename = declared_name.replace("\\", "/").rsplit("/", 1)[-1]
+        match = REVIEW_IMAGE_NAME.fullmatch(basename)
+        if match is None:
+            undecidable = True
+            continue
+        variant, original_shot_id, order = (
+            int(match.group(1)), match.group(2), int(match.group(3))
+        )
+        key = (variant, order)
+        if key not in expected:
+            raise ValueError("COMPOSITION_REVIEW_INDEX_EXTRA_IMAGE")
+        frozen_shot_id, candidate = expected[key]
+        if original_shot_id not in (frozen_shot_id, f"SHOT_{order:03d}"):
+            raise ValueError("COMPOSITION_REVIEW_INDEX_SHOT_ID_MISMATCH")
+        sha_values = [node[field] for field in REVIEW_IMAGE_SHA_FIELDS
+                      if field in node]
+        if not sha_values:
+            undecidable = True
+            continue
+        if any(_sha(v) != candidate["png_sha256"] for v in sha_values):
+            raise ValueError("COMPOSITION_REVIEW_INDEX_IMAGE_HASH_MISMATCH")
+        if key in matched:
+            raise ValueError("COMPOSITION_REVIEW_INDEX_DUPLICATE_IMAGE")
+        matched[key] = {
+            "variant": variant, "order": order,
+            "shot_id": frozen_shot_id,
+            "original_output_image": basename,
+            "staged_evidence_image": candidate["filename"],
+            "png_sha256": candidate["png_sha256"],
+            "same_bytes_verified": True,
+        }
+
+    # 09. Never elevate an unrecognized/partial index to verified. The
+    #     byte-level six-image graph audit can still stand independently.
+    complete = len(matched) == 6 and not undecidable
+    return {
+        "review_index_output_bindings_verified": complete,
+        "review_index_bound_image_count": len(matched),
+        "review_index_binding_status": (
+            "VERIFIED" if complete else "UNVERIFIED_SCHEMA_OR_COVERAGE"
+        ),
+        "review_index_image_bindings": [
+            matched[key] for key in sorted(matched)
+        ],
+    }
+
+
+def audit(bootstrap_dir: Path, review_dir: Path,
+          source_graph_file: Path | None = None) -> dict:
     """Check exact graphs and image bytes without changing either directory."""
     # 02. Bounded explicit directories only; do not search outside them.
     if (not bootstrap_dir.is_dir() or bootstrap_dir.is_symlink()
@@ -215,21 +309,36 @@ def audit(bootstrap_dir: Path, review_dir: Path) -> dict:
         or any(len(group["candidates"]) != 2 for group in groups.values())):
         raise ValueError("COMPOSITION_REVIEW_COVERAGE_INVALID")
 
-    # 05. The operator's separate review index must exist and be unambiguous
-    #     JSON. Its unknown schema is NOT independently verified Comfy history.
+    # 05. Reconcile the separately preserved review index by exact source
+    #     image hash; original image names may differ from staged copy names.
+    #     This is not a Comfy history API attestation or visual approval.
     local_index = review_dir / "creative_review_index.json"
     local_index_raw = _regular_bytes(local_index, MAX_JSON_BYTES)
-    _json(local_index_raw)
+    bindings = _bind_review_index(_json(local_index_raw), groups)
     local_index_sha = _digest(local_index_raw)
+
+    # 06. Optional independently supplied recovered API graph verifies the
+    #     *source* frozen nodes, not just consistency across the six outputs.
+    #     The original SHA must match every manifest before the comparison.
+    source_graph_checked = False
+    if source_graph_file is not None:
+        source_raw = _regular_bytes(source_graph_file, MAX_JSON_BYTES)
+        source_doc = _json(source_raw)
+        if _digest(source_raw) != common_source:
+            raise ValueError("COMPOSITION_REVIEW_SOURCE_GRAPH_HASH_MISMATCH")
+        if _isolated_graph(source_doc)[0] != common_frozen_graph:
+            raise ValueError("COMPOSITION_REVIEW_SOURCE_GRAPH_FROZEN_MISMATCH")
+        source_graph_checked = True
     return {
         "schema": "picotoo.composition-draft-evidence-audit.v1",
         "bootstrap_index_sha256": _digest(index_raw),
         "creative_review_index_sha256": local_index_sha,
+        **bindings,
         "creative_package_sha256": package_sha,
         "source_graph_sha256": common_source,
         "intra_batch_frozen_graph_sha256": common_frozen_graph,
         "intra_batch_only_prompt_seed_prefix_differ": True,
-        "source_graph_allowlist_independently_verified": False,
+        "source_graph_allowlist_independently_verified": source_graph_checked,
         "candidate_count": len(seen_png_hashes),
         "candidate_groups": [groups[shot] for shot in common_order],
         "image_container_and_embedded_graph_verified": True,
@@ -248,6 +357,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bootstrap-dir", required=True, type=Path)
     parser.add_argument("--review-dir", required=True, type=Path)
+    parser.add_argument("--source-graph-file", type=Path, default=None,
+                        help="Exact recovered workflow_api.json; optional extra source check")
     parser.add_argument("--report-file", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
@@ -261,7 +372,9 @@ def main(argv: list[str] | None = None) -> int:
         if (report.is_relative_to(bootstrap) or report.is_relative_to(review)
             or not report.parent.is_dir()):
             raise ValueError("COMPOSITION_REVIEW_REPORT_DESTINATION_INVALID")
-        result = audit(bootstrap, review)
+        if args.source_graph_file is not None and args.source_graph_file.is_symlink():
+            raise ValueError("COMPOSITION_REVIEW_SOURCE_GRAPH_SYMLINK_INVALID")
+        result = audit(bootstrap, review, args.source_graph_file)
         with report.open("xb") as stream:
             stream.write(canonical_bytes(result))
     except (ValueError, OSError, KeyError, TypeError, IndexError,
