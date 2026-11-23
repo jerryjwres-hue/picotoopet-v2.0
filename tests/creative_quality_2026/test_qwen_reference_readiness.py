@@ -7,11 +7,14 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from qwen_reference_readiness import inspect_readiness  # noqa: E402
-from prepare_local_keyframe_batch import canonical_bytes, prepare, sha  # noqa: E402
+from prepare_local_keyframe_batch import (  # noqa: E402
+    bootstrap_compositions, canonical_bytes, main as prepare_main, prepare, sha,
+)
 from test_qwen_reference_bindings import jpeg, qwen_fixture  # noqa: E402
 
 
@@ -164,6 +167,119 @@ class ThreeShotReadinessTests(unittest.TestCase):
                     graph, recovery, package, "a" * 64, root,
                     composition_node="1", fixed_nodes=("2", "3"),
                 )
+
+    def test_creative_bootstrap_unblocks_first_drafts_without_fake_compositions(self):
+        # 01. Historical S1 guidance can be used to *prepare* three distinct
+        #     prompts, but cannot satisfy strict S2/S3 readiness or approval.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, package = observed_fixture(root)
+            original = copy.deepcopy(graph)
+            before = inspect_readiness(
+                graph, recovery, package, "a" * 64, root,
+                composition_node="1", fixed_nodes=("2", "3"),
+            )
+            self.assertEqual(before["status"], "BLOCKED_MISSING_REFERENCES")
+            prepared, manifest = bootstrap_compositions(
+                graph, recovery, package, "a" * 64, 0, root,
+            )
+            self.assertEqual(len(prepared), 3)
+            self.assertEqual(manifest["schema"],
+                             "picotoo.local-composition-bootstrap-dry-run.v1")
+            self.assertEqual(len(manifest["historical_reference_inputs"]), 3)
+            self.assertTrue(manifest["historical_composition_reused_as_guidance_only"])
+            for key in ("source_inputs_verified", "reference_approved",
+                        "production_authorized", "workflow_registered",
+                        "distinct_shot_compositions_observed"):
+                self.assertFalse(manifest[key])
+            self.assertEqual(manifest["gpu_post"], 0)
+            self.assertEqual(len({entry["seed"] for entry in manifest["shots"]}), 3)
+            for entry in manifest["shots"]:
+                payload = prepared[entry["graph_file"]]
+                draft = json.loads(payload)
+                self.assertEqual(sha(payload), entry["graph_sha256"])
+                self.assertEqual(draft["7"]["inputs"]["prompt"],
+                                 f"Opening state {entry['order']}")
+                self.assertIn("/composition_bootstrap/",
+                              draft["14"]["inputs"]["filename_prefix"])
+                for frozen in ("1", "2", "3", "4", "8"):
+                    self.assertEqual(draft[frozen], original[frozen])
+                self.assertIsNone(entry["generated_composition"])
+                self.assertEqual(entry["human_visual_review"], "NOT_PERFORMED")
+            self.assertEqual(graph, original)
+            after = inspect_readiness(
+                graph, recovery, package, "a" * 64, root,
+                composition_node="1", fixed_nodes=("2", "3"),
+            )
+            self.assertEqual(after["status"], "BLOCKED_MISSING_REFERENCES")
+            self.assertIsNone(after["binding_proposal"])
+            (root / "REF_DOG_A_001.jpg").write_bytes(b"tampered")
+            with self.assertRaises(ValueError):
+                bootstrap_compositions(graph, recovery, package, "a" * 64, 0, root)
+
+    def test_bootstrap_cli_multi_seed_is_offline_unapproved_and_nonoverwriting(self):
+        # 02. Reuse the existing producer and CLI. The output schema is
+        #     deliberately NOT accepted as a strict production keyframe batch.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, package = observed_fixture(root)
+            archive = root / "creative.zip"
+            with zipfile.ZipFile(archive, "w") as z:
+                z.writestr(f"{package['creative_package_id']}/creative-package.json",
+                           canonical_bytes(package))
+            digest = sha(archive.read_bytes())
+            (root / "workflow_api.json").write_bytes(canonical_bytes(graph))
+            (root / "recovery_manifest.json").write_bytes(canonical_bytes(recovery))
+            args = [
+                "--package", str(archive), "--package-sha256", digest,
+                "--recovery-dir", str(root), "--composition-bootstrap",
+                "--input-root", str(root), "--variant", "5",
+                "--variant-count", "2",
+            ]
+            output = root / "bootstrap_variants"
+            self.assertEqual(prepare_main(args + ["--output-dir", str(output)]), 0)
+            self.assertEqual(prepare_main(args + ["--output-dir", str(output)]), 1)
+            index = json.loads((output / "variant_index.json").read_bytes())
+            self.assertEqual(index["schema"],
+                             "picotoo.local-composition-bootstrap-index.v1")
+            self.assertEqual(index["variant_count"], 2)
+            self.assertFalse(index["production_authorized"])
+            self.assertEqual(index["gpu_post"], 0)
+            self.assertEqual(
+                sorted(x.name for x in output.iterdir()),
+                ["v0005", "v0006", "variant_index.json"],
+            )
+            seeds = set()
+            for item in index["variants"]:
+                folder_path = output / item["relative_directory"]
+                manifest_bytes = (folder_path / "batch_manifest.json").read_bytes()
+                self.assertEqual(item["batch_manifest_sha256"], sha(manifest_bytes))
+                manifest = json.loads(manifest_bytes)
+                self.assertEqual(manifest["schema"],
+                                 "picotoo.local-composition-bootstrap-dry-run.v1")
+                self.assertFalse(manifest["distinct_shot_compositions_observed"])
+                self.assertFalse(manifest["production_authorized"])
+                self.assertEqual(manifest["gpu_post"], 0)
+                self.assertEqual(len(manifest["shots"]), 3)
+                for shot in manifest["shots"]:
+                    seeds.add(shot["seed"])
+                    raw = (folder_path / shot["graph_file"]).read_bytes()
+                    self.assertEqual(sha(raw), shot["graph_sha256"])
+            self.assertEqual(len(seeds), 6)
+
+            # 03. An invalid mixing of bootstrap and strict bindings cannot
+            #     write any directory or accidentally create approved assets.
+            for name, extra in (
+                ("wrong_args", ["--slot-map", str(root / "unknown.json")]),
+                ("bad_variant", ["--variant-count", "9"]),
+            ):
+                with self.subTest(name=name):
+                    target = root / name
+                    self.assertEqual(
+                        prepare_main(args + extra + ["--output-dir", str(target)]),
+                        1,
+                    )
+                    self.assertFalse(target.exists())
 
     def test_distinct_new_compositions_produce_unapproved_strict_slot_map(self):
         with tempfile.TemporaryDirectory() as folder:
