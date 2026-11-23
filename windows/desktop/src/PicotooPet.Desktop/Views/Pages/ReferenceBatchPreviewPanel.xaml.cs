@@ -88,8 +88,27 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         }
     }
 
-    // 01. 只复制封存 Creative Kit 的镜头提示词；不发送到 Comfy、Core 或其他服务。
-    //     用户自行决定何时使用该文本，不能通过复制绕过现有审批门禁。
+    // 03. Copy the single frozen three-shot director handoff, preserving
+    //     exact per-shot prompts and cut continuity without any API/GPU call.
+    private void CopyThreeShotBrief_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm
+            || !vm.CanCopyFrozenThreeShotBrief) return;
+        try
+        {
+            System.Windows.Clipboard.SetText(vm.BuildFrozenThreeShotBrief());
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "三镜头封存构图交接单已复制；图片、许可、审批和 GPU 授权仍需独立核实。");
+        }
+        catch (Exception)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "剪贴板不可用；封存三镜头 Prompt 和连续性说明仍可在上方阅读。");
+        }
+    }
+
+    // 04. Only copy the exact frozen Creative Kit still prompt.
+    //     No local Qwen observation or approval can rewrite its text.
     private void CopyCompositionPrompt_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm

@@ -28,9 +28,16 @@
    <Expander Header="三镜头构图准备（封存导演指令 · 未审批）" Margin="0,12,0,0" IsExpanded="True">
     <StackPanel>
      <TextBlock Text="三镜头的原始提示词、场景和机位随封存创意包直接显示。未载入本地证据时显示 UNVERIFIED；读取 Qwen readiness 报告仅补充历史构图状态，绝不确认画质、使用权或 GPU 授权。" TextWrapping="Wrap" Margin="0,0,0,8"/>
-     <Button x:Name="LoadCompositionWorkOrderButton" Content="核对本地 Qwen 构图报告（可选）..." Padding="12,6"
-             HorizontalAlignment="Left" IsEnabled="{Binding CanLoadCompositionWorkOrder, FallbackValue=False}"
-             Click="LoadCompositionWorkOrder_Click" Margin="0,0,0,8"/>
+     <WrapPanel Margin="0,0,0,8">
+      <!-- 01. One-click text handoff; the source is the immutable three-shot
+           Creative Kit, not untrusted local Qwen observation reports. -->
+      <Button x:Name="CopyThreeShotBriefButton" Content="复制完整三镜头构图交接单" Padding="12,6"
+              IsEnabled="{Binding CanCopyFrozenThreeShotBrief, FallbackValue=False}"
+              Click="CopyThreeShotBrief_Click" Margin="0,0,8,0"/>
+      <Button x:Name="LoadCompositionWorkOrderButton" Content="核对本地 Qwen 构图报告（可选）..." Padding="12,6"
+              IsEnabled="{Binding CanLoadCompositionWorkOrder, FallbackValue=False}"
+              Click="LoadCompositionWorkOrder_Click"/>
+     </WrapPanel>
      <TextBlock Text="逐镜选图沿用下方的来源声明：真实本人提供的原图选择 USER_SUPPLIED；本地生成或第三方图片必须正确声明 LICENSED 并提供许可/来源摘要。逐镜按钮不会自动批准。" TextWrapping="Wrap" Margin="0,0,0,8"/>
      <ItemsControl x:Name="CompositionWorkOrderList" ItemsSource="{Binding CompositionWorkOrders}">
       <ItemsControl.ItemTemplate>

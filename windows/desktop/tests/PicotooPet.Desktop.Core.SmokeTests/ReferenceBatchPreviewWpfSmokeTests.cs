@@ -53,6 +53,8 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
         SmokeAssert.True(panel.FindName("SourceComboBox") is ComboBox, "Explicit source declaration is missing");
         SmokeAssert.True(panel.FindName("SourceDigestTextBox") is TextBox, "Licensed-source digest input is missing");
         SmokeAssert.True(panel.FindName("ChooseReferenceButton") is Button, "Native file selection is missing");
+        SmokeAssert.True(panel.FindName("CopyThreeShotBriefButton") is Button,
+            "One-click frozen three-shot director handoff is missing");
         SmokeAssert.True(panel.FindName("LoadObservedCandidatesButton") is Button,
             "Read-only Comfy candidate list import is missing");
         SmokeAssert.True(panel.FindName("RestoreReferenceBatchButton") is Button,
@@ -342,6 +344,25 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Show the frozen camera framing beside the per-shot brief");
             SmokeAssert.Equal("Lock bowl", vm.CompositionWorkOrders[2].ReviewChecklist,
                 "Review checklist must appear without a Qwen local report");
+            // 02. One-click handoff is source-bound, contains all three
+            //     exact still prompts and state locks, never inferred Qwen data.
+            SmokeAssert.True(vm.CanCopyFrozenThreeShotBrief,
+                "Three-shot frozen director handoff should be available without a readiness report");
+            var frozenHandoff = vm.BuildFrozenThreeShotBrief();
+            SmokeAssert.True(frozenHandoff.Contains("===== 1/3 | shot-1 =====", StringComparison.Ordinal)
+                && frozenHandoff.Contains("===== 2/3 | shot-2 =====", StringComparison.Ordinal)
+                && frozenHandoff.Contains("===== 3/3 | shot-3 =====", StringComparison.Ordinal),
+                "The one-click handoff must contain exactly the original three ordered shot briefs");
+            SmokeAssert.True(frozenHandoff.Contains("Opening pose two", StringComparison.Ordinal)
+                && frozenHandoff.Contains("统一场景：kitchen-scene", StringComparison.Ordinal)
+                && frozenHandoff.Contains("镜头构图：close-up", StringComparison.Ordinal)
+                && frozenHandoff.Contains("起始状态：paw approaches bowl", StringComparison.Ordinal)
+                && frozenHandoff.Contains("结束状态：paw touches bowl", StringComparison.Ordinal)
+                && frozenHandoff.Contains("人工视觉检查清单：", StringComparison.Ordinal),
+                "Handoff must preserve exact frozen prompt, scene, camera, continuity and review criteria");
+            SmokeAssert.True(!frozenHandoff.Contains("OBSERVED_UNAPPROVED", StringComparison.Ordinal)
+                && !frozenHandoff.Contains("NEEDS_DISTINCT_COMPOSITION", StringComparison.Ordinal),
+                "Untrusted local observation statuses must never contaminate the director handoff");
             SmokeAssert.Equal(0, vm.Items.Count, "Frozen briefs cannot stage images");
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Frozen briefs cannot create Core approvals");
             SmokeAssert.Equal("Opening pose two", vm.KeyframeInstructions[1].StillPrompt, "Preserve Core prompts");
@@ -404,6 +425,10 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             workOrderPanel.Arrange(new Rect(0, 0, 1000, 700));
             workOrderPanel.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            var copyAll = (Button)workOrderPanel.FindName("CopyThreeShotBriefButton");
+            SmokeAssert.True(copyAll.IsEnabled, "The frozen three-shot handoff should be one click");
+            SmokeAssert.Equal(frozenHandoff, vm.BuildFrozenThreeShotBrief(),
+                "Loading an external Qwen status report must not rewrite the director handoff");
             var visibleWorkOrders = (ItemsControl)workOrderPanel.FindName("CompositionWorkOrderList");
             SmokeAssert.Equal(3, visibleWorkOrders.Items.Count,
                 "Existing WPF review screen must display all three frozen work orders");

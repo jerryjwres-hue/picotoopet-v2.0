@@ -144,6 +144,41 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public bool CanEdit => !IsBusy && _frozenRequest is null;
     public bool CanLoadObservedCandidates => CanEdit && _p0PlanCandidate;
     public bool CanLoadCompositionWorkOrder => CanEdit && _p0PlanCandidate;
+    // 02. Export is solely a copy of frozen source data, even after a
+    //     request is locked; it does not mutate state or authorize GPU.
+    public bool CanCopyFrozenThreeShotBrief => _p0PlanCandidate;
+    public string BuildFrozenThreeShotBrief()
+    {
+        if (!CanCopyFrozenThreeShotBrief || KeyframeInstructions.Count != 3)
+            throw new InvalidDataException("REFERENCE_FROZEN_BRIEF_NOT_ELIGIBLE");
+        var text = new List<string>
+        {
+            "PicotooPet | 封存三镜头构图交接单",
+            "仅用于本地人工构图；无图像质量、素材权利、Owner 审批或 GPU 授权结论。",
+            "所有 Still Prompt 均为封存 Creative Kit 原文；连续性信息来自同一封存 Video Bible。"
+        };
+        for (var index = 0; index < KeyframeInstructions.Count; index++)
+        {
+            var item = KeyframeInstructions[index];
+            text.Add(string.Empty);
+            text.Add($"===== {index + 1}/3 | {item.ShotId} =====");
+            if (!string.IsNullOrWhiteSpace(item.SceneId))
+                text.Add("统一场景：" + item.SceneId);
+            if (!string.IsNullOrWhiteSpace(item.CameraFraming))
+                text.Add("镜头构图：" + item.CameraFraming);
+            if (!string.IsNullOrWhiteSpace(item.OpeningState))
+                text.Add("起始状态：" + item.OpeningState);
+            if (!string.IsNullOrWhiteSpace(item.ClosingState))
+                text.Add("结束状态：" + item.ClosingState);
+            if (!string.IsNullOrWhiteSpace(item.HandoffToNext))
+                text.Add("镜头衔接：" + item.HandoffToNext);
+            text.Add("封存首帧 Still Prompt（原文）：");
+            text.Add(item.StillPrompt);
+            text.Add("人工视觉检查清单：");
+            text.Add(item.ReviewChecklist);
+        }
+        return string.Join("\n", text);
+    }
     public bool CanResumeReferenceBatch => CanLoadObservedCandidates
         && _initialReceipt is null && Items.Count == 0;
     public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
