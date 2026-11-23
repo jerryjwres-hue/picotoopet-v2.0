@@ -6,6 +6,7 @@ Creative package, calls ComfyUI, or authorizes production GPU work.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import re
@@ -13,6 +14,7 @@ import stat
 import sys
 from pathlib import Path
 
+from scripts.audit_local_qwen_pngs import _links
 from scripts.comfy_png_embedded_evidence import MAX_PNG_BYTES, recover_embedded_png
 from scripts.recover_comfy_keyframe_workflow import canonical_bytes, parse_history
 
@@ -51,6 +53,39 @@ def _sha(value: object) -> str:
     return value
 
 
+def _isolated_graph(graph: dict) -> tuple[str, str, int, str]:
+    """Mask only positive Qwen prompt, KSampler seed, and SaveImage prefix."""
+    # 02a. Resolve positive through explicit links so the negative prompt
+    #      cannot be altered under the guise of an allowed creative change.
+    if not isinstance(graph, dict) or not 1 <= len(graph) <= 512:
+        raise ValueError("COMPOSITION_REVIEW_QWEN_GRAPH_INVALID")
+    samplers = [n for n, v in graph.items()
+                if v.get("class_type") == "KSampler"
+                and type(v.get("inputs", {}).get("seed")) is int]
+    saves = [n for n, v in graph.items()
+             if v.get("class_type") == "SaveImage"
+             and isinstance(v.get("inputs", {}).get("filename_prefix"), str)]
+    qwen = {n for n, v in graph.items()
+            if v.get("class_type") == "TextEncodeQwenImageEditPlus"
+            and isinstance(v.get("inputs", {}).get("prompt"), str)}
+    if len(samplers) != 1 or len(saves) != 1 or len(qwen) != 2:
+        raise ValueError("COMPOSITION_REVIEW_QWEN_LAYOUT_INVALID")
+    sampler = graph[samplers[0]]["inputs"]
+    pos = qwen & _links(graph, sampler.get("positive"))
+    neg = qwen & _links(graph, sampler.get("negative"))
+    if len(pos) != 1 or len(neg) != 1 or pos == neg:
+        raise ValueError("COMPOSITION_REVIEW_QWEN_LINKS_INVALID")
+    positive_id = next(iter(pos))
+    positive_text = graph[positive_id]["inputs"]["prompt"]
+    seed = sampler["seed"]
+    prefix = graph[saves[0]]["inputs"]["filename_prefix"]
+    normalized = copy.deepcopy(graph)
+    normalized[positive_id]["inputs"]["prompt"] = "<ALLOWED_POSITIVE_PROMPT>"
+    normalized[samplers[0]]["inputs"]["seed"] = 0
+    normalized[saves[0]]["inputs"]["filename_prefix"] = "<ALLOWED_OUTPUT_PREFIX>"
+    return _digest(canonical_bytes(normalized)), positive_text, seed, prefix
+
+
 def audit(bootstrap_dir: Path, review_dir: Path) -> dict:
     """Check exact graphs and image bytes without changing either directory."""
     # 02. Bounded explicit directories only; do not search outside them.
@@ -75,6 +110,7 @@ def audit(bootstrap_dir: Path, review_dir: Path) -> dict:
     groups: dict[str, dict] = {}
     common_order: list[str] | None = None
     common_source: str | None = None
+    common_frozen_graph: str | None = None
 
     for entry in variants:
         # 03. Require two exact variant directory names without path traversal.
@@ -145,12 +181,18 @@ def audit(bootstrap_dir: Path, review_dir: Path) -> dict:
                 or proof.get("source_image_sha256") != png_sha):
                 raise ValueError("COMPOSITION_REVIEW_EMBEDDED_GRAPH_INVALID")
             graph = _json(embedded)
-            seeds = [node["inputs"]["seed"] for node in graph.values()
-                     if (isinstance(node, dict) and node.get("class_type") == "KSampler"
-                         and isinstance(node.get("inputs"), dict)
-                         and type(node["inputs"].get("seed")) is int)]
-            if seeds != [shot["seed"]]:
-                raise ValueError("COMPOSITION_REVIEW_SEED_MISMATCH")
+            frozen_sha, prompt, graph_seed, prefix = _isolated_graph(graph)
+            if common_frozen_graph is not None and common_frozen_graph != frozen_sha:
+                raise ValueError("COMPOSITION_REVIEW_FROZEN_GRAPH_CHANGED")
+            common_frozen_graph = frozen_sha
+            expected_prefix = (
+                f"PicotooPet/composition_bootstrap/{package_sha[:16]}/"
+                f"{shot_id}/v{variant:04d}"
+            )
+            if (graph_seed != shot["seed"]
+                or _digest(prompt.encode("utf-8")) != _sha(shot.get("still_prompt_sha256"))
+                or prefix != expected_prefix):
+                raise ValueError("COMPOSITION_REVIEW_PROMPT_SEED_PATH_MISMATCH")
             group = groups.setdefault(shot_id, {
                 "shot_id": shot_id, "order": order, "candidates": [],
             })
@@ -185,6 +227,9 @@ def audit(bootstrap_dir: Path, review_dir: Path) -> dict:
         "creative_review_index_sha256": local_index_sha,
         "creative_package_sha256": package_sha,
         "source_graph_sha256": common_source,
+        "intra_batch_frozen_graph_sha256": common_frozen_graph,
+        "intra_batch_only_prompt_seed_prefix_differ": True,
+        "source_graph_allowlist_independently_verified": False,
         "candidate_count": len(seen_png_hashes),
         "candidate_groups": [groups[shot] for shot in common_order],
         "image_container_and_embedded_graph_verified": True,
