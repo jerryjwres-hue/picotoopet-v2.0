@@ -38,6 +38,16 @@ internal static class CoordinatorIntegrationTests
         }
         using (var fixture = new Fixture())
         {
+            await fixture.DurableMasterVisualFailureSuppressesUnchangedRestartAsync()
+                .ConfigureAwait(false);
+        }
+        using (var fixture = new Fixture())
+        {
+            await fixture.TransientMasterFailureNeverPersistsNegativeMemoAsync()
+                .ConfigureAwait(false);
+        }
+        using (var fixture = new Fixture())
+        {
             await fixture.SwitchAndCancellationAsync().ConfigureAwait(false);
         }
         using (var fixture = new Fixture())
@@ -130,6 +140,7 @@ internal static class CoordinatorIntegrationTests
         private readonly GoalDeliveryCandidateVerifier _verifier;
         private readonly FakeLauncher _launcher = new();
         private bool _failMaster;
+        private bool _failVisualMaster;
         private bool _delayFirstAssembler;
         private readonly TaskCompletionSource<bool> _releaseFirst = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _assembleCallCount;
@@ -194,6 +205,119 @@ internal static class CoordinatorIntegrationTests
             Check(!coordinator.CurrentSnapshot.CanOpen, "required failure cannot open C004");
             Check(!await coordinator.OpenCurrentAsync().ConfigureAwait(false), "master failure never falls back");
             Check(_launcher.Opens == 0, "required failure cannot launch");
+        }
+
+        public async Task DurableMasterVisualFailureSuppressesUnchangedRestartAsync()
+        {
+            const string goal = "visual-failure-goal";
+            const string job = "visual-failure-job";
+            var continuation = Continuation(goal, job);
+            var memo = new MasterVisualFailureMemoStore(
+                Path.Combine(_root, "visual-failure-memo"), _finalRoot,
+                Path.Combine(_root, "Overlay"));
+            _failVisualMaster = true;
+
+            // 01. The first attempt produces a real typed deterministic
+            //     C009A visual-invalid error, never a C004 fallback or QA PASS.
+            await using (var first = NewCoordinator(true, false, memo))
+            {
+                await AwaitPhaseAsync(first, goal, continuation, GoalDeliveryPhase.Failed)
+                    .ConfigureAwait(false);
+                Check(!first.CurrentSnapshot.CanOpen, "master visual failure cannot open");
+            }
+            Check(_composeCalls == 1, "first deterministic visual validation executed once");
+            var memoDirectory = Path.Combine(_root, "visual-failure-memo");
+            var receipts = Directory.GetFiles(memoDirectory, "*.json");
+            Check(receipts.Length == 1, "one negative failure memo after deterministic C009");
+            var receiptText = await File.ReadAllTextAsync(receipts[0]).ConfigureAwait(false);
+            Check(receiptText.Contains(MasterCompositionException.VisualInvalid,
+                    StringComparison.Ordinal)
+                && !receiptText.Contains(_finalRoot, StringComparison.Ordinal)
+                && !receiptText.Contains(job, StringComparison.Ordinal)
+                && !receiptText.Contains("PASS", StringComparison.Ordinal),
+                "memo stores only a negative bounded code and input fingerprint");
+
+            // 02. A new headless process sees the *same source bytes* and must
+            //     not repeat a doomed C009 composer call.
+            await using (var second = NewCoordinator(true, false, memo))
+            {
+                await AwaitPhaseAsync(second, goal, continuation, GoalDeliveryPhase.Failed)
+                    .ConfigureAwait(false);
+                Check(!second.CurrentSnapshot.CanOpen, "unchanged C009 still denied");
+            }
+            Check(_composeCalls == 1, "unchanged inputs must skip repeated C009 work");
+
+            // 03. Repairing a managed *path* with identical bytes also changes
+            //     the fingerprint, because an invalid path can cause C009A
+            //     to reject otherwise intact media.
+            var oldArtifact = await MakeFallbackAsync(job).ConfigureAwait(false);
+            var oldInput = new MasterCompositionInputV1(
+                oldArtifact, NarrationPlan(job, true), null, OverlayPlan(job, false), null);
+            var oldFingerprint = await memo.CaptureFingerprintAsync(
+                oldInput, CancellationToken.None).ConfigureAwait(false);
+            Check(oldFingerprint is not null
+                && await memo.WasAlreadyFailedAsync(
+                    goal, job, oldFingerprint, CancellationToken.None).ConfigureAwait(false),
+                "negative memo should match exactly the original managed input");
+            var movedMovie = Path.Combine(_finalRoot, "path-repair.mp4");
+            var movedManifest = Path.Combine(_finalRoot, "path-repair.json");
+            File.Copy(oldArtifact.FilePath, movedMovie);
+            File.Copy(oldArtifact.ManifestPath, movedManifest);
+            var correctedInput = oldInput with
+            {
+                C004 = oldArtifact with
+                {
+                    FilePath = movedMovie,
+                    ManifestPath = movedManifest,
+                },
+            };
+            var repairedPathFingerprint = await memo.CaptureFingerprintAsync(
+                correctedInput, CancellationToken.None).ConfigureAwait(false);
+            Check(repairedPathFingerprint is not null && repairedPathFingerprint != oldFingerprint
+                && !await memo.WasAlreadyFailedAsync(
+                    goal, job, repairedPathFingerprint, CancellationToken.None).ConfigureAwait(false),
+                "changed managed file path must not be permanently suppressed");
+
+            // 04. Repairing a managed source changes actual bytes. A new
+            //     process re-validates and may produce the QA-gated master.
+            var movie = Path.Combine(_finalRoot, "final-" + Sha(job)[..32] + ".mp4");
+            await File.AppendAllTextAsync(movie, "-repaired").ConfigureAwait(false);
+            _failVisualMaster = false;
+            await using (var repaired = NewCoordinator(true, false, memo))
+            {
+                await AwaitPhaseAsync(repaired, goal, continuation, GoalDeliveryPhase.DeliveryReady)
+                    .ConfigureAwait(false);
+                Check(repaired.CurrentSnapshot.CanOpen,
+                    "repair still requires fresh C011 QA approval");
+            }
+            Check(_composeCalls == 2, "changed upstream bytes must allow exactly one recheck");
+            Check(_qaCalls >= 1, "repaired content must pass the existing QA step");
+        }
+
+        public async Task TransientMasterFailureNeverPersistsNegativeMemoAsync()
+        {
+            const string goal = "transient-failure-goal";
+            const string job = "transient-failure-job";
+            var continuation = Continuation(goal, job);
+            var memo = new MasterVisualFailureMemoStore(
+                Path.Combine(_root, "transient-failure-memo"), _finalRoot,
+                Path.Combine(_root, "Overlay"));
+            _failMaster = true;
+            await using (var first = NewCoordinator(true, false, memo))
+            {
+                await AwaitPhaseAsync(first, goal, continuation, GoalDeliveryPhase.Failed)
+                    .ConfigureAwait(false);
+            }
+            await using (var retry = NewCoordinator(true, false, memo))
+            {
+                await AwaitPhaseAsync(retry, goal, continuation, GoalDeliveryPhase.Failed)
+                    .ConfigureAwait(false);
+            }
+            // 04. Unknown/transient errors may recur at a new process start;
+            //     they do not become an invented terminal visual-invalid.
+            Check(_composeCalls == 2, "nonvisual failure must not become sticky");
+            Check(!Directory.Exists(Path.Combine(_root, "transient-failure-memo")),
+                "nonvisual failure must never persist a C009 visual memo");
         }
 
         public async Task RestartFromDurableFilesAsync()
@@ -267,7 +391,8 @@ internal static class CoordinatorIntegrationTests
             Check(_launcher.Opens == 0, "shutdown cancellation cannot open");
         }
 
-        private PostProductionDeliveryCoordinator NewCoordinator(bool narration, bool overlays)
+        private PostProductionDeliveryCoordinator NewCoordinator(
+            bool narration, bool overlays, MasterVisualFailureMemoStore? memo = null)
         {
             var assembler = new FakeAssembler(async (job, ct) =>
             {
@@ -290,6 +415,8 @@ internal static class CoordinatorIntegrationTests
                 {
                     Interlocked.Increment(ref _composeCalls);
                     if (_failMaster) throw new InvalidOperationException("synthetic master unavailable");
+                    if (_failVisualMaster) throw new MasterCompositionException(
+                        MasterCompositionException.VisualInvalid);
                     if (input.NarrationPlan.Plan.NarrationRequired
                         || input.OverlayPlan.Plan.OverlaysRequired)
                     {
@@ -301,7 +428,8 @@ internal static class CoordinatorIntegrationTests
                 },
                 _verifier, _launcher,
                 _qaWired ? AuthorityAsync : null,
-                _qaWired ? VerifyQaAsync : null);
+                _qaWired ? VerifyQaAsync : null,
+                visualFailureMemo: memo);
         }
 
         // ── Test-scoped C011 authority: contract-consistent Core facts, stable per job ──

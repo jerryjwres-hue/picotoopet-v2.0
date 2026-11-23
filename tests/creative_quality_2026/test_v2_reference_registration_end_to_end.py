@@ -155,6 +155,23 @@ def test_incomplete_or_foreign_v2_refs_fail_before_writing_approval(live) -> Non
     assert case.counts() == (0, 0)
 
 
+def test_sealed_v2_full_batch_rejects_renamed_duplicate_image_bytes(live) -> None:
+    case, _, register, _ = live
+    payload = _payload(case)
+    first, second = payload["selected_references"][:2]
+    # 01. Different valid managed paths and shot names still refer to
+    #     the same claimed bytes. Keep the first-shot pilot unchanged.
+    second["sha256"] = first["sha256"]
+    second["input_relative_path"] = (
+        f"PicotooPet/references/{first['sha256']}/{second['shot_id']}.png"
+    )
+    request = ReferenceBatchRequestV1.model_validate(payload)
+    with pytest.raises(ApprovalError, match="REFERENCE_V2_DUPLICATE_IMAGE_BYTES"):
+        register.register(request, idempotency_key="v2-duplicate-sha-different-shot")
+    assert case.rt.database.scalar("SELECT COUNT(*) FROM approvals") == 0
+    assert case.counts() == (0, 0)
+
+
 def test_false_goal_digest_and_managed_path_never_register(live) -> None:
     case, _, register, _ = live
     source = _payload(case)

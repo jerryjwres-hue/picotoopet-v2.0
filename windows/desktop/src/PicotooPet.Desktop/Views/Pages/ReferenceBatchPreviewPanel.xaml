@@ -24,18 +24,100 @@
      </ItemsControl.ItemTemplate>
     </ItemsControl>
    </Expander>
-   <Expander Header="本地 ComfyUI 首帧候选（需人工审核）" Margin="0,12,0,0">
+   <!-- 直接从封存 Creative Kit 填充三镜头工作卡；外部报告只更新本地观察状态。 -->
+   <Expander Header="三镜头构图准备（封存导演指令 · 未审批）" Margin="0,12,0,0" IsExpanded="True">
     <StackPanel>
-     <TextBlock Text="候选清单只显示历史结果，不证明图像质量或使用权。本地 AI 输出不能自动归类为 USER_SUPPLIED；使用前须提供 LICENSED 来源凭据 SHA-256。" TextWrapping="Wrap" Margin="0,0,0,7"/>
-     <Button x:Name="LoadObservedCandidatesButton" Content="读取本地候选清单..." Padding="12,6"
-             HorizontalAlignment="Left" IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
-             Click="LoadObservedCandidates_Click" Margin="0,0,0,8"/>
-     <ItemsControl x:Name="ObservedCandidatesList" ItemsSource="{Binding ObservedCandidates}">
+     <TextBlock Text="三镜头的原始提示词、场景和机位随封存创意包直接显示。未载入本地证据时显示 UNVERIFIED；读取 Qwen readiness 报告仅补充历史构图状态，绝不确认画质、使用权或 GPU 授权。" TextWrapping="Wrap" Margin="0,0,0,8"/>
+     <WrapPanel Margin="0,0,0,8">
+      <!-- 01. One-click text handoff; the source is the immutable three-shot
+           Creative Kit, not untrusted local Qwen observation reports. -->
+      <Button x:Name="CopyThreeShotBriefButton" Content="复制完整三镜头构图交接单" Padding="12,6"
+              IsEnabled="{Binding CanCopyFrozenThreeShotBrief, FallbackValue=False}"
+              Click="CopyThreeShotBrief_Click" Margin="0,0,8,0"/>
+      <Button x:Name="LoadCompositionWorkOrderButton" Content="核对本地 Qwen 构图报告（可选）..." Padding="12,6"
+              IsEnabled="{Binding CanLoadCompositionWorkOrder, FallbackValue=False}"
+              Click="LoadCompositionWorkOrder_Click"/>
+     </WrapPanel>
+     <TextBlock Text="逐镜选图沿用下方的来源声明：真实本人提供的原图选择 USER_SUPPLIED；本地生成或第三方图片必须正确声明 LICENSED 并提供许可/来源摘要。逐镜按钮不会自动批准。" TextWrapping="Wrap" Margin="0,0,0,8"/>
+     <ItemsControl x:Name="CompositionWorkOrderList" ItemsSource="{Binding CompositionWorkOrders}">
       <ItemsControl.ItemTemplate>
        <DataTemplate>
         <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8" Margin="0,0,0,5">
          <StackPanel>
           <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding Status, StringFormat=历史构图观察（未审批）：{0}}" TextWrapping="Wrap"/>
+          <!-- 05. Stage state is based on locally verified snapshot bytes,
+               not the historical/untrusted Qwen readiness status above. -->
+          <TextBlock Text="{Binding LocalSelectionStatus, StringFormat=本地选图：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding LocalSelectionSha256, StringFormat=已选快照 SHA-256：{0}}"
+                     FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding SceneId, StringFormat=封存场景：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding CameraFraming, StringFormat=封存机位：{0}}" TextWrapping="Wrap"/>
+          <!-- 04. Show source-bound story state transitions before choosing S2/S3.
+               These read-only notes do not imply any image has been produced. -->
+          <TextBlock Text="{Binding OpeningState, StringFormat=镜头开始：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding ClosingState, StringFormat=镜头结束：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding HandoffToNext, StringFormat=衔接下一镜：{0}}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding ExistingFilename, StringFormat=历史输入（未批准）：{0}}" FontSize="10" TextWrapping="Wrap"/>
+          <TextBox Text="{Binding StillPrompt, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                   MaxHeight="160" VerticalScrollBarVisibility="Auto"
+                   AutomationProperties.Name="此镜头封存首帧提示词"/>
+          <WrapPanel Margin="0,5,0,5">
+           <Button Content="复制此镜头 Prompt" Tag="{Binding}" Padding="8,4"
+                   HorizontalAlignment="Left" Click="CopyCompositionPrompt_Click" Margin="0,0,8,0"/>
+           <Button Content="为此镜头选择参考图…" Tag="{Binding}" Padding="8,4"
+                   HorizontalAlignment="Left"
+                   IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                   Click="ChooseCompositionShot_Click"/>
+          </WrapPanel>
+          <TextBlock Text="{Binding ReviewChecklist}" TextWrapping="Wrap"/>
+         </StackPanel>
+        </Border>
+       </DataTemplate>
+      </ItemsControl.ItemTemplate>
+     </ItemsControl>
+    </StackPanel>
+   </Expander>
+   <Expander Header="本地 ComfyUI 首帧候选（需人工审核）" Margin="0,12,0,0">
+    <StackPanel>
+     <TextBlock Text="候选清单只显示历史结果，不证明图像质量或使用权。本地 AI 输出不能自动归类为 USER_SUPPLIED；使用前须提供 LICENSED 来源凭据 SHA-256。" TextWrapping="Wrap" Margin="0,0,0,7"/>
+     <WrapPanel Margin="0,0,0,8">
+      <Button x:Name="LoadObservedCandidatesButton" Content="读取单份候选清单..." Padding="12,6"
+              HorizontalAlignment="Left" IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
+              Click="LoadObservedCandidates_Click" Margin="0,0,8,0"/>
+      <!-- 06. Aggregate only explicitly observed per-variant local files.
+           Import is read-only; image staging and approval stay separate. -->
+      <Button x:Name="LoadObservedVariantFolderButton" Content="批量读取多组 seed 候选..."
+              Padding="12,6" HorizontalAlignment="Left"
+              IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
+              Click="LoadObservedVariantFolder_Click"/>
+     </WrapPanel>
+     <!-- 07. Compare same-shot seed alternatives side by side, while
+          preserving exact staged-image identity and manual choice. -->
+     <ItemsControl x:Name="ObservedCandidatesList" ItemsSource="{Binding ObservedCandidateGroups}">
+      <ItemsControl.GroupStyle>
+       <GroupStyle>
+        <GroupStyle.HeaderTemplate>
+         <DataTemplate>
+          <TextBlock Text="{Binding Name, StringFormat=镜头 {0} 的候选（未审批）}"
+                     FontSize="14" FontWeight="SemiBold" Margin="0,12,0,6"/>
+         </DataTemplate>
+        </GroupStyle.HeaderTemplate>
+        <GroupStyle.Panel>
+         <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+        </GroupStyle.Panel>
+       </GroupStyle>
+      </ItemsControl.GroupStyle>
+      <ItemsControl.ItemTemplate>
+       <DataTemplate>
+        <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8"
+                Width="260" Margin="0,0,8,8">
+         <StackPanel>
+          <TextBlock Text="{Binding CandidateBatch}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding SelectionStatus}" FontSize="11" TextWrapping="Wrap"
+                     AutomationProperties.Name="候选是否为当前镜头已选快照（未审批）"/>
+          <Image Source="{Binding Preview}" Width="230" Height="145" Stretch="Uniform" HorizontalAlignment="Left"
+                 AutomationProperties.Name="本地候选缩略图（未批准）"/>
           <TextBlock Text="{Binding OutputRelativePath}" TextWrapping="Wrap" FontSize="10"/>
           <TextBlock Text="{Binding Sha256, StringFormat=本地观察 SHA-256：{0}}" TextWrapping="Wrap" FontSize="10" FontFamily="Consolas"/>
           <Button Content="使用此候选作参考图（需 LICENSED 凭据）" Tag="{Binding}" HorizontalAlignment="Left"
@@ -48,11 +130,24 @@
      </ItemsControl>
     </StackPanel>
    </Expander>
+   <StackPanel Margin="0,12,0,0">
+    <TextBlock Text="恢复已有三镜头参考图审批（重启后不重复提交）" FontWeight="SemiBold"/>
+    <TextBlock Text="仅凭 Core 审批 ID 重新读取原快照；恢复不自动批准，仍需刷新并单独创建生产计划。" TextWrapping="Wrap"/>
+    <WrapPanel Margin="0,4,0,8">
+     <TextBox x:Name="ResumeApprovalIdTextBox" Width="340" MaxLength="36"
+              VerticalContentAlignment="Center" ToolTip="粘贴已有 Core approval_id UUID"/>
+     <Button x:Name="RestoreReferenceBatchButton" Content="恢复已有批次" Padding="12,6"
+             Margin="8,0,0,0" IsEnabled="{Binding CanResumeReferenceBatch, FallbackValue=False}"
+             Click="RestoreReferenceBatch_Click"/>
+    </WrapPanel>
+   </StackPanel>
    <Grid Margin="0,16,0,0" IsEnabled="{Binding CanEdit, FallbackValue=False}">
     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <StackPanel Margin="0,0,10,0"><TextBlock Text="镜头"/><ComboBox x:Name="ShotComboBox" ItemsSource="{Binding EligibleShots}" MinHeight="30" /></StackPanel>
-    <StackPanel Grid.Column="1" Margin="0,0,10,0"><TextBlock Text="来源声明"/>
-     <ComboBox x:Name="SourceComboBox" SelectedIndex="0" MinHeight="30">
+    <!-- Each image needs a deliberate provenance choice; never auto-label Qwen output as USER_SUPPLIED. -->
+    <StackPanel Grid.Column="1" Margin="0,0,10,0"><TextBlock Text="来源声明（必须主动选择）"/>
+     <ComboBox x:Name="SourceComboBox" SelectedIndex="-1" MinHeight="30"
+               ToolTip="未选择则禁止选图；USER_SUPPLIED 仅用于本人提供的原始素材，生成图须核对 LICENSED 来源。">
       <ComboBoxItem Content="USER_SUPPLIED"/><ComboBoxItem Content="LICENSED"/>
      </ComboBox>
     </StackPanel>

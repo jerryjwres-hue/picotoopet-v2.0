@@ -16,7 +16,7 @@ import urllib.request
 import zlib
 from pathlib import Path, PurePosixPath
 
-from prepare_local_keyframe_batch import read_bounded, require_digest
+from prepare_local_keyframe_batch import ID, read_bounded, require_digest
 from recover_comfy_keyframe_workflow import (
     COMFY_ORIGIN, MAX_HISTORY_BYTES, NoRedirect, canonical_bytes,
     fetch_history, parse_history, prompt_identity,
@@ -305,24 +305,224 @@ def collect(batch: dict, batch_dir: Path, identities: dict,
     }
 
 
+def collect_variant_snapshot(
+    variants_root: Path, listing: dict, output_root: Path,
+) -> tuple[list[tuple[str, dict]], dict]:
+    """Match all bounded seed variants to exact completed Comfy graph bytes.
+
+    This is CPU-only: no model call, no output-name guessing, no PNG copy.
+    Existing collector contracts remain authoritative per variant and shot.
+    """
+    # 01. Only an explicit, ordinary prepared parent is eligible.
+    root = variants_root.absolute()
+    index_file = root / "variant_index.json"
+    if (not root.is_dir() or root.is_symlink() or index_file.is_symlink()
+        or not index_file.is_file()):
+        raise ValueError("CANDIDATE_VARIANT_ROOT_INVALID")
+    source = read_bounded(index_file)
+    index = parse_history(source)
+    entries = index.get("variants")
+    count = index.get("variant_count")
+    if (index.get("schema") != "picotoo.local-keyframe-variant-index.v1"
+        or type(count) is not int or not 2 <= count <= 8
+        or not isinstance(entries, list) or len(entries) != count
+        or index.get("source_inputs_verified") is not False
+        or index.get("production_authorized") is not False
+        or index.get("gpu_post") != 0
+        or not isinstance(listing, dict) or len(listing) > MAX_HISTORY_ITEMS):
+        raise ValueError("CANDIDATE_VARIANT_INDEX_INVALID")
+    package_digest = require_digest(index["creative_package_sha256"])
+    kit_digest = require_digest(index["keyframe_kit_digest"])
+    seen_versions: set[int] = set()
+    seen_images: set[str] = set()
+    seen_paths: set[str] = set()
+    seen_prompts: set[str] = set()
+    prepared: list[tuple[str, dict]] = []
+    index_rows = []
+    first_variant = None
+    source_contract = None
+    total_candidates = 0
+    for entry in entries:
+        # 02. Never join unchecked JSON paths or infer a variant number
+        #     from a candidate filename. Use only the exact frozen index.
+        if not isinstance(entry, dict) or set(entry) != {
+            "variant", "relative_directory", "batch_manifest_sha256", "shot_count"
+        }:
+            raise ValueError("CANDIDATE_VARIANT_ENTRY_INVALID")
+        variant = entry["variant"]
+        if (type(variant) is not int or not 0 <= variant <= 10000
+            or variant in seen_versions or type(entry["shot_count"]) is not int
+            or entry["shot_count"] != 3
+            or entry["relative_directory"] != f"v{variant:04d}"):
+            raise ValueError("CANDIDATE_VARIANT_SCOPE_INVALID")
+        if first_variant is None:
+            first_variant = variant
+        if variant != first_variant + len(prepared):
+            raise ValueError("CANDIDATE_VARIANT_ORDER_INVALID")
+        seen_versions.add(variant)
+        folder_name = f"v{variant:04d}"
+        folder = root / folder_name
+        batch_path = folder / "batch_manifest.json"
+        if (not folder.is_dir() or folder.is_symlink()
+            or batch_path.is_symlink() or not batch_path.is_file()):
+            raise ValueError("CANDIDATE_VARIANT_BATCH_MISSING")
+        batch_bytes = read_bounded(batch_path)
+        if file_sha(batch_bytes) != require_digest(entry["batch_manifest_sha256"]):
+            raise ValueError("CANDIDATE_VARIANT_BATCH_DIGEST_MISMATCH")
+        batch = parse_history(batch_bytes)
+        if (canonical_bytes(batch) != batch_bytes
+            or batch.get("schema") != "picotoo.local-keyframe-batch-dry-run.v1"
+            or batch.get("variant") != variant
+            or batch.get("creative_package_sha256") != package_digest
+            or batch.get("keyframe_kit_digest") != kit_digest
+            or batch.get("source_inputs_verified") is not False
+            or batch.get("production_authorized") is not False
+            or batch.get("gpu_post") != 0):
+            raise ValueError("CANDIDATE_VARIANT_BATCH_INVALID")
+        # 03. Every variant must share one source graph, slot map and Core
+        #     creative-package identity. No arbitrary graph path, link,
+        #     parent traversal or extra shots can join this offline batch.
+        contract = (
+            batch.get("creative_package_id"),
+            batch.get("source_graph_sha256"),
+            batch.get("slot_map_sha256"),
+        )
+        if (not isinstance(contract[0], str) or not contract[0]
+            or any(require_digest(value) != value for value in contract[1:])):
+            raise ValueError("CANDIDATE_VARIANT_SOURCE_IDENTITY_INVALID")
+        if source_contract is None:
+            source_contract = contract
+        elif contract != source_contract:
+            raise ValueError("CANDIDATE_VARIANT_SOURCE_CONFLICT")
+        shots = batch.get("shots")
+        if not isinstance(shots, list) or len(shots) != 3:
+            raise ValueError("CANDIDATE_VARIANT_SHOT_COVERAGE_INVALID")
+        for order, shot in enumerate(shots, 1):
+            if not isinstance(shot, dict):
+                raise ValueError("CANDIDATE_VARIANT_SHOT_INVALID")
+            shot_id, name = shot.get("shot_id"), shot.get("graph_file")
+            if (not isinstance(shot_id, str) or not ID.fullmatch(shot_id)
+                or name != f"{order:02d}-{shot_id}.json"):
+                raise ValueError("CANDIDATE_VARIANT_GRAPH_PATH_INVALID")
+            graph_path = folder / name
+            if graph_path.is_symlink() or not graph_path.is_file():
+                raise ValueError("CANDIDATE_VARIANT_GRAPH_FILE_INVALID")
+        # 04. Match recorded successful Comfy history by exact graph SHA,
+        #     reuse the verified output bytes/CRC/shot-scope collector, and
+        #     preserve each candidate's own prompt ID and graph identity.
+        ids, histories = discover_exact_prompt_ids(batch, folder, listing)
+        result = collect(batch, folder, ids, histories, output_root)
+        for shot in result["shots"]:
+            prompt_id = shot["prompt_id"]
+            if prompt_id in seen_prompts:
+                raise ValueError("CANDIDATE_VARIANT_PROMPT_REUSED")
+            seen_prompts.add(prompt_id)
+            for candidate in shot["candidates"]:
+                digest = candidate["sha256"]
+                name = candidate["output_relative_path"].casefold()
+                if digest in seen_images or name in seen_paths:
+                    raise ValueError("CANDIDATE_VARIANT_IMAGE_REUSED")
+                seen_images.add(digest)
+                seen_paths.add(name)
+                total_candidates += 1
+                if total_candidates > 96:
+                    raise ValueError("CANDIDATE_VARIANT_TOO_MANY_IMAGES")
+        data = canonical_bytes(result)
+        prepared.append((folder_name, result))
+        index_rows.append({
+            "variant": variant,
+            "relative_directory": folder_name,
+            "candidate_manifest_sha256": file_sha(data),
+            "shot_count": 3,
+        })
+    # 05. This index only points to already-observed candidate reports.
+    #     It never certifies real model quality, creative rights or a Job.
+    report_index = {
+        "schema": "picotoo.local-keyframe-observed-variant-index.v1",
+        "creative_package_sha256": package_digest,
+        "keyframe_kit_digest": kit_digest,
+        "variant_count": count,
+        "variants": index_rows,
+        "source_rights_confirmed": False,
+        "reference_approved": False,
+        "gpu_post": 0,
+    }
+    return prepared, report_index
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--batch-dir", type=Path, required=True)
+    batch_source = parser.add_mutually_exclusive_group(required=True)
+    batch_source.add_argument("--batch-dir", type=Path)
+    batch_source.add_argument("--variants-root", type=Path)
     parser.add_argument("--prompt-ids", type=Path)
     history_source = parser.add_mutually_exclusive_group(required=True)
     history_source.add_argument("--history-dir", type=Path)
     history_source.add_argument("--live-history", action="store_true")
     history_source.add_argument("--history-snapshot", type=Path)
     history_source.add_argument("--live-history-scan", action="store_true")
+    history_source.add_argument("--embedded-png-map", type=Path)
     parser.add_argument("--comfy-output-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     auto_discovery = args.history_snapshot is not None or args.live_history_scan
-    if auto_discovery == (args.prompt_ids is not None):
-        parser.error("Auto-discovery omits --prompt-ids; explicit history requires --prompt-ids.")
+    embedded_mode = args.embedded_png_map is not None
+    variant_mode = args.variants_root is not None
+    # 08. Multi-seed mode supports the SAME fixed loopback read-only GET
+    #     as single-seed mode, or a provided offline history snapshot.
+    #     Explicit per-shot IDs, PNG maps and write operations stay excluded.
+    if variant_mode and (
+        (args.history_snapshot is None and not args.live_history_scan)
+        or args.prompt_ids is not None
+    ):
+        parser.error(
+            "Multi-seed collection requires --history-snapshot "
+            "or the explicit read-only --live-history-scan."
+        )
+    if embedded_mode or auto_discovery:
+        if args.prompt_ids is not None:
+            parser.error("Embedded/auto mode cannot use --prompt-ids.")
+    elif args.prompt_ids is None:
+        parser.error("Explicit Comfy history requires --prompt-ids.")
     try:
+        if variant_mode:
+            # 09. Fetch exactly one bounded history view over the existing
+            #     fixed localhost GET, or read a user-supplied offline copy.
+            #     No Comfy POST, HTTP redirect, GPU or local image mutation.
+            history_bytes = (
+                fetch_recent_history() if args.live_history_scan
+                else read_bounded(args.history_snapshot)
+            )
+            listing = parse_history(history_bytes)
+            groups, index = collect_variant_snapshot(
+                args.variants_root, listing, args.comfy_output_root
+            )
+            args.output_dir.mkdir(parents=False, exist_ok=False)
+            for folder_name, result in groups:
+                dest = args.output_dir / folder_name
+                dest.mkdir(exist_ok=False)
+                with (dest / "candidate_manifest.json").open("xb") as output:
+                    output.write(canonical_bytes(result))
+            # 07. Last-written index signifies completed export; each
+            #     vNNNN/candidate_manifest.json can be opened in WPF.
+            with (args.output_dir / "observed_variant_index.json").open("xb") as output:
+                output.write(canonical_bytes(index))
+            print(f"KEYFRAME_VARIANT_CANDIDATES=OBSERVED; VARIANTS={len(groups)}; GPU_POST=0")
+            print(
+                "HISTORY_SOURCE=FIXED_LOOPBACK_GET" if args.live_history_scan
+                else "HISTORY_SOURCE=OFFLINE_SNAPSHOT"
+            )
+            print("HUMAN_REVIEW=REQUIRED; REFERENCE_APPROVED=FALSE")
+            return 0
         batch = parse_history(read_bounded(args.batch_dir / "batch_manifest.json"))
-        if auto_discovery:
+        if embedded_mode:
+            # 01. No network, no fake Comfy history, no inferred output path.
+            from offline_png_output_collector import collect_embedded_outputs
+            selected = parse_history(read_bounded(args.embedded_png_map))
+            result = collect_embedded_outputs(
+                batch, args.batch_dir, selected, args.comfy_output_root
+            )
+        elif auto_discovery:
             listing = parse_history(
                 fetch_recent_history() if args.live_history_scan
                 else read_bounded(args.history_snapshot)
@@ -339,7 +539,8 @@ def main(argv: list[str] | None = None) -> int:
                     else read_bounded(args.history_dir / f"{key}.json")
                 ) for key in ids
             }
-        result = collect(batch, args.batch_dir, identities, histories, args.comfy_output_root)
+        if not embedded_mode:
+            result = collect(batch, args.batch_dir, identities, histories, args.comfy_output_root)
         # 03. No image is copied or imported into approved Core reference storage.
         args.output_dir.mkdir(parents=False, exist_ok=False)
         with (args.output_dir / "candidate_manifest.json").open("xb") as output:

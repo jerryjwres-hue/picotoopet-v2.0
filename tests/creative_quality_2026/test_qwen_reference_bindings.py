@@ -1,0 +1,404 @@
+"""Qwen-Image-Edit-2511 graph with 3 LoadImage core nodes, synthetic CPU refs."""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import struct
+import sys
+import tempfile
+import unittest
+import zlib
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from prepare_local_keyframe_batch import prepare, sha  # noqa: E402
+from test_prepare_local_keyframe_batch import fixture  # noqa: E402
+
+
+def _chunk(kind: bytes, data: bytes) -> bytes:
+    return (struct.pack(">I", len(data)) + kind + data
+            + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff))
+
+
+def png(n: int) -> bytes:
+    data = b"\x00" + bytes([n, 40, 75]) * 4
+    return (b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 1, 8, 2, 0, 0, 0))
+            + _chunk(b"IDAT", zlib.compress(data))
+            + _chunk(b"IEND", b""))
+
+
+def jpeg(marker: int = 1) -> bytes:
+    """Minimal grayscale JPEG marker fixture: structure only, no pixel claims."""
+    # 01. SOI + APP0 + SOF0 (4x4, 1 channel) + SOS + entropy + EOI.
+    #     The checked bytes are intentionally not decoded as an image.
+    return (
+        b"\xff\xd8"
+        + b"\xff\xe0\x00\x07JFIF\x00"
+        + b"\xff\xc0\x00\x0b\x08\x00\x04\x00\x04\x01\x01\x11\x00"
+        + b"\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00"
+        + bytes((0x40, marker))
+        + b"\xff\xd9"
+    )
+
+
+def qwen_fixture(root: Path):
+    graph, recovery, bindings, package = fixture()
+    graph["1"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {
+        "prompt": "old positive", "image1": ["6", 0],
+    }}
+    graph["6"] = {"class_type": "LoadImage", "inputs": {"image": "old-composition.png"}}
+    graph["7"] = {"class_type": "LoadImage", "inputs": {"image": "character.png"}}
+    graph["8"] = {"class_type": "LoadImage", "inputs": {"image": "scene.png"}}
+    bindings["positive_prompt"] = dict(
+        node_id="1", class_type="TextEncodeQwenImageEditPlus", input_name="prompt"
+    )
+    files = {}
+    for name, number in {
+        "old-composition.png": 10, "character.png": 20, "scene.png": 30,
+        "s01-composition.png": 1, "s02-composition.png": 2, "s03-composition.png": 3,
+    }.items():
+        value = png(number)
+        (root / name).write_bytes(value)
+        files[name] = {"filename": name, "sha256": hashlib.sha256(value).hexdigest(),
+                       "bytes": len(value)}
+    bindings["reference_images"] = [
+        {"node_id": "6", "class_type": "LoadImage", "input_name": "image",
+         "mode": "per_shot", "files": [
+             {"shot_id": f"shot-{i}", **files[f"s0{i}-composition.png"]}
+             for i in (1, 2, 3)
+         ]},
+        {"node_id": "7", "class_type": "LoadImage", "input_name": "image",
+         "mode": "fixed", "file": files["character.png"]},
+        {"node_id": "8", "class_type": "LoadImage", "input_name": "image",
+         "mode": "fixed", "file": files["scene.png"]},
+    ]
+    recovery["graph_sha256"] = sha(
+        json.dumps(graph, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    )
+    bindings["graph_sha256"] = recovery["graph_sha256"]
+    # Preserve the fact that no recovered Comfy history ID exists.
+    recovery["history_status"] = "PNG_EMBEDDED_NO_HISTORY"
+    recovery["source_kind"] = "COMFY_PNG_TEXt_PROMPT"
+    recovery["source_image_sha256"] = "f" * 64
+    recovery["source_image_container_crc_verified"] = True
+    recovery["prompt_id"] = None
+    return graph, recovery, bindings, package
+
+
+class QwenBindingsTests(unittest.TestCase):
+    def test_exact_qwen_prompt_three_compositions_and_pinned_shared_inputs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, bindings, package = qwen_fixture(root)
+            before = copy.deepcopy(graph)
+            args = graph, recovery, bindings, package, "a" * 64, 0, root
+            files, report = prepare(*args)
+            self.assertEqual(len(files), 3)
+            self.assertEqual(report["history_provenance"], "PNG_EMBEDDED_NO_HISTORY")
+            self.assertEqual(len(report["reference_inputs"]), 3)
+            self.assertFalse(report["production_authorized"])
+            self.assertFalse(report["source_inputs_verified"])
+            for number, record in enumerate(report["shots"], 1):
+                item = json.loads(files[record["graph_file"]])
+                self.assertEqual(item["1"]["inputs"]["prompt"], f"Opening state {number}")
+                self.assertEqual(item["6"]["inputs"]["image"], f"s0{number}-composition.png")
+                self.assertEqual(item["7"]["inputs"]["image"], "character.png")
+                self.assertEqual(item["8"]["inputs"]["image"], "scene.png")
+                self.assertEqual(item["2"], before["2"])
+                self.assertEqual(item["3"]["inputs"]["model"], before["3"]["inputs"]["model"])
+            self.assertEqual(before, graph)
+
+    def test_qwen_png_composition_and_two_existing_jpeg_dog_references(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, bindings, package = qwen_fixture(root)
+            # 02. Real Windows audit observed LoadImage 2/3 references as
+            #     REF_DOG_A_00x.jpg; preserving original bytes is mandatory.
+            original = copy.deepcopy(graph)
+            for node, name, marker in (
+                ("7", "REF_DOG_A_001.jpg", 1),
+                ("8", "REF_DOG_A_002.jpg", 2),
+            ):
+                raw = jpeg(marker)
+                (root / name).write_bytes(raw)
+                graph[node]["inputs"]["image"] = name
+                entry = next(entry for entry in bindings["reference_images"]
+                             if entry["node_id"] == node)
+                entry["file"] = {
+                    "filename": name, "sha256": hashlib.sha256(raw).hexdigest(),
+                    "bytes": len(raw),
+                }
+            recovery["graph_sha256"] = sha(
+                json.dumps(graph, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            )
+            bindings["graph_sha256"] = recovery["graph_sha256"]
+            files, report = prepare(graph, recovery, bindings, package, "a" * 64, 0, root)
+            self.assertEqual(len(files), 3)
+            self.assertFalse(report["production_authorized"])
+            self.assertFalse(report["source_inputs_verified"])
+            for item in report["reference_inputs"]:
+                if item["node_id"] in ("7", "8"):
+                    self.assertEqual(item["mode"], "fixed")
+                    self.assertEqual([shot["format"] for shot in item["shots"]], ["jpeg"] * 3)
+                    self.assertEqual([shot["dimensions"] for shot in item["shots"]], [(4, 4)] * 3)
+                    self.assertTrue(all(shot["pixels_decoded"] is False for shot in item["shots"]))
+            for shot in report["shots"]:
+                graph_out = json.loads(files[shot["graph_file"]])
+                self.assertEqual(graph_out["7"]["inputs"]["image"], "REF_DOG_A_001.jpg")
+                self.assertEqual(graph_out["8"]["inputs"]["image"], "REF_DOG_A_002.jpg")
+            self.assertEqual(original["3"], graph["3"])
+            self.assertEqual(graph["7"]["inputs"]["image"], "REF_DOG_A_001.jpg")
+
+    def test_observed_node_layout_1_2_3_load_7_8_prompt_12_sample_14_save(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, recovery, bindings, package = qwen_fixture(root)
+            # 03. Match the node identities verified in the six real PNGs,
+            #     while keeping test bytes synthetic and GPU-free.
+            jpeg1, jpeg2 = jpeg(9), jpeg(10)
+            (root / "REF_DOG_A_001.jpg").write_bytes(jpeg1)
+            (root / "REF_DOG_A_002.jpg").write_bytes(jpeg2)
+            graph = {
+                "1": {"class_type": "LoadImage", "inputs": {"image": "old-composition.png"}},
+                "2": {"class_type": "LoadImage", "inputs": {"image": "REF_DOG_A_001.jpg"}},
+                "3": {"class_type": "LoadImage", "inputs": {"image": "REF_DOG_A_002.jpg"}},
+                "4": {"class_type": "UNETLoader", "inputs": {
+                    "unet_name": "qwen_image_edit_2511_fp8mixed.safetensors",
+                }},
+                "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {
+                    "prompt": "initial positive",
+                    "image1": ["1", 0], "image2": ["2", 0], "image3": ["3", 0],
+                }},
+                "8": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {
+                    "prompt": "frozen negative",
+                }},
+                "12": {"class_type": "KSampler", "inputs": {
+                    "seed": 99, "model": ["4", 0], "positive": ["7", 0],
+                    "negative": ["8", 0],
+                }},
+                "14": {"class_type": "SaveImage", "inputs": {
+                    "filename_prefix": "PVP", "images": ["12", 0],
+                }},
+            }
+            bindings["positive_prompt"] = {
+                "node_id": "7", "class_type": "TextEncodeQwenImageEditPlus",
+                "input_name": "prompt",
+            }
+            bindings["seed"] = {"node_id": "12", "class_type": "KSampler",
+                                 "input_name": "seed"}
+            bindings["output_prefix"] = {"node_id": "14", "class_type": "SaveImage",
+                                          "input_name": "filename_prefix"}
+            def evidence(name: str, raw: bytes) -> dict:
+                # 04. Every image slot is pinned to exact bytes; never infer
+                #     rights, visual quality, or missing future composition.
+                return {"filename": name, "sha256": hashlib.sha256(raw).hexdigest(),
+                        "bytes": len(raw)}
+
+            bindings["reference_images"] = [
+                {"node_id": "1", "class_type": "LoadImage", "input_name": "image",
+                 "mode": "per_shot", "files": [
+                     {"shot_id": f"shot-{i}",
+                      **evidence(f"s0{i}-composition.png",
+                                 (root / f"s0{i}-composition.png").read_bytes())}
+                     for i in (1, 2, 3)
+                 ]},
+                {"node_id": "2", "class_type": "LoadImage", "input_name": "image",
+                 "mode": "fixed", "file": evidence("REF_DOG_A_001.jpg", jpeg1)},
+                {"node_id": "3", "class_type": "LoadImage", "input_name": "image",
+                 "mode": "fixed", "file": evidence("REF_DOG_A_002.jpg", jpeg2)},
+            ]
+            recovery["graph_sha256"] = sha(
+                json.dumps(graph, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            )
+            bindings["graph_sha256"] = recovery["graph_sha256"]
+            original = copy.deepcopy(graph)
+            files, report = prepare(graph, recovery, bindings, package, "a" * 64, 0, root)
+            self.assertEqual(len(files), 3)
+            self.assertEqual(len(report["reference_inputs"]), 3)
+            for number, shot in enumerate(report["shots"], 1):
+                prepared = json.loads(files[shot["graph_file"]])
+                self.assertEqual(prepared["7"]["inputs"]["prompt"], f"Opening state {number}")
+                self.assertEqual(prepared["8"], original["8"])
+                self.assertEqual(prepared["1"]["inputs"]["image"],
+                                 f"s0{number}-composition.png")
+                self.assertEqual(prepared["2"]["inputs"]["image"], "REF_DOG_A_001.jpg")
+                self.assertEqual(prepared["3"]["inputs"]["image"], "REF_DOG_A_002.jpg")
+                self.assertEqual(prepared["4"], original["4"])
+                self.assertEqual(prepared["12"]["inputs"]["negative"],
+                                 original["12"]["inputs"]["negative"])
+            self.assertEqual(graph, original)
+            self.assertFalse(report["source_inputs_verified"])
+            self.assertFalse(report["production_authorized"])
+
+    def test_renamed_composition_copy_rejected_by_strict_batch_preparer(self):
+        # 05. The strict binder must independently reject byte-identical
+        #     S1→S2 and S2→S3 images, even with different valid filenames.
+        copies = (
+            ("s02-composition.png", "s01-composition.png"),
+            ("s03-composition.png", "s02-composition.png"),
+        )
+        for target, source in copies:
+            with self.subTest(target=target):
+                with tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder)
+                    graph, recovery, bindings, package = qwen_fixture(root)
+                    raw = (root / source).read_bytes()
+                    (root / target).write_bytes(raw)
+                    item = next(
+                        item for item in bindings["reference_images"][0]["files"]
+                        if item["filename"] == target
+                    )
+                    item["sha256"] = hashlib.sha256(raw).hexdigest()
+                    item["bytes"] = len(raw)
+                    with self.assertRaisesRegex(
+                        ValueError, "KEYFRAME_REFERENCE_REUSED_BYTES_PER_SHOT"
+                    ):
+                        prepare(
+                            graph, recovery, bindings, package,
+                            "a" * 64, 0, root
+                        )
+
+    def test_exact_jpeg_bytes_with_24_byte_camera_tail_are_audited(self):
+        # 06. Camera exporters sometimes append a tiny opaque suffix after
+        #     the real EOI. Preserve ALL bytes and authenticate the suffix.
+        from qwen_reference_bindings import (
+            MAX_JPEG_TRAILING_BYTES, _verify, jpeg_container_info,
+            jpeg_dimensions, jpeg_trailing_audit,
+        )
+        tail = bytes.fromhex("1336060100000000") + bytes(16)
+        self.assertEqual(len(tail), 24)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            name = "REF_DOG_A_001.jpg"
+            original = jpeg(17) + tail
+            (root / name).write_bytes(original)
+            exact_sha = hashlib.sha256(original).hexdigest()
+            relative, report = _verify(root, {
+                "filename": name, "sha256": exact_sha, "bytes": len(original),
+            })
+            self.assertEqual(relative, name)
+            self.assertEqual(jpeg_dimensions(original), (4, 4))
+            self.assertEqual(jpeg_container_info(original), (
+                (4, 4), 24, hashlib.sha256(tail).hexdigest(),
+            ))
+            self.assertEqual(jpeg_trailing_audit(original), {
+                "jpeg_trailing_bytes": 24,
+                "jpeg_trailing_sha256": hashlib.sha256(tail).hexdigest(),
+            })
+            self.assertEqual(report["sha256"], exact_sha)
+            self.assertEqual(report["bytes"], len(original))
+            self.assertEqual(report["jpeg_trailing_bytes"], 24)
+            self.assertEqual(report["jpeg_trailing_sha256"], hashlib.sha256(tail).hexdigest())
+            self.assertFalse(report["pixels_decoded"])
+            self.assertEqual((root / name).read_bytes(), original)
+            # 07. Full-file SHA including the suffix remains mandatory.
+            with self.assertRaisesRegex(ValueError, "KEYFRAME_REFERENCE_BYTES_MISMATCH"):
+                _verify(root, {
+                    "filename": name, "sha256": hashlib.sha256(jpeg(17)).hexdigest(),
+                    "bytes": len(original),
+                })
+            # 08. A JPEG without trailing bytes keeps a transparent audit.
+            self.assertEqual(jpeg_trailing_audit(jpeg(17)), {
+                "jpeg_trailing_bytes": 0, "jpeg_trailing_sha256": None,
+            })
+            self.assertEqual(MAX_JPEG_TRAILING_BYTES, 64)
+
+    def test_jpeg_eoi_scan_boundaries_and_excess_trailers_fail_closed(self):
+        # 09. Entropy stuffing, restart markers and an additional SOS are not
+        #     EOI. The first actual EOI must follow valid SOF and SOS markers.
+        from qwen_reference_bindings import jpeg_container_info, jpeg_dimensions
+        tail = bytes.fromhex("1336060100000000") + bytes(16)
+        bare = jpeg(4)
+        cases = [
+            (bare[:-2] + tail, "KEYFRAME_REFERENCE_JPEG_INCOMPLETE"),
+            (bare[:-2] + b"\xff\x00" + tail, "KEYFRAME_REFERENCE_JPEG_INCOMPLETE"),
+            (bare + bytes(65), "KEYFRAME_REFERENCE_JPEG_TRAILING_BYTES_EXCESS"),
+            (bare[:-2] + b"\xff\xd9" + bytes(65),
+             "KEYFRAME_REFERENCE_JPEG_TRAILING_BYTES_EXCESS"),
+            (bare[:-2] + b"\xff\xc4\x00\x08\xff\xd9\x00\x00\x00\x00",
+             "KEYFRAME_REFERENCE_JPEG_INCOMPLETE"),
+        ]
+        for data, code in cases:
+            with self.subTest(code=code, size=len(data)), self.assertRaisesRegex(
+                ValueError, code,
+            ):
+                jpeg_dimensions(data)
+        stuffed_scan = bare[:-2] + b"\xff\x00\xff\xd0" + bare[-2:] + tail
+        self.assertEqual(jpeg_container_info(stuffed_scan)[1], 24)
+
+    def test_renamed_png_corrupt_jpeg_and_jpeg_symlink_denied(self):
+        from qwen_reference_bindings import _verify, jpeg_dimensions
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name, data in (
+                ("renamed.jpg", png(1)),
+                ("missing-end.jpeg", jpeg(3)[:-2]),
+                ("no-frame.jpg", b"\xff\xd8\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00\x01\xff\xd9"),
+            ):
+                (root / name).write_bytes(data)
+                evidence = {
+                    "filename": name,
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "bytes": len(data),
+                }
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    _verify(root, evidence)
+            with self.assertRaises(ValueError):
+                jpeg_dimensions(b"\xff\xd8\xff\xd9")
+            source = root / "actual.jpeg"
+            source.write_bytes(jpeg(7))
+            linked = root / "REF_DOG_A_001.jpg"
+            try:
+                linked.symlink_to(source)
+            except (OSError, NotImplementedError):
+                # 05. Windows CI may not permit symlink creation. Retain
+                #     malformed-JPEG checks as PASS instead of skipping them.
+                return
+            with self.assertRaises(ValueError):
+                _verify(root, {
+                    "filename": linked.name,
+                    "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                    "bytes": source.stat().st_size,
+                })
+
+    def test_missing_ref_wrong_hash_unpinned_slot_and_symlink_denied(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for failure in ("missing", "wrong_hash", "missing_slot", "wrong_prompt", "symlink"):
+                graph, recovery, bindings, package = qwen_fixture(root)
+                if failure == "missing":
+                    bindings["reference_images"].pop()
+                elif failure == "wrong_hash":
+                    bindings["reference_images"][0]["files"][0]["sha256"] = "0" * 64
+                elif failure == "missing_slot":
+                    bindings["reference_images"][0]["node_id"] = "3"
+                elif failure == "wrong_prompt":
+                    bindings["positive_prompt"]["class_type"] = "Wrong"
+                else:
+                    target = root / "s01-composition.png"
+                    target.unlink()
+                    try:
+                        target.symlink_to(root / "character.png")
+                    except (OSError, NotImplementedError):
+                        self.skipTest("No symlink support")
+                with self.subTest(failure=failure), self.assertRaises((ValueError, OSError)):
+                    prepare(graph, recovery, bindings, package, "a" * 64, 0, root)
+                if failure == "symlink":
+                    break
+
+    def test_ref_root_mandatory_and_legacy_prompt_contract_unchanged(self):
+        graph, recovery, bindings, package = fixture()
+        self.assertEqual(len(prepare(graph, recovery, bindings, package, "a" * 64, 0)[0]), 3)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, bindings, package = qwen_fixture(root)
+            with self.assertRaises(ValueError):
+                prepare(graph, recovery, bindings, package, "a" * 64, 0, None)
+            self.assertEqual(len(prepare(graph, recovery, bindings, package, "a" * 64, 0, root)[0]), 3)
+
+
+if __name__ == "__main__":
+    unittest.main()
