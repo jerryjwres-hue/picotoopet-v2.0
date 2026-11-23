@@ -22,6 +22,9 @@ from recover_comfy_keyframe_workflow import (
 from qwen_reference_bindings import resolve_reference_bindings
 
 MAX_PACKAGE_BYTES = 16 * 1024 * 1024
+# 01. Bound one offline request to prevent accidental huge file trees.
+#     More variants can be prepared in separate non-overwriting folders.
+MAX_VARIANTS_PER_EXPORT = 8
 PROFILE = "video.landscape.v1"
 ID = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -230,6 +233,20 @@ def prepare(graph: dict, recovery: dict, bindings: dict, package: dict,
     return files, manifest
 
 
+def _write_candidate(folder: Path, files: dict[str, bytes], manifest: dict) -> bytes:
+    """Write one ordinary batch compatible with the existing collector."""
+    # 05. Never overwrite existing candidate folders or graph contents.
+    #     Manifest is written last, so missing manifest means incomplete.
+    folder.mkdir(parents=False, exist_ok=False)
+    for name, data in files.items():
+        with (folder / name).open("xb") as handle:
+            handle.write(data)
+    manifest_bytes = canonical_bytes(manifest)
+    with (folder / "batch_manifest.json").open("xb") as handle:
+        handle.write(manifest_bytes)
+    return manifest_bytes
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", type=Path, required=True)
@@ -238,27 +255,71 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--slot-map", type=Path, required=True)
     parser.add_argument("--input-root", type=Path)
     parser.add_argument("--variant", type=int, default=0)
+    parser.add_argument("--variant-count", type=int, default=1)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
+        # 06. The legacy single-variant layout stays byte-for-byte
+        #     compatible. A multi-variant export is a parent of unchanged
+        #     per-variant 3-shot batch folders, not a new collector schema.
+        if (not 1 <= args.variant_count <= MAX_VARIANTS_PER_EXPORT
+            or not 0 <= args.variant <= 10000
+            or args.variant + args.variant_count > 10001):
+            raise ValueError("KEYFRAME_VARIANT_RANGE_INVALID")
         package = read_package(args.package, args.package_sha256)
         graph = parse_history(read_bounded(args.recovery_dir / "workflow_api.json"))
         recovery = parse_history(read_bounded(args.recovery_dir / "recovery_manifest.json"))
         bindings = parse_history(read_bounded(args.slot_map))
-        files, manifest = prepare(graph, recovery, bindings, package,
-                                  args.package_sha256, args.variant, args.input_root)
-        # 04. No overwrite; the last-written manifest marks complete export.
-        args.output_dir.mkdir(parents=False, exist_ok=False)
-        for name, data in files.items():
-            with (args.output_dir / name).open("xb") as handle:
-                handle.write(data)
-        with (args.output_dir / "batch_manifest.json").open("xb") as handle:
-            handle.write(canonical_bytes(manifest))
+        prepared = []
+        for variant in range(args.variant, args.variant + args.variant_count):
+            files, manifest = prepare(
+                graph, recovery, bindings, package, args.package_sha256,
+                variant, args.input_root
+            )
+            prepared.append((variant, files, manifest))
+
+        # 07. Prepare and validate all variants BEFORE creating anything.
+        #     A partial write never contains the final index manifest.
+        if args.variant_count == 1:
+            _, files, manifest = prepared[0]
+            _write_candidate(args.output_dir, files, manifest)
+        else:
+            args.output_dir.mkdir(parents=False, exist_ok=False)
+            entries = []
+            for variant, files, manifest in prepared:
+                folder_name = f"v{variant:04d}"
+                manifest_bytes = _write_candidate(
+                    args.output_dir / folder_name, files, manifest
+                )
+                entries.append({
+                    "variant": variant,
+                    "relative_directory": folder_name,
+                    "batch_manifest_sha256": sha(manifest_bytes),
+                    "shot_count": 3,
+                })
+            # 08. Index is only an offline navigation aid. Existing
+            #     batch_manifest.json remains the sole per-batch contract.
+            index = {
+                "schema": "picotoo.local-keyframe-variant-index.v1",
+                "creative_package_sha256": args.package_sha256,
+                "keyframe_kit_digest": prepared[0][2]["keyframe_kit_digest"],
+                "variant_count": args.variant_count,
+                "variants": entries,
+                "source_inputs_verified": False,
+                "production_authorized": False,
+                "gpu_post": 0,
+            }
+            with (args.output_dir / "variant_index.json").open("xb") as handle:
+                handle.write(canonical_bytes(index))
     except (ValueError, OSError, TypeError, KeyError, IndexError, AttributeError,
             RecursionError, OverflowError, zipfile.BadZipFile, RuntimeError):
         print("KEYFRAME_BATCH=UNVERIFIED; GPU_POST=0", file=sys.stderr)
         return 1
-    print("KEYFRAME_BATCH=DRY_RUN_CANDIDATE; SHOTS=3; GPU_POST=0")
+    if args.variant_count == 1:
+        print("KEYFRAME_BATCH=DRY_RUN_CANDIDATE; SHOTS=3; GPU_POST=0")
+    else:
+        print("KEYFRAME_VARIANTS=DRY_RUN_CANDIDATES; "
+              f"VARIANTS={args.variant_count}; SHOTS_PER_VARIANT=3; GPU_POST=0")
     print("SOURCE_INPUTS_VERIFIED=FALSE; PRODUCTION_AUTHORIZED=FALSE")
     return 0
 

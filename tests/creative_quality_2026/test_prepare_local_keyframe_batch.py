@@ -94,6 +94,92 @@ class BatchTests(unittest.TestCase):
             with self.subTest(variant=variant), self.assertRaises(ValueError):
                 prepare(graph, recovery, bindings, package, "a" * 64, 0)
 
+    def test_multi_variant_offline_export_is_deterministic_and_collector_compatible(self):
+        # 04. Four seeds x three distinct frozen shots in one CPU-only
+        #     operation. Every variant is an unchanged ordinary batch folder.
+        graph, recovery, bindings, package = fixture()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "package.zip"
+            with zipfile.ZipFile(archive, "w") as z:
+                z.writestr(f"{PACKAGE_ID}/creative-package.json", canonical_bytes(package))
+            digest = sha(archive.read_bytes())
+            (root / "workflow_api.json").write_bytes(canonical_bytes(graph))
+            (root / "recovery_manifest.json").write_bytes(canonical_bytes(recovery))
+            (root / "map.json").write_bytes(canonical_bytes(bindings))
+            opts = [
+                "--package", str(archive), "--package-sha256", digest,
+                "--recovery-dir", str(root), "--slot-map", str(root / "map.json"),
+            ]
+            target = root / "variants"
+            args = opts + ["--variant", "7", "--variant-count", "4",
+                           "--output-dir", str(target)]
+            self.assertEqual(main(args), 0)
+            self.assertEqual(main(args), 1)  # Never overwrite a completed export.
+            index = json.loads((target / "variant_index.json").read_bytes())
+            self.assertEqual(index["schema"], "picotoo.local-keyframe-variant-index.v1")
+            self.assertEqual(index["variant_count"], 4)
+            self.assertEqual(index["creative_package_sha256"], digest)
+            self.assertFalse(index["production_authorized"])
+            self.assertFalse(index["source_inputs_verified"])
+            self.assertEqual(index["gpu_post"], 0)
+            self.assertEqual(sorted(x.name for x in target.iterdir()),
+                             ["v0007", "v0008", "v0009", "v0010", "variant_index.json"])
+            variants = set()
+            observed_seeds = set()
+            for row in index["variants"]:
+                version = row["variant"]
+                variants.add(version)
+                folder = target / row["relative_directory"]
+                self.assertEqual(folder.name, f"v{version:04d}")
+                self.assertEqual(len(list(folder.iterdir())), 4)
+                raw = (folder / "batch_manifest.json").read_bytes()
+                self.assertEqual(row["batch_manifest_sha256"], sha(raw))
+                manifest = json.loads(raw)
+                self.assertEqual(manifest["schema"], "picotoo.local-keyframe-batch-dry-run.v1")
+                self.assertEqual(manifest["variant"], version)
+                self.assertEqual([record["shot_id"] for record in manifest["shots"]],
+                                 ["shot-1", "shot-2", "shot-3"])
+                self.assertFalse(manifest["workflow_registered"])
+                self.assertEqual(manifest["gpu_post"], 0)
+                for record in manifest["shots"]:
+                    candidate_bytes = (folder / record["graph_file"]).read_bytes()
+                    candidate = json.loads(candidate_bytes)
+                    self.assertEqual(record["graph_sha256"], sha(candidate_bytes))
+                    self.assertEqual(candidate["1"]["inputs"]["text"],
+                                     f"Opening state {record['order']}")
+                    self.assertEqual(candidate["2"], graph["2"])
+                    self.assertEqual(candidate["4"], graph["4"])
+                    self.assertEqual(candidate["6"], graph["6"])
+                    observed_seeds.add(candidate["3"]["inputs"]["seed"])
+            self.assertEqual(variants, {7, 8, 9, 10})
+            self.assertEqual(len(observed_seeds), 12)
+
+            # 05. Bounds reject empty, excessive and overflow ranges
+            #     BEFORE creating an output folder or writing any data.
+            for bad_start, bad_count in [(0, 0), (0, 9), (10000, 2), (-1, 1)]:
+                with self.subTest(start=bad_start, count=bad_count):
+                    output = root / f"bad_{bad_start}_{bad_count}"
+                    self.assertEqual(main(
+                        opts + ["--variant", str(bad_start), "--variant-count",
+                                str(bad_count), "--output-dir", str(output)]
+                    ), 1)
+                    self.assertFalse(output.exists())
+
+            # 06. A single variant with an explicit count of one preserves
+            #     the original 4-file layout (no index or nested folder).
+            single = root / "single"
+            self.assertEqual(main(
+                opts + ["--variant", "7", "--variant-count", "1",
+                        "--output-dir", str(single)]
+            ), 0)
+            self.assertEqual(len(list(single.iterdir())), 4)
+            self.assertFalse((single / "variant_index.json").exists())
+            self.assertEqual(
+                (single / "batch_manifest.json").read_bytes(),
+                (target / "v0007" / "batch_manifest.json").read_bytes()
+            )
+
     def test_real_zip_digest_and_cli_no_overwrite(self):
         graph, recovery, bindings, package = fixture()
         with tempfile.TemporaryDirectory() as tmp:

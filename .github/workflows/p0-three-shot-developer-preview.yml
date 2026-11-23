@@ -96,6 +96,11 @@ jobs:
           python -m unittest discover -s tests/creative_quality_2026 -p "test_qwen_reference_readiness.py" -v
           if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_SHOT_READINESS_FAILED' }
 
+          # 02. Multiple local seed options still preserve each frozen
+          #     3-shot package and never generate or send GPU prompts.
+          python -m unittest discover -s tests/creative_quality_2026 -p "test_prepare_local_keyframe_batch.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'P0_QWEN_VARIANT_PREPARATION_FAILED' }
+
           # 原生 Windows 5.1 无联网自检；不得下载密钥、连接 Mac 或触发 Worker。
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/desktop/release/Start-SecureMacTunnel.ps1 -SelfTest
           if ($LASTEXITCODE -ne 0) { throw 'P0_SECURE_SSH_NATIVE_SELFTEST_FAILED' }
@@ -267,6 +272,8 @@ jobs:
             'Inspect-QwenKeyframes.ps1 is optional, reads existing PVP PNGs and writes only one private report.'
             'QuickCheck-P0ThreeShot.ps1 is optional: arms permanent HOLD first, then runs the same offline inspector.'
             'QuickCheck stops if the GUI/Worker is already running, and never resumes or starts any process.'
+            'The existing prepare_local_keyframe_batch.py accepts --variant-count (1..8) for local CPU-only seed alternatives.'
+            'Each vNNNN folder is a normal separate three-shot batch for the existing collector; no image is generated.'
             'These source tools need Python 3.12; do not install Python or run them for production without review.'
             'Missing SHOT_002 or SHOT_003 compositions stay BLOCKED; readiness does not create images.'
             'Qwen JPEG reference files are checked without conversion.'
