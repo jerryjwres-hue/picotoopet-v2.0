@@ -187,6 +187,37 @@ class CompositionDraftAuditTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     audit(bootstrap, review)
 
+    def test_missing_or_malformed_review_index_rejected(self):
+        # 07. The operator-created evidence index is mandatory but is not approval.
+        for case in ("missing", "malformed", "duplicate"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
+                bootstrap, review, _ = fixture(Path(temp))
+                index = review / "creative_review_index.json"
+                if case == "missing":
+                    index.unlink()
+                elif case == "malformed":
+                    index.write_bytes(b"not json")
+                else:
+                    index.write_bytes(b'{"a":1,"a":2}')
+                with self.assertRaises((ValueError, FileNotFoundError)):
+                    audit(bootstrap, review)
+
+    def test_cli_does_not_follow_symlinked_evidence_directory(self):
+        # 08. The CLI must reject a symlink even if resolve() finds a real tree.
+        with tempfile.TemporaryDirectory() as temp:
+            bootstrap, review, report = fixture(Path(temp))
+            shortcut = Path(temp) / "review-shortcut"
+            try:
+                shortcut.symlink_to(review, target_is_directory=True)
+            except OSError:
+                self.skipTest("Symlink unavailable on this host")
+            self.assertEqual(main([
+                "--bootstrap-dir", str(bootstrap),
+                "--review-dir", str(shortcut),
+                "--report-file", str(report),
+            ]), 1)
+            self.assertFalse(report.exists())
+
     def test_symlink_and_output_under_evidence_tree_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             bootstrap, review, _ = fixture(Path(temp))
