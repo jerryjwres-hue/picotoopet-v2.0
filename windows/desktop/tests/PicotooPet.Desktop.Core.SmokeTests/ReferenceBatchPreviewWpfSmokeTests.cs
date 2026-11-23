@@ -650,6 +650,9 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Two valid variant manifests must expose six independent candidates");
             SmokeAssert.Equal(2, vm.ObservedCandidates.Select(x => x.CandidateBatch).Distinct().Count(),
                 "Each candidate must display its source batch ordinal, not guessed seed authority");
+            SmokeAssert.True(vm.ObservedCandidates.Select(x => x.ShotId).SequenceEqual(
+                ["shot-1", "shot-1", "shot-2", "shot-2", "shot-3", "shot-3"]),
+                "Alternatives must appear beside the same shot, not alternate between distant batches");
             SmokeAssert.True(vm.ObservedCandidates.GroupBy(x => x.ShotId)
                 .All(group => group.Count() == 2),
                 "Every shot must retain one independently observed image from each batch");

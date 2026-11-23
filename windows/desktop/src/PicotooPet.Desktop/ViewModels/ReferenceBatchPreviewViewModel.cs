@@ -580,7 +580,11 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             // 10. Publish all candidates together only after every source
             //     passes. Nothing grants GPU, approvals or provenance rights.
             ObservedCandidates.Clear();
-            foreach (var observed in parsed) ObservedCandidates.Add(observed);
+            // 11. Keep S1 options together, then S2, then S3, preserving
+            //     source batch order within each shot for visual comparison.
+            foreach (var observed in parsed.OrderBy(x =>
+                Array.IndexOf(EligibleShots, x.ShotId)))
+                ObservedCandidates.Add(observed);
             StatusText = provenanceMode == "PNG_EMBEDDED_NO_HISTORY"
                 ? $"已核验 {manifestPaths.Count} 份 PNG 内嵌工作流候选；未认证历史推理成功，仍需人工审片和许可。"
                 : $"已读取 {manifestPaths.Count} 份本地首帧候选清单；图片尚未选择、授权或导入。";
