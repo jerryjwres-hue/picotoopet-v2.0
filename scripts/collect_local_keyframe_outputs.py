@@ -468,8 +468,17 @@ def main(argv: list[str] | None = None) -> int:
     auto_discovery = args.history_snapshot is not None or args.live_history_scan
     embedded_mode = args.embedded_png_map is not None
     variant_mode = args.variants_root is not None
-    if variant_mode and (args.history_snapshot is None or args.prompt_ids is not None):
-        parser.error("Multi-seed collection requires one offline --history-snapshot.")
+    # 08. Multi-seed mode supports the SAME fixed loopback read-only GET
+    #     as single-seed mode, or a provided offline history snapshot.
+    #     Explicit per-shot IDs, PNG maps and write operations stay excluded.
+    if variant_mode and (
+        (args.history_snapshot is None and not args.live_history_scan)
+        or args.prompt_ids is not None
+    ):
+        parser.error(
+            "Multi-seed collection requires --history-snapshot "
+            "or the explicit read-only --live-history-scan."
+        )
     if embedded_mode or auto_discovery:
         if args.prompt_ids is not None:
             parser.error("Embedded/auto mode cannot use --prompt-ids.")
@@ -477,9 +486,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Explicit Comfy history requires --prompt-ids.")
     try:
         if variant_mode:
-            # 06. One offline history snapshot resolves every variant.
-            #     All 3xN images are checked BEFORE creating output files.
-            listing = parse_history(read_bounded(args.history_snapshot))
+            # 09. Fetch exactly one bounded history view over the existing
+            #     fixed localhost GET, or read a user-supplied offline copy.
+            #     No Comfy POST, HTTP redirect, GPU or local image mutation.
+            history_bytes = (
+                fetch_recent_history() if args.live_history_scan
+                else read_bounded(args.history_snapshot)
+            )
+            listing = parse_history(history_bytes)
             groups, index = collect_variant_snapshot(
                 args.variants_root, listing, args.comfy_output_root
             )
@@ -494,6 +508,10 @@ def main(argv: list[str] | None = None) -> int:
             with (args.output_dir / "observed_variant_index.json").open("xb") as output:
                 output.write(canonical_bytes(index))
             print(f"KEYFRAME_VARIANT_CANDIDATES=OBSERVED; VARIANTS={len(groups)}; GPU_POST=0")
+            print(
+                "HISTORY_SOURCE=FIXED_LOOPBACK_GET" if args.live_history_scan
+                else "HISTORY_SOURCE=OFFLINE_SNAPSHOT"
+            )
             print("HUMAN_REVIEW=REQUIRED; REFERENCE_APPROVED=FALSE")
             return 0
         batch = parse_history(read_bounded(args.batch_dir / "batch_manifest.json"))

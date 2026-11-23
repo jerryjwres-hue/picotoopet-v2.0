@@ -391,6 +391,118 @@ class CandidateTests(unittest.TestCase):
                       "--output-dir", str(root / "invalid")])
             self.assertFalse((root / "invalid").exists())
 
+    def test_live_multi_seed_scan_reuses_one_fixed_local_get_only(self):
+        # 05. Both variants use exactly ONE GET through the existing
+        #     loopback-only reader. No POST, history export or image staging.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            variants, output, snapshot, _, _ = variant_fixture(root)
+            baseline_dir = root / "offline"
+            live_dir = root / "live"
+            source = [
+                "--variants-root", str(variants),
+                "--comfy-output-root", str(output),
+            ]
+            self.assertEqual(main(source + [
+                "--history-snapshot", str(snapshot),
+                "--output-dir", str(baseline_dir),
+            ]), 0)
+            with patch("collect_local_keyframe_outputs.fetch_recent_history",
+                       return_value=snapshot.read_bytes()) as get, patch(
+                "collect_local_keyframe_outputs.fetch_history"
+            ) as by_id:
+                self.assertEqual(main(source + [
+                    "--live-history-scan",
+                    "--output-dir", str(live_dir),
+                ]), 0)
+                get.assert_called_once_with()
+                by_id.assert_not_called()
+
+            # 06. A live GET is strictly an alternative evidence source;
+            #     all output report bytes equal the offline snapshot mode.
+            left = sorted(path.relative_to(baseline_dir)
+                          for path in baseline_dir.rglob("*") if path.is_file())
+            right = sorted(path.relative_to(live_dir)
+                           for path in live_dir.rglob("*") if path.is_file())
+            self.assertEqual(left, right)
+            for relative in left:
+                self.assertEqual(
+                    (baseline_dir / relative).read_bytes(),
+                    (live_dir / relative).read_bytes(),
+                )
+            self.assertEqual(len(left), 3)
+
+    def test_live_multi_seed_scan_rejects_missing_and_invalid_records(self):
+        # 07. Missing, truncated and ambiguous finished histories must not
+        #     create a partial WPF review directory or use network fallback.
+        for invalid in ("missing", "malformed", "ambiguous", "unreachable"):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                variants, output, snapshot, _, listing = variant_fixture(root)
+                if invalid == "missing":
+                    listing.pop("00000000-0000-4000-8000-000000000803")
+                    returned = canonical_bytes(listing)
+                elif invalid == "malformed":
+                    returned = b'{"incomplete":'
+                elif invalid == "ambiguous":
+                    original_id = "00000000-0000-4000-8000-000000000701"
+                    new_id = "00000000-0000-4000-8000-000000009999"
+                    record = copy.deepcopy(listing[original_id])
+                    record["prompt"][1] = new_id
+                    listing[new_id] = record
+                    returned = canonical_bytes(listing)
+                else:
+                    returned = None
+                target = root / "not_created"
+                args = [
+                    "--variants-root", str(variants),
+                    "--live-history-scan",
+                    "--comfy-output-root", str(output),
+                    "--output-dir", str(target),
+                ]
+                with patch("collect_local_keyframe_outputs.fetch_history") as by_id:
+                    if returned is None:
+                        with patch(
+                            "collect_local_keyframe_outputs.fetch_recent_history",
+                            side_effect=OSError("loopback refused")
+                        ) as get:
+                            self.assertEqual(main(args), 1)
+                    else:
+                        with patch(
+                            "collect_local_keyframe_outputs.fetch_recent_history",
+                            return_value=returned,
+                        ) as get:
+                            self.assertEqual(main(args), 1)
+                    get.assert_called_once_with()
+                    by_id.assert_not_called()
+                self.assertFalse(target.exists())
+
+    def test_live_multi_seed_scan_requires_explicit_safe_source(self):
+        # 08. Multi-seed collection must never infer a live API choice
+        #     from a missing snapshot or accept per-ID/live-history modes.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            variants, output, snapshot, _, _ = variant_fixture(root)
+            common = [
+                "--variants-root", str(variants),
+                "--comfy-output-root", str(output),
+                "--output-dir", str(root / "not_created"),
+            ]
+            for wrong in (
+                [],
+                ["--live-history"],
+                ["--history-dir", str(root)],
+                ["--embedded-png-map", str(snapshot)],
+                ["--live-history-scan", "--prompt-ids", str(snapshot)],
+                ["--history-snapshot", str(snapshot), "--prompt-ids", str(snapshot)],
+            ):
+                with self.subTest(args=wrong):
+                    with patch("collect_local_keyframe_outputs.fetch_recent_history") as get:
+                        with self.assertRaises(SystemExit):
+                            main(common + wrong)
+                        get.assert_not_called()
+                    self.assertFalse((root / "not_created").exists())
+
     def test_live_history_scan_is_fixed_loopback_get(self):
         with patch("collect_local_keyframe_outputs.urllib.request.build_opener") as builder:
             opener = builder.return_value
