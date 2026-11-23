@@ -260,6 +260,74 @@ class QwenBindingsTests(unittest.TestCase):
                             "a" * 64, 0, root
                         )
 
+    def test_exact_jpeg_bytes_with_24_byte_camera_tail_are_audited(self):
+        # 06. Camera exporters sometimes append a tiny opaque suffix after
+        #     the real EOI. Preserve ALL bytes and authenticate the suffix.
+        from qwen_reference_bindings import (
+            MAX_JPEG_TRAILING_BYTES, _verify, jpeg_container_info,
+            jpeg_dimensions, jpeg_trailing_audit,
+        )
+        tail = bytes.fromhex("1336060100000000") + bytes(16)
+        self.assertEqual(len(tail), 24)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            name = "REF_DOG_A_001.jpg"
+            original = jpeg(17) + tail
+            (root / name).write_bytes(original)
+            exact_sha = hashlib.sha256(original).hexdigest()
+            relative, report = _verify(root, {
+                "filename": name, "sha256": exact_sha, "bytes": len(original),
+            })
+            self.assertEqual(relative, name)
+            self.assertEqual(jpeg_dimensions(original), (4, 4))
+            self.assertEqual(jpeg_container_info(original), (
+                (4, 4), 24, hashlib.sha256(tail).hexdigest(),
+            ))
+            self.assertEqual(jpeg_trailing_audit(original), {
+                "jpeg_trailing_bytes": 24,
+                "jpeg_trailing_sha256": hashlib.sha256(tail).hexdigest(),
+            })
+            self.assertEqual(report["sha256"], exact_sha)
+            self.assertEqual(report["bytes"], len(original))
+            self.assertEqual(report["jpeg_trailing_bytes"], 24)
+            self.assertEqual(report["jpeg_trailing_sha256"], hashlib.sha256(tail).hexdigest())
+            self.assertFalse(report["pixels_decoded"])
+            self.assertEqual((root / name).read_bytes(), original)
+            # 07. Full-file SHA including the suffix remains mandatory.
+            with self.assertRaisesRegex(ValueError, "KEYFRAME_REFERENCE_BYTES_MISMATCH"):
+                _verify(root, {
+                    "filename": name, "sha256": hashlib.sha256(jpeg(17)).hexdigest(),
+                    "bytes": len(original),
+                })
+            # 08. A JPEG without trailing bytes keeps a transparent audit.
+            self.assertEqual(jpeg_trailing_audit(jpeg(17)), {
+                "jpeg_trailing_bytes": 0, "jpeg_trailing_sha256": None,
+            })
+            self.assertEqual(MAX_JPEG_TRAILING_BYTES, 64)
+
+    def test_jpeg_eoi_scan_boundaries_and_excess_trailers_fail_closed(self):
+        # 09. Entropy stuffing, restart markers and an additional SOS are not
+        #     EOI. The first actual EOI must follow valid SOF and SOS markers.
+        from qwen_reference_bindings import jpeg_container_info, jpeg_dimensions
+        tail = bytes.fromhex("1336060100000000") + bytes(16)
+        bare = jpeg(4)
+        cases = [
+            (bare[:-2] + tail, "KEYFRAME_REFERENCE_JPEG_INCOMPLETE"),
+            (bare[:-2] + b"\xff\x00" + tail, "KEYFRAME_REFERENCE_JPEG_INCOMPLETE"),
+            (bare + bytes(65), "KEYFRAME_REFERENCE_JPEG_TRAILING_BYTES_EXCESS"),
+            (bare[:-2] + b"\xff\xd9" + bytes(65),
+             "KEYFRAME_REFERENCE_JPEG_TRAILING_BYTES_EXCESS"),
+            (bare[:-2] + b"\xff\xc4\x00\x08\xff\xd9\x00\x00\x00\x00",
+             "KEYFRAME_REFERENCE_JPEG_INCOMPLETE"),
+        ]
+        for data, code in cases:
+            with self.subTest(code=code, size=len(data)), self.assertRaisesRegex(
+                ValueError, code,
+            ):
+                jpeg_dimensions(data)
+        stuffed_scan = bare[:-2] + b"\xff\x00\xff\xd0" + bare[-2:] + tail
+        self.assertEqual(jpeg_container_info(stuffed_scan)[1], 24)
+
     def test_renamed_png_corrupt_jpeg_and_jpeg_symlink_denied(self):
         from qwen_reference_bindings import _verify, jpeg_dimensions
 
