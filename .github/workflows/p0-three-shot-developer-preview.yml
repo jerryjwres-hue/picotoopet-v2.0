@@ -282,6 +282,7 @@ jobs:
             'When the only authentic Core v2 PASS Creative Package is video.vertical.v1, ONLY --composition-bootstrap --allow-vertical-guidance-for-landscape-drafts can use its frozen prompts as historical creative references for later LANDSCAPE drafts.'
             'This does not change the original vertical Core ZIP, still prompts, Qwen image dimensions or model nodes; it DOES NOT convert to a landscape package or certify target output geometry.'
             'Bootstrap manifest reports source_output_profile_id=video.vertical.v1, intended_later_output_profile_id=video.landscape.v1, source_profile_conversion_performed=false and target_geometry_verified=false.'
+            'An original IMAGE_TO_VIDEO shot intent can be retained as HISTORICAL GUIDANCE in bootstrap draft JSON only; it is never converted into GENERATIVE_VIDEO or accepted by strict production input binding.'
             'Production still requires a new Core creative.content_plan.v2 PASS package with a native video.landscape.v1 brief, separate real S2/S3 images, exact rights, review and approval.'
 
             'It emits an intentionally different bootstrap manifest schema; the strict candidate collector, reference registration, Owner/GPU/production flow MUST NOT accept it as a finished image batch.'
