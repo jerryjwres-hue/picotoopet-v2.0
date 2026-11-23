@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows.Data;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -33,7 +35,8 @@ public sealed record ReferenceCompositionWorkItem(
 // 只读候选是历史输出观测，不是 Producer 授权、身份资产或使用许可。
 public sealed record ReferenceObservedCandidate(string ShotId, string OutputRelativePath,
     string Sha256, long Bytes, int Width, int Height, string PromptId,
-    BitmapSource? Preview = null, string CandidateBatch = "单份候选");
+    BitmapSource? Preview = null, string CandidateBatch = "单份候选",
+    string SelectionStatus = "尚未选用");
 
 /// <summary>Local preview and explicit request for existing Core approvals; never grants execution permission.</summary>
 public sealed class ReferenceBatchPreviewViewModel : ObservableObject
@@ -123,6 +126,11 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         CreativePackageDigest = package.PackageDigest;
         EligibleShots = eligible.ToArray();
         _eligibleShots = new HashSet<string>(eligible, StringComparer.Ordinal);
+        // 01. Group the existing observed images by frozen shot identity.
+        //     This view is presentation-only and never changes file/rights data.
+        ObservedCandidateGroups = CollectionViewSource.GetDefaultView(ObservedCandidates);
+        ObservedCandidateGroups.GroupDescriptions?.Add(
+            new PropertyGroupDescription(nameof(ReferenceObservedCandidate.ShotId)));
     }
 
     public string GoalId { get; }
@@ -130,6 +138,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public string CreativePackageDigest { get; }
     public ObservableCollection<ReferencePreviewItem> Items { get; } = new();
     public ObservableCollection<ReferenceObservedCandidate> ObservedCandidates { get; } = new();
+    // 02. One group per S1/S2/S3; candidates remain in original batch order.
+    public ICollectionView ObservedCandidateGroups { get; }
     public ObservableCollection<ReferenceCompositionWorkItem> CompositionWorkOrders { get; } = new();
     public string[] EligibleShots { get; }
     public IReadOnlyList<ReferenceKeyframeInstruction> KeyframeInstructions { get; }
@@ -428,6 +438,19 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                     LocalSelectionSha256 = digest
                 };
         }
+        // 03. Only the actual immutable staged SHA defines the selected
+        //     candidate. Seed index, filename and manifest cannot claim it.
+        for (var index = 0; index < ObservedCandidates.Count; index++)
+        {
+            var observed = ObservedCandidates[index];
+            var status = !_snapshots.TryGetValue(observed.ShotId, out var staged)
+                ? "尚未选用"
+                : staged.Item.Sha256 == observed.Sha256
+                    ? "当前镜头已选用此图（未审批）"
+                    : "当前镜头已选其他候选";
+            if (observed.SelectionStatus != status)
+                ObservedCandidates[index] = observed with { SelectionStatus = status };
+        }
     }
 
     // 05. Keep the original one-file API, but permit up to eight distinct
@@ -585,6 +608,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             foreach (var observed in parsed.OrderBy(x =>
                 Array.IndexOf(EligibleShots, x.ShotId)))
                 ObservedCandidates.Add(observed);
+            SyncLocalShotSelections();
             StatusText = provenanceMode == "PNG_EMBEDDED_NO_HISTORY"
                 ? $"已核验 {manifestPaths.Count} 份 PNG 内嵌工作流候选；未认证历史推理成功，仍需人工审片和许可。"
                 : $"已读取 {manifestPaths.Count} 份本地首帧候选清单；图片尚未选择、授权或导入。";

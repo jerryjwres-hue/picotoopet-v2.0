@@ -92,13 +92,30 @@
               IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
               Click="LoadObservedVariantFolder_Click"/>
      </WrapPanel>
-     <ItemsControl x:Name="ObservedCandidatesList" ItemsSource="{Binding ObservedCandidates}">
+     <!-- 07. Compare same-shot seed alternatives side by side, while
+          preserving exact staged-image identity and manual choice. -->
+     <ItemsControl x:Name="ObservedCandidatesList" ItemsSource="{Binding ObservedCandidateGroups}">
+      <ItemsControl.GroupStyle>
+       <GroupStyle>
+        <GroupStyle.HeaderTemplate>
+         <DataTemplate>
+          <TextBlock Text="{Binding Name, StringFormat=镜头 {0} 的候选（未审批）}"
+                     FontSize="14" FontWeight="SemiBold" Margin="0,12,0,6"/>
+         </DataTemplate>
+        </GroupStyle.HeaderTemplate>
+        <GroupStyle.Panel>
+         <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+        </GroupStyle.Panel>
+       </GroupStyle>
+      </ItemsControl.GroupStyle>
       <ItemsControl.ItemTemplate>
        <DataTemplate>
-        <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8" Margin="0,0,0,5">
+        <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8"
+                Width="260" Margin="0,0,8,8">
          <StackPanel>
-          <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold"/>
-          <TextBlock Text="{Binding CandidateBatch}" FontSize="10" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding CandidateBatch}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding SelectionStatus}" FontSize="11" TextWrapping="Wrap"
+                     AutomationProperties.Name="候选是否为当前镜头已选快照（未审批）"/>
           <Image Source="{Binding Preview}" Width="230" Height="145" Stretch="Uniform" HorizontalAlignment="Left"
                  AutomationProperties.Name="本地候选缩略图（未批准）"/>
           <TextBlock Text="{Binding OutputRelativePath}" TextWrapping="Wrap" FontSize="10"/>

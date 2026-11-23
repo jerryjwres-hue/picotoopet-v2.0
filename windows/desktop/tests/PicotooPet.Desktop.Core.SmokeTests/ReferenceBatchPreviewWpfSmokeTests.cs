@@ -63,8 +63,14 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             "Existing approved batches must be recoverable after restart");
         SmokeAssert.True(panel.FindName("ResumeApprovalIdTextBox") is TextBox,
             "Existing approval ID input is missing");
-        SmokeAssert.True(panel.FindName("ObservedCandidatesList") is ItemsControl,
+        var observedList = panel.FindName("ObservedCandidatesList") as ItemsControl;
+        SmokeAssert.True(observedList is not null,
             "Observed candidates cannot be reviewed in the existing UI");
+        // 01. Same-shot alternatives must render side by side, with one
+        //     explicit header per shot rather than a long batch-major list.
+        SmokeAssert.True(observedList.GroupStyle.Count == 1
+            && observedList.GroupStyle[0].Panel is not null,
+            "The WPF review must show visually grouped same-shot alternatives");
         SmokeAssert.True(panel.FindName("PreviewItems") is ItemsControl, "Real reference preview list is missing");
         var consent = panel.FindName("ConsentCheckBox") as CheckBox
             ?? throw new InvalidOperationException("Explicit preview and rights consent is missing");
@@ -656,6 +662,8 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.True(vm.ObservedCandidates.GroupBy(x => x.ShotId)
                 .All(group => group.Count() == 2),
                 "Every shot must retain one independently observed image from each batch");
+            SmokeAssert.Equal(3, vm.ObservedCandidateGroups.Groups?.Count ?? 0,
+                "The WPF view must have separate S1/S2/S3 visual groups");
             await vm.InspectObservedCandidatesAsync(observedRoot);
             SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
                 "One folder review must render every verified seed alternative thumbnail");
@@ -663,6 +671,40 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Multi-seed thumbnail aggregation cannot stage any source image");
             SmokeAssert.Equal(0, gateway.RegisterCalls,
                 "Aggregating multiple seeds cannot call Core approval API");
+
+            // 09. Explicitly picking one reviewed image and then another
+            //     for the SAME shot should update the exact staged SHA
+            //     annotation, rather than falsely marking both selected.
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.SelectionStatus == "尚未选用"),
+                "All observed images start unselected without a staged snapshot");
+            await vm.AddObservedCandidateAsync(vm.ObservedCandidates[0],
+                observedRoot, new string('e', 64));
+            SmokeAssert.Equal("当前镜头已选用此图（未审批）",
+                vm.ObservedCandidates[0].SelectionStatus,
+                "Only the byte-identical staged SHA can mark a candidate selected");
+            SmokeAssert.Equal("当前镜头已选其他候选",
+                vm.ObservedCandidates[1].SelectionStatus,
+                "The alternative for that shot must remain explicitly unselected");
+            vm.UserConfirmsPreviewAndRights = true;
+            await vm.AddObservedCandidateAsync(vm.ObservedCandidates[1],
+                observedRoot, new string('e', 64));
+            SmokeAssert.Equal("当前镜头已选其他候选",
+                vm.ObservedCandidates[0].SelectionStatus,
+                "Replacing a staged candidate must clear the former selection");
+            SmokeAssert.Equal("当前镜头已选用此图（未审批）",
+                vm.ObservedCandidates[1].SelectionStatus,
+                "Replacing a staged candidate must display the new exact SHA");
+            SmokeAssert.True(!vm.UserConfirmsPreviewAndRights,
+                "Switching a visual candidate must revoke stale rights consent");
+            SmokeAssert.Equal(1, vm.Items.Count,
+                "Switching one shot must replace, not append, a staged image");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Switching candidates must never submit an approval request");
+            vm.Remove("shot-1");
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.SelectionStatus == "尚未选用"),
+                "Removing the staged image must reset both alternatives");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "The comparison test must leave no staged image behind");
 
             // 08. The original one-file importer must remain compatible
             //     while multi-import rejects mixed provenance and duplicates.
