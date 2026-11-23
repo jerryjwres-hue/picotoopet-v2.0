@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from qwen_reference_readiness import inspect_readiness  # noqa: E402
 from prepare_local_keyframe_batch import (  # noqa: E402
-    bootstrap_compositions, canonical_bytes, main as prepare_main, prepare, sha,
+    bootstrap_compositions, canonical_bytes, keyframes, main as prepare_main, prepare, sha,
 )
 from test_qwen_reference_bindings import jpeg, qwen_fixture  # noqa: E402
 
@@ -280,6 +280,129 @@ class ThreeShotReadinessTests(unittest.TestCase):
                         1,
                     )
                     self.assertFalse(target.exists())
+
+    def test_vertical_pass_kit_guidance_requires_explicit_bootstrap_opt_in(self):
+        # 04. A real Core PASS vertical ZIP can guide creative sketches,
+        #     but it is never silently upgraded to a landscape PASS package.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, package = observed_fixture(root)
+            original = copy.deepcopy(graph)
+            package["stage_results"]["creative_brief.v1"]["output_profile_id"] = (
+                "video.vertical.v1"
+            )
+            with self.assertRaisesRegex(ValueError, "KEYFRAME_KIT_LINEAGE_INVALID"):
+                keyframes(package)
+            with self.assertRaisesRegex(ValueError, "KEYFRAME_KIT_LINEAGE_INVALID"):
+                bootstrap_compositions(graph, recovery, package, "a" * 64, 0, root)
+            files, manifest = bootstrap_compositions(
+                graph, recovery, package, "a" * 64, 0, root,
+                allow_vertical_guidance=True,
+            )
+            self.assertEqual(len(files), 3)
+            self.assertEqual(manifest["creative_package_sha256"], "a" * 64)
+            self.assertEqual(manifest["source_output_profile_id"], "video.vertical.v1")
+            self.assertEqual(manifest["intended_later_output_profile_id"],
+                             "video.landscape.v1")
+            self.assertFalse(manifest["source_output_profile_matches_intent"])
+            self.assertFalse(manifest["source_profile_conversion_performed"])
+            self.assertFalse(manifest["target_geometry_verified"])
+            self.assertFalse(manifest["production_authorized"])
+            self.assertFalse(manifest["reference_approved"])
+            self.assertFalse(manifest["distinct_shot_compositions_observed"])
+            self.assertEqual(manifest["gpu_post"], 0)
+            for item in manifest["shots"]:
+                decoded = json.loads(files[item["graph_file"]])
+                self.assertEqual(decoded["1"], original["1"])
+                self.assertEqual(decoded["2"], original["2"])
+                self.assertEqual(decoded["3"], original["3"])
+                self.assertEqual(decoded["4"], original["4"])
+                self.assertEqual(decoded["8"], original["8"])
+                self.assertIsNone(item["generated_composition"])
+            self.assertEqual(graph, original)
+            with self.assertRaisesRegex(ValueError, "VERTICAL_OPT_IN_INVALID"):
+                bootstrap_compositions(
+                    graph, recovery, package, "a" * 64, 0, root,
+                    allow_vertical_guidance="yes",
+                )
+            # 05. Restrict the exception to vertical source only:
+            #     a true landscape kit must use the usual bootstrap path.
+            package["stage_results"]["creative_brief.v1"]["output_profile_id"] = (
+                "video.landscape.v1"
+            )
+            with self.assertRaisesRegex(ValueError, "VERTICAL_OPT_IN_INVALID"):
+                bootstrap_compositions(
+                    graph, recovery, package, "a" * 64, 0, root,
+                    allow_vertical_guidance=True,
+                )
+
+    def test_vertical_pass_kit_cli_stays_offline_and_strict_batch_stays_closed(self):
+        # 06. Exercise the authentic one-member Core ZIP read/check path,
+        #     including the explicit flag; source is NEVER repackaged.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            graph, recovery, package = observed_fixture(root)
+            package["stage_results"]["creative_brief.v1"]["output_profile_id"] = (
+                "video.vertical.v1"
+            )
+            archive = root / "original-vertical-core.zip"
+            with zipfile.ZipFile(archive, "w") as handle:
+                handle.writestr(
+                    f"{package['creative_package_id']}/creative-package.json",
+                    canonical_bytes(package),
+                )
+            digest = sha(archive.read_bytes())
+            (root / "workflow_api.json").write_bytes(canonical_bytes(graph))
+            (root / "recovery_manifest.json").write_bytes(canonical_bytes(recovery))
+            base = [
+                "--package", str(archive), "--package-sha256", digest,
+                "--recovery-dir", str(root), "--input-root", str(root),
+                "--variant-count", "2",
+            ]
+            without = root / "without_ack"
+            self.assertEqual(
+                prepare_main(base + ["--composition-bootstrap",
+                                     "--output-dir", str(without)]), 1,
+            )
+            self.assertFalse(without.exists())
+            selected = root / "vertical_guidance"
+            ack = "--allow-vertical-guidance-for-landscape-drafts"
+            opts = base + ["--composition-bootstrap", ack, "--output-dir",
+                           str(selected)]
+            self.assertEqual(prepare_main(opts), 0)
+            self.assertEqual(prepare_main(opts), 1)
+            self.assertEqual(sha(archive.read_bytes()), digest)
+            index = json.loads((selected / "variant_index.json").read_bytes())
+            self.assertEqual(index["schema"],
+                             "picotoo.local-composition-bootstrap-index.v1")
+            self.assertEqual(index["source_output_profile_id"], "video.vertical.v1")
+            self.assertFalse(index["source_profile_conversion_performed"])
+            self.assertFalse(index["target_geometry_verified"])
+            for item in index["variants"]:
+                manifest = json.loads((
+                    selected / item["relative_directory"] / "batch_manifest.json"
+                ).read_bytes())
+                self.assertEqual(manifest["schema"],
+                                 "picotoo.local-composition-bootstrap-dry-run.v1")
+                self.assertFalse(manifest["source_output_profile_matches_intent"])
+                self.assertEqual(manifest["gpu_post"], 0)
+                self.assertEqual(len(manifest["shots"]), 3)
+            # 07. No flag can bypass the production keyframe preparation;
+            #     the normal strict path continues to reject vertical kits.
+            strict = root / "wrong_strict"
+            self.assertEqual(
+                prepare_main(base + [ack, "--output-dir", str(strict)]), 1
+            )
+            self.assertFalse(strict.exists())
+            wrong_hash = root / "wrong_hash"
+            self.assertEqual(
+                prepare_main(
+                    base + ["--package-sha256", "f" * 64,
+                            "--composition-bootstrap", ack,
+                            "--output-dir", str(wrong_hash)]
+                ), 1,
+            )
+            self.assertFalse(wrong_hash.exists())
 
     def test_distinct_new_compositions_produce_unapproved_strict_slot_map(self):
         with tempfile.TemporaryDirectory() as folder:
