@@ -233,6 +233,115 @@ def prepare(graph: dict, recovery: dict, bindings: dict, package: dict,
     return files, manifest
 
 
+
+def bootstrap_compositions(
+    graph: dict, recovery: dict, package: dict, package_sha: str,
+    variant: int, input_root: Path,
+) -> tuple[dict[str, bytes], dict]:
+    """Prepare *unapproved creative drafts*, never strict reference bindings.
+
+    The existing Qwen composition may guide all three proposed generations,
+    but it is NEVER accepted as three independently produced source images.
+    Outputs must be reviewed and subsequently passed through strict readiness.
+    """
+    # 01. Reuse the actual observed three-LoadImage Qwen graph and frozen Kit.
+    #     No guessed node IDs, invented pixels, model switch or network action.
+    from qwen_reference_readiness import _graph_slots, _observe_input
+
+    digest = sha(canonical_bytes(graph))
+    require_digest(package_sha)
+    if (not isinstance(graph, dict) or not 1 <= len(graph) <= 512
+        or not isinstance(recovery, dict)
+        or recovery.get("schema") != "picotoo.local-keyframe-workflow-recovery.v1"
+        or recovery.get("graph_sha256") != digest
+        or recovery.get("production_authorized") is not False
+        or recovery.get("gpu_post") != 0
+        or recovery.get("history_status") not in (
+            "RECORDED_SUCCESS", "PNG_EMBEDDED_NO_HISTORY"
+        )
+        or type(variant) is not int or not 0 <= variant <= 10000
+        or not input_root.is_dir() or input_root.is_symlink()):
+        raise ValueError("COMPOSITION_BOOTSTRAP_SOURCE_INVALID")
+    if recovery["history_status"] == "PNG_EMBEDDED_NO_HISTORY":
+        if (recovery.get("prompt_id") is not None
+            or recovery.get("source_kind") != "COMFY_PNG_TEXt_PROMPT"
+            or recovery.get("source_image_container_crc_verified") is not True
+            or not isinstance(recovery.get("source_image_sha256"), str)
+            or not DIGEST.fullmatch(recovery["source_image_sha256"])):
+            raise ValueError("COMPOSITION_BOOTSTRAP_PROVENANCE_INVALID")
+    elif recovery.get("source_kind") == "COMFY_PNG_TEXt_PROMPT":
+        raise ValueError("COMPOSITION_BOOTSTRAP_PROVENANCE_CONFLICT")
+
+    slots, load_ids = _graph_slots(graph)
+    if len(load_ids) != 3:
+        raise ValueError("COMPOSITION_BOOTSTRAP_QWEN_INPUTS_INVALID")
+    kit_digest, frames = keyframes(package)
+    observed_inputs = []
+    for node_id in load_ids:
+        # 02. Pin three source references by real image bytes. The original
+        #     graph stays unchanged; none becomes an approved S2/S3 output.
+        filename = graph[node_id]["inputs"]["image"]
+        image = _observe_input(input_root, filename)
+        observed_inputs.append({
+            "node_id": node_id, "filename": image["filename"],
+            "sha256": image["sha256"], "bytes": image["bytes"],
+            "role": "HISTORICAL_GUIDANCE_ONLY",
+        })
+
+    # 03. Only the positive prompt, sampler seed and SaveImage prefix can
+    #     change; all LoadImage, model, negative and topology inputs are frozen.
+    prompt_id = slots["positive_prompt"]["node_id"]
+    sampler_id = slots["seed"]["node_id"]
+    save_id = slots["output_prefix"]["node_id"]
+    files: dict[str, bytes] = {}
+    records = []
+    for frame in frames:
+        shot_id = frame["shot_id"]
+        seed = int.from_bytes(hashlib.sha256(
+            f"composition-bootstrap|{package_sha}|{shot_id}|{variant}".encode()
+        ).digest()[:8], "big") & ((1 << 63) - 1)
+        projected = copy.deepcopy(graph)
+        projected[prompt_id]["inputs"]["prompt"] = frame["still_prompt"]
+        projected[sampler_id]["inputs"]["seed"] = seed
+        projected[save_id]["inputs"]["filename_prefix"] = (
+            f"PicotooPet/composition_bootstrap/{package_sha[:16]}/{shot_id}/v{variant:04d}"
+        )
+        graph_name = f"{frame['order']:02d}-{shot_id}.json"
+        data = canonical_bytes(projected)
+        files[graph_name] = data
+        records.append({
+            "shot_id": shot_id, "order": frame["order"],
+            "graph_file": graph_name, "graph_sha256": sha(data),
+            "seed": seed,
+            "still_prompt_sha256": sha(frame["still_prompt"].encode("utf-8")),
+            "review_checklist": list(frame["review_checklist"]),
+            "generated_composition": None,
+            "human_visual_review": "NOT_PERFORMED",
+        })
+
+    # 04. Deliberately incompatible with the strict output collector's
+    #     batch schema: these files are creative bootstrap *proposals* only.
+    manifest = {
+        "schema": "picotoo.local-composition-bootstrap-dry-run.v1",
+        "creative_package_id": package["creative_package_id"],
+        "creative_package_sha256": package_sha,
+        "keyframe_kit_digest": kit_digest,
+        "source_graph_sha256": digest,
+        "history_provenance": recovery["history_status"],
+        "variant": variant,
+        "historical_reference_inputs": observed_inputs,
+        "historical_composition_reused_as_guidance_only": True,
+        "distinct_shot_compositions_observed": False,
+        "shots": records,
+        "source_inputs_verified": False,
+        "workflow_registered": False,
+        "reference_approved": False,
+        "production_authorized": False,
+        "gpu_post": 0,
+    }
+    return files, manifest
+
+
 def _write_candidate(folder: Path, files: dict[str, bytes], manifest: dict) -> bytes:
     """Write one ordinary batch compatible with the existing collector."""
     # 05. Never overwrite existing candidate folders or graph contents.
@@ -252,7 +361,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--package", type=Path, required=True)
     parser.add_argument("--package-sha256", required=True)
     parser.add_argument("--recovery-dir", type=Path, required=True)
-    parser.add_argument("--slot-map", type=Path, required=True)
+    parser.add_argument("--slot-map", type=Path)
+    parser.add_argument("--composition-bootstrap", action="store_true")
     parser.add_argument("--input-root", type=Path)
     parser.add_argument("--variant", type=int, default=0)
     parser.add_argument("--variant-count", type=int, default=1)
@@ -269,13 +379,28 @@ def main(argv: list[str] | None = None) -> int:
         package = read_package(args.package, args.package_sha256)
         graph = parse_history(read_bounded(args.recovery_dir / "workflow_api.json"))
         recovery = parse_history(read_bounded(args.recovery_dir / "recovery_manifest.json"))
-        bindings = parse_history(read_bounded(args.slot_map))
+        # 09. Bootstrap has no strict per-shot composition map yet. Never
+        #     silently use a bootstrap graph as a production reference batch.
+        if args.composition_bootstrap:
+            if args.slot_map is not None or args.input_root is None:
+                raise ValueError("COMPOSITION_BOOTSTRAP_ARGUMENTS_INVALID")
+            bindings = None
+        else:
+            if args.slot_map is None:
+                raise ValueError("KEYFRAME_SLOT_MAP_REQUIRED")
+            bindings = parse_history(read_bounded(args.slot_map))
         prepared = []
         for variant in range(args.variant, args.variant + args.variant_count):
-            files, manifest = prepare(
-                graph, recovery, bindings, package, args.package_sha256,
-                variant, args.input_root
-            )
+            if args.composition_bootstrap:
+                files, manifest = bootstrap_compositions(
+                    graph, recovery, package, args.package_sha256,
+                    variant, args.input_root
+                )
+            else:
+                files, manifest = prepare(
+                    graph, recovery, bindings, package, args.package_sha256,
+                    variant, args.input_root
+                )
             prepared.append((variant, files, manifest))
 
         # 07. Prepare and validate all variants BEFORE creating anything.
@@ -300,7 +425,9 @@ def main(argv: list[str] | None = None) -> int:
             # 08. Index is only an offline navigation aid. Existing
             #     batch_manifest.json remains the sole per-batch contract.
             index = {
-                "schema": "picotoo.local-keyframe-variant-index.v1",
+                "schema": ("picotoo.local-composition-bootstrap-index.v1"
+                           if args.composition_bootstrap else
+                           "picotoo.local-keyframe-variant-index.v1"),
                 "creative_package_sha256": args.package_sha256,
                 "keyframe_kit_digest": prepared[0][2]["keyframe_kit_digest"],
                 "variant_count": args.variant_count,
@@ -315,7 +442,13 @@ def main(argv: list[str] | None = None) -> int:
             RecursionError, OverflowError, zipfile.BadZipFile, RuntimeError):
         print("KEYFRAME_BATCH=UNVERIFIED; GPU_POST=0", file=sys.stderr)
         return 1
-    if args.variant_count == 1:
+    if args.composition_bootstrap:
+        # 10. A reusable historical conditioning image is not a distinct
+        #     S2/S3 composition; all three generated images remain absent.
+        print("COMPOSITION_BOOTSTRAP=DRY_RUN_ONLY; "
+              f"VARIANTS={args.variant_count}; SHOTS_PER_VARIANT=3; GPU_POST=0")
+        print("DISTINCT_S2_S3_COMPOSITIONS=NOT_CREATED; OWNER_APPROVAL=FALSE")
+    elif args.variant_count == 1:
         print("KEYFRAME_BATCH=DRY_RUN_CANDIDATE; SHOTS=3; GPU_POST=0")
     else:
         print("KEYFRAME_VARIANTS=DRY_RUN_CANDIDATES; "
