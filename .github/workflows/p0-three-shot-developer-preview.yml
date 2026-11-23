@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/p0-three-shot-developer-preview.yml"
       - "windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1"
+      - "windows/desktop/scripts/QuickCheck-P0ThreeShot.ps1"
       - "windows/desktop/release/Start-SecureMacTunnel.ps1"
       - "windows/desktop/release/CONNECT_MAC_SECURE.vbs"
       - "windows/desktop/src/**"
@@ -37,6 +38,7 @@ on:
       - "tests/contract/test_p0_secure_ssh_film_preview.py"
       - "scripts/ci/verify_p0_developer_preview.py"
       - "windows/desktop/release/Start-SecureMacTunnel.ps1"
+      - "windows/desktop/scripts/QuickCheck-P0ThreeShot.ps1"
       - "windows/desktop/release/CONNECT_MAC_SECURE.vbs"
       - "windows/desktop/release/Verify-Phase2Prebuilt.ps1"
       - ".github/workflows/windows-phase2-release.yml"
@@ -133,6 +135,7 @@ jobs:
             }
           }
           Copy-Item -LiteralPath 'windows/desktop/scripts/Prepare-P0ThreeShotHold.ps1' -Destination (Join-Path $bundle 'Prepare-P0ThreeShotHold.ps1')
+          Copy-Item -LiteralPath 'windows/desktop/scripts/QuickCheck-P0ThreeShot.ps1' -Destination (Join-Path $bundle 'QuickCheck-P0ThreeShot.ps1')
           Copy-Item -LiteralPath 'windows/desktop/release/CONNECT_MAC_SECURE.vbs' -Destination (Join-Path $bundle 'CONNECT_MAC_SECURE.vbs')
           Copy-Item -LiteralPath 'windows/desktop/release/Start-SecureMacTunnel.ps1' -Destination (Join-Path $bundle 'Start-SecureMacTunnel.ps1')
           # 01. Ship the exact CPU-only Qwen recovery and image-evidence tools
@@ -218,6 +221,30 @@ jobs:
             throw 'P0_QWEN_BUNDLED_LAUNCHER_SMOKE_FAILED'
           }
           Write-Host 'P0_QWEN_BUNDLED_LAUNCHER_SMOKE=PASS; INPUT_BYTES=6; S2_S3_ASSIGNMENT=UNVERIFIED; REAL_IMAGES_TOUCHED=0; GPU_POST=0'
+          # 07. Run the actual manual quick-check wrapper on ephemeral CI only.
+          #     It must arm HOLD first and reuse the packaged inspector; no
+          #     local user machine, SSH, Comfy, model or Worker is accessed.
+          $quickCheck = Join-Path $bundle 'QuickCheck-P0ThreeShot.ps1'
+          $quickOutput = (& pwsh -NoLogo -NoProfile -NonInteractive -File $quickCheck -OutputRoot $syntheticOutput -InputRoot $syntheticInput -ExpectedCount 6 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or
+              $quickOutput -notmatch 'P0_HOLD_PREPARED=PASS' -or
+              $quickOutput -notmatch 'QWEN_REFERENCED_INPUTS=6/6' -or
+              $quickOutput -notmatch 'P0_LOCAL_QUICKCHECK=PASS' -or
+              $quickOutput -notmatch 'GPU_HOLD=HOLD' -or
+              $quickOutput -notmatch 'S2_S3_COMPOSITION=UNVERIFIED') {
+            throw 'P0_QUICKCHECK_BUNDLED_NATIVE_SMOKE_FAILED'
+          }
+          Write-Host 'P0_QUICKCHECK_BUNDLED_NATIVE_SMOKE=PASS; HOLD=HOLD; GPU_POST=0'
+          # 08. Removing one *synthetic runner* input must turn an otherwise
+          #     successful six-PNG inspection into a blocked combined check.
+          Remove-Item -LiteralPath (Join-Path $syntheticInput 'private-input-5.png') -Force
+          $blockedQuickCheck = (& pwsh -NoLogo -NoProfile -NonInteractive -File $quickCheck -OutputRoot $syntheticOutput -InputRoot $syntheticInput -ExpectedCount 6 2>$null | Out-String)
+          if ($LASTEXITCODE -eq 0 -or
+              $blockedQuickCheck -notmatch 'P0_LOCAL_QUICKCHECK=BLOCKED' -or
+              $blockedQuickCheck -match 'P0_LOCAL_QUICKCHECK=PASS') {
+            throw 'P0_QUICKCHECK_MISSING_INPUT_NOT_BLOCKED'
+          }
+          Write-Host 'P0_QUICKCHECK_MISSING_INPUT_STOP=PASS; GPU_POST=0'
           @(
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
             'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'
@@ -234,6 +261,8 @@ jobs:
             'the exact three-shot Core Job/Plan/Digest has been reviewed and GPU execution is safe.'
             'Eight scripts/*.py tools are bundled for offline CPU-only inspection, not run automatically.'
             'Inspect-QwenKeyframes.ps1 is optional, reads existing PVP PNGs and writes only one private report.'
+            'QuickCheck-P0ThreeShot.ps1 is optional: arms permanent HOLD first, then runs the same offline inspector.'
+            'QuickCheck stops if the GUI/Worker is already running, and never resumes or starts any process.'
             'These source tools need Python 3.12; do not install Python or run them for production without review.'
             'Missing SHOT_002 or SHOT_003 compositions stay BLOCKED; readiness does not create images.'
             'Qwen JPEG reference files are checked without conversion.'
@@ -263,6 +292,7 @@ jobs:
             connection_script = 'Start-SecureMacTunnel.ps1'
             offline_keyframe_tools = @($offlineToolNames | ForEach-Object { "scripts/$_" })
             offline_inspector_script = 'Inspect-QwenKeyframes.ps1'
+            local_quickcheck_script = 'QuickCheck-P0ThreeShot.ps1'
             files = $files
           }
           $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $bundle 'preview-manifest.json') -Encoding utf8

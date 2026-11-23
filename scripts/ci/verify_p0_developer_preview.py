@@ -222,6 +222,19 @@ def verify_preview_archive(
                 or "offline_inspector_script" in manifest
             ):
                 raise PreviewVerificationError("OFFLINE_QWEN_TOOLSET_UNDECLARED")
+            # 02. The optional one-click local check can only ship together
+            #     with the real HOLD script and eight exact offline Qwen
+            #     tools. Earlier portable archives remain valid as legacy.
+            quickcheck = manifest.get("local_quickcheck_script")
+            if quickcheck is not None:
+                if (quickcheck != "QuickCheck-P0ThreeShot.ps1"
+                    or quickcheck not in listed
+                    or set(offline or ()) != _OFFLINE_QWEN_TOOLS_V3
+                    or manifest.get("offline_inspector_script")
+                       != "Inspect-QwenKeyframes.ps1"):
+                    raise PreviewVerificationError("QUICKCHECK_BUNDLED_SCRIPT_INVALID")
+            elif "QuickCheck-P0ThreeShot.ps1" in listed:
+                raise PreviewVerificationError("QUICKCHECK_BUNDLED_SCRIPT_UNDECLARED")
             with zip_file.open("README_P0_DEVELOPER_PREVIEW.txt") as handle:
                 readme = handle.read().decode("utf-8-sig")
             if "NOT a formal Release Builder output" not in readme \

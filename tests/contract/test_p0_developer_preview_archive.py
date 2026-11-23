@@ -41,6 +41,10 @@ def _create_preview(
     tamper_inspector: bool = False,
     include_readiness: bool = False,
     tamper_readiness: bool = False,
+    include_quickcheck: bool = False,
+    missing_quickcheck: bool = False,
+    tamper_quickcheck: bool = False,
+    undeclared_quickcheck: bool = False,
 ) -> tuple[Path, Path]:
     """Synthetic ZIP resembles real preview metadata, never a runnable application."""
 
@@ -56,6 +60,8 @@ def _create_preview(
     }
     if include_readiness and not include_inspector:
         raise ValueError("READINESS_REQUIRES_INSPECTOR")
+    if include_quickcheck and not include_readiness:
+        raise ValueError("QUICKCHECK_REQUIRES_EIGHT_TOOLS")
     if include_inspector and not include_offline_tools:
         raise ValueError("INSPECTOR_REQUIRES_BUNDLED_TOOLS")
     if include_offline_tools:
@@ -75,6 +81,12 @@ def _create_preview(
                 files["scripts/qwen_reference_readiness.py"] = (
                     b"# SYNTHETIC MISSING-SHOT PREFLIGHT ONLY\n"
                 )
+    if include_quickcheck:
+        # 01. Synthetic script is only an archive manifest fixture;
+        #     never execute a command or touch a real worker/Comfy session.
+        files["QuickCheck-P0ThreeShot.ps1"] = b"# TEST ONLY: manual HOLD-first inventory\n"
+    if missing_quickcheck:
+        files.pop("QuickCheck-P0ThreeShot.ps1", None)
     if missing_hold:
         files.pop("Prepare-P0ThreeShotHold.ps1")
     if missing_tunnel:
@@ -97,6 +109,8 @@ def _create_preview(
         )} if include_offline_tools else {}),
         **({"offline_inspector_script": "Inspect-QwenKeyframes.ps1"}
            if include_inspector else {}),
+        **({"local_quickcheck_script": "QuickCheck-P0ThreeShot.ps1"}
+           if include_quickcheck and not undeclared_quickcheck else {}),
         "files": [
             {
                 "path": name,
@@ -114,7 +128,9 @@ def _create_preview(
                 tamper_tunnel and name == "Start-SecureMacTunnel.ps1"
             ) or (tool_body_tamper and name == "scripts/recover_comfy_keyframe_workflow.py") or (
                 tamper_inspector and name == "Inspect-QwenKeyframes.ps1"
-            ) or (tamper_readiness and name == "scripts/qwen_reference_readiness.py")
+            ) or (tamper_readiness and name == "scripts/qwen_reference_readiness.py") or (
+                tamper_quickcheck and name == "QuickCheck-P0ThreeShot.ps1"
+            )
             package.writestr(name, data + (b"CHANGED" if changed else b""))
         if duplicate:
             # Duplicate basename under different case must not be extracted on Windows.
@@ -249,6 +265,45 @@ class PreviewArchiveContractTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             PreviewVerificationError, "FILE_BYTES_OR_SHA256_MISMATCH"
+        ):
+            self.verify(archive, receipt)
+
+    def test_manual_hold_first_quickcheck_is_sha_verified_not_installable(self):
+        # 03. All three original entrypoints remain separate and the one
+        #     click wrapper has a source-SHA-checked manifest identity.
+        archive, receipt = _create_preview(
+            self.root, include_offline_tools=True, include_inspector=True,
+            include_readiness=True, include_quickcheck=True,
+        )
+        result = self.verify(archive, receipt)
+        self.assertEqual(result["files_verified"], 16)
+        self.assertFalse(result["user_install_allowed"])
+        self.assertFalse(result["formal_release_pass"])
+
+    def test_missing_tampered_or_undeclared_quickcheck_is_rejected(self):
+        # 04. No ZIP may claim the new entrypoint without an exact tracked
+        #     member, and changed script bytes cannot pass SHA verification.
+        base = dict(include_offline_tools=True, include_inspector=True,
+                    include_readiness=True, include_quickcheck=True)
+        archive, receipt = _create_preview(
+            self.root, **base, missing_quickcheck=True,
+        )
+        with self.assertRaisesRegex(
+            PreviewVerificationError, "QUICKCHECK_BUNDLED_SCRIPT_INVALID"
+        ):
+            self.verify(archive, receipt)
+        archive, receipt = _create_preview(
+            self.root, **base, tamper_quickcheck=True,
+        )
+        with self.assertRaisesRegex(
+            PreviewVerificationError, "FILE_BYTES_OR_SHA256_MISMATCH"
+        ):
+            self.verify(archive, receipt)
+        archive, receipt = _create_preview(
+            self.root, **base, undeclared_quickcheck=True,
+        )
+        with self.assertRaisesRegex(
+            PreviewVerificationError, "QUICKCHECK_BUNDLED_SCRIPT_UNDECLARED"
         ):
             self.verify(archive, receipt)
 
