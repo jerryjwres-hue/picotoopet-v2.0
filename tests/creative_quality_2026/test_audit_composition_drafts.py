@@ -119,6 +119,138 @@ class CompositionDraftAuditTests(unittest.TestCase):
             self.assertEqual(main(args), 1)  # Never overwrite a report.
             self.assertEqual(json.loads(report.read_bytes()), result)
 
+    def test_review_index_original_names_bind_to_staged_copies_by_sha(self):
+        # 10. Render history uses original SHOT_001 labels; staged evidence
+        #     can be named after an actual frozen shot ID like "shot1".
+        #     Only exact PNG SHA256 equality makes that rename auditable.
+        with tempfile.TemporaryDirectory() as temp:
+            bootstrap, review, _ = fixture(Path(temp))
+            originals = []
+            for variant in (0, 1):
+                for order in (1, 2, 3):
+                    original_name = f"v{variant:04d}_SHOT_{order:03d}_shot{order}.png"
+                    staged = review / original_name
+                    raw = staged.read_bytes()
+                    # 11. Rename only a synthetic evidence COPY, not a
+                    #     Comfy output. The original owner-index label stays.
+                    copy_name = f"v{variant:04d}_shot{order}_shot{order}.png"
+                    staged.rename(review / copy_name)
+                    originals.append({
+                        "output_image": original_name,
+                        "output_image_sha256": digest(raw),
+                    })
+                    folder = bootstrap / f"v{variant:04d}"
+                    manifest_path = folder / "batch_manifest.json"
+                    manifest = json.loads(manifest_path.read_bytes())
+                    shot = manifest["shots"][order - 1]
+                    new_graph_name = f"{order:02d}-shot{order}.json"
+                    (folder / shot["graph_file"]).rename(folder / new_graph_name)
+                    shot["shot_id"] = f"shot{order}"
+                    shot["graph_file"] = new_graph_name
+                    graph = json.loads((folder / new_graph_name).read_bytes())
+                    graph["11"]["inputs"]["filename_prefix"] = (
+                        f"PicotooPet/composition_bootstrap/{'a'*16}/shot{order}/v{variant:04d}"
+                    )
+                    raw_graph = canonical_bytes(graph)
+                    (folder / new_graph_name).write_bytes(raw_graph)
+                    shot["graph_sha256"] = digest(raw_graph)
+                    (review / copy_name).write_bytes(png(graph))
+                    # 12. The renamed synthetic graph changes actual PNG
+                    #     bytes, so update the independent owner index SHA.
+                    originals[-1]["output_image_sha256"] = digest((review / copy_name).read_bytes())
+                    new_manifest = canonical_bytes(manifest)
+                    manifest_path.write_bytes(new_manifest)
+                    index_path = bootstrap / "variant_index.json"
+                    index = json.loads(index_path.read_bytes())
+                    index["variants"][variant]["batch_manifest_sha256"] = digest(new_manifest)
+                    index_path.write_bytes(canonical_bytes(index))
+            (review / "creative_review_index.json").write_bytes(
+                canonical_bytes({"renders": originals})
+            )
+            result = audit(bootstrap, review)
+            self.assertTrue(result["review_index_output_bindings_verified"])
+            self.assertEqual(result["review_index_bound_image_count"], 6)
+            self.assertEqual(len(result["review_index_image_bindings"]), 6)
+            self.assertTrue(all(item["same_bytes_verified"]
+                                for item in result["review_index_image_bindings"]))
+            self.assertNotEqual(
+                result["review_index_image_bindings"][0]["original_output_image"],
+                result["review_index_image_bindings"][0]["staged_evidence_image"],
+            )
+            self.assertFalse(result["comfy_history_independently_verified"])
+            self.assertFalse(result["production_authorized"])
+
+            # 13. A claimed owner index hash cannot falsely bind different
+            #     bytes, even when all six staged image graphs stay valid.
+            originals[2]["output_image_sha256"] = "f" * 64
+            (review / "creative_review_index.json").write_bytes(
+                canonical_bytes({"renders": originals})
+            )
+            with self.assertRaisesRegex(
+                ValueError, "COMPOSITION_REVIEW_INDEX_IMAGE_HASH_MISMATCH",
+            ):
+                audit(bootstrap, review)
+
+    def test_partial_or_unrecognized_review_index_never_verified(self):
+        # 14. A syntactically valid index alone does not prove any mapping.
+        with tempfile.TemporaryDirectory() as temp:
+            bootstrap, review, _ = fixture(Path(temp))
+            result = audit(bootstrap, review)
+            self.assertFalse(result["review_index_output_bindings_verified"])
+            self.assertEqual(result["review_index_bound_image_count"], 0)
+            self.assertEqual(
+                result["review_index_binding_status"], "UNVERIFIED_SCHEMA_OR_COVERAGE",
+            )
+
+    def test_optional_source_graph_is_sha_pinned_and_frozen_nodes_match(self):
+        # 15. "All six share one graph" alone does not prove they preserve
+        #     the original recovered graph. Check the source when supplied.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bootstrap, review, report = fixture(root)
+            source = bootstrap / "v0000" / "01-SHOT_001.json"
+            raw = source.read_bytes()
+            source_path = root / "workflow_api.json"
+            source_path.write_bytes(raw)
+            index_path = bootstrap / "variant_index.json"
+            index = json.loads(index_path.read_bytes())
+            for variant in (0, 1):
+                manifest_path = bootstrap / f"v{variant:04d}" / "batch_manifest.json"
+                manifest = json.loads(manifest_path.read_bytes())
+                manifest["source_graph_sha256"] = digest(raw)
+                raw_manifest = canonical_bytes(manifest)
+                manifest_path.write_bytes(raw_manifest)
+                index["variants"][variant]["batch_manifest_sha256"] = digest(raw_manifest)
+            index_path.write_bytes(canonical_bytes(index))
+            verified = audit(bootstrap, review, source_path)
+            self.assertTrue(verified["source_graph_allowlist_independently_verified"])
+            self.assertFalse(verified["review_index_output_bindings_verified"])
+            self.assertEqual(main([
+                "--bootstrap-dir", str(bootstrap),
+                "--review-dir", str(review),
+                "--source-graph-file", str(source_path),
+                "--report-file", str(report),
+            ]), 0)
+
+            # 16. Even a source that shares the same positive prompt, Seed
+            #     and prefix must fail if its frozen nodes were altered.
+            forged = json.loads(raw)
+            forged["9"]["inputs"]["prompt"] = "modified source negative"
+            forged_raw = canonical_bytes(forged)
+            source_path.write_bytes(forged_raw)
+            for variant in (0, 1):
+                manifest_path = bootstrap / f"v{variant:04d}" / "batch_manifest.json"
+                manifest = json.loads(manifest_path.read_bytes())
+                manifest["source_graph_sha256"] = digest(forged_raw)
+                raw_manifest = canonical_bytes(manifest)
+                manifest_path.write_bytes(raw_manifest)
+                index["variants"][variant]["batch_manifest_sha256"] = digest(raw_manifest)
+            index_path.write_bytes(canonical_bytes(index))
+            with self.assertRaisesRegex(
+                ValueError, "COMPOSITION_REVIEW_SOURCE_GRAPH_FROZEN_MISMATCH",
+            ):
+                audit(bootstrap, review, source_path)
+
     def test_missing_corrupt_and_wrong_embedded_graph_rejected(self):
         for failure in ("missing", "bad_crc", "wrong_graph"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
