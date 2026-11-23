@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 from scripts.comfy_png_embedded_evidence import MAX_PNG_BYTES, recover_embedded_png
-from scripts.recover_comfy_keyframe_workflow import canonical_bytes
+from scripts.recover_comfy_keyframe_workflow import canonical_bytes, parse_history
 
 MAX_JSON_BYTES = 4 * 1024 * 1024
 SHOT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
@@ -38,7 +38,8 @@ def _regular_bytes(path: Path, maximum: int) -> bytes:
 
 
 def _json(raw: bytes) -> dict:
-    doc = json.loads(raw)
+    # Reject duplicate keys and NaN/Infinity instead of silently selecting a value.
+    doc = parse_history(raw)
     if not isinstance(doc, dict):
         raise ValueError("COMPOSITION_REVIEW_DOCUMENT_INVALID")
     return doc
@@ -102,6 +103,10 @@ def audit(bootstrap_dir: Path, review_dir: Path) -> dict:
             or manifest.get("production_authorized") is not False
             or manifest.get("source_inputs_verified") is not False
             or manifest.get("reference_approved") is not False
+            or manifest.get("workflow_registered") is not False
+            or manifest.get("historical_composition_reused_as_guidance_only") is not True
+            or manifest.get("distinct_shot_compositions_observed") is not False
+            or manifest.get("source_render_intents_converted") is not False
             or manifest.get("source_profile_conversion_performed") is not False
             or manifest.get("target_geometry_verified") is not False
             or manifest.get("gpu_post") != 0):
