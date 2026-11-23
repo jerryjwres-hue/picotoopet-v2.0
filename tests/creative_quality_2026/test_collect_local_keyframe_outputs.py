@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from collect_local_keyframe_outputs import (  # noqa: E402
-    collect, discover_exact_prompt_ids, fetch_recent_history,
+    collect, collect_variant_snapshot, discover_exact_prompt_ids, fetch_recent_history,
     file_sha, main, png_chunks_checked, safe_components,
 )
 from recover_comfy_keyframe_workflow import canonical_bytes  # noqa: E402
@@ -78,6 +78,67 @@ def fixture(root: Path):
     (batch_dir / "batch_manifest.json").write_bytes(canonical_bytes(batch))
     (root / "prompt_ids.json").write_bytes(canonical_bytes(identities))
     return batch, batch_dir, identities, histories, output_root, history_dir
+
+
+def variant_fixture(root: Path):
+    """Two synthetic frozen batches and six successful exact-graph histories."""
+    # 01. The snapshot can contain many prompts, but every prepared graph
+    #     must have exactly one distinct completed history entry.
+    base, _, _, _, output, _ = fixture(root)
+    variants_root = root / "prepared-variants"
+    variants_root.mkdir()
+    listing, rows = {}, []
+    for version in (7, 8):
+        folder = variants_root / f"v{version:04d}"
+        folder.mkdir()
+        batch = copy.deepcopy(base)
+        batch["variant"] = version
+        batch["shots"] = []
+        for i in range(1, 4):
+            shot_id = f"shot-{i}"
+            graph = {
+                "1": {"class_type": "SyntheticText",
+                      "inputs": {"text": f"{shot_id}-seed-{version}"}},
+                "2": {"class_type": "SyntheticSave",
+                      "inputs": {"filename_prefix": f"v{version}-{shot_id}"}},
+            }
+            graph_bytes = canonical_bytes(graph)
+            graph_name = f"{i:02d}-{shot_id}.json"
+            (folder / graph_name).write_bytes(graph_bytes)
+            batch["shots"].append({
+                "shot_id": shot_id, "order": i, "graph_file": graph_name,
+                "graph_sha256": file_sha(graph_bytes),
+            })
+            prompt_id = f"00000000-0000-4000-8000-{version * 100 + i:012d}"
+            image_name = f"v{version}-{shot_id}.png"
+            (output / image_name).write_bytes(png(14 + version * 4 + i, 9))
+            listing[prompt_id] = {
+                "status": {"status_str": "success", "completed": True, "messages": []},
+                "prompt": [i, prompt_id, graph, {}, ["2"]],
+                "outputs": {"2": {"images": [{
+                    "type": "output", "subfolder": "", "filename": image_name,
+                }]}},
+            }
+        body = canonical_bytes(batch)
+        (folder / "batch_manifest.json").write_bytes(body)
+        rows.append({
+            "variant": version, "relative_directory": folder.name,
+            "batch_manifest_sha256": file_sha(body), "shot_count": 3,
+        })
+    index = {
+        "schema": "picotoo.local-keyframe-variant-index.v1",
+        "creative_package_sha256": base["creative_package_sha256"],
+        "keyframe_kit_digest": base["keyframe_kit_digest"],
+        "variant_count": 2,
+        "variants": rows,
+        "source_inputs_verified": False,
+        "production_authorized": False,
+        "gpu_post": 0,
+    }
+    (variants_root / "variant_index.json").write_bytes(canonical_bytes(index))
+    snapshot = root / "offline-history.json"
+    snapshot.write_bytes(canonical_bytes(listing))
+    return variants_root, output, snapshot, index, listing
 
 
 class CandidateTests(unittest.TestCase):
@@ -215,6 +276,120 @@ class CandidateTests(unittest.TestCase):
             report = json.loads((root / "discovered" / "candidate_manifest.json").read_bytes())
             self.assertEqual(len(report["shots"]), 3)
             self.assertFalse(report["source_rights_confirmed"])
+
+    def test_one_offline_history_snapshot_collects_two_complete_seed_variants(self):
+        # 02. One non-network command produces exactly the folder shape
+        #     consumed by the existing Windows multi-seed thumbnail review.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared, comfy_output, snapshot, index, listing = variant_fixture(root)
+            variants, report_index = collect_variant_snapshot(
+                prepared, listing, comfy_output
+            )
+            self.assertEqual([folder for folder, _ in variants], ["v0007", "v0008"])
+            self.assertEqual(report_index["variant_count"], 2)
+            self.assertFalse(report_index["reference_approved"])
+            self.assertFalse(report_index["source_rights_confirmed"])
+            self.assertEqual(report_index["gpu_post"], 0)
+
+            review_root = root / "review"
+            args = [
+                "--variants-root", str(prepared),
+                "--history-snapshot", str(snapshot),
+                "--comfy-output-root", str(comfy_output),
+                "--output-dir", str(review_root),
+            ]
+            with patch("collect_local_keyframe_outputs.fetch_history") as single, patch(
+                "collect_local_keyframe_outputs.fetch_recent_history"
+            ) as scan:
+                self.assertEqual(main(args), 0)
+                self.assertEqual(main(args), 1)   # Never overwrite any review file.
+                single.assert_not_called()
+                scan.assert_not_called()
+            self.assertEqual(sorted(x.name for x in review_root.iterdir()),
+                             ["observed_variant_index.json", "v0007", "v0008"])
+            saved_index = json.loads(
+                (review_root / "observed_variant_index.json").read_bytes()
+            )
+            self.assertEqual(saved_index, report_index)
+            seen_images, seen_prompts = set(), set()
+            for entry in saved_index["variants"]:
+                path = review_root / entry["relative_directory"] / "candidate_manifest.json"
+                raw = path.read_bytes()
+                self.assertEqual(file_sha(raw), entry["candidate_manifest_sha256"])
+                report = json.loads(raw)
+                self.assertEqual(report["schema"], "picotoo.local-keyframe-output-candidates.v1")
+                self.assertEqual(report["creative_package_sha256"],
+                                 index["creative_package_sha256"])
+                self.assertEqual([s["shot_id"] for s in report["shots"]],
+                                 ["shot-1", "shot-2", "shot-3"])
+                self.assertFalse(report["reference_approved"])
+                self.assertFalse(report["candidate_files_staged"])
+                self.assertFalse(report["source_rights_confirmed"])
+                self.assertEqual(report["gpu_post"], 0)
+                for shot in report["shots"]:
+                    self.assertIsNone(shot["selected_reference"])
+                    seen_prompts.add(shot["prompt_id"])
+                    for candidate in shot["candidates"]:
+                        self.assertEqual(candidate["visual_review"], "UNREVIEWED")
+                        self.assertFalse(candidate["pixels_decoded"])
+                        seen_images.add(candidate["sha256"])
+            self.assertEqual(len(seen_prompts), 6)
+            self.assertEqual(len(seen_images), 6)
+
+    def test_offline_variant_collection_fails_closed_before_writing(self):
+        # 03. Any single unsafe/missing identity blocks the whole export:
+        #     no partially certified candidate review index or hidden POST.
+        for bad in ("wrong_index", "noncanonical", "changed_graph",
+                    "missing_history", "missing_image", "reused_image", "path_escape"):
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                prepared, output, snapshot, index, listing = variant_fixture(root)
+                if bad == "wrong_index":
+                    index["creative_package_sha256"] = "e" * 64
+                    (prepared / "variant_index.json").write_bytes(canonical_bytes(index))
+                elif bad == "noncanonical":
+                    batch = prepared / "v0008" / "batch_manifest.json"
+                    batch.write_bytes(batch.read_bytes() + b" ")
+                    index["variants"][1]["batch_manifest_sha256"] = file_sha(batch.read_bytes())
+                    (prepared / "variant_index.json").write_bytes(canonical_bytes(index))
+                elif bad == "changed_graph":
+                    (prepared / "v0008" / "03-shot-3.json").write_bytes(b"{}")
+                elif bad == "missing_history":
+                    listing.pop("00000000-0000-4000-8000-000000000803")
+                    snapshot.write_bytes(canonical_bytes(listing))
+                elif bad == "missing_image":
+                    (output / "v8-shot-2.png").unlink()
+                elif bad == "reused_image":
+                    (output / "v8-shot-2.png").write_bytes(
+                        (output / "v7-shot-1.png").read_bytes()
+                    )
+                else:
+                    index["variants"][0]["relative_directory"] = "../v0007"
+                    (prepared / "variant_index.json").write_bytes(canonical_bytes(index))
+                target = root / "review"
+                args = [
+                    "--variants-root", str(prepared),
+                    "--history-snapshot", str(snapshot),
+                    "--comfy-output-root", str(output),
+                    "--output-dir", str(target),
+                ]
+                with patch("collect_local_keyframe_outputs.fetch_history") as single, patch(
+                    "collect_local_keyframe_outputs.fetch_recent_history"
+                ) as scan:
+                    self.assertEqual(main(args), 1)
+                    single.assert_not_called()
+                    scan.assert_not_called()
+                self.assertFalse(target.exists())
+        # 04. Multi-variant syntax never silently falls back to live Comfy.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared, output, _, _, _ = variant_fixture(root)
+            with self.assertRaises(SystemExit):
+                main(["--variants-root", str(prepared), "--live-history",
+                      "--comfy-output-root", str(output),
+                      "--output-dir", str(root / "invalid")])
+            self.assertFalse((root / "invalid").exists())
 
     def test_live_history_scan_is_fixed_loopback_get(self):
         with patch("collect_local_keyframe_outputs.urllib.request.build_opener") as builder:
