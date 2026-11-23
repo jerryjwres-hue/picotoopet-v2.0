@@ -308,6 +308,12 @@ def bootstrap_compositions(
             "node_id": node_id, "filename": image["filename"],
             "sha256": image["sha256"], "bytes": image["bytes"],
             "role": "HISTORICAL_GUIDANCE_ONLY",
+            # Record the bounded non-image JPEG suffix without stripping it.
+            # The complete file SHA remains the authoritative identity.
+            **({
+                "jpeg_trailing_bytes": image["jpeg_trailing_bytes"],
+                "jpeg_trailing_sha256": image["jpeg_trailing_sha256"],
+            } if image["format"] == "jpeg" else {}),
         })
 
     # 03. Only the positive prompt, sampler seed and SaveImage prefix can
