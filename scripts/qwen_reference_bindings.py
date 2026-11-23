@@ -31,34 +31,75 @@ def _load_image_slot(graph: dict, entry: dict) -> str:
     return node_id
 
 
-def jpeg_dimensions(data: bytes) -> tuple[int, int]:
-    """Check bounded JPEG marker framing and SOF, not compressed pixel quality."""
-    # 01. SOI, a valid Start-of-Frame, Start-of-Scan and terminal EOI
-    #     must all exist. EXIF strings or a renamed PNG are not sufficient.
-    if len(data) < 16 or not data.startswith(b"\xff\xd8") or not data.endswith(b"\xff\xd9"):
+MAX_JPEG_TRAILING_BYTES = 64
+
+
+def jpeg_container_info(data: bytes) -> tuple[tuple[int, int], int, str | None]:
+    """Check JPEG framing through a real EOI marker, and audit bounded trailing bytes.
+
+    JPEG suffix bytes are preserved as *untrusted metadata*, never stripped or
+    silently ignored. This does NOT decode or certify pixels. Exact full-file
+    SHA256, size, and no-symlink checks remain enforced by the caller.
+    """
+    # 01. Require actual JPEG SOI and marker framing. EXIF strings, renamed
+    #     PNGs and a trailing standalone FFD9 are not JPEG evidence.
+    if len(data) < 16 or not data.startswith(b"\xff\xd8"):
         raise ValueError("KEYFRAME_REFERENCE_JPEG_CONTAINER_INVALID")
-    offset, dimensions, saw_scan = 2, None, False
+
+    offset, dimensions, saw_scan, entropy = 2, None, False, False
     sof_markers = {
         0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
         0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
     }
-    while offset < len(data) - 2:
-        if data[offset] != 0xFF:
-            raise ValueError("KEYFRAME_REFERENCE_JPEG_MARKER_INVALID")
-        while offset < len(data) - 2 and data[offset] == 0xFF:
+    while offset < len(data):
+        if entropy:
+            # 02. Entropy scan: FF00 is byte stuffing and FFD0..FFD7 are
+            #     restart markers. Neither can terminate this JPEG image.
+            if data[offset] != 0xFF:
+                offset += 1
+                continue
+            while offset < len(data) and data[offset] == 0xFF:
+                offset += 1
+            if offset >= len(data):
+                raise ValueError("KEYFRAME_REFERENCE_JPEG_INCOMPLETE")
+            marker = data[offset]
             offset += 1
-        if offset >= len(data) - 2:
+            if marker == 0x00 or 0xD0 <= marker <= 0xD7:
+                continue
+            entropy = False
+        else:
+            # 03. Outside entropy bytes, markers must start at FF. Segment
+            #     length checks prevent EOI-like bytes in APP/EXIF payloads
+            #     from masquerading as the true image terminator.
+            if data[offset] != 0xFF:
+                raise ValueError("KEYFRAME_REFERENCE_JPEG_MARKER_INVALID")
+            while offset < len(data) and data[offset] == 0xFF:
+                offset += 1
+            if offset >= len(data):
+                raise ValueError("KEYFRAME_REFERENCE_JPEG_INCOMPLETE")
+            marker = data[offset]
+            offset += 1
+
+        if marker == 0xD9:
+            if not saw_scan or dimensions is None:
+                raise ValueError("KEYFRAME_REFERENCE_JPEG_INCOMPLETE")
+            tail = data[offset:]
+            if len(tail) > MAX_JPEG_TRAILING_BYTES:
+                raise ValueError("KEYFRAME_REFERENCE_JPEG_TRAILING_BYTES_EXCESS")
+            return (
+                dimensions,
+                len(tail),
+                hashlib.sha256(tail).hexdigest() if tail else None,
+            )
+        if marker in (0x00, 0xD8, 0x01, *range(0xD0, 0xD8)):
             raise ValueError("KEYFRAME_REFERENCE_JPEG_MARKER_INVALID")
-        marker = data[offset]
-        offset += 1
-        if marker in (0x00, 0xD8, 0xD9, 0x01, *range(0xD0, 0xD8)):
-            raise ValueError("KEYFRAME_REFERENCE_JPEG_MARKER_INVALID")
-        if offset + 2 > len(data) - 2:
+        if offset + 2 > len(data):
             raise ValueError("KEYFRAME_REFERENCE_JPEG_SEGMENT_INVALID")
         length = int.from_bytes(data[offset:offset + 2], "big")
-        if length < 2 or offset + length > len(data) - 2:
+        if length < 2 or offset + length > len(data):
             raise ValueError("KEYFRAME_REFERENCE_JPEG_SEGMENT_INVALID")
         payload = data[offset + 2:offset + length]
+
         if marker in sof_markers:
             if dimensions is not None or len(payload) < 9:
                 raise ValueError("KEYFRAME_REFERENCE_JPEG_FRAME_INVALID")
@@ -74,14 +115,24 @@ def jpeg_dimensions(data: bytes) -> tuple[int, int]:
         if marker == 0xDA:
             if dimensions is None or len(payload) < 6:
                 raise ValueError("KEYFRAME_REFERENCE_JPEG_SCAN_INVALID")
-            saw_scan = True
-            # 02. Entropy-coded bytes are opaque; do not decode, interpret,
-            #     or claim pixel identity from this structural inspection.
-            break
+            saw_scan, entropy = True, True
         offset += length
-    if dimensions is None or not saw_scan:
-        raise ValueError("KEYFRAME_REFERENCE_JPEG_INCOMPLETE")
-    return dimensions
+
+    raise ValueError("KEYFRAME_REFERENCE_JPEG_INCOMPLETE")
+
+
+def jpeg_dimensions(data: bytes) -> tuple[int, int]:
+    """Backwards-compatible JPEG dimensions, never a pixel/rights approval."""
+    return jpeg_container_info(data)[0]
+
+
+def jpeg_trailing_audit(data: bytes) -> dict:
+    """Return bounded JPEG tail identity for read-only inventory manifests."""
+    _, trailing_bytes, trailing_sha256 = jpeg_container_info(data)
+    return {
+        "jpeg_trailing_bytes": trailing_bytes,
+        "jpeg_trailing_sha256": trailing_sha256,
+    }
 
 
 def _verified_jpeg_input(root: Path, filename: str) -> tuple[str, bytes, tuple[int, int]]:
@@ -135,9 +186,11 @@ def _verify(root: Path, file: dict) -> tuple[str, dict]:
         relative, data, dimensions = _verified_jpeg_input(root, filename)
     if relative != filename or len(data) != count or hashlib.sha256(data).hexdigest() != digest:
         raise ValueError("KEYFRAME_REFERENCE_BYTES_MISMATCH")
+    is_jpeg = filename.lower().endswith((".jpg", ".jpeg"))
     return filename, {"sha256": digest, "bytes": count, "dimensions": dimensions,
-                      "format": "jpeg" if filename.lower().endswith((".jpg", ".jpeg")) else "png",
-                      "pixels_decoded": False}
+                      "format": "jpeg" if is_jpeg else "png",
+                      "pixels_decoded": False,
+                      **(jpeg_trailing_audit(data) if is_jpeg else {})}
 
 
 def resolve_reference_bindings(
