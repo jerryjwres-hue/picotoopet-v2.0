@@ -46,9 +46,15 @@ def _observe_input(input_root: Path, filename: str) -> dict:
         "bytes": len(data),
     }
     # 02. Reuse exactly the same verification contract as strict preparation.
-    _verify(input_root, metadata)
+    #     Preserve the verified JPEG EOI trailer identity in offline manifests;
+    #     original reference bytes, names and hashes never change.
+    _, verified = _verify(input_root, metadata)
+    tail = ({
+        "jpeg_trailing_bytes": verified["jpeg_trailing_bytes"],
+        "jpeg_trailing_sha256": verified["jpeg_trailing_sha256"],
+    } if fmt == "jpeg" else {})
     return {**metadata, "format": fmt, "dimensions": dimensions,
-            "pixels_decoded": False, "owner_approved": False}
+            "pixels_decoded": False, "owner_approved": False, **tail}
 
 
 def _graph_slots(graph: dict) -> tuple[dict, list[str]]:
