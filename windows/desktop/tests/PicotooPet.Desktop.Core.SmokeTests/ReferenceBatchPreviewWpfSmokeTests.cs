@@ -607,6 +607,36 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             SmokeAssert.True(vm.CanLoadObservedCandidates, "Sealed three-shot view should accept read-only candidates");
             await vm.LoadObservedCandidatesAsync(observedFile);
             SmokeAssert.Equal(3, vm.ObservedCandidates.Count, "Full candidate observation lost shots");
+            // 01. One known Comfy Desktop folder removes the repetitive output
+            //     picker only when all three *actual* PNG bytes verify.
+            var fakeLocalAppData = Path.Combine(root, "fake-user-localappdata");
+            var standardOutput = Path.Combine(fakeLocalAppData,
+                "Comfy-Desktop", "ComfyUI-Shared", "output");
+            Directory.CreateDirectory(standardOutput);
+            foreach (var path in Directory.EnumerateFiles(observedRoot, "*.png"))
+                File.Copy(path, Path.Combine(standardOutput, Path.GetFileName(path)));
+            SmokeAssert.True(await ReferenceBatchPreviewPanel.TryInspectStandardComfyOutputAsync(
+                    vm, Path.Combine(root, "missing-localappdata")) is null,
+                "Absent standard folder must fall back to explicit manual selection");
+            var autoOutput = await ReferenceBatchPreviewPanel.TryInspectStandardComfyOutputAsync(
+                vm, fakeLocalAppData);
+            SmokeAssert.Equal(standardOutput, autoOutput,
+                "An exact verified default output should avoid the second folder picker");
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
+                "Auto-discovery must decode real SHA-checked thumbnails, not just locate a folder");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "Auto-discovery cannot select, stage, or approve candidates");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Auto-discovery must never POST an Owner approval");
+            // 02. Existing default-path bytes may be stale or tampered with:
+            //     reject all thumbnails, then permit the existing manual root.
+            await vm.LoadObservedCandidatesAsync(observedFile);
+            File.WriteAllBytes(Path.Combine(standardOutput, "shot-3.png"), [1, 2, 3]);
+            SmokeAssert.True(await ReferenceBatchPreviewPanel.TryInspectStandardComfyOutputAsync(
+                    vm, fakeLocalAppData) is null,
+                "Changed default output must not be treated as successful auto-preview");
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is null),
+                "Failed default-root SHA must not leave partially accepted thumbnails");
             await vm.InspectObservedCandidatesAsync(observedRoot);
             SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
                 "Real local image thumbnails must decode for all observed stills");
