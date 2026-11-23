@@ -245,6 +245,10 @@ jobs:
             throw 'P0_QUICKCHECK_MISSING_INPUT_NOT_BLOCKED'
           }
           Write-Host 'P0_QUICKCHECK_MISSING_INPUT_STOP=PASS; GPU_POST=0'
+          # 09. The nonzero exit code was EXPECTED and asserted above.
+          #     Clear only that verified negative's process status before
+          #     concluding this successful packaging step on GitHub Actions.
+          $global:LASTEXITCODE = 0
           @(
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
             'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'
