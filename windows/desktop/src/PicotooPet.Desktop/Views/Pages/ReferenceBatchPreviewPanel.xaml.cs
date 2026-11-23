@@ -162,18 +162,12 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         try
         {
             await vm.LoadObservedCandidatesAsync(picker.FileName);
-            _observedOutputRoot = null;
-            // 01. 同一目录只选一次，后台依次重核并显示各镜头缩略图。
-            var folder = new Microsoft.Win32.OpenFolderDialog
-            {
-                Title = "选择当前 ComfyUI Output 根目录（只读取缩略图）"
-            };
-            if (folder.ShowDialog() == true)
-            {
-                await vm.InspectObservedCandidatesAsync(folder.FolderName);
-                _observedOutputRoot = folder.FolderName;
-            }
-            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+            // 01. Prefer the existing Comfy Desktop output when its actual
+            //     bytes pass the ViewModel SHA and pixel validation.
+            var previewReady = await PreviewObservedOutputAsync(vm);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                previewReady ? vm.StatusText :
+                    "候选清单已读取，图片尚未核验；可重新选择输出目录。未选择参考图或申请审批。");
         }
         catch (Exception)
         {
@@ -195,19 +189,12 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         try
         {
             await vm.LoadObservedVariantFolderAsync(picker.FolderName);
-            _observedOutputRoot = null;
-            // 08. Revalidate every candidate thumbnail against its actual
-            //     Comfy output bytes in one pass, never infer image rights.
-            var outputFolder = new Microsoft.Win32.OpenFolderDialog
-            {
-                Title = "选择当前 ComfyUI Output 根目录（批量核验缩略图）"
-            };
-            if (outputFolder.ShowDialog() == true)
-            {
-                await vm.InspectObservedCandidatesAsync(outputFolder.FolderName);
-                _observedOutputRoot = outputFolder.FolderName;
-            }
-            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+            // 02. Reuse the same verified output-root lookup for every seed,
+            //     rather than requiring a second picker on each import.
+            var previewReady = await PreviewObservedOutputAsync(vm);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                previewReady ? vm.StatusText :
+                    "多组 seed 清单已读取，图片尚未核验；未选择参考图或申请审批。");
         }
         catch (Exception)
         {
@@ -215,6 +202,51 @@ public partial class ReferenceBatchPreviewPanel : UserControl
             OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
                 "多组 seed 候选清单验证失败；未导入图片、申请审批或启动 GPU。");
         }
+    }
+
+    // 03. Try exactly one standard user-local Comfy Desktop folder; do not
+    //     scan drives, start Comfy, infer history, or mark a candidate licensed.
+    //     ViewModel rechecks every image SHA, bounds, pixel and path on disk.
+    public static async Task<string?> TryInspectStandardComfyOutputAsync(
+        ReferenceBatchPreviewViewModel vm, string localAppDataRoot)
+    {
+        if (vm is null || !vm.CanLoadObservedCandidates
+            || string.IsNullOrWhiteSpace(localAppDataRoot)
+            || !Path.IsPathFullyQualified(localAppDataRoot))
+            return null;
+        var root = Path.Combine(localAppDataRoot, "Comfy-Desktop", "ComfyUI-Shared", "output");
+        if (!Directory.Exists(root)) return null;
+        try
+        {
+            await vm.InspectObservedCandidatesAsync(root);
+            return root;
+        }
+        catch (InvalidDataException) { return null; }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    // 04. A nonstandard or changed output remains manually selectable; a
+    //     cancelled picker keeps only untrusted manifest metadata on screen.
+    private async Task<bool> PreviewObservedOutputAsync(ReferenceBatchPreviewViewModel vm)
+    {
+        _observedOutputRoot = null;
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var verified = await TryInspectStandardComfyOutputAsync(vm, local);
+        if (verified is not null)
+        {
+            _observedOutputRoot = verified;
+            return true;
+        }
+
+        var folder = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择 ComfyUI Output 根目录（仅本地读取并核对缩略图）"
+        };
+        if (folder.ShowDialog() != true) return false;
+        await vm.InspectObservedCandidatesAsync(folder.FolderName);
+        _observedOutputRoot = folder.FolderName;
+        return true;
     }
 
     private async void UseObservedCandidate_Click(object sender, RoutedEventArgs e)
