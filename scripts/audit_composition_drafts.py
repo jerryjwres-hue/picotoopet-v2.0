@@ -173,11 +173,12 @@ def audit(bootstrap_dir: Path, review_dir: Path) -> dict:
         or any(len(group["candidates"]) != 2 for group in groups.values())):
         raise ValueError("COMPOSITION_REVIEW_COVERAGE_INVALID")
 
-    # 05. The separate review index is observed by hash only; its unspecified
-    #     schema is NOT evidence of independently verified Comfy history.
+    # 05. The operator's separate review index must exist and be unambiguous
+    #     JSON. Its unknown schema is NOT independently verified Comfy history.
     local_index = review_dir / "creative_review_index.json"
-    local_index_sha = (_digest(_regular_bytes(local_index, MAX_JSON_BYTES))
-                       if local_index.exists() or local_index.is_symlink() else None)
+    local_index_raw = _regular_bytes(local_index, MAX_JSON_BYTES)
+    _json(local_index_raw)
+    local_index_sha = _digest(local_index_raw)
     return {
         "schema": "picotoo.composition-draft-evidence-audit.v1",
         "bootstrap_index_sha256": _digest(index_raw),
@@ -205,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-file", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
+        # 06a. Resolve only after rejecting redirected operator-supplied roots.
+        if args.bootstrap_dir.is_symlink() or args.review_dir.is_symlink():
+            raise ValueError("COMPOSITION_REVIEW_ROOT_SYMLINK_INVALID")
         bootstrap = args.bootstrap_dir.resolve(strict=True)
         review = args.review_dir.resolve(strict=True)
         report = args.report_file.resolve(strict=False)
