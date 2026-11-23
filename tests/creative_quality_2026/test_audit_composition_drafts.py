@@ -65,6 +65,10 @@ def fixture(root: Path) -> tuple[Path, Path, Path]:
             "keyframe_kit_digest": "b" * 64,
             "source_graph_sha256": "c" * 64,
             "source_inputs_verified": False, "reference_approved": False,
+            "workflow_registered": False,
+            "historical_composition_reused_as_guidance_only": True,
+            "distinct_shot_compositions_observed": False,
+            "source_render_intents_converted": False,
             "production_authorized": False,
             "source_profile_conversion_performed": False,
             "target_geometry_verified": False,
@@ -137,6 +141,49 @@ class CompositionDraftAuditTests(unittest.TestCase):
                     document = json.loads(path.read_bytes())
                     document["reference_approved"] = True
                     path.write_bytes(canonical_bytes(document))
+                with self.assertRaises(ValueError):
+                    audit(bootstrap, review)
+
+    def test_duplicate_json_fields_and_nonfinite_values_rejected(self):
+        # 05. Duplicate keys and NaN must not alter approval interpretation.
+        for alteration in ("duplicate", "nonfinite"):
+            with self.subTest(alteration=alteration), tempfile.TemporaryDirectory() as temp:
+                bootstrap, review, _ = fixture(Path(temp))
+                manifest = bootstrap / "v0000" / "batch_manifest.json"
+                raw = manifest.read_bytes()
+                if alteration == "duplicate":
+                    raw = raw.replace(b'"reference_approved":false,',
+                                      b'"reference_approved":true,"reference_approved":false,')
+                else:
+                    raw = raw.replace(b'"gpu_post":0', b'"gpu_post":NaN')
+                manifest.write_bytes(raw)
+                # Attackers who can replace the index can forge its digest.
+                index_path = bootstrap / "variant_index.json"
+                index = json.loads(index_path.read_bytes())
+                index["variants"][0]["batch_manifest_sha256"] = digest(raw)
+                index_path.write_bytes(canonical_bytes(index))
+                with self.assertRaises(ValueError):
+                    audit(bootstrap, review)
+
+    def test_forged_output_authority_flags_rejected_even_when_rehashed(self):
+        # 06. Internal consistency alone cannot confer approval.
+        for key, value in (
+            ("workflow_registered", True),
+            ("historical_composition_reused_as_guidance_only", False),
+            ("distinct_shot_compositions_observed", True),
+            ("source_render_intents_converted", True),
+        ):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as temp:
+                bootstrap, review, _ = fixture(Path(temp))
+                manifest_path = bootstrap / "v0000" / "batch_manifest.json"
+                manifest = json.loads(manifest_path.read_bytes())
+                manifest[key] = value
+                raw = canonical_bytes(manifest)
+                manifest_path.write_bytes(raw)
+                index_path = bootstrap / "variant_index.json"
+                index = json.loads(index_path.read_bytes())
+                index["variants"][0]["batch_manifest_sha256"] = digest(raw)
+                index_path.write_bytes(canonical_bytes(index))
                 with self.assertRaises(ValueError):
                     audit(bootstrap, review)
 
