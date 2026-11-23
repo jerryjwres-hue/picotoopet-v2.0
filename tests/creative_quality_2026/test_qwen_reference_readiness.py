@@ -291,6 +291,10 @@ class ThreeShotReadinessTests(unittest.TestCase):
             package["stage_results"]["creative_brief.v1"]["output_profile_id"] = (
                 "video.vertical.v1"
             )
+            # 08. A historical I2V intent is eligible solely as creative
+            #     guidance for prospective stills, never strict I2V execution.
+            for shot in package["stage_results"]["shot_plan.v1"]["shots"]:
+                shot["render_intent"] = "IMAGE_TO_VIDEO"
             with self.assertRaisesRegex(ValueError, "KEYFRAME_KIT_LINEAGE_INVALID"):
                 keyframes(package)
             with self.assertRaisesRegex(ValueError, "KEYFRAME_KIT_LINEAGE_INVALID"):
@@ -307,6 +311,8 @@ class ThreeShotReadinessTests(unittest.TestCase):
             self.assertFalse(manifest["source_output_profile_matches_intent"])
             self.assertFalse(manifest["source_profile_conversion_performed"])
             self.assertFalse(manifest["target_geometry_verified"])
+            self.assertEqual(manifest["source_shot_render_intents"], ["IMAGE_TO_VIDEO"] * 3)
+            self.assertFalse(manifest["source_render_intents_converted"])
             self.assertFalse(manifest["production_authorized"])
             self.assertFalse(manifest["reference_approved"])
             self.assertFalse(manifest["distinct_shot_compositions_observed"])
@@ -330,6 +336,8 @@ class ThreeShotReadinessTests(unittest.TestCase):
             package["stage_results"]["creative_brief.v1"]["output_profile_id"] = (
                 "video.landscape.v1"
             )
+            with self.assertRaisesRegex(ValueError, "KEYFRAME_SHOT_SCOPE_INVALID"):
+                keyframes(package)
             with self.assertRaisesRegex(ValueError, "VERTICAL_OPT_IN_INVALID"):
                 bootstrap_compositions(
                     graph, recovery, package, "a" * 64, 0, root,
@@ -345,6 +353,8 @@ class ThreeShotReadinessTests(unittest.TestCase):
             package["stage_results"]["creative_brief.v1"]["output_profile_id"] = (
                 "video.vertical.v1"
             )
+            for shot in package["stage_results"]["shot_plan.v1"]["shots"]:
+                shot["render_intent"] = "IMAGE_TO_VIDEO"
             archive = root / "original-vertical-core.zip"
             with zipfile.ZipFile(archive, "w") as handle:
                 handle.writestr(
@@ -385,6 +395,9 @@ class ThreeShotReadinessTests(unittest.TestCase):
                 self.assertEqual(manifest["schema"],
                                  "picotoo.local-composition-bootstrap-dry-run.v1")
                 self.assertFalse(manifest["source_output_profile_matches_intent"])
+                self.assertEqual(manifest["source_shot_render_intents"],
+                                 ["IMAGE_TO_VIDEO"] * 3)
+                self.assertFalse(manifest["source_render_intents_converted"])
                 self.assertEqual(manifest["gpu_post"], 0)
                 self.assertEqual(len(manifest["shots"]), 3)
             # 07. No flag can bypass the production keyframe preparation;
