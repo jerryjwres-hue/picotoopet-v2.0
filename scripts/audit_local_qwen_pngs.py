@@ -148,7 +148,9 @@ def inspect_loadimage_inputs(png_files: list[dict], input_root: Path) -> dict:
                 "sha256": entry["sha256"],
                 "bytes": entry["bytes"],
                 "format": entry["format"],
-                "dimensions": entry["dimensions"],
+                # 05. Canonical JSON round-trips dimensions as a list,
+                #     never a Python tuple (CI expects byte-equivalent data).
+                "dimensions": list(entry["dimensions"]),
                 "used_by": usages,
                 "pixels_decoded": False,
                 "owner_approved": False,
