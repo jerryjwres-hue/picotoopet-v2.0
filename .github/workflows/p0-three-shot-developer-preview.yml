@@ -295,6 +295,7 @@ jobs:
             'These source tools need Python 3.12; do not install Python or run them for production without review.'
             'Missing SHOT_002 or SHOT_003 compositions stay BLOCKED; readiness does not create images.'
             'Qwen JPEG reference files are checked without conversion.'
+            'JPEG references with a real marker-parsed EOI and at most 64 post-EOI bytes remain byte-identical; the full-file SHA256 is pinned, and offline manifests record jpeg_trailing_bytes and jpeg_trailing_sha256 (or null when absent). Bad JPEG markers, missing EOI, wrong SHA, symlinks and tails longer than 64 bytes still STOP.'
             'They do not fetch models, license creative assets or authorize C009/C011 / Comfy GPU jobs.'
             'Production Comfy/Wan, Ollama, Mac Core, FFmpeg and GPU presence are not validated here.'
           ) | Set-Content -LiteralPath (Join-Path $bundle 'README_P0_DEVELOPER_PREVIEW.txt') -Encoding utf8
