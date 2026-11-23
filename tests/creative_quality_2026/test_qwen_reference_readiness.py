@@ -355,6 +355,17 @@ class ThreeShotReadinessTests(unittest.TestCase):
             )
             for shot in package["stage_results"]["shot_plan.v1"]["shots"]:
                 shot["render_intent"] = "IMAGE_TO_VIDEO"
+            # 10. Reproduce the actual Windows camera JPEG shape: each
+            #     original, byte-pinned reference has a 24-byte post-EOI tail.
+            tails = {}
+            initial_bytes = {}
+            for node_id, serial in (("2", 1), ("3", 2)):
+                name = graph[node_id]["inputs"]["image"]
+                tail = bytes.fromhex("1336060100000000") + bytes([serial]) * 16
+                original = (root / name).read_bytes() + tail
+                (root / name).write_bytes(original)
+                tails[name] = hashlib.sha256(tail).hexdigest()
+                initial_bytes[name] = original
             archive = root / "original-vertical-core.zip"
             with zipfile.ZipFile(archive, "w") as handle:
                 handle.writestr(
@@ -400,6 +411,17 @@ class ThreeShotReadinessTests(unittest.TestCase):
                 self.assertFalse(manifest["source_render_intents_converted"])
                 self.assertEqual(manifest["gpu_post"], 0)
                 self.assertEqual(len(manifest["shots"]), 3)
+                observations = {item["filename"]: item
+                                for item in manifest["historical_reference_inputs"]}
+                for name, trailing_sha in tails.items():
+                    entry = observations[name]
+                    self.assertEqual(entry["jpeg_trailing_bytes"], 24)
+                    self.assertEqual(entry["jpeg_trailing_sha256"], trailing_sha)
+                    self.assertEqual(entry["sha256"], hashlib.sha256(initial_bytes[name]).hexdigest())
+                    self.assertEqual((root / name).read_bytes(), initial_bytes[name])
+                self.assertEqual(len([p for p in (selected / item["relative_directory"]).glob(
+                    "*.json"
+                ) if p.name != "batch_manifest.json"]), 3)
             # 07. No flag can bypass the production keyframe preparation;
             #     the normal strict path continues to reject vertical kits.
             strict = root / "wrong_strict"
