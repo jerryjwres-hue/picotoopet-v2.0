@@ -76,7 +76,10 @@ def read_package(path: Path, expected_sha: str) -> dict:
     return package
 
 
-def keyframes(package: dict, *, allow_vertical_guidance: bool = False) -> tuple[str, list[dict]]:
+def keyframes(
+    package: dict, *, allow_vertical_guidance: bool = False,
+    allow_i2v_guidance: bool = False,
+) -> tuple[str, list[dict]]:
     # 02. Use exact Core kit payload, including original review state and shot order.
     if (package.get("schema_version") != "1.0"
         or package.get("quality_outcome") != "PASS"
@@ -111,7 +114,11 @@ def keyframes(package: dict, *, allow_vertical_guidance: bool = False) -> tuple[
         if (not isinstance(shot_id, str) or not ID.fullmatch(shot_id)
             or shot_id in seen or frame["order"] != index or shot["order"] != index
             or shot_id != shot["shot_id"] or shot["duration_seconds"] != 4
-            or shot["render_intent"] != "GENERATIVE_VIDEO"
+            # Only offline draft preparation may consult an I2V story intent.
+            # Strict production binding continues to require GENERATIVE_VIDEO.
+            or (shot["render_intent"] != "GENERATIVE_VIDEO" and
+                not (allow_i2v_guidance is True and
+                     shot["render_intent"] == "IMAGE_TO_VIDEO"))
             or frame["approval_status"] != "PENDING_HUMAN_REVIEW"
             or not isinstance(frame["still_prompt"], str) or not 1 <= len(frame["still_prompt"]) <= 5000
             or not isinstance(frame["review_checklist"], list)
@@ -288,7 +295,8 @@ def bootstrap_compositions(
         or (allow_vertical_guidance and source_profile != "video.vertical.v1")):
         raise ValueError("COMPOSITION_BOOTSTRAP_VERTICAL_OPT_IN_INVALID")
     kit_digest, frames = keyframes(
-        package, allow_vertical_guidance=allow_vertical_guidance
+        package, allow_vertical_guidance=allow_vertical_guidance,
+        allow_i2v_guidance=True,
     )
     observed_inputs = []
     for node_id in load_ids:
@@ -350,6 +358,11 @@ def bootstrap_compositions(
         "source_output_profile_matches_intent": source_profile == PROFILE,
         "source_profile_conversion_performed": False,
         "target_geometry_verified": False,
+        "source_shot_render_intents": [
+            item["render_intent"]
+            for item in package["stage_results"]["shot_plan.v1"]["shots"]
+        ],
+        "source_render_intents_converted": False,
         "historical_reference_inputs": observed_inputs,
         "historical_composition_reused_as_guidance_only": True,
         "distinct_shot_compositions_observed": False,
