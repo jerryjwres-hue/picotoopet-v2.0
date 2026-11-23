@@ -182,6 +182,41 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         }
     }
 
+    // 07. Selecting one variant-root folder loads vNNNN review manifests
+    //     as a single thumbnail collection. It never runs or queues Qwen.
+    private async void LoadObservedVariantFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanLoadObservedCandidates) return;
+        var picker = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择包含 v0000、v0001 等候选清单文件夹的目录（仅只读）"
+        };
+        if (picker.ShowDialog() != true) return;
+        try
+        {
+            await vm.LoadObservedVariantFolderAsync(picker.FolderName);
+            _observedOutputRoot = null;
+            // 08. Revalidate every candidate thumbnail against its actual
+            //     Comfy output bytes in one pass, never infer image rights.
+            var outputFolder = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "选择当前 ComfyUI Output 根目录（批量核验缩略图）"
+            };
+            if (outputFolder.ShowDialog() == true)
+            {
+                await vm.InspectObservedCandidatesAsync(outputFolder.FolderName);
+                _observedOutputRoot = outputFolder.FolderName;
+            }
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+        }
+        catch (Exception)
+        {
+            _observedOutputRoot = null;
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
+                "多组 seed 候选清单验证失败；未导入图片、申请审批或启动 GPU。");
+        }
+    }
+
     private async void UseObservedCandidate_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanEdit

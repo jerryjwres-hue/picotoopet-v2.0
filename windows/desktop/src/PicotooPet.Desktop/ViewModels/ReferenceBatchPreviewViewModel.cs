@@ -33,7 +33,7 @@ public sealed record ReferenceCompositionWorkItem(
 // 只读候选是历史输出观测，不是 Producer 授权、身份资产或使用许可。
 public sealed record ReferenceObservedCandidate(string ShotId, string OutputRelativePath,
     string Sha256, long Bytes, int Width, int Height, string PromptId,
-    BitmapSource? Preview = null);
+    BitmapSource? Preview = null, string CandidateBatch = "单份候选");
 
 /// <summary>Local preview and explicit request for existing Core approvals; never grants execution permission.</summary>
 public sealed class ReferenceBatchPreviewViewModel : ObservableObject
@@ -430,99 +430,165 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         }
     }
 
-    // 05. 校验本地候选清单的完整身份；只显示元数据，绝不自动 Stage 或批准。
-    public async Task LoadObservedCandidatesAsync(string manifestPath, CancellationToken cancellationToken = default)
+    // 05. Keep the original one-file API, but permit up to eight distinct
+    //     observed seed batches with one atomic review import.
+    public Task LoadObservedCandidatesAsync(string manifestPath,
+        CancellationToken cancellationToken = default)
+        => LoadObservedCandidateManifestsAsync([manifestPath], cancellationToken);
+
+    // 06. One folder selection can load vNNNN/candidate_manifest.json files
+    //     from existing per-variant collectors. No recursive search, model
+    //     submission, source-file mutation or automatic rights decision.
+    public async Task LoadObservedVariantFolderAsync(string variantRoot,
+        CancellationToken cancellationToken = default)
     {
-        if (!CanLoadObservedCandidates) throw new InvalidDataException("KEYFRAME_OBSERVATION_NOT_ELIGIBLE");
+        if (!CanLoadObservedCandidates || !Path.IsPathFullyQualified(variantRoot)
+            || !Directory.Exists(variantRoot))
+            throw new InvalidDataException("KEYFRAME_VARIANT_ROOT_INVALID");
+        var paths = Directory.EnumerateDirectories(variantRoot)
+            .Where(path => System.Text.RegularExpressions.Regex.IsMatch(
+                Path.GetFileName(path), @"^v[0-9]{4}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+            .OrderBy(path => Path.GetFileName(path), StringComparer.Ordinal)
+            .ToArray();
+        if (paths.Length is < 2 or > 8)
+            throw new InvalidDataException("KEYFRAME_VARIANT_FOLDER_COUNT_INVALID");
+        var manifests = new List<string>();
+        foreach (var folder in paths)
+        {
+            // 07. A directory junction or symlink cannot redirect review
+            //     outside the single folder explicitly selected by Owner.
+            ProductionLocalEnvironment.AssertNoLinkEscape(variantRoot, folder);
+            if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException("KEYFRAME_VARIANT_FOLDER_LINK");
+            var manifest = Path.Combine(folder, "candidate_manifest.json");
+            ProductionLocalEnvironment.AssertNoLinkEscape(variantRoot, manifest);
+            if (!ProductionLocalEnvironment.IsOrdinaryFile(manifest))
+                throw new InvalidDataException("KEYFRAME_VARIANT_MANIFEST_MISSING");
+            manifests.Add(manifest);
+        }
+        await LoadObservedCandidateManifestsAsync(manifests, cancellationToken);
+    }
+
+    // 08. Every selected candidate manifest retains its own Comfy prompt
+    //     provenance, per-shot graph digest and original image bytes. This
+    //     method only joins review thumbnails; no candidate is auto-staged.
+    public async Task LoadObservedCandidateManifestsAsync(
+        IReadOnlyList<string> manifestPaths, CancellationToken cancellationToken = default)
+    {
+        if (!CanLoadObservedCandidates || manifestPaths is null || manifestPaths.Count is < 1 or > 8)
+            throw new InvalidDataException("KEYFRAME_OBSERVATION_NOT_ELIGIBLE");
         if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
         try
         {
-            var info = new FileInfo(manifestPath);
-            if (!info.Exists || info.Length is <= 0 or > 1024 * 1024)
-                throw new InvalidDataException("KEYFRAME_CANDIDATE_MANIFEST_SIZE_INVALID");
-            var raw = await File.ReadAllBytesAsync(manifestPath, cancellationToken);
-            if (raw.LongLength != info.Length)
-                throw new InvalidDataException("KEYFRAME_CANDIDATE_MANIFEST_CHANGED");
-            using var document = JsonDocument.Parse(raw, new JsonDocumentOptions
-            {
-                AllowTrailingCommas = false,
-                CommentHandling = JsonCommentHandling.Disallow,
-                MaxDepth = 24
-            });
-            var root = document.RootElement;
-            RequireDistinctJsonProperties(root);
-            if (Text(root, "schema") != "picotoo.local-keyframe-output-candidates.v1"
-                || Text(root, "creative_package_id") != CreativePackageId
-                || Text(root, "creative_package_sha256") != CreativePackageDigest
-                || Text(root, "keyframe_kit_digest") != _keyframeKitDigest
-                || !Bool(root, "recorded_image_bytes_observed")
-                || Bool(root, "candidate_files_staged") || Bool(root, "reference_approved")
-                || Bool(root, "source_rights_confirmed")
-                || Number(root, "gpu_post") != 0
-                || Text(root, "review_status") != "NEEDS_HUMAN_REVIEW"
-                || !root.TryGetProperty("shots", out var shots)
-                || shots.ValueKind != JsonValueKind.Array || shots.GetArrayLength() != 3)
-                throw new InvalidDataException("KEYFRAME_OBSERVATION_CONTEXT_INVALID");
-            // 01. PNG-embedded historyless evidence never receives a fake UUID.
-            //     Only exact graph-bound offline bytes can reach human review.
-            var provenance = Text(root, "history_provenance");
-            var embedded = provenance == "PNG_EMBEDDED_NO_HISTORY";
-            if (provenance is not ("" or "PNG_EMBEDDED_NO_HISTORY")
-                || (embedded && Bool(root, "comfy_history_success_verified")))
-                throw new InvalidDataException("KEYFRAME_OBSERVATION_PROVENANCE_INVALID");
             var parsed = new List<ReferenceObservedCandidate>();
+            var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenBatches = new HashSet<string>(StringComparer.Ordinal);
             var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var seenDigests = new HashSet<string>(StringComparer.Ordinal);
             var seenPrompts = new HashSet<string>(StringComparer.Ordinal);
-            var index = 0;
-            foreach (var shot in shots.EnumerateArray())
+            string? provenanceMode = null;
+            for (var batchIndex = 0; batchIndex < manifestPaths.Count; batchIndex++)
             {
-                var shotId = Text(shot, "shot_id");
-                var promptId = Text(shot, "prompt_id");
-                if (!shot.TryGetProperty("prompt_id", out var promptValue)
-                    || (embedded
-                        ? promptValue.ValueKind != JsonValueKind.Null
-                        : !IsIdentifier(promptId) || !seenPrompts.Add(promptId)))
-                    throw new InvalidDataException("KEYFRAME_OBSERVATION_HISTORY_ID_INVALID");
-                if (shotId != EligibleShots[index] || Number(shot, "order") != index + 1
-                    || !IsDigest(Text(shot, "prepared_graph_sha256"))
-                    || !shot.TryGetProperty("selected_reference", out var selected)
-                    || selected.ValueKind != JsonValueKind.Null
-                    || !shot.TryGetProperty("candidates", out var candidates)
-                    || candidates.ValueKind != JsonValueKind.Array
-                    || candidates.GetArrayLength() is < 1 or > 32)
-                    throw new InvalidDataException("KEYFRAME_OBSERVATION_SHOT_INVALID");
-                foreach (var item in candidates.EnumerateArray())
+                cancellationToken.ThrowIfCancellationRequested();
+                var manifestPath = manifestPaths[batchIndex];
+                if (string.IsNullOrWhiteSpace(manifestPath)
+                    || !seenFiles.Add(Path.GetFullPath(manifestPath)))
+                    throw new InvalidDataException("KEYFRAME_CANDIDATE_FILE_DUPLICATED");
+                var info = new FileInfo(manifestPath);
+                if (!info.Exists || info.Length is <= 0 or > 1024 * 1024
+                    || (info.Attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException("KEYFRAME_CANDIDATE_MANIFEST_SIZE_INVALID");
+                var raw = await File.ReadAllBytesAsync(manifestPath, cancellationToken);
+                if (raw.LongLength != info.Length)
+                    throw new InvalidDataException("KEYFRAME_CANDIDATE_MANIFEST_CHANGED");
+                using var document = JsonDocument.Parse(raw, new JsonDocumentOptions
                 {
-                    var relative = Text(item, "output_relative_path");
-                    var digest = Text(item, "sha256");
-                    var bytes = Number(item, "bytes");
-                    var width = Number(item, "width");
-                    var height = Number(item, "height");
-                    if (!SafeObservedRelativePath(relative) || !seenPaths.Add(relative)
-                        || !IsDigest(digest) || !seenDigests.Add(digest)
-                        || bytes is <= 0 or > ReferencePreviewSnapshotStager.MaxBytes
-                        || width is < 1 or > 8192 || height is < 1 or > 8192
-                        || width * height > 16_000_000
-                        || !Bool(item, "image_container_crc_verified")
-                        || (embedded && !Bool(item, "embedded_prompt_graph_verified"))
-                        || Bool(item, "pixels_decoded") || Text(item, "visual_review") != "UNREVIEWED")
-                        throw new InvalidDataException("KEYFRAME_OBSERVATION_IMAGE_INVALID");
-                    parsed.Add(new(shotId, relative, digest, bytes, (int)width, (int)height,
-                        promptId));
+                    AllowTrailingCommas = false,
+                    CommentHandling = JsonCommentHandling.Disallow,
+                    MaxDepth = 24
+                });
+                var root = document.RootElement;
+                RequireDistinctJsonProperties(root);
+                if (Text(root, "schema") != "picotoo.local-keyframe-output-candidates.v1"
+                    || Text(root, "creative_package_id") != CreativePackageId
+                    || Text(root, "creative_package_sha256") != CreativePackageDigest
+                    || Text(root, "keyframe_kit_digest") != _keyframeKitDigest
+                    || !Bool(root, "recorded_image_bytes_observed")
+                    || Bool(root, "candidate_files_staged") || Bool(root, "reference_approved")
+                    || Bool(root, "source_rights_confirmed")
+                    || Number(root, "gpu_post") != 0
+                    || Text(root, "review_status") != "NEEDS_HUMAN_REVIEW"
+                    || !root.TryGetProperty("shots", out var shots)
+                    || shots.ValueKind != JsonValueKind.Array || shots.GetArrayLength() != 3)
+                    throw new InvalidDataException("KEYFRAME_OBSERVATION_CONTEXT_INVALID");
+                // 09. For multi-import, one distinct exact batch manifest digest
+                //     per source is required. Legacy one-file observations
+                //     remain compatible without this optional field.
+                if (manifestPaths.Count > 1
+                    && (!IsDigest(Text(root, "batch_manifest_sha256"))
+                        || !seenBatches.Add(Text(root, "batch_manifest_sha256"))))
+                    throw new InvalidDataException("KEYFRAME_OBSERVATION_BATCH_IDENTITY_INVALID");
+                var provenance = Text(root, "history_provenance");
+                var embedded = provenance == "PNG_EMBEDDED_NO_HISTORY";
+                if (provenance is not ("" or "PNG_EMBEDDED_NO_HISTORY")
+                    || (embedded && Bool(root, "comfy_history_success_verified"))
+                    || (provenanceMode is not null && provenanceMode != provenance))
+                    throw new InvalidDataException("KEYFRAME_OBSERVATION_PROVENANCE_INVALID");
+                provenanceMode = provenance;
+                var index = 0;
+                foreach (var shot in shots.EnumerateArray())
+                {
+                    var shotId = Text(shot, "shot_id");
+                    var promptId = Text(shot, "prompt_id");
+                    if (!shot.TryGetProperty("prompt_id", out var promptValue)
+                        || (embedded
+                            ? promptValue.ValueKind != JsonValueKind.Null
+                            : !IsIdentifier(promptId) || !seenPrompts.Add(promptId)))
+                        throw new InvalidDataException("KEYFRAME_OBSERVATION_HISTORY_ID_INVALID");
+                    if (shotId != EligibleShots[index] || Number(shot, "order") != index + 1
+                        || !IsDigest(Text(shot, "prepared_graph_sha256"))
+                        || !shot.TryGetProperty("selected_reference", out var selected)
+                        || selected.ValueKind != JsonValueKind.Null
+                        || !shot.TryGetProperty("candidates", out var candidates)
+                        || candidates.ValueKind != JsonValueKind.Array
+                        || candidates.GetArrayLength() is < 1 or > 32)
+                        throw new InvalidDataException("KEYFRAME_OBSERVATION_SHOT_INVALID");
+                    foreach (var item in candidates.EnumerateArray())
+                    {
+                        var relative = Text(item, "output_relative_path");
+                        var digest = Text(item, "sha256");
+                        var bytes = Number(item, "bytes");
+                        var width = Number(item, "width");
+                        var height = Number(item, "height");
+                        if (!SafeObservedRelativePath(relative) || !seenPaths.Add(relative)
+                            || !IsDigest(digest) || !seenDigests.Add(digest)
+                            || bytes is <= 0 or > ReferencePreviewSnapshotStager.MaxBytes
+                            || width is < 1 or > 8192 || height is < 1 or > 8192
+                            || width * height > 16_000_000
+                            || !Bool(item, "image_container_crc_verified")
+                            || (embedded && !Bool(item, "embedded_prompt_graph_verified"))
+                            || Bool(item, "pixels_decoded") || Text(item, "visual_review") != "UNREVIEWED")
+                            throw new InvalidDataException("KEYFRAME_OBSERVATION_IMAGE_INVALID");
+                        parsed.Add(new(shotId, relative, digest, bytes, (int)width, (int)height,
+                            promptId, CandidateBatch: $"候选批次 {batchIndex + 1}/{manifestPaths.Count}"));
+                        if (parsed.Count > 96)
+                            throw new InvalidDataException("KEYFRAME_OBSERVATION_TOO_MANY_CANDIDATES");
+                    }
+                    index++;
                 }
-                index++;
             }
+            // 10. Publish all candidates together only after every source
+            //     passes. Nothing grants GPU, approvals or provenance rights.
             ObservedCandidates.Clear();
             foreach (var observed in parsed) ObservedCandidates.Add(observed);
-            StatusText = embedded
-                ? "已核验无历史 Prompt ID 的 PNG 内嵌图合同；未认证运行成功，仍需人工审片和许可。"
-                : "已读取本地首帧候选清单；图片尚未选择、授权或导入，请逐张核验。";
+            StatusText = provenanceMode == "PNG_EMBEDDED_NO_HISTORY"
+                ? $"已核验 {manifestPaths.Count} 份 PNG 内嵌工作流候选；未认证历史推理成功，仍需人工审片和许可。"
+                : $"已读取 {manifestPaths.Count} 份本地首帧候选清单；图片尚未选择、授权或导入。";
         }
         catch
         {
             ObservedCandidates.Clear();
-            StatusText = "候选清单未通过核验，未导入参考图或发送审批。";
+            StatusText = "候选清单未通过完整核验，未导入参考图或发送审批。";
             throw;
         }
         finally { Exit(); }

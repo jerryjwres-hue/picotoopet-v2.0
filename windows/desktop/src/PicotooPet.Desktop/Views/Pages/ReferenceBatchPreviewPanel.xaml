@@ -81,15 +81,24 @@
    <Expander Header="本地 ComfyUI 首帧候选（需人工审核）" Margin="0,12,0,0">
     <StackPanel>
      <TextBlock Text="候选清单只显示历史结果，不证明图像质量或使用权。本地 AI 输出不能自动归类为 USER_SUPPLIED；使用前须提供 LICENSED 来源凭据 SHA-256。" TextWrapping="Wrap" Margin="0,0,0,7"/>
-     <Button x:Name="LoadObservedCandidatesButton" Content="读取本地候选清单..." Padding="12,6"
-             HorizontalAlignment="Left" IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
-             Click="LoadObservedCandidates_Click" Margin="0,0,0,8"/>
+     <WrapPanel Margin="0,0,0,8">
+      <Button x:Name="LoadObservedCandidatesButton" Content="读取单份候选清单..." Padding="12,6"
+              HorizontalAlignment="Left" IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
+              Click="LoadObservedCandidates_Click" Margin="0,0,8,0"/>
+      <!-- 06. Aggregate only explicitly observed per-variant local files.
+           Import is read-only; image staging and approval stay separate. -->
+      <Button x:Name="LoadObservedVariantFolderButton" Content="批量读取多组 seed 候选..."
+              Padding="12,6" HorizontalAlignment="Left"
+              IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
+              Click="LoadObservedVariantFolder_Click"/>
+     </WrapPanel>
      <ItemsControl x:Name="ObservedCandidatesList" ItemsSource="{Binding ObservedCandidates}">
       <ItemsControl.ItemTemplate>
        <DataTemplate>
         <Border BorderBrush="#FFD4DFEB" BorderThickness="1" Padding="8" Margin="0,0,0,5">
          <StackPanel>
           <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding CandidateBatch}" FontSize="10" TextWrapping="Wrap"/>
           <Image Source="{Binding Preview}" Width="230" Height="145" Stretch="Uniform" HorizontalAlignment="Left"
                  AutomationProperties.Name="本地候选缩略图（未批准）"/>
           <TextBlock Text="{Binding OutputRelativePath}" TextWrapping="Wrap" FontSize="10"/>

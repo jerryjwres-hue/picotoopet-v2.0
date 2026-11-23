@@ -57,6 +57,8 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
             "One-click frozen three-shot director handoff is missing");
         SmokeAssert.True(panel.FindName("LoadObservedCandidatesButton") is Button,
             "Read-only Comfy candidate list import is missing");
+        SmokeAssert.True(panel.FindName("LoadObservedVariantFolderButton") is Button,
+            "One-folder multi-seed candidate comparison entry is missing");
         SmokeAssert.True(panel.FindName("RestoreReferenceBatchButton") is Button,
             "Existing approved batches must be recoverable after restart");
         SmokeAssert.True(panel.FindName("ResumeApprovalIdTextBox") is TextBox,
@@ -604,6 +606,92 @@ internal static class ReferenceBatchPreviewWpfSmokeTests
                 "Real local image thumbnails must decode for all observed stills");
             SmokeAssert.Equal(0, vm.Items.Count, "Read-only observation must never stage images");
             SmokeAssert.Equal(0, gateway.RegisterCalls, "Thumbnail read may not create approvals");
+
+            // 06. One explicit vNNNN directory selection combines two
+            //     independently observed seed batches without selecting,
+            //     licensing or submitting any candidate image.
+            var variantRoot = Path.Combine(root, "seed-variants");
+            var v7 = Path.Combine(variantRoot, "v0007");
+            var v8 = Path.Combine(variantRoot, "v0008");
+            Directory.CreateDirectory(v7);
+            Directory.CreateDirectory(v8);
+            var firstVariant = JsonNode.Parse(JsonSerializer.Serialize(observedManifest))!.AsObject();
+            firstVariant["batch_manifest_sha256"] = new string('a', 64);
+            var secondVariant = JsonNode.Parse(JsonSerializer.Serialize(observedManifest))!.AsObject();
+            secondVariant["batch_manifest_sha256"] = new string('b', 64);
+            for (var i = 1; i <= 3; i++)
+            {
+                // 07. Distinct PNG payloads are real decodable local images;
+                //     distinct seeds alone are not mistaken for image proof.
+                var pixels = new byte[] { 5, 0, (byte)(80 * i), 255, 7, (byte)(70 * i), 5, 255 };
+                var image = BitmapSource.Create(2, 1, 96, 96, PixelFormats.Bgra32, null, pixels, 8);
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(image));
+                using var stream = new MemoryStream();
+                encoder.Save(stream);
+                var bytes = stream.ToArray();
+                var outputName = $"variant2-shot-{i}.png";
+                File.WriteAllBytes(Path.Combine(observedRoot, outputName), bytes);
+                var digest = Convert.ToHexStringLower(SHA256.HashData(bytes));
+                var shot = secondVariant["shots"]![i - 1]!;
+                shot["prompt_id"] = $"11111111-1111-4111-8111-{i:000000000000}";
+                shot["prepared_graph_sha256"] = new string('d', 64);
+                var candidate = shot["candidates"]![0]!;
+                candidate["output_relative_path"] = outputName;
+                candidate["sha256"] = digest;
+                candidate["bytes"] = bytes.Length;
+            }
+            var firstVariantFile = Path.Combine(v7, "candidate_manifest.json");
+            var secondVariantFile = Path.Combine(v8, "candidate_manifest.json");
+            await File.WriteAllTextAsync(firstVariantFile, firstVariant.ToJsonString());
+            await File.WriteAllTextAsync(secondVariantFile, secondVariant.ToJsonString());
+            await vm.LoadObservedVariantFolderAsync(variantRoot);
+            SmokeAssert.Equal(6, vm.ObservedCandidates.Count,
+                "Two valid variant manifests must expose six independent candidates");
+            SmokeAssert.Equal(2, vm.ObservedCandidates.Select(x => x.CandidateBatch).Distinct().Count(),
+                "Each candidate must display its source batch ordinal, not guessed seed authority");
+            SmokeAssert.True(vm.ObservedCandidates.GroupBy(x => x.ShotId)
+                .All(group => group.Count() == 2),
+                "Every shot must retain one independently observed image from each batch");
+            await vm.InspectObservedCandidatesAsync(observedRoot);
+            SmokeAssert.True(vm.ObservedCandidates.All(x => x.Preview is { IsFrozen: true }),
+                "One folder review must render every verified seed alternative thumbnail");
+            SmokeAssert.Equal(0, vm.Items.Count,
+                "Multi-seed thumbnail aggregation cannot stage any source image");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Aggregating multiple seeds cannot call Core approval API");
+
+            // 08. The original one-file importer must remain compatible
+            //     while multi-import rejects mixed provenance and duplicates.
+            await RejectAsync(() => vm.LoadObservedCandidateManifestsAsync(
+                [firstVariantFile, firstVariantFile]));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "Reusing the same candidate source twice must invalidate the whole batch");
+            secondVariant["creative_package_sha256"] = new string('f', 64);
+            await File.WriteAllTextAsync(secondVariantFile, secondVariant.ToJsonString());
+            await RejectAsync(() => vm.LoadObservedVariantFolderAsync(variantRoot));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "One forged Creative Package must invalidate all seed candidates");
+            secondVariant["creative_package_sha256"] = vm.CreativePackageDigest;
+            secondVariant["batch_manifest_sha256"] = new string('a', 64);
+            await File.WriteAllTextAsync(secondVariantFile, secondVariant.ToJsonString());
+            await RejectAsync(() => vm.LoadObservedVariantFolderAsync(variantRoot));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "Two manifests claiming one batch digest cannot be merged as independent");
+            secondVariant["batch_manifest_sha256"] = new string('b', 64);
+            await File.WriteAllTextAsync(secondVariantFile, secondVariant.ToJsonString());
+            Directory.CreateDirectory(Path.Combine(variantRoot, "v0009"));
+            await RejectAsync(() => vm.LoadObservedVariantFolderAsync(variantRoot));
+            SmokeAssert.Equal(0, vm.ObservedCandidates.Count,
+                "A missing third candidate manifest must not leave a partial trusted review");
+            Directory.Delete(Path.Combine(variantRoot, "v0009"));
+            await vm.LoadObservedCandidatesAsync(observedFile);
+            await vm.InspectObservedCandidatesAsync(observedRoot);
+            SmokeAssert.Equal(3, vm.ObservedCandidates.Count,
+                "Legacy single-manifest import must work after a multi-seed review");
+            SmokeAssert.Equal(0, gateway.RegisterCalls,
+                "Multi-seed import and negative scenarios must never grant approval");
+
             // 02. Any changed file must invalidate EVERY preview, not leave one trusted-looking thumbnail.
             var changedThumbnail = Path.Combine(observedRoot, "shot-2.png");
             var originalSecondImage = File.ReadAllBytes(changedThumbnail);
