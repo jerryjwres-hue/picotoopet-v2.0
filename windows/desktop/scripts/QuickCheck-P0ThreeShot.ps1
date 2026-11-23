@@ -46,7 +46,9 @@ try {
 
     # 04. Reuse the exact existing read-only six-PNG/output-input verifier.
     #     It creates only one non-overwritten JSON in the user's TEMP folder.
-    $inspection = (& $inspect -OutputRoot $OutputRoot -InputRoot $InputRoot -ExpectedCount $ExpectedCount | Out-String)
+    #     The existing inspector uses Write-Host (information stream 6);
+    #     capture it alongside Python stdout to obtain its private report path.
+    $inspection = (& $inspect -OutputRoot $OutputRoot -InputRoot $InputRoot -ExpectedCount $ExpectedCount 6>&1 | Out-String)
     Write-Output $inspection.TrimEnd()
 
     # 05. The historical PNG audit may pass while an input asset is missing.
