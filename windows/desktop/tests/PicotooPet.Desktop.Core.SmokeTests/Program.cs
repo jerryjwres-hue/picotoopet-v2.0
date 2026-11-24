@@ -87,6 +87,8 @@ internal static class Program
                 // 01. Only synthetic local REST GETs: no paired token,
                 //     real LTX Desktop process, GPU or user-owned media.
                 await LtxDesktopLocalI2vPreflightSmokeTests.RunAsync().ConfigureAwait(false);
+            await LtxDesktopLocalI2vResultSmokeTests.RunAsync().ConfigureAwait(false);
+                await LtxDesktopLocalI2vResultSmokeTests.RunAsync().ConfigureAwait(false);
                 return 0;
             }
 
