@@ -185,7 +185,7 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
                     SmokeAssert.Equal(FakeLtxDesktop.AssetId,
                         fixture.Payload!["inputs"]!["startFrame"]!["assetId"]!.GetValue<string>(),
                         "Generation must reference the uploaded image UUID");
-                    SmokeAssert.Equal(4, fixture.Payload["params"]!["duration"]!.GetValue<int>(),
+                    SmokeAssert.Equal(4, fixture.Payload!["params"]!["duration"]!.GetValue<int>(),
                         "Generation payload must be 4 seconds");
                 }
                 else
@@ -265,7 +265,7 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
                     var multipart = request.Content as MultipartFormDataContent
                         ?? throw new InvalidOperationException("EXPECTED_MULTIPART");
                     var part = multipart.Single();
-                    SmokeAssert.Equal("\"file\"", part.Headers.ContentDisposition?.Name,
+                    SmokeAssert.Equal("file", part.Headers.ContentDisposition?.Name?.Trim('"'),
                         "Vendor requires multipart field file");
                     UploadedBytes = await part.ReadAsByteArrayAsync(cancellationToken);
                     response = "{\"id\":\"" + AssetId + "\",\"media_kind\":\"image\"}";
