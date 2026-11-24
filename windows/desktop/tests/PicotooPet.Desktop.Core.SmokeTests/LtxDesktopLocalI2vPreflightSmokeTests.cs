@@ -229,6 +229,49 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
                 SmokeAssert.True(reopened.Read(job, task)!.Phase != "Settled",
                     "Legacy recovery settled LTX without vendor evidence");
             }
+            // 11. Exercise the actual signed-source journal transition with
+            //     synthetic Core rechecks; no real vendor or GPU is contacted.
+            var coreDraft = frozen with { ShotId = "shot-a", SourceStoryPackSha256 = "",
+                SourceOutputProfile = "video.vertical.v1", SourceCreativePackageDigest = new string('c', 64) };
+            foreach (var stop in new[] { 0, 1, 2 })
+            {
+                var fixture = new FakeLtxDesktop { SubmissionMode = "success" };
+                using var local = new HttpClient(fixture) { BaseAddress = LtxDesktopLocalI2vPreflightClient.FixedBaseAddress };
+                local.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "synthetic-only");
+                await using var sender = new LtxDesktopLocalI2vPreflightClient(local);
+                var journal = new ProductionSubmissionJournal(Path.Combine(directory, "claimed-" + stop));
+                using var gpu = journal.AcquireGpu();
+                var job = Guid.NewGuid().ToString("D");
+                var task = Guid.NewGuid().ToString("D");
+                var plan = new string('b', 64);
+                var ready = await sender.PreflightAsync(coreDraft, settingsPath);
+                var intent = LtxDesktopLocalI2vPreflightClient.SubmissionIntentDigest(coreDraft, ready.VendorSubmissionTemplate);
+                journal.Save(new(job, task, plan, intent, "Claimed", null, Renderer: ProductionSubmission.LtxRenderer));
+                var checks = 0;
+                Task Recheck(CancellationToken ct)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (++checks == stop) throw new InvalidOperationException("SYNTHETIC_LEASE_REVOKED");
+                    return Task.CompletedTask;
+                }
+                if (stop == 0)
+                {
+                    var receipt = await sender.SubmitClaimedOnceTransportAsync(coreDraft, settingsPath,
+                        journal, gpu, job, task, plan, intent, Recheck);
+                    SmokeAssert.Equal(intent, receipt.JournalDigest, "Core intent changed");
+                    SmokeAssert.Equal(2, checks, "Both POSTs require live lease");
+                    SmokeAssert.Equal("Submitted", journal.Read(job, task)?.Phase, "Signed submission not bound");
+                }
+                else
+                {
+                    await ExpectStop(sender.SubmitClaimedOnceTransportAsync(coreDraft, settingsPath,
+                        journal, gpu, job, task, plan, intent, Recheck), "SYNTHETIC_LEASE_REVOKED");
+                    SmokeAssert.Equal(stop == 1 ? "Claimed" : "Submitting", journal.Read(job, task)?.Phase,
+                        "Revocation changed reservation incorrectly");
+                }
+                SmokeAssert.Equal(stop == 1 ? 0 : 1, fixture.UploadCount, "Upload after lease denial");
+                SmokeAssert.Equal(stop == 0 ? 1 : 0, fixture.GenerationCount, "Generation after lease denial");
+            }
             Console.WriteLine("LTX_SYNTHETIC_ONE_SHOT_TRANSPORT=PASS; REAL_GPU_POST=0");
         }
         finally

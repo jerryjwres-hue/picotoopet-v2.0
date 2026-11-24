@@ -14,7 +14,9 @@ public sealed record LtxDesktopI2vDraft(
     string FirstFrameFile,
     string FirstFrameSha256,
     string Prompt,
-    int Seed);
+    int Seed,
+    // 01. Core Creative Package and standalone StoryPack are distinct sources.
+    string? SourceCreativePackageDigest = null);
 
 /// <summary>只读原生能力验收；上传 assetId、Owner approval 和执行 Lane 仍然缺失。</summary>
 public sealed record LtxDesktopReadiness(
@@ -31,7 +33,8 @@ public sealed record LtxDesktopReadiness(
     bool GenerationLaneVerified,
     bool OwnerApproved,
     bool CanSubmit,
-    int GpuPost);
+    int GpuPost,
+    string? SourceCreativePackageDigest = null);
 
 /// <summary>
 /// 复用本机 LTX Desktop Remote：只允许 127.0.0.1:41955 的 GET；
@@ -90,9 +93,14 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(draft);
         // 02. 11-21 横屏 StoryPack 不得悄悄切换成竖屏 LTX 任务。
         //     必须明确选用独立的 portrait 版本再进入本地 I2V。
-        if (draft.ShotId is not ("S01" or "S02" or "S03")
-            || !IsSha(draft.SourceStoryPackSha256) || !IsSha(draft.FirstFrameSha256)
-            || draft.SourceOutputProfile != "design_portrait"
+        var coreSource = draft.SourceCreativePackageDigest is not null;
+        var sourceValid = coreSource
+            ? IsSha(draft.SourceCreativePackageDigest!) && draft.SourceStoryPackSha256 == ""
+                && draft.SourceOutputProfile == "video.vertical.v1"
+                && !string.IsNullOrWhiteSpace(draft.ShotId) && draft.ShotId.Length <= 80
+            : draft.ShotId is ("S01" or "S02" or "S03")
+                && IsSha(draft.SourceStoryPackSha256) && draft.SourceOutputProfile == "design_portrait";
+        if (!sourceValid || !IsSha(draft.FirstFrameSha256)
             || draft.Seed < 0
             || string.IsNullOrWhiteSpace(draft.Prompt)
             || draft.Prompt.Length > 10_000)
@@ -248,7 +256,8 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient : IAsyncDisposable
             draft.FirstFrameSha256, draft.SourceStoryPackSha256,
             draft.SourceOutputProfile, template, true, true, true, true, true,
             VendorAssetUploaded: false, GenerationLaneVerified: false,
-            OwnerApproved: false, CanSubmit: false, GpuPost: 0);
+            OwnerApproved: false, CanSubmit: false, GpuPost: 0,
+            SourceCreativePackageDigest: draft.SourceCreativePackageDigest);
     }
 
     private async Task<JsonObject> GetAsync(string path, CancellationToken ct)

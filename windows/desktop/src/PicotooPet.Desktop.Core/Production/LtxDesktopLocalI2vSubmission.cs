@@ -26,9 +26,30 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         LtxDesktopI2vDraft draft, string localSettingsFile,
         ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
         string jobId, string taskId, string planDigest,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SubmitTransportCoreAsync(draft, localSettingsFile, journal, gpu, jobId, taskId,
+            planDigest, null, null, cancellationToken);
+
+    // 01. The signed Worker must supply its live Core lease recheck. This is
+    //     still internal transport, not a replacement for Core authorization.
+    internal Task<LtxDesktopSubmissionReceipt> SubmitClaimedOnceTransportAsync(
+        LtxDesktopI2vDraft draft, string localSettingsFile,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
+        string jobId, string taskId, string planDigest, string expectedIntentDigest,
+        Func<CancellationToken, Task> recheckLease, CancellationToken cancellationToken = default)
     {
-        // 01. Reuse the existing cross-process GPU lock. Do not permit a
+        ArgumentNullException.ThrowIfNull(recheckLease);
+        return SubmitTransportCoreAsync(draft, localSettingsFile, journal, gpu, jobId,
+            taskId, planDigest, expectedIntentDigest, recheckLease, cancellationToken);
+    }
+
+    private async Task<LtxDesktopSubmissionReceipt> SubmitTransportCoreAsync(
+        LtxDesktopI2vDraft draft, string localSettingsFile,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
+        string jobId, string taskId, string planDigest, string? expectedIntentDigest,
+        Func<CancellationToken, Task>? recheckLease, CancellationToken cancellationToken)
+    {
+        // 02. Reuse the existing cross-process GPU lock. Do not permit a
         //     parallel renderer or any unsettled submission (including Wan).
         ArgumentNullException.ThrowIfNull(journal);
         ArgumentNullException.ThrowIfNull(gpu);
@@ -39,10 +60,18 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         {
             throw new InvalidOperationException("LTX_SUBMISSION_SCOPE_INVALID");
         }
-        if (journal.Read(jobId, taskId) is not null || journal.Pending().Count != 0)
-        {
+        var signed = expectedIntentDigest is not null;
+        var prior = journal.Read(jobId, taskId);
+        var pending = journal.Pending();
+        if (signed != (draft.SourceCreativePackageDigest is not null)
+            || (signed && (!IsSha(expectedIntentDigest!) || recheckLease is null)))
+            throw new InvalidOperationException("LTX_SUBMISSION_SOURCE_SCOPE_INVALID");
+        if (signed
+            ? prior is null || !prior.IsLtx || prior.Phase != "Claimed"
+                || prior.PlanDigest != planDigest || prior.GraphDigest != expectedIntentDigest
+                || pending.Count != 1 || pending[0] != prior
+            : prior is not null || pending.Count != 0)
             throw new InvalidOperationException("LTX_SUBMISSION_RECONCILIATION_REQUIRED");
-        }
 
         // 02. Repeat local capability checks immediately before upload.
         //     Copy the exact bounded input bytes and rehash them; never
@@ -76,17 +105,16 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         //     Deliberately reuse the existing journal format; never put a
         //     token, signed URL, private path or raw prompt in its record.
         var payload = readiness.VendorSubmissionTemplate.DeepClone().AsObject();
-        var identity = new JsonObject
-        {
-            ["engine"] = "ltx.desktop.local.i2v.v1",
-            ["source_storypack_sha256"] = draft.SourceStoryPackSha256,
-            ["first_frame_sha256"] = digest,
-            ["vendor_request"] = payload.DeepClone(),
-        };
-        var requestDigest = ProductionSubmissionJournal.GraphDigest(identity);
+        var requestDigest = SubmissionIntentDigest(draft, payload);
+        if (signed && requestDigest != expectedIntentDigest)
+            throw new InvalidOperationException("LTX_SUBMISSION_SIGNED_INTENT_MISMATCH");
         var state = new ProductionSubmission(jobId, taskId, planDigest,
             requestDigest, "Submitting", null, Renderer: ProductionSubmission.LtxRenderer);
 
+        gpu.RequireOwnedBy(journal);
+        cancellationToken.ThrowIfCancellationRequested();
+        // 03. Recheck the exact signed reservation immediately before upload.
+        if (recheckLease is not null) await recheckLease(cancellationToken).ConfigureAwait(false);
         gpu.RequireOwnedBy(journal);
         cancellationToken.ThrowIfCancellationRequested();
         journal.Save(state);
@@ -115,6 +143,8 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         state = state with { VendorStartFrameAssetId = assetId };
         journal.Save(state);
         ((JsonObject)payload["inputs"]!["startFrame"]!)["assetId"] = assetId;
+        // 04. Revocation between upload and generation must prevent GPU POST.
+        if (recheckLease is not null) await recheckLease(cancellationToken).ConfigureAwait(false);
         gpu.RequireOwnedBy(journal);
         using var body = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
         var created = await PostLtxOnceAsync("api/generations/image-to-video", body,
@@ -129,6 +159,21 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         //     required before enabling this component in production.
         journal.Save(state with { Phase = "Submitted", PromptId = generationId });
         return new LtxDesktopSubmissionReceipt(generationId, assetId, digest, requestDigest);
+    }
+
+    // 05. Match Core's vendor_intent_digest exactly for the formal source.
+    //     Preserve the standalone StoryPack digest for its existing fixtures.
+    internal static string SubmissionIntentDigest(LtxDesktopI2vDraft draft, JsonObject payload)
+    {
+        var identity = new JsonObject
+        {
+            ["engine"] = "ltx.desktop.local.i2v.v1",
+            [draft.SourceCreativePackageDigest is null ? "source_storypack_sha256" : "creative_package_digest"]
+                = draft.SourceCreativePackageDigest ?? draft.SourceStoryPackSha256,
+            ["first_frame_sha256"] = draft.FirstFrameSha256,
+            ["vendor_request"] = payload.DeepClone(),
+        };
+        return ProductionSubmissionJournal.GraphDigest(identity);
     }
 
     private async Task<JsonObject> PostLtxOnceAsync(string path, HttpContent content,
