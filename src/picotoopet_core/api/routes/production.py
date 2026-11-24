@@ -33,6 +33,10 @@ from picotoopet_core.production.ltx_plan import (
     LtxPilotFreezeRequestV12, LtxPilotPlanV12, freeze_ltx_pilot_job,
     load_frozen_ltx_pilot_plan,
 )
+from picotoopet_core.production.ltx_admission import (
+    LtxWorkerWitnessV12, LtxClaimReceiptV12, issue_ltx_challenge,
+    claim_ltx_first_attempt,
+)
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -165,6 +169,43 @@ def issue_worker_challenge_v11(
         issued_at=issued_at,
         expires_at=expires_at,
     )
+
+
+class LtxWorkerChallengeResponseV12(WorkerChallengeResponseV11):
+    schema_version: Literal["production.ltx.worker_challenge.v1"] = "production.ltx.worker_challenge.v1"
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-worker-challenge",
+             response_model=LtxWorkerChallengeResponseV12)
+def issue_worker_challenge_v12(
+    production_job_id: str, payload: WorkerChallengeRequestV11,
+    request: Request, response: Response,
+) -> LtxWorkerChallengeResponseV12:
+    # 01. The challenge is renderer-specific, not a lease or GPU permit.
+    nonce, issued_at, expires_at = execute_production(lambda: issue_ltx_challenge(
+        request.app.state.services.production, production_job_id,
+        payload.worker_key_id, payload.executor_id, payload.plan_digest,
+    ))
+    response.headers["Cache-Control"] = "no-store, private"
+    return LtxWorkerChallengeResponseV12(
+        worker_key_id=payload.worker_key_id, executor_id=payload.executor_id,
+        production_job_id=production_job_id, plan_digest=payload.plan_digest,
+        nonce=nonce, issued_at=issued_at, expires_at=expires_at,
+    )
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-claim",
+             response_model=LtxClaimReceiptV12)
+def claim_production_job_v12(
+    production_job_id: str, payload: LtxWorkerWitnessV12,
+    request: Request, response: Response,
+) -> LtxClaimReceiptV12:
+    # 02. One explicit signed claim reserves exactly one LTX attempt.
+    #     This route cannot execute a renderer or call the Windows GPU.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: claim_ltx_first_attempt(
+        request.app.state.services.production, production_job_id, payload,
+    ))
 
 
 @router.post("/production/jobs/{production_job_id}/witness/preflight", status_code=204)
