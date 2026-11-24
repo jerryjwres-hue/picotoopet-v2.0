@@ -210,6 +210,24 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
                     frozen, settingsPath, journal, gpu, Guid.NewGuid().ToString("D"), task, plan),
                     "LTX_SUBMISSION_RECONCILIATION_REQUIRED");
                 SmokeAssert.Equal(posts, fixture.PostCount, "Duplicate vendor POST occurred");
+                // 10. Reopen durable journal; the legacy reconciler must not
+                //     query Comfy or Core for an LTX generation, even after a crash.
+                var reopened = new ProductionSubmissionJournal(Path.Combine(directory, mode));
+                var persisted = reopened.Read(job, task)!;
+                SmokeAssert.True(persisted.IsLtx, "Renderer tag lost during journal reload");
+                SmokeAssert.Equal(mode == "upload-timeout" ? null : FakeLtxDesktop.AssetId,
+                    persisted.VendorStartFrameAssetId, "Upload identity not durable");
+                var legacy = new RejectLegacyReconciler();
+                await ExpectStop(ProductionPendingRecovery.ReconcileTerminalAsync(
+                    reopened, legacy, persisted), "MEDIA_LTX_RECOVERY_REQUIRED");
+                gpu.Dispose();
+                var recovery = new ProductionPendingRecovery(reopened, legacy,
+                    (_, _) => throw new InvalidOperationException("LEGACY_CORE_QUERY_FOR_LTX"));
+                var blocked = await recovery.ReconcileAsync();
+                SmokeAssert.True(blocked.HasPending && blocked.RecoverableJobId is null,
+                    "Pending LTX record must block legacy scheduling");
+                SmokeAssert.True(reopened.Read(job, task)!.Phase != "Settled",
+                    "Legacy recovery settled LTX without vendor evidence");
             }
             Console.WriteLine("LTX_SYNTHETIC_ONE_SHOT_TRANSPORT=PASS; REAL_GPU_POST=0");
         }
@@ -225,6 +243,14 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
         try { await work.ConfigureAwait(false); }
         catch (Exception e) { stopped = e.Message == expected; }
         SmokeAssert.True(stopped, "Missing fail-closed reason " + expected);
+    }
+
+    private sealed class RejectLegacyReconciler : IComfyPromptReconciler
+    {
+        public Task<string?> FindExactAsync(string digest, CancellationToken ct) =>
+            throw new InvalidOperationException("COMFY_QUERY_FOR_LTX");
+        public Task<bool> IsFinishedAsync(string promptId, CancellationToken ct) =>
+            throw new InvalidOperationException("COMFY_QUERY_FOR_LTX");
     }
 
     private sealed class FakeLtxDesktop : HttpMessageHandler
