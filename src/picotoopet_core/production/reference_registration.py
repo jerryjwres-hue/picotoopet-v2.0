@@ -113,6 +113,8 @@ class ReferenceBatchReceiptV1(BaseModel):
     creative_package_digest: str
     goal_id: str
     references: list[RegisteredReferenceV1]
+    # 04. New LTX receipts identify their scope; old Wan HTTP receipts omit it.
+    rights_scope: Literal["ltx.desktop.local.i2v.production.v1"] | None = None
 
 
 class ReferenceRegistrationService:
@@ -161,6 +163,7 @@ class ReferenceRegistrationService:
             creative_package_digest=scope["creative_package_digest"],
             goal_id=scope["goal_id"],
             references=[RegisteredReferenceV1.model_validate(item) for item in scope["references"]],
+            rights_scope=_LTX_USE if scope["rights_scope"] == _LTX_USE else None,
         )
 
     def get(self, approval_id: str) -> ReferenceBatchReceiptV1:
