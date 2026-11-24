@@ -20,7 +20,9 @@ RUNNER_SHA256 = "fba9b6f004871664c92c75f1c36170a17ceef89b47f3a2c71032df472405d2b
 LORA_V2_SHA256 = "5972e7f782e3e4ed16b764441fdb66d638cb6a8ba85fb8226d95feeb98e8eb70"
 LORA_V2_SIZE = 46_223_616
 C8B_MASTER_SHA256 = "c6d7e556b8047d06d6ba7c408e8fdde26d3d16dd59d3c029e901847beac8f59b"
-B1_SCENE_SHA256 = "c89f7c8d8e44b97d884fb6ad4e6f53e2873a7836422bb7e747b8711e4382c043"
+# B1 full SHA is not present in the directly inspectable inventory report.
+# An exact SHA is supplied by the Windows-side evidence and rehashed here.
+# This does not certify an approved Core asset or a matched scene geometry.
 SHA_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 SHOT_PATTERN = re.compile(r"S0[1-3]\Z")
 FILENAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,120}\Z")
@@ -153,8 +155,9 @@ def prepare(
             raise _bad("REFERENCE_SHA_MISMATCH")
         if index == 0 and expected_sha != C8B_MASTER_SHA256:
             raise _bad("NOT_APPROVED_C8B_IDENTITY_SOURCE")
-        if index == 1 and expected_sha != B1_SCENE_SHA256:
-            raise _bad("NOT_REGISTERED_B1_SCENE_SOURCE")
+        # B1 full SHA has not been independently attested in this repo.
+        # Only the selected local bytes are checked; Core identity/approval
+        # remain false until authenticated registry verification.
         observed.append({
             "role": role, "relative_path": relative,
             "sha256": expected_sha, "bytes": len(data),
@@ -229,7 +232,10 @@ def prepare(
         "source_profile_conversion_performed": False,
         "target_geometry_verified": False,
         "character_master_sha256": C8B_MASTER_SHA256,
-        "scene_master_sha256": B1_SCENE_SHA256,
+        "scene_source_sha256": observed[1]["sha256"],
+        "scene_local_bytes_verified": True,
+        "scene_core_artifact_binding_verified": False,
+        "scene_owner_approval_verified": False,
         "lora_v2_sha256": LORA_V2_SHA256,
         "lora_strength": 0.9,
         "references": observed,

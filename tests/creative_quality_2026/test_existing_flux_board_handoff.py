@@ -76,7 +76,6 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         self.patches = [
             patch.object(module, "RUNNER_SHA256", _sha(self.runner.read_bytes())),
             patch.object(module, "C8B_MASTER_SHA256", _sha(self.character.read_bytes())),
-            patch.object(module, "B1_SCENE_SHA256", _sha(self.scene.read_bytes())),
             patch.object(module, "LORA_V2_SHA256", _sha(self.lora.read_bytes())),
             patch.object(module, "LORA_V2_SIZE", len(self.lora.read_bytes())),
         ]
@@ -109,6 +108,12 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         self.assertEqual(result["gpu_post"], 0)
         self.assertFalse(result["target_geometry_verified"])
         self.assertEqual(result["source_output_profile"], "p0_landscape")
+        # 03b. Local scene bytes are real, but no Core artifact binding or
+        #      Owner approval can be inferred from a request-supplied SHA.
+        self.assertEqual(result["scene_source_sha256"], _sha(self.scene.read_bytes()))
+        self.assertTrue(result["scene_local_bytes_verified"])
+        self.assertFalse(result["scene_core_artifact_binding_verified"])
+        self.assertFalse(result["scene_owner_approval_verified"])
         self.assertFalse(result["source_profile_conversion_performed"])
         self.assertEqual(result["draft_still_profile"], "flux2.still.864x1536.v1")
         jobs = json.loads((self.output / "flux_board_single_job.json").read_bytes())
