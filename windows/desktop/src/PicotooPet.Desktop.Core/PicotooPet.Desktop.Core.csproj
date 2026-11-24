@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="PicotooPet.OwnerReview.SmokeTests" />
+    <InternalsVisibleTo Include="PicotooPet.Desktop.Core.SmokeTests" />
   </ItemGroup>
 </Project>
