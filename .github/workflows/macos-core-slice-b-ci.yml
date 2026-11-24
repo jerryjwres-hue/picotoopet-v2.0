@@ -50,8 +50,10 @@ jobs:
         shell: bash
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Exact stacked candidate must build its own arm64 package; no runtime changes.
+          ASSET_INTAKE_CANDIDATE: ${{ github.event_name == 'pull_request' && github.head_ref == 'integrate/p0-asset-intake-device-candidate-20261123' && github.base_ref == 'feat/p0-1b-windows-existing-asset-registration-20261123' }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "$ASSET_INTAKE_CANDIDATE" == "true" ]]; then
             python scripts/detect_component_impact.py \
               --baselines contracts/release/component-baselines.json \
               --head "$HEAD_SHA" \
