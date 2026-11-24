@@ -311,7 +311,9 @@ public static class P0MediaWorkerHost
     {
         foreach (var job in jobs)
         {
-            if (job.Status is not ("Ready" or "Claimed")
+            // The existing Wan worker is not the LTX signed worker.
+            if (job.ProductionProfile != "production.comfyui.v1"
+                || job.Status is not ("Ready" or "Claimed")
                 || !P0ThreeShotAcceptanceGate.HasExplicitAllowFor(job.ProductionJobId)) continue;
             var plan = await session.GetProductionPlanAsync(job.ProductionJobId, ct).ConfigureAwait(false);
             if (plan.SchemaVersion == "1.1"
