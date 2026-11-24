@@ -76,8 +76,10 @@ def import_local_asset(
         raise ValueError("ASSET_HASH_MISMATCH")
 
     # The content key makes identical replays harmless; different bytes get a new ID.
-    scoped = json.dumps([project_id, role, digest], separators=(",", ":"))
-    asset_id = "asset-" + hashlib.sha256(scoped.encode("utf-8")).hexdigest()
+    # Same helper as the Windows-claim path, so both paths share one ID scheme.
+    from picotoopet_core.domain.storypack_asset_registry import storypack_artifact_id
+
+    asset_id = storypack_artifact_id(project_id, role, digest)
     artifact_type = f"storypack_{role}"
 
     with database.transaction() as connection:
