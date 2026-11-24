@@ -102,6 +102,10 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
             transport.QueueBusy = true;
             await ExpectStop(client.PreflightAsync(request, settingsPath), "LTX_DESKTOP_QUEUE_BUSY");
             transport.QueueBusy = false;
+            transport.MalformedQueue = true;
+            await ExpectStop(client.PreflightAsync(request, settingsPath),
+                "LTX_DESKTOP_QUEUE_SCHEMA_UNVERIFIED");
+            transport.MalformedQueue = false;
             transport.Unsupported4s = true;
             await ExpectStop(client.PreflightAsync(request, settingsPath),
                 "LTX_DESKTOP_LOCAL_4S_MODEL_UNSUPPORTED");
@@ -110,6 +114,10 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
             await ExpectStop(client.PreflightAsync(request, settingsPath),
                 "LTX_DESKTOP_MATCHING_HISTORY_EXISTS");
             transport.HistoryDuplicate = false;
+            transport.HistoryDuplicateNested = true;
+            await ExpectStop(client.PreflightAsync(request, settingsPath),
+                "LTX_DESKTOP_MATCHING_HISTORY_EXISTS");
+            transport.HistoryDuplicateNested = false;
 
             // 06. Misconfigured endpoint or unpaired session is denied
             //     before any request, never redirected to a provider.
@@ -149,8 +157,10 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
         public int Count { get; private set; }
         public int PostCount { get; private set; }
         public bool QueueBusy { get; set; }
+        public bool MalformedQueue { get; set; }
         public bool Unsupported4s { get; set; }
         public bool HistoryDuplicate { get; set; }
+        public bool HistoryDuplicateNested { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
@@ -165,15 +175,19 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
             string json = path switch
             {
                 "/api/session" => """{"status":"connected"}""",
-                "/api/generation-queue" => QueueBusy
-                    ? """{"active":{"generation":{"id":"busy"}},"queued":[]}"""
-                    : """{"active":null,"queued":[]}""",
+                "/api/generation-queue" => MalformedQueue
+                    ? """{"active":null}"""
+                    : QueueBusy
+                        ? """{"active":{"generation":{"id":"busy"}},"queued":[]}"""
+                        : """{"active":null,"queued":[]}""",
                 "/api/generate/models-specs" => Unsupported4s
                     ? """{"downloaded_local_models":[{"model":"ltx-2.5-fast","spec":{"supported_resolutions_durations":{"720p":{"aspect_ratios":["9:16"],"fps_to_durations":{"24":[8]}}}}}]}"""
                     : """{"downloaded_local_models":[{"model":"ltx-2.5-fast","spec":{"supported_resolutions_durations":{"720p":{"aspect_ratios":["9:16"],"fps_to_durations":{"24":[4,8]}}}}}]}""",
-                "/api/generations?feature=image-to-video" => HistoryDuplicate
-                    ? """[{"spec":{"params":{"prompt":"Maotai sits beside the bowl, fixed camera, one head movement","model":"ltx-2.5-fast","resolution":"720p","aspectRatio":"9:16","duration":4,"fps":24,"seed":2026112201}}}]"""
-                    : "[]",
+                "/api/generations?feature=image-to-video" => HistoryDuplicateNested
+                    ? """[[{"spec":{"params":{"prompt":"Maotai sits beside the bowl, fixed camera, one head movement","model":"ltx-2.5-fast","resolution":"720p","aspectRatio":"9:16","duration":4,"fps":24,"seed":2026112201}}}]]"""
+                    : HistoryDuplicate
+                        ? """[{"spec":{"params":{"prompt":"Maotai sits beside the bowl, fixed camera, one head movement","model":"ltx-2.5-fast","resolution":"720p","aspectRatio":"9:16","duration":4,"fps":24,"seed":2026112201}}}]"""
+                        : "[]",
                 _ => throw new InvalidOperationException("UNEXPECTED_LOCAL_GET:" + path),
             };
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
