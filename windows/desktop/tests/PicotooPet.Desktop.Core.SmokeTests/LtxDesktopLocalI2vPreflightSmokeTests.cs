@@ -137,6 +137,81 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
             SmokeAssert.True(denied, "Missing pair token accepted");
             SmokeAssert.Equal(0, transport.PostCount, "Local LTX preflight performed a POST");
             Console.WriteLine("LTX_DESKTOP_LOCAL_4S_PREFLIGHT=PASS; GPU_POST=0");
+
+            // 07. Exercise actual transport against a synthetic handler ONLY.
+            //     The PNG signature fixture is not a decoded user-owned frame.
+            var pngBytes = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4 };
+            await File.WriteAllBytesAsync(frame, pngBytes);
+            var frozen = request with {
+                FirstFrameSha256 = Convert.ToHexStringLower(SHA256.HashData(pngBytes)),
+            };
+            foreach (var mode in new[] { "success", "upload-timeout", "generation-timeout" })
+            {
+                var fixture = new FakeLtxDesktop { SubmissionMode = mode };
+                using var local = new HttpClient(fixture)
+                {
+                    BaseAddress = LtxDesktopLocalI2vPreflightClient.FixedBaseAddress,
+                };
+                local.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", "synthetic-only");
+                await using var sender = new LtxDesktopLocalI2vPreflightClient(local);
+                var journal = new ProductionSubmissionJournal(Path.Combine(directory, mode));
+                using var gpu = journal.AcquireGpu();
+                var job = Guid.NewGuid().ToString("D");
+                var task = Guid.NewGuid().ToString("D");
+                var plan = new string('b', 64);
+                fixture.BeforePost = () =>
+                    SmokeAssert.Equal("Submitting", journal.Read(job, task)?.Phase,
+                        "Durable uncertain marker must precede ALL POSTs");
+
+                // 08. The same signed-plan digest and GPU lock are required
+                //     by the internal transport. These IDs are synthetic.
+                if (mode == "success")
+                {
+                    var receipt = await sender.SubmitOnceTransportAsync(
+                        frozen, settingsPath, journal, gpu, job, task, plan);
+                    SmokeAssert.Equal(FakeLtxDesktop.GenerationId, receipt.GenerationId,
+                        "Vendor generation identity lost");
+                    SmokeAssert.Equal(FakeLtxDesktop.AssetId, receipt.StartFrameAssetId,
+                        "Vendor uploaded asset identity lost");
+                    SmokeAssert.Equal(frozen.FirstFrameSha256, receipt.FirstFrameSha256,
+                        "Uploaded input digest changed");
+                    SmokeAssert.Equal("Submitted", journal.Read(job, task)?.Phase,
+                        "Successful response was not durably bound");
+                    SmokeAssert.Equal(FakeLtxDesktop.GenerationId,
+                        journal.Read(job, task)?.PromptId, "Vendor ID not journaled");
+                    SmokeAssert.True(fixture.UploadedBytes!.SequenceEqual(pngBytes),
+                        "Multipart uploaded bytes differ from pinned input");
+                    SmokeAssert.Equal(FakeLtxDesktop.AssetId,
+                        fixture.Payload!["inputs"]!["startFrame"]!["assetId"]!.GetValue<string>(),
+                        "Generation must reference the uploaded image UUID");
+                    SmokeAssert.Equal(4, fixture.Payload["params"]!["duration"]!.GetValue<int>(),
+                        "Generation payload must be 4 seconds");
+                }
+                else
+                {
+                    await ExpectStop(sender.SubmitOnceTransportAsync(
+                        frozen, settingsPath, journal, gpu, job, task, plan),
+                        "LTX_SUBMISSION_TRANSPORT_UNCERTAIN");
+                    SmokeAssert.Equal("Submitting", journal.Read(job, task)?.Phase,
+                        "Uncertain network response must leave durable marker");
+                }
+                SmokeAssert.Equal(1, fixture.UploadCount, "Upload must occur once");
+                SmokeAssert.Equal(mode == "upload-timeout" ? 0 : 1, fixture.GenerationCount,
+                    "At most one generation POST");
+
+                // 09. Simulate reopening the journal after a lost response;
+                //     neither the same job nor another job can blindly retry.
+                var posts = fixture.PostCount;
+                await ExpectStop(sender.SubmitOnceTransportAsync(
+                    frozen, settingsPath, journal, gpu, job, task, plan),
+                    "LTX_SUBMISSION_RECONCILIATION_REQUIRED");
+                await ExpectStop(sender.SubmitOnceTransportAsync(
+                    frozen, settingsPath, journal, gpu, Guid.NewGuid().ToString("D"), task, plan),
+                    "LTX_SUBMISSION_RECONCILIATION_REQUIRED");
+                SmokeAssert.Equal(posts, fixture.PostCount, "Duplicate vendor POST occurred");
+            }
+            Console.WriteLine("LTX_SYNTHETIC_ONE_SHOT_TRANSPORT=PASS; REAL_GPU_POST=0");
         }
         finally
         {
@@ -161,15 +236,53 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
         public bool Unsupported4s { get; set; }
         public bool HistoryDuplicate { get; set; }
         public bool HistoryDuplicateNested { get; set; }
+        public const string AssetId = "00000000-0000-4000-8000-000000000021";
+        public const string GenerationId = "00000000-0000-4000-8000-000000000022";
+        public string? SubmissionMode { get; init; }
+        public Action? BeforePost { get; set; }
+        public int UploadCount { get; private set; }
+        public int GenerationCount { get; private set; }
+        public byte[]? UploadedBytes { get; private set; }
+        public JsonObject? Payload { get; private set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Count++;
             if (request.Method != HttpMethod.Get)
             {
                 PostCount++;
-                throw new InvalidOperationException("LTX_POST_NOT_AUTHORIZED_IN_TEST");
+                if (SubmissionMode is null || request.Method != HttpMethod.Post
+                    || request.RequestUri?.Host != "127.0.0.1" || request.RequestUri.Port != 41955)
+                    throw new InvalidOperationException("LTX_POST_NOT_AUTHORIZED_IN_TEST");
+                BeforePost?.Invoke();
+                string response;
+                if (request.RequestUri.AbsolutePath == "/api/assets/upload")
+                {
+                    UploadCount++;
+                    if (SubmissionMode == "upload-timeout")
+                        throw new HttpRequestException("synthetic lost upload response");
+                    var multipart = request.Content as MultipartFormDataContent
+                        ?? throw new InvalidOperationException("EXPECTED_MULTIPART");
+                    var part = multipart.Single();
+                    SmokeAssert.Equal("\"file\"", part.Headers.ContentDisposition?.Name,
+                        "Vendor requires multipart field file");
+                    UploadedBytes = await part.ReadAsByteArrayAsync(cancellationToken);
+                    response = "{\"id\":\"" + AssetId + "\",\"media_kind\":\"image\"}";
+                }
+                else if (request.RequestUri.AbsolutePath == "/api/generations/image-to-video")
+                {
+                    GenerationCount++;
+                    Payload = JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))!.AsObject();
+                    if (SubmissionMode == "generation-timeout")
+                        throw new HttpRequestException("synthetic lost generation response");
+                    response = "{\"id\":\"" + GenerationId + "\",\"status\":\"queued\"}";
+                }
+                else throw new InvalidOperationException("UNEXPECTED_POST");
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(response, Encoding.UTF8, "application/json"),
+                };
             }
             var path = request.RequestUri?.PathAndQuery;
             string json = path switch
@@ -190,10 +303,10 @@ internal static class LtxDesktopLocalI2vPreflightSmokeTests
                         : "[]",
                 _ => throw new InvalidOperationException("UNEXPECTED_LOCAL_GET:" + path),
             };
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),
-            });
+            };
         }
     }
 }
