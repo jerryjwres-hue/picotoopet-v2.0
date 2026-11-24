@@ -51,7 +51,8 @@ jobs:
   portable-preview:
     # 其他 PR 不得触发便携包；仅允许本次 #330 统一集成审查构建无签名内部候选。
     # 必须同时匹配原有精确 head 和本次唯一 base，不扩大其他 PR 的构建权限。
-    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop' || (github.head_ref == 'feat/p0-296-keyframe-thumbnail-review' && github.base_ref == 'integrate/p0-296-film-closed-loop-candidate-20261121') || (github.head_ref == 'feat/p0-330-bundle-offline-qwen-tools-20261122' && github.base_ref == 'fix/p0-330-c009-visual-restart-repeat-20261122') || (github.head_ref == 'feat/p0-330-qwen-one-command-inventory-20261122' && github.base_ref == 'feat/p0-330-qwen-six-png-readonly-inventory-20261122') || (github.head_ref == 'feat/p0-330-jpeg-and-readiness-windows-bundle-20261122' && github.base_ref == 'feat/p0-330-qwen-three-shot-reference-preflight-20261122')
+    # P0 asset intake: exact stacked child candidate only; no formal release or install permission.
+    if: github.event_name != 'pull_request' || github.head_ref == 'integrate/p0-296-mac23-win23-storypack-v31-candidate' || github.head_ref == 'feat/p0-296-film-preview-secure-ssh-interop' || (github.head_ref == 'feat/p0-296-keyframe-thumbnail-review' && github.base_ref == 'integrate/p0-296-film-closed-loop-candidate-20261121') || (github.head_ref == 'feat/p0-330-bundle-offline-qwen-tools-20261122' && github.base_ref == 'fix/p0-330-c009-visual-restart-repeat-20261122') || (github.head_ref == 'feat/p0-330-qwen-one-command-inventory-20261122' && github.base_ref == 'feat/p0-330-qwen-six-png-readonly-inventory-20261122') || (github.head_ref == 'feat/p0-330-jpeg-and-readiness-windows-bundle-20261122' && github.base_ref == 'feat/p0-330-qwen-three-shot-reference-preflight-20261122') || (github.head_ref == 'integrate/p0-asset-intake-device-candidate-20261123' && github.base_ref == 'feat/p0-1b-windows-existing-asset-registration-20261123')
     name: Build unsigned portable WPF candidate without Release Builder
     runs-on: windows-2025
     timeout-minutes: 35
@@ -262,6 +263,10 @@ jobs:
             'PicotooPet P0 THREE-SHOT DEVELOPER PREVIEW - UNSIGNED, INTERNAL TEST ONLY'
             'NOT a formal Release Builder output, NOT an installer, NOT a signed or QA-approved application.'
             'Desktop pet is DEFERRED and excluded from film-production scope.'
+            'Asset intake candidate: existing Film Studio character/scene/style copy import and LoRA v2 SHA-only registration.'
+            'A separate confirmed Owner request remains Pending; no automatic Owner decision, no new production Plan, no GPU.'
+            'Do not repeat rejected Qwen six-frame or role-master generation; prefer existing C8B/B1/identity lock and FLUX LoRA v2.'
+            'FLUX and LTX execution adapters are not certified by this asset-intake candidate.'
             'Only trusted SSH public-key authentication; no credentials in the archive.'
             'The optional CONNECT_MAC_SECURE.vbs launches the trusted Windows OpenSSH loopback tunnel.'
             'Mac Remote Login, a pre-approved SSH key, and trusted known_hosts are prerequisites.'
