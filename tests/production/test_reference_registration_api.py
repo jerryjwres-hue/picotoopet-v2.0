@@ -585,6 +585,18 @@ def test_ltx_reference_scope_is_explicit_and_never_authorizes_wan(state):
         approved = service.get(receipt["approval_id"])
         assert approved.status == "Approved"
         assert approved.rights_scope == ltx
+        # Both verifier entry points enforce their own renderer purpose.
+        from picotoopet_core.production.reference_assets import (
+            LtxReferenceAssetIdentityV1, verify_persisted_ltx_reference_approval,
+        )
+        ltx_ref = LtxReferenceAssetIdentityV1.model_validate(
+            {**identity(approved, "shot-a").model_dump(), "rights_scope": ltx}
+        )
+        verify_persisted_ltx_reference_approval(db, ltx_ref)
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
+            approved_reference_descriptor(db, ltx_ref)
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
+            verify_persisted_ltx_reference_approval(db, identity(approved, "shot-a"))
         with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
             approved_reference_descriptor(db, identity(approved, "shot-a"))
         assert len(db.fetchall("SELECT * FROM production_jobs", ())) == 0
@@ -599,3 +611,87 @@ def test_ltx_reference_scope_is_explicit_and_never_authorizes_wan(state):
         assert revoked.status_code == 200
         assert revoked.json()["status"] == "Revoked"
         assert revoked.json()["rights_scope"] == ltx
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+            verify_persisted_ltx_reference_approval(db, ltx_ref)
+
+
+def test_ltx_pilot_compiles_exact_frozen_first_frame_without_admission(state):
+    # 01. Use the existing synthetic fixture, replacing ONLY its fixture
+    #     package with a legitimate portrait four-second source before approval.
+    from picotoopet_core.creative.repository import CreativeRepository
+    from picotoopet_core.production.ltx_plan import compile_ltx_pilot_plan, LTX_SCOPE
+    from picotoopet_core.production.repository import ProductionRepository
+    from picotoopet_core.production.service import ProductionService
+    from picotoopet_core.production.store import ProductionArtifactStore
+    from picotoopet_core.production.versioned_plan import parse_versioned_plan
+
+    db, registration, approval, store, _ = state
+    row = db.fetchone("SELECT * FROM creative_packages WHERE creative_package_id=?", (PACKAGE,))
+    manifest = json.loads(row["manifest_json"])
+    old = store.resolve_managed_relative(row["package_relpath"])
+    old.unlink()  # Synthetic test fixture only; production never rewrites a package.
+    stages = manifest["stage_results"]
+    stages["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+    stages["script.v1"]["target_duration_seconds"] = 12
+    for beat in stages["script.v1"]["beats"]:
+        beat["duration_seconds"] = 4
+    for shot in stages["shot_plan.v1"]["shots"]:
+        shot["duration_seconds"] = 4
+    location, digest = store.write_creative_package(PACKAGE, manifest)
+    db.execute(
+        "UPDATE creative_packages SET package_digest=?,package_relpath=?,manifest_json=? "
+        "WHERE creative_package_id=?", (digest, location, json.dumps(manifest), PACKAGE),
+    )
+
+    # 02. Create a scoped Pending request and require actual approval.
+    raw = payload(digest)
+    raw["selected_references"] = [
+        dict(candidate("shot-a"), rights_scope=LTX_SCOPE),
+    ]
+    receipt = registration.register(
+        ReferenceBatchRequestV1.model_validate(raw), idempotency_key="ltx-pilot",
+    )
+    service = ProductionService(
+        repository=ProductionRepository(db), creative_repository=CreativeRepository(db),
+        store=ProductionArtifactStore(store.paths),
+    )
+    job = str(uuid4())
+
+    def compile_plan():
+        return compile_ltx_pilot_plan(
+            service, production_job_id=job, creative_package_id=PACKAGE,
+            approved_reference_id=receipt.approval_id,
+        )
+
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        compile_plan()
+    approval.decide_for_control_center(
+        approval_id=receipt.approval_id, decision="approve",
+        request_digest=receipt.approval_request_digest,
+        idempotency_key="ltx-pilot-owner", resolved_by="synthetic-fixture",
+        reason="fixture first-frame consent",
+    )
+    plan = compile_plan()
+    assert plan == compile_plan()
+    assert plan.digest() == compile_plan().digest()
+    assert plan.schema_version == "1.2"
+    assert plan.shot_id == "shot-a"
+    assert plan.reference_asset.sha256 == SHA
+    assert plan.reference_asset.rights_scope == LTX_SCOPE
+    assert plan.source_output_profile == "video.vertical.v1"
+    assert (plan.model, plan.resolution, plan.aspect_ratio, plan.duration_seconds, plan.fps) == (
+        "ltx-2.5-fast", "720p", "9:16", 4, 24,
+    )
+    # 03. Never admit the new contract through the legacy executable parser.
+    with pytest.raises(ValueError, match="PRODUCTION_PLAN_SCHEMA_UNSUPPORTED"):
+        parse_versioned_plan(plan.model_dump(mode="json"))
+    assert not db.fetchall("SELECT * FROM production_jobs", ())
+    assert not db.fetchall("SELECT * FROM production_attempts", ())
+
+    # 04. Revoked consent cannot produce another plan.
+    registration.revoke(
+        receipt.approval_id, request_digest=receipt.approval_request_digest,
+        reason="synthetic revoke",
+    )
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        compile_plan()
