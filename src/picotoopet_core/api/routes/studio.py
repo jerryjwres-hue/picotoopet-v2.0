@@ -19,6 +19,7 @@ from picotoopet_core.domain.storypack_asset_registry import (
     register_windows_claim, request_owner_approval, storypack_expected_kinds,
 )
 from picotoopet_core.domain.storypack_fingerprints import build_shot_fingerprints
+from picotoopet_core.domain.storypack_plan_bridge import build_storypack_bridge_proposal
 from picotoopet_core.domain.storypack_goal_intake import build_storypack_goal_intake
 from picotoopet_core.domain.storypack_owner_subject import build_owner_review_subject
 from picotoopet_core.security.auth import require_auth
@@ -76,6 +77,11 @@ async def preview_storypack(request: Request, response: Response) -> dict:
         expected_kinds=storypack_expected_kinds(pack),
     )
     preview["fingerprint_plan"] = build_shot_fingerprints(
+        pack, preview["storypack_sha256"], preview["asset_record_checks"]
+    )
+    # P0-2: deterministic, SHA-pinned bridge candidate. Never claim this is
+    # an executable canonical ProductionPlan or release the Worker GPU HOLD.
+    preview["production_bridge_proposal"] = build_storypack_bridge_proposal(
         pack, preview["storypack_sha256"], preview["asset_record_checks"]
     )
     preview["owner_review_subject"] = build_owner_review_subject(
