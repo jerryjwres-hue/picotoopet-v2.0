@@ -209,3 +209,56 @@ def test_ltx_nonce_and_attempt_rollback_together(pilot):
         p.db.execute("DROP TRIGGER fixture_abort_ltx_attempt")
         response = client.post(p.root + "/ltx-claim", json=proof.model_dump(mode="json"))
         assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize("mutation", ["token", "attempt", "intent", "key", "approval", "snapshot", "witness", "expiry"])
+def test_ltx_current_lease_rechecks_before_vendor_post_and_renewal(pilot, mutation):
+    p = pilot
+    with TestClient(p.app) as client:
+        proof = witness(p, issue(client, p))
+        claim = client.post(p.root + "/ltx-claim", json=proof.model_dump(mode="json"))
+        assert claim.status_code == 200, claim.text
+        data = claim.json()
+        lease = {key: data[key] for key in (
+            "executor_id", "lease_token", "production_attempt_id",
+            "plan_digest", "vendor_intent_digest",
+        )}
+        # 06. Rechecking and extending a lease never consumes a new nonce
+        #     or increases the first-attempt budget.
+        before = facts(p)
+        checked = client.post(p.root + "/ltx-lease/recheck", json=lease)
+        assert checked.status_code == 200, checked.text
+        assert checked.json()["production_attempt_id"] == data["production_attempt_id"]
+        assert facts(p) == before
+        heartbeat = client.post(p.root + "/ltx-lease/heartbeat", json=lease)
+        assert heartbeat.status_code == 200, heartbeat.text
+        assert p.db.scalar("SELECT COUNT(*) FROM production_attempts") == 1
+        assert client.post(p.root + "/heartbeat", json={
+            "executor_id": lease["executor_id"], "lease_token": lease["lease_token"],
+        }).status_code == 409
+        if mutation == "token":
+            lease["lease_token"] = "forged-legacy-token"
+        elif mutation == "attempt":
+            lease["production_attempt_id"] = str(uuid4())
+        elif mutation == "intent":
+            lease["vendor_intent_digest"] = "0"*64
+        elif mutation == "key":
+            p.db.execute("UPDATE production_worker_keys SET revoked_at=?",
+                         (datetime.now(UTC).isoformat(),))
+        elif mutation == "approval":
+            p.registration.revoke(
+                p.receipt.approval_id, request_digest=p.receipt.approval_request_digest,
+                reason="fixture revoke after claim",
+            )
+        elif mutation == "snapshot":
+            p.db.execute("UPDATE production_tasks SET task_plan_json='{}'")
+        elif mutation == "witness":
+            p.db.execute("UPDATE production_worker_challenges SET admitted_witness_json='{}'")
+        else:
+            p.db.execute("UPDATE production_jobs SET lease_expires_at=?",
+                         ((datetime.now(UTC)-timedelta(seconds=1)).isoformat(),))
+        before = facts(p)
+        for route in ("/ltx-lease/recheck", "/ltx-lease/heartbeat"):
+            assert client.post(p.root + route, json=lease).status_code == 409
+        assert facts(p) == before
+        assert p.db.scalar("SELECT COUNT(*) FROM production_attempts") == 1
