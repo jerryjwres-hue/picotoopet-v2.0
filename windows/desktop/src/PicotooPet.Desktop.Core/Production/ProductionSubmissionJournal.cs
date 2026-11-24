@@ -133,7 +133,9 @@ public sealed class ProductionSubmissionJournal
         //     prompt. Preserve asset identity once the upload is acknowledged.
         if (s.Renderer is not (null or ProductionSubmission.LtxRenderer)
             || (!s.IsLtx && s.VendorStartFrameAssetId is not null)
-            || (s.IsLtx && (s.Phase is not ("Submitting" or "Submitted" or "Settled")
+            || (!s.IsLtx && s.Phase is ("Claiming" or "Claimed"))
+            || (s.IsLtx && (s.Phase is not ("Claiming" or "Claimed" or "Submitting" or "Submitted" or "Settled")
+                || (s.Phase is ("Claiming" or "Claimed") && (s.PromptId is not null || s.VendorStartFrameAssetId is not null))
                 || s.FailureCode is not null || s.PreviousPromptId is not null
                 || s.PreviousTaskUpdatedAtUtc is not null
                 || (s.VendorStartFrameAssetId is not null
@@ -143,7 +145,7 @@ public sealed class ProductionSubmissionJournal
             throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
 
         if (string.IsNullOrWhiteSpace(s.JobId) || s.JobId.Length > 160 || string.IsNullOrWhiteSpace(s.TaskId) || s.TaskId.Length > 160
-            || !Sha(s.PlanDigest) || !Sha(s.GraphDigest) || s.Phase is not ("Prepared" or "RetryPrepared" or "Submitting" or "Submitted" or "FailurePending" or "Settled")
+            || !Sha(s.PlanDigest) || !Sha(s.GraphDigest) || s.Phase is not ("Prepared" or "RetryPrepared" or "Claiming" or "Claimed" or "Submitting" or "Submitted" or "FailurePending" or "Settled")
             || s.PromptId is { Length: > 200 } || s.PreviousPromptId is { Length: > 200 } 
             || (s.Phase == "RetryPrepared" && (s.PromptId is not null || string.IsNullOrWhiteSpace(s.PreviousPromptId)
                 || s.PreviousTaskUpdatedAtUtc is null))

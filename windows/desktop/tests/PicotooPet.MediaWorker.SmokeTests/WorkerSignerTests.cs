@@ -245,6 +245,16 @@ internal static class WorkerSignerTests
             0, payload, 0, payload.Length), "actual DPAPI LTX signature");
         await DeniedAsync(Sign);
         Assert(f.Journal.Pending().Count == 0, "LTX measurement never submits media");
+        // 02. Claim ambiguity is a durable reservation, not a vendor ID.
+        var marker = new ProductionSubmission(reference.ProductionJobId, reference.ProductionTaskId,
+            digest, intent, "Claiming", null, Renderer: ProductionSubmission.LtxRenderer);
+        f.Journal.Save(marker);
+        Assert(f.Journal.Pending().Single() == marker, "uncertain LTX claim stays pending");
+        Throws(() => f.Journal.Save(marker with { Renderer = null }));
+        Throws(() => f.Journal.Save(marker with { PromptId = Guid.NewGuid().ToString("D") }));
+        f.Journal.Save(marker with { Phase = "Claimed" });
+        Assert(f.Journal.Read(marker.JobId, marker.TaskId)?.Phase == "Claimed", "LTX reservation persists");
+        await DeniedAsync(Sign);
         Console.WriteLine("P0_LTX_DPAPI_MEASURED_SIGNATURE=PASS; GPU_POSTS=0");
     }
 
