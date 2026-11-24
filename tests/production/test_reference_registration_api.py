@@ -275,6 +275,7 @@ def test_authenticated_route_post_get_revoke_and_pending_not_approved(state):
         assert data.status_code == 201, data.text
         obj = data.json()
         assert obj["status"] == "Pending"
+        assert "rights_scope" not in obj  # Frozen legacy Wan HTTP receipt.
         assert len(obj["references"]) == 2
         again = client.post("/api/v1/production/references/batches",
                             json=payload(digest), headers={"Idempotency-Key": "http-test-key"})
@@ -525,3 +526,76 @@ def test_v10_plan_parser_keeps_legacy_json_and_rejects_unknown_versions(state):
     assert parsed.model_dump(mode="json") == raw
     with pytest.raises(ValueError, match="PRODUCTION_PLAN_SCHEMA_UNSUPPORTED"):
         parse_versioned_plan(dict(raw, schema_version="1.2"))
+
+
+def test_ltx_reference_scope_is_explicit_and_never_authorizes_wan(state):
+    # 01. Reuse the exact existing HTTP registration and approval lifecycle.
+    #     The fixture is a synthetic frozen package; no GPU or user media.
+    db, service, approval, store, digest = state
+    data = payload(digest)
+    ltx = "ltx.desktop.local.i2v.production.v1"
+    for item in data["selected_references"]:
+        item["rights_scope"] = ltx
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(reference_registration.router, prefix="/api/v1")
+    app.state.services = SimpleNamespace(database=db, approvals=approval, creative_store=store)
+    app.dependency_overrides[require_auth] = lambda: None
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/production/references/batches", json=data,
+            headers={"Idempotency-Key": "ltx-reference-only"},
+        )
+        assert response.status_code == 201, response.text
+        receipt = response.json()
+        assert receipt["rights_scope"] == ltx
+        assert receipt["status"] == "Pending"
+        assert ltx in approval.get(receipt["approval_id"]).scope_summary
+        row = db.fetchone("SELECT * FROM approvals WHERE approval_id=?", (receipt["approval_id"],))
+        assert json.loads(row["scope_json"])["rights_scope"] == ltx
+
+        # 02. A replay is exact; a changed engine with the same key is rejected.
+        replay = client.post(
+            "/api/v1/production/references/batches", json=data,
+            headers={"Idempotency-Key": "ltx-reference-only"},
+        )
+        assert replay.status_code == 201 and replay.json() == receipt
+        wrong = client.post(
+            "/api/v1/production/references/batches", json=payload(digest),
+            headers={"Idempotency-Key": "ltx-reference-only"},
+        )
+        assert wrong.status_code == 409
+        mixed = payload(digest)
+        mixed["selected_references"][0]["rights_scope"] = ltx
+        rejected = client.post(
+            "/api/v1/production/references/batches", json=mixed,
+            headers={"Idempotency-Key": "mixed-reference-only"},
+        )
+        assert rejected.status_code == 422
+        assert len(db.fetchall("SELECT * FROM approvals", ())) == 1
+
+        # 03. Even a real Owner decision cannot be laundered into old Wan
+        #     authority. LTX-specific plan/lease admission is not enabled.
+        approval.decide_for_control_center(
+            approval_id=receipt["approval_id"], decision="approve",
+            request_digest=receipt["approval_request_digest"],
+            idempotency_key="ltx-synthetic-owner-decision",
+            resolved_by="synthetic-fixture", reason="fixture LTX only",
+        )
+        approved = service.get(receipt["approval_id"])
+        assert approved.status == "Approved"
+        assert approved.rights_scope == ltx
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
+            approved_reference_descriptor(db, identity(approved, "shot-a"))
+        assert len(db.fetchall("SELECT * FROM production_jobs", ())) == 0
+        assert len(db.fetchall("SELECT * FROM production_attempts", ())) == 0
+
+        # 04. Revocation uses the same immutable scoped request digest.
+        revoked = client.post(
+            f'/api/v1/production/references/batches/{receipt["approval_id"]}/revoke',
+            json={"request_digest": receipt["approval_request_digest"],
+                  "reason": "synthetic revoke"},
+        )
+        assert revoked.status_code == 200
+        assert revoked.json()["status"] == "Revoked"
+        assert revoked.json()["rights_scope"] == ltx
