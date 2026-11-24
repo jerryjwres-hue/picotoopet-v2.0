@@ -504,6 +504,48 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
             throw Invalid("CORE_CHALLENGE_UTC_REQUIRED");
         return date;
     }
+    // 01. Snapshot consent uses the paired Core transport and existing session
+    //     guard. The entire reference, plan digest and intent must agree.
+    internal ITrustedReferenceApprovalSource LtxReferenceApproval(
+        ProductionReferenceAssetV11Record expected, string planDigest, string vendorIntentDigest) =>
+        new SessionBoundApproval(new LtxApproval(this, expected, planDigest, vendorIntentDigest), _requireCurrentSession);
+
+    private sealed class LtxApproval(CoreWorkerChallengeClient client, ProductionReferenceAssetV11Record expected,
+        string planDigest, string vendorIntentDigest) : ITrustedReferenceApprovalSource
+    {
+        public async Task<bool> IsApprovedAsync(TrustedReferenceDescriptor descriptor, CancellationToken ct)
+        {
+            try
+            {
+                if (expected.RightsScope != "ltx.desktop.local.i2v.production.v1"
+                    || descriptor != new TrustedReferenceDescriptor(expected.ApprovalId, expected.ShotId,
+                        expected.AssetId, expected.InputRelativePath, expected.Sha256, expected.Bytes))
+                    return false;
+                var route = "api/v1/production/jobs/" + Uri.EscapeDataString(expected.ProductionJobId) + "/ltx-reference/check";
+                using var response = await client.PostAsync(route,
+                    new { plan_digest = planDigest, vendor_intent_digest = vendorIntentDigest },
+                    HttpStatusCode.OK, ct).ConfigureAwait(false);
+                var body = response.RootElement;
+                Shape(body, "schema_version plan_digest vendor_intent_digest plan");
+                var plan = body.GetProperty("plan");
+                var reference = plan.GetProperty("reference_asset").Deserialize<ProductionReferenceAssetV11Record>();
+                return body.GetProperty("schema_version").GetString() == "production.ltx.reference_check.v1"
+                    && body.GetProperty("plan_digest").GetString() == planDigest
+                    && body.GetProperty("vendor_intent_digest").GetString() == vendorIntentDigest
+                    && plan.GetProperty("schema_version").GetString() == "1.2"
+                    && plan.GetProperty("production_profile").GetString() == "production.ltx.desktop.local.v1"
+                    && plan.GetProperty("production_job_id").GetString() == expected.ProductionJobId
+                    && plan.GetProperty("production_task_id").GetString() == expected.ProductionTaskId
+                    && plan.GetProperty("shot_id").GetString() == expected.ShotId
+                    && plan.GetProperty("creative_package_digest").GetString() == expected.CreativePackageDigest
+                    && Hash(CanonicalJson.Serialize(JsonNode.Parse(plan.GetRawText())!)) == planDigest
+                    && reference == expected;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception) { return false; } // 02. Network loss or changed consent is DENY.
+        }
+    }
+
     private async Task<JsonDocument> PostAsync(string route, object payload, HttpStatusCode expected, CancellationToken ct)
     {
         _requireCurrentSession();

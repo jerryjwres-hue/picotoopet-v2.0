@@ -36,6 +36,7 @@ from picotoopet_core.production.ltx_plan import (
 from picotoopet_core.production.ltx_admission import (
     LtxWorkerWitnessV12, LtxClaimReceiptV12, issue_ltx_challenge,
     claim_ltx_first_attempt, LtxLeaseRequestV12, LtxLeaseReceiptV12, check_ltx_lease,
+    LtxReferenceCheckV12, LtxReferenceReceiptV12, check_ltx_reference,
 )
 from picotoopet_core.security.auth import require_auth
 
@@ -173,6 +174,20 @@ def issue_worker_challenge_v11(
 
 class LtxWorkerChallengeResponseV12(WorkerChallengeResponseV11):
     schema_version: Literal["production.ltx.worker_challenge.v1"] = "production.ltx.worker_challenge.v1"
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-reference/check",
+             response_model=LtxReferenceReceiptV12)
+def check_production_reference_v12(
+    production_job_id: str, payload: LtxReferenceCheckV12,
+    request: Request, response: Response,
+) -> LtxReferenceReceiptV12:
+    # 01. Live reference consent for the shared Windows snapshot store.
+    #     No nonce, claim, attempt or renderer call is made.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: check_ltx_reference(
+        request.app.state.services.production, production_job_id, payload,
+    ))
 
 
 @router.post("/production/jobs/{production_job_id}/ltx-worker-challenge",

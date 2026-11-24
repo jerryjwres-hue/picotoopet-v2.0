@@ -72,6 +72,39 @@ def vendor_intent_digest(plan: LtxPilotPlanV12) -> str:
     })
 
 
+class LtxReferenceCheckV12(BaseModel):
+    """Read-only exact snapshot authority; never grants a lease."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    vendor_intent_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class LtxReferenceReceiptV12(LtxReferenceCheckV12):
+    schema_version: Literal["production.ltx.reference_check.v1"] = "production.ltx.reference_check.v1"
+    plan: LtxPilotPlanV12
+
+
+def check_ltx_reference(service: ProductionService, job_id: str,
+                        request: LtxReferenceCheckV12) -> LtxReferenceReceiptV12:
+    # 01. Reuse the compiler's live approval, source and frozen identity checks.
+    #     Historical plan readback alone must never authorize a snapshot.
+    with service.repository.database.transaction():
+        plan = load_frozen_ltx_pilot_plan(service, job_id)
+        current = compile_ltx_pilot_plan(
+            service, production_job_id=job_id,
+            creative_package_id=plan.creative_package_id,
+            approved_reference_id=plan.reference_asset.approval_id,
+        )
+        if (current != plan or plan.digest() != request.plan_digest
+                or vendor_intent_digest(plan) != request.vendor_intent_digest):
+            raise ValueError("LTX_REFERENCE_CHECK_SCOPE_MISMATCH")
+        return LtxReferenceReceiptV12(
+            plan_digest=request.plan_digest,
+            vendor_intent_digest=request.vendor_intent_digest, plan=plan,
+        )
+
+
 def _audit_untouched(service: ProductionService, connection, job_id: str,
                      executor_id: str, plan_digest: str) -> LtxPilotPlanV12:
     # 03. Freeze, current Owner decision, ZIP and dynamic-film review are

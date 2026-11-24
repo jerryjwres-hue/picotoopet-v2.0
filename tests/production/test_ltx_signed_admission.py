@@ -262,3 +262,26 @@ def test_ltx_current_lease_rechecks_before_vendor_post_and_renewal(pilot, mutati
             assert client.post(p.root + route, json=lease).status_code == 409
         assert facts(p) == before
         assert p.db.scalar("SELECT COUNT(*) FROM production_attempts") == 1
+
+
+def test_ltx_live_snapshot_check_is_read_only_and_revocable(pilot):
+    p = pilot
+    body = {"plan_digest": p.plan.digest(), "vendor_intent_digest": vendor_intent_digest(p.plan)}
+    with TestClient(p.app) as client:
+        before = facts(p)
+        route = p.root + "/ltx-reference/check"
+        response = client.post(route, json=body)
+        assert response.status_code == 200, response.text
+        assert response.json()["plan"] == p.plan.model_dump(mode="json")
+        assert response.json()["schema_version"] == "production.ltx.reference_check.v1"
+        assert client.post(route, json=dict(body, vendor_intent_digest="f"*64)).status_code == 409
+        assert client.post(route, json=dict(body, plan_digest="f"*64)).status_code == 409
+        assert facts(p) == before
+        assert p.db.scalar("SELECT COUNT(*) FROM production_worker_challenges") == 0
+        p.registration.revoke(
+            p.receipt.approval_id, request_digest=p.receipt.approval_request_digest,
+            reason="fixture revoke",
+        )
+        assert client.post(route, json=body).status_code == 409
+        assert client.get(p.root + "/ltx-plan").status_code == 200
+        assert facts(p) == before

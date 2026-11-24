@@ -95,10 +95,15 @@ internal sealed class ProductionReferenceSnapshotStore
     public static string RelativePathFor(ProductionTaskPlanRecord task, string planDigest)
     {
         var reference = task.ReferenceAsset ?? throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+        return RelativePathFor(reference, planDigest);
+    }
+
+    private static string RelativePathFor(ProductionReferenceAssetV11Record reference, string planDigest)
+    {
         var extension = Path.GetExtension(reference.InputRelativePath);
         if (extension is not (".png" or ".jpg" or ".jpeg" or ".webp"))
             throw new ProductionWorkerException("I2V_REFERENCE_FORMAT_INVALID");
-        return $"PicotooPet/references/{reference.Sha256}/worker-{ProductionSubmissionJournal.Hash(planDigest + "\n" + task.ProductionTaskId)}{extension}";
+        return $"PicotooPet/references/{reference.Sha256}/worker-{ProductionSubmissionJournal.Hash(planDigest + "\n" + reference.ProductionTaskId)}{extension}";
     }
 
     public void RequireInputRoot(string? inputRoot)
@@ -118,21 +123,47 @@ internal sealed class ProductionReferenceSnapshotStore
             || graphDigest.Length != 64 || graphDigest.Any(c => c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
             throw new ProductionWorkerException("MEDIA_SUBMISSION_IDENTITY_CONFLICT");
         var r = task.ReferenceAsset ?? throw new ProductionWorkerException("I2V_V11_REFERENCE_IDENTITY_INVALID");
+        return await PrepareReferenceAsync(r, planDigest, graphDigest,
+            _approvals(plan, task, planDigest), journal, ct).ConfigureAwait(false);
+    }
+
+    // 01. LTX uses the same byte pins, ACLs, receipt and journal. The explicit
+    //     LTX authority must match the full frozen reference and vendor intent.
+    internal Task<DurableReferenceSnapshot> PrepareLtxAsync(ProductionReferenceAssetV11Record reference,
+        string planDigest, string vendorIntentDigest, ITrustedReferenceApprovalSource approvals,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu, CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        if (reference.SchemaVersion != "reference_asset.v1"
+            || reference.RightsScope != "ltx.desktop.local.i2v.production.v1"
+            || !IsDigest(planDigest) || !IsDigest(vendorIntentDigest))
+            throw new ProductionWorkerException("LTX_SNAPSHOT_IDENTITY_INVALID");
+        return PrepareReferenceAsync(reference, planDigest, vendorIntentDigest, approvals, journal, ct);
+    }
+
+    private static bool IsDigest(string digest) =>
+        digest.Length == 64 && digest.Any(c => c != '0')
+        && digest.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    private async Task<DurableReferenceSnapshot> PrepareReferenceAsync(ProductionReferenceAssetV11Record r,
+        string planDigest, string graphDigest, ITrustedReferenceApprovalSource approvals,
+        ProductionSubmissionJournal journal, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
         var descriptor = new TrustedReferenceDescriptor(r.ApprovalId, r.ShotId, r.AssetId, r.InputRelativePath, r.Sha256, r.Bytes);
-        var approvals = _approvals(plan, task, planDigest);
         var verifier = CreateVerifier(approvals);
-        var original = await verifier.VerifyAsync(descriptor, task.ShotId, r.AssetId, ct).ConfigureAwait(false);
+        var original = await verifier.VerifyAsync(descriptor, r.ShotId, r.AssetId, ct).ConfigureAwait(false);
         VerifiedReferenceAsset? snapshot = null;
         VerifiedReferenceAsset? receiptPin = null;
         try
         {
-            var relative = RelativePathFor(task, planDigest);
+            var relative = RelativePathFor(r, planDigest);
             var destination = ResolveManagedPath(_inputRoot, relative, false);
             var receiptPath = destination + ".snapshot.json";
-            var receipt = new SnapshotReceipt("loadimage_snapshot.v1", plan.ProductionJobId,
-                task.ProductionTaskId, planDigest, graphDigest, relative, r);
+            var receipt = new SnapshotReceipt("loadimage_snapshot.v1", r.ProductionJobId,
+                r.ProductionTaskId, planDigest, graphDigest, relative, r);
             var receiptBytes = JsonSerializer.SerializeToUtf8Bytes(receipt);
-            var prior = journal.Read(plan.ProductionJobId, task.ProductionTaskId);
+            var prior = journal.Read(r.ProductionJobId, r.ProductionTaskId);
             if (prior is not null && (prior.PlanDigest != planDigest || prior.GraphDigest != graphDigest))
                 throw new ProductionWorkerException("MEDIA_SUBMISSION_IDENTITY_CONFLICT");
             // Even Prepared may mean that Core reserved an attempt before a crash.
@@ -158,7 +189,7 @@ internal sealed class ProductionReferenceSnapshotStore
                 ByteLength = receiptBytes.Length,
             };
             receiptPin = await CreateVerifier(new PrivateCopyApproval(approvals, descriptor, receiptDescriptor))
-                .VerifyAsync(receiptDescriptor, task.ShotId, r.AssetId, ct).ConfigureAwait(false);
+                .VerifyAsync(receiptDescriptor, r.ShotId, r.AssetId, ct).ConfigureAwait(false);
             if (!File.Exists(destination))
             {
                 if (!mayPublish) throw new ProductionWorkerException("I2V_DURABLE_SNAPSHOT_MISSING");
@@ -172,7 +203,7 @@ internal sealed class ProductionReferenceSnapshotStore
             // authenticated original authorization, only after the receipt/byte binding above.
             var privateDescriptor = descriptor with { RelativePath = relative };
             snapshot = await CreateVerifier(new PrivateCopyApproval(approvals, descriptor, privateDescriptor))
-                .VerifyAsync(privateDescriptor, task.ShotId, r.AssetId, ct).ConfigureAwait(false);
+                .VerifyAsync(privateDescriptor, r.ShotId, r.AssetId, ct).ConfigureAwait(false);
             foreach (var directory in ManagedDirectories(destination))
             {
                 if (mayPublish) Protect(new DirectoryInfo(directory), DirectoryDenial);
@@ -186,8 +217,8 @@ internal sealed class ProductionReferenceSnapshotStore
             ct.ThrowIfCancellationRequested();
             // Read actual pinned files; never export the claimed/approved SHA as if
             // it were a Windows byte measurement. These facts cannot authorize Core.
-            var measured = new ReferenceSnapshotMeasurement(plan.ProductionJobId, task.ProductionTaskId,
-                task.ShotId, r.AssetId, r.ApprovalId, planDigest, graphDigest, relative,
+            var measured = new ReferenceSnapshotMeasurement(r.ProductionJobId, r.ProductionTaskId,
+                r.ShotId, r.AssetId, r.ApprovalId, planDigest, graphDigest, relative,
                 await ProductionLocalEnvironment.Sha256FileAsync(original.FullPath, ct).ConfigureAwait(false),
                 new FileInfo(original.FullPath).Length,
                 await ProductionLocalEnvironment.Sha256FileAsync(snapshot.FullPath, ct).ConfigureAwait(false),
