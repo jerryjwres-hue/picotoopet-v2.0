@@ -130,7 +130,7 @@ public sealed partial class MacCoreClient
             throw new InvalidOperationException(
                 "待审批回执不可信；不能显示为已提交或已批准。");
         }
-        return new StudioOwnerApprovalRequestReceipt(artifactId, approvalId, digest, status!);
+        return new StudioOwnerApprovalRequestReceipt(artifactId, approvalId!, digest!, status!);
     }
 
     private static object StudioEvidenceBody(StudioWindowsByteEvidence evidence) => new
