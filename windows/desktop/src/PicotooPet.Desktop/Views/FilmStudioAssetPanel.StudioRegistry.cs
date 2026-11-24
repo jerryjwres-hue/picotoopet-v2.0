@@ -13,6 +13,9 @@ namespace PicotooPet.Desktop.Views;
 public partial class FilmStudioAssetPanel
 {
     private const long MaxSelectedLoraBytes = 4L * 1024 * 1024 * 1024;
+    private const long MaotaiLoraV2Bytes = 46_223_616;
+    private const string MaotaiLoraV2Sha256 =
+        "5972e7f782e3e4ed16b764441fdb66d638cb6a8ba85fb8226d95feeb98e8eb70";
 
     private async void RegisterLora_Click(object sender, RoutedEventArgs e)
     {
@@ -62,8 +65,15 @@ public partial class FilmStudioAssetPanel
             {
                 throw new InvalidDataException("LoRA bytes changed during verification");
             }
+            // 03. 本按钮仅登记已核实的 v2。旧版 v1 已作废，
+            //     不允许误把任意其他 LoRA 当成当前茅台身份资产。
+            if (bytes != MaotaiLoraV2Bytes
+                || !string.Equals(digest, MaotaiLoraV2Sha256, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Selected LoRA does not match pinned Maotai v2");
+            }
 
-            // 03. 显示完整 SHA256 和「只提交摘要」的明确同意；取消无 HTTP。
+            // 04. 显示完整 SHA256 和「只提交摘要」的明确同意；取消无 HTTP。
             var answer = WpfMessageBox.Show(
                 Window.GetWindow(this),
                 $"项目：{project.Title}\n文件：{filename}\n大小：{bytes:N0} 字节\nSHA256：{digest}"
@@ -95,6 +105,11 @@ public partial class FilmStudioAssetPanel
             {
                 AssetStatus.Text = approval;
             }
+        }
+        catch (InvalidDataException)
+        {
+            AssetStatus.Text = "所选文件不是已核验的茅台 LoRA v2（完整 SHA 或字节数不一致）。"
+                + "拒绝登记，不能使用已作废的 v1。GPU HOLD。";
         }
         catch (Exception)
         {
