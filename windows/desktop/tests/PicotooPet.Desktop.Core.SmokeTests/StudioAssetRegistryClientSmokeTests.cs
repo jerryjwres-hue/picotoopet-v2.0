@@ -217,7 +217,8 @@ internal static class StudioAssetRegistryClientSmokeTests
                 reply[field] = field switch
                 {
                     "artifact_id" => JsonValue.Create("asset-" + new string('0', 64)),
-                    "sha256" or "request_digest" => JsonValue.Create(new string('f', 64)),
+                    "sha256" => JsonValue.Create(new string('f', 64)),
+                    "request_digest" => JsonValue.Create("INVALID_DIGEST"),
                     "size_bytes" => JsonValue.Create(-1),
                     "owner_approved" or "gpu_post_authorized" or "core_verified_bytes" =>
                         JsonValue.Create(true),
