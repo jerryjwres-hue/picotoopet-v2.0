@@ -156,6 +156,46 @@ internal static class StudioStoryPackLiveInteropSmokeTests
             "真实导入后必须保留生产否决字段");
         Console.WriteLine("REAL_CORE_WINDOWS_ASSET_HTTP=PASS; REPLAY=PASS; GPU_POST=0");
 
+        // 01. Live Windows -> REAL Python Core 3.12: register a synthetic
+        //     Windows-only LoRA DIGEST. No GPU, no upload and no local model.
+        var syntheticLora = Encoding.UTF8.GetBytes("ci-fixture-lora-metadata-only");
+        var syntheticLoraSha = Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(syntheticLora));
+        var syntheticEvidence = new StudioWindowsByteEvidence(
+            "synthetic-ci-only.safetensors",
+            DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ",
+                System.Globalization.CultureInfo.InvariantCulture));
+        var loraClaim = await client.RegisterStudioWindowsLoraAsync(
+            project, syntheticLoraSha, syntheticLora.Length, syntheticEvidence)
+            .ConfigureAwait(false);
+        var loraReplay = await client.RegisterStudioWindowsLoraAsync(
+            project, syntheticLoraSha, syntheticLora.Length, syntheticEvidence)
+            .ConfigureAwait(false);
+        SmokeAssert.Equal(loraClaim.ArtifactId, loraReplay.ArtifactId,
+            "Windows-only LoRA SHA record must be idempotent in REAL Core");
+        var loraReview = await client.RequestStudioAssetOwnerApprovalAsync(
+            loraClaim.ArtifactId, syntheticLoraSha, syntheticEvidence)
+            .ConfigureAwait(false);
+        SmokeAssert.Equal("Pending", loraReview.Status,
+            "CI may REQUEST but never decide the Owner approval");
+        var loraApprovalReplay = await client.RequestStudioAssetOwnerApprovalAsync(
+            loraClaim.ArtifactId, syntheticLoraSha, syntheticEvidence)
+            .ConfigureAwait(false);
+        SmokeAssert.Equal(loraReview.ApprovalId, loraApprovalReplay.ApprovalId,
+            "Retry of same Owner request must not create duplicate approval");
+
+        // 02. The Core-hashed original image accepts a DIFFERENT Owner
+        //     request without Windows evidence, but also remains pending.
+        var syntheticCharacterSha = Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(png));
+        var characterApproval = await client.RequestStudioAssetOwnerApprovalAsync(
+            JsonElement.Parse(vm.StoryPackJson).GetProperty("character_ref").GetString()!,
+            syntheticCharacterSha, null).ConfigureAwait(false);
+        SmokeAssert.Equal("Pending", characterApproval.Status,
+            "Existing Core image must not be auto-approved by Windows");
+
+        Console.WriteLine("REAL_CORE_WINDOWS_LORA_SHA_CLAIM=PASS; OWNER_PENDING_ONLY=PASS; GPU_POST=0");
+
         var after = await client.GetTasksAsync().ConfigureAwait(false);
         SmokeAssert.Equal(before.Length, after.Length, "预览误创建真实 Core Task");
 
