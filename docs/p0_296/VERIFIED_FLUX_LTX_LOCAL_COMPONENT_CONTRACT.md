@@ -23,17 +23,20 @@ Windows user-home paths in this repository. No GPU work is authorized.
   architecture or CPU-only CI validation.
 - Existing C8B master SHA:
   `c6d7e556b8047d06d6ba7c408e8fdde26d3d16dd59d3c029e901847beac8f59b`.
-- Existing B1 scene SHA:
-  `c89f7c8d8e44b97d884fb6ad4e6f53e2873a7836422bb7e747b8711e4382c043`.
+- B1 scene `PL3b_E_dogeye_in_strip_v2.png`: the available inventory
+  records only `c89f7c8d…c043` (prefix/suffix), **not** the full SHA.
+  Do not pin an invented B1 digest. Independently rehash the Windows B1
+  bytes and resolve them to an approved Core artifact before production.
 - Existing LoRA v2 SHA:
   `5972e7f782e3e4ed16b764441fdb66d638cb6a8ba85fb8226d95feeb98e8eb70`,
   46,223,616 bytes. v1/c001 is archived, not an alternate identity source.
 
 `scripts/prepare_existing_flux_board_shot.py` is an optional **CPU-only**
 preparation bridge. It checks the unmodified private source SHA, reads the
-actual local C8B/B1 and LoRA bytes, invokes only its exact existing `build()`
-on verified bytes, and writes a single-shot legacy jobs file plus the exact
-candidate graph and provenance manifest. It **does not** start ComfyUI, copy
+actual local C8B, selected scene and LoRA bytes, invokes only the verified
+original `build()`, and writes one legacy job, exact candidate graph
+and an unapproved manifest. The local scene hash does not establish a
+Core asset binding, Owner approval or geometry continuity. It **does not** start ComfyUI, copy
 assets, submit a prompt or mark a character/first frame approved.
 
 A suitable JSON request (locally owned, not stored in this repository) is:
@@ -55,7 +58,7 @@ A suitable JSON request (locally owned, not stored in this repository) is:
     {
       "role": "scene_master",
       "relative_path": "refs/B1_scene_master.png",
-      "sha256": "c89f7c8d8e44b97d884fb6ad4e6f53e2873a7836422bb7e747b8711e4382c043"
+      "sha256": "<exact complete B1 SHA256 from Windows inventory>"
     }
   ]
 }
