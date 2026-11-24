@@ -85,7 +85,7 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         };
         var requestDigest = ProductionSubmissionJournal.GraphDigest(identity);
         var state = new ProductionSubmission(jobId, taskId, planDigest,
-            requestDigest, "Submitting", null);
+            requestDigest, "Submitting", null, Renderer: ProductionSubmission.LtxRenderer);
 
         gpu.RequireOwnedBy(journal);
         cancellationToken.ThrowIfCancellationRequested();
@@ -110,6 +110,10 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
 
         // 05. Bind the vendor's actual returned asset UUID, not the Core
         //     character asset ID or a fabricated UUID. Exactly one POST.
+        // Persist upload receipt before issuing generation POST. A restart
+        // must know the exact vendor asset, even if generation POST is lost.
+        state = state with { VendorStartFrameAssetId = assetId };
+        journal.Save(state);
         ((JsonObject)payload["inputs"]!["startFrame"]!)["assetId"] = assetId;
         gpu.RequireOwnedBy(journal);
         using var body = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
@@ -119,8 +123,8 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         if (!Guid.TryParseExact(generationId, "D", out _))
             throw new InvalidDataException("LTX_SUBMISSION_GENERATION_RECEIPT_UNVERIFIED");
 
-        // 06. Record the vendor ID in the existing journal's opaque prompt-ID
-        //     slot. This path is not wired to the legacy Wan recovery loop:
+        // 06. Record the vendor ID in the renderer-tagged journal slot.
+        //     The legacy Wan recovery loop must not consume this entry:
         //     a dedicated engine-aware recovery/authorization caller is
         //     required before enabling this component in production.
         journal.Save(state with { Phase = "Submitted", PromptId = generationId });
