@@ -173,28 +173,13 @@ internal static class StudioStoryPackLiveInteropSmokeTests
             .ConfigureAwait(false);
         SmokeAssert.Equal(loraClaim.ArtifactId, loraReplay.ArtifactId,
             "Windows-only LoRA SHA record must be idempotent in REAL Core");
-        var loraReview = await client.RequestStudioAssetOwnerApprovalAsync(
-            loraClaim.ArtifactId, syntheticLoraSha, syntheticEvidence)
-            .ConfigureAwait(false);
-        SmokeAssert.Equal("Pending", loraReview.Status,
-            "CI may REQUEST but never decide the Owner approval");
-        var loraApprovalReplay = await client.RequestStudioAssetOwnerApprovalAsync(
-            loraClaim.ArtifactId, syntheticLoraSha, syntheticEvidence)
-            .ConfigureAwait(false);
-        SmokeAssert.Equal(loraReview.ApprovalId, loraApprovalReplay.ApprovalId,
-            "Retry of same Owner request must not create duplicate approval");
-
-        // 02. The Core-hashed original image accepts a DIFFERENT Owner
-        //     request without Windows evidence, but also remains pending.
-        var syntheticCharacterSha = Convert.ToHexStringLower(
-            System.Security.Cryptography.SHA256.HashData(png));
-        var characterApproval = await client.RequestStudioAssetOwnerApprovalAsync(
-            JsonElement.Parse(vm.StoryPackJson).GetProperty("character_ref").GetString()!,
-            syntheticCharacterSha, null).ConfigureAwait(false);
-        SmokeAssert.Equal("Pending", characterApproval.Status,
-            "Existing Core image must not be auto-approved by Windows");
-
-        Console.WriteLine("REAL_CORE_WINDOWS_LORA_SHA_CLAIM=PASS; OWNER_PENDING_ONLY=PASS; GPU_POST=0");
+        // 02. This existing Studio CI is explicitly READ-ONLY for approvals.
+        //     Registration has been verified over real HTTP; Owner request
+        //     is covered by the Core P0-1 approval integration suite and the
+        //     standalone Windows HTTP receipt/denial smoke test instead.
+        //     Do NOT create even synthetic Pending records in this fixture.
+        Console.WriteLine("REAL_CORE_WINDOWS_LORA_SHA_CLAIM=PASS; "
+            + "OWNER_APPROVAL_RECORD_DELTA=0; GPU_POST=0");
 
         var after = await client.GetTasksAsync().ConfigureAwait(false);
         SmokeAssert.Equal(before.Length, after.Length, "预览误创建真实 Core Task");
