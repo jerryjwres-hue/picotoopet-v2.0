@@ -1,15 +1,16 @@
 """Renderer-specific frozen LTX pilot plan compiler.
 
 Reuse Core's existing Creative Package, reference approval and compiler.
-This module does NOT register a job or admit a worker. The legacy v1.0/1.1
-parser deliberately cannot accept this new plan until its execution path is
-wired end to end.
+This module can durably freeze a held job, but cannot admit a worker.
+The legacy v1.0/1.1 parser deliberately rejects this plan until its own
+execution path is wired end to end.
 """
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -23,6 +24,7 @@ from .reference_assets import (
 )
 from .reference_registration import ReferenceRegistrationService
 from .service import ProductionService
+from .models import ProductionJobRecord, ProductionJobStatus, ProductionProfile
 
 LTX_SCOPE = "ltx.desktop.local.i2v.production.v1"
 
@@ -174,3 +176,99 @@ def compile_ltx_pilot_plan(
         prompt=first.positive_prompt, seed=first.seed & 0x7fffffff,
         reference_asset=reference,
     )
+
+
+class LtxPilotFreezeRequestV12(BaseModel):
+    """Explicit new-job request, not an upgrade or a GPU authorization."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    creative_package_id: str
+    approved_reference_id: str = Field(min_length=1, max_length=160)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+def freeze_ltx_pilot_job(
+    service: ProductionService, request: LtxPilotFreezeRequestV12,
+) -> ProductionJobRecord:
+    """Atomically persist the immutable plan in the existing production table.
+
+    No task is materialized while the LTX-specific signed worker path is absent.
+    This is an explicit held reservation, not an executable job or approval.
+    """
+    db = service.repository.database
+    package_id = str(UUID(request.creative_package_id))
+    # 01. Compile, recheck current approval, and persist under the SAME
+    #     database transaction. A concurrent revoke cannot race the freeze.
+    with db.transaction() as connection:
+        existing = connection.execute(
+            "SELECT * FROM production_jobs WHERE idempotency_key=?",
+            (request.idempotency_key,),
+        ).fetchone()
+        if existing is not None and (
+            existing["production_profile"] != ProductionProfile.LTX_DESKTOP_LOCAL_V1.value
+            or existing["creative_package_id"] != package_id
+        ):
+            raise ValueError("LTX_PLAN_IDEMPOTENCY_CONFLICT")
+        job_id = existing["production_job_id"] if existing is not None else str(uuid4())
+        plan = compile_ltx_pilot_plan(
+            service, production_job_id=job_id, creative_package_id=package_id,
+            approved_reference_id=request.approved_reference_id,
+        )
+        digest = plan.digest()
+        encoded = json.dumps(
+            plan.model_dump(mode="json"), sort_keys=True,
+            separators=(",", ":"), ensure_ascii=False,
+        )
+        # 02. Exact retries return the already persisted job, never replace
+        #     its source, shot, renderer, approval, or frozen plan bytes.
+        if existing is not None:
+            if (
+                existing["plan_digest"] != digest or existing["plan_json"] != encoded
+                or existing["creative_package_digest"] != plan.creative_package_digest
+                or existing["project_key"] != plan.project_key
+                or existing["status"] != ProductionJobStatus.NEEDS_HUMAN.value
+            ):
+                raise ValueError("LTX_PLAN_IDEMPOTENCY_CONFLICT")
+            return service.repository.get_job(job_id)
+
+        # 03. Reuse production_jobs rather than create a second scheduler.
+        #     No Ready row, task, lease, attempt, nonce, or vendor POST.
+        stamp = datetime.now(UTC).isoformat()
+        connection.execute(
+            "INSERT INTO production_jobs("
+            "production_job_id,creative_package_id,creative_package_digest,"
+            "project_key,production_profile,plan_digest,plan_json,status,"
+            "failure_code,idempotency_key,created_at,updated_at,finished_at"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id, package_id, plan.creative_package_digest, plan.project_key,
+             plan.production_profile, digest, encoded,
+             ProductionJobStatus.NEEDS_HUMAN.value,
+             "LTX_SIGNED_WORKER_NOT_ENABLED", request.idempotency_key,
+             stamp, stamp, stamp),
+        )
+        return service.repository.get_job(job_id)
+
+
+def load_frozen_ltx_pilot_plan(
+    service: ProductionService, production_job_id: str,
+) -> LtxPilotPlanV12:
+    """Read the separate frozen contract; legacy executable parser stays closed."""
+    row = service.repository.database.fetchone(
+        "SELECT * FROM production_jobs WHERE production_job_id=?",
+        (production_job_id,),
+    )
+    if row is None:
+        raise KeyError(production_job_id)
+    if row["production_profile"] != ProductionProfile.LTX_DESKTOP_LOCAL_V1.value:
+        raise ValueError("LTX_PLAN_PROFILE_MISMATCH")
+    plan = LtxPilotPlanV12.model_validate_json(row["plan_json"])
+    # 04. Fail closed on stored plan or source identity tampering.
+    if (
+        row["plan_digest"] != plan.digest()
+        or row["production_job_id"] != plan.production_job_id
+        or row["creative_package_id"] != plan.creative_package_id
+        or row["creative_package_digest"] != plan.creative_package_digest
+        or row["project_key"] != plan.project_key
+    ):
+        raise ValueError("LTX_PLAN_PERSISTED_IDENTITY_MISMATCH")
+    return plan
