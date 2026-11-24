@@ -30,6 +30,30 @@ internal static class WorkerSignerTests
                 Ed25519.Sign(seed, 0, bytes, 0, bytes.Length, sig, 0);
                 Assert(Convert.ToHexString(sig).Equals(witness.GetProperty("signature").GetString(), StringComparison.OrdinalIgnoreCase), "Core exact Ed25519 signature");
                 Assert(Ed25519.Verify(sig, 0, pub, 0, bytes, 0, bytes.Length), "valid signature");
+                // 01. Reuse the Core-generated canonical fixtures, changing
+                //     only the two protocol literals defined by LTX Core.
+                var ltx = JsonNode.Parse(witness.GetRawText())!;
+                ltx["schema_version"] = "production.ltx.worker_witness.v1";
+                var ltxWitness = JsonSerializer.SerializeToElement(ltx);
+                var ltxBytes = WorkerWitnessEncoding.LtxPayload(ltxWitness);
+                var expectedLtx = System.Text.Encoding.UTF8.GetBytes(
+                    System.Text.Encoding.UTF8.GetString(bytes)
+                        .Replace("picotoopet.production.worker_witness.v1\n", "picotoopet.production.ltx.worker_witness.v1\n", StringComparison.Ordinal)
+                        .Replace("\"schema_version\":\"production.worker_witness.v1\"", "\"schema_version\":\"production.ltx.worker_witness.v1\"", StringComparison.Ordinal));
+                Assert(ltxBytes.AsSpan().SequenceEqual(expectedLtx), "LTX canonical domain and schema");
+                Assert(!Ed25519.Verify(sig, 0, pub, 0, ltxBytes, 0, ltxBytes.Length), "Wan signature denied for LTX");
+                var ltxSig = new byte[64];
+                Ed25519.Sign(seed, 0, ltxBytes, 0, ltxBytes.Length, ltxSig, 0);
+                Assert(Ed25519.Verify(ltxSig, 0, pub, 0, ltxBytes, 0, ltxBytes.Length), "LTX domain signature");
+                Assert(!Ed25519.Verify(ltxSig, 0, pub, 0, bytes, 0, bytes.Length), "LTX signature denied for Wan");
+                Throws(() => WorkerWitnessEncoding.Payload(ltxWitness));
+                Throws(() => WorkerWitnessEncoding.LtxPayload(witness));
+                var refs = ltx["references"]!.AsArray();
+                var extra = refs[0]!.DeepClone();
+                extra["production_task_id"] = "other-task";
+                extra["shot_id"] = "other-shot";
+                refs.Add(extra);
+                Throws(() => WorkerWitnessEncoding.LtxPayload(JsonSerializer.SerializeToElement(ltx)));
                 bytes[^1] ^= 1;
                 Assert(!Ed25519.Verify(sig, 0, pub, 0, bytes, 0, bytes.Length), "tamper rejected");
                 Throws(() => WorkerWitnessEncoding.RequireFresh(witness, DateTimeOffset.Parse("2026-10-29T12:01:00Z", System.Globalization.CultureInfo.InvariantCulture)));

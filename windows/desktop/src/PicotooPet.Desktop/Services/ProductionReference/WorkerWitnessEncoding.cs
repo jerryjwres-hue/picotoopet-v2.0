@@ -10,10 +10,15 @@ internal static partial class WorkerWitnessEncoding
 {
     private const string Fields = "schema_version algorithm worker_key_id executor_id production_job_id plan_digest issued_at expires_at nonce worker_executable_sha256 journal_digest journal_generation journal_state references signature";
     private const string ReferenceFields = "production_task_id shot_id asset_id approval_id approval_request_digest source_sha256 source_bytes source_relative_path snapshot_sha256 snapshot_bytes snapshot_receipt_sha256 graph_digest snapshot_relative_path";
-    internal static byte[] Payload(JsonElement witness)
+    // 01. Keep the Wan entry point closed to LTX. Only an explicit LTX caller
+    //     may encode the renderer-specific, first-shot witness.
+    internal static byte[] Payload(JsonElement witness) => Encode(witness, false);
+    internal static byte[] LtxPayload(JsonElement witness) => Encode(witness, true);
+
+    private static byte[] Encode(JsonElement witness, bool ltx)
     {
         Shape(witness, Fields);
-        Equal(witness, "schema_version", "production.worker_witness.v1");
+        Equal(witness, "schema_version", ltx ? "production.ltx.worker_witness.v1" : "production.worker_witness.v1");
         Equal(witness, "algorithm", "ed25519");
         Identifier(Text(witness, "executor_id", 120));
         Identifier(Text(witness, "worker_key_id", 128), 16);
@@ -29,6 +34,8 @@ internal static partial class WorkerWitnessEncoding
         if (expires <= issued || expires - issued > TimeSpan.FromSeconds(30)) throw Invalid();
         var references = witness.GetProperty("references");
         if (references.ValueKind != JsonValueKind.Array || references.GetArrayLength() is < 1 or > 12) throw Invalid();
+        // 02. The current LTX Core contract admits exactly one reference.
+        if (ltx && references.GetArrayLength() != 1) throw Invalid();
         HashSet<string> tasks = new(StringComparer.Ordinal), shots = new(StringComparer.Ordinal);
         foreach (var reference in references.EnumerateArray())
         {
@@ -45,7 +52,10 @@ internal static partial class WorkerWitnessEncoding
                     || path.Split('/').Any(p => p is "" or "." or "..")) throw Invalid();
             }
         }
-        var output = new StringBuilder("picotoopet.production.worker_witness.v1\n");
+        // 03. Canonical JSON is shared; the signature domain is never shared.
+        var output = new StringBuilder(ltx
+            ? "picotoopet.production.ltx.worker_witness.v1\n"
+            : "picotoopet.production.worker_witness.v1\n");
         Write(output, witness, true);
         return new UTF8Encoding(false, true).GetBytes(output.ToString());
     }
