@@ -62,6 +62,12 @@ class ReferenceAssetIdentityV1(BaseModel):
         return self
 
 
+class LtxReferenceAssetIdentityV1(ReferenceAssetIdentityV1):
+    """Same immutable reference identity, with a DIFFERENT explicit purpose."""
+
+    rights_scope: Literal["ltx.desktop.local.i2v.production.v1"]
+
+
 class TrustedReferenceDescriptorV1(BaseModel):
     """Exact six-field projection expected by Codex #107. Never authorization itself."""
 
@@ -103,6 +109,24 @@ def verify_persisted_reference_approval(
     The immutable Windows byte check and future plan projection are separate.
     """
 
+    # 01. Never use the common verifier to expand the legacy Wan purpose.
+    _verify_reference_scope(database, reference, _SCOPE)
+
+
+def verify_persisted_ltx_reference_approval(
+    database: Database, reference: LtxReferenceAssetIdentityV1
+) -> None:
+    """Verify a live LTX-specific reference grant, not a lease or GPU permit."""
+    _verify_reference_scope(database, reference, "ltx.desktop.local.i2v.production.v1")
+
+
+def _verify_reference_scope(
+    database: Database, reference: ReferenceAssetIdentityV1, expected_scope: str
+) -> None:
+    # 02. Reuse all immutable approval checks, but enforce the caller's
+    #     renderer purpose even for model_copy() / subclass input.
+    if reference.rights_scope != expected_scope:
+        raise ValueError("REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH")
     row = database.fetchone(
         "SELECT * FROM approvals WHERE approval_id=?", (reference.approval_id,)
     )
@@ -142,7 +166,7 @@ def verify_persisted_reference_approval(
         "bytes": reference.bytes,
         "source_reference": reference.source_reference,
         "source_digest": reference.source_digest,
-        "rights_scope": _SCOPE,
+        "rights_scope": expected_scope,
     }
     if scope == expected:
         return  # Legacy exact per-shot approval: no batch semantics implied.
@@ -155,7 +179,7 @@ def verify_persisted_reference_approval(
         "creative_job_id": reference.creative_job_id,
         "creative_package_id": reference.creative_package_id,
         "creative_package_digest": reference.creative_package_digest,
-        "rights_scope": _SCOPE,
+        "rights_scope": expected_scope,
     }
     if any(scope.get(key) != value for key, value in shared.items()):
         raise ValueError("REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH")
