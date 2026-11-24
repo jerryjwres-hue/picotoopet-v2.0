@@ -37,7 +37,7 @@ public sealed record LtxDesktopReadiness(
 /// 复用本机 LTX Desktop Remote：只允许 127.0.0.1:41955 的 GET；
 /// 实际 POST 仍须接入 Core 已签名 Worker Attempt、持久提交日志及 GPU Lease。
 /// </summary>
-public sealed class LtxDesktopLocalI2vPreflightClient : IAsyncDisposable
+public sealed partial class LtxDesktopLocalI2vPreflightClient : IAsyncDisposable
 {
     public static readonly Uri FixedBaseAddress =
         new("http://127.0.0.1:41955/", UriKind.Absolute);
