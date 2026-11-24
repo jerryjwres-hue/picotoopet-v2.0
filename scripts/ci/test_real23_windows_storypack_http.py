@@ -89,17 +89,34 @@ def _assert_sandbox_scoped_goal(db_path: Path) -> None:
                 or task[1] != f"workflow:{goals[0][1]}"
                 or task[2] != 0 or task[3] is not None):
                 raise RuntimeError("STUDIO_UNEXPECTED_EXECUTION")
-        # 保留既有项目及三份有界登记资产；相同文件重试不得增加行。
+        # 01. 保留原有三份 Core 托管副本，同时精确核对新增的
+        #     Windows-only LoRA 摘要声明：不能把它算成第四份 Core 验证文件。
         rows = db.execute(
-            "SELECT artifact_type, sha256, stored_object_hash, size_bytes, is_original, cloud_policy "
-            "FROM artifacts"
+            "SELECT artifact_type, sha256, stored_object_hash, size_bytes, "
+            "is_original, cloud_policy, source_path FROM artifacts"
         ).fetchall()
-        if len(rows) != 3 or {row[0] for row in rows} != {
-            "storypack_character", "storypack_scene", "storypack_style"
-        }:
+        required = {
+            "storypack_character", "storypack_scene", "storypack_style", "storypack_lora",
+        }
+        if len(rows) != 4 or {row[0] for row in rows} != required:
             raise RuntimeError("STUDIO_ASSET_SCOPE_OR_REPLAY_MISMATCH")
-        for _, digest, stored_hash, size, original, policy in rows:
-            if digest != stored_hash or original != 0 or policy != "local_only":
+
+        lora_fixture = b"ci-fixture-lora-metadata-only"
+        lora_digest = hashlib.sha256(lora_fixture).hexdigest()
+        for kind, digest, stored_hash, size, original, policy, source_path in rows:
+            # 02. Windows LoRA 只能拥有 SHA 声明，不能出现受信任副本或私有路径。
+            if kind == "storypack_lora":
+                if (digest != lora_digest or size != len(lora_fixture)
+                    or stored_hash is not None or source_path is not None
+                    or original != 0 or policy != "local_only"):
+                    raise RuntimeError("STUDIO_LORA_CLAIM_NOT_CORE_VERIFIED_MISMATCH")
+                continue
+
+            # 03. 既有三类资产仍须由 Core 本机读取真正的托管字节，
+            #     证明源文件没有被 LoRA 声明替代或混入其他类型。
+            if (kind not in {"storypack_character", "storypack_scene", "storypack_style"}
+                or digest != stored_hash or source_path is not None
+                or original != 0 or policy != "local_only"):
                 raise RuntimeError("STUDIO_ASSET_TRUST_FIELDS_INVALID")
             obj = db_path.parent.parent / "results" / "objects" / digest[:2] / digest[2:]
             data = obj.read_bytes()
@@ -210,7 +227,7 @@ def main() -> int:
 
     # 上游两端没有借用用户私有服务器，也未授予正式的 GPU/Owner 许可。
     print("REAL_23_WINDOWS_HTTP=PASS; SQLITE_V24=PASS; READONLY_TASK_DELTA=0; SCOPED_GOAL=1; APPROVAL=0; PRODUCTION=0")
-    print("REAL_ASSET_HTTP=PASS; ASSETS=3; MANAGED_SHA256=PASS; REPLAY=PASS")
+    print("REAL_ASSET_HTTP=PASS; CORE_COPIES=3; LORA_WINDOWS_CLAIMS=1; MANAGED_SHA256=PASS; REPLAY=PASS")
     print("REAL_SCOPED_GOAL_HTTP=PASS; EVIDENCE_PACKETS=1; GOAL_REPLAY=PASS; EXECUTED_TASKS=0")
     print("WORKER=NOT_STARTED; COMFY=NOT_STARTED; OWNER=NOT_APPROVED")
     return 0
