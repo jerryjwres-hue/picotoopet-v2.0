@@ -697,11 +697,36 @@ def test_ltx_pilot_compiles_exact_frozen_first_frame_without_admission(state):
         creative_package_id=PACKAGE, approved_reference_id=receipt.approval_id,
         idempotency_key="ltx-pilot-freeze",
     )
-    frozen_job = freeze_ltx_pilot_job(service, request)
+    # The real authenticated production router now exposes the freeze.
+    # Dependency override is synthetic CI only, not a production auth bypass.
+    from picotoopet_core.api.routes import production
+    from picotoopet_core.production.models import ProductionJobRecord
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(production.router, prefix="/api/v1")
+    app.state.services = SimpleNamespace(production=service)
+    app.dependency_overrides[require_auth] = lambda: None
+    with TestClient(app) as client:
+        response = client.post("/api/v1/production/jobs/v1.2/freeze",
+                               json=request.model_dump(mode="json"))
+        assert response.status_code == 200, response.text
+        frozen_job = ProductionJobRecord.model_validate(response.json())
+        job_path = f"/api/v1/production/jobs/{frozen_job.production_job_id}"
+        assert client.post("/api/v1/production/jobs/v1.2/freeze",
+                           json=request.model_dump(mode="json")).json() == response.json()
+        assert client.get(job_path).json() == response.json()
+        assert client.get("/api/v1/production/jobs").json() == [response.json()]
+        assert client.get(job_path + "/ltx-plan").status_code == 200
+        # Legacy plan and claim endpoint must fail closed with no lease.
+        assert client.get(job_path + "/plan").status_code == 409
+        assert client.post(job_path + "/claim",
+                           json={"executor_id": "windows-legacy"}).status_code == 409
     assert frozen_job.status.value == "NeedsHuman"
     assert frozen_job.production_profile.value == "production.ltx.desktop.local.v1"
     frozen = load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id)
     assert frozen.digest() == frozen_job.plan_digest
+    with TestClient(app) as client:
+        assert client.get(job_path + "/ltx-plan").json() == frozen.model_dump(mode="json")
     assert freeze_ltx_pilot_job(service, request) == frozen_job
     assert len(db.fetchall("SELECT * FROM production_jobs", ())) == 1
     assert not db.fetchall("SELECT * FROM production_tasks", ())
@@ -735,6 +760,10 @@ def test_ltx_pilot_compiles_exact_frozen_first_frame_without_admission(state):
     # 06. Audit reads may retain historical bytes after revoke, but never
     #     accept a corrupted digest or transform that history into a lease.
     assert load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id) == frozen
+    with TestClient(app) as client:
+        assert client.post("/api/v1/production/jobs/v1.2/freeze",
+                           json=request.model_dump(mode="json")).status_code == 409
+        assert client.get(job_path + "/ltx-plan").json() == frozen.model_dump(mode="json")
     db.execute("UPDATE production_jobs SET plan_digest=? WHERE production_job_id=?",
                ("0" * 64, frozen_job.production_job_id))
     with pytest.raises(ValueError, match="LTX_PLAN_PERSISTED_IDENTITY_MISMATCH"):
