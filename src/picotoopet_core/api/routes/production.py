@@ -35,7 +35,7 @@ from picotoopet_core.production.ltx_plan import (
 )
 from picotoopet_core.production.ltx_admission import (
     LtxWorkerWitnessV12, LtxClaimReceiptV12, issue_ltx_challenge,
-    claim_ltx_first_attempt,
+    claim_ltx_first_attempt, LtxLeaseRequestV12, LtxLeaseReceiptV12, check_ltx_lease,
 )
 from picotoopet_core.security.auth import require_auth
 
@@ -205,6 +205,31 @@ def claim_production_job_v12(
     response.headers["Cache-Control"] = "no-store, private"
     return execute_production(lambda: claim_ltx_first_attempt(
         request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-lease/recheck",
+             response_model=LtxLeaseReceiptV12)
+def recheck_production_lease_v12(
+    production_job_id: str, payload: LtxLeaseRequestV12,
+    request: Request, response: Response,
+) -> LtxLeaseReceiptV12:
+    # 03. No new claim or GPU work; recheck the same signed reservation.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: check_ltx_lease(
+        request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-lease/heartbeat",
+             response_model=LtxLeaseReceiptV12)
+def heartbeat_production_lease_v12(
+    production_job_id: str, payload: LtxLeaseRequestV12,
+    request: Request, response: Response,
+) -> LtxLeaseReceiptV12:
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: check_ltx_lease(
+        request.app.state.services.production, production_job_id, payload, renew=True,
     ))
 
 
