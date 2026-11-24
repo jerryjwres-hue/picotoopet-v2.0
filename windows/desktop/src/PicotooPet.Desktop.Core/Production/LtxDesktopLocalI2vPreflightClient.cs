@@ -151,8 +151,11 @@ public sealed class LtxDesktopLocalI2vPreflightClient : IAsyncDisposable
         }
         var queue = await GetAsync("api/generation-queue", cancellationToken)
             .ConfigureAwait(false);
-        if (queue["active"] is not null
-            || queue["queued"] is JsonArray queued && queued.Count > 0)
+        if (!queue.ContainsKey("active") || queue["queued"] is not JsonArray queued)
+        {
+            throw new InvalidDataException("LTX_DESKTOP_QUEUE_SCHEMA_UNVERIFIED");
+        }
+        if (queue["active"] is not null || queued.Count > 0)
         {
             throw new InvalidOperationException("LTX_DESKTOP_QUEUE_BUSY");
         }
@@ -180,7 +183,29 @@ public sealed class LtxDesktopLocalI2vPreflightClient : IAsyncDisposable
         var history = await GetArrayAsync(
             "api/generations?feature=image-to-video", cancellationToken)
             .ConfigureAwait(false);
-        var duplicated = history.OfType<JsonObject>().Any(item =>
+        // 07. PowerShell may expose a nested returned array; flatten a
+        //     single array level, but do not silently ignore unknown records.
+        var records = new List<JsonObject>();
+        foreach (var item in history)
+        {
+            if (item is JsonObject one)
+            {
+                records.Add(one);
+            }
+            else if (item is JsonArray inner)
+            {
+                if (inner.Any(child => child is not JsonObject))
+                {
+                    throw new InvalidDataException("LTX_DESKTOP_HISTORY_SCHEMA_INVALID");
+                }
+                records.AddRange(inner.OfType<JsonObject>());
+            }
+            else
+            {
+                throw new InvalidDataException("LTX_DESKTOP_HISTORY_SCHEMA_INVALID");
+            }
+        }
+        var duplicated = records.Any(item =>
         {
             var p = item["spec"]?["params"];
             return p?["prompt"]?.GetValue<string>() == draft.Prompt
