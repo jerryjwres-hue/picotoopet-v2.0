@@ -111,3 +111,33 @@ output profile, accepted per-shot first frames, frozen StoryPack+ProductionPlan,
 a signed Worker attempt with local-only LTX execution and artifact receipts,
 then visual review. Original 11-21 horizontal StoryPack stays unchanged.
 GPU HOLD remains asserted until those gates are genuinely satisfied.
+
+
+## P0-4A code delivered: native Windows local-only four-second preflight
+
+`windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vPreflightClient.cs`
+exercises the **actual existing 1.3.1 local vendor GET routes** on
+`127.0.0.1:41955` without ever POSTing. It checks a selected local first
+frame's entire SHA256, the two local generation settings, authenticated
+session, empty local queue, **installed** `ltx-2.5-fast` with 720p / 9:16 /
+24 fps / 4-second advertised capability, and nonduplicate image-to-video
+history by prompt, model, ratio, duration, fps and seed.
+
+The returned payload preserves actual vendor field names and is deliberately
+**non-submittable**: `inputs.startFrame.assetId = null`, owner approval
+`false`, generation lane verification `false`, `can_submit=false`,
+`gpu_post=0`. It does not create another job scheduler, another credential
+file or another submission journal.
+
+For this adapter, `SourceOutputProfile` must be explicitly
+`design_portrait`: the 11-21 original `p0_landscape` source must NOT
+be converted by an incidental Worker or test. That explicit source-profile
+choice does not certify the LTX output pixels or authorize any upload.
+
+**P0-4B remains**: tie to the existing signed Core ProductionPlan/Attempt,
+current `ProductionSubmissionJournal` and GPU Lease; reuse DPAPI pairing
+from the original local controller; upload the exact pinned first frame once,
+POST the vendor payload once, retain a persistent uncertain-submission lock,
+check returned `Generation.lane == local`, safely export, verify actual
+MP4 geometry and 97 frames, then commit the result via existing Core API.
+No execution of P0-4B or private LTX tasks is authorized here.
