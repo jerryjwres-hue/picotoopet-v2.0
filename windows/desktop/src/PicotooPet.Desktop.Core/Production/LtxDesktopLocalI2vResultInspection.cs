@@ -37,6 +37,16 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         LtxDesktopGenerationExpectation expected,
         CancellationToken cancellationToken = default)
     {
+        var (inspection, _) = await InspectGenerationForExportAsync(expected, cancellationToken)
+            .ConfigureAwait(false);
+        return inspection;
+    }
+
+    // 00. Signed path remains private to the authenticated local client.
+    private async Task<(LtxDesktopGenerationInspection Inspection, string SignedPath)>
+        InspectGenerationForExportAsync(LtxDesktopGenerationExpectation expected,
+            CancellationToken cancellationToken)
+    {
         // 01. 只接受确定的 generation UUID / startFrame asset UUID；
         //     不从未核实的历史记录中自动选择「最近一个成功」。
         ArgumentNullException.ThrowIfNull(expected);
@@ -121,7 +131,7 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
 
         // 05. 明确隔离 vendor 成功与正式 Core Commit。尚未核对源图
         //     上传字节、视频实际大小/画幅、签名 Attempt 或 Owner 许可。
-        return new LtxDesktopGenerationInspection(
+        return (new LtxDesktopGenerationInspection(
             expected.GenerationId, id!, mime!, "local", 4, 24, expected.Seed,
             ResultIsLocal: true,
             SubmissionReceiptIndependentlyBoundToCore: false,
@@ -129,7 +139,7 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
             MediaBytesDownloaded: false,
             MediaGeometryVerified: false,
             CanCommitProductionResult: false,
-            GpuPost: 0);
+            GpuPost: 0), signedUrl);
     }
 
     private static string? ReadText(JsonObject node, string property)
