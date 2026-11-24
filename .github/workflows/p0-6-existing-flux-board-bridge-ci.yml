@@ -1,0 +1,49 @@
+name: P0-6 Existing FLUX Board Runner CPU Handoff
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-6-existing-flux-board-bridge-ci.yml"
+      - "scripts/prepare_existing_flux_board_shot.py"
+      - "tests/creative_quality_2026/test_existing_flux_board_handoff.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  existing-flux-handoff:
+    name: CPU-only existing FLUX runner handoff (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2025
+          - macos-15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Use Python 3.12 (no inference dependencies)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Test synthetic existing-runner reuse, hash mismatches and GPU denial
+        shell: bash
+        run: |
+          # 01. unittest uses a synthetic script and fake assets, never
+          #     obtains private user files or runs the real model.
+          python -B -m unittest discover -s tests/creative_quality_2026 -p "test_existing_flux_board_handoff.py" -v
+          python -m py_compile scripts/prepare_existing_flux_board_shot.py
+          echo "P0_6_FLUX_EXISTING_RUNNER_REUSE=PASS; GPU_POST=0"
+
+      - name: Confirm no model, execution or deployment
+        shell: bash
+        run: |
+          echo "FLUX_SOURCE_RUNTIME=NOT_EXECUTED; MODEL_DOWNLOAD=NO; USER_ASSETS=NO"
+          echo "GPU_HOLD=UNMODIFIED; PRODUCTION_APPROVAL=NOT_GRANTED"
