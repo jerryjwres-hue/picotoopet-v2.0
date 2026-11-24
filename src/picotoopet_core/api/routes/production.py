@@ -29,6 +29,10 @@ from picotoopet_core.production.versioned_plan import (
     ApprovedReferenceAuthorizationV11, ProductionJobCreateV11Request, ProductionPlanV11,
     WorkerWitnessV11,
 )
+from picotoopet_core.production.ltx_plan import (
+    LtxPilotFreezeRequestV12, LtxPilotPlanV12, freeze_ltx_pilot_job,
+    load_frozen_ltx_pilot_plan,
+)
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -51,6 +55,27 @@ def create_production_job_v11(
 ) -> ProductionJobRecord:
     # Only explicitly selected, already Approved Core reference scopes are used.
     return execute_production(lambda: request.app.state.services.production.create_job_v11(payload))
+
+
+@router.post("/production/jobs/v1.2/freeze", response_model=ProductionJobRecord)
+def freeze_production_job_v12(
+    payload: LtxPilotFreezeRequestV12, request: Request,
+) -> ProductionJobRecord:
+    # 01. Explicit renderer-specific reservation; not an executable claim.
+    return execute_production(lambda: freeze_ltx_pilot_job(
+        request.app.state.services.production, payload,
+    ))
+
+
+@router.get("/production/jobs/{production_job_id}/ltx-plan", response_model=LtxPilotPlanV12)
+def get_frozen_ltx_plan_v12(
+    production_job_id: str, request: Request,
+) -> LtxPilotPlanV12:
+    # 02. Historical plan readback retains its digest even after revocation.
+    #     It is NOT the legacy executable plan endpoint or a worker grant.
+    return execute_production(lambda: load_frozen_ltx_pilot_plan(
+        request.app.state.services.production, production_job_id,
+    ))
 
 
 @router.get("/production/jobs", response_model=list[ProductionJobRecord])
