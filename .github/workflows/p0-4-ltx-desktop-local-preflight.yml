@@ -7,6 +7,7 @@ on:
       - "windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vPreflightClient.cs"
       - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/LtxDesktopLocalI2vPreflightSmokeTests.cs"
       - "windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vResultInspection.cs"
+      - "windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vMediaExport.cs"
       - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/LtxDesktopLocalI2vResultSmokeTests.cs"
       - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs"
   workflow_dispatch:
