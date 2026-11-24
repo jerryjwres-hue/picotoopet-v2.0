@@ -32,6 +32,7 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
         ImportCharacterButton.IsEnabled = selected;
         ImportSceneButton.IsEnabled = selected;
         ImportStyleButton.IsEnabled = selected;
+        RegisterLoraButton.IsEnabled = selected;
         if (SubmitScopedStoryButton is not null)
         {
             SubmitScopedStoryButton.IsEnabled = selected;
@@ -370,6 +371,18 @@ public partial class FilmStudioAssetPanel : System.Windows.Controls.UserControl
             AssetStatus.Text = bound
                 ? $"{roleLabel}已登记并绑定。请重新点击只读检查；Owner 未批准，GPU HOLD。\n{id}"
                 : $"{roleLabel}已登记，但草稿已变化或无法绑定；未覆盖草稿。再次选择同一文件可幂等重试。\n{id}";
+            if (bound)
+            {
+                // 05. 登记完成仍未批准。必须第二次明确确认，才请求
+                //     现有审批中心创建 Pending；不自动点击 Owner 批准。
+                var digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(data));
+                var approval = await OfferOwnerApprovalRequestAsync(
+                    model, roleLabel, id, digest, null);
+                if (!string.IsNullOrWhiteSpace(approval))
+                {
+                    AssetStatus.Text = approval;
+                }
+            }
         }
         catch (Exception)
         {

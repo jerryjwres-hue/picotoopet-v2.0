@@ -23,6 +23,8 @@
                   Click="ImportAsset_Click" IsEnabled="False" />
           <Button x:Name="ImportStyleButton" Tag="style" Content="选择风格锁"
                   Click="ImportAsset_Click" IsEnabled="False" />
+          <Button x:Name="RegisterLoraButton" Content="登记已有茅台 LoRA（仅摘要，不上传模型）"
+                  Click="RegisterLora_Click" IsEnabled="False" Margin="8,0,0,0" />
         </WrapPanel>
         <!-- 设备声明是源证据，不是正式 OwnerPrincipal 审核，也不会打开 GPU。 -->
         <Expander Header="使用已有声明或首次填写宠物事实" IsExpanded="True" Margin="0,10,0,0">

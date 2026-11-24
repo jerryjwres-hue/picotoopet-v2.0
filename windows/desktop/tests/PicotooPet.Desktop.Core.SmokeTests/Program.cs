@@ -26,6 +26,7 @@ internal static class Program
             if (args.Contains("--studio-storypack-client-only", StringComparer.Ordinal))
             {
                 await StudioStoryPackClientSmokeTests.RunAsync().ConfigureAwait(false);
+                await StudioAssetRegistryClientSmokeTests.RunAsync().ConfigureAwait(false);
                 StudioStoryPackPanelSmokeTests.Run();
                 Console.WriteLine("STUDIO_23_STORYPACK_CLIENT=PASS; LEASE=0; GPU_POST=0");
                 return 0;
@@ -199,6 +200,7 @@ internal static class Program
             ComfyWorkflowTemplateSmokeTests.Run();
             await VerifyEmergencyLoggerAsync().ConfigureAwait(false);
             await BusinessPipelineClientSmokeTests.RunAsync().ConfigureAwait(false);
+            await StudioAssetRegistryClientSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
             await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
