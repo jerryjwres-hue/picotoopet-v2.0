@@ -144,3 +144,36 @@ POST the vendor payload once, retain a persistent uncertain-submission lock,
 check returned `Generation.lane == local`, safely export, verify actual
 MP4 geometry and 97 frames, then commit the result via existing Core API.
 No execution of P0-4B or private LTX tasks is authorized here.
+
+
+## P0-4B1 completed-vendor-record inspection (read-only)
+
+New LtxDesktopLocalI2vResultInspection.cs reads exactly one authenticated
+GET /api/generations/{generationId}. It never chooses a recent task by time,
+uploads an asset, POSTs a generation, downloads media or modifies Core.
+Valid generation and startFrame asset UUIDs must come from an earlier
+submission receipt, not from an unverified filename.
+
+Exact readback gates:
+- Response id and status=succeeded plus literal Generation.lane=local.
+  Historic S1/S2 receipts lacking lane remain UNVERIFIED.
+- spec.params exactly matches frozen prompt, ltx-2.5-fast, 720p, 9:16,
+  duration=4, fps=24, seed, cameraMotion=none, negativePrompt empty,
+  promptProvenance=typed.
+- spec.inputs.startFrame.assetId equals the expected uploaded asset UUID.
+- Exactly one video asset, video/mp4 or video/webm, with a relative only
+  vendor /api/assets/<asset-id>/bytes?... signed route. No returned
+  receipt contains the signed URL or the Bearer token.
+
+If installed LTX Desktop 1.3.1 omits lane or spec.inputs, the result remains
+BLOCKED / UNVERIFIED. Never silently infer a local execution lane.
+
+The returned evidence always says CanCommitProductionResult=false,
+MediaBytesDownloaded=false, MediaGeometryVerified=false, GpuPost=0.
+That is vendor metadata inspection ONLY; not Core authorization, accepted
+first-frame bytes, an MP4 audit or a final ProductionTask commit.
+
+P0-4B2 remains: signed Core Plan/Attempt, existing durable journal and GPU
+lease, source-matched first-frame upload, exactly ONE vendor generation POST,
+safe authenticated asset export and verified actual 97-frame output prior
+to any Core CommitResult. No engine execution is authorized by P0-4B1.
